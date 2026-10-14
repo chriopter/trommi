@@ -18,6 +18,8 @@ pub mod upkeep;
 pub mod record;
 #[path = "events.rs"]
 pub mod events;
+#[path = "room_join.rs"]
+pub mod room_join;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -146,6 +148,9 @@ pub enum Alert {
     NotMember,
     /// The hub needs a newer Trommi.
     ClientTooOld,
+    /// The room was joined with the code, but the hub did not serve the link from an older code to this one: what
+    /// was sealed under the older codes stays closed to this device.
+    MissingLink,
     /// A newer Trommi wrote here.
     NewerVersion { from: DeviceId },
     /// A stale session waits for a repair this device could not make: nothing is written in it until then (5.2.8).
@@ -185,6 +190,8 @@ pub enum Report {
     /// The session groups of a sign-in with the code are through: how many the hub took this device into, and the
     /// ones it is not in, each with the reason. Another human device of the person adds it to those (5.2.7).
     SessionsJoined { joined: u32, not_joined: Vec<(GroupId, &'static str)> },
+    /// How the join of the room with the code stands (`room_join`).
+    RoomJoin(room_join::RoomJoinStatus),
     /// A piece the hub only passed on, as the protocol core opened it (a stroke still being drawn, 7.2).
     Relay(Box<Received>),
     /// A newcomer sent its Request for an invite of this room (12.1): the invite flow reads it.
@@ -247,6 +254,8 @@ enum Asked {
     RoomGroups { expect: Expect, job: upkeep::Job },
     /// The hub's list of wishes (`events`).
     Wishes(Expect),
+    /// A read of the join of the room with the code (`room_join`).
+    RoomRead { expect: Expect, what: room_join::Read },
     /// The engine's record, read at the start and written when it changed (`record`).
     Record,
     RecordWrite,
@@ -267,7 +276,8 @@ impl Asked {
             | Asked::JoinRead { expect, .. }
             | Asked::First { expect, .. }
             | Asked::Claim { expect, .. }
-            | Asked::RoomGroups { expect, .. } => Some(expect),
+            | Asked::RoomGroups { expect, .. }
+            | Asked::RoomRead { expect, .. } => Some(expect),
         }
     }
 }
@@ -435,6 +445,8 @@ pub struct Engine {
     written: Option<record::Record>,
     /// Wishes of other devices for keys, and the ones answered (`events`).
     wishes: events::Wishes,
+    /// The join of the room with the code, while it runs (`room_join`): nothing else is done before it ends.
+    room_join: Option<room_join::Joiner>,
 }
 
 /// Why a stored device does not open as an engine.
@@ -446,6 +458,9 @@ pub enum OpenError {
     Device(&'static str),
     /// `Config.hub` is no canonical hub address.
     Hub,
+    /// The device is in no room, and holds a join of the room with the code that was posted without its answer
+    /// being read: the code is asked for again ([`room_join`]).
+    Interrupted,
 }
 
 impl Engine {
@@ -468,9 +483,17 @@ impl Engine {
         let address = HubAddress::parse(hub).map_err(|_| OpenError::Hub)?;
         let (store, writes) = memstore::store(revision, entries.into_iter().map(|e| (e.key.0, e.value.0)).collect());
         let device = Device::open(store, entropy).map_err(|e| OpenError::Device(e.code()))?;
-        let room = device.room().ok_or(OpenError::NoRoom)?;
+        let Some(room) = device.room() else {
+            // (a join with the code was posted and its answer never read: only the code goes on with it)
+            return Err(if room_join::staged(&device).is_some() { OpenError::Interrupted } else { OpenError::NoRoom });
+        };
+        Ok(Self::over(device, writes, room, hub, address, client, seed))
+    }
+
+    /// The engine over a device that was opened or made.
+    fn over(device: Device<memstore::MemStore>, writes: Writes, room: RoomId, hub: &str, address: HubAddress, client: &str, seed: u64) -> Self {
         let position = device.cursor();
-        Ok(Engine {
+        Engine {
             codec: Codec,
             device,
             writes,
@@ -528,7 +551,8 @@ impl Engine {
             restoring: None,
             written: None,
             wishes: events::Wishes::default(),
-        })
+            room_join: None,
+        }
     }
 
     // ---- what the App reads
@@ -608,6 +632,9 @@ impl Engine {
             if let Some(joining) = &self.joining {
                 want(joining.retry.at);
             }
+            if let Some(j) = &self.room_join {
+                want(j.retry.at);
+            }
             want(self.tending.wake());
             if self.caught_up && self.upkeep_asked.is_none() {
                 want(Some(self.upkeep_at.max(self.upkeep_retry.at.unwrap_or(0))).filter(|at| *at != 0));
@@ -667,6 +694,9 @@ impl Engine {
         self.pump_retry.hurry();
         if let Some(joining) = &mut self.joining {
             joining.retry.hurry();
+        }
+        if let Some(j) = &mut self.room_join {
+            j.retry.hurry();
         }
         self.tending.retry.hurry();
     }
@@ -762,6 +792,7 @@ impl Engine {
             Asked::Claim { job, .. } => self.on_claimed(ctx, job, answer, unauthorised),
             Asked::RoomGroups { job, .. } => self.on_room_groups(ctx, job, answer, unauthorised),
             Asked::Wishes(_) => self.on_wishes(ctx, answer),
+            Asked::RoomRead { what, .. } => self.on_room_read(ctx, what, answer, unauthorised, refusal),
         }
         self.drive(ctx);
         true
@@ -872,7 +903,9 @@ impl Engine {
             return;
         }
         self.drive_all(ctx);
-        self.keep(ctx);
+        if self.room_join.is_none() {
+            self.keep(ctx);
+        }
     }
 
     fn drive_all(&mut self, ctx: &mut Ctx<'_>) {
@@ -883,8 +916,18 @@ impl Engine {
             return;
         }
         if !self.signed_in(ctx) {
-            self.connect(ctx);
+            if self.room_join.is_none() {
+                self.connect(ctx);
+            }
             return;
+        }
+        if self.room_join.is_some() {
+            // (the room is joined first: the device has nothing else to do before)
+            self.drive_room_join(ctx);
+            self.flush(ctx);
+            if self.room_join.is_some() || self.stopped.is_some() {
+                return;
+            }
         }
         // the Desk before the order: what is open now is asked for before the first page
         self.drive_desk(ctx);
@@ -1009,7 +1052,7 @@ impl Engine {
     fn on_challenge(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>) {
         self.signing = None;
         match answer {
-            Ok(Answer::Challenge(challenge)) => match self.device.hub_sign_in(&self.address, challenge) {
+            Ok(Answer::Challenge(challenge)) => match self.room_join.as_ref().map_or_else(|| self.device.hub_sign_in(&self.address, challenge), |j| j.sign_in(self.room, &self.address, challenge)) {
                 Ok(signed) => {
                     let room = self.room;
                     self.signing = self.ask(ctx, Route::Token { room: &room, auth: &signed.auth, signature: &signed.signature }, false, Asked::Token);
@@ -1017,6 +1060,7 @@ impl Engine {
                 Err(e) => self.local(ctx, &e),
             },
             Ok(_) => self.auth_failed(ctx, Failure::BadAnswer { why: "challenge" }),
+            Err(failure) if self.room_join.is_some() => self.room_auth_failed(ctx, failure),
             Err(failure) => self.auth_failed(ctx, failure),
         }
     }
@@ -1036,6 +1080,7 @@ impl Engine {
                 }
             }
             Ok(_) => self.auth_failed(ctx, Failure::BadAnswer { why: "token" }),
+            Err(failure) if self.room_join.is_some() => self.room_auth_failed(ctx, failure),
             Err(failure) => self.auth_failed(ctx, failure),
         }
     }
@@ -2031,6 +2076,9 @@ impl Engine {
         refusal: Option<Refusal>,
     ) {
         self.posting = None;
+        if self.room_join.is_some() {
+            return self.on_room_posted(ctx, entry, answer, unauthorised, refusal);
+        }
         let failure = match answer {
             Ok(Answer::Outbox(taken)) => {
                 self.pump_retry.ok();

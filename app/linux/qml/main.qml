@@ -64,12 +64,18 @@ ApplicationWindow {
     }
     Connections { target: trommi; function onSelectedChanged() { window.openCard = "" } }
     // a notification clicked: its card (or the Desk), in front
-    onActiveChanged: trommi.set_focused(active)
+    onActiveChanged: if (core) go(place); else trommi.set_focused(active)
     Connections {
         target: trommi
         function onOpen_requestChanged() {
             const id = trommi.open_request
             if (id === "") return
+            // on the app core: a notification names a card (or nothing: the Desk)
+            if (window.core) {
+                window.go(id === "desk" ? { screen: "desk" } : { screen: "card", card_id: id })
+                window.show(); window.raise(); window.requestActivate()
+                return
+            }
             if (trommi.selected !== "") trommi.select_session("")
             window.openCard = id === "desk" ? "" : id
             window.show(); window.raise(); window.requestActivate()
@@ -84,6 +90,28 @@ ApplicationWindow {
     // the app core's view model, as the shell folded it (shell.rs); `core`: it is the one behind this window
     property var view: { try { return JSON.parse(trommi.view_json) } catch (e) { return ({}) } }
     readonly property bool core: view.phase !== undefined
+    /** The page in view, as last sent to the core (`Event::Focus`): { screen: "desk" | "session" | "card", … }. */
+    property var place: ({ screen: "desk" })
+    function go(screen) {
+        window.place = screen
+        trommi.send_event(JSON.stringify({ type: "focus", focus: { screen: screen, visible: window.active } }))
+    }
+    // the time zone: the core is told when it changes (travel, summer time)
+    property int zone: -new Date().getTimezoneOffset()
+    Timer {
+        interval: 60000; repeat: true; running: window.core
+        onTriggered: {
+            const now = -new Date().getTimezoneOffset()
+            if (now !== window.zone) {
+                window.zone = now
+                trommi.send_event(JSON.stringify({ type: "zone", utc_offset_min: now }))
+            }
+        }
+    }
+    /** A tap on the core's view: an `Action`, in the contract's spelling. */
+    function act(action) { trommi.send_event(JSON.stringify({ type: "action", action: action })) }
+    readonly property var placeSession: place.screen === "session" && view.sessions ? (view.sessions[place.session_id] || null) : null
+    readonly property var placeCard: place.screen === "card" && view.cards ? (view.cards[place.card_id] || null) : null
     // which of the window's three faces shows: the wait, the sign-in, the board
     readonly property bool starting: core ? view.phase === "starting" : trommi.starting
     readonly property bool signedIn: core ? ["opening", "live", "offline"].indexOf(view.phase) >= 0 : trommi.signed_in
@@ -102,6 +130,18 @@ ApplicationWindow {
         property int step: 0
         onTriggered: {
             const scene = trommi.scene
+            // on the app core: `card` opens the first row's card, `session` the first session, `answer` takes the
+            // first row's first tile; then the picture
+            if (window.core && step === 0 && ["card", "session", "answer"].indexOf(scene) >= 0) {
+                step = 1
+                const rows = (window.view.desk || {}).rows || []
+                const sessions = (window.view.sidebar || {}).sessions || []
+                if (scene === "card" && rows.length) window.go({ screen: "card", card_id: rows[0].id })
+                if (scene === "session" && sessions.length) window.go({ screen: "session", session_id: sessions[0].id })
+                if (scene === "answer" && rows.length && rows[0].tiles.tiles.length) window.act({ do: "answer", card_id: rows[0].id, choices: [rows[0].tiles.tiles[0].key] })
+                shotTimer.restart()
+                return
+            }
             if ((scene === "chat" || scene === "say") && step === 0) {
                 step = 1
                 let pick = ""
@@ -168,9 +208,17 @@ ApplicationWindow {
         color: theme.bg
 
         // ---- signing in --------------------------------------------------------------------------------------------
+        ViewSignIn {
+            anchors.fill: parent
+            visible: window.core && window.view.phase === "signed_out"
+            theme: theme
+            account: window.view.account || ({})
+            status: window.view.status || null
+            onAct: (action) => window.act(action)
+        }
         SignIn {
             anchors.fill: parent
-            visible: !window.signedIn && !window.starting
+            visible: !window.core && !window.signedIn && !window.starting
             trommi: trommi
             theme: theme
         }
@@ -201,6 +249,7 @@ ApplicationWindow {
                 theme: theme
                 sidebar: window.view.sidebar || ({})
                 onTheme_toggled: trommi.set_theme(theme.dark ? "light" : "dark")
+                onGo: (screen) => window.go(screen)
             }
             Sidebar {
                 visible: !window.core
@@ -219,10 +268,30 @@ ApplicationWindow {
 
                 ViewDesk {
                     anchors.fill: parent
-                    visible: window.core
+                    visible: window.core && !window.placeSession && !window.placeCard
                     theme: theme
                     desk: window.view.desk || ({})
                     sidebar: window.view.sidebar || ({})
+                    onAct: (action) => window.act(action)
+                    onGo: (screen) => window.go(screen)
+                }
+                ViewSession {
+                    anchors.fill: parent
+                    visible: window.core && !!window.placeSession
+                    theme: theme
+                    trommi: trommi
+                    files: window.view.files || ({})
+                    session: window.placeSession || ({})
+                    onAct: (action) => window.act(action)
+                    onGo: (screen) => window.go(screen)
+                }
+                ViewCard {
+                    anchors.fill: parent
+                    visible: window.core && !!window.placeCard
+                    theme: theme
+                    card: window.placeCard || ({})
+                    onAct: (action) => window.act(action)
+                    onGo: (screen) => window.go(screen)
                 }
                 Desk {
                     anchors.fill: parent
