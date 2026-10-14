@@ -41,6 +41,8 @@ const port = globalThis as unknown as { postMessage(m: FromCore): void; onmessag
 const post = (m: FromCore): void => port.postMessage(m)
 
 let shell: CoreShell | null = null
+/** Events the page sent before the core was up: handed in, in order, once it is. */
+let early: { event: Json; blobs: Uint8Array[] }[] | null = []
 let store: DeviceStore | null = null
 let channel: BroadcastChannel | null = null
 let stopped = false
@@ -105,6 +107,8 @@ async function start(m: Extract<ToCore, { t: 'start' }>): Promise<void> {
     },
   })
   shell.send({ type: 'start', config: { ...m.config, slot: m.slot } })
+  for (const e of early ?? []) shell.send(e.event, e.blobs)
+  early = null
   post({ t: 'started' })
 }
 
@@ -127,7 +131,8 @@ port.onmessage = ({ data: m }) => {
       start(m).catch(e => post({ t: 'failed', error: String((e as Error)?.message ?? e) }))
       return
     case 'event':
-      shell?.send(m.event, m.blobs ?? [])
+      if (shell) shell.send(m.event, m.blobs ?? [])
+      else early?.push({ event: m.event, blobs: m.blobs ?? [] })
       return
     case 'platform': {
       const a = asked.get(m.id)
