@@ -1134,6 +1134,22 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             (Some("1"), since, only) => app.read(|x| content::desk_brief(x.c, &rq.auth(app, x.c)?, since, &only)),
             _ => Err(refuse("bad-format", "the Desk is read whole, or with brief=1 (and since=)")),
         },
+        // point 47: the objects no longer open, newest first, a page at a time
+        ("GET", ["objects"]) => {
+            if rq.q("state") != Some("settled") {
+                return Err(refuse("bad-format", "state: settled"));
+            }
+            let kind = match rq.q("kind") {
+                None => None,
+                Some(k @ ("cards" | "notes" | "permission_requests" | "artifacts")) => Some(k),
+                Some(_) => return Err(refuse("bad-format", "kind: cards, notes, permission_requests or artifacts")),
+            };
+            // `group=` one group's rows, or `active=1` the live groups' (as on a catch-up: one of them at most)
+            let mut only = only(rq, true)?;
+            let group = only.group.take();
+            let (before, limit) = (rq.q_int("before")?, rq.q_int("limit")?);
+            app.read(|x| content::settled_objects(x.c, &rq.auth(app, x.c)?, kind, group.as_deref(), before, limit, &only))
+        }
         ("GET", ["chats", scope, timeline, "items"]) => {
             let key = content::chat_key(scope, timeline)?;
             let (before, limit) = (rq.q_int("before")?, rq.q_int("limit")?);

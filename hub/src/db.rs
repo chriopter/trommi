@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS board_frontiers (
 ";
 
 /// Added to schema 5 in place (Welcomes stored once, ids never given twice, an index for deleting by group, the
-/// Offer's MAC, an index for paging the groups, an index of register values with bodies, the board frontiers, settled Notes), on every open (a fresh database and one that holds data alike): nothing is
+/// Offer's MAC, an index for paging the groups, an index of register values with bodies, the board frontiers, settled Notes, the object counts and the settled objects in order), on every open (a fresh database and one that holds data alike): nothing is
 /// rewritten, rows written before keep working. A Welcome is stored once per group and epoch in
 /// `welcome_bytes`; a row of `welcomes` with `epoch` set points to it and keeps an empty `bytes`, a row without
 /// `epoch` (written before) holds its own. At 1000 human devices a founding's Welcome is some 0.3 MB, and it is
@@ -62,6 +62,19 @@ CREATE INDEX IF NOT EXISTS envelopes_register_bodies ON envelopes(group_id, send
 -- 9.4.1: a Note deleted (closed) settles; one closed before this rule gets its arrival of closing
 CREATE INDEX IF NOT EXISTS notes_due ON notes(settled_at) WHERE settled_at IS NOT NULL AND pruned_at IS NULL;
 UPDATE notes SET settled_at = closed_at WHERE state = 3 AND settled_at IS NULL AND closed_at IS NOT NULL;
+-- the Desk's counts per group and state, and the settled objects newest first (hub-api.md point 47)
+CREATE INDEX IF NOT EXISTS cards_settled ON cards(room_id, head_change) WHERE state != 1;
+CREATE INDEX IF NOT EXISTS cards_settled_by_group ON cards(room_id, group_id, head_change) WHERE state != 1;
+CREATE INDEX IF NOT EXISTS cards_counts ON cards(room_id, group_id, state);
+CREATE INDEX IF NOT EXISTS permission_requests_settled ON permission_requests(room_id, head_change) WHERE state != 1;
+CREATE INDEX IF NOT EXISTS permission_requests_settled_by_group ON permission_requests(room_id, group_id, head_change) WHERE state != 1;
+CREATE INDEX IF NOT EXISTS permission_requests_counts ON permission_requests(room_id, group_id, state);
+CREATE INDEX IF NOT EXISTS artifacts_settled ON artifacts(room_id, head_change) WHERE state != 1;
+CREATE INDEX IF NOT EXISTS artifacts_settled_by_group ON artifacts(room_id, group_id, head_change) WHERE state != 1;
+CREATE INDEX IF NOT EXISTS artifacts_counts ON artifacts(room_id, group_id, state);
+CREATE INDEX IF NOT EXISTS notes_settled ON notes(room_id, head_change) WHERE state != 1;
+CREATE INDEX IF NOT EXISTS notes_settled_by_group ON notes(room_id, group_id, head_change) WHERE state != 1;
+CREATE INDEX IF NOT EXISTS notes_counts ON notes(room_id, group_id, state);
 CREATE TABLE IF NOT EXISTS welcome_ids (
   one            INTEGER PRIMARY KEY CHECK (one = 1),
   last           INTEGER NOT NULL
