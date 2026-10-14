@@ -187,3 +187,29 @@ fn every_way_in_is_changed_and_signs_in_after() {
     signs_in(&hub, AccountAction::SignIn { email: EMAIL.into(), password: secret("third password here"), hub: None });
     signs_in(&hub, AccountAction::SignInWithKit { email: EMAIL.into(), words: secret(&kit3), hub: None });
 }
+
+#[test]
+fn the_room_is_recovered_with_the_kit() {
+    let hub = TestHub::start();
+    let mut first = slot(&hub, std::rc::Rc::new(Authenticator::new()));
+    account(&mut first, AccountAction::Found { email: EMAIL.into(), password: secret("first password here"), hub: None });
+    let kit1 = kit(&mut first);
+    until(&mut first, "live", |s| s.view.phase == Phase::Live);
+    signs_in(&hub, AccountAction::SignIn { email: EMAIL.into(), password: secret("first password here"), hub: None });
+
+    // every device is lost: the kit recovers the room on a new one, with a new password and a new kit
+    let mut new = slot(&hub, std::rc::Rc::new(Authenticator::new()));
+    account(&mut new, AccountAction::Recover { email: EMAIL.into(), words: secret(&kit1), password: secret("second password here"), hub: None });
+    let kit2 = kit(&mut new);
+    assert_ne!(kit1, kit2);
+    until(&mut new, "live", |s| s.view.phase == Phase::Live);
+    let (humans, _) = new.app.engine().expect("in the room").roles();
+    assert_eq!(humans, vec![new.app.engine().unwrap().device().id()], "the other human devices are out");
+
+    signs_in(&hub, AccountAction::SignIn { email: EMAIL.into(), password: secret("second password here"), hub: None });
+    signs_in(&hub, AccountAction::SignInWithKit { email: EMAIL.into(), words: secret(&kit2), hub: None });
+    // the old password and the old kit open nothing any more
+    let mut old = slot(&hub, std::rc::Rc::new(Authenticator::new()));
+    account(&mut old, AccountAction::SignIn { email: EMAIL.into(), password: secret("first password here"), hub: None });
+    until(&mut old, "refused", |s| s.view.account.problem.is_some());
+}

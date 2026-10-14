@@ -135,6 +135,10 @@ pub struct App {
     /// The account's steps in flight (`app::account_steps`).
     steps: account_steps::Steps,
     changes: account_change::Changes,
+    /// A recovery (`AccountAction::Recover`) waiting for its login: the new kit's words and the sealer of the
+    /// account's new copies; then the words, shown once the room is recovered.
+    recover_with: Option<(Vec<String>, engine::recover::Copies)>,
+    recovered_kit: Option<Vec<String>>,
     /// Agents' asks to let in a new session of their machine (`app::selfjoin`).
     selfjoin: selfjoin::SelfJoin,
     /// Actions that write the room's registers, held while the device catches up: a register written before the
@@ -200,6 +204,8 @@ impl App {
             invites: invites::Invites::default(),
             steps: account_steps::Steps::default(),
             changes: account_change::Changes::default(),
+            recover_with: None,
+            recovered_kit: None,
             selfjoin: selfjoin::SelfJoin::default(),
             held_actions: Vec::new(),
             opening: None,
@@ -328,6 +334,16 @@ impl App {
             _ => {}
         }
         let (by, account, secret, hub) = match action {
+            AccountAction::Recover { email, words, password, hub } => {
+                match crate::account::found::recovery_copies(&email, &password, &mut trommi_core::crypto::SystemEntropy) {
+                    Ok(made) => self.recover_with = Some(made),
+                    Err(text) => {
+                        self.next_view.account = crate::views::AccountView { step: "recover".into(), problem: Some(text), ..Default::default() };
+                        return;
+                    }
+                }
+                (By::Kit, email, words, hub)
+            }
             AccountAction::SignIn { email, password, hub } => (By::Password, email, password, hub),
             AccountAction::SignInWithKit { email, words, hub } => (By::Kit, email, words, hub),
             other => {
@@ -523,7 +539,11 @@ impl App {
                 self.signed_in_join = true;
                 let hub = waiting.hub.clone();
                 drop(waiting);
-                let effects = self.join_room(now_ms, engine::room_join::RoomJoin { hub, room, keys });
+                let recover = self.recover_with.take().map(|(words, copies)| {
+                    self.recovered_kit = Some(words);
+                    copies
+                });
+                let effects = self.join_room(now_ms, engine::room_join::RoomJoin { hub, room, keys, recover });
                 out.extend(effects.into_iter().filter(|e| !matches!(e, Effect::Render { .. })));
             }
             Err(problem) => self.sign_in_failed(problem),
@@ -539,10 +559,14 @@ impl App {
         match self.room_join {
             Some(RoomJoinStatus::Joined) => {
                 self.signed_in_join = false;
-                self.next_view.account = crate::views::AccountView { step: "none".into(), ..Default::default() };
+                self.next_view.account = match self.recovered_kit.take() {
+                    Some(kit) => crate::views::AccountView { step: "keep_kit".into(), kit, ..Default::default() },
+                    None => crate::views::AccountView { step: "none".into(), ..Default::default() },
+                };
             }
             Some(RoomJoinStatus::Failed(error)) => {
                 self.signed_in_join = false;
+                self.recovered_kit = None;
                 use crate::views::words::say;
                 let problem = match error {
                     RoomJoinError::TooMany => say("account.too_many", "This room has as many devices as it may. Remove one first.", &[]),

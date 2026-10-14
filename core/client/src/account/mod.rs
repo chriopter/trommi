@@ -60,6 +60,16 @@ pub enum AccountAction {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hub: Option<String>,
     },
+    /// The password is lost and no device of the person is left: the room is recovered with the Emergency Kit
+    /// (8.7). Every other human device is removed, the code is replaced, and the account gets `password` and a new
+    /// kit (shown once, `step: "keep_kit"`).
+    Recover {
+        email: String,
+        words: Secret,
+        password: Secret,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hub: Option<String>,
+    },
     /// Join by an invite link (this device becomes a member once the emoji match).
     Join {
         link: Secret,

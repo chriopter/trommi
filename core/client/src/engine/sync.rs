@@ -20,6 +20,9 @@ pub mod record;
 pub mod events;
 #[path = "room_join.rs"]
 pub mod room_join;
+/// The recovery of the room with its code (8.7), inside the join.
+#[path = "recover.rs"]
+pub mod recover;
 #[path = "requests.rs"]
 pub mod requests;
 #[path = "found.rs"]
