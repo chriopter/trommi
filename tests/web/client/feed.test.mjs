@@ -52,7 +52,7 @@ test(`${HISTORY} changes taken in batches are the room they are taken item by it
     if (single) itemByItem(client)
     const before = storeSteps(name)
     await client.start({ stream: false })
-    await client.settle(120_000)
+    await client.settle({ timeout_ms: 120_000 })
     assert.ok(client.engine.position >= head)
     return storeSteps(name) - before
   }
@@ -67,7 +67,7 @@ test(`${HISTORY} changes taken in batches are the room they are taken item by it
   const codeSingle = await take(c2, name2.name, true)
   fake.faults.clear()
   await a.settle()
-  for (const c of [again1, again2, c1, c2]) await c.settle(60_000)
+  for (const c of [again1, again2, c1, c2]) await c.settle({ timeout_ms: 60_000 })
 
   modelsAgree(again1.model, again2.model, 'the device that took batches and the one that took single items')
   modelsAgree(a.model, again1.model, 'the founder and the device that took batches')
