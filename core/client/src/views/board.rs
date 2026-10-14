@@ -43,6 +43,8 @@ pub struct Lens {
     pub card: Option<String>,
     /// The page Off your mind is in view, with the search's words: its unit is made.
     pub off: Option<String>,
+    /// The gallery of Artifacts is in view.
+    pub artifacts: bool,
     /// The desks whose goals are folded to their first line on this device (web localStorage
     /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
     pub goals_folded: Vec<String>,
@@ -482,6 +484,7 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     let off = super::off::of_board(&b);
     view.desk = super::desk::desk_with(&b, &off);
     view.off = lens.off.as_deref().map(|q| super::off::off_list(&b, &off, q));
+    view.artifacts = lens.artifacts.then(|| super::session::artifacts(&b));
     view.notes = super::notes::notes(&b);
     // (what the account read keeps: the e-mail is the account's, W3)
     // (what the App adds beside the model: the account read, the room, the desks' deletes)

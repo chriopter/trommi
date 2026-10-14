@@ -338,6 +338,25 @@
       "updated_ms": 1791469620000
     }
   ],
+  "questions": [
+    {
+      "id": "a7043d48862eac8c164c419182dbd0c7",
+      "number": 17,
+      "title": "Smart retries: failed renewals down from 4.1% to 1.3%"
+    },
+    {
+      "id": "ec2f5263fac9174007a1f17b148b8314",
+      "number": 1,
+      "title": "Renewal webhooks fail since 14:02: roll back to 2.13.2?"
+    }
+  ],
+  "files": [
+    "548d053a3254d62f0c0c6a861bca4ca3",
+    "9db1442ecce0db9de717f78025f11622",
+    "e8b85d437cf6d2790a969bd273f02f95",
+    "dca1b60409e1a268a14b2554f92d8b1f",
+    "e23cd83513f96d209c87c2b3d8f88ab0"
+  ],
   "has_more": false,
   "slug": "payments-service",
   "mark": "draw:lock",

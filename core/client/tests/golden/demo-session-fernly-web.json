@@ -781,6 +781,36 @@
       }
     }
   ],
+  "questions": [
+    {
+      "id": "95a7444523d097bff745b891bc2166cf",
+      "number": 46,
+      "title": "Launch on Monday at 09:00, or on Tuesday?"
+    },
+    {
+      "id": "637adcc6eae4b4ac30b47509a3071884",
+      "number": 38,
+      "title": "Send a weekly summary e-mail on Sundays?"
+    },
+    {
+      "id": "e77e5a529e1d3a4bd3046ce602a34c1e",
+      "number": 26,
+      "title": "Done: onboarding in three steps is on staging"
+    },
+    {
+      "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
+      "number": 14,
+      "title": "Remind in the morning or in the evening?"
+    }
+  ],
+  "files": [
+    "5e206d84ca2b38134b8164b2135760cd",
+    "7251fba1c16a29dc90d9fd4f706daf11",
+    "c11ba9616d097302b2a8b1c9b19b3e4b",
+    "d02cbe914970950dec12b8066505481a",
+    "886c5651e28e6fc20d28b64f97fb9678",
+    "32411e6dafa3269067bac5b4f8837ef3"
+  ],
   "has_more": false,
   "slug": "fernly-web",
   "mark": "draw:leaf",

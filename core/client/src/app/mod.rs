@@ -916,6 +916,7 @@ impl App {
                     self.lens.home_desk = Some(desk.to_string());
                 }
                 self.lens.desk = focus.desk;
+                self.lens.artifacts = matches!(focus.screen, Screen::Artifacts);
                 let (session, card, off) = match focus.screen {
                     Screen::Session { session_id } => (Some(session_id), None, None),
                     Screen::Card { card_id } => (None, Some(card_id), None),

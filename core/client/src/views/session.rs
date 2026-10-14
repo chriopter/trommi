@@ -126,6 +126,7 @@ fn outcome(c: &Card) -> (&'static str, String) {
 /// The page of the session `id` (its key, or its short id of the address); none when it is not on the board.
 pub fn session(b: &Board, id: &str) -> Option<SessionView> {
     let mut v = page(b, id)?;
+    piles(b, &mut v);
     // The talk's window: the newest pages (the day line and the runs stay as the whole talk has them).
     let pages = Lens::pages(&b.lens.talk_window, &v.id).max(Lens::pages(&b.lens.talk_window, &v.slug));
     let keep = TALK_PAGE * pages as usize;
@@ -375,6 +376,8 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
     let open = fresh.len() as u32;
     let n = open.to_string();
     Some(SessionView {
+        questions: Vec::new(),
+        files: Vec::new(),
         id: a.row.key.clone(),
         name: say("session.name", name, &[]),
         link: link.as_ref().map(|l| l.state.clone()).unwrap_or_default(),
@@ -418,6 +421,82 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
             }
         }),
     })
+}
+
+/// The session's questions (every card, newest first) and its files (the attachments of its cards, their answers,
+/// its Chats and its Artifacts, newest first, each once).
+fn piles(b: &Board, v: &mut SessionView) {
+    let m = b.model;
+    let Some(&idx) = b.by_key.get(v.id.as_str()).or_else(|| b.by_id.get(v.id.as_str())) else { return };
+    let mut cards: Vec<&Card> = m.cards.values().filter(|c| b.by_key.get(key_of(&c.session_id, &c.agent_device_id)) == Some(&idx)).collect();
+    cards.sort_by_key(|c| std::cmp::Reverse(c.first_envelope_number));
+    v.questions = cards
+        .iter()
+        .map(|c| super::CardRefView { id: c.object_id.clone(), number: b.number_of(&c.object_id), title: c.fields.get("title").as_str().unwrap_or("").to_string() })
+        .collect();
+    let mut found: Vec<(u64, String)> = Vec::new();
+    let mut take = |at: u64, list: &serde_json::Value| {
+        for a in list.as_array().into_iter().flatten() {
+            super::files_seen::saw(a);
+            if let Some(id) = a.get("attachment_id").and_then(serde_json::Value::as_str) {
+                found.push((at, id.to_string()));
+            }
+        }
+    };
+    for c in &cards {
+        take(c.first_envelope_number, &c.fields.get("attachments"));
+        for a in c.answers.iter() {
+            take(a.envelope_number.unwrap_or(0), &a.attachments);
+        }
+        for key in [format!("chat:card/{}", c.object_id)] {
+            if let Some(t) = m.timelines.get(&key) {
+                for it in t.items.values() {
+                    let at = it.get("envelope_number").and_then(serde_json::Value::as_u64).unwrap_or(0);
+                    take(at, it.get("content").and_then(|c| c.get("attachments")).unwrap_or(&serde_json::Value::Null));
+                }
+            }
+        }
+    }
+    if let Some(t) = m.timelines.get(&format!("chat:session/{}", b.agents[idx].row.key)) {
+        for it in t.items.values() {
+            let at = it.get("envelope_number").and_then(serde_json::Value::as_u64).unwrap_or(0);
+            take(at, it.get("content").and_then(|c| c.get("attachments")).unwrap_or(&serde_json::Value::Null));
+        }
+    }
+    for p in m.published.values().filter(|p| b.by_key.get(key_of(&p.session_id, &p.agent_device_id)) == Some(&idx)) {
+        take(p.envelope_number, &p.attachments);
+    }
+    found.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
+    let mut seen = std::collections::HashSet::new();
+    v.files = found.into_iter().filter(|(_, id)| seen.insert(id.clone())).map(|(_, id)| id).collect();
+}
+
+/// Every Artifact this device holds, the newest first, with its session's name and its files.
+pub fn artifacts(b: &Board) -> Vec<super::ArtifactView> {
+    let m = b.model;
+    let mut list: Vec<&crate::model::types::Published> = m.published.values().filter(|p| p.object_state != "closed").collect();
+    list.sort_by_key(|p| std::cmp::Reverse((p.sent_at, p.envelope_number)));
+    list.into_iter()
+        .map(|p| {
+            let idx = b.by_key.get(key_of(&p.session_id, &p.agent_device_id)).copied();
+            let mut files = Vec::new();
+            for a in p.attachments.as_array().into_iter().flatten() {
+                super::files_seen::saw(a);
+                if let Some(id) = a.get("attachment_id").and_then(serde_json::Value::as_str) {
+                    files.push(id.to_string());
+                }
+            }
+            super::ArtifactView {
+                id: p.object_id.clone(),
+                title: p.title.clone(),
+                kind: p.artifact_type.as_ref().and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+                session_id: idx.map(|i| b.agents[i].row.key.clone()),
+                session: idx.map(|i| b.agents[i].row.name.clone()).unwrap_or_default(),
+                sent_at: p.sent_at,
+                files,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
