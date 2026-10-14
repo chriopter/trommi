@@ -318,7 +318,7 @@ pub struct SignedReveal {
 }
 
 /// The 64 emoji a check code picks from, each with a word for a terminal that draws emoji badly. The place in
-/// the list is the number in the code: the order is that of `app/web/core/check-emoji.ts` and never changes.
+/// the list is the number in the code: this order never changes.
 pub const CHECK_EMOJI: [(&str, &str); 64] = [
     ("🐶", "dog"),
     ("🐱", "cat"),

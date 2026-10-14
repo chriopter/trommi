@@ -31,8 +31,7 @@ Not shown anywhere in the app; all are kept for the tab only (sessionStorage).
 | --- | --- |
 | `?hub=<url>` | another hub than the default, for self-hosting and local work. Default: `https://hub.trommi.com`; on localhost `http://127.0.0.1:8890`. The deployed app's CSP (`public/_headers`, `connect-src`) names only the default hub: an app served for another hub names that hub there. The dev server also lets `http://127.0.0.1:*` and `http://localhost:*` through |
 | `?found_code=<code>` | a founding token, for a hub that asks for one when an account is created |
-| `?core=page` | run the client core in the page instead of its worker (for debugging) |
-| `?mock=<name>` | the demo room. `1` is the room as it is; `crazy` generates a very big room (`dev/perf.mjs`); `side`, `quiet`, `fresh`, `first`, `many`, `foot`, `reads`, `link`, `new` (an agent that just joined: the empty conversation) are variants built from the room's own sessions and cards, so on the empty room they show it as it is |
+| `?mock=1` | the demo room: the app core runs the fixture of `demo/data/` (`Config.demo`): no hub, nothing stored; what is done shows and stays until the tab is closed. `?mock=0` ends it |
 | `?state=<name>`, `?onboard=<name>` | demo only: the click a state of `/screens` needs, an account screen |
 
 ## Checks
@@ -42,32 +41,33 @@ Not shown anywhere in the app; all are kept for the tab only (sessionStorage).
 node app/web/dev/check.mjs                 # the layout rules alone
 node app/web/dev/build.mjs                 # the build, in memory: prints the cold start's size, writes nothing
 node app/web/dev/look.mjs URL 1440,900 out.png [--dark] [--js '...']   # one screenshot, console errors (needs Chromium)
-node app/web/dev/perf.mjs                  # the very big demo room (?mock=crazy), desktop and a slowed phone (needs Chromium)
 ```
 
-End to end against a real hub, in headless Chromium: `dev/e2e.mjs`, `dev/e2e-mobile.mjs`, `dev/e2e-passkey.mjs`, and
-`dev/card-drawing.mjs` against a demo room with cards. The hub and a demo room with content are not in this
-repository yet; these scripts wait for them.
+Against a real hub: `TROMMI_HUB_BIN=<trommi-hub> node --test tests/web/shell/real-hub.test.mjs` (the web's executor
+of the app core: an account founded, a second device signs in, the account deleted). In the browser, start a hub
+with `HUB_ORIGINS=http://127.0.0.1:8900` and the dev server, and open the app.
 
 ## Layout
 
 ```
 worker.js              http -> https, the universal links' file, /whats-new.json (whats-new.mjs: What's new from the releases' notes)
 wrangler.jsonc  THIRD-PARTY.md   fonts, Argon2, the QR reader, the word list: whose they are
-core/                  the client layer (TypeScript): the room, sync, storage, the worker; crypto and the Desk's rules
-                       come from Rust (core/protocol/, core/client/) as WebAssembly. core/protocol/README.md
-dev/                   serve, build, check, verify; look, perf and the browser tests (cdp.mjs drives Chromium)
+core/                  the executor of the Rust app core (core/client, as WebAssembly) in a Web Worker: I/O, storage,
+                       one tab owning the device (core/README.md). All of the app's logic is the core's
+dev/                   serve, build, check, verify; look and the browser tests (cdp.mjs drives Chromium)
 public/
   index.html  sw.js  manifest.webmanifest  _headers  robots.txt  frame.html (the sandbox a published page runs in)
   help.html            help and "how it works", its own style and script inline
-  app.mjs  app.css     start, router, the room in the page (board state, actions, the pages and their live
-                       pieces), frame, attachments, push, new versions; app.css: tokens, base layout, type, links, focus
+  app.mjs  app.css     start, router (pages drawn from the core's view model, morphed in place on every render),
+                       frame, the core's toasts, new versions; app.css: tokens, base layout, type, links, focus
   ui.mjs               what every view shares: html, the pen, words, toasts, the controllers (controller(name, class)),
                        rich text, agent layouts, keys, a card's row, a session's mark, the room's frame
   auth.mjs/.css        account screens, passkeys, password, Emergency Kit, recovery, pairing, devices, settings, log out
   desk  card  session  sidebar  notes  media  agents  desks  whiteboard   (.mjs + .css each)
   proof.mjs            Self Test (the core's self test), a row of Settings → Security
   news.mjs             What's new: /whats-new.json (whats-new.mjs, the worker's: the releases' notes), from the menu
+  core.mjs             the page's side of the app core (its worker: core/core-worker.ts): the view model, actions, focus, files
+  platform.mjs         what only the page can do for the core: passkeys (WebAuthn, prf), Web Push
   paths.mjs            the addresses of before (/s/…, /a/…) and their new form; shared by app.mjs and worker.js
   demo/                the demo room's code (demo.mjs, screens.css); its data is the repository's demo/data/, which
                        the build copies here as fixture.json and files/ (not in git)
@@ -114,9 +114,8 @@ inline script or style whose hash is not in `_headers`, and broken demo data.
 `dev/build.mjs` makes everything generated, at deploy time:
 
 - `public/gen/app/` (esbuild, minified and split): the entry `app-<hash>.mjs` with app, ui, desk, sidebar and notes,
-  one chunk per lazy view, the core as chunks of its own, the demo, the core's worker in one file
-  (`core-worker-<hash>.mjs`), the account screens' part of it (`core-worker-account-<hash>.mjs`, loaded only by them)
-  and `core-start-<hash>.mjs`, which `index.html` runs first to start the worker. Beside them lies the Rust core,
+  one chunk per lazy view, the demo, the core's worker in one file
+  (`core-worker-<hash>.mjs`) and `core-start-<hash>.mjs`, which `index.html` runs first to start the worker. Beside them lies the Rust core,
   `trommi-core-<hash>.wasm`, as `core/bindings/wasm/build.sh` made it (`core/bindings/wasm/pkg/`; the build runs that script only when
   its output is missing or older than the core's sources); the binding's scripts are inside the worker. Every name
   carries its content's hash; `_headers` keeps them immutable.
@@ -256,10 +255,18 @@ The app says **account**, never "room" (inside, the core founds and joins a room
 
 ### Data flow
 
-1. `app.mjs` boot opens the room from IndexedDB (`openRoom` of the core) — no network — and builds the board state (`BoardState`) from `client.model`.
-2. The page for the address is rendered at once (`router.visit` → `board.request` → a view's route → `bodyParts`). First paint does not wait for the hub.
-3. `client.start()` signs in, catches up from the cursor and opens the stream. Every `change` of the core (sets of object ids, timeline keys, register keys) is collected for one animation frame, then `board-state` rebuilds only the cards the change names, and `board.live()` diffs the open page's live pieces (Desk rows, card face/answer/thread, session log, sidebar rows, the pill's counts, notes) and replaces only the elements that changed (`<turbo-stream>` actions, keyed by `row-<id>`, `agent-<id>`, `msg-<id>`, `card-lead-<id>` …).
-4. A form (answer, Snooze, Revise, What??, Whatever, Shred, message, note, session edit, desk, pairing) is answered by the views' handlers in the page: the actions (`hubFacade`) call the core (`answer`, `sendMessage`, `setRegisters`, …). The core shows the change at once (optimistic echo, `pending`) and seals, signs and sends it; the hub's copy replaces the echo.
+1. `index.html` runs `core-start` first: the core's worker (`core/core-worker.ts`) is fetched and the `.wasm` compiled
+   while the page loads. `app.mjs` boot sends it `start` (the config: hub, platform, the demo's fixture) and Focus
+   (the address as the core's `Screen`, `app.mjs screenOf`).
+2. The core opens this browser's device from IndexedDB (no network) and sends its first render, the whole view model.
+   The page for the address is drawn from it (`router.visit` → `board.request` → a view's route → `bodyParts`); the
+   first paint does not wait for the hub.
+3. The core signs in, catches up and keeps its live stream. Every render is a delta of parts (`ViewPart`), folded on
+   the page (`views-fold.js`); once per animation frame the page in view is drawn again and MORPHED into the body
+   (`app.mjs morphNode`/`morphKeyed`): unchanged nodes stay with their controllers, rows of a list are matched by id.
+4. A form or a control is answered by the views' handlers in the page: they send an `Action` (`t.act`). The core shows
+   it at once (an echo in the view model), seals, signs and sends it; the hub's copy replaces the echo, a refusal rolls
+   it back with a toast.
 
 ### Addresses
 
@@ -267,12 +274,12 @@ The app says **account**, never "room" (inside, the core founds and joins a room
 
 ### IndexedDB
 
-The core owns the schema (`core/protocol/README.md`, "Storage adapter"): database `trommi`, keys prefixed `room/`; device keys as non-extractable CryptoKeys; records `card/<object_id>`, `session/<session_id>`, `perm/<id>`, `note/<id>`, `pub/<id>`, `reg/<key>`, `tlmeta/<timeline_key>`, `tl/<timeline_key>/<envelope_number>`, `sync` (cursor + chains, same transaction), `room`, `outbox`, `invite/<id>`; written incrementally (~200 ms batches). The app keeps only per-browser conveniences in localStorage: theme (`trommi-theme`), rail (`trommi-rail`), open crowns (`trommi-crowns-open`), the desk in view (`trommi-desk`); the developer switches below are sessionStorage only. The mock room keeps nothing.
+The core owns what it stores: the device's state in the database `trommi` (the binding's `IdbStore`: entries and one revision, values wrapped at rest, `trommi:wrap` holds the key; one owner by Web Lock) and its cache in `trommi:app:cache` (string keys, bytes; safe to lose). The app keeps only per-browser conveniences in localStorage: theme (`trommi-theme`), rail (`trommi-rail`), open crowns (`trommi-crowns-open`), the desk in view (`trommi-desk`); the developer switches below are sessionStorage only. The mock room keeps nothing.
 
 ### Render strategy (performance)
 
-- **Local first**: first paint from the in-memory model the core restored from IndexedDB; the network only adds what is new.
-- **Patch only**: after a change, only elements whose markup changed are replaced; Desk rows are cached per card object (a card the change did not name keeps its row string), the sidebar per row, the body per part (a navigation keeps the topbar and sidebar if their markup is the same).
+- **Local first**: first paint from the view model the core made from IndexedDB; the network only adds what is new.
+- **Morph only**: after a render, the page is drawn again and only nodes whose markup changed are touched; the body is kept per part (a navigation keeps the topbar and sidebar if their markup is the same).
 - **Windowed**: conversations are timelines loaded newest page first (50), older pages on "Earlier"; a session page loads its cards' threads lazily; Desk rows and log messages out of sight are skipped by layout and paint (`content-visibility: auto`).
 - **Lazy decrypt**: attachments are rendered as `/att/<id>` with `loading="lazy"`; the service worker asks the page, which fetches and decrypts only that file, only when it is shown or opened.
 - **No framework, one stylesheet, a small first load**: one minified bundle; a cold start fetches the entry, the page's

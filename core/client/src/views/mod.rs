@@ -153,7 +153,7 @@ pub struct ViewModel {
     /// The Scribble Board in view (`Focus.board`, `Screen::Scribble`); none when no board is shown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<BoardView>,
-    /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`), the newest first.
+    /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`, and on the Desk, whose foot shows the newest), the newest first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<Vec<ArtifactView>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

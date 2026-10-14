@@ -183,7 +183,7 @@ public enum CoreView {
     public var files: [String: FileView]
     /// The Scribble Board in view (`Focus.board`, `Screen::Scribble`); none when no board is shown.
     public var board: BoardView?
-    /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`), the newest first.
+    /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`, and on the Desk, whose foot shows the newest), the newest first.
     public var artifacts: [ArtifactView]?
     public var toasts: [Toast]
 

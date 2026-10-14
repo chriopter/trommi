@@ -190,6 +190,40 @@ impl Files {
         })
     }
 
+    /// `Attach` in the demo room: no hub; the file is ready at once under its local id, its bytes kept here.
+    pub fn demo_attach(&mut self, local_id: &str, name: &str, media_type: &str, bytes: &Bytes) {
+        let mut reference = Map::new();
+        reference.insert("attachment_id".into(), json!(local_id));
+        reference.insert("file_name".into(), json!(if name.trim().is_empty() { "file" } else { name.trim() }));
+        reference.insert("media_type".into(), json!(if media_type.is_empty() { "application/octet-stream" } else { media_type }));
+        reference.insert("total_size".into(), json!(bytes.0.len()));
+        let mut view = view_of(&reference);
+        view.state = "ready".into();
+        view.attachment_id = Some(local_id.to_string());
+        self.states.insert(local_id.to_string(), view);
+        self.keep_plain(local_id, bytes.clone());
+        self.uploads.insert(local_id.to_string(), Upload { reference, sha256: [0; 32], request: None });
+    }
+
+    /// `OpenFile` in the demo room: from memory, or the demo file's own address (its reference's `url`): the
+    /// request to make, and what to hand over when it comes.
+    pub fn demo_open(&mut self, attachment_id: &str, save: bool, out: &mut Vec<Effect>) -> Option<(String, DemoOpen)> {
+        let reference = self.reference(attachment_id).cloned()?;
+        let id = reference.get("attachment_id").and_then(Value::as_str).unwrap_or(attachment_id).to_string();
+        if let Some((_, bytes)) = self.plain.iter().find(|(k, _)| *k == id) {
+            let bytes = bytes.clone();
+            self.hand(&id, &reference, save, bytes, out);
+            return None;
+        }
+        let url = reference.get("url").and_then(Value::as_str)?.to_string();
+        Some((url, DemoOpen { id, reference, save }))
+    }
+
+    /// The demo file's bytes came.
+    pub fn demo_opened(&mut self, open: DemoOpen, bytes: Bytes, out: &mut Vec<Effect>) {
+        self.hand(&open.id, &open.reference, open.save, bytes, out);
+    }
+
     /// `OpenFile`: the bytes from memory at once, or a download.
     pub fn open(&mut self, attachment_id: &str, save: bool, out: &mut Vec<Effect>) -> Result<Option<Send>, NotDone> {
         let reference = self.reference(attachment_id).cloned().ok_or_else(|| Text::new("file.unknown", "That file is not here."))?;
@@ -415,6 +449,14 @@ impl Files {
         }
         self.plain.push((id.to_string(), bytes));
     }
+}
+
+/// A demo file asked for by its address.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DemoOpen {
+    id: String,
+    reference: Map<String, Value>,
+    save: bool,
 }
 
 /// A send's pending part, handed back with the request's id ([`Files::sent`]).

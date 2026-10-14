@@ -294,6 +294,10 @@ pub(super) fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView
             kind: k.to_string(),
         }))
         .collect();
+    // (the fan's pictures are files the person may open: the App lets them be fetched)
+    for a in own.iter().filter(|a| media.iter().any(|m| Some(m.file_id.as_str()) == a.get("attachment_id").and_then(Value::as_str))) {
+        super::files_seen::saw(a);
+    }
     let media_says = match media.len() {
         0 => None,
         1 => Some(say("row.media.one", "Look at the picture", &[("n", "1")])),

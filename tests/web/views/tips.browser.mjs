@@ -25,14 +25,17 @@ export const MAX_WORDS = 3
 
 /** Every hint on the page with its word count, a name of the room counting as one word (run there). */
 const PROBE = `(() => {
-  const m = window.trommi?.model?.() ?? {}, st = m.state ?? {}
+  const v = window.trommi?.vm?.() ?? {}
   const names = new Set()
   const add = v => { v = String(v ?? '').trim(); if (v.length > 1) names.add(v) }
-  for (const c of st.cards ?? []) add(c.title)
-  for (const a of m.everyone ?? st.agents ?? []) { add(a.name); add(a.name?.replace(/ · [^·]*$/, '')); add(a.given); add(a.label) }
-  for (const d of st.desks ?? []) add(d.name)
-  for (const x of st.assets ?? []) { add(x.title); add(x.att?.name) }
-  for (const x of st.cards ?? []) { for (const f of x.attachments ?? []) add(f.name); for (const o of x.options ?? []) add(o.label) }
+  for (const r of v.desk?.rows ?? []) { add(r.title); for (const t of r.tiles?.tiles ?? []) add(t.label); add(r.from?.name) }
+  for (const c of Object.values(v.cards ?? {})) { add(c.title); for (const o of c.options ?? []) add(o.label); for (const p of c.pictures ?? []) add(p.name) }
+  for (const x of [...(v.desk?.starred?.rows ?? []), ...(v.desk?.running?.rows ?? []), ...(v.off?.works ?? []), ...(v.off?.rest ?? []), ...(v.desk?.off?.rows ?? [])]) add(x.title)
+  for (const x of v.sidebar?.sessions ?? []) add(x.name?.en)
+  for (const d of v.sidebar?.desks ?? []) add(d.name?.en)
+  for (const a of v.artifacts ?? []) { add(a.title); add(a.session) }
+  for (const f of Object.values(v.files ?? {})) add(f.name)
+  for (const s of Object.values(v.sessions ?? {})) { add(s.name?.en); for (const q of s.questions ?? []) add(q.title); for (const r of s.talk ?? []) add(r.card?.title) }
   for (const el of document.querySelectorAll('[data-name]')) add(el.dataset.name)
   for (const el of document.querySelectorAll('.att-name, .asset-name, .file-name, figcaption')) add(el.textContent)
   const list = [...names].sort((a, b) => b.length - a.length)
