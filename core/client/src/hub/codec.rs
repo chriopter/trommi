@@ -4,7 +4,7 @@ use super::json::{bad, Read};
 use super::limits::{CAP_DESK, CAP_GROUPS_READ, CAP_GROUP_INFO, CAP_LIST, CAP_SMALL, CAP_WRITE};
 use super::types::{Answer, ByteRange, Route, Site};
 use super::{
-    account, answer, changes, content, desk, files, groups, invites, outbox, push, signin, stream,
+    account, answer, changes, content, desk, files, groups, invites, link, outbox, push, signin, stream,
     Failure,
 };
 use crate::app::io::{HttpRequest, HttpResponse};
@@ -26,6 +26,9 @@ enum Kind {
     KeyPackagesHeld,
     Challenge,
     Token,
+    Linked {
+        generation: Option<u64>,
+    },
     Welcomes {
         after: u64,
     },
@@ -104,6 +107,15 @@ impl Codec {
                 (request, Kind::Changes(asked))
             }
             Route::Stream { after } => (stream::request(site, after)?, Kind::Stream),
+            Route::Link {
+                process,
+                generation,
+                report,
+                leaving,
+            } => (
+                link::link_request(site, process, generation, report, leaving)?,
+                Kind::Linked { generation },
+            ),
             Route::DeskBrief { since, active } => {
                 let (request, since) = desk::request(site, since, active)?;
                 (request, Kind::DeskBrief { since })
@@ -398,6 +410,7 @@ impl Codec {
             Kind::Stream => return stream_has_no_answer(),
             Kind::Challenge => signin::challenge(&answer(response, CAP_WRITE)?)?,
             Kind::Token => signin::token(&answer(response, CAP_WRITE)?)?,
+            Kind::Linked { generation } => link::linked(*generation, &answer(response, CAP_WRITE)?)?,
             Kind::Welcomes { after } => groups::welcomes(*after, &answer(response, CAP_LIST)?)?,
             Kind::GroupLog(asked) => groups::log(asked, &answer(response, CAP_LIST)?)?,
             Kind::GroupInfo { epoch } => groups::info(*epoch, &answer(response, CAP_GROUP_INFO)?)?,

@@ -12,6 +12,7 @@ const SITE: Site<'static> = Site {
     url: "https://hub.example",
     token: Some("abcdefghijklmnop_-0123"),
     client: "web/1.2.3",
+    lease: None,
 };
 
 fn ok(body: &str) -> HttpResponse {

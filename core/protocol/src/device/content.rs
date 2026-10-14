@@ -986,6 +986,14 @@ impl<S: Storage> Device<S> {
         Ok(self.chains(group)?.head(sender))
     }
 
+    /// The last envelope this device signed in `group`, sent or still in its outbox; [`Head::START`] if
+    /// none. It is written in the same write as every seal: an envelope of this device beyond it that the
+    /// hub serves was signed by a newer state than this one (the rollback guard of an agent device).
+    pub fn own_head(&self, group: &GroupId) -> Result<Head, Error> {
+        self.owner()?;
+        Ok(self.own_chain(group)?.head())
+    }
+
     /// The Cut that ended the chain of `device` in `group`, once this device processed the Commit that
     /// removed it. Whatever was shown of that device beyond it is dropped (9.0.10).
     pub fn chain_cut(&self, group: &GroupId, device: &DeviceId) -> Result<Option<Head>, Error> {

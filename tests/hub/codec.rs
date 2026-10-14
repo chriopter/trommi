@@ -36,6 +36,7 @@ impl Recorder {
             url: &self.url,
             token: self.token.as_deref(),
             client: "test/1.0.0",
+            lease: None,
         }
     }
 
@@ -1133,4 +1134,43 @@ fn the_account_invites_and_push_through_the_codec() {
     let asked_remove = json!({ "route": "remove_passkey", "credential_id": b64(&second.credential_id) });
     let removed = rec.ask("account-passkey-remove", &Route::RemovePasskey { credential_id: &second.credential_id, proof: &by_kit }, asked_remove);
     assert_eq!(removed, Ok(Answer::Done));
+}
+
+/// An agent device's lease (13.7) through the codec: `POST /v1/link` acquires and renews it, `Trommi-Lease` on a
+/// write and on the stream is the generation the hub holds, and an older process is refused `lease-lost` on both.
+#[test]
+fn an_agents_lease_through_the_codec() {
+    use trommi_client_core::hub::LinkReport;
+    let mut w = World::on(TestHub::start());
+    let mut agent = w.enrol_agent();
+    w.found_main(&mut [], Some(&mut agent));
+    let rec = Recorder { port: w.hub.port, url: w.hub.url.clone(), token: agent.token.clone(), write: false };
+    let send = |lease: Option<u64>, route: &Route<'_>| {
+        let site = Site { lease, ..rec.site() };
+        let (request, expect) = Codec.request(&site, route).expect("the codec builds the route");
+        let response = rec.send(&request);
+        (Codec.answer(&expect, &response), Codec.refusal(&response).map(|r| r.code.to_string()))
+    };
+    let report = LinkReport { hears: true, working: false, last_call_at: 7 };
+    let link = |process: &[u8; 16], generation: Option<u64>, leaving: bool| send(None, &Route::Link { process, generation, report: &report, leaving });
+    // a new process acquires it above the one the enrolment took; the same process renews it under its generation
+    let (one, two) = (random::<16>(), random::<16>());
+    let Ok(Answer::Linked { generation: g1, expires_at }) = link(&one, None, false).0 else { panic!("a lease") };
+    assert!(g1 > agent.lease.unwrap_or(0) && expires_at > 1_700_000_000_000);
+    assert!(matches!(link(&one, Some(g1), false).0, Ok(Answer::Linked { generation, .. }) if generation == g1));
+    // a write carries it; the stream too
+    assert!(matches!(send(Some(g1), &Route::KeyPackagesHeld).0, Ok(Answer::KeyPackagesHeld { .. })));
+    let (stream, _) = Codec.request(&Site { lease: Some(g1), ..rec.site() }, &Route::Stream { after: 0 }).expect("a stream");
+    assert_eq!(stream.headers.iter().find(|h| h.name == "trommi-lease").map(|h| h.value.as_str()), Some(g1.to_string().as_str()));
+    assert_eq!(rec.stream(&stream).0, 200);
+    // a newer process takes it: the older one's renewal, write and stream are refused
+    let Ok(Answer::Linked { generation: g2, .. }) = link(&two, None, false).0 else { panic!("a lease") };
+    assert_eq!(g2, g1 + 1);
+    assert_eq!(link(&one, Some(g1), false).1.as_deref(), Some("lease-lost"));
+    assert_eq!(send(Some(g1), &Route::KeyPackagesHeld).1.as_deref(), Some("lease-lost"));
+    let (stale, _) = Codec.request(&Site { lease: Some(g1), ..rec.site() }, &Route::Stream { after: 0 }).expect("a stream");
+    assert_eq!(rec.stream(&stale).0, 409);
+    assert!(matches!(send(Some(g2), &Route::KeyPackagesHeld).0, Ok(Answer::KeyPackagesHeld { .. })));
+    // its last word gives it up
+    assert!(matches!(link(&two, Some(g2), true).0, Ok(Answer::Linked { generation, .. }) if generation == g2));
 }

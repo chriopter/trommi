@@ -314,6 +314,7 @@ fn the_request_and_the_answers_head() {
         url: "https://hub.example",
         token: Some("abcdefghijklmnop_-0123"),
         client: "web/1.2.3",
+        lease: None,
     };
     let (r, expect) = Codec.request(&site, &Route::Stream { after: 44 }).unwrap();
     assert_eq!(

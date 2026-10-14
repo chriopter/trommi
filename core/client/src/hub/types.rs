@@ -19,6 +19,9 @@ pub struct Site<'a> {
     pub token: Option<&'a str>,
     /// `Config.platform` and `Config.version`, for the `trommi-client` header.
     pub client: &'a str,
+    /// An agent device's lease generation (13.7): every write and the stream carry it as `Trommi-Lease`, but
+    /// `POST /v1/link` itself. None for a human device, and for an agent's process that holds no lease yet.
+    pub lease: Option<u64>,
 }
 
 impl std::fmt::Debug for Site<'_> {
@@ -73,6 +76,15 @@ impl std::fmt::Debug for OutboxExtra {
     }
 }
 
+/// What an agent's process tells the hub with its lease (13.7, hub-api.md "Decided" 20): whether it hears the
+/// human (`hears`), whether its agent is at work (`working`), and when its agent last called a tool.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LinkReport {
+    pub hears: bool,
+    pub working: bool,
+    pub last_call_at: u64,
+}
+
 /// One request to the hub, by its meaning. Borrowed: an outbox entry may hold megabytes and is not copied to ask.
 #[derive(Clone, Copy)]
 pub enum Route<'a> {
@@ -83,6 +95,14 @@ pub enum Route<'a> {
         room: &'a RoomId,
         auth: &'a [u8],
         signature: &'a [u8],
+    },
+    /// `POST /v1/link` (13.7): an agent device's lease, acquired by a new `process` (no generation), renewed by the
+    /// same one with its generation, or given up (`leaving`, with its generation).
+    Link {
+        process: &'a [u8; 16],
+        generation: Option<u64>,
+        report: &'a LinkReport,
+        leaving: bool,
     },
     /// `GET /v1/changes?after=&limit=`: a page of the room's one order.
     Changes {
@@ -956,6 +976,11 @@ pub enum Answer {
         role: Role,
     },
     Changes(ChangesPage),
+    /// `Link`: the lease's generation, and when it ends by the hub's clock (a hint).
+    Linked {
+        generation: u64,
+        expires_at: u64,
+    },
     Welcomes(Vec<WelcomeRow>),
     /// Commits and messages of one group, as `ChangeItem`s (never an envelope).
     GroupLog {
@@ -1072,6 +1097,7 @@ impl std::fmt::Debug for Answer {
             Answer::Challenge(_) => "Challenge",
             Answer::Token { .. } => "Token",
             Answer::Changes(_) => "Changes",
+            Answer::Linked { .. } => "Linked",
             Answer::Welcomes(_) => "Welcomes",
             Answer::GroupLog { .. } => "GroupLog",
             Answer::Chain { .. } => "Chain",
