@@ -364,13 +364,19 @@ async function run(cmd) {
       await until(() => view.account?.step === 'compare_emoji' && view.account.invite_id === id, `the Request to invite ${id}`, cmd.timeout_ms ?? 60_000)
       if (cmd.die) {
         // the tab is closed right after "They match": the Commit goes out, nothing after it
-        let committed = false
-        onAnswer = (method, url, status) => { if (method === 'POST' && url.includes('/v1/commits') && status < 300) committed = true }
+        // (the Commit that adds the newcomer: `POST /v1/groups/<room>/commits`, taken by the hub)
+        const wrote = []
+        // (closed at once, in the answer's own turn: the core hears of the Commit no more, as a closed tab)
+        onAnswer = (method, url, status) => {
+          if (method === 'GET' || status >= 300) return
+          wrote.push(routeOf(method, url))
+          if (wrote.at(-1).endsWith('/commits')) { onAnswer = null; close() }
+        }
         act({ do: 'account', action: { step: 'confirm_emoji', invite_id: id, matches: true } })
-        await until(() => committed, 'the confirmation committed', 30_000)
+        await until(() => wrote.some(r => r.endsWith('/commits')), 'the confirmation committed', 30_000)
         onAnswer = null
         close()
-        return { agent: null, died: true }
+        return { agent: null, died: true, wrote }
       }
       act({ do: 'account', action: { step: 'confirm_emoji', invite_id: id, matches: true } })
       await until(() => view.account?.step !== 'compare_emoji', 'the newcomer added', 60_000)
