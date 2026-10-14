@@ -25,8 +25,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use zeroize::{Zeroize, Zeroizing};
 
-/// The associated data of the APNs sealing.
-const APNS_AAD: &[u8] = b"trommi apns v1";
+/// The associated data of the APNs sealing, and of a Live Activity's sealed counts.
+use trommi_wire::push::{APNS_AAD, LIVE_AAD};
 /// The highest urgency (section 9: 0 low, 1 normal, 2 high, 3 critical).
 pub const MAX_URGENCY: u8 = 3;
 /// The highest change number a payload carries: every JSON reader holds it exactly.
@@ -35,13 +35,10 @@ pub const MAX_CHANGE: u64 = (1 << 53) - 1;
 pub const MAX_TICKET_LEN: usize = 256;
 /// The longest Web Push payload: the three fields at their longest.
 pub const MAX_WEB_PUSH_LEN: usize = 128;
-/// The longest sealed APNs payload: the JSON with the longest ticket, the nonce and the tag.
-pub const MAX_APNS_LEN: usize = 512;
-/// The length every sealed APNs plaintext is padded to with zero bytes: a sealed payload is always
-/// [`MAX_APNS_LEN`] bytes.
-pub const APNS_PLAIN_LEN: usize = MAX_APNS_LEN - NONCE_LEN - TAG_LEN;
-/// The associated data of a Live Activity's sealed counts.
-const LIVE_AAD: &[u8] = b"trommi live v1";
+/// The longest sealed APNs payload: the JSON with the longest ticket, the nonce and the tag; and the length every
+/// sealed APNs plaintext is padded to with zero bytes: a sealed payload is always [`MAX_APNS_LEN`] bytes.
+pub use trommi_wire::push::{APNS_PLAIN_LEN, MAX_APNS_LEN};
+const _: () = assert!(APNS_PLAIN_LEN == MAX_APNS_LEN - NONCE_LEN - TAG_LEN);
 /// The length of a sealed Live Activity block: nonce, two `uint64`, tag.
 pub const LIVE_SEALED_LEN: usize = NONCE_LEN + 16 + TAG_LEN;
 

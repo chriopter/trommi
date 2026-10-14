@@ -14,7 +14,7 @@ use crate::observer::{By, CommitFacts, Device, Observer};
 use crate::rules::{self, SessionKind, Standing};
 use crate::store::{self, Audience, Auth, Effects, Event, GroupKind, Room, Sight, Who};
 use crate::util::{b64, same, short};
-use crate::wire::{self, CommitNote, RecoveryAuth, RecoveryLink, SealedKey, ZERO16};
+use trommi_wire::layout::{self as wire, CommitNote, RecoveryAuth, RecoveryLink, SealedKey, ZERO16};
 
 pub struct Ctx<'a> {
     pub c: &'a Connection,
@@ -60,7 +60,7 @@ fn digest(bytes: &[u8]) -> [u8; 32] {
 }
 
 pub fn group_info_hash(bytes: &[u8]) -> [u8; 32] {
-    wire::ref_hash("Trommi Group Info", bytes)
+    wire::ref_hash(trommi_wire::recovery::GROUP_INFO_LABEL, bytes)
 }
 
 fn check_size(cfg: &Config, parts: &[Option<&[u8]>]) -> Res<()> {
@@ -493,7 +493,7 @@ fn verify_recovery_auth(
         && auth.room_epoch == note.room_epoch
         && auth.room_state == note.room_state
         && &auth.joiner == joiner
-        && auth.commit == wire::ref_hash("Trommi Commit", commit);
+        && auth.commit == wire::ref_hash(trommi_wire::recovery::COMMIT_LABEL, commit);
     if !names_this {
         return Err(bad(
             "the recovery authorisation names another Commit, base or joiner",
@@ -501,7 +501,7 @@ fn verify_recovery_auth(
     }
     if !x.obs.verify(
         recovery_signature_key,
-        "TrommiRecoveryJoin",
+        trommi_wire::recovery::JOIN_LABEL,
         &auth.signed(),
         &auth.signature,
     ) {
@@ -1189,7 +1189,7 @@ pub fn read_size(c: &Connection, group_id: &[u8], limit: i64) -> Res<usize> {
 /// How long after its removal a device may still fetch the Commits that prove it (13.5).
 pub const REMOVAL_KEPT_MS: u64 = 30 * 86_400_000;
 /// Commits per answer of that route.
-pub const REMOVAL_PAGE: i64 = 200;
+const REMOVAL_PAGE: i64 = trommi_wire::limits::MAX_REMOVAL as i64;
 
 /// Where a device was removed in a group, if it was and that is not longer ago than `REMOVAL_KEPT_MS`: the log
 /// number of the removing Commit. The room group: the Commit that revoked the device (a human device's Remove,

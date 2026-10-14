@@ -10,15 +10,16 @@ use crate::delivery::Ctx;
 use crate::error::{refuse, Res};
 use crate::store::{self, Audience, Auth, Effects, Event, GroupKind};
 use crate::util::{b64, same};
-use crate::wire::{self, InviteRequest, Offer, Reveal, ZERO16};
+use trommi_wire::layout::{self as wire, InviteRequest, Offer, Reveal, ZERO16};
 
-/// The invite life of each kind of device (12.1.2): 10 minutes for a human device, 15 for an agent device; the
-/// inviter's clock may differ from the hub's by 2 minutes either way.
-pub const HUMAN_INVITE_MS: u64 = 600_000;
-pub const AGENT_INVITE_MS: u64 = 900_000;
-pub const CLOCK_TOLERANCE_MS: u64 = 120_000;
-/// The Offer's MAC under the link's secret (12.1.2): the hub stores and serves it, and checks only its length.
-pub const OFFER_MAC_LEN: usize = 32;
+// The invite life of each kind of device (12.1.2): 10 minutes for a human device, 15 for an agent device; the
+// inviter's clock may differ from the hub's by 2 minutes either way. The Offer's MAC under the link's secret: the
+// hub stores and serves it, and checks only its length.
+use trommi_wire::invite::{
+    AGENT_INVITE_LIFE_MS, CLOCK_TOLERANCE_MS, HUMAN_INVITE_LIFE_MS, LABEL_COMMITMENT,
+    LABEL_OFFER_HASH, LABEL_REQUEST_HASH, MAC_LEN as OFFER_MAC_LEN, SIGN_OFFER, SIGN_REQUEST,
+    SIGN_REVEAL,
+};
 const MAX_REQUESTS: i64 = 4;
 
 /// `POST /v1/invites`: only a human device invites; it publishes the signed Offer with its MAC.
@@ -43,7 +44,7 @@ pub fn publish(
     }
     if !x
         .obs
-        .verify(&offer.inviter, "TrommiInviteOffer", offer_bytes, signature)
+        .verify(&offer.inviter, SIGN_OFFER, offer_bytes, signature)
     {
         return Err(refuse(
             "bad-signature",
@@ -79,9 +80,9 @@ pub fn publish(
     }
     // the invite life of its kind, with the clocks' tolerance; the hub's own expiry is the Offer's `expires_at`
     let life = if offer.role == 2 {
-        AGENT_INVITE_MS
+        AGENT_INVITE_LIFE_MS
     } else {
-        HUMAN_INVITE_MS
+        HUMAN_INVITE_LIFE_MS
     };
     if offer.expires_at <= x.now || offer.expires_at > x.now + life + CLOCK_TOLERANCE_MS {
         return Err(refuse(
@@ -220,7 +221,7 @@ pub fn request(
         && request.invite_id == offer.invite_id
         && request.hub == x.cfg.url.as_bytes()
         && request.role == offer.role
-        && request.offer_hash == wire::ref_hash("Trommi Invite Offer", &invite.offer)
+        && request.offer_hash == wire::ref_hash(LABEL_OFFER_HASH, &invite.offer)
         && mac.len() == 32;
     if !fits {
         return Err(refuse(
@@ -230,16 +231,13 @@ pub fn request(
     }
     let kp = x.obs.key_package(&request.key_package)?;
     let signed = [request_bytes, mac].concat();
-    if !x
-        .obs
-        .verify(&kp.device, "TrommiInviteRequest", &signed, signature)
-    {
+    if !x.obs.verify(&kp.device, SIGN_REQUEST, &signed, signature) {
         return Err(refuse(
             "bad-signature",
             "the Request is not signed by its KeyPackage's key",
         ));
     }
-    let hash = wire::ref_hash("Trommi Invite Request", &signed);
+    let hash = wire::ref_hash(LABEL_REQUEST_HASH, &signed);
     if x.c
         .prepare_cached("SELECT 1 FROM invite_requests WHERE invite_id = ?1 AND request_hash = ?2")?
         .exists(params![id, &hash[..]])?
@@ -300,7 +298,7 @@ pub fn reveal(
     }
     if !x
         .obs
-        .verify(&auth.device, "TrommiInviteReveal", reveal_bytes, signature)
+        .verify(&auth.device, SIGN_REVEAL, reveal_bytes, signature)
     {
         return Err(refuse(
             "bad-signature",
@@ -308,7 +306,7 @@ pub fn reveal(
         ));
     }
     let commitment = wire::ref_hash(
-        "Trommi Invite Commitment",
+        LABEL_COMMITMENT,
         &[&reveal.invite_id[..], &reveal.nonce[..]].concat(),
     );
     if commitment != offer.commitment {

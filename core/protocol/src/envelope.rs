@@ -20,7 +20,7 @@ use std::fmt;
 use zeroize::{Zeroize, Zeroizing};
 
 /// The version of the header and of the body.
-pub const VERSION: u8 = 2;
+pub use trommi_wire::envelope::VERSION;
 /// The `schema_version` of a payload.
 pub const SCHEMA_VERSION: u64 = 2;
 /// The longest JSON payload, in bytes.
@@ -30,28 +30,26 @@ pub const MAX_PADDED_LEN: usize = 65_536;
 /// The smallest padded body, in bytes.
 pub const MIN_PADDED_LEN: usize = 256;
 /// How many files a header names at most.
-pub const MAX_FILE_IDS: usize = 255;
+pub use trommi_wire::envelope::MAX_FILE_IDS;
 /// How many choices an answer carries at most.
 pub const MAX_CHOICES: usize = 64;
 /// The longest single choice of an answer, in bytes.
 pub const MAX_CHOICE_LEN: usize = 256;
 /// The largest encoded envelope this module reads: the hub's limit for one request.
 pub const MAX_ENVELOPE_LEN: usize = 1 << 20;
-/// The length of an Ed25519 signature.
-pub const SIGNATURE_LEN: usize = 64;
-/// The first of the kinds 8 to 255, which no writer may use.
-pub const FIRST_RESERVED_KIND: u8 = 8;
+/// The length of an Ed25519 signature; the first of the kinds 8 to 255, which no writer may use.
+pub use trommi_wire::envelope::{FIRST_RESERVED_KIND, SIGNATURE_LEN};
 /// The length of the block a header carries for every kind but item and register.
 pub const OBJECT_BLOCK_LEN: usize = 59;
 
-const LABEL_HASH: &str = "Trommi Envelope";
 const LABEL_SIGNATURE: &str = "TrommiEnvelope";
-const LABEL_OBJECT: &str = "Trommi Object";
+use trommi_wire::envelope::{
+    FLAG_PUSH, FORM_FULL, FORM_PRUNED, KIND_ANSWER, KIND_ITEM, KIND_REGISTER, KIND_REQUEST,
+    KIND_TAKE_BACK, KIND_VERDICT, KIND_VERSION, LABEL_HASH, LABEL_OBJECT, SCOPE_CARD, SCOPE_DESK,
+    SCOPE_SESSION, TIMELINE_BOARD, TIMELINE_CHAT,
+};
 /// The most bytes a body has beside its bind and its payload: the version and the two lengths.
 const BODY_OVERHEAD: usize = 1 + 4 + 4;
-const FLAG_PUSH: u8 = 1;
-const FORM_FULL: u8 = 1;
-const FORM_PRUNED: u8 = 2;
 
 macro_rules! byte_enum {
     ($(#[$doc:meta])* $name:ident { $($(#[$variant_doc:meta])* $variant:ident = $value:literal),+ $(,)? }) => {
@@ -173,18 +171,18 @@ impl Timeline {
     fn read(reader: &mut Reader<'_>) -> Result<Self, Error> {
         let (kind, scope, reference) = (reader.u8()?, reader.u8()?, reader.fixed::<16>()?);
         match (kind, scope) {
-            (1, 1) => Ok(Self::CardChat(ObjectId::new(reference))),
-            (1, 2) => Ok(Self::SessionChat(SessionId::new(reference))),
-            (2, 3) => Ok(Self::Board(BoardId::new(reference))),
+            (TIMELINE_CHAT, SCOPE_CARD) => Ok(Self::CardChat(ObjectId::new(reference))),
+            (TIMELINE_CHAT, SCOPE_SESSION) => Ok(Self::SessionChat(SessionId::new(reference))),
+            (TIMELINE_BOARD, SCOPE_DESK) => Ok(Self::Board(BoardId::new(reference))),
             _ => Err(Error::BadFormat),
         }
     }
 
     fn write(&self, writer: &mut Writer) {
         let (kind, scope, reference) = match self {
-            Self::CardChat(object) => (1, 1, object.as_bytes()),
-            Self::SessionChat(session) => (1, 2, session.as_bytes()),
-            Self::Board(board) => (2, 3, board.as_bytes()),
+            Self::CardChat(object) => (TIMELINE_CHAT, SCOPE_CARD, object.as_bytes()),
+            Self::SessionChat(session) => (TIMELINE_CHAT, SCOPE_SESSION, session.as_bytes()),
+            Self::Board(board) => (TIMELINE_BOARD, SCOPE_DESK, board.as_bytes()),
         };
         writer.u8(kind);
         writer.u8(scope);
@@ -272,13 +270,13 @@ impl Subject {
     /// The kind byte.
     pub fn kind(&self) -> u8 {
         match self {
-            Self::Item(_) => 1,
-            Self::Version(_) => 2,
-            Self::Answer(_) => 3,
-            Self::Request(_) => 4,
-            Self::Verdict(_) => 5,
-            Self::Register(_) => 6,
-            Self::TakeBack(_) => 7,
+            Self::Item(_) => KIND_ITEM,
+            Self::Version(_) => KIND_VERSION,
+            Self::Answer(_) => KIND_ANSWER,
+            Self::Request(_) => KIND_REQUEST,
+            Self::Verdict(_) => KIND_VERDICT,
+            Self::Register(_) => KIND_REGISTER,
+            Self::TakeBack(_) => KIND_TAKE_BACK,
             Self::Reserved { kind, .. } => *kind,
         }
     }
@@ -384,13 +382,13 @@ impl Decode for Header {
         let time = reader.u64()?;
         let subject = match kind {
             0 => return Err(Error::BadFormat),
-            1 => Subject::Item(Timeline::read(reader)?),
-            2 => Subject::Version(ObjectFields::read(reader)?),
-            3 => Subject::Answer(ObjectFields::read(reader)?),
-            4 => Subject::Request(ObjectFields::read(reader)?),
-            5 => Subject::Verdict(ObjectFields::read(reader)?),
-            6 => Subject::Register(reader.value()?),
-            7 => Subject::TakeBack(ObjectFields::read(reader)?),
+            KIND_ITEM => Subject::Item(Timeline::read(reader)?),
+            KIND_VERSION => Subject::Version(ObjectFields::read(reader)?),
+            KIND_ANSWER => Subject::Answer(ObjectFields::read(reader)?),
+            KIND_REQUEST => Subject::Request(ObjectFields::read(reader)?),
+            KIND_VERDICT => Subject::Verdict(ObjectFields::read(reader)?),
+            KIND_REGISTER => Subject::Register(reader.value()?),
+            KIND_TAKE_BACK => Subject::TakeBack(ObjectFields::read(reader)?),
             kind => Subject::Reserved {
                 kind,
                 block: reader.fixed()?,

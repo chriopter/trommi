@@ -11,7 +11,7 @@ use common::*;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use trommi_hub::util::{b64, hex, random, unb64};
-use trommi_hub::wire::{self, ZERO32};
+use trommi_wire::layout::{self as wire, ZERO32};
 
 /// Tables that name no account, room or device and are kept: the references of KeyPackages handed out (kept for
 /// ever, 14.2), the login throttle (keyed by hashes of what was typed at a login) and two counters.

@@ -12,10 +12,11 @@ use crate::error::{refuse, Res};
 use crate::observer::{Device, Observer};
 use crate::store::{self, Auth, Room, Who};
 use crate::util::{b64, random};
-use crate::wire::HubAuth;
+use trommi_wire::layout::HubAuth;
 
-pub const CHALLENGE_MS: u64 = 120_000;
-pub const TOKEN_MS: u64 = 600_000;
+use trommi_wire::signin::{
+    CHALLENGE_LIFE_MS as CHALLENGE_MS, LABEL_HUB_AUTH, TOKEN_LIFE_MS as TOKEN_MS,
+};
 const MAX_CHALLENGES: usize = 10_000;
 
 struct Token {
@@ -90,7 +91,7 @@ impl Sessions {
         if parsed.hub != hub.as_bytes() {
             return Err(refuse("bad-format", "signed for another hub address"));
         }
-        if !obs.verify(&parsed.device, "TrommiHubAuth", auth, signature) {
+        if !obs.verify(&parsed.device, LABEL_HUB_AUTH, auth, signature) {
             return Err(refuse(
                 "bad-signature",
                 "the sign-in signature does not verify",

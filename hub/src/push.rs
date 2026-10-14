@@ -509,10 +509,8 @@ impl Apns {
     }
 }
 
-const APNS_AAD: &[u8] = b"trommi apns v1";
-const LIVE_AAD: &[u8] = b"trommi live v1";
-/// 15.2: every sealed APNs plaintext is the JSON padded with zero bytes to this length (512 bytes sealed).
-pub const APNS_PLAIN_LEN: usize = 512 - 12 - 16;
+// 15.2: every sealed APNs plaintext is the JSON padded with zero bytes to APNS_PLAIN_LEN (512 bytes sealed).
+use trommi_wire::push::{APNS_AAD, APNS_PLAIN_LEN, LIVE_AAD};
 
 /// The JSON of a push, padded to [`APNS_PLAIN_LEN`] and sealed for the phone; `None` for a longer one.
 pub fn seal_for_phone(key: &[u8; 32], plain: &[u8]) -> Option<Vec<u8>> {

@@ -10,7 +10,7 @@ use trommi_hub::content::{post_envelope, Posted};
 use trommi_hub::delivery::Ctx;
 use trommi_hub::store::{Auth, Effects, Who};
 use trommi_hub::util::{b64, hex, random};
-use trommi_hub::wire::{self, ZERO32};
+use trommi_wire::layout::{self as wire, ZERO32};
 
 fn timed(what: &str, runs: usize, f: impl Fn() -> usize) -> Duration {
     let mut times = vec![];

@@ -141,14 +141,14 @@ jobs:
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
-        run: cargo clippy --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io --all-targets -- -D warnings
+        run: cargo clippy --locked -p trommi-wire -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io --all-targets -- -D warnings
       - name: THIRD-PARTY.md is current
         run: node .github/scripts/third_party.mjs --check
       # the Rust facade, the wasm exports, the JavaScript layer and the typings offer the same calls (Node only, under a second)
       - name: The bindings manifest
         run: node tests/bindings/manifest.mjs
       - name: The crates' own tests
-        run: cargo test --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io -p trommi-tests-shipped -p trommi-tests-shipped
+        run: cargo test --locked -p trommi-wire -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io -p trommi-tests-shipped -p trommi-tests-shipped
       # One test that fails must not hide the others: every target runs, the step fails at the end.
       - name: The scenario tests (tests/core, tests/bindings) and the test library
         run: |

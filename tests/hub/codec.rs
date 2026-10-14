@@ -21,7 +21,7 @@ use trommi_client_core::hub::{
 use trommi_core::ids::{GroupId, RoomId};
 use trommi_core::store::{OutboxEntry, OutboxKind};
 use trommi_hub::util::{b64, random};
-use trommi_hub::wire::{self, ZERO16, ZERO32};
+use trommi_wire::layout::{self as wire, ZERO16, ZERO32};
 
 struct Recorder {
     port: u16,

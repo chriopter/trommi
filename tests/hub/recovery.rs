@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use serde_json::{json, Value};
 use trommi_hub::util::{b64, random, unb64};
-use trommi_hub::wire::{self, Cut, ZERO32};
+use trommi_wire::layout::{self as wire, Cut, ZERO32};
 
 fn recovery_token(hub: &TestHub, room: &[u8; 32], recovery: &Recovery) -> Dev {
     let mut asker = Dev::new();

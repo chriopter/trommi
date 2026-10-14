@@ -39,12 +39,9 @@ pub const MAC_LABEL: &str = "trommi recovery mac";
 pub const SEALED_KEY_LABEL: &str = "TrommiSealedKey";
 /// The label of a `RecoveryLink`'s sealing, and the prefix of its `mac` input.
 pub const LINK_LABEL: &str = "TrommiRecoveryLink";
-/// The label of the signature in a `RecoveryAuth`.
-pub const JOIN_LABEL: &str = "TrommiRecoveryJoin";
-/// The label of the hash that names a GroupInfo.
-pub const GROUP_INFO_LABEL: &str = "Trommi Group Info";
-/// The label of the hash that names a Commit.
-pub const COMMIT_LABEL: &str = "Trommi Commit";
+/// The label of the signature in a `RecoveryAuth`, of the hash that names a GroupInfo, of the hash that names a
+/// Commit.
+pub use trommi_wire::recovery::{COMMIT_LABEL, GROUP_INFO_LABEL, JOIN_LABEL};
 
 /// The length of a `mac`.
 pub const MAC_LEN: usize = 32;

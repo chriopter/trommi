@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use serde_json::Value;
 use trommi_hub::util::{b64, random, unb64};
-use trommi_hub::wire::{Cut, Envelope};
+use trommi_wire::layout::{Cut, Envelope};
 
 /// Every envelope the asker may see, by its hash: whether it is served with its body.
 fn bodies(hub: &TestHub, dev: &Dev) -> Vec<([u8; 32], bool)> {
@@ -128,7 +128,7 @@ fn a_register_value_prunes_the_same_writers_earlier_values_and_their_files() {
 
 #[test]
 fn a_note_version_prunes_the_same_writers_earlier_versions_of_that_note() {
-    use trommi_hub::wire::{self, ZERO32};
+    use trommi_wire::layout::{self as wire, ZERO32};
     let mut w = World::new();
     let mut bea = w.add_human();
     let room = w.room;

@@ -12,18 +12,15 @@ use openmls::prelude::{
 };
 use tls_codec::Serialize as _;
 
-/// The extension type of [`TrommiRoom`] in a room group's context.
-pub const EXTENSION_ROOM: u16 = 0xF001;
-/// The extension type of [`TrommiSession`] in a session group's context.
-pub const EXTENSION_SESSION: u16 = 0xF002;
+/// The extension types of [`TrommiRoom`] in a room group's context and of [`TrommiSession`] in a session group's.
+pub use trommi_wire::mls::{EXT_ROOM as EXTENSION_ROOM, EXT_SESSION as EXTENSION_SESSION};
 /// The label of the only key derived from a group (section 6).
 pub const CONTENT_KEY_LABEL: &str = "trommi content";
 /// The length of a content key.
 pub const CONTENT_KEY_LEN: usize = 32;
-/// The label of the hash of a room group's context that Commits and invites name.
-pub const ROOM_STATE_LABEL: &str = "Trommi Room State";
-/// The version every [`CommitNote`] names.
-pub const NOTE_VERSION: u8 = 2;
+/// The label of the hash of a room group's context that Commits and invites name, and the version every
+/// [`CommitNote`] names.
+pub use trommi_wire::mls::{NOTE_VERSION, ROOM_STATE_LABEL};
 
 /// How far a sender ratchet may be read out of order (3.5).
 pub const OUT_OF_ORDER_TOLERANCE: u32 = 50;
@@ -42,7 +39,7 @@ pub const MAX_HUMAN_DEVICES_IN_RECOVERY: usize = 1001;
 /// The most enrolled agent devices of a room.
 pub const MAX_AGENT_DEVICES: usize = 256;
 /// The most helper devices in one helper session.
-pub const MAX_HELPER_DEVICES: usize = 7;
+pub use trommi_wire::mls::MAX_HELPER_DEVICES;
 /// The most live helper sessions of one main session.
 pub const MAX_LIVE_HELPERS: usize = 100;
 /// The most bytes of a Commit with its GroupInfo and Welcome.

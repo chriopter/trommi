@@ -4,7 +4,7 @@
 //! (Once the core's encodings are merged, this file gives way to the core.)
 
 use sha2::{Digest, Sha256};
-use trommi_hub::wire::{
+use trommi_wire::layout::{
     CommitNote, Cut, Header, HubAuth, InviteRequest, KeyContext, Offer, RecoveryAuth, RecoveryLink,
     Reveal, SealedKey, Subject, TrommiRoom, TrommiSession,
 };

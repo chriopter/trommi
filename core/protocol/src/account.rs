@@ -66,7 +66,7 @@ pub const PASSKEY_PRF_INPUT: &[u8] = b"trommi/v1/passkey-prf";
 /// The length of a passkey's prf output.
 pub const PRF_LEN: usize = 32;
 /// The longest credential id WebAuthn allows.
-pub const MAX_CREDENTIAL_ID_LEN: usize = 1023;
+pub use trommi_wire::account::MAX_CREDENTIAL_ID_LEN;
 /// The fewest code points of a password, counted in its NFC form.
 pub const PASSWORD_MIN: usize = 12;
 /// The words of an Emergency Kit.
@@ -75,19 +75,14 @@ pub const KIT_WORDS: usize = 12;
 /// moves while it grows.
 const MAX_WORD_LEN: usize = 9;
 const KIT_TEXT_CAPACITY: usize = KIT_WORDS * (MAX_WORD_LEN + 1);
-/// The length of a sealed copy of the recovery code.
-pub const SEALED_COPY_LEN: usize = 1 + NONCE_LEN + 32 + TAG_LEN;
-/// The first byte of a sealed copy.
-const SEALED_COPY_VERSION: u8 = 2;
+/// The length of a sealed copy of the recovery code, and its first byte.
+pub use trommi_wire::account::{SEALED_COPY_LEN, SEALED_COPY_VERSION};
+const _: () = assert!(SEALED_COPY_LEN == 1 + NONCE_LEN + 32 + TAG_LEN);
 /// The key derivation record of an account as this client writes it, and the only one it derives with.
 pub const KDF_RECORD: &str = r#"{"alg":"argon2id","v":1,"m":65536,"t":3,"p":1}"#;
 /// The longest key derivation record that is read: what a hub gives is many times shorter.
 pub const MAX_KDF_RECORD_LEN: usize = 1024;
-const KDF_ALG: &str = "argon2id";
-const KDF_RECORD_VERSION: f64 = 1.0;
-const KDF_MEMORY_KIB: u32 = 65536;
-const KDF_PASSES: u32 = 3;
-const KDF_LANES: u32 = 1;
+use trommi_wire::account::{KDF_ALG, KDF_LANES, KDF_MEMORY_KIB, KDF_PASSES, KDF_RECORD_VERSION};
 
 /// The length of an account id.
 pub const ACCOUNT_ID_LEN: usize = 16;
@@ -249,7 +244,7 @@ pub fn accept_kdf(record: Option<&str>) -> Result<(), AccountError> {
     let number = |name: &str| value.get(name).and_then(serde_json::Value::as_f64);
     let pinned = value.is_object()
         && value.get("alg").and_then(serde_json::Value::as_str) == Some(KDF_ALG)
-        && number("v") == Some(KDF_RECORD_VERSION)
+        && number("v") == Some(f64::from(KDF_RECORD_VERSION))
         && number("m") == Some(f64::from(KDF_MEMORY_KIB))
         && number("t") == Some(f64::from(KDF_PASSES))
         && number("p") == Some(f64::from(KDF_LANES));

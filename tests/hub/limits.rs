@@ -10,7 +10,7 @@ use common::*;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use trommi_hub::util::{b64, random, unb64};
-use trommi_hub::wire::{self, ZERO16, ZERO32};
+use trommi_wire::layout::{self as wire, ZERO16, ZERO32};
 
 /// `allowed` attempts are taken, the next one is refused with `status` and `code`.
 fn boundary(

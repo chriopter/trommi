@@ -1,6 +1,23 @@
 //! This client's own limits on what a hub may answer: sizes, counts and how far a cursor may run. They follow
 //! spec/v1.md section 16 and spec/hub-api.md, with room for the JSON around the bytes, and they hold whatever a
 //! hub does: an answer beyond one of them is refused whole.
+//!
+//! The pages, windows and counts the hub's routes keep to are the hub's and this client's at once: they come from
+//! core/wire, which the hub reads them from too.
+
+/// A sealed copy of the recovery code; a passkey's credential id; an e-mail address, and the one field that names
+/// an account.
+pub use trommi_wire::account::{
+    MAX_CREDENTIAL_ID_LEN as MAX_CREDENTIAL_ID, MAX_EMAIL_LEN as MAX_EMAIL,
+    SEALED_COPY_LEN as SEALED_COPY,
+};
+use trommi_wire::limits::ANSWER_BYTES;
+/// Most devices one claim of KeyPackages names: the leaves of a group's tree.
+pub use trommi_wire::limits::MAX_LEAVES as MAX_CLAIM;
+pub use trommi_wire::limits::{
+    CHANGES_WINDOW, LOG_PAGE, MAX_AT_ONCE, MAX_CHANGES, MAX_CHAT_PAGE, MAX_FRONTIER_FILES,
+    MAX_FRONTIER_WRITERS, MAX_GROUPS_PAGE, MAX_LOG, MAX_PAGE, MAX_REMOVAL, MAX_SEALED_KEYS,
+};
 
 const MIB: usize = 1 << 20;
 
@@ -23,14 +40,8 @@ pub const MAX_KEY_PACKAGE: usize = 16 << 10;
 /// The small structs: a SealedKey, a RecoveryLink, a RecoveryAuth.
 pub const MAX_SMALL_STRUCT: usize = 1024;
 
-/// hub-api.md "Decided" 32: one catch-up answer looks at most so many change numbers ahead.
-pub const CHANGES_WINDOW: u64 = 20_000;
-/// Most items one page of a catch-up may be asked for.
-pub const MAX_CHANGES: u32 = 1000;
 /// Most rows the Desk's open list holds (cards, permission requests and settled ones together).
 pub const MAX_OPEN: usize = 10_000;
-/// Most Commits one `POST /v1/commits` and most groups one `POST /v1/groups/read` take.
-pub const MAX_AT_ONCE: usize = 64;
 /// Most single-use KeyPackages one upload holds (hub-api.md "Decided" 41).
 pub const MAX_KEY_PACKAGES: usize = 100;
 /// Most one GroupInfo answer may hold: a GroupInfo of 1 MiB in base64url and the JSON around it.
@@ -39,16 +50,6 @@ pub const CAP_GROUP_INFO: usize = 2 * MIB;
 pub const MAX_TAG: usize = 128;
 /// Most Welcomes one answer holds (the hub's 8 MiB of them).
 pub const MAX_WELCOMES: usize = 10_000;
-/// Most entries one page of a group's log may be asked for.
-pub const MAX_LOG: u32 = 1000;
-/// The page of Commits `POST /v1/groups/read` gives per group.
-pub const LOG_PAGE: usize = 256;
-/// Most envelopes one page of a chain or an object may be asked for.
-pub const MAX_PAGE: u32 = 2000;
-/// Most devices one claim of KeyPackages names.
-pub const MAX_CLAIM: usize = 1024;
-/// Most rows one page of the room's groups may be asked for.
-pub const MAX_GROUPS_PAGE: u32 = 1000;
 /// Most leaves a group's row lists (the tree's 2 047 nodes hold 1 024; with room).
 pub const MAX_LEAVES: usize = 4096;
 /// Most wishes `GET /v1/requests` lists.
@@ -61,15 +62,6 @@ pub const MAX_DESK_REGISTERS: usize = 20_000;
 pub const MAX_DESK_GROUPS: usize = 10_000;
 /// Most stored bytes of a file (spec/v1.md 16: 64 MiB of plaintext).
 pub const CAP_FILE: usize = 67_125_269;
-/// Most envelopes one page of a Chat may be asked for.
-pub const MAX_CHAT_PAGE: u32 = 200;
-/// Most rows one page of sealed keys may be asked for.
-pub const MAX_SEALED_KEYS: u32 = 2000;
-/// Most Commits one page of a removal holds.
-pub const MAX_REMOVAL: usize = 200;
-/// Most writers and files one board frontier names (hub-api.md "Decided" 45).
-pub const MAX_FRONTIER_WRITERS: usize = 1000;
-pub const MAX_FRONTIER_FILES: usize = 20_000;
 /// How long the shell waits for a file to go up or come down.
 pub const TRANSFER_TIMEOUT_MS: u32 = 600_000;
 /// Most the answer of `POST /v1/groups/read` may hold. The hub keeps one budget of 8 MiB for the whole answer and
@@ -88,7 +80,7 @@ const fn b64(n: usize) -> usize {
 /// sender and the names, under 400 bytes, and its RecoveryAuth.)
 const _: () = assert!(
     2 * b64(MAX_MLS)
-        + 8 * MIB
+        + ANSWER_BYTES
         + LOG_PAGE * (400 + b64(MAX_SMALL_STRUCT))
         + MAX_AT_ONCE * 512
         + 4096
@@ -96,12 +88,6 @@ const _: () = assert!(
 );
 /// Most a small answer that is more than a few numbers may hold (an account, a login, an invite).
 pub const CAP_SMALL: usize = MIB;
-/// A sealed copy of the recovery code.
-pub const SEALED_COPY: usize = 61;
-/// A passkey's credential id.
-pub const MAX_CREDENTIAL_ID: usize = 1023;
-/// An e-mail address, and the one field that names an account.
-pub const MAX_EMAIL: usize = 254;
 /// Most rooms an account's answers list, and most passkeys.
 pub const MAX_ROOMS: usize = 16;
 pub const MAX_PASSKEYS: usize = 64;

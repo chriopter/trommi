@@ -55,7 +55,7 @@ Updates come by themselves: a running connector installs a new signed release an
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/readme/architecture-dark.svg">
-  <img alt="The apps (app/web, app/ios, app/linux) only draw and do their platform's I/O; core/client, the app core in Rust, decides what every screen shows, runs the sync and keeps the cache; core/protocol holds MLS and all cryptography; core/bindings binds both to wasm, UniFFI and plain Rust. The connector and the hub sit beside them, everything on OpenMLS." src=".github/readme/architecture-light.svg">
+  <img alt="The apps (app/web, app/ios, app/linux) only draw and do their platform's I/O; core/client, the app core in Rust, decides what every screen shows, runs the sync and keeps the cache; core/protocol holds MLS and all cryptography; core/bindings binds both to wasm, UniFFI and plain Rust; core/wire holds what the hub and the app core read the same way (refusal codes, limits, formats) and points to core/client, core/protocol and the hub. The connector and the hub sit beside them, everything on OpenMLS." src=".github/readme/architecture-light.svg">
 </picture>
 
 All logic is Rust and exists once. Everything Rust shares lives under `core/`:
@@ -68,13 +68,16 @@ All logic is Rust and exists once. Everything Rust shares lives under `core/`:
   sync with the hub, the actions, the cache and the view model of every screen.
 - `core/bindings/` (`swift/`, `wasm/`): one facade, bound to Swift through UniFFI and to the browser through
   wasm-bindgen; a Rust host (the Linux app) uses the crates directly.
+- `core/wire/` (`trommi-wire`): what the hub and the app core must read the same way, written once: the refusal
+  codes and their statuses, the pages and limits of the hub's routes, the constants of the structs of
+  spec/v1.md, and the hub's strict parsers of those structs. No key, no client logic, no I/O.
 
 An app only draws the view model it is given, passes taps back, and does the I/O its platform wants done its own way
 (fetch, URLSession, reqwest), plus the platform's own services (push, notifications, the Keychain, file pickers).
 The picture shows that target; today the web and iOS apps still run their own sync and part of the Desk's rules
 ([`core/client/README.md`](core/client/README.md) has the detail). The connector and the hub share no code with the
-apps' layers: the connector sits on `core/protocol`, the hub on OpenMLS alone. All devices talk to the hub with
-sealed MLS messages, and keys stay on devices.
+apps' layers: the connector sits on `core/protocol`, the hub on OpenMLS and `core/wire` alone. All devices talk to the
+hub with sealed MLS messages, and keys stay on devices.
 
 ## Under the hood
 
@@ -510,6 +513,7 @@ nightly ──────────────── nightly.yml: the giant 
 | `core/protocol/` | the protocol core in Rust on OpenMLS: MLS, envelopes, chains, files |
 | `core/bindings/` | the one facade over both cores: `wasm/` for the browser, `swift/` for iOS and the Mac |
 | `core/client/` | the app core (Rust): the board model, the Desk's rules and the catch-up's load plan, shared by every app through `core/bindings` |
+| `core/wire/` | what the hub and the app core read the same way: refusal codes, the limits of the hub's routes, the formats of spec/v1.md |
 | `hub/` | the hub (the server) and its updater; `hub/deploy/` installs it |
 | `app/web/` | the web app |
 | `app/ios/` | the iOS app (Swift, SwiftUI) |

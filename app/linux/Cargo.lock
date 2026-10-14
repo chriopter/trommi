@@ -3332,6 +3332,7 @@ dependencies = [
  "serde",
  "serde_json",
  "trommi-core",
+ "trommi-wire",
 ]
 
 [[package]]
@@ -3374,6 +3375,7 @@ dependencies = [
  "sha2 0.11.0",
  "subtle",
  "tls_codec",
+ "trommi-wire",
  "unicode-normalization",
  "zeroize",
 ]
@@ -3421,6 +3423,10 @@ dependencies = [
  "zbus",
  "zeroize",
 ]
+
+[[package]]
+name = "trommi-wire"
+version = "0.0.0"
 
 [[package]]
 name = "try-lock"
