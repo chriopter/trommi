@@ -139,6 +139,8 @@ pub(crate) fn answered(waiting: &Waiting, answer: Result<Answer, Failure>) -> Re
             });
         }
         Err(Failure::Refused { .. }) => return Err(Problem::Other("refused")),
+        // (the hub's throttle after a wrong try answers 429 with the wait: said as such, not as "offline")
+        Err(Failure::NotNow { status: 429, .. }) => return Err(Problem::Throttled),
         Err(Failure::NotNow { .. } | Failure::Offline) => return Err(Problem::Offline),
         Err(Failure::BadAnswer { .. }) => return Err(Problem::Other("bad-format")),
     };
@@ -150,4 +152,22 @@ pub(crate) fn answered(waiting: &Waiting, answer: Result<Answer, Failure>) -> Re
     let code = account::open_code(&waiting.wrap_key, &room.room, way, &room.sealed_copy).map_err(|e| sorted(e, waiting.by))?;
     let keys = RecoveryKeys::from_code(code).map_err(|e| Problem::Other(e.code()))?;
     Ok((room.room, keys))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn waiting() -> Waiting {
+        let (waiting, _) = begin("http://127.0.0.1:1".into(), By::Password, "ada@example.org", &Secret("pw".into()), "test/0").expect("begun");
+        waiting
+    }
+
+    #[test]
+    fn the_throttle_is_said_as_such() {
+        let w = waiting();
+        assert_eq!(answered(&w, Err(Failure::NotNow { status: 429, retry_after_ms: Some(1_000) })).err(), Some(Problem::Throttled));
+        assert_eq!(answered(&w, Err(Failure::NotNow { status: 503, retry_after_ms: None })).err(), Some(Problem::Offline));
+        assert_eq!(answered(&w, Err(Failure::Offline)).err(), Some(Problem::Offline));
+    }
 }

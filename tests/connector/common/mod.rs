@@ -766,14 +766,14 @@ impl Human {
             nonce = self
                 .items
                 .iter()
+                .rev()
                 .filter(|(s, _, payload)| *s == session && !payload["value"].is_null())
-                .filter_map(|(_, _, payload)| {
+                .find_map(|(_, _, payload)| {
                     payload["name"]
                         .as_str()?
                         .strip_prefix("join_ask/")
                         .map(String::from)
-                })
-                .last();
+                });
             if nonce.is_some() {
                 break;
             }
