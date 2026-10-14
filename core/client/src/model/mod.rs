@@ -120,6 +120,10 @@ pub struct Model {
     pub patch_rest: std::collections::BTreeSet<String>,
     /// The room is still being read (a sign-in, a read back): a session whose profile has not come is "Loading …".
     pub reading: bool,
+    /// The hub's counts of the Desk as last read (hub-api.md point 47): at which change, and per session (its id)
+    /// how many of its cards were answered or closed then. A device that did not read the room's past counts its
+    /// done cards from these (off_mind.rs).
+    pub hub_settled: Option<(u64, BTreeMap<String, u64>)>,
     /// The cards that carry a snooze mark (`snoozed_until`, `unsnoozed`).
     pub snooze_marked: std::collections::BTreeSet<String>,
     /// The model's clock: the `now` of the last projection (the session list's status is decided at it).

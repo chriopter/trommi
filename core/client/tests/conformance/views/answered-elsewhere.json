@@ -192,14 +192,6 @@
                 "depth": 0,
                 "desk_id": "main",
                 "group": ":off",
-                "heading": {
-                  "kind": "away",
-                  "text": {
-                    "en": "Disconnected",
-                    "key": "sidebar.away"
-                  },
-                  "waiting": 0
-                },
                 "hushed": false,
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
@@ -446,14 +438,6 @@
                 "depth": 0,
                 "desk_id": "main",
                 "group": ":off",
-                "heading": {
-                  "kind": "away",
-                  "text": {
-                    "en": "Disconnected",
-                    "key": "sidebar.away"
-                  },
-                  "waiting": 0
-                },
                 "hushed": false,
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
@@ -942,14 +926,6 @@
                 "depth": 0,
                 "desk_id": "main",
                 "group": ":off",
-                "heading": {
-                  "kind": "away",
-                  "text": {
-                    "en": "Disconnected",
-                    "key": "sidebar.away"
-                  },
-                  "waiting": 0
-                },
                 "hushed": false,
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
@@ -1425,14 +1401,6 @@
           "depth": 0,
           "desk_id": "main",
           "group": ":off",
-          "heading": {
-            "kind": "away",
-            "text": {
-              "en": "Disconnected",
-              "key": "sidebar.away"
-            },
-            "waiting": 0
-          },
           "hushed": false,
           "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
           "knocks": false,

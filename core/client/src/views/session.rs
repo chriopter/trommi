@@ -382,7 +382,8 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         name: say("session.name", name, &[]),
         link: link.as_ref().map(|l| l.state.clone()).unwrap_or_default(),
         blocked: hand.is_some(),
-        empty: talk.is_empty().then(|| EmptyTalkView {
+        // (the welcome only for a session whose Chat the hub holds nothing of: none while its history is read)
+        empty: (talk.is_empty() && b.lens.talk_waits.as_deref() != Some(a.row.key.as_str())).then(|| EmptyTalkView {
             meta: a.row.model_label.clone(),
             text: say("session.empty", "Joined and waiting for its first task. Write below, or start with:", &[]),
             starters: vec![

@@ -44,6 +44,11 @@ fn desk_request(p: &PermissionRequest) -> DeskRequest {
 }
 
 impl Model {
+    /// The hub's counts of the Desk (`hub_settled`), as last read.
+    pub fn set_hub_settled(&mut self, at: u64, settled: std::collections::BTreeMap<String, u64>) {
+        self.hub_settled = Some((at, settled));
+    }
+
     /// The hub's Desk as last read: what it lists as open (by id, the change of its version) and at which change;
     /// none forgets it. It decides the Desk from the next projection on.
     pub fn set_desk_listing(&mut self, listing: Option<(u64, Vec<(String, u64)>)>) {
