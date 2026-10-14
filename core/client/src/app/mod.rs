@@ -26,6 +26,7 @@ mod invites;
 mod account_steps;
 mod account_change;
 mod desks;
+mod outside;
 pub mod push;
 mod selfjoin;
 mod shared;
@@ -34,7 +35,8 @@ pub mod script;
 pub mod sim;
 
 pub use bytes::Bytes;
-pub use effect::{Effect, LogLevel, Notice, WidgetSnapshot};
+pub use effect::{Effect, LogLevel, Notice, NotifyContext, NotifyKey, WaitingCard, WaitingOption, WidgetSnapshot};
+pub use outside::WAITING_MAX;
 pub use event::{Abilities, Config, Event};
 pub use io::{
     DeviceEntry, Entry, Header, HttpClass, HttpRequest, HttpResponse, IoError, IoErrorKind, IoId,
@@ -151,6 +153,8 @@ pub struct App {
     changes: account_change::Changes,
     desks: desks::DeskDeletes,
     push: push::Push,
+    /// Widgets, local notifications, the notification extension (`app::outside`).
+    outside: outside::Outside,
     /// The demo room runs (`Config.demo`): no hub, no store.
     demo: bool,
     /// Notes this run delivered (their closing version is on its way).
@@ -229,6 +233,7 @@ impl App {
             changes: account_change::Changes::default(),
             desks: desks::DeskDeletes::default(),
             push: push::Push::default(),
+            outside: outside::Outside::default(),
             demo: false,
             notes_went: Default::default(),
             recover_with: None,
@@ -923,6 +928,12 @@ impl App {
             }
             Event::Platform { id, result } if self.changes.owns_platform(id) => self.change_platform(now_ms, id, result, &mut out),
             Event::Platform { id, result } if self.push.owns_platform(id) => self.push_platform_answered(now_ms, id, result, &mut out),
+            Event::Secret { id, result } if self.outside.key_read == Some(id) => {
+                self.outside_key(match result {
+                    IoResult::Ok(value) => value.map(|v| v.0),
+                    IoResult::Err(_) => None,
+                });
+            }
             Event::Secret { id, .. } | Event::Platform { id, .. } => {
                 if self.pending.remove(&id).is_none() {
                     out.push(log(LogLevel::Warn, "an answer to nothing asked"));
@@ -977,6 +988,7 @@ impl App {
                 self.lens.card = card;
                 self.lens.off = off;
                 self.stale_views = true;
+                self.outside_front(Some(focus.visible), false);
             }
             Event::Wake => {
                 self.timer = None;
@@ -987,6 +999,7 @@ impl App {
                 }
             }
             Event::Foreground => {
+                self.outside_front(Some(true), false);
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_foreground(ctx));
                 // (one that gave up on its stored state tries again when the person comes back)
                 if self.next_view.phase == Phase::Stopped && self.reopen_tries > REOPEN_TRIES {
@@ -995,6 +1008,7 @@ impl App {
                 }
             }
             Event::Background => {
+                self.outside_front(Some(false), false);
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_background(ctx));
             }
             Event::Net { online } => {
@@ -1002,6 +1016,7 @@ impl App {
             }
             // (a push that reached the app: what it rang for is read, as when the app comes to the front)
             Event::Push { .. } => {
+                self.outside_front(None, true);
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_foreground(ctx));
             }
         }
@@ -1142,13 +1157,15 @@ impl App {
     }
 
     /// The demo's views, made again when they went stale.
-    fn after_demo(&mut self, now_ms: u64, _out: &mut Vec<Effect>) {
+    fn after_demo(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
         if self.stale_views {
+            self.outside.due = true;
             self.stale_views = false;
             let (wake, shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
             self.view_wake = wake;
             self.files.shown(shown, &mut self.next_view.files);
         }
+        self.outside(now_ms, out);
     }
 
     /// The notes this device sent whose hold (the toast's Undo) ran out: delivered, once each.
@@ -1482,6 +1499,7 @@ impl App {
                 self.cache = Some(crate::cache::Keeper::open(&room, &device, revision, &mut self.next_id, out));
                 self.engine = Some(engine);
                 self.next_view.phase = Phase::Opening;
+                self.outside_opened(out);
             }
             Err(OpenError::NoRoom) if !again => self.next_view.phase = Phase::SignedOut,
             Err(OpenError::Interrupted) if !again => {
@@ -1721,6 +1739,7 @@ impl App {
                     }
                 }
                 Report::FileEvicted { file } => evicted.push(file),
+                Report::Groups | Report::Log { .. } => self.outside.keys_due = true,
                 Report::Accepted { id, .. } if self.changes.replacing() == Some(id) => replaced = Some(None),
                 Report::Refused { id, code, .. } if self.changes.replacing() == Some(id) => replaced = Some(Some(code)),
                 Report::Accepted { id, .. } => {
@@ -1855,6 +1874,8 @@ impl App {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });
         }
+        self.outside.due |= fed;
+        self.outside(now_ms, out);
     }
 
     fn io(&mut self, what: Pending) -> IoId {

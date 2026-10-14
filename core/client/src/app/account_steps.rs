@@ -143,6 +143,7 @@ impl App {
         self.engine = None;
         self.cache = None;
         self.push = Default::default();
+        self.outside_signed_out(out);
         self.board = crate::engine::feed::Board::default();
         self.stale_views = true;
         self.next_view.phase = Phase::SignedOut;
