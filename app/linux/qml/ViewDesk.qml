@@ -14,6 +14,20 @@ Item {
     /** ViewModel.sidebar: a row's sender is drawn in its session's hue. */
     property var sidebar: ({})
 
+    /** An `Action` (contract spelling). */
+    signal act(var action)
+    /** Another page: an `Event::Focus` screen. */
+    signal go(var screen)
+
+    /** A row's tile, as an action: the tile's shape and key say which; the card opens for the rest. */
+    function tapped(row, key, shape) {
+        if (shape === "got") act({ do: "read", card_id: row.id })
+        else if (shape === "what") act({ do: "hand_back", card_id: row.id })
+        else if (key !== "" && row.kind === "request") act({ do: "verdict", request_id: row.id, allow: key === "allow" })
+        else if (key !== "") act({ do: "answer", card_id: row.id, choices: [key] })
+        else go({ screen: "card", card_id: row.id })
+    }
+
     property bool goalsFolded: true
     readonly property var rows: desk.rows || []
     readonly property var words: desk.hello ? desk.hello.en.split(" ") : []
@@ -146,12 +160,19 @@ Item {
             required property var modelData
             width: list.width
             height: 108
+            MouseArea {
+                anchors.fill: rowItem
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.go({ screen: "card", card_id: parent.modelData.id })
+            }
             ViewDeskRow {
+                id: rowItem
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: Math.min(800, list.width - 64)
                 theme: root.theme
                 row: parent.modelData
                 slug: parent.modelData.from ? (root.slugs[parent.modelData.from.session_id] || "") : ""
+                onChosen: (key, shape) => root.tapped(row, key, shape)
             }
         }
     }
