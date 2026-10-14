@@ -59,6 +59,9 @@ pub struct RoomJoin {
     pub hub: String,
     pub room: RoomId,
     pub keys: RecoveryKeys,
+    /// A recovery (8.7): every other human device is removed and the code replaced; this seals the new code into
+    /// the account's new copies.
+    pub recover: Option<super::recover::Copies>,
 }
 
 /// Where the join stands, for the view.
@@ -109,7 +112,7 @@ impl RoomJoinError {
     }
 
     /// The core's error, sorted.
-    fn of(error: &Error) -> Self {
+    pub(super) fn of(error: &Error) -> Self {
         match error {
             Error::WrongRecovery => RoomJoinError::WrongCode,
             Error::TooMany => RoomJoinError::TooMany,
@@ -140,47 +143,55 @@ pub(super) enum Read {
     Log,
     /// The room group's log, looking for the Commit at the epoch of the join posted earlier.
     Find,
+    /// A recovery's reads: a session group's founding (`true`) or current GroupInfo, a group's Commits, a removed
+    /// device's chain, the recovery opened.
+    Session(GroupId, bool),
+    SessionLog(GroupId),
+    Chain,
+    Open,
 }
 
 /// The join while it runs. The keys of the code live here only.
 pub(super) struct Joiner {
-    keys: RecoveryKeys,
+    pub(super) keys: RecoveryKeys,
     pub(super) retry: Retry,
-    asked: Option<IoId>,
-    tries: u32,
-    step: RoomJoinStep,
+    pub(super) asked: Option<IoId>,
+    pub(super) tries: u32,
+    pub(super) step: RoomJoinStep,
     // what was read
-    rows: Vec<Vec<u8>>,
-    links: Vec<Vec<u8>>,
-    bytes: usize,
-    keys_after: u64,
-    keys_done: bool,
-    anchor_epoch: Option<u64>,
-    current: Option<(u64, Vec<u8>)>,
-    founding: Option<Vec<u8>>,
-    anchor: Option<Vec<u8>>,
-    main: Vec<GroupId>,
-    helpers: Vec<GroupId>,
-    sessions_after: u64,
-    sessions_done: bool,
+    pub(super) rows: Vec<Vec<u8>>,
+    pub(super) links: Vec<Vec<u8>>,
+    pub(super) bytes: usize,
+    pub(super) keys_after: u64,
+    pub(super) keys_done: bool,
+    pub(super) anchor_epoch: Option<u64>,
+    pub(super) current: Option<(u64, Vec<u8>)>,
+    pub(super) founding: Option<Vec<u8>>,
+    pub(super) anchor: Option<Vec<u8>>,
+    pub(super) main: Vec<GroupId>,
+    pub(super) helpers: Vec<GroupId>,
+    pub(super) sessions_after: u64,
+    pub(super) sessions_done: bool,
     /// The core holds the check.
-    started: bool,
-    log_after: u64,
-    reached: u64,
+    pub(super) started: bool,
+    pub(super) log_after: u64,
+    pub(super) reached: u64,
     /// The join in the device's outbox, and whether it may be posted as it is (else the room's epoch is read
     /// first: its answer may have been lost).
-    entry: Option<u64>,
+    pub(super) entry: Option<u64>,
     /// The epoch the join is built on.
-    entry_epoch: u64,
-    may_post: bool,
+    pub(super) entry_epoch: u64,
+    pub(super) may_post: bool,
     /// The hub answered `epoch-taken`: the core holds the join back until the room's log shows whose Commit
     /// took that epoch (13.2).
-    awaiting: bool,
-    find_after: u64,
+    pub(super) awaiting: bool,
+    pub(super) find_after: u64,
     /// A join of this run left for the hub: from then on the device is never wiped.
-    posted: bool,
+    pub(super) posted: bool,
     /// The room moved on under the join: it is read again from the start.
-    restart: bool,
+    pub(super) restart: bool,
+    /// A recovery (8.7) instead of a join.
+    pub(super) recover: Option<super::recover::Recovering>,
 }
 
 /// The device's join of the room group, posted and not answered yet.
@@ -219,6 +230,7 @@ impl Joiner {
             find_after: 0,
             posted: entry.is_some(),
             restart: false,
+            recover: None,
         }
     }
 
@@ -226,6 +238,7 @@ impl Joiner {
     fn again(self) -> Self {
         let mut next = Joiner::new(self.keys, None);
         (next.tries, next.retry, next.posted) = (self.tries, self.retry, self.posted);
+        next.recover = self.recover.and_then(|r| r.again());
         next
     }
 
@@ -276,7 +289,9 @@ impl Engine {
             }
         };
         let mut engine = Self::over(device, writes, join.room, &join.hub, address, client, seed);
-        engine.room_join = Some(Joiner::new(join.keys, staged_entry));
+        let mut joiner = Joiner::new(join.keys, staged_entry);
+        joiner.recover = join.recover.map(super::recover::Recovering::new);
+        engine.room_join = Some(joiner);
         Ok(engine)
     }
 
@@ -302,12 +317,14 @@ impl Engine {
         self.drive(ctx);
     }
 
-    fn room_status(&mut self, j: &Joiner) {
+    pub(super) fn room_status(&mut self, j: &Joiner) {
         self.report(Report::RoomJoin(RoomJoinStatus::Step(j.step)));
     }
 
     /// The join ends without the room: the device's state goes unless a join of it may stand at the hub.
     fn room_failed(&mut self, ctx: &mut Ctx<'_>, j: Joiner, error: RoomJoinError) {
+        // (a recovery opened and not finished gives the room back; its device holds nothing the hub keeps)
+        self.recover_drop(ctx, &j);
         let keep = j.posted && j.entry.is_some();
         if !keep {
             // (what the device wrote first, then everything gone in one write)
@@ -328,7 +345,7 @@ impl Engine {
     }
 
     /// A transient failure: the same step again after a wait.
-    fn room_wait(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner, failure: &Failure) {
+    pub(super) fn room_wait(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner, failure: &Failure) {
         let retry_after = match failure {
             Failure::NotNow { retry_after_ms, .. } => *retry_after_ms,
             Failure::BadAnswer { why } => {
@@ -386,7 +403,7 @@ impl Engine {
         }
     }
 
-    fn room_ask(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner, route: Route<'_>, what: Read) -> Result<(), RoomJoinError> {
+    pub(super) fn room_ask(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner, route: Route<'_>, what: Read) -> Result<(), RoomJoinError> {
         j.asked = self.ask(ctx, route, true, |expect| Asked::RoomRead { expect, what });
         j.asked.map(|_| ()).ok_or(RoomJoinError::Device("bad-format"))
     }
@@ -451,6 +468,11 @@ impl Engine {
         }
         if !j.sessions_done {
             return self.room_ask(ctx, j, Route::RoomGroups { room: &room, after: j.sessions_after, limit: crate::hub::limits::MAX_GROUPS_PAGE }, Read::Sessions);
+        }
+        if j.recover.is_some() {
+            let sessions: Vec<GroupId> = j.main.iter().chain(&j.helpers).copied().collect();
+            let (founding, anchor) = (j.founding.clone().unwrap_or_default(), j.anchor.clone().unwrap_or_default());
+            return self.recover_next(ctx, j, sessions, (current_epoch, current), founding, anchor);
         }
         if !j.started {
             j.step = RoomJoinStep::Checking;
@@ -533,6 +555,9 @@ impl Engine {
             }
         };
         j.retry.ok();
+        if matches!(what, Read::Session(..) | Read::SessionLog(_) | Read::Chain | Read::Open) {
+            return self.recover_read(j, what, answer);
+        }
         let room = GroupId::room(self.room);
         match (what, answer) {
             (Read::Keys, Answer::SealedKeys(SealedKeysPage { rows, links, change, more })) => {
@@ -676,6 +701,10 @@ impl Engine {
     pub(super) fn on_room_posted(&mut self, ctx: &mut Ctx<'_>, entry: u64, answer: Result<Answer, Failure>, unauthorised: bool, refusal: Option<Refusal>) {
         let Some(mut j) = self.room_join.take() else { return };
         j.asked = None;
+        if j.recover.as_ref().is_some_and(|r| r.posting() == Some(entry)) {
+            let result = self.recover_posted(ctx, &mut j, entry, answer, unauthorised);
+            return self.room_after(ctx, j, result);
+        }
         let result = match answer {
             Ok(Answer::Outbox(taken)) => {
                 j.retry.ok();
@@ -716,8 +745,10 @@ impl Engine {
         self.todo_upto = self.position;
         self.report(Report::RoomJoin(RoomJoinStatus::Joined));
         self.report(Report::Groups);
+        let recovered = j.recover.is_some();
         let Joiner { keys, rows, links, main, helpers, .. } = j;
-        let groups: Vec<GroupId> = main.into_iter().chain(helpers).collect();
+        // (a recovery joined every live session with the room)
+        let groups: Vec<GroupId> = if recovered { Vec::new() } else { main.into_iter().chain(helpers).collect() };
         self.join_sessions(ctx, SessionJoins { keys, later: Some(Later { rows, links }), groups });
     }
 }

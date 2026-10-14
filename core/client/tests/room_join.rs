@@ -26,7 +26,7 @@ fn blank(world: &World) -> Sim {
 }
 
 fn join(world: &World, sim: &mut Sim, keys: RecoveryKeys) {
-    let effects = sim.app.join_room(sim.now_ms, RoomJoin { hub: HUB_URL.into(), room: world.room.room_id(), keys });
+    let effects = sim.app.join_room(sim.now_ms, RoomJoin { hub: HUB_URL.into(), room: world.room.room_id(), keys, recover: None });
     sim.run(effects);
 }
 
@@ -205,7 +205,7 @@ fn a_join_posted_without_its_answer_goes_on_after_a_restart_and_is_not_posted_tw
     assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Failed(RoomJoinError::Interrupted)));
     assert!(!sim.device.1.is_empty(), "a posted join is never wiped");
     // the code again, with the hub named by the stored room
-    let effects = sim.app.join_room(sim.now_ms, RoomJoin { hub: HUB_URL.into(), room: world.room.room_id(), keys: code_keys() });
+    let effects = sim.app.join_room(sim.now_ms, RoomJoin { hub: HUB_URL.into(), room: world.room.room_id(), keys: code_keys(), recover: None });
     sim.run(effects);
     settle(&world, &mut sim);
     assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined));
