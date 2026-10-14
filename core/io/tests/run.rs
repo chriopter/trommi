@@ -198,16 +198,34 @@ async fn a_failed_device_write_drops_what_waited_behind_it() {
         next(&mut events).await,
         next(&mut events).await,
     ];
+    // The loop picks between a new event and a result at random (tokio::select!): the write may fail before
+    // Foreground is handled, and then its request is no longer behind the barrier and leaves (the order the core
+    // heard them in says which it was; asserting only the first case failed now and then on CI).
+    let waited = heard.iter().position(|e| matches!(e, Event::Foreground))
+        < heard.iter().position(|e| matches!(e, Event::Store { .. }));
     heard.retain(|e| !matches!(e, Event::Start { .. } | Event::Foreground));
     assert!(
         matches!(&heard[..], [Event::Store { id: IoId(1), result: IoResult::Err(e) }] if e.kind == IoErrorKind::Conflict),
         "{heard:?}"
     );
+    if !waited {
+        let after = next(&mut events).await;
+        assert!(
+            matches!(
+                after,
+                Event::Http {
+                    id: IoId(4),
+                    result: IoResult::Ok(_)
+                }
+            ),
+            "{after:?}"
+        );
+    }
     nothing(&mut events, 300).await;
     assert_eq!(
         hub.count(),
-        0,
-        "a request left after the device write failed"
+        usize::from(!waited),
+        "a request of the failed write's answer, or one that waited behind it, left"
     );
     assert_eq!(*shown.lock().unwrap(), 0);
     drop(handle);
