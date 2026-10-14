@@ -81,6 +81,12 @@ pub mod qobject {
         /// Writes a picture of the window to `shot_path` was done (QML): ends a scene run.
         #[qinvokable]
         fn shot_taken(self: Pin<&mut Trommi>);
+
+        #[qinvokable]
+        fn send_event(self: Pin<&mut Trommi>, json: &QString);
+
+        #[qinvokable]
+        fn attach_file(self: Pin<&mut Trommi>, url: &QString, local_id: &QString);
     }
 
     impl cxx_qt::Threading for Trommi {}
@@ -274,6 +280,51 @@ fn announce(thread: &Thread, desk: &str) {
     });
 }
 
+/// The desktop's services of the app core's window: the files' map and a saved file's place to the window, the
+/// notifications to the session bus (a click opens what it names).
+fn desktop_for(thread: Thread) -> crate::platform::Desktop {
+    let mut desktop = crate::platform::Desktop::new();
+    let on = thread.clone();
+    desktop.on_files = Box::new(move |json| {
+        let _ = on.queue(move |mut o: Pin<&mut qobject::Trommi>| o.as_mut().set_files_json(QString::from(json.as_str())));
+    });
+    let on = thread.clone();
+    desktop.on_saved = Box::new(move |path| {
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let _ = on.queue(move |mut o: Pin<&mut qobject::Trommi>| o.as_mut().set_error(QString::from(format!("Saved to Downloads: {name}").as_str())));
+    });
+    desktop.on_notice = Box::new(move |notice| {
+        if std::env::var("TROMMI_LINUX_NOTIFY").is_ok_and(|v| v == "0") {
+            return;
+        }
+        let note = crate::notify::Note {
+            card: notice.target.clone().unwrap_or_default(),
+            summary: notice.title.en.clone(),
+            body: notice.body.en.clone(),
+            urgent: notice.urgent,
+        };
+        let thread = thread.clone();
+        runtime().spawn(async move {
+            static NOTIFIER: tokio::sync::OnceCell<Option<crate::notify::Notifier>> = tokio::sync::OnceCell::const_new();
+            let notifier = NOTIFIER
+                .get_or_init(|| async move {
+                    let open: Arc<dyn Fn(String) + Send + Sync> = Arc::new(move |target: String| {
+                        let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
+                            o.as_mut().set_open_request(QString::default());
+                            o.as_mut().set_open_request(QString::from(if target.is_empty() { "desk" } else { target.as_str() }));
+                        });
+                    });
+                    crate::notify::Notifier::connect(open).await.ok()
+                })
+                .await;
+            if let Some(n) = notifier {
+                let _ = n.show(&note).await;
+            }
+        });
+    });
+    desktop
+}
+
 /// The engine's updates, onto Qt's thread.
 fn sink_for(thread: Thread) -> Sink {
     Arc::new(move |u: Update| {
@@ -342,11 +393,11 @@ impl qobject::Trommi {
             }
             let offset = cxx_qt_lib::QDateTime::current_date_time().offset_from_utc() / 60;
             let draw_on = thread.clone();
-            let started = crate::shell::start(runtime(), crate::shell::config(offset), move |json| {
+            let started = crate::shell::start_with(runtime(), crate::shell::config(offset), move |json| {
                 let _ = draw_on.queue(move |mut o: Pin<&mut qobject::Trommi>| {
                     o.as_mut().set_view_json(QString::from(json.as_str()));
                 });
-            });
+            }, desktop_for(thread.clone()));
             match started {
                 Ok(handle) => *core_slot().lock().unwrap_or_else(|e| e.into_inner()) = Some(handle),
                 Err(why) => tell_error(&thread, format!("Could not open: {why}")),
@@ -601,6 +652,35 @@ impl qobject::Trommi {
         let _ = crate::store::private_dir(&crate::store::base_dir());
         let _ = std::fs::write(crate::store::base_dir().join("theme"), mode);
         self.as_mut().set_theme_mode(QString::from(mode));
+    }
+
+    /// The window's word for the app core (`shell::person_event`): a tap as an `Event::Action`, a page as an
+    /// `Event::Focus`. Only while the app core runs.
+    fn send_event(self: Pin<&mut Self>, json: &QString) {
+        match crate::shell::person_event(&json.to_string()) {
+            Ok(event) => {
+                if let Some(handle) = core_slot().lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                    handle.send(event);
+                }
+            }
+            Err(why) => eprintln!("[trommi] the window sent {why}"),
+        }
+    }
+
+    /// A file the person picked (the file dialog): read here, handed to the core as `Action::Attach` under the
+    /// window's own id for it.
+    fn attach_file(self: Pin<&mut Self>, url: &QString, local_id: &QString) {
+        let thread = self.qt_thread();
+        let (url, local_id) = (url.to_string(), local_id.to_string());
+        runtime().spawn_blocking(move || match crate::platform::read_picked(&url) {
+            Ok((name, media_type, bytes)) => {
+                let action = trommi_client_core::actions::Action::Attach { local_id, name, media_type, bytes: bytes.into() };
+                if let Some(handle) = core_slot().lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                    handle.send(trommi_client_core::app::Event::Action { action });
+                }
+            }
+            Err(why) => tell_error(&thread, format!("The file could not be read: {why}")),
+        });
     }
 
     fn shot_taken(self: Pin<&mut Self>) {

@@ -54,6 +54,25 @@ enum Pending {
     DeviceLoad,
     /// A cache entry deleted (a file the hub evicted): nothing waits for it.
     CacheDelete,
+    /// The stored room's hub, read at the start when `Config.hub` names none ([`ROOM_KEY`]).
+    RoomKey,
+    /// The stored room's hub written by a join with the code.
+    RoomKeyWrite,
+    /// The device state read for a join with the code ([`App::join_room`]).
+    JoinLoad,
+    /// I/O of an engine that was dropped (a join of the room that failed): its answer is only logged.
+    Dropped,
+}
+
+/// The app store's key that names the room of this slot and its hub: written by a join with the code before the
+/// device's first write, read at the start when `Config.hub` is empty.
+pub const ROOM_KEY: &str = "room";
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct RoomKey {
+    v: u32,
+    hub: String,
+    room: String,
 }
 
 pub struct App {
@@ -74,6 +93,14 @@ pub struct App {
     /// What the engine reported for the person (until the views show them: W4).
     alerts: Vec<engine::Alert>,
     sessions_not_joined: Option<Vec<(trommi_core::ids::GroupId, &'static str)>>,
+    /// How the last join of the room with the code stands; none before one.
+    room_join: Option<engine::room_join::RoomJoinStatus>,
+    /// A join of the room asked for, waiting for the device state it is made on.
+    room_join_wait: Option<(IoId, engine::room_join::RoomJoin)>,
+    /// The hub the stored room names ([`ROOM_KEY`]).
+    stored_hub: Option<String>,
+    /// The device state loaded, while the stored room's hub is read.
+    opening: Option<(u64, Vec<DeviceEntry>)>,
     /// The board model, fed from the engine's reports.
     board: engine::feed::Board,
     /// What this device alone chooses: the desk and the pages in view, the zone (`Event::Focus`, `Event::Zone`).
@@ -90,6 +117,8 @@ pub struct App {
     /// how often it was in a row.
     reopen_at: Option<u64>,
     reopen_tries: u32,
+    /// The room's cache: read before the engine starts, written behind the board (`cache::keeper`).
+    cache: Option<crate::cache::Keeper>,
 }
 
 impl Default for App {
@@ -112,6 +141,10 @@ impl App {
             timer: None,
             alerts: Vec::new(),
             sessions_not_joined: None,
+            room_join: None,
+            room_join_wait: None,
+            stored_hub: None,
+            opening: None,
             board: engine::feed::Board::default(),
             lens: Lens::default(),
             stale_views: false,
@@ -120,6 +153,7 @@ impl App {
             invite_requests: Vec::new(),
             reopen_at: None,
             reopen_tries: 0,
+            cache: None,
         }
     }
 
@@ -166,6 +200,68 @@ impl App {
         out
     }
 
+    /// Joins the room with the recovery code (`engine::room_join`), on a slot without a device in a room: the
+    /// device is made (or a join posted earlier goes on), the room read and checked, the join posted, and then the
+    /// session groups joined with the same keys ([`App::sessions_not_joined`]). How it stands: [`App::room_join`].
+    /// The keys stay in the core and are dropped when the sessions are through.
+    pub fn join_room(&mut self, now_ms: u64, join: engine::room_join::RoomJoin) -> Vec<Effect> {
+        use engine::room_join::{RoomJoinError, RoomJoinStatus, RoomJoinStep};
+        let mut out = Vec::new();
+        if self.config.is_none() {
+            out.push(log(LogLevel::Warn, "join_room: before start"));
+            return out;
+        }
+        let canonical = trommi_core::hub_auth::HubAddress::parse(&join.hub).is_ok_and(|a| a.as_str() == join.hub);
+        self.room_join = Some(if self.engine.is_some() {
+            RoomJoinStatus::Failed(RoomJoinError::RoomExists)
+        } else if !canonical {
+            RoomJoinStatus::Failed(RoomJoinError::Refused("bad-hub"))
+        } else {
+            // the room's hub first: a device that exists is always found with its hub
+            let key = RoomKey { v: 1, hub: join.hub.clone(), room: join.room.to_base64url() };
+            let id = self.io(Pending::RoomKeyWrite);
+            let value = serde_json::to_vec(&key).unwrap_or_default();
+            out.push(Effect::Store { id, op: StoreOp::Put { put: vec![Entry { key: ROOM_KEY.into(), value: value.into() }], delete: Vec::new() } });
+            let id = self.io(Pending::JoinLoad);
+            out.push(Effect::Store { id, op: StoreOp::DeviceLoad });
+            if let Some((old, _)) = self.room_join_wait.replace((id, join)) {
+                self.pending.insert(old, Pending::Dropped);
+            }
+            RoomJoinStatus::Step(RoomJoinStep::Reading)
+        });
+        self.after_engine(now_ms, &mut out);
+        self.render(&mut out);
+        out
+    }
+
+    /// How the last join of the room with the code stands; none before one.
+    pub fn room_join(&self) -> Option<engine::room_join::RoomJoinStatus> {
+        self.room_join
+    }
+
+    /// The device state for a join with the code is read: the engine is made on it.
+    fn join_loaded(&mut self, now_ms: u64, id: IoId, revision: u64, entries: Vec<DeviceEntry>, out: &mut Vec<Effect>) {
+        use engine::room_join::RoomJoinStatus;
+        let Some((_, join)) = self.room_join_wait.take_if(|(waiting, _)| *waiting == id) else { return };
+        let Some(config) = self.config.as_ref() else { return };
+        if self.engine.is_some() {
+            self.room_join = Some(RoomJoinStatus::Failed(engine::room_join::RoomJoinError::RoomExists));
+            return;
+        }
+        let client = format!("{}/{}", config.platform, config.version);
+        let entropy = self.entropy.take().unwrap_or_else(|| Box::new(trommi_core::crypto::SystemEntropy));
+        match Engine::join_room(&client, config.seed, revision, entries, join, entropy) {
+            Ok(engine) => {
+                self.board = engine::feed::Board::new(engine.device());
+                self.stored_hub = Some(engine.hub().to_string());
+                self.engine = Some(engine);
+                self.sessions_not_joined = None;
+                self.with_engine(now_ms, out, |engine, ctx| engine.start_room_join(ctx));
+            }
+            Err(error) => self.room_join = Some(RoomJoinStatus::Failed(error)),
+        }
+    }
+
     /// Once a sign-in's sessions are through: the ones this device is not in, each with the reason. None before.
     pub fn sessions_not_joined(&self) -> Option<&[(trommi_core::ids::GroupId, &'static str)]> {
         self.sessions_not_joined.as_deref()
@@ -209,7 +305,41 @@ impl App {
             }
             _ if self.config.is_none() => out.push(log(LogLevel::Warn, "an event before start")),
             Event::Store { id, result } => match self.pending.remove(&id) {
+                Some(Pending::JoinLoad) => match result {
+                    IoResult::Ok(StoreAnswer::Device { revision, entries }) => self.join_loaded(now_ms, id, revision, entries, &mut out),
+                    _ => {
+                        out.push(log(LogLevel::Error, "join: the device state was not read"));
+                        self.room_join_wait = None;
+                        self.room_join = Some(engine::room_join::RoomJoinStatus::Failed(engine::room_join::RoomJoinError::Device("storage")));
+                    }
+                },
+                Some(Pending::RoomKey) => {
+                    if let IoResult::Ok(StoreAnswer::Values { values }) = &result {
+                        let key: Option<RoomKey> = values.first().and_then(Option::as_ref).and_then(|v| serde_json::from_slice(&v.0).ok());
+                        self.stored_hub = key.filter(|k| k.v == 1).map(|k| k.hub);
+                    }
+                    if let Some((revision, entries)) = self.opening.take() {
+                        self.open(now_ms, revision, entries, &mut out);
+                    }
+                }
+                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) => {
+                    if let IoResult::Err(e) = &result {
+                        out.push(log(LogLevel::Warn, &format!("store: {:?}", e.kind)));
+                    }
+                }
                 Some(Pending::DeviceLoad) => match result {
+                    IoResult::Ok(StoreAnswer::Device { revision, entries })
+                        if revision != 0
+                            && !entries.is_empty()
+                            && self.engine.is_none()
+                            && self.stored_hub.is_none()
+                            && self.config.as_ref().is_some_and(|c| c.hub.is_empty()) =>
+                    {
+                        // (no hub named: the stored room names its hub, read before the device is opened)
+                        self.opening = Some((revision, entries));
+                        let id = self.io(Pending::RoomKey);
+                        out.push(Effect::Store { id, op: StoreOp::Get { keys: vec![ROOM_KEY.into()] } });
+                    }
                     IoResult::Ok(StoreAnswer::Device { revision, entries }) => {
                         self.open(now_ms, revision, entries, &mut out)
                     }
@@ -223,6 +353,7 @@ impl App {
                 },
                 // (a cache entry that stays is only a cache entry: the hub no longer serves the file)
                 Some(Pending::CacheDelete) => {}
+                None if self.cache.is_some() && self.cached(now_ms, id, &result, &mut out) => {}
                 None => {
                     let mine = self.with_engine(now_ms, &mut out, |engine, ctx| {
                         engine.on_store(ctx, id, &result)
@@ -306,10 +437,10 @@ impl App {
         let Some(config) = self.config.as_ref() else {
             return;
         };
-        let hub = if config.hub.is_empty() {
-            DEFAULT_HUB
-        } else {
+        let hub = if !config.hub.is_empty() {
             config.hub.as_str()
+        } else {
+            self.stored_hub.as_deref().unwrap_or(DEFAULT_HUB)
         };
         let client = format!("{}/{}", config.platform, config.version);
         let entropy = self
@@ -328,11 +459,22 @@ impl App {
                     self.board = engine::feed::Board::new(engine.device());
                 }
                 self.stale_views = true;
+                // the cache first: the board it holds is drawn before the engine asks the hub anything
+                let room = engine::feed::hex(engine.room().as_bytes());
+                let device = engine::feed::hex(engine.device().id().as_bytes());
+                self.cache = Some(crate::cache::Keeper::open(&room, &device, revision, &mut self.next_id, out));
                 self.engine = Some(engine);
                 self.next_view.phase = Phase::Opening;
-                self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
             }
             Err(OpenError::NoRoom) if !again => self.next_view.phase = Phase::SignedOut,
+            Err(OpenError::Interrupted) if !again => {
+                self.next_view.phase = Phase::SignedOut;
+                self.room_join = Some(engine::room_join::RoomJoinStatus::Failed(engine::room_join::RoomJoinError::Interrupted));
+            }
+            Err(OpenError::Interrupted) => {
+                out.push(log(LogLevel::Error, "device open: the stored state holds no room now"));
+                self.next_view.phase = Phase::Stopped;
+            }
             Err(OpenError::NoRoom) => {
                 out.push(log(LogLevel::Error, "device open: the stored state holds no room now"));
                 self.next_view.phase = Phase::Stopped;
@@ -379,6 +521,40 @@ impl App {
         out.push(Effect::Store { id, op: StoreOp::DeviceLoad });
     }
 
+    /// An answer to one of the cache's store ops; false when it was none. Once the start's read is through, the board
+    /// holds what it gave and the engine starts.
+    fn cached(&mut self, now_ms: u64, id: IoId, result: &IoResult<StoreAnswer>, out: &mut Vec<Effect>) -> bool {
+        let Some(cache) = self.cache.as_mut() else {
+            return false;
+        };
+        let read = match cache.on_store(id, result, &mut self.board.model, now_ms, &mut self.next_id, out) {
+            crate::cache::Took::No => return false,
+            crate::cache::Took::Mine => return true,
+            crate::cache::Took::Read(read) => read,
+        };
+        match read {
+            crate::cache::Read::Loaded { listing, .. } => {
+                // the Desk the hub listed last stands until it lists anew
+                if let Some(listing) = listing {
+                    self.board.model.set_desk_listing(Some((listing.at, listing.open)));
+                    self.board.model.set_desk_hold(false);
+                }
+                let change = self.board.finish(now_ms);
+                cache.note(&change);
+            }
+            crate::cache::Read::Dropped => {
+                if let Some(engine) = self.engine.as_ref() {
+                    self.board = engine::feed::Board::new(engine.device());
+                }
+                out.push(log(LogLevel::Warn, "the cache was not whole or not this device's: dropped"));
+            }
+            crate::cache::Read::Empty => {}
+        }
+        self.stale_views = true;
+        self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
+        true
+    }
+
     fn with_engine<T>(
         &mut self,
         now_ms: u64,
@@ -402,10 +578,18 @@ impl App {
         let mut fed = false;
         let mut evicted = Vec::new();
         let mut stopped = false;
+        let mut dropped = false;
+        let joining_room = engine.joining_room();
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
             match report {
+                Report::Desk { at, open, truncated: false } => {
+                    if let Some(cache) = self.cache.as_mut() {
+                        let open = open.iter().map(|(id, version)| (engine::feed::hex(id.as_bytes()), *version)).collect();
+                        cache.listed(crate::cache::Listing { at, open });
+                    }
+                }
                 Report::Connection(Connection::Live) => {
                     self.next_view.phase = Phase::Live;
                     self.reopen_tries = 0;
@@ -416,9 +600,28 @@ impl App {
                         self.next_view.phase = Phase::Opening
                     }
                 }
+                Report::Stopped(_) if joining_room => {
+                    // (a device that is joining the room is not opened again: the join is asked for again)
+                    dropped = true;
+                    self.room_join = Some(engine::room_join::RoomJoinStatus::Failed(engine::room_join::RoomJoinError::Device("storage")));
+                }
                 Report::Stopped(why) if why.reopens() => stopped = true,
-                Report::Stopped(_) => self.next_view.phase = Phase::Stopped,
+                Report::Stopped(_) => {
+                    self.next_view.phase = Phase::Stopped;
+                    if let Some(cache) = self.cache.as_mut() {
+                        cache.stop();
+                    }
+                }
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
+                Report::RoomJoin(status) => {
+                    use engine::room_join::RoomJoinStatus;
+                    match status {
+                        RoomJoinStatus::Failed(_) => dropped = true,
+                        RoomJoinStatus::Joined => self.next_view.phase = Phase::Opening,
+                        _ => {}
+                    }
+                    self.room_join = Some(status);
+                }
                 Report::InviteRequest { invite } => {
                     if !self.invite_requests.contains(&invite) {
                         if self.invite_requests.len() >= INVITE_REQUESTS_MAX {
@@ -446,12 +649,35 @@ impl App {
             self.pending.insert(id, Pending::CacheDelete);
             out.push(Effect::Store { id, op: StoreOp::Put { put: Vec::new(), delete } });
         }
+        let engine_wake = if dropped {
+            // a join of the room that failed: the engine goes (what it wrote last is the wipe, still stored)
+            for id in engine.forget() {
+                self.pending.insert(id, Pending::Dropped);
+            }
+            self.engine = None;
+            self.board = engine::feed::Board::default();
+            self.stale_views = true;
+            self.next_view.phase = Phase::SignedOut;
+            None
+        } else {
+            engine.next_wake()
+        };
         // (a view's moment by the clock, a link that falls asleep: the model's statuses are worked out at its clock,
         //  so the board is brought to now first)
         let view_due = self.view_wake.is_some_and(|at| now_ms >= at);
         if fed || view_due || (self.board.model.desk_wake != 0 && now_ms >= self.board.model.desk_wake) {
-            let _ = self.board.finish(now_ms);
+            let change = self.board.finish(now_ms);
+            if let Some(cache) = self.cache.as_mut() {
+                cache.note(&change);
+            }
             self.stale_views = true;
+        }
+        // (the cache's writes go behind every device write handed out so far: the shell holds them at its barrier)
+        let mut cache_wake = None;
+        if let Some(cache) = self.cache.as_mut() {
+            cache.saw(out);
+            cache.step(now_ms, &mut self.next_id, out);
+            cache_wake = cache.next_wake();
         }
         // The board's units: made again when the model, the lens or the clock moved (every unit whole; a unit that
         // did not change is not sent, `ViewModel::diff`).
@@ -460,12 +686,11 @@ impl App {
             self.lens.reading = self.board.model.reading;
             self.view_wake = crate::views::render(&self.board.model, &self.lens, now_ms, &mut self.next_view);
         }
-        let engine_wake = engine.next_wake();
         if stopped {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [engine_wake, model_wake, self.view_wake, self.reopen_at].into_iter().flatten().min();
+        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });

@@ -82,6 +82,75 @@
               "en": "Personal",
               "key": "desk.personal"
             },
+            "sessions": [],
+            "stopped": 0,
+            "unheard": 0,
+            "waiting": 0,
+            "working": 0
+          }
+        },
+        {
+          "part": "desk",
+          "view": {
+            "done": [],
+            "empty": {
+              "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
+              "key": "desk.empty.reading"
+            },
+            "hello": {
+              "en": "Catching up…",
+              "key": "desk.hello.catching_up"
+            },
+            "later": [],
+            "mode": "reading",
+            "off_your_mind": [],
+            "stack": [],
+            "waiting": 0
+          }
+        },
+        {
+          "part": "notes",
+          "view": {
+            "far": false,
+            "no_crown": {
+              "en": "Give a session the crown to send",
+              "key": "note.no_crown"
+            },
+            "notes": [],
+            "says": {
+              "en": "New note",
+              "key": "note.new"
+            },
+            "written": false
+          }
+        }
+      ]
+    },
+    {
+      "base": 2,
+      "parts": [
+        {
+          "part": "sidebar",
+          "view": {
+            "badge": 0,
+            "desk": "main",
+            "desks": [
+              {
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "desk.personal"
+                },
+                "selected": true,
+                "waiting": 0
+              }
+            ],
+            "knocking": 0,
+            "place": {
+              "en": "Personal",
+              "key": "desk.personal"
+            },
             "sessions": [
               {
                 "away": true,
@@ -169,22 +238,6 @@
           }
         },
         {
-          "part": "notes",
-          "view": {
-            "far": false,
-            "no_crown": {
-              "en": "Give a session the crown to send",
-              "key": "note.no_crown"
-            },
-            "notes": [],
-            "says": {
-              "en": "New note",
-              "key": "note.new"
-            },
-            "written": false
-          }
-        },
-        {
           "part": "settings",
           "view": {
             "account": null,
@@ -248,7 +301,7 @@
       ]
     },
     {
-      "base": 2,
+      "base": 3,
       "parts": [
         {
           "part": "sidebar",
@@ -445,7 +498,7 @@
       ]
     },
     {
-      "base": 3,
+      "base": 4,
       "parts": [
         {
           "part": "phase",
@@ -455,7 +508,7 @@
       ]
     },
     {
-      "base": 4,
+      "base": 5,
       "parts": [
         {
           "part": "sidebar",
@@ -676,7 +729,7 @@
       "written": false
     },
     "phase": "live",
-    "rev": 5,
+    "rev": 6,
     "settings": {
       "account": null,
       "agents": {

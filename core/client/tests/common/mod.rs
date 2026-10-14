@@ -149,6 +149,11 @@ pub fn invite(inviter: &mut Peer, joiner: &mut Peer, role: Role) -> u64 {
     Offer::decode(&opened.signed_offer.offer).expect("an offer").room_epoch
 }
 
+/// The keys of the room's recovery code (the same for every `World`).
+pub fn code_keys() -> RecoveryKeys {
+    RecoveryKeys::from_code(Secret::new([0xC0; 32])).expect("the keys of the code")
+}
+
 pub fn text(json: &str) -> SecretBytes {
     SecretBytes::new(json.as_bytes().to_vec())
 }
@@ -175,7 +180,8 @@ impl World {
         let (mut founder, _) = new_peer();
         let (mut me, me_store) = new_peer();
         let (mut agent, _) = new_peer();
-        let keys = RecoveryKeys::from_code(Secret::new([0xC0; 32])).expect("the keys of the code");
+        let keys = code_keys();
+        hub.recovery = Some(DeviceId::new(keys.public().signature_key));
         let room = GroupId::room(founder.found_room(&keys, now()).expect("the room is founded"));
         assert!(post_all(&mut hub, &mut founder).is_empty());
         // a second human device: the one the App runs
