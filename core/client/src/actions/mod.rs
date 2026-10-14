@@ -177,6 +177,12 @@ pub enum Action {
     RemoveDesk {
         desk_id: String,
     },
+    /// A step of a desk's deletion (`app::desks`): a desk's register written. Not the shell's to send.
+    #[serde(skip)]
+    DeskRegister {
+        key: String,
+        value: serde_json::Value,
+    },
     /// Every desk's place, in one write: the desks in this order.
     OrderDesks {
         desk_ids: Vec<String>,

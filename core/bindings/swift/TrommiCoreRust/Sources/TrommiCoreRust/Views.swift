@@ -3731,10 +3731,14 @@ public enum CoreView {
     /// The room's id (hex) and its hub, for the page that proves the room.
     public var room: String?
     public var hub: String?
+    /// What each desk holds, for the confirm of its delete (its board counted once read on this device).
+    public var deskCounts: [DeskCountsView]
+    /// The desks being deleted, with how far.
+    public var deleting: [DeskDeleteView]
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     public var login: LoginView?
 
-    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, login: LoginView? = nil) {
+    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, deskCounts: [DeskCountsView] = [], deleting: [DeskDeleteView] = [], login: LoginView? = nil) {
       self.account = account
       self.devices = devices
       self.removed = removed
@@ -3748,6 +3752,8 @@ public enum CoreView {
       self.keyEpoch = keyEpoch
       self.room = room
       self.hub = hub
+      self.deskCounts = deskCounts
+      self.deleting = deleting
       self.login = login
     }
 
@@ -3765,6 +3771,8 @@ public enum CoreView {
       case keyEpoch = "key_epoch"
       case room = "room"
       case hub = "hub"
+      case deskCounts = "desk_counts"
+      case deleting = "deleting"
       case login = "login"
     }
 
@@ -3783,6 +3791,8 @@ public enum CoreView {
       self.keyEpoch = try c.decodeIfPresent(UInt64.self, forKey: .keyEpoch) ?? 0
       self.room = try c.decodeIfPresent(String.self, forKey: .room)
       self.hub = try c.decodeIfPresent(String.self, forKey: .hub)
+      self.deskCounts = try c.decodeIfPresent([DeskCountsView].self, forKey: .deskCounts) ?? []
+      self.deleting = try c.decodeIfPresent([DeskDeleteView].self, forKey: .deleting) ?? []
       self.login = try c.decodeIfPresent(LoginView.self, forKey: .login)
     }
 
@@ -3801,7 +3811,127 @@ public enum CoreView {
       try c.encode(keyEpoch, forKey: .keyEpoch)
       try c.encodeIfPresent(room, forKey: .room)
       try c.encodeIfPresent(hub, forKey: .hub)
+      if !deskCounts.isEmpty { try c.encode(deskCounts, forKey: .deskCounts) }
+      if !deleting.isEmpty { try c.encode(deleting, forKey: .deleting) }
       try c.encodeIfPresent(login, forKey: .login)
+    }
+  }
+
+  /// What a desk holds: what its delete takes away.
+  public struct DeskCountsView: Codable, Hashable, Sendable {
+    public var deskId: String
+    public var sessions: UInt64
+    public var helpers: UInt64
+    public var archived: UInt64
+    public var openCards: UInt64
+    public var doneCards: UInt64
+    /// Agent devices that leave the room with it.
+    public var agents: UInt64
+    /// Shapes on its board, pictures and notes among them; none while the board is not read.
+    public var board: UInt64?
+    public var pictures: UInt64?
+    public var notes: UInt64?
+    public var files: UInt64
+    public var artifacts: UInt64
+    public var goals: UInt64
+
+    public init(deskId: String = "", sessions: UInt64 = 0, helpers: UInt64 = 0, archived: UInt64 = 0, openCards: UInt64 = 0, doneCards: UInt64 = 0, agents: UInt64 = 0, board: UInt64? = nil, pictures: UInt64? = nil, notes: UInt64? = nil, files: UInt64 = 0, artifacts: UInt64 = 0, goals: UInt64 = 0) {
+      self.deskId = deskId
+      self.sessions = sessions
+      self.helpers = helpers
+      self.archived = archived
+      self.openCards = openCards
+      self.doneCards = doneCards
+      self.agents = agents
+      self.board = board
+      self.pictures = pictures
+      self.notes = notes
+      self.files = files
+      self.artifacts = artifacts
+      self.goals = goals
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case deskId = "desk_id"
+      case sessions = "sessions"
+      case helpers = "helpers"
+      case archived = "archived"
+      case openCards = "open_cards"
+      case doneCards = "done_cards"
+      case agents = "agents"
+      case board = "board"
+      case pictures = "pictures"
+      case notes = "notes"
+      case files = "files"
+      case artifacts = "artifacts"
+      case goals = "goals"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.deskId = try c.decode(String.self, forKey: .deskId)
+      self.sessions = try c.decode(UInt64.self, forKey: .sessions)
+      self.helpers = try c.decode(UInt64.self, forKey: .helpers)
+      self.archived = try c.decode(UInt64.self, forKey: .archived)
+      self.openCards = try c.decode(UInt64.self, forKey: .openCards)
+      self.doneCards = try c.decode(UInt64.self, forKey: .doneCards)
+      self.agents = try c.decode(UInt64.self, forKey: .agents)
+      self.board = try c.decodeIfPresent(UInt64.self, forKey: .board)
+      self.pictures = try c.decodeIfPresent(UInt64.self, forKey: .pictures)
+      self.notes = try c.decodeIfPresent(UInt64.self, forKey: .notes)
+      self.files = try c.decode(UInt64.self, forKey: .files)
+      self.artifacts = try c.decode(UInt64.self, forKey: .artifacts)
+      self.goals = try c.decode(UInt64.self, forKey: .goals)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(deskId, forKey: .deskId)
+      try c.encode(sessions, forKey: .sessions)
+      try c.encode(helpers, forKey: .helpers)
+      try c.encode(archived, forKey: .archived)
+      try c.encode(openCards, forKey: .openCards)
+      try c.encode(doneCards, forKey: .doneCards)
+      try c.encode(agents, forKey: .agents)
+      try c.encodeIfPresent(board, forKey: .board)
+      try c.encodeIfPresent(pictures, forKey: .pictures)
+      try c.encodeIfPresent(notes, forKey: .notes)
+      try c.encode(files, forKey: .files)
+      try c.encode(artifacts, forKey: .artifacts)
+      try c.encode(goals, forKey: .goals)
+    }
+  }
+
+  /// A desk's delete in progress: units done of the total.
+  public struct DeskDeleteView: Codable, Hashable, Sendable {
+    public var deskId: String
+    public var done: UInt64
+    public var total: UInt64
+
+    public init(deskId: String = "", done: UInt64 = 0, total: UInt64 = 0) {
+      self.deskId = deskId
+      self.done = done
+      self.total = total
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case deskId = "desk_id"
+      case done = "done"
+      case total = "total"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.deskId = try c.decode(String.self, forKey: .deskId)
+      self.done = try c.decode(UInt64.self, forKey: .done)
+      self.total = try c.decode(UInt64.self, forKey: .total)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(deskId, forKey: .deskId)
+      try c.encode(done, forKey: .done)
+      try c.encode(total, forKey: .total)
     }
   }
 

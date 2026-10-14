@@ -292,8 +292,18 @@ fn desks_are_made_renamed_given_goals_and_the_last_one_stays() {
     let s = human(&sim, &format!("session/{session}")).unwrap().0;
     assert_eq!((s["desk"].clone(), s["name"].clone()), (json!(work.clone()), json!("Builder")));
     world.stream(&mut sim);
+    // the delete runs in steps (mark, board read, empty snapshot, register gone), each once the last shows
     act(&mut sim, Action::RemoveDesk { desk_id: "main".into() });
-    assert_eq!(desks(&sim).len(), 1);
+    assert!(!sim.view.settings.deleting.is_empty() || desks(&sim).len() == 1);
+    for _ in 0..40 {
+        if desks(&sim).len() == 1 {
+            break;
+        }
+        world.stream(&mut sim);
+        sim.advance(5_000);
+    }
+    assert_eq!(desks(&sim).len(), 1, "{:?} {:?}", sim.view.settings.deleting, sim.view.toasts);
+    assert!(sim.view.settings.deleting.is_empty());
     act(&mut sim, Action::RemoveDesk { desk_id: work.clone() });
     assert_eq!(sim.view.toasts.last().map(|t| t.text.key.as_str()), Some("action.last_desk"));
     assert_eq!(desks(&sim).len(), 1);

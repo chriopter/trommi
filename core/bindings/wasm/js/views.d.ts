@@ -1062,8 +1062,38 @@ export interface SettingsView {
   /** The room's id (hex) and its hub, for the page that proves the room. */
   room?: string
   hub?: string
+  /** What each desk holds, for the confirm of its delete (its board counted once read on this device). */
+  desk_counts?: DeskCountsView[]
+  /** The desks being deleted, with how far. */
+  deleting?: DeskDeleteView[]
   /** The account's ways in, once read (`AccountAction::ReadAccount`). */
   login?: LoginView
+}
+
+/** What a desk holds: what its delete takes away. */
+export interface DeskCountsView {
+  desk_id: string
+  sessions: number
+  helpers: number
+  archived: number
+  open_cards: number
+  done_cards: number
+  /** Agent devices that leave the room with it. */
+  agents: number
+  /** Shapes on its board, pictures and notes among them; none while the board is not read. */
+  board?: number
+  pictures?: number
+  notes?: number
+  files: number
+  artifacts: number
+  goals: number
+}
+
+/** A desk's delete in progress: units done of the total. */
+export interface DeskDeleteView {
+  desk_id: string
+  done: number
+  total: number
 }
 
 /** The account's ways in, for the page Account: what can be changed and how it is proved. */

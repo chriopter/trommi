@@ -1503,9 +1503,46 @@ pub struct SettingsView {
     pub room: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hub: Option<String>,
+    /// What each desk holds, for the confirm of its delete (its board counted once read on this device).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub desk_counts: Vec<DeskCountsView>,
+    /// The desks being deleted, with how far.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleting: Vec<DeskDeleteView>,
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login: Option<LoginView>,
+}
+
+/// What a desk holds: what its delete takes away.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeskCountsView {
+    pub desk_id: String,
+    pub sessions: u64,
+    pub helpers: u64,
+    pub archived: u64,
+    pub open_cards: u64,
+    pub done_cards: u64,
+    /// Agent devices that leave the room with it.
+    pub agents: u64,
+    /// Shapes on its board, pictures and notes among them; none while the board is not read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pictures: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<u64>,
+    pub files: u64,
+    pub artifacts: u64,
+    pub goals: u64,
+}
+
+/// A desk's delete in progress: units done of the total.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeskDeleteView {
+    pub desk_id: String,
+    pub done: u64,
+    pub total: u64,
 }
 
 /// The account's ways in, for the page Account: what can be changed and how it is proved.

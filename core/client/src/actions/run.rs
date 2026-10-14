@@ -242,16 +242,7 @@ impl Doing<'_> {
                 desk.insert("name".into(), json!(desk_name(name)));
                 self.registers(action, &[(format!("desk/{desk_id}"), Value::Object(desk))])
             }
-            Action::RemoveDesk { desk_id } => {
-                let live = self.desks();
-                if !live.contains(desk_id) {
-                    return Err(not_done("action.no_desk", "That desk is no longer there."));
-                }
-                if live.len() <= 1 {
-                    return Err(not_done("action.last_desk", "The last desk stays."));
-                }
-                self.registers(action, &[(format!("desk/{desk_id}"), Value::Null)])
-            }
+            Action::DeskRegister { key, value } if key.starts_with("desk/") => self.registers(action, &[(key.clone(), value.clone())]),
             // a field of the desk's register like its name; with no desk yet the first one is made for them
             Action::SetGoal { desk_id, text } => {
                 let live = self.desks();

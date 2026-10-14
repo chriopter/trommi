@@ -22,6 +22,8 @@ pub(super) enum Step {
     Change(super::account_change::Ask, Expect),
     /// Nothing waits for the answer.
     Quiet,
+    /// A file of a desk being deleted (`app::desks`).
+    DeskFile { desk: String, file: String, expect: Expect },
 }
 
 #[derive(Default)]
@@ -164,6 +166,14 @@ impl App {
         };
         match step {
             Step::SignOut | Step::Quiet => {}
+            Step::DeskFile { desk, file, expect } => {
+                let gone = match answer(&expect) {
+                    Ok(_) => true,
+                    Err(Failure::Refused { code: Some(code), .. }) => code == "not-found",
+                    Err(_) => false,
+                };
+                self.desk_file_gone(&desk, file, gone);
+            }
             Step::Change(ask, expect) => {
                 let answer = answer(&expect);
                 self.change_answered(now_ms, ask, answer, out);

@@ -25,6 +25,7 @@ pub mod io;
 mod invites;
 mod account_steps;
 mod account_change;
+mod desks;
 mod selfjoin;
 pub mod script;
 pub mod sim;
@@ -135,6 +136,7 @@ pub struct App {
     /// The account's steps in flight (`app::account_steps`).
     steps: account_steps::Steps,
     changes: account_change::Changes,
+    desks: desks::DeskDeletes,
     /// A recovery (`AccountAction::Recover`) waiting for its login: the new kit's words and the sealer of the
     /// account's new copies; then the words, shown once the room is recovered.
     recover_with: Option<(Vec<String>, engine::recover::Copies)>,
@@ -206,6 +208,7 @@ impl App {
             invites: invites::Invites::default(),
             steps: account_steps::Steps::default(),
             changes: account_change::Changes::default(),
+            desks: desks::DeskDeletes::default(),
             recover_with: None,
             recovered_kit: None,
             selfjoin: selfjoin::SelfJoin::default(),
@@ -902,6 +905,9 @@ impl App {
         if let Action::DeleteSession { session_id } = &action {
             return self.delete_session(now_ms, session_id, out);
         }
+        if let Action::RemoveDesk { desk_id } = &action {
+            return self.delete_desk(now_ms, desk_id, out);
+        }
         self.run_action(now_ms, action, out);
     }
 
@@ -1529,6 +1535,10 @@ impl App {
             self.doing(now_ms, out, |doing| doing.sync_goals());
             self.goals_check = false;
         }
+        // a desk's delete: its next step once the last one shows
+        if fed || !self.desks.running.is_empty() {
+            self.drive_desk_deletes(now_ms, out);
+        }
         // The board's units: made again when the model, the lens or the clock moved (every unit whole; a unit that
         // did not change is not sent, `ViewModel::diff`).
         if self.stale_views || view_due {
@@ -1541,6 +1551,8 @@ impl App {
                 self.next_view.settings.room = Some(engine::feed::hex(engine.room().as_bytes()));
                 self.next_view.settings.hub = Some(engine.hub().to_string());
             }
+            self.next_view.settings.desk_counts = self.desk_counts();
+            self.show_desk_deletes();
             self.view_wake = wake;
             self.files.shown(shown, &mut self.next_view.files);
         }
@@ -1548,7 +1560,7 @@ impl App {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms)].into_iter().flatten().min();
+        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.desks.wake(now_ms)].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });

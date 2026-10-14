@@ -194,3 +194,42 @@ fn an_item_the_hub_refuses_is_taken_back() {
     sim.send(Event::Action { action: Action::StrokePiece { board_id: BOARD.into(), piece: json!({ "stroke": "zz" }) } });
     assert!(shapes(&sim).is_empty());
 }
+
+#[test]
+fn a_desk_is_deleted_with_its_sessions_cards_and_board() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    world.agent_asks("Ship it?");
+    world.stream(&mut sim);
+    let card = sim.view.desk.rows[0].id.clone();
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    sim.send(Event::Action { action: Action::AddDesk { name: "Work".into() } });
+    world.stream(&mut sim);
+    let human = |sim: &Sim, k: &str| sim.app.board().model.human.get(k).map(|r| r.value.clone()).unwrap_or(Value::Null);
+    let work = sim.app.board().model.human.keys().filter_map(|k| k.strip_prefix("desk/")).find(|d| *d != "main").unwrap().to_string();
+    sim.send(Event::Action { action: Action::MoveSession { session_id: session.clone(), desk_id: work.clone() } });
+    world.stream(&mut sim);
+    // a stroke on the desk's board
+    let board = scribble::desk_board(&work);
+    sim.send(Event::Focus { focus: Focus { board: Some(board.clone()), ..Default::default() } });
+    sim.send(Event::Action { action: Action::BoardItem { board_id: board.clone(), local_id: "s1".into(), content: json!({ "content_type": "strokes", "strokes": [stroke(&[(0, 0), (4, 4)])] }) } });
+    world.stream(&mut sim);
+    sim.send(Event::Focus { focus: Focus::default() });
+    let counts = sim.view.settings.desk_counts.iter().find(|c| c.desk_id == work).cloned().expect("the desk counted");
+    assert_eq!((counts.sessions, counts.open_cards), (1, 1));
+
+    sim.send(Event::Action { action: Action::RemoveDesk { desk_id: work.clone() } });
+    for _ in 0..60 {
+        if human(&sim, &format!("desk/{work}")).is_null() {
+            break;
+        }
+        world.stream(&mut sim);
+        sim.advance(5_000);
+    }
+    assert!(human(&sim, &format!("desk/{work}")).is_null(), "{:?} {:?}", sim.view.settings.deleting, sim.view.toasts);
+    assert_eq!(sim.app.board().model.cards[&card].object_state, "closed", "its open card is shredded");
+    assert_eq!(human(&sim, &format!("session/{session}"))["archived"], json!(true));
+    assert_eq!(sim.app.board_known(&board).map(|b| b.shapes.len()), Some(0), "its board is erased");
+    assert!(sim.view.settings.deleting.is_empty());
+}
