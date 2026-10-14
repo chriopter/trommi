@@ -1,8 +1,9 @@
 // account-name.ts: how an account is named outside the hub, in public texts. Used on the page (the screens'
 // own checks, the QR code on the Emergency Kit) and in the core worker (account.ts) alike; no key, no core.
 //
-// - An e-mail address as the account keeps it: the core's rule (core/protocol/src/account.rs normaliseEmail), written out
-//   again for the page, which never loads the core; tests/web/account runs both over the same cases.
+// - An e-mail address as the account keeps it: the hub's and the core's one rule (core/wire/src/account.rs
+//   normalise_email), written out again for the page, which never loads the core; tests/web/account runs both over
+//   the same cases.
 // - The one field "E-mail or account ID": told apart by its form alone, exactly as the hub tells it apart
 //   (hub/src/accounts.rs `name_of`, `parse_id`; spec/hub-api.md "One field names an account").
 // - The Emergency Kit's address, `https://<app>/#k1.<hub>.<id>`: what the kit's QR code holds, so that the recovery
@@ -20,8 +21,8 @@ const refusal = (code: string, message: string): Error => Object.assign(new Erro
  *   2. Every character left is printable ASCII, U+0021 to U+007E. Anything else is refused, never mapped: an address
  *      with other characters is written in its ASCII form (a domain as punycode).
  *   3. A to Z become a to z.
- *   4. At most 254 characters; exactly one "@"; 1 to 64 characters before it; after it a "." with 1 to 190 characters
- *      before and 2 to 63 after.
+ *   4. At most 254 characters; exactly one "@"; 1 to 64 characters before it; after it the last "." with 1 to 190
+ *      characters before and 2 to 63 after.
  */
 export function normaliseEmail(email: unknown): string {
   const bad = (): Error => refusal('bad-email', 'not an email address')
@@ -40,10 +41,9 @@ export function normaliseEmail(email: unknown): string {
   }
   if (at < 1 || at > 64) throw bad()
   const domain = e.slice(at + 1)
-  for (let dot = domain.indexOf('.'); dot >= 0; dot = domain.indexOf('.', dot + 1)) {
-    const after = domain.length - dot - 1
-    if (dot >= 1 && dot <= 190 && after >= 2 && after <= 63) return e
-  }
+  const dot = domain.lastIndexOf('.')
+  const after = domain.length - dot - 1
+  if (dot >= 1 && dot <= 190 && after >= 2 && after <= 63) return e
   throw bad()
 }
 

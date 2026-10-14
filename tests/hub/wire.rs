@@ -314,3 +314,65 @@ fn the_constants_both_sides_take_from_core_wire_are_the_protocol_cores() {
     assert!(trommi_hub::accounts::kdf_record(&serde_json::json!({ "kdf": record })).is_ok());
     assert_eq!(trommi_core::account::SEALED_COPY_LEN, SEALED_COPY_LEN);
 }
+
+#[test]
+fn the_hub_and_the_app_core_check_an_e_mail_address_with_the_one_rule() {
+    let hub = |text: &str| trommi_hub::accounts::normalise_email(text).map_err(|e| e.code);
+    let core = |text: &str| trommi_core::account::normalise_email(text).map_err(|e| e.code());
+    // the case that drifted: the first dot fits, the last one does not
+    assert_eq!(hub("a@b.example.c"), Err("bad-email"));
+    assert_eq!(core("a@b.example.c"), Err("bad-email"));
+    for ordinary in [
+        "owner@example.com",
+        "  Ada.Lovelace+Notes@Sub.Example.ORG\n",
+        "user@xn--mller-kva.example.org",
+    ] {
+        let kept = ordinary.trim().to_ascii_lowercase();
+        assert_eq!(hub(ordinary).as_deref(), Ok(kept.as_str()), "{ordinary:?}");
+        assert_eq!(core(ordinary).as_deref(), Ok(kept.as_str()), "{ordinary:?}");
+    }
+    // the vectors, then made-up addresses near the rule's edges: both sides say the same
+    let vectors: Value =
+        serde_json::from_str(include_str!("../../spec/account-vectors.json")).unwrap();
+    let mut texts: Vec<String> = vectors["email"]["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["input"].as_str().unwrap().to_string())
+        .collect();
+    let alphabet = ['a', 'B', '.', '.', '@', ' ', '-', 'é'];
+    let mut seed: u32 = 20261014;
+    let mut next = |n: usize| {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        seed as usize % n
+    };
+    for i in 0..5_000 {
+        let text: String = if i % 2 == 0 {
+            format!(
+                "{}@{}.{}",
+                "a".repeat(next(70)),
+                "b".repeat(next(200)),
+                "c".repeat(next(70))
+            )
+        } else {
+            (0..next(20))
+                .map(|_| alphabet[next(alphabet.len())])
+                .collect()
+        };
+        texts.push(text);
+    }
+    let (mut kept, mut refused) = (0, 0);
+    for text in &texts {
+        let said = hub(text);
+        assert_eq!(core(text), said, "{text:?}");
+        if said.is_ok() {
+            kept += 1
+        } else {
+            refused += 1
+        }
+    }
+    assert!(
+        kept > 100 && refused > 100,
+        "{kept} kept, {refused} refused"
+    );
+}
