@@ -6,7 +6,7 @@
   "content_range": null,
   "name": "account-put-email-again",
   "request": {
-    "body": "{\"email\":\"ada-8cd117d6fa34@example.org\",\"kit\":{\"auth_key\":\"MqZDWAAYXkH4O9SFcV3cMqRzJBYfOjQQYO5K1nR0Dwg\",\"sealed_copy\":\"AgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBA\"},\"proof\":{\"kit\":{\"auth_key\":\"MqZDWAAYXkH4O9SFcV3cMqRzJBYfOjQQYO5K1nR0Dwg\"}},\"revision\":2}",
+    "body": "{\"email\":\"ada-3ba34577a2ef@example.org\",\"kit\":{\"auth_key\":\"xICQTxJXHrzn3p7Ym_F2fv-exH798CKfu4_Set8fuGc\",\"sealed_copy\":\"AgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBA\"},\"proof\":{\"kit\":{\"auth_key\":\"xICQTxJXHrzn3p7Ym_F2fv-exH798CKfu4_Set8fuGc\"}},\"revision\":2}",
     "method": "PUT",
     "path": "/v1/account/email"
   },

@@ -1,7 +1,7 @@
 {
   "answer": "{\"id\":2}",
   "asked": {
-    "group": "bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS3k-KibKGh-g9Goc9MM0lGw",
+    "group": "BDYV2sUVj1S4v5jiiBYOmw7kBi4Pt8p2Oud5NBl74fT2NXv_18jwFF3IA8a_uCNu",
     "n": 3,
     "route": "reject"
   },
@@ -10,7 +10,7 @@
   "request": {
     "body": "{\"n\":3}",
     "method": "POST",
-    "path": "/v1/groups/bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS3k-KibKGh-g9Goc9MM0lGw/reject"
+    "path": "/v1/groups/BDYV2sUVj1S4v5jiiBYOmw7kBi4Pt8p2Oud5NBl74fT2NXv_18jwFF3IA8a_uCNu/reject"
   },
   "status": 200
 }

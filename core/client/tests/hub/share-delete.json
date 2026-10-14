@@ -2,14 +2,14 @@
   "answer": "{\"deleted\":true}",
   "asked": {
     "route": "delete_share",
-    "share": "3322OBQ_wWxgBN670FMivg"
+    "share": "eCr0r0RvJnJHYSW8wWLh-g"
   },
   "content_range": null,
   "name": "share-delete",
   "request": {
     "body": null,
     "method": "DELETE",
-    "path": "/v1/shares/3322OBQ_wWxgBN670FMivg"
+    "path": "/v1/shares/eCr0r0RvJnJHYSW8wWLh-g"
   },
   "status": 200
 }

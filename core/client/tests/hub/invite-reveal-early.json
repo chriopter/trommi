@@ -1,7 +1,7 @@
 {
   "answer": "{\"error\":\"not-found\",\"message\":\"not revealed yet\"}",
   "asked": {
-    "invite": "5XADjlVFxB-DDOVQOPfvmg",
+    "invite": "Gm82QkjnPJvgxxN6kDSbzw",
     "route": "get_reveal"
   },
   "content_range": null,
@@ -9,7 +9,7 @@
   "request": {
     "body": null,
     "method": "GET",
-    "path": "/v1/invites/5XADjlVFxB-DDOVQOPfvmg/reveal"
+    "path": "/v1/invites/Gm82QkjnPJvgxxN6kDSbzw/reveal"
   },
   "status": 404
 }

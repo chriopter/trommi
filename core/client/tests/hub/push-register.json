@@ -6,7 +6,7 @@
   "content_range": null,
   "name": "push-register",
   "request": {
-    "body": "{\"level\":\"knocking\",\"web_push\":{\"endpoint\":\"http://127.0.0.1:9/push/1\",\"keys\":{\"auth\":\"AQEBAQEBAQEBAQEBAQEBAQ\",\"p256dh\":\"BOuK8IMYutvcFjME7PhinNUOi9TuqBkkU6sPdZBMFNpjzBmmwTHcsGMXYsa01G731B9GpAQ9QAStMWCeqAIukzw\"}}}",
+    "body": "{\"level\":\"knocking\",\"web_push\":{\"endpoint\":\"http://127.0.0.1:9/push/1\",\"keys\":{\"auth\":\"AQEBAQEBAQEBAQEBAQEBAQ\",\"p256dh\":\"BN7X8xpp4BZNRg1kqtwS-vfC0obZv1V4KJZoV2BWgRuhVNCeOpGXK8XRCp4fnZVxGs8nbYrrnbHWZu4itvX9860\"}}}",
     "method": "POST",
     "path": "/v1/push"
   },

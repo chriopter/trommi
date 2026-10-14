@@ -450,6 +450,14 @@ fn signing_in_and_joining_through_the_codec() {
     let (session, group) = w.found_main(&mut [], Some(&mut agent));
     let (helper, founded, _) = w.found_helper(&mut agent, &session, &[w.ada.id()], &[]);
     founded.ok();
+    // (32 more, for a post of 32 joins at once)
+    let many_helpers: Vec<Vec<u8>> = (0..32)
+        .map(|_| {
+            let (group, founded, _) = w.found_helper(&mut agent, &session, &[w.ada.id()], &[]);
+            founded.ok();
+            group
+        })
+        .collect();
     let mut other = w.enrol_agent();
     let (_, group2) = w.found_main(&mut [], Some(&mut other));
     for text in ["one", "two", "three", "four"] {
@@ -497,9 +505,9 @@ fn signing_in_and_joining_through_the_codec() {
     dana.token = Some(token);
     let (mut after, mut pages, mut rows) = (0, 0, Vec::new());
     loop {
-        let asked = json!({ "route": "room_groups", "room": b64(&w.room), "after": after, "limit": 2 });
+        let asked = json!({ "route": "room_groups", "room": b64(&w.room), "after": after, "limit": 20 });
         let name = format!("room-groups-{pages}");
-        let Ok(Answer::RoomGroups { items, more, after: next }) = rec.ask(&name, &Route::RoomGroups { room: &room, after, limit: 2 }, asked) else {
+        let Ok(Answer::RoomGroups { items, more, after: next }) = rec.ask(&name, &Route::RoomGroups { room: &room, after, limit: 20 }, asked) else {
             panic!("{name} is read")
         };
         rows.extend(items);
@@ -508,14 +516,16 @@ fn signing_in_and_joining_through_the_codec() {
             break;
         }
     }
-    assert_eq!(rows.len(), 4);
+    assert_eq!((rows.len(), pages), (36, 2));
     assert_eq!(rows[0].kind, GroupRowKind::Room);
     assert_eq!(rows[0].leaves.len(), 2, "the founder and the device that joined");
     let mains: Vec<_> = rows.iter().filter(|r| r.kind == GroupRowKind::Main).collect();
     assert!(mains.len() == 2 && mains.iter().all(|r| r.live && r.parent.is_none()));
     // the helper session names the session it was opened under
     let helpers: Vec<_> = rows.iter().filter(|r| r.kind == GroupRowKind::Helper).collect();
-    assert!(matches!(&helpers[..], [h] if h.group == group_id(&helper) && h.parent.is_some_and(|p| p.as_bytes() == &session)), "{helpers:?}");
+    assert_eq!(helpers.len(), 33);
+    assert!(helpers.iter().all(|h| h.parent.is_some_and(|p| p.as_bytes() == &session)), "{helpers:?}");
+    assert!(helpers.iter().any(|h| h.group == group_id(&helper)));
 
     let nowhere: [u8; 48] = [&w.room[..], &random::<16>()[..]].concat().try_into().unwrap();
     let sessions = [group_id(&group), group_id(&group2), group_id(&nowhere)];
@@ -558,6 +568,26 @@ fn signing_in_and_joining_through_the_codec() {
         panic!("a refusal in its place")
     };
     assert!(matches!(&answers[..], [Err(Failure::Refused { code: Some(_), .. })]), "{answers:?}");
+
+    // ---- 32 joins in one post: the helper sessions, read in one request
+    let helpers: Vec<GroupId> = many_helpers.iter().map(|g| group_id(g)).collect();
+    let Ok(Answer::GroupsRead(read)) = rec.ask("", &Route::GroupsRead { groups: &helpers }, json!({})) else {
+        panic!("32 helper sessions are read in one request")
+    };
+    let now = dana.room_now();
+    let mut joins = Vec::new();
+    for (bytes, one) in many_helpers.iter().zip(&read) {
+        let one = one.as_ref().expect("a helper session the new device may read");
+        let out = dana.external_join(&one.info, now);
+        let auth = recovery_auth(&w.recovery.sign, &out, &one.info, now, &dana.id());
+        let key = dana.sealed_key(bytes, out.epoch + 1, &out.group_info, now.0, &w.recovery.hpke_public, true);
+        joins.push(entry(OutboxKind::ExternalCommit, Some(bytes), out.epoch, vec![out.commit, out.group_info, key, auth]));
+    }
+    let Ok(Answer::Joins(answers)) = rec.ask("joins-32", &Route::Joins { entries: &joins }, asked_joins(&joins)) else {
+        panic!("32 joins are answered in their places")
+    };
+    assert_eq!(answers.len(), 32);
+    assert!(answers.iter().all(|a| matches!(a, Ok(a) if a.epoch == Some(2))), "{answers:?}");
 
     // ---- the log with a message, a sender's chain, an object's envelopes
     let session_group = group_id(&group);

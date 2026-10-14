@@ -2,7 +2,7 @@
   "answer": "{\"error\":\"gap\",\"message\":\"the chain misses envelopes before this one\",\"seq\":1}",
   "asked": {
     "epoch": 1,
-    "group": "TigCuFvRJeuJEJP1514VB88fBz16rPmxB29byqDTIgdSQ3FedA45gXcz8oeWQcZ5",
+    "group": "H2RIM6uy5NKg2FWB8mcRWCNhnXeXdTDckh7NuL-QhrxFwGUmGPheWINLA0v_IIOi",
     "kind": "Envelope",
     "parts": 1,
     "route": "outbox"
@@ -10,7 +10,7 @@
   "content_range": null,
   "name": "outbox-envelope-gap",
   "request": {
-    "body": "{\"envelope\":\"AQIBADBOKAK4W9El64kQk_XnXhUHzx8HPXqs-bEHb1vKoNMiB1JDcV50DjmBdzPyh5ZBxnkAAAAAAAAAARK1jCFLTeEFNMlXtFbcBDeQZhxA7cWe1UKutbgTqU14AAAAAAAAAANhIv1jSkPeNS1nVQzP1Xs97dC7ZPRjpB8wc7Is-MqgGygnrfo6bXLJ0f6y5wKpN7bq5FmbRx2WZD9umz4M4LsYAAABoTXhNp0BAlJDcV50DjmBdzPyh5ZBxnkA7fhusAKOac4CopdhQRBosPQrxjLDl7mAyi7BP1XM-k6O_E2i1QKFsXqedihbllhSfgoRZc1deX0q5IUcee23rHcrpmJrx171iHUn9APqUaM0eoar2GN1WqD4Hr6XLP8JkX-PjCDALdXY69vC7vgEQLFB87H1T2_gy-BhmFNY2-fuDmf1HGTkMiNwOLiJAZplgfOmD7PUmuHiJbtTKD6sYpFO8JIeupIBek_SO7CCEqn2JKg32Ht3cn9pZ4rQ56FSjvJYvPrnwcj4xsA-HJlXk8AXh4BfxwF0FOQE5KYsoqlYyo0mOEEek6SSaUcG9gPqJDjYG-5FyBREEyKq_7NMLbl4W62MEM8F9P5kVbWs7gj0iXKhrs4x9u-_g3zeLkBASIV6I5OS3BtM5ujmLQwJeS8fAJXx9k_ctUQLu7UJ02XW6pxvg2IV_jqMu_TvQCQmPNTudY6m-6byN2_xuj7nBA\"}",
+    "body": "{\"envelope\":\"AQIBADAfZEgzq7Lk0qDYVYHyZxFYI2Gdd5d1MNySHs24v5CGvEXAZSYY-F5Yg0sDS_8gg6IAAAAAAAAAATFVSmEmtGfyusojDpFJiqNS2Z4LPSll3mb_vym3D1IsAAAAAAAAAAMPQ-lSwoX_wb2Zfj4-15VIK5m3aNlREgbbxGOhnEhZTbUpE3CVGGGqQrovgXyNmm2Xh8W9JR2GOk54mPwEqkXHAAABoTX7bUcBAkXAZSYY-F5Yg0sDS_8gg6IAJ_oSwplvDjUU18WQQRBCn21uW02LbdTRuCZ41bss-jW0iT6hISUYPMC5ArFsYCu0UP_eeU7KixAubBHCncmAM399Ti6_EfWvHa84PQTbj5dj_nQ09XeQAuPp148hkWOFsVvh6rWJ6I2ymLjltnxHOutljs_IJgiHWmhsc-6Qlz4XlTsdRbyb9_8vxiuEPfElSe-Vj0F8u94JCVK8t_StsPeN2kPfo2TZqhgdundlppTpwV9o5hX58EnngRpmBftJR9kqNLl4pDEqSbrOywSKRA3BAMGMGofXC64j3iE_20ovbaeXpfI6pF8cOEp2YguA7zYYHKDYQg2ttAeaCh62-RHt_TmckOlTyEthjfsIasj-v5Uo84X53NjJN7w_UEBA6QZSTYZmDcMD7xE9DTjcAcvJgXBmb8F24W-ylR7YfrIabkrgQdFEzfZk9sWuRYBJQy0JJqqOGmM9dvdgPbwPDA\"}",
     "method": "POST",
     "path": "/v1/envelopes"
   },

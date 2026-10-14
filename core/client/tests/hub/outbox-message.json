@@ -2,7 +2,7 @@
   "answer": "{\"n\":3}",
   "asked": {
     "epoch": 2,
-    "group": "TigCuFvRJeuJEJP1514VB88fBz16rPmxB29byqDTIgdSQ3FedA45gXcz8oeWQcZ5",
+    "group": "H2RIM6uy5NKg2FWB8mcRWCNhnXeXdTDckh7NuL-QhrxFwGUmGPheWINLA0v_IIOi",
     "kind": "Message",
     "parts": 1,
     "route": "outbox"
@@ -10,9 +10,9 @@
   "content_range": null,
   "name": "outbox-message",
   "request": {
-    "body": "{\"epoch\":2,\"message\":\"AAEAAjBOKAK4W9El64kQk_XnXhUHzx8HPXqs-bEHb1vKoNMiB1JDcV50DjmBdzPyh5ZBxnkAAAAAAAAAAgEAHOF4pFadak34zuYigxKaYpRKZv3MxmQrPaGvjvBAWgHV2zIHkocMGOothDpjQX9CgThLcUU4kTwS58K-Z9WDVzXxsCzxtM5Pz2tWVTl3IM86inYUXP_i86vWeGmTq_EzG0j7Vyb1YDho4VjniyARzzZ0n0bsFmJyTg\"}",
+    "body": "{\"epoch\":2,\"message\":\"AAEAAjAfZEgzq7Lk0qDYVYHyZxFYI2Gdd5d1MNySHs24v5CGvEXAZSYY-F5Yg0sDS_8gg6IAAAAAAAAAAgEAHB7QQL8vaO4dzKJfUjz1F5w5ta-UeXd47ydhQZdAWjs3GF3cB9e39T7WYQg6QpmT8MXCG4URDHPdV0bMb1vLfgerBylBlUknABGKq3KLmxbkfZS-tor7qMAXqD6IVa3Dpj0jJ-se_CQmcn0fGDIdjB0Qd81oAo-KPQ\"}",
     "method": "POST",
-    "path": "/v1/groups/TigCuFvRJeuJEJP1514VB88fBz16rPmxB29byqDTIgdSQ3FedA45gXcz8oeWQcZ5/messages"
+    "path": "/v1/groups/H2RIM6uy5NKg2FWB8mcRWCNhnXeXdTDckh7NuL-QhrxFwGUmGPheWINLA0v_IIOi/messages"
   },
   "status": 200
 }

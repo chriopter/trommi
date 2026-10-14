@@ -1,7 +1,7 @@
 {
-  "answer": "{\"challenge\":\"W_SY_VdC5XjRdhe3f_gEExiwkI0fAdPHyTtbyqLa07o\"}",
+  "answer": "{\"challenge\":\"5ukmLv3sfFR_Dry7xLJO1ufwk8U35cbgfQMB69UG2UQ\"}",
   "asked": {
-    "room": "bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0",
+    "room": "BDYV2sUVj1S4v5jiiBYOmw7kBi4Pt8p2Oud5NBl74fQ",
     "route": "challenge"
   },
   "content_range": null,
@@ -9,7 +9,7 @@
   "request": {
     "body": null,
     "method": "GET",
-    "path": "/v1/rooms/bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0/challenge"
+    "path": "/v1/rooms/BDYV2sUVj1S4v5jiiBYOmw7kBi4Pt8p2Oud5NBl74fQ/challenge"
   },
   "status": 200
 }
