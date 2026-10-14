@@ -59,3 +59,45 @@ impl Founding {
         std::str::from_utf8(self.words.expose()).unwrap_or("").split_whitespace().map(String::from).collect()
     }
 }
+
+/// The account's new copies of a recovery (8.7): a new password and a new kit under `email`. Checked and derived
+/// here (Argon2id); the new code is sealed once the recovery made it. Returns the new kit's words and the sealer.
+pub(crate) fn recovery_copies(email: &str, password: &Secret, entropy: &mut dyn Entropy) -> Result<(Vec<String>, crate::engine::recover::Copies), Text> {
+    let email = account::normalise_email(email.trim()).map_err(|_| Problem::BadAccount.text())?;
+    account::check_password(&password.0).map_err(|e| match e.code() {
+        "weak-password" => Text::new("account.weak_password", &format!("The password needs at least {} characters.", account::PASSWORD_MIN)),
+        code => Text::new("account.refused", &format!("That password cannot be used ({code}).")),
+    })?;
+    let pw = account::password_keys(&email, &password.0, None).map_err(|_| Text::new("account.refused", "That password cannot be used."))?;
+    let words = account::generate_kit_words(entropy).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?;
+    let text = std::str::from_utf8(words.expose()).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?.to_string();
+    let kit = account::kit_keys(&email, &text).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?;
+    let shown = text.split_whitespace().map(String::from).collect();
+    let seal: crate::engine::recover::Copies = Box::new(move |code: &Key<32>, room: &RoomId| {
+        let mut entropy = trommi_core::crypto::SystemEntropy;
+        let sealed_password = account::seal_code(&pw.wrap_key, room, Way::Password, code, &mut entropy).map_err(|e| e.code())?;
+        let sealed_kit = account::seal_code(&kit.wrap_key, room, Way::Kit, code, &mut entropy).map_err(|e| e.code())?;
+        let sixty_one = |v: Vec<u8>| -> Result<[u8; 61], &'static str> { v.try_into().map_err(|_| "internal") };
+        let kdf: serde_json::Value = serde_json::from_str(account::KDF_RECORD).map_err(|_| "internal")?;
+        let kdf = crate::hub::Kdf(
+            kdf.as_object()
+                .map(|o| {
+                    o.iter()
+                        .filter_map(|(k, v)| match v {
+                            serde_json::Value::String(s) => Some((k.clone(), crate::hub::KdfValue::Text(s.clone()))),
+                            serde_json::Value::Number(n) => n.as_u64().map(|n| (k.clone(), crate::hub::KdfValue::Number(n))),
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        );
+        let copies = crate::hub::AccountCopies {
+            kit: crate::hub::KitPart { auth_key: *kit.auth_key.expose(), sealed_copy: sixty_one(sealed_kit)? },
+            revision: None,
+            way_in: Some(crate::hub::CopyOfWayIn::NewPassword(crate::hub::NewPassword { auth_key: *pw.auth_key.expose(), sealed_copy: sixty_one(sealed_password)?, kdf })),
+        };
+        crate::hub::account_copies_body(Some(&copies)).map_err(|_| "internal")
+    });
+    Ok((shown, seal))
+}
