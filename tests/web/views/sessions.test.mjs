@@ -53,8 +53,10 @@ test('with neither connected, the newest pairing of the folder is the one entry'
   assert.deepEqual(shown(m), [idOf(S1)])
 })
 
-test('the old session stays while it holds an open question, or when he fetched it back', () => {
-  assert.deepEqual(shown(pairedTwice({ open: 1 })).sort(), [idOf(S0), idOf(S1)].sort())
+test('the old session stays when he fetched it back; an open question of it does not keep it (its cards stay on the Desk)', () => {
+  // (how many of its cards are read changes while archived groups are read lazily: the list must not)
+  assert.deepEqual(shown(pairedTwice({ open: 1 })), [idOf(S1)])
+  assert.equal(agentsOf(pairedTwice({ open: 1 })).find(a => a.id === idOf(S0)).replaced, true)
   assert.deepEqual(shown(pairedTwice({ settings: { archived: false } })).sort(), [idOf(S0), idOf(S1)].sort())
 })
 
