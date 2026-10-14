@@ -78,3 +78,83 @@ fn emoji_that_do_not_match_burn_the_invite() {
     let (humans, _) = sim.app.engine().unwrap().roles();
     assert!(!humans.contains(&joiner.id()));
 }
+
+/// The founder (a device of the world's room) opens an invite and publishes its Offer at the stand-in.
+fn founder_invites(world: &mut World) -> (trommi_core::ids::InviteId, String) {
+    let address = trommi_core::hub_auth::HubAddress::parse(common::hub::HUB_URL).unwrap();
+    let opened = world.founder.invite_open(trommi_core::invite::Role::Human, None, "https://app.example", &address, now()).expect("an invite");
+    let link = String::from_utf8(opened.link.expose().to_vec()).unwrap();
+    let decoded = trommi_core::invite::Offer::decode(&opened.signed_offer.offer).unwrap();
+    let id = trommi_core::ids::base64url_encode(decoded.invite_id.as_bytes());
+    world.hub.borrow_mut().invites.insert(id, common::hub::StandInInvite {
+        offer: opened.signed_offer.offer.clone(), signature: opened.signed_offer.signature.clone(), mac: opened.signed_offer.mac.clone(),
+        expires_at: decoded.expires_at, requests: Vec::new(), reveal: None,
+    });
+    (opened.invite_id, link)
+}
+
+#[test]
+fn a_new_device_joins_by_link() {
+    let mut world = World::new();
+    let (invite, link) = founder_invites(&mut world);
+    let mut sim = Sim::new(now());
+    world.attach(&mut sim);
+    sim.send(Event::Start { config: trommi_client_core::app::Config { platform: "test".into(), version: "0".into(), hub: String::new(), seed: 9, ..Default::default() } });
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    account(&mut sim, AccountAction::Join { link: trommi_client_core::account::Secret(link) });
+    assert_eq!(sim.view.account.step, "join", "{:?}", sim.view.account.problem);
+    // the Request is at the hub: the inviter accepts it and publishes the Reveal
+    let id = trommi_core::ids::base64url_encode(invite.as_bytes());
+    let request = world.hub.borrow().invites[&id].requests.first().cloned().expect("the Request was posted");
+    let accepted = world.founder.invite_accept(&invite, &request, now()).expect("accepted");
+    world.hub.borrow_mut().invites.get_mut(&id).unwrap().reveal = Some(accepted.signed_reveal.clone());
+    sim.advance(1_100);
+    assert_eq!(sim.view.account.step, "compare_emoji", "{:?}", sim.view.account.problem);
+    let words: Vec<String> = sim.view.account.emoji.iter().map(|e| e.word.clone()).collect();
+    assert_eq!(words, accepted.code.words().map(String::from).to_vec());
+    // confirmed on the inviter's device: the Commit and the Welcome reach the hub
+    world.founder.invite_confirm(&invite, &accepted.code, &accepted.request_hash, true, now()).expect("confirmed");
+    common::post_all(&mut world.hub.borrow_mut(), &mut world.founder);
+    for _ in 0..90 {
+        world.stream(&mut sim);
+        if sim.view.phase == Phase::Live {
+            break;
+        }
+        sim.advance(1_000);
+    }
+    assert_eq!(sim.view.phase, Phase::Live, "{:?} {:?}", sim.view.account, world.hub.borrow().refused);
+    assert_eq!(sim.view.account.step, "none");
+    assert!(sim.app.engine().unwrap().roles().0.contains(&sim.app.engine().unwrap().device().id()));
+}
+
+fn join_link(sim: &Sim, nonce: &str) -> Option<serde_json::Value> {
+    sim.app.board().model.sessions.values().find_map(|s| s.registers.get(&format!("join_link/{nonce}")).map(|r| r.value.clone()))
+}
+
+#[test]
+fn an_agents_ask_is_refused_past_the_bounds_and_allowed_with_a_link() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Live);
+    // an ask that names no account: refused at once, without the person
+    world.agent_register("join_ask/a1", r#"{"name":"helper","folder":"~/x"}"#);
+    for _ in 0..3 {
+        world.stream(&mut sim);
+        sim.advance(500);
+    }
+    assert_eq!(join_link(&sim, "a1").map(|v| v["refused"].clone()), Some(serde_json::json!("bad-ask")));
+    // an ask with its account: the person allows it, the agent gets a link
+    world.agent_register("join_ask/b2", r#"{"name":"helper","folder":"~/x","account":"acct-1"}"#);
+    world.stream(&mut sim);
+    assert!(join_link(&sim, "b2").is_none(), "it waits for the person");
+    account(&mut sim, AccountAction::AnswerAsk { nonce: "b2".into(), allow: true });
+    for _ in 0..3 {
+        world.stream(&mut sim);
+        sim.advance(500);
+    }
+    let link = join_link(&sim, "b2").expect("the answer");
+    assert!(link["link"].as_str().is_some_and(|l| l.contains('#')), "{link}");
+    assert_eq!(world.hub.borrow().invites.len(), 1, "its Offer is at the hub");
+    assert_eq!(sim.view.account.step, "", "the person's screen is not taken over: {:?}", sim.view.account);
+}

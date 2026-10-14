@@ -721,6 +721,21 @@ impl Hub {
                     "requests": i.requests.iter().map(|r| json!({ "request": b64(&r.request), "mac": b64(&r.mac), "signature": b64(&r.signature) })).collect::<Vec<_>>() })),
                 None => missing(),
             },
+            ("POST", ["v1", "invites", id, "request"]) => match self.invites.get_mut(*id) {
+                Some(i) => {
+                    let request = trommi_core::invite::SignedRequest { request: field("request"), mac: field("mac"), signature: field("signature") };
+                    let hash = trommi_core::invite::request_hash(&request).ok()?;
+                    if !i.requests.contains(&request) {
+                        i.requests.push(request);
+                    }
+                    answer(200, json!({ "request_hash": b64(hash.as_bytes()) }))
+                }
+                None => missing(),
+            },
+            ("GET", ["v1", "invites", id, "reveal"]) => match self.invites.get(*id).and_then(|i| i.reveal.as_ref()) {
+                Some(r) => answer(200, json!({ "reveal": b64(&r.reveal), "signature": b64(&r.signature) })),
+                None => missing(),
+            },
             ("PUT", ["v1", "invites", id, "reveal"]) => match self.invites.get_mut(*id) {
                 Some(i) => {
                     i.reveal = Some(trommi_core::invite::SignedReveal { reveal: field("reveal"), signature: field("signature") });

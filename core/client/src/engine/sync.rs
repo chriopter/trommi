@@ -24,6 +24,8 @@ pub mod room_join;
 pub mod requests;
 #[path = "found.rs"]
 pub mod found;
+#[path = "link_join.rs"]
+pub mod link_join;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -173,6 +175,8 @@ pub enum Report {
     /// The founding of the room (`Engine::found_room`) ended: taken (none), or refused with this code (the device's
     /// state is gone).
     Founded(Option<&'static str>),
+    /// How a join by an invite link stands (`Engine::join_by_link`).
+    LinkJoin(link_join::LinkJoinStatus),
     /// An envelope as the protocol core took it. `ordered`: in the hub's order; else read again (a repair).
     Envelope { received: Box<ReceivedEnvelope>, ordered: bool },
     /// A log entry the device processed.
@@ -242,6 +246,8 @@ impl Retry {
 
 /// What a request in flight was for.
 enum Asked {
+    /// A step of a join by link.
+    Link { expect: Expect },
     Challenge(Expect),
     Token(Expect),
     Page(Expect),
@@ -286,6 +292,7 @@ impl Asked {
             Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::Request { .. } | Asked::KeptScan | Asked::KeptWrite => None,
             Asked::Challenge(e) | Asked::Token(e) | Asked::Page(e) | Asked::Welcomes(e) | Asked::Told(e) | Asked::KeyPackagesHeld(e) | Asked::Desk(e) | Asked::Wishes(e) => Some(e),
             Asked::Post { expect, .. }
+            | Asked::Link { expect }
             | Asked::GroupLog { expect, .. }
             | Asked::Chain { expect, .. }
             | Asked::Mend { expect, .. }
@@ -466,6 +473,8 @@ pub struct Engine {
     room_join: Option<room_join::Joiner>,
     /// A room this device founds, until the hub took the founding (`found`).
     founding: Option<found::Founding>,
+    /// A join of the room by an invite link, until this device is in (`link_join`).
+    link_join: Option<link_join::LinkJoin>,
     /// The actions' requests (`requests`).
     requests: requests::Requests,
 }
@@ -574,6 +583,7 @@ impl Engine {
             wishes: events::Wishes::default(),
             room_join: None,
             founding: None,
+            link_join: None,
             requests: requests::Requests::default(),
         }
     }
@@ -643,6 +653,10 @@ impl Engine {
             }
         };
         want(self.auth_retry.at);
+        want(self.link_join.as_ref().and_then(|j| j.wake()));
+        if self.founding.is_some() {
+            want(self.pump_retry.at);
+        }
         if self.token.is_some() {
             if self.desk.want || !self.desk.firsts.is_empty() {
                 want(self.desk.retry.at);
@@ -825,6 +839,7 @@ impl Engine {
         }
         match asked {
             Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::Request { .. } | Asked::KeptScan | Asked::KeptWrite => {}
+            Asked::Link { .. } => self.on_link_answer(ctx, answer),
             Asked::Challenge(_) => self.on_challenge(ctx, answer),
             Asked::Token(_) => self.on_token(ctx, answer),
             Asked::Page(_) => self.on_page(ctx, answer, unauthorised, refusal),
@@ -954,6 +969,9 @@ impl Engine {
         }
         if self.founding.is_some() {
             return self.drive_founding(ctx);
+        }
+        if self.link_join.is_some() {
+            return self.drive_link_join(ctx);
         }
         self.drive_all(ctx);
         if self.room_join.is_none() {
