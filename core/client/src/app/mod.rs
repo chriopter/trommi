@@ -23,6 +23,7 @@ pub mod effect;
 pub mod event;
 pub mod io;
 mod invites;
+mod account_steps;
 pub mod script;
 pub mod sim;
 
@@ -69,6 +70,8 @@ enum Pending {
     JoinLoad,
     /// The device state read for a founding (`AccountAction::Found`).
     FoundLoad,
+    /// The cache space read to wipe it (a sign-out).
+    Wipe,
     /// I/O of an engine that was dropped (a join of the room that failed): its answer is only logged.
     Dropped,
 }
@@ -119,6 +122,8 @@ pub struct App {
     files: crate::files::Files,
     /// Invites this device opened (`app::invites`).
     invites: invites::Invites,
+    /// The account's steps in flight (`app::account_steps`).
+    steps: account_steps::Steps,
     /// The hub the stored room names ([`ROOM_KEY`]).
     stored_hub: Option<String>,
     /// The device state loaded, while the stored room's hub is read.
@@ -176,6 +181,7 @@ impl App {
             answers: Vec::new(),
             files: crate::files::Files::default(),
             invites: invites::Invites::default(),
+            steps: account_steps::Steps::default(),
             opening: None,
             board: engine::feed::Board::default(),
             lens: Lens::default(),
@@ -272,7 +278,7 @@ impl App {
     fn account(&mut self, now_ms: u64, action: crate::account::AccountAction, out: &mut Vec<Effect>) {
         use crate::account::signin::{self, By};
         use crate::account::AccountAction;
-        if self.invite_action(now_ms, &action, out) {
+        if self.invite_action(now_ms, &action, out) || self.account_step(now_ms, &action, out) {
             return;
         }
         match action {
@@ -530,6 +536,11 @@ impl App {
             }
             _ if self.config.is_none() => out.push(log(LogLevel::Warn, "an event before start")),
             Event::Store { id, result } => match self.pending.remove(&id) {
+                Some(Pending::Wipe) => {
+                    if let IoResult::Ok(StoreAnswer::Entries { entries }) = result {
+                        self.wipe_cache(entries.into_iter().map(|e| e.key).collect(), &mut out);
+                    }
+                }
                 Some(Pending::FoundLoad) => match result {
                     IoResult::Ok(StoreAnswer::Device { revision, entries }) => self.found_loaded(now_ms, revision, entries, &mut out),
                     _ => self.found_failed(crate::views::Text::new("account.found_failed", "The room was not made (storage).")),
@@ -991,6 +1002,7 @@ impl App {
         let mut notes_back = Vec::new();
         let mut invite_news = Vec::new();
         let mut invite_answers = Vec::new();
+        let mut step_answers = Vec::new();
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
@@ -1045,6 +1057,7 @@ impl App {
                 }
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
                 Report::Answer(answered) if self.invites.owns(answered.id) => invite_answers.push(*answered),
+                Report::Answer(answered) if self.steps.asked.contains_key(&answered.id) => step_answers.push(*answered),
                 Report::Answer(answered) if self.files.owns(answered.id) => {
                     if let Some(text) = self.files.answered(answered.id, &answered.result, out) {
                         self.sent.toast(&mut self.next_view.toasts, text, None);
@@ -1133,6 +1146,9 @@ impl App {
         self.settle_actions(now_ms, refused, out);
         for answered in invite_answers {
             self.invite_answered(now_ms, answered.id, &answered.result, out);
+        }
+        for answered in step_answers {
+            self.step_answered(now_ms, answered.id, &answered.result, out);
         }
         for invite in invite_news {
             self.invites_look(now_ms, Some(invite), out);

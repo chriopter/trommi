@@ -75,6 +75,17 @@ test('an account is made through the core, and a second device signs in to it', 
     two.act({ do: 'account', action: { step: 'sign_in', email: 'ada@example.org', password: PASSWORD } })
     await two.until('live after the sign-in', v => v.phase === 'live')
     assert.equal(two.view().account?.problem ?? null, null)
+
+    // the account deleted from the second device: a wrong password is said, the right one deletes it and signs out
+    two.act({ do: 'account', action: { step: 'delete_account', password: 'not the password at all' } })
+    await two.until('the wrong password said', v => v.account?.problem?.key === 'account.wrong_login')
+    two.act({ do: 'account', action: { step: 'delete_account', password: PASSWORD } })
+    await two.until('signed out after the deletion', v => v.phase === 'signed_out' && v.account?.step === 'found')
+    const three = app(b, hub.url)
+    await three.until('the sign-in', v => v.phase === 'signed_out')
+    three.act({ do: 'account', action: { step: 'sign_in', email: 'ada@example.org', password: PASSWORD } })
+    await three.until('no such account', v => v.account?.problem?.key === 'account.wrong_login')
+    three.shell.close()
     one.shell.close()
     two.shell.close()
   } finally { await hub.stop() }

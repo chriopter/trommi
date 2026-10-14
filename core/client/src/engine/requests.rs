@@ -148,6 +148,20 @@ impl Engine {
         })
     }
 
+    /// Everything the device's store holds taken away in one write (a sign-out); the device writes no more. False
+    /// when nothing was there to take.
+    pub fn wipe(&mut self, ctx: &mut Ctx<'_>) -> bool {
+        self.flush(ctx);
+        let Some(write) = self.writes.wipe() else { return false };
+        let id = ctx.id();
+        self.pending.insert(id, Asked::DeviceWrite);
+        ctx.out.push(Effect::Store {
+            id,
+            op: StoreOp::DeviceApply { expected_revision: write.expected_revision, put: Vec::new(), delete: write.delete.into_iter().map(Into::into).collect() },
+        });
+        true
+    }
+
     /// Drops a request an action no longer wants (a transfer the person cancelled): it is not sent again, and no
     /// answer comes for it. Returns the id of its HTTP request in flight, for the shell to cancel.
     pub fn forget_request(&mut self, id: IoId) -> Option<IoId> {
