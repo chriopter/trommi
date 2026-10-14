@@ -72,6 +72,8 @@ enum Pending {
     FoundLoad,
     /// The cache space read to wipe it (a sign-out).
     Wipe,
+    /// The device state read for a join by an invite link (`AccountAction::Join`).
+    LinkLoad,
     /// I/O of an engine that was dropped (a join of the room that failed): its answer is only logged.
     Dropped,
 }
@@ -112,6 +114,8 @@ pub struct App {
     /// A founding waiting for the device state, then for the hub (`account::found`); its kit's words are shown once
     /// the hub took it.
     founding: Option<(Option<IoId>, crate::account::found::Founding)>,
+    /// A join by an invite link waiting for the slot's device state (the link holds the invite's secret).
+    linking: Option<crate::account::Secret>,
     /// A sign-in waiting for its login answer.
     signing_in: Option<(IoId, crate::account::signin::Waiting)>,
     /// A sign-in's join of the room runs: its end is shown on the account's screen.
@@ -179,6 +183,7 @@ impl App {
             room_join_wait: None,
             signing_in: None,
             founding: None,
+            linking: None,
             signed_in_join: false,
             stored_hub: None,
             answers: Vec::new(),
@@ -293,6 +298,17 @@ impl App {
                 return;
             }
             AccountAction::Found { email, password, hub } => return self.found(&email, &password, hub.as_deref(), out),
+            AccountAction::Join { link } => {
+                if self.engine.is_some() || self.founding.is_some() || self.signing_in.is_some() || self.linking.is_some() {
+                    out.push(log(LogLevel::Warn, "account: a join by link on a slot that has a device or is busy"));
+                    return;
+                }
+                let id = self.io(Pending::LinkLoad);
+                out.push(Effect::Store { id, op: StoreOp::DeviceLoad });
+                self.linking = Some(link);
+                self.next_view.account = crate::views::AccountView { step: "join".into(), ..Default::default() };
+                return;
+            }
             _ => {}
         }
         let (by, account, secret, hub) = match action {
@@ -380,6 +396,26 @@ impl App {
         self.engine = Some(engine);
         self.next_view.phase = Phase::Opening;
         self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
+    }
+
+    /// The slot's device state for a join by link: the device is made and the join begins.
+    fn link_loaded(&mut self, now_ms: u64, revision: u64, entries: Vec<DeviceEntry>, out: &mut Vec<Effect>) {
+        let Some(config) = self.config.as_ref() else { return };
+        let Some(link) = self.linking.take() else { return };
+        let client = format!("{}/{}", config.platform, config.version);
+        let entropy = self.entropy.take().unwrap_or_else(|| Box::new(trommi_core::crypto::SystemEntropy));
+        match Engine::join_by_link(&client, config.seed, revision, entries, &link.0, now_ms, entropy) {
+            Ok(engine) => {
+                let key = RoomKey { v: 1, hub: engine.hub().to_string(), room: engine.room().to_base64url() };
+                let id = self.io(Pending::RoomKeyWrite);
+                out.push(Effect::Store { id, op: StoreOp::Put { put: vec![Entry { key: ROOM_KEY.into(), value: serde_json::to_vec(&key).unwrap_or_default().into() }], delete: Vec::new() } });
+                self.board = engine::feed::Board::new(engine.device());
+                self.stored_hub = Some(engine.hub().to_string());
+                self.engine = Some(engine);
+                self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
+            }
+            Err(code) => self.next_view.account = crate::views::AccountView { step: "join".into(), problem: Some(link_problem(code)), ..Default::default() },
+        }
     }
 
     fn sign_in_failed(&mut self, problem: crate::account::signin::Problem) {
@@ -545,6 +581,13 @@ impl App {
                         self.wipe_cache(entries.into_iter().map(|e| e.key).collect(), &mut out);
                     }
                 }
+                Some(Pending::LinkLoad) => match result {
+                    IoResult::Ok(StoreAnswer::Device { revision, entries }) => self.link_loaded(now_ms, revision, entries, &mut out),
+                    _ => {
+                        self.linking = None;
+                        self.next_view.account = crate::views::AccountView { step: "join".into(), problem: Some(crate::views::Text::new("join.failed", "Joining did not work (storage).")), ..Default::default() };
+                    }
+                },
                 Some(Pending::FoundLoad) => match result {
                     IoResult::Ok(StoreAnswer::Device { revision, entries }) => self.found_loaded(now_ms, revision, entries, &mut out),
                     _ => self.found_failed(crate::views::Text::new("account.found_failed", "The room was not made (storage).")),
@@ -1050,6 +1093,23 @@ impl App {
                         cache.stop();
                     }
                 }
+                Report::LinkJoin(status) => {
+                    use crate::engine::sync::link_join::LinkJoinStatus;
+                    match status {
+                        LinkJoinStatus::Asking => {}
+                        LinkJoinStatus::Code(code) => {
+                            self.next_view.account = crate::views::AccountView { step: "compare_emoji".into(), emoji: invites::emoji_of(code), ..Default::default() };
+                        }
+                        LinkJoinStatus::Joined => {
+                            self.next_view.account = crate::views::AccountView { step: "none".into(), ..Default::default() };
+                            self.next_view.phase = Phase::Opening;
+                        }
+                        LinkJoinStatus::Failed(code) => {
+                            dropped = true;
+                            self.next_view.account = crate::views::AccountView { step: "join".into(), problem: Some(link_problem(code)), ..Default::default() };
+                        }
+                    }
+                }
                 Report::Founded(None) => {
                     if let Some((_, founding)) = self.founding.take() {
                         self.next_view.account = crate::views::AccountView { step: "keep_kit".into(), kit: founding.kit_words(), ..Default::default() };
@@ -1229,6 +1289,19 @@ impl App {
                 out.insert(0, Effect::Render { delta });
             }
         }
+    }
+}
+
+/// The words of a join by link that did not work.
+fn link_problem(code: &str) -> crate::views::Text {
+    use crate::views::Text;
+    match code {
+        "invite-expired" => Text::new("join.expired", "The link has ended. Ask for a new one."),
+        "invite-used" => Text::new("join.used", "The link was used already. Ask for a new one."),
+        "code-mismatch" => Text::new("join.mismatch", "The other device said the emoji do not match. Nothing was joined."),
+        "bad-invite" | "bad-format" => Text::new("join.bad_link", "That is not an invite link."),
+        "room-exists" => Text::new("join.room_exists", "This device is in a room already."),
+        code => Text::new("join.failed", &format!("Joining did not work ({code}).")),
     }
 }
 

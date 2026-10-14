@@ -333,7 +333,7 @@ impl App {
     }
 }
 
-fn emoji_of(code: [u8; 6]) -> Vec<EmojiView> {
+pub(super) fn emoji_of(code: [u8; 6]) -> Vec<EmojiView> {
     code.iter()
         .map(|n| {
             let (emoji, word) = trommi_core::invite::CHECK_EMOJI.get(usize::from(*n)).copied().unwrap_or_default();
