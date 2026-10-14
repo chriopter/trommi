@@ -22,7 +22,10 @@
 //! - the stream's events beside the order: a Welcome to each device added, relays to the human devices but the sender, wishes to the human
 //!   devices (a device keeps every wish, not its 16 newest), an archived session to its leaves, an evicted file
 //!   to the human devices (not to the leaves of its group);
-//! - files, pushes, accounts, invites, recovery: not there.
+//! - the recovery key's token (a join with the code): it reads only `GET /v1/sealed-keys` (each row numbered by its
+//!   place, no RecoveryLinks), the room group's GroupInfos and log and the room's groups, and posts the join of the
+//!   room group; any other route is `forbidden`;
+//! - files, pushes, accounts, invites, a recovery of the room (8.7): not there.
 
 #![allow(dead_code)]
 
@@ -238,6 +241,9 @@ pub struct Hub {
     /// lower them.
     pub desk_bytes_max: usize,
     pub desk_registers_max: usize,
+    /// The room's recovery key as the id it signs in under (8.4): its token reads only what a join with the code
+    /// needs (the sealed keys, the room group's GroupInfos and log, the room's groups) and posts that join.
+    pub recovery: Option<DeviceId>,
 }
 
 impl Default for Hub {
@@ -260,6 +266,7 @@ impl Default for Hub {
             tokens: BTreeMap::new(),
             seen: Vec::new(),
             fault: None,
+            recovery: None,
             streaming: Vec::new(),
             notes: Vec::new(),
             wishes: Vec::new(),
@@ -666,7 +673,9 @@ impl Hub {
                 let issued = IssuedChallenge { challenge: self.challenges.remove(at), expires_at: now + 120_000 };
                 let device = hub_auth::verify(&signed, &self.room_id(), &HubAddress::parse(HUB_URL).expect("an address"), &issued, now).map_err(no)?;
                 let history = self.room.as_ref().and_then(Observer::history).ok_or(no(Error::NoRoom))?.newest();
-                let role = if history.is_human(&device) {
+                let role = if Some(device) == self.recovery {
+                    "recovery"
+                } else if history.is_human(&device) {
                     "human"
                 } else if history.is_agent(&device) {
                     "agent"
@@ -681,7 +690,27 @@ impl Hub {
             _ => {}
         }
         let device = self.device_of(now, request).ok_or(no(Error::Unauthorised))?;
+        if Some(device) == self.recovery {
+            // (the recovery key's token: the room group's own routes and the keys, nothing of the content)
+            let room = Some(b64(self.room_id().as_bytes()));
+            let on_room = |at: usize| segs.get(at).map(|s| s.to_string()) == room;
+            let allowed = match (method, segs.as_slice()) {
+                ("GET", ["v1", "sealed-keys"]) | ("GET", ["v1", "rooms", _, "groups"]) => true,
+                ("GET", ["v1", "groups", _, "info" | "log"]) | ("POST", ["v1", "groups", _, "commits"]) => on_room(2),
+                _ => false,
+            };
+            if !allowed {
+                return Err(no(Error::Forbidden));
+            }
+        }
         match (method, segs.as_slice()) {
+            ("GET", ["v1", "sealed-keys"]) => {
+                // (each row numbered by its place: the stand-in keeps no change of its own for a row)
+                let (after, limit) = (num("after") as usize, num("limit").clamp(1, 2000) as usize);
+                let page: Vec<Value> = self.rows.iter().enumerate().skip(after).take(limit).map(|(at, row)| json!({ "change": at + 1, "sealed_key": b64(row) })).collect();
+                let end = after + page.len();
+                Ok(json!({ "rows": page, "links": [], "change": end, "more": end < self.rows.len() }))
+            }
             ("GET", ["v1", "changes"]) => {
                 let (after, limit) = (num("after"), num("limit").clamp(1, 1000) as usize);
                 let only: Option<GroupId> = q("group").and_then(|g| base64url_decode(g).ok()).and_then(|b| GroupId::from_bytes(&b).ok());

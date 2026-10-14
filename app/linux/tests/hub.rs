@@ -172,6 +172,25 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
     assert_eq!(row["from"]["session_id"], sessions[0]["id"], "{row}");
     wait_for(&drawn, "the phase live", |v| v["phase"] == "live");
 
+    // the window's pages, as the window asks for them (`shell::person_event`): the card's, then the session's
+    let card = row["id"].as_str().unwrap().to_string();
+    let session = sessions[0]["id"].as_str().unwrap().to_string();
+    let send = |json: Value| assert!(handle.send(shell::person_event(&json.to_string()).expect("the person's event")));
+    send(json!({ "type": "focus", "focus": { "screen": { "screen": "card", "card_id": card } } }));
+    let view = wait_for(&drawn, "the card's page", |v| v["cards"][&card].is_object());
+    let page = &view["cards"][&card];
+    assert_eq!((page["title"].as_str(), page["answer"]["mode"].as_str()), (Some("Blue or green?"), Some("options")), "{page}");
+    let keys: Vec<&str> = page["options"].as_array().unwrap().iter().filter_map(|o| o["key"].as_str()).collect();
+    assert_eq!(keys.len(), 2, "{page}");
+    assert!(keys.contains(&"blue") && keys.contains(&"green"), "{page}");
+    send(json!({ "type": "focus", "focus": { "screen": { "screen": "session", "session_id": session } } }));
+    let view = wait_for(&drawn, "the session's page", |v| v["sessions"][&session].is_object());
+    let page = &view["sessions"][&session];
+    assert!(page["talk"].as_array().is_some_and(|t| t.iter().any(|r| r["kind"] == "ask" || r["card"]["id"] == card.as_str())), "the question stands where it was asked: {page}");
+    assert!(view["cards"].as_object().is_none_or(|c| c.is_empty()), "the card's page is gone with its focus");
+    send(json!({ "type": "focus", "focus": { "screen": { "screen": "desk" } } }));
+    wait_for(&drawn, "the Desk alone", |v| v["sessions"].as_object().is_none_or(|s| s.is_empty()));
+
     // the app ends and starts again over the same folders: the same Desk
     drop(handle);
     let (handle, drawn) = start(&app, &room.hub.url);
