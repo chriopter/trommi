@@ -428,20 +428,8 @@ pub(super) fn check_entry(key: &[u8], value: &[u8]) -> Result<(), Error> {
                 SUB_ORIGIN => {
                     codec::decode::<super::history::Origin>(value, value.len()).map(|_| ())
                 }
-                SUB_LISTED => <[u8; 8]>::try_from(value)
-                    .map(|_| ())
-                    .map_err(|_| Error::BadFormat),
-                SUB_LISTED_OBJECT => codec::decode::<Object>(value, value.len()).map(|_| ()),
-                SUB_FLOOR => {
-                    let mut reader = Reader::new(value);
-                    reader
-                        .u64()
-                        .and_then(|_| reader.opaque().map(<[u8]>::to_vec))
-                        .and_then(|text| {
-                            reader.finish()?;
-                            let text = std::str::from_utf8(&text).map_err(|_| Error::BadFormat)?;
-                            chain::parse_heads(text).map(|_| ())
-                        })
+                SUB_LISTED | SUB_LISTED_OBJECT | SUB_FLOOR => {
+                    super::listed::check_entry(sub, rest, value)
                 }
                 SUB_BY_HASH => {
                     if value.len() == 40 {
@@ -969,7 +957,8 @@ impl<S: Storage> Device<S> {
             device: self,
             group: *group,
             whole,
-            listed: self.listed_at(group)?.is_some(),
+            // (an agent or helper device never adopts, whatever its store says)
+            listed: self.listed_at(group)?.is_some() && self.is_human(),
         })
     }
 
@@ -1077,11 +1066,12 @@ impl<S: Storage> Device<S> {
             return Ok(Objects::new());
         }
         let mut objects = Objects::adopting();
-        let prefix = group_key(table::CHAIN, SUB_LISTED_OBJECT, group, &[]);
-        for (key, value) in self.stored_under(&prefix) {
-            let object_id = ObjectId::from_slice(key.get(prefix.len()..).unwrap_or_default())
-                .map_err(|_| damaged("a listed object's key"))?;
-            let after = read_object(&value)?;
+        for (object_id, record, after) in self.listed_sources(group)? {
+            // (what a Cut ended is not taken, as anything its sender signed beyond it)
+            let header = &record.header;
+            if self.beyond_cut(group, &header.sender, header.seq, header.epoch)? {
+                continue;
+            }
             objects.apply(&Transition {
                 object_id,
                 before: None,
@@ -1534,7 +1524,12 @@ impl<S: Storage> Device<S> {
                 code.code().as_bytes().to_vec(),
             );
         }
+        // Of a group started from the hub's list, an object taken from an envelope beyond the Cut goes too.
+        let listed = self.drop_listed_beyond(batch, group, &cut.device)?;
         if effect.drop_from.is_none() || stays {
+            if listed {
+                self.replay_group(batch, group)?;
+            }
             return Ok(());
         }
         for (key, hash) in beyond {

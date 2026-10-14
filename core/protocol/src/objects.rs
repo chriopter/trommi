@@ -411,6 +411,21 @@ fn begin(
     })
 }
 
+/// Whether the sender of `header` made the object `object_id`: its id is the one section 9 derives from one of
+/// the sender's numbers before this envelope's. Looked for at most [`MAX_MADE_BY`] numbers back.
+fn made_by(header: &Header, object_id: &ObjectId) -> Result<bool, Error> {
+    let lowest = header.seq.saturating_sub(MAX_MADE_BY).max(1);
+    for seq in (lowest..header.seq).rev() {
+        if envelope::object_id(&header.group, &header.sender, seq)? == *object_id {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// How many numbers of its sender [`made_by`] looks back for an object's first version.
+const MAX_MADE_BY: u64 = 1 << 16;
+
 /// An object this holder does not know, or knows only from a signed header, taken from the signed header of
 /// a later version, an answer, a take back or a verdict (9.2.1, a group started from the hub's list): its
 /// owner is the version's sender, or the device an answer, take back or verdict is addressed to; its current
@@ -429,6 +444,15 @@ fn adopt(
             .as_ref()
             .is_none_or(|before| before.object_type == fields.object_type),
     )?;
+    // A card or an Artifact unknown here is taken from a version only of the device that made it: its id is
+    // derived from that device's first version (9). Another device's version of it is not taken, also when
+    // it might own it now: the object then stands as the list showed it.
+    if before.is_none()
+        && matches!(header.subject, Subject::Version(_))
+        && fields.object_type != ObjectType::Note
+    {
+        allow(made_by(header, &fields.object_id)?)?;
+    }
     let after = match &header.subject {
         Subject::Version(_) => {
             allow(fields.state != ObjectState::Answered)?;
@@ -529,17 +553,14 @@ pub fn judge(
     // An object taken from a signed header follows the next signed header that does not build on the
     // version it holds: the version between them was not read here (9.2.1).
     if objects.adopts()? && objects.adopted(&fields.object_id)? {
-        let builds_on = match &header.subject {
-            Subject::Version(_) if before.object_type == ObjectType::Note => {
-                objects.note_version(&fields.object_id, &fields.object_ref)?
-            }
-            Subject::Version(_) => fields.object_ref == before.current,
-            Subject::TakeBack(_) => {
-                fields.object_ref == before.current && before.state == ObjectState::Answered
-            }
-            _ => fields.object_ref == before.current && before.state == ObjectState::Open,
+        // Only a version this holder never read stands between them: an envelope that names the version it
+        // holds is judged by the rules as they are, whatever state it finds.
+        let names_known = if before.object_type == ObjectType::Note {
+            objects.note_version(&fields.object_id, &fields.object_ref)?
+        } else {
+            fields.object_ref == before.current
         };
-        if !builds_on {
+        if !names_known {
             let rightful = match &header.subject {
                 Subject::Version(_) if before.object_type == ObjectType::Note => true,
                 Subject::Version(_) => owner(facts, group, epoch, before)? == Some(header.sender),

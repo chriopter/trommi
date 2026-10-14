@@ -73,6 +73,12 @@ impl World {
 /// them and wrote its `heads`. Then a second human device comes, joins the room and the session, and reads
 /// the log up to now: of the session's envelopes it holds none.
 fn world() -> World {
+    world_learning(true)
+}
+
+/// [`world`]; `learning`: the late device learns the session's past epochs (who wrote in them) before it
+/// starts from the list.
+fn world_learning(learning: bool) -> World {
     let store = MemoryStorage::new();
     let mut human = new_device_on(store.handle());
     let mut agent = new_device_on(MemoryStorage::new());
@@ -139,9 +145,11 @@ fn world() -> World {
     sync_all(&w.hub, &mut w.agent);
     sync_all(&w.hub, &mut w.late);
     // It learns the session's past epochs from the hub (4.4): who wrote in them, not what.
-    let room = GroupId::room(w.group.room_id());
-    learn(&w.hub, &mut w.late, &room).expect("the room's past is learned");
-    learn(&w.hub, &mut w.late, &w.group).expect("the past is learned");
+    if learning {
+        let room = GroupId::room(w.group.room_id());
+        learn(&w.hub, &mut w.late, &room).expect("the room's past is learned");
+        learn(&w.hub, &mut w.late, &w.group).expect("the past is learned");
+    }
     w.at = w.hub.change();
     w
 }
@@ -341,4 +349,170 @@ fn an_agent_keeps_its_full_check() {
     let received = sync_all(&w.hub, &mut w.late);
     assert_eq!(received.len(), 1);
     assert_eq!(received[0].code, Some(Error::Gap));
+}
+
+/// A device added to a session after a sender wrote there, in an epoch before its join, and that has not
+/// learned the session's past: it never fetches that sender's chain from number 1 (which it would refuse as
+/// `group-behind`, and which left the rest of the chain a gap for good). Started from the list, the sender's
+/// chain begins at its first envelope after the list.
+#[test]
+fn a_device_added_late_starts_the_chain_after_its_join_without_the_past() {
+    let mut w = world_learning(false);
+    let group = w.group;
+    w.late.start_from_list(&group, w.at).unwrap();
+    // The list's version is of an epoch before the join: without the past it cannot be checked, and nothing
+    // is taken from it.
+    let listed = w.stored(&w.revised.clone());
+    let refused = w
+        .late
+        .adopt_listed(
+            &group,
+            &w.revised.object_id.unwrap(),
+            &listed.bytes,
+            listed.change,
+        )
+        .unwrap();
+    assert_eq!(refused.outcome, EnvelopeOutcome::Refused);
+    assert_eq!(refused.code, Some(Error::GroupBehind));
+    let revised = w.revised.clone();
+    let third = w.version(&revised, &revised, "third");
+    let received = sync_all(&w.hub, &mut w.late);
+    assert_eq!(received.len(), 1);
+    assert_eq!(
+        received[0].outcome,
+        EnvelopeOutcome::Applied,
+        "{received:?}"
+    );
+    assert_eq!(
+        w.late.chain_head(&group, &w.agent.id()).unwrap().hash,
+        third.envelope_hash
+    );
+    let object = w
+        .late
+        .object(&group, &revised.object_id.unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(object.current, third.envelope_hash);
+    assert!(w.late.findings().unwrap().is_empty());
+}
+
+/// The list may show a version older than what was written before it, a first version too: the object is
+/// taken as listed, and the next version, which names one never read here, is taken from its header.
+#[test]
+fn a_stale_first_version_listed_gives_way_to_the_next_one() {
+    let mut w = world();
+    let group = w.group;
+    w.late.start_from_list(&group, w.at).unwrap();
+    let object_id = w.revised.object_id.unwrap();
+    let first = w
+        .hub
+        .chain_of(&group, &w.agent.id(), 0)
+        .into_iter()
+        .find(|stored| {
+            stored
+                .header
+                .subject
+                .object()
+                .is_some_and(|f| f.object_id == object_id)
+        })
+        .expect("the first version");
+    let taken = w
+        .late
+        .adopt_listed(&group, &object_id, &first.bytes, first.change)
+        .unwrap();
+    assert!(taken.object_after.is_some(), "{taken:?}");
+    let revised = w.revised.clone();
+    let third = w.version(&revised, &revised, "third");
+    sync_all(&w.hub, &mut w.late);
+    let object = w.late.object(&group, &object_id).unwrap().unwrap();
+    assert_eq!(object.current, third.envelope_hash);
+    // And again after the store is opened anew and the group's state built again.
+    let late = reopen(w.late_store.handle()).expect("the store opens");
+    assert_eq!(
+        late.object(&group, &object_id).unwrap().unwrap().current,
+        third.envelope_hash
+    );
+}
+
+/// An answer that names the version this device holds is judged by the rules as they are: a second answer
+/// to the same open version, which a hostile hub serves as stored, is forbidden and changes nothing.
+#[test]
+fn a_second_answer_to_a_listed_version_is_forbidden() {
+    let mut w = world();
+    let group = w.group;
+    w.late.start_from_list(&group, w.at).unwrap();
+    let plain = w.stored(&w.plain.clone());
+    let object_id = w.plain.object_id.unwrap();
+    w.late
+        .adopt_listed(&group, &object_id, &plain.bytes, plain.change)
+        .unwrap();
+    // The late device answers too, but its answer stays in its outbox; the human's is first.
+    let own = w
+        .late
+        .seal(
+            &Draft::Answer {
+                session: w.session,
+                object_id,
+                choices: vec!["no".into()],
+                closes: false,
+                payload: json(r#"{"answer_action":"answer","choices":["no"]}"#),
+            },
+            None,
+            &[],
+            trommi_tests::now(),
+        )
+        .expect("the answer seals");
+    let bytes = w
+        .late
+        .outbox()
+        .into_iter()
+        .find(|entry| entry.group == Some(group))
+        .expect("the answer waits")
+        .parts[0]
+        .clone();
+    sync_all(&w.hub, &mut w.human);
+    let first = write(
+        &mut w.hub,
+        &mut w.human,
+        &Draft::Answer {
+            session: w.session,
+            object_id,
+            choices: vec!["yes".into()],
+            closes: false,
+            payload: json(r#"{"answer_action":"answer","choices":["yes"]}"#),
+        },
+    );
+    sync_all(&w.hub, &mut w.late);
+    let answered = w.late.object(&group, &object_id).unwrap().unwrap();
+    assert_eq!(answered.answer, Some(first.envelope_hash));
+    // The hub serves the late device's own answer as stored, after the human's.
+    let mut second = w.stored(&w.plain.clone());
+    second.bytes = bytes;
+    second.hash = own.envelope_hash;
+    second.change = w.late.cursor() + 1;
+    let r = take_envelope(&mut w.late, &second);
+    assert_eq!(r.code, Some(Error::Forbidden), "{r:?}");
+    let still = w.late.object(&group, &object_id).unwrap().unwrap();
+    assert_eq!(still.answer, Some(first.envelope_hash));
+}
+
+/// The unread prefix is not read by any ordered route: also not read back below the cursor.
+#[test]
+fn the_unread_prefix_is_not_read_back_either() {
+    let mut w = world();
+    let group = w.group;
+    w.late.start_from_list(&group, w.at).unwrap();
+    let revised = w.revised.clone();
+    w.version(&revised, &revised, "third");
+    sync_all(&w.hub, &mut w.late);
+    let first = w
+        .hub
+        .chain_of(&group, &w.agent.id(), 0)
+        .into_iter()
+        .next()
+        .expect("the first envelope");
+    assert!(first.change <= w.late.cursor());
+    let r = take_envelope(&mut w.late, &first);
+    assert_eq!(r.outcome, EnvelopeOutcome::Refused);
+    assert_eq!(r.code, Some(Error::Replay));
 }

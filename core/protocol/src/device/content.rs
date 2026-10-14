@@ -415,7 +415,7 @@ struct Lamport {
 }
 
 /// What a record keeps of an opened body for later steps.
-fn extra_of(header: &Header, body: &Body, keeps_cards: bool) -> Vec<u8> {
+pub(super) fn extra_of(header: &Header, body: &Body, keeps_cards: bool) -> Vec<u8> {
     match (&header.subject, body.bind()) {
         (Subject::Register(_), _) => body.payload().to_vec(),
         (Subject::Version(fields), _) if fields.object_type == ObjectType::Note => {
@@ -750,7 +750,7 @@ impl<S: Storage> Device<S> {
         };
         let urgency_of = |object: &Object| -> Result<Urgency, Error> {
             Ok(self
-                .record_by_hash(group, &object.current)?
+                .known_record(group, &object.current)?
                 .and_then(|record| record.header.subject.object().map(|fields| fields.urgency))
                 .unwrap_or(Urgency::Normal))
         };
@@ -828,7 +828,7 @@ impl<S: Storage> Device<S> {
                 let request = &known(request_id)?;
                 // The request's own expiry, from its body as this device opened it.
                 let expires_at = self
-                    .record_by_hash(group, &request.current)?
+                    .known_record(group, &request.current)?
                     .and_then(|record| <[u8; 8]>::try_from(record.extra.as_slice()).ok())
                     .map(u64::from_be_bytes)
                     .ok_or(Error::NotFound)?;
@@ -1313,11 +1313,7 @@ impl<S: Storage> Device<S> {
             // A group started from the hub's list (9.0.6): a sender's chain this device holds nothing of
             // begins just before its first envelope served after the list.
             let mut chains = this.chains(&group)?;
-            let began = if in_order {
-                this.start_listed(&header, change, &mut chains)?
-            } else {
-                Ok(false)
-            };
+            let began = this.start_listed(&header, change, in_order, &mut chains)?;
             let received = match &began {
                 Ok(_) => chain::receive(
                     &Facts(this),
