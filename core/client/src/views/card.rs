@@ -14,14 +14,14 @@
 //! - under the answers: a session that does not hear (not one that hears on its next step, before he answered), and
 //!   the receipt of his answer: on its way, with the session, or not picked up for two minutes.
 
-use super::board::{is_loading, key_of, reads_as_info, Board};
+use super::board::{is_loading, key_of, reads_as_info, Board, Lens, COMMENTS_PAGE};
 use super::desk::{from_of, shown_title, NEEDS_NEWER};
 use super::links::{plain, titled};
 use super::session::{link_note, unheard_fix};
 use super::sidebar::link_of;
 use super::talk::{card_ref, choices_of, events_of, file_ids, in_order, items_of, Entry, Side};
 use super::words::{minutes, minutes_tick, say};
-use super::{AfterView, AnswerView, CardRefView, CardView, PictureView, CardWorkView, LinkNoteView, NotedView, OptionView, PlaceView, SectionView, TalkRow, Text, VersionView};
+use super::{AfterView, AnswerView, LeadView, MoreView, OptionLinkView, CardRefView, CardView, PictureView, CardWorkView, LinkNoteView, NotedView, OptionView, PlaceView, SectionView, TalkRow, Text, VersionView};
 use crate::model::types::{Card, PermissionRequest, StatusLine};
 use crate::off_mind::went_at;
 use crate::status::card_place;
@@ -307,6 +307,78 @@ pub fn pictures_of(attachments: &[Value], sections: &[Value], options: &[super::
         .collect()
 }
 
+/// The links an agent wrote into its options' labels and details (the web's `optionLinks`): a web address, or a
+/// path to a page (`/a/b.html`), with the punctuation after it left off; each with its option.
+pub fn option_links(options: &Value) -> Vec<OptionLinkView> {
+    let mut out = Vec::new();
+    for o in options.as_array().into_iter().flatten() {
+        let get = |k: &str| o.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let (key, label) = (get("key"), get("label"));
+        let found = links_in(&format!("{label} {}", get("detail")));
+        if found.is_empty() {
+            continue;
+        }
+        let mut bare = label.clone();
+        for (at, end) in links_in(&label).into_iter().rev() {
+            bare.replace_range(at..end, "");
+        }
+        let text = format!("{label} {}", get("detail"));
+        let bare = bare.trim();
+        for (at, end) in found {
+            let url = text[at..end].trim_end_matches(['.', ',', ';', ':', '!', '?']).to_string();
+            let short = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")).unwrap_or(&url);
+            let short = short.strip_prefix("www.").unwrap_or(short).to_string();
+            out.push(OptionLinkView { key: key.clone(), label: if bare.is_empty() { key.clone() } else { bare.to_string() }, url, short });
+        }
+    }
+    out
+}
+
+/// Where links stand in a text, as byte ranges (the web's LINK pattern).
+fn links_in(text: &str) -> Vec<(usize, usize)> {
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let in_name = |c: char| word(c) || c == '-' || c == '.';
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < text.len() {
+        let rest = &text[i..];
+        let Some(c) = rest.chars().next() else { break };
+        if rest.starts_with("http://") || rest.starts_with("https://") {
+            let len = rest.find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | ')' | '`')).unwrap_or(rest.len());
+            out.push((i, i + len));
+            i += len;
+            continue;
+        }
+        let before = text[..i].chars().next_back();
+        if c == '/' && !before.is_some_and(|p| word(p) || matches!(p, '/' | ':' | '.' | '~' | '-')) {
+            // (/name/…/name.htm[l], then a query and a fragment)
+            let run = rest[1..].find(|c: char| !(in_name(c) || c == '/')).map_or(rest.len(), |n| n + 1);
+            let path = &rest[..run];
+            let mut end = None;
+            for (at, _) in path.match_indices(".htm") {
+                let stop = if path[at + 4..].starts_with('l') { at + 5 } else { at + 4 };
+                let head = &path[1..at];
+                let ok = !head.is_empty() && head.split('/').all(|seg| !seg.is_empty()) && !head.ends_with('/');
+                if ok {
+                    end = Some(stop);
+                }
+            }
+            if let Some(mut stop) = end {
+                for sign in ['?', '#'] {
+                    if rest[stop..].starts_with(sign) {
+                        stop += 1 + rest[stop + 1..].find(|c: char| !(word(c) || matches!(c, '-' | '.' | '=' | '&' | '%' | '+'))).unwrap_or(rest.len() - stop - 1);
+                    }
+                }
+                out.push((i, i + stop));
+                i += stop;
+                continue;
+            }
+        }
+        i += c.len_utf8();
+    }
+    out
+}
+
 /// A card's comments as its page groups them (the web's `cardThread`): a new version says its number, and "as you
 /// asked" when his hand-back came before it; an answer to an older version says which; the agent's words after a bare
 /// What?? answer it (one block), or the What?? waits for them.
@@ -403,6 +475,26 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         x.text = titled(&x.text, assets);
     }
     v.after = after_of(b, &v, walk);
+    // The comments' window: the newest page stands, each "Load earlier (N)" shows a page more above it.
+    let pages = Lens::pages(&b.lens.comments_window, &v.id);
+    let left = v.talk.len().saturating_sub(COMMENTS_PAGE * pages as usize);
+    if left > 0 {
+        v.talk.drain(..left);
+    }
+    if left > 0 || v.has_more {
+        let n = left.to_string();
+        let says = if left > 0 {
+            say("card.earlier", format!("Load earlier ({n})"), &[("left", &n)])
+        } else {
+            say("card.earlier.hub", "Earlier comments", &[])
+        };
+        v.earlier = Some(MoreView {
+            left: left as u32,
+            hub: v.has_more,
+            says,
+            pages: pages + 1,
+        });
+    }
     Some(v)
 }
 
@@ -659,10 +751,36 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
                             .collect()
                     })
                     .unwrap_or_default();
-                VersionView { n: n as u32, at_ms: w[0].sent_at, title: w[0].title.clone(), note: w[1].note.clone(), loaded: body.is_some(), text: text.unwrap_or_default(), options }
+                let attachments = body.as_ref().and_then(|o| o.get("attachments")).cloned().unwrap_or(Value::Null);
+                let pictures = body
+                    .as_ref()
+                    .map(|o| {
+                        let sections = o.get("sections").and_then(Value::as_array).cloned().unwrap_or_default();
+                        let opts = super::desk::options_of(o.get("options").unwrap_or(&Value::Null));
+                        pictures_of(attachments.as_array().map(Vec::as_slice).unwrap_or(&[]), &sections, &opts)
+                    })
+                    .unwrap_or_default();
+                // (its other files: what is no picture of it)
+                let files: Vec<String> = file_ids(&attachments).into_iter().filter(|f| !pictures.iter().any(|p| p.file_id == *f)).collect();
+                VersionView { n: n as u32, at_ms: w[0].sent_at, title: w[0].title.clone(), note: w[1].note.clone(), loaded: body.is_some(), text: text.unwrap_or_default(), options, pictures, files }
             })
             .collect()
     };
+    // ---- what the card does not hold, before the comments ----
+    let html = if newer || loading { String::new() } else { field("html") };
+    let mut lead: Vec<LeadView> = Vec::new();
+    if more {
+        lead.push(LeadView { kind: "whole".into(), label: say("card.lead.whole", "The whole text", &[]), text: titled(&body, b.assets()), html: html.clone(), ..Default::default() });
+    } else if !html.is_empty() {
+        lead.push(LeadView { kind: "with".into(), label: say("card.lead.with", "With the text", &[]), html: html.clone(), ..Default::default() });
+    }
+    let links = if loading || newer { Vec::new() } else { option_links(&c.field("options")) };
+    if !links.is_empty() {
+        lead.push(LeadView { kind: "links".into(), label: say("card.lead.links", "Links of the options", &[]), links, ..Default::default() });
+    }
+    if status == "open" && c.snoozed_until.is_some() {
+        lead.push(LeadView { kind: "later".into(), label: say("card.lead.later", "You put it off: it waits on “Later”", &[]), at_ms: c.snoozed_at, ..Default::default() });
+    }
     let starred = m.human.get(&format!("star/{id}")).is_some_and(|r| !r.value.is_null() && r.value != Value::Bool(false));
     let other = |id: &str| match m.cards.get(id) {
         Some(x) => card_ref(b, x),
@@ -694,7 +812,8 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         notes,
         text,
         more,
-        html: if newer || loading { String::new() } else { field("html") },
+        html,
+        lead,
         sections: said,
         multiple,
         note: agent.and_then(|i| link_of_card(b, c, i, status, settled)),
@@ -708,6 +827,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         merged_from: merged.iter().map(|x| other(x)).collect(),
         merged_into: (!into.is_empty()).then(|| other(&into)),
         after: None,
+        earlier: None,
         id,
     })
 }
@@ -800,6 +920,39 @@ mod tests {
         v.notes.iter().map(|n| n.en.as_str()).collect()
     }
 
+    #[test]
+    fn the_comments_show_the_newest_ten_and_ten_more_each_time() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.card("q", "a", "decision", "normal");
+        for n in 0..24u64 {
+            r.say("a", Some("q"), 200 + n, if n % 2 == 0 { "me" } else { "a" }, (30 - n) * MIN, json!({ "text": format!("comment {n}") }));
+        }
+        let at = |lens: &Lens| {
+            let m = r.model(NOW);
+            let b = Board::new(&m, lens, NOW);
+            let walk = desk::desk(&b).stack;
+            card(&b, "q", &walk).unwrap()
+        };
+        let mut lens = Lens::default();
+        let whole = { let mut l = lens.clone(); l.comments_window = Some(("q".into(), 99)); at(&l).talk.len() };
+        assert!(whole > 20, "the asked line and the 24 comments: {whole}");
+        let v = at(&lens);
+        assert_eq!(v.talk.len(), COMMENTS_PAGE);
+        assert_eq!(v.talk.last().map(|t| t.text.as_str()), Some("comment 23"));
+        let more = v.earlier.clone().unwrap();
+        let left = (whole - COMMENTS_PAGE).to_string();
+        assert_eq!((more.left as usize, more.hub, more.pages, more.says.en.clone()), (whole - COMMENTS_PAGE, false, 2, format!("Load earlier ({left})")));
+        lens.show_more(crate::views::MoreOf::Comments { card: "q".into() });
+        assert_eq!(at(&lens).talk.len(), 2 * COMMENTS_PAGE);
+        lens.show_more(crate::views::MoreOf::Comments { card: "q".into() });
+        let v = at(&lens);
+        assert_eq!((v.talk.len(), v.earlier), (whole, None));
+        // (another card's window is its own)
+        lens.show_more(crate::views::MoreOf::Comments { card: "other".into() });
+        assert_eq!(at(&lens).talk.len(), COMMENTS_PAGE);
+    }
+
     /// The web's `pictureKeys`, case by case.
     #[test]
     fn pictures_find_their_options() {
@@ -854,6 +1007,62 @@ mod tests {
         let old = &v.versions[0];
         assert_eq!((old.n, old.loaded, old.text.as_str()), (1, true, "Old words.\n\n*↓ code, in the whole text below*"));
         assert_eq!(old.options.iter().map(|o| (o.key.as_str(), o.detail.as_str())).collect::<Vec<_>>(), [("y", "now")]);
+    }
+
+    /// What the card does not hold leads its comments; an answer says the labels of the version it answered, with
+    /// what he wrote and sent along; an old version keeps its pictures.
+    #[test]
+    fn the_thread_leads_with_what_the_card_does_not_hold() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let c = r.card("q", "a", "decision", "normal");
+        c["body"] = json!("Look:\n```\ncode\n```");
+        c["html"] = json!("<table></table>");
+        c["options"] = json!([
+            { "key": "a", "label": "Plan A https://example.com/a.", "detail": "see /docs/plan.html?x=1#top, then" },
+            { "key": "b", "label": "https://www.trommi.com", "detail": "" },
+            { "key": "c", "label": "Plain", "detail": "no link: a/b.html and http//x" },
+        ]);
+        c["versions"] = json!([
+            { "object_version": 1, "envelope_number": 101, "sent_at": NOW - 9 * MIN, "object_state": "open",
+              "content": { "title": "First", "body": "Old.", "options": [{ "key": "a", "label": "Old A" }, { "key": "b", "label": "Old B" }],
+                "attachments": [{ "attachment_id": "p1", "file_name": "a.png", "media_type": "image/png" }, { "attachment_id": "f1", "file_name": "notes.pdf", "media_type": "application/pdf" }] } },
+            { "object_version": 2, "envelope_number": 120, "sent_at": NOW - 4 * MIN, "object_state": "open", "content": { "title": "q" } },
+        ]);
+        c["answers"] = json!([{ "answer_action": "answer", "choices": ["a"], "note": "because", "option_notes": { "b": "maybe", "a": "yes" },
+            "attachments": [{ "attachment_id": "f2", "file_name": "x.txt", "media_type": "text/plain" }], "bound_object_version": 1,
+            "envelope_number": 115, "answered_at": NOW - 5 * MIN, "taken_back_at": 118, "taken_back_sent_at": NOW - 5 * MIN + 1 }]);
+        r.snoozes = json!({ "q": { "until": NOW + 60 * MIN, "at": NOW - MIN } });
+        let v = view(&r, "q");
+        let kinds: Vec<&str> = v.lead.iter().map(|l| l.kind.as_str()).collect();
+        assert_eq!(kinds, ["whole", "links", "later"]);
+        assert_eq!(v.lead[2].label.en, "You put it off: it waits on “Later”");
+        assert_eq!((v.lead[0].label.en.as_str(), v.lead[0].text.as_str(), v.lead[0].html.as_str()), ("The whole text", "Look:\n```\ncode\n```", "<table></table>"));
+        let links: Vec<(&str, &str, &str, &str)> = v.lead[1].links.iter().map(|l| (l.key.as_str(), l.label.as_str(), l.url.as_str(), l.short.as_str())).collect();
+        assert_eq!(
+            links,
+            [
+                ("a", "Plan A", "https://example.com/a", "example.com/a"),
+                ("a", "Plan A", "/docs/plan.html?x=1#top", "/docs/plan.html?x=1#top"),
+                ("b", "b", "https://www.trommi.com", "trommi.com"),
+            ]
+        );
+        let chose = v.talk.iter().find(|x| x.id == "v115d").unwrap().event.clone().unwrap();
+        assert_eq!((chose.text.as_str(), chose.label.en.as_str()), ("Old A", "You chose in version 1"));
+        assert_eq!(chose.said.iter().map(|t| t.en.as_str()).collect::<Vec<_>>(), ["“because”", "On Old A: “yes”", "On Old B: “maybe”"]);
+        assert_eq!(chose.files, ["f2"]);
+        let old = &v.versions[0];
+        assert_eq!((old.pictures.iter().map(|p| p.file_id.as_str()).collect::<Vec<_>>(), old.files.clone()), (vec!["p1"], vec!["f1".to_string()]));
+
+        // only the agent's layout, the words all on the card
+        let c = &mut r.cards[0];
+        c["body"] = json!("Short.");
+        c["options"] = json!([]);
+        let v = view(&r, "q");
+        assert_eq!(v.lead.iter().map(|l| (l.kind.as_str(), l.label.en.as_str())).collect::<Vec<_>>(), [("with", "With the text"), ("later", "You put it off: it waits on “Later”")]);
+        // (not put off: no line of it)
+        r.snoozes = json!({});
+        assert_eq!(view(&r, "q").lead.iter().map(|l| l.kind.as_str()).collect::<Vec<_>>(), ["with"]);
     }
 
     /// Settled, a card's page offers the next open question of the desk in view, else says none is left.
