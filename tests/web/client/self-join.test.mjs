@@ -102,3 +102,25 @@ test('taps at once count against the cap, and past eight open links an ask is to
   const more = await until(async () => { const v = Array.from({ length: 4 }, (_, i) => linkOf(a, agent, `d${i}`)); return v.every(Boolean) && v }, 'four answers', 30000)
   assert.deepEqual(more, Array(4).fill({ refused: 'busy' }))
 })
+
+test('a session that asks again under its identity is named as it was, not after its folder (the owner\'s board, 2026-10-14)', async t => {
+  const { a, agent } = await scene(t, { agent: true })
+  // the agent session as it was: its device names who it is, the person named its session
+  await agent.reportDevice({ device_name: 'trommi', platform: 'claude-code', folder: '~/git/trommi', host: 'desk', agent: '0123456789abcdef' })
+  await until(() => a.model.sessions.get(agent.session_id), 'the session')
+  await a.setRegisters({ [`session/${agent.session_id}`]: { name: 'coordinator' } })
+  await agent.setRegister('join_ask/a5', ask({ name: 'saeckel', folder: '~/git/saeckel', agent: '0123456789abcdef' }))
+  await sees(a, agent, 'a5')
+  const named = await until(async () => {
+    await a.answerVouch('a5', true)
+    const answer = linkOf(a, agent, 'a5')
+    return answer?.invite_id && a.model.invites.get(answer.invite_id)
+  }, 'the link for the ask')
+  assert.equal(named.label, 'coordinator')
+  // another agent's ask in the same folder: its own name
+  await agent.setRegister('join_ask/a6', ask({ name: 'saeckel', folder: '~/git/saeckel', agent: 'fedcba9876543210' }))
+  await sees(a, agent, 'a6')
+  await a.answerVouch('a6', true)
+  const other = await until(() => linkOf(a, agent, 'a6'), 'the second link')
+  assert.equal(a.model.invites.get(other.invite_id).label, 'saeckel')
+})

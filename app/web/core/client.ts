@@ -1582,9 +1582,10 @@ export class Client {
         if (session) {
           const session_id = kept.public['session_id'] = hex(session.sessionId)
           const vouch = kept.public['vouch'] as Vouch | undefined
-          const place = { ...(kept.public.label ? { name: kept.public.label } : {}), ...(kept.public['desk'] ? { desk: kept.public['desk'] } : {}),
+          const had = this.model.human.session_settings.get(session_id) ?? {}, named = kept.public.label && !(vouch && had.name) // (a vouched session keeps a name it has: the label is the ask's word)
+          const place = { ...(named ? { name: kept.public.label } : {}), ...(kept.public['desk'] ? { desk: kept.public['desk'] } : {}),
             ...(vouch ? { vouched: { by: vouch.session_id, by_name: vouch.by_name, account: vouch.account, account_label: vouch.account_label } } : {}) }
-          if (Object.keys(place).length) void this.setRegisters({ [`session/${session_id}`]: { ...(this.model.human.session_settings.get(session_id) ?? {}), ...place } }).catch(() => {})
+          if (Object.keys(place).length) void this.setRegisters({ [`session/${session_id}`]: { ...had, ...place } }).catch(() => {})
         }
       }
       this.setInvite(invite_id, { invite_state: 'joined', done: true })
@@ -1616,7 +1617,7 @@ export class Client {
   }
   /** The asks of the agents to act on, each with the refusal it gets at once: the client core's rule
    *  (core/client/src/selfjoin.rs: bad-ask, cap, busy), this device's answered ones and its open vouched links counted in. */
-  private selfJoinAsks(): { session_id: string; nonce: string; ask: Record<string, unknown>; refused: string | null }[] {
+  private selfJoinAsks(): { session_id: string; nonce: string; ask: Record<string, unknown>; refused: string | null; name?: string }[] {
     const pending = [...this.invites.values()].filter(k => !k.done && k.public['vouch']).map(k => (k.public['vouch'] as Vouch).account)
     return JSON.parse(this.board.selfJoinAsks(JSON.stringify([...this.vouchAnswered]), JSON.stringify(pending)))
   }
@@ -1630,14 +1631,13 @@ export class Client {
     if (typeof allow !== 'boolean') fail('bad-argument', 'answerVouch takes true (allow) or false (deny)')
     const found = this.selfJoinAsks().find(x => x.nonce === nonce)
     if (!found) return
-    const { ask, refused } = found, s = this.model.sessions.get(found.session_id)!
+    const { ask, refused, name } = found, s = this.model.sessions.get(found.session_id)!
     this.vouchAnswered.add(nonce)
     const answer = async (value: unknown) => { await this.setRegisters({ [`join_link/${nonce}`]: value }, { session_id: s.session_id }) }
-    if (!allow) return answer({ refused: 'denied' })
-    if (refused) return answer({ refused })
+    if (!allow || refused) return answer(allow ? { refused } : { refused: 'denied' })
     const vouch: Vouch = { nonce, session_id: s.session_id, account: String(ask['account']), account_label: String(ask['account_label'] ?? ''), by_name: String(s.settings?.name ?? ask['vouched_by'] ?? '') }
     let invite: Invite
-    try { invite = await this.createInvite({ device_role: 'agent', label: (String(ask['name'] ?? '') || String(ask['folder'] ?? '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '').slice(0, 120) || null, desk: s.settings?.desk ?? null, vouch }) }
+    try { invite = await this.createInvite({ device_role: 'agent', label: (name || String(ask['name'] ?? '')).slice(0, 120) || null, desk: s.settings?.desk ?? null, vouch }) }
     catch { return answer({ refused: 'busy' }) }
     await answer({ link: invite.link, invite_id: invite.invite_id })
   }
