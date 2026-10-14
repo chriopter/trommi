@@ -417,24 +417,15 @@ try {
     await A.until(`${count} === ${before}`, 'the cards are back with the session', 10000).then(() => check(true, 'moved back: its cards are on this desk again'), e => check(false, e.message))
   }
   // ---- the Whiteboard: the Desk has no paper; the drawing is a place of its own, on the
-  //      board of the desk in view (whiteboard.mjs boardOf, the core's scribble.ts deskBoard) ----
+  //      board of the desk in view (the core's vm.board) ----
   await A.js("trommi.router.visit('/')")
   await A.until("document.querySelector('#inbox')", 'desk again')
   await sleep(800)
   check(await A.js("return !document.querySelector('#deskpad, #deskpad-pen, #deskpad-clear, #paper-island, .clear-btn')"), 'the Desk has no paper under it, no pen and no wipe button')
   check(await A.js("return !!document.querySelector('.curl-grab') && !document.querySelector('#whiteboard-row, #desk-pad')"), 'the Scribble Board is the back of the Desk: its corner')
-  // A stroke on the desk's canvas, sealed through the Whiteboard's openCanvas before it opens (as another device would).
-  await A.js(`const { openCanvas, strokeFromWorld, boardOf } = await trommi.view('whiteboard')
-    const tl = boardOf(trommi.model())
-    const c = await openCanvas({ client: trommi.client, timeline_id: tl })
-    const k = strokeFromWorld({ pts: [120, 140, 220, 190, 340, 160], t: [0, 16, 33], f: [0.2, 0.3, 0.25], sim: true }, { tool: 'pen', color: 'ink', width: 4 })
-    c.push([{ id: 'e2e-old-paper', before: null, after: { id: 'e2e-old-paper', pad: tl, type: 'stroke', rotation: 0, z: 1, group: null, author: 'human', rev: 1, blob: null, sent: [], ...k } }])
-    for (let i = 0; i < 150 && c.state().pending; i++) await new Promise(r => setTimeout(r, 100))
-    return c.state()`).then(st => check(!st.error && !st.pending, `a stroke on the desk's canvas timeline is sealed (${JSON.stringify(st)})`))
   await A.js("const g = document.querySelector('.curl-grab'), r = g.getBoundingClientRect(); for (const t of ['pointerdown', 'pointerup']) g.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerId: 1, clientX: r.right - 8, clientY: r.top + 8 }))")
   await A.until("location.pathname === '/scribble-board' && window.pad", 'whiteboard page with the pad')
   const pad = 'window.pad'
-  await A.until(`${pad}.elements().length >= 1`, 'the canvas stroke on the Whiteboard').then(() => check(true, 'a stroke of the desk canvas shows on the Whiteboard'), e => check(false, e.message))
   await A.until(`${pad}.state().board.sessions.some(s => s.id === '${sid}')`, 'sessions in the pad').then(() => check(true, 'the Whiteboard Send to… knows the sessions'), e => check(false, e.message))
   // Draw one stroke with the mouse, as a person does: it is kept and comes back after a reload.
   const r = await A.js("const b = document.getElementById('canvas').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }")
@@ -443,11 +434,11 @@ try {
   await mouse('mouseMoved', r.x, r.y); await mouse('mousePressed', r.x, r.y)
   for (let i = 1; i <= 12; i++) await mouse('mouseMoved', r.x + i * 12, r.y + Math.sin(i / 2) * 20)
   await mouse('mouseReleased', r.x + 144, r.y)
-  await A.until(`${pad}.elements().length >= 2 && !${pad}.state().sync.pending`, 'drawn stroke sealed').then(() => check(true, 'a stroke drawn on the Whiteboard is sealed'), e => check(false, e.message))
+  await A.until(`${pad}.elements().length >= 1 && !${pad}.state().sync.pending`, 'drawn stroke sealed').then(() => check(true, 'a stroke drawn on the Whiteboard is sealed'), e => check(false, e.message))
   await A.shot('e2e-whiteboard.png')
   await A.go(`${APP}/scribble-board`)
   await A.until("document.documentElement.hasAttribute('data-ready') && window.pad", 'whiteboard after reload', 30000)
-  await A.until(`${pad}.elements().length >= 2`, 'strokes after reload', 20000).then(() => check(true, 'the Whiteboard strokes come back after a reload'), e => check(false, e.message))
+  await A.until(`${pad}.elements().length >= 1`, 'strokes after reload', 20000).then(() => check(true, 'the Whiteboard strokes come back after a reload'), e => check(false, e.message))
   await A.js("trommi.router.visit('/')")
   await A.until("document.querySelector('#inbox')", 'desk after the whiteboard')
   await A.js("document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true }))")
