@@ -9,7 +9,8 @@
 //! - the name: the person's label, else what the agent calls itself (`profile.agent_name`), else the device's name,
 //!   else "Loading …" while the room is still read and the session's profile has not come, else its short id;
 //! - archived: the person's choice (`session/<id>` register, `archived`), else a helper its agent closed with no open
-//!   question; a main session whose agent is connected again shows whatever hid it;
+//!   question, else a helper whose main is archived while its agent is away (not one he fetched back); a main session
+//!   whose agent is connected again shows whatever hid it;
 //! - one entry per agent session in a folder (slot): a connector paired again in its folder is a new agent device
 //!   with a new main session; while one session of the slot is connected (else: the newest) the others are archived
 //!   as replaced (`replaced_by` names the one that took the place), never one the person fetched back, whatever
@@ -487,6 +488,18 @@ fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>) {
         });
     }
     replace_in_slots(&mut out, &slots);
+    // A helper of a main session the person archived goes to the archive with it while its agent is away, unless
+    // he fetched the helper back (archiving a coordinator brought its hidden helpers back as "gone" rows).
+    let shelved: BTreeSet<String> = out
+        .iter()
+        .filter(|a| a.archived && a.parent.is_none())
+        .map(|a| a.id.clone())
+        .collect();
+    for a in out.iter_mut() {
+        if !a.archived && !a.online && !a.fetched && a.parent.as_ref().is_some_and(|p| shelved.contains(p)) {
+            a.archived = true;
+        }
+    }
     // A helper stands on its main's desk; a session without a desk on the first one ("main").
     let desks: HashMap<String, String> = out
         .iter()
@@ -526,9 +539,7 @@ fn replace_in_slots(out: &mut [SessionRow], slots: &[Option<Slot>]) {
     let mut by_place: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (i, s) in slots.iter().enumerate() {
         if let Some(slot) = s {
-            if !out[i].archived {
-                by_place.entry(slot.place.as_str()).or_default().push(i);
-            }
+            by_place.entry(slot.place.as_str()).or_default().push(i);
         }
     }
     // (connected first, then the newest pairing, then the one active last; the key settles a tie)
@@ -550,10 +561,11 @@ fn replace_in_slots(out: &mut [SessionRow], slots: &[Option<Slot>]) {
             if out[i].online || out[i].fetched {
                 continue;
             }
+            // (an archived session takes no place; one archived itself still has its helpers and crown follow)
             let best = same
                 .iter()
                 .copied()
-                .filter(|&j| j != i && same_agent(i, j))
+                .filter(|&j| j != i && !out[j].archived && same_agent(i, j))
                 .max_by_key(|&j| rank(j));
             if let Some(j) = best.filter(|&j| rank(j) > rank(i)) {
                 by[i] = Some(j);
@@ -577,8 +589,11 @@ fn replace_in_slots(out: &mut [SessionRow], slots: &[Option<Slot>]) {
         }
         let k = last(i);
         took.insert(out[i].id.clone(), k);
-        out[i].archived = true;
-        out[i].replaced = true;
+        // (one the person archived stays his choice: its cards leave the Desk)
+        if !out[i].archived {
+            out[i].archived = true;
+            out[i].replaced = true;
+        }
         out[i].replaced_by = Some(out[k].id.clone());
         // the crown follows the session that took the place
         if out[i].starred {
@@ -759,6 +774,15 @@ mod tests {
         assert_eq!(row(S3).parent_key.as_deref(), Some(S1), "a connected helper stands under the new session");
         assert!(!row(S3).archived);
         assert_eq!(shown(&m), vec![S1.to_string(), S3.to_string()]);
+        // the person archives the replaced coordinator: its away helpers stay out of the list, the others stay under
+        // the new session, the crown stays there, and its cards leave the Desk (his choice)
+        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "archived": true }), ..Default::default() });
+        assert_eq!(shown(&m), vec![S1.to_string(), S3.to_string()]);
+        let rows = session_list(&m, false);
+        let row = |k: &str| rows.iter().find(|r| r.key == k).unwrap().clone();
+        assert_eq!(row(S3).parent_key.as_deref(), Some(S1));
+        assert!(row(S1).starred && !row(S0).replaced);
+        assert!(archived_sessions(&m).contains(&S0.to_string()));
     }
 
     /// Two agents that ran in one folder are two entries when their devices say who they are; the same agent joined
@@ -796,8 +820,11 @@ mod tests {
                 ..Default::default()
             },
         );
-        // (the archive is per session: a helper of an archived main keeps its own choice, as on the web)
+        // (an away helper goes to the archive with its main; one he fetched back stays)
+        assert_eq!(shown(&m), Vec::<String>::new());
+        m.human.insert(format!("session/{S2}"), HumanRegister { value: json!({ "archived": false }), ..Default::default() });
         assert_eq!(shown(&m), vec![S2.to_string()]);
+        m.human.remove(&format!("session/{S2}"));
         m.sessions.get_mut(S0).unwrap().is_online = true;
         assert_eq!(shown(&m), vec![S0.to_string(), S2.to_string()]);
         m.sessions
