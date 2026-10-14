@@ -13,7 +13,7 @@
 // form with its own address (formaction), so what was written goes along. The controller "card" adds the pencil for
 // a note on one option, the draft kept while typing, Enter that sends, files that are pasted or dropped, and the pen's
 // arrow from the picture to its option. Styles: card.css.
-import { Controller, PLUS, avatar, fileTile, isTyping, letterKeysOn, LATER_TAG, SETTLED, WORDS, agoSpan, arrowStrokes, controller, doodleSvg, el, fileSrc, finalSign, html, linkNote, raw, revokeTiles, rich, sideWays, sk, sketch, whoOf } from './ui.mjs'
+import { Controller, PLUS, avatar, fileTile, isTyping, letterKeysOn, LATER_TAG, SETTLED, WORDS, agoSpan, arrowStrokes, controller, doodleSvg, el, fileSrc, finalSign, html, linkNote, raw, revokeTiles, rich, sideWays, sk, sketch, useFiles, whoOf } from './ui.mjs'
 const icon = d => raw(`<svg viewBox="0 0 24 24" class="tc-icon" aria-hidden="true"><path d="${d}"/></svg>`)
 const ARROW_L = 'M19 12H5M11 6l-6 6 6 6', ARROW_R = 'M5 12h14M13 6l6 6-6 6', TICK = 'M5 12.5l4.5 4.5L19 7.5', PLAY = 'M9 6.5v11l9-5.5z', GROW = 'M14 5h5v5M19 5l-6 6M10 19H5v-5M5 19l6-6'
 // Drawn with the pen, for the round buttons above a card: an arrow to the left and one to the right, a cross, three
@@ -1677,6 +1677,8 @@ const WAYS = {
 
 export function register(t) {
   const { stream } = t
+  // (ui.mjs fileSrc: a picture's object URL, the core asked once; app.mjs does not hand it over yet)
+  if (t.fileUrl) useFiles(t.fileUrl)
   const gone = (req, res) => t.notFound(req, res, 'This question is not on the board any more.')
   /** The session a card was opened from (/chat/<slug>/card/<n>): its address, its key, its name. */
   const fromOf = (vm, slug) => { if (!slug) return null; const s = vm.sidebar.sessions.find(x => x.slug === slug || x.id === slug); return { slug, id: s?.id ?? null, name: s?.name.en ?? 'the session' } }
