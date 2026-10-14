@@ -1,44 +1,31 @@
-# The checks of every part, in two tiers.
-#
-# On every pull request (the fast tier, about one to two minutes per part): which parts changed against the pull
+# The checks of a pull request (the fast tier, about one to two minutes per part): which parts changed against the pull
 # request's base, and for those: clippy and every Rust test but the slow ones (nextest profile `fast`,
-# .config/nextest.toml), the web app's type check, lint and tests (no browser) and its build, the iOS client package
-# compiled (with its tests), the app compiled for iOS and the Mac, the Linux app and the website. The jobs' names are
-# the checks the ruleset of main requires: Which parts changed, Core (check), Web app (check), Connector (check),
+# .config/nextest.toml), the web app's type check, lint and tests, its browser tests and its build, the iOS client
+# package compiled (with its tests), the app compiled for iOS and the Mac, the Linux app and the website. The jobs' names
+# are the checks the ruleset of main requires: Which parts changed, Core (check), Web app (check), Connector (check),
 # Hub (check), iOS client (check). A part that did not change skips its job, which counts as passed; when finding the
 # changed parts fails, every check runs. A pull request gets no secret and delivers nothing.
 #
-# Called by a part's ship-*.yml on main (the full tier): `parts` names the part; its check runs with every test
-# (profile `ci`), and Core (check) runs too when the core changed since that workflow's newest run on main that
-# passed (so what a failed run left untested is tested again). The giant tests, fuzzing, the torture run and the
-# connector under load are nightly (nightly.yml).
+# The steps of each check are a composite action (.github/actions/check-*), which the part's ship-*.yml on main uses too,
+# with every test (profile `ci`). The giant tests, fuzzing, the torture run and the connector under load are nightly
+# (nightly.yml).
 name: pr-check
 
 on:
   pull_request:
-  workflow_call:
-    inputs:
-      parts:
-        description: The part whose full checks run (web, hub, connector, apple, linux, site)
-        required: true
-        type: string
-      workflow:
-        description: The calling workflow's file (ship-hub.yml, ...); the core's changes are counted since its newest green run on main
-        required: true
-        type: string
 
 permissions: {}
 
-# A pull request: a newer commit cuts the older run off. (Called: the caller's concurrency holds.)
+# A newer commit cuts the older run off.
 concurrency:
-  group: pr-check-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}-${{ inputs.parts }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: pr-check-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_INCREMENTAL: '0'
   NEXTEST_VERSION: 0.9.148
-  # fast on a pull request, ci (every test) when a ship-*.yml calls
-  NEXTEST_PROFILE: ${{ github.event_name == 'pull_request' && 'fast' || 'ci' }}
+  # fast on a pull request, ci (every test) in a ship-*.yml
+  NEXTEST_PROFILE: fast
 
 jobs:
   changes:
@@ -69,53 +56,8 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PARTS: ${{ inputs.parts }}
-          WORKFLOW: ${{ inputs.workflow }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -eu
-          base=
-          if [ "$EVENT" = pull_request ]; then
-            base=$(git merge-base "$PR_BASE" HEAD || true)
-          else
-            # called by a ship-*.yml on main: since its newest run on main that passed
-            base=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW/runs?branch=main&status=success&per_page=1" \
-              --jq '.workflow_runs[0].head_sha // ""' 2>/dev/null) || base=
-          fi
-          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
-            all=0
-            git diff --name-only "$base" HEAD > "$RUNNER_TEMP/files"
-            echo "compared with $base: $(wc -l < "$RUNNER_TEMP/files") file(s) changed"
-          else
-            all=1
-            : > "$RUNNER_TEMP/files"
-            echo "nothing to compare with: every part counts as changed"
-          fi
-          # what every Rust part and app is built on
-          shared='core/|client/|Cargo\.toml$|\.config/nextest\.toml$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/pr-check\.yml$|\.github/scripts/(inputs|rust_toolchain)\.sh$'
-          # part <name> '<its own paths>': on a pull request, whether its paths (or the shared ones) changed; called,
-          # only the named part (always) and the core (when it changed)
-          part() {
-            if [ "$all" = 1 ] || grep -Eq "^($2|$shared)" "$RUNNER_TEMP/files"; then value=true; else value=false; fi
-            if [ "$EVENT" != pull_request ]; then
-              case "$1" in
-                "$PARTS") value=true ;;
-                # the website does not build on the core
-                core) [ "$PARTS" != site ] || value=false ;;
-                *) value=false ;;
-              esac
-            fi
-            echo "$1=$value" >> "$GITHUB_OUTPUT"
-            echo "- $1: $value" | tee -a "$GITHUB_STEP_SUMMARY"
-          }
-          part core 'tests/core/|tests/src/|tests/bindings/|tests/Cargo\.toml$|spec/vectors/|spec/account-vectors\.json$|THIRD-PARTY\.md$|\.github/scripts/third_party\.mjs$'
-          part web 'app/web/|tests/web/|connector/tools\.json$|connector/prompt\.md$|demo/|\.node-version$|\.github/scripts/(web_release\.mjs|web_smoke\.sh|deployed\.sh|release_notes\.mjs)$|\.github/tools/wrangler/|\.github/workflows/ship-web\.yml$'
-          part connector 'connector/|release/|install\.sh$|\.claude-plugin/|tests/connector/|tests/Cargo\.toml$|\.github/workflows/(ship-connector|sign-release)\.yml$'
-          part hub 'hub/|release/|tests/hub/|tests/deploy/|tests/Cargo\.toml$|\.github/workflows/(ship-hub|sign-release)\.yml$|\.github/scripts/(hub_compat|deployed|deploy_issue)\.sh$'
-          part apple 'app/ios/|tests/ios/|demo/|\.github/scripts/(ios_|mac_)|\.github/workflows/ship-apple\.yml$'
-          # (the window draws with the web app's pen and fonts)
-          part linux 'app/linux/|connector/|app/web/public/ui\.mjs$|app/web/public/fonts/|\.github/workflows/ship-linux\.yml$'
-          part site 'site/|tests/site/|\.github/workflows/ship-site\.yml$'
+        run: bash .github/scripts/changed_parts.sh
 
   # The shared core's own tests: the crates' unit tests and the scenario tests under tests/core and tests/bindings.
   core:
@@ -130,33 +72,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Compiler (rust-toolchain.toml), clippy
-        run: sh .github/scripts/rust_toolchain.sh --component clippy
-      # the downloaded crates (~/.cargo) and the compiled ones (target/), saved by main; a pull request reads main's
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          prefix-key: v2-rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
-        with:
-          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
-      - name: Clippy
-        run: cargo clippy --locked -p trommi-wire -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io --all-targets -- -D warnings
-      - name: THIRD-PARTY.md is current
-        run: node .github/scripts/third_party.mjs --check
-      # the Rust facade, the wasm exports, the JavaScript layer and the typings offer the same calls (Node only, under a second)
-      - name: The bindings manifest
-        run: node tests/bindings/manifest.mjs
-      - name: The crates' own tests
-        run: cargo test --locked -p trommi-wire -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io -p trommi-tests-shipped -p trommi-tests-shipped
-      # One test that fails must not hide the others: every target runs, the step fails at the end.
-      - name: The scenario tests (tests/core, tests/bindings) and the test library
-        run: |
-          set -eu
-          tests=$(sed -n 's/^name = "\(\(core\|bindings\)_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')
-          [ -n "$tests" ] || { echo "::error::tests/Cargo.toml names no core test"; exit 1; }
-          # shellcheck disable=SC2086
-          cargo nextest run --locked -p trommi-tests --no-fail-fast --lib $tests
+      - uses: ./.github/actions/check-core
 
   web:
     name: Web app (check)
@@ -172,62 +88,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: app/web/package-lock.json
-      # the Rust core for the browser: core/bindings/wasm/build.sh, or the same bytes from main's cache (.github/scripts/wasm_core.sh)
-      - name: Compiler (rust-toolchain.toml)
-        run: sh .github/scripts/rust_toolchain.sh wasm32-unknown-unknown
-      - name: The core's inputs
-        id: core
-        run: echo "key=$(sh .github/scripts/wasm_core.sh key)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: pkg
-        with:
-          path: core/bindings/wasm/pkg
-          key: ${{ steps.core.outputs.key }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: steps.pkg.outputs.cache-hit != 'true'
-        with:
-          prefix-key: v2-rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: The Rust core for the browser
-        env:
-          HIT: ${{ steps.pkg.outputs.cache-hit }}
-        run: sh .github/scripts/wasm_core.sh build
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.pkg.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
-        with:
-          path: core/bindings/wasm/pkg
-          key: ${{ steps.core.outputs.key }}
-      - name: Packages
-        working-directory: app/web
-        run: npm ci --no-audit --no-fund
-      # type check, the app's own checks (layout, lint), the tests without a browser: six files at once on four cores
-      - name: Test
-        working-directory: app/web
-        env:
-          WEB_TEST_CONCURRENCY: '6'
-        run: npm test
-      - name: Build
-        run: node app/web/dev/build.mjs --write
-      - name: The demo data
-        run: node demo/check.mjs
-      # The browser tests (headless Chrome of the runner), one after the other so that a failing one does not hide the others.
-      - name: Browser tests
-        env:
-          CHROMIUM: google-chrome
-        run: |
-          status=0
-          for t in store/run.mjs proof/proof.mjs views/overflow.browser.mjs views/att-gone.browser.mjs views/foot-level.browser.mjs views/dock.browser.mjs views/security.browser.mjs views/news.browser.mjs views/tips.browser.mjs; do
-            echo "== $t"
-            node "tests/web/$t" || { echo "::error::tests/web/$t failed"; status=1; }
-          done
-          node --test tests/web/build/build.test.mjs || status=1
-          node tests/web/build/wasm-load.mjs || status=1
-          exit "$status"
+      - uses: ./.github/actions/check-web
 
   connector:
     name: Connector (check)
@@ -241,33 +102,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-      - name: Compiler (rust-toolchain.toml), clippy
-        run: sh .github/scripts/rust_toolchain.sh --component clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          prefix-key: v2-rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
-        with:
-          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
-      - name: Clippy
-        run: cargo clippy --locked -p trommi-connector --all-targets -- -D warnings
-      - name: The connector's own tests
-        run: cargo test --locked -p trommi-connector
-      # The scenario tests start the hub of this repository and the built connector (tests/connector/common/mod.rs).
-      - name: Test
-        run: |
-          set -eu
-          cargo build --locked -p trommi-hub -p trommi-connector
-          tests=$(sed -n 's/^name = "\(connector_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')
-          [ -n "$tests" ] || { echo "::error::tests/Cargo.toml names no connector test"; exit 1; }
-          # TROMMI_HUB_SERVES_REMOVAL: this repository's hub has the removal route, so a removed connector must verify
-          # its removal there (without it the test accepts a connector that only keeps its state)
-          # shellcheck disable=SC2086
-          TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" cargo nextest run --locked -p trommi-tests --no-fail-fast $tests
+      - uses: ./.github/actions/check-connector
 
   hub:
     name: Hub (check)
@@ -281,34 +116,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Compiler (rust-toolchain.toml), clippy
-        run: sh .github/scripts/rust_toolchain.sh --component clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          prefix-key: v2-rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
-        with:
-          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
-      - name: Clippy
-        run: cargo clippy --locked -p trommi-hub -p trommi-hub-updater --all-targets -- -D warnings
-      # the hub's tests and the deploy path's (updater, release form, settings)
-      - name: Test
-        run: |
-          set -eu
-          tests=$(sed -n 's/^name = "\(\(hub\|deploy\)_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')
-          [ -n "$tests" ] || { echo "::error::tests/Cargo.toml names no hub test"; exit 1; }
-          # shellcheck disable=SC2086
-          cargo nextest run --locked -p trommi-tests --no-fail-fast $tests
-      - name: Scripts of the deploy path
-        run: |
-          set -eu
-          # notes of the lowest level differ between shellcheck versions and do not stop the build
-          shellcheck -S warning release/*.sh hub/deploy/*.sh
-          bash hub/deploy/install.sh check
+      - uses: ./.github/actions/check-hub
 
-  # The app's client package (app/ios/TrommiClient) with its tests (tests/ios), on Linux: the package does not compile
-  # for macOS (ActivityKit). A pull request compiles it with its tests; ship-apple.yml runs them.
   ios_client:
     name: iOS client (check)
     needs: changes
@@ -321,52 +130,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # the core for Swift on this machine, taken from an earlier run of main when built from the same paths
-      - name: What the core for Swift is built from
-        id: core_inputs
-        run: |
-          set -eu
-          sum=$(git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
-          echo "key=ios-core-host-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: core_cache
-        with:
-          key: ${{ steps.core_inputs.outputs.key }}
-          path: |
-            core/bindings/swift/TrommiCoreRust/lib
-            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
-            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
-      - name: Compiler (rust-toolchain.toml), Swift
-        env:
-          HIT: ${{ steps.core_cache.outputs.cache-hit }}
-        run: |
-          if [ "$HIT" != true ]; then sh .github/scripts/rust_toolchain.sh; fi
-          swift --version
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: steps.core_cache.outputs.cache-hit != 'true'
-        with:
-          prefix-key: v2-rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: The Rust core for Swift on this machine
-        if: steps.core_cache.outputs.cache-hit != 'true'
-        run: sh core/bindings/swift/build.sh host
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.core_cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
-        with:
-          key: ${{ steps.core_inputs.outputs.key }}
-          path: |
-            core/bindings/swift/TrommiCoreRust/lib
-            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
-            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
-      - name: Test
-        env:
-          FAST: ${{ github.event_name == 'pull_request' }}
-        run: |
-          if [ "$FAST" = true ]; then swift build --build-tests --package-path tests/ios; else swift test --package-path tests/ios; fi
+      - uses: ./.github/actions/check-ios-client
 
-  # The app itself (the Xcode project from AppStore/project.yml) compiled for iOS and for the Mac, on a pull request:
-  # what the Linux check of the client package cannot see. Not signed, not archived, no secret. (On main the archive
-  # of ship-apple.yml builds it.) A stable name a ruleset can require.
   ios_app:
     name: iOS app (build)
     needs: changes
@@ -442,66 +207,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Qt 6 and the build tools
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends \
-            qt6-base-dev qt6-declarative-dev qt6-declarative-private-dev \
-            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
-            qml6-module-qtquick-window qml6-module-qtquick-templates qml6-module-qtqml-workerscript qml6-module-qtquick-dialogs \
-            libgl-dev lld
-          qmake6 -query QT_VERSION
-      # the window draws with the web app's pen: qml/pen.mjs is made from app/web/public/ui.mjs and must be current
-      - name: The pen is the web's
-        run: node app/linux/dev/pen.mjs --check
-      - name: Compiler (rust-toolchain.toml)
-        run: sh .github/scripts/rust_toolchain.sh
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          prefix-key: v2-rust-linux
-          workspaces: app/linux -> target
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Build
-        working-directory: app/linux
-        env:
-          QMAKE: qmake6
-        run: cargo build --locked -j 4
-      - name: Tests
-        working-directory: app/linux
-        env:
-          QMAKE: qmake6
-        run: cargo test --locked -j 4
-      - name: Smoke test (Qt offscreen)
-        working-directory: app/linux
-        run: |
-          data=$(mktemp -d)
-          QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 TROMMI_LINUX_DIR="$data" \
-            TROMMI_LINUX_SHOT="$PWD/smoke.png" TROMMI_LINUX_SHOT_AFTER_MS=500 \
-            timeout 60 target/debug/trommi-linux 2>&1 | grep -v '^qt\.' || true
-          test -s smoke.png || { echo "the window drew nothing"; exit 1; }
-          # (a QML error would leave the window empty: the picture must not be one plain colour)
-          test "$(stat -c %s smoke.png)" -gt 8000 || { echo "the picture is empty"; exit 1; }
-      - name: Smoke test (Qt offscreen), on the app core
-        working-directory: app/linux
-        run: |
-          data=$(mktemp -d)
-          TROMMI_LINUX_APP_CORE=1 QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 TROMMI_LINUX_DIR="$data" \
-            TROMMI_LINUX_SHOT="$PWD/smoke-core.png" TROMMI_LINUX_SHOT_AFTER_MS=500 \
-            timeout 60 target/debug/trommi-linux 2>&1 | grep -v '^qt\.' || true
-          test -s smoke-core.png || { echo "the window drew nothing"; exit 1; }
-          # (a QML error would leave the window empty: the picture must not be one plain colour)
-          test "$(stat -c %s smoke-core.png)" -gt 8000 || { echo "the picture is empty"; exit 1; }
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: linux-smoke
-          path: |
-            app/linux/smoke.png
-            app/linux/smoke-core.png
-          if-no-files-found: ignore
-          retention-days: 7
+      - uses: ./.github/actions/check-linux
 
-  # The website trommi.com (site/), checked as files (tests/site/check.mjs).
   site:
     name: Site (test)
     needs: changes
@@ -518,8 +225,5 @@ jobs:
             site
             tests/site
             .node-version
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-      - name: The site's checks
-        run: node tests/site/check.mjs
+            .github/actions/check-site
+      - uses: ./.github/actions/check-site
