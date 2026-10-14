@@ -199,6 +199,25 @@ fn vectors_email() {
 }
 
 #[test]
+fn email_only_the_last_dot_of_the_domain_counts_as_at_the_hub() {
+    assert_eq!(
+        normalise_email("a@b.example.c"),
+        Err(AccountError::BadEmail)
+    );
+    assert_eq!(
+        normalise_email("a@example.com."),
+        Err(AccountError::BadEmail)
+    );
+    for good in [
+        "owner@example.com",
+        "a@example..com",
+        "ada.lovelace+notes@sub.example.org",
+    ] {
+        assert_eq!(normalise_email(good).as_deref(), Ok(good));
+    }
+}
+
+#[test]
 fn vectors_password_rule() {
     let v = vectors();
     assert_eq!(v["passwordRule"]["min"], PASSWORD_MIN);
