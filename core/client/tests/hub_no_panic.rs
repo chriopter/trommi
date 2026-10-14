@@ -16,6 +16,7 @@ const SITE: Site<'static> = Site {
     url: "https://hub.example",
     token: Some("abcdefghijklmnop_-0123"),
     client: "web/1.2.3",
+    lease: None,
 };
 
 /// One `Expect` of every kind the codec reads an answer by.

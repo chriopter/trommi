@@ -123,7 +123,7 @@ pub(crate) fn begin(hub: String, by: By, account: &str, secret: &Secret, client:
             (named, keys.auth_key, keys.wrap_key)
         }
     };
-    let site = Site { url: &hub, token: None, client };
+    let site = Site { url: &hub, token: None, client, lease: None };
     let auth: [u8; 32] = *auth_key.expose();
     let route = match by {
         By::Password | By::Passkey => Route::Login { account: &named, auth_key: &auth },
@@ -135,14 +135,14 @@ pub(crate) fn begin(hub: String, by: By, account: &str, secret: &Secret, client:
 
 /// The challenge of a sign-in with a passkey (no token).
 pub(crate) fn passkey_challenge(hub: &str, client: &str) -> Result<(crate::app::io::HttpRequest, Expect), Problem> {
-    let site = Site { url: hub, token: None, client };
+    let site = Site { url: hub, token: None, client, lease: None };
     Codec.request(&site, &Route::PasskeyChallenge).map_err(|_| Problem::BadHub)
 }
 
 /// The login with a passkey's assertion; `prf`: its PRF output (32 bytes).
 pub(crate) fn passkey_begin(hub: String, assertion: crate::hub::PasskeyAssertion, prf: &[u8], client: &str) -> Result<(Waiting, crate::app::io::HttpRequest), Problem> {
     let prf = Key::from_slice(prf).map_err(|_| Problem::Other("no-prf"))?;
-    let site = Site { url: &hub, token: None, client };
+    let site = Site { url: &hub, token: None, client, lease: None };
     let (request, expect) = Codec.request(&site, &Route::PasskeyLogin { assertion: &assertion }).map_err(|_| Problem::Other("bad-passkey"))?;
     let credential_id = assertion.credential_id;
     Ok((Waiting { hub, by: By::Passkey, wrap_key: Wrap::Passkey { prf, credential_id }, expect }, request))

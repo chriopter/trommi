@@ -20,7 +20,8 @@
 //!   from the device's own cursor, as before there was a record. One that does not parse is treated the same way.
 //!
 //! Also kept: the ids of the wishes for keys this device answered (`events`), so a restart does not hand the same
-//! keys over again for a wish the hub still lists.
+//! keys over again for a wish the hub still lists. And on an agent device the commands the gate let through that
+//! nobody said were done (`agent`): reported again after a restart, marked uncertain.
 //!
 //! Not kept: the page in hand, the repair the head of the order waits for, the Welcomes read so far (all read again
 //! from the position), the stream, tokens, waits, and the keys of the code (see `joins`: a sign-in's joins that
@@ -89,6 +90,9 @@ pub(super) struct Record {
     /// The wishes for keys this device answered with a handover (`events`), the newest last.
     #[serde(default)]
     answered: Vec<u64>,
+    /// An agent device's commands the gate let through that nobody said were done (`agent`), oldest first.
+    #[serde(default)]
+    commands: Vec<super::agent::AgentCommand>,
 }
 
 /// A refusal's code as this build names it, from a record.
@@ -189,6 +193,9 @@ impl Engine {
         self.reread_from = record.reread_from;
         self.joining = joining;
         self.wishes.restore(&record.answered);
+        if let Some(agent) = self.agent.as_mut() {
+            agent.commands = record.commands.iter().take(super::agent::COMMANDS_MAX).cloned().collect();
+        }
         self.written = Some(record.clone());
         Some(())
     }
@@ -214,6 +221,7 @@ impl Engine {
             reread_from: self.reread_from,
             joins: self.joining.as_ref().map(joins::Joining::record),
             answered: self.wishes.answered.iter().copied().collect(),
+            commands: self.agent.as_ref().map(|a| a.commands.clone()).unwrap_or_default(),
         }
     }
 
@@ -230,7 +238,7 @@ impl Engine {
                 return;
             }
             record.revision = self.writes.revision();
-        } else if record.position == self.device.cursor() && record.behind.is_empty() && record.keyless.is_empty() && record.withheld.is_empty() && record.mends.is_empty() && record.reread_from.is_none() && record.joins.is_none() && record.floor.is_none() && record.answered.is_empty() {
+        } else if record.position == self.device.cursor() && record.behind.is_empty() && record.keyless.is_empty() && record.withheld.is_empty() && record.mends.is_empty() && record.reread_from.is_none() && record.joins.is_none() && record.floor.is_none() && record.answered.is_empty() && record.commands.is_empty() {
             // (nothing the device's own cursor does not say)
             return;
         }

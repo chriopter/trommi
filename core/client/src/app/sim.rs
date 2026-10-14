@@ -311,3 +311,125 @@ impl Sim {
             .collect()
     }
 }
+
+/// An agent device's engine run in memory ([`crate::engine::Engine::become_agent`]): the same stores, stand-in
+/// hub, streams and clock as [`Sim`], with the engine driven directly (an agent has no App and no views). Every
+/// report the engine made is kept in `reports`.
+pub struct AgentSim {
+    /// The stores, the hub, the streams and the clock (its `app` is not used).
+    pub io: Sim,
+    pub engine: Option<crate::engine::Engine>,
+    pub reports: Vec<crate::engine::Report>,
+    /// The hub's address the engine is opened with.
+    pub hub: String,
+    next_id: u64,
+}
+
+impl AgentSim {
+    /// An engine over the device state in `io.device`, made an agent's; nothing is asked before [`AgentSim::start`].
+    pub fn new(io: Sim, hub: &str) -> Self {
+        let mut sim = AgentSim { io, engine: None, reports: Vec::new(), hub: hub.to_string(), next_id: 1 };
+        sim.open();
+        sim
+    }
+
+    /// The process died: a new engine over the same stores.
+    pub fn restart(&mut self) {
+        self.io.timer = None;
+        self.io.queue.clear();
+        self.io.streams.clear();
+        self.io.held.clear();
+        self.open();
+    }
+
+    fn open(&mut self) {
+        let entries = self.io.device.1.iter().map(|(k, v)| DeviceEntry { key: k.clone().into(), value: v.clone().into() }).collect();
+        let mut engine = crate::engine::Engine::open(&self.hub, "test/0.0.0", 7, self.io.device.0, entries).expect("the stored device opens");
+        engine.become_agent().expect("an agent device");
+        self.engine = Some(engine);
+    }
+
+    pub fn engine(&mut self) -> &mut crate::engine::Engine {
+        self.engine.as_mut().expect("an engine")
+    }
+
+    /// Calls the engine with a context and runs everything that follows.
+    pub fn with<T>(&mut self, call: impl FnOnce(&mut crate::engine::Engine, &mut crate::engine::Ctx<'_>) -> T) -> T {
+        let mut out = Vec::new();
+        let result = {
+            let mut ctx = crate::engine::Ctx { now: self.io.now_ms, next_id: &mut self.next_id, out: &mut out };
+            call(self.engine.as_mut().expect("an engine"), &mut ctx)
+        };
+        self.run(out);
+        result
+    }
+
+    pub fn start(&mut self) {
+        self.with(|engine, ctx| engine.start(ctx));
+    }
+
+    /// Runs effects and the events that follow from them, until nothing is left to do now.
+    pub fn run(&mut self, effects: Vec<Effect>) {
+        self.io.execute(effects);
+        while let Some(event) = self.io.queue.pop_front() {
+            let mut out = Vec::new();
+            {
+                let engine = self.engine.as_mut().expect("an engine");
+                let mut ctx = crate::engine::Ctx { now: self.io.now_ms, next_id: &mut self.next_id, out: &mut out };
+                match event {
+                    Event::Http { id, result } => {
+                        engine.on_http(&mut ctx, id, result);
+                    }
+                    Event::Stream { id, item } => {
+                        engine.on_stream(&mut ctx, id, item);
+                    }
+                    Event::Store { id, result } => {
+                        engine.on_store(&mut ctx, id, &result);
+                    }
+                    Event::Wake => engine.on_wake(&mut ctx),
+                    _ => {}
+                }
+            }
+            self.io.execute(out);
+            self.drain();
+        }
+        self.drain();
+    }
+
+    fn drain(&mut self) {
+        let engine = self.engine.as_mut().expect("an engine");
+        while let Some(report) = engine.next_report() {
+            self.reports.push(report);
+        }
+        self.io.timer = engine.next_wake();
+    }
+
+    /// Moves the clock; wakes the engine when its timer is due.
+    pub fn advance(&mut self, ms: u64) {
+        self.io.now_ms += ms;
+        if self.io.timer.is_some_and(|at| at <= self.io.now_ms) {
+            self.io.timer = None;
+            self.io.queue.push_back(Event::Wake);
+            self.run(Vec::new());
+        }
+    }
+
+    /// Sends an item on the newest open stream, and runs what follows.
+    pub fn stream(&mut self, item: StreamItem) -> bool {
+        let Some((id, _)) = self.io.streams.last().cloned() else { return false };
+        if matches!(item, StreamItem::Ended | StreamItem::Failed { .. }) {
+            self.io.streams.pop();
+        }
+        self.io.queue.push_back(Event::Stream { id, item });
+        self.run(Vec::new());
+        true
+    }
+
+    /// The commands the engine reported, in order.
+    pub fn commands(&self) -> Vec<crate::engine::AgentCommand> {
+        self.reports.iter().filter_map(|r| match r {
+            crate::engine::Report::Command(c) => Some((**c).clone()),
+            _ => None,
+        }).collect()
+    }
+}

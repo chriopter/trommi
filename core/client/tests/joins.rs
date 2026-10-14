@@ -185,7 +185,7 @@ fn the_answer_to_thirty_two_joins_is_read() {
     let entries: Vec<OutboxEntry> = (0..JOINS_AT_ONCE as u8)
         .map(|i| OutboxEntry { id: 1, kind: OutboxKind::ExternalCommit, group: Some(GroupId::session(room, SessionId::new([i; 16]))), epoch: 1, parts: vec![vec![1], vec![2], vec![3], vec![4]] })
         .collect();
-    let site = Site { url: common::hub::HUB_URL, token: Some("abcdefghijklmnop_-0123"), client: "web/1.2.3" };
+    let site = Site { url: common::hub::HUB_URL, token: Some("abcdefghijklmnop_-0123"), client: "web/1.2.3", lease: None };
     let (_, expect) = Codec.request(&site, &Route::Joins { entries: &entries }).expect("a request");
     let rows: Vec<String> = (0..entries.len()).map(|i| format!(r#"{{"change":{},"epoch":2}}"#, 20 + i)).collect();
     let body = format!(r#"{{"answers":[{}]}}"#, rows.join(","));

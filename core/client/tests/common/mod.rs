@@ -172,6 +172,9 @@ pub struct World {
     ticks: u64,
     /// Agents of further sessions (`another_session`).
     pub others: Vec<Peer>,
+    /// The agent's device state as it stands (`agent` writes it): an agent engine runs over a copy of it
+    /// (`agent_sim`).
+    pub agent_store: TestStore,
 }
 
 impl World {
@@ -179,7 +182,7 @@ impl World {
         let mut hub = Hub::default();
         let (mut founder, _) = new_peer();
         let (mut me, me_store) = new_peer();
-        let (mut agent, _) = new_peer();
+        let (mut agent, agent_store) = new_peer();
         let keys = code_keys();
         hub.recovery = Some(DeviceId::new(keys.public().signature_key));
         let room = GroupId::room(founder.found_room(&keys, now()).expect("the room is founded"));
@@ -215,7 +218,7 @@ impl World {
         assert!(agent.group(&group).is_ok(), "the agent is in its session");
         let id = me.id();
         drop(me);
-        World { hub: Rc::new(RefCell::new(hub)), founder, agent, room, session, group, me: id, me_store, cards: 0, ticks: 0, others: Vec::new() }
+        World { hub: Rc::new(RefCell::new(hub)), founder, agent, room, session, group, me: id, me_store, cards: 0, ticks: 0, others: Vec::new(), agent_store }
     }
 
     /// A Sim whose device store holds the App's device as it stands, whose hub is the stand-in.
@@ -237,6 +240,12 @@ impl World {
         sim.hub = Some(Box::new(move |now, request| hub.borrow_mut().http(now, request)));
         let hub = self.hub.clone();
         sim.stream_hub = Some(Box::new(move |now, request| hub.borrow_mut().open_stream(now, request)));
+    }
+
+    /// An agent engine over a copy of the agent's device state as it stands, against the stand-in hub. The World's
+    /// own `agent` must write no more after this (the engine is that device now), unless a test wants two writers.
+    pub fn agent_sim(&self) -> trommi_client_core::app::sim::AgentSim {
+        trommi_client_core::app::sim::AgentSim::new(self.sim_of(&self.agent_store), HUB_URL)
     }
 
     /// The App's device opened from what a Sim stored: what a restart would find.

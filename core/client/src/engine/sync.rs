@@ -29,6 +29,8 @@ pub mod requests;
 pub mod found;
 #[path = "link_join.rs"]
 pub mod link_join;
+#[path = "agent.rs"]
+pub mod agent;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -130,6 +132,18 @@ pub enum Stopped {
     Write,
     /// The device itself failed (its store's contents, its entropy). The App opens the stored state again in place.
     Device,
+    /// An agent device: another process took its lease (13.7). Of two processes on one state the later wins.
+    LeaseLost,
+    /// An agent device: the hub serves an envelope this device signed beyond what its stored state signed. The
+    /// state is older than what the device sent; nothing is signed with it ([`agent`]).
+    RolledBack,
+    /// An agent device: a Commit removed it from its main session; another connector continues the session.
+    Replaced,
+    /// An agent device: the hub refuses it as no member, and no Commit it still serves removed it. The state is
+    /// kept.
+    NotMember,
+    /// An agent device: the room was told of it by another device than the one that invited it (12.1.6).
+    BadInvite,
 }
 
 impl Stopped {
@@ -218,6 +232,11 @@ pub enum Report {
     /// The hub deleted a file (11.3): its cached bytes go.
     FileEvicted { file: FileId },
     Stopped(Stopped),
+    /// An agent device: a human's command the gate let through, after the envelope's own report; or, after a
+    /// restart, one kept from before that nobody said was done (`uncertain`).
+    Command(Box<agent::AgentCommand>),
+    /// An agent device: the lease this process acquired (its generation), or none once it was given up.
+    Lease(Option<u64>),
 }
 
 /// A wait before the next try of something.
@@ -286,6 +305,12 @@ enum Asked {
     Record,
     RecordWrite,
     DeviceWrite,
+    /// An agent's lease (`agent`).
+    Lease(Expect),
+    /// The rollback guard's look at this device's own chain in a group, beyond its own head `own`.
+    Guard { expect: Expect, group: GroupId, own: u64 },
+    /// A page of what the hub still serves of a removal.
+    Removal { expect: Expect, group: GroupId },
 }
 
 impl Asked {
@@ -293,7 +318,7 @@ impl Asked {
     fn expect(&self) -> Option<&Expect> {
         match self {
             Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::Request { .. } | Asked::KeptScan | Asked::KeptWrite => None,
-            Asked::Challenge(e) | Asked::Token(e) | Asked::Page(e) | Asked::Welcomes(e) | Asked::Told(e) | Asked::KeyPackagesHeld(e) | Asked::Desk(e) | Asked::Wishes(e) => Some(e),
+            Asked::Challenge(e) | Asked::Lease(e) | Asked::Token(e) | Asked::Page(e) | Asked::Welcomes(e) | Asked::Told(e) | Asked::KeyPackagesHeld(e) | Asked::Desk(e) | Asked::Wishes(e) => Some(e),
             Asked::Post { expect, .. }
             | Asked::Link { expect }
             | Asked::GroupLog { expect, .. }
@@ -304,7 +329,9 @@ impl Asked {
             | Asked::First { expect, .. }
             | Asked::Claim { expect, .. }
             | Asked::RoomGroups { expect, .. }
-            | Asked::RoomRead { expect, .. } => Some(expect),
+            | Asked::RoomRead { expect, .. }
+            | Asked::Guard { expect, .. }
+            | Asked::Removal { expect, .. } => Some(expect),
         }
     }
 }
@@ -480,6 +507,8 @@ pub struct Engine {
     link_join: Option<link_join::LinkJoin>,
     /// The actions' requests (`requests`).
     requests: requests::Requests,
+    /// An agent device's lease, gate and guards (`agent`); none for a human device.
+    agent: Option<agent::Agent>,
 }
 
 /// Why a stored device does not open as an engine.
@@ -588,6 +617,7 @@ impl Engine {
             founding: None,
             link_join: None,
             requests: requests::Requests::default(),
+            agent: None,
         }
     }
 
@@ -656,6 +686,7 @@ impl Engine {
             }
         };
         want(self.auth_retry.at);
+        want(self.agent_wake());
         want(self.link_join.as_ref().and_then(|j| j.wake()));
         if self.founding.is_some() {
             want(self.pump_retry.at);
@@ -840,8 +871,15 @@ impl Engine {
         } else if answer.is_ok() && !matches!(asked, Asked::Challenge(_) | Asked::Token(_)) {
             self.unauthorised = 0;
         }
+        if let (Some(r), false) = (&refusal, matches!(asked, Asked::Guard { .. } | Asked::Removal { .. })) {
+            self.agent_refused(ctx, r.code);
+        }
+        let code = refusal.as_ref().map(|r| r.code);
         match asked {
             Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::Request { .. } | Asked::KeptScan | Asked::KeptWrite => {}
+            Asked::Lease(_) => self.on_lease(ctx, answer, code),
+            Asked::Guard { group, own, .. } => self.on_guard(ctx, group, own, answer, code),
+            Asked::Removal { group, .. } => self.on_removal(ctx, group, answer, code),
             Asked::Link { .. } => self.on_link_answer(ctx, answer),
             Asked::Challenge(_) => self.on_challenge(ctx, answer),
             Asked::Token(_) => self.on_token(ctx, answer),
@@ -907,6 +945,11 @@ impl Engine {
                     Some(Failure::NotNow { retry_after_ms, .. }) => *retry_after_ms,
                     Some(Failure::Refused { status: 401, .. }) => {
                         self.token = None;
+                        None
+                    }
+                    Some(Failure::Refused { code: Some(code), .. }) => {
+                        let code = code.clone();
+                        self.agent_refused(ctx, &code);
                         None
                     }
                     _ => None,
@@ -983,6 +1026,7 @@ impl Engine {
     }
 
     fn drive_all(&mut self, ctx: &mut Ctx<'_>) {
+        self.agent_restart();
         // The order first: what is at hand is taken before anything new is asked.
         self.take(ctx);
         self.flush(ctx);
@@ -993,6 +1037,12 @@ impl Engine {
             if self.room_join.is_none() {
                 self.connect(ctx);
             }
+            return;
+        }
+        // an agent device reads and writes nothing before it holds the lease and its own chains were checked
+        if !self.drive_agent(ctx) {
+            self.flush(ctx);
+            self.connect(ctx);
             return;
         }
         if self.room_join.is_some() {
@@ -1094,6 +1144,7 @@ impl Engine {
             url: &self.hub,
             token: if token { self.token.as_ref().map(|t| t.value.as_str()) } else { None },
             client: &self.client,
+            lease: self.lease_header(),
         };
         match self.codec.request(&site, &route) {
             Ok((request, expect)) => {
@@ -1153,6 +1204,7 @@ impl Engine {
                 if role == Role::Removed {
                     // (the hub's word alone ends nothing: the device follows the room's Commits itself)
                     self.report(Report::Alert(Alert::NotMember));
+                    self.agent_out(ctx);
                 }
             }
             Ok(_) => self.auth_failed(ctx, Failure::BadAnswer { why: "token" }),
@@ -1564,6 +1616,9 @@ impl Engine {
     }
 
     fn take_envelope(&mut self, ctx: &mut Ctx<'_>, item: &EnvelopeItem) -> Taken {
+        if let Some(halt) = self.agent_guard_envelope(ctx, &item.envelope) {
+            return halt;
+        }
         let void = Self::void_code(item);
         let received = match self.device.receive_envelope(&item.envelope, item.change, true, void.as_ref(), ctx.now) {
             Ok(received) => received,
@@ -1615,7 +1670,11 @@ impl Engine {
             // chained without its body: read back once the key was handed over
             self.note_keyless(received.header.group, item.change);
         }
+        let command = self.agent_gate(ctx, &received);
         self.report(Report::Envelope { received: Box::new(received), ordered: true });
+        if let Some(command) = command {
+            self.report(Report::Command(Box::new(command)));
+        }
         Taken::Done
     }
 
@@ -1656,8 +1715,13 @@ impl Engine {
                 LogKind::Message { bytes: &item.bytes }
             },
         };
+        let before = self.agent_before(&item.group);
         match self.device.process_log_entry(&entry, ctx.now) {
             Ok(processed) => {
+                if self.agent_processed(ctx, item.group, &processed, before) {
+                    self.report(Report::Log { change: item.change, group: item.group, processed: Box::new(processed) });
+                    return Taken::Halt;
+                }
                 // The founding of a group this device does not hold: if it was added there, its Welcome waits (the
                 // stream says so only to who is connected then). Read once the items at hand are through.
                 if commit && item.epoch == 0 && matches!(processed, Processed::Skipped) && self.device.is_human() {
@@ -1666,6 +1730,7 @@ impl Engine {
                 self.processed(ctx, item.change, item.group, processed, groups_changed);
                 Taken::Done
             }
+            Err(e) if self.agent_log_refused(ctx, &e) => Taken::Halt,
             Err(e) => match log_finding(&e) {
                 LogFinding::Duplicate => Taken::Done,
                 LogFinding::Local => {
@@ -1902,7 +1967,7 @@ impl Engine {
     // ---- the Desk: what is open now, before the order is read
 
     fn drive_desk(&mut self, ctx: &mut Ctx<'_>) {
-        if self.desk.retry.waiting(ctx.now) {
+        if self.desk.retry.waiting(ctx.now) || self.agent.is_some() {
             return;
         }
         if self.desk.want && self.desk.asked.is_none() {
@@ -2036,7 +2101,7 @@ impl Engine {
         } else {
             self.position
         };
-        let site = Site { url: &self.hub, token: self.token.as_ref().map(|t| t.value.as_str()), client: &self.client };
+        let site = Site { url: &self.hub, token: self.token.as_ref().map(|t| t.value.as_str()), client: &self.client, lease: self.lease_header() };
         let Ok((request, _)) = self.codec.request(&site, &Route::Stream { after: from }) else {
             return;
         };

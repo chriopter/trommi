@@ -127,7 +127,7 @@ impl Engine {
         if self.requests.outs.len() >= REQUESTS_MAX || (keep.is_some() && self.requests.outs.values().filter(|o| o.keep.is_some()).count() >= KEPT_MAX) {
             return Err("busy");
         }
-        let site = Site { url: &self.hub, token: Some(self.token.as_ref().map_or("waits-for-a-sign-in", |t| t.value.as_str())), client: &self.client };
+        let site = Site { url: &self.hub, token: Some(self.token.as_ref().map_or("waits-for-a-sign-in", |t| t.value.as_str())), client: &self.client, lease: self.lease_header() };
         let request = build(&site).map_err(|_| "bad-request")?;
         self.send_request(ctx, request, keep, None)
     }
@@ -201,7 +201,7 @@ impl Engine {
         if self.device.group(&group).is_err() {
             return Err("not-found");
         }
-        let site = Site { url: &self.hub, token: Some(self.token.as_ref().map_or("waits-for-a-sign-in", |t| t.value.as_str())), client: &self.client };
+        let site = Site { url: &self.hub, token: Some(self.token.as_ref().map_or("waits-for-a-sign-in", |t| t.value.as_str())), client: &self.client, lease: self.lease_header() };
         let request = crate::hub::archive_request(&site, &group).map_err(|_| "bad-request")?;
         let name = format!("archive/{}", crate::engine::feed::hex(group.as_bytes()));
         let then = Then::Archive { group: trommi_core::ids::base64url_encode(group.as_bytes()), retire: retire.iter().map(DeviceId::to_base64url).collect() };

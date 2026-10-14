@@ -261,6 +261,13 @@ pub struct Hub {
     pub frontiers: Vec<(String, Value)>,
     /// The board route serves no item at or below this change (a hub that pruned them behind a snapshot).
     pub board_pruned: u64,
+    /// Agent leases (13.7): per device the process that holds it and its generation.
+    pub leases: BTreeMap<DeviceId, (Vec<u8>, u64)>,
+    /// Every `POST /v1/link` body, by device, as it came.
+    pub links: Vec<(DeviceId, Value)>,
+    /// Keys the hub took out of the room: their token reads, per group, the Commits up to the one numbered here in
+    /// that group's log (`GET /v1/groups/{group}/removal`), and nothing else.
+    pub removed_keys: BTreeMap<DeviceId, BTreeMap<GroupId, u64>>,
 }
 
 #[derive(Clone)]
@@ -298,6 +305,9 @@ impl Default for Hub {
             wish_extras: BTreeMap::new(),
             frontiers: Vec::new(),
             board_pruned: 0,
+            leases: BTreeMap::new(),
+            links: Vec::new(),
+            removed_keys: BTreeMap::new(),
             streaming: Vec::new(),
             notes: Vec::new(),
             wishes: Vec::new(),
@@ -627,6 +637,11 @@ impl Hub {
         Ok(json!({ "epoch": epoch, "group_info": b64(info) }))
     }
 
+    /// The number of the newest entry of a group's log.
+    pub fn log_n(&self, group: &GroupId) -> u64 {
+        self.log_n.get(group).copied().unwrap_or(0)
+    }
+
     /// The hub keeps a void record under the next number of this chain (a test's refusal with `voided: true`).
     pub fn void_next(&mut self, group: GroupId, sender: DeviceId) {
         *self.chains.entry((group, sender)).or_default() += 1;
@@ -865,7 +880,9 @@ impl Hub {
                 let issued = IssuedChallenge { challenge: self.challenges.remove(at), expires_at: now + 120_000 };
                 let device = hub_auth::verify(&signed, &self.room_id(), &HubAddress::parse(HUB_URL).expect("an address"), &issued, now).map_err(no)?;
                 let history = self.room.as_ref().and_then(Observer::history).ok_or(no(Error::NoRoom))?.newest();
-                let role = if Some(device) == self.recovery {
+                let role = if self.removed_keys.contains_key(&device) {
+                    "removed"
+                } else if Some(device) == self.recovery {
                     "recovery"
                 } else if history.is_human(&device) {
                     "human"
@@ -882,6 +899,33 @@ impl Hub {
             _ => {}
         }
         let device = self.device_of(now, request).ok_or(no(Error::Unauthorised))?;
+        if let Some(removed) = self.removed_keys.get(&device) {
+            // (a removed key reads the Commits that removed it, and nothing else)
+            return match (method, segs.as_slice()) {
+                ("GET", ["v1", "groups", _, "removal"]) => {
+                    let group = group_at(2)?;
+                    let upto = *removed.get(&group).ok_or(no(Error::NotFound))?;
+                    let after = num("after");
+                    let items: Vec<Value> = self
+                        .order
+                        .iter()
+                        .filter(|i| matches!(i, Item::Log { group: g, n, commit: true, .. } if *g == group && *n > after && *n <= upto))
+                        .map(Item::json)
+                        .collect();
+                    Ok(json!({ "items": items, "more": false, "removed_at": upto }))
+                }
+                _ => Err(no(Error::NotMember)),
+            };
+        }
+        // 13.7: an agent's writes carry its lease; one of an older generation is refused
+        if method != "GET" && segs.as_slice() != ["v1", "link"] {
+            if let Some((_, generation)) = self.leases.get(&device) {
+                let carried = request.headers.iter().find(|h| h.name.eq_ignore_ascii_case("trommi-lease")).and_then(|h| h.value.parse::<u64>().ok());
+                if carried != Some(*generation) {
+                    return Err(no(Error::from_code("lease-lost").expect("a code")));
+                }
+            }
+        }
         if Some(device) == self.recovery {
             // (the recovery key's token: the room group's own routes and the keys, nothing of the content)
             let room = Some(b64(self.room_id().as_bytes()));
@@ -896,6 +940,25 @@ impl Hub {
             }
         }
         match (method, segs.as_slice()) {
+            ("POST", ["v1", "link"]) => {
+                self.links.push((device, body.clone()));
+                if !self.is_agent(&device) {
+                    return Err(no(Error::Forbidden));
+                }
+                let process = bytes("process");
+                if process.len() != 16 {
+                    return Err(no(Error::BadFormat));
+                }
+                let held = self.leases.get(&device).cloned();
+                let generation = match (&held, body["generation"].as_u64()) {
+                    (Some((p, g)), Some(given)) if *p == process && *g == given => *g,
+                    (_, Some(_)) => return Err(no(Error::from_code("lease-lost").expect("a code"))),
+                    (Some((_, g)), None) => g + 1,
+                    (None, None) => 1,
+                };
+                self.leases.insert(device, (process, generation));
+                Ok(json!({ "generation": generation, "expires_at": now + 60_000 }))
+            }
             ("GET", ["v1", "sealed-keys"]) => {
                 // (each row numbered by its place: the stand-in keeps no change of its own for a row)
                 let (after, limit) = (num("after") as usize, num("limit").clamp(1, 2000) as usize);
@@ -1210,6 +1273,16 @@ impl Hub {
                 StreamItem::Ended,
             ];
         };
+        let carried = request.headers.iter().find(|h| h.name.eq_ignore_ascii_case("trommi-lease")).and_then(|h| h.value.parse::<u64>().ok());
+        if let (Some(carried), Some((_, generation))) = (carried, self.leases.get(&device)) {
+            if carried != *generation {
+                return vec![
+                    StreamItem::Opened { status: 409, headers: Vec::new() },
+                    StreamItem::Chunk { bytes: json!({ "error": "lease-lost", "message": "refused" }).to_string().into_bytes().into() },
+                    StreamItem::Ended,
+                ];
+            }
+        }
         let after: u64 = path.split_once("after=").and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
         let mut bytes = Vec::new();
         for item in self.order.iter().filter(|i| i.change() > after && !self.hidden.contains(&i.change())) {

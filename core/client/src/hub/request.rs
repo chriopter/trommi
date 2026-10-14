@@ -70,6 +70,15 @@ pub(crate) fn begin(
             _ => return bad("the request: this route needs a token"),
         }
     }
+    // 13.7: an agent's writes and its stream carry its lease (a stream of a process that lost it ends nothing)
+    if let Some(generation) = site.lease {
+        if token && (method != "GET" || path == "/v1/stream") {
+            headers.push(Header {
+                name: "trommi-lease".to_owned(),
+                value: generation.to_string(),
+            });
+        }
+    }
     Ok(Build {
         method,
         url: format!("{}{}", site.url, path),
@@ -150,6 +159,7 @@ pub(crate) mod tests {
         url: "https://hub.example",
         token: Some("abcdefghijklmnop_-0123"),
         client: "web/1.2.3",
+        lease: None,
     };
 
     pub(crate) fn header<'a>(request: &'a HttpRequest, name: &str) -> Option<&'a str> {
