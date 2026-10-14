@@ -275,7 +275,9 @@ controller('corner-note', class extends Controller {
  *  where sessions live: what the vouching agent says it is, with Allow and Deny on a line of their own under the words. */
 export function joinRow(ask) {
   const button = (value, label, cls) => html`<form method="post" action="/vouch/${ask.nonce}" class="join-answer"><input type="hidden" name="allow" value="${value}"><button type="submit" class="${cls}">${label}</button></form>`
-  return html`<div class="agent-row join-row" id="join-${ask.nonce}" data-state="ask" title="${ask.says.en}"><span class="agent-entry"><span class="join-mark" aria-hidden="true">${PLUS}</span><span class="agent-text"><strong>${ask.says.en}</strong><small class="join-line">wants to join</small></span></span><span class="join-acts" role="group" aria-label="${`Allow ${ask.says.en}?`}">${button('yes', 'Allow', 'join-allow')}${button('no', 'Deny', 'join-deny')}</span></div>`
+  const state = ask.joining ? 'joining' : 'ask', name = ask.name || ask.folder || 'New session'
+  const line = ask.joining ? 'joining…' : `wants to join${ask.host ? ` · ${ask.host}` : ''}`
+  return html`<div class="agent-row join-row" id="join-${ask.nonce}" data-state="${state}" title="${ask.says.en}"><span class="agent-entry"><span class="join-mark" aria-hidden="true">${PLUS}</span><span class="agent-text"><strong>${name}</strong><small class="join-line">${line}</small>${ask.vouched_by ? html`<small class="join-by">vouched by ${ask.vouched_by}</small>` : ''}</span></span>${ask.joining ? '' : html`<span class="join-acts" role="group" aria-label="${`Allow new ${ask.kind || 'agent'} session ${name}?`}">${button('yes', 'Allow', 'join-allow')}${button('no', 'Deny', 'join-deny')}</span>`}</div>`
 }
 
 /** The rows of #agents (vm.sidebar.sessions, in the core's order): the sessions, each heading the core puts above a
@@ -505,13 +507,15 @@ controller('order', class extends Controller {
 // menu; the controller "menu" adds the arrows and a new desk, the Desk's row menu (desk.mjs) the long press. Opening and closing the
 // menu and the theme: ui.mjs.
 
-/** Makes a desk (AddDesk) and gives it once the core drew it (the desk that was not there before); null after a while. */
+/** Makes a desk (AddDesk) and gives it once the core drew it: its id is the one the core's toast "Desk added" names
+ *  (its Undo is RemoveDesk of it); null after a while. */
 async function addDesk(name) {
   const had = new Set(T.vm().sidebar.desks.map(d => d.id))
   T.act({ do: 'add_desk', name })
   for (let i = 0; i < 60; i++) {
     await new Promise(r => setTimeout(r, 50))
-    const made = T.vm().sidebar.desks.find(d => !had.has(d.id))
+    const vm = T.vm(), id = (vm.toasts ?? []).map(x => x.action).find(a => a?.do === 'remove_desk' && !had.has(a.desk_id))?.desk_id
+    const made = id && vm.sidebar.desks.find(d => d.id === id)
     if (made) return made
   }
   return null

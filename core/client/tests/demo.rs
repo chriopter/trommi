@@ -57,3 +57,51 @@ fn the_demo_opens_its_files_by_their_address_and_keeps_what_is_attached() {
     sim.send(Event::Action { action: Action::OpenFile { attachment_id: "local-1".into(), save: false } });
     assert!(sim.log.iter().any(|e| matches!(e, Effect::FileReady { bytes, .. } if bytes.0 == b"mine")));
 }
+
+#[test]
+fn the_demo_shows_its_scribble_boards_folds_goals_and_adds_a_desk_with_undo() {
+    let f = fixture();
+    let mut sim = Sim::new(f["made_at"].as_u64().unwrap());
+    sim.send(Event::Start { config: Config { platform: "test".into(), version: "0".into(), seed: 7, demo: Some(f), ..Default::default() } });
+    // the Desk's board beside it: the demo's shapes, its pictures openable
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, desk: Some("main".into()), board: Some("main".into()), ..Default::default() } });
+    let board = sim.view.board.clone().expect("the board in view");
+    assert_eq!((board.board_id.as_str(), board.state.as_str()), ("desk/6d61696e000000000000000000000004", "ready"));
+    assert!(board.shapes.len() >= 5, "{}", board.shapes.len());
+    let picture = board.shapes.iter().find_map(|s| s.attachment.clone()).expect("a picture on it");
+    assert!(sim.view.files.contains_key(&picture), "its file is known to open");
+    // what is erased goes
+    let first = board.shapes[0].id.clone();
+    let content = serde_json::json!({ "content_type": "erase", "stroke_ids": [first] });
+    sim.send(Event::Action { action: Action::BoardItem { board_id: board.board_id.clone(), local_id: "e1".into(), content } });
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+    let now = sim.view.board.clone().unwrap();
+    assert_eq!(now.shapes.len(), board.shapes.len() - 1);
+    assert!(!now.shapes.iter().any(|s| s.id == first));
+    assert_eq!(sim.view.thumbs, None, "no page shows the boards small");
+
+    // Settings: every desk's board small, counted, without what only drawing it large needs
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Settings, desk: Some("main".into()), ..Default::default() } });
+    let thumbs = sim.view.thumbs.clone().expect("the boards small");
+    assert_eq!(thumbs.iter().map(|t| t.desk_id.as_str()).collect::<Vec<_>>(), ["main", "platform"]);
+    assert_eq!(thumbs[0].count as usize, now.shapes.len());
+    assert!(thumbs.iter().flat_map(|t| &t.shapes).all(|s| s.t.is_empty() && s.f.is_empty() && s.az.is_none()));
+
+    // the goals fold on this device
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, desk: Some("main".into()), ..Default::default() } });
+    let goals = |sim: &Sim| sim.view.desk.goals.clone().expect("the desk's goals");
+    assert!(goals(&sim).foldable && !goals(&sim).folded);
+    sim.send(Event::Action { action: Action::FoldGoals { desk_id: "main".into(), folded: true } });
+    assert!(goals(&sim).folded);
+    sim.send(Event::Action { action: Action::FoldGoals { desk_id: "main".into(), folded: false } });
+    assert!(!goals(&sim).folded);
+
+    // a new desk: its toast names it, and Undo takes it away
+    let before = sim.view.sidebar.desks.len();
+    sim.send(Event::Action { action: Action::AddDesk { name: "Garden".into() } });
+    let toast = sim.view.toasts.last().cloned().expect("Desk added");
+    assert_eq!((toast.text.en.as_str(), toast.alert), ("Desk added", false));
+    let Some(Action::RemoveDesk { desk_id }) = toast.action.clone() else { panic!("Undo: {:?}", toast.action) };
+    assert!(sim.view.sidebar.desks.iter().any(|d| d.id == desk_id), "the toast names the new desk");
+    assert_eq!(sim.view.sidebar.desks.len(), before + 1);
+}

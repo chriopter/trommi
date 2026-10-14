@@ -208,6 +208,11 @@ fn kit_part(keys: &account::KitKeys, room: &RoomId, code: &Key<32>) -> Result<Ki
 }
 
 impl App {
+    /// A change of the account runs (or a read of it).
+    pub(super) fn changes_running(&self) -> bool {
+        self.changes.flow.is_some()
+    }
+
     /// The account's changes: true when `action` was one of them.
     pub(super) fn change_action(&mut self, now_ms: u64, action: &AccountAction, out: &mut Vec<Effect>) -> bool {
         let (change, unlock) = match action {

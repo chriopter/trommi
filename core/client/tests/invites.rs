@@ -36,11 +36,15 @@ fn a_device_is_let_in_when_the_emoji_match() {
     assert_eq!(sim.view.account.step, "invite", "{:?}", sim.view.account.problem);
     let link = sim.view.account.link.clone().expect("the link");
     assert!(!format!("{:?}", sim.view.account).contains(&link), "the link stays out of Debug");
+    let shown = sim.view.account.invite.clone().expect("the invite in view");
+    assert_eq!((shown.role.as_str(), shown.state.as_str()), ("human", "open"));
+    assert!(shown.expires_ms > now(), "it ends later");
 
     let (mut joiner, _store) = new_peer();
     let id = newcomer_asks(&world, &mut joiner, &link);
     sim.advance(3_100);
     assert_eq!(sim.view.account.step, "compare_emoji", "{:?}", sim.view.account.problem);
+    assert_eq!(sim.view.account.invite.as_ref().map(|i| i.state.as_str()), Some("confirm_code"));
     let reveal = world.hub.borrow().invites[&id].reveal.clone().expect("the Reveal was published");
     let code = joiner.join_reveal(&reveal).expect("the code");
     let words: Vec<String> = sim.view.account.emoji.iter().map(|e| e.word.clone()).collect();
@@ -58,6 +62,26 @@ fn a_device_is_let_in_when_the_emoji_match() {
     assert_eq!(sim.view.account.step, "none", "{:?}", sim.view.account);
     let (humans, _) = sim.app.engine().unwrap().roles();
     assert!(humans.contains(&joiner.id()), "the newcomer is in the room");
+    let joined = sim.view.account.invite.clone().expect("the invite stays in view, joined");
+    assert_eq!((joined.state.as_str(), joined.invite_id.as_str()), ("joined", shown.invite_id.as_str()));
+    account(&mut sim, AccountAction::DropInvite { invite_id: joined.invite_id });
+    assert_eq!(sim.view.account.invite, None, "Done: it leaves the view");
+}
+
+#[test]
+fn an_open_invite_is_dropped_and_burned() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    account(&mut sim, AccountAction::InviteAgent { label: "Fernly".into(), desk: None });
+    let shown = sim.view.account.invite.clone().expect("the invite in view");
+    assert_eq!((shown.role.as_str(), shown.state.as_str()), ("agent", "open"));
+    sim.advance(100);
+    assert_eq!(world.hub.borrow().invites.len(), 1, "its Offer is at the hub");
+    account(&mut sim, AccountAction::DropInvite { invite_id: shown.invite_id });
+    sim.advance(100);
+    assert!(world.hub.borrow().invites.is_empty(), "burned at the hub");
+    assert_eq!((sim.view.account.step.as_str(), sim.view.account.invite.clone()), ("none", None));
 }
 
 #[test]
@@ -148,6 +172,10 @@ fn an_agents_ask_is_refused_past_the_bounds_and_allowed_with_a_link() {
     world.agent_register("join_ask/b2", r#"{"name":"helper","folder":"~/x","account":"acct-1"}"#);
     world.stream(&mut sim);
     assert!(join_link(&sim, "b2").is_none(), "it waits for the person");
+    let asks = sim.view.account.asks.clone();
+    assert_eq!(asks.len(), 1, "only the ask that waits: {asks:?}");
+    assert_eq!((asks[0].nonce.as_str(), asks[0].folder.as_str(), asks[0].joining), ("b2", "~/x", false));
+    assert!(asks[0].says.en.starts_with("New Claude session in ~/x"), "{:?}", asks[0].says);
     account(&mut sim, AccountAction::AnswerAsk { nonce: "b2".into(), allow: true });
     for _ in 0..3 {
         world.stream(&mut sim);
@@ -156,5 +184,7 @@ fn an_agents_ask_is_refused_past_the_bounds_and_allowed_with_a_link() {
     let link = join_link(&sim, "b2").expect("the answer");
     assert!(link["link"].as_str().is_some_and(|l| l.contains('#')), "{link}");
     assert_eq!(world.hub.borrow().invites.len(), 1, "its Offer is at the hub");
+    assert_eq!(sim.view.account.asks.iter().map(|a| (a.nonce.as_str(), a.joining)).collect::<Vec<_>>(), [("b2", true)], "allowed: joining");
+    assert_eq!(sim.view.account.invite, None, "a self-join's invite is not the person's to see");
     assert_eq!(sim.view.account.step, "", "the person's screen is not taken over: {:?}", sim.view.account);
 }

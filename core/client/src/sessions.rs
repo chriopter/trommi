@@ -152,7 +152,7 @@ fn settings_of(m: &Model, s: &Session, key: &str) -> serde_json::Map<String, Val
 }
 
 /// The name a device gave itself (its register `device/<id>`): `device_name`, else the last part of its folder.
-fn device_name_of(m: &Model, id: Option<&str>) -> String {
+pub(crate) fn device_name_of(m: &Model, id: Option<&str>) -> String {
     let Some(id) = id else { return String::new() };
     let member = m.members.get(id);
     let reg = m.device_registers.get(id);

@@ -14,7 +14,7 @@ use super::{log, App, Effect, LogLevel};
 use crate::account::AccountAction;
 use crate::app::io::IoId;
 use crate::hub::{Answer, Codec, Expect, Failure, Route};
-use crate::views::{AccountView, EmojiView, Text};
+use crate::views::{AccountView, EmojiView, InviteView, Text};
 use serde_json::json;
 use std::collections::BTreeMap;
 use trommi_core::hub_auth::HubAddress;
@@ -71,10 +71,20 @@ pub(super) enum InviteAsk {
     Burn,
 }
 
+/// An invite of this device whose newcomer came in: shown as joined until it is dropped or another is made.
+#[derive(Clone, Debug)]
+struct Joined {
+    invite: InviteId,
+    role: Role,
+    newcomer: DeviceId,
+    label: String,
+}
+
 #[derive(Default)]
 pub(super) struct Invites {
     open: BTreeMap<InviteId, Inviting>,
     asked: BTreeMap<IoId, InviteAsk>,
+    joined: Option<Joined>,
 }
 
 impl Invites {
@@ -101,6 +111,7 @@ impl App {
                 self.invite_open(now_ms, Role::Agent, label.clone(), desk.clone(), None, out);
             }
             AccountAction::ConfirmEmoji { invite_id, matches } => self.invite_confirm(now_ms, invite_id, *matches, out),
+            AccountAction::DropInvite { invite_id } => self.invite_drop(now_ms, invite_id, out),
             _ => return false,
         }
         true
@@ -136,6 +147,9 @@ impl App {
             }
         }
         let invite = opened.invite_id;
+        if shown {
+            self.invites.joined = None;
+        }
         let link = String::from_utf8(opened.link.expose().to_vec()).unwrap_or_default();
         let offer = opened.signed_offer;
         self.invites.open.insert(invite, Inviting { role, vouch, link: (!shown).then(|| link.clone()), label, desk, expires_at: opened.expires_at, stage: Stage::Publishing, next_look: now_ms + LOOK_MS, asked: None });
@@ -380,9 +394,70 @@ impl App {
                 }
             }
             if i.vouch.is_none() {
+                self.invites.joined = Some(Joined { invite, role: i.role, newcomer, label: i.label.clone() });
                 self.next_view.account = AccountView { step: "none".into(), ..Default::default() };
             }
         }
+    }
+
+    /// `DropInvite`: an open invite of this device is burned at the hub; a joined one leaves the view.
+    fn invite_drop(&mut self, now_ms: u64, invite_id: &str, out: &mut Vec<Effect>) {
+        let Some(invite) = unhex(invite_id).map(InviteId::new) else { return };
+        if self.invites.joined.as_ref().is_some_and(|j| j.invite == invite) {
+            self.invites.joined = None;
+        }
+        // (one being added is past the hub's part: the engine finishes it)
+        let open = self.invites.open.get(&invite).is_some_and(|i| i.vouch.is_none() && !matches!(i.stage, Stage::Adding { .. }));
+        if open {
+            self.invites.open.remove(&invite);
+            self.invite_send(now_ms, out, move |site| Codec.request(site, &Route::DeleteInvite { invite: &invite }), |_| InviteAsk::Burn);
+        }
+        if self.next_view.account.invite_id.as_deref() == Some(invite_id) || self.next_view.account.step == "invite" {
+            self.next_view.account = AccountView { step: "none".into(), ..Default::default() };
+        }
+    }
+
+    /// The invite the account's screen shows (`AccountView.invite`): the one in its step, else the one that joined.
+    pub(super) fn invite_view(&self) -> Option<InviteView> {
+        let model = &self.board.model;
+        let name = |newcomer: &DeviceId, role: Role, label: &str| {
+            let device = hex(newcomer.as_bytes());
+            let named = crate::sessions::device_name_of(model, Some(&device));
+            if role == Role::Agent && !label.is_empty() {
+                label.to_string()
+            } else {
+                named
+            }
+        };
+        let role_of = |role: Role| if role == Role::Agent { "agent" } else { "human" }.to_string();
+        let shown = self.next_view.account.invite_id.as_deref().and_then(unhex).map(InviteId::new);
+        if let Some((id, i)) = shown.and_then(|id| self.invites.open.get(&id).map(|i| (id, i))).filter(|(_, i)| i.vouch.is_none()) {
+            let (state, newcomer) = match &i.stage {
+                Stage::Publishing | Stage::Open => ("open", String::new()),
+                Stage::Compare { newcomer, .. } => ("confirm_code", name(newcomer, i.role, &i.label)),
+                Stage::Adding { newcomer } => ("adding", name(newcomer, i.role, &i.label)),
+            };
+            return Some(InviteView { invite_id: hex(id.as_bytes()), role: role_of(i.role), state: state.into(), expires_ms: i.expires_at, newcomer });
+        }
+        let j = self.invites.joined.as_ref()?;
+        Some(InviteView { invite_id: hex(j.invite.as_bytes()), role: role_of(j.role), state: "joined".into(), expires_ms: 0, newcomer: name(&j.newcomer, j.role, &j.label) })
+    }
+
+    /// The state of each vouched link open here, by its invite's id (hex): a self-join that is under way.
+    pub(super) fn vouched_states(&self) -> BTreeMap<String, String> {
+        self.invites
+            .open
+            .iter()
+            .filter(|(_, i)| i.vouch.is_some())
+            .map(|(id, i)| {
+                let state = match i.stage {
+                    Stage::Publishing | Stage::Open => "open",
+                    Stage::Compare { .. } => "confirm_code",
+                    Stage::Adding { .. } => "adding",
+                };
+                (hex(id.as_bytes()), state.to_string())
+            })
+            .collect()
     }
 
     /// The vouched links open here: the accounts they are for (the bounds count them), and those whose Request waits

@@ -13,14 +13,14 @@ function deskHead(d, base) {
 }
 
 /** The desk's goals (GoalsView): a checklist of his own under the greeting; a click on the words writes in place
- *  (controller "goals": Action::SetGoal). One toggle folds them to the first line; folded is this device's
- *  (localStorage, until the core takes an action for Lens::goals_folded). None on All desks. */
+ *  (controller "goals": Action::SetGoal). One toggle folds them to the first line (Action::FoldGoals: GoalsView.folded);
+ *  folded is this device's: the desks are kept in localStorage and sent to the core again at the start. None on All desks. */
 const GOALS_LINES = 20, GOALS_LINE_MAX = 200
 const GOALS_FOLDED = 'trommi-goals-folded'
 const goalsFolded = () => { try { const v = JSON.parse(localStorage.getItem(GOALS_FOLDED) ?? '[]'); return Array.isArray(v) ? v.map(String) : [] } catch { return [] } }
 function deskGoals(g) {
   if (!g) return ''
-  const folded = g.foldable && (g.folded || goalsFolded().includes(g.desk_id))
+  const folded = g.foldable && g.folded
   return html`<div class="desk-goals${folded ? ' is-folded' : ''}" id="desk-goals" data-controller="goals" data-goals-desk-value="${g.desk_id}" data-goals-text-value="${g.lines.join('\n')}" data-goals-show-value="${g.show_all?.en ?? ''}" data-goals-fold-value="${g.folded ? '' : g.toggle?.en ?? ''}">${goalsWords(g, folded)}</div>`
 }
 /** A line that starts with an emoji or a tick box: the sign in a column of its own, so the words of such lines start
@@ -93,7 +93,7 @@ ${offHint(d.off, base)}<div class="inbox-stacks stack-tabs is-straight is-two" i
 
 /** "Artifacts N" at the foot of the Desk: what the agents published (vm.artifacts, the newest first), the last four
  *  as small cards, picture or page, each with its title; the heading opens /artifacts. Without any it is not there. */
-let deskVm = null
+let deskVm = null, deskAct = null
 function artifactsPile(base) {
   const vm = deskVm?.() ?? {}, all = vm.artifacts ?? []
   if (!all.length) return ''
@@ -194,6 +194,7 @@ controller('goals', class extends Controller {
     const t = this.element.querySelector('.desk-goals-toggle')
     if (t) { t.setAttribute('aria-expanded', String(!folded)); t.setAttribute('aria-label', folded ? this.showValue : this.foldValue); t.title = folded ? 'Show all' : 'Fold' }
     try { localStorage.setItem(GOALS_FOLDED, JSON.stringify([...goalsFolded().filter(d => d !== this.deskValue), ...(folded ? [this.deskValue] : [])].slice(-50))) } catch {}
+    deskAct?.({ do: 'fold_goals', desk_id: this.deskValue, folded })
   }
   edit() {
     if (this.field) return
@@ -572,6 +573,9 @@ const SAID = { later: WORDS.later, duck: 'Left to the agents', shred: 'Shredded'
 
 export function register(t) {
   deskVm = t.vm
+  deskAct = t.act
+  // (the desks whose goals are folded on this device: the core holds them for its run)
+  for (const desk_id of goalsFolded()) t.act({ do: 'fold_goals', desk_id, folded: true })
   const desk = () => t.vm().desk
   const place = () => t.vm().sidebar?.place?.en ?? 'Desk'
   t.get(/^\/$/, ({ req, res }) => {

@@ -17,7 +17,7 @@
 use super::board::{key_of, Board, Lens, TALK_PAGE, UNHEARD_MS};
 use super::desk::{card_row, request_row, shown_title};
 use super::sidebar::{hand_of, link_of};
-use super::talk::{card_ref, choices_of, event_label, events_of, in_order, items_of, Entry, Side, UNSENT};
+use super::talk::{card_ref, choices_of, event_label_by, events_of, in_order, items_of, Entry, Side, UNSENT};
 use super::words::{local, next_midnight, quiet_words, say};
 use super::{CardRefView, DotView, EmptyTalkView, EventView, FixView, LinkNoteView, LinkWords, MoreView, SessionView, StatusLineView, TalkRow, Text};
 use crate::model::types::Card;
@@ -183,7 +183,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
                 kind: "event".into(),
                 time_ms: p.sent_at,
                 card: Some(CardRefView { id: p.object_id.clone(), number: b.number_of(&p.object_id), title: format!("Approval: {}", p.tool_name) }),
-                event: Some(EventView { kind: "asked".into(), label: event_label("asked"), ..Default::default() }),
+                event: Some(EventView { kind: "asked".into(), label: event_label_by("asked", &a.row.name), ..Default::default() }),
                 ..Default::default()
             },
         });
@@ -240,7 +240,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
                 let asked_as = row.event.as_ref().map(|ev| ev.text.clone()).unwrap_or_default();
                 row.event = Some(EventView {
                     kind: kind.into(),
-                    label: event_label(kind),
+                    label: event_label_by(if kind == "done" && c.object_state == "closed" && c.field("close_summary").as_str().unwrap_or("").is_empty() && !c.field("withdraw_reason").as_str().unwrap_or("").is_empty() { "withdrawn" } else { kind }, &a.row.name),
                     about: if title.is_empty() { asked_as } else { title.clone() },
                     text: if text == title { String::new() } else { text },
                     echo: false,
@@ -375,7 +375,14 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
 
     let open = fresh.len() as u32;
     let n = open.to_string();
+    let account_of = |key: &str| m.sessions.get(key).and_then(|s| s.profile.as_ref()).and_then(|p| p.get("account")).filter(|v| v.is_object());
+    let usage = account_of(&a.row.key)
+        .or_else(|| a.row.parent_key.as_deref().and_then(account_of))
+        .and_then(|acc| super::settings::usage_of(acc, now));
     Some(SessionView {
+        usage,
+        parent: a.row.parent_key.clone(),
+        archived: a.row.archived,
         questions: Vec::new(),
         files: Vec::new(),
         id: a.row.key.clone(),
@@ -626,13 +633,53 @@ mod tests {
         assert_eq!((ask.id.as_str(), ask.tiles.kind.as_str(), v.talk[1].card.as_ref().unwrap().number), ("q-open", "pair", 1));
         assert_eq!((v.talk[7].row.as_ref().unwrap().kind.as_str(), v.talk[7].card.as_ref().unwrap().number), ("request", 6));
         // (something to read is the board's line; it counts as open on the session's own page)
-        assert_eq!(event(&v.talk[2]), ("info", "Board", "", "q-read"));
+        assert_eq!(event(&v.talk[2]), ("info", "a wrote", "", "q-read"));
         assert_eq!(event(&v.talk[3]), ("handed", "With the agent", "q-back", ""));
         assert_eq!(event(&v.talk[4]), ("snoozed", "Later", "q-later", ""));
-        assert_eq!(event(&v.talk[5]), ("decided", "Answered", "q-done", "Ship it"));
+        assert_eq!(event(&v.talk[5]), ("decided", "You chose", "q-done", "Ship it"));
         // (the answer's own event only repeats what the question's line says)
-        assert_eq!((event(&v.talk[6]), v.talk[6].event.as_ref().unwrap().echo), (("decided", "Answered", "q-done", "Ship it"), true));
+        assert_eq!((event(&v.talk[6]), v.talk[6].event.as_ref().unwrap().echo), (("decided", "You chose", "q-done", "Ship it"), true));
         assert_eq!((v.open, en(&v.open_word), en(&v.open_says), v.first_open.as_deref()), (3, "3 open", "3 open questions: go to the first one", Some("v100a")));
+    }
+
+    #[test]
+    fn the_heading_has_the_accounts_rings_the_main_and_the_archive() {
+        let mut r = Room::default();
+        r.session("a", None, true)["profile"]["account"] = json!({ "plan": "max", "email": "a@b.c", "five_hour": { "used": 42, "resets_at": NOW + 60 * MIN }, "weekly": { "used": 85.4 } });
+        r.session("h", Some("a"), false);
+        r.settings.insert(dev("h"), json!({ "archived": true }));
+        let main = view(&r, "a");
+        let usage = main.usage.clone().expect("its account");
+        assert_eq!(usage.plan, "Claude Max");
+        assert_eq!(usage.meters.iter().map(|m| (m.key.as_str(), m.used, m.hot)).collect::<Vec<_>>(), [("five_hour", 42, false), ("weekly", 85, true)]);
+        assert_eq!((main.parent.as_deref(), main.archived), (None, false));
+        // a helper: its main's account, its main named, archived
+        let helper = view(&r, "h");
+        assert_eq!(helper.usage, main.usage);
+        assert_eq!((helper.parent.as_deref(), helper.archived), (Some(main.id.as_str()), true));
+    }
+
+    #[test]
+    fn a_question_says_who_asked_and_who_closed_it() {
+        let mut r = Room::default();
+        r.session("fernly", None, true);
+        let c = r.card("q-gone", "fernly", "decision", "normal");
+        c["versions"] = json!([{ "object_version": 1, "envelope_number": 100, "sent_at": NOW - 10 * MIN, "object_state": "open", "content": { "title": "q-gone" } }]);
+        c["object_state"] = json!("closed");
+        c["close_summary"] = json!("Shipped without it");
+        let m = r.model(NOW);
+        let lens = Lens::default();
+        let b = Board::new(&m, &lens, NOW);
+        let card = m.cards.get("q-gone").unwrap();
+        let labels: Vec<(String, String)> = super::super::talk::events_of(&b, card).into_iter().map(|e| { let ev = e.row.event.unwrap(); (ev.kind, ev.label.en) }).collect();
+        assert_eq!(labels, [("asked".to_string(), "fernly asked".to_string()), ("done".to_string(), "fernly closed it".to_string())]);
+        let c = r.cards.last_mut().unwrap();
+        c["close_summary"] = Value::Null;
+        c["withdraw_reason"] = json!("not needed");
+        let m = r.model(NOW);
+        let b = Board::new(&m, &lens, NOW);
+        let done = super::super::talk::events_of(&b, m.cards.get("q-gone").unwrap()).pop().unwrap().row.event.unwrap();
+        assert_eq!((done.label.en.as_str(), done.text.as_str()), ("fernly withdrew it", "not needed"));
     }
 
     #[test]

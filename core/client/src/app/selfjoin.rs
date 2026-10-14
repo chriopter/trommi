@@ -56,6 +56,40 @@ impl App {
         true
     }
 
+    /// The asks as the screens show them (`AccountView.asks`): those that wait for Allow or Deny, and those allowed
+    /// whose session is still joining. An ask this device answered or refused leaves at once.
+    pub(super) fn asks_view(&self) -> Vec<crate::views::AskView> {
+        if self.engine.is_none() {
+            return Vec::new();
+        }
+        let states = self.vouched_states();
+        crate::selfjoin::join_rows(&self.board.model, &states)
+            .into_iter()
+            .filter(|r| r.state != "ask" || !self.selfjoin.answered.contains(&r.nonce))
+            .map(|r| {
+                let place = if r.folder.is_empty() { r.name.clone() } else { r.folder.clone() };
+                let on = if r.host.is_empty() { String::new() } else { format!(" on {}", r.host) };
+                let by = if r.by.is_empty() { String::new() } else { format!(", vouched for by {}", r.by) };
+                let says = crate::views::words::say(
+                    "join.ask",
+                    format!("New {} session in {place}{on}{by}", r.kind),
+                    &[("kind", &r.kind), ("place", &place), ("host", &r.host), ("by", &r.by)],
+                );
+                crate::views::AskView {
+                    nonce: r.nonce,
+                    says,
+                    session_id: r.session_id,
+                    name: r.name,
+                    host: r.host,
+                    folder: r.folder,
+                    kind: r.kind,
+                    vouched_by: r.by,
+                    joining: r.state == "joining",
+                }
+            })
+            .collect()
+    }
+
     fn answer_ask(&mut self, now_ms: u64, session_id: &str, nonce: &str, value: Value, out: &mut Vec<Effect>) {
         self.doing(now_ms, out, |doing| {
             doing.session_register(session_id, &format!("join_link/{nonce}"), &value);

@@ -32,6 +32,7 @@ extension CoreView.ViewModel {
       case .toasts(let list): toasts = list
       case .board(let view): board = view
       case .artifacts(let view): artifacts = view
+      case .thumbs(let view): thumbs = view
       }
     }
     rev = delta.base + 1

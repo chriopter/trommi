@@ -164,9 +164,15 @@ impl Doing<'_> {
                 self.write(action, Some(session_id), card_id.as_deref(), content)
             }
             // "What??" or "Revise": the card goes back to its agent with the question, and comes back up awake
-            Action::HandBack { card_id, note, rework, marks } => {
+            Action::HandBack { card_id, note, rework, marks, attachments } => {
+                let files = self.files_of(attachments)?;
                 let mut content = Map::new();
-                content.insert("text".into(), json!(note.clone().unwrap_or_default()));
+                let said = note.as_deref().map(str::trim).filter(|n| !n.is_empty());
+                let bare = if *rework { crate::views::talk::HAND_BACK_TEXT } else { crate::views::talk::EXPLAIN_TEXT };
+                content.insert("text".into(), json!(said.unwrap_or(bare)));
+                if !files.is_empty() {
+                    content.insert("attachments".into(), Value::Array(files));
+                }
                 content.insert(if *rework { "hand_back" } else { "explain" }.into(), json!(true));
                 if !marks.is_empty() {
                     content.insert("marks".into(), Value::Array(marks.clone()));
@@ -236,15 +242,20 @@ impl Doing<'_> {
                     values.push((format!("desk/{FIRST_DESK_ID}"), first_desk()));
                 }
                 let id = self.sent.new_id(self.now);
-                values.push((format!("desk/{id}"), json!({ "name": desk_name(name), "created_at": self.now })));
-                self.registers(action, &values)
+                let named = desk_name(name);
+                values.push((format!("desk/{id}"), json!({ "name": named, "created_at": self.now })));
+                self.registers(action, &values)?;
+                // (the toast names the new desk's id: its Undo takes the desk away again, and the shell goes to it)
+                let text = Text::new("desk.added", "Desk added");
+                self.sent.undo_toast(self.toasts, text, Some(Text::new("desk.added.name", &named)), Action::RemoveDesk { desk_id: id });
+                Ok(())
             }
             Action::RenameDesk { desk_id, name } => {
                 let mut desk = self.desk(desk_id)?;
                 desk.insert("name".into(), json!(desk_name(name)));
                 self.registers(action, &[(format!("desk/{desk_id}"), Value::Object(desk))])
             }
-            Action::DeskRegister { key, value } if key.starts_with("desk/") => self.registers(action, &[(key.clone(), value.clone())]),
+            Action::RoomRegister { key, value } if key.starts_with("desk/") || key == "kit" => self.registers(action, &[(key.clone(), value.clone())]),
             // a field of the desk's register like its name; with no desk yet the first one is made for them
             Action::SetGoal { desk_id, text } => {
                 let live = self.desks();

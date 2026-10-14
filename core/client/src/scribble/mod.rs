@@ -387,6 +387,8 @@ pub struct Scribble {
     asked: BTreeMap<IoId, Asked>,
     /// Something shown changed since the views were made.
     dirty: bool,
+    /// Every board that is read is shown small (`Lens::thumbs`): a change of any of them is shown.
+    pub thumbs: bool,
     /// What went wrong, for the App's log.
     pub notes: Vec<String>,
 }
@@ -472,7 +474,7 @@ impl Scribble {
         pad.newest_change = pad.newest_change.max(r.change);
         if pad.step == Step::Ready {
             pad.apply(held, now);
-            self.dirty |= self.focus == Some(board);
+            self.dirty |= self.thumbs || self.focus == Some(board);
         } else {
             pad.held.insert(r.change, held);
         }
@@ -504,7 +506,7 @@ impl Scribble {
             shape.al = None;
         }
         *at = now;
-        self.dirty |= self.focus == Some(*board);
+        self.dirty |= self.thumbs || self.focus == Some(*board);
     }
 
     /// The hub answered a request of the boards (or the engine gave up on it).
@@ -651,7 +653,7 @@ impl Scribble {
                     pad.apply(item, now);
                 }
                 pad.step = Step::Ready;
-                self.dirty |= self.focus == Some(*board);
+                self.dirty |= self.thumbs || self.focus == Some(*board);
             }
             let before = pad.live.len();
             pad.live.retain(|_, (_, at)| now < *at + LIVE_MS);
@@ -703,6 +705,24 @@ impl Scribble {
         shapes.sort_by_key(|s| s.z);
         shapes.extend(pad.live.values().map(|(s, _)| s.clone()));
         Some(BoardView { board_id: format!("desk/{}", pad.hex()), state: pad.state().into(), shapes })
+    }
+
+    /// The board in view, if any.
+    pub fn focused(&self) -> Option<BoardId> {
+        self.focus
+    }
+
+    /// A board that is read, as a small picture shows it: its state and its shapes (this device's pending items
+    /// laid over them); none while it was never asked for.
+    pub fn thumb(&self, model: &Model, board: &BoardId) -> Option<(&'static str, Vec<BoardShape>)> {
+        let pad = self.pads.get(board)?;
+        if pad.step != Step::Ready {
+            return Some((pad.state(), Vec::new()));
+        }
+        let mut shapes: Vec<BoardShape> = pad.shapes.values().cloned().collect();
+        overlay(&mut shapes, pad, model);
+        shapes.sort_by_key(|s| s.z);
+        Some((pad.state(), thumb_shapes(shapes)))
     }
 
     /// The references of the pictures on the board in view (so that `OpenFile` opens them).
@@ -881,31 +901,93 @@ fn overlay(shapes: &mut Vec<BoardShape>, pad: &Pad, model: &Model) {
     let me = model.my_device_id.clone().unwrap_or_default();
     let Some(sender) = unhex(&me).and_then(|b| DeviceId::from_slice(&b).ok()) else { return };
     for (seq, local, content) in pending(model, pad) {
-        let Ok(payload) = crate::codec::encode_body(crate::codec::BodyKind::BoardItem, content) else { continue };
-        let Ok(body) = ItemBody::decode(payload.as_bytes()) else { continue };
-        match body {
-            ItemBody::Strokes(list) => {
-                for (index, shape) in (0u32..).zip(&list) {
-                    let (mut view, _) = view_of(shape_key(&ShapeId { sender, seq, index }), me.clone(), shape);
-                    view.local = local.map(|l| format!("{l}/{index}"));
-                    shapes.push(view);
+        lay(shapes, &mut BTreeMap::new(), sender, seq, local, content);
+    }
+}
+
+/// One item (the model's form) laid onto `shapes` as the board takes it: a picture's reference into `refs`.
+fn lay(shapes: &mut Vec<BoardShape>, refs: &mut BTreeMap<String, Map<String, Value>>, sender: DeviceId, seq: u64, local: Option<&str>, content: &Map<String, Value>) {
+    let Ok(payload) = crate::codec::encode_body(crate::codec::BodyKind::BoardItem, content) else { return };
+    let Ok(body) = ItemBody::decode(payload.as_bytes()) else { return };
+    match body {
+        ItemBody::Strokes(list) => {
+            for (index, shape) in (0u32..).zip(&list) {
+                let (mut view, reference) = view_of(shape_key(&ShapeId { sender, seq, index }), hex(sender.as_bytes()), shape);
+                if let (Some(r), Some(a)) = (reference, view.attachment.clone()) {
+                    refs.insert(a, r);
                 }
+                view.local = local.map(|l| format!("{l}/{index}"));
+                shapes.push(view);
             }
-            ItemBody::Erase(ids) | ItemBody::SendAway(ids) => {
-                let gone: BTreeSet<String> = ids.iter().map(shape_key).collect();
-                shapes.retain(|s| !gone.contains(&s.id));
-            }
-            ItemBody::Move { shapes: ids, offset } => {
-                let moved: BTreeSet<String> = ids.iter().map(shape_key).collect();
-                let (dx, dy) = (units(offset[0]), units(offset[1]));
-                for s in shapes.iter_mut().filter(|s| moved.contains(&s.id)) {
-                    for (i, v) in s.pts.iter_mut().enumerate() {
-                        *v += if i % 2 == 0 { dx } else { dy };
-                    }
+        }
+        ItemBody::Erase(ids) | ItemBody::SendAway(ids) => {
+            let gone: BTreeSet<String> = ids.iter().map(shape_key).collect();
+            shapes.retain(|s| !gone.contains(&s.id));
+        }
+        ItemBody::Move { shapes: ids, offset } => {
+            let moved: BTreeSet<String> = ids.iter().map(shape_key).collect();
+            let (dx, dy) = (units(offset[0]), units(offset[1]));
+            for s in shapes.iter_mut().filter(|s| moved.contains(&s.id)) {
+                for (i, v) in s.pts.iter_mut().enumerate() {
+                    *v += if i % 2 == 0 { dx } else { dy };
                 }
             }
         }
     }
+}
+
+/// A board that lives in the model alone (the demo room: no hub, no snapshot): every item of its timeline
+/// `scribble:desk/<board>` in the order they were sent, ready to draw, and the references of its pictures.
+pub fn model_board(model: &Model, board: &BoardId) -> (BoardView, BTreeMap<String, Map<String, Value>>) {
+    let id = format!("desk/{}", hex(board.as_bytes()));
+    let mut shapes = Vec::new();
+    let mut refs = BTreeMap::new();
+    if let Some(t) = model.timelines.get(&crate::model::timeline_key("scribble", &id)) {
+        let mut items: Vec<&Map<String, Value>> = t.items.values().collect();
+        let n = |i: &Map<String, Value>, k: &str| i.get(k).and_then(Value::as_u64);
+        items.sort_by_key(|i| (n(i, "envelope_number").unwrap_or(u64::MAX), n(i, "sent_at").unwrap_or(0)));
+        let me = model.my_device_id.clone().unwrap_or_default();
+        for (at, item) in items.into_iter().enumerate() {
+            let by = item.get("sender_device_id").and_then(Value::as_str).unwrap_or(&me);
+            let Some(sender) = unhex(by).and_then(|b| DeviceId::from_slice(&b).ok()) else { continue };
+            let seq = n(item, "sender_sequence").or_else(|| n(item, "envelope_number")).unwrap_or(at as u64 + 1);
+            let Some(content) = item.get("content").and_then(Value::as_object) else { continue };
+            // (the demo's pictures are files by their address, without a key: a stand-in key lets them be read as
+            //  items, and the reference shown is the demo's own)
+            let mut content = content.clone();
+            for shape in content.get_mut("strokes").and_then(Value::as_array_mut).into_iter().flatten() {
+                let Some(a) = shape.get_mut("attachment").and_then(Value::as_object_mut) else { continue };
+                if a.get("file_key").and_then(Value::as_str).is_some_and(|k| !k.is_empty()) {
+                    continue;
+                }
+                if let Some(id) = a.get("attachment_id").and_then(Value::as_str) {
+                    refs.insert(id.to_string(), a.clone());
+                }
+                a.insert("file_key".into(), json!(trommi_core::ids::base64url_encode(&[0u8; 32])));
+                a.insert("sha256".into(), json!(trommi_core::ids::base64url_encode(&[0u8; 32])));
+            }
+            let kept = refs.clone();
+            lay(&mut shapes, &mut refs, sender, seq, item.get("local_id").and_then(Value::as_str), &content);
+            refs.extend(kept);
+        }
+    }
+    shapes.sort_by_key(|s| s.z);
+    (BoardView { board_id: id, state: "ready".into(), shapes }, refs)
+}
+
+/// A board small: its shapes without what only drawing it large needs (a stroke's times, force and tilt).
+pub fn thumb_shapes(shapes: Vec<BoardShape>) -> Vec<BoardShape> {
+    shapes
+        .into_iter()
+        .map(|mut s| {
+            s.t = Vec::new();
+            s.f = Vec::new();
+            s.az = None;
+            s.al = None;
+            s.local = None;
+            s
+        })
+        .collect()
 }
 
 #[cfg(test)]

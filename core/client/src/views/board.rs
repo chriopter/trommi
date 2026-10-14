@@ -53,6 +53,8 @@ pub struct Lens {
     pub off: Option<String>,
     /// The gallery of Artifacts is in view.
     pub artifacts: bool,
+    /// A page shows every desk's board small (Settings, the boards of All desks): they are read, `ViewModel.thumbs`.
+    pub thumbs: bool,
     /// The desks whose goals are folded to their first line on this device (web localStorage
     /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
     pub goals_folded: Vec<String>,

@@ -185,9 +185,12 @@ public enum CoreView {
     public var board: BoardView?
     /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`, and on the Desk, whose foot shows the newest), the newest first.
     public var artifacts: [ArtifactView]?
+    /// Every desk's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
+    /// desks); none else.
+    public var thumbs: [ThumbView]?
     public var toasts: [Toast]
 
-    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, artifacts: [ArtifactView]? = nil, toasts: [Toast] = []) {
+    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, artifacts: [ArtifactView]? = nil, thumbs: [ThumbView]? = nil, toasts: [Toast] = []) {
       self.rev = rev
       self.phase = phase
       self.status = status
@@ -202,6 +205,7 @@ public enum CoreView {
       self.files = files
       self.board = board
       self.artifacts = artifacts
+      self.thumbs = thumbs
       self.toasts = toasts
     }
 
@@ -220,6 +224,7 @@ public enum CoreView {
       case files = "files"
       case board = "board"
       case artifacts = "artifacts"
+      case thumbs = "thumbs"
       case toasts = "toasts"
     }
 
@@ -239,6 +244,7 @@ public enum CoreView {
       self.files = try c.decodeIfPresent([String: FileView].self, forKey: .files) ?? [:]
       self.board = try c.decodeIfPresent(BoardView.self, forKey: .board)
       self.artifacts = try c.decodeIfPresent([ArtifactView].self, forKey: .artifacts)
+      self.thumbs = try c.decodeIfPresent([ThumbView].self, forKey: .thumbs)
       self.toasts = try c.decodeIfPresent([Toast].self, forKey: .toasts) ?? []
     }
 
@@ -258,6 +264,7 @@ public enum CoreView {
       if !files.isEmpty { try c.encode(files, forKey: .files) }
       try c.encodeIfPresent(board, forKey: .board)
       try c.encodeIfPresent(artifacts, forKey: .artifacts)
+      try c.encodeIfPresent(thumbs, forKey: .thumbs)
       if !toasts.isEmpty { try c.encode(toasts, forKey: .toasts) }
     }
   }
@@ -308,6 +315,8 @@ public enum CoreView {
     case board(view: BoardView?)
     /// The gallery of Artifacts, whole; none when it is left.
     case artifacts(view: [ArtifactView]?)
+    /// The desks' boards small, whole; none when no page shows them.
+    case thumbs(view: [ThumbView]?)
     case toasts(toasts: [Toast])
 
     enum CodingKeys: String, CodingKey {
@@ -336,6 +345,7 @@ public enum CoreView {
       case "file": self = .file(id: try c.decode(String.self, forKey: .id), view: try c.decodeIfPresent(FileView.self, forKey: .view))
       case "board": self = .board(view: try c.decodeIfPresent(BoardView.self, forKey: .view))
       case "artifacts": self = .artifacts(view: try c.decodeIfPresent([ArtifactView].self, forKey: .view))
+      case "thumbs": self = .thumbs(view: try c.decodeIfPresent([ThumbView].self, forKey: .view))
       case "toasts": self = .toasts(toasts: try c.decode([Toast].self, forKey: .toasts))
       case let other: throw DecodingError.dataCorruptedError(forKey: .part, in: c, debugDescription: "ViewPart: no variant \(other)")
       }
@@ -386,6 +396,9 @@ public enum CoreView {
         try c.encode(view, forKey: .view)
       case .artifacts(let view):
         try c.encode("artifacts", forKey: .part)
+        try c.encode(view, forKey: .view)
+      case .thumbs(let view):
+        try c.encode("thumbs", forKey: .part)
         try c.encode(view, forKey: .view)
       case .toasts(let toasts):
         try c.encode("toasts", forKey: .part)
@@ -1970,8 +1983,15 @@ public enum CoreView {
     public var firstOpen: String?
     /// An empty conversation: the card of the agent that joined, and three ways to start.
     public var empty: EmptyTalkView?
+    /// Its agent's account and how much of it is used (the heading's rings: the week and the 5-hour window); a
+    /// helper without one of its own shows its main's. None without a plan or an e-mail.
+    public var usage: UsageView?
+    /// The main session it is a helper of (its key); none for a main.
+    public var parent: String?
+    /// In the Archive: the More menu offers "Back from the Archive" (`ArchiveSession` with `on: false`).
+    public var archived: Bool
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", deskId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", deskId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, parent: String? = nil, archived: Bool = false) {
       self.id = id
       self.name = name
       self.link = link
@@ -2002,6 +2022,9 @@ public enum CoreView {
       self.openSays = openSays
       self.firstOpen = firstOpen
       self.empty = empty
+      self.usage = usage
+      self.parent = parent
+      self.archived = archived
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2035,6 +2058,9 @@ public enum CoreView {
       case openSays = "open_says"
       case firstOpen = "first_open"
       case empty = "empty"
+      case usage = "usage"
+      case parent = "parent"
+      case archived = "archived"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2069,6 +2095,9 @@ public enum CoreView {
       self.openSays = try c.decodeIfPresent(Text.self, forKey: .openSays)
       self.firstOpen = try c.decodeIfPresent(String.self, forKey: .firstOpen)
       self.empty = try c.decodeIfPresent(EmptyTalkView.self, forKey: .empty)
+      self.usage = try c.decodeIfPresent(UsageView.self, forKey: .usage)
+      self.parent = try c.decodeIfPresent(String.self, forKey: .parent)
+      self.archived = try c.decodeIfPresent(Bool.self, forKey: .archived) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2103,6 +2132,9 @@ public enum CoreView {
       try c.encodeIfPresent(openSays, forKey: .openSays)
       try c.encodeIfPresent(firstOpen, forKey: .firstOpen)
       try c.encodeIfPresent(empty, forKey: .empty)
+      try c.encodeIfPresent(usage, forKey: .usage)
+      try c.encodeIfPresent(parent, forKey: .parent)
+      try c.encode(archived, forKey: .archived)
     }
   }
 
@@ -4494,11 +4526,24 @@ public enum CoreView {
     public var emoji: [EmojiView]
     /// The Emergency Kit words to keep, shown once.
     public var kit: [String]
-    /// Self-join asks waiting for "Allow" or "Deny" (for `AnswerAsk`).
+    /// Self-join asks waiting for "Allow" or "Deny" (for `AnswerAsk`), and those allowed whose session is still
+    /// joining (`joining`).
     public var asks: [AskView]
     public var problem: Text?
+    /// The invite this device made and shows (not a self-join's): what it is for, until when, who came; it stays
+    /// `joined` once its newcomer is in, until `DropInvite` or the next invite.
+    public var invite: InviteView?
+    /// The account's Emergency Kit was never saved (downloaded, printed or shown, then `KitKept`): the screens show
+    /// the kit's page first. The room register `kit` of every human device of the person says it.
+    public var kitDue: Bool
+    /// What the kit's sheet names, once the account was read: its e-mail, its id (as printed), and the address its
+    /// QR code holds (`https://<app>/#k1.<hub, base64url>.<id, 32 hex>`: the recovery screen with both filled in; no
+    /// word of the kit).
+    public var kitEmail: String?
+    public var kitAccount: String?
+    public var kitAddress: String?
 
-    public init(step: String = "", inviteId: String? = nil, link: String? = nil, emoji: [EmojiView] = [], kit: [String] = [], asks: [AskView] = [], problem: Text? = nil) {
+    public init(step: String = "", inviteId: String? = nil, link: String? = nil, emoji: [EmojiView] = [], kit: [String] = [], asks: [AskView] = [], problem: Text? = nil, invite: InviteView? = nil, kitDue: Bool = false, kitEmail: String? = nil, kitAccount: String? = nil, kitAddress: String? = nil) {
       self.step = step
       self.inviteId = inviteId
       self.link = link
@@ -4506,6 +4551,11 @@ public enum CoreView {
       self.kit = kit
       self.asks = asks
       self.problem = problem
+      self.invite = invite
+      self.kitDue = kitDue
+      self.kitEmail = kitEmail
+      self.kitAccount = kitAccount
+      self.kitAddress = kitAddress
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4516,6 +4566,11 @@ public enum CoreView {
       case kit = "kit"
       case asks = "asks"
       case problem = "problem"
+      case invite = "invite"
+      case kitDue = "kit_due"
+      case kitEmail = "kit_email"
+      case kitAccount = "kit_account"
+      case kitAddress = "kit_address"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4527,6 +4582,11 @@ public enum CoreView {
       self.kit = try c.decodeIfPresent([String].self, forKey: .kit) ?? []
       self.asks = try c.decodeIfPresent([AskView].self, forKey: .asks) ?? []
       self.problem = try c.decodeIfPresent(Text.self, forKey: .problem)
+      self.invite = try c.decodeIfPresent(InviteView.self, forKey: .invite)
+      self.kitDue = try c.decodeIfPresent(Bool.self, forKey: .kitDue) ?? false
+      self.kitEmail = try c.decodeIfPresent(String.self, forKey: .kitEmail)
+      self.kitAccount = try c.decodeIfPresent(String.self, forKey: .kitAccount)
+      self.kitAddress = try c.decodeIfPresent(String.self, forKey: .kitAddress)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4538,6 +4598,11 @@ public enum CoreView {
       if !kit.isEmpty { try c.encode(kit, forKey: .kit) }
       if !asks.isEmpty { try c.encode(asks, forKey: .asks) }
       try c.encodeIfPresent(problem, forKey: .problem)
+      try c.encodeIfPresent(invite, forKey: .invite)
+      try c.encode(kitDue, forKey: .kitDue)
+      try c.encodeIfPresent(kitEmail, forKey: .kitEmail)
+      try c.encodeIfPresent(kitAccount, forKey: .kitAccount)
+      try c.encodeIfPresent(kitAddress, forKey: .kitAddress)
     }
   }
 
@@ -4572,27 +4637,161 @@ public enum CoreView {
     public var nonce: String
     /// What the vouching agent says it is: account, name, host (its word, shown as such).
     public var says: Text
+    /// The asking session's key (its main, which vouches).
+    public var sessionId: String
+    /// The name the new session gets.
+    public var name: String
+    /// The computer and the folder it asks from (the agent's word); "" when it named none.
+    public var host: String
+    public var folder: String
+    /// "Claude" or "Codex".
+    public var kind: String
+    /// Who vouches: the asking session's name.
+    public var vouchedBy: String
+    /// Allowed: its link is out and the new session is not in yet (no Allow or Deny any more).
+    public var joining: Bool
 
-    public init(nonce: String = "", says: Text = Text()) {
+    public init(nonce: String = "", says: Text = Text(), sessionId: String = "", name: String = "", host: String = "", folder: String = "", kind: String = "", vouchedBy: String = "", joining: Bool = false) {
       self.nonce = nonce
       self.says = says
+      self.sessionId = sessionId
+      self.name = name
+      self.host = host
+      self.folder = folder
+      self.kind = kind
+      self.vouchedBy = vouchedBy
+      self.joining = joining
     }
 
     enum CodingKeys: String, CodingKey {
       case nonce = "nonce"
       case says = "says"
+      case sessionId = "session_id"
+      case name = "name"
+      case host = "host"
+      case folder = "folder"
+      case kind = "kind"
+      case vouchedBy = "vouched_by"
+      case joining = "joining"
     }
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.nonce = try c.decode(String.self, forKey: .nonce)
       self.says = try c.decode(Text.self, forKey: .says)
+      self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId) ?? ""
+      self.name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+      self.host = try c.decodeIfPresent(String.self, forKey: .host) ?? ""
+      self.folder = try c.decodeIfPresent(String.self, forKey: .folder) ?? ""
+      self.kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? ""
+      self.vouchedBy = try c.decodeIfPresent(String.self, forKey: .vouchedBy) ?? ""
+      self.joining = try c.decodeIfPresent(Bool.self, forKey: .joining) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(nonce, forKey: .nonce)
       try c.encode(says, forKey: .says)
+      try c.encode(sessionId, forKey: .sessionId)
+      try c.encode(name, forKey: .name)
+      try c.encode(host, forKey: .host)
+      try c.encode(folder, forKey: .folder)
+      try c.encode(kind, forKey: .kind)
+      try c.encode(vouchedBy, forKey: .vouchedBy)
+      try c.encode(joining, forKey: .joining)
+    }
+  }
+
+  /// An invite this device made, as its page shows it.
+  public struct InviteView: Codable, Hashable, Sendable {
+    public var inviteId: String
+    /// "human" (a device of the person) or "agent".
+    public var role: String
+    /// "open" (waits for the newcomer), "confirm_code" (the emoji to compare), "adding", "joined".
+    public var state: String
+    /// When the link ends unused (ms).
+    public var expiresMs: UInt64
+    /// The newcomer's name once it is known ("" before): the device's own, or the agent's session.
+    public var newcomer: String
+
+    public init(inviteId: String = "", role: String = "", state: String = "", expiresMs: UInt64 = 0, newcomer: String = "") {
+      self.inviteId = inviteId
+      self.role = role
+      self.state = state
+      self.expiresMs = expiresMs
+      self.newcomer = newcomer
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case inviteId = "invite_id"
+      case role = "role"
+      case state = "state"
+      case expiresMs = "expires_ms"
+      case newcomer = "newcomer"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.inviteId = try c.decode(String.self, forKey: .inviteId)
+      self.role = try c.decode(String.self, forKey: .role)
+      self.state = try c.decode(String.self, forKey: .state)
+      self.expiresMs = try c.decodeIfPresent(UInt64.self, forKey: .expiresMs) ?? 0
+      self.newcomer = try c.decodeIfPresent(String.self, forKey: .newcomer) ?? ""
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(inviteId, forKey: .inviteId)
+      try c.encode(role, forKey: .role)
+      try c.encode(state, forKey: .state)
+      try c.encode(expiresMs, forKey: .expiresMs)
+      if !newcomer.isEmpty { try c.encode(newcomer, forKey: .newcomer) }
+    }
+  }
+
+  /// A desk's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt.
+  public struct ThumbView: Codable, Hashable, Sendable {
+    public var deskId: String
+    /// `desk/<32 hex>`.
+    public var boardId: String
+    /// "loading" while it is read on this device, else as `BoardView.state`.
+    public var state: String
+    /// How many shapes it holds (once read).
+    public var count: UInt64
+    public var shapes: [BoardShape]
+
+    public init(deskId: String = "", boardId: String = "", state: String = "", count: UInt64 = 0, shapes: [BoardShape] = []) {
+      self.deskId = deskId
+      self.boardId = boardId
+      self.state = state
+      self.count = count
+      self.shapes = shapes
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case deskId = "desk_id"
+      case boardId = "board_id"
+      case state = "state"
+      case count = "count"
+      case shapes = "shapes"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.deskId = try c.decode(String.self, forKey: .deskId)
+      self.boardId = try c.decode(String.self, forKey: .boardId)
+      self.state = try c.decode(String.self, forKey: .state)
+      self.count = try c.decodeIfPresent(UInt64.self, forKey: .count) ?? 0
+      self.shapes = try c.decodeIfPresent([BoardShape].self, forKey: .shapes) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(deskId, forKey: .deskId)
+      try c.encode(boardId, forKey: .boardId)
+      try c.encode(state, forKey: .state)
+      try c.encode(count, forKey: .count)
+      if !shapes.isEmpty { try c.encode(shapes, forKey: .shapes) }
     }
   }
 
