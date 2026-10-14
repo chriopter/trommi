@@ -12,6 +12,13 @@ notes, pick the two to four things people will notice most. A day may have at mo
 (`?mock=1`, never real data), webp, at most 150 KB. The days before the releases had notes are in history.json
 (frozen).
 
+## 14 October 2026
+
+The Linux app runs only on the shared Rust app core, which now handles accounts, invites, joining by link, files,
+devices, sign-out, account deletion and archiving. A new sign-in loads only the open cards and what is new: about
+1.6 s instead of 8 s on a large account, with names shown at once. The connector no longer re-joins as a new agent
+after a resume, update finds new releases again, and the board's session list stays stable across loads.
+
 ## 13 October 2026
 
 Signing in takes under a second, and every helper keeps its name and cards afterwards. Running work lies as a stack
