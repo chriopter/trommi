@@ -2,10 +2,12 @@
 // with everything on it.
 //
 // The desks are the sidebar's (vm.sidebar.desks), what each holds the core's (vm.settings.desk_counts: its board
-// counted once read on this device), a delete under way with how far vm.settings.deleting. The confirm names exactly
+// counted once read on this device), each board small the core's too (vm.thumbs, painted by whiteboard.mjs's
+// controller "thumbs"), a delete under way with how far vm.settings.deleting. The confirm names exactly
 // what goes and is held to delete: Action::RemoveDesk (POST /settings/desks/<id>/delete); the core runs every step,
 // also one broken off before, and the desk leaves the list when it is gone. ?del=<desk id> opens a desk's confirm on load.
 import { Controller, controller, html, raw, settingsPage, sk } from './ui.mjs'
+import { viewModule } from './app.mjs'
 
 const pct = p => (p ? Math.round((100 * p.done) / Math.max(1, p.total)) : 0)
 const num = (k, word) => html`<div class="dk-n"><b>${k ?? '…'}</b><small>${word}</small></div>`
@@ -49,11 +51,13 @@ ${row('goals', 'goal', 'goals')}
 }
 
 export function register(t) {
+  // (the boards small are painted by whiteboard.mjs's controller "thumbs": loaded with this page)
+  viewModule('whiteboard').catch(err => console.warn('whiteboard', err))
   const main = url => {
     const vm = t.vm(), desks = vm.sidebar.desks
     const counts = new Map((vm.settings.desk_counts ?? []).map(c => [c.desk_id, c])), going = new Map((vm.settings.deleting ?? []).map(p => [p.desk_id, p]))
     return settingsPage('Desks', html`<div class="dk-page" data-controller="desks" data-desks-open-value="${url?.searchParams.get('del') ?? ''}">
-<div class="dk-cards" id="dk-cards">${desks.map(d => deskCard(d, counts.get(d.id) ?? {}, going.get(d.id), desks.length < 2))}</div>
+<div class="dk-cards" id="dk-cards" data-controller="thumbs">${desks.map(d => deskCard(d, counts.get(d.id) ?? {}, going.get(d.id), desks.length < 2))}</div>
 <p class="set-note">Each desk with its Scribble Board small. The bin deletes a desk with everything on it; you see what goes before.</p>
 <div id="dk-dialogs">${desks.map(d => confirmDialog(d, counts.get(d.id) ?? {}, going.get(d.id)))}</div></div>`, { lead: vm.settings.desks?.en ?? '' })
   }

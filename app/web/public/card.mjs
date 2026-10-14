@@ -1666,7 +1666,7 @@ const WAYS = {
   reopen: ({ id }) => [{ do: 'decide_again', card_id: id }],
   takeback: ({ id }) => [{ do: 'take_back', card_id: id }],
   // (HandBack carries no files: what was attached, the drawing's picture too, goes as a comment just before it)
-  revise: ({ id, card, note, marks, attachments }) => [...(attachments.length && card?.session_id ? [{ do: 'write', session_id: card.session_id, card_id: id, text: '', attachments }] : []), { do: 'hand_back', card_id: id, ...(note ? { note } : {}), rework: true, marks }, ...forget(card)],
+  revise: ({ id, card, note, marks, attachments }) => [{ do: 'hand_back', card_id: id, ...(note ? { note } : {}), rework: true, marks, ...(attachments.length ? { attachments } : {}) }, ...forget(card)],
   what: ({ id, marks }) => [{ do: 'hand_back', card_id: id, rework: false, marks }],
   message({ id, card, note, marks, attachments }) {
     if (!note && !attachments.length && !marks.length) throw new Error('Write something first.')

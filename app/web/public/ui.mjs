@@ -3001,6 +3001,15 @@ export function usageMark(acc, { mini = false, now = Date.now() } = {}) {
   const mark = raw(`<svg class="use-mark" viewBox="0 0 32 32" aria-hidden="true">${week ? useRing(week, 13) : ''}${five ? useRing(five, week ? 7.6 : 13) : ''}</svg>`)
   return html`<span class="use-rings${mini ? ' is-mini' : ''}" role="img" aria-label="${usagePlan(acc)}: ${words}" title="Usage">${mark}${mini ? '' : html`<span class="use-words">${ms.map(m => html`<span><b class="${hot(m.used).trim()}">${m.used} %</b> ${m.label}</span>`)}</span>`}</span>`
 }
+/** The same two rings from the core's UsageView (SessionView.usage): its meters as the core counted them. */
+export function usageRings(u, { mini = false } = {}) {
+  const ms = u?.meters ?? []
+  if (!ms.length) return ''
+  const five = ms.find(m => m.key === 'five_hour'), week = ms.find(m => m.key === 'weekly')
+  const words = ms.map(m => `${m.long}: ${m.used} % used${m.reset_ms ? `, resets ${usageReset(m.reset_ms)}` : ''}`).join(' · ')
+  const mark = raw(`<svg class="use-mark" viewBox="0 0 32 32" aria-hidden="true">${week ? useRing(week, 13) : ''}${five ? useRing(five, week ? 7.6 : 13) : ''}</svg>`)
+  return html`<span class="use-rings${mini ? ' is-mini' : ''}" role="img" aria-label="${u.plan || 'Usage'}: ${words}" title="Usage">${mark}${mini ? '' : html`<span class="use-words">${ms.map(m => html`<span><b class="${hot(m.used).trim()}">${m.used} %</b> ${m.label}</span>`)}</span>`}</span>`
+}
 /** Fuller, for an agent's card on Settings · Agents: plan and e-mail, one row per meter, Codex's credits and resets. */
 export function usageFull(acc, now = Date.now()) {
   if (!acc || typeof acc !== 'object' || !(acc.plan || acc.email)) return ''
