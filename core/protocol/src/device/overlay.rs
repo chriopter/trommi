@@ -100,7 +100,7 @@ fn name_of(header: &Header, payload: &[u8]) -> Option<Name> {
 
 /// Checks a stored overlay entry when the device is opened: `rest` is its key after the table and part. A
 /// record must be a register value of the group, sender and number its key names; an index entry names a name, a
-/// sender and a number, and holds the lamport the value was counted with when it came (empty before that).
+/// sender and a number, and holds the lamport the value was counted with when it came.
 pub(super) fn check_entry(rest: &[u8], value: &[u8]) -> Result<(), Error> {
     let mut reader = Reader::new(rest);
     let len = reader.u8()? as usize;
@@ -131,7 +131,7 @@ pub(super) fn check_entry(rest: &[u8], value: &[u8]) -> Result<(), Error> {
                     && of_fits
                     && reader.take(DeviceId::LEN).is_ok()
                     && reader.u64().is_ok()
-                    && (value.is_empty() || value.len() == 8)
+                    && value.len() == 8
             }
             _ => false,
         };
@@ -305,26 +305,29 @@ impl<S: Storage> Device<S> {
         let Some(judged) = self.judged(&registers, &record)? else {
             return Ok(None);
         };
-        // (a writer's later value of a name always follows its earlier one: of each writer the overlay keeps the
-        //  newest number alone)
-        let mine: Vec<Record> = self
+        // (a writer's later value of a name follows its earlier one: of each writer the overlay keeps the newest
+        //  number, and an earlier one only while it counts higher, its lamport counted as it came)
+        let mine: Vec<(Record, Option<u64>)> = self
             .overlay_named(&group, &judged.name)?
             .into_iter()
-            .map(|(held, _)| held)
-            .filter(|held| held.header.sender == sender)
+            .filter(|(held, _)| held.header.sender == sender)
             .collect();
-        let superseded = mine.iter().any(|held| held.header.seq > seq);
+        let superseded = mine.iter().any(|(held, _)| held.header.seq > seq);
+        // the very envelope again: it stays as it came, with the lamport it was counted with then
+        let again = mine.iter().any(|(held, _)| held.hash == record.hash);
         let newer = !superseded
             && registers
                 .held(&judged.name.0, judged.name.1)
                 .is_none_or(|held| held < judged.stamp);
-        if newer {
-            for held in mine.iter().filter(|held| held.header.seq < seq) {
-                self.delete_overlay(batch, held);
+        if newer && !again {
+            for (held, counted) in mine.iter().filter(|(held, _)| held.header.seq < seq) {
+                if counted.is_some_and(|counted| counted <= judged.stamp.lamport) {
+                    self.delete_overlay(batch, held);
+                }
             }
             self.put_overlay(batch, &record, &judged.name, judged.stamp.lamport)?;
         }
-        let current = newer
+        let current = (newer || again)
             && self
                 .overlay_standing(&group, &registers, &judged.name)?
                 .is_some_and(|(standing, _)| standing.hash == record.hash);
