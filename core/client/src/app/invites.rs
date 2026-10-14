@@ -38,8 +38,22 @@ enum Stage {
     Adding { newcomer: DeviceId },
 }
 
+/// A link the person allowed for an agent's ask to let in a new session of its machine (12.4): its Request is let
+/// in without the emoji when the ask names its hash and the voucher still stands.
+#[derive(Clone, Debug)]
+pub(super) struct Vouch {
+    pub(super) nonce: String,
+    pub(super) session_id: String,
+    pub(super) account: String,
+    pub(super) account_label: String,
+    pub(super) by_name: String,
+}
+
 pub(super) struct Inviting {
     role: Role,
+    pub(super) vouch: Option<Vouch>,
+    /// The link, kept for a vouched one until it is written for the asking agent.
+    link: Option<String>,
     label: String,
     desk: Option<String>,
     expires_at: u64,
@@ -80,36 +94,42 @@ impl App {
     /// `InviteDevice`, `InviteAgent`, `ConfirmEmoji`: true when `action` was one of them.
     pub(super) fn invite_action(&mut self, now_ms: u64, action: &AccountAction, out: &mut Vec<Effect>) -> bool {
         match action {
-            AccountAction::InviteDevice => self.invite_open(now_ms, Role::Human, String::new(), None, out),
-            AccountAction::InviteAgent { label, desk } => self.invite_open(now_ms, Role::Agent, label.clone(), desk.clone(), out),
+            AccountAction::InviteDevice => {
+                self.invite_open(now_ms, Role::Human, String::new(), None, None, out);
+            }
+            AccountAction::InviteAgent { label, desk } => {
+                self.invite_open(now_ms, Role::Agent, label.clone(), desk.clone(), None, out);
+            }
             AccountAction::ConfirmEmoji { invite_id, matches } => self.invite_confirm(now_ms, invite_id, *matches, out),
             _ => return false,
         }
         true
     }
 
-    fn invite_open(&mut self, now_ms: u64, role: Role, label: String, desk: Option<String>, out: &mut Vec<Effect>) {
+    pub(super) fn invite_open(&mut self, now_ms: u64, role: Role, label: String, desk: Option<String>, vouch: Option<Vouch>, out: &mut Vec<Effect>) -> bool {
+        let shown = vouch.is_none();
         let Some(engine) = self.engine.as_ref() else {
             self.next_view.account = problem("action.no_room", "Sign in first.");
-            return;
+            return false;
         };
-        let Ok(hub) = HubAddress::parse(engine.hub()) else { return };
+        let Ok(hub) = HubAddress::parse(engine.hub()) else { return false };
         let opened = self.with_engine(now_ms, out, |engine, ctx| engine.act(ctx, |d, now| d.invite_open(role, None, INVITE_APP, &hub, now)));
         let opened = match opened {
             Some(Ok(opened)) => opened,
+            Some(Err(_)) if !shown => return false,
             Some(Err(e)) => {
                 self.next_view.account = match e.code() {
                     "too-many" => problem("invite.too_many", "Too many invites are open. Wait until one is used or ends."),
                     "forbidden" => problem("invite.forbidden", "Only a person's device can invite."),
                     code => problem("invite.failed", &format!("No invite could be made ({code}).")),
                 };
-                return;
+                return false;
             }
-            None => return,
+            None => return false,
         };
         // (one agent link at a time: a newer one ends this device's earlier one nobody answered yet)
-        if role == Role::Agent {
-            let old: Vec<InviteId> = self.invites.open.iter().filter(|(_, i)| i.role == Role::Agent && matches!(i.stage, Stage::Open | Stage::Publishing)).map(|(id, _)| *id).collect();
+        if role == Role::Agent && shown {
+            let old: Vec<InviteId> = self.invites.open.iter().filter(|(_, i)| i.role == Role::Agent && i.vouch.is_none() && matches!(i.stage, Stage::Open | Stage::Publishing)).map(|(id, _)| *id).collect();
             for id in old {
                 self.invites.open.remove(&id);
                 self.invite_send(now_ms, out, move |site| Codec.request(site, &Route::DeleteInvite { invite: &id }), |_| InviteAsk::Burn);
@@ -118,7 +138,7 @@ impl App {
         let invite = opened.invite_id;
         let link = String::from_utf8(opened.link.expose().to_vec()).unwrap_or_default();
         let offer = opened.signed_offer;
-        self.invites.open.insert(invite, Inviting { role, label, desk, expires_at: opened.expires_at, stage: Stage::Publishing, next_look: now_ms + LOOK_MS, asked: None });
+        self.invites.open.insert(invite, Inviting { role, vouch, link: (!shown).then(|| link.clone()), label, desk, expires_at: opened.expires_at, stage: Stage::Publishing, next_look: now_ms + LOOK_MS, asked: None });
         let asked = self.invite_send(
             now_ms,
             out,
@@ -128,7 +148,10 @@ impl App {
         if let Some(i) = self.invites.open.get_mut(&invite) {
             i.asked = asked;
         }
-        self.next_view.account = AccountView { step: "invite".into(), invite_id: Some(hex(invite.as_bytes())), link: Some(link), ..Default::default() };
+        if shown {
+            self.next_view.account = AccountView { step: "invite".into(), invite_id: Some(hex(invite.as_bytes())), link: Some(link), ..Default::default() };
+        }
+        true
     }
 
     /// Sends a request of the invites through the engine; the id it went under.
@@ -204,10 +227,24 @@ impl App {
                 let Some(i) = self.invites.open.get_mut(&invite) else { return };
                 i.asked = None;
                 match answer(&expect) {
-                    Ok(_) => i.stage = Stage::Open,
+                    Ok(_) => {
+                        i.stage = Stage::Open;
+                        // (a vouched link goes to the asking agent now that the hub holds its Offer)
+                        if let (Some(v), Some(link)) = (i.vouch.clone(), i.link.take()) {
+                            let value = json!({ "link": link, "invite_id": hex(invite.as_bytes()) });
+                            self.doing(now_ms, out, |doing| {
+                                doing.session_register(&v.session_id, &format!("join_link/{}", v.nonce), &value);
+                            });
+                        }
+                    }
                     Err(_) => {
-                        self.invites.open.remove(&invite);
-                        self.next_view.account = problem("invite.not_published", "The invite did not reach the hub. Try again.");
+                        let vouch = self.invites.open.remove(&invite).and_then(|i| i.vouch);
+                        match vouch {
+                            Some(v) => self.doing(now_ms, out, |doing| {
+                                doing.session_register(&v.session_id, &format!("join_link/{}", v.nonce), &json!({ "refused": "busy" }));
+                            }),
+                            None => self.next_view.account = problem("invite.not_published", "The invite did not reach the hub. Try again."),
+                        }
                     }
                 }
             }
@@ -228,9 +265,15 @@ impl App {
                                 |expect| InviteAsk::Reveal(invite, expect),
                             );
                             let code = accepted.code.numbers();
+                            let mut vouched = false;
                             if let Some(i) = self.invites.open.get_mut(&invite) {
                                 i.asked = asked;
                                 i.stage = Stage::Compare { code, request_hash: *accepted.request_hash.as_bytes(), newcomer: accepted.new_device };
+                                vouched = i.vouch.is_some();
+                            }
+                            // (a vouched one is let in by the ask's word, not the emoji: `selfjoin_tend`)
+                            if vouched {
+                                return self.selfjoin_tend(now_ms, out);
                             }
                             self.next_view.account = AccountView {
                                 step: "compare_emoji".into(),
@@ -263,7 +306,8 @@ impl App {
         }
     }
 
-    fn invite_confirm(&mut self, now_ms: u64, invite_id: &str, matches: bool, out: &mut Vec<Effect>) {
+    pub(super) fn invite_confirm(&mut self, now_ms: u64, invite_id: &str, matches: bool, out: &mut Vec<Effect>) {
+        let vouched = unhex(invite_id).map(InviteId::new).and_then(|id| self.invites.open.get(&id)).is_some_and(|i| i.vouch.is_some());
         let Some(invite) = unhex(invite_id).map(InviteId::new) else { return };
         let Some(Stage::Compare { code, request_hash, newcomer }) = self.invites.open.get(&invite).map(|i| i.stage.clone()) else {
             self.next_view.account = problem("invite.not_waiting", "This invite waits for no emoji.");
@@ -275,7 +319,9 @@ impl App {
         if !matches {
             self.invites.open.remove(&invite);
             self.invite_send(now_ms, out, move |site| Codec.request(site, &Route::DeleteInvite { invite: &invite }), |_| InviteAsk::Burn);
-            self.next_view.account = problem("invite.mismatch", "The emoji do not match: nobody was added, and the link is spent.");
+            if !vouched {
+                self.next_view.account = problem("invite.mismatch", "The emoji do not match: nobody was added, and the link is spent.");
+            }
             return;
         }
         match confirmed {
@@ -283,7 +329,9 @@ impl App {
                 if let Some(i) = self.invites.open.get_mut(&invite) {
                     i.stage = Stage::Adding { newcomer };
                 }
-                self.next_view.account = AccountView { step: "working".into(), invite_id: Some(invite_id.to_string()), ..Default::default() };
+                if !vouched {
+                    self.next_view.account = AccountView { step: "working".into(), invite_id: Some(invite_id.to_string()), ..Default::default() };
+                }
             }
             Some(Err(e)) => {
                 self.invites.open.remove(&invite);
@@ -314,7 +362,7 @@ impl App {
                 self.next_view.account = problem("invite.removed", "The new device is not in the room.");
                 continue;
             }
-            if i.role == Role::Agent && (!i.label.is_empty() || i.desk.is_some()) {
+            if i.role == Role::Agent && (!i.label.is_empty() || i.desk.is_some() || i.vouch.is_some()) {
                 let device = hex(newcomer.as_bytes());
                 let session = self.board.model.sessions.iter().find(|(_, s)| s.agent_device_id.as_deref() == Some(device.as_str()) && s.parent_session_id.is_none()).map(|(k, _)| k.clone());
                 if let Some(session) = session {
@@ -325,15 +373,35 @@ impl App {
                     if let Some(desk) = &i.desk {
                         place.insert("desk".into(), json!(desk));
                     }
+                    if let Some(v) = &i.vouch {
+                        place.insert("vouched".into(), json!({ "by": v.session_id, "by_name": v.by_name, "account": v.account, "account_label": v.account_label }));
+                    }
                     self.doing(now_ms, out, |doing| doing.session_settings(&session, place));
                 }
             }
-            self.next_view.account = AccountView { step: "none".into(), ..Default::default() };
+            if i.vouch.is_none() {
+                self.next_view.account = AccountView { step: "none".into(), ..Default::default() };
+            }
         }
+    }
+
+    /// The vouched links open here: the accounts they are for (the bounds count them), and those whose Request waits
+    /// for the ask's word, with its hash (base64url).
+    pub(super) fn vouched_open(&self) -> (Vec<String>, Vec<(String, Vouch, String)>) {
+        let mut accounts = Vec::new();
+        let mut waiting = Vec::new();
+        for (id, i) in &self.invites.open {
+            let Some(v) = &i.vouch else { continue };
+            accounts.push(v.account.clone());
+            if let Stage::Compare { request_hash, .. } = &i.stage {
+                waiting.push((hex(id.as_bytes()), v.clone(), trommi_core::ids::base64url_encode(request_hash)));
+            }
+        }
+        (accounts, waiting)
     }
 }
 
-fn emoji_of(code: [u8; 6]) -> Vec<EmojiView> {
+pub(super) fn emoji_of(code: [u8; 6]) -> Vec<EmojiView> {
     code.iter()
         .map(|n| {
             let (emoji, word) = trommi_core::invite::CHECK_EMOJI.get(usize::from(*n)).copied().unwrap_or_default();

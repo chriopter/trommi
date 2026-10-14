@@ -611,6 +611,15 @@ impl Doing<'_> {
         }
     }
 
+    /// A register of a session's group, for its agent to read (`join_link/<nonce>`, 12.4): no echo; false when it
+    /// could not be sealed.
+    pub fn session_register(&mut self, session_id: &str, key: &str, value: &Value) -> bool {
+        let Some(session) = id(session_id).map(SessionId::new) else { return false };
+        let Ok((name, wire)) = codec::encode_register(key, value) else { return false };
+        let draft = Draft::Register { group: GroupId::session(self.room, session), name, value: wire.map(|w| SecretBytes::new(w.into_bytes())) };
+        (self.seal)(&draft, None, &[]).is_ok()
+    }
+
     /// The desks that are there, by id.
     fn desks(&self) -> Vec<String> {
         self.model
