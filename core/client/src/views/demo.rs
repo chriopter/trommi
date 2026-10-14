@@ -43,6 +43,8 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
     let f = moved(fixture, "", now_ms as i64 - made);
     let pair = |id: &str, o: Map<String, Value>| json!([id, o]);
 
+    // (a session's key is its 16-byte id as every app spells it: the demo's agent device ids, cut to their first half)
+    let sid = |dev: &str| dev.get(..32).unwrap_or(dev).to_string();
     let members: Vec<Value> = list(&f, "members").map(|m| pair(text(m, "device_id"), m.clone())).collect();
     // (a card, a request or an Artifact belongs to its agent's session)
     let owned = |key: &str| -> Vec<Value> {
@@ -50,7 +52,7 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
             .map(|o| {
                 let mut o = o.clone();
                 if o.get("session_id").is_none_or(Value::is_null) {
-                    o.insert("session_id".into(), json!(text(&o, "agent_device_id")));
+                    o.insert("session_id".into(), json!(sid(text(&o, "agent_device_id"))));
                 }
                 if !o.contains_key("content_state") {
                     o.insert("content_state".into(), json!("ok"));
@@ -64,7 +66,7 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
             let mut c = c.clone();
             let agent = text(&c, "agent_device_id").to_string();
             if c.get("session_id").is_none_or(Value::is_null) {
-                c.insert("session_id".into(), json!(agent));
+                c.insert("session_id".into(), json!(sid(&agent)));
             }
             if !c.contains_key("state_envelope_number") {
                 c.insert("state_envelope_number".into(), c.get("envelope_number").cloned().unwrap_or(json!(0)));
@@ -74,13 +76,14 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
         .collect();
     let sessions: Vec<Value> = list(&f, "sessions")
         .map(|s| {
-            let id = text(s, "agent_device_id").to_string();
+            let dev = text(s, "agent_device_id").to_string();
+            let id = sid(&dev);
             let mut o = s.clone();
             o.insert("session_id".into(), json!(id));
-            o.insert("agent_device_ids".into(), json!([id]));
+            o.insert("agent_device_ids".into(), json!([dev]));
             o.insert("timeline_key".into(), json!(format!("chat:session/{id}")));
             let mine: Vec<&str> = list(&f, "cards")
-                .filter(|c| text(c, "agent_device_id") == id)
+                .filter(|c| text(c, "agent_device_id") == dev)
                 .map(|c| text(c, "object_id"))
                 .collect();
             o.insert("card_ids".into(), json!(mine));
@@ -115,8 +118,9 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
     //  person never placed gets its place in that list)
     let settings = h.get("session_settings").and_then(Value::as_object);
     for (i, s) in list(&f, "sessions").enumerate() {
-        let id = text(s, "agent_device_id");
-        let mut set = settings.and_then(|all| all.get(id)).or(s.get("settings")).and_then(Value::as_object).cloned().unwrap_or_default();
+        let dev = text(s, "agent_device_id");
+        let id = sid(dev);
+        let mut set = settings.and_then(|all| all.get(dev)).or(s.get("settings")).and_then(Value::as_object).cloned().unwrap_or_default();
         if !set.get("position").is_some_and(Value::is_number) {
             set.insert("position".into(), json!(i));
         }
@@ -133,6 +137,11 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
         .into_iter()
         .flatten()
         .map(|(key, items)| {
+            // (a session's Chat under its session's key)
+            let key = &match key.strip_prefix("chat:session/") {
+                Some(dev) => format!("chat:session/{}", sid(dev)),
+                None => key.clone(),
+            };
             let (kind, id) = key.split_once(':').unwrap_or((key.as_str(), ""));
             let items: Vec<&Value> = items.as_array().into_iter().flatten().collect();
             let number = |i: &Value| i.get("envelope_number").and_then(Value::as_u64);

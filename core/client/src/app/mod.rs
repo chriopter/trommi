@@ -143,6 +143,8 @@ pub struct App {
     changes: account_change::Changes,
     desks: desks::DeskDeletes,
     push: push::Push,
+    /// The demo room runs (`Config.demo`): no hub, no store.
+    demo: bool,
     /// Notes this run delivered (their closing version is on its way).
     notes_went: std::collections::BTreeSet<String>,
     /// A recovery (`AccountAction::Recover`) waiting for its login: the new kit's words and the sealer of the
@@ -218,6 +220,7 @@ impl App {
             changes: account_change::Changes::default(),
             desks: desks::DeskDeletes::default(),
             push: push::Push::default(),
+            demo: false,
             notes_went: Default::default(),
             recover_with: None,
             recovered_kit: None,
@@ -760,7 +763,23 @@ impl App {
                     self.lens.utc_offset_min = config.utc_offset_min;
                     // (the Desk's greeting: one for the whole run)
                     self.lens.dice = (config.seed ^ (config.seed >> 32)) as u32;
+                    let demo = config.demo.clone();
                     self.config = Some(config);
+                    if let Some(fixture) = demo {
+                        match crate::views::demo::model_of(&fixture, now_ms) {
+                            Ok(model) => {
+                                self.board = engine::feed::Board::default();
+                                self.board.model = model;
+                                self.demo = true;
+                                self.next_view.phase = Phase::Live;
+                                self.stale_views = true;
+                                self.after_demo(now_ms, &mut out);
+                            }
+                            Err(why) => out.push(log(LogLevel::Error, &format!("demo: {why}"))),
+                        }
+                        self.render(&mut out);
+                        return out;
+                    }
                     self.next_view.phase = Phase::Starting;
                     let id = self.io(Pending::DeviceLoad);
                     out.push(Effect::Store {
@@ -961,7 +980,18 @@ impl App {
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_foreground(ctx));
             }
         }
-        self.after_engine(now_ms, &mut out);
+        if self.demo {
+            if self.view_wake.is_some_and(|at| now_ms >= at) {
+                self.stale_views = true;
+            }
+            self.after_demo(now_ms, &mut out);
+            if self.view_wake != self.timer {
+                self.timer = self.view_wake;
+                out.push(Effect::Timer { at_ms: self.view_wake });
+            }
+        } else {
+            self.after_engine(now_ms, &mut out);
+        }
         self.render(&mut out);
         out
     }
@@ -983,6 +1013,9 @@ impl App {
                 return;
             }
             _ => {}
+        }
+        if self.demo {
+            return self.demo_action(now_ms, action, out);
         }
         if self.engine.is_none() {
             let text = crate::views::Text::new("action.no_room", "Sign in first.");
@@ -1008,6 +1041,57 @@ impl App {
             return self.push_action(now_ms, *level, out);
         }
         self.run_action(now_ms, action, out);
+    }
+
+    /// An action in the demo room: done on the model as on a real one (the echo), and taken as done at once.
+    fn demo_action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
+        let utc_offset_min = self.lens.utc_offset_min;
+        let room = trommi_core::ids::RoomId::new([7; 32]);
+        let mut n = 0u64;
+        let mut seal = |_: &trommi_core::device::Draft, _: Option<&trommi_core::ids::DeviceId>, _: &[trommi_core::ids::FileId]| {
+            n += 1;
+            let mut hash = [0u8; 32];
+            hash[..8].copy_from_slice(&(now_ms ^ (n << 48)).to_be_bytes());
+            Ok(trommi_core::device::Sealed {
+                outbox_id: n,
+                envelope_hash: trommi_core::ids::Hash32::new(hash),
+                seq: n,
+                group: trommi_core::ids::GroupId::room(room),
+                object_id: None,
+                time: now_ms,
+            })
+        };
+        let files = &self.files;
+        let file = |id: &str| files.reference(id).cloned();
+        let mut doing = Doing {
+            file: &file,
+            model: &mut self.board.model,
+            sent: &mut self.sent,
+            toasts: &mut self.next_view.toasts,
+            room,
+            now: now_ms,
+            utc_offset_min,
+            seal: &mut seal,
+            change: Change::default(),
+        };
+        if let Err(NotDone { text, .. }) = doing.run(&action) {
+            doing.sent.toast(doing.toasts, text, None);
+        }
+        let mut change = std::mem::take(&mut doing.change);
+        self.board.model.settle_echoes();
+        self.board.model.project(&mut change, now_ms);
+        self.stale_views = true;
+        self.after_demo(now_ms, out);
+    }
+
+    /// The demo's views, made again when they went stale.
+    fn after_demo(&mut self, now_ms: u64, _out: &mut Vec<Effect>) {
+        if self.stale_views {
+            self.stale_views = false;
+            let (wake, shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
+            self.view_wake = wake;
+            self.files.shown(shown, &mut self.next_view.files);
+        }
     }
 
     /// The notes this device sent whose hold (the toast's Undo) ran out: delivered, once each.

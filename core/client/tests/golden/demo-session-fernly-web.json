@@ -1,5 +1,5 @@
 {
-  "id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+  "id": "54ddca7af4029f0526984da1e346d833",
   "name": {
     "key": "session.name",
     "en": "Fernly Website"
@@ -425,7 +425,7 @@
         "starred": false,
         "created_ms": 1791466200000,
         "from": {
-          "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+          "session_id": "54ddca7af4029f0526984da1e346d833",
           "name": "Fernly Website",
           "mark": "draw:leaf",
           "path": [
@@ -548,7 +548,7 @@
         "starred": false,
         "created_ms": 1791464400000,
         "from": {
-          "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+          "session_id": "54ddca7af4029f0526984da1e346d833",
           "name": "Fernly Website",
           "mark": "draw:leaf",
           "path": [
