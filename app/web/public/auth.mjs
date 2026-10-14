@@ -1,749 +1,106 @@
-// ---- room ----
-// The room's own screens. Inside a room (pages of the board): /settings (one list, as iOS Settings: Invite a Device with
-// its code and the emoji check in place, beside it Invite an Agent, then a row per page: Agents (agents.mjs), Devices,
-// Account, Theme, Keyboard Shortcuts, Security), /settings/security (every key that opens the account's data, and the self
-// test), /settings/devices (who is in the room, Push, inviting an agent; each device a page
-// of its own: rename, remove), /pair/:id (an agent's clipboard; a device's code), /settings/account (email, password, passkeys, Emergency Kit: each a page of its own; storage). Before a room (a screen of its own): Create
-// account (email + a passkey where the device can, else or by choice a password; this device founds the room and its
-// Emergency Kit is made at once), Log in (a passkey, email + password, or scan a signed-in device's code), Forgot
-// password (Emergency Kit, ending in a new password or a new passkey). A device is never asked for its name (deviceLabel). The UI says "account", never "room".
-// Calm and sober: this is about keys; pen drawings only on the choice buttons.
-// Core features that may not be there yet (usage, session handover) are shown only when the core has them.
-import { BELL, Controller, PLUS, SET_CHEVRON, agentsOf, avatar, connectCommand, connectPrompt, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode, sayError, toast } from './ui.mjs'
-import { CLIENT, account, checkEmoji, core, openInWorker, qrReader, ses } from './app.mjs'
-const read = (k, f = null) => { try { return localStorage.getItem(k) ?? f } catch { return f } }
-const write = (k, v) => { try { localStorage.setItem(k, v) } catch {} }
-const foundCode = () => ses('trommi-found-code', new URLSearchParams(location.search).get('found_code')) || undefined
+// ---- the account and Settings ----
+// Drawn from the app core's view model: before a room (vm.phase 'signed_out') and while an account step is under way
+// (vm.account.step), the screens of their own: /start, /create, /login, /forgot, /scan, /join, /kit, /new-way (one calm
+// column, auth.css "ob"); inside a room the pages of Settings: /settings (the list, with Invite a Device and Invite an
+// Agent), /settings/devices (each device a page of its own, Push on this device), /settings/account (its ways in, each a
+// page), /settings/security, /settings/theme, /settings/keys, /pair/agent (an agent's clipboard), /logout. What the
+// person does goes to the core as an AccountAction (t.account) or an Action (t.act); the core says how far it is
+// (step 'working'), what went wrong (problem), the emoji, the kit's words. The page only remembers what it drew: which
+// form was sent (its busy button), which invite was asked for here, whether the kit's words are shown.
+// app.mjs asks gate(vm, url) on every visit while signed out or while a step runs: the address the page must be on.
+// The UI says "account", never "room". Calm and sober: pen drawings only on the choice buttons.
+import { BELL, Controller, PLUS, SET_CHEVRON, askToast, connectCommand, connectPrompt, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode } from './ui.mjs'
+import { passkeysOn, pushObstacle } from './platform.mjs'
+
+// (the page's core and the QR reader come when first needed: this module also loads in Node, for its tests)
+const qrReader = () => import('./app.mjs').then(app => app.qrReader())
 const art = name => raw(['phone', 'house'].includes(name) ? doodleSvg(`draw:${name}`) : sketchSvg(name))
-const has = (o, fn) => typeof o?.[fn] === 'function'
+const isDemo = () => Boolean(globalThis.document?.documentElement.classList.contains('is-demo'))
+const day = ms => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
-// ---- passkeys: the ceremonies ----
-// WebAuthn runs here, on the page; the core worker (core/account.ts) gets what a ceremony returned, as bytes. A passkey
-// opens the account through the 32 bytes of its `prf` extension over a fixed input; they go to the worker and nowhere else.
-/** The bytes of what WebAuthn hands back, copied: an ArrayBuffer or a view, also one made in another realm (a password
- *  manager's extension that answers create() and get() for the browser hands those: `instanceof` is false for them),
- *  or the base64url text some of them give instead. Anything else is no passkey answer (`passkey-failed`). */
-const pkBytes = v => {
-  if (ArrayBuffer.isView(v)) return new Uint8Array(v.buffer, v.byteOffset, v.byteLength).slice()
-  if (v instanceof ArrayBuffer || Object.prototype.toString.call(v) === '[object ArrayBuffer]') return new Uint8Array(v).slice()
-  if (typeof v === 'string' && /^[A-Za-z0-9_-]*={0,2}$/.test(v)) return unb64u(v.replace(/=+$/, ''))
-  throw pkError('passkey-failed', 'the passkey\'s answer holds no bytes where WebAuthn puts them')
+// ---- what the page remembers (drawing state only; nothing of the account) ----
+const local = {
+  sent: null,          // the form sent last: { path, word, passkey } (its button is busy while the step is 'working')
+  email: '',           // the e-mail typed last, to start the next form with
+  begun: false,        // this page signed in, made an account or joined: its screens lead to the Desk once in
+  loggedOut: false,    // "Logged out." on the start page
+  invite: null,        // the invite asked for here: { kind: 'device' | 'agent', seen: the last step drawn }
+  kitFrom: 'start',    // where a new kit is shown: 'start' (/kit) or 'settings' (/settings/account/kit)
+  kit: { shown: false, saved: false },
+  words: null,         // the Emergency Kit's words of a recovery, held for its new passkey or password (/new-way)
+  paste: '',           // what the pasted link was refused for
+  readAt: 0,           // when the account was last asked for (ReadAccount)
 }
-const unb64u = text => Uint8Array.from(atob(String(text).replace(/-/g, '+').replace(/_/g, '/')), ch => ch.charCodeAt(0))
-const b64u = b => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-/** The relying-party id: this page's own host. app.trommi.com for the app (fixed, for good); a development or preview
- *  build has its own, and the hub takes no other from it. */
-const pkRpId = () => location.hostname
-const pkError = (code, message) => Object.assign(new Error(message), { code })
-/** What a ceremony throws, in the app's codes (a DOMException's own code is a number): the prompt was closed (passkey-cancelled), this page ended it (passkey-aborted), the authenticator holds one already (passkey-exists). */
-const pkFail = err => (typeof err?.code === 'string' ? err : err?.name === 'AbortError' ? pkError('passkey-aborted', 'ended') : err?.name === 'InvalidStateError' ? pkError('passkey-exists', 'this passkey is here already') : err?.name === 'NotAllowedError' ? pkError('passkey-cancelled', 'no passkey was used') : pkError('passkey-failed', err?.message ?? 'the passkey did not work'))
-/**
- * A ceremony's answer read field by field: from its JSON form (`toJSON()`, WebAuthn level 3: base64url text, what
- * Chrome and a passkey provider such as 1Password give whole) where it has one, else from the objects themselves
- * (whose getters a provider may leave empty). A field that is in neither: `passkey-failed`, naming the field.
- */
-function pkRead(cred) {
-  let json = null
-  try { json = typeof cred?.toJSON === 'function' ? cred.toJSON() : null } catch { json = null }
-  const raw = cred?.response ?? {}, jr = json?.response ?? {}
-  const pick = (name, fromJson, fromRaw, optional = false) => {
-    for (const v of [fromJson, fromRaw]) if (v != null && v !== '') try { return pkBytes(v) } catch { /* the other form */ }
-    if (optional) return null
-    throw pkError('passkey-failed', `the passkey answer lacks ${name}`)
-  }
-  let ext = null
-  try { ext = cred?.getClientExtensionResults?.() ?? null } catch { ext = null }
-  const prfOf = e => e?.prf?.results?.first
-  return {
-    field: (name, optional = false) => pick(name, jr[name], raw[name], optional),
-    id: () => pick('rawId', json?.rawId ?? json?.id, cred?.rawId),
-    transports: () => { try { return jr.transports ?? raw.getTransports?.() ?? [] } catch { return [] } },
-    prf: () => pick('prf result', prfOf(json?.clientExtensionResults), prfOf(ext), true),
-    prfEnabled: () => (json?.clientExtensionResults?.prf ?? ext?.prf)?.enabled,
-  }
+const stepOf = vm => vm.account?.step || 'none'
+const signedOut = vm => vm.phase === 'signed_out'
+
+// ---- the gate ----
+/** The signed-out screens, by address. */
+const OUT = { '/start': 'start', '/create': 'create', '/login': 'login', '/forgot': 'forgot', '/scan': 'scan', '/join': 'join', '/kit': 'kit', '/new-way': 'newway' }
+const kitPath = () => (local.kitFrom === 'settings' ? '/settings/account/kit' : '/kit')
+/** The address the page must be on (app.mjs, on every visit while signed out or while an account step runs), or null. */
+export function gate(vm, url) {
+  const av = vm.account ?? {}, step = stepOf(vm), p = url.pathname
+  const go = to => (p === to ? null : to)
+  if (step === 'keep_kit') return go(kitPath())
+  // (an invite of this device: its emoji and its adding stand where it was asked for)
+  if (av.invite_id && ['compare_emoji', 'working'].includes(step)) return go(local.invite?.kind === 'agent' ? '/pair/agent' : '/settings')
+  if (step === 'join' || step === 'compare_emoji') return go('/join')
+  if (!signedOut(vm)) return null
+  if (p in OUT || p === '/settings/proof') return null
+  return '/start'
 }
-const pkList = ids => ids.map(id => ({ type: 'public-key', id }))
-/** A passkey that came to nothing (no account, or it cannot unlock): tell its store to drop it, where the browser can. */
-/** Did the step certainly leave no passkey registered? Not when the hub was not reached or did not answer as it should, the worker went away, or the core says the passkey was kept: it may be a way in then, and stays in its store. */
-const cameToNothing = err => err?.passkey_kept !== true && err?.transient !== true && !['offline', 'bad-answer', 'worker-failed', 'worker-timeout'].includes(err?.code)
-const passkeyForget = id => { try { Promise.resolve(window.PublicKeyCredential?.signalUnknownCredential?.({ rpId: pkRpId(), credentialId: b64u(id) })).catch(() => {}) } catch {} }
-/**
- * What this device can do with passkeys, before anything is tried (whether its passkeys have prf is known only once one is made: passkeyMake):
- * create: offer "Create with passkey" first (a platform authenticator with user verification, and no word that prf is
- * missing); get: a passkey may be used to log in (also one on a phone or a key); conditional: offer one in the email field.
- */
-/**
- * Passkeys are switched off for the launch (the owner's call, 2026-10-10): no "Create with passkey", no "Log in with
- * passkey" nor the field's passkey offer, no "Add passkey". All of it stays in the code and is switched on for a tab
- * by `?passkeys=1` (kept for the tab session, as `?hub=`), which the tests use; PASSKEYS_ON turns it on for everyone.
- */
-const PASSKEYS_ON = false
-const passkeysOn = () => {
-  try {
-    const asked = new URLSearchParams(location.search).get('passkeys')
-    if (asked !== null) { if (asked === '1') sessionStorage.setItem('trommi-passkeys', '1'); else sessionStorage.removeItem('trommi-passkeys') }
-    return PASSKEYS_ON || sessionStorage.getItem('trommi-passkeys') === '1'
-  } catch { return PASSKEYS_ON }
-}
-async function passkeyOffer() {
-  if (!passkeysOn()) return { create: false, get: false, conditional: false, off: true }
-  if (typeof window.PublicKeyCredential !== 'function' || !navigator.credentials?.create) return { create: false, get: false, conditional: false }
-  let caps = null
-  try { caps = await PublicKeyCredential.getClientCapabilities?.() ?? null } catch {}
-  let platform = caps?.userVerifyingPlatformAuthenticator
-  try { platform ??= await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable() } catch {}
-  let conditional = caps?.conditionalGet
-  try { conditional ??= await PublicKeyCredential.isConditionalMediationAvailable?.() } catch {}
-  return { create: platform === true && caps?.['extension:prf'] !== false, get: true, conditional: conditional === true }
-}
-/** get(): the assertion as bytes with its prf output (null when the passkey gave none). Without a challenge: a random one (an unlock on this page that is sent nowhere). */
-async function passkeyGet({ challenge = null, allow = [], mediation, signal } = {}) {
-  const input = await (await account()).passkeyPrfInput()
-  let cred
-  try {
-    cred = await navigator.credentials.get({ ...(mediation ? { mediation } : {}), ...(signal ? { signal } : {}),
-      publicKey: { challenge: challenge ? unb64u(challenge) : crypto.getRandomValues(new Uint8Array(32)), rpId: pkRpId(), userVerification: 'required', allowCredentials: pkList(allow), extensions: { prf: { eval: { first: input } } } } })
-  } catch (err) { throw pkFail(err) }
-  const a = pkRead(cred), handle = a.field('userHandle', true)
-  return { credential_id: a.id(), authenticator_data: a.field('authenticatorData'), client_data_json: a.field('clientDataJSON'), signature: a.field('signature'), user_handle: handle?.length ? handle : null, prf: a.prf() }
-}
-/**
- * A new passkey with the 32 bytes that will seal the account's copy. create() (discoverable, user verification, prf
- * asked for): one prompt. Its prf output comes with the creation; a store that only says "prf is on" there gives it in
- * one get() right after (a second prompt, the only way to have the bytes). There is no proof beyond that: should a
- * passkey ever give other bytes later, the Emergency Kit opens the account. A store without prf: { code: 'no-prf' },
- * the passkey is told to go, and nothing was sent anywhere. `user_handle`: the account's id as its 16 bytes (the hub
- * names it with the challenge); `name`: what a passkey list shows for it, the email or, without one, the account's ID.
- */
-async function passkeyMake({ challenge, user_handle, name, exclude = [] }) {
-  const input = await (await account()).passkeyPrfInput()
-  let cred
-  try {
-    cred = await navigator.credentials.create({ publicKey: {
-      challenge: unb64u(challenge), rp: { id: pkRpId(), name: 'Trommi' }, user: { id: user_handle, name, displayName: name },
-      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -8 }],
-      authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
-      attestation: 'none', excludeCredentials: pkList(exclude), extensions: { prf: { eval: { first: input } } },
-    } })
-  } catch (err) { throw pkFail(err) }
-  const a = pkRead(cred), id = a.id()
-  try {
-    let prf = a.prf()
-    // (a provider that gives the prf output only at get(): asked at once, for this credential. Nothing has reached the
-    //  hub but the challenge: the account is made only with the key in hand, in one request with the room)
-    if (!prf && a.prfEnabled() !== false) prf = await passkeyGet({ allow: [id] }).then(got => got.prf, err => { if (err?.code === 'passkey-aborted') throw err; return null })
-    if (!prf) throw pkError('no-prf', 'the passkey answer lacks prf result')
-    return { credential_id: id, attestation_object: a.field('attestationObject'), client_data_json: a.field('clientDataJSON'), transports: a.transports(), prf }
-  } catch (err) { passkeyForget(id); throw err }
-}
-/** A signed-in device opens the account with one of its passkeys (for a new kit, a password, a passkey more or less),
- *  on the hub's challenge for the account: its prf output opens the code here, its assertion proves the way in to
- *  the hub in the request that makes the change (a token alone changes no way in). */
-async function passkeyUnlock(st, client) {
-  const challenge = await (await account()).passkeyChallengeFor(client)
-  const got = await passkeyGet({ challenge, allow: (st?.passkeys ?? []).map(p => unb64u(p.credential_id)) })
-  if (!got.prf) throw pkError('no-prf', 'this passkey gives no key here')
-  return { credential_id: got.credential_id, prf: got.prf, authenticator_data: got.authenticator_data, client_data_json: got.client_data_json, signature: got.signature }
-}
-const NO_PRF = 'The passkey was saved but cannot unlock Trommi. Delete it in your password manager and use a password.'
-// A change of how the account opens asks for the way in of now once more: being logged in on this device is not enough.
-const CONFIRM_PASSWORD = 'To change how your account opens, enter your current password. Being logged in here is not enough.'
-const CONFIRM_PASSKEY = 'To change how your account opens, confirm with one of your passkeys. Being logged in here is not enough.'
-/** Said once, quietly, where a browser has no WebAuthn at all: the password is the way then. */
+
+// ---- the screens before the board: one calm column (auth.css "ob") ----
+const UNDER = raw('<svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><path d="M1.0 5.0 Q18.0 3.4 26.0 4.3 Q34.0 5.2 43.0 4.4 Q52.0 3.6 61.0 4.3 Q70.0 5.0 78.0 4.4 Q86.0 3.8 92.5 4.2 L99.0 4.6"/></svg>')
+const DEMO_LINK = html`<a href="/?mock=1" id="ob-demo" data-turbo="false">Try the demo</a>`
+/** On the start page the demo is the third way, right under Create account and Log in: a clear quieter button. */
+const DEMO_WAY = html`<a href="/?mock=1" id="ob-demo" class="ob-demo-way" data-turbo="false"><span>Try the demo</span><small>A made-up room: nothing is sent</small></a>`
+/** A button that leads to another screen (a form of its own: the look of a button, the way of a link). */
+const goButton = (path, cls, id, inner) => html`<form method="get" action="${path}" style="display: contents"><button type="submit" class="${cls}" id="${id}">${inner}</button></form>`
+/** One screen: the bell (the way back to the start), a short headline, at most one line under it, the demo at the
+ *  foot (demo: false where the screen offers it itself, the start page). */
+const obShell = (title, inner, { lead = '', cls = '', home = true, foot = '', demo = true, focus = 'input:not([type=hidden], [hidden]), button.ob-go' } = {}) => html`<main id="room" class="ob${cls ? ` ${cls}` : ''}" aria-labelledby="ob-title"${focus ? html` data-controller="ob-focus" data-ob-focus-at-value="${focus}"` : ''}>
+<header class="ob-brand">${home ? html`<a href="/start" data-nav id="room-home" aria-label="Trommi: back to the start">${BELL}<b>Trommi</b></a>` : html`<span>${BELL}<b>Trommi</b></span>`}</header>
+<h1 id="ob-title" class="ob-title">${title}</h1>${lead ? html`<p class="ob-lead">${lead}</p>` : ''}
+${inner}
+<footer class="ob-foot">${foot}${demo ? DEMO_LINK : ''}</footer></main>`
+/** The one line a form says when it failed: its place is kept, so nothing jumps. */
+const obError = (error = '') => html`<p class="ob-error" role="alert" id="ob-error">${error}</p>`
+const obEmail = (value = '', optional = false) => html`<div class="ob-field"><span class="ob-label"><label for="ob-email">Email</label>${optional ? html`<span class="ob-hint" id="ob-email-optional">optional</span>` : ''}</span><input type="email" id="ob-email" name="email" value="${value}" autocomplete="username" autocapitalize="off" spellcheck="false" inputmode="email"${optional ? raw(' aria-describedby="ob-email-optional"') : ''}></div>`
+/** The one field that names an account: its email, or the account ID printed on its Emergency Kit. */
+const obAccount = (value = '', passkeys = false) => html`<label class="ob-field"><span class="ob-label">Email or account ID</span><input type="text" name="account" value="${value}" autocomplete="${passkeys ? 'username webauthn' : 'username'}" autocapitalize="off" spellcheck="false" inputmode="email"></label>`
+const PW_RULE = 'At least 12 characters'
+/** A password, with Show/Hide in the field (controller "ob-pw"); a new one says the rule under it. */
+const obPassword = ({ label = 'Password', fresh = false, side = '', name = 'password' } = {}) => html`<div class="ob-field ob-pw${fresh ? ' is-new' : ''}" data-controller="ob-pw"><span class="ob-label"><label for="ob-pw">${label}</label>${side}</span>
+<span class="ob-pwrow"><input type="password" id="ob-pw" name="${name}" autocomplete="${fresh ? 'new-password' : 'current-password'}" spellcheck="false" autocapitalize="off" data-ob-pw-target="field"${fresh ? raw(' aria-describedby="ob-pw-hint"') : ''}><button type="button" class="ob-eye" aria-pressed="false" aria-controls="ob-pw" data-action="ob-pw#eye">Show</button></span>
+${fresh ? html`<span class="ob-under"><span class="ob-hint" id="ob-pw-hint">${PW_RULE}</span></span>` : ''}</div>`
+/** A form's button; busy (its word: "Creating…") while the core works on what it sent. */
+const obSubmit = (word, busy = '', cls = 'ob-go', id = '') => html`<button type="submit" class="${cls}${busy ? ' is-busy' : ''}"${id ? raw(` id="${id}"`) : ''} data-word="${word}"${busy ? raw(' disabled') : ''}>${busy || word}</button>`
 const NO_PASSKEYS = html`<p class="ob-alt ob-way ob-none" id="no-passkeys">No passkeys in this browser. A password works everywhere.</p>`
+const NO_PRF = 'The passkey was saved but cannot unlock Trommi. Delete it in your password manager and use a password.'
 const NO_PRF_HERE = 'This passkey can\'t unlock Trommi here. Use your password.'
-// The check code as six emoji with a word under each: the same on both devices (and in a connector's terminal). The human
-// compares them; the function is the core's (core/check-emoji.ts), so app and connector cannot drift apart.
-const emojiRow = (code, id = '') => html`<ol class="check-emoji"${id ? raw(` id="${id}"`) : ''} data-code="${code}" aria-label="Check code: ${checkEmoji(code).map(e => e.word).join(', ')}">${checkEmoji(code).map(e => html`<li><span class="check-emoji-glyph" aria-hidden="true">${e.emoji}</span><span class="check-emoji-word">${e.word}</span></li>`)}</ol>`
-// The two answers to "the same six?": the only way to confirm (no typing, no picking), only on the device that made the link.
-// (here: the page the answer comes back to; 'settings' is the Settings list, where the device's code stands in place)
-const matchButtons = (inv, yesLabel = 'They match', here = '') => { const back = here ? html`<input type="hidden" name="in" value="${here}">` : ''; return html`<div class="check-answer"><form method="post" action="/pair/${inv.invite_id}/confirm">${back}<input type="hidden" name="match" value="yes"><button type="submit" class="room-primary check-yes">${yesLabel}</button></form><form method="post" action="/pair/${inv.invite_id}/confirm">${back}<input type="hidden" name="match" value="no"><button type="submit" class="check-no">They don't match</button></form></div>` }
-// A read-only field with its value and a Copy button (controller "room").
-const copyBox = (value, label, cls = '') => html`<div class="room-link${cls ? ` ${cls}` : ''}" data-controller="room"><input readonly value="${value}" aria-label="${label}" data-room-target="field" data-action="focus->room#select"><button type="button" data-action="room#copy" data-room-text-param="${value}"><span data-room-target="label">Copy</span></button></div>`
-
-// ---- inside a room: devices, pairing, settings (pages of the board, rendered like any other) ----
-export function register(t) {
-  // (an Emergency Kit's address opened on a device that is logged in: nothing to recover here; the fragment goes)
-  if (location.hash.startsWith('#k1.')) history.replaceState(null, '', location.pathname + location.search)
-  const client = t.hub.client
-  {
-    const m = () => client.model
-    const page = (req, res, title, main, extra = {}, code = 200) => t.page(req, res, { title: `${title} · Trommi`, view: 'room', css: 'room', main, ...extra }, code)
-    const isHuman = () => m().room.my_role === 'human'
-    const fp = d => d.fingerprint || d.device_id.slice(0, 16).replace(/(.{4})(?!$)/g, '$1 ')
-
-    // ---- /settings/devices: your devices only (phones, tablets, browsers: where you read and answer), each with a page of
-    // its own, and Push. The agents are Settings · Agents (agents.mjs). ----
-    const devName = d => d.device_name || (d.device_role === 'human' ? 'Device' : 'Agent')
-    const devIcon = d => (d.device_role !== 'human' ? sk('terminal') : /phone|ipad|ios|android/i.test(`${d.device_name ?? ''} ${d.platform ?? ''}`) ? art('phone') : sk('laptop'))
-    // A device of yours that never finished signing in: it came into the room (a login that hung or was given up)
-    // and never named itself, which every device does as soon as it is in. It holds no KeyPackage either, so every
-    // new session of the account is refused while it is there: offered for removal.
-    const unfinished = d => d.is_active && !d.is_me && d.device_role === 'human' && !d.device_name && !d.is_online
-    const devState = d => (!d.is_active ? 'removed' : d.is_me ? 'this device' : unfinished(d) ? 'never finished signing in' : d.is_online ? 'online' : 'away')
-    const onlineDot = on => html`<i class="set-dot" data-online="${on ? 'yes' : 'no'}"></i>`
-    const devLine = d => html`<span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${devName(d)}</b><small class="room-fp" title="Key fingerprint">${fp(d)}</small></span><span class="set-detail">${d.is_active ? onlineDot(d.is_online || d.is_me) : ''}${devState(d)}</span>`
-    // (.room-device: one per device listed, as the end-to-end runs count them)
-    const member = d => (d.is_active
-      ? html`<a class="set-row set-row-two room-device" id="device-${d.device_id}" href="/settings/devices/${d.device_id}" data-nav>${devLine(d)}${SET_CHEVRON}</a>`
-      : html`<div class="set-row set-row-two set-fact room-device is-removed" id="device-${d.device_id}">${devLine(d)}<span></span></div>`)
-    // The two lists, each one element with an id, so a change replaces only the list it touched.
-    const lists = () => {
-      const all = [...m().members.values()].filter(d => d.device_role === 'human')
-      const order = (a, b) => a.added_entry_number - b.added_entry_number
-      const people = all.filter(d => d.is_active && d.device_role === 'human').sort(order)
-      const gone = all.filter(d => !d.is_active).sort(order)
-      const stuck = isHuman() ? people.filter(unfinished) : []
-      return {
-        people: String(html`<div class="set-group" id="room-people">${people.map(member)}</div>${stuck.length ? html`<form method="post" action="/devices/remove-unfinished" class="set-group" id="devices-unfinished">${stuck.map(d => html`<input type="hidden" name="device_id" value="${d.device_id}">`)}<button type="submit" class="set-row set-danger"><span class="set-ico">${sk('logout')}</span><b>Remove ${stuck.length === 1 ? 'the device' : `the ${stuck.length} devices`} that never finished signing in</b><span class="set-detail"></span><span></span></button></form><p class="set-note" id="devices-unfinished-note">A login that hung or was given up leaves a device behind that never came. While it is there, new sessions can't be opened.</p>` : ''}`),
-        gone: String(gone.length ? html`<div class="set-group" id="room-gone">${setRow({ href: '/settings/devices/removed', icon: sk('archive'), word: 'Removed', detail: String(gone.length), id: 'devices-removed' })}</div>` : html`<div id="room-gone" hidden></div>`),
-      }
-    }
-    const PUSH_LEVELS = [['all', 'bell', 'Yes', 'every card'], ['knocking', 'knock', 'Only knocking', 'high, critical, a lost session'], ['off', 'snooze', 'No', '']]
-    const devicesMain = (error = '') => {
-      const L = lists()
-      return roomPage('Devices', html`${errorLine(error)}
-<h3 class="set-label" id="people-head">Your devices</h3>${raw(L.people)}
-${isHuman() ? html`<h3 class="set-label" id="push-head">Push on this device</h3><fieldset class="set-group set-choice set-push" id="push-level" aria-labelledby="push-head">${PUSH_LEVELS.map(([v, icon, word, d]) => html`<label class="set-row"><input type="radio" name="push-level" value="${v}"${v === 'off' ? raw(' checked') : ''}><span class="set-ico">${sk(icon)}</span><b>${word}</b><span class="set-detail">${d}</span>${sk('tick')}</label>`)}</fieldset>
-<p class="push-level-note" id="push-level-note" role="status"></p>
-<ul class="push-others set-note" id="push-others" aria-label="Push on your other devices"></ul>` : ''}
-${raw(L.gone)}
-<p class="set-note">A new device: Invite a Device in <a href="/settings" data-nav>Settings</a>, or open app.trommi.com on it and log in. Every device holds its own keys; the hub sees sealed envelopes only. Your agents are under <a href="/settings/agents" data-nav>Agents</a>.</p>`, 'The phones, tablets and browsers where you read and answer.')
-    }
-    const removeWords = d => (d.device_role === 'human' ? `${devName(d)} can open nothing new after this. Everyone else gets a new key; that takes a moment.` : `${devName(d)} can read nothing new after this. The others get a new key; the session's history stays.`)
-    const deviceMain = (d, error = '') => {
-      const me = d.is_me, human = d.device_role === 'human', canRemove = d.is_active && !me && isHuman()
-      return settingsPage(devName(d), html`${errorLine(error)}<div class="set-group">
-<div class="set-row set-fact"><span class="set-ico">${devIcon(d)}</span><b>Kind</b><span class="set-detail">${human ? 'Person' : 'Agent'}</span><span></span></div>
-<div class="set-row set-fact"><span class="set-ico">${onlineDot(d.is_active && (d.is_online || me))}</span><b>Status</b><span class="set-detail" id="device-state">${devState(d)}</span><span></span></div>
-<div class="set-row set-fact set-fp-row"><span class="set-ico">${sk('key')}</span><b>Key fingerprint</b><span class="set-detail room-mono" id="device-fp">${fp(d)}</span><span></span></div></div>
-<p class="set-note">The fingerprint comes from the signed member list: it must look the same on every device.</p>
-${me && d.is_active && has(client, 'setRegisters') ? html`<h3 class="set-label">Name</h3><form method="post" action="/devices/rename" class="set-group set-form" id="device-rename"><label class="set-field"><span>Name of this device</span><input name="device_name" value="${d.device_name ?? ''}" maxlength="40" required autocomplete="off"></label><button type="submit" class="room-primary">Rename</button></form><p class="set-note">A device names itself; this name is what your other devices see.</p>` : ''}
-${canRemove ? html`<form method="post" action="/devices/remove" class="set-group" id="device-remove"><input type="hidden" name="device_id" value="${d.device_id}"><button type="submit" class="set-row set-danger"><span class="set-ico">${sk('logout')}</span><b>Remove ${devName(d)}</b><span class="set-detail"></span><span></span></button></form><p class="set-note">${removeWords(d)}</p>` : ''}`,
-      { lead: me ? 'This device' : !d.is_active ? 'Removed' : human ? 'One of your devices' : 'An agent', back: '/settings/devices', backWord: 'Devices' })
-    }
-    const removedMain = () => {
-      const gone = [...m().members.values()].filter(d => !d.is_active).sort((a, b) => a.added_entry_number - b.added_entry_number)
-      return settingsPage('Removed', html`<div class="set-group">${gone.map(member)}</div><p class="set-note">They open nothing new; what they had before stays with them.</p>`, { back: '/settings/devices', backWord: 'Devices' })
-    }
-    t.get(/^\/settings\/devices$/, ({ req, res }) => page(req, res, 'Devices · Settings', devicesMain(), { stream: '&room=devices' }))
-    t.get(/^\/settings\/devices\/removed$/, ({ req, res }) => page(req, res, 'Removed · Devices', removedMain(), { view: 'settings' }))
-    t.get(/^\/settings\/devices\/([^/]+)$/, ({ req, res, match }) => {
-      const d = m().members.get(decodeURIComponent(match[1]))
-      if (!d) return t.redirect(res, '/settings/devices')
-      page(req, res, `${devName(d)} · Devices`, deviceMain(d), { view: 'settings' })
-    })
-    t.post(/^\/devices\/remove-unfinished$/, async ({ req, res, form }) => {
-      // (only what is still one of them when the form comes: a device that named itself meanwhile stays)
-      const ids = form.getAll('device_id').map(String).filter(id => { const d = m().members.get(id); return d && unfinished(d) })
-      try { if (ids.length) await client.removeDevices(ids) } catch (err) { return page(req, res, 'Devices', devicesMain(`Not removed: ${sayError(err)}`), {}, 422) }
-      t.redirect(res, '/settings/devices')
-    })
-    t.post(/^\/devices\/remove$/, async ({ req, res, form }) => {
-      const id = String(form.get('device_id'))
-      try { await client.removeDevices([id]) } catch (err) { const d = m().members.get(id); return page(req, res, 'Devices', d ? deviceMain(d, `Not removed: ${sayError(err)}`) : devicesMain(`Not removed: ${sayError(err)}`), {}, 422) }
-      t.redirect(res, '/settings/devices')
-    })
-    // This device's own name (asked nowhere: deviceLabel made it): its register device/<id>, which only it may write.
-    t.post(/^\/devices\/rename$/, async ({ req, res, form }) => {
-      const me = m().members.get(m().room.my_device_id), device_name = String(form.get('device_name') ?? '').trim().slice(0, 40)
-      try {
-        if (!me || !device_name) throw new Error('a name is missing')
-        await client.setRegisters({ [`device/${me.device_id}`]: { device_name, ...Object.fromEntries(['platform', 'folder', 'host'].filter(k => me[k] != null).map(k => [k, me[k]])) } }, { own_device: true })
-      } catch (err) { const me = m().members.get(m().room.my_device_id); return page(req, res, 'Devices', me ? deviceMain(me, `Not renamed: ${sayError(err)}`) : devicesMain(`Not renamed: ${sayError(err)}`), {}, 422) }
-      t.redirect(res, '/settings/devices')
-    })
-    // The desk a new agent's session goes on: the desk in view; on "All desks" the desk of the session open there (the
-    // page the invite was made from), else the first desk. Kept with the invite on this device (createInvite desk).
-    const inviteDesk = req => {
-      const bm = t.model()
-      if (!bm.desks?.length) return null
-      if (!bm.all) return bm.desk
-      const at = new URL(String(req.headers.referer ?? '/'), location.origin).pathname, ref = /^\/chat\/([^/+]+)/.exec(at)?.[1], sid = ref ? (() => { try { return decodeURIComponent(ref) } catch { return ref } })() : null
-      const a = sid ? bm.everyone?.find(x => x.id === sid || x.device_id === sid) : null
-      return a ? bm.deskOf(a) : bm.desks[0].id
-    }
-    t.post(/^\/pair$/, async ({ req, res, form }) => {
-      try {
-        const agent = form.get('role') === 'agent'
-        const label = String(form.get('label') ?? '').trim() || null
-        // continue=<session>: "Copy invite link again" on a session's page. The link is for THAT session: the connector that
-        // joins with it continues it, after the human confirmed its check code here (the core: createInvite takeover).
-        // session_id: "Takes over" on the Devices page, the same kind of link (the client hands the session over when
-        // the new agent has joined).
-        const cont = agent ? String(form.get('continue') ?? '') || String(form.get('session_id') ?? '') : ''
-        const invite = await client.createInvite({ device_role: agent ? 'agent' : 'human', app_url: `${location.origin}/join`, ...(agent && label ? { label } : {}), ...(cont ? { session_id: cont, takeover: true, ...(form.get('with_history') != null ? { with_history: form.get('with_history') === 'yes' } : {}) } : agent ? { desk: inviteDesk(req) } : {}) })
-        t.redirect(res, !agent && form.get('in') === 'settings' ? `/settings?pair=${invite.invite_id}` : `/pair/${invite.invite_id}`)
-      } catch (err) { if (form.get('in') === 'settings') return home(req, res, '', `No code: ${sayError(err)}`, 422); page(req, res, 'Devices', devicesMain(`No invite: ${sayError(err)}`), {}, 422) }
-    })
-    t.live('room', {
-      take: () => lists(),
-      diff: (was, now) => ['people', 'gone'].map(k => (was[k] !== now[k] ? String(t.stream('replace', `room-${k}`, raw(now[k]))) : '')).join(''),
-    })
-
-    // ---- /pair/:id ----
-    const newcomerName = inv => (inv.newcomer && m().members.get(inv.newcomer.device_id)?.device_name) || inv.newcomer?.device_name || ''
-    const again = (agent, word = 'Pair again') => html`<form method="post" action="/pair" class="room-inline"><input type="hidden" name="role" value="${agent ? 'agent' : 'human'}"><button type="submit" class="room-primary">${word}</button></form>`
-    const back = html`<a href="/settings/devices" data-nav class="room-back">Back to the devices</a>`
-    // ---- inviting an agent: a clipboard with a short checklist ----
-    // Two lines, each one big thing to press (it copies): install the connector (once per machine; it sets up Claude
-    // Code and Codex), then a plain prompt with the link pasted into the agent in the project folder (once per folder;
-    // the agent calls the connector's connect tool with it), the plugin's slash command as the smaller second way. The
-    // link is only ever typed by the human into that terminal. Then waiting: the line ticks itself when the
-    // agent is in, and shows who came; last, start the program there.
-    const CLAMP = raw('<svg class="clip-clamp" viewBox="0 0 120 44" aria-hidden="true"><path class="clamp-plate" d="M22 40 Q21 25 26 22 L43 21 Q46 9 60 8 Q74 9 77 21 L94 22 Q99 25 98 40 Z"/><path d="M52 21 Q53 15 60 14.6 Q67 15 68 21"/><path d="M30 31 Q60 29.4 90 31"/></svg>')
-    const TICKBOX = raw('<svg class="clip-box" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.6 5.2 Q12 4.4 19.3 4.9 Q20 12 19.5 19.2 Q12 20 4.9 19.4 Q4.2 12 4.6 5.2 Z"/><path class="clip-tick" d="M7.4 12.6 Q9.6 14.6 10.9 16.6 Q14.6 10.2 20.6 5.2"/></svg>')
-    // (a line breaks after a slash, after the scheme, after a short first host label: a phone never breaks inside a word)
-    const wrapAt = text => text.split(/(?<=[^/:]\/|:\/\/|\/\/[^/.]{1,12}\.)/).map((part, i) => html`${i ? raw('<wbr>') : ''}${part}`)
-    const copyLine = (text, word, line, shown = wrapAt(text)) => html`<button type="button" class="clip-copy" data-line="${line}" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${shown}</code><span class="clip-copy-word" data-word="${word}">${word}</span></button>`
-    /** The connect command as shown: every invite link of an account starts alike (app, version, hub, room), so the
-     *  hub and the room are folded into an ellipsis and the part that is this invite's own (its secret and deadline)
-     *  stays in view. The folded text is still there (text and Copy take the whole command). */
-    const connectShown = command => {
-      const at = command.indexOf('#'), parts = at < 0 ? [] : command.slice(at + 1).split('.')
-      if (parts.length < 5) return wrapAt(command)
-      const head = command.slice(0, at + 1) + parts[0] + '.', mid = `${parts[1]}.${parts[2]}.`, tail = parts.slice(3).join('.')
-      return html`${wrapAt(head)}<span class="clip-link-same" data-same="…">${mid}</span><wbr><span class="clip-link-own">${tail}</span>`
-    }
-    const step = (state, inner) => html`<li class="clip-step${state ? ` is-${state}` : ''}">${TICKBOX}<div class="clip-step-body">${inner}</div></li>`
-    /** What is left of a link's time, in words: never "0 more min". */
-    /** The two lines of an agent invite (as the iOS agentConnectSteps): the installer once per machine (it sets up
-     *  Claude Code and Codex where installed), then a plain prompt with the invite's link, pasted into claude or codex:
-     *  the agent calls the connector's connect tool with it, with or without the plugin's slash command, which stays
-     *  as the shorter way for Claude Code. */
-    const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh'
-    const altLine = text => html`<button type="button" class="clip-alt" data-line="slash" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${text.replace(/#.*'$/, "#…'")}</code><span class="clip-copy-word" data-word="Copy">Copy</span></button>`
-    const leftWords = until => { const ms = until - Date.now(); return ms > 90_000 ? `${Math.round(ms / 60000)} more min.` : ms > 0 ? 'less than a minute.' : 'no time left.' }
-    const clipboard = (inv, error = '') => {
-      // (an unused link whose time is up has run out; once a connector has answered it (check code, adding) the page stays
-      // open until the agent is really in, or the hub says the invite ended)
-      const late = inv.expires_at <= Date.now()
-      const state = late && inv.invite_state === 'open' ? 'expired' : inv.invite_state, open = state === 'open', joined = state === 'joined', coming = state === 'adding' || state === 'confirm_code'
-      const dead = !open && !joined && !coming
-      const who = joined ? t.model().agents.find(a => a.agent_device_id === inv.newcomer?.device_id || a.id === inv.newcomer?.device_id) ?? null : null
-      const name = newcomerName(inv) || who?.name || 'The agent'
-      const done = open ? '' : 'done'
-      // A link that continues an existing session ("Copy invite link again"): the human sees which session, and
-      // confirms that the six emoji the new connector's terminal shows are the ones shown here before anything is granted.
-      const cont = inv.takeover ? t.model().everyone?.find(a => a.device_id === inv.session_id || a.session_id === inv.session_id) ?? t.model().agents.find(a => a.device_id === inv.session_id) ?? null : null
-      const contName = inv.takeover ? cont?.label || cont?.given || cont?.name || 'this session' : ''
-      // the session it continues is gone (deleted, archived, removed): nothing to continue, only the way back
-      // (only while nobody answered the link: continuing retires the old holder, which must not read as "gone")
-      if (inv.takeover && !joined && (cont?.archived || (open && !cont))) return html`<main id="room" class="room room-clip" aria-label="Continue a session"><div id="invite-${inv.invite_id}" class="room-invite" data-state="gone"><section class="clip">${CLAMP}<h2>Continue ${contName}</h2><p class="clip-sub">The session this link continues is gone: it was deleted or put in the archive. The link does nothing any more.</p><a href="/" data-nav class="room-done clip-done">Back to the Desk</a></section></div></main>`
-      const ask = state === 'confirm_code' && checkEmoji(inv.check_code).length > 0
-      const keep = inv.takeover ? html`<input type="hidden" name="continue" value="${inv.session_id}">` : ''
-      const last = ask ? html`<div class="clip-ask" role="group" aria-label="${inv.takeover ? `Confirm: continue ${contName}` : 'Confirm the agent'}"><b>${inv.takeover ? `A connector wants to continue ${contName}.` : 'An agent wants to join.'}</b>
-<small>Its terminal shows six emoji, each with a word. Are they these, in this order?</small>
-${emojiRow(inv.check_code)}
-${inv.takeover ? html`<small>If they match, that connector continues <strong>${contName}</strong>: its questions, helper sessions and conversation. The connector that held ${contName} until now is retired.</small>` : ''}
-${matchButtons(inv)}
-${errorLine(error)}<small>"They don't match" burns the link: nobody is added${inv.takeover ? html`, and ${contName} stays as it is` : ''}.</small></div>`
-        : joined && inv.takeover ? html`<b class="clip-in">${cont ? avatar(cont, { crown: false }) : ''}<span>${contName} goes on with the new connector</span></b><small>The connector that held it before is retired.</small>`
-        : joined ? html`<b class="clip-in">${who ? avatar(who, { crown: false }) : ''}<span>${name} is in</span></b>`
-        : coming ? html`<b>Adding ${newcomerName(inv) || 'the agent'}…</b>`
-        : dead ? html`<b>${state === 'expired' ? 'This link has run out' : inv.error === 'invite-replaced' ? 'A newer link replaced this one' : inv.error === 'code-mismatch' ? 'They did not match: nobody was added' : `That did not work${inv.error ? ` (${inv.error})` : ''}`}</b>${errorLine(error)}`
-        : html`<b>Compare the six emoji Claude shows with the ones here</b><small>Nobody is added before you tap "They match".</small>`
-      const foot = joined ? html`<a href="/" data-nav class="room-done clip-done">Done</a>`
-        : dead ? html`<form method="post" action="/pair" class="clip-again"><input type="hidden" name="role" value="agent">${keep}<button type="submit">New link</button></form>`
-        : coming ? html`<p class="clip-note">The link is in use: this page stays until the agent is in.</p>`
-        : html`<p class="clip-note">The link works once · <span data-invite-clip-target="left">${leftWords(inv.expires_at)}</span></p>`
-      return html`<main id="room" class="room room-clip" aria-label="${inv.takeover ? `Continue ${contName}` : 'Invite an agent'}"><div id="invite-${inv.invite_id}" class="room-invite" data-state="${state}">
-<section class="clip" data-controller="invite-clip" data-invite-clip-until-value="${open ? inv.expires_at : 0}">${CLAMP}
-${inv.takeover ? html`<h2>Continue ${contName}</h2><p class="clip-sub">A link for this session: the connector that joins with it goes on as ${contName}. On a Linux or macOS computer with Claude Code or Codex.</p>`
-        : html`<h2>Invite an agent</h2><p class="clip-sub">On a Linux or macOS computer with Claude Code or Codex.</p>`}
-<ol class="clip-list">
-${step(done, html`<b>First time on this computer? Install:</b>${open ? html`${copyLine(INSTALL, 'Copy', 'install')}<small>Skip this if you have installed Trommi before (check: <code>trommi-connector --version</code>).</small>` : ''}`)}
-${step(done, html`<b>In your project folder, start claude (or codex) and paste:</b>${open ? html`${copyLine(connectPrompt(inv.link), 'Copy', 'connect', connectShown(connectPrompt(inv.link)))}<small class="clip-or">Or in Claude Code, the slash command: ${altLine(connectCommand(inv.link))}</small><small>Claude Code asks once whether to use the trommi MCP server: choose "Use this MCP server". In Codex: start Codex again if it was running when Trommi was installed.</small>` : ''}`)}
-${step(joined ? 'done' : dead ? 'dead' : ask ? 'ask' : open ? '' : 'wait', last)}
-</ol>${foot}</section></div></main>`
-    }
-    const inviteMain = (inv, error = '') => {
-      if (!inv) return roomShell('Invite', html`<p class="room-lead">This invite is gone.</p>${back}`)
-      const agent = inv.device_role === 'agent', state = inv.invite_state
-      let body
-      if (agent) return clipboard(inv, error)
-      if (state === 'open') body = html`<div class="room-pair"><div class="room-qr" data-controller="room">${raw(qrSvg(inv.link, 'QR code to pair'))}</div>
-<ol class="room-steps"><li>On the new device, open the camera and scan the code. Or open app.trommi.com there and choose "Pair a device".</li><li>Both devices then show six emoji. If they are the same, tap "They match" here.</li></ol></div>
-<details class="room-more"><summary>No scanner? Send the link</summary><p class="room-meta">Send the link to yourself (a message to yourself works) and open it on the new device. The secret is after the #; it never reaches a server.</p>${copyBox(inv.link, 'Invite link')}</details>
-<p class="room-wait">Waiting for the new device… The code works once, ${leftWords(inv.expires_at)}</p>`
-      else if (state === 'confirm_code') body = html`<p class="room-lead">A device wants to join. Does it show these six emoji, in this order?</p>
-${emojiRow(inv.check_code)}${matchButtons(inv)}
-${errorLine(error)}<p class="room-meta">"They don't match" burns the invite: nobody is added.</p>${back}`
-      else if (state === 'adding') body = html`<p class="room-wait">Adding ${newcomerName(inv) || (agent ? 'the agent' : 'the device')}…</p>`
-      else if (state === 'joined') {
-        body = html`<p class="room-lead room-ok">✓ ${newcomerName(inv) || (agent ? 'The agent' : 'The new device')} is in now.</p><a href="/settings/devices" data-nav class="room-done">Done</a>`
-      } else if (inv.error === 'code-mismatch') body = html`<p class="room-error" role="alert">They did not match. Nobody was added; the invite is used up.</p>${again(agent)}${back}`
-      else body = html`<p class="room-error" role="alert">${state === 'expired' ? 'The invite has expired.' : `That did not work${inv.error ? ` (${inv.error})` : ''}.`}</p>${errorLine(error)}${again(agent)}${back}`
-      return roomShell(agent ? 'Invite an agent' : state === 'confirm_code' ? 'Add a new device?' : 'Pair a device', html`<div id="invite-${inv.invite_id}" class="room-invite" data-state="${state}">${body}</div>`)
-    }
-    t.get(/^\/pair\/([0-9a-f]+)$/, ({ req, res, match }) => {
-      const inv = m().invites.get(match[1])
-      page(req, res, inv?.device_role === 'agent' ? 'Invite an agent' : 'Pair a device', inviteMain(inv), { view: 'invite', stream: `&invite=${match[1]}` })
-    })
-    t.post(/^\/pair\/([0-9a-f]+)\/confirm$/, async ({ req, res, match, form }) => {
-      const list = form.get('in') === 'settings'
-      try { await client.confirmInvite(match[1], form.get('match') === 'yes') } catch (err) {
-        if (list) return home(req, res, match[1], err.code === 'code-mismatch' ? '' : sayError(err), 422)
-        return page(req, res, 'Pair a device', inviteMain(m().invites.get(match[1]), err.code === 'code-mismatch' ? '' : sayError(err)), { view: 'invite', stream: `&invite=${match[1]}` }, 422)
-      }
-      t.redirect(res, list ? `/settings?pair=${match[1]}` : `/pair/${match[1]}`)
-    })
-    // Self-join (12.4): the person's Allow or Deny for an agent's ask; the prompt goes, from this page and the others.
-    t.post(/^\/vouch\/([0-9a-f]{1,64})$/, async ({ req, res, match, form }) => {
-      try { await client.answerVouch(match[1], form.get('allow') === 'yes') } catch (err) {
-        return t.sendStream(req, res, t.stream('prepend', 'says-host', toast({ head: 'Not answered', line: sayError(err), role: 'alert' })), 422)
-      }
-      // (Deny: the row goes at once; Allow: it says "joining…" until the session's own row takes its place)
-      t.sendStream(req, res, form.get('allow') === 'yes' ? '' : t.stream('remove', `join-${match[1]}`, ''))
-    })
-    t.live('invite', {
-      take: (mm, clients) => new Map(clients.map(c => c.params.get('invite')).filter(Boolean).map(id => { const inv = m().invites.get(id); return [id, String(inviteMain(inv)).replace(/\d+ more min\.|less than a minute\.|no time left\./g, '').replace(/data-invite-clip-until-value="\d+"/, '')] })),
-      diff: (was, now, c) => { const id = c.params.get('invite'); return was.get(id) !== now.get(id) ? String(t.stream('refresh')) : '' },
-    })
-
-    // ---- /settings: the list ----
-    // At its top the two invites. A device's code is drawn blurred until it is asked for: only then is an invite made
-    // (POST /pair in=settings), never on the page's load; the code, the six emoji and "They match" then stand in place
-    // (/settings?pair=<invite>, kept current by the live piece "invite"). Under them a row per page.
-    const deviceInvite = (inv, error = '') => {
-      const state = inv ? (inv.expires_at <= Date.now() && inv.invite_state === 'open' ? 'expired' : inv.invite_state) : 'none'
-      const head = (words, line) => html`<div class="set-text"><b>${words}</b>${line ? html`<small>${line}</small>` : ''}</div>`
-      const fresh = (word = 'Show Code', line = 'A phone or another computer scans the code. It is made when you ask for it and works once.') => html`<form method="post" action="/pair" class="set-pair"><input type="hidden" name="role" value="human"><input type="hidden" name="in" value="settings"><button type="submit" class="set-qr" id="settings-pair" aria-label="${word}: the code to invite a device"><span class="set-qr-code">${FAKE_QR}</span><span class="set-qr-show">${word}</span></button>${head('Invite a Device', line)}</form>`
-      let inner
-      if (state === 'none') inner = fresh()
-      else if (state === 'open') inner = html`<div class="set-pair"><div class="set-qr is-real">${raw(qrSvg(inv.link, 'QR code to invite a device'))}</div><div class="set-text"><b>Invite a Device</b><small>On the new device, open the camera and scan the code. Both devices then show six emoji.</small><p class="room-wait">Waiting for the new device… The code works once, ${leftWords(inv.expires_at)}</p><details class="room-more"><summary>No scanner? Send the link</summary><p class="room-meta">Send it to yourself and open it on the new device. The secret is after the #; it never reaches a server.</p>${copyBox(inv.link, 'Invite link')}</details></div></div>`
-      else if (state === 'confirm_code') inner = html`${head('A device wants to join', 'Does it show these six emoji, in this order?')}${emojiRow(inv.check_code)}${matchButtons(inv, 'They match', 'settings')}${errorLine(error)}<small class="set-note">"They don't match" burns the code: nobody is added.</small>`
-      else if (state === 'adding') inner = html`${head('Invite a Device')}<p class="room-wait">Adding ${newcomerName(inv) || 'the device'}…</p>`
-      else if (state === 'joined') inner = html`<div class="set-pair"><span class="set-in">${sk('tick')}</span>${head(`${newcomerName(inv) || 'The new device'} is in now.`, 'It holds keys of its own; you see it under Devices.')}<a class="set-pill" href="/settings" data-nav id="settings-pair-done">Done</a></div>`
-      else inner = html`${errorLine(state === 'expired' ? 'The code has run out.' : inv.error === 'code-mismatch' ? 'They did not match. Nobody was added; the code is used up.' : `That did not work${inv.error ? ` (${inv.error})` : ''}.`)}${fresh('Show a New Code', '')}`
-      return html`<div class="set-device" id="set-device" data-state="${state}">${inner}</div>`
-    }
-    const SHOWN = { light: 'Light', dark: 'Dark', system: 'System' }
-    /** The Agents row: how many agents, how many sessions they run. */
-    const agentsDetail = () => {
-      const groups = agentsOf(t.model().everyone ?? t.model().agents ?? [], m().members ?? new Map()), all = groups.flatMap(g => g.sessions)
-      return groups.length ? `${groups.length} ${groups.length === 1 ? 'agent' : 'agents'} · ${all.length} ${all.length === 1 ? 'session' : 'sessions'}` : ''
-    }
-    // The two invites as equals, side by side (one above the other on a phone): a device's code and an agent's
-    // command, each drawn blurred until asked for; only then is the invite made. A device's code then takes the
-    // whole width (deviceInvite: the code, the six emoji, They Match).
-    const TERMINAL = html`<span class="set-term-bar" aria-hidden="true"><i></i><i></i><i></i></span><span class="set-term-code" aria-hidden="true"><span>$ claude</span><span>&gt; join trommi ab3f…9c2e</span><span>&gt; check the six emoji</span></span>`
-    const inviteTiles = (error = '') => html`${errorLine(error)}<section class="set-invite-tiles" aria-label="Invite">
-<form method="post" action="/pair" class="set-tile"><input type="hidden" name="role" value="human"><input type="hidden" name="in" value="settings"><button type="submit" class="set-tile-art set-qr" id="settings-pair" aria-label="Show Code: the code to invite a device"><span class="set-qr-code">${FAKE_QR}</span><span class="set-qr-show">Show Code</span></button><span class="set-text"><b>Invite a Device</b><small>A phone or another computer scans the code. Made when you ask, works once.</small></span></form>
-<form method="post" action="/pair" class="set-tile set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-tile-art set-term" id="settings-invite-agent" aria-label="Show Command: the command to invite an agent"><span class="set-term-in">${TERMINAL}</span><span class="set-qr-show">Show Command</span></button><span class="set-text"><b>Invite an Agent</b><small>Claude Code or Codex runs one command in your project and joins.</small></span></form>
-</section>`
-    const homeMain = (inv, error = '') => {
-      const bm = t.model(), members = [...(m().members?.values() ?? [])].filter(d => d.is_active)
-      const people = members.filter(d => d.device_role === 'human').length
-      return settingsPage('Settings', html`${inv === undefined ? errorLine(error) : ''}
-${isHuman() && !inv ? inviteTiles() : isHuman() ? html`<section class="set-group set-invites" aria-label="Invite">${deviceInvite(inv ?? null, error)}
-<form method="post" action="/pair" class="set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-row" id="settings-invite-agent"><span class="set-ico">${PLUS}</span><b>Invite Agent…</b><span class="set-detail">a command for Claude Code</span>${SET_CHEVRON}</button></form></section>` : ''}
-<nav class="set-group" aria-label="Settings">
-${setRow({ href: '/settings/agents', icon: sk('terminal'), word: 'Agents', detail: agentsDetail(), id: 'settings-agents' })}
-${isHuman() ? setRow({ href: '/settings/desks', icon: sk('desk'), word: 'Desks', detail: (() => { const k = t.model().state?.desks?.length ?? 0; return k ? `${k} ${k === 1 ? 'desk' : 'desks'}` : '' })(), id: 'settings-desks' }) : ''}
-${setRow({ href: '/settings/devices', icon: art('phone'), word: 'Devices', detail: people ? `${people} ${people === 1 ? 'device' : 'devices'}` : '', id: 'settings-devices' })}
-${isHuman() ? setRow({ href: '/settings/account', icon: sk('key'), word: 'Account', detail: m().room.account ? m().room.account.email ?? 'Passkey' : '', id: 'settings-account' }) : ''}
-</nav>
-<nav class="set-group" aria-label="This device">
-${setRow({ href: '/settings/theme', icon: sk('moon'), word: 'Theme', detail: SHOWN[themeMode()] ?? 'System', id: 'settings-theme' })}
-${setRow({ href: '/settings/keys', icon: sk('keycap'), word: 'Keyboard Shortcuts', id: 'settings-keys' })}
-</nav>
-<nav class="set-group" aria-label="About">
-${isHuman() ? setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detail: 'keys, devices, self test', id: 'settings-security' }) : setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Self Test', detail: 'runs on this device', id: 'settings-proof' })}
-</nav>
-`, { back: false })
-    }
-    const home = (req, res, pairId = '', error = '', code = 200) => {
-      const inv = pairId ? m().invites.get(pairId) ?? null : undefined
-      page(req, res, 'Settings', homeMain(inv, error), pairId ? { view: 'invite', stream: `&invite=${pairId}` } : { view: 'settings' }, code)
-    }
-    t.get(/^\/settings$/, ({ req, res, url }) => { if (client.hub && isHuman() && m().room.account === undefined) loadAccount(); home(req, res, url.searchParams.get('pair') ?? '') })
-    t.get(/^\/settings\/theme$/, ({ req, res }) => page(req, res, 'Theme · Settings', settingsPage('Theme', html`<div class="set-group set-choice" role="radiogroup" aria-label="Theme" data-controller="set-theme">${['light', 'dark', 'system'].map(v => html`<label class="set-row"><input type="radio" name="theme" value="${v}" data-action="change->set-theme#pick"${themeMode() === v ? raw(' checked') : ''}><span class="set-ico">${sk(v === 'light' ? 'sun' : v === 'dark' ? 'moon' : 'grid')}</span><b>${SHOWN[v]}</b>${sk('tick')}</label>`)}</div>
-<p class="set-note">System follows this device's own setting. The key T switches anywhere.</p>`, { lead: 'On this device.' }), { view: 'settings-theme' }))
-    t.get(/^\/settings\/keys$/, ({ req, res }) => page(req, res, 'Keyboard Shortcuts · Settings', settingsPage('Keyboard Shortcuts', html`<div class="set-group set-keys-group">${keysList()}</div><p class="set-note">More keys later. Keys rest while you type in a field. <a href="/help.html#keys">On the help page</a></p>`), { view: 'settings-keys' }))
-
-    // ---- /settings/security: every key that opens the account's data, each with what it can read (v1.md 4, 5, 8;
-    // SECURITY.md), and the self test (/settings/proof). The account key is the room's recovery key: every epoch's
-    // content key is sealed to it, and the hub holds the code only sealed under the ways in. Live: the page is drawn
-    // anew when a device, an agent, the recovery key or the account changes. ----
-    const dayOf = ts => (ts == null ? null : new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))
-    const helperCount = () => {
-      const ids = new Set()
-      for (const s of m().sessions.values()) if (s.is_active && s.parent_session_id) for (const d of s.agent_device_ids) if (d !== s.creator_device_id && m().members.get(d)?.is_active) ids.add(d)
-      return ids.size
-    }
-    const securityDevices = () => [...m().members.values()].filter(d => d.is_active && d.device_role === 'human').sort((a, b) => a.added_entry_number - b.added_entry_number)
-    /** What opens the sealed copies of the account key, as the account says: its ways in, in words. */
-    const sealedUnder = st => {
-      const ways = [...(st?.has_password ? ['your password'] : []), ...((st?.passkeys ?? []).length ? [(st.passkeys.length === 1 ? 'your passkey' : 'a passkey')] : []), ...(st?.has_recovery ? ['your Emergency Kit'] : [])]
-      return ways.length ? ways.length === 1 ? ways[0] : `${ways.slice(0, -1).join(', ')} or ${ways.at(-1)}` : 'a way in of your account'
-    }
-    const securityMain = () => {
-      const st = client.hub ? m().room.account : DEMO_ACCOUNT
-      const key = m().room.recovery_key ?? null, since = dayOf(key?.since)
-      const helpers = helperCount()
-      const keyRow = html`<div class="set-row set-row-two set-fact" id="security-key"><span class="set-ico">${sk('key')}</span><span class="set-two"><b>Account key</b><small><span class="room-mono" id="security-key-fp">${key?.fingerprint ?? 'unknown'}</span> · recovery key, ${since ? `since ${since}` : 'since: unknown'}</small></span><span class="set-detail">everything</span><span></span></div>`
-      const kitRow = setRow({ href: '/settings/account/kit', icon: sk('page'), word: 'Emergency Kit', detail: st === undefined ? '…' : st?.has_recovery ? 'made' : 'not made yet', id: 'security-kit' })
-      const devRow = d => html`<a class="set-row set-row-two security-device" id="security-device-${d.device_id.slice(0, 16)}" href="/settings/devices/${d.device_id}" data-nav><span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${devName(d)}${d.is_me ? html` <span class="set-small set-inline">· this device</span>` : ''}</b><small><span class="room-mono">${fp(d)}</span> · ${dayOf(d.added_at) ? `added ${dayOf(d.added_at)}` : 'added: unknown'}</small></span><span class="set-detail">everything</span>${SET_CHEVRON}</a>`
-      const agentRow = html`<a class="set-row set-row-two" id="security-agents" href="/settings/agents" data-nav><span class="set-ico">${sk('terminal')}</span><span class="set-two"><b>Agents</b><small>${agentsDetail() || 'none'}${helpers ? ` · ${helpers} ${helpers === 1 ? 'helper' : 'helpers'}` : ''}: each with its own key</small></span><span class="set-detail">own session</span>${SET_CHEVRON}</a>`
-      return settingsPage('Security', html`<h3 class="set-label">Account key</h3><div class="set-group">${keyRow}${kitRow}</div>
-<p class="set-note" id="security-key-note">Opens everything; it is also your recovery key. The hub keeps it only sealed: ${sealedUnder(st)} opens it on a new device.</p>
-<h3 class="set-label">Authorized devices</h3><div class="set-group" id="security-devices">${securityDevices().map(devRow)}</div>
-<p class="set-note">Each of your devices reads everything, also what came before it was added.</p>
-<h3 class="set-label">Agents</h3><div class="set-group">${agentRow}</div>
-<p class="set-note">An agent reads only its own session and the helper sessions it starts; a helper reads only its own.</p>
-<p class="set-note set-note-strong" id="security-hub">Nobody else, not the hub either: it sees which device is in which group, when, and how much.</p>
-<h3 class="set-label">Check</h3><div class="set-group">${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Self Test', detail: 'runs on this device', id: 'settings-proof' })}</div>`,
-      { lead: 'Every key that opens your data, and the self test.' })
-    }
-    const securitySnap = () => JSON.stringify([securityDevices().map(d => [d.device_id, d.device_name, d.added_at ?? null, d.is_me, d.platform]), m().room.recovery_key ?? null, agentsDetail(), helperCount(), m().room.account ?? null])
-    t.live('settings-security', { take: securitySnap, diff: (was, now) => (was !== now ? String(t.stream('refresh')) : '') })
-    t.get(/^\/settings\/security$/, ({ req, res }) => {
-      if (!isHuman()) return t.redirect(res, '/settings/proof')
-      if (client.hub && m().room.account === undefined) loadAccount()
-      page(req, res, 'Security · Settings', securityMain(), { view: 'settings-security' })
-    })
-
-    // ---- /settings/account ----
-    // The account is read from the hub once per visit (client._setRoom: a change, so the page refreshes when it is in).
-    const loadAccount = () => {
-      if (!client.hub || m().room.account_loading) return
-      client._setRoom({ account_loading: true })
-      account().then(A => A.accountStatus(client)).then(st => client._setRoom({ account: st, account_loading: false }), err => client._setRoom({ account_error: accountError(err), account_loading: false }))
-    }
-    // The overview (sub ''): who, the ways in (each a page: password, passkeys, kit; email where there is none),
-    // storage, Log Out. Each way in is changed on its own page; a change asks for the way in of now once more
-    // (proofField). The demo shows a made-up account and changes nothing.
-    const DEMO_ACCOUNT = { email: 'ada@example.org', account: 'A7Q2-K9XD-4MWP-T3RC', has_password: true, has_recovery: true, passkeys: [{ credential_id: 'demo-passkey-one', created_at: Date.parse('2026-09-12'), last_used_at: Date.parse('2026-10-10') }] }
-    const SUBS = { password: 'Password', passkeys: 'Passkeys', kit: 'Emergency Kit', email: 'Email' }
-    const accountMain = (sub = '', { error = '', said = '', kit = null, first = false } = {}) => {
-      const room = m().room
-      const st = client.hub ? room.account : DEMO_ACCOUNT
-      const form = (action, inner, word, id) => html`<form method="post" action="${action}" class="set-stack" data-controller="room" id="${id}">${inner}<button type="submit" class="room-primary">${word}</button></form>`
-      const day = ts => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-      const top = html`${errorLine(error)}${said ? html`<p class="room-lead room-ok" role="status">${said}</p>` : ''}`
-      const sublead = { password: 'Opens your account with your email.', passkeys: 'Each opens your account without a password.', kit: 'Twelve words for the day you lose your way in.', email: 'A second name for your account.' }
-      const subPage = inner => settingsPage(SUBS[sub], html`${top}${inner}`, { back: '/settings/account', backWord: 'Account', lead: sublead[sub] })
-      if (!isHuman()) return roomPage('Account', html`${top}${storagePart()}`, 'What this device keeps.')
-      if (st === undefined) return roomPage('Account', html`${top}<div class="set-group"><p class="set-empty room-wait">${room.account_error ? `Not reachable: ${room.account_error}` : 'Loading…'}</p></div>${storagePart()}`, 'Your login, and what this device keeps.')
-      if (st === null) return roomPage('Account', html`${top}${storagePart()}${logoutPart()}`, 'What this device keeps.')
-      const pk = st.passkeys ?? [], noPassword = st.has_password === false
-      if (sub === 'password') {
-        return subPage(noPassword
-          ? html`<div class="set-group"><div class="set-row set-fact"><span class="set-ico">${sk('lock')}</span><b>Password</b><span class="set-detail" id="password-none">none: your passkey opens this account</span><span></span></div></div>
-${st.email ? html`<section id="pw-add"><h3 class="set-label">Add a password</h3>${form('/settings/password/add', html`<div class="set-group set-proof-g">${proofField(st)}</div><div class="set-group set-form">${pwField({ label: 'New password' })}</div>`, 'Add Password', 'pw-add-form')}</section>` : html`<p class="set-note" id="pw-needs-email">A password needs an email. <a href="/settings/account/email" data-nav>Add one first.</a></p>`}
-<p class="set-note set-note-after">${NO_RECOVERY_PASSKEY}</p>`
-          : html`<section id="pw-change">${form('/settings/password', html`<div class="set-group set-proof-g">${proofField(st, 'current')}</div><div class="set-group set-form">${pwField({ label: 'New password' })}</div>`, 'Change Password', 'pw-form')}</section>
-<p class="set-note set-note-after">${NO_RECOVERY}</p>`)
-      }
-      if (sub === 'passkeys') {
-        return subPage(html`${pk.length ? html`<div class="set-group" id="passkeys">${pk.map((p, i) => html`<details class="set-exp room-passkey" id="passkey-${p.credential_id.slice(0, 12)}"><summary class="set-row set-row-two"><span class="set-ico">${sk('key')}</span><span class="set-two"><b>Passkey${pk.length > 1 ? ` ${i + 1}` : ''}</b><small>added ${day(p.created_at)} · ${p.last_used_at ? `used ${day(p.last_used_at)}` : 'not used yet'}</small></span><span class="set-detail">Remove</span>${SET_CHEVRON}</summary>
-<form method="post" action="/settings/passkeys/remove" class="set-exp-body set-stack room-remove"><input type="hidden" name="id" value="${p.credential_id}"><p class="set-small">This passkey no longer opens your account after this.</p><div class="set-group set-proof-g">${proofField(st)}</div><button type="submit" class="room-danger">Remove Passkey</button></form></details>`)}</div>`
-          : html`<div class="set-group"><p class="set-empty" id="passkeys-none">None yet. A passkey logs you in without a password.</p></div>`}
-${!noPassword && pk.length ? html`<p class="set-note" id="password-still">Your password still opens this account.</p>` : ''}
-${canPasskey ? html`<section id="passkey-new"><h3 class="set-label">Add a passkey</h3>${form('/settings/passkeys', html`<div class="set-group set-proof-g">${proofField(st)}</div>`, 'Add Passkey', 'passkey-form')}</section>` : passkeysOff ? '' : html`<p class="set-note" id="passkey-cannot">This browser makes no passkeys.</p>`}`)
-      }
-      if (sub === 'kit') {
-        return subPage(kit ? html`<p class="room-lead">Download or print it, and keep it somewhere safe. It is shown only now.${first ? '' : ' The old kit no longer works.'}</p>${kitBox({ ...kit, account: kit.account ?? st.account }, kitLink(kit.account ?? st.account), true)}`
-          : html`<div class="set-group"><div class="set-row set-fact"><span class="set-ico">${sk('page')}</span><b>Your kit</b><span class="set-detail" id="kit-state">${st.has_recovery ? 'made' : 'not made yet'}</span><span></span></div></div>
-<p class="set-note">${noPassword ? 'It opens your account if you lose your passkey.' : 'With it you can set a new password if you forget yours.'}${st.has_recovery ? ' A new kit makes the old one stop working.' : ''}</p>
-<section id="kit-new"><h3 class="set-label">${st.has_recovery ? 'Make a new kit' : 'Make my Emergency Kit'}</h3>${form('/settings/kit', html`<div class="set-group set-proof-g">${proofField(st)}</div>`, 'Make the Kit', 'kit-form')}</section>`)
-      }
-      if (sub === 'email') {
-        return subPage(kit ? html`<p class="room-lead">Download or print it, and keep it somewhere safe. It is shown only now.</p>${kitBox({ ...kit, account: kit.account ?? st.account }, kitLink(kit.account ?? st.account), true)}`
-          : st.email ? html`<div class="set-group"><div class="set-row set-fact"><span class="set-ico">${sk('letter')}</span><b>Email</b><span class="set-detail">${st.email}</span><span></span></div></div>`
-            : html`<section id="email-add"><p class="set-note set-note-after">It cannot be changed later. Your Emergency Kit keeps its twelve words and opens with the email from then on: type them once more. They also confirm it is you.</p>${form('/settings/email', html`<div class="set-group set-form"><label class="set-field">Email<input type="email" name="email" required autocomplete="username" autocapitalize="off" spellcheck="false"></label><label class="set-field">Twelve words<textarea name="words" rows="3" required autocomplete="off" autocapitalize="off" spellcheck="false"></textarea></label></div>`, 'Add Email', 'email-form')}</section>`)
-      }
-      const ways = [
-        ...(st.email ? [] : [{ key: 'email', icon: sk('letter'), word: 'Email', detail: 'none yet' }]),
-        { key: 'password', icon: sk('lock'), word: 'Password', detail: noPassword ? 'none' : 'set' },
-        ...(passkeysOff && !pk.length ? [] : [{ key: 'passkeys', icon: sk('key'), word: 'Passkeys', detail: pk.length ? String(pk.length) : 'none' }]),
-        { key: 'kit', icon: sk('page'), word: 'Emergency Kit', detail: st.has_recovery ? 'made' : 'not made yet' },
-      ]
-      return roomPage('Account', html`${top}<div class="set-group set-who"><div class="set-row set-row-two set-fact"><span class="set-ico">${sk(st.email ? 'letter' : 'key')}</span><span class="set-two">${st.email ? html`<b id="account-email">${st.email}</b>` : html`<b>Logged in with a passkey</b>`}<small>${st.email ? '' : html`<span id="account-email">No email.</span> · `}Account ID <span class="room-mono" id="account-id">${st.account}</span></small></span><span></span><span></span></div></div>
-<h3 class="set-label">Ways in</h3><nav class="set-group" aria-label="Ways in">${ways.map(w => setRow({ href: `/settings/account/${w.key}`, icon: w.icon, word: w.word, detail: w.detail, id: `settings-way-${w.key}` }))}</nav>
-<p class="set-note">Each opens your account on a new device. Changing one asks for one of them again: being logged in here is not enough.</p>
-${storagePart()}${logoutPart()}`, 'Your login, and what this device keeps.')
-    }
-    const storagePart = () => html`<h3 class="set-label" id="store-head">Storage</h3><dl class="set-group set-facts" data-controller="room" data-room-usage-value="${has(client, 'usage') ? 'hub' : 'local'}"><div class="set-row set-fact"><span class="set-ico">${sk('laptop')}</span><dt>On this device</dt><dd class="set-detail" data-room-target="local">…</dd><span></span></div>${has(client, 'usage') ? html`<div class="set-row set-fact"><span class="set-ico">${sk('db')}</span><dt>On the hub, encrypted</dt><dd class="set-detail" data-room-target="hub">…</dd><span></span></div>` : ''}</dl><p class="set-note">The hub deletes envelopes after 30 days; your devices keep what they decrypted.</p>`
-    const logoutPart = () => html`<div class="set-group"><a class="set-row set-danger" href="/logout" data-nav id="settings-logout"><span class="set-ico">${sk('logout')}</span><b>Log Out</b><span class="set-detail">of this device</span>${SET_CHEVRON}</a></div>`
-    // The address the kit's QR code holds (hub and account ID, no words): made once the page's helpers are loaded.
-    let kitLink = () => null
-    account().then(A => { kitLink = id => { try { return A.kitAddress(location.origin, m().room.hub_url, id) } catch { return null } } }).catch(() => {})
-    const DONE = { changed: 'Password changed.', 'passkey-added': 'Passkey added.', 'passkey-removed': 'Passkey removed.', 'password-added': 'Password added.' }
-    // (whether this browser can make a passkey: asked once, the page refreshes when it is known)
-    let canPasskey = false, passkeysOff = !passkeysOn()
-    passkeyOffer().then(o => { canPasskey = o.get; passkeysOff = Boolean(o.off); if (canPasskey && m().room.account) client._setRoom?.({ account: { ...m().room.account } }) })
-    /** The way in for a change on this page: the form's password, or a passkey of the account (a prompt). */
-    const unlockOf = async (f, st) => (st?.has_password === false ? { passkey: await passkeyUnlock(st, client) } : { password: String(f.get('password') ?? '') })
-    // A kit just made is held here (memory only) for ten minutes, so that the page drawn again (a stream's refresh, a
-    // visit back) still shows it; while it is held the page is not refreshed by the account's own change.
-    let held = null
-    const holding = () => (held && Date.now() - held.at < 600_000 ? held : (held = null))
-    const accountSnap = () => JSON.stringify([m().room.account ?? null, m().room.account_error ?? null, canPasskey])
-    t.live('settings', { take: () => holding()?.snap ?? accountSnap(), diff: (was, now) => (was !== now ? String(t.stream('refresh')) : '') })
-    const accountGet = sub => ({ req, res, url }) => {
-      if (m().room.account === undefined) loadAccount()
-      const h = holding()
-      page(req, res, `${SUBS[sub] ?? 'Account'} · Settings`, accountMain(sub, h && h.sub === sub ? h : { said: DONE[url.searchParams.get('done')] ?? '' }), { view: 'settings' })
-    }
-    t.get(/^\/settings\/account$/, accountGet(''))
-    for (const sub of Object.keys(SUBS)) t.get(new RegExp(`^/settings/account/${sub}$`), accountGet(sub))
-    // (sub: the page the form is on, where an error or a new kit is shown; after a change, the page to go back to)
-    const accountPost = (path, sub, fn, done, back = '') => t.post(path, async ({ req, res, form }) => {
-      let out
-      try {
-        if (!client.hub) throw Object.assign(new Error('The demo changes nothing here.'), { code: 'demo' })
-        out = await fn(form, await account())
-      } catch (err) {
-        console.error(err)
-        return page(req, res, 'Settings', accountMain(sub, { error: err.code === 'demo' ? err.message : accountError(err) }), { view: 'settings' }, 422)
-      }
-      if (out?.kit) {
-        held = { at: Date.now(), sub, snap: held?.snap ?? out.snap ?? accountSnap(), kit: out.kit, said: out.said ?? 'Your new Emergency Kit:', first: out.first }
-        if (out.account) client._setRoom(out.account)
-        return page(req, res, 'Settings', accountMain(sub, held), { view: 'settings' })
-      }
-      held = null
-      client._setRoom({ account: undefined }); loadAccount()
-      t.redirect(res, `/settings/account${back ? `/${back}` : ''}?done=${done}`)
-    })
-    accountPost(/^\/settings\/password$/, 'password', (f, A) => A.changePassword(client, { current: String(f.get('current')), next: String(f.get('password')) }), 'changed')
-    // A new passkey: the way in is checked first (a wrong password leaves no stray passkey), then the passkey is made
-    // here, then the core seals the code under it.
-    accountPost(/^\/settings\/passkeys$/, 'passkeys', async (f, A) => {
-      const st = await A.accountStatus(client), unlock = await unlockOf(f, st)
-      await A.checkUnlock(client, unlock)
-      const passkey = await passkeyMake({ challenge: await A.passkeyChallengeFor(client), user_handle: unb64u(st.user_handle), name: st.email ?? st.account, exclude: (st.passkeys ?? []).map(p => unb64u(p.credential_id)) })
-      try { await A.addPasskey(client, { unlock, passkey }) } catch (err) { if (cameToNothing(err)) passkeyForget(passkey.credential_id); throw err }
-    }, 'passkey-added', 'passkeys')
-    accountPost(/^\/settings\/passkeys\/remove$/, 'passkeys', async (f, A) => {
-      const id = String(f.get('id'))
-      await A.removePasskey(client, { credential_id: id, unlock: await unlockOf(f, await A.accountStatus(client)) })
-      passkeyForget(unb64u(id))
-    }, 'passkey-removed', 'passkeys')
-    accountPost(/^\/settings\/password\/add$/, 'password', async (f, A) => A.setPassword(client, { unlock: { passkey: await passkeyUnlock(await A.accountStatus(client), client) }, next: String(f.get('password')) }), 'password-added')
-    accountPost(/^\/settings\/kit$/, 'kit', async (f, A) => {
-      const kit = await A.makeEmergencyKit(client, await unlockOf(f, await A.accountStatus(client)))
-      return { kit, account: { account: { ...m().room.account, has_recovery: true, kit_form: kit.form } } }
-    })
-    // An account without email gets one, once (a second name for it, and what a password needs). Its kit is sealed
-    // anew under the email in the same request, with the same words: its sheet is shown again, to print once more.
-    accountPost(/^\/settings\/email$/, 'email', async (f, A) => {
-      try {
-        const kit = await A.setEmail(client, { email: String(f.get('email')), words: String(f.get('words')) })
-        return { kit, said: 'Email added. Your Emergency Kit opens with your email now:', first: true, account: { account: await A.accountStatus(client), account_error: undefined } }
-      } catch (err) { throw err.code === 'account-exists' ? Object.assign(err, { message: EMAIL_HELD, code: 'email-held' }) : err.code === 'forbidden' || err.code === 'email-set' ? Object.assign(err, { message: 'This account has an email already.', code: 'email-set' }) : err.code === 'wrong-recovery' ? Object.assign(err, { message: 'Those are not the words of your Emergency Kit.', code: 'kit-words' }) : err }
-    })
-
-    // ---- /logout (the Trommi menu and Settings -> Account): asks once, then logOut() ----
-    const logoutMain = (error = '') => {
-      const me = m().room.my_device_id
-      const others = [...(m().members?.values() ?? [])].filter(d => d.is_active && d.device_role === 'human' && d.device_id !== me).length
-      const st = m().room.account
-      // (the ways in this account has: said as they are)
-      const pk = Boolean(st?.passkeys?.length), pw = st?.has_password !== false
-      const again = pk && pw ? 'your passkey or your password' : pk ? 'your passkey' : 'email and password'
-      const ways = pk && pw ? 'your passkey, or your email and password' : pk ? 'your passkey' : 'your email and password'
-      const note = !client.hub ? 'The demo keeps nothing; this only ends it.'
-        : others ? ''
-            : `This is your only device. After this, ${ways} (or your Emergency Kit) ${st?.has_password === false ? 'opens' : 'open'} your account.`
-      return roomShell('Log out', html`${errorLine(error)}<p class="room-lead" id="logout-ask">Log out of this device? You can log in again with ${again}.</p>
-${note ? html`<p class="room-lead" id="logout-last">${note}</p>` : ''}<p class="room-meta">Everything Trommi keeps on this device is deleted here; your account and your other devices stay as they are.</p>
-<form method="post" action="/logout" class="room-inline room-logout" id="logout-form"><button type="submit" class="room-danger" id="logout-go">Log Out</button><a href="/" data-nav class="room-back" id="logout-cancel">Cancel</a></form>`)
-    }
-    t.get(/^\/logout$/, ({ req, res }) => { if (client.hub && isHuman() && m().room.account === undefined) loadAccount(); page(req, res, 'Log out', logoutMain(), { view: 'logout' }) })
-    t.post(/^\/logout$/, async () => { await logOut(client) })
-
-    // A join link opened on a device that is in a room already.
-    t.get(/^\/(?:join|login)$/, ({ req, res }) => { if (location.hash.length > 1) history.replaceState(null, '', location.pathname); return page(req, res, 'Pair a device', roomShell('Already logged in', html`<p class="room-lead">This device is logged in already. Invite another device under <a href="/settings" data-nav>Settings</a>.</p><p class="room-meta">Another account? <a href="/logout" data-nav id="login-logout-first">Log out of this device first</a>, then log in.</p><p class="room-meta"><a href="/" data-nav>Open your Desk</a></p>`)) })
-  }
-}
-
-// ---- Log out: what is still to send goes out, the streams close, every local trace of the app on this origin goes
-// (IndexedDB, Cache Storage, localStorage, sessionStorage; the service worker stays and fills its cache again from
-// the network), and the start page comes. No device takes itself out of the room: the start page says the device
-// stays in "Devices" until another device removes it.
-async function logOut(client) {
-  // (the demo has no account: leaving it is all there is to do; nothing stored on this device is touched)
-  if (client?.model?.room?.hub_url === 'mock:') { try { sessionStorage.removeItem('trommi-mock') } catch {} return location.replace('/') }
-  let removed = !client?.hub   // the demo has nothing to remove
-  if (typeof client?.leaveRoom === 'function') {
-    // (`removed: false`: no device takes itself out of the room; it stays under Devices until another one removes it)
-    try { removed = (await Promise.race([client.leaveRoom(), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 20_000))]))?.removed !== false }
-    catch (err) { console.warn('log out: not removed', err?.code ?? '', err?.message ?? err) }
-  }
-  try { await client?.stop?.() } catch {}
-  await wipeLocal(client)
-  location.replace(removed ? '/?logged_out=1' : '/?logged_out=kept')
-}
-async function wipeLocal(client) {
-  try { await client?.storage?.close?.() } catch {}
-  try { for (const name of await caches.keys()) await caches.delete(name) } catch {}
-  try { localStorage.clear() } catch {}
-  try { sessionStorage.clear() } catch {}
-  let names = ['trommi', 'trommi:cache', 'trommi:wrap']   // (where indexedDB.databases() is missing)
-  try { if (indexedDB.databases) names = [...new Set([...names, ...(await indexedDB.databases()).map(d => d.name).filter(Boolean)])] } catch {}
-  // A connection still open elsewhere (another tab) blocks the delete: it finishes when that closes; this page goes on.
-  const drop = name => new Promise(done => {
-    try { const r = indexedDB.deleteDatabase(name); r.onsuccess = r.onerror = () => done(); r.onblocked = () => setTimeout(done, 2000) } catch { done() }
-  })
-  // The wrapping keys (store-idb.ts `<name>:wrap`) go last, after the entries they wrap.
-  const wraps = names.filter(n => n.endsWith(':wrap'))
-  await Promise.all(names.filter(n => !wraps.includes(n)).map(drop))
-  await Promise.all(wraps.map(drop))
-}
-
-// ---- the account: shared pieces (screens before the board and the Settings page) ----
-/** A password field with "Generate" (five words); `gen` false for the current password. */
-const pwField = ({ name = 'password', label = 'Password', gen = true, autocomplete = 'new-password' } = {}) => html`<label>${label}<span class="room-pwrow"><input type="password" name="${name}" required minlength="${gen ? 12 : 1}" autocomplete="${autocomplete}" spellcheck="false" autocapitalize="off">${gen ? html`<button type="button" class="room-gen" data-action="room#generate">Generate</button>` : ''}</span>${gen ? html`<small class="room-hint">At least 12 characters. Or press Generate: five words, easy to type.</small>` : ''}</label>`
-/** "Generate" fills a five-word password and shows it; pressed again it copies it. */
-async function generateInto(button) {
-  const input = button.closest('.room-pwrow')?.querySelector('input')
-  if (!input) return
-  if (button.dataset.generated === input.value && input.value) {
-    let ok = false
-    try { await navigator.clipboard.writeText(input.value); ok = true } catch {}
-    button.textContent = ok ? 'Copied' : 'Write it down'
-    return
-  }
-  input.value = (await account()).generatePassword()
-  input.type = 'text'
-  button.dataset.generated = input.value
-  button.textContent = 'Copy'
-  const hint = button.closest('label')?.querySelector('.room-hint')
-  if (hint) hint.textContent = 'Generated for you. Put it in your password manager or write it down.'
-  input.addEventListener('input', () => { button.textContent = 'Generate'; delete button.dataset.generated }, { once: true })
-}
-/** Said by "Create account" for an email that has one (in Settings the same refusal is about this account's login). */
-const EMAIL_TAKEN = 'This email has an account already. Log in instead.'
-const EMAIL_HELD = 'This email has an account already.'
-/** Said where an account ID meets a password: a password's keys are derived from the email. */
 const ID_NO_PASSWORD = 'Enter your email to log in with a password.'
-const NOT_A_NAME = 'That is not an email address or an account ID.'
-/** The way in a change asks for again (Settings · Account's pages): the password where the account has one (its field
- *  named `name`), else one of its passkeys (asked when the form is sent). The one place that draws it. */
-const proofField = (a, name = 'password') => html`<div class="set-proof" id="proof"><p class="set-proof-why"><span class="set-ico">${sk('lock')}</span><span><b>Confirm it is you</b><small>${a.has_password === false ? CONFIRM_PASSKEY : CONFIRM_PASSWORD}</small></span></p>${a.has_password === false ? '' : pwField({ name, label: name === 'current' ? 'Current password' : 'Your password', gen: false, autocomplete: 'current-password' })}</div>`
-const NO_RECOVERY = 'If you lose your password and your Emergency Kit, nobody (not even Trommi) can recover your data.'
-const NO_RECOVERY_PASSKEY = 'If you lose your passkeys and your Emergency Kit, nobody (not even Trommi) can recover your data.'
-/** What an Emergency Kit opens with, in words: the email it was made under, or the account's ID. */
-const kitOpensWith = kit => (kit.form === 'id' || !kit.email ? 'account ID' : 'email')
-/** The one plain sentence on the kit's step: the way in and the kit lost together are the account lost. */
-const LOST = way => `If you lose your ${way} and this kit, your account is lost. Nobody can recover it, not even Trommi.`
-/** The Emergency Kit as a text file. `link`: the address its QR code holds (hub and account ID; never the words). */
-const kitText = (kit, link) => `Trommi Emergency Kit
+/** The six emoji with a word under each: the same on both devices (and in a connector's terminal). */
+const emojiRow = (emoji = [], id = '') => html`<ol class="check-emoji"${id ? raw(` id="${id}"`) : ''} aria-label="Check code: ${emoji.map(e => e.word).join(', ')}">${emoji.map(e => html`<li><span class="check-emoji-glyph" aria-hidden="true">${e.emoji}</span><span class="check-emoji-word">${e.word}</span></li>`)}</ol>`
 
-${kit.account ? `Account ID: ${kit.account}\n` : ''}${kit.email ? `Email: ${kit.email}\n` : ''}Recovery words: ${kit.words}
+// The Emergency Kit: its words come from the core (AccountView.kit) and are drawn only while shown; what it is for (the
+// e-mail, the account's ID) from the account once read (SettingsView.login).
+const KIT_EMPTY = 'orbit lantern maple quiet saddle copper violin harbor ember thistle canyon pepper'
+const kitOpensWith = kit => (!kit.email ? 'account ID' : 'email')
+const LOST = way => `If you lose your ${way} and this kit, your account is lost. Nobody can recover it, not even Trommi.`
+const kitText = (kit, words) => `Trommi Emergency Kit
+
+${kit.account ? `Account ID: ${kit.account}\n` : ''}${kit.email ? `Email: ${kit.email}\n` : ''}Recovery words: ${words.join(' ')}
 
 Lost your way in? Open https://app.trommi.com, choose "Log in", then "Forgot?".
 Enter your ${kitOpensWith(kit)} and these 12 words, then choose a new ${kit.email ? 'password or passkey' : 'passkey'}.
-${link ? `Or open ${link} (it fills in the account ID; it holds no words).\n` : ''}
+
 Keep this kit private and offline: with these words and your ${kitOpensWith(kit)}, anyone can get into your account.
 ${LOST(kit.has_password === false || !kit.email ? 'passkey' : 'password')}
 
 Made ${new Date().toISOString().slice(0, 10)}
 `
-/** Save the kit as a file (a link to a Blob, clicked). */
 function downloadKit(text) {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
@@ -751,750 +108,606 @@ function downloadKit(text) {
   document.body.append(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(a.href), 10000)
 }
-/** The account's ID with the code that opens the recovery screen with it filled in: on every kit, next to the words. */
-const kitIdentity = (kit, link) => (kit.account ? html`<div class="set-pair kit-id">${link ? html`<div class="set-qr is-real">${raw(qrSvg(link, 'QR code: opens the recovery screen with this account ID'))}</div>` : ''}<div class="set-text"><b>Account ID</b><small class="room-mono" id="kit-account">${kit.account}</small>${link ? html`<small>The code opens the recovery screen with this ID filled in. It holds no words.</small>` : ''}</div></div>` : '')
-const kitBox = (kit, link, stim = false) => html`<div class="room-kit" id="kit"><p class="room-kit-title">${raw(BELL)} Trommi Emergency Kit</p>${kit.email ? html`<p class="room-meta">Email: <b>${kit.email}</b></p>` : ''}
-<ol class="room-kit-words" id="kit-words">${kit.words.split(' ').map(w => html`<li>${w}</li>`)}</ol>
-${kitIdentity(kit, link)}
-<p class="room-meta">Lost your way in? app.trommi.com → Log in → "Forgot?" → your ${kitOpensWith(kit)} and these 12 words.</p></div>
-<div class="room-actions room-kit-actions"${stim ? raw(' data-controller="room"') : ''}><button type="button" id="kit-download"${stim ? raw(' data-action="room#download"') : ''} data-room-text-param="${kitText(kit, link)}">Download</button><button type="button" id="kit-print"${stim ? raw(' data-action="room#print"') : ''}>Print</button></div>`
-const accountError = err => ({
-  'wrong-login': 'Wrong email or password.', 'wrong-recovery': 'Wrong email or words.', 'bad-recovery-words': 'Check the twelve words.',
-  'bad-account': NOT_A_NAME, 'needs-email': 'This account has no email, so it has no password. Use a passkey.',
-  'rate-limited': 'Too many tries. Wait a few minutes.', 'too-many': 'Too many. Try again later.', 'weak-password': 'At least 12 characters.', 'bad-email': 'That is not an email address.',
-  'room-exists': 'This browser is logged in already.', 'bad-recovery-code': 'This code does not fit this account.',
-  'account-exists': 'This account has a login already.', 'account-changed': 'Changed on another device. Try again.',
-  stalled: 'Logging in takes too long. Check your connection and try again.',
-  'no-prf': 'This passkey can\'t unlock Trommi here.', 'passkey-cancelled': 'No passkey used.', 'passkey-aborted': 'No passkey used.', 'passkey-exists': 'This passkey is added already.',
-  'passkey-failed': 'The passkey did not work. Try again.', 'bad-passkey': 'That passkey was not accepted. Try again.', 'last-way-in': 'This is your only way in. Add a password or another passkey first.',
-  'no-password': 'This account has no password.',
-}[err.code] ?? sayError(err))
-
-// ---- the screens before the board, and the Emergency Kit's page: one calm column (auth.css "ob") ----
-/** This device's name, made for it: "Chrome on Linux", "Safari on iPhone". Never asked for; renamed under Settings → Devices. */
-function deviceLabel(nav = navigator) {
-  const ua = String(nav.userAgent ?? ''), brands = (nav.userAgentData?.brands ?? []).map(b => b.brand).join(' ')
-  const browser = /Brave/.test(brands) ? 'Brave' : /Edg(e|A|iOS)?\b|Microsoft Edge/.test(`${brands} ${ua}`) ? 'Edge' : /Opera|OPR\//.test(`${brands} ${ua}`) ? 'Opera' : /Vivaldi/.test(`${brands} ${ua}`) ? 'Vivaldi'
-    : /Firefox|FxiOS/.test(ua) ? 'Firefox' : /Chrom(e|ium)|CriOS/.test(`${brands} ${ua}`) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'Browser'
-  const os = /iPhone|iPod/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (/Macintosh/.test(ua) && nav.maxTouchPoints > 1) ? 'iPad' : /Android/.test(ua) ? 'Android'
-    : /Macintosh|Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux|X11/.test(ua) ? 'Linux' : ''
-  return os ? `${browser} on ${os}` : browser
-}
-const UNDER = raw('<svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><path d="M1.0 5.0 Q18.0 3.4 26.0 4.3 Q34.0 5.2 43.0 4.4 Q52.0 3.6 61.0 4.3 Q70.0 5.0 78.0 4.4 Q86.0 3.8 92.5 4.2 L99.0 4.6"/></svg>')
-const DEMO_LINK = html`<a href="/?mock=1" id="ob-demo" data-turbo="false">Try the demo</a>`
-/** On the start page the demo is the third way, right under Create account and Log in: a clear quieter button. */
-const DEMO_WAY = html`<a href="/?mock=1" id="ob-demo" class="ob-demo-way" data-turbo="false"><span>Try the demo</span><small>A made-up room: nothing is sent</small></a>`
-/** One screen: the bell (the way back to the start), a short headline, at most one line under it, the demo at the
- *  foot (demo: false where the screen offers it itself, the start page). */
-const obShell = (title, inner, { lead = '', cls = '', home = true, foot = '', demo = true } = {}) => html`<main id="room" class="ob${cls ? ` ${cls}` : ''}" aria-labelledby="ob-title">
-<header class="ob-brand">${home ? html`<a href="/" id="room-home" aria-label="Trommi: back to the start">${BELL}<b>Trommi</b></a>` : html`<span>${BELL}<b>Trommi</b></span>`}</header>
-<h1 id="ob-title" class="ob-title">${title}</h1>${lead ? html`<p class="ob-lead">${lead}</p>` : ''}
-${inner}
-<footer class="ob-foot">${foot}${demo ? DEMO_LINK : ''}</footer></main>`
-/** The one line a form says when it failed: its place is kept, so nothing jumps. */
-const obError = (error = '') => html`<p class="ob-error" role="alert" id="ob-error">${error}</p>`
-/** The email field of "Create account". `optional`: beside a passkey nothing rests on it, and the field says so. */
-const obEmail = (value = '', optional = false) => html`<div class="ob-field"><span class="ob-label"><label for="ob-email">Email</label>${optional ? html`<span class="ob-hint" id="ob-email-optional">optional</span>` : ''}</span><input type="email" id="ob-email" name="email" value="${value}" autocomplete="username" autocapitalize="off" spellcheck="false" inputmode="email"${optional ? raw(' aria-describedby="ob-email-optional"') : ''}></div>`
-/** The one field that names an account where it is logged in to or recovered: its email, or the account ID printed on its Emergency Kit. */
-const obAccount = (value = '', passkeys = false) => html`<label class="ob-field"><span class="ob-label">Email or account ID</span><input type="text" name="account" value="${value}" autocomplete="${passkeys ? 'username webauthn' : 'username'}" autocapitalize="off" spellcheck="false" inputmode="email"></label>`
-const PW_RULE = 'At least 12 characters'
-/** A password: Show/Hide in the field; a new one with the live rule and "Generate": five words, put into the field and
- *  shown in full on a slip under it, with Copy (the slip goes when the field is typed in). */
-const obPassword = ({ label = 'Password', fresh = false, side = '' } = {}) => html`<div class="ob-field ob-pw${fresh ? ' is-new' : ''}"><span class="ob-label"><label for="ob-pw">${label}</label>${side}</span>
-<span class="ob-pwrow"><input type="password" id="ob-pw" name="password" autocomplete="${fresh ? 'new-password' : 'current-password'}" spellcheck="false" autocapitalize="off"${fresh ? raw(' aria-describedby="ob-pw-hint"') : ''}><button type="button" class="ob-eye" aria-pressed="false" aria-controls="ob-pw">Show</button></span>
-${fresh ? html`<span class="ob-made" hidden><code></code><button type="button" class="ob-chip ob-copy">Copy</button></span>
-<span class="ob-under"><span class="ob-hint" id="ob-pw-hint" aria-live="polite">${PW_RULE}</span><button type="button" class="ob-link ob-gen" title="Five random words">Generate</button></span>` : ''}</div>`
-const obSubmit = word => html`<button type="submit" class="ob-go" data-word="${word}">${word}</button>`
-const KIT_EMPTY = 'orbit lantern maple quiet saddle copper violin harbor ember thistle canyon pepper'
-/** The kit as a sheet of paper. Hidden, it holds no word at all: twelve drawn strokes; the words are put in when shown. */
-const kitSheet = (kit, words, link) => html`<div class="kit-sheet${words ? ' is-shown' : ''}" id="kit"><p class="kit-head">${BELL}<b>Trommi Emergency Kit</b></p><p class="kit-mail">${kit.email ?? ''}</p>
-<ol class="kit-words" id="kit-words"${words ? '' : raw(' aria-hidden="true"')}>${(words || KIT_EMPTY).split(' ').map((w, i) => (words ? html`<li>${w}</li>` : html`<li><i style="--w:${3 + KIT_EMPTY.split(' ')[i].length}"></i></li>`))}</ol>
-${kitIdentity(kit, link)}
+const kitIdentity = kit => (kit.account ? html`<div class="set-pair kit-id"><div class="set-text"><b>Account ID</b><small class="room-mono" id="kit-account">${kit.account}</small></div></div>` : '')
+/** The kit as a sheet of paper. Hidden, it holds no word at all: twelve drawn strokes. */
+const kitSheet = (kit, words) => html`<div class="kit-sheet${words ? ' is-shown' : ''}" id="kit"><p class="kit-head">${BELL}<b>Trommi Emergency Kit</b></p><p class="kit-mail">${kit.email ?? ''}</p>
+<ol class="kit-words" id="kit-words"${words ? '' : raw(' aria-hidden="true"')}>${words ? words.map(w => html`<li>${w}</li>`) : KIT_EMPTY.split(' ').map(w => html`<li><i style="--w:${3 + w.length}"></i></li>`)}</ol>
+${kitIdentity(kit)}
 <p class="kit-how">Lost your way in? app.trommi.com → Log in → Forgot? → your ${kitOpensWith(kit)} and these 12 words.</p></div>`
+/** The kit's buttons post one form (/kit/do): shown or hidden, saved as a file, printed, kept. */
+const KIT_FORM = (back) => html`<form id="kit-acts" method="post" action="/kit/do" hidden><input type="hidden" name="back" value="${back}"></form>`
+const kitButton = (what, label, cls, id, extra = '') => html`<button type="submit" form="kit-acts" name="do" value="${what}" class="${cls}" id="${id}"${raw(extra)}>${label}</button>`
+/** What a kit is of: the account as read (SettingsView.login); nothing while it is not. */
+const kitOf = login => ({ email: login?.email ?? null, account: login?.account ?? null, has_password: login?.has_password })
 
-/**
- * The Emergency Kit's page, in `root`. With words: the sheet (hidden until "Show"), Download, Print, and "Open Trommi"
- * once it was downloaded, printed or shown. Without (the tab was closed before that): the password makes a new kit.
- * The words live in this closure only: never in an attribute, in storage or in a log. `kit`: whose it is (email or
- * none, the account's ID, which of the two it opens with); `linkOf(id)`: the address its QR code holds.
- */
-function kitPage(root, { kit = { email: null, account: null, form: 'email' }, words = null, linkOf = () => null, error = '', demo = false, shown = false, make = null, open = null, logout = null, ways = { password: true, passkey: false } }) {
-  let saved = false
-  const paint = () => {
-    root.innerHTML = String(obShell('Your Emergency Kit', words ? html`
-<div class="kit-stage"><div class="kit-cover" id="kit-cover">${kitSheet(kit, shown ? words : null, kit.account ? linkOf(kit.account) : null)}</div>
-<button type="button" class="ob-chip kit-show" id="kit-show" aria-pressed="${shown ? 'true' : 'false'}">${shown ? 'Hide' : 'Show'}</button></div>
-<div class="ob-row"><button type="button" class="ob-second" id="kit-download">Download</button><button type="button" class="ob-second" id="kit-print">Print</button></div>
-<p class="ob-warn" id="kit-warn">${LOST(ways.password ? 'password' : 'passkey')}</p>
-${obError(error)}<button type="button" class="ob-go" id="kit-done"${saved ? '' : raw(' disabled')}>Open Trommi</button>
-<p class="ob-hint ob-center" id="kit-first"${saved ? raw(' hidden') : ''}>Download, print or show it first.</p>`
-      : html`<form id="kit-form" class="ob-form" novalidate>${ways.password ? html`<input type="text" name="email" value="${kit.email ?? ''}" autocomplete="username" hidden>${obPassword()}` : ''}
-${obError(error)}${obSubmit(ways.password ? 'Make kit' : 'Use passkey')}</form>${ways.password && ways.passkey ? html`<p class="ob-or"><span>or</span></p><button type="button" class="ob-second ob-wide" id="kit-passkey">${art('key')}Use passkey</button>` : ''}`,
-    { lead: words ? (ways.password ? 'Twelve words that set a new password if you forget yours.' : 'Twelve words that open your account if you lose your passkey.') : ways.password ? 'Enter your password to make it.' : 'Unlock with your passkey to make it.', cls: 'ob-kit', home: false, foot: logout ? html`<button type="button" class="ob-link" id="kit-logout">Log out</button>` : '' }))
-  }
-  const q = sel => root.querySelector(sel)
-  const keep = () => { saved = true; q('#kit-done')?.removeAttribute('disabled'); q('#kit-first')?.setAttribute('hidden', '') }
-  const flip = () => { shown = !shown; if (shown) saved = true; const focus = document.activeElement?.id; paint(); wire(); if (focus) q(`#${focus}`)?.focus({ preventScroll: true }) }
-  const wire = () => {
-    q('#kit-logout')?.addEventListener('click', e => { e.target.disabled = true; logout() })
-    // The kit is made from a way in given again: the password, or a passkey of the account (a prompt).
-    const making = async way => {
-      if (!make) return
-      const b = q('.ob-go'); b.disabled = true; b.textContent = way.passkey ? 'Waiting for passkey…' : 'Making…'; q('#ob-error').textContent = ''
-      try { const made = await make(way); words = made.words; kit = { ...kit, ...made, account: made.account ?? kit.account, words: undefined }; error = ''; paint(); wire(); q('#kit-show')?.focus({ preventScroll: true }) }
-      catch (err) { console.warn('kit:', err?.code ?? '', err?.message ?? err); b.disabled = false; b.textContent = b.dataset.word; q('#ob-error').textContent = err?.code === 'wrong-login' ? (way.passkey ? 'This passkey does not open your account.' : 'Wrong password.') : accountError(err); q('#ob-pw')?.focus() }
-    }
-    q('#kit-passkey')?.addEventListener('click', () => making({ passkey: true }))
-    q('#kit-form')?.addEventListener('submit', e => {
-      e.preventDefault()
-      if (!ways.password) return making({ passkey: true })
-      const pw = q('#ob-pw').value
-      if (!pw) { q('#ob-error').textContent = 'Enter your password.'; return q('#ob-pw').focus() }
-      making({ password: pw })
-    })
-    q('#kit-cover')?.addEventListener('click', flip)
-    q('#kit-show')?.addEventListener('click', flip)
-    q('#kit-download')?.addEventListener('click', () => { if (!demo) downloadKit(kitText({ ...kit, words, has_password: ways.password }, kit.account ? linkOf(kit.account) : null)); keep() })
-    q('#kit-print')?.addEventListener('click', () => {
-      // the printed sheet carries the words: shown for the print, hidden again after it if they were hidden
-      const was = shown
-      if (!was) flip()
-      keep()
-      if (demo) return
-      if (!was) addEventListener('afterprint', () => { if (shown) flip() }, { once: true })
-      window.print()
-    })
-    q('#kit-done')?.addEventListener('click', async e => {
-      if (!open) return
-      e.target.disabled = true
-      try { await open(); words = null } catch (err) { console.warn('kit:', err?.message ?? err); e.target.disabled = false; q('#ob-error').textContent = 'Not saved yet. Try again.' }
-    })
-  }
-  if (shown) saved = true
-  paint(); wire()
-  q(words ? '#kit-show' : ways.password ? '#ob-pw' : '.ob-go')?.focus({ preventScroll: true })
-}
+// ---- the screens, each drawn from the core's AccountView and what this page remembers ----
+// o: { pk (passkeys offered), way, busy (the busy button's word), passkeyBusy, problem (words), email, loggedOut,
+//      note, still, paste, shown, saved, kit (whose kit), words (the kit's), ways ({ password, passkey }), demo }
+const SCREENS = {
+  start: o => obShell(html`Your agents ring.<br>Answer <span class="ob-pen">anywhere.${UNDER}</span>`, html`${o.loggedOut ? html`<p class="ob-said" id="logged-out" role="status">Logged out.</p>` : ''}${o.problem ? html`<p class="ob-error is-shown" role="alert">${o.problem}</p>` : ''}
+<div class="ob-stack">${goButton('/create', 'ob-go', 'way-create', 'Create account')}${goButton('/login', 'ob-second', 'way-login', 'Log in')}${DEMO_WAY}</div>`, { lead: 'Claude Code and Codex ask as cards on your phone. One tap, and they keep working. End-to-end encrypted.', cls: 'ob-welcome', home: false, demo: false, focus: '' }),
 
-// ---- the kit's gate: an account whose kit was never downloaded, printed or shown opens on the kit's page ----
-// "Not yet saved" is a human register of the account, `kit: { pending: true }` (sealed like every register: the hub
-// learns nothing), written when the account is made and cleared by "Open Trommi"; every device of the person sees it.
-// Until the register is out, a mark in this browser stands in for it (set before the account is asked for).
-const KIT_MARK = 'trommi-kit-pending'
-let gate = null, freshKit = null
-/** Is the kit of this account still to be saved? (app.mjs asks at the start and on every change of the register) */
-const kitDue = client => client?.model?.room?.my_role === 'human' && Boolean(client.hub) && (read(KIT_MARK) === '1' || (client.model.room.connection !== 'offline' && client.model.human?.raw?.get('kit')?.value?.pending === true))
-/** This device processed the Commit that removed it (engine.ts `lost`: never on the hub's word alone). Its keys
- *  and everything Trommi kept on this origin are wiped, and one screen says so: the account and the person's other
- *  devices stay; logging in again makes this a new device. Once per page. */
-let removedShown = false
-export async function removedScreen(client) {
-  if (removedShown) return
-  removedShown = true
-  try { await client?.stop?.() } catch {}
-  await wipeLocal(client)
-  const root = Object.assign(document.createElement('div'), { id: 'room-screen' })
-  document.body.replaceChildren(root)
-  document.title = 'Removed · Trommi'
-  root.innerHTML = String(obShell('This device was removed', html`<p class="ob-said" role="status" id="removed-said">Another of your devices removed this one from your account. What Trommi kept on this device is deleted.</p>
-<div class="ob-stack"><a class="ob-go" id="removed-login" href="/?way=login" data-turbo="false">Log in again</a></div>`, { lead: 'Your account and your other devices are as they were.', home: false }))
-  root.querySelector('#removed-login')?.focus({ preventScroll: true })
-}
-export function kitGate(client, { fresh = false } = {}) {
-  if (gate || !client || !(fresh || kitDue(client))) return
-  const root = document.getElementById('room-screen') ?? Object.assign(document.createElement('div'), { id: 'room-screen' })
-  // a modal dialog: over the board, which rests under it (no focus, no pointer), and no way around it but Log out
-  const box = gate = Object.assign(document.createElement('dialog'), { id: 'kit-gate', className: 'ob-gate' })
-  box.append(root); document.body.append(box); box.showModal()
-  box.addEventListener('cancel', e => e.preventDefault())
-  // (a page change closes every open dialog, ui.mjs, and a page drawn anew may take it out of the body: this one is put
-  //  back and opened again while it is the gate, at once and on a watch, whatever the browser allowed at that moment)
-  const reopen = () => {
-    if (gate !== box) return
-    if (!box.isConnected) document.body.append(box)
-    if (!box.open) try { box.showModal() } catch { try { box.show() } catch {} }
-  }
-  box.addEventListener('close', () => { reopen(); requestAnimationFrame(reopen) })
-  const guard = setInterval(() => { if (gate !== box) clearInterval(guard); else reopen() }, 400)
-  box.addEventListener('keydown', e => e.stopPropagation())
-  const registered = () => client.model.human?.raw?.get('kit')?.value?.pending === true
-  const kit = freshKit; freshKit = null
-  if (!registered()) Promise.resolve(client.setRegisters({ kit: { pending: true } })).then(() => { try { localStorage.removeItem(KIT_MARK) } catch {} }, err => console.warn('kit register:', err?.message ?? err))
-  const close = () => { off?.(); gate = null; box.close(); box.remove() }
-  // A kit made on this page just now (sign-up, recovery) closes only by "Open Trommi": no other device saw it, and a
-  // device catching up meets the account's older values of the register first. A gate opened for a kit that is due
-  // (a reload, another device) closes as soon as the register no longer says so: saved on another device, or by
-  // this one before the reload (its write still in the outbox when the page read the older value from its cache).
-  // Only the register's value saying "due", or this browser's mark, keeps it open.
-  const watch = () => {
-    if (kit?.words) return
-    const r = client.model.human?.raw?.get('kit')
-    // (due is what the register says now, this device's own unsent write included: a write that clears it is not due)
-    if (r?.value?.pending === true || read(KIT_MARK) === '1') return
-    close()
-  }
-  const off = (() => { const un = client.on?.('change', watch); return typeof un === 'function' ? un : () => client.off?.('change', watch) })()
-  // (the register's newer value may have come before this gate listened: looked at once now, and again shortly)
-  setTimeout(watch, 0); setTimeout(watch, 1500)
-  // st: the account as the hub has it (which ways in it has); null when it could not be read: the password's form then
-  const paint = (st, A = null) => { if (gate !== box) return; kitPage(root, {
-    kit: { email: (kit ?? st)?.email ?? client.model.room.account?.email ?? null, account: kit?.account ?? st?.account ?? client.model.room.account?.account ?? null, form: kit?.form ?? st?.kit_form ?? 'email' }, words: kit?.words ?? null,
-    linkOf: id => { try { return A?.kitAddress(location.origin, client.model.room.hub_url, id) ?? null } catch { return null } },
-    ways: { password: (st ?? kit)?.has_password !== false, passkey: Boolean(st?.passkeys?.length) },
-    make: async way => { const A = await account(); return A.makeEmergencyKit(client, way.passkey ? { passkey: await passkeyUnlock(st ?? await A.accountStatus(client), client) } : { password: way.password }) },
-    // (a core that seals no register yet, `core-missing`: nothing was written when the account was made either,
-    //  and the gate rests on this browser's mark alone)
-    open: async () => { await client.setRegisters({ kit: null }).catch(err => { if (err?.code !== 'core-missing') throw err }); try { localStorage.removeItem(KIT_MARK) } catch {} close() },
-    logout: () => logOut(client),
-  }) }
-  // With the words and the account's ID in hand the page is there as soon as its helpers are; else it first asks
-  // the hub for the account (which ways in it has, its ID), and does not wait long for it.
-  const asked = account().then(A => (kit?.words && kit.account ? [null, A] : Promise.race([A.accountStatus(client).catch(() => null), new Promise(ok => setTimeout(ok, 4000, null))]).then(st => [st, A])))
-  asked.then(([st, A]) => paint(st, A), () => paint(null))
-}
+  // Passkey first where the browser has passkeys (the email is optional then); the password is the quiet way.
+  create: o => {
+    const passkey = o.way === 'passkey'
+    return obShell('Create account', html`<form id="create-form" class="ob-form" method="post" action="/create" novalidate><input type="hidden" name="way" value="${passkey ? 'passkey' : 'password'}">${o.note ? html`<p class="ob-said" role="status" id="passkey-note">${o.note}</p>` : ''}${obEmail(o.email, passkey)}${passkey ? '' : obPassword({ fresh: true })}
+${obError(o.problem)}${obSubmit(passkey ? 'Create with passkey' : 'Create account', o.busy)}</form>
+${o.pk ? html`<p class="ob-alt ob-way"><a class="ob-link" id="way-swap" href="/create?way=${passkey ? 'password' : 'passkey'}" data-nav>${passkey ? 'Use a password instead' : 'Use a passkey instead'}</a></p>` : o.pkOff ? '' : NO_PASSKEYS}
+<p class="ob-alt">Have an account? <a class="ob-link" id="alt-login" href="/login" data-nav>Log in</a></p>`, { ...(passkey ? { lead: 'No password to remember.' } : {}), ...(o.note ? { focus: '#ob-pw' } : passkey ? { focus: 'button.ob-go' } : {}) })
+  },
 
-// ---- before a room: a screen of its own, before the board exists ----
-export async function roomScreen({ start, hub, openError = null, demo = '' }) {
-  // A link in the address leaves the address bar before anything else happens, whatever screen comes next: a join
-  // link's secret (/join#v1.…), and an Emergency Kit's address (#k1.…: a hub and an account ID, nothing secret).
-  const joinLink = location.pathname === '/join' && location.hash.length > 1 ? location.href : ''
-  const kitHash = !joinLink && location.hash.startsWith('#k1.') ? location.hash : ''
-  if (joinLink) history.replaceState(null, '', '/join')
-  else if (kitHash) history.replaceState(null, '', location.pathname + location.search)
-  document.title = 'Trommi'
-  const root = document.createElement('div')
-  root.id = 'room-screen'
-  document.body.replaceChildren(root)
-  let stopScan = null, stopPasskey = null   // (stopPasskey: ends the login screen's standing offer of a passkey in the email field)
-  let offerEnded = false                    // the browser refused that offer by itself: it is not made again on this page
-  const framed = (() => { try { return window.top !== window } catch { return true } })()
-  const show = (markup, focus = 'input:not([type=hidden], [hidden]), button.ob-go') => {
-    stopScan?.(); stopScan = null
-    stopPasskey?.(); stopPasskey = null
-    root.innerHTML = String(markup)
-    // (a preview, /screens: password managers stay off its fields, and nothing takes the focus inside a frame)
-    if (demo) for (const f of root.querySelectorAll('input, textarea')) { f.autocomplete = 'off'; for (const a of ['data-1p-ignore', 'data-bwignore', 'data-protonpass-ignore']) f.setAttribute(a, ''); f.setAttribute('data-lpignore', 'true'); f.setAttribute('data-form-type', 'other') }
-    if (focus && !(demo && framed)) root.querySelector(focus)?.focus({ preventScroll: true })
-    wireBack()
-  }
-  // (the demo, ?mock=1&onboard=<state>, /screens: the same screens, drawn only; nothing is sent, made or wiped here)
-  if (demo) {
-    root.addEventListener('submit', e => { e.preventDefault(); e.stopImmediatePropagation() }, true)
-    root.addEventListener('click', e => { if (e.target.closest('#broken-logout, #broken-retry, #scan-again, #join-cancel, #ob-demo, #way-passkey, #newway-passkey, #kit-passkey')) { e.preventDefault(); e.stopImmediatePropagation() } }, true)
-  }
-  // The password field's buttons: Show/Hide, Generate (five words, shown), Copy; and the live rule under a new password.
-  const rule = input => {
-    const hint = input.closest('.ob-pw')?.querySelector('.ob-hint')
-    if (!hint) return
-    const n = [...input.value.normalize('NFC')].length, made = input.dataset.made === input.value && n > 0
-    hint.textContent = made ? 'Save it in your password manager.' : !n ? PW_RULE : n < 12 ? `${12 - n} more` : 'Long enough'
-    hint.classList.toggle('is-ok', n >= 12); hint.classList.remove('is-bad'); input.removeAttribute('aria-invalid')
-    const slip = input.closest('.ob-pw').querySelector('.ob-made')
-    if (slip) { slip.hidden = !made; slip.querySelector('code').textContent = made ? input.value : ''; slip.querySelector('.ob-copy').textContent = 'Copy' }
-  }
-  const eye = (input, on) => { const b = input.closest('.ob-pw').querySelector('.ob-eye'); input.type = on ? 'text' : 'password'; b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Hide' : 'Show' }
-  root.addEventListener('input', e => { if (e.target.matches('.ob-pw.is-new input')) rule(e.target); const err = root.querySelector('#ob-error'); if (err && e.target.closest('form')) err.textContent = '' })
-  root.addEventListener('click', async e => {
-    const b = e.target.closest('button'), input = b?.closest('.ob-pw')?.querySelector('input')
-    if (!input) return
-    if (b.classList.contains('ob-eye')) eye(input, input.type === 'password')
-    else if (b.classList.contains('ob-gen')) { input.value = input.dataset.made = (await account()).generatePassword(); eye(input, false); rule(input) }
-    else if (b.classList.contains('ob-copy')) b.textContent = (await copyText(input.value)) ? 'Copied' : 'Not copied'
-  })
-  const done = async (client, { keep = false } = {}) => { if (!keep) root.remove(); history.replaceState(null, '', '/'); await start(client, { fresh: true }) }
-  const on = (sel, ev, fn) => root.querySelector(sel)?.addEventListener(ev, fn)
-  const wireBack = () => on('#room-home', 'click', e => { e.preventDefault(); history.replaceState(null, '', '/'); welcome() })
-  const say = (error, field = null) => { const p = root.querySelector('#ob-error'); if (p) p.textContent = error; if (field) { field.setAttribute('aria-invalid', 'true'); field.focus() } }
-  // A sign-in's progress on its busy button ("Catching up 1,234 of 5,000…"), while the button is still busy.
-  const busyWord = (form, word) => { const b = form.querySelector('button[type="submit"].is-busy'); if (b) b.textContent = word }
-  const busy = (form, word) => { const b = form.querySelector('button[type="submit"]'); b.disabled = true; b.classList.add('is-busy'); b.textContent = word; say('') }
-  // The passkey button of the login screen while its prompt is up, and after.
-  const keyBusy = word => { const b = root.querySelector('#way-passkey'); if (b) { b.disabled = true; b.classList.add('is-busy'); b.querySelector('span').textContent = word } }
-  const keyIdle = () => { const b = root.querySelector('#way-passkey'); if (b) { b.disabled = false; b.classList.remove('is-busy'); b.querySelector('span').textContent = 'Log in with passkey' } }
-  // A hub challenge asked for when a passkey screen shows, so the prompt follows the tap at once (a browser may want
-  // the tap to be recent). One use, two minutes at the hub: taken once, and only while it is young.
-  const pkChallenge = async () => (await account()).passkeyChallenge({ hub_url: hub, client: CLIENT })
-  let warmed = null
-  // (what comes back: { challenge, account, user_handle }; the last two name the id an account made on it will have)
-  const warmChallenge = () => { const w = { at: Date.now(), got: null }; warmed = w; pkChallenge().then(c => { w.got = c; w.at = Date.now() }, err => { console.warn('passkey challenge:', err?.message ?? err); if (warmed === w) warmed = null }) }
-  const takeChallenge = async () => { const w = warmed; warmed = null; return w?.got && Date.now() - w.at < 90_000 ? w.got : pkChallenge() }
-  const idle = form => { const b = form?.querySelector('button[type="submit"]'); if (b) { b.disabled = false; b.classList.remove('is-busy'); b.textContent = b.dataset.word } }
-  const weak = form => { const hint = form.querySelector('.ob-hint'), pw = form.elements.password; hint.textContent = PW_RULE; hint.classList.add('is-bad'); pw.setAttribute('aria-invalid', 'true'); if (!(demo && framed)) pw.focus() }
-  /** The one field "Email or account ID" of a form, told apart by its form: { A, named: { kind: 'email', email } |
-   *  { kind: 'id', account }, text }; null (and the word said) when it is neither. */
-  const nameOf = async form => {
-    const A = await account(), field = form.elements.account
-    let named
-    try { named = A.accountName(field.value) } catch { say(field.value.trim() ? NOT_A_NAME : 'Enter your email or account ID.', field); return null }
-    lastEmail = field.value.trim()
-    return { A, named, text: named.kind === 'email' ? named.email : named.account }
-  }
-  /** The email of "Create with passkey", which may be left empty: { A, email: string | null }; null (and the word said) for a text that is no address. */
-  const optionalEmail = async form => {
-    const A = await account(), email = form.elements.email
-    if (!email.value.trim()) return { A, email: null }
-    try { A.normaliseEmail(email.value) } catch { say('That is not an email address.', email); return null }
-    lastEmail = email.value.trim()
-    return { A, email: lastEmail }
-  }
-  /** What the email field of "Create account" starts with: what was typed before, if it is an address. */
-  const typedEmail = () => (lastEmail.includes('@') ? lastEmail : '')
-  /** A form's email and password, checked with a human word each; null (and the word said) when one is missing. */
-  const fields = async (form, { fresh = false } = {}) => {
-    const A = await account(), email = form.elements.email, pw = form.elements.password
-    try { A.normaliseEmail(email.value) } catch { say(email.value.trim() ? 'That is not an email address.' : 'Enter your email.', email); return null }
-    if (fresh && A.passwordProblem(pw.value)) { weak(form); return null }
-    if (!pw.value) { say('Enter your password.', pw); return null }
-    lastEmail = email.value.trim()
-    return { A, email: lastEmail, password: pw.value }
-  }
-  const c = await core().catch(() => ({}))
-  // (the page's own light helpers: the one field's form, the kit's address; no core, no worker)
-  const pageHelpers = await account().catch(() => null)
-  // (the demo's stills show what a device with passkeys shows)
-  const offer = demo ? { create: !demo.endsWith('-nopasskey'), get: !demo.endsWith('-nopasskey'), conditional: false } : await passkeyOffer().catch(() => ({ create: false, get: false, conditional: false }))
-  let lastEmail = ''
-  const device_name = deviceLabel()
-
-  // After a log out (logOut): said once on the start page, then the address is plain again.
-  const loggedOut = demo === 'logged-out' ? '1' : new URLSearchParams(location.search).get('logged_out')
-  const wayLogin = new URLSearchParams(location.search).get('way') === 'login'
-  if (loggedOut) history.replaceState(null, '', '/')
-  // (another join link opened on this page changes only the fragment: taken as the first one was, from the start; so is a kit's address)
-  if (!demo) addEventListener('hashchange', () => { if (((location.pathname === '/join' && location.hash.length > 1) || location.hash.startsWith('#k1.')) && document.getElementById('room-screen')) location.reload() })
-  // This browser holds an account that did not open: never the start page (Log in would refuse: "signed in already").
-  if (demo) return demoFlow(demo)
-  if (openError) return brokenFlow(openError)
-  if (joinLink) return joinFlow(joinLink)
-  // An Emergency Kit's code was scanned: the way back with the kit, its account ID filled in, at the hub it names.
-  // (A fragment that is no kit address is dropped without a word: the start page comes.)
-  const kitLink = kitHash ? pageHelpers?.parseKitAddress(kitHash) ?? null : null
-  if (kitLink) forgotFlow({ way: offer.get ? 'passkey' : 'password', kit: kitLink })
-  else if (wayLogin) loginFlow()
-  else welcome()
-
-  // The code and the message of an error, the code once: the core's messages begin with their code already.
-  function codeAndMessage(err) {
-    const code = err?.code ? String(err.code) : '', message = err?.message ? String(err.message) : ''
-    if (!code) return message
-    return message === code || message.startsWith(`${code}:`) ? message : message ? `${code}: ${message}` : code
-  }
-  // The stored account does not open (or a login found one stored): say so, Retry, or Log out of this device (wipe
-  // this browser's copy; the account and the other devices stay). Never a dead end.
-  function brokenFlow(err, { fromLogin = false } = {}) {
-    const why = err?.code === 'no-device' || err?.code === 'device-not-stored' ? 'This browser lost this device\'s keys.' : fromLogin ? 'This browser holds an account that does not open.' : 'Your account did not open here.'
-    show(obShell('Not opened', html`<p class="ob-error is-shown" role="alert" id="broken-why">${why}</p>
-<div class="ob-stack"><button type="button" class="ob-go" id="broken-logout">Log out</button><button type="button" class="ob-second" id="broken-retry">Retry</button></div>
-<p class="ob-hint" id="broken-detail">${codeAndMessage(err)}</p>`, { lead: 'Log out here, then log in again. Your account stays.', home: false }), '#broken-retry')
-    on('#broken-retry', 'click', () => location.reload())
-    on('#broken-logout', 'click', async e => {
-      e.target.disabled = true; e.target.textContent = 'Logging out…'
-      await wipeLocal(null)
-      location.replace('/?logged_out=kept&way=login')
-    })
-  }
-  // A login, kit or pairing on a browser that holds an account: open that one (it is the account, or the person logs
-  // out first); if it does not open, the broken screen.
-  // Also after a sign-in that was given up (`stalled`): if it got as far as the room, the device is in and opens
-  // here; if not, what it stored is a half-made device of no room, which is cleared so that logging in again works.
-  // `again`: the same log in once more, at once, after a leftover of an unfinished one was cleared (once per page).
-  let clearedOnce = false
-  async function roomExists(err = null, again = null) {
-    try {
-      const client = await openInWorker()
-      if (client) return done(client)
-    } catch (e) { return brokenFlow(e, { fromLogin: true }) }
-    await wipeLocal(null)
-    if (again && err?.code === 'room-exists' && !clearedOnce) { clearedOnce = true; return again() }
-    return loginFlow(err?.code === 'stalled' ? accountError(err) : 'The last log in did not finish on this browser. Please log in again.')
-  }
-
-  function welcome(error = '') {
-    show(obShell(html`Your agents ring.<br>Answer <span class="ob-pen">anywhere.${UNDER}</span>`, html`${loggedOut ? html`<p class="ob-said" id="logged-out" role="status">${loggedOut === 'kept' ? 'Logged out. This device still shows under Devices.' : 'Logged out.'}</p>` : ''}${error ? html`<p class="ob-error is-shown" role="alert">${error}</p>` : ''}
-<div class="ob-stack"><button type="button" class="ob-go" id="way-create">Create account</button><button type="button" class="ob-second" id="way-login">Log in</button>${DEMO_WAY}</div>`, { lead: 'Claude Code and Codex ask as cards on your phone. One tap, and they keep working. End-to-end encrypted.', cls: 'ob-welcome', home: false, demo: false }), null)
-    on('#way-create', 'click', () => createFlow())
-    on('#way-login', 'click', () => loginFlow())
-  }
-
-  // The board starts under this screen; the kit's page takes it over (kitGate).
-  const opened = async client => {
-    root.classList.add('is-over')
-    await done(client, { keep: true })
-    kitGate(window.trommi?.client, { fresh: true })   // (app.mjs opened it already, unless this browser keeps no mark)
-    if (!gate) root.remove()
-  }
-  // Passkey first: where the device has its own passkeys, the one button is "Create with passkey" and the password is
-  // the quiet way; where it has none (a passkey on a phone or a key may still do), the password's form comes first and
-  // the passkey is the quiet way; a browser without WebAuthn: only the password's form, and one line that says so. A passkey that cannot unlock (no prf): the password's form, the email kept.
-  // With a passkey the email is optional (the field says so): one tap makes the account, named by its ID alone.
-  function createFlow({ way = offer.create ? 'passkey' : 'password', note = '' } = {}) {
-    const passkey = way === 'passkey'
-    show(obShell('Create account', html`<form id="create-form" class="ob-form" novalidate>${note ? html`<p class="ob-said" role="status" id="passkey-note">${note}</p>` : ''}${obEmail(typedEmail(), passkey)}${passkey ? '' : obPassword({ fresh: true })}
-${obError()}${obSubmit(passkey ? 'Create with passkey' : 'Create account')}</form>
-${offer.get ? html`<p class="ob-alt ob-way"><button type="button" class="ob-link" id="way-swap">${passkey ? 'Use a password instead' : 'Use a passkey instead'}</button></p>` : offer.off ? '' : NO_PASSKEYS}
-<p class="ob-alt">Have an account? <button type="button" class="ob-link" id="alt-login">Log in</button></p>`, passkey ? { lead: 'No password to remember.' } : {}), note ? '#ob-pw' : passkey ? 'button.ob-go' : undefined)
-    if (passkey && !demo) warmChallenge()
-    on('#alt-login', 'click', () => loginFlow())
-    on('#way-swap', 'click', () => { lastEmail = root.querySelector('#create-form').elements.email.value.trim(); createFlow({ way: passkey ? 'password' : 'passkey' }) })
-    on('#create-form', 'submit', async e => {
-      e.preventDefault()
-      const form = e.target
-      if (passkey) return createWithPasskey(form)
-      const f = await fields(form, { fresh: true })
-      if (!f) return
-      busy(form, 'Creating…')
-      try {
-        // (the mark: should this tab close between the account, made with its kit, and the kit's page, the page still comes: kitGate)
-        write(KIT_MARK, '1')
-        const { client, kit } = await f.A.createAccount({ hub_url: hub, email: f.email, password: f.password, device_name, found_token: foundCode(), client: CLIENT })
-        freshKit = { ...kit, has_password: true }
-        await opened(client)
-      } catch (err) {
-        console.warn(err)
-        if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err)
-        try { localStorage.removeItem(KIT_MARK) } catch {}
-        idle(form); say(err.code === 'account-exists' ? EMAIL_TAKEN : accountError(err))
-      }
-    })
-  }
-  // The passkey is made on this page before anything is stored: only a passkey that gave its 32 bytes reaches the hub,
-  // with the account, in one request.
-  async function createWithPasskey(form) {
-    const f = await optionalEmail(form)
-    if (!f) return
-    busy(form, 'Waiting for passkey…')
-    let made = null
-    try {
-      // the hub names, with the challenge, the id the account will have: the passkey carries it as its user handle
-      const named = await takeChallenge()
-      made = await passkeyMake({ challenge: named.challenge, user_handle: unb64u(named.user_handle), name: f.email ? f.A.normaliseEmail(f.email) : named.account })
-      busy(form, 'Creating…')
-      write(KIT_MARK, '1')
-      const { client, kit } = await f.A.createAccountWithPasskey({ hub_url: hub, email: f.email, account: named.account, passkey: made, device_name, found_token: foundCode(), client: CLIENT })
-      made = null   // (it is the account's way in from here on)
-      freshKit = { ...kit, has_password: false }
-      await opened(client)
-    } catch (err) {
-      console.warn(err)
-      try { localStorage.removeItem(KIT_MARK) } catch {}
-      if (made && cameToNothing(err)) passkeyForget(made.credential_id)   // made, and no account came of it
-      if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err)
-      if (err.code === 'no-prf') return createFlow({ way: 'password', note: NO_PRF })
-      idle(form); say(err.code === 'passkey-cancelled' ? 'No passkey made.' : err.code === 'account-exists' ? EMAIL_TAKEN : accountError(err))
-    }
-  }
-
-  // A passkey is offered three ways: in the field's own list before anything is typed (conditional UI), by the
-  // button (any passkey of this site, also one on a phone or a key; nothing to fill in), and the password stays below
-  // with ONE field for the account: its email, or its account ID (told apart by their form; a password logs in
-  // under the email its keys are derived from, so an ID there is answered with that one sentence).
-  function loginFlow(error = '', at = 'form') {
-    // Passkey first: where the browser has passkeys, the one filled button is "Log in with passkey"; email and
-    // password stay on the screen under "or", their button the quiet one. Without passkeys: the password's form alone.
-    const pk = offer.get
-    show(obShell('Log in', html`${pk ? html`<button type="button" class="ob-go ob-key" id="way-passkey">${art('key')}<span>Log in with passkey</span></button>
-${error && at === 'passkey' ? html`<p class="ob-error ob-key-error" role="alert" id="passkey-error">${error}</p>` : ''}
+  // Passkey first where the browser has passkeys: the one filled button; email and password under "or".
+  login: o => {
+    const pk = o.pk, atKey = o.passkeyBusy || o.at === 'passkey'
+    return obShell('Log in', html`${pk ? html`<form method="post" action="/login/passkey"><button type="submit" class="ob-go ob-key${o.passkeyBusy ? ' is-busy' : ''}" id="way-passkey"${o.passkeyBusy ? raw(' disabled') : ''}>${art('key')}<span>${o.passkeyBusy || 'Log in with passkey'}</span></button></form>
+${o.problem && atKey ? html`<p class="ob-error ob-key-error" role="alert" id="passkey-error">${o.problem}</p>` : ''}
 <p class="ob-or"><span>or</span></p>` : ''}
-<form id="login-form" class="ob-form" novalidate>${obAccount(lastEmail, pk)}${obPassword({ side: html`<button type="button" class="ob-link" id="way-forgot">Forgot?</button>` })}
-${obError(at === 'form' ? error : '')}${pk ? html`<button type="submit" class="ob-second ob-wide" data-word="Log in with password">Log in with password</button>` : obSubmit('Log in')}</form>
+<form id="login-form" class="ob-form" method="post" action="/login" novalidate>${obAccount(o.email, pk)}${obPassword({ side: html`<a class="ob-link" id="way-forgot" href="/forgot" data-nav>Forgot?</a>` })}
+${obError(atKey ? '' : o.problem)}${pk ? obSubmit('Log in with password', o.busy, 'ob-second ob-wide') : obSubmit('Log in', o.busy)}</form>
 ${pk ? '' : html`<p class="ob-or"><span>or</span></p>`}
-<div class="ob-stack ob-ways"><button type="button" class="ob-second ob-wide" id="way-pair">${art('phone')}Scan a code</button></div>
-${pk || offer.off ? '' : NO_PASSKEYS}
-<p class="ob-alt">New here? <button type="button" class="ob-link" id="alt-create">Create account</button></p>`), pk && !(error && at === 'form') ? '#way-passkey' : undefined)
-    on('#alt-create', 'click', () => createFlow())
-    on('#way-pair', 'click', () => scanFlow())
-    on('#way-forgot', 'click', () => forgotFlow())
-    // One challenge for this screen: the email field's offer and the button ask with the same one (the offer ends
-    // before the button's prompt; whichever answers spends it, and the screen is drawn again after a miss).
-    let c0 = null, issued = 0
-    const challenge = async () => { if (!c0 || Date.now() - issued > 90_000) { c0 = (await pkChallenge()).challenge; issued = Date.now() } return c0 }
-    /** From an assertion (still on its way) to the board. `standing`: it came from the email field's offer. */
-    const withPasskey = async (pending, standing = false) => {
-      try {
-        let a = await pending
-        if (!root.querySelector('#login-form')) return
-        // (the hub's challenge lasts two minutes and the offer may have stood longer: once more, with that passkey)
-        if (a.prf && Date.now() - issued > 100_000) { c0 = null; a = await passkeyGet({ challenge: await challenge(), allow: [a.credential_id] }) }
-        if (!a.prf) return loginFlow(NO_PRF_HERE, 'passkey')
-        keyBusy('Logging in…')
-        say('')
-        const A = await account()
-        const { client } = await A.loginWithPasskey({ hub_url: hub, assertion: a, device_name, client: CLIENT }, step => keyBusy(A.signInWords(step)))
-        await done(client)
-      } catch (err) {
-        if (err.code === 'passkey-aborted' || !root.querySelector('#login-form')) return
-        // The email field's offer was refused by the browser itself: it ends, without a word and without drawing the
-        // form again (the person may be typing in it); the button still asks on a tap.
-        if (standing) { offerEnded = true; return }
-        if (err.code === 'passkey-cancelled') { keyIdle(); standingOffer(); return }
-        console.warn(err)
-        if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err)
-        loginFlow(err.code === 'wrong-login' ? 'This passkey opens no account here.' : accountError(err), 'passkey')
-      }
-    }
-    let standing = null   // the standing offer's request, while it waits (a browser runs one WebAuthn request at a time)
-    const standingOffer = async () => {
-      if (!offer.conditional || offerEnded) return
-      try {
-        const c = await challenge()
-        if (!root.querySelector('#login-form')) return
-        const stop = new AbortController()
-        stopPasskey = () => stop.abort()
-        const pending = passkeyGet({ challenge: c, mediation: 'conditional', signal: stop.signal })
-        standing = pending.then(() => {}, () => {})
-        withPasskey(pending, true)
-      } catch (err) { console.warn('passkey offer:', err?.message ?? err) }
-    }
-    on('#way-passkey', 'click', async () => {
-      say(''); root.querySelector('#passkey-error')?.remove()
-      keyBusy('Waiting for passkey…')
-      try {
-        // the standing offer ends first, and is gone before the prompt is asked for
-        stopPasskey?.(); stopPasskey = null
-        const [c] = await Promise.all([challenge(), standing])
-        withPasskey(passkeyGet({ challenge: c }))
-      } catch (err) { console.warn(err); keyIdle(); say(accountError(err)) }
-    })
-    on('#login-form', 'submit', async e => {
-      e.preventDefault()
-      const form = e.target, f = await nameOf(form), pw = form.elements.password
-      if (!f) return
-      if (f.named.kind === 'id') return say(ID_NO_PASSWORD, form.elements.account)
-      if (!pw.value) return say('Enter your password.', pw)
-      busy(form, 'Logging in…')
-      try {
-        const { client } = await f.A.loginWithPassword({ hub_url: hub, account: f.text, password: pw.value, device_name, client: CLIENT }, step => busyWord(form, f.A.signInWords(step)))
-        await done(client)
-      } catch (err) { console.warn(err); if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err, () => { idle(form); form.requestSubmit() }); idle(form); say(accountError(err), form.elements.password) }
-    })
-    if (pk && !demo) standingOffer()
-  }
+<div class="ob-stack ob-ways">${goButton('/scan', 'ob-second ob-wide', 'way-pair', html`${art('phone')}Scan a code`)}</div>
+${pk || o.pkOff ? '' : NO_PASSKEYS}
+<p class="ob-alt">New here? <a class="ob-link" id="alt-create" href="/create" data-nav>Create account</a></p>`, pk && !(o.problem && !atKey) ? { focus: '#way-passkey' } : {})
+  },
 
-  // The Emergency Kit: the one field (email or account ID) + twelve words, and what opens the account from now on: a
-  // new password (the old one stops working), or, the quiet way where the device can, a new passkey (made once the
-  // words opened the account). `kit`: the kit's own code was scanned ({ hub_url, account }): its account ID is filled
-  // in, and the account is looked for at the hub the code names; that hub is said before anything is typed when it is
-  // not this app's own (whoever made the link chose it).
-  function forgotFlow({ way = 'password', kit = null } = {}) {
-    const passkey = way === 'passkey', at = kit?.hub_url ?? hub
-    let other = ''
-    try { other = at !== (demo ? 'https://hub.trommi.com' : hub) ? new URL(at).host : '' } catch {}
-    show(obShell(passkey ? 'New passkey' : 'New password', html`<form id="forgot-form" class="ob-form" novalidate>${other ? html`<p class="ob-said" role="status" id="kit-hub">This code leads to an account at <b>${other}</b>. Go on only if that is where your account is.</p>` : ''}${obAccount(kit?.account ?? lastEmail)}
+  // The Emergency Kit: the one field (email or account ID) + twelve words; then a new password, or (the quiet way
+  // where the device can) a new passkey, made once the words opened the account (/new-way).
+  forgot: o => {
+    const passkey = o.way === 'passkey'
+    return obShell(passkey ? 'New passkey' : 'New password', html`<form id="forgot-form" class="ob-form" method="post" action="/forgot" novalidate><input type="hidden" name="way" value="${passkey ? 'passkey' : 'password'}">${o.otherHub ? html`<p class="ob-said" role="status" id="kit-hub">This code leads to an account at <b>${o.otherHub}</b>. Go on only if that is where your account is.</p>` : ''}${obAccount(o.email)}
 <label class="ob-field"><span class="ob-label">Twelve words</span><textarea name="words" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea></label>
 ${passkey ? '' : obPassword({ label: 'New password', fresh: true })}
-${obError()}${obSubmit(passkey ? 'Continue' : 'Set password')}</form>
-${offer.get ? html`<p class="ob-alt ob-way"><button type="button" class="ob-link" id="way-swap">${passkey ? 'Set a password instead' : 'Use a passkey instead'}</button></p>` : ''}
-<p class="ob-alt"><button type="button" class="ob-link" id="alt-login">Back to log in</button></p>`, { lead: 'With the words of your Emergency Kit.' }), kit ? 'textarea' : undefined)
-    on('#alt-login', 'click', () => loginFlow())
-    on('#way-swap', 'click', () => { const f = root.querySelector('#forgot-form').elements, words = f.words.value, typed = f.account.value; forgotFlow({ way: passkey ? 'password' : 'passkey', kit }); const g = root.querySelector('#forgot-form').elements; g.words.value = words; g.account.value = typed })
-    /** What a miss says: the words open the kit only under the name it was made with, which its sheet shows. */
-    const missed = (err, named) => (err.code === 'wrong-recovery' && named.kind === 'id' ? 'Wrong account ID or words. A kit that shows an email opens with that email.' : accountError(err))
-    on('#forgot-form', 'submit', async e => {
-      e.preventDefault()
-      const form = e.target, words = form.elements.words
-      const f = await nameOf(form)
-      if (!f) return
-      try { f.A.parseRecoveryWords(words.value) } catch { return say('Check the twelve words.', words) }
-      if (passkey) {
-        busy(form, 'Opening…')
-        try {
-          const { client } = await f.A.recoverWithKit({ hub_url: at, account: f.text, words: words.value, device_name, client: CLIENT }, step => busyWord(form, f.A.signInWords(step)))
-          newWayFlow(client, words.value)
-        } catch (err) { console.warn(err); if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err); idle(form); say(missed(err, f.named)) }
-        return
-      }
-      const pw = form.elements.password
-      if (f.A.passwordProblem(pw.value)) return weak(form)
-      busy(form, 'Setting…')
-      try {
-        // (the old kit opens nothing after this: the new one is shown next, as after "Create account")
-        write(KIT_MARK, '1')
-        const { client, kit: fresh } = await f.A.resetPassword({ hub_url: at, account: f.text, words: words.value, new_password: pw.value, device_name, client: CLIENT })
-        freshKit = { ...fresh, has_password: true }
-        await opened(client)
-      } catch (err) { console.warn(err); if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err); try { localStorage.removeItem(KIT_MARK) } catch {} idle(form); say(missed(err, f.named)) }
-    })
-  }
-  // The words opened the account and this device is in. Now the way in for next time: a new passkey, or a password.
-  // With it the account gets a new Emergency Kit (the old words open nothing after it), shown next.
-  // (A reload here opens the board: the device is a member already; Settings → Account offers both again.)
-  function newWayFlow(client, words, { way = 'passkey', note = '' } = {}) {
-    const passkey = way === 'passkey'
-    show(obShell(passkey ? 'New passkey' : 'New password', html`<form id="newway-form" class="ob-form" novalidate>${note ? html`<p class="ob-said" role="status" id="passkey-note">${note}</p>` : ''}${passkey ? '' : obPassword({ label: 'New password', fresh: true })}
-${obError()}${passkey ? html`<button type="submit" class="ob-go" id="newway-passkey" data-word="Create passkey">Create passkey</button>` : obSubmit('Set password')}</form>
-<p class="ob-alt ob-way"><button type="button" class="ob-link" id="way-swap">${passkey ? 'Set a password instead' : 'Use a passkey instead'}</button></p>`, { lead: 'Your account is open. Choose how you log in next time.', home: false }))
-    on('#way-swap', 'click', () => newWayFlow(client, words, { way: passkey ? 'password' : 'passkey' }))
-    on('#newway-form', 'submit', async e => {
-      e.preventDefault()
-      const form = e.target, A = await account()
-      let made = null
-      try {
-        if (passkey) {
-          busy(form, 'Waiting for passkey…')
-          const st = await A.accountStatus(client)
-          made = await passkeyMake({ challenge: await A.passkeyChallengeFor(client), user_handle: unb64u(st.user_handle), name: st.email ?? st.account, exclude: (st.passkeys ?? []).map(p => unb64u(p.credential_id)) })
-          busy(form, 'Saving…')
-          write(KIT_MARK, '1')
-          const { kit } = await A.addPasskey(client, { unlock: { words }, passkey: made })
-          made = null   // (it is the account's way in from here on)
-          freshKit = { ...kit, has_password: false }
-          return await opened(client)
-        }
-        if (A.passwordProblem(form.elements.password.value)) return weak(form)
-        busy(form, 'Setting…')
-        write(KIT_MARK, '1')
-        const { kit } = await A.setPassword(client, { unlock: { words }, next: form.elements.password.value })
-        freshKit = { ...kit, has_password: true }
-        await opened(client)
-      } catch (err) {
-        console.warn(err)
-        try { localStorage.removeItem(KIT_MARK) } catch {}
-        if (made && cameToNothing(err)) passkeyForget(made.credential_id)
-        if (err.code === 'no-prf') return newWayFlow(client, words, { way: 'password', note: NO_PRF })
-        idle(form); say(err.code === 'passkey-cancelled' ? 'No passkey made.' : accountError(err))
-      }
-    })
-  }
+${obError(o.problem)}${obSubmit(passkey ? 'Continue' : 'Set password', o.busy)}</form>
+${o.pk ? html`<p class="ob-alt ob-way"><a class="ob-link" id="way-swap" href="/forgot?way=${passkey ? 'password' : 'passkey'}" data-nav>${passkey ? 'Set a password instead' : 'Use a passkey instead'}</a></p>` : ''}
+<p class="ob-alt"><a class="ob-link" id="alt-login" href="/login" data-nav>Back to log in</a></p>`, { lead: 'With the words of your Emergency Kit.', ...(o.fromKit ? { focus: 'textarea' } : {}) })
+  },
 
-  // Scan a code: this device's camera reads the code a signed-in device shows (Settings → Invite a Device), and the
-  // link in it goes on exactly as a pasted one. The camera's frame is the screen; "Paste the link" is the quiet way
-  // under it (opened by itself when there is no camera to use). `still`: a state drawn for /screens, without a camera.
-  // The stream ends when the screen is left (show), a code was read, or the tab is hidden; it comes back with the tab.
-  function scanFlow({ still = demo ? 'scanning' : '', paste = false } = {}) {
-    const can = Boolean(navigator.mediaDevices?.getUserMedia)
-    let state = still || (can ? 'asking' : 'none')
-    show(obShell('Scan a code', html`<div class="scan" id="scan" data-state="${state}"><video id="scan-video" muted playsinline aria-label="Camera"></video>${still ? html`<span class="scan-still">${FAKE_QR}</span>` : ''}${SCAN_CORNERS}
-<button type="button" class="ob-chip scan-start" id="scan-start">Start camera</button></div>
-<p class="scan-say" id="scan-say" role="status">${SCAN_SAYS[state]}</p>
+  // The words opened the account and this device is in: the way in for next time (and a new kit with it).
+  newway: o => {
+    const passkey = o.way === 'passkey'
+    return obShell(passkey ? 'New passkey' : 'New password', html`<form id="newway-form" class="ob-form" method="post" action="/new-way" novalidate><input type="hidden" name="way" value="${passkey ? 'passkey' : 'password'}">${o.note ? html`<p class="ob-said" role="status" id="passkey-note">${o.note}</p>` : ''}${passkey ? '' : obPassword({ label: 'New password', fresh: true })}
+${obError(o.problem)}${passkey ? obSubmit('Create passkey', o.busy, 'ob-go', 'newway-passkey') : obSubmit('Set password', o.busy)}</form>
+${o.pk ? html`<p class="ob-alt ob-way"><a class="ob-link" id="way-swap" href="/new-way?way=${passkey ? 'password' : 'passkey'}" data-nav>${passkey ? 'Set a password instead' : 'Use a passkey instead'}</a></p>` : ''}`, { lead: 'Your account is open. Choose how you log in next time.', home: false })
+  },
+
+  // The Emergency Kit's page: with words (shown once after an account was made or recovered) the sheet, hidden until
+  // "Show", Download, Print, and "Open Trommi" once it was downloaded, printed or shown. Without: a new kit is made
+  // with the way in given again (NewKit).
+  kit: o => {
+    const ways = o.ways ?? { password: true, passkey: false }
+    return obShell('Your Emergency Kit', o.words ? html`${KIT_FORM('/kit')}
+<div class="kit-stage"><div class="kit-cover" id="kit-cover" data-controller="kit" data-action="click->kit#flip">${kitSheet(o.kit, o.shown ? o.words : null)}</div>
+${kitButton('show', o.shown ? 'Hide' : 'Show', 'ob-chip kit-show', 'kit-show', ` aria-pressed="${o.shown ? 'true' : 'false'}"`)}</div>
+<div class="ob-row">${kitButton('download', 'Download', 'ob-second', 'kit-download')}${kitButton('print', 'Print', 'ob-second', 'kit-print')}</div>
+<p class="ob-warn" id="kit-warn">${LOST(ways.password ? 'password' : 'passkey')}</p>
+${obError(o.problem)}${kitButton('done', 'Open Trommi', 'ob-go', 'kit-done', o.saved ? '' : ' disabled')}
+<p class="ob-hint ob-center" id="kit-first"${o.saved ? raw(' hidden') : ''}>Download, print or show it first.</p>`
+      : html`<form id="kit-form" class="ob-form" method="post" action="/kit/new" novalidate>${ways.password ? html`<input type="text" name="email" value="${o.kit.email ?? ''}" autocomplete="username" hidden>${obPassword()}` : ''}
+${obError(o.problem)}${obSubmit(ways.password ? 'Make kit' : 'Use passkey', o.busy)}</form>${ways.password && ways.passkey ? html`<p class="ob-or"><span>or</span></p><form method="post" action="/kit/new"><input type="hidden" name="by" value="passkey"><button type="submit" class="ob-second ob-wide" id="kit-passkey">${art('key')}Use passkey</button></form>` : ''}`,
+    { lead: o.words ? (ways.password ? 'Twelve words that set a new password if you forget yours.' : 'Twelve words that open your account if you lose your passkey.') : ways.password ? 'Enter your password to make it.' : 'Unlock with your passkey to make it.', cls: 'ob-kit', home: false, focus: o.words ? '#kit-show' : ways.password ? '#ob-pw' : '.ob-go', foot: o.words ? '' : html`<a class="ob-link" id="kit-logout" href="/logout" data-nav>Log out</a>` })
+  },
+
+  // Scan a code: this device's camera reads the code a signed-in device shows (Settings → Invite a Device); "Paste the
+  // link" is the quiet way under it (open by itself when there is no camera). `still`: drawn without a camera.
+  scan: o => {
+    const state = o.still || 'asking'
+    return obShell('Scan a code', html`<div class="scan" id="scan" data-state="${state}"${o.still ? '' : raw(' data-controller="scan"')}><video id="scan-video" muted playsinline aria-label="Camera" data-scan-target="video"></video>${o.still ? html`<span class="scan-still">${FAKE_QR}</span>` : ''}${SCAN_CORNERS}
+<button type="button" class="ob-chip scan-start" id="scan-start" data-action="scan#begin">Start camera</button></div>
+<p class="scan-say" id="scan-say" role="status">${SCAN_SAYS[state === 'wrong' ? 'scanning' : state]}</p>
 <p class="scan-where">On the other device: Settings → Invite a Device</p>
-<details class="ob-paste" id="scan-paste"${paste || state === 'denied' || state === 'none' ? raw(' open') : ''}><summary>Paste the link</summary>
-<form id="paste-form" class="ob-form" novalidate><input name="link" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="The link" placeholder="https://app.trommi.com/join#v1…">
-${obError()}${obSubmit('Next')}</form></details>
-<p class="ob-alt"><button type="button" class="ob-link" id="alt-login">Back to log in</button><span${state === 'denied' ? '' : raw(' hidden')}> · <button type="button" class="ob-link" id="scan-again">Try the camera</button></span></p>`, { cls: 'ob-scan' }), null)
-    on('#alt-login', 'click', () => loginFlow())
-    const box = root.querySelector('#scan'), line = root.querySelector('#scan-say'), video = root.querySelector('#scan-video'), again = root.querySelector('#scan-again').parentElement, pasteBox = root.querySelector('#scan-paste')
-    const set = (next, words = SCAN_SAYS[next]) => {
-      state = next; box.dataset.state = next; line.textContent = words
-      again.hidden = next !== 'denied'
-      if ((next === 'denied' || next === 'none') && !pasteBox.open) pasteBox.open = true
+<details class="ob-paste" id="scan-paste"${o.paste || state === 'denied' || state === 'none' ? raw(' open') : ''}><summary>Paste the link</summary>
+<form id="paste-form" class="ob-form" method="post" action="/join" novalidate><input name="link" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="The link" placeholder="https://app.trommi.com/join#v1…">
+${obError(o.problem)}${obSubmit('Next')}</form></details>
+<p class="ob-alt"><a class="ob-link" id="alt-login" href="/login" data-nav>Back to log in</a><span${state === 'denied' ? '' : raw(' hidden')}> · <button type="button" class="ob-link" id="scan-again">Try the camera</button></span></p>`, { cls: 'ob-scan', focus: '' })
+  },
+
+  // Joining with a link: asking, then the six emoji to compare with the other device; or what went wrong.
+  join: o => (o.problem ? obShell('Not logged in', html`<p class="ob-error is-shown" role="alert">${o.problem}</p>${goButton('/scan', 'ob-go', 'scan-again', 'Scan again')}`, { lead: 'Show a new code on the other device.', focus: '#scan-again' })
+    : o.emoji?.length ? obShell('Same six emoji?', html`${emojiRow(o.emoji, 'check-code')}<p class="room-wait">Waiting for the other device…</p>`, { lead: 'If they match, tap “They match” on the other device.', cls: 'ob-emoji', home: false, focus: '' })
+      : obShell('Log in', html`<p class="room-wait">Asking the other device…</p>`, { focus: '' })),
+
+  /** (the demo only: a stored account that did not open; the core has no such state for the web yet) */
+  broken: o => obShell('Not opened', html`<p class="ob-error is-shown" role="alert" id="broken-why">This browser lost this device's keys.</p>
+<div class="ob-stack"><button type="button" class="ob-go" id="broken-logout">Log out</button><button type="button" class="ob-second" id="broken-retry">Retry</button></div>
+<p class="ob-hint" id="broken-detail">${o.detail ?? ''}</p>`, { lead: 'Log out here, then log in again. Your account stays.', home: false, focus: '#broken-retry' }),
+  joinOffline: () => obShell('Not logged in', html`<p class="ob-error is-shown" role="alert">Trommi is not reachable right now. Check your connection.</p><button type="button" class="ob-go" id="join-again">Try again</button>
+<p class="ob-alt">${goButton('/scan', 'ob-link', 'scan-again', 'Scan a new code')}</p>`, { lead: 'The same code still works until it runs out.', focus: '#join-again' }),
+}
+const TITLES = { start: 'Trommi', create: 'Create account', login: 'Log in', forgot: 'Forgot password', newway: 'New way in', kit: 'Emergency Kit', scan: 'Scan a code', join: 'Log in' }
+/** Which steps a screen's problem comes with (a problem of another screen's step is not said here). */
+const FAMILY = { start: ['none'], create: ['found', 'none'], login: ['sign_in', 'none'], forgot: ['sign_in', 'recover', 'none'], newway: ['none'], kit: ['none', 'keep_kit'], scan: ['join'], join: ['join'] }
+/** A screen's main, in the frame's place (#room-screen: auth.css). */
+const screenMain = (name, o) => html`<div id="room-screen">${SCREENS[name](o)}</div>`
+
+/** What a screen needs from the view model and the page's memory. */
+function screenOpts(name, vm, url) {
+  const av = vm.account ?? {}, step = stepOf(vm), q = url.searchParams
+  const pk = passkeysOn()
+  const sentHere = local.sent?.path === url.pathname && step === 'working'
+  const problem = FAMILY[name]?.includes(step) ? av.problem?.en ?? '' : ''
+  const login = vm.settings?.login
+  return {
+    pk, pkOff: !pk, way: q.get('way') ?? ((name === 'create' || name === 'newway') && pk ? 'passkey' : 'password'),
+    busy: sentHere && !local.sent.passkey ? local.sent.word : '', passkeyBusy: sentHere && local.sent.passkey ? local.sent.word : '',
+    at: local.sent?.passkey ? 'passkey' : 'form',
+    problem: name === 'scan' ? local.paste || '' : problem, email: local.email, loggedOut: local.loggedOut,
+    emoji: av.emoji, words: av.kit?.length ? av.kit : null, shown: local.kit.shown, saved: local.kit.saved,
+    kit: kitOf(login), ways: { password: login?.has_password !== false, passkey: Boolean(login?.passkeys?.length) },
+  }
+}
+
+// ---- self-join asks (vm.account.asks): a toast that asks, on any page, until it is answered ----
+const askShown = new Map()
+function syncAsks(vm) {
+  const now = new Map((vm.account?.asks ?? []).map(a => [a.nonce, a]))
+  for (const [nonce, el] of askShown) if (!now.has(nonce) || !el.isConnected) { el.remove(); askShown.delete(nonce) }
+  const host = document.getElementById('says-host')
+  if (!host) return
+  for (const [nonce, a] of now) {
+    if (askShown.has(nonce)) continue
+    host.insertAdjacentHTML('afterbegin', String(askToast({ id: `ask-${nonce}`, head: 'A new session wants to join', line: a.says.en, action: `/vouch/${nonce}`, field: 'allow', yes: 'Allow', no: 'Deny' })))
+    askShown.set(nonce, host.firstElementChild)
+  }
+}
+
+// ---- the routes ----
+export function register(t) {
+  if (typeof document !== 'undefined') { import('./core.mjs').then(core => core.on('render', syncAsks)); syncAsks(t.vm()) }
+  const vm = () => t.vm()
+  const page = (req, res, title, main, extra = {}) => t.page(req, res, { title: `${title} · Trommi`, view: 'room', main, ...extra })
+  const sent = (path, word, passkey = false) => { local.sent = { path, word, passkey }; local.begun = true; local.loggedOut = false; if (path !== '/forgot' && path !== '/new-way') local.words = null }
+  const field = (form, name) => String(form.get(name) ?? '')
+  /** The way in a change of the account is proved with: the form's password, else one of the account's passkeys. */
+  const unlockOf = form => (form.has('password') ? { by: 'password', password: field(form, 'password') } : form.has('words') ? { by: 'words', words: field(form, 'words') } : { by: 'passkey' })
+  /** The account, asked for once in a while (a page that shows it): it comes as vm.settings.login. */
+  const readAccount = () => { if (!vm().settings?.login && Date.now() - local.readAt > 10_000 && !signedOut(vm())) { local.readAt = Date.now(); t.account({ step: 'read_account' }) } }
+
+  // ---- the screens before the board ----
+  for (const [path, name] of Object.entries(OUT)) t.get(new RegExp(`^${path}$`), ({ req, res, url }) => {
+    const m = vm(), step = stepOf(m)
+    // A link in the address leaves the address bar before anything else: a join link's secret (/join#v1.…), an
+    // Emergency Kit's address (#k1.…).
+    const hash = globalThis.location?.hash ?? ''
+    if (name === 'join' && /^#v1\./.test(hash)) {
+      const link = location.href
+      history.replaceState(history.state, '', '/join')
+      if (signedOut(m) && step !== 'join') { local.begun = true; t.account({ step: 'join', link }) }
+      else if (!signedOut(m)) return page(req, res, 'Pair a device', alreadyIn())
+      return t.redirect(res, '/join')
     }
-    const go = text => {
-      const hash = joinHash(text)
-      if (!hash) return false
-      history.replaceState(null, '', '/join')
-      joinFlow(`${location.origin}/join${hash}`)
-      return true
+    if (hash.startsWith('#k1.')) { history.replaceState(history.state, '', location.pathname + location.search); return t.redirect(res, '/forgot?way=passkey') }
+    const flowing = signedOut(m) || !['none', 'invite'].includes(step)
+    if (!flowing) {
+      // (signed in: the words of a recovery wait for the new way in; a screen this page led through leads to the Desk)
+      if (name === 'newway' && local.words) return t.page(req, res, { title: 'New way in · Trommi', view: 'account', sidebar: false, main: screenMain('newway', screenOpts('newway', m, url)) })
+      if (local.words && name === 'forgot') return t.redirect(res, '/new-way')
+      if (!local.begun && (name === 'login' || name === 'join')) return page(req, res, 'Pair a device', alreadyIn())
+      return t.redirect(res, '/')
     }
-    on('#paste-form', 'submit', e => { e.preventDefault(); if (!go(e.target.elements.link.value)) say('That is not a Trommi link.', e.target.elements.link) })
-    on('#scan-paste', 'toggle', e => { if (e.target.open && !(demo && framed)) e.target.querySelector('input').focus({ preventScroll: true }) })
-    if (still) { if (still === 'wrong') { box.dataset.state = 'scanning' } return }
-    if (!can) return set('none')
-    let stop = null, said = 0, alive = true
-    const end = () => { stop?.(); stop = null }
-    const begin = async () => {
-      if (stop || !alive) return
-      set('asking')
-      try {
-        stop = await scanQr(video, text => {
-          if (go(text)) return true
-          // (another code in view: said for a moment, the camera keeps looking)
-          line.textContent = SCAN_SAYS.wrong; clearTimeout(said); said = setTimeout(() => { if (state === 'scanning') line.textContent = SCAN_SAYS.scanning }, 2500)
-          return false
-        })
-        if (!alive || document.hidden) return end()
-        set('scanning')
-      } catch (err) {
-        console.warn('camera:', err?.name ?? '', err?.message ?? err)
-        // (iOS: a video that may not start by itself waits for a tap)
-        if (err?.name === 'play') return set('tap')
-        set(['NotAllowedError', 'SecurityError'].includes(err?.name) ? 'denied' : 'none')
+    if (name === 'join' && !['join', 'compare_emoji'].includes(step)) return t.redirect(res, '/scan')
+    if (name === 'scan' && !url.searchParams.has('paste')) local.paste = ''
+    t.page(req, res, { title: `${TITLES[name]} · Trommi`, view: 'account', sidebar: false, main: screenMain(name, screenOpts(name, m, url)) })
+  })
+  const alreadyIn = () => roomShell('Already logged in', html`<p class="room-lead">This device is logged in already. Invite another device under <a href="/settings" data-nav>Settings</a>.</p><p class="room-meta">Another account? <a href="/logout" data-nav id="login-logout-first">Log out of this device first</a>, then log in.</p><p class="room-meta"><a href="/" data-nav>Open your Desk</a></p>`)
+
+  t.post(/^\/create$/, ({ res, form }) => {
+    const email = field(form, 'email').trim()
+    local.email = email
+    if (field(form, 'way') === 'passkey') { sent('/create', 'Waiting for passkey…'); t.account({ step: 'found_with_passkey', ...(email ? { email } : {}) }) }
+    else { sent('/create', 'Creating…'); t.account({ step: 'found', email, password: field(form, 'password') }) }
+    local.kitFrom = 'start'
+    t.done(res)
+  })
+  t.post(/^\/login$/, ({ res, form }) => {
+    local.email = field(form, 'account').trim()
+    sent('/login', 'Logging in…')
+    t.account({ step: 'sign_in', email: local.email, password: field(form, 'password') })
+    t.done(res)
+  })
+  t.post(/^\/login\/passkey$/, ({ res }) => { sent('/login', 'Waiting for passkey…', true); t.account({ step: 'sign_in_with_passkey' }); t.done(res) })
+  t.post(/^\/forgot$/, ({ res, form }) => {
+    local.email = field(form, 'account').trim()
+    const words = field(form, 'words')
+    if (field(form, 'way') === 'passkey') {
+      // (the words open the account here; the new passkey is made with them on /new-way)
+      sent('/forgot', 'Opening…'); local.words = words
+      t.account({ step: 'sign_in_with_kit', email: local.email, words })
+    } else {
+      sent('/forgot', 'Setting…'); local.kitFrom = 'start'
+      t.account({ step: 'recover', email: local.email, words, password: field(form, 'password') })
+    }
+    t.done(res)
+  })
+  t.post(/^\/new-way$/, ({ res, form }) => {
+    const words = local.words ?? ''
+    local.kitFrom = 'start'
+    if (field(form, 'way') === 'password') { sent('/new-way', 'Setting…'); t.account({ step: 'set_password', unlock: { by: 'words', words }, next: field(form, 'password') }) }
+    else { sent('/new-way', 'Waiting for passkey…'); t.account({ step: 'add_passkey', unlock: { by: 'words', words } }) }
+    t.done(res)
+  })
+  // A pasted link (Scan a code), or one read by the camera (controller "scan"): joined with as it is.
+  t.post(/^\/join$/, ({ res, form }) => {
+    const link = field(form, 'link').trim()
+    if (!joinHash(link)) { local.paste = 'That is not a Trommi link.'; return t.redirect(res, '/scan?paste=1') }
+    local.paste = ''; local.begun = true
+    t.account({ step: 'join', link })
+    t.redirect(res, '/join')
+  })
+  // The kit's buttons. Its words are the core's (AccountView.kit): read here for the file, never kept.
+  t.post(/^\/kit\/do$/, ({ res, form }) => {
+    const back = field(form, 'back') || kitPath(), words = vm().account?.kit ?? []
+    switch (field(form, 'do')) {
+      case 'show': local.kit.shown = !local.kit.shown; if (local.kit.shown) local.kit.saved = true; break
+      case 'download': if (words.length && !isDemo()) downloadKit(kitText(kitOf(vm().settings?.login), words)); local.kit.saved = true; break
+      case 'print': {
+        const was = local.kit.shown
+        local.kit.shown = local.kit.saved = true
+        // (the printed sheet carries the words: shown for the print, hidden again after it if they were hidden)
+        setTimeout(() => { if (!was) addEventListener('afterprint', () => { local.kit.shown = false; window.Turbo?.visit(back, { action: 'replace' }) }, { once: true }); window.print() }, 300)
+        break
       }
+      case 'done': local.kit = { shown: false, saved: false }; local.words = null; t.account({ step: 'kit_kept' }); return t.done(res)
     }
-    const hidden = () => { if (document.hidden) end(); else if (state === 'scanning' || state === 'asking') begin() }
-    document.addEventListener('visibilitychange', hidden)
-    addEventListener('pagehide', end)
-    stopScan = () => { alive = false; clearTimeout(said); end(); document.removeEventListener('visibilitychange', hidden); removeEventListener('pagehide', end) }
-    on('#scan-start', 'click', begin)
-    on('#scan-again', 'click', begin)
-    begin()
-  }
+    t.redirect(res, back)
+  })
+  t.post(/^\/kit\/new$/, ({ res, form }) => { sent('/kit', 'Making…'); local.kitFrom = 'start'; t.account({ step: 'new_kit', unlock: form.get('by') === 'passkey' ? { by: 'passkey' } : unlockOf(form) }); t.done(res) })
 
-  // Join with a link (from the address, scanned or pasted; its secret is never left in the address bar): this device
-  // makes its keys and asks at once; then the check code (six emoji) to compare with the other device. Its name is
-  // made for it (deviceLabel).
-  async function joinFlow(link) {
-    joinWait()
-    try {
-      const join = c.joinRoom({ link, device_name, client: CLIENT })
-      join.check_code.then(code => {
-        joinEmoji(code)
-        on('#join-cancel', 'click', () => { join.cancel(); history.replaceState(null, '', '/'); scanFlow() })
-      })
-      await done(await join.client)
-    } catch (err) {
-      if (err.code === 'cancelled') return
-      console.error(err)
-      if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err)
-      // Not reached is not used up: the same code is tried again, no new one needed (the hub kept nothing of this try
-      // that would refuse the next).
-      if (err.code === 'offline' || err.transient === true) return joinUnreached(link)
-      joinFailed({ 'invite-used': 'This code was used already.', 'invite-expired': 'This code has run out.', 'invite-burned': 'The emoji did not match there.', 'bad-invite': 'This link is not a valid invite. Ask for a new one.' }[err.code] ?? accountError(err))
-    }
+  // ---- /logout: asks once, then SignOut (the core wipes what this device stored) ----
+  const logoutMain = () => {
+    const m = vm(), login = m.settings?.login
+    const others = (m.settings?.devices ?? []).filter(d => d.active && !d.this_device).length
+    const pk = Boolean(login?.passkeys?.length), pw = login?.has_password !== false
+    const again = pk && pw ? 'your passkey or your password' : pk ? 'your passkey' : 'email and password'
+    const ways = pk && pw ? 'your passkey, or your email and password' : pk ? 'your passkey' : 'your email and password'
+    const note = isDemo() ? 'The demo keeps nothing; this only ends it.' : others ? '' : `This is your only device. After this, ${ways} (or your Emergency Kit) ${pw ? 'open' : 'opens'} your account.`
+    return roomShell('Log out', html`<p class="room-lead" id="logout-ask">Log out of this device? You can log in again with ${again}.</p>
+${note ? html`<p class="room-lead" id="logout-last">${note}</p>` : ''}<p class="room-meta">Everything Trommi keeps on this device is deleted here; your account and your other devices stay as they are.</p>
+<form method="post" action="/logout" class="room-inline room-logout" id="logout-form"><button type="submit" class="room-danger" id="logout-go">Log Out</button><a href="/" data-nav class="room-back" id="logout-cancel">Cancel</a></form>`)
   }
-  function joinUnreached(link) {
-    show(obShell('Not logged in', html`<p class="ob-error is-shown" role="alert">Trommi is not reachable right now. Check your connection.</p><button type="button" class="ob-go" id="join-again">Try again</button>
-<p class="ob-alt"><button type="button" class="ob-link" id="scan-again">Scan a new code</button></p>`, { lead: 'The same code still works until it runs out.' }), '#join-again')
-    on('#join-again', 'click', () => link ? joinFlow(link) : scanFlow())
-    on('#scan-again', 'click', () => scanFlow())
-  }
-  function joinWait() { show(obShell('Log in', html`<p class="room-wait">Asking the other device…</p>`), null) }
-  function joinEmoji(code) {
-    show(obShell('Same six emoji?', html`${emojiRow(code, 'check-code')}<p class="room-wait">Waiting for the other device…</p>
-<p class="ob-alt"><button type="button" class="ob-link" id="join-cancel">Cancel</button></p>`, { lead: 'If they match, tap “They match” on the other device.', cls: 'ob-emoji', home: false }), null)
-  }
-  function joinFailed(why) {
-    show(obShell('Not logged in', html`<p class="ob-error is-shown" role="alert">${why}</p><button type="button" class="ob-go" id="scan-again">Scan again</button>`, { lead: 'Show a new code on the other device.' }), '#scan-again')
-    on('#scan-again', 'click', () => scanFlow())
-  }
+  t.get(/^\/logout$/, ({ req, res }) => { readAccount(); page(req, res, 'Log out', logoutMain(), { view: 'logout' }) })
+  t.post(/^\/logout$/, ({ res }) => {
+    // (the demo has no account: leaving it is all there is to do)
+    if (isDemo()) { try { sessionStorage.removeItem('trommi-mock') } catch {} location.replace('/'); return t.done(res) }
+    local.loggedOut = true; local.begun = false
+    t.account({ step: 'sign_out' })
+    t.done(res)
+  })
 
-  // ---- the demo (/screens): every state of these screens, drawn with made-up words and no account ----
-  function demoFlow(state) {
-    lastEmail = 'ada@example.org'
-    const words = KIT_EMPTY
-    const type = (sel, value) => { const f = root.querySelector(sel); if (f) { f.value = value; f.dispatchEvent(new Event('input', { bubbles: true })) } }
-    const DEMO_ID = '0f8fad5b-d9cb-469f-a165-70867728950e', DEMO_HUB = 'https://hub.trommi.com'
-    const linkOf = id => { try { return pageHelpers.kitAddress('https://app.trommi.com', DEMO_HUB, id) } catch { return null } }
-    const kit = ({ email = lastEmail, ...o }) => kitPage(root, { kit: { email, account: DEMO_ID, form: email ? 'email' : 'id' }, linkOf, demo: true, logout: null, ...o })
-    const flows = {
-      welcome: () => welcome(), 'logged-out': () => welcome(),
-      create: () => createFlow(), 'create-nopasskey': () => createFlow(),
-      'create-passkey-waiting': () => { createFlow(); busy(root.querySelector('#create-form'), 'Waiting for passkey…') },
-      'create-passkey-cancelled': () => { createFlow(); say('No passkey made.') },
-      'create-passkey-fallback': () => createFlow({ way: 'password', note: NO_PRF }),
-      'create-password': () => createFlow({ way: 'password' }),
-      'create-typing': () => { createFlow({ way: 'password' }); type('#ob-pw', 'seven77') },
-      'create-generated': () => { createFlow({ way: 'password' }); root.querySelector('.ob-gen').click() },
-      'create-error': () => { createFlow({ way: 'password' }); type('#ob-pw', 'short'); weak(root.querySelector('#create-form')) },
-      'create-busy': () => { createFlow({ way: 'password' }); type('#ob-pw', 'a long enough password'); busy(root.querySelector('#create-form'), 'Creating…') },
-      'create-offline': () => { createFlow({ way: 'password' }); type('#ob-pw', 'a long enough password'); say(accountError({ code: 'offline' })) },
-      'create-limit': () => { createFlow({ way: 'password' }); type('#ob-pw', 'a long enough password'); say(accountError({ code: 'too-many' })) },
-      kit: () => kit({ words }), 'kit-shown': () => kit({ words, shown: true }), 'kit-again': () => kit({ logout: () => {} }), 'kit-wrong': () => kit({ error: 'Wrong password.', logout: () => {} }),
-      'kit-passkey': () => kit({ words, ways: { password: false, passkey: true } }), 'kit-noemail': () => kit({ words, shown: true, email: null, ways: { password: false, passkey: true } }),
-      'login-id': () => { lastEmail = DEMO_ID; loginFlow(ID_NO_PASSWORD) },
-      'forgot-kit': () => forgotFlow({ way: 'passkey', kit: { hub_url: DEMO_HUB, account: DEMO_ID } }), 'forgot-kit-hub': () => forgotFlow({ way: 'passkey', kit: { hub_url: 'https://hub.example.org', account: DEMO_ID } }),
-      'forgot-wrong-id': () => { forgotFlow({ way: 'passkey', kit: { hub_url: DEMO_HUB, account: DEMO_ID } }); type('textarea', words); say('Wrong account ID or words. A kit that shows an email opens with that email.') }, 'kit-again-passkey': () => kit({ logout: () => {}, ways: { password: false, passkey: true } }), 'kit-again-both': () => kit({ logout: () => {}, ways: { password: true, passkey: true } }),
-      'login-nopasskey': () => loginFlow(), 'login-passkey-waiting': () => { loginFlow(); keyBusy('Waiting for passkey…') }, 'login-passkey-busy': () => { loginFlow(); keyBusy('Logging in…') },
-      'login-passkey-error': () => loginFlow('This passkey opens no account here.', 'passkey'), 'login-passkey-noprf': () => loginFlow(NO_PRF_HERE, 'passkey'),
-      'forgot-passkey': () => forgotFlow({ way: 'passkey' }), 'new-passkey': () => newWayFlow(null, ''), 'new-passkey-fallback': () => newWayFlow(null, '', { way: 'password', note: NO_PRF }),
-      login: () => loginFlow(), 'login-error': () => { loginFlow(accountError({ code: 'wrong-login' })); type('#ob-pw', 'not my password') },
-      'login-limit': () => loginFlow(accountError({ code: 'rate-limited' })), 'login-offline': () => loginFlow(accountError({ code: 'offline' })),
-      forgot: () => forgotFlow(), scan: () => scanFlow({ still: 'scanning' }), 'scan-asking': () => scanFlow({ still: 'asking' }), 'scan-denied': () => scanFlow({ still: 'denied' }),
-      'scan-none': () => scanFlow({ still: 'none' }), 'scan-tap': () => scanFlow({ still: 'tap' }), 'scan-wrong': () => { scanFlow({ still: 'wrong' }) }, 'scan-paste': () => scanFlow({ still: 'scanning', paste: true }),
-      join: () => joinWait(), 'join-emoji': () => joinEmoji('03-17-08-42-25-11'),
-      'join-expired': () => joinFailed('This code has run out.'), 'join-offline': () => joinUnreached(null), 'join-burned': () => joinFailed('The emoji did not match there.'),
-      broken: () => brokenFlow(Object.assign(new Error('the device keys are not in this browser'), { code: 'no-device' })),
-    }
-    ;(flows[state] ?? welcome)()
+  // ---- /settings: the list. At its top the two invites, each drawn blurred until it is asked for; a device's code,
+  // its emoji and "They match" then stand in place (vm.account while this page asked for it). ----
+  const SHOWN = { light: 'Light', dark: 'Dark', system: 'System' }
+  const TERMINAL = html`<span class="set-term-bar" aria-hidden="true"><i></i><i></i><i></i></span><span class="set-term-code" aria-hidden="true"><span>$ claude</span><span>&gt; join trommi ab3f…9c2e</span><span>&gt; check the six emoji</span></span>`
+  const inviteTiles = () => html`<section class="set-invite-tiles" aria-label="Invite">
+<form method="post" action="/pair" class="set-tile"><input type="hidden" name="role" value="human"><button type="submit" class="set-tile-art set-qr" id="settings-pair" aria-label="Show Code: the code to invite a device"><span class="set-qr-code">${FAKE_QR}</span><span class="set-qr-show">Show Code</span></button><span class="set-text"><b>Invite a Device</b><small>A phone or another computer scans the code. Made when you ask, works once.</small></span></form>
+<form method="post" action="/pair" class="set-tile set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-tile-art set-term" id="settings-invite-agent" aria-label="Show Command: the command to invite an agent"><span class="set-term-in">${TERMINAL}</span><span class="set-qr-show">Show Command</span></button><span class="set-text"><b>Invite an Agent</b><small>Claude Code or Codex runs one command in your project and joins.</small></span></form>
+</section>`
+  const matchButtons = (inviteId, back) => html`<div class="check-answer">${['yes', 'no'].map(v => html`<form method="post" action="/pair/confirm"><input type="hidden" name="invite_id" value="${inviteId}"><input type="hidden" name="in" value="${back}"><input type="hidden" name="match" value="${v}"><button type="submit" class="${v === 'yes' ? 'room-primary check-yes' : 'check-no'}">${v === 'yes' ? 'They match' : 'They don\'t match'}</button></form>`)}</div>`
+  const copyBox = (value, label) => html`<div class="room-link" data-controller="room"><input readonly value="${value}" aria-label="${label}" data-room-target="field" data-action="focus->room#select"><button type="button" data-action="room#copy" data-room-text-param="${value}"><span data-room-target="label">Copy</span></button></div>`
+  /** Where the invite asked for here stands: 'open', 'confirm_code', 'adding', 'joined', 'failed', or 'none'. */
+  const inviteState = (kind) => {
+    const m = vm(), av = m.account ?? {}, step = stepOf(m)
+    if (local.invite?.kind !== kind) return 'none'
+    const state = step === 'invite' ? (av.problem ? 'failed' : av.link ? 'open' : 'none') : step === 'compare_emoji' && av.invite_id ? 'confirm_code' : step === 'working' && av.invite_id ? 'adding'
+      : local.invite.seen === 'adding' || local.invite.seen === 'joined' ? 'joined' : 'none'
+    local.invite.seen = state
+    return state
   }
+  const deviceInvite = () => {
+    const av = vm().account ?? {}, state = inviteState('device')
+    const head = (words, line) => html`<div class="set-text"><b>${words}</b>${line ? html`<small>${line}</small>` : ''}</div>`
+    const fresh = (word = 'Show Code', line = 'A phone or another computer scans the code. It is made when you ask for it and works once.') => html`<form method="post" action="/pair" class="set-pair"><input type="hidden" name="role" value="human"><button type="submit" class="set-qr" id="settings-pair" aria-label="${word}: the code to invite a device"><span class="set-qr-code">${FAKE_QR}</span><span class="set-qr-show">${word}</span></button>${head('Invite a Device', line)}</form>`
+    let inner
+    if (state === 'open') inner = html`<div class="set-pair"><div class="set-qr is-real">${raw(qrSvg(av.link, 'QR code to invite a device'))}</div><div class="set-text"><b>Invite a Device</b><small>On the new device, open the camera and scan the code. Both devices then show six emoji.</small><p class="room-wait">Waiting for the new device… The code works once.</p><details class="room-more"><summary>No scanner? Send the link</summary><p class="room-meta">Send it to yourself and open it on the new device. The secret is after the #; it never reaches a server.</p>${copyBox(av.link, 'Invite link')}</details></div></div>`
+    else if (state === 'confirm_code') inner = html`${head('A device wants to join', 'Does it show these six emoji, in this order?')}${emojiRow(av.emoji)}${matchButtons(av.invite_id, 'settings')}<small class="set-note">"They don't match" burns the code: nobody is added.</small>`
+    else if (state === 'adding') inner = html`${head('Invite a Device')}<p class="room-wait">Adding the device…</p>`
+    else if (state === 'joined') inner = html`<div class="set-pair"><span class="set-in">${sk('tick')}</span>${head('The new device is in now.', 'It holds keys of its own; you see it under Devices.')}<a class="set-pill" href="/settings?pair=done" data-nav id="settings-pair-done">Done</a></div>`
+    else if (state === 'failed') inner = html`${errorLine(av.problem.en)}${fresh('Show a New Code', '')}`
+    else return null
+    return html`<div class="set-device" id="set-device" data-state="${state}">${inner}</div>`
+  }
+  const homeMain = () => {
+    const s = vm().settings ?? {}, invite = deviceInvite()
+    return settingsPage('Settings', html`${!invite ? inviteTiles() : html`<section class="set-group set-invites" aria-label="Invite">${invite}
+<form method="post" action="/pair" class="set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-row" id="settings-invite-agent"><span class="set-ico">${PLUS}</span><b>Invite Agent…</b><span class="set-detail">a command for Claude Code</span>${SET_CHEVRON}</button></form></section>`}
+<nav class="set-group" aria-label="Settings">
+${setRow({ href: '/settings/agents', icon: sk('terminal'), word: 'Agents', detail: s.agents?.en ?? '', id: 'settings-agents' })}
+${setRow({ href: '/settings/desks', icon: sk('desk'), word: 'Desks', detail: s.desks?.en ?? '', id: 'settings-desks' })}
+${setRow({ href: '/settings/devices', icon: art('phone'), word: 'Devices', detail: s.devices_says?.en ?? '', id: 'settings-devices' })}
+${setRow({ href: '/settings/account', icon: sk('key'), word: 'Account', detail: s.account ?? '', id: 'settings-account' })}
+</nav>
+<nav class="set-group" aria-label="This device">
+${setRow({ href: '/settings/theme', icon: sk('moon'), word: 'Theme', detail: SHOWN[themeMode()] ?? 'System', id: 'settings-theme' })}
+${setRow({ href: '/settings/keys', icon: sk('keycap'), word: 'Keyboard Shortcuts', id: 'settings-keys' })}
+</nav>
+<nav class="set-group" aria-label="About">
+${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detail: 'keys, devices, self test', id: 'settings-security' })}
+</nav>
+`, { back: false })
+  }
+  t.get(/^\/settings$/, ({ req, res, url }) => {
+    if (url.searchParams.get('pair') === 'done') { local.invite = null; return t.redirect(res, '/settings') }
+    readAccount()
+    page(req, res, 'Settings', homeMain(), { view: 'settings' })
+  })
+  t.post(/^\/pair$/, ({ res, form }) => {
+    if (form.get('role') === 'agent') {
+      const desk = t.desk()
+      local.invite = { kind: 'agent', seen: 'none' }
+      t.account({ step: 'invite_agent', label: field(form, 'label').trim(), ...(desk && desk !== 'all' ? { desk } : {}) })
+      return t.redirect(res, '/pair/agent')
+    }
+    local.invite = { kind: 'device', seen: 'none' }
+    t.account({ step: 'invite_device' })
+    t.redirect(res, '/settings')
+  })
+  t.post(/^\/pair\/confirm$/, ({ res, form }) => {
+    // (a match being added: once the core's step is over, the newcomer is in)
+    if (local.invite && form.get('match') === 'yes') local.invite.seen = 'adding'
+    t.account({ step: 'confirm_emoji', invite_id: field(form, 'invite_id'), matches: form.get('match') === 'yes' })
+    t.redirect(res, form.get('in') === 'settings' ? '/settings' : '/pair/agent')
+  })
+  // Self-join: the person's Allow or Deny for an agent's ask.
+  t.post(/^\/vouch\/([0-9A-Za-z_-]{1,128})$/, ({ res, match, form }) => {
+    t.account({ step: 'answer_ask', nonce: match[1], allow: form.get('allow') === 'yes' })
+    document.getElementById(`ask-${match[1]}`)?.remove()
+    t.done(res)
+  })
+
+  // ---- /pair/agent: inviting an agent, a clipboard with a short checklist ----
+  // Two lines, each one big thing to press (it copies): install the connector (once per machine), then a plain prompt
+  // with the link pasted into the agent in the project folder; then the emoji to compare, and the agent is in.
+  const CLAMP = raw('<svg class="clip-clamp" viewBox="0 0 120 44" aria-hidden="true"><path class="clamp-plate" d="M22 40 Q21 25 26 22 L43 21 Q46 9 60 8 Q74 9 77 21 L94 22 Q99 25 98 40 Z"/><path d="M52 21 Q53 15 60 14.6 Q67 15 68 21"/><path d="M30 31 Q60 29.4 90 31"/></svg>')
+  const TICKBOX = raw('<svg class="clip-box" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.6 5.2 Q12 4.4 19.3 4.9 Q20 12 19.5 19.2 Q12 20 4.9 19.4 Q4.2 12 4.6 5.2 Z"/><path class="clip-tick" d="M7.4 12.6 Q9.6 14.6 10.9 16.6 Q14.6 10.2 20.6 5.2"/></svg>')
+  // (a line breaks after a slash, after the scheme, after a short first host label: a phone never breaks inside a word)
+  const wrapAt = text => text.split(/(?<=[^/:]\/|:\/\/|\/\/[^/.]{1,12}\.)/).map((part, i) => html`${i ? raw('<wbr>') : ''}${part}`)
+  const copyLine = (text, word, line, shown = wrapAt(text)) => html`<button type="button" class="clip-copy" data-line="${line}" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${shown}</code><span class="clip-copy-word" data-word="${word}">${word}</span></button>`
+  /** The connect command as shown: the part every invite of an account shares folded into an ellipsis. */
+  const connectShown = command => {
+    const at = command.indexOf('#'), parts = at < 0 ? [] : command.slice(at + 1).split('.')
+    if (parts.length < 5) return wrapAt(command)
+    const head = command.slice(0, at + 1) + parts[0] + '.', mid = `${parts[1]}.${parts[2]}.`, tail = parts.slice(3).join('.')
+    return html`${wrapAt(head)}<span class="clip-link-same" data-same="…">${mid}</span><wbr><span class="clip-link-own">${tail}</span>`
+  }
+  const step = (state, inner) => html`<li class="clip-step${state ? ` is-${state}` : ''}">${TICKBOX}<div class="clip-step-body">${inner}</div></li>`
+  const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh'
+  const altLine = text => html`<button type="button" class="clip-alt" data-line="slash" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${text.replace(/#.*'$/, "#…'")}</code><span class="clip-copy-word" data-word="Copy">Copy</span></button>`
+  const clipboard = () => {
+    const av = vm().account ?? {}, state = inviteState('agent')
+    const open = state === 'open', joined = state === 'joined', coming = state === 'adding', ask = state === 'confirm_code', dead = state === 'failed'
+    const done = open ? '' : 'done'
+    const last = ask ? html`<div class="clip-ask" role="group" aria-label="Confirm the agent"><b>An agent wants to join.</b>
+<small>Its terminal shows six emoji, each with a word. Are they these, in this order?</small>
+${emojiRow(av.emoji)}
+${matchButtons(av.invite_id, 'agent')}
+<small>"They don't match" burns the link: nobody is added.</small></div>`
+      : joined ? html`<b class="clip-in"><span>The agent is in</span></b>`
+      : coming ? html`<b>Adding the agent…</b>`
+      : dead ? html`<b>${av.problem.en}</b>`
+      : html`<b>Compare the six emoji Claude shows with the ones here</b><small>Nobody is added before you tap "They match".</small>`
+    const foot = joined ? html`<a href="/" data-nav class="room-done clip-done">Done</a>`
+      : dead ? html`<form method="post" action="/pair" class="clip-again"><input type="hidden" name="role" value="agent"><button type="submit">New link</button></form>`
+      : coming ? html`<p class="clip-note">The link is in use: this page stays until the agent is in.</p>`
+      : html`<p class="clip-note">The link works once.</p>`
+    return html`<main id="room" class="room room-clip" aria-label="Invite an agent"><div id="invite-agent" class="room-invite" data-state="${state}">
+<section class="clip" data-controller="invite-clip">${CLAMP}
+<h2>Invite an agent</h2><p class="clip-sub">On a Linux or macOS computer with Claude Code or Codex.</p>
+<ol class="clip-list">
+${step(done, html`<b>First time on this computer? Install:</b>${open ? html`${copyLine(INSTALL, 'Copy', 'install')}<small>Skip this if you have installed Trommi before (check: <code>trommi-connector --version</code>).</small>` : ''}`)}
+${step(done, html`<b>In your project folder, start claude (or codex) and paste:</b>${open ? html`${copyLine(connectPrompt(av.link), 'Copy', 'connect', connectShown(connectPrompt(av.link)))}<small class="clip-or">Or in Claude Code, the slash command: ${altLine(connectCommand(av.link))}</small><small>Claude Code asks once whether to use the trommi MCP server: choose "Use this MCP server". In Codex: start Codex again if it was running when Trommi was installed.</small>` : ''}`)}
+${step(joined ? 'done' : dead ? 'dead' : ask ? 'ask' : open ? '' : 'wait', last)}
+</ol>${foot}</section></div></main>`
+  }
+  t.get(/^\/pair\/agent$/, ({ req, res }) => {
+    if (local.invite?.kind !== 'agent' || inviteState('agent') === 'none') return t.redirect(res, '/settings')
+    page(req, res, 'Invite an agent', clipboard(), { view: 'invite' })
+  })
+
+  // ---- /settings/devices: the person's devices (phones, tablets, browsers), each with a page of its own, and Push.
+  // The agents are Settings · Agents (agents.mjs). ----
+  const devIcon = d => (d.icon === 'terminal' ? sk('terminal') : d.icon === 'phone' ? art('phone') : sk('laptop'))
+  const onlineDot = on => html`<i class="set-dot" data-online="${on ? 'yes' : 'no'}"></i>`
+  const devLine = d => html`<span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${d.name}</b><small class="room-fp" title="Key fingerprint">${d.fingerprint}</small></span><span class="set-detail">${d.active ? onlineDot(d.online) : ''}${d.says.en}</span>`
+  // (.room-device: one per device listed, as the end-to-end runs count them)
+  const member = d => (d.active
+    ? html`<a class="set-row set-row-two room-device" id="device-${d.id}" href="/settings/devices/${d.id}" data-nav>${devLine(d)}${SET_CHEVRON}</a>`
+    : html`<div class="set-row set-row-two set-fact room-device is-removed" id="device-${d.id}">${devLine(d)}<span></span></div>`)
+  const PUSH_LEVELS = [['all', 'bell', 'Yes', 'every card'], ['knocking', 'knock', 'Only knocking', 'high, critical, a lost session'], ['off', 'snooze', 'No', '']]
+  const devicesMain = () => {
+    const s = vm().settings ?? {}, push = s.push, gone = s.removed ?? [], stuck = s.unfinished ?? []
+    return roomPage('Devices', html`<h3 class="set-label" id="people-head">Your devices</h3><div class="set-group" id="room-people">${(s.devices ?? []).map(member)}</div>${stuck.length ? html`<form method="post" action="/devices/remove" class="set-group" id="devices-unfinished">${stuck.map(id => html`<input type="hidden" name="device_id" value="${id}">`)}<button type="submit" class="set-row set-danger"><span class="set-ico">${sk('logout')}</span><b>${s.remove_unfinished?.en ?? ''}</b><span class="set-detail"></span><span></span></button></form><p class="set-note" id="devices-unfinished-note">A login that hung or was given up leaves a device behind that never came. While it is there, new sessions can't be opened.</p>` : ''}
+${push ? html`<h3 class="set-label" id="push-head">Push on this device</h3><form method="post" action="/settings/push" data-controller="set-push"><fieldset class="set-group set-choice set-push" id="push-level" aria-labelledby="push-head"${push.busy ? raw(' disabled') : ''}>${PUSH_LEVELS.map(([v, icon, word, d]) => html`<label class="set-row"><input type="radio" name="level" value="${v}" data-action="change->set-push#pick"${push.level === v ? raw(' checked') : ''}><span class="set-ico">${sk(icon)}</span><b>${word}</b><span class="set-detail">${d}</span>${sk('tick')}</label>`)}</fieldset></form>
+<p class="push-level-note" id="push-level-note" role="status">${push.level === 'off' ? pushObstacle() : ''}</p>` : ''}
+${gone.length ? html`<div class="set-group" id="room-gone">${setRow({ href: '/settings/devices/removed', icon: sk('archive'), word: 'Removed', detail: String(gone.length), id: 'devices-removed' })}</div>` : html`<div id="room-gone" hidden></div>`}
+<p class="set-note">A new device: Invite a Device in <a href="/settings" data-nav>Settings</a>, or open app.trommi.com on it and log in. Every device holds its own keys; the hub sees sealed envelopes only. Your agents are under <a href="/settings/agents" data-nav>Agents</a>.</p>`, 'The phones, tablets and browsers where you read and answer.')
+  }
+  const deviceMain = d => settingsPage(d.name, html`<div class="set-group">
+<div class="set-row set-fact"><span class="set-ico">${devIcon(d)}</span><b>Kind</b><span class="set-detail">${d.role === 'human' ? 'Person' : 'Agent'}</span><span></span></div>
+<div class="set-row set-fact"><span class="set-ico">${onlineDot(d.active && d.online)}</span><b>Status</b><span class="set-detail" id="device-state">${d.says.en}</span><span></span></div>
+<div class="set-row set-fact set-fp-row"><span class="set-ico">${sk('key')}</span><b>Key fingerprint</b><span class="set-detail room-mono" id="device-fp">${d.fingerprint}</span><span></span></div></div>
+<p class="set-note">The fingerprint comes from the signed member list: it must look the same on every device.</p>
+${d.this_device && d.active ? html`<h3 class="set-label">Name</h3><form method="post" action="/devices/rename" class="set-group set-form" id="device-rename"><label class="set-field"><span>Name of this device</span><input name="device_name" value="${d.name}" maxlength="40" required autocomplete="off"></label><button type="submit" class="room-primary">Rename</button></form><p class="set-note">A device names itself; this name is what your other devices see.</p>` : ''}
+${d.active && !d.this_device ? html`<form method="post" action="/devices/remove" class="set-group" id="device-remove"><input type="hidden" name="device_id" value="${d.id}"><button type="submit" class="set-row set-danger"><span class="set-ico">${sk('logout')}</span><b>Remove ${d.name}</b><span class="set-detail"></span><span></span></button></form><p class="set-note">${d.name} can open nothing new after this. Everyone else gets a new key; that takes a moment.</p>` : ''}`,
+  { lead: d.this_device ? 'This device' : !d.active ? 'Removed' : 'One of your devices', back: '/settings/devices', backWord: 'Devices' })
+  // After a device not in the person's hands was removed: a new recovery code, the way in given kept (8.6).
+  const removedMain = () => {
+    const login = vm().settings?.login
+    return settingsPage('Removed', html`<div class="set-group">${(vm().settings?.removed ?? []).map(member)}</div><p class="set-note">They open nothing new; what they had before stays with them.</p>
+${login ? html`<section id="code-new"><h3 class="set-label">Not in your hands?</h3>${form('/settings/recovery-code', html`<div class="set-group set-proof-g">${proofField(login)}</div>`, 'Replace the Recovery Code', 'code-form')}<p class="set-note">A new Emergency Kit replaces the old one; your other ways in except this one are removed.</p></section>` : ''}`, { back: '/settings/devices', backWord: 'Devices' })
+  }
+  t.get(/^\/settings\/devices$/, ({ req, res }) => page(req, res, 'Devices · Settings', devicesMain(), { view: 'settings' }))
+  t.get(/^\/settings\/devices\/removed$/, ({ req, res }) => { readAccount(); page(req, res, 'Removed · Devices', removedMain(), { view: 'settings' }) })
+  t.get(/^\/settings\/devices\/([^/]+)$/, ({ req, res, match }) => {
+    const id = decodeURIComponent(match[1]), d = [...(vm().settings?.devices ?? []), ...(vm().settings?.removed ?? [])].find(x => x.id === id)
+    if (!d) return t.redirect(res, '/settings/devices')
+    page(req, res, `${d.name} · Devices`, deviceMain(d), { view: 'settings' })
+  })
+  t.post(/^\/devices\/remove$/, ({ res, form }) => { t.account({ step: 'remove_devices', device_ids: form.getAll('device_id').map(String) }); t.redirect(res, '/settings/devices') })
+  t.post(/^\/devices\/rename$/, ({ res, form }) => { const name = field(form, 'device_name').trim().slice(0, 40); if (name) t.act({ do: 'rename_device', name }); t.redirect(res, '/settings/devices') })
+  t.post(/^\/settings\/push$/, ({ res, form }) => { t.act({ do: 'push', level: field(form, 'level') }); t.done(res) })
+
+  // ---- /settings/theme, /settings/keys: this device's own ----
+  t.get(/^\/settings\/theme$/, ({ req, res }) => page(req, res, 'Theme · Settings', settingsPage('Theme', html`<div class="set-group set-choice" role="radiogroup" aria-label="Theme" data-controller="set-theme">${['light', 'dark', 'system'].map(v => html`<label class="set-row"><input type="radio" name="theme" value="${v}" data-action="change->set-theme#pick"${themeMode() === v ? raw(' checked') : ''}><span class="set-ico">${sk(v === 'light' ? 'sun' : v === 'dark' ? 'moon' : 'grid')}</span><b>${SHOWN[v]}</b>${sk('tick')}</label>`)}</div>
+<p class="set-note">System follows this device's own setting. The key T switches anywhere.</p>`, { lead: 'On this device.' }), { view: 'settings-theme' }))
+  t.get(/^\/settings\/keys$/, ({ req, res }) => page(req, res, 'Keyboard Shortcuts · Settings', settingsPage('Keyboard Shortcuts', html`<div class="set-group set-keys-group">${keysList()}</div><p class="set-note">More keys later. Keys rest while you type in a field. <a href="/help.html#keys">On the help page</a></p>`), { view: 'settings-keys' }))
+
+  // ---- /settings/security: what opens the account's data, and the self test ----
+  const securityMain = () => {
+    const s = vm().settings ?? {}
+    const keyRow = html`<div class="set-row set-row-two set-fact" id="security-key"><span class="set-ico">${sk('key')}</span><span class="set-two"><b>Account key</b><small><span class="room-mono" id="security-key-fp">${s.room ? `${s.room.slice(0, 16)}…` : 'unknown'}</span> · key epoch ${s.key_epoch}${s.hub ? ` · ${s.hub}` : ''}</small></span><span class="set-detail">everything</span><span></span></div>`
+    const kitRow = setRow({ href: '/settings/account/kit', icon: sk('page'), word: 'Emergency Kit', id: 'security-kit' })
+    const devRow = d => html`<a class="set-row set-row-two security-device" id="security-device-${d.id.slice(0, 16)}" href="/settings/devices/${d.id}" data-nav><span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${d.name}${d.this_device ? html` <span class="set-small set-inline">· this device</span>` : ''}</b><small><span class="room-mono">${d.fingerprint}</span> · ${d.added_ms ? `added ${day(d.added_ms)}` : 'added: unknown'}</small></span><span class="set-detail">everything</span>${SET_CHEVRON}</a>`
+    const agentRow = html`<a class="set-row set-row-two" id="security-agents" href="/settings/agents" data-nav><span class="set-ico">${sk('terminal')}</span><span class="set-two"><b>Agents</b><small>${s.agents?.en || 'none'}: each with its own key</small></span><span class="set-detail">own session</span>${SET_CHEVRON}</a>`
+    return settingsPage('Security', html`<h3 class="set-label">Account key</h3><div class="set-group">${keyRow}${kitRow}</div>
+<p class="set-note" id="security-key-note">Opens everything; it is also your recovery key. The hub keeps it only sealed: a way in of your account opens it on a new device.</p>
+<h3 class="set-label">Authorized devices</h3><div class="set-group" id="security-devices">${(s.devices ?? []).filter(d => d.active).map(devRow)}</div>
+<p class="set-note">Each of your devices reads everything, also what came before it was added.</p>
+<h3 class="set-label">Agents</h3><div class="set-group">${agentRow}</div>
+<p class="set-note">An agent reads only its own session and the helper sessions it starts; a helper reads only its own.</p>
+<p class="set-note set-note-strong" id="security-hub">Nobody else, not the hub either: it sees which device is in which group, when, and how much.</p>
+<h3 class="set-label">Check</h3><div class="set-group">${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Self Test', detail: 'runs on this device', id: 'settings-proof' })}</div>`,
+    { lead: 'Every key that opens your data, and the self test.' })
+  }
+  t.get(/^\/settings\/security$/, ({ req, res }) => page(req, res, 'Security · Settings', securityMain(), { view: 'settings-security' }))
+
+  // ---- /settings/account: the account's ways in (each a page: password, passkeys, kit; email where there is none).
+  // A change asks for the way in of now once more (proofField); its answer is a toast, a problem, or a new kit. ----
+  const SUBS = { password: 'Password', passkeys: 'Passkeys', kit: 'Emergency Kit', email: 'Email', delete: 'Delete Account' }
+  const sublead = { password: 'Opens your account with your email.', passkeys: 'Each opens your account without a password.', kit: 'Twelve words for the day you lose your way in.', email: 'A second name for your account.', delete: 'The account, its rooms and everything in them.' }
+  const accountMain = sub => {
+    const m = vm(), st = m.settings?.login, av = m.account ?? {}, step = stepOf(m)
+    const busy = step === 'working'
+    const top = html`${step === 'none' && av.problem ? errorLine(av.problem.en) : ''}${busy ? html`<p class="room-wait" role="status">Working…</p>` : ''}`
+    const subPage = inner => settingsPage(SUBS[sub], html`${top}${inner}`, { back: '/settings/account', backWord: 'Account', lead: sublead[sub] })
+    if (sub === 'kit' && step === 'keep_kit' && av.kit?.length) {
+      return subPage(html`${KIT_FORM('/settings/account/kit')}<p class="room-lead">Download or print it, and keep it somewhere safe. It is shown only now. The old kit no longer works.</p>${kitBox(kitOf(st), av.kit)}`)
+    }
+    if (!st) return roomPage('Account', html`${top}<div class="set-group"><p class="set-empty room-wait">Loading…</p></div>${storagePart()}`, 'Your login, and what this device keeps.')
+    const pk = st.passkeys ?? [], noPassword = st.has_password === false
+    if (sub === 'password') {
+      return subPage(noPassword
+        ? html`<div class="set-group"><div class="set-row set-fact"><span class="set-ico">${sk('lock')}</span><b>Password</b><span class="set-detail" id="password-none">none: your passkey opens this account</span><span></span></div></div>
+${st.email ? html`<section id="pw-add"><h3 class="set-label">Add a password</h3>${form('/settings/password', html`<div class="set-group set-proof-g">${proofField(st)}</div><div class="set-group set-form">${pwField({ name: 'next', label: 'New password' })}</div>`, 'Add Password', 'pw-add-form')}</section>` : html`<p class="set-note" id="pw-needs-email">A password needs an email. <a href="/settings/account/email" data-nav>Add one first.</a></p>`}
+<p class="set-note set-note-after">${NO_RECOVERY_PASSKEY}</p>`
+        : html`<section id="pw-change">${form('/settings/password', html`<div class="set-group set-proof-g">${proofField(st, 'Current password')}</div><div class="set-group set-form">${pwField({ name: 'next', label: 'New password' })}</div>`, 'Change Password', 'pw-form')}</section>
+<p class="set-note set-note-after">${NO_RECOVERY}</p>`)
+    }
+    if (sub === 'passkeys') {
+      return subPage(html`${pk.length ? html`<div class="set-group" id="passkeys">${pk.map((p, i) => html`<details class="set-exp room-passkey" id="passkey-${p.credential_id.slice(0, 12)}"><summary class="set-row set-row-two"><span class="set-ico">${sk('key')}</span><span class="set-two"><b>Passkey${pk.length > 1 ? ` ${i + 1}` : ''}</b><small>added ${day(p.created_at)} · ${p.last_used_at ? `used ${day(p.last_used_at)}` : 'not used yet'}</small></span><span class="set-detail">Remove</span>${SET_CHEVRON}</summary>
+<form method="post" action="/settings/passkeys/remove" class="set-exp-body set-stack room-remove"><input type="hidden" name="id" value="${p.credential_id}"><p class="set-small">This passkey no longer opens your account after this.</p><div class="set-group set-proof-g">${proofField(st)}</div><button type="submit" class="room-danger">Remove Passkey</button></form></details>`)}</div>`
+        : html`<div class="set-group"><p class="set-empty" id="passkeys-none">None yet. A passkey logs you in without a password.</p></div>`}
+${!noPassword && pk.length ? html`<p class="set-note" id="password-still">Your password still opens this account.</p>` : ''}
+${passkeysOn() ? html`<section id="passkey-new"><h3 class="set-label">Add a passkey</h3>${form('/settings/passkeys', html`<div class="set-group set-proof-g">${proofField(st)}</div>`, 'Add Passkey', 'passkey-form')}</section>` : ''}`)
+    }
+    if (sub === 'kit') {
+      return subPage(html`<div class="set-group"><div class="set-row set-fact"><span class="set-ico">${sk('page')}</span><b>Your kit</b><span class="set-detail" id="kit-state">opens with your ${st.kit_form === 'id' ? 'account ID' : 'email'}</span><span></span></div></div>
+<p class="set-note">${noPassword ? 'It opens your account if you lose your passkey.' : 'With it you can set a new password if you forget yours.'} A new kit makes the old one stop working.</p>
+<section id="kit-new"><h3 class="set-label">Make a new kit</h3>${form('/settings/kit', html`<div class="set-group set-proof-g">${proofField(st)}</div>`, 'Make the Kit', 'kit-form')}</section>`)
+    }
+    if (sub === 'email') {
+      return subPage(st.email ? html`<div class="set-group"><div class="set-row set-fact"><span class="set-ico">${sk('letter')}</span><b>Email</b><span class="set-detail">${st.email}</span><span></span></div></div>`
+        : html`<section id="email-add"><p class="set-note set-note-after">It cannot be changed later. Your Emergency Kit keeps its twelve words and opens with the email from then on: type them once more. They also confirm it is you.</p>${form('/settings/email', html`<div class="set-group set-form"><label class="set-field">Email<input type="email" name="email" required autocomplete="username" autocapitalize="off" spellcheck="false"></label><label class="set-field">Twelve words<textarea name="words" rows="3" required autocomplete="off" autocapitalize="off" spellcheck="false"></textarea></label></div>`, 'Add Email', 'email-form')}</section>`)
+    }
+    if (sub === 'delete') {
+      return subPage(html`<p class="set-note set-note-after">Every device of yours is signed out, and what the hub keeps of your account is deleted. This cannot be undone.</p>${form('/settings/account/delete', html`<div class="set-group set-form">${pwField({ label: 'Your password', gen: false })}</div>`, 'Delete Account', 'delete-form', 'room-danger')}`)
+    }
+    const ways = [
+      ...(st.email ? [] : [{ key: 'email', icon: sk('letter'), word: 'Email', detail: 'none yet' }]),
+      { key: 'password', icon: sk('lock'), word: 'Password', detail: noPassword ? 'none' : 'set' },
+      ...(!passkeysOn() && !pk.length ? [] : [{ key: 'passkeys', icon: sk('key'), word: 'Passkeys', detail: pk.length ? String(pk.length) : 'none' }]),
+      { key: 'kit', icon: sk('page'), word: 'Emergency Kit', detail: '' },
+    ]
+    return roomPage('Account', html`${top}<div class="set-group set-who"><div class="set-row set-row-two set-fact"><span class="set-ico">${sk(st.email ? 'letter' : 'key')}</span><span class="set-two">${st.email ? html`<b id="account-email">${st.email}</b>` : html`<b>Logged in with a passkey</b>`}<small>${st.email ? '' : html`<span id="account-email">No email.</span> · `}Account ID <span class="room-mono" id="account-id">${st.account}</span></small></span><span></span><span></span></div></div>
+<h3 class="set-label">Ways in</h3><nav class="set-group" aria-label="Ways in">${ways.map(w => setRow({ href: `/settings/account/${w.key}`, icon: w.icon, word: w.word, detail: w.detail, id: `settings-way-${w.key}` }))}</nav>
+<p class="set-note">Each opens your account on a new device. Changing one asks for one of them again: being logged in here is not enough.</p>
+${storagePart()}<div class="set-group"><a class="set-row set-danger" href="/logout" data-nav id="settings-logout"><span class="set-ico">${sk('logout')}</span><b>Log Out</b><span class="set-detail">of this device</span>${SET_CHEVRON}</a>${st.has_password !== false ? html`<a class="set-row set-danger" href="/settings/account/delete" data-nav id="settings-delete"><span class="set-ico">${sk('logout')}</span><b>Delete Account</b><span class="set-detail">everywhere</span>${SET_CHEVRON}</a>` : ''}</div>`, 'Your login, and what this device keeps.')
+  }
+  const accountGet = sub => ({ req, res }) => { readAccount(); page(req, res, `${SUBS[sub] ?? 'Account'} · Settings`, accountMain(sub), { view: 'settings' }) }
+  t.get(/^\/settings\/account$/, accountGet(''))
+  for (const sub of Object.keys(SUBS)) t.get(new RegExp(`^/settings/account/${sub}$`), accountGet(sub))
+  // (every change: the core works, then says it with a toast, a problem, or a new kit shown on the kit's page)
+  const change = (path, action) => t.post(path, ({ res, form }) => {
+    local.kitFrom = 'settings'
+    if (isDemo()) return t.sendStream(null, res, t.toast({ head: 'The demo changes nothing here.' }))
+    t.account(action(form))
+    t.done(res)
+  })
+  change(/^\/settings\/password$/, f => ({ step: 'set_password', unlock: unlockOf(f), next: field(f, 'next') }))
+  change(/^\/settings\/passkeys$/, f => ({ step: 'add_passkey', unlock: unlockOf(f) }))
+  change(/^\/settings\/passkeys\/remove$/, f => ({ step: 'remove_passkey', credential_id: field(f, 'id'), unlock: unlockOf(f) }))
+  change(/^\/settings\/kit$/, f => ({ step: 'new_kit', unlock: unlockOf(f) }))
+  change(/^\/settings\/email$/, f => ({ step: 'set_email', email: field(f, 'email').trim(), words: field(f, 'words') }))
+  change(/^\/settings\/recovery-code$/, f => ({ step: 'replace_recovery_code', unlock: unlockOf(f) }))
+  change(/^\/settings\/account\/delete$/, f => ({ step: 'delete_account', password: field(f, 'password') }))
+}
+
+// ---- Settings · Account's shared pieces ----
+const form = (action, inner, word, id, cls = 'room-primary') => html`<form method="post" action="${action}" class="set-stack" data-controller="room" id="${id}">${inner}<button type="submit" class="${cls}">${word}</button></form>`
+/** A password field (Settings' look). */
+const pwField = ({ name = 'password', label = 'Password', gen = true } = {}) => html`<label>${label}<span class="room-pwrow"><input type="password" name="${name}" required minlength="${gen ? 12 : 1}" autocomplete="${gen ? 'new-password' : 'current-password'}" spellcheck="false" autocapitalize="off"></span>${gen ? html`<small class="room-hint">At least 12 characters.</small>` : ''}</label>`
+const CONFIRM_PASSWORD = 'To change how your account opens, enter your current password. Being logged in here is not enough.'
+const CONFIRM_PASSKEY = 'To change how your account opens, confirm with one of your passkeys. Being logged in here is not enough.'
+/** The way in a change asks for again: the password where the account has one, else one of its passkeys (asked by
+ *  the core when the form is sent). The one place that draws it. */
+const proofField = (login, label = 'Your password') => html`<div class="set-proof" id="proof"><p class="set-proof-why"><span class="set-ico">${sk('lock')}</span><span><b>Confirm it is you</b><small>${login.has_password === false ? CONFIRM_PASSKEY : CONFIRM_PASSWORD}</small></span></p>${login.has_password === false ? '' : pwField({ label, gen: false })}</div>`
+const NO_RECOVERY = 'If you lose your password and your Emergency Kit, nobody (not even Trommi) can recover your data.'
+const NO_RECOVERY_PASSKEY = 'If you lose your passkeys and your Emergency Kit, nobody (not even Trommi) can recover your data.'
+/** A new kit in Settings: its words in full, Download, Print, and Done (the words leave the view). */
+const kitBox = (kit, words) => html`<div class="room-kit" id="kit"><p class="room-kit-title">${BELL} Trommi Emergency Kit</p>${kit.email ? html`<p class="room-meta">Email: <b>${kit.email}</b></p>` : ''}
+<ol class="room-kit-words" id="kit-words">${words.map(w => html`<li>${w}</li>`)}</ol>
+${kitIdentity(kit)}
+<p class="room-meta">Lost your way in? app.trommi.com → Log in → "Forgot?" → your ${kitOpensWith(kit)} and these 12 words.</p></div>
+<div class="room-actions room-kit-actions">${kitButton('download', 'Download', '', 'kit-download')}${kitButton('print', 'Print', '', 'kit-print')}${kitButton('done', 'Done', 'room-primary', 'kit-done')}</div>`
+const storagePart = () => html`<h3 class="set-label" id="store-head">Storage</h3><dl class="set-group set-facts" data-controller="room"><div class="set-row set-fact"><span class="set-ico">${sk('laptop')}</span><dt>On this device</dt><dd class="set-detail" data-room-target="local">…</dd><span></span></div></dl><p class="set-note">The hub deletes envelopes after 30 days; your devices keep what they decrypted.</p>`
+
+// ---- the demo (/screens: ?mock=1&onboard=<state>): every state of the screens before the board, each drawn from a
+// made-up AccountView and page memory; no core, nothing sent ----
+const DEMO_ID = '0f8fad5b-d9cb-469f-a165-70867728950e'
+const DEMO_EMOJI = [['🦊', 'fox'], ['🌵', 'cactus'], ['🎈', 'balloon'], ['🐢', 'turtle'], ['🍋', 'lemon'], ['⚓', 'anchor']].map(([emoji, word]) => ({ emoji, word }))
+const DEMO_WORDS = KIT_EMPTY.split(' ')
+const DEMO_KIT = { email: 'ada@example.org', account: DEMO_ID, has_password: true }
+const W = (words = DEMO_WORDS) => ({ words })
+/** state -> [screen, options over the defaults, values typed into fields after drawing] */
+const DEMO = {
+  welcome: ['start'], 'logged-out': ['start', { loggedOut: true }],
+  create: ['create', { way: 'passkey' }], 'create-nopasskey': ['create', { pk: false, pkOff: false, way: 'password' }],
+  'create-passkey-waiting': ['create', { way: 'passkey', busy: 'Waiting for passkey…' }],
+  'create-passkey-cancelled': ['create', { way: 'passkey', problem: 'No passkey made.' }],
+  'create-passkey-fallback': ['create', { way: 'password', note: NO_PRF }],
+  'create-password': ['create'], 'create-typing': ['create', {}, { '#ob-pw': 'seven77' }], 'create-generated': ['create', {}, { '#ob-pw': 'orbit lantern maple quiet saddle' }],
+  'create-error': ['create', { problem: 'The password needs at least 12 characters.' }, { '#ob-pw': 'short' }],
+  'create-busy': ['create', { busy: 'Creating…' }, { '#ob-pw': 'a long enough password' }],
+  'create-offline': ['create', { problem: 'The hub cannot be reached. Try again.' }, { '#ob-pw': 'a long enough password' }],
+  'create-limit': ['create', { problem: 'Too many tries. Wait a moment, then try again.' }, { '#ob-pw': 'a long enough password' }],
+  kit: ['kit', W()], 'kit-shown': ['kit', { ...W(), shown: true, saved: true }], 'kit-again': ['kit'], 'kit-wrong': ['kit', { problem: 'Wrong password.' }],
+  'kit-passkey': ['kit', { ...W(), ways: { password: false, passkey: true } }], 'kit-noemail': ['kit', { ...W(), shown: true, saved: true, kit: { ...DEMO_KIT, email: null }, ways: { password: false, passkey: true } }],
+  'kit-again-passkey': ['kit', { ways: { password: false, passkey: true } }], 'kit-again-both': ['kit', { ways: { password: true, passkey: true } }],
+  login: ['login'], 'login-nopasskey': ['login', { pk: false, pkOff: false }], 'login-error': ['login', { problem: 'The e-mail or the password is wrong.' }, { '#ob-pw': 'not my password' }],
+  'login-id': ['login', { email: DEMO_ID, problem: ID_NO_PASSWORD }],
+  'login-passkey-waiting': ['login', { passkeyBusy: 'Waiting for passkey…' }], 'login-passkey-busy': ['login', { passkeyBusy: 'Logging in…' }],
+  'login-passkey-error': ['login', { at: 'passkey', problem: 'This passkey opens no account here.' }], 'login-passkey-noprf': ['login', { at: 'passkey', problem: NO_PRF_HERE }],
+  'login-limit': ['login', { problem: 'Too many tries. Wait a moment, then try again.' }], 'login-offline': ['login', { problem: 'The hub cannot be reached. Try again.' }],
+  forgot: ['forgot'], 'forgot-passkey': ['forgot', { way: 'passkey' }],
+  'forgot-kit': ['forgot', { way: 'passkey', email: DEMO_ID, fromKit: true }], 'forgot-kit-hub': ['forgot', { way: 'passkey', email: DEMO_ID, otherHub: 'hub.example.org', fromKit: true }],
+  'forgot-wrong-id': ['forgot', { way: 'passkey', email: DEMO_ID, fromKit: true, problem: 'Wrong account ID or words. A kit that shows an email opens with that email.' }, { textarea: KIT_EMPTY }],
+  'new-passkey': ['newway', { way: 'passkey' }], 'new-passkey-fallback': ['newway', { way: 'password', note: NO_PRF }],
+  scan: ['scan', { still: 'scanning' }], 'scan-asking': ['scan', { still: 'asking' }], 'scan-denied': ['scan', { still: 'denied' }], 'scan-none': ['scan', { still: 'none' }],
+  'scan-tap': ['scan', { still: 'tap' }], 'scan-wrong': ['scan', { still: 'wrong' }], 'scan-paste': ['scan', { still: 'scanning', paste: true }],
+  join: ['join'], 'join-emoji': ['join', { emoji: DEMO_EMOJI }], 'join-expired': ['join', { problem: 'The link has ended. Ask for a new one.' }],
+  'join-offline': ['joinOffline'], 'join-burned': ['join', { problem: 'The other device said the emoji do not match. Nothing was joined.' }],
+  broken: ['broken', { detail: 'no-device: the device keys are not in this browser' }],
+}
+/** The demo's account screens (app.mjs boot, ?mock=1&onboard=<state>): drawn once, nothing sent. */
+export function demoScreen(state) {
+  const [name, over = {}, typed = {}] = DEMO[state] ?? DEMO.welcome
+  const o = { pk: true, pkOff: false, way: 'password', busy: '', passkeyBusy: '', at: 'form', problem: '', email: 'ada@example.org', loggedOut: false, emoji: [], words: null, shown: false, saved: false, kit: DEMO_KIT, ways: { password: true, passkey: false }, demo: true, ...over }
+  document.title = 'Trommi'
+  document.body.innerHTML = String(screenMain(name, o))
+  const root = document.getElementById('room-screen')
+  // (a preview: password managers stay off its fields; nothing is sent, nothing leads elsewhere)
+  for (const f of root.querySelectorAll('input, textarea')) { f.autocomplete = 'off'; for (const a of ['data-1p-ignore', 'data-bwignore', 'data-protonpass-ignore']) f.setAttribute(a, ''); f.setAttribute('data-lpignore', 'true'); f.setAttribute('data-form-type', 'other') }
+  root.addEventListener('submit', e => { e.preventDefault(); e.stopImmediatePropagation() }, true)
+  root.addEventListener('click', e => { if (e.target.closest('a[href], #broken-logout, #broken-retry, #join-again, #scan-again')) { e.preventDefault(); e.stopImmediatePropagation() } }, true)
+  for (const [sel, value] of Object.entries(typed)) { const f = root.querySelector(sel); if (f) f.value = value }
 }
 
 // ---- qr ----
@@ -1636,11 +849,12 @@ function qrSvg(text, label = 'QR-Code') {
 }
 
 const SCAN_SAYS = { asking: 'Allow the camera to scan.', tap: '', scanning: 'Point at the code on your other device.', denied: 'Camera is off. Paste the link instead.', none: 'No camera here. Paste the link instead.', wrong: 'Not a Trommi code.' }
-/** A join link of this app: this origin, /join, and after the # `v1.` with its three parts (the hub, the room's id and the secret, 32 bytes each). Anything else is no code of ours. */
+/** A join link (an invite's: /join, and after the # `v1.` with its parts); anything else is no code of ours. The core
+ *  reads the link itself (Join): this only tells a Trommi code from another one in front of the camera. */
 const joinHash = text => {
   let u
   try { u = new URL(String(text).trim()) } catch { return null }
-  return u.origin === location.origin && u.pathname === '/join' && /^#v1\.[\w-]{4,}\.[\w-]{43}\.[\w-]{43}$/.test(u.hash) ? u.hash : null
+  return u.pathname === '/join' && /^#v1\.[\w.-]+$/.test(u.hash) ? u.hash : null
 }
 /** The drawn corners over the camera's picture: four pen angles, a little uneven. */
 const SCAN_CORNERS = raw('<svg class="scan-corners" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M15.2 31.5 Q14.2 21 15.6 15.8 Q22 14.4 31.8 15.3"/><path d="M68.4 14.9 Q79 14.3 84.5 15.5 Q85.9 22.5 84.8 31.9"/><path d="M85.1 68.2 Q85.8 78.6 84.4 84.6 Q77.5 85.8 68 84.9"/><path d="M31.6 85.2 Q21.4 85.9 15.5 84.3 Q14.2 77 15 68.3"/></svg>')
@@ -1699,35 +913,7 @@ async function scanQr(video, onText) {
   return stop
 }
 
-// ---- controller "room" ----
-// The account pages' small helpers: copy a link or command, select a read-only field on focus,
-// Generate a password, download or print the Emergency Kit, and the storage numbers (navigator.storage; client.usage()).
-
-const size = n => (n == null ? '–' : n < 1e3 ? `${n} B` : n < 1e6 ? `${(n / 1e3).toFixed(0)} kB` : n < 1e9 ? `${(n / 1e6).toFixed(1)} MB` : `${(n / 1e9).toFixed(2)} GB`)
-
-// The agent invite's clipboard (clipboard() above): a press on a command copies it and ticks its line; the minutes
-// left count down by themselves, and when they are gone the page is rendered again (it then offers a new link).
-controller('invite-clip', class extends Controller {
-  static targets = ['left']
-  static values = { until: Number }
-  connect() { if (this.untilValue) { this.count(); this.timer = setInterval(() => this.count(), 5000) } }
-  disconnect() { clearInterval(this.timer); clearTimeout(this.said) }
-  count() {
-    const ms = this.untilValue - Date.now()
-    if (this.hasLeftTarget) this.leftTarget.textContent = ms > 90000 ? `${Math.round(ms / 60000)} more min.` : ms > 0 ? 'less than a minute.' : 'no time left.'
-    if (ms <= 0) { clearInterval(this.timer); window.Turbo?.visit(location.pathname, { action: 'replace' }) }
-  }
-  async copy(e) {
-    const line = e.currentTarget, word = line.querySelector('.clip-copy-word'), ok = await copyText(e.params.text)
-    word.textContent = ok ? 'Copied' : 'Not copied'
-    if (ok) line.closest('.clip-step')?.classList.add('is-done')
-    clearTimeout(this.said)
-    this.said = setTimeout(() => { for (const w of this.element.querySelectorAll('.clip-copy-word')) w.textContent = w.dataset.word }, 1800)
-  }
-})
-
-// ---- Settings: a stand-in for the code until it is asked for (drawn blurred; it encodes nothing), the Theme's three
-// choices ----
+// A stand-in for the code until it is asked for (drawn blurred; it encodes nothing).
 const FAKE_QR = (() => {
   const n = 25, cells = [], finder = (x, y) => (x < 7 && y < 7) || (x >= n - 7 && y < 7) || (x < 7 && y >= n - 7)
   let seed = 7
@@ -1738,18 +924,14 @@ const FAKE_QR = (() => {
   }
   return raw(`<svg viewBox="-2 -2 ${n + 4} ${n + 4}" aria-hidden="true"><rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${cells.join('')}" fill="#14181a"/></svg>`)
 })()
-controller('set-theme', class extends Controller {
-  connect() { for (const r of this.element.querySelectorAll('input[name="theme"]')) r.checked = r.value === themeMode() }
-  pick(e) { setThemeMode(e.target.value) }
-})
 
+// ---- controllers ----
+// "room": select a read-only field on focus, copy a link, this device's storage (navigator.storage).
+const size = n => (n == null ? '–' : n < 1e3 ? `${n} B` : n < 1e6 ? `${(n / 1e3).toFixed(0)} kB` : n < 1e9 ? `${(n / 1e6).toFixed(1)} MB` : `${(n / 1e9).toFixed(2)} GB`)
 controller('room', class extends Controller {
-  static targets = ['field', 'label', 'local', 'hub']
-  static values = { usage: String }
-
+  static targets = ['field', 'label', 'local']
   connect() { if (this.hasLocalTarget) this.usage() }
   disconnect() { clearTimeout(this.timer) }
-
   select(e) { e.target.select() }
   async copy(e) {
     const ok = await copyText(e.params.text)
@@ -1759,20 +941,98 @@ controller('room', class extends Controller {
     clearTimeout(this.timer)
     this.timer = setTimeout(() => { label.textContent = 'Copy' }, 1800)
   }
-
-  generate(e) { e.preventDefault(); generateInto(e.currentTarget) }
-  download(e) { downloadKit(e.params.text) }
-  print() { window.print() }
-
   async usage() {
     try { const e = await navigator.storage?.estimate?.(); this.localTarget.textContent = e ? size(e.usage) : 'unknown' } catch { this.localTarget.textContent = 'unknown' }
-    if (!this.hasHubTarget) return
+  }
+})
+
+// The agent invite's clipboard: a press on a command copies it and ticks its line.
+controller('invite-clip', class extends Controller {
+  disconnect() { clearTimeout(this.said) }
+  async copy(e) {
+    const line = e.currentTarget, word = line.querySelector('.clip-copy-word'), ok = await copyText(e.params.text)
+    word.textContent = ok ? 'Copied' : 'Not copied'
+    if (ok) line.closest('.clip-step')?.classList.add('is-done')
+    clearTimeout(this.said)
+    this.said = setTimeout(() => { for (const w of this.element.querySelectorAll('.clip-copy-word')) w.textContent = w.dataset.word }, 1800)
+  }
+})
+
+controller('set-theme', class extends Controller {
+  connect() { for (const r of this.element.querySelectorAll('input[name="theme"]')) r.checked = r.value === themeMode() }
+  pick(e) { setThemeMode(e.target.value) }
+})
+// Push on this device: a level picked is sent at once (the form's handler: Action::Push).
+controller('set-push', class extends Controller {
+  pick() { this.element.requestSubmit() }
+})
+// A password field's Show/Hide.
+controller('ob-pw', class extends Controller {
+  static targets = ['field']
+  eye(e) {
+    const on = this.fieldTarget.type === 'password'
+    this.fieldTarget.type = on ? 'text' : 'password'
+    e.currentTarget.setAttribute('aria-pressed', String(on))
+    e.currentTarget.textContent = on ? 'Hide' : 'Show'
+  }
+})
+// A screen's first field (or its one button) takes the focus when the screen comes; never inside a frame (/screens).
+controller('ob-focus', class extends Controller {
+  static values = { at: String }
+  connect() {
+    const framed = (() => { try { return window.top !== window } catch { return true } })()
+    if (!framed && this.atValue) this.element.querySelector(this.atValue)?.focus({ preventScroll: true })
+  }
+})
+// The kit's sheet: a tap on it is a tap on Show.
+controller('kit', class extends Controller {
+  flip() { document.getElementById('kit-show')?.click() }
+})
+
+// Scan a code: the camera's stream while the screen is in view (and the tab is); a code of this app is joined with
+// (posted as a pasted link would be), another one is said for a moment and the camera keeps looking.
+controller('scan', class extends Controller {
+  static targets = ['video']
+  connect() {
+    this.alive = true
+    this.hidden = () => { if (document.hidden) this.end(); else if (['scanning', 'asking'].includes(this.state)) this.begin() }
+    document.addEventListener('visibilitychange', this.hidden)
+    this.begin()
+  }
+  disconnect() { this.alive = false; clearTimeout(this.said); this.end(); document.removeEventListener('visibilitychange', this.hidden) }
+  end() { this.stop?.(); this.stop = null }
+  set(state, words = SCAN_SAYS[state]) {
+    this.state = state
+    this.element.dataset.state = state
+    const line = document.getElementById('scan-say'), again = document.getElementById('scan-again')?.parentElement, paste = document.getElementById('scan-paste')
+    if (line) line.textContent = words
+    if (again) again.hidden = state !== 'denied'
+    if ((state === 'denied' || state === 'none') && paste && !paste.open) paste.open = true
+  }
+  async begin() {
+    if (this.stop || !this.alive) return
+    if (!navigator.mediaDevices?.getUserMedia) return this.set('none')
+    document.getElementById('scan-again')?.addEventListener('click', () => this.begin(), { once: true })
+    this.set('asking')
     try {
-      const u = await window.trommi?.client?.usage?.()
-      const used = u?.bytes ?? u?.used_bytes ?? u?.total_bytes
-      const limit = u?.limit_bytes ?? u?.quota_bytes ?? u?.limit
-      this.hubTarget.textContent = used == null ? 'unknown' : limit ? `${size(used)} of ${size(limit)}` : size(used)
-      if (used != null && limit) { this.hubTarget.style.setProperty('--used', `${Math.min(100, (100 * used) / limit).toFixed(1)}%`); this.hubTarget.classList.add('has-bar') }
-    } catch { this.hubTarget.textContent = 'not reachable' }
+      this.stop = await scanQr(this.videoTarget, async text => {
+        if (joinHash(text)) {
+          await fetch('/join', { method: 'POST', body: new URLSearchParams({ link: text }) })
+          window.Turbo?.visit('/join', { action: 'replace' })
+          return true
+        }
+        const line = document.getElementById('scan-say')
+        if (line) line.textContent = SCAN_SAYS.wrong
+        clearTimeout(this.said); this.said = setTimeout(() => { if (this.state === 'scanning' && line) line.textContent = SCAN_SAYS.scanning }, 2500)
+        return false
+      })
+      if (!this.alive || document.hidden) return this.end()
+      this.set('scanning')
+    } catch (err) {
+      console.warn('camera:', err?.name ?? '', err?.message ?? err)
+      // (iOS: a video that may not start by itself waits for a tap)
+      if (err?.name === 'play') return this.set('tap')
+      this.set(['NotAllowedError', 'SecurityError'].includes(err?.name) ? 'denied' : 'none')
+    }
   }
 })

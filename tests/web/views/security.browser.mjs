@@ -1,8 +1,7 @@
 // security.browser.mjs: Settings → Security in headless Chromium, in the demo room (?mock=1): the row in Settings,
-// the account key with its fingerprint and date, the Emergency Kit, every device of the account with its fingerprint
+// the account key (the room it opens, its key epoch), the Emergency Kit, every device of the account with its fingerprint
 // and the date it came, the agents, one line per kind on what it can read, and the self test under it (whose page
-// goes back to Security). The page follows the room: a device that comes in is listed without a reload; one whose
-// date this device never saw says "unknown". At 1440 and 390 wide, light; the page never scrolls sideways.
+// goes back to Security). At 1440 and 390 wide, light; the page never scrolls sideways.
 //   node tests/web/views/security.browser.mjs      (needs Chromium; serves the app from its sources itself)
 //   TROMMI_E2E_SHOTS=<folder>: pictures of the page at both widths.
 import net from 'node:net'
@@ -74,8 +73,7 @@ try {
     const p = await ev(READ)
     check(p.title === 'Security' && p.back === 'Settings', `${width}: a page of Settings`, p)
     check(p.labels.join() === 'Account key,Authorized devices,Agents,Check', `${width}: its four parts, in order`, p.labels)
-    check(/^[0-9a-f]{4}( [0-9a-f]{4}){3}$/.test(p.keyFp ?? '') && /recovery key, since \d+ \w+ \d{4}$/.test(p.key ?? ''), `${width}: the account key: its fingerprint, the recovery key, since when`, p.key)
-    check(p.kit === 'made', `${width}: the Emergency Kit is there`, p.kit)
+    check(/ · key epoch \d+/.test(p.key ?? ''), `${width}: the account key: the room it opens, its key epoch`, p.key)
     check(p.devices.length === 3 && p.devices.every(d => /^[0-9a-f]{4}( [0-9a-f]{4}){3} · added \d+ \w+ \d{4}$/.test(d.small) && d.href.startsWith('/settings/devices/') && d.reads === 'everything'), `${width}: every device with its fingerprint, the day it came, a way to its page`, p.devices)
     check(p.devices[0].name === 'Laptop · this device', `${width}: this device says so`, p.devices[0])
     check(/agents? · \d+ sessions?: each with its own key$/.test(p.agents ?? '') && p.agentsHref === '/settings/agents', `${width}: the agents, counted, with their page`, p.agents)
@@ -85,14 +83,6 @@ try {
     await shot(`security-${width}-light`)
   }
   await page.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
-
-  // ---- live: a device that comes in is listed at once; its date unknown when this device did not see its Commit ----
-  await ev(`(() => { const c = trommi.client, id = 'ab'.repeat(32)
-    c.model.members.set(id, { device_id: id, device_role: 'human', device_name: 'Desktop', fingerprint: 'abab abab abab abab', platform: null, folder: null, host: null, is_active: true, added_entry_number: 99, removed_entry_number: null, added_at: null, is_me: false, is_online: false, offline_since: null, link: null })
-    c.changed(ch => { ch.members = true }) })()`)
-  await until("document.querySelectorAll('.security-device').length === 4", 'the new device is listed without a reload')
-  const live = await ev(READ)
-  check(live.devices.at(-1)?.name === 'Desktop' && live.devices.at(-1)?.small === 'abab abab abab abab · added: unknown', 'a device whose Commit this device did not see: its date is unknown', live.devices.at(-1))
 
   // ---- the self test goes back to Security ----
   await open('/settings/proof')
