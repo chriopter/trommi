@@ -145,6 +145,7 @@ fn debug_never_shows_secrets() {
         action: AccountAction::SignIn {
             email: "a@example.org".into(),
             password: Secret("hunter2".into()),
+            hub: None,
         },
     };
     let event = Event::Action { action };

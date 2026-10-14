@@ -68,6 +68,16 @@ same keys (`App::sessions_not_joined`). `App::room_join()` says where it stands:
 and the join goes on from it), `busy`, the core's code of a room that does not verify, or the hub's refusal. A join
 that fails before it was posted leaves nothing stored; the keys of the code are never stored.
 
+**Signing in to the account.** `Event::Action { Account { SignIn { email, password, hub } | SignInWithKit { email,
+words, hub } } }` on a slot without a device: the core derives the keys (Argon2id for the password, inside this
+`handle`), sends `POST /v1/account/login` or `/recover` itself (no token), opens the copy of the recovery code the
+hub answers with, and joins the room with it as `App::join_room` does. The hub is the action's `hub`, else
+`Config.hub`, else the default. `view.account.step` is `working` meanwhile, `none` once joined, `sign_in` with a
+`problem` (`account.wrong_login`, `account.wrong_kit`, `account.bad_account`, `account.bad_words`, `account.bad_hub`,
+`account.no_room`, `account.offline`, `account.throttled`, `account.too_many`, `account.interrupted`,
+`account.join_failed`, `account.refused`) when not. Password, words, keys and code are in no `Debug`, log, view or
+stored entry.
+
 `App::handle(now_ms, Event) -> Vec<Effect>` is the only entry. Time comes in beside each event (`now_ms`, the
 shell's clock); the core never reads a clock. The protocol's randomness is the system's, read inside
 `core/protocol`; the core's own jitter comes from `Config.seed`, so a seeded test repeats exactly. Local-time rules

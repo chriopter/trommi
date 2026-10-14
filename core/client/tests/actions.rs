@@ -197,8 +197,8 @@ fn no_debug_of_an_action_shows_a_secret() {
     let secret = "hunter2-very-secret";
     let actions = [
         AccountAction::Found { email: "a@example.org".into(), password: Secret(secret.into()) },
-        AccountAction::SignIn { email: "a@example.org".into(), password: Secret(secret.into()) },
-        AccountAction::SignInWithKit { email: "a@example.org".into(), words: Secret(secret.into()) },
+        AccountAction::SignIn { email: "a@example.org".into(), password: Secret(secret.into()), hub: None },
+        AccountAction::SignInWithKit { email: "a@example.org".into(), words: Secret(secret.into()), hub: None },
         AccountAction::Join { link: Secret(secret.into()) },
         AccountAction::DeleteAccount { password: Secret(secret.into()) },
     ];
