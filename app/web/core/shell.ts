@@ -149,7 +149,7 @@ export class CoreShell {
       case 'save_file': return this.host.saveFile?.(effect['name'] as string, effect['media_type'] as string, blobs[effect['bytes'] as number] ?? new Uint8Array())
       case 'open_url': return this.host.openUrl?.(effect['url'] as string)
       case 'notify': return this.host.notify?.(effect['notice'])
-      case 'snapshot': return
+      case 'snapshot': case 'notify_context': return
       case 'log': return this.host.log?.(effect['level'] as string, effect['text'] as string)
       default: return this.host.log?.('warn', `an effect this shell does not know: ${String(effect['type'])}`)
     }

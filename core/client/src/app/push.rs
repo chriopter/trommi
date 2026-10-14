@@ -51,9 +51,9 @@ pub(super) struct Push {
     /// The platform's token of now (kind, bytes).
     token: Option<(String, Vec<u8>)>,
     /// The APNs notify key of this device.
-    notify_key: Option<[u8; 32]>,
+    pub(super) notify_key: Option<[u8; 32]>,
     /// The level the hub has, once read.
-    level: Option<PushChoice>,
+    pub(super) level: Option<PushChoice>,
     read: bool,
 }
 
@@ -236,6 +236,7 @@ impl App {
     }
 
     pub(super) fn show_push(&mut self) {
+        self.outside.due = true;
         let can = self.config.as_ref().map(|c| c.can.push.clone()).unwrap_or_default();
         self.next_view.settings.push = (!can.is_empty()).then(|| PushView {
             level: match self.push.level.unwrap_or(PushChoice::Off) {

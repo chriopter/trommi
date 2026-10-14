@@ -42,7 +42,8 @@ pub struct Config {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Abilities {
-    /// The shell shows local notifications ([`Effect::Notify`](super::Effect::Notify)).
+    /// The shell shows local notifications ([`Effect::Notify`](super::Effect::Notify)); with `push` "apns" also
+    /// the notification extension's context and keys ([`Effect::NotifyContext`](super::Effect::NotifyContext)).
     #[serde(default)]
     pub notify: bool,
     /// The shell keeps secrets in a platform store ([`Effect::Secret`](super::Effect::Secret)).

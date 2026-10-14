@@ -41,7 +41,7 @@ impl Core for App {
 
 /// The part of a shell that is not I/O: the window and the desktop. Called on the loop's task, in order.
 pub trait Shell: Send + 'static {
-    /// `Render`, `FileReady`, `FileGone`, `Notify`, `Snapshot`, `SaveFile`, `OpenUrl`, `Log`: what only the
+    /// `Render`, `FileReady`, `FileGone`, `Notify`, `Snapshot`, `NotifyContext`, `SaveFile`, `OpenUrl`, `Log`: what only the
     /// window or the desktop can do. It must not block.
     fn show(&mut self, effect: Effect);
 
@@ -281,6 +281,7 @@ impl<C: Core, S: Shell> Loop<C, S> {
                 | Effect::FileGone { .. }
                 | Effect::Notify { .. }
                 | Effect::Snapshot { .. }
+                | Effect::NotifyContext { .. }
                 | Effect::SaveFile { .. }
                 | Effect::OpenUrl { .. }
                 | Effect::Log { .. }) => self.shell.show(effect),
