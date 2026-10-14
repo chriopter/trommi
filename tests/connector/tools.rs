@@ -2394,6 +2394,12 @@ async fn a_session_joined_by_the_cli_is_online_and_named_at_once() {
     };
     let reg = named.await.expect("the device register is written at once");
     assert_eq!(reg["device_name"], "project", "{reg}");
+    // who the session is across its devices (spec/v1.md 9.3.3): one entry and one name for it in the person's list
+    assert_eq!(
+        reg["agent"].as_str(),
+        trommi_connector::vouch::agent_identity(&format!("key:{}", seat.session_key)).as_deref(),
+        "{reg}"
+    );
 
     // a reconnect (/mcp): the old server ends, a new one starts
     mcp.close().await;

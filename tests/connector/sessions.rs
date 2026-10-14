@@ -943,6 +943,114 @@ async fn one_session_is_one_ask() {
     asks_settle(&mut m, &vg, 0, 15_000).await.expect("no ask left");
 }
 
+/// A session's door, as another connector of this machine knocks at it.
+async fn knock_session(m: &Machine, s: &Session, req: serde_json::Value) -> serde_json::Value {
+    assert!(s.on.is_some(), "{} is on the board", s.name);
+    let keys = m.seat.home.path().join("keys");
+    for room in std::fs::read_dir(&keys).unwrap().flatten() {
+        for f in std::fs::read_dir(room.path()).unwrap().flatten() {
+            let p = f.path();
+            let name = p.file_name().unwrap().to_string_lossy().to_string();
+            let Some(stem) = name.strip_suffix(".owner") else { continue };
+            let mine = std::fs::read_to_string(&p)
+                .ok()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                .is_some_and(|v| v["owner"] == s.owner());
+            if !mine || stem.starts_with("replaced-") {
+                continue;
+            }
+            let key = room.path().join(format!("{stem}.key"));
+            let sock = m
+                .seat
+                .run_dir()
+                .join(format!("trommi-{}", trommi_connector::slots::uid()))
+                .join(format!(
+                    "{}.sock",
+                    &hex(&trommi_connector::util::sha256(key.display().to_string().as_bytes()))[..20]
+                ));
+            return trommi_connector::door::knock_at(&sock, &req, 10_000)
+                .await
+                .expect("the session's door answers");
+        }
+    }
+    panic!("{}: no key of its own", s.name);
+}
+
+/// One session is one ask across every session that could vouch for it (the owner's board, 2026-10-14: an ask per
+/// try and voucher): a try at another voucher takes the earlier ask back there, and a session whose ask the person
+/// allowed already gets that link again while it holds and is unused, instead of a new ask.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_ask_across_vouchers_and_an_allowed_link_is_used_again() {
+    let mut m = Machine::new().await;
+    let mut v1 = Session::new(&m, "v1", Client::Claude, "one", "cfg");
+    v1.start(&m).await;
+    v1.connect(&mut m, 'A').await;
+    let mut v2 = Session::new(&m, "v2", Client::Claude, "two", "cfg");
+    v2.start(&m).await;
+    v2.connect(&mut m, 'A').await;
+    let (_, _, g1) = v1.on.unwrap();
+    let (_, _, g2) = v2.on.unwrap();
+
+    // a session of the same account asks, as its connector does (self_join), at the first voucher
+    let config = m.seat.home.path().join("cfg");
+    let account = hex(&trommi_connector::util::sha256(
+        format!("claude:{}", trommi_connector::member::resolve(&config.display().to_string()).display()).as_bytes(),
+    ))[..16]
+        .to_string();
+    let owner = format!("cc:{}", uuid());
+    let agent = trommi_connector::vouch::agent_identity(&owner).unwrap();
+    let asker = program_process();
+    let ask = json!({ "op": "vouch", "owner": owner, "account": account, "account_label": "claude cfg", "name": "three",
+        "folder": "~/three", "host": "desktop", "pid": asker.id().unwrap(), "agent": agent });
+    let r1 = knock_session(&m, &v1, ask.clone()).await;
+    assert_eq!(r1["ok"], true, "{r1}");
+    asks_settle(&mut m, &g1, 1, 15_000).await.expect("its ask at the first voucher");
+    let n1 = r1["nonce"].as_str().unwrap().to_string();
+    assert_eq!(
+        m.a.register(&g1, &format!("join_ask/{n1}")).await.unwrap()["agent"],
+        json!(agent),
+        "the ask names who the session is"
+    );
+
+    // its next try at the second voucher: the first takes its ask back (the connector knocks there with vouch-drop)
+    let r2 = knock_session(&m, &v2, ask.clone()).await;
+    assert_eq!(r2["ok"], true, "{r2}");
+    let n2 = r2["nonce"].as_str().unwrap().to_string();
+    let take_back = json!({ "op": "vouch-drop", "owner": owner, "account": account });
+    assert_eq!(knock_session(&m, &v1, take_back).await["dropped"], 1);
+    asks_settle(&mut m, &g1, 0, 15_000).await.expect("no ask left at the first voucher");
+    asks_settle(&mut m, &g2, 1, 15_000).await.expect("one ask at the second");
+    // another account's session cannot take it back
+    let foreign = json!({ "op": "vouch-drop", "owner": owner, "account": "0000000000000000" });
+    assert_eq!(knock_session(&m, &v2, foreign).await["ok"], false);
+
+    // the person allows it; the try stops before it joins; the next try gets the same link, no new ask
+    let invite = m.a.invite(None).await;
+    m.a.set_register(&g2, &format!("join_link/{n2}"), Some(json!({ "link": invite.link, "invite_id": "x" })))
+        .await
+        .expect("the link is written");
+    let reuse = json!({ "op": "vouch-reuse", "owner": owner, "account": account, "pid": asker.id().unwrap() });
+    let mut again = json!(null);
+    for _ in 0..100 {
+        again = knock_session(&m, &v2, reuse.clone()).await;
+        if again["ok"] == true {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(again["nonce"].as_str(), Some(n2.as_str()), "{again}");
+    let asked = knock_session(&m, &v2, ask.clone()).await;
+    assert_eq!(asked["nonce"].as_str(), Some(n2.as_str()), "a vouch of it gets the allowed ask too");
+    assert_eq!(knock_session(&m, &v1, reuse.clone()).await["ok"], false, "none held at the first");
+    // used (its Request named): never handed out again
+    let hash = json!({ "op": "vouch-hash", "nonce": n2, "owner": owner, "request_hash": "AAAA" });
+    assert_eq!(knock_session(&m, &v2, hash).await["ok"], true);
+    assert_eq!(knock_session(&m, &v2, reuse).await["ok"], false);
+    let fresh = knock_session(&m, &v2, ask).await;
+    assert_ne!(fresh["nonce"].as_str(), Some(n2.as_str()));
+    drop(asker);
+}
+
 /// The link of an invite for the coordinator's own session, given to `trommi-connector connect` in a terminal of
 /// another folder (its first one) while the resumed session waits for its key: the running session takes the new
 /// key at once, without a restart, and is back in its own board session.
