@@ -520,3 +520,31 @@ fn a_sessions_group_carries_its_desks_goals_and_is_written_once() {
     assert!(held(&sim).is_null());
     assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
 }
+
+#[test]
+fn a_register_written_while_catching_up_waits_until_live() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    // the next start: held at the hub, so the device is still catching up
+    sim.restart();
+    sim.hold = true;
+    sim.send(start());
+    assert_ne!(sim.view.phase, Phase::Live);
+    let outbox = sim.app.engine().unwrap().device().outbox().len();
+    sim.send(Event::Action { action: Action::Star { card_id: card.clone(), on: true } });
+    assert_eq!(sim.app.engine().unwrap().device().outbox().len(), outbox, "nothing sealed before the device is live");
+    assert!(human(&sim, &format!("star/{card}")).is_none());
+    sim.hold = false;
+    for _ in 0..10 {
+        serve(&world, &mut sim);
+        world.stream(&mut sim);
+        if sim.view.phase == Phase::Live {
+            break;
+        }
+        sim.advance(1_000);
+    }
+    assert_eq!(sim.view.phase, Phase::Live);
+    serve(&world, &mut sim);
+    assert!(human(&sim, &format!("star/{card}")).is_some_and(|(v, _)| !v.is_null()), "written once live");
+}

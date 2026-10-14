@@ -23,6 +23,7 @@ pub mod effect;
 pub mod event;
 pub mod io;
 mod invites;
+mod account_steps;
 pub mod script;
 pub mod sim;
 
@@ -69,6 +70,8 @@ enum Pending {
     JoinLoad,
     /// The device state read for a founding (`AccountAction::Found`).
     FoundLoad,
+    /// The cache space read to wipe it (a sign-out).
+    Wipe,
     /// I/O of an engine that was dropped (a join of the room that failed): its answer is only logged.
     Dropped,
 }
@@ -119,6 +122,11 @@ pub struct App {
     files: crate::files::Files,
     /// Invites this device opened (`app::invites`).
     invites: invites::Invites,
+    /// The account's steps in flight (`app::account_steps`).
+    steps: account_steps::Steps,
+    /// Actions that write the room's registers, held while the device catches up: a register written before the
+    /// device read the newest value would lose to an older one read later (its write counter is too low).
+    held_actions: Vec<Action>,
     /// The hub the stored room names ([`ROOM_KEY`]).
     stored_hub: Option<String>,
     /// The device state loaded, while the stored room's hub is read.
@@ -176,6 +184,8 @@ impl App {
             answers: Vec::new(),
             files: crate::files::Files::default(),
             invites: invites::Invites::default(),
+            steps: account_steps::Steps::default(),
+            held_actions: Vec::new(),
             opening: None,
             board: engine::feed::Board::default(),
             lens: Lens::default(),
@@ -272,7 +282,7 @@ impl App {
     fn account(&mut self, now_ms: u64, action: crate::account::AccountAction, out: &mut Vec<Effect>) {
         use crate::account::signin::{self, By};
         use crate::account::AccountAction;
-        if self.invite_action(now_ms, &action, out) {
+        if self.invite_action(now_ms, &action, out) || self.account_step(now_ms, &action, out) {
             return;
         }
         match action {
@@ -530,6 +540,11 @@ impl App {
             }
             _ if self.config.is_none() => out.push(log(LogLevel::Warn, "an event before start")),
             Event::Store { id, result } => match self.pending.remove(&id) {
+                Some(Pending::Wipe) => {
+                    if let IoResult::Ok(StoreAnswer::Entries { entries }) = result {
+                        self.wipe_cache(entries.into_iter().map(|e| e.key).collect(), &mut out);
+                    }
+                }
                 Some(Pending::FoundLoad) => match result {
                     IoResult::Ok(StoreAnswer::Device { revision, entries }) => self.found_loaded(now_ms, revision, entries, &mut out),
                     _ => self.found_failed(crate::views::Text::new("account.found_failed", "The room was not made (storage).")),
@@ -697,6 +712,12 @@ impl App {
             return;
         }
         if self.file_action(now_ms, &action, out) {
+            return;
+        }
+        if writes_room_registers(&action) && self.next_view.phase != Phase::Live {
+            if self.held_actions.len() < 64 {
+                self.held_actions.push(action);
+            }
             return;
         }
         self.doing(now_ms, out, |doing| {
@@ -991,6 +1012,7 @@ impl App {
         let mut notes_back = Vec::new();
         let mut invite_news = Vec::new();
         let mut invite_answers = Vec::new();
+        let mut step_answers = Vec::new();
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
@@ -1045,6 +1067,7 @@ impl App {
                 }
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
                 Report::Answer(answered) if self.invites.owns(answered.id) => invite_answers.push(*answered),
+                Report::Answer(answered) if self.steps.asked.contains_key(&answered.id) => step_answers.push(*answered),
                 Report::Answer(answered) if self.files.owns(answered.id) => {
                     if let Some(text) = self.files.answered(answered.id, &answered.result, out) {
                         self.sent.toast(&mut self.next_view.toasts, text, None);
@@ -1134,12 +1157,24 @@ impl App {
         for answered in invite_answers {
             self.invite_answered(now_ms, answered.id, &answered.result, out);
         }
+        for answered in step_answers {
+            self.step_answered(now_ms, answered.id, &answered.result, out);
+        }
         for invite in invite_news {
             self.invites_look(now_ms, Some(invite), out);
         }
         self.invites_settle(now_ms, out);
         self.notes_free(now_ms, notes_back, out);
         self.goals_check |= fed;
+        if !self.held_actions.is_empty() && self.next_view.phase == Phase::Live {
+            for action in std::mem::take(&mut self.held_actions) {
+                self.doing(now_ms, out, |doing| {
+                    if let Err(NotDone { text, again }) = doing.run(&action) {
+                        doing.sent.toast(doing.toasts, text, again.then_some(action.clone()));
+                    }
+                });
+            }
+        }
         if self.goals_check && self.next_view.phase == Phase::Live {
             self.doing(now_ms, out, |doing| doing.sync_goals());
             self.goals_check = false;
@@ -1195,6 +1230,24 @@ impl App {
             }
         }
     }
+}
+
+/// Whether an action writes a register of the room group (stars, snoozes, drafts, sessions' settings, desks).
+fn writes_room_registers(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::Star { .. }
+            | Action::Snooze { .. }
+            | Action::Unsnooze { .. }
+            | Action::Draft { .. }
+            | Action::RenameSession { .. }
+            | Action::ArchiveSession { .. }
+            | Action::MoveSession { .. }
+            | Action::AddDesk { .. }
+            | Action::RenameDesk { .. }
+            | Action::RemoveDesk { .. }
+            | Action::SetGoal { .. }
+    )
 }
 
 fn log(level: LogLevel, text: &str) -> Effect {
