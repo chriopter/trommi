@@ -516,3 +516,34 @@ fn the_unread_prefix_is_not_read_back_either() {
     assert_eq!(r.outcome, EnvelopeOutcome::Refused);
     assert_eq!(r.code, Some(Error::Replay));
 }
+
+/// What comes in the hub's order but was served before the version the list showed of its object is older than
+/// what the device holds: taken in its chain, it changes nothing of the object, and a first version is not
+/// refused for an object the list already gave.
+#[test]
+fn what_was_served_before_the_listed_version_changes_nothing() {
+    let mut w = world();
+    let group = w.group;
+    // The device reads in order from its join on; the list is read later, at a change above everything below.
+    w.late.start_from_list(&group, 0).unwrap();
+    let object_id = w.revised.object_id.unwrap();
+    let listed = w.stored(&w.revised.clone());
+    let at = w.late.cursor() + 100;
+    w.late
+        .adopt_listed(&group, &object_id, &listed.bytes, at)
+        .unwrap();
+    let first = w
+        .hub
+        .chain_of(&group, &w.agent.id(), 0)
+        .into_iter()
+        .next()
+        .expect("the first version");
+    let mut early = first.clone();
+    early.change = w.late.cursor() + 1;
+    let r = take_envelope(&mut w.late, &early);
+    assert_ne!(r.outcome, EnvelopeOutcome::Refused, "{r:?}");
+    assert_ne!(r.code, Some(Error::Forbidden), "{r:?}");
+    assert!(r.object_after.is_none(), "{r:?}");
+    let object = w.late.object(&group, &object_id).unwrap().unwrap();
+    assert_eq!(object.current, w.revised.envelope_hash);
+}

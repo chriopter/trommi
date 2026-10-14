@@ -93,7 +93,6 @@ impl<S: Storage> Device<S> {
             if !this.is_human() {
                 return Err(Error::Forbidden);
             }
-            this.meta(group)?;
             if this.listed_at(group)?.is_some() {
                 return Ok(());
             }

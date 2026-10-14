@@ -555,6 +555,16 @@ pub(super) struct HeldObjects<'a, S: Storage> {
     whole: Option<Objects>,
     /// The group was started from the hub's list.
     listed: bool,
+    /// The change number of the envelope judged against these objects, when it came in the hub's order.
+    at: Option<u64>,
+}
+
+impl<S: Storage> HeldObjects<'_, S> {
+    /// These objects for judging the envelope served under `change`.
+    pub(super) fn at(mut self, change: u64) -> Self {
+        self.at = Some(change);
+        self
+    }
 }
 
 impl<S: Storage> ObjectStates for HeldObjects<'_, S> {
@@ -601,6 +611,18 @@ impl<S: Storage> ObjectStates for HeldObjects<'_, S> {
                 .device
                 .stored(&adopted_key(&self.group, object))
                 .is_some())
+    }
+
+    fn covered(&self, object: &ObjectId) -> Result<bool, Error> {
+        let Some(at) = self.at.filter(|_| self.listed) else {
+            return Ok(false);
+        };
+        let Some(value) = self.device.stored(&listed_object_key(&self.group, object)) else {
+            return Ok(false);
+        };
+        let (record, _) = super::listed::read_listed(value)
+            .map_err(|_| damaged("an object taken from the list"))?;
+        Ok(record.change > at)
     }
 }
 
@@ -959,6 +981,7 @@ impl<S: Storage> Device<S> {
             whole,
             // (an agent or helper device never adopts, whatever its store says)
             listed: self.listed_at(group)?.is_some() && self.is_human(),
+            at: None,
         })
     }
 
@@ -1080,6 +1103,7 @@ impl<S: Storage> Device<S> {
                 revision: objects.revision(),
                 adopted: true,
             })?;
+            objects.listed_at(object_id, record.change);
         }
         Ok(objects)
     }
@@ -1297,6 +1321,7 @@ impl<S: Storage> Device<S> {
             if record.change >= change || record.status != Status::Taken {
                 continue;
             }
+            objects.judging_at(record.change);
             match objects::judge(&facts, &objects, &record.header, &record.hash) {
                 Ok(Some(transition)) => objects.apply(&transition)?,
                 Ok(None) | Err(Error::Forbidden) => {}
@@ -1322,6 +1347,7 @@ impl<S: Storage> Device<S> {
                 if !matches!(record.status, Status::Taken | Status::Forbidden) {
                     continue;
                 }
+                objects.judging_at(record.change);
                 let status = match objects::judge(&facts, &objects, &record.header, &record.hash) {
                     // What check 7 refused where it came and that was of an ended epoch stays refused:
                     // it never met check 8.

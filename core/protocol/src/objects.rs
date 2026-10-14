@@ -103,6 +103,12 @@ pub trait ObjectStates {
     fn adopted(&self, _object: &ObjectId) -> Result<bool, Error> {
         Ok(false)
     }
+
+    /// Whether the hub's list this holder started from holds a version of `object` served after the envelope
+    /// being judged: such an envelope changes nothing of the object (9.2.1).
+    fn covered(&self, _object: &ObjectId) -> Result<bool, Error> {
+        Ok(false)
+    }
 }
 
 impl ObjectStates for Objects {
@@ -125,6 +131,14 @@ impl ObjectStates for Objects {
     fn adopted(&self, object: &ObjectId) -> Result<bool, Error> {
         Ok(self.adopted.contains(object))
     }
+
+    fn covered(&self, object: &ObjectId) -> Result<bool, Error> {
+        Ok(self.adopts
+            && self
+                .listed
+                .get(object)
+                .is_some_and(|listed| *listed > self.at))
+    }
 }
 
 /// The objects of one group.
@@ -140,6 +154,10 @@ pub struct Objects {
     adopts: bool,
     /// The objects taken from a signed header.
     adopted: BTreeSet<ObjectId>,
+    /// Of the objects taken from the hub's list, the change number of the version listed.
+    listed: BTreeMap<ObjectId, u64>,
+    /// The change number of the envelope being judged ([`Objects::judging_at`]).
+    at: u64,
 }
 
 struct ObjectEntry(ObjectId, Object);
@@ -174,6 +192,17 @@ impl Objects {
             adopts: true,
             ..Self::default()
         }
+    }
+
+    /// Notes that `object` was taken from the hub's list at the version served under `change`.
+    pub fn listed_at(&mut self, object: ObjectId, change: u64) {
+        self.listed.insert(object, change);
+    }
+
+    /// The change number of the envelope judged next: one served before the list's version of its object
+    /// changes nothing of it.
+    pub fn judging_at(&mut self, change: u64) {
+        self.at = change;
     }
 
     /// Whether `object` was taken from a signed header and not read from its first version.
@@ -521,6 +550,17 @@ pub fn judge(
 ) -> Result<Option<Transition>, Error> {
     sender_may(facts, header)?;
     let (group, epoch) = (&header.group, header.epoch);
+    // What was served before the version the hub's list showed of its object is older than what is held: it
+    // is allowed as far as the sender's role says, and changes nothing (9.2.1).
+    let named = match &header.subject {
+        Subject::Item(Timeline::CardChat(card)) => Some(*card),
+        subject => subject.object().map(|fields| fields.object_id),
+    };
+    if let Some(named) = named {
+        if objects.covered(&named)? {
+            return Ok(None);
+        }
+    }
     let fields = match &header.subject {
         Subject::Item(Timeline::CardChat(card)) => {
             let known = objects.object(card)?;

@@ -1304,10 +1304,14 @@ impl<S: Storage> Device<S> {
             // An envelope that comes behind later ones of its group is judged at its own place.
             let (at_its_place, held);
             let objects: &dyn ObjectStates = if change < this.group_state(&group)?.max_change {
-                at_its_place = this.objects_before(&group, change)?;
+                at_its_place = {
+                    let mut objects = this.objects_before(&group, change)?;
+                    objects.judging_at(change);
+                    objects
+                };
                 &at_its_place
             } else {
-                held = this.held_objects(&group)?;
+                held = this.held_objects(&group)?.at(change);
                 &held
             };
             // A group started from the hub's list (9.0.6): a sender's chain this device holds nothing of
