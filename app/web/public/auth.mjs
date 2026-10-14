@@ -10,7 +10,7 @@
 // app.mjs asks gate(vm, url) on every visit while signed out or while a step runs: the address the page must be on.
 // The UI says "account", never "room". Calm and sober: pen drawings only on the choice buttons.
 import { BELL, Controller, PLUS, SET_CHEVRON, askToast, connectCommand, connectPrompt, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode } from './ui.mjs'
-import { passkeysOn, pushObstacle } from './platform.mjs'
+import { passkeysOn, pushObstacle } from './app.mjs'
 
 // (the page's core and the QR reader come when first needed: this module also loads in Node, for its tests)
 const qrReader = () => import('./app.mjs').then(app => app.qrReader())
@@ -252,7 +252,7 @@ function syncAsks(vm) {
 
 // ---- the routes ----
 export function register(t) {
-  if (typeof document !== 'undefined') { import('./core.mjs').then(core => core.on('render', syncAsks)); syncAsks(t.vm()) }
+  if (typeof document !== 'undefined') { import('./app.mjs').then(app => app.onCore('render', syncAsks)); syncAsks(t.vm()) }
   const vm = () => t.vm()
   const page = (req, res, title, main, extra = {}) => t.page(req, res, { title: `${title} · Trommi`, view: 'room', main, ...extra })
   const sent = (path, word, passkey = false) => { local.sent = { path, word, passkey }; local.begun = true; local.loggedOut = false; if (path !== '/forgot' && path !== '/new-way') local.words = null }

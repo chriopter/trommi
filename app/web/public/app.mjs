@@ -14,6 +14,9 @@ import { movedPath } from './paths.mjs'
 import { rowSheet } from './desk.mjs'
 import * as core from './core.mjs'
 import { passkeysOn, pushable } from './platform.mjs'
+/** For the views (a view imports only app.mjs and ui.mjs). */
+export { passkeysOn, pushObstacle } from './platform.mjs'
+export { on as onCore } from './core.mjs'
 
 // The views a cold start needs (the Desk, its frame, the notes) come with this module; every other view is loaded
 // when an address of it is first asked for (LAZY: the addresses it answers), and all of them once the page is idle,
@@ -22,7 +25,7 @@ const VIEWS = [desk, sidebar, notes]
 /** "MLS proof" (proof.mjs): a page of Settings, and a screen of its own on a device without a room (boot). */
 const PROOF_PATH = /^\/settings\/proof$/
 const LAZY = {
-  auth: { load: () => import('./auth.mjs'), paths: /^\/(?:settings(?:\/(?:devices|account|theme|keys|kit|password|security))?|devices\/|pair|logout|join|login)(?:\/|$)/ },
+  auth: { load: () => import('./auth.mjs'), paths: /^\/(?:settings(?:\/(?:devices|account|theme|keys|kit|password|security))?|devices\/|pair|logout|join|login|start|create|forgot|scan|kit|new-way)(?:\/|$)/ },
   agents: { load: () => import('./agents.mjs'), paths: /^\/(?:settings\/(?:sessions|agents)$|sessions\/)/ },
   desks: { load: () => import('./desks.mjs'), paths: /^\/settings\/desks(?:\/|$)/ },
   card: { load: () => import('./card.mjs'), paths: /^(?:\/chat\/[^/]+)?\/card\/|^\/cards\/[0-9a-f]+\// },
