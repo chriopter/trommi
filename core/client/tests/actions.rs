@@ -623,3 +623,29 @@ fn deleting_a_session_shreds_its_cards_and_archives_it() {
     assert_eq!(answer_of(&sim, &card).map(|a| a.0), Some("closed".into()));
     assert_eq!(human(&sim, &format!("session/{session}")).unwrap().0["archived"], json!(true));
 }
+
+#[test]
+fn a_note_sent_waits_for_undo_then_goes_to_its_session() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    write_note(&mut sim, None, "remember the milk");
+    world.stream(&mut sim);
+    let id = open_notes(&sim)[0].clone();
+    // sent, then undone within the hold: nothing goes
+    act(&mut sim, Action::SendNote { note_id: id.clone(), to: Some(session.clone()) });
+    assert!(note(&sim, &id)["held"].is_object());
+    act(&mut sim, Action::UnsendNote { note_id: id.clone() });
+    assert!(note(&sim, &id)["held"].is_null());
+    world.stream(&mut sim);
+    // sent and left: after the hold the line goes to the session and the note is closed
+    act(&mut sim, Action::SendNote { note_id: id.clone(), to: Some(session.clone()) });
+    world.stream(&mut sim);
+    sim.advance(4_000);
+    world.stream(&mut sim);
+    let chat = sim.app.board().model.timelines[&format!("chat:session/{session}")].items.values().any(|i| i["content"]["text"] == json!("remember the milk") && i["content"]["note"]["object_id"] == json!(id));
+    assert!(chat, "the line names the note");
+    assert!(!open_notes(&sim).contains(&id), "the note is gone");
+    assert!(sim.view.toasts.iter().all(|t| t.text.key == "notes.sent"), "{:?}", sim.view.toasts);
+}

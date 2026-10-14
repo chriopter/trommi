@@ -139,6 +139,8 @@ pub struct App {
     changes: account_change::Changes,
     desks: desks::DeskDeletes,
     push: push::Push,
+    /// Notes this run delivered (their closing version is on its way).
+    notes_went: std::collections::BTreeSet<String>,
     /// A recovery (`AccountAction::Recover`) waiting for its login: the new kit's words and the sealer of the
     /// account's new copies; then the words, shown once the room is recovered.
     recover_with: Option<(Vec<String>, engine::recover::Copies)>,
@@ -212,6 +214,7 @@ impl App {
             changes: account_change::Changes::default(),
             desks: desks::DeskDeletes::default(),
             push: push::Push::default(),
+            notes_went: Default::default(),
             recover_with: None,
             recovered_kit: None,
             selfjoin: selfjoin::SelfJoin::default(),
@@ -925,6 +928,46 @@ impl App {
         self.run_action(now_ms, action, out);
     }
 
+    /// The notes this device sent whose hold (the toast's Undo) ran out: delivered, once each.
+    fn deliver_notes(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
+        let me = self.board.model.my_device_id.clone();
+        let due: Vec<String> = self
+            .board
+            .model
+            .notes
+            .iter()
+            .filter(|(id, n)| {
+                let held = n.get("held").and_then(|h| h.get("until")).and_then(serde_json::Value::as_u64);
+                held.is_some_and(|u| u <= now_ms)
+                    && n.get("by_device_id").and_then(serde_json::Value::as_str) == me.as_deref()
+                    && n.get("object_state").and_then(serde_json::Value::as_str) != Some("closed")
+                    && !n.get("pending").is_some_and(crate::model::apply::truthy)
+                    && !self.notes_went.contains(*id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in due {
+            self.notes_went.insert(id.clone());
+            self.doing(now_ms, out, |doing| {
+                if let Err(NotDone { text, .. }) = doing.deliver_note(&id) {
+                    doing.sent.toast(doing.toasts, text, None);
+                }
+            });
+        }
+    }
+
+    /// When the next held note is due.
+    fn notes_wake(&self) -> Option<u64> {
+        let me = self.board.model.my_device_id.as_deref();
+        self.board
+            .model
+            .notes
+            .iter()
+            .filter(|(id, n)| !self.notes_went.contains(*id) && n.get("by_device_id").and_then(serde_json::Value::as_str) == me)
+            .filter_map(|(_, n)| n.get("held").and_then(|h| h.get("until")).and_then(serde_json::Value::as_u64))
+            .min()
+    }
+
     /// Deletes a session (the web's `deletionOf`): its open cards and those of its helpers are shredded, they are
     /// archived, and the agent devices that carry no other session (not archived, or connected) leave the room.
     fn delete_session(&mut self, now_ms: u64, session_id: &str, out: &mut Vec<Effect>) {
@@ -975,6 +1018,11 @@ impl App {
         });
         // an archived session is over for good (5.2.10): the hub takes nothing more for its group, and the agent
         // device a self-joined session brought along goes with it
+        // a sent note's toast offers Undo while it is held
+        if let (true, Action::SendNote { note_id, .. }) = (done, &action) {
+            let text = crate::views::Text::new("notes.sent", "Note sent.");
+            self.sent.toast(&mut self.next_view.toasts, text, Some(Action::UnsendNote { note_id: note_id.clone() }));
+        }
         if let (true, Action::ArchiveSession { session_id, on: true }) = (done, &action) {
             self.archive_group(now_ms, session_id, out);
         }
@@ -1549,9 +1597,10 @@ impl App {
             self.doing(now_ms, out, |doing| doing.sync_goals());
             self.goals_check = false;
         }
-        // this device's push, as the hub has it
+        // this device's push, as the hub has it; its notes whose hold ran out go to their session
         if self.next_view.phase == Phase::Live {
             self.push_look(now_ms, out);
+            self.deliver_notes(now_ms, out);
         }
         // a desk's delete: its next step once the last one shows
         if fed || !self.desks.running.is_empty() {
@@ -1578,7 +1627,7 @@ impl App {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.desks.wake(now_ms)].into_iter().flatten().min();
+        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.desks.wake(now_ms), self.notes_wake().map(|at| at.max(now_ms + 1))].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });
