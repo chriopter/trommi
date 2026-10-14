@@ -68,6 +68,8 @@ public/
   desk  card  session  sidebar  notes  media  agents  desks  whiteboard   (.mjs + .css each)
   proof.mjs            Self Test (the core's self test), a row of Settings → Security
   news.mjs             What's new: /whats-new.json (whats-new.mjs, the worker's: the releases' notes), from the menu
+  core.mjs             the page's side of the app core (its worker: core/core-worker.ts): the view model, actions, focus, files
+  platform.mjs         what only the page can do for the core: passkeys (WebAuthn, prf), Web Push
   paths.mjs            the addresses of before (/s/…, /a/…) and their new form; shared by app.mjs and worker.js
   demo/                the demo room's code (demo.mjs, screens.css); its data is the repository's demo/data/, which
                        the build copies here as fixture.json and files/ (not in git)
