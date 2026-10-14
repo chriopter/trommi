@@ -21,8 +21,9 @@ final class InviteResumeTests: XCTestCase {
   override func tearDown() async throws { try? FileManager.default.removeItem(at: base) }
 
   /** A room of this device with one live session, and an invite of it that still has to add the newcomer there. */
-  private func roomWithOpenAdd() async throws -> (Room, FakeDevice, GroupId) {
+  private func roomWithOpenAdd(shortPauses: Bool = false) async throws -> (Room, FakeDevice, GroupId) {
     let room = try await Room.foundRoom(hubURL: "http://127.0.0.1:9", base: base).room
+    if shortPauses { room.invitesPauseFirst = 5_000_000; room.invitesPauseMost = 20_000_000; room.invitesPause = 5_000_000 }
     FakeHub.shared.commit(group: room.roomId, ["session": session, "agent": agent])
     _ = try await room.sync()
     let device = try XCTUnwrap(room.device as? FakeDevice)
@@ -68,14 +69,18 @@ final class InviteResumeTests: XCTestCase {
     again.close()
   }
 
-  /** While the hub holds none, the upkeep keeps looking, without a new sync: the device is added once it has one. */
+  /** While the hub holds none, the upkeep keeps looking, without a new sync: the device is added once it has one.
+   *  Counted in rounds, not in time (the pauses are short here): a wall-clock wait raced the growing pause. */
   func testTheUpkeepLooksAgainUntilTheKeyPackageCame() async throws {
-    let (room, device, _) = try await roomWithOpenAdd()
+    let (room, device, _) = try await roomWithOpenAdd(shortPauses: true)
     _ = try await room.sync()
-    try await Task.sleep(nanoseconds: 300_000_000)
-    XCTAssertTrue(device.added.isEmpty)
+    let first = room.invitesRounds
+    try await until("the upkeep looks again, without a sync") { room.invitesRounds >= first + 3 }
+    XCTAssertTrue(device.added.isEmpty, "no KeyPackage at the hub: nobody added")
     FakeHub.shared.lock.withLock { _ = FakeHub.shared.keyPackages.insert(hex(newcomer)) }
-    try await until("added by a later round") { device.added.contains { $0.device == newcomer } }
+    let came = room.invitesRounds
+    try await until("a whole round after the KeyPackage came") { device.added.contains { $0.device == newcomer } || room.invitesRounds >= came + 2 }
+    XCTAssertTrue(device.added.contains { $0.device == newcomer }, "added by a later round")
     room.close()
   }
 

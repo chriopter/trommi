@@ -5,7 +5,9 @@
 #     Content-Security-Policy, Cross-Origin-Opener-Policy) and is the release's public/index.html (SHA-256)
 #   - every script and module the start page names under /gen/ answers 200 and is the release's file (SHA-256)
 #   - /gen/build.txt names this release's commit
-# Tried up to three times (a rollout takes a moment). Exit 0: well; else the reason on standard output, exit 1.
+# Tried up to 12 times, 10 s apart (a rollout takes a moment: for up to a minute Cloudflare's edges answer from the old
+# and the new version by turns, so the start page and the files it names may come from different ones; three tries
+# in 20 s failed the runs of 2e76c89 and eac593d, #224). Exit 0: well; else the reason on standard output, exit 1.
 #
 #   .github/scripts/web_smoke.sh <release dir (manifest.json)> <commit> [<origin, default https://app.trommi.com>]
 set -u
@@ -42,10 +44,10 @@ check() {
   [ "$served" = "$(printf '%s' "$commit" | cut -c1-7)" ] || { echo "/gen/build.txt names ${served:-nothing}, not $commit"; return 1; }
   echo "$origin serves this release: the start page and $(wc -l < "$work/names" | tr -d ' ') files it loads, byte for byte" >&2
 }
-for try in 1 2 3; do
+for try in 1 2 3 4 5 6 7 8 9 10 11 12; do
   if reason=$(check); then exit 0; fi
   echo "try $try: $reason" >&2
-  [ "$try" = 3 ] || sleep 10
+  [ "$try" = 12 ] || sleep 10
 done
 echo "$reason"
 exit 1
