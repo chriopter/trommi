@@ -15,7 +15,8 @@
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
     "noEmit": true,
-    "skipLibCheck": false
+    "skipLibCheck": false,
+    "resolveJsonModule": true
   },
-  "files": ["typings.ts", "../../core/bindings/wasm/js/trommi-core.d.ts", "../../core/bindings/wasm/js/idb-store.d.ts"]
+  "files": ["typings.ts", "views-typings.ts", "../../core/bindings/wasm/js/views.d.ts", "../../core/bindings/wasm/js/trommi-core.d.ts", "../../core/bindings/wasm/js/idb-store.d.ts"]
 }

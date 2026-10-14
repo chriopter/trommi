@@ -390,7 +390,8 @@ pub fn clean_goals(text: &str) -> String {
     joined.trim_matches('\n').split('\n').take(GOALS_LINES).collect::<Vec<_>>().join("\n")
 }
 
-/// Makes the board's units of `view` again from the model: the sidebar and the Desk (sessions and cards follow).
+/// Makes the board's units of `view` again from the model: the sidebar, the Desk, the pages in view, the notes and
+/// the settings.
 /// What the engine and the account own (`phase`, `status`, `account`, `files`, `toasts`) is left as it is. Returns
 /// when to call again by the clock alone (a count of minutes, an answer that turns late), if ever. The App calls
 /// this after each batch and at that moment, and sends what `ViewModel::diff` finds.
@@ -400,6 +401,11 @@ pub fn render(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel)
     let off = super::off::of_board(&b);
     view.desk = super::desk::desk_with(&b, &off);
     view.off = lens.off.as_deref().map(|q| super::off::off_list(&b, &off, q));
+    view.notes = super::notes::notes(&b);
+    // (what the account read keeps: the e-mail is the account's, W3)
+    let account = view.settings.account.take();
+    view.settings = super::settings::settings(&b);
+    view.settings.account = account;
     // The pages in view: one session, one card. A page that is left is taken away.
     view.sessions.clear();
     if let Some(s) = lens.session.as_deref().and_then(|id| super::session::session(&b, id)) {

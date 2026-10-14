@@ -1,0 +1,51 @@
+{
+  "notes": [
+    "96edd88ae69f5f4a1ec3caffdad8ef2e"
+  ],
+  "rows": [
+    {
+      "id": "96edd88ae69f5f4a1ec3caffdad8ef2e",
+      "text": "Ask payments: does the checkout keep the plant someone was adding?",
+      "created_ms": 1791469380000,
+      "updated_ms": 1791469380000,
+      "pending": false
+    }
+  ],
+  "corner": "96edd88ae69f5f4a1ec3caffdad8ef2e",
+  "written": true,
+  "says": {
+    "key": "note.open",
+    "en": "Your note: open it"
+  },
+  "to": {
+    "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+    "name": "Fernly Website",
+    "mark": "draw:leaf",
+    "desk_id": "main",
+    "desk": "Fernly"
+  },
+  "far": false,
+  "choose": [
+    {
+      "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "name": "Fernly Website",
+      "mark": "draw:leaf",
+      "desk_id": "main",
+      "desk": "Fernly"
+    },
+    {
+      "session_id": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "name": "Payments",
+      "mark": "draw:lock",
+      "desk_id": "platform",
+      "desk": "Platform"
+    }
+  ],
+  "send_says": {
+    "key": "note.send_to",
+    "args": {
+      "name": "Fernly Website"
+    },
+    "en": "Send to Fernly Website"
+  }
+}

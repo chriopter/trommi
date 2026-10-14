@@ -246,6 +246,16 @@ object needs only the keys it names. `app::script::run` with `CoreShell` is the 
 own fold, in its own test harness (the same thirty lines in Swift, TypeScript and Rust). A shell passes when every
 script holds with its own fold.
 
+A signed-in room needs real sealed envelopes, which no script can hold, so the scenes of a room (an empty Desk, a
+decision arriving, answered and snoozed on another device, a session falling asleep) are recorded instead:
+`tests/view_scenes.rs` runs each against the stand-in hub on a fixed clock and writes every `Render` delta with the
+view model reached into `tests/conformance/views/<scene>.json` (random ids as stable stand-ins). A stale recording
+fails like a stale golden (`TROMMI_GOLDEN=write` to write them again). Each shell's fold replays the deltas into an
+empty model and must reach that view: the web's `core/bindings/wasm/js/views-fold.js` (`node
+tests/bindings/views-replay.mjs`), Swift's `CoreView.ViewModel.apply` (`tests/bindings/views-replay.swift`), the
+Linux shell's own. The shells' view types are written from the Rust ones by `node tests/bindings/views.mjs --write`
+(`core/bindings/wasm/js/views.d.ts`, `core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/Views.swift`).
+
 ### Build order
 
 The streams that fill this contract (W1 engine, W2 hub, W3 actions and account, W4 views, W5 cache, W6 torture and

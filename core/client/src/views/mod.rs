@@ -16,7 +16,7 @@
 //!
 //! **Who makes it.** [`board::Board`] reads the board model once per render (the session list, the desks, what
 //! waits where), and each screen's module makes its unit from it: [`sidebar`], [`desk`], [`session`] and [`card`] (the pages in view;
-//! its conversation's rows come from [`talk`]). The rules are the web app's of
+//! its conversation's rows come from [`talk`]), [`notes`] and [`settings`]. The rules are the web app's of
 //! before (`app/web/public/app.mjs` `boardModel`), now here and nowhere else; [`words`] holds every sentence.
 //! What this device alone chooses (the desk in view, the zone) comes in as a [`Lens`].
 
@@ -24,8 +24,10 @@ pub mod board;
 pub mod card;
 pub mod demo;
 pub mod desk;
+pub mod notes;
 pub mod off;
 pub mod session;
+pub mod settings;
 pub mod sidebar;
 pub mod talk;
 #[cfg(test)]
@@ -1221,22 +1223,142 @@ pub struct VersionView {
     pub note: String,
 }
 
+/// The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NotesView {
+    /// The ids of the notes that show, the last written first (the ids of `rows`). A sent note held for the toast's
+    /// Undo shows nowhere.
     pub notes: Vec<String>,
+    /// Those notes, in the same order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rows: Vec<NoteView>,
+    /// The note in the corner: the first of them; none when there is none (the corner then makes a new one).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corner: Option<String>,
+    /// The corner's note holds words or files (the tab's note is drawn written).
+    #[serde(default)]
+    pub written: bool,
+    /// What the corner's sticky says ("Your note: open it", "New note").
+    #[serde(default)]
+    pub says: Text,
+    /// The crowned session it goes to; none when no session wears the crown here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<NoteToView>,
+    /// All desks, and it goes to another desk's crown than the desk chosen last: the send names it.
+    #[serde(default)]
+    pub far: bool,
+    /// All desks with two crowned desks or more: the person picks one (each desk's crown, in the desks' order).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choose: Vec<NoteToView>,
+    /// What the send says ("Send to Fernly").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_says: Option<Text>,
+    /// In the send's place without a crown: "Give a session the crown to send" (opens Settings · Agents).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_crown: Option<Text>,
 }
 
+/// One note.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteView {
+    pub id: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<NoteFileView>,
+    pub created_ms: u64,
+    pub updated_ms: u64,
+    /// This device's version is not confirmed by the hub yet.
+    #[serde(default)]
+    pub pending: bool,
+}
+
+/// A file of a note: a picture as a small thumbnail, any other file by its name.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteFileView {
+    /// The attachment (`ViewModel.files`, `Action::OpenFile`).
+    pub file_id: String,
+    pub name: String,
+    pub media_type: String,
+    pub picture: bool,
+}
+
+/// A crowned session a note can go to.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteToView {
+    pub session_id: String,
+    /// Its name; "Main Session" while it has none.
+    pub name: String,
+    /// What draws it (`SessionRowView::mark`).
+    pub mark: String,
+    #[serde(default)]
+    pub desk_id: String,
+    /// Its desk's name ("Personal" for one without), for the choice on All desks.
+    #[serde(default)]
+    pub desk: String,
+}
+
+/// Settings: what the list's rows say, and the person's devices (`settings.rs`). What only this device knows (the
+/// theme, the Push level) is the shell's.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettingsView {
+    /// The account's e-mail, for the row Account; none until the account is read (W3).
     pub account: Option<String>,
+    /// The person's devices that are in, in the order they joined (the agents are under Agents).
     pub devices: Vec<DeviceRow>,
+    /// The person's removed devices, in the order they joined (the row "Removed" and its page).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<DeviceRow>,
+    /// The devices that never finished signing in: offered for removal together.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unfinished: Vec<String>,
+    /// "Remove the 2 devices that never finished signing in".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remove_unfinished: Option<Text>,
+    /// The row Agents: "2 agents · 5 sessions"; none without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agents: Option<Text>,
+    /// The row Desks: "3 desks"; none in a room without desks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desks: Option<Text>,
+    /// The row Devices: "2 devices".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub devices_says: Option<Text>,
+    /// The room's key epoch (the version line at the list's foot).
+    #[serde(default)]
+    pub key_epoch: u64,
 }
 
+/// One device of the person.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceRow {
     pub id: String,
+    /// Its name; "Device" while it has named itself nothing.
     pub name: String,
     pub this_device: bool,
+    /// "human" or "agent".
+    #[serde(default)]
+    pub role: String,
+    /// In the room (not removed).
+    #[serde(default)]
+    pub active: bool,
+    /// The green dot: in, and connected (this device always is).
+    #[serde(default)]
+    pub online: bool,
+    /// "this_device", "unfinished" (never finished signing in), "online", "away", "removed".
+    #[serde(default)]
+    pub state: String,
+    /// The state in words ("this device", "never finished signing in").
+    #[serde(default)]
+    pub says: Text,
+    /// The key fingerprint from the signed member list: it must look the same on every device.
+    #[serde(default)]
+    pub fingerprint: String,
+    /// Its drawing: "phone", "laptop", "terminal".
+    #[serde(default)]
+    pub icon: String,
+    /// When it joined, if known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added_ms: Option<u64>,
 }
 
 /// The account's flows as a screen shows them. `step` names the screen; the fields it needs are filled.
@@ -1308,13 +1430,38 @@ pub struct FileView {
     pub loaded: bool,
 }
 
+/// A passing line at the window's foot: what was done, and the way back. The engine and the actions make them; the
+/// shell draws them and drops one when its time is up or it is pressed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Toast {
     pub id: String,
+    /// The bold words ("Note sent to Fernly", "Not saved").
     pub text: Text,
     /// An action the toast offers ("Undo", "Retry"), sent back as that action.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action: Option<crate::actions::Action>,
+    /// The quieter words after them ("the board did not take it").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<Text>,
+    /// The action's word on its button ("Undo", "Retry"); none: "Undo".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<Text>,
+    /// Something went wrong: said at once to a screen reader (the web's role "alert"), drawn as a problem.
+    #[serde(default)]
+    pub alert: bool,
+    /// How long it stands (ms), as the ring on its Undo runs down; none: the shell's own time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ms: Option<u64>,
+    /// A way to a page ("Open"): the screen, and the link's words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub go: Option<ToastGo>,
+}
+
+/// A toast's way to a page.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToastGo {
+    pub screen: Screen,
+    pub label: Text,
 }
 
 /// Why a delta could not be folded.

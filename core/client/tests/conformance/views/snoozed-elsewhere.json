@@ -1,0 +1,873 @@
+{
+  "deltas": [
+    {
+      "base": 0,
+      "parts": [
+        {
+          "model": {
+            "account": {
+              "step": ""
+            },
+            "desk": {
+              "done": [],
+              "later": [],
+              "mode": "",
+              "off_your_mind": [],
+              "stack": [],
+              "waiting": 0
+            },
+            "notes": {
+              "far": false,
+              "notes": [],
+              "says": {
+                "en": "",
+                "key": ""
+              },
+              "written": false
+            },
+            "phase": "starting",
+            "rev": 0,
+            "settings": {
+              "account": null,
+              "devices": [],
+              "key_epoch": 0
+            },
+            "sidebar": {
+              "badge": 0,
+              "desk": "",
+              "desks": [],
+              "knocking": 0,
+              "place": {
+                "en": "",
+                "key": ""
+              },
+              "sessions": [],
+              "stopped": 0,
+              "unheard": 0,
+              "waiting": 0,
+              "working": 0
+            }
+          },
+          "part": "whole"
+        }
+      ]
+    },
+    {
+      "base": 1,
+      "parts": [
+        {
+          "part": "phase",
+          "phase": "opening",
+          "status": null
+        },
+        {
+          "part": "sidebar",
+          "view": {
+            "badge": 0,
+            "desk": "main",
+            "desks": [
+              {
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "desk.personal"
+                },
+                "selected": true,
+                "waiting": 0
+              }
+            ],
+            "knocking": 0,
+            "place": {
+              "en": "Personal",
+              "key": "desk.personal"
+            },
+            "sessions": [],
+            "stopped": 0,
+            "unheard": 0,
+            "waiting": 0,
+            "working": 0
+          }
+        },
+        {
+          "part": "desk",
+          "view": {
+            "done": [],
+            "empty": {
+              "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
+              "key": "desk.empty.reading"
+            },
+            "hello": {
+              "en": "Catching up…",
+              "key": "desk.hello.catching_up"
+            },
+            "later": [],
+            "mode": "reading",
+            "off_your_mind": [],
+            "stack": [],
+            "waiting": 0
+          }
+        },
+        {
+          "part": "notes",
+          "view": {
+            "far": false,
+            "no_crown": {
+              "en": "Give a session the crown to send",
+              "key": "note.no_crown"
+            },
+            "notes": [],
+            "says": {
+              "en": "New note",
+              "key": "note.new"
+            },
+            "written": false
+          }
+        }
+      ]
+    },
+    {
+      "base": 2,
+      "parts": [
+        {
+          "part": "sidebar",
+          "view": {
+            "badge": 0,
+            "desk": "main",
+            "desks": [
+              {
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "desk.personal"
+                },
+                "selected": true,
+                "waiting": 0
+              }
+            ],
+            "knocking": 0,
+            "place": {
+              "en": "Personal",
+              "key": "desk.personal"
+            },
+            "sessions": [
+              {
+                "away": true,
+                "blocked": false,
+                "cap": {
+                  "kind": "gone",
+                  "line": {
+                    "args": {
+                      "at": "",
+                      "name": "Loading …",
+                      "program": "Claude Code"
+                    },
+                    "en": "Loading … is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                    "key": "link.gone.line_silent"
+                  },
+                  "short": {
+                    "en": "Gone",
+                    "key": "link.gone.short"
+                  },
+                  "word": {
+                    "args": {
+                      "at": ""
+                    },
+                    "en": "gone",
+                    "key": "link.gone.word"
+                  }
+                },
+                "crowned": false,
+                "depth": 0,
+                "desk_id": "main",
+                "group": ":off",
+                "heading": {
+                  "kind": "away",
+                  "text": {
+                    "en": "Disconnected",
+                    "key": "sidebar.away"
+                  },
+                  "waiting": 0
+                },
+                "hushed": false,
+                "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+                "knocks": false,
+                "link": "gone",
+                "main": true,
+                "mark": "00000001eeee",
+                "name": {
+                  "en": "Loading …",
+                  "key": "session.name"
+                },
+                "online": false,
+                "open": 0,
+                "slug": "00000001eeee",
+                "unheard": 0,
+                "working": false
+              }
+            ],
+            "stopped": 0,
+            "unheard": 0,
+            "waiting": 0,
+            "working": 0
+          }
+        },
+        {
+          "part": "desk",
+          "view": {
+            "done": [],
+            "empty": {
+              "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
+              "key": "desk.empty.reading"
+            },
+            "goals": {
+              "desk_id": "main",
+              "foldable": false,
+              "lines": []
+            },
+            "hello": {
+              "en": "Catching up…",
+              "key": "desk.hello.catching_up"
+            },
+            "later": [],
+            "mode": "desk",
+            "off_your_mind": [],
+            "stack": [],
+            "waiting": 0
+          }
+        },
+        {
+          "part": "settings",
+          "view": {
+            "account": null,
+            "agents": {
+              "args": {
+                "agents": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent · 1 session",
+              "key": "settings.agents"
+            },
+            "devices": [
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": true,
+                "role": "human",
+                "says": {
+                  "en": "this device",
+                  "key": "device.this_device"
+                },
+                "state": "this_device",
+                "this_device": true
+              },
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": false,
+                "role": "human",
+                "says": {
+                  "en": "never finished signing in",
+                  "key": "device.unfinished"
+                },
+                "state": "unfinished",
+                "this_device": false
+              }
+            ],
+            "devices_says": {
+              "args": {
+                "n": "2"
+              },
+              "en": "2 devices",
+              "key": "settings.devices"
+            },
+            "key_epoch": 2,
+            "remove_unfinished": {
+              "en": "Remove the device that never finished signing in",
+              "key": "settings.remove_unfinished.one"
+            },
+            "unfinished": [
+              "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "base": 3,
+      "parts": [
+        {
+          "part": "sidebar",
+          "view": {
+            "badge": 1,
+            "desk": "main",
+            "desks": [
+              {
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "desk.personal"
+                },
+                "selected": true,
+                "waiting": 1
+              }
+            ],
+            "knocking": 0,
+            "place": {
+              "en": "Personal",
+              "key": "desk.personal"
+            },
+            "sessions": [
+              {
+                "away": true,
+                "blocked": false,
+                "cap": {
+                  "kind": "gone",
+                  "line": {
+                    "args": {
+                      "at": "",
+                      "name": "00000001eeee",
+                      "program": "Claude Code"
+                    },
+                    "en": "00000001eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                    "key": "link.gone.line_silent"
+                  },
+                  "short": {
+                    "en": "Gone",
+                    "key": "link.gone.short"
+                  },
+                  "word": {
+                    "args": {
+                      "at": ""
+                    },
+                    "en": "gone",
+                    "key": "link.gone.word"
+                  }
+                },
+                "crowned": false,
+                "depth": 0,
+                "desk_id": "main",
+                "group": ":off",
+                "heading": {
+                  "kind": "away",
+                  "text": {
+                    "en": "Disconnected",
+                    "key": "sidebar.away"
+                  },
+                  "waiting": 0
+                },
+                "hushed": false,
+                "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+                "knocks": false,
+                "link": "gone",
+                "main": true,
+                "mark": "00000001eeee",
+                "name": {
+                  "en": "00000001eeee",
+                  "key": "session.name"
+                },
+                "online": false,
+                "open": 1,
+                "says": {
+                  "args": {
+                    "n": "1"
+                  },
+                  "en": "Disconnected, 1 question open",
+                  "key": "badge.offline_open"
+                },
+                "slug": "00000001eeee",
+                "unheard": 0,
+                "working": false
+              }
+            ],
+            "stopped": 0,
+            "unheard": 0,
+            "waiting": 1,
+            "working": 0
+          }
+        },
+        {
+          "part": "desk",
+          "view": {
+            "blitz": {
+              "en": "Blitz: 1 open card",
+              "key": "desk.blitz.one"
+            },
+            "done": [],
+            "goals": {
+              "desk_id": "main",
+              "foldable": false,
+              "lines": []
+            },
+            "hello": {
+              "en": "Welcome back.",
+              "key": "desk.hello.greeting.0"
+            },
+            "later": [],
+            "mode": "desk",
+            "off_your_mind": [],
+            "rows": [
+              {
+                "created_ms": 1791900300010,
+                "from": {
+                  "mark": "00000001eeee",
+                  "name": "00000001eeee",
+                  "path": [
+                    "00000001eeee"
+                  ],
+                  "session_id": "00000001eeeeeeeeeeeeeeeeeeeeeeee"
+                },
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeee",
+                "kind": "decision",
+                "loading": false,
+                "newer": false,
+                "run": 1,
+                "sign": "whenever",
+                "sign_says": {
+                  "en": "Whenever",
+                  "key": "row.whenever"
+                },
+                "starred": false,
+                "tiles": {
+                  "kind": "pair",
+                  "others": 0,
+                  "tiles": [
+                    {
+                      "advised": false,
+                      "key": "yes",
+                      "label": "",
+                      "lead": false,
+                      "says": {
+                        "args": {
+                          "label": ""
+                        },
+                        "en": "",
+                        "key": "tile.says"
+                      },
+                      "settles": false,
+                      "short": false,
+                      "small": false,
+                      "thumb": "no",
+                      "thumbs": false
+                    },
+                    {
+                      "advised": false,
+                      "key": "no",
+                      "label": "",
+                      "lead": false,
+                      "says": {
+                        "args": {
+                          "label": ""
+                        },
+                        "en": "",
+                        "key": "tile.says"
+                      },
+                      "settles": false,
+                      "short": false,
+                      "small": false,
+                      "thumb": "no",
+                      "thumbs": false
+                    }
+                  ]
+                },
+                "title": "Ship it?",
+                "urgency": "low",
+                "ways": [
+                  "later",
+                  "reverse",
+                  "duck",
+                  "shred"
+                ],
+                "words": ""
+              }
+            ],
+            "stack": [
+              "00000004eeeeeeeeeeeeeeeeeeeeeeee"
+            ],
+            "waiting": 1
+          }
+        }
+      ]
+    },
+    {
+      "base": 4,
+      "parts": [
+        {
+          "part": "phase",
+          "phase": "live",
+          "status": null
+        }
+      ]
+    },
+    {
+      "base": 5,
+      "parts": [
+        {
+          "part": "sidebar",
+          "view": {
+            "badge": 0,
+            "desk": "main",
+            "desks": [
+              {
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "desk.personal"
+                },
+                "selected": true,
+                "waiting": 0
+              }
+            ],
+            "knocking": 0,
+            "place": {
+              "en": "Personal",
+              "key": "desk.personal"
+            },
+            "sessions": [
+              {
+                "away": true,
+                "blocked": false,
+                "cap": {
+                  "kind": "gone",
+                  "line": {
+                    "args": {
+                      "at": "",
+                      "name": "00000001eeee",
+                      "program": "Claude Code"
+                    },
+                    "en": "00000001eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                    "key": "link.gone.line_silent"
+                  },
+                  "short": {
+                    "en": "Gone",
+                    "key": "link.gone.short"
+                  },
+                  "word": {
+                    "args": {
+                      "at": ""
+                    },
+                    "en": "gone",
+                    "key": "link.gone.word"
+                  }
+                },
+                "crowned": false,
+                "depth": 0,
+                "desk_id": "main",
+                "group": ":off",
+                "heading": {
+                  "kind": "away",
+                  "text": {
+                    "en": "Disconnected",
+                    "key": "sidebar.away"
+                  },
+                  "waiting": 0
+                },
+                "hushed": false,
+                "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+                "knocks": false,
+                "link": "gone",
+                "main": true,
+                "mark": "00000001eeee",
+                "name": {
+                  "en": "00000001eeee",
+                  "key": "session.name"
+                },
+                "online": false,
+                "open": 0,
+                "slug": "00000001eeee",
+                "unheard": 0,
+                "working": false
+              }
+            ],
+            "stopped": 0,
+            "unheard": 0,
+            "waiting": 0,
+            "working": 0
+          }
+        },
+        {
+          "part": "desk",
+          "view": {
+            "done": [],
+            "empty": {
+              "en": "Questions land here.",
+              "key": "desk.empty"
+            },
+            "goals": {
+              "desk_id": "main",
+              "foldable": false,
+              "lines": []
+            },
+            "hello": {
+              "en": "All quiet.",
+              "key": "desk.hello.calm.0"
+            },
+            "later": [
+              "00000004eeeeeeeeeeeeeeeeeeeeeeee"
+            ],
+            "mode": "desk",
+            "off": {
+              "closed": 0,
+              "put_off": 1,
+              "rows": [
+                {
+                  "at_ms": 0,
+                  "id": "00000004eeeeeeeeeeeeeeeeeeeeeeee",
+                  "mark": "snooze",
+                  "place": "later",
+                  "says": {
+                    "en": "Later",
+                    "key": "off.place.snooze"
+                  },
+                  "starred": false,
+                  "title": "Ship it?",
+                  "until": {
+                    "args": {
+                      "when": "Tue 15:05"
+                    },
+                    "en": "until Tue 15:05",
+                    "key": "off.until"
+                  }
+                }
+              ],
+              "says": {
+                "args": {
+                  "put_off": "1"
+                },
+                "en": "1 put off",
+                "key": "off.hint.put_off"
+              }
+            },
+            "off_your_mind": [],
+            "stack": [],
+            "waiting": 0
+          }
+        }
+      ]
+    }
+  ],
+  "scene": "snoozed-elsewhere",
+  "view": {
+    "account": {
+      "step": ""
+    },
+    "desk": {
+      "done": [],
+      "empty": {
+        "en": "Questions land here.",
+        "key": "desk.empty"
+      },
+      "goals": {
+        "desk_id": "main",
+        "foldable": false,
+        "lines": []
+      },
+      "hello": {
+        "en": "All quiet.",
+        "key": "desk.hello.calm.0"
+      },
+      "later": [
+        "00000004eeeeeeeeeeeeeeeeeeeeeeee"
+      ],
+      "mode": "desk",
+      "off": {
+        "closed": 0,
+        "put_off": 1,
+        "rows": [
+          {
+            "at_ms": 0,
+            "id": "00000004eeeeeeeeeeeeeeeeeeeeeeee",
+            "mark": "snooze",
+            "place": "later",
+            "says": {
+              "en": "Later",
+              "key": "off.place.snooze"
+            },
+            "starred": false,
+            "title": "Ship it?",
+            "until": {
+              "args": {
+                "when": "Tue 15:05"
+              },
+              "en": "until Tue 15:05",
+              "key": "off.until"
+            }
+          }
+        ],
+        "says": {
+          "args": {
+            "put_off": "1"
+          },
+          "en": "1 put off",
+          "key": "off.hint.put_off"
+        }
+      },
+      "off_your_mind": [],
+      "stack": [],
+      "waiting": 0
+    },
+    "notes": {
+      "far": false,
+      "no_crown": {
+        "en": "Give a session the crown to send",
+        "key": "note.no_crown"
+      },
+      "notes": [],
+      "says": {
+        "en": "New note",
+        "key": "note.new"
+      },
+      "written": false
+    },
+    "phase": "live",
+    "rev": 6,
+    "settings": {
+      "account": null,
+      "agents": {
+        "args": {
+          "agents": "1",
+          "sessions": "1"
+        },
+        "en": "1 agent · 1 session",
+        "key": "settings.agents"
+      },
+      "devices": [
+        {
+          "active": true,
+          "fingerprint": "(fingerprint)",
+          "icon": "laptop",
+          "id": "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "name": "Device",
+          "online": true,
+          "role": "human",
+          "says": {
+            "en": "this device",
+            "key": "device.this_device"
+          },
+          "state": "this_device",
+          "this_device": true
+        },
+        {
+          "active": true,
+          "fingerprint": "(fingerprint)",
+          "icon": "laptop",
+          "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "name": "Device",
+          "online": false,
+          "role": "human",
+          "says": {
+            "en": "never finished signing in",
+            "key": "device.unfinished"
+          },
+          "state": "unfinished",
+          "this_device": false
+        }
+      ],
+      "devices_says": {
+        "args": {
+          "n": "2"
+        },
+        "en": "2 devices",
+        "key": "settings.devices"
+      },
+      "key_epoch": 2,
+      "remove_unfinished": {
+        "en": "Remove the device that never finished signing in",
+        "key": "settings.remove_unfinished.one"
+      },
+      "unfinished": [
+        "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      ]
+    },
+    "sidebar": {
+      "badge": 0,
+      "desk": "main",
+      "desks": [
+        {
+          "id": "main",
+          "knocks": false,
+          "name": {
+            "en": "Personal",
+            "key": "desk.personal"
+          },
+          "selected": true,
+          "waiting": 0
+        }
+      ],
+      "knocking": 0,
+      "place": {
+        "en": "Personal",
+        "key": "desk.personal"
+      },
+      "sessions": [
+        {
+          "away": true,
+          "blocked": false,
+          "cap": {
+            "kind": "gone",
+            "line": {
+              "args": {
+                "at": "",
+                "name": "00000001eeee",
+                "program": "Claude Code"
+              },
+              "en": "00000001eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+              "key": "link.gone.line_silent"
+            },
+            "short": {
+              "en": "Gone",
+              "key": "link.gone.short"
+            },
+            "word": {
+              "args": {
+                "at": ""
+              },
+              "en": "gone",
+              "key": "link.gone.word"
+            }
+          },
+          "crowned": false,
+          "depth": 0,
+          "desk_id": "main",
+          "group": ":off",
+          "heading": {
+            "kind": "away",
+            "text": {
+              "en": "Disconnected",
+              "key": "sidebar.away"
+            },
+            "waiting": 0
+          },
+          "hushed": false,
+          "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+          "knocks": false,
+          "link": "gone",
+          "main": true,
+          "mark": "00000001eeee",
+          "name": {
+            "en": "00000001eeee",
+            "key": "session.name"
+          },
+          "online": false,
+          "open": 0,
+          "slug": "00000001eeee",
+          "unheard": 0,
+          "working": false
+        }
+      ],
+      "stopped": 0,
+      "unheard": 0,
+      "waiting": 0,
+      "working": 0
+    }
+  }
+}
