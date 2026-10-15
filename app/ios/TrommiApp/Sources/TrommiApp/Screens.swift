@@ -17,7 +17,8 @@ struct RootView: View {
   var body: some View {
     NavigationStack(path: $shell.path) {
       Group {
-        if shell.view.phase == .signedOut || shell.view.phase == .starting || shell.view.account.step == "keep_kit" { AccountScreen() }
+        if shell.view.phase == .starting { ProgressView("Trommi").font(Face.display(30)).frame(maxWidth: .infinity, maxHeight: .infinity) }
+        else if shell.view.phase == .signedOut || shell.view.account.step == "keep_kit" { AccountScreen() }
         else if wide {
           HStack(spacing: 0) { Sidebar().frame(width: 258); Divider(); home.frame(maxWidth: .infinity) }
         } else { home }

@@ -9,7 +9,7 @@ import TrommiClient
   #else
   @NSApplicationDelegateAdaptor(PushDelegate.self) private var push
   #endif
-  init() { NativeDemo.launchTicks = Spent.now; NativeDemo.launchStart = ProcessInfo.processInfo.systemUptime; Spent.time("fonts") { Face.registerFonts() } }
+  init() { NativeDemo.launchTicks = Spent.now; NativeDemo.launchStart = ProcessInfo.processInfo.systemUptime; Spent.time("fonts") { Face.registerFonts() }; Task { await AppShell.shared.start() } }
   private var window: some Scene {
     WindowGroup {
       RootView().environmentObject(shell).tint(Ink.accent)
