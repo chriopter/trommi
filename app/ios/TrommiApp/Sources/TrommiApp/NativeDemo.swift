@@ -25,7 +25,13 @@ enum NativeDemo {
     #endif
     let report: [String: Any] = ["rows": rows, "desk_ms": (ProcessInfo.processInfo.systemUptime - launchStart) * 1000, "resident_bytes": resident, "folded_ms": foldedAt ?? 0, "checkpoints": checkpoints, "steps": Spent.take()]
     guard let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) else { return nil }
-    return String(decoding: data, as: UTF8.self)
+    let text = String(decoding: data, as: UTF8.self)
+    // A normal simctl launch can be measured without XCTest injecting its startup services.
+    if let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+      try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      try? data.write(to: folder.appendingPathComponent("native-desk-startup.json"), options: .atomic)
+    }
+    return text
   }
   static var screen: String? { ProcessInfo.processInfo.environment["TROMMI_SCREEN"].flatMap { $0.isEmpty ? nil : $0 } }
   private static func url(_ name: String) -> URL {
