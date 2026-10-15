@@ -8,6 +8,7 @@ case "${1:-}" in
     TF_DESTINATION=$destination bash .github/scripts/ios_release_gate.sh decide
     ;;
   mac-direct)
+    : > "$RUNNER_TEMP/mac-pending"
     GITHUB_OUTPUT="$RUNNER_TEMP/mac-pending" bash .github/scripts/mac_release.sh check >&2
     if grep -q '^mode=build$' "$RUNNER_TEMP/mac-pending"; then echo deliver=true; else echo deliver=false; fi
     ;;
