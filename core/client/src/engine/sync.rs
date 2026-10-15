@@ -2071,6 +2071,7 @@ impl Engine {
                 if received.header.group.is_room()
                     && matches!(received.code, Some(Error::NoKey | Error::GroupBehind | Error::RoomBehind)) {
                     self.need_anchored_past();
+                    self.note_room_key_need();
                 }
                 if received.outcome != EnvelopeOutcome::Refused {
                     self.report(Report::Envelope { received: Box::new(received), ordered: false });

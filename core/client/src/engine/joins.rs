@@ -88,6 +88,8 @@ pub(super) struct Joining {
     keys: Option<RecoveryKeys>,
     later: Option<Later>,
     room_keys_recovered: bool,
+    /// The first Desk may still need the code to recover old room keys.
+    room_pending: bool,
     reported: bool,
     /// Still to be read, together.
     together: VecDeque<GroupId>,
@@ -133,11 +135,12 @@ fn code_of(failure: &Failure) -> &'static str {
 
 impl Joining {
     /// After a restart: the joins that were built wait for the hub's answer; nothing more is read.
-    pub(super) fn resumed(posted: BTreeSet<GroupId>, joined: u32, not_joined: Vec<(GroupId, &'static str)>) -> Self {
+    pub(super) fn resumed(posted: BTreeSet<GroupId>, joined: u32, not_joined: Vec<(GroupId, &'static str)>, room_pending: bool) -> Self {
         Joining {
             keys: None,
             later: None,
             room_keys_recovered: false,
+            room_pending,
             reported: false,
             together: VecDeque::new(),
             rows: VecDeque::new(),
@@ -156,7 +159,7 @@ impl Joining {
     /// What a restart needs of it: the groups still to join, and how the others ended.
     pub(super) fn record(&self) -> super::record::JoinsRecord {
         let waiting = self.together.iter().chain(&self.alone).copied().chain(self.rows.iter().map(|row| row.group)).chain(self.one.iter().map(|one| one.group)).chain(self.posted.iter().copied()).chain(self.reading.iter().copied());
-        super::record::JoinsRecord::new(waiting, self.joined, &self.not_joined)
+        super::record::JoinsRecord::new(waiting, self.joined, &self.not_joined, self.room_pending && !self.room_keys_recovered)
     }
 }
 
@@ -167,11 +170,13 @@ impl Engine {
         if self.stopped.is_some() {
             return;
         }
+        let room_pending = joins.later.is_some();
         let mut joining = match self.joining.take() {
             Some(mut joining) => {
                 joining.keys = Some(joins.keys);
                 joining.later = joins.later;
                 joining.room_keys_recovered = false;
+                joining.room_pending = room_pending;
                 joining.reported = false;
                 joining.not_joined.retain(|(_, code)| *code != "interrupted");
                 joining
@@ -180,6 +185,7 @@ impl Engine {
                 keys: Some(joins.keys),
                 later: joins.later,
                 room_keys_recovered: false,
+                room_pending,
                 reported: false,
                 together: VecDeque::new(),
                 rows: VecDeque::new(),
@@ -201,6 +207,16 @@ impl Engine {
         }
         self.joining = Some(joining);
         self.drive(ctx);
+    }
+
+    /// The first Desk needs old room keys but a restart lost the in-memory code.
+    pub(super) fn note_room_key_need(&mut self) {
+        let room = GroupId::room(self.room);
+        if let Some(j) = self.joining.as_mut().filter(|j| j.room_pending && j.keys.is_none()) {
+            if !j.not_joined.iter().any(|(g, _)| *g == room) {
+                j.not_joined.push((room, "interrupted"));
+            }
+        }
     }
 
     /// Whether the session groups of a sign-in are still being joined.
@@ -234,8 +250,8 @@ impl Engine {
                 j.not_joined.push((group, "refused"));
             }
         }
-        let room_waits = j.keys.is_some() && self.anchored_past_missing()
-            && (!self.desk.complete || self.room_past_pending());
+        let room_waits = j.room_pending && !j.room_keys_recovered && !self.desk.complete
+            || j.keys.is_some() && self.anchored_past_missing() && self.room_past_pending();
         let through = !room_waits && j.asked.is_none() && j.one.is_none() && j.rows.is_empty() && j.together.is_empty() && j.alone.is_empty() && j.posted.is_empty();
         if through {
             // every session's keys are at hand now: the Desk of the joined groups, and what came without its key
@@ -257,8 +273,9 @@ impl Engine {
         let room = GroupId::room(self.room);
         // Keep the code until the first Desk has revealed whether old room registers need it.
         // An empty Desk does not trigger history; an old room envelope does.
-        if j.keys.is_some() && j.together.is_empty() && j.alone.is_empty() && j.rows.is_empty() && j.one.is_none()
-            && self.anchored_past_missing() && (!self.desk.complete || self.room_past_pending()) {
+        if j.room_pending && !j.room_keys_recovered && !self.desk.complete
+            || j.keys.is_some() && j.together.is_empty() && j.alone.is_empty() && j.rows.is_empty() && j.one.is_none()
+                && self.anchored_past_missing() && self.room_past_pending() {
             return;
         }
         if self.past_failed(&room) {

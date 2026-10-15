@@ -49,9 +49,10 @@ Code sign-in starts from the room state authenticated by the recovery code when 
 room before reading old room Commits, starts catch-up at that accepted join, and reads the Desk for current
 content. Live sessions require earlier room states: the engine verifies that backward history in bounded pages
 against its held origin before checking their history or recovering old room keys. New membership actions also
-wait for that verification. A room with no live sessions leaves its old Commits unread, including after restart.
-Recovery and old recovery links retain the complete-history check. Recovery-code keys stay in memory only;
-interrupted unfinished session joins ask for the code again.
+wait for that verification. Old room settings on the first Desk also trigger it. A first Desk with neither old
+room values nor live sessions leaves old room Commits unread, including after restart. Recovery and old recovery
+links retain the complete-history check. Recovery-code keys stay in memory only; an interrupted sign-in asks for
+the code again on the same device when its old keys or unfinished session joins still need it.
 
 ## Events and effects
 

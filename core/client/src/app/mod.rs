@@ -358,7 +358,7 @@ impl App {
     }
 
     fn can_resume_sign_in(&self) -> bool {
-        self.engine.is_some() && self.sessions_not_joined.as_ref().is_some_and(|groups|
+        self.engine.as_ref().is_some_and(|engine| engine.stopped().is_none()) && self.sessions_not_joined.as_ref().is_some_and(|groups|
             groups.iter().any(|(_, code)| *code == "interrupted"))
     }
 

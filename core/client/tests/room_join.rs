@@ -453,3 +453,35 @@ fn old_room_registers_on_the_first_desk_trigger_verified_history_before_the_code
     assert!(device.group_past(&world.room).unwrap().unwrap().learned);
     assert_eq!(device.content_key(&world.room, 0), world.founder.content_key(&world.room, 0));
 }
+
+#[test]
+fn a_restart_before_the_first_desk_can_resume_old_room_keys_without_live_sessions() {
+    let mut world = World::new();
+    world.founder_sets("star/00000000000000000000000000000000", r#"{"at":1}"#);
+    world.hub.borrow_mut().archive(&world.group);
+    let mut sim = blank(&world);
+    sim.send(start());
+    sim.hold = true;
+    join(&world, &mut sim, code_keys());
+    for _ in 0..50 {
+        if sim.app.room_join() == Some(RoomJoinStatus::Joined) { break; }
+        let (id, request) = sim.held.front().cloned().unwrap();
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, got);
+    }
+    assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined));
+    let id = sim.app.engine().unwrap().device().id();
+    sim.restart();
+    sim.hold = false;
+    sim.send(start());
+    for _ in 0..10 { serve_all(&world, &mut sim); }
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert_eq!(sim.view.account.problem.as_ref().unwrap().key, "account.interrupted");
+    join(&world, &mut sim, code_keys());
+    settle(&world, &mut sim);
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
+    let device = sim.app.engine().unwrap().device();
+    assert_eq!(device.id(), id);
+    assert_eq!(device.content_key(&world.room, 0), world.founder.content_key(&world.room, 0));
+}

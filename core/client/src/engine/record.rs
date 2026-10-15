@@ -66,6 +66,9 @@ pub(super) struct JoinsRecord {
     waiting: Vec<String>,
     joined: u32,
     not_joined: Vec<(String, String)>,
+    /// No code is stored: after a restart the first Desk decides whether signing in again is needed.
+    #[serde(default)]
+    room_pending: bool,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Debug)]
@@ -110,8 +113,8 @@ fn code_of(code: &str) -> &'static str {
 }
 
 impl JoinsRecord {
-    pub(super) fn new(waiting: impl Iterator<Item = GroupId>, joined: u32, not_joined: &[(GroupId, &'static str)]) -> Self {
-        JoinsRecord { waiting: waiting.map(|group| g(&group)).collect(), joined, not_joined: not_joined.iter().map(|(group, code)| (g(group), code.to_string())).collect() }
+    pub(super) fn new(waiting: impl Iterator<Item = GroupId>, joined: u32, not_joined: &[(GroupId, &'static str)], room_pending: bool) -> Self {
+        JoinsRecord { room_pending, waiting: waiting.map(|group| g(&group)).collect(), joined, not_joined: not_joined.iter().map(|(group, code)| (g(group), code.to_string())).collect() }
     }
 }
 
@@ -188,7 +191,7 @@ impl Engine {
                         not_joined.push((group, "interrupted"));
                     }
                 }
-                Some(joins::Joining::resumed(posted, joined, not_joined))
+                Some(joins::Joining::resumed(posted, joined, not_joined, joins.room_pending))
             }
         };
         self.position = record.position;
