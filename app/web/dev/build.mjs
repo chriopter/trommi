@@ -372,7 +372,7 @@ export async function generate({ pub = PUBLIC, repo = REPO, bundle: bundled = tr
   const vendor = vendorFiles(repo, { sourcemap: !bundled })
   if (bundled) out['gen/vendor/tools-reference.mjs'] = vendor['tools-reference.mjs']   // (the help page reads it)
   else for (const [f, c] of Object.entries(vendor)) out[`gen/vendor/${f}`] = c
-  out['gen/build.txt'] = `source: trommi/trommi app/web\ncommit: ${commitOf(repo)}\n`
+  out['gen/build.txt'] = `source: chriopter/trommi app/web\ncommit: ${commitOf(repo)}\n`
   // The Rust core's .wasm: beside the bundle under a name of its content, or (dev server) beside the sources under
   // the binding's name, core-wasm.mjs then starting with the constants the bundle gets from esbuild's define.
   const core = coreFiles(repo, bundled ? {} : { dir: 'gen/vendor', hashed: false })

@@ -14,7 +14,7 @@ script(join(scripts,'main_release_gate.sh'),'[ "${CHECKS:-green}" = green ]\n')
 script(join(scripts,'inputs.sh'),`printf 'ios %064d\\n' 1\n`)
 script(join(scripts,'ios_delivered.sh'),'[ "${DELIVERED:-}" != "${1:-ios}" ] || printf "%064d\\n" 1\n')
 script(join(scripts,'mac_release.sh'),'echo "mode=${MAC_MODE:-none}" >> "$GITHUB_OUTPUT"; echo "mode: ${MAC_MODE:-none}"\n')
-const env={...process.env,PATH:bin+':'+process.env.PATH,GH_TOKEN:'test-only',GITHUB_REPOSITORY:'trommi/trommi',RUN_ID:'42',COMMIT:'a'.repeat(40),RUNNER_TEMP:root}
+const env={...process.env,PATH:bin+':'+process.env.PATH,GH_TOKEN:'test-only',GITHUB_REPOSITORY:'chriopter/trommi',RUN_ID:'42',COMMIT:'a'.repeat(40),RUNNER_TEMP:root}
 const run=(file,args=[],extra={})=>spawnSync('bash',[join(scripts,file),...args],{cwd:root,env:{...env,...extra},encoding:'utf8'})
 test('queued TestFlight destinations recheck their own delivery independently',()=>{
   for(const [pipeline,destination,other] of [['ios','ios','mac'],['mac-testflight','mac','ios']]) {

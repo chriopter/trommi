@@ -17,7 +17,7 @@ use trommi_hub_updater::{
 };
 
 const TARGET: &str = "x86_64-unknown-linux-musl";
-const REPOSITORY: &str = "trommi/trommi";
+const REPOSITORY: &str = "chriopter/trommi";
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()

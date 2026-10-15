@@ -83,7 +83,14 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   part's files with their hashes, signed with Ed25519, one key for both. A part is released only when its own checks
   and the core's checks passed for that commit.
 - Public key: `release/public-key.pem`, also pinned on the hub server. The private key stays in 1Password.
-- The hub server installs a release only if its signature checks out, and never one older than it accepted before.
+- Our hub image has a separate standard ECDSA P-256 Cosign key, pinned in `release/hub-cosign-public.pem` and
+  independently on the server. The binary manifest still uses the existing Ed25519 key and includes that public
+  container key as an asset. The image private key stays in 1Password as `SIGN_IMAGE_KEY`; CI imports it with a random
+  runtime password into an ephemeral Cosign key. The server holds only its public key. YoloDeploy verifies Cosign and
+  the digest before replacing the app, then runs the exact verified local image ID. Normal updates refuse older
+  signed release-sequence labels and changed app images with the same sequence; health-failure recovery may
+  return to the actual previous image. CI promotes the deployment tag only after checks and signature verification
+  and refuses promotion past a newer published release. Legacy binary updaters keep their signed manifest checks.
 - The connector's `install.sh` and `trommi-connector update` check the same signature, with the key built in.
 - Release files and web app files carry GitHub build attestations: a public record of which build made them.
 - The web app is delivered as soon as its own checks and the core's checks passed; after each delivery CI checks from
@@ -103,21 +110,27 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 ## Deployment
 - Secrets live in 1Password and are read only by the step that needs them.
 - Pull requests get no secrets and deploy nothing.
-- CI never logs into the hub server and sends it no code, only "take release `hub-v<N>`".
-- CI reaches the hub server over a private network (Tailscale) with a short-lived GitHub login, no stored key.
-- The hub server downloads and checks the release itself.
-- Before the switch, the new hub is tried on a copy of the live data, without network; if that fails, nothing changes.
-- If the new hub is not healthy within 60 seconds, the previous release runs again. Its data (database, keys,
-  uploaded files) goes back to the copy made just before only if the new hub had not yet served a single request.
-- Every hub build checks that the release before still runs on data the new one migrated; a change that cannot
-  keep that is marked in the signed release, and then the program is never put back over data the new hub served.
+- CI never logs into the hub server. It publishes the checked signed image and sends one empty HTTPS POST to
+  YoloDeploy through Cloudflare Access with an app-specific token; that token chooses a fixed server-owned target,
+  never a command, repository or path from the request. CI then verifies public health and the expected commit.
+- YoloDeploy pulls and verifies the image signature before replacing the hub and waits for its Docker healthcheck.
+  Failed startup/health returns to the previous image on the current data; no data is restored or discarded by
+  deployment. CI checks that the actual released predecessors still start on data the new binary migrated, even
+  across declared data-epoch changes. Migrations must remain compatible with the previous image. A killed deploy
+  or power failure requires inspecting the recovery journal manually.
+- A separate nightly job takes a consistent private copy of hub data/configuration during a short pause, under
+  the same operation lock as deployment. It resumes that container, normalizes the copied SQLite DB/WAL through
+  SQLite's backup API, checks and syncs a private archive and checksum, and retains its archives for 14 days.
+  Its interruption marker and service cleanup resume only the container it paused. No production restore test is
+  deliberately broken: isolated fixtures verify WAL/data restoration and image-only rollback preserving writes.
 - A failed hub or web delivery opens a GitHub issue; the next good one closes it.
 - After each web delivery CI asks app.trommi.com from outside whether it serves exactly that build (the start page and
   every file it loads, by SHA-256, with its security headers); when not, the version before is put back at once.
-- Hub and updater run as their own users (`trommi`, `trommi-updater`), neither with root rights.
-- Root runs only a tiny helper (`hub-ctl`) that starts or stops the hub, or its dry run or data restore (two fixed
-  units that run as the hub's user), when the updater asks; nothing else.
-- The hub runs in a systemd sandbox and listens only on its own machine (`127.0.0.1`).
+- The hub runs as a non-root container with a read-only root filesystem, dropped capabilities, no Docker socket
+  and no published host ports. Its data is writable; configuration is mounted read-only. Cloudflared reaches its
+  port 8080 on the private Docker network. YoloDeploy has the Docker socket and therefore broad host rights; the
+  old separate systemd hub/updater services are disabled on our hosting. Other fixed targets are not controlled by
+  the Trommi request token. Cloudflare service credentials are shared across apps, so Access is not app isolation.
 - Public traffic reaches the hub only through a Cloudflare tunnel. Cloudflare ends TLS for the hub, the web app and
   the website: in transit it sees what the hub sees, including sign-in data (your e-mail and the login key derived
   from your password, which signs in but opens no content), tokens and the metadata above. Content stays
@@ -128,6 +141,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   `HUB_HSTS=on` is set on its server.
 - The web app and the website keep their windows and files to themselves: no other site's window keeps a handle on
   them (COOP), and no other site may embed their files (CORP). Both have a strict Content-Security-Policy.
+- Local recovery archives have no off-server backup configured. UFW is inactive. The tunnel token and the Trommi
+  deploy token exposed during setup need rotation by the owner.
 - Server logs are kept 30 days and contain no personal data (no e-mail or IP addresses, no tokens).
 
 ## Repository
@@ -165,8 +180,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - In the browser, the app's code is loaded from Cloudflare (app.trommi.com) each time; whoever controls that
   delivery (our Cloudflare account or the deploy pipeline) could ship code that reads your keys. The hub cannot.
   The iOS app and the connector do not have this risk: they are installed signed releases.
-- Going back to the previous hub after the new one served keeps the current data (by design: nothing anyone sent is
-  lost); the copy made before the update is only put back when the new hub served nothing.
+- Container rollback keeps current data. It cannot make an incompatible migration reversible: the predecessor
+  binary must keep working, and the migration gate refuses a release when it does not. Backups are separate.
 - Rulesets (signed commits, no force push, protected tags): being turned on.
 - iOS: account recovery and replacing the recovery code are tested only against a stand-in hub, not a real one.
 - Passkeys: built, but off, because they need the PRF extension, which some password managers lack.

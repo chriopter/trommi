@@ -8,7 +8,7 @@
 # whether that changed since the release before: $PARTS is lines of `<part> <inputs sha256> <true|false>`. Every file is named with its size and SHA-256; the name in
 # the manifest is the file's name without its folder, which is also its name as a release asset. With $DATA_EPOCH set
 # (the number in hub/data-epoch), the manifest says it as "data_epoch" (hub/deploy/README.md, "Migrations").
-# The repository is $GITHUB_REPOSITORY (default trommi/trommi).
+# The repository is $GITHUB_REPOSITORY (default chriopter/trommi).
 set -eu
 [ $# -ge 4 ] || { echo "usage: $0 <product> <version> <commit> <file>..." >&2; exit 2; }
 product=$1 version=$2 commit=$3
@@ -19,7 +19,7 @@ case $version in ''|0*|*[!0-9]*) echo "version must be a whole number without le
 [ ${#version} -le 12 ] || { echo "version is too long" >&2; exit 2; }
 case $commit in *[!0-9a-f]*) echo "commit must be a full lower-case SHA" >&2; exit 2 ;; esac
 [ ${#commit} -eq 40 ] || { echo "commit must be a full lower-case SHA" >&2; exit 2; }
-repository=${GITHUB_REPOSITORY:-trommi/trommi}
+repository=${GITHUB_REPOSITORY:-chriopter/trommi}
 case $repository in *[!A-Za-z0-9._/-]*) echo "unexpected repository name" >&2; exit 2 ;; esac
 
 case $product in trommi) tag=v$version ;; *) tag=${product#trommi-}-v$version ;; esac

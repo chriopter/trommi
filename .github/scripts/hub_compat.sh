@@ -9,18 +9,19 @@
 #    release of the series hub-v<N> or v<N> made from that commit) and the newest hub released (hub-v<N> or v<N>),
 #    when that is another one. Each: its manifest's signature checked against release/public-key.pem, the binary
 #    against the manifest. OLD_HUB names one binary instead, for a run by hand.
-# 2. hub/data-epoch lower than a predecessor's: an error (an epoch never goes down). Higher: this build declares a
-#    migration that hub cannot run on; not checked for it, and the updater never puts it back once the new hub served.
-# 3. Otherwise per predecessor: it makes a database, this build's hub migrates it, it starts on it again and must
+# 2. hub/data-epoch lower than a predecessor's: an error (an epoch never goes down). An increased epoch
+#    still requires predecessor compatibility: image rollback preserves current data.
+# 3. Per predecessor: it makes a database, this build's hub migrates it, it starts on it again and must
 #    answer /healthz with 200. Its last lines are shown when it does not.
 # Fails closed: a predecessor that cannot be found or checked is an error, not a pass.
 set -eu
 new=${1:?usage: $0 <hub binary> <target>}
 target=${2:?usage: $0 <hub binary> <target>}
-repository=${GITHUB_REPOSITORY:-trommi/trommi}
+repository=${GITHUB_REPOSITORY:-chriopter/trommi}
 here=$(cd "$(dirname "$0")/../.." && pwd)
 work=$(mktemp -d)
-trap 'rc=$?; kill "$pid" 2>/dev/null || true; rm -rf "$work"; exit "$rc"' EXIT
+compat_exit_status=0
+trap 'compat_exit_status=$?; kill "$pid" 2>/dev/null || true; rm -rf "$work"; exit "$compat_exit_status"' EXIT
 pid=''
 epoch=$(tr -d ' \n' < "$here/hub/data-epoch")
 asset="trommi-hub-$target"
@@ -62,7 +63,7 @@ check() {
   run "$1" > /dev/null || { echo "::error::the hub of $2 does not start on an empty folder"; exit 1; }
   run "$new" > /dev/null || { echo "::error::this build's hub does not start on the database of the hub of $2"; exit 1; }
   if ! run "$1" > /dev/null; then
-    echo "::error::the hub of $2 does not run on a database this build migrated. Make the migration expand-only (hub/deploy/README.md, \"Migrations\"), or raise hub/data-epoch to say that the program cannot go back past this release."
+    echo "::error::the hub of $2 does not run on a database this build migrated. Make the migration expand-only (hub/deploy/README.md, \"Migrations\"), before shipping; image rollback never restores data."
     exit 1
   fi
   echo "the hub of $2 runs on data this build migrated"
@@ -94,7 +95,7 @@ for tag in $runs $newest; do
   mkdir -p "$work/$tag"
   gh release download "$tag" --repo "$repository" --pattern manifest.json --pattern manifest.json.sig --pattern "$asset" --dir "$work/$tag"
   sh "$here/release/sign.sh" verify "$work/$tag/manifest.json"
-  jq -e --arg r "$repository" --arg t "$tag" '.repository == $r and .tag == $t' "$work/$tag/manifest.json" > /dev/null \
+  jq -e --arg r "$repository" --arg t "$tag" '(.repository == $r or ($r == "chriopter/trommi" and .repository == "trommi/trommi")) and .tag == $t' "$work/$tag/manifest.json" > /dev/null \
     || { echo "::error::the manifest of $tag is not that release of this repository"; exit 1; }
   sum=$(sha256sum "$work/$tag/$asset" | cut -d' ' -f1)
   jq -e --arg n "$asset" --arg s "$sum" '[.assets[] | select(.name == $n and .sha256 == $s)] | length == 1' "$work/$tag/manifest.json" > /dev/null \
@@ -104,10 +105,7 @@ for tag in $runs $newest; do
     echo "::error::hub/data-epoch is $epoch, lower than $old_epoch of $tag: an epoch never goes down"
     exit 1
   fi
-  if [ "$epoch" -gt "$old_epoch" ]; then
-    echo "::notice::hub/data-epoch is $epoch, $tag has $old_epoch: this build declares a migration the hub of $tag cannot run on. Not checked; the updater will not put it back past this release once the new hub has served."
-    continue
-  fi
+  # Image-only rollback always needs its predecessor to read the migrated data, including across epoch changes.
   chmod +x "$work/$tag/$asset"
   check "$work/$tag/$asset" "$tag"
 done

@@ -112,7 +112,7 @@ for (const page of pages) {
   check(bad.length === 0, `${page}: links, pictures, anchors, no inline script or style`, bad)
   // the way in and the code: in the head and the foot of every page
   const app = tags.filter(t => t.tag === 'a' && t.attrs.href === 'https://app.trommi.com/').length
-  const code = tags.filter(t => t.tag === 'a' && t.attrs.href === 'https://github.com/trommi/trommi').length
+  const code = tags.filter(t => t.tag === 'a' && t.attrs.href === 'https://github.com/chriopter/trommi').length
   check(app >= 2 && code >= 2, `${page}: the app and the code are linked from the head and the foot`, [app, code])
   // the reading above knows attributes in double quotes only: a tag written otherwise would go unread
   const written = (html.replace(/<!--[\s\S]*?-->/g, '').match(/<[a-zA-Z]/g) ?? []).length

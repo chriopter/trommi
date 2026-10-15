@@ -19,7 +19,7 @@ export function plan(files, delivery = {}, all = false, requested = '', observed
   for (const part of ['web', 'hub', 'connector']) if (delivery[part]) checks.add(part)
   if (delivery.ios || delivery.mac_testflight || delivery.mac) checks.add('apple')
   if (requested) {
-    if (!['all','connector','linux','site'].includes(requested)) throw Error('unknown manual part')
+    if (!['all','connector','hub','linux','site'].includes(requested)) throw Error('unknown manual part')
     checks.clear()
     for (const part of requested === 'all' ? Object.keys(checkNames) : [requested]) checks.add(part)
     core = requested !== 'site'

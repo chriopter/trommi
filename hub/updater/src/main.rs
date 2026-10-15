@@ -8,7 +8,7 @@
 //! | name | default | |
 //! |---|---|---|
 //! | `UPDATER_LISTEN` | none | the tailnet address and port, e.g. `100.101.102.103:9443`; anything outside the tailnet's ranges is refused |
-//! | `UPDATER_REPOSITORY` | `trommi/trommi` | where releases come from |
+//! | `UPDATER_REPOSITORY` | `chriopter/trommi` | where releases come from |
 //! | `UPDATER_PUBLIC_KEY` | `/etc/trommi/release-public-key.pem` | the pinned public half of the release signing key |
 //! | `UPDATER_TARGET` | this machine's, `…-unknown-linux-musl` | which binary of a release is this server's |
 //! | `UPDATER_ROOT` | `/srv/trommi/deploy` | releases, links, state: the one folder this program writes |
@@ -51,7 +51,7 @@ fn config() -> Result<(Config, PathBuf), String> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(60);
     let cfg = Config {
-        repository: env("UPDATER_REPOSITORY").unwrap_or_else(|| "trommi/trommi".into()),
+        repository: env("UPDATER_REPOSITORY").unwrap_or_else(|| "chriopter/trommi".into()),
         api: "https://api.github.com".into(),
         key,
         target: env("UPDATER_TARGET")

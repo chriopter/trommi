@@ -130,6 +130,7 @@ jobs:
       id-token: write
       attestations: write
       deployments: write
+      packages: write
     uses: ./.github/workflows/main-delivery.yml
     with:
       part: ${{ inputs.part }}

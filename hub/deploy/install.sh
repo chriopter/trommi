@@ -25,7 +25,7 @@ set -euo pipefail
 
 HUB_SSH=${HUB_SSH:-root@trommi-hub.tail276436.ts.net}
 HUB_SSH_PORT=${HUB_SSH_PORT:-22}
-REPOSITORY=trommi/trommi
+REPOSITORY=chriopter/trommi
 TARGET=x86_64-unknown-linux-musl
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)

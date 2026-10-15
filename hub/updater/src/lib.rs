@@ -231,7 +231,9 @@ pub fn verify_manifest(
     if !PRODUCTS.contains(&manifest.product.as_str()) {
         return Err(format!("signed for another product: {}", manifest.product));
     }
-    if manifest.repository != repository {
+    if manifest.repository != repository
+        && !(repository == "chriopter/trommi" && manifest.repository == "trommi/trommi")
+    {
         return Err(format!(
             "signed for another repository: {}",
             manifest.repository

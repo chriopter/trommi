@@ -94,7 +94,7 @@ consistent() {
   [ "$(awk '{print $2}' "$dir/$name.dmg.sha256")" = "$name.dmg" ] || { echo "::error::$name.dmg.sha256 names another file"; exit 1; }
   jq -e --arg s "$(sha256sum "$dir/$name.dmg" | cut -d' ' -f1)" --argjson z "$(wc -c < "$dir/$name.dmg" | tr -d ' ')" \
     --arg i "$inputs" --arg r "$GITHUB_REPOSITORY" \
-    '.product == "trommi-macos" and .repository == $r and .file == "Trommi-macOS.dmg" and .sha256 == $s and .size == $z and .inputs_ios == $i' \
+    '.product == "trommi-macos" and (.repository == $r or ($r == "chriopter/trommi" and .repository == "trommi/trommi")) and .file == "Trommi-macOS.dmg" and .sha256 == $s and .size == $z and .inputs_ios == $i' \
     "$dir/$name.json" > /dev/null || { echo "::error::$name.json does not describe this $name.dmg of these iOS inputs"; exit 1; }
 }
 

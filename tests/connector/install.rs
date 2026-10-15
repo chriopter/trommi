@@ -132,7 +132,7 @@ impl Bench {
             .arg(root().join("release/manifest.sh"))
             .args([product, &version.to_string(), &"a".repeat(40)])
             .arg(folder.join(&self.asset))
-            .env("GITHUB_REPOSITORY", "trommi/trommi")
+            .env("GITHUB_REPOSITORY", "chriopter/trommi")
             .output()
             .expect("release/manifest.sh runs");
         assert!(manifest.status.success(), "{}", said(&manifest));
@@ -363,7 +363,7 @@ fn what_does_not_check_is_refused_and_nothing_is_installed() {
 
     // another repository, properly signed
     let elsewhere = bench.release("elsewhere", "trommi-connector", 7, &verified(7), None);
-    let manifest = read(&elsewhere.join("manifest.json")).replace("trommi/trommi", "someone/else");
+    let manifest = read(&elsewhere.join("manifest.json")).replace("chriopter/trommi", "someone/else");
     std::fs::write(elsewhere.join("manifest.json"), manifest).expect("rewritten");
     bench.sign(&elsewhere, None);
     refused(&elsewhere, "another repository");
@@ -529,7 +529,7 @@ fn the_newest_connector_release_is_found_beside_other_parts_of_the_same_number()
     }
     let entry = |tag: &str| {
         format!(
-            "  <entry>\n    <link rel=\"alternate\" type=\"text/html\" href=\"https://github.com/trommi/trommi/releases/tag/{tag}\"/>\n  </entry>\n"
+            "  <entry>\n    <link rel=\"alternate\" type=\"text/html\" href=\"https://github.com/chriopter/trommi/releases/tag/{tag}\"/>\n  </entry>\n"
         )
     };
     let feed = format!(
@@ -564,11 +564,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 case $url in
-  https://github.com/trommi/trommi/releases.atom) cp "$stage/releases.atom" "$out" ;;
-  'https://api.github.com/repos/trommi/trommi/releases?per_page=100')
+  https://github.com/chriopter/trommi/releases.atom) cp "$stage/releases.atom" "$out" ;;
+  'https://api.github.com/repos/chriopter/trommi/releases?per_page=100')
     if [ -f "$stage/releases.json" ]; then cp "$stage/releases.json" "$out"; else echo "curl: (22) 403" >&2; exit 22; fi ;;
-  https://github.com/trommi/trommi/releases/download/*)
-    file=${{url#https://github.com/trommi/trommi/releases/download/}}
+  https://github.com/chriopter/trommi/releases/download/*)
+    file=${{url#https://github.com/chriopter/trommi/releases/download/}}
     case $format in
       '%{{http_code}}') if [ -f "$stage/$file" ]; then printf 302; else printf 404; fi ;;
       '%{{redirect_url}}') if [ -f "$stage/$file" ]; then printf 'https://release-assets.githubusercontent.com/%s' "$file"; fi ;;
@@ -814,8 +814,8 @@ echo "claude $*" >> "$state/calls"
 echo "${CLAUDE_CONFIG_DIR:-unset}" >> "$state/config-dirs"
 case "$*" in
   "plugin marketplace list --json") if [ -f "$state/markets" ]; then cat "$state/markets"; else echo '[]'; fi ;;
-  "plugin marketplace add trommi/trommi --sparse .claude-plugin connector/plugin")
-    printf '[{"name":"trommi","source":"github","repo":"trommi/trommi","installLocation":"%s/market"}]' "$state" > "$state/markets" ;;
+  "plugin marketplace add chriopter/trommi --sparse .claude-plugin connector/plugin")
+    printf '[{"name":"trommi","source":"github","repo":"chriopter/trommi","installLocation":"%s/market"}]' "$state" > "$state/markets" ;;
   "plugin marketplace update trommi") [ -f "$state/markets" ] || exit 1 ;;
   "plugin list --json") if [ -f "$state/plugins" ]; then cat "$state/plugins"; else echo '[]'; fi ;;
   "plugin install trommi@trommi -s user -y")
@@ -968,7 +968,7 @@ fn setup_claude_adds_the_marketplace_and_the_plugin_once() {
         desk.calls(),
         [
             "claude plugin marketplace list --json",
-            "claude plugin marketplace add trommi/trommi --sparse .claude-plugin connector/plugin",
+            "claude plugin marketplace add chriopter/trommi --sparse .claude-plugin connector/plugin",
             "claude plugin list --json",
             "claude plugin install trommi@trommi -s user -y",
             "claude plugin marketplace list --json",

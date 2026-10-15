@@ -196,6 +196,7 @@ jobs:
       id-token: write
       attestations: write
       deployments: write
+      packages: write
     env:
       MAIN_PLAN_DIGEST: ${{ inputs.plan-digest }}
     steps:
@@ -235,7 +236,7 @@ jobs:
       run: |
         set -u
         sh .github/scripts/inputs.sh > "$RUNNER_TEMP/inputs"
-        for i in $(seq 1 16); do
+        for _ in $(seq 1 16); do
           [ "$(sh .github/scripts/deployed.sh "$RUNNER_TEMP/inputs" hub)" != hub=false ] || exit 0
           sleep 30
         done
@@ -249,12 +250,29 @@ jobs:
         manifest: ${{ env.MAIN_MANIFEST }}
         tag: ${{ env.MAIN_TAG }}
       id: published
+    - name: Check YoloDeploy Access separately before image promotion
+      if: inputs.part == 'hub' && env.MAIN_PUBLISHED == 'true'
+      env:
+        DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+      run: python3 .github/scripts/hub_deliver.py --preflight-only
+    - uses: ./.github/actions/main-hub-image
+      if: inputs.part == 'hub' && env.MAIN_PUBLISHED == 'true'
+      with:
+        tag: ${{ env.MAIN_TAG }}
+        manifest: ${{ env.MAIN_MANIFEST }}
+        op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
     - uses: ./.github/actions/main-deliver-hub
       if: inputs.part == 'hub' && env.MAIN_PUBLISHED == 'true'
       with:
         tag: ${{ env.MAIN_TAG }}
-        tailscale-client: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-        tailscale-audience: ${{ secrets.TAILSCALE_AUDIENCE }}
+        webhook-url: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        cf-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+        cf-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        deploy-token: ${{ secrets.DEPLOY_TOKEN }}
     - uses: ./.github/actions/main-process-ios
       if: inputs.part == 'apple' && inputs.pipeline == 'ios' && env.MAIN_READY != 'already'
       with:

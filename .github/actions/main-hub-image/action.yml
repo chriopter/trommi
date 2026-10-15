@@ -1,0 +1,82 @@
+name: Signed hub container
+description: Build the checked hub into an OCI image, sign it with the dedicated Cosign key, then promote it
+inputs:
+  tag:
+    required: true
+    description: Published signed hub release
+  manifest:
+    required: true
+    description: Verified manifest digest from the producing gate
+  op-token:
+    required: true
+    description: Repository 1Password service account
+  op-env:
+    required: true
+    description: Repository 1Password environment
+runs:
+  using: composite
+  steps:
+  - name: Download and verify the checked signed hub
+    shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+      EXPECTED: ${{ inputs.manifest }}
+    run: |
+      set -eu
+      [ "$GITHUB_REF" = refs/heads/main ]
+      printf '%s' "$TAG" | grep -Eq '^hub-v[1-9][0-9]{0,11}$'
+      gh release download "$TAG" --dir "$RUNNER_TEMP/hub-image-assets"
+      cd "$RUNNER_TEMP/hub-image-assets"
+      [ "$(sha256sum manifest.json | cut -d' ' -f1)" = "$EXPECTED" ]
+      sh "$GITHUB_WORKSPACE/release/sign.sh" verify manifest.json
+      sh "$GITHUB_WORKSPACE/release/sign.sh" files manifest.json
+      jq -e --arg c "$GITHUB_SHA" --arg t "$TAG" '.commit == $c and .tag == $t and .product == "trommi-hub"' manifest.json >/dev/null
+      mkdir "$RUNNER_TEMP/hub-image-context"
+      cp trommi-hub-x86_64-unknown-linux-musl "$RUNNER_TEMP/hub-image-context/trommi-hub"
+      cp "$GITHUB_WORKSPACE/hub/container/Dockerfile" "$RUNNER_TEMP/hub-image-context/Dockerfile"
+  - name: Build and publish the immutable image
+    shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    run: |
+      set -eu
+      export DOCKER_CONFIG="$RUNNER_TEMP/hub-docker-auth"
+      printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null
+      epoch=$(git show -s --format=%ct "$GITHUB_SHA")
+      touch -d "@$epoch" "$RUNNER_TEMP/hub-image-context/"*
+      docker buildx build --platform linux/amd64 --push --metadata-file "$RUNNER_TEMP/hub-image-build.json" --label "io.yolodeploy.sequence=${TAG#hub-v}" --build-arg "SOURCE_DATE_EPOCH=$epoch" --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag "ghcr.io/chriopter/trommi-hub:$TAG" "$RUNNER_TEMP/hub-image-context"
+      digest="ghcr.io/chriopter/trommi-hub@$(jq -er ' .["containerimage.digest"] ' "$RUNNER_TEMP/hub-image-build.json")"
+      printf '%s' "$digest" | grep -Eq '^ghcr.io/chriopter/trommi-hub@sha256:[0-9a-f]{64}$'
+      echo "IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+      echo "COSIGN=$RUNNER_TEMP/cosign" >> "$GITHUB_ENV"
+      echo "VERSION=${TAG#hub-v}" >> "$GITHUB_ENV"
+      sh .github/scripts/install_cosign.sh "$RUNNER_TEMP/cosign"
+  - uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50
+    with:
+      version: 2.42.0-beta.01
+  - name: Sign the image with the dedicated Cosign key
+    shell: bash
+    env:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.op-token }}
+      OP_ENVIRONMENT_ID: ${{ inputs.op-env }}
+      DOCKER_CONFIG: ${{ runner.temp }}/hub-docker-auth
+    run: op run --environment "$OP_ENVIRONMENT_ID" -- sh .github/scripts/hub_image_sign.sh
+  - name: Promote only the newest checked signed release
+    shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DOCKER_CONFIG: ${{ runner.temp }}/hub-docker-auth
+      TAG: ${{ inputs.tag }}
+    run: |
+      set -eu
+      newest=$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName' | sed -n 's/^hub-v\([1-9][0-9]*\)$/\1/p' | sort -n | tail -n1)
+      [ "$newest" = "$VERSION" ] || { echo '::error::a newer hub release exists; deployment tag was not changed'; exit 1; }
+      "$COSIGN" verify --key release/hub-cosign-public.pem "$IMAGE_DIGEST" >/dev/null
+      docker buildx imagetools create --prefer-index=false --tag ghcr.io/chriopter/trommi-hub:production "$IMAGE_DIGEST"
+      echo "Signed image $IMAGE_DIGEST promoted after all producing checks passed." >> "$GITHUB_STEP_SUMMARY"
+  - name: Remove registry credentials
+    if: always()
+    shell: bash
+    run: rm -rf "$RUNNER_TEMP/hub-docker-auth" "$RUNNER_TEMP"/cosign-key.*

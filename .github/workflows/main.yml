@@ -32,6 +32,7 @@ name: main
         options:
         - all
         - connector
+        - hub
         - linux
         - site
         default: all
@@ -159,6 +160,7 @@ jobs:
       id-token: write
       attestations: write
       deployments: write
+      packages: write
     uses: ./.github/workflows/main-part.yml
     with:
       part: ${{ matrix.part }}

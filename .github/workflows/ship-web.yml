@@ -306,7 +306,7 @@ jobs:
           find . -type f ! -path ./checksums.txt | sed 's|^\./||' | sort > "$RUNNER_TEMP/there"
           cut -d' ' -f3- checksums.txt | sort > "$RUNNER_TEMP/named"
           diff "$RUNNER_TEMP/named" "$RUNNER_TEMP/there" || { echo "::error::the release holds files checksums.txt does not name"; exit 1; }
-          jq -e --arg r "$GITHUB_REPOSITORY" '.product == "trommi-web" and .repository == $r and .worker == "trommi-app" and .host == "app.trommi.com"' manifest.json > /dev/null \
+          jq -e --arg r "$GITHUB_REPOSITORY" '.product == "trommi-web" and (.repository == $r or ($r == "chriopter/trommi" and .repository == "trommi/trommi")) and .worker == "trommi-app" and .host == "app.trommi.com"' manifest.json > /dev/null \
             || { echo "::error::manifest.json is not a web release of this repository"; exit 1; }
           commit=$(jq -r .commit manifest.json)
           version=$(jq -r .version manifest.json)

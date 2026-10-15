@@ -37,7 +37,9 @@ include!(concat!(env!("OUT_DIR"), "/release.rs"));
 /// whole repository (one tag series `v<N>`).
 pub const PRODUCTS: [&str; 2] = ["trommi-connector", "trommi"];
 /// The repository releases come from.
-pub const REPOSITORY: &str = "trommi/trommi";
+pub const REPOSITORY: &str = "chriopter/trommi";
+/// Stable signed identity of manifests created before the repository transfer; never a download URL.
+pub const LEGACY_REPOSITORY: &str = "trommi/trommi";
 /// The largest manifest that is read.
 const MAX_MANIFEST_LEN: u64 = 1 << 20;
 
@@ -85,7 +87,7 @@ pub fn check(
     if !product.is_some_and(|product| PRODUCTS.contains(&product)) {
         return Err("the manifest is of another product");
     }
-    if stated.get("repository").and_then(Value::as_str) != Some(REPOSITORY) {
+    if !stated.get("repository").and_then(Value::as_str).is_some_and(|r| r == REPOSITORY || r == LEGACY_REPOSITORY) {
         return Err("the manifest is of another repository");
     }
     let version = stated

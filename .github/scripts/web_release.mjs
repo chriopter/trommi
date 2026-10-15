@@ -87,7 +87,7 @@ const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).di
 const names = walk(out).map(file => path.relative(out, file).split(path.sep).join('/')).sort()
 for (const name of names) if (/[\s\\]/.test(name)) fail(`a file name with white space or a backslash: ${name}`)
 const files = names.map(name => ({ name, sha256: sha(path.join(out, name)), size: fs.statSync(path.join(out, name)).size }))
-const manifest = { product: 'trommi-web', repository: env('GITHUB_REPOSITORY', 'trommi/trommi'), version, commit, worker: config.name, host: HOST, hub, files }
+const manifest = { product: 'trommi-web', repository: env('GITHUB_REPOSITORY', 'chriopter/trommi'), version, commit, worker: config.name, host: HOST, hub, files }
 fs.writeFileSync(path.join(out, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 const sums = [...files, { name: 'manifest.json', sha256: sha(path.join(out, 'manifest.json')) }]
 fs.writeFileSync(path.join(out, 'checksums.txt'), sums.map(f => `${f.sha256}  ${f.name}\n`).join(''))

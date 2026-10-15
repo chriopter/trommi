@@ -496,7 +496,7 @@ fn neither_the_updater_nor_the_hub_is_root_and_each_writes_only_its_own() {
     assert!(values(&helper, "User").is_empty());
     // what a release brings is two programs: no unit, no script
     let build = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../.github/workflows/ship-hub.yml"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../.github/actions/main-build-hub/action.yml"),
     )
     .unwrap();
     assert!(!build.contains("out/trommi-hub.service"));

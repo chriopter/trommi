@@ -24,8 +24,8 @@ paths() {
     # the iPhone app and the Mac app (built from the same paths)
     ios) echo "app/ios/ .github/actions/main-build-apple/ .github/actions/main-upload-ios/ .github/actions/main-upload-mac/ .github/actions/main-sign-mac-direct/ .github/actions/main-process-ios/ .github/actions/main-process-mac/ .github/actions/main-publish-mac-direct/ .github/actions/main-notes-ios/ demo/ .github/scripts/ios_testflight.sh .github/scripts/ios_archive.sh .github/scripts/ios_entitlements.py .github/scripts/ios_release_gate.sh .github/scripts/ios_delivered.sh .github/scripts/main_native_pending.sh .github/scripts/mac_testflight.sh .github/scripts/mac_direct.sh .github/scripts/mac_release.sh .github/workflows/ship-apple.yml" ;;
     # the hub program: the hub's crate (hub/updater and hub/deploy belong to the updater)
-    hub) echo ".github/actions/main-build-hub/ .github/actions/main-deliver-hub/ hub/Cargo.toml hub/src/ hub/build.rs hub/static/ hub/data-epoch .github/workflows/ship-hub.yml .github/scripts/hub_compat.sh $rust_release" ;;
-    updater) echo "hub/updater/ hub/deploy/ .github/workflows/ship-hub.yml $rust_release" ;;
+    hub) echo "hub/container/ .github/actions/main-hub-image/ .github/scripts/install_cosign.sh .github/scripts/hub_image_sign.sh .github/scripts/hub_deliver.py .github/scripts/hub_container_check.sh .github/actions/main-build-hub/ .github/actions/main-deliver-hub/ hub/Cargo.toml hub/src/ hub/build.rs hub/static/ hub/data-epoch .github/scripts/hub_compat.sh $rust_release" ;;
+    updater) echo "hub/updater/ hub/deploy/ $rust_release" ;;
   esac
 }
 if [ "$commit" = paths ]; then
