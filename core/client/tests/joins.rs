@@ -175,7 +175,6 @@ fn a_hub_that_refuses_the_requests_as_a_whole_gets_each_group_alone() {
 }
 
 #[test]
-#[ignore = "a finding for the codec: hub/json.rs's value budget (a body's length / 8 + 64) refuses the well-formed answer of 32 joins (24 bytes and five values a row); the engine then settles them from the order"]
 fn the_answer_to_thirty_two_joins_is_read() {
     use trommi_client_core::app::io::HttpResponse;
     use trommi_client_core::hub::{Answer, Codec, Route, Site};
