@@ -13,8 +13,3 @@ test('the heading draws the core\'s label beside the dot; the full id is its tip
   assert.match(src, /<i><\/i><\/span>\$\{s\.model_label \? html`<span class="head-model" title="\$\{s\.model\}">\$\{s\.model_label\}<\/span>` : ''\}/)
   assert.match(read('app/web/public/session.css'), /\.head-model \{[^}]*color: var\(--muted\)/)
 })
-
-test('the iPhone shows the same label beside the name', () => {
-  assert.match(read('app/ios/TrommiApp/Sources/TrommiApp/SessionScreen.swift'), /if !a\.modelLabel\.isEmpty \{ Text\(a\.modelLabel\)/)
-  assert.match(read('app/ios/TrommiClient/Sources/TrommiClient/Desk.swift'), /a\.modelLabel = r\["model_label"\]\.string \?\? ""/)
-})

@@ -1,20 +1,12 @@
 // LiveAnswer: the two answer buttons of the Live Activity. The widget draws them as Button(intent:); iOS runs the
-// intent in the app's process (a LiveActivityIntent), where the app's handler answers the card through the room
-// as a tap on the card would (LiveActivities.swift in the app). The widget itself answers nothing: it holds no key.
+// intent in the app's process (a LiveActivityIntent), where the app's handler sends its answer to AppCore
+// as a tap on the card would (NativeLive.swift in the app). The widget itself answers nothing: it holds no key.
 // Answering asks for the phone to be unlocked first.
 import Foundation
 
-/** What the app's handler made of an answer from the island. */
-public enum LiveAnswerOutcome: Sendable {
-  /** Sent; the activity shows it as done, then the next card. */
-  case answered
-  /** Not sent (no room, the card changed or closed, no network): the activity offers to open the card. */
-  case openCard
-}
-
 public enum LiveAnswer {
   /** Set by the app at launch: answer card `id` with option `key`. */
-  @MainActor public static var handler: ((_ card: String, _ key: String) async -> LiveAnswerOutcome)?
+  @MainActor public static var handler: ((_ card: String, _ key: String) async -> Void)?
 }
 
 #if canImport(ActivityKit) && canImport(AppIntents) && os(iOS)

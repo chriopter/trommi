@@ -158,9 +158,9 @@ impl Observer {
             "ios" => {
                 // the built test runner itself (tests/client/mega/prepare.sh builds it): no SwiftPM, so several
                 // devices of one tree run side by side without its lock on .build
-                let runner = root.join("tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiCoreLiveTests-test-runner");
+                let runner = root.join("tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiShellTests-test-runner");
                 Command::new(&runner)
-                    .arg("TrommiCoreLiveTests.MegaObserverTests/testObserve")
+                    .arg("TrommiShellTests.MegaObserverTests/testObserve")
                     .env("TROMMI_MEGA_OBSERVER", &dir)
                     .stdin(Stdio::null())
                     .stdout(log.try_clone().unwrap())
@@ -1686,7 +1686,7 @@ async fn helper_names_after_a_fresh_signin() {
     };
     let mut observers = vec![Observer::spawn("web", "first", &root, &out, 1)];
     let ios = root
-        .join("tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiCoreLiveTests-test-runner")
+        .join("tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiShellTests-test-runner")
         .exists()
         && env("MEGA_IOS").as_deref() != Some("0");
     if ios {

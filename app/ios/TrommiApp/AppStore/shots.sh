@@ -2,7 +2,7 @@
 # The App Store screenshots: builds app/ios/TrommiApp for the iOS simulator on a Mac (XcodeGen's project of
 # project.yml, unsigned) and photographs the built-in demo (the made-up "Fernly" room of demo/data; nothing is sent)
 # on one iPhone and one iPad, light theme, clean status bar. Each picture is one state of demo/data/screens.json,
-# opened with the launch hook TROMMI_SCREEN=<id>; TROMMI_STORE_SHOTS=1 leaves out the demo's marks (DemoMode.swift).
+# opened with the launch hook TROMMI_SCREEN=<id>; TROMMI_STORE_SHOTS=1 leaves out the demo's marks (NativeDemo.swift).
 #
 #   shots.sh                     build, then all shots on both devices
 #   shots.sh --no-build          the shots only, from the app of the last build

@@ -1,6 +1,6 @@
 // swift-tools-version: 6.4
 // TrommiApp: the iOS app and its three extensions (an xtool project). Everything that is not a view is the package
-// ../TrommiClient; the protocol is trommi-core (Rust), linked into the app through TrommiCoreLive and into the
+// ../TrommiClient platform shell; Rust AppCore owns the app and protocol, linked into the app and into the
 // notification extension through NotifyCoreLive. Build the Rust library first (app/ios/README.md).
 import PackageDescription
 
@@ -25,7 +25,6 @@ let package = Package(
       name: "TrommiApp",
       dependencies: [
         .product(name: "TrommiClient", package: "TrommiClient"),
-        .product(name: "TrommiCoreLive", package: "TrommiClient"),
         .product(name: "ShareInbox", package: "TrommiClient"),
         .product(name: "PushNotify", package: "TrommiClient"),
       ],

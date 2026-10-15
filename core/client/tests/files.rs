@@ -91,3 +91,20 @@ fn a_file_is_attached_sent_opened_and_shared() {
     act(&mut sim, Action::OpenFile { attachment_id: "00112233445566778899aabbccddeeff".into(), save: false });
     assert!(sim.view.toasts.iter().any(|t| t.text.key == "file.unknown"));
 }
+
+#[test]
+fn a_note_keeps_its_attached_file_and_a_native_pen_stroke_round_trips() {
+    let world = World::new(); let mut sim = world.sim(); sim.send(start());
+    act(&mut sim, Action::Attach { local_id: "native-file".into(), name: "plan.png".into(), media_type: "image/png".into(), bytes: Bytes(PICTURE.to_vec()) });
+    act(&mut sim, Action::WriteNoteFiles { note_id: None, text: "Keep this plan".into(), attachments: vec!["native-file".into()] });
+    assert_eq!(sim.view.notes.rows.len(), 1);
+    assert_eq!(sim.view.notes.rows[0].files.len(), 1);
+    let file = sim.view.notes.rows[0].files[0].file_id.clone();
+    assert_eq!(sim.view.files[&file].name, "plan.png");
+    let board = trommi_client_core::scribble::desk_board("all");
+    sim.send(Event::Focus { focus: trommi_client_core::views::Focus { screen: trommi_client_core::views::Screen::Scribble { board_id: board.clone() }, ..Default::default() } });
+    act(&mut sim, Action::DrawStroke { board_id: board, local_id: "native-pen".into(), points: vec![serde_json::json!([1.5,2.5,0,0.5]), serde_json::json!([3.5,4.5,5,1])], tool: "pen".into(), color: "ink".into(), width: 3 });
+    let view = sim.view.board.as_ref().expect("a board");
+    assert_eq!(view.shapes.len(), 1, "{:?}", sim.view.toasts);
+    assert_eq!(view.shapes[0].pts, [1.5,2.5,3.5,4.5]);
+}

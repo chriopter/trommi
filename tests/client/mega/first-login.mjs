@@ -24,7 +24,7 @@ const log = fs.openSync(path.join(dir, 'log.txt'), 'w')
 const env = { ...process.env, TROMMI_TRACE: '1', MEGA_SEED: '1' }
 const child = platform === 'web'
   ? spawn('node', [path.join(here, 'web-observer.mjs'), dir, tree], { env, stdio: ['ignore', log, log] })
-  : spawn(path.join(tree, 'tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiCoreLiveTests-test-runner'), ['TrommiCoreLiveTests.MegaObserverTests/testObserve'], { env: { ...env, TROMMI_MEGA_OBSERVER: dir }, stdio: ['ignore', log, log] })
+  : spawn(path.join(tree, 'tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiShellTests-test-runner'), ['TrommiShellTests.MegaObserverTests/testObserve'], { env: { ...env, TROMMI_MEGA_OBSERVER: dir }, stdio: ['ignore', log, log] })
 let n = 0
 async function call(cmd, limitS = 1800) {
   const at = n++

@@ -95,7 +95,7 @@ impl<F: FnMut(String) + Send + 'static> Shell for Window<F> {
                 }
             }
             // (no widgets on this desktop, no notification extension)
-            Effect::Snapshot { .. } | Effect::NotifyContext { .. } => {}
+            Effect::Snapshot { .. } | Effect::NotifyContext { .. } | Effect::ShareInbox { .. } | Effect::ForgetShared => {}
             // (I/O: never handed to the window)
             Effect::Http { .. }
             | Effect::OpenStream { .. }

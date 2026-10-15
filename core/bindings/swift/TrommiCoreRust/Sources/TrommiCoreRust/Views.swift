@@ -3767,6 +3767,8 @@ public enum CoreView {
   /// Settings: what the list's rows say, and the person's devices (`settings.rs`). What only this device knows (the
   /// theme, the Push level) is the shell's.
   public struct SettingsView: Codable, Hashable, Sendable {
+    /// Hub counts and sizes, read only by an authenticated device of this account.
+    public var data: DataView?
     /// The account's e-mail, for the row Account; none until the account is read (W3).
     public var account: String?
     /// The person's devices that are in, in the order they joined (the agents are under Agents).
@@ -3802,7 +3804,8 @@ public enum CoreView {
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     public var login: LoginView?
 
-    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, deskCounts: [DeskCountsView] = [], deleting: [DeskDeleteView] = [], push: PushView? = nil, login: LoginView? = nil) {
+    public init(data: DataView? = nil, account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, deskCounts: [DeskCountsView] = [], deleting: [DeskDeleteView] = [], push: PushView? = nil, login: LoginView? = nil) {
+      self.data = data
       self.account = account
       self.devices = devices
       self.removed = removed
@@ -3823,6 +3826,7 @@ public enum CoreView {
     }
 
     enum CodingKeys: String, CodingKey {
+      case data = "data"
       case account = "account"
       case devices = "devices"
       case removed = "removed"
@@ -3844,6 +3848,7 @@ public enum CoreView {
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.data = try c.decodeIfPresent(DataView.self, forKey: .data)
       self.account = try c.decodeIfPresent(String.self, forKey: .account)
       self.devices = try c.decode([DeviceRow].self, forKey: .devices)
       self.removed = try c.decodeIfPresent([DeviceRow].self, forKey: .removed) ?? []
@@ -3865,6 +3870,7 @@ public enum CoreView {
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encodeIfPresent(data, forKey: .data)
       try c.encode(account, forKey: .account)
       try c.encode(devices, forKey: .devices)
       if !removed.isEmpty { try c.encode(removed, forKey: .removed) }
@@ -3882,6 +3888,71 @@ public enum CoreView {
       if !deleting.isEmpty { try c.encode(deleting, forKey: .deleting) }
       try c.encodeIfPresent(push, forKey: .push)
       try c.encodeIfPresent(login, forKey: .login)
+    }
+  }
+
+  /// Settings → Data: presentation belongs to the core, never the native HTTP executor.
+  public struct DataView: Codable, Hashable, Sendable {
+    public var state: String
+    public var rows: [DataRow]
+    public var says: Text?
+
+    public init(state: String = "", rows: [DataRow] = [], says: Text? = nil) {
+      self.state = state
+      self.rows = rows
+      self.says = says
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case state = "state"
+      case rows = "rows"
+      case says = "says"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.state = try c.decode(String.self, forKey: .state)
+      self.rows = try c.decode([DataRow].self, forKey: .rows)
+      self.says = try c.decodeIfPresent(Text.self, forKey: .says)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(state, forKey: .state)
+      try c.encode(rows, forKey: .rows)
+      try c.encode(says, forKey: .says)
+    }
+  }
+
+  public struct DataRow: Codable, Hashable, Sendable {
+    public var id: String
+    public var label: Text
+    public var value: Text
+
+    public init(id: String = "", label: Text = Text(), value: Text = Text()) {
+      self.id = id
+      self.label = label
+      self.value = value
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case label = "label"
+      case value = "value"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.label = try c.decode(Text.self, forKey: .label)
+      self.value = try c.decode(Text.self, forKey: .value)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(label, forKey: .label)
+      try c.encode(value, forKey: .value)
     }
   }
 

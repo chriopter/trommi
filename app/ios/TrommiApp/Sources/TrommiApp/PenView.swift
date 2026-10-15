@@ -262,8 +262,6 @@ enum PenDraw {
     return 1.7
   }
   static func draw(_ d: SVGDoc, in ctx: inout GraphicsContext, size: CGSize, inks: PenInks) {
-    let t0 = PerfLog.on ? DispatchTime.now().uptimeNanoseconds : 0
-    defer { if PerfLog.on { RenderCount.penDraws += 1; RenderCount.penNs += DispatchTime.now().uptimeNanoseconds - t0 } }
     let vb = d.viewBox
     let sx = size.width / vb.width, sy = size.height / vb.height
     let s = d.stretch ? 1 : min(sx, sy)
@@ -412,19 +410,14 @@ struct StarShape: Shape {
 
 /** A session's mark: its drawing in its colour, the crown when it is the desk's crowned session. */
 struct AgentMark: View {
-  let agent: Agent
+  let mark: String
   var size: CGFloat = 26
-  var crown = true
+  var crowned = false
   var body: some View {
     ZStack(alignment: .topLeading) {
-      PenMark(doc: PenStore.mark(agent.mark), inks: PenInks(stroke: Tone.mark(agent.hue)))
-        .frame(width: size, height: size)
-        .opacity(agent.online || agent.own ? 1 : 0.75)
-      if crown && agent.starred {
-        PenMark("crown").frame(width: size * 0.62, height: size * 0.45).offset(x: -size * 0.12, y: -size * 0.3)
-      }
-    }
-    .frame(width: size, height: size)
+      PenMark(doc: PenStore.mark(mark), inks: PenInks(stroke: Ink.accent)).frame(width: size, height: size)
+      if crowned { PenMark("crown").frame(width: size * 0.62, height: size * 0.45).offset(x: -size * 0.12, y: -size * 0.3) }
+    }.frame(width: size, height: size)
   }
 }
 
