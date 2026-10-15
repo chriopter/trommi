@@ -808,7 +808,9 @@ impl Conn {
         };
         let u = self.use_.lock().unwrap().at;
         let link = self.said.lock().unwrap().as_ref().map(|s| s.1.clone());
-        presence_of(&self.cfg.session, self.spare, self.parent, u, slot, link)
+        let mut presence = presence_of(&self.cfg.session, self.spare, self.parent, u, slot, link);
+        presence["owner"] = json!(self.cfg.owner());
+        presence
     }
     fn present(&self) {
         let Some(here) = self.here.lock().unwrap().clone() else {
@@ -924,7 +926,8 @@ impl Conn {
                 || t.get("told").is_some_and(crate::util::truthy)
                 || self.speaking.lock().unwrap().contains(&file)
                 || (self.member.phase() == "ready"
-                    && self.member.paths().map(|p| p.slot as u64) == slot)
+                    && self.member.paths().map(|p| p.slot as u64) == slot
+                    && t.get("owner").and_then(Value::as_str).unwrap_or("") == self.cfg.owner())
             {
                 continue;
             }
@@ -2506,13 +2509,12 @@ impl mcp::Server for Conn {
                 if dir.exists() {
                     *self.here.lock().unwrap() = Some(dir.clone());
                     self.present();
-                    let keyed = member::slots_in(&self.cfg, &dir);
-                    let reconnect = keyed.iter().any(|n| {
-                        let p = member::paths_of(&self.cfg, &room_id, *n);
-                        let h = holders_of(&p);
-                        h.iter().any(|x| session_of(&p, *x) == self.cfg.session)
+                    let keyed = member::command_slots(&self.cfg, &room_id);
+                    let reconnect = keyed.iter().any(|p| {
+                        let h = holders_of(p);
+                        h.iter().any(|x| session_of(p, *x) == self.cfg.session)
                             || (h.is_empty()
-                                && owned_by(owner_of(&p).as_ref(), &self.cfg.owner(), ppid()))
+                                && owned_by(owner_of(p).as_ref(), &self.cfg.owner(), ppid()))
                     });
                     let others: Vec<Other> = others_here(&dir, &self.cfg.base, self.watch_on)
                         .into_iter()

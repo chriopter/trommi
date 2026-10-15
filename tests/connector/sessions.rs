@@ -785,7 +785,8 @@ impl Session {
 fn owner_files(m: &Machine, owner: &str) -> Vec<PathBuf> {
     let mut out = vec![];
     for room in std::fs::read_dir(m.seat.home.path().join("keys")).into_iter().flatten().flatten() {
-        for f in std::fs::read_dir(room.path()).into_iter().flatten().flatten() {
+        for f in trommi_connector::member::room_slot_dirs(&room.path()).into_iter()
+            .flat_map(|dir| std::fs::read_dir(dir).into_iter().flatten().flatten()) {
             let p = f.path();
             let name = p.file_name().unwrap().to_string_lossy().to_string();
             if name.ends_with(".owner")
@@ -948,7 +949,8 @@ async fn knock_session(m: &Machine, s: &Session, req: serde_json::Value) -> serd
     assert!(s.on.is_some(), "{} is on the board", s.name);
     let keys = m.seat.home.path().join("keys");
     for room in std::fs::read_dir(&keys).unwrap().flatten() {
-        for f in std::fs::read_dir(room.path()).unwrap().flatten() {
+        for f in trommi_connector::member::room_slot_dirs(&room.path()).into_iter()
+            .flat_map(|dir| std::fs::read_dir(dir).unwrap().flatten()) {
             let p = f.path();
             let name = p.file_name().unwrap().to_string_lossy().to_string();
             let Some(stem) = name.strip_suffix(".owner") else { continue };
@@ -959,7 +961,7 @@ async fn knock_session(m: &Machine, s: &Session, req: serde_json::Value) -> serd
             if !mine || stem.starts_with("replaced-") {
                 continue;
             }
-            let key = room.path().join(format!("{stem}.key"));
+            let key = p.with_extension("key");
             let sock = m
                 .seat
                 .run_dir()
@@ -1112,9 +1114,16 @@ async fn keys_of_one_session_in_two_rooms_are_refused_by_name() {
     s2.connect(&mut m, 'B').await;
     s1.close().await;
     s2.close().await;
+    let f1 = owner_files(&m, &s1.owner());
     let f2 = owner_files(&m, &s2.owner());
     let text = std::fs::read_to_string(&f2[0]).unwrap().replace(&s2.owner(), &s1.owner());
     std::fs::write(&f2[0], text).unwrap();
+    // A manually copied session key includes its owner directory. Merely changing a record under
+    // another owner's hash must not make that other owner's subtree discoverable.
+    let from = f2[0].parent().unwrap();
+    if from.parent().and_then(|p| p.file_name()).is_some_and(|n| n == "s") {
+        std::fs::rename(from, from.with_file_name(f1[0].parent().unwrap().file_name().unwrap())).unwrap();
+    }
     s1.resume(&m).await;
     let said = s1.refused("inbox").await;
     assert!(

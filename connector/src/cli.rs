@@ -4,7 +4,7 @@ use crate::driver::BoxFut;
 use crate::door::{knock, ring};
 use crate::error::{Fault, Result};
 use crate::hooks::{hook_output, hook_request};
-use crate::member::{self, connector_config, paths_of, resolve_room, slots_in, Member};
+use crate::member::{self, command_slots, connector_config, paths_of, resolve_room, Member};
 use crate::server::{env_ms, say_with};
 use crate::slots::*;
 use crate::util::now_ms;
@@ -142,8 +142,7 @@ pub async fn say(argv: &[String]) -> Result<String> {
     let mut last: Option<Fault>;
     loop {
         let mut silent = vec![];
-        for n in slots_in(&cfg, &cfg.keys_dir.join(&room_id)) {
-            let p = paths_of(&cfg, &room_id, n);
+        for p in command_slots(&cfg, &room_id) {
             let holders = holders_of(&p);
             if holders.is_empty() {
                 continue;
@@ -243,8 +242,8 @@ pub async fn hook(kind: &str) -> String {
         .unwrap_or_default();
     ring(&pids, 15_000).await;
     let wait = request.get("wait_ms").and_then(|v| v.as_u64()).unwrap_or(0);
-    for n in slots_in(&cfg, &cfg.keys_dir.join(&room_id)) {
-        let p = paths_of(&cfg, &room_id, n);
+    for p in command_slots(&cfg, &room_id) {
+        let n = p.slot;
         if holders_of(&p).is_empty() {
             continue;
         }
@@ -319,7 +318,13 @@ pub async fn last_word(cfg: &member::Cfg, room_id: &str, t: &Value) -> bool {
     let Some(slot) = t.get("slot").and_then(|v| v.as_u64()) else {
         return false;
     };
-    let p = paths_of(cfg, room_id, slot as u32);
+    let owner = t.get("owner").and_then(Value::as_str).unwrap_or("");
+    let p = if owner.is_empty() {
+        paths_of(cfg, room_id, slot as u32)
+    } else {
+        let Some((_, p)) = member::own_slots(cfg, owner).into_iter().find(|(r, p)| r == room_id && u64::from(p.slot) == slot) else { return false };
+        p
+    };
     if !p.key_file.exists() || !lock_slot(&p, &format!("witness:{}", pid())) {
         return false;
     }
@@ -392,7 +397,7 @@ pub async fn witness(session: Option<String>) {
 pub fn whoami() -> Result<String> {
     let cfg = connector_config(None, true);
     let room = resolve_room(&cfg)?;
-    let p = room.as_ref().map(|r| paths_of(&cfg, r, 1));
+    let p = room.as_ref().map(|r| command_slots(&cfg, r).into_iter().next().unwrap_or_else(|| paths_of(&cfg, r, 1)));
     Ok(serde_json::to_string_pretty(&json!({
         "room_id": room, "key_file": p.as_ref().map(|p| p.key_file.display().to_string()), "has_key": p.as_ref().is_some_and(|p| p.key_file.exists()),
         "folder": cfg.shown, "host": cfg.host,

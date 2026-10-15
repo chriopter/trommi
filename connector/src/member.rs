@@ -355,6 +355,43 @@ pub fn paths_named(dir: &Path, name: &str) -> SlotPaths {
         ..Default::default()
     }
 }
+/// The state directories in a room: legacy slots and each identified session's subtree.
+/// Does not follow symlinks or scan unrelated files.
+pub fn room_slot_dirs(room: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![room.to_path_buf()];
+    if let Ok(rd) = std::fs::read_dir(room.join("s")) {
+        let mut sessions: Vec<_> = rd.filter_map(|e| e.ok()).filter(|e| {
+            e.file_type().is_ok_and(|t| t.is_dir()) && crate::vouch::is_identity(&e.file_name().to_string_lossy())
+        }).map(|e| e.path()).collect();
+        sessions.sort();
+        dirs.extend(sessions);
+    }
+    dirs
+}
+/// New identified sessions keep their state in an owner directory, independent of folder and account.
+/// Replacement joins use another slot here until the original device has been safely replaced.
+fn session_dir(cfg: &Cfg, room: &str, owner: &str) -> PathBuf {
+    cfg.keys_dir.join(room).join("s").join(&crate::util::hex(&crate::util::sha256(owner.as_bytes()))[..16])
+}
+fn new_paths(cfg: &Cfg, room: &str, slot: u32) -> SlotPaths {
+    let owner = cfg.owner();
+    if owner.is_empty() {
+        return paths_of(cfg, room, slot);
+    }
+    paths_named(&session_dir(cfg, room, &owner), &format!("session-{slot}"))
+}
+/// The keys this command may address: its exact owner's keys and legacy keys of its folder.
+pub fn command_slots(cfg: &Cfg, room: &str) -> Vec<SlotPaths> {
+    let mut paths: Vec<_> = own_slots(cfg, &cfg.owner()).into_iter()
+        .filter(|(r, _)| r == room).map(|(_, p)| p).collect();
+    for n in slots_in(cfg, &cfg.keys_dir.join(room)) {
+        let p = paths_of(cfg, room, n);
+        if !paths.iter().any(|old| old.key_file == p.key_file) {
+            paths.push(p);
+        }
+    }
+    paths
+}
 /// Every key of this machine whose owner record names `owner` exactly, in every room and every folder's slots:
 /// (room, paths). Keys put aside (`replaced-…`) and slots without a key are not counted.
 pub fn own_slots(cfg: &Cfg, owner: &str) -> Vec<(String, SlotPaths)> {
@@ -363,27 +400,19 @@ pub fn own_slots(cfg: &Cfg, owner: &str) -> Vec<(String, SlotPaths)> {
         return out;
     }
     for room in room_names(cfg) {
-        let dir = cfg.keys_dir.join(&room);
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        let mut names: Vec<String> = rd
-            .filter_map(|e| e.ok())
-            .map(|e| e.file_name().to_string_lossy().to_string())
-            .filter_map(|f| f.strip_suffix(".owner").map(String::from))
-            .filter(|n| !n.starts_with("replaced-"))
-            .collect();
-        names.sort();
-        for name in names {
-            let p = paths_named(&dir, &name);
-            let keyed = std::fs::read_to_string(&p.key_file).is_ok_and(|t| t == KEY_MARKER);
-            let mine = owner_of(&p)
-                .as_ref()
-                .and_then(|r| r.get("owner"))
-                .and_then(|o| o.as_str())
-                == Some(owner);
-            if keyed && mine {
-                out.push((room.clone(), p));
+        // Only the exact owner's subtree is inspected. A hash collision must still pass the full owner check.
+        for dir in [session_dir(cfg, &room, owner), cfg.keys_dir.join(&room)] {
+            let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+            let mut names: Vec<String> = rd.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter_map(|f| f.strip_suffix(".owner").map(String::from))
+                .filter(|n| !n.starts_with("replaced-")).collect();
+            names.sort();
+            for name in names {
+                let p = paths_named(&dir, &name);
+                let keyed = std::fs::read_to_string(&p.key_file).is_ok_and(|t| t == KEY_MARKER);
+                let mine = owner_of(&p).as_ref().and_then(|r| r.get("owner")).and_then(|o| o.as_str()) == Some(owner);
+                if keyed && mine { out.push((room.clone(), p)); }
             }
         }
     }
@@ -504,24 +533,14 @@ pub fn paths_of(cfg: &Cfg, room_id: &str, slot: u32) -> SlotPaths {
 }
 /// The newest out mark of this folder in a room.
 pub fn last_out(cfg: &Cfg, room_id: &str) -> Option<Value> {
-    let dir = cfg.keys_dir.join(room_id);
-    let re = regex::Regex::new(&format!(
-        r"^replaced-(\d{{8}}T\d{{6}})-{}-\d+\.out$",
-        regex::escape(&cfg.base)
-    ))
-    .unwrap();
-    let names: Vec<String> = std::fs::read_dir(&dir)
-        .map(|rd| {
-            rd.filter_map(|e| e.ok())
-                .map(|e| e.file_name().to_string_lossy().to_string())
-                .filter(|f| re.is_match(f))
-                .collect()
-        })
-        .unwrap_or_default();
-    let mut marks: Vec<Value> = names
-        .iter()
-        .filter_map(|f| read_json(&dir.join(f)))
-        .collect();
+    let owner = cfg.owner();
+    let mut marks = Vec::new();
+    for (dir, base) in [(cfg.keys_dir.join(room_id), cfg.base.clone()), (session_dir(cfg, room_id, &owner), "session".into())] {
+        if base == "session" && owner.is_empty() { continue; }
+        let re = regex::Regex::new(&format!(r"^replaced-(\d{{8}}T\d{{6}})-{}-\d+\.out$", regex::escape(&base))).unwrap();
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        marks.extend(rd.filter_map(|e| e.ok()).filter(|e| re.is_match(&e.file_name().to_string_lossy())).filter_map(|e| read_json(&e.path())));
+    }
     marks.sort_by_key(|m| m.get("at").and_then(|v| v.as_u64()).unwrap_or(0));
     let own = marks
         .iter()
@@ -744,50 +763,37 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
         busy.push(*n);
         holders.extend(r.holders);
     }
-    let mut n = 1;
-    loop {
-        if !keyed_raw.contains(&n) {
-            let p = paths_of(cfg, room_id, n);
-            if claim_slot(&p, &cfg.session, cfg.takeover_ms).await.ok {
-                clear_leftovers(&p);
-                return SlotPaths {
-                    has_key: false,
-                    busy,
-                    holders,
-                    refused,
-                    foreign,
-                    ..p
-                };
-            }
-        }
-        n += 1;
-    }
+    let mut p = free_slot(cfg, room_id).await;
+    p.busy = busy;
+    p.holders = holders;
+    p.refused = refused;
+    p.foreign = foreign;
+    p
 }
-/// The first slot of the folder without a key, claimed.
+/// A new slot, in the identified session's directory or the ownerless client's legacy folder slots.
 pub async fn free_slot(cfg: &Cfg, room_id: &str) -> SlotPaths {
-    let keyed = slots_in(cfg, &cfg.keys_dir.join(room_id));
     let mut n = 1;
     loop {
-        if !keyed.contains(&n) {
-            let p = paths_of(cfg, room_id, n);
-            if claim_slot(&p, &cfg.session, cfg.takeover_ms).await.ok {
+        let p = new_paths(cfg, room_id, n);
+        // Allocating an empty slot must not terminate a live connector waiting in that slot.
+        // Reconnect takeover applies only when opening an existing key.
+        if !p.key_file.exists() && lock_slot(&p, &cfg.session) {
+            // Recheck after acquiring the claim: another join may have completed while it was acquired.
+            if p.key_file.exists() {
+                unlock_slot(&p);
+            } else {
                 clear_leftovers(&p);
-                return SlotPaths {
-                    has_key: false,
-                    busy: keyed,
-                    holders: vec![],
-                    ..p
-                };
+                return p;
             }
         }
         n += 1;
+        tokio::task::yield_now().await;
     }
 }
 /// The keyed slot of this folder that a running connector of this same Claude Code session holds, if any.
 pub async fn own_held_slot(cfg: &Cfg, room_id: &str) -> Option<SlotPaths> {
     let up = ancestors(8);
-    for n in slots_in(cfg, &cfg.keys_dir.join(room_id)) {
-        let p = paths_of(cfg, room_id, n);
+    for p in command_slots(cfg, room_id) {
         if holders_of(&p).is_empty() {
             continue;
         }
@@ -1679,5 +1685,97 @@ impl Member {
         if let Some(p) = self.paths() {
             unlock_slot(&p);
         }
+    }
+}
+
+#[cfg(test)]
+mod session_key_tests {
+    use super::*;
+
+    struct Fixture(Cfg);
+    impl Fixture {
+        fn new(owner: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("trommi-session-paths-{}", crate::util::random_hex(16)));
+            Self(Cfg { keys_dir: dir.clone(), folder: dir.join("project"), shown: "~/project".into(), host: "test".into(), base: "test-project".into(), session: owner.into(), owner: owner.into(), takeover_ms: 1, hub_url: "http://127.0.0.1:9".into(), invite: String::new(), room: String::new() })
+        }
+        fn room(&self) -> String { trommi_core::ids::RoomId::new([7; 32]).to_base64url() }
+        fn keyed(&self, p: &SlotPaths, owner: &str) {
+            std::fs::create_dir_all(&p.dir).unwrap();
+            write_private(&p.key_file, KEY_MARKER).unwrap();
+            write_owner(p, &owner_record(owner, Some(ppid())));
+        }
+    }
+    impl Drop for Fixture { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0.keys_dir); } }
+
+    #[tokio::test]
+    async fn identified_keys_resume_across_folders_and_leave_legacy_keys_where_they_are() {
+        let f = Fixture::new("cc:first");
+        let room = f.room();
+        let p = pick_slot(&f.0, &room, false).await;
+        assert!(p.key_file.starts_with(f.0.keys_dir.join(&room).join("s")));
+        assert!(!p.dir.to_string_lossy().contains("cc:first"));
+        f.keyed(&p, "cc:first");
+        unlock_slot(&p);
+        let mut resumed = f.0.clone();
+        resumed.base = "another-folder".into();
+        resumed.folder = resumed.keys_dir.join("other");
+        assert_eq!(resolve_room(&resumed).unwrap(), Some(room.clone()));
+        let got = pick_slot(&resumed, &room, false).await;
+        assert!(got.has_key);
+        assert_eq!(got.key_file, p.key_file);
+        assert_eq!(command_slots(&resumed, &room)[0].key_file, p.key_file);
+        unlock_slot(&got);
+        let legacy = paths_of(&f.0, &room, 3);
+        f.keyed(&legacy, "codex:legacy");
+        resumed.owner = "codex:legacy".into();
+        let got = pick_slot(&resumed, &room, false).await;
+        assert!(got.has_key);
+        assert_eq!(got.key_file, legacy.key_file);
+        unlock_slot(&got);
+    }
+
+    #[tokio::test]
+    async fn another_owner_never_adopts_the_key_even_if_the_directory_hash_matches() {
+        let f = Fixture::new("codex:first");
+        let room = f.room();
+        let p = new_paths(&f.0, &room, 1);
+        f.keyed(&p, "codex:other");
+        assert!(own_slots(&f.0, &f.0.owner).is_empty());
+        let next = pick_slot(&f.0, &room, false).await;
+        assert!(!next.has_key);
+        assert_ne!(next.key_file, p.key_file);
+        unlock_slot(&next);
+        let mut other = f.0.clone();
+        other.owner = "cc:second".into();
+        assert_ne!(new_paths(&other, &room, 1).dir, p.dir);
+    }
+
+    #[tokio::test]
+    async fn replacement_keeps_old_state_until_admission_and_removal_mark_follows_owner() {
+        let f = Fixture::new("key:stable");
+        let room = f.room();
+        let old = pick_slot(&f.0, &room, false).await;
+        f.keyed(&old, &f.0.owner);
+        let next = free_slot(&f.0, &room).await;
+        assert_ne!(old.key_file, next.key_file);
+        assert!(old.key_file.exists());
+        assert_eq!(old.dir, next.dir);
+        let mark = json!({ "at": 42, "owner": owner_record(&f.0.owner, Some(ppid())), "verified": true });
+        write_private(&out_file(&old), &mark.to_string()).unwrap();
+        set_slot_aside(&old, Some("20261015T220000".into()));
+        unlock_slot(&old);
+        unlock_slot(&next);
+        let mut moved = f.0.clone(); moved.base = "new-folder".into();
+        assert_eq!(last_out(&moved, &room), Some(mark));
+        assert_eq!(resolve_room(&moved).unwrap(), Some(room));
+    }
+
+    #[tokio::test]
+    async fn ownerless_clients_keep_the_folder_slot_layout() {
+        let f = Fixture::new("");
+        let room = f.room();
+        let p = pick_slot(&f.0, &room, false).await;
+        assert_eq!(p.key_file, paths_of(&f.0, &room, 1).key_file);
+        unlock_slot(&p);
     }
 }

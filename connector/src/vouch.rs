@@ -76,6 +76,9 @@ pub fn session_name(cfg: &Cfg) -> String {
 
 /// The keyed slots of a room held by a running connector, of every folder: who could vouch.
 pub fn held_slots(room_dir: &Path) -> Vec<SlotPaths> {
+    crate::member::room_slot_dirs(room_dir).iter().flat_map(|dir| held_slots_in(dir)).collect()
+}
+fn held_slots_in(room_dir: &Path) -> Vec<SlotPaths> {
     let Ok(rd) = std::fs::read_dir(room_dir) else {
         return vec![];
     };
@@ -138,7 +141,10 @@ pub fn rooms_for(cfg: &Cfg) -> Vec<String> {
         })
         .unwrap_or_default();
     for n in names {
-        if !rooms.contains(&n) && !crate::member::slots_in(cfg, &cfg.keys_dir.join(&n)).is_empty() {
+        // Session-owned keys no longer live in a folder's legacy slots. Candidate vouchers still
+        // authenticate the exact program account before accepting an ask.
+        if !rooms.contains(&n) && (!crate::member::slots_in(cfg, &cfg.keys_dir.join(&n)).is_empty()
+            || !held_slots(&cfg.keys_dir.join(&n)).is_empty()) {
             rooms.push(n);
         }
     }
