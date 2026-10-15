@@ -183,5 +183,7 @@ schemes:
         Trommi: all
         TrommiUITests: [test]
     test:
+      environmentVariables:
+        TROMMI_SIGNIN_ACCOUNT_FILE: "$(TROMMI_SIGNIN_ACCOUNT_FILE)"
       targets:
         - TrommiUITests

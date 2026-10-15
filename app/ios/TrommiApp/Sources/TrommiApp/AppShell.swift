@@ -7,11 +7,15 @@ import UIKit
 import AppKit
 #endif
 
+enum NativeTab: Equatable { case chat, desk }
+
 // Published state is the generated view fold plus drawing/platform state. There is no second board model.
 @MainActor final class AppShell: ObservableObject {
   static let shared = AppShell()
   @Published var view = CoreView.ViewModel()
   @Published var screen = CoreView.Screen.desk
+  @Published var path: [CoreView.Screen] = []
+  @Published var tab = NativeTab.desk
   @Published var files: [String: Data] = [:]
   @Published var saved: SavedFile?
   @Published var isDemo = false
@@ -33,6 +37,11 @@ import AppKit
       let preview = isDemo
       session = try CoreSession(directory: preview ? nil : dir, network: NativeNetworkHooks(cached: { request in if preview { return NativeDemo.file(request) }; return await NativeServices.shared.prefetched(request) }, before: { _, url in preview && !url.hasPrefix("/demo/files/") ? "denied" : nil })) { [weak self] packet in await self?.effect(packet) }
       var config: [String: Any] = ["platform": Self.platform, "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1", "slot": "default", "seed": UInt64.random(in: 0..<(1 << 53)), "locale": Locale.current.identifier, "utc_offset_min": TimeZone.current.secondsFromGMT() / 60, "can": ["notify": true, "secrets": true, "snapshots": true, "push": "apns", "passkeys": false]]
+      #if targetEnvironment(simulator)
+      // UI automation uses the real executor and store against its own loopback hub.
+      if let hub = ProcessInfo.processInfo.environment["TROMMI_TEST_HUB"],
+         let url = URL(string: hub), url.scheme == "http", url.host == "127.0.0.1" { config["hub"] = hub }
+      #endif
       if preview { config["demo"] = try NativeDemo.fixture(); config["can"] = [:] }
       await session?.send(NativePacket(["type": "start", "config": config]))
       if !preview {
@@ -45,10 +54,10 @@ import AppKit
     } catch { platformError = "The encrypted device store could not be opened." }
   }
   func enterDemo() {
-    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; await start(demo: true) }
+    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; path = []; tab = .desk; await start(demo: true) }
   }
   func leaveDemo() {
-    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; await start() }
+    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; path = []; tab = .desk; await start() }
   }
   static var platform: String {
     #if os(macOS)
@@ -73,6 +82,11 @@ import AppKit
   }
   func account(_ action: [String: Any]) { act(["do": "account", "action": action]) }
   func focus(_ screen: CoreView.Screen, desk: String? = nil) {
+    if screen == .desk { path = []; tab = .desk }
+    else if path.last != screen { path.append(screen) }
+    show(screen, desk: desk)
+  }
+  func show(_ screen: CoreView.Screen, desk: String? = nil) {
     self.screen = screen
     let focus = CoreView.Focus(screen: screen, visible: true, desk: desk ?? view.sidebar.desk)
     if let data = try? JSONEncoder().encode(focus), let json = try? JSONSerialization.jsonObject(with: data) { send(["type": "focus", "focus": json]) }
@@ -92,7 +106,7 @@ import AppKit
       do {
         let delta = try JSONDecoder().decode(CoreView.ViewDelta.self, from: JSONSerialization.data(withJSONObject: e["delta"]!))
         try view.apply(delta)
-        if view.phase == .signedOut { files = [:]; saved = nil; screen = .desk }
+        if view.phase == .signedOut { files = [:]; saved = nil; screen = .desk; path = []; tab = .desk }
         if !isDemo { NativeServices.shared.draw(view) }
       } catch { platformError = "The view update was out of order." }
     case "file_ready": if let id = e["file_id"] as? String { files[id] = try? packet.bytes(e["bytes"]) }
