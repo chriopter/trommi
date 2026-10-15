@@ -1040,6 +1040,11 @@ impl<S: Storage> Device<S> {
         walked: &Walked,
         now_ms: u64,
     ) -> Result<(), Error> {
+        // This writer records a complete past from zero. A partial anchored walk must not be
+        // numbered from zero or marked as a fully learned history.
+        if walked.first_epoch != 0 {
+            return Err(Error::RoomBehind);
+        }
         let mut past = walked.epochs.clone();
         if let Some(last) = past.last_mut() {
             last.end = Some(WalkedEnd {

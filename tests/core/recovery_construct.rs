@@ -1983,3 +1983,16 @@ fn malformed_input_is_refused_and_never_panics() {
         let _ = follow_anchor(&context(room_group(), 0), &auth);
     }
 }
+
+#[test]
+fn a_history_walk_keeps_the_room_epoch_of_its_authenticated_anchor() {
+    let room = real_room(1, 3);
+    let keys = keys(1);
+    let anchor = select_anchor(&keys, &room.group.room_id(), &room.rows).unwrap();
+    assert_eq!(anchor.epoch, 3);
+    let observer = follow_anchor(&anchor, &room.infos[3]).unwrap();
+    let walked = recovery::Walked::begin(&observer).unwrap();
+    assert_eq!(walked.first_epoch, anchor.epoch);
+    assert_eq!(walked.epochs.len(), 1);
+    assert_eq!(walked.epochs[0].room_epoch, anchor.epoch);
+}

@@ -1319,17 +1319,20 @@ pub struct WalkedEpoch {
 /// section 5, or from the tree that Commit led to.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Walked {
-    /// The epochs, from 0 on.
+    /// The epoch of the first state in `epochs`; an authenticated anchor need not be epoch zero.
+    pub first_epoch: u64,
+    /// Consecutive epochs, beginning at `first_epoch`.
     pub epochs: Vec<WalkedEpoch>,
 }
 
 impl Walked {
-    /// A walk that stands at the founding GroupInfo `observer` was started from.
+    /// A walk beginning at the public state the observer authenticated.
     pub fn begin(observer: &Observer) -> Result<Self, Error> {
         Ok(Self {
+            first_epoch: observer.epoch()?,
             epochs: vec![WalkedEpoch {
                 leaves: observer.leaves()?.into_iter().collect(),
-                room_epoch: 0,
+                room_epoch: observer.history().map_or(0, |history| history.newest().epoch),
                 change: 0,
                 end: None,
             }],
