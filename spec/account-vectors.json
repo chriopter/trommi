@@ -297,7 +297,7 @@
     ]
   },
   "kdf": {
-    "rule": "A record is accepted only if alg, v, m, t and p are exactly those of pinned (other fields are ignored); no record (null) means pinned. Everything in refused is bad-kdf: nothing is derived with it.",
+    "rule": "A record is accepted only if alg, v, m, t and p are exactly those of pinned (other fields are ignored); a record with integer fields is required. Everything in refused is bad-kdf: nothing is derived with it.",
     "pinned": {
       "alg": "argon2id",
       "v": 1,
@@ -320,10 +320,10 @@
         "t": 3,
         "p": 1,
         "note": "another field"
-      },
-      null
+      }
     ],
     "refused": [
+      null,
       {
         "alg": "argon2id",
         "v": 1,

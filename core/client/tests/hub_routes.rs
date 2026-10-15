@@ -967,3 +967,18 @@ fn outbox_recovery() {
     };
     assert!(outbox(&e, Some(&short)).is_err());
 }
+
+#[test]
+fn push_endpoints_have_the_hubs_1024_byte_limit() {
+    use trommi_client_core::hub::{PushLevel, PushRegistration, PushTarget};
+    for len in [1024, 1025] {
+        let endpoint = format!("https://push.example/{}", "x".repeat(len - 21));
+        assert_eq!(endpoint.len(), len);
+        let registration = PushRegistration {
+            target: PushTarget::WebPush { endpoint: endpoint.clone(), p256dh: vec![1; 65], auth: vec![2; 16] },
+            level: PushLevel::All,
+        };
+        assert_eq!(Codec.request(&SITE, &Route::PushRegister { registration: &registration }).is_ok(), len == 1024);
+        assert_eq!(Codec.request(&SITE, &Route::PushRemove { endpoint: Some(&endpoint) }).is_ok(), len == 1024);
+    }
+}

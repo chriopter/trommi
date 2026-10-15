@@ -770,8 +770,7 @@ fn commit_in(
             return Err(bad("a session group's TrommiSession never changes"));
         }
         let kind = store::session_kind(x.c, &view, &row)?;
-        let was_stale = rules::is_stale(kind, &view, &facts.before.leaves);
-        rules::check_session_commit(kind, &view, &facts, founding, was_stale, scope.recovery)?;
+        rules::check_session_commit(kind, &view, &facts, founding)?;
         if founding {
             // 5.2.5: a human device is left out of a founding only while the hub holds no KeyPackage of it; it is
             // added later (5.2.7). One the hub could have handed out: claim again and found again.

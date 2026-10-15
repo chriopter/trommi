@@ -82,7 +82,7 @@ const _: () = assert!(SEALED_COPY_LEN == 1 + NONCE_LEN + 32 + TAG_LEN);
 pub const KDF_RECORD: &str = r#"{"alg":"argon2id","v":1,"m":65536,"t":3,"p":1}"#;
 /// The longest key derivation record that is read: what a hub gives is many times shorter.
 pub const MAX_KDF_RECORD_LEN: usize = 1024;
-use trommi_wire::account::{KDF_ALG, KDF_LANES, KDF_MEMORY_KIB, KDF_PASSES, KDF_RECORD_VERSION};
+use trommi_wire::account::{KDF_LANES, KDF_MEMORY_KIB, KDF_PASSES};
 
 /// The length of an account id.
 pub const ACCOUNT_ID_LEN: usize = 16;
@@ -199,28 +199,26 @@ pub fn check_password(password: &str) -> Result<(), AccountError> {
 }
 
 /// Whether a key derivation record, as the JSON a hub hands out, may be derived with: only if `alg`, `v`, `m`,
-/// `t` and `p` are exactly `"argon2id"`, 1, 65536, 3 and 1; other fields are ignored. No record, or `null`, is
-/// that pinned set. Anything else, a record above [`MAX_KDF_RECORD_LEN`] bytes included, is `bad-kdf`, and
+/// `t` and `p` are exactly `"argon2id"`, 1, 65536, 3 and 1; other fields are ignored. A record is required, with integer fields. Anything else, a record above [`MAX_KDF_RECORD_LEN`] bytes included, is `bad-kdf`, and
 /// nothing is derived: a hub does not choose what a derivation of the password costs.
 pub fn accept_kdf(record: Option<&str>) -> Result<(), AccountError> {
     let Some(record) = record else {
-        return Ok(());
+        return Err(AccountError::BadKdf);
     };
     if record.len() > MAX_KDF_RECORD_LEN {
         return Err(AccountError::BadKdf);
     }
     let value: serde_json::Value =
         serde_json::from_str(record).map_err(|_| AccountError::BadKdf)?;
-    if value.is_null() {
-        return Ok(());
-    }
-    let number = |name: &str| value.get(name).and_then(serde_json::Value::as_f64);
+    let number = |name: &str| value.get(name).and_then(serde_json::Value::as_u64);
     let pinned = value.is_object()
-        && value.get("alg").and_then(serde_json::Value::as_str) == Some(KDF_ALG)
-        && number("v") == Some(f64::from(KDF_RECORD_VERSION))
-        && number("m") == Some(f64::from(KDF_MEMORY_KIB))
-        && number("t") == Some(f64::from(KDF_PASSES))
-        && number("p") == Some(f64::from(KDF_LANES));
+        && trommi_wire::account::pinned_kdf(
+            value.get("alg").and_then(serde_json::Value::as_str),
+            number("v"),
+            number("m"),
+            number("t"),
+            number("p"),
+        );
     if pinned {
         Ok(())
     } else {
@@ -353,8 +351,7 @@ fn argon2id(password: &[u8], salt: &[u8; 32]) -> Result<Secret<32>, Error> {
     Ok(Secret::new(*master))
 }
 
-/// The master key of an account: the slow step, about a second. `kdf` is the hub's record for the account, if it
-/// gave one: `bad-kdf` unless [`accept_kdf`] takes it, before anything is derived. `bad-email` for an address
+/// The master key of an account: the slow step, about a second. `kdf` is the required record for the account: `bad-kdf` unless [`accept_kdf`] takes it, before anything is derived. `bad-email` for an address
 /// that is none.
 pub fn master_key(
     email: &str,
@@ -1303,7 +1300,8 @@ mod tests {
     use serde_json::Value;
 
     fn vectors() -> Value {
-        serde_json::from_str(include_str!("../../../spec/account-vectors.json")).expect("the vectors")
+        serde_json::from_str(include_str!("../../../spec/account-vectors.json"))
+            .expect("the vectors")
     }
 
     fn text<'a>(value: &'a Value, path: &[&str]) -> &'a str {

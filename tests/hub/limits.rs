@@ -328,7 +328,7 @@ fn devices_and_sessions_of_a_room() {
         if i < 7 {
             reply.ok();
         } else {
-            reply.refused(400, "bad-commit");
+            reply.refused(429, "too-many");
         }
     }
 }

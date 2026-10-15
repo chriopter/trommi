@@ -237,11 +237,11 @@ fn vectors_kdf() {
         v["kdf"]["pinned"]
     );
     let accepted = v["kdf"]["accepted"].as_array().expect("accepted");
-    assert!(accepted.len() >= 3);
+    assert!(accepted.len() >= 2);
     for record in accepted {
         assert_eq!(accept_kdf(Some(&json(record))), Ok(()), "{record}");
     }
-    assert_eq!(accept_kdf(None), Ok(()));
+    assert_eq!(accept_kdf(None), Err(AccountError::BadKdf));
     let refused = v["kdf"]["refused"].as_array().expect("refused");
     assert!(refused.len() >= 29);
     for record in refused {
@@ -261,12 +261,12 @@ fn vectors_kdf() {
     for not_json in ["", "{", "argon2id", "{\"alg\":\"argon2id\",}"] {
         assert_eq!(accept_kdf(Some(not_json)), Err(AccountError::BadKdf));
     }
-    // A number is compared as a number, however it is written.
+    // Fractional and exponential JSON numbers are not integer fields.
     assert_eq!(
         accept_kdf(Some(
             r#"{"alg":"argon2id","v":1.0,"m":6.5536e4,"t":3,"p":1}"#
         )),
-        Ok(())
+        Err(AccountError::BadKdf)
     );
 }
 
@@ -477,7 +477,7 @@ fn keys_depend_on_the_account() {
         Some(AccountError::BadEmail)
     );
     assert_eq!(
-        master_key("owner", "a long password", None).err(),
+        master_key("owner", "a long password", Some(KDF_RECORD)).err(),
         Some(AccountError::BadEmail)
     );
     assert_eq!(kit_keys("owner", "x").err(), Some(AccountError::BadEmail));

@@ -24,7 +24,7 @@ const ACCOUNT_ID: &str = "b3909710-0275-4714-a504-a872deaddff8";
 fn with_account(world: &World) -> String {
     let room = world.room.room_id();
     let code = Key::new([0xC0; 32]);
-    let pw = account::password_keys(EMAIL, PASSWORD, None).expect("the password's keys");
+    let pw = account::password_keys(EMAIL, PASSWORD, Some(account::KDF_RECORD)).expect("the password's keys");
     let words = account::generate_kit_words(&mut SystemEntropy).expect("words");
     let words = String::from_utf8(words.expose().to_vec()).expect("text");
     let kit = account::kit_keys(EMAIL, &words).expect("the kit's keys");

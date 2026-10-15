@@ -726,7 +726,7 @@ fn scenario<C: Fn() -> u64>(run: &mut Run<C>, now_ms: u64) {
         let keys = password_keys(
             "self-test@example.org".to_owned(),
             "a password for the self-test".to_owned(),
-            None,
+            Some(trommi_core::account::KDF_RECORD.to_owned()),
         )?;
         expect(keys.auth_key != keys.wrap_key, "the two keys are one")
     });

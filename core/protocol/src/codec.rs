@@ -232,6 +232,11 @@ impl<'a> Reader<'a> {
         Ok(items)
     }
 
+    /// The unread bytes, borrowed without copying.
+    pub fn as_bytes(&self) -> &'a [u8] {
+        self.rest
+    }
+
     /// How many bytes are left.
     pub fn remaining(&self) -> usize {
         self.rest.len()

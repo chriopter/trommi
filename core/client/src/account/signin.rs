@@ -104,7 +104,7 @@ pub(crate) fn begin(hub: String, by: By, account: &str, secret: &Secret, client:
         By::Passkey => return Err(Problem::Other("internal")),
         By::Password => {
             let email = account::normalise_email(account).map_err(|e| sorted(e, by))?;
-            let keys = account::password_keys(&email, &secret.0, None).map_err(|e| sorted(e, by))?;
+            let keys = account::password_keys(&email, &secret.0, Some(account::KDF_RECORD)).map_err(|e| sorted(e, by))?;
             (email, keys.auth_key, keys.wrap_key)
         }
         By::Kit => {

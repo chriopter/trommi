@@ -22,6 +22,7 @@ pub mod limits;
 pub mod mls;
 pub mod push;
 pub mod recovery;
+pub mod rules;
 pub mod signin;
 
 #[cfg(feature = "layout")]

@@ -511,7 +511,7 @@ impl App {
             Change::Password { next } => {
                 account::check_password(&next.0).map_err(|e| e.code().to_string())?;
                 let email = held.email.clone().ok_or("needs-email")?;
-                let keys = account::password_keys(&email, &next.0, None).map_err(|e| e.code().to_string())?;
+                let keys = account::password_keys(&email, &next.0, Some(account::KDF_RECORD)).map_err(|e| e.code().to_string())?;
                 let sealed = account::seal_code(&keys.wrap_key, &room, Way::Password, &opened.code, &mut SystemEntropy).map_err(|e| e.code().to_string())?;
                 let password = NewPassword { auth_key: *keys.auth_key.expose(), sealed_copy: copy61(sealed)?, kdf: pinned_kdf() };
                 // (after the kit's words the code is replaced under the new password)

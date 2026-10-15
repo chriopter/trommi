@@ -36,7 +36,6 @@ pub const CODES: &[(u16, &[&str])] = &[
     ),
     (404, &["not-found", "no-room"]),
     // (no route of the hub answers it today: an unknown method is `not-found`)
-    (405, &["method-not-allowed"]),
     (
         409,
         &[

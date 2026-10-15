@@ -273,3 +273,10 @@ assumptions have to take in.
 
 `cargo test --workspace --locked` · `core/bindings/wasm/build.sh` · `core/bindings/swift/build.sh`. Compiler and targets:
 `rust-toolchain.toml`. Dependencies and licences: [`THIRD-PARTY.md`](../../THIRD-PARTY.md).
+
+Public room and session membership checks live in `core/wire::rules`, used by members and the hub through small
+adapters over verified facts. The protocol keeps signature verification, recovery authentication, historical
+keys and cross-session state. The hub links no protocol code. Envelope decoding uses `core/wire::layout` for
+borrowed header and envelope framing; typed subject checks stay here. Members can authenticate reserved kinds
+in history, while hub input rejects them and requires database numbers to fit signed 64 bits. Password KDF
+records must be present and use the pinned integer fields; local derivations name the pinned record explicitly.

@@ -97,7 +97,7 @@ async function checkToolchain(repo) {
 //
 // The build does not compile Rust as long as pkg/ is there and not older than the core's sources (CORE_SOURCES);
 // else it runs core/bindings/wasm/build.sh, with this process's environment (CARGO_TARGET_DIR).
-const CORE_SOURCES = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'core/protocol/Cargo.toml', 'core/protocol/src', 'core/client/Cargo.toml', 'core/client/src', 'core/bindings/swift/Cargo.toml', 'core/bindings/swift/src', 'core/bindings/wasm/Cargo.toml', 'core/bindings/wasm/build.sh', 'core/bindings/wasm/src', 'core/bindings/wasm/js']
+const CORE_SOURCES = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'core/wire/Cargo.toml', 'core/wire/src', 'core/protocol/Cargo.toml', 'core/protocol/src', 'core/client/Cargo.toml', 'core/client/src', 'core/bindings/swift/Cargo.toml', 'core/bindings/swift/src', 'core/bindings/wasm/Cargo.toml', 'core/bindings/wasm/build.sh', 'core/bindings/wasm/src', 'core/bindings/wasm/js']
 const CORE_WASM = 'trommi_core_wasm_bg.wasm'
 const CORE_MODULES = ['trommi-core', 'trommi_core_wasm', 'idb-store', 'views-fold']   // pkg/<name>.js, in gen/vendor/ as <name>.mjs
 /** An import of the binding (…/core/bindings/wasm/js/<name>.js or …/pkg/<name>.js) as gen/vendor/ has it: './<name>.mjs'. */

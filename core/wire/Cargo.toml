@@ -6,7 +6,7 @@ publish.workspace = true
 description = "What the hub and the app core must read the same way, written once: refusal codes and their statuses, the limits of the hub's routes, the constants of the structs of spec/v1.md, and (feature `layout`) the hub's strict parsers of those structs. No key, no client logic, no I/O."
 
 [features]
-# The structs of spec/v1.md that the hub parses (layout.rs). The hub turns it on; the app core does not need it.
+# The structs of spec/v1.md that the hub parses (layout.rs). The hub and the protocol envelope codec use this framing.
 layout = ["dep:sha2", "dep:serde"]
 
 [dependencies]

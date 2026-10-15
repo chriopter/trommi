@@ -10,8 +10,8 @@ description = "Trommi's protocol core: MLS groups through OpenMLS, and Trommi's 
 vectors = ["dep:rand_chacha", "dep:rand_core"]
 
 [dependencies]
-# The constants the hub reads the same structs with (versions, kinds, labels, lengths, lifetimes): core/wire.
-trommi-wire = { path = "../wire" }
+# Public formats, borrowed envelope framing and pure membership checks shared with the hub.
+trommi-wire = { path = "../wire", features = ["layout"] }
 openmls = { workspace = true }
 openmls_rust_crypto = { workspace = true }
 openmls_basic_credential = { workspace = true }
