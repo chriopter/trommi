@@ -9,7 +9,7 @@ import subprocess
 
 
 def main():
-    if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('GITHUB_REPOSITORY') != 'trommi/trommi':
+    if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('GITHUB_REPOSITORY') != 'chriopter/trommi':
         raise RuntimeError('This bootstrap runs only inside this repository CI')
     recipient = json.loads(Path('release/hub-key-recipient.json').read_text())
     public = base64.b64decode(recipient['key'], validate=True)
