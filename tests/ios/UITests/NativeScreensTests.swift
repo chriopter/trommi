@@ -105,7 +105,7 @@ final class NativeScreensTests: XCTestCase {
     target.launchEnvironment["TROMMI_FIXTURE"] = fixture
     target.launchEnvironment["TROMMI_SPEED_TRACE"] = "1"
     let options = XCTMeasureOptions(); options.iterationCount = 3
-    measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true), XCTMemoryMetric(application: target)], options: options) {
+    measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true)], options: options) {
       target.launch()
       let desk = target.scrollViews["desk-content"]
       XCTAssertTrue(desk.waitForExistence(timeout: 15))
