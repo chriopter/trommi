@@ -389,3 +389,43 @@ fn a_takeover_by_link_seats_the_new_agent_in_the_session_and_every_helper_sessio
     assert!(sim.app.engine().unwrap().device().outbox().is_empty());
     assert!(sim.app.alerts().is_empty(), "{:?}", sim.app.alerts());
 }
+
+#[test]
+fn a_cut_restores_the_register_value_the_verified_chain_still_holds() {
+    for earlier in [false, true] {
+        for late_at_start in [false, true] {
+            for restart in [false, true] {
+                let mut world = World::new();
+                let name_key = format!("device/{}", world.founder.id().to_base64url());
+                let naming = Draft::Register { group: world.room, name: name_key, value: Some(common::text(r#"{"device_name":"Human in the room"}"#)) };
+                world.founder.seal(&naming, None, &[], now()).unwrap();
+                assert!(post_all(&mut world.hub.borrow_mut(), &mut world.founder).is_empty());
+                if earlier { world.agent_register("profile", r#"{"session_name":"before"}"#); }
+                world.peers_sync();
+                let agent = world.agent.id();
+                let cut = world.founder.cut_of(&world.group, &agent).unwrap();
+                let mut sim = world.sim();
+                if late_at_start { world.agent_register("profile", r#"{"session_name":"beyond the Cut"}"#); }
+                sim.send(start());
+                if !late_at_start { world.agent_register("profile", r#"{"session_name":"beyond the Cut"}"#); }
+                news(&world, &mut sim);
+                if restart { sim.advance(5_001); sim.restart(); sim.send(start()); news(&world, &mut sim); }
+                let session = world.session.as_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>();
+                assert_eq!(sim.app.board().model.sessions[&session].registers["profile"].value["session_name"], "beyond the Cut");
+                // The other human never read that last write; its removal cuts the agent below it.
+                world.founder.remove_agents(&[agent], now()).unwrap();
+                assert!(post_all(&mut world.hub.borrow_mut(), &mut world.founder).is_empty());
+                world.founder.clean_session(&world.group, &[cut], None, now()).unwrap();
+                assert!(post_all(&mut world.hub.borrow_mut(), &mut world.founder).is_empty());
+                news(&world, &mut sim);
+                let raw = sim.app.engine().unwrap().device().register(&world.group, "profile").unwrap();
+                let expected = if earlier { json!("before") } else { serde_json::Value::Null };
+                let actual = raw.map(|raw| serde_json::from_slice::<serde_json::Value>(raw.expose()).unwrap()["session_name"].clone()).unwrap_or_default();
+                assert_eq!(actual, expected);
+                assert_eq!(sim.app.board().model.sessions[&session].registers["profile"].value["session_name"], expected, "model kept a value the verified chain dropped: earlier={earlier}, late_at_start={late_at_start}, restart={restart}");
+                let human = world.founder.id().as_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>();
+                assert_eq!(sim.app.board().model.members[&human].device_name, "Human in the room", "a session Cut cannot clear a name learned from the room");
+            }
+        }
+    }
+}

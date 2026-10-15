@@ -174,8 +174,12 @@ impl Board {
                 Processed::Commit { facts, removed, .. } => {
                     let by_recovery = facts.external && facts.group.is_room();
                     m.apply_commit(&commit_in(facts), c, by_recovery, *removed && group.is_room(), now);
+                    refresh_cut_registers(m, c, device, facts, now);
                 }
-                Processed::Observed(facts) => m.apply_commit(&commit_in(facts), c, false, false, now),
+                Processed::Observed(facts) => {
+                    m.apply_commit(&commit_in(facts), c, false, false, now);
+                    refresh_cut_registers(m, c, device, facts, now);
+                },
                 Processed::Message(Received::WorkTrail { from, turn, number, time, step }) => {
                     if let Some(session) = group.session_id() {
                         m.apply_work_trail(&hex(session.as_bytes()), &hex(from.as_bytes()), &hex(turn.as_bytes()), u64::from(*number), *time, step, *change, c);
@@ -263,5 +267,38 @@ impl Board {
     pub fn finish(&mut self, now: u64) -> Change {
         self.model.project(&mut self.change, now);
         std::mem::take(&mut self.change)
+    }
+}
+
+/// A Cut can invalidate a value already handed to the model, including a value read through its chain.
+/// Ask the device for what stands now; do not rebuild register ordering in the projection.
+fn refresh_cut_registers(model: &mut Model, change: &mut Change, device: &Device, facts: &CommitFacts, now: u64) {
+    if facts.note.as_ref().is_none_or(|note| note.cuts.is_empty()) { return; }
+    let session = facts.group.session_id().map(|id| hex(id.as_bytes()));
+    let mut keys: Vec<String> = match &session {
+        Some(id) => model.sessions.get(id).map(|s| s.registers.keys().cloned().collect()).unwrap_or_default(),
+        None => model.human.iter().filter(|(_, r)| !r.pending).map(|(key, _)| key.clone()).collect(),
+    };
+    keys.extend(model.device_register_groups.iter().filter(|(_, group)| **group == session).map(|(id, _)| format!("device/{id}")));
+    let names: Vec<String> = keys.iter().map(|key| crate::codec::register_name_of(key)).collect();
+    let values = match device.shown_registers(&facts.group, &names) {
+        Ok(values) => values,
+        Err(_) => {
+            model.push_alert(change, "storage", "the current register values could not be read after a Cut", None, None, "local", now);
+            names.iter().map(|name| trommi_core::device::RegisterShown { name: name.clone(), of: None, now: None }).collect()
+        }
+    };
+    for (key, value) in keys.into_iter().zip(values) {
+        // Only the verified replacement list is applied. The remaining fields locate a deleted value.
+        let template = rx::Received {
+            change: 0, hash: String::new(), outcome: rx::Outcome::Applied, code: None,
+            kind: rx::EnvelopeKind::Register,
+            sender: key.strip_prefix("device/").unwrap_or("").to_string(), seq: 0,
+            recipient: None, time: now, session_id: session.clone(), timeline: None,
+            object: None, object_after: None, bind: None,
+            register: None, payload: None,
+            shown: vec![rx::Shown { name: value.name, now: value.now.as_deref().map(|r| Box::new(received_of(r))) }],
+        };
+        model.apply_register_changes(&template, change, now);
     }
 }

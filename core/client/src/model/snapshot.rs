@@ -134,6 +134,7 @@ impl Model {
         self.notes = typed(v.notes);
         self.published = typed(v.published);
         self.human = typed(v.human);
+        self.device_register_groups = room.get("device_register_groups").cloned().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
         self.timelines.clear();
         for e in v
             .timelines

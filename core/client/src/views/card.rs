@@ -839,7 +839,8 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
 fn request(b: &Board, p: &PermissionRequest, number: u32, nr: Text, walk: &[String]) -> CardView {
     let agent = b.by_key.get(key_of(&p.session_id, &p.agent_device_id)).copied();
     let read = p.content_state.is_empty() || p.content_state == "ok";
-    let open = !p.catching_up && p.permission_state == "pending" && !(p.expires_at > 0 && p.expires_at < b.now);
+    let expired = p.permission_state == "expired" || (p.permission_state == "pending" && p.expires_at > 0 && p.expires_at < b.now);
+    let open = !p.catching_up && p.permission_state == "pending" && !expired;
     if open && p.expires_at > 0 {
         b.wake_at(Some(p.expires_at + 1));
     }
@@ -852,7 +853,6 @@ fn request(b: &Board, p: &PermissionRequest, number: u32, nr: Text, walk: &[Stri
     } else if !open {
         let summary = match p.permission_state.as_str() {
             "withdrawn" => "Answered in the terminal",
-            "expired" => "Expired",
             _ => "",
         };
         AnswerView {
@@ -860,6 +860,7 @@ fn request(b: &Board, p: &PermissionRequest, number: u32, nr: Text, walk: &[Stri
             label: Some(match verdict {
                 Some("allow") => say("card.said", "Allow", &[]),
                 Some(_) => say("card.said", "Deny", &[]),
+                None if expired => say("card.said.expired", "Expired", &[]),
                 None => say("card.said.withdrawn", "Withdrawn by the agent", &[]),
             }),
             did: verdict.map(|_| say("card.did.chose", "You chose", &[])),
@@ -1175,6 +1176,22 @@ mod tests {
         assert_eq!((v.kind.as_str(), v.title.as_str(), v.number, en(&v.knock), v.answer.mode.as_str(), v.urgency), ("request", "Approval: Bash", 3, "Knock! Permission", "request", 3));
         assert_eq!(v.options.iter().map(|o| o.key.as_str()).collect::<Vec<_>>(), ["allow", "deny"]);
         assert_eq!(v.place.map(|p| p.at), Some(2));
+    }
+
+    #[test]
+    fn an_expired_approval_has_one_shared_expired_label_and_no_live_verdict_buttons() {
+        for state in ["pending", "expired"] {
+            let mut r = Room::default();
+            r.session("a", None, true);
+            r.request("late", "a", "ok");
+            r.permissions[0]["permission_state"] = json!(state);
+            r.permissions[0]["expires_at"] = json!(NOW - 1);
+            let v = view(&r, "late");
+            assert_eq!(v.state, "closed");
+            assert_eq!(v.answer.mode, "said");
+            assert_eq!(en(&v.answer.label), "Expired");
+            assert!(v.answer.summary.is_empty());
+        }
     }
 
     #[test]

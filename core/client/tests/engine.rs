@@ -820,7 +820,6 @@ fn without_the_first_versions_the_revised_cards_stand_out_of_place_until_the_ord
 }
 
 #[test]
-#[ignore = "a finding, not yet so: the core reads a register out of the order without saying whether it is current, so the model takes a session's or a device's register only when the order reaches it"]
 fn a_register_of_the_desk_stands_on_the_board_before_the_order_is_read() {
     let mut world = World::new();
     world.agent_register("profile", r#"{"name":"Builder"}"#);
