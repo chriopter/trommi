@@ -224,7 +224,7 @@ fn a_join_posted_without_its_answer_goes_on_after_a_restart_and_is_not_posted_tw
     sim.hold = false;
     // a shell that names no hub: the stored room names it
     sim.send(Event::Start { config: Config { platform: "test".into(), version: "0".into(), seed: 7, ..Default::default() } });
-    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert_eq!(sim.view.phase, Phase::SignedOut, "{:?}", sim.log.iter().filter(|e| matches!(e, Effect::Log { .. })).collect::<Vec<_>>());
     assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Failed(RoomJoinError::Interrupted)));
     assert!(!sim.device.1.is_empty(), "a posted join is never wiped");
     // the code again, with the hub named by the stored room
@@ -277,4 +277,211 @@ fn a_slot_in_a_room_refuses_a_second_join() {
     join(&world, &mut sim, code_keys());
     assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Failed(RoomJoinError::RoomExists)));
     assert!(sim.app.engine().is_some(), "the device in the room stays");
+}
+
+#[test]
+fn a_code_signin_joins_at_its_anchor_before_fetching_older_room_history() {
+    let world = World::new();
+    world.hub.borrow_mut().seen.clear();
+    let mut sim = blank(&world);
+    sim.send(start());
+    sim.hold = true;
+    join(&world, &mut sim, code_keys());
+    let commits = room_commits(&world);
+    for _ in 0..50 {
+        let Some((id, request)) = sim.held.front().cloned() else { break };
+        if request.method == "POST" && request.url.ends_with(&commits["POST ".len()..]) { break; }
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, got);
+    }
+    assert!(sim.held.front().is_some_and(|(_, r)| r.method == "POST" && r.url.ends_with(&commits["POST ".len()..])), "the authenticated room join is ready");
+    let requests = world.hub.borrow().seen.clone();
+    let room_path = format!("/v1/groups/{}", trommi_core::ids::base64url_encode(world.room.as_bytes()));
+    let earlier: Vec<_> = requests.iter().filter(|r| r.contains(&room_path) && (r.contains("epoch=0") || r.contains("/log"))).collect();
+    assert!(earlier.is_empty(), "older room history is deferred until needed, but before joining it fetched {earlier:?}");
+}
+
+#[test]
+fn an_anchored_signin_without_live_sessions_leaves_old_room_commits_unread_across_restart() {
+    let world = World::new();
+    world.hub.borrow_mut().archive(&world.group);
+    world.hub.borrow_mut().seen.clear();
+    let mut sim = blank(&world);
+    sim.send(start());
+    join(&world, &mut sim, code_keys());
+    settle(&world, &mut sim);
+    assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined));
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
+    assert!(!sim.app.engine().unwrap().device().group_past(&world.room).unwrap().unwrap().learned);
+    let room = trommi_core::ids::base64url_encode(world.room.as_bytes());
+    let old_info = format!("GET /v1/groups/{room}/info?epoch=0");
+    let old_log = format!("GET /v1/groups/{room}/log?");
+    assert!(world.hub.borrow().seen.iter().all(|s| s != &old_info && !s.starts_with(&old_log)), "{:?}", world.hub.borrow().seen);
+    let position = sim.app.engine().unwrap().position();
+    sim.restart();
+    world.attach(&mut sim);
+    sim.send(start());
+    for _ in 0..5 { serve_all(&world, &mut sim); }
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert!(sim.app.engine().unwrap().position() >= position);
+    assert!(!sim.app.engine().unwrap().device().group_past(&world.room).unwrap().unwrap().learned);
+    assert!(world.hub.borrow().seen.iter().all(|s| s != &old_info && !s.starts_with(&old_log)), "{:?}", world.hub.borrow().seen);
+}
+
+#[test]
+fn a_hostile_room_prefix_leaves_sessions_unjoined_without_accepting_its_facts() {
+    let world = World::new();
+    let room = trommi_core::ids::base64url_encode(world.room.as_bytes());
+    let log_path = format!("/v1/groups/{room}/log?");
+    let mut old = world.hub.borrow().order.iter().find(|item|
+        matches!(item, common::hub::Item::Log { group, commit: true, .. } if *group == world.room)
+    ).unwrap().json();
+    old["bytes"] = serde_json::json!(trommi_core::ids::base64url_encode(&[1, 2, 3, 4]));
+    world.hub.borrow_mut().fault = Some(Box::new(move |_, request| {
+        (request.method == "GET" && request.url.contains(&log_path)).then(||
+            Ok(answer(200, serde_json::json!({ "items": [old.clone()], "more": false })))
+        )
+    }));
+    let mut sim = blank(&world);
+    sim.send(start());
+    join(&world, &mut sim, code_keys());
+    settle(&world, &mut sim);
+    assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined));
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[(world.group, "bad-group")][..]));
+    let device = sim.app.engine().unwrap().device();
+    assert!(!device.group_past(&world.room).unwrap().unwrap().learned);
+    assert!(device.group(&world.group).is_err());
+    assert_eq!(device.content_key(&world.room, 0), Err(trommi_core::Error::NoKey));
+}
+
+#[test]
+fn a_live_sessions_signin_learns_the_shared_room_prefix_only_once() {
+    let mut world = World::new();
+    world.another_session();
+    world.hub.borrow_mut().seen.clear();
+    let mut sim = blank(&world);
+    sim.send(start());
+    join(&world, &mut sim, code_keys());
+    settle(&world, &mut sim);
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
+    let room = trommi_core::ids::base64url_encode(world.room.as_bytes());
+    assert_eq!(seen(&world, &format!("GET /v1/groups/{room}/info?epoch=0")), 1);
+    assert_eq!(seen(&world, &format!("GET /v1/groups/{room}/log?")), 1);
+    assert!(sim.app.engine().unwrap().device().group_past(&world.room).unwrap().unwrap().learned);
+}
+
+#[test]
+fn an_anchored_signin_defers_a_room_prefix_of_thirty_two_updates() {
+    let mut world = World::new();
+    common::sync(&world.hub.borrow(), &mut world.founder);
+    for _ in 0..32 {
+        world.founder.update(&world.room, true, now()).unwrap();
+        assert!(common::post_all(&mut world.hub.borrow_mut(), &mut world.founder).is_empty());
+        common::sync(&world.hub.borrow(), &mut world.founder);
+    }
+    world.hub.borrow_mut().archive(&world.group);
+    let (old_commits, old_bytes) = world.hub.borrow().order.iter().filter_map(|item| match item {
+        common::hub::Item::Log { group, commit: true, bytes, .. } if *group == world.room => Some(bytes.len()),
+        _ => None,
+    }).fold((0, 0), |(count, bytes), size| (count + 1, bytes + size));
+    world.hub.borrow_mut().seen.clear();
+    let mut sim = blank(&world);
+    sim.send(start());
+    join(&world, &mut sim, code_keys());
+    settle(&world, &mut sim);
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
+    let room = trommi_core::ids::base64url_encode(world.room.as_bytes());
+    let log = format!("GET /v1/groups/{room}/log?");
+    assert_eq!(seen(&world, &log), 0);
+    assert!(old_commits >= 32);
+    println!("anchored sign-in: old prefix {old_commits} Commits / {old_bytes} bytes; fetched 0 Commits / 0 bytes");
+}
+
+#[test]
+fn a_restart_after_the_room_join_asks_for_the_code_and_resumes_without_another_device() {
+    let world = World::new();
+    let mut sim = blank(&world);
+    sim.send(start());
+    sim.hold = true;
+    join(&world, &mut sim, code_keys());
+    for _ in 0..50 {
+        if sim.app.room_join() == Some(RoomJoinStatus::Joined) { break; }
+        let (id, request) = sim.held.front().cloned().unwrap();
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, got);
+    }
+    assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined));
+    let device = sim.app.engine().unwrap().device().id();
+    sim.restart();
+    sim.hold = false;
+    sim.send(start());
+    for _ in 0..5 { serve_all(&world, &mut sim); }
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert_eq!(sim.view.account.step, "sign_in");
+    assert_eq!(sim.view.account.problem.as_ref().unwrap().key, "account.interrupted");
+    // It remains resumable after another process stop; no recovery code was stored.
+    sim.restart();
+    sim.send(start());
+    for _ in 0..5 { serve_all(&world, &mut sim); }
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    join(&world, &mut sim, RecoveryKeys::from_code(Secret::new([0xC1; 32])).unwrap());
+    assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Failed(RoomJoinError::WrongCode)));
+    assert_eq!(sim.app.engine().unwrap().device().id(), device, "a wrong retry never erases the room leaf");
+    join(&world, &mut sim, code_keys());
+    settle(&world, &mut sim);
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
+    assert!(in_room(&sim, &[world.room, world.group]));
+    assert_eq!(sim.app.engine().unwrap().device().id(), device);
+    assert_eq!(seen(&world, &room_commits(&world)), 1);
+}
+
+#[test]
+fn old_room_registers_on_the_first_desk_trigger_verified_history_before_the_code_is_dropped() {
+    let mut world = World::new();
+    world.founder_sets("star/00000000000000000000000000000000", r#"{"at":1}"#);
+    world.hub.borrow_mut().archive(&world.group);
+    let mut sim = blank(&world);
+    sim.send(start());
+    join(&world, &mut sim, code_keys());
+    settle(&world, &mut sim);
+    assert_eq!(sim.view.phase, Phase::Live);
+    let device = sim.app.engine().unwrap().device();
+    assert!(device.group_past(&world.room).unwrap().unwrap().learned);
+    assert_eq!(device.content_key(&world.room, 0), world.founder.content_key(&world.room, 0));
+}
+
+#[test]
+fn a_restart_before_the_first_desk_can_resume_old_room_keys_without_live_sessions() {
+    let mut world = World::new();
+    world.founder_sets("star/00000000000000000000000000000000", r#"{"at":1}"#);
+    world.hub.borrow_mut().archive(&world.group);
+    let mut sim = blank(&world);
+    sim.send(start());
+    sim.hold = true;
+    join(&world, &mut sim, code_keys());
+    for _ in 0..50 {
+        if sim.app.room_join() == Some(RoomJoinStatus::Joined) { break; }
+        let (id, request) = sim.held.front().cloned().unwrap();
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, got);
+    }
+    assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined));
+    let id = sim.app.engine().unwrap().device().id();
+    sim.restart();
+    sim.hold = false;
+    sim.send(start());
+    for _ in 0..10 { serve_all(&world, &mut sim); }
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert_eq!(sim.view.account.problem.as_ref().unwrap().key, "account.interrupted");
+    join(&world, &mut sim, code_keys());
+    settle(&world, &mut sim);
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
+    let device = sim.app.engine().unwrap().device();
+    assert_eq!(device.id(), id);
+    assert_eq!(device.content_key(&world.room, 0), world.founder.content_key(&world.room, 0));
 }

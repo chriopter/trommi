@@ -30,6 +30,7 @@ pub fn kit_address(app: &str, hub: &str, account: &str) -> Option<String> {
 impl App {
     /// The register says the kit waits, or this device founded the account and has not written it yet.
     fn kit_due(&self) -> bool {
+        if self.can_resume_sign_in() { return false; }
         let Some(engine) = self.engine.as_ref() else { return false };
         let me = engine.device().id();
         if !engine.roles().0.contains(&me) {

@@ -1983,3 +1983,131 @@ fn malformed_input_is_refused_and_never_panics() {
         let _ = follow_anchor(&context(room_group(), 0), &auth);
     }
 }
+
+#[test]
+fn a_history_walk_keeps_the_room_epoch_of_its_authenticated_anchor() {
+    let room = real_room(1, 3);
+    let keys = keys(1);
+    let anchor = select_anchor(&keys, &room.group.room_id(), &room.rows).unwrap();
+    assert_eq!(anchor.epoch, 3);
+    let observer = follow_anchor(&anchor, &room.infos[3]).unwrap();
+    let walked = recovery::Walked::begin(&observer).unwrap();
+    assert_eq!(walked.first_epoch, anchor.epoch);
+    assert_eq!(walked.epochs.len(), 1);
+    assert_eq!(walked.epochs[0].room_epoch, anchor.epoch);
+}
+
+#[test]
+fn an_anchored_room_check_reads_no_founding_or_older_commits() {
+    let room = real_room(1, 3);
+    let keys = keys(1);
+    let begin = recovery::ServedStart {
+        room: room.group.room_id(), founding: b"not fetched", anchor: &room.infos[3],
+        rows: &room.rows, sessions: &[],
+    };
+    let check = recovery::RoomCheck::start_at_anchor(&keys, &begin).unwrap();
+    let checked = check.finish(&keys, &recovery::ServedEnd {
+        current: &room.infos[3], sessions: &[], rows: &room.rows, links: &[],
+    }).unwrap();
+    assert_eq!(checked.observer.epoch().unwrap(), 3);
+    assert_eq!(checked.walked.first_epoch, 3);
+    assert_eq!(checked.walked.epochs.len(), 1);
+    assert_eq!(checked.observer.history().unwrap().states().count(), 1);
+    assert!(checked.keys.iter().all(|key| key.epoch >= 3), "older keys require verified older room states");
+    let substituted = recovery::ServedStart { anchor: &room.infos[2], ..begin };
+    assert!(matches!(recovery::RoomCheck::start_at_anchor(&keys, &substituted), Err(Error::WrongRecovery)));
+}
+
+#[test]
+fn an_anchored_room_check_still_follows_and_checks_new_commits() {
+    let room = real_room(1, 4);
+    let keys = keys(1);
+    let rows = &room.rows[..4];
+    let begin = recovery::ServedStart {
+        room: room.group.room_id(), founding: b"not fetched", anchor: &room.infos[3], rows, sessions: &[],
+    };
+    let end = recovery::ServedEnd { current: &room.infos[4], sessions: &[], rows, links: &[] };
+    assert!(matches!(recovery::RoomCheck::start_at_anchor(&keys, &begin).unwrap().finish(&keys, &end), Err(Error::WrongRecovery)));
+    let mut check = recovery::RoomCheck::start_at_anchor(&keys, &begin).unwrap();
+    check.slice(&[recovery::PlacedCommit { group: room.group, commit: recovery::ServedCommit {
+        change: 5, commit: &room.commits[3], recovery_auth: None,
+    } }]).unwrap();
+    let checked = check.finish(&keys, &end).unwrap();
+    assert_eq!(checked.observer.epoch().unwrap(), 4);
+    assert_eq!(checked.walked.first_epoch, 3);
+    assert_eq!(checked.walked.epochs.len(), 2);
+}
+
+#[test]
+fn an_anchor_check_requires_the_verified_prefix_before_a_new_role() {
+    let room = real_room(1, 3);
+    let keys = keys(1);
+    let commits: Vec<_> = room.commits.iter().enumerate().map(|(index, commit)| recovery::ServedCommit {
+        change: index as u64 + 2, commit, recovery_auth: None,
+    }).collect();
+    let mut joiner = Device::create(MemoryStorage::new(), Box::new(SystemEntropy)).unwrap();
+    joiner.join_room_with_code(&keys, &recovery::ServedRoom {
+        room: room.group.room_id(), group: recovery::ServedGroup {
+            founding: &room.infos[0], commits: &commits, current: &room.infos[3],
+        }, anchor: &room.infos[3], rows: &room.rows, links: &[], sessions: &[],
+    }, now()).unwrap();
+    let posted = joiner.outbox().pop().unwrap();
+    let mut check = recovery::RoomCheck::start_at_anchor(&keys, &recovery::ServedStart {
+        room: room.group.room_id(), founding: b"not fetched", anchor: &room.infos[3], rows: &room.rows, sessions: &[],
+    }).unwrap();
+    assert_eq!(check.slice(&[recovery::PlacedCommit { group: room.group, commit: recovery::ServedCommit {
+        change: 5, commit: &posted.parts[0], recovery_auth: Some(&posted.parts[3]),
+    } }]), Err(Error::RoomBehind));
+    // Even a caller that ignores the refusal cannot finish the partially followed check.
+    assert!(matches!(check.finish(&keys, &recovery::ServedEnd {
+        current: &posted.parts[1], sessions: &[], rows: &room.rows, links: &[],
+    }), Err(Error::WrongRecovery)));
+}
+
+#[test]
+fn an_anchored_device_join_restarts_then_verifies_its_older_room_history() {
+    let room = real_room(1, 3);
+    let keys = keys(1);
+    let store = MemoryStorage::new();
+    let mut joiner = Device::create(store.handle(), Box::new(SystemEntropy)).unwrap();
+    joiner.code_check_start_at_anchor(&keys, &recovery::ServedStart {
+        room: room.group.room_id(), founding: b"not fetched", anchor: &room.infos[3], rows: &room.rows, sessions: &[],
+    }).unwrap();
+    joiner.join_room_checked(&keys, &recovery::ServedEnd {
+        current: &room.infos[3], sessions: &[], rows: &room.rows, links: &[],
+    }, now()).unwrap();
+    let posted = joiner.outbox().pop().unwrap();
+    joiner.outbox_accepted(posted.id, Accepted { change: Some(5) }).unwrap();
+    joiner.process_log_entry(&LogEntry { change: 5, group: room.group, kind: LogKind::Commit {
+        bytes: &posted.parts[0], recovery_auth: Some(&posted.parts[3]),
+    } }, now()).unwrap();
+    drop(joiner);
+    let store = store.reopened();
+    let mut joiner = trommi_tests::reopen(store.handle()).unwrap();
+    let past = joiner.group_past(&room.group).unwrap().unwrap();
+    assert_eq!(past.from_epoch, 4);
+    assert!(!past.learned);
+    assert_eq!(joiner.room_history().unwrap().states().next().unwrap().epoch, 3);
+    assert_eq!(joiner.content_key(&room.group, 0), Err(Error::NoKey));
+    assert_eq!(joiner.recover_room_keys_after_history(&keys, &room.rows, &[]), Err(Error::RoomBehind));
+    assert!(joiner.room_past_required().unwrap());
+    assert_eq!(joiner.update(&room.group, true, now()), Err(Error::RoomBehind));
+    let mut commits: Vec<_> = room.commits.iter().enumerate().map(|(index, commit)| recovery::ServedCommit {
+        change: index as u64 + 2, commit, recovery_auth: None,
+    }).collect();
+    commits.push(recovery::ServedCommit { change: 5, commit: &posted.parts[0], recovery_auth: Some(&posted.parts[3]) });
+    let mut altered = room.commits[0].clone();
+    altered[0] ^= 1;
+    let mut hostile = commits.clone();
+    hostile[0].commit = &altered;
+    assert!(joiner.learn_history(&room.group, &room.infos[0], &hostile).is_err());
+    assert!(!joiner.group_past(&room.group).unwrap().unwrap().learned);
+    joiner.learn_history(&room.group, &room.infos[0], &commits).unwrap();
+    assert!(joiner.group_past(&room.group).unwrap().unwrap().learned);
+    assert_eq!(joiner.room_history().unwrap().states().next().unwrap().epoch, 0);
+    assert!(!joiner.room_past_required().unwrap());
+    assert_eq!(joiner.recover_room_keys_after_history(&keys, &room.rows, &[]), Ok(None));
+    assert_eq!(joiner.content_key(&room.group, 0), room.device.content_key(&room.group, 0));
+    drop(joiner);
+    assert!(trommi_tests::reopen(store.reopened()).unwrap().group_past(&room.group).unwrap().unwrap().learned);
+}

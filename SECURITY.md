@@ -19,9 +19,10 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Your password never leaves your device; the hub keeps only a slow hash of a key derived from it.
 - Each wrong password makes that guesser wait longer (up to 15 minutes); no account is ever locked.
 - A recovery code opens everything. The hub keeps it only encrypted under your password or Emergency Kit words.
-- Logging in with your password checks the account's whole member history before the device joins; it reads a
-  conversation's past only after checking that conversation from its start, or once another of your devices
-  adds it, as for any new device.
+- Logging in with your password checks the room from a state authenticated by your recovery code before the
+  device joins. When it needs earlier member history, it checks that history from the start against its held
+  state before using it; new membership changes wait for that check too. It reads a conversation's past only
+  after checking that conversation from its start, or once another of your devices adds it, as for any new device.
 - Nobody, not even we, can reset an account: without password, Emergency Kit and devices, the content is gone.
 - An invite link holds a secret the hub never sees, so the hub cannot slip in an invite of its own.
 - Invite links work once and expire: 10 minutes for a device, 15 for an agent.

@@ -1319,17 +1319,20 @@ pub struct WalkedEpoch {
 /// section 5, or from the tree that Commit led to.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Walked {
-    /// The epochs, from 0 on.
+    /// The epoch of the first state in `epochs`; an authenticated anchor need not be epoch zero.
+    pub first_epoch: u64,
+    /// Consecutive epochs, beginning at `first_epoch`.
     pub epochs: Vec<WalkedEpoch>,
 }
 
 impl Walked {
-    /// A walk that stands at the founding GroupInfo `observer` was started from.
+    /// A walk beginning at the public state the observer authenticated.
     pub fn begin(observer: &Observer) -> Result<Self, Error> {
         Ok(Self {
+            first_epoch: observer.epoch()?,
             epochs: vec![WalkedEpoch {
                 leaves: observer.leaves()?.into_iter().collect(),
-                room_epoch: 0,
+                room_epoch: observer.history().map_or(0, |history| history.newest().epoch),
                 change: 0,
                 end: None,
             }],
@@ -1821,6 +1824,22 @@ impl RoomCheck {
     /// [`MAX_COMMIT_REQUEST_LEN`] is `too-large`, and two session foundings of one group are `bad-format`;
     /// of a founding that does not verify nothing is kept but the finding.
     pub fn start(keys: &RecoveryKeys, served: &ServedStart<'_>) -> Result<Self, Error> {
+        Self::begin(keys, served, false)
+    }
+
+    /// Begins at the authenticated anchor, without reading the earlier room history. Session
+    /// verification is deferred: a session may name older room states not held by this check.
+    /// Earlier roles, keys and links remain unavailable until a backward walk verifies them.
+    /// A subsequent role/key change returns `room-behind` and invalidates this check until that
+    /// prefix is supplied through a complete check.
+    pub fn start_at_anchor(keys: &RecoveryKeys, served: &ServedStart<'_>) -> Result<Self, Error> {
+        if !served.sessions.is_empty() {
+            return Err(Error::RoomBehind);
+        }
+        Self::begin(keys, served, true)
+    }
+
+    fn begin(keys: &RecoveryKeys, served: &ServedStart<'_>, anchored: bool) -> Result<Self, Error> {
         // Section 16: no GroupInfo above the limit of a Commit's request is kept, and a session is named
         // once (`bad-format` for one named twice).
         let mut infos = [served.founding, served.anchor]
@@ -1830,14 +1849,19 @@ impl RoomCheck {
             return Err(Error::TooLarge);
         }
         let anchor = select_anchor(keys, &served.room, served.rows)?;
-        let observer =
-            Observer::follow_room(served.founding, None).map_err(|_| Error::WrongRecovery)?;
-        if observer.group() != anchor.group || observer.epoch()? != 0 {
+        let observer = if anchored {
+            follow_anchor(&anchor, served.anchor)?
+        } else {
+            Observer::follow_room(served.founding, None).map_err(|_| Error::WrongRecovery)?
+        };
+        if observer.group() != anchor.group || (!anchored && observer.epoch()? != 0) {
             return Err(Error::WrongRecovery);
         }
-        // 5.1.1, 8.1: a row's `mac` says who wrote it, not that the founding it names obeys the rules.
-        let first = observer.history().ok_or(Error::Internal("room observer"))?;
-        rules::check_room_founding(first.newest()).map_err(|_| Error::BadGroup)?;
+        if observer.epoch()? == 0 {
+            // An authenticated row does not excuse a malformed founding state.
+            let first = observer.history().ok_or(Error::Internal("room observer"))?;
+            rules::check_room_founding(first.newest()).map_err(|_| Error::BadGroup)?;
+        }
         // The groups are named before anything is kept of them.
         let mut named = BTreeSet::new();
         for founding in served.sessions {
@@ -1861,7 +1885,7 @@ impl RoomCheck {
             walks,
             places: Vec::new(),
             last_committer: None,
-            anchored: false,
+            anchored,
             place: None,
             deferred: BTreeSet::new(),
         })
@@ -1978,6 +2002,14 @@ impl RoomCheck {
             .walked
             .follow(&mut self.observer, commit, &context, RoomEpochAt::Newest)
             .map_err(|_| Error::BadGroup)?;
+        // An anchor authenticates current roles, not whether a new role or recovery key was
+        // used and revoked earlier. Obtain the verified prefix before judging such a change.
+        if self.walked.first_epoch != 0
+            && (facts.external || !facts.adds.is_empty() || facts.context != rules::ContextChange::None)
+        {
+            self.anchored = false;
+            return Err(Error::RoomBehind);
+        }
         self.places.push((self.observer.epoch()?, commit.change));
         self.last_committer = Some(facts.committer);
         Ok(())

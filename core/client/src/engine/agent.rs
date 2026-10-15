@@ -441,7 +441,7 @@ impl Engine {
                     // a new holder: its own chains are held against the hub's before anything is written
                     agent.guard = Guard::Due;
                     // (and the live groups whose past was not learned are looked for)
-                    agent.way.learn_due = true;
+                    self.past.learn_due = true;
                     self.report(Report::Lease(Some(generation)));
                 }
             }

@@ -84,6 +84,7 @@ const SUB_SENT: u8 = 5;
 const SUB_OWED: u8 = 7;
 const SUB_HANDOVER: u8 = 8;
 const SUB_WANTED: u8 = 9;
+const SUB_ANCHORED: u8 = 10;
 const SUB_MAC: u8 = 0;
 const SUB_UNCONFIRMED: u8 = 1;
 const SUB_UNBOUND: u8 = 6;
@@ -668,7 +669,8 @@ impl Staged {
                             | table::REGISTER,
                         ..
                     ]
-            )
+            ) || matches!(key.as_slice(), [table::DEVICE, SUB_ANCHORED, ..])
+                && key.get(2..).is_some_and(|bytes| GroupId::from_bytes(bytes).is_ok_and(|group| group.is_room()))
         };
         self.put.iter().all(|(key, _)| allowed(key)) && self.delete.iter().all(allowed)
     }
@@ -1204,6 +1206,13 @@ fn rebuild(mirror: &BTreeMap<Vec<u8>, Vec<u8>>) -> Result<(Memory, MlsEntries, S
                     })()
                     .map_err(|_| damaged("an owed handover"))?;
                     memory.handovers.insert(parsed.0, parsed.1);
+                }
+                SUB_ANCHORED => {
+                    let group = GroupId::from_bytes(rest.take(rest.remaining())?)
+                        .map_err(|_| damaged("an anchored room record"))?;
+                    if !group.is_room() || !value.is_empty() {
+                        return Err(damaged("an anchored room record"));
+                    }
                 }
                 SUB_WANTED => {
                     let parsed = (|| {
@@ -3479,6 +3488,7 @@ impl<S: Storage> Device<S> {
         new_mac: Option<&Secret<32>>,
         now_ms: u64,
     ) -> Result<Posting, Error> {
+        self.require_room_past()?;
         let meta = self.meta(id)?.clone();
         if meta.archived {
             return Err(Error::Gone);
@@ -3654,7 +3664,22 @@ impl<S: Storage> Device<S> {
         Ok(posting)
     }
 
+    /// Whether an anchored code sign-in still needs its verified pre-join room history before
+    /// judging new membership changes. Ordinary device invites retain their authenticated origin.
+    pub fn room_past_required(&self) -> Result<bool, Error> {
+        let Some(room) = self.memory.record.room.filter(|_| self.is_human()) else { return Ok(false) };
+        let group = GroupId::room(room);
+        Ok(self.stored(&device_key(SUB_ANCHORED, group.as_bytes())).is_some()
+            && self.origin(&group)?.is_some_and(|origin| !origin.learned))
+    }
+
+    fn require_room_past(&self) -> Result<(), Error> {
+        if self.room_past_required()? { return Err(Error::RoomBehind); }
+        Ok(())
+    }
+
     fn room_group(&self) -> Result<GroupId, Error> {
+        self.require_room_past()?;
         let room = self.memory.record.room.ok_or(Error::NoRoom)?;
         if !self.is_human() {
             return Err(Error::Forbidden);
@@ -4161,8 +4186,8 @@ impl<S: Storage> Device<S> {
 
     // ---- joining with the code (8.4, 8.5), replacing it (8.6), recovery (8.7) ----
 
-    /// Takes over what the check of a served room established: the room, its roles from the founding on, the
-    /// code's `recovery_mac`, and every content key the code opened, each marked if it is unconfirmed.
+    /// Takes over what the served-room check established: the room, its verified roles (from the anchor
+    /// or founding), the code's `recovery_mac`, and the keys it opened, marked if unconfirmed.
     fn take_checked(
         &mut self,
         batch: &mut Batch,
@@ -4357,12 +4382,35 @@ impl<S: Storage> Device<S> {
         keys: &RecoveryKeys,
         served: &ServedStart<'_>,
     ) -> Result<(), Error> {
+        self.begin_code_check(keys, served, false)
+    }
+
+    /// Checks from the authenticated anchor, leaving older room history unlearned. The caller
+    /// verifies that past before using old roles, content keys or RecoveryLinks.
+    pub fn code_check_start_at_anchor(
+        &mut self,
+        keys: &RecoveryKeys,
+        served: &ServedStart<'_>,
+    ) -> Result<(), Error> {
+        self.begin_code_check(keys, served, true)
+    }
+
+    fn begin_code_check(
+        &mut self,
+        keys: &RecoveryKeys,
+        served: &ServedStart<'_>,
+        anchored: bool,
+    ) -> Result<(), Error> {
         self.owner()?;
         self.room_check = None;
         if self.memory.record.room.is_some() {
             return Err(Error::RoomExists);
         }
-        self.room_check = Some(recovery::RoomCheck::start(keys, served)?);
+        self.room_check = Some(if anchored {
+            recovery::RoomCheck::start_at_anchor(keys, served)?
+        } else {
+            recovery::RoomCheck::start(keys, served)?
+        });
         Ok(())
     }
 
@@ -4455,6 +4503,40 @@ impl<S: Storage> Device<S> {
             return Err(Error::TooMany);
         }
         Ok(())
+    }
+
+    /// Opens older room keys only after the backward history walk has verified the room's
+    /// roles and key replacements. Returns the public key of a missing RecoveryLink, if any.
+    pub fn recover_room_keys_after_history(
+        &mut self,
+        keys: &RecoveryKeys,
+        rows: &[Vec<u8>],
+        links: &[Vec<u8>],
+    ) -> Result<Option<[u8; 32]>, Error> {
+        self.owner()?;
+        if !self.is_human() { return Err(Error::Forbidden); }
+        let room = self.memory.record.room.ok_or(Error::NoRoom)?;
+        let group = GroupId::room(room);
+        if !self.group_past(&group)?.is_some_and(|past| past.learned) {
+            return Err(Error::RoomBehind);
+        }
+        let history = self.history()?;
+        keys.check_room(&history.newest().room)?;
+        let opened = recovery::open_links(keys, &room, links, &recovery::key_changes(history))?;
+        let own: Vec<_> = rows.iter().filter(|row| {
+            SealedKey::from_bytes(row).is_ok_and(|row| row.context.group == group)
+        }).cloned().collect();
+        let recovered = recovery::select_keys(&room, &own, &opened.openers, history, &|_, _| recovery::Began::Never)?;
+        self.transact(|this, batch| {
+            for key in recovered {
+                if this.keep_key(batch, &key.group, key.epoch, key.key) && !key.confirmed {
+                    batch.put(unconfirmed_key(&key.group, key.epoch), Vec::new());
+                    this.memory.unconfirmed.insert((key.group, key.epoch));
+                }
+            }
+            Ok(())
+        })?;
+        Ok(opened.missing_link)
     }
 
     /// Joins a live session group with the recovery code (8.4, 5.2.7), as a human device that joined the
@@ -5387,6 +5469,7 @@ impl<S: Storage> Device<S> {
         if named > epoch {
             return Err(Error::GroupBehind);
         }
+        self.require_room_past()?;
         // 5.4.1: a group's Commits come in the hub's order. One that claims a place at or before the last
         // one's was not there when this device passed it.
         if change <= meta.place {

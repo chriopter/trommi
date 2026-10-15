@@ -170,6 +170,8 @@ impl Tending {
 
 impl Engine {
     pub(super) fn drive_tending(&mut self, ctx: &mut Ctx<'_>) {
+        // Repairs can introduce roles and must not judge them against an incomplete revocation past.
+        if self.anchored_past_missing() { return; }
         // (the core judges a session against the room states this device holds: the order first; and a sign-in's
         //  own joins of its sessions come before anybody adds it by Welcome)
         if self.joining.is_some() || !self.caught_up || self.pass || !self.todo.is_empty() || self.repair.is_some() || self.tending.asked.is_some() || self.tending.unmerged {

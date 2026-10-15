@@ -27,21 +27,14 @@
 //! The wish to be let in again after a Welcome that did not open (3.7) is asked in the sync's Welcome step for every
 //! device ([`super::Engine`]): an agent device asks without a KeyPackage, as its connector did.
 
-use super::{Asked, Ctx, Engine, Mend, OpenError, Retry, Stopped};
+use super::{Asked, Ctx, Engine, OpenError, Retry, Stopped};
 use crate::app::io::{DeviceEntry, IoId};
 use crate::app::LogLevel;
-use crate::hub::{Answer, ChangeItem, Failure, LogItem, Route};
-use std::collections::VecDeque;
+use crate::hub::{Answer, Failure, Route};
 use trommi_core::crypto::{Entropy, SystemEntropy};
 use trommi_core::device::{Device, Joined};
 use trommi_core::hub_auth::HubAddress;
 use trommi_core::ids::{GroupId, RoomId, SessionId};
-use trommi_core::recovery::ServedCommit;
-
-/// Commits asked for in one page of a group's log while its past is learned.
-const LEARN_PAGE: u32 = 1000;
-/// The most a group's Commits may weigh when its past is learned (the connector's bound on a session's history).
-const LEARN_BYTES_MAX: usize = 256 << 20;
 
 /// What the connector stored when this device answered its invite (its room record).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,51 +47,18 @@ pub struct AgentInvite {
     pub session: Option<SessionId>,
 }
 
-/// One group's past being learned, with those it builds on.
-struct Learning {
-    /// The group whose past is learned (after its parents').
-    group: GroupId,
-    /// Still to learn, in order: the room group, a helper session's main session, the group.
-    todo: VecDeque<GroupId>,
-    founding: Option<Vec<u8>>,
-    commits: Vec<LogItem>,
-    after: u64,
-    weight: usize,
-    /// Its envelopes are read again whatever came of it (after a Welcome).
-    reread: bool,
-    /// Every group in `todo` was learned so far.
-    learned: bool,
-}
-
 /// What an agent device's way in holds.
 #[derive(Default)]
 pub(super) struct Way {
     pub(super) invite: Option<AgentInvite>,
     observe_asked: Option<IoId>,
     pub(super) observe_retry: Retry,
-    /// Groups whose past is to be learned, and whether their envelopes are read again whatever comes of it.
-    queue: VecDeque<(GroupId, bool)>,
-    learning: Option<Learning>,
-    learn_asked: Option<IoId>,
-    pub(super) learn_retry: Retry,
-    /// A lease was acquired: the live groups whose past is not learned are looked for.
-    pub(super) learn_due: bool,
-}
 
-/// What a read of the way in was for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum WayRead {
-    /// The room group's GroupInfo of the Offer's epoch.
-    Observe,
-    /// A group's founding GroupInfo, for its past.
-    Founding(GroupId),
-    /// A page of a group's Commits, for its past.
-    Commits(GroupId),
 }
 
 impl Way {
     pub(super) fn wake(&self) -> Option<u64> {
-        [self.observe_retry.at, self.learn_retry.at].into_iter().flatten().min()
+        self.observe_retry.at
     }
 }
 
@@ -162,22 +122,14 @@ impl Engine {
         if agent.way.observe_asked.is_some() || agent.way.observe_retry.waiting(ctx.now) {
             return false;
         }
-        let asked = self.ask(ctx, Route::GroupInfo { group: &room, epoch: Some(epoch) }, true, |expect| Asked::Way { expect, what: WayRead::Observe });
+        let asked = self.ask(ctx, Route::GroupInfo { group: &room, epoch: Some(epoch) }, true, |expect| Asked::ObserveRoom { expect });
         if let Some(agent) = self.agent.as_mut() {
             agent.way.observe_asked = asked;
         }
         false
     }
 
-    /// A read of the way in was answered.
-    pub(super) fn on_way(&mut self, ctx: &mut Ctx<'_>, what: WayRead, answer: Result<Answer, Failure>) {
-        match what {
-            WayRead::Observe => self.on_observe(ctx, answer),
-            WayRead::Founding(group) | WayRead::Commits(group) => self.on_learn(ctx, group, answer),
-        }
-    }
-
-    fn on_observe(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>) {
+    pub(super) fn on_observe(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>) {
         let Some(agent) = self.agent.as_mut() else { return };
         agent.way.observe_asked = None;
         let info = match answer {
@@ -236,160 +188,4 @@ impl Engine {
         self.stop(ctx, Stopped::BadWelcome);
     }
 
-    // ---- the past of a group
-
-    /// Groups joined by Welcome: their past is learned (once the log brought the join its place), and their
-    /// envelopes read again.
-    pub(super) fn agent_joined(&mut self, groups: &[GroupId]) {
-        let Some(agent) = self.agent.as_mut() else { return };
-        for group in groups {
-            if !agent.way.queue.iter().any(|(g, _)| g == group) {
-                agent.way.queue.push_back((*group, true));
-            }
-        }
-    }
-
-    fn learned(&self, group: &GroupId) -> bool {
-        match self.device.group(group) {
-            Ok(summary) => summary.past_learned,
-            Err(_) => self.device.group_past(group).ok().flatten().is_none_or(|past| past.learned),
-        }
-    }
-
-    /// The next step of learning a group's past; only while the order waits for no repair.
-    pub(super) fn drive_learn(&mut self, ctx: &mut Ctx<'_>) {
-        if self.repair.is_some() || self.stopped.is_some() {
-            return;
-        }
-        let Some(agent) = self.agent.as_mut() else { return };
-        let way = &mut agent.way;
-        if way.learn_asked.is_some() || way.learn_retry.waiting(ctx.now) {
-            return;
-        }
-        if way.learn_due {
-            way.learn_due = false;
-            let unlearned: Vec<GroupId> = self
-                .device
-                .groups()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|s| !s.group.is_room() && !s.past_learned && !s.archived)
-                .map(|s| s.group)
-                .collect();
-            let way = &mut self.agent.as_mut().expect("an agent").way;
-            for group in unlearned {
-                if !way.queue.iter().any(|(g, _)| *g == group) && way.learning.as_ref().is_none_or(|l| l.group != group) {
-                    way.queue.push_back((group, false));
-                }
-            }
-        }
-        loop {
-            let way = &mut self.agent.as_mut().expect("an agent").way;
-            if way.learning.is_none() {
-                let Some((group, reread)) = way.queue.pop_front() else { return };
-                let parent = self.device.group(&group).ok().and_then(|s| s.session).filter(|s| !s.parent.is_zero()).map(|s| GroupId::session(s.room_id, s.parent));
-                let mut todo: VecDeque<GroupId> = std::iter::once(GroupId::room(self.room)).chain(parent).collect();
-                todo.push_back(group);
-                let learning = Learning { group, todo, founding: None, commits: Vec::new(), after: 0, weight: 0, reread, learned: true };
-                self.agent.as_mut().expect("an agent").way.learning = Some(learning);
-            }
-            // (what is learned already, the core says: a group founded at epoch 0, or learned before)
-            let next = loop {
-                let Some(of) = self.agent.as_ref().and_then(|a| a.way.learning.as_ref()).and_then(|l| l.todo.front().copied()) else { break None };
-                if !self.learned(&of) {
-                    break Some(of);
-                }
-                if let Some(l) = self.agent.as_mut().and_then(|a| a.way.learning.as_mut()) {
-                    l.todo.pop_front();
-                }
-            };
-            let Some(of) = next else {
-                self.learn_finished(ctx);
-                continue;
-            };
-            let learning = self.agent.as_ref().and_then(|a| a.way.learning.as_ref()).expect("a learning");
-            let (route, what) = match learning.founding {
-                None => (Route::GroupInfo { group: &of, epoch: Some(0) }, WayRead::Founding(of)),
-                Some(_) => (Route::GroupLog { group: &of, after: learning.after, limit: LEARN_PAGE, commits_only: true }, WayRead::Commits(of)),
-            };
-            let asked = self.ask(ctx, route, true, |expect| Asked::Way { expect, what });
-            if let Some(agent) = self.agent.as_mut() {
-                agent.way.learn_asked = asked;
-            }
-            return;
-        }
-    }
-
-    fn on_learn(&mut self, ctx: &mut Ctx<'_>, of: GroupId, answer: Result<Answer, Failure>) {
-        let Some(agent) = self.agent.as_mut() else { return };
-        agent.way.learn_asked = None;
-        let Some(learning) = agent.way.learning.as_mut().filter(|l| l.todo.front() == Some(&of)) else { return };
-        match answer {
-            Ok(Answer::GroupInfo { group_info, .. }) if learning.founding.is_none() => {
-                learning.founding = Some(group_info);
-                agent.way.learn_retry.ok();
-                return;
-            }
-            Ok(Answer::GroupLog { items, more }) if learning.founding.is_some() => {
-                agent.way.learn_retry.ok();
-                let asked_after = learning.after;
-                for item in items {
-                    let ChangeItem::Commit(log) = item else { continue };
-                    if log.group != of {
-                        continue;
-                    }
-                    learning.after = learning.after.max(log.n);
-                    learning.weight += log.bytes.len();
-                    learning.commits.push(log);
-                }
-                // (a log that says there is more and does not move on, or that is longer than any group's, ends)
-                if more && learning.after != asked_after && learning.weight <= LEARN_BYTES_MAX {
-                    return;
-                }
-            }
-            Ok(_) | Err(_) => {
-                agent.way.learn_retry.fail(ctx.now, None, &mut self.jitter);
-                return;
-            }
-        }
-        // the whole history is in hand: the core walks it
-        let learning = agent.way.learning.as_mut().expect("a learning");
-        let founding = learning.founding.take().unwrap_or_default();
-        let commits = std::mem::take(&mut learning.commits);
-        (learning.after, learning.weight) = (0, 0);
-        let served: Vec<ServedCommit<'_>> = commits.iter().map(|c| ServedCommit { change: c.change, commit: &c.bytes, recovery_auth: c.recovery_auth.as_deref() }).collect();
-        match self.device.learn_history(&of, &founding, &served) {
-            Ok(_) => {
-                if let Some(l) = self.agent.as_mut().and_then(|a| a.way.learning.as_mut()) {
-                    l.todo.pop_front();
-                }
-            }
-            Err(e) => {
-                self.local(ctx, &e);
-                if self.stopped.is_some() {
-                    return;
-                }
-                // the epochs before this device joined stay unknown: what was written in them is not taken
-                ctx.log(LogLevel::Warn, format!("finding: {} (a session's past was not learned)", e.code()));
-                if let Some(l) = self.agent.as_mut().and_then(|a| a.way.learning.as_mut()) {
-                    l.todo.clear();
-                    l.learned = false;
-                }
-                self.learn_finished(ctx);
-            }
-        }
-    }
-
-    /// The learning of one group ended: its envelopes up to the position are read again when it was learned, or
-    /// joined just now.
-    fn learn_finished(&mut self, _ctx: &mut Ctx<'_>) {
-        let Some(learning) = self.agent.as_mut().and_then(|a| a.way.learning.take()) else { return };
-        if learning.learned || learning.reread {
-            if self.device.group(&learning.group).is_ok() {
-                let upto = self.position;
-                self.queue(Mend::Group { group: learning.group, after: 0, upto });
-            }
-            self.groups_changed();
-        }
-    }
 }
