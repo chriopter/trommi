@@ -31,6 +31,7 @@ name: main
         type: choice
         options:
         - all
+        - hub-key-bootstrap
         - connector
         - linux
         - site
@@ -44,6 +45,7 @@ env:
   NEXTEST_TEST_THREADS: '4'
 jobs:
   plan:
+    if: inputs.part != 'hub-key-bootstrap'
     name: Plan and shared checks
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -159,6 +161,7 @@ jobs:
       id-token: write
       attestations: write
       deployments: write
+      packages: write
     uses: ./.github/workflows/main-part.yml
     with:
       part: ${{ matrix.part }}
@@ -176,7 +179,7 @@ jobs:
     - plan
     - checks
     - parts
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && inputs.part != 'hub-key-bootstrap' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -197,3 +200,24 @@ jobs:
       run: node .github/scripts/main_report.mjs
     env:
       MAIN_PLAN_DIGEST: ${{ needs.plan.outputs.digest }}
+  hub_key:
+    name: Bootstrap the encrypted hub signing key
+    if: github.event_name == 'workflow_dispatch' && inputs.part == 'hub-key-bootstrap'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Pinned signing tool
+      run: sh .github/scripts/install_cosign.sh "$RUNNER_TEMP/cosign"
+    - name: Create a CI-only key encrypted to this repository
+      run: python3 .github/scripts/hub_key_bootstrap.py
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: hub-cosign-bootstrap
+        path: ${{ runner.temp }}/hub-key-public/*
+        if-no-files-found: error
+        retention-days: 1
