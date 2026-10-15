@@ -11,7 +11,7 @@
 
 /** The binding's `AppCore` as the shell uses it: JSON text plus the bytes it names (`core/client/src/app/edge.rs`). */
 export interface Packet { json: string; blobs: Uint8Array[] }
-export interface CoreLike { handle(nowMs: number, event: Packet): Packet }
+export interface CoreLike { handle(nowMs: number, event: Packet): Packet; close?(): void }
 
 /** The device's state of one slot: all or nothing, one revision, one owner (idb-store.js). */
 export interface DeviceSpace {
@@ -91,7 +91,11 @@ export class CoreShell {
 
   /** Ends the shell: requests in flight are aborted, the timer cleared; late results are dropped. */
   close(): void {
+    if (this.closed) return
     this.closed = true
+    this.queue.length = 0
+    this.held = []
+    this.core.close?.()
     for (const c of this.flying.values()) c.abort()
     this.flying.clear()
     if (this.timer) clearTimeout(this.timer)
@@ -111,10 +115,12 @@ export class CoreShell {
   }
 
   private result(json: Json): void {
+    if (this.closed) return
     this.queue.push({ json, blobs: [] })
     this.pump()
   }
   private resultWith(json: Json, blobs: Uint8Array[]): void {
+    if (this.closed) return
     this.queue.push({ json, blobs })
     this.pump()
   }

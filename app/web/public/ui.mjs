@@ -2112,7 +2112,8 @@ controller('later', class extends Controller {
 // Until then, and when anything fails, the drawn kind stays.
 
 const WIDTH = 1280            // a page is laid out this wide and scaled down to the card
-const pages = new Map()       // src -> Promise<string>: a card the stream brings anew does not fetch again
+// At most eight small pages; large published documents belong only to their mounted viewer.
+const pages = new Map()       // src -> Promise<string>; bounded across a long-open tab
 
 let readAtt = null           // app.mjs: an attachment's text, decrypted in this page (no service worker needed)
 export const readAttachmentsWith = fn => { readAtt = fn }
@@ -2120,8 +2121,9 @@ const pageOf = src => {
   if (!pages.has(src)) {
     const att = /^\/att\/([0-9a-f]{32})$/.exec(src)?.[1]
     const job = att && readAtt ? readAtt(att) : fetch(src).then(res => { if (!res.ok) throw new Error(String(res.status)); return res.text() })
-    job.catch(() => pages.delete(src))
+    job.then(text => { if (text.length > 1024 * 1024 && pages.get(src) === job) pages.delete(src) }, () => { if (pages.get(src) === job) pages.delete(src) })
     pages.set(src, job)
+    while (pages.size > 8) pages.delete(pages.keys().next().value)
   }
   return pages.get(src)
 }
