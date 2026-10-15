@@ -1996,3 +1996,70 @@ fn a_history_walk_keeps_the_room_epoch_of_its_authenticated_anchor() {
     assert_eq!(walked.epochs.len(), 1);
     assert_eq!(walked.epochs[0].room_epoch, anchor.epoch);
 }
+
+#[test]
+fn an_anchored_room_check_reads_no_founding_or_older_commits() {
+    let room = real_room(1, 3);
+    let keys = keys(1);
+    let begin = recovery::ServedStart {
+        room: room.group.room_id(), founding: b"not fetched", anchor: &room.infos[3],
+        rows: &room.rows, sessions: &[],
+    };
+    let check = recovery::RoomCheck::start_at_anchor(&keys, &begin).unwrap();
+    let checked = check.finish(&keys, &recovery::ServedEnd {
+        current: &room.infos[3], sessions: &[], rows: &room.rows, links: &[],
+    }).unwrap();
+    assert_eq!(checked.observer.epoch().unwrap(), 3);
+    assert_eq!(checked.walked.first_epoch, 3);
+    assert_eq!(checked.walked.epochs.len(), 1);
+    assert_eq!(checked.observer.history().unwrap().states().count(), 1);
+    assert!(checked.keys.iter().all(|key| key.epoch >= 3), "older keys require verified older room states");
+    let substituted = recovery::ServedStart { anchor: &room.infos[2], ..begin };
+    assert!(matches!(recovery::RoomCheck::start_at_anchor(&keys, &substituted), Err(Error::WrongRecovery)));
+}
+
+#[test]
+fn an_anchored_room_check_still_follows_and_checks_new_commits() {
+    let room = real_room(1, 4);
+    let keys = keys(1);
+    let rows = &room.rows[..4];
+    let begin = recovery::ServedStart {
+        room: room.group.room_id(), founding: b"not fetched", anchor: &room.infos[3], rows, sessions: &[],
+    };
+    let end = recovery::ServedEnd { current: &room.infos[4], sessions: &[], rows, links: &[] };
+    assert!(matches!(recovery::RoomCheck::start_at_anchor(&keys, &begin).unwrap().finish(&keys, &end), Err(Error::WrongRecovery)));
+    let mut check = recovery::RoomCheck::start_at_anchor(&keys, &begin).unwrap();
+    check.slice(&[recovery::PlacedCommit { group: room.group, commit: recovery::ServedCommit {
+        change: 5, commit: &room.commits[3], recovery_auth: None,
+    } }]).unwrap();
+    let checked = check.finish(&keys, &end).unwrap();
+    assert_eq!(checked.observer.epoch().unwrap(), 4);
+    assert_eq!(checked.walked.first_epoch, 3);
+    assert_eq!(checked.walked.epochs.len(), 2);
+}
+
+#[test]
+fn an_anchor_check_requires_the_verified_prefix_before_a_new_role() {
+    let room = real_room(1, 3);
+    let keys = keys(1);
+    let commits: Vec<_> = room.commits.iter().enumerate().map(|(index, commit)| recovery::ServedCommit {
+        change: index as u64 + 2, commit, recovery_auth: None,
+    }).collect();
+    let mut joiner = Device::create(MemoryStorage::new(), Box::new(SystemEntropy)).unwrap();
+    joiner.join_room_with_code(&keys, &recovery::ServedRoom {
+        room: room.group.room_id(), group: recovery::ServedGroup {
+            founding: &room.infos[0], commits: &commits, current: &room.infos[3],
+        }, anchor: &room.infos[3], rows: &room.rows, links: &[], sessions: &[],
+    }, now()).unwrap();
+    let posted = joiner.outbox().pop().unwrap();
+    let mut check = recovery::RoomCheck::start_at_anchor(&keys, &recovery::ServedStart {
+        room: room.group.room_id(), founding: b"not fetched", anchor: &room.infos[3], rows: &room.rows, sessions: &[],
+    }).unwrap();
+    assert_eq!(check.slice(&[recovery::PlacedCommit { group: room.group, commit: recovery::ServedCommit {
+        change: 5, commit: &posted.parts[0], recovery_auth: Some(&posted.parts[3]),
+    } }]), Err(Error::RoomBehind));
+    // Even a caller that ignores the refusal cannot finish the partially followed check.
+    assert!(matches!(check.finish(&keys, &recovery::ServedEnd {
+        current: &posted.parts[1], sessions: &[], rows: &room.rows, links: &[],
+    }), Err(Error::WrongRecovery)));
+}
