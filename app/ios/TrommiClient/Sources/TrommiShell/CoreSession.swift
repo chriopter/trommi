@@ -25,7 +25,7 @@ public actor CoreSession {
   public func send(_ packet: NativePacket) async {
     guard !closed else { return }
     do {
-      let json = String(decoding: try JSONSerialization.data(withJSONObject: packet.json, options: [.sortedKeys]), as: UTF8.self)
+      let json = try Spent.time("app.encode") { String(decoding: try JSONSerialization.data(withJSONObject: packet.json), as: UTF8.self) }
       let answer = try Spent.time("app.handle") { try core.handle(nowMs: UInt64(Date().timeIntervalSince1970 * 1000), event: AppPacket(json: json, blobs: packet.blobs)) }
       guard let effects = try JSONSerialization.jsonObject(with: Data(answer.json.utf8)) as? [[String: Any]] else { throw TrommiError("bad-format") }
       queue.append(contentsOf: effects.map { NativePacket($0, blobs: answer.blobs) })
