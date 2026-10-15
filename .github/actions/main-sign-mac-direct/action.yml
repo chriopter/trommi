@@ -1,0 +1,197 @@
+name: main-sign-mac-direct
+description: The main pipeline steps for main-sign-mac-direct
+inputs:
+  version:
+    description: Release series number
+    default: ''
+  op-token:
+    description: Scoped 1Password service token
+    default: ''
+  op-env:
+    description: Scoped 1Password environment
+    default: ''
+outputs:
+  ready:
+    description: ready
+    value: ${{ steps.app.outputs.ready }}
+  version:
+    description: version
+    value: ${{ steps.app.outputs.version }}
+runs:
+  using: composite
+  steps:
+  - name: Is signing set up
+    id: setup
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.op-token }}
+      OP_ENVIRONMENT_ID: ${{ inputs.op-env }}
+    run: |
+      if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ] && [ -n "$OP_ENVIRONMENT_ID" ]; then
+        echo "ready=yes" >> "$GITHUB_OUTPUT"
+      else
+        echo "::notice::the environment mac has no OP_SERVICE_ACCOUNT_TOKEN or OP_ENVIRONMENT_ID: the Mac app for direct download is not built (README.md \"Mac app (direct download)\")"
+        echo "### Mac (direct download): not built, the environment mac is not set up" >> "$GITHUB_STEP_SUMMARY"
+        echo "ready=no" >> "$GITHUB_OUTPUT"
+      fi
+    shell: bash
+  - name: What the core for the Mac is built from
+    id: core_inputs
+    if: steps.setup.outputs.ready == 'yes'
+    run: |
+      set -eu
+      tree=$(sh .github/scripts/source_tree.sh HEAD core/ Cargo.toml Cargo.lock rust-toolchain.toml .github/actions/check-ios-client/action.yml .github/actions/main-build-apple/action.yml .github/actions/main-sign-mac-direct/action.yml .github/workflows/pr-check.yml .github/workflows/ship-apple.yml .github/workflows/main.yml .github/workflows/main-delivery.yml .github/workflows/main-part.yml)
+      xcode=$(xcodebuild -version)
+      sum=$(printf '%s\n%s\n' "$tree" "$xcode" | shasum -a 256 | cut -c1-64)
+      echo "key=mac-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+    id: core_cache
+    if: steps.setup.outputs.ready == 'yes'
+    with:
+      key: ${{ steps.core_inputs.outputs.key }}
+      path: |
+        core/bindings/swift/TrommiCoreRust/lib/macos
+        core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+        core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: Compiler (rust-toolchain.toml)
+    if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
+    run: |
+      set -eu
+      rustup toolchain install || rustup show
+      rustc --version
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+    if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
+    with:
+      prefix-key: v2-rust
+      save-if: ${{ github.ref == 'refs/heads/main' }}
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: The Rust core for the Mac
+    if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
+    run: sh core/bindings/swift/build.sh macos
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+    if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
+    with:
+      key: ${{ steps.core_inputs.outputs.key }}
+      path: |
+        core/bindings/swift/TrommiCoreRust/lib/macos
+        core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+        core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: XcodeGen
+    if: steps.setup.outputs.ready == 'yes'
+    run: |
+      set -eu
+      curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+      echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+      unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+      echo "XCODEGEN=$RUNNER_TEMP/xcodegen/bin/xcodegen" >> "$GITHUB_ENV"
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: Install the 1Password CLI
+    if: steps.setup.outputs.ready == 'yes'
+    uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50
+    with:
+      version: 2.42.0-beta.01
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: Build, sign, notarize
+    id: app
+    if: steps.setup.outputs.ready == 'yes'
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.op-token }}
+      OP_ENVIRONMENT_ID: ${{ inputs.op-env }}
+    run: op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/mac_direct.sh build
+    shell: bash
+  - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+    if: steps.app.outputs.ready == 'yes'
+    with:
+      overwrite: true
+      name: mac-direct
+      path: ${{ runner.temp }}/mac-direct/
+      if-no-files-found: error
+      retention-days: 14
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: The app is built
+    if: steps.setup.outputs.ready == 'yes' && steps.app.outputs.ready != 'yes'
+    run: |
+      echo "::error::mac_direct.sh ended without building the app (see the step above)"
+      exit 1
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: No key or keychain is left
+    if: always()
+    run: |
+      security delete-keychain "$RUNNER_TEMP/mac-direct.keychain-db" 2>/dev/null || true
+      rm -rf "$RUNNER_TEMP/mac-direct-keys" "$RUNNER_TEMP/ExportOptionsMacDirect.plist"
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806

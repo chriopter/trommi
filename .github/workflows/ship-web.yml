@@ -1,3 +1,4 @@
+# Manual recovery only; normal pushes use main.yml. Old runs keep their original definitions.
 # The web app (app/web), from a push to main to https://app.trommi.com (the Cloudflare worker trommi-app), on its own:
 # it waits for no other part.
 #
@@ -25,32 +26,6 @@
 name: ship-web
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - app/web/**
-      - tests/web/**
-      - connector/tools.json
-      - connector/prompt.md
-      - demo/**
-      - .node-version
-      - core/**
-      - Cargo.toml
-      - Cargo.lock
-      - rust-toolchain.toml
-      - .github/scripts/web_release.mjs
-      - .github/scripts/web_smoke.sh
-      - .github/scripts/wasm_core.sh
-      - .github/scripts/deployed.sh
-      - .github/scripts/inputs.sh
-      - .github/scripts/release_notes.mjs
-      - .github/tools/wrangler/**
-      - .github/workflows/ship-web.yml
-      - .github/actions/**
-      - .github/scripts/changed_parts.sh
-      - .github/scripts/source_tree.sh
-      - .github/workflows/pr-check.yml
-      - .github/workflows/sign-release.yml
   workflow_dispatch:
     inputs:
       run_id:
@@ -271,6 +246,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
+      contents: read
       actions: read
       id-token: write
       attestations: write
@@ -279,6 +255,13 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       manifest: ${{ steps.check.outputs.manifest }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          persist-credentials: false
+          path: gate
+          sparse-checkout: .github/scripts/main_release_gate.sh
+          sparse-checkout-cone-mode: false
       # A run named by hand must be a build of the main branch of this repository: a pull request's run also has
       # artifacts, and nothing of such a run may be signed, attested or delivered.
       - name: The run that is delivered again
@@ -292,13 +275,17 @@ jobs:
           printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
           jq -e --arg r "$GITHUB_REPOSITORY" \
-            '.path == ".github/workflows/ship-web.yml" and .head_branch == "main" and .event == "push" and .repository.full_name == $r and .head_repository.full_name == $r' \
+            '((.path == ".github/workflows/ship-web.yml" and .event == "push") or (.path == ".github/workflows/main.yml" and (.event == "push" or .event == "workflow_dispatch"))) and .head_branch == "main" and .repository.full_name == $r and .head_repository.full_name == $r' \
             "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a build of the main branch of this repository"; exit 1; }
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "success") | .name' > "$RUNNER_TEMP/jobs.txt"
+          if [ "$(jq -r .path "$RUNNER_TEMP/run.json")" = .github/workflows/main.yml ]; then
+            COMMIT=$(jq -r .head_sha "$RUNNER_TEMP/run.json") bash gate/.github/scripts/main_release_gate.sh web
+          else
           grep -Fxq "Web app (check)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job Web app (check) of run $RUN_ID did not succeed"; exit 1; }
           # the core's check of that run passed, or was skipped (the core did not change): as for a delivery by a build
           core=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" --jq '.jobs[] | select(.name == "Core (check)") | .conclusion')
           case "$core" in success|skipped) ;; *) echo "::error::the job Core (check) of run $RUN_ID: ${core:-not there}"; exit 1 ;; esac
+          fi
           echo "commit=$(jq -r .head_sha "$RUNNER_TEMP/run.json")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

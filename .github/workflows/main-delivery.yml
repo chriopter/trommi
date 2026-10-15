@@ -1,0 +1,292 @@
+name: main delivery
+'on':
+  workflow_call:
+    inputs:
+      part:
+        type: string
+        required: true
+      pipeline:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      plan-digest:
+        type: string
+        required: true
+      spec:
+        type: string
+        required: true
+      release-digest:
+        type: string
+        required: false
+        default: ''
+      web-digest:
+        type: string
+        required: false
+        default: ''
+      native-digest:
+        type: string
+        required: false
+        default: ''
+      site-digest:
+        type: string
+        required: false
+        default: ''
+permissions: {}
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_BUILD_JOBS: '4'
+  NEXTEST_TEST_THREADS: '4'
+jobs:
+  prepare:
+    name: Sign and prepare
+    runs-on: ${{ fromJSON(inputs.spec).prepare_runner }}
+    timeout-minutes: ${{ fromJSON(inputs.spec).prepare_timeout }}
+    environment:
+      name: ${{ fromJSON(inputs.spec).prepare_env }}
+      deployment: ${{ fromJSON(inputs.spec).prepare_deployment }}
+    concurrency:
+      group: ${{ fromJSON(inputs.spec).prepare_lock }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    env:
+      MAIN_PLAN_DIGEST: ${{ inputs.plan-digest }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: main-plan
+        path: ${{ runner.temp }}/main-plan
+    - name: Public build inputs
+      run: node .github/scripts/main_metadata.mjs configure '${{ inputs.part }}'
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: main-checked-${{ inputs.part }}
+        path: ${{ runner.temp }}/main-checked
+    - name: The producing checks and build passed
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RUN_ID: ${{ github.run_id }}
+        COMMIT: ${{ github.sha }}
+      run: |-
+        node .github/scripts/main_metadata.mjs verify-check '${{ inputs.part }}'
+        bash .github/scripts/main_release_gate.sh '${{ inputs.part }}'
+    - uses: ./.github/actions/main-attest-web
+      if: inputs.part == 'web'
+      with:
+        version: ${{ inputs.version }}
+        expected-manifest: ${{ inputs.web-digest }}
+      id: web
+    - uses: ./.github/actions/main-sign-release
+      if: inputs.part == 'web' || inputs.part == 'hub' || inputs.part == 'connector'
+      with:
+        version: ${{ inputs.version }}
+        part: ${{ inputs.part }}
+        artifact: ${{ inputs.part == 'web' && 'web-part-release' || format('{0}-release', inputs.part) }}
+        expected-manifest: ${{ inputs.release-digest }}
+        op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
+      id: signed
+    - uses: ./.github/actions/main-publish-release
+      if: inputs.part == 'hub'
+      with:
+        version: ${{ inputs.version }}
+        part: ${{ inputs.part }}
+        artifact: ${{ inputs.part == 'web' && 'web-part-release' || format('{0}-release', inputs.part) }}
+        manifest: ${{ steps.signed.outputs.manifest }}
+        tag: ${{ steps.signed.outputs.tag }}
+      id: published
+    - uses: ./.github/actions/main-upload-ios
+      if: inputs.part == 'apple' && inputs.pipeline == 'ios'
+      with:
+        version: ${{ inputs.version }}
+        op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
+        expected-checksums: ${{ inputs.native-digest }}
+      id: ios
+    - uses: ./.github/actions/main-upload-mac
+      if: inputs.part == 'apple' && inputs.pipeline == 'mac-testflight'
+      with:
+        version: ${{ inputs.version }}
+        op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
+        expected-checksums: ${{ inputs.native-digest }}
+      id: mac_testflight
+    - uses: ./.github/actions/main-sign-mac-direct
+      if: inputs.part == 'apple' && inputs.pipeline == 'mac-direct'
+      with:
+        version: ${{ inputs.version }}
+        op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
+      id: mac_direct
+    - name: A TestFlight upload produced a build
+      if: inputs.part == 'apple' && inputs.pipeline != 'mac-direct'
+      env:
+        BUILD: ${{ steps.ios.outputs.build || steps.mac_testflight.outputs.build }}
+      run: test -n "$BUILD"
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      if: inputs.part == 'site'
+      with:
+        name: site-inputs
+        path: ${{ runner.temp }}/site-inputs
+    - name: The checked site inputs
+      if: inputs.part == 'site'
+      env:
+        EXPECTED: ${{ inputs.site-digest }}
+      run: sh .github/scripts/main_artifact.sh "$EXPECTED" "$RUNNER_TEMP/site-inputs/site-inputs.tar.gz"
+    - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+      if: inputs.part == 'site'
+      with:
+        subject-path: ${{ runner.temp }}/site-inputs/site-inputs.tar.gz
+    - name: Public gate result
+      id: result
+      env:
+        MAIN_FIELD_manifest: ${{ steps.signed.outputs.manifest }}
+        MAIN_FIELD_tag: ${{ steps.signed.outputs.tag }}
+        MAIN_FIELD_published: ${{ steps.published.outputs.published }}
+        MAIN_FIELD_web_manifest: ${{ steps.web.outputs.manifest }}
+        MAIN_FIELD_app_version: ${{ steps.ios.outputs.version || steps.mac_testflight.outputs.version }}
+        MAIN_FIELD_app_build: ${{ steps.ios.outputs.build || steps.mac_testflight.outputs.build }}
+        MAIN_FIELD_mac_version: ${{ steps.mac_direct.outputs.version }}
+        MAIN_FIELD_ready: ${{ steps.mac_direct.outputs.ready }}
+      run: node .github/scripts/main_metadata.mjs result '${{ inputs.part }}' '${{ inputs.pipeline }}-prepared'
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        overwrite: true
+        name: main-result-${{ inputs.part }}-${{ inputs.pipeline }}-prepared
+        path: ${{ runner.temp }}/main-result.json
+        if-no-files-found: error
+        retention-days: 30
+    outputs:
+      digest: ${{ steps.result.outputs.digest }}
+  publish:
+    name: Publish and deliver
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ fromJSON(inputs.spec).publish_timeout }}
+    environment:
+      name: ${{ fromJSON(inputs.spec).publish_env }}
+      deployment: ${{ fromJSON(inputs.spec).publish_deployment }}
+    concurrency:
+      group: ${{ fromJSON(inputs.spec).publish_lock }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+      deployments: write
+    env:
+      MAIN_PLAN_DIGEST: ${{ inputs.plan-digest }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: main-plan
+        path: ${{ runner.temp }}/main-plan
+    - name: Public build inputs
+      run: node .github/scripts/main_metadata.mjs configure '${{ inputs.part }}'
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: main-result-${{ inputs.part }}-${{ inputs.pipeline }}-prepared
+        path: ${{ runner.temp }}/main-previous
+    - name: The preparing job passed and its proof was not replaced
+      env:
+        GH_TOKEN: ${{ github.token }}
+        MAIN_PREVIOUS_DIGEST: ${{ needs.prepare.outputs.digest }}
+      run: node .github/scripts/main_metadata.mjs previous '${{ inputs.part }}' '${{ inputs.pipeline }}-prepared'
+    - uses: ./.github/actions/main-deliver-web
+      if: inputs.part == 'web'
+      with:
+        version: ${{ inputs.version }}
+        manifest: ${{ env.MAIN_WEB_MANIFEST }}
+        op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
+    - name: Let the matching hub arrive first
+      if: inputs.part == 'connector' && env.MAIN_HUB_CHANGED == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -u
+        sh .github/scripts/inputs.sh > "$RUNNER_TEMP/inputs"
+        for i in $(seq 1 16); do
+          [ "$(sh .github/scripts/deployed.sh "$RUNNER_TEMP/inputs" hub)" != hub=false ] || exit 0
+          sleep 30
+        done
+        echo "::warning::the hub is not delivered after 8 minutes: the connector is released against the hub that is live"
+    - uses: ./.github/actions/main-publish-release
+      if: inputs.part == 'web' || inputs.part == 'connector'
+      with:
+        version: ${{ inputs.version }}
+        part: ${{ inputs.part }}
+        artifact: ${{ inputs.part == 'web' && 'web-part-release' || format('{0}-release', inputs.part) }}
+        manifest: ${{ env.MAIN_MANIFEST }}
+        tag: ${{ env.MAIN_TAG }}
+      id: published
+    - uses: ./.github/actions/main-deliver-hub
+      if: inputs.part == 'hub' && env.MAIN_PUBLISHED == 'true'
+      with:
+        tag: ${{ env.MAIN_TAG }}
+        tailscale-client: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+        tailscale-audience: ${{ secrets.TAILSCALE_AUDIENCE }}
+    - uses: ./.github/actions/main-process-ios
+      if: inputs.part == 'apple' && inputs.pipeline == 'ios'
+      with:
+        app-version: ${{ env.MAIN_APP_VERSION }}
+        app-build: ${{ env.MAIN_APP_BUILD }}
+        op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
+    - uses: ./.github/actions/main-process-mac
+      if: inputs.part == 'apple' && inputs.pipeline == 'mac-testflight'
+      with:
+        app-version: ${{ env.MAIN_APP_VERSION }}
+        app-build: ${{ env.MAIN_APP_BUILD }}
+        op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
+    - uses: ./.github/actions/main-notes-ios
+      if: inputs.part == 'apple' && inputs.pipeline == 'ios'
+      with:
+        version: ${{ inputs.version }}
+        app-version: ${{ env.MAIN_APP_VERSION }}
+        app-build: ${{ env.MAIN_APP_BUILD }}
+    - uses: ./.github/actions/main-publish-mac-direct
+      if: inputs.part == 'apple' && inputs.pipeline == 'mac-direct' && env.MAIN_READY == 'yes'
+      with:
+        version: ${{ inputs.version }}
+        mac-version: ${{ env.MAIN_MAC_VERSION }}
+        expected-dmg: ${{ env.MAIN_MAC_DMG_SHA }}
+    - uses: ./.github/actions/main-deliver-site
+      if: inputs.part == 'site'
+      with:
+        op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
+      id: site
+    - name: Release published
+      if: steps.published.outputs.published == 'true' || (inputs.part == 'hub' && env.MAIN_PUBLISHED == 'true')
+      run: echo "This release was published and its delivery gate passed."
+    - name: Site delivered
+      if: inputs.part == 'site' && steps.site.outputs.delivered == 'true'
+      run: echo "The checked site was delivered and verified from outside."
+    - name: Public gate result
+      id: result
+      env:
+        MAIN_FIELD_published: ${{ steps.published.outputs.published }}
+      run: node .github/scripts/main_metadata.mjs result '${{ inputs.part }}' '${{ inputs.pipeline }}-delivered'
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        overwrite: true
+        name: main-result-${{ inputs.part }}-${{ inputs.pipeline }}-delivered
+        path: ${{ runner.temp }}/main-result.json
+        if-no-files-found: error
+        retention-days: 30
+    needs: prepare

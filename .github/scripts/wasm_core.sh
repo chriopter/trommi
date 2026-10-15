@@ -9,7 +9,7 @@
 set -eu
 case "${1:-}" in
   key)
-    tree=$(sh .github/scripts/source_tree.sh HEAD core client Cargo.toml Cargo.lock rust-toolchain.toml .github/scripts/wasm_core.sh)
+    tree=$(sh .github/scripts/source_tree.sh HEAD core client Cargo.toml Cargo.lock rust-toolchain.toml .github/scripts/wasm_core.sh .github/actions/check-web/action.yml .github/actions/main-build-web/action.yml .github/workflows/pr-check.yml .github/workflows/main.yml .github/workflows/main-part.yml)
     echo "wasm-pkg-v2-$(printf '%s\n' "$tree" | sha256sum | cut -d' ' -f1)"
     ;;
   build)

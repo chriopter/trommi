@@ -1,3 +1,4 @@
+# Manual recovery only; normal pushes use main.yml. Old runs keep their original definitions.
 # The iPhone app and the Mac app (app/ios), from a push to main to TestFlight and to the Mac app for direct download,
 # on their own: they wait for no other part.
 #
@@ -29,26 +30,6 @@
 name: ship-apple
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - app/ios/**
-      - tests/ios/**
-      - tests/bindings/**
-      - demo/**
-      - core/**
-      - Cargo.toml
-      - Cargo.lock
-      - rust-toolchain.toml
-      - .github/scripts/ios_**
-      - .github/scripts/mac_**
-      - .github/scripts/inputs.sh
-      - .github/scripts/release_notes.mjs
-      - .github/workflows/ship-apple.yml
-      - .github/actions/**
-      - .github/scripts/changed_parts.sh
-      - .github/scripts/source_tree.sh
-      - .github/workflows/pr-check.yml
   workflow_dispatch:
     inputs:
       action:
@@ -230,7 +211,7 @@ jobs:
         id: core_inputs
         run: |
           set -eu
-          tree=$(sh .github/scripts/source_tree.sh HEAD core/ Cargo.toml Cargo.lock rust-toolchain.toml)
+          tree=$(sh .github/scripts/source_tree.sh HEAD core/ Cargo.toml Cargo.lock rust-toolchain.toml .github/actions/check-ios-client/action.yml .github/actions/main-build-apple/action.yml .github/actions/main-sign-mac-direct/action.yml .github/workflows/pr-check.yml .github/workflows/ship-apple.yml .github/workflows/main.yml .github/workflows/main-delivery.yml .github/workflows/main-part.yml)
           xcode=$(xcodebuild -version)
           sum=$(printf '%s\n%s\n' "$tree" "$xcode" | shasum -a 256 | cut -c1-64)
           echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
@@ -347,7 +328,7 @@ jobs:
           printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
           jq -e --arg r "$GITHUB_REPOSITORY" \
-            '.path == ".github/workflows/ship-apple.yml" and .head_branch == "main" and .event == "push" and .repository.full_name == $r and .head_repository.full_name == $r' \
+            '((.path == ".github/workflows/ship-apple.yml" and .event == "push") or (.path == ".github/workflows/main.yml" and (.event == "push" or .event == "workflow_dispatch"))) and .head_branch == "main" and .repository.full_name == $r and .head_repository.full_name == $r' \
             "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a run of ship-apple.yml on the main branch of this repository"; exit 1; }
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "success") | .name' > "$RUNNER_TEMP/jobs.txt"
           grep -Fq "iOS core for devices (main)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job iOS core for devices (main) of run $RUN_ID did not succeed"; exit 1; }
@@ -505,7 +486,7 @@ jobs:
           printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
           jq -e --arg r "$GITHUB_REPOSITORY" \
-            '.path == ".github/workflows/ship-apple.yml" and .head_branch == "main" and .event == "push" and .repository.full_name == $r and .head_repository.full_name == $r' \
+            '((.path == ".github/workflows/ship-apple.yml" and .event == "push") or (.path == ".github/workflows/main.yml" and (.event == "push" or .event == "workflow_dispatch"))) and .head_branch == "main" and .repository.full_name == $r and .head_repository.full_name == $r' \
             "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a run of ship-apple.yml on the main branch of this repository"; exit 1; }
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -675,7 +656,7 @@ jobs:
         if: steps.setup.outputs.ready == 'yes'
         run: |
           set -eu
-          tree=$(sh .github/scripts/source_tree.sh HEAD core/ Cargo.toml Cargo.lock rust-toolchain.toml)
+          tree=$(sh .github/scripts/source_tree.sh HEAD core/ Cargo.toml Cargo.lock rust-toolchain.toml .github/actions/check-ios-client/action.yml .github/actions/main-build-apple/action.yml .github/actions/main-sign-mac-direct/action.yml .github/workflows/pr-check.yml .github/workflows/ship-apple.yml .github/workflows/main.yml .github/workflows/main-delivery.yml .github/workflows/main-part.yml)
           xcode=$(xcodebuild -version)
           sum=$(printf '%s\n%s\n' "$tree" "$xcode" | shasum -a 256 | cut -c1-64)
           echo "key=mac-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,102 @@
+name: main-deliver-site
+description: The main pipeline steps for main-deliver-site
+inputs:
+  op-token:
+    description: Scoped 1Password service token
+    default: ''
+  op-env:
+    description: Scoped 1Password environment
+    default: ''
+outputs:
+  delivered:
+    description: The checked site was delivered and smoke-tested
+    value: ${{ steps.delivered.outputs.done }}
+runs:
+  using: composite
+  steps:
+  - name: Do not overtake the head of main
+    run: |
+      set -eu
+      head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+      if [ "$head" != "$GITHUB_SHA" ]; then
+        git cat-file -e "$head^{commit}" 2>/dev/null || git fetch --no-tags origin "$head"
+        a=$(sh .github/scripts/source_tree.sh "$GITHUB_SHA" site/ .github/tools/wrangler/ .node-version)
+        b=$(sh .github/scripts/source_tree.sh "$head" site/ .github/tools/wrangler/ .node-version)
+        if [ "$a" != "$b" ]; then
+          echo "current=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::newer site inputs belong to the newer main run; this one is left out"
+          exit 0
+        fi
+      fi
+      echo "current=true" >> "$GITHUB_OUTPUT"
+    env:
+      CALLER: ${{ github.sha }}
+      GH_TOKEN: ${{ github.token }}
+    shell: bash
+    id: head
+  - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+    with:
+      node-version-file: .node-version
+    env:
+      CALLER: ${{ github.sha }}
+    if: steps.head.outputs.current == 'true'
+  - name: wrangler (pinned in .github/tools/wrangler)
+    run: npm ci --no-audit --no-fund --ignore-scripts --prefix .github/tools/wrangler
+    shell: bash
+    env:
+      CALLER: ${{ github.sha }}
+    if: steps.head.outputs.current == 'true'
+  - name: Install the 1Password CLI
+    uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50
+    with:
+      version: 2.42.0-beta.01
+    env:
+      CALLER: ${{ github.sha }}
+    if: steps.head.outputs.current == 'true'
+  - name: Deliver
+    env:
+      CALLER: ${{ github.sha }}
+      COMMIT: ${{ github.sha }}
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.op-token }}
+      OP_ENVIRONMENT_ID: ${{ inputs.op-env }}
+      WRANGLER_SEND_METRICS: 'false'
+    run: |
+      set -eu
+      test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+      test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+      wrangler="$PWD/.github/tools/wrangler/node_modules/.bin/wrangler"
+      # CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID come from the 1Password Environment
+      op run --environment "$OP_ENVIRONMENT_ID" -- "$wrangler" deploy --config site/wrangler.jsonc --message "site of $COMMIT"
+    shell: bash
+    if: steps.head.outputs.current == 'true'
+  - name: Ask trommi.com
+    env:
+      CALLER: ${{ github.sha }}
+      COMMIT: ${{ github.sha }}
+    run: |
+      set -u
+      want=$(sha256sum site/public/index.html | cut -d' ' -f1)
+      got=
+      for try in $(seq 1 30); do
+        got=$(curl -fsS --max-time 10 "https://trommi.com/?ci=$GITHUB_RUN_ID-$try" | sha256sum | cut -d' ' -f1 || true)
+        echo "try $try: trommi.com serves a front page with SHA-256 $got"
+        [ "$got" = "$want" ] && break
+        sleep 5
+      done
+      {
+        echo "### Website"
+        echo
+        echo "| | |"
+        echo "|---|---|"
+        echo "| commit | \`$COMMIT\` |"
+        echo "| site/public/index.html (SHA-256) | \`$want\` |"
+        echo "| trommi.com/ serves (SHA-256) | \`${got:-nothing}\` |"
+      } >> "$GITHUB_STEP_SUMMARY"
+      [ "$got" = "$want" ] || { echo "::error::trommi.com does not serve the front page of $COMMIT"; exit 1; }
+    shell: bash
+    if: steps.head.outputs.current == 'true'
+  - name: The site was delivered
+    id: delivered
+    if: steps.head.outputs.current == 'true'
+    shell: bash
+    run: echo "done=true" >> "$GITHUB_OUTPUT"

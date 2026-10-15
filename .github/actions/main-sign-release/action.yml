@@ -1,0 +1,106 @@
+name: main-sign-release
+description: The main pipeline steps for main-sign-release
+inputs:
+  version:
+    description: Release series number
+    default: ''
+  part:
+    description: Release part
+    default: ''
+  artifact:
+    description: Release artifact name
+    default: ''
+  commit:
+    description: Source commit
+    default: ${{ github.sha }}
+  op-token:
+    description: Scoped 1Password service token
+    default: ''
+  op-env:
+    description: Scoped 1Password environment
+    default: ''
+  expected-manifest:
+    description: Digest exported by the producing job
+    required: true
+outputs:
+  manifest:
+    description: manifest
+    value: ${{ steps.check.outputs.manifest }}
+  tag:
+    description: tag
+    value: ${{ steps.check.outputs.tag }}
+runs:
+  using: composite
+  steps:
+  - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+    with:
+      name: ${{ inputs.artifact }}
+      path: out
+  - name: The producing job checked these bytes
+    shell: bash
+    env:
+      EXPECTED: ${{ inputs.expected-manifest }}
+    run: sh .github/scripts/main_artifact.sh "$EXPECTED" "out/manifest.json"
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    with:
+      ref: ${{ github.sha }}
+      path: repo
+      persist-credentials: 'false'
+      sparse-checkout: release
+  - name: The manifest is the part's, of this build
+    id: check
+    env:
+      PART: ${{ inputs.part }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ inputs.commit }}
+    run: |
+      set -eu
+      case "$PART" in web|hub|connector) ;; *) echo "::error::not a part that is released on its own: $PART"; exit 1 ;; esac
+      # only main signs, and only the commit this run is of
+      [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::only main is released, not $GITHUB_REF"; exit 1; }
+      [ "$COMMIT" = "$GITHUB_SHA" ] || { echo "::error::$COMMIT is not the commit of this run ($GITHUB_SHA)"; exit 1; }
+      printf '%s' "$VERSION" | grep -Eq '^[1-9][0-9]{0,11}$' || { echo "::error::not a release number: $VERSION"; exit 1; }
+      printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::not a commit: $COMMIT"; exit 1; }
+      tag="$PART-v$VERSION"
+      jq -e --arg p "trommi-$PART" --arg v "$VERSION" --arg c "$COMMIT" --arg r "$GITHUB_REPOSITORY" --arg t "$tag" \
+        '.product == $p and .repository == $r and (.version | tostring) == $v and .tag == $t and .commit == $c' \
+        out/manifest.json > /dev/null || { echo "::error::manifest.json is not $tag of $COMMIT in this repository"; exit 1; }
+      # Every file the manifest names is there and is that file; nothing else lies beside it.
+      jq -e '(.assets | length) > 0 and all(.assets[]; (.name | test("^[A-Za-z0-9._-]+$")) and (.sha256 | test("^[0-9a-f]{64}$")) and (.size | type) == "number") and ([.assets[].name] | unique | length) == (.assets | length)' \
+        out/manifest.json > /dev/null || { echo "::error::manifest.json has an entry that is not a plain file with hash and size"; exit 1; }
+      sh repo/release/sign.sh files out/manifest.json
+      find out -type f ! -name manifest.json -printf '%f\n' | sort > "$RUNNER_TEMP/there"
+      jq -r '.assets[].name' out/manifest.json | sort > "$RUNNER_TEMP/named"
+      diff "$RUNNER_TEMP/named" "$RUNNER_TEMP/there" || { echo "::error::the release holds files the manifest does not name"; exit 1; }
+      case "$PART" in
+        # the server decides by these whether a program changed (hub/updater: `changes`)
+        hub) jq -e '.inputs.hub and .inputs.updater' out/manifest.json > /dev/null || { echo "::error::the hub's manifest names no inputs of the hub and the updater"; exit 1; } ;;
+      esac
+      echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      echo "manifest=$(sha256sum out/manifest.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+    shell: bash
+  - name: Install the 1Password CLI
+    uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50
+    with:
+      version: 2.42.0-beta.01
+  - name: Sign the manifest
+    env:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.op-token }}
+      OP_ENVIRONMENT_ID: ${{ inputs.op-env }}
+    run: |
+      set -eu
+      test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+      test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+      op run --environment "$OP_ENVIRONMENT_ID" -- sh repo/release/sign.sh sign out/manifest.json
+    shell: bash
+  - name: No key file is left
+    if: always()
+    run: rm -f "$RUNNER_TEMP"/sign.*
+    shell: bash
+  - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+    with:
+      overwrite: true
+      name: ${{ inputs.part }}-release-signature
+      path: out/manifest.json.sig
+      if-no-files-found: error
+      retention-days: 30

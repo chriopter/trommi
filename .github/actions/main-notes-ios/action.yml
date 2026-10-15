@@ -1,0 +1,46 @@
+name: main-notes-ios
+description: The main pipeline steps for main-notes-ios
+inputs:
+  version:
+    description: Release series number
+    default: ''
+  app-version:
+    description: TestFlight app version
+    default: ''
+  app-build:
+    description: TestFlight app build
+    default: ''
+outputs: {}
+runs:
+  using: composite
+  steps:
+  - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+    with:
+      node-version: 24
+    env:
+      CARGO_INCREMENTAL: '0'
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ios-v${{ inputs.version }}
+      APP_VERSION: ${{ inputs.app-version }}
+      APP_BUILD: ${{ inputs.app-build }}
+  - name: Publish
+    run: |
+      set -eu
+      if gh release view "$TAG" > /dev/null 2>&1; then echo "$TAG is published already"; exit 0; fi
+      newest=$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName' | sed -n 's/^ios-v\([1-9][0-9]*\)$/\1/p' | sort -n | tail -n 1)
+      before=''
+      if [ -n "$newest" ]; then before=$(gh api "repos/$GH_REPO/commits/ios-v$newest" --jq .sha 2>/dev/null) || before=''; fi
+      {
+        node .github/scripts/release_notes.mjs mac "$before" "$GITHUB_SHA" || true
+        printf '\n---\n\nThe iPhone and Mac apps of commit %s: TestFlight %s (%s), in the groups "Intern" and "Trommi".\n' "$GITHUB_SHA" "$APP_VERSION" "$APP_BUILD"
+      } > "$RUNNER_TEMP/notes.md"
+      gh release create "$TAG" --target "$GITHUB_SHA" --latest=false --title "Trommi for iPhone $APP_VERSION ($APP_BUILD)" --notes-file "$RUNNER_TEMP/notes.md"
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ios-v${{ inputs.version }}
+      APP_VERSION: ${{ inputs.app-version }}
+      APP_BUILD: ${{ inputs.app-build }}

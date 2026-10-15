@@ -1,3 +1,4 @@
+# Manual recovery only; normal pushes use main.yml. Old runs keep their original definitions.
 # The hub and its updater (hub/), from a push to main to the hub's server, on their own: they wait for no other part.
 #
 #   decide   whether the hub must be delivered: what the server has (GitHub's record of the newest delivery that went
@@ -27,30 +28,6 @@
 name: ship-hub
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - hub/**
-      - release/**
-      - tests/hub/**
-      - tests/deploy/**
-      - tests/src/**
-      - tests/Cargo.toml
-      - core/**
-      - Cargo.toml
-      - Cargo.lock
-      - rust-toolchain.toml
-      - .config/nextest.toml
-      - .github/scripts/hub_compat.sh
-      - .github/scripts/deployed.sh
-      - .github/scripts/inputs.sh
-      - .github/scripts/release_notes.mjs
-      - .github/workflows/ship-hub.yml
-      - .github/actions/**
-      - .github/scripts/changed_parts.sh
-      - .github/scripts/source_tree.sh
-      - .github/workflows/pr-check.yml
-      - .github/workflows/sign-release.yml
   workflow_dispatch:
     inputs:
       tag:

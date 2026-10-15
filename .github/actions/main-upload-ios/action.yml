@@ -1,0 +1,132 @@
+name: main-upload-ios
+description: The main pipeline steps for main-upload-ios
+inputs:
+  version:
+    description: Release series number
+    default: ''
+  op-token:
+    description: Scoped 1Password service token
+    default: ''
+  op-env:
+    description: Scoped 1Password environment
+    default: ''
+  expected-checksums:
+    description: Digest exported by the producing job
+    required: true
+outputs:
+  commit:
+    description: commit
+    value: ${{ steps.core.outputs.commit }}
+  version:
+    description: version
+    value: ${{ steps.upload.outputs.version }}
+  build:
+    description: build
+    value: ${{ steps.upload.outputs.build }}
+runs:
+  using: composite
+  steps:
+  - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+    with:
+      name: ios-release
+      path: ${{ runner.temp }}/core
+      run-id: ${{ github.run_id || github.run_id }}
+      github-token: ${{ github.token }}
+    env:
+      CARGO_INCREMENTAL: '0'
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: The producing job checked these bytes
+    shell: bash
+    env:
+      EXPECTED: ${{ inputs.expected-checksums }}
+    run: sh .github/scripts/main_artifact.sh "$EXPECTED" "$RUNNER_TEMP/core/checksums.txt"
+  - name: Which commit the core was built from
+    id: core
+    env:
+      CARGO_INCREMENTAL: '0'
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+      COMMIT: ${{ github.event_name == 'push' && github.sha || '' }}
+      GH_TOKEN: ${{ github.token }}
+    run: |
+      set -eu
+      cd "$RUNNER_TEMP/core"
+      shasum -a 256 -c checksums.txt
+      commit=$(sed -n 's/^commit: //p' build.txt)
+      printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::the artifact names no commit"; exit 1; }
+      if [ -n "$COMMIT" ]; then
+        [ "$commit" = "$COMMIT" ] || { echo "::error::the core is of $commit, the run built $COMMIT"; exit 1; }
+      else
+        # by hand: the commit must be on main (main is it or ahead of it)
+        status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...main" --jq .status) || status=
+        case "$status" in identical|ahead) ;; *) echo "::error::the core is of $commit, which is not on main"; exit 1 ;; esac
+      fi
+      echo "commit=$commit" >> "$GITHUB_OUTPUT"
+    shell: bash
+  - name: Put the Rust core in place
+    run: |
+      set -eu
+      package=core/bindings/swift/TrommiCoreRust
+      mkdir -p "$package/lib/ios" "$package/Sources/TrommiCoreFFI/include"
+      cp "$RUNNER_TEMP/core/lib/ios/libtrommi_core_ffi.a" "$package/lib/ios/"
+      cp "$RUNNER_TEMP/core/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h" "$package/Sources/TrommiCoreFFI/include/"
+      cp "$RUNNER_TEMP/core/Sources/TrommiCoreRust/TrommiCoreRust.swift" "$package/Sources/TrommiCoreRust/"
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: XcodeGen
+    run: |
+      set -eu
+      curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+      echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+      unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+      echo "XCODEGEN=$RUNNER_TEMP/xcodegen/bin/xcodegen" >> "$GITHUB_ENV"
+      "$RUNNER_TEMP/xcodegen/bin/xcodegen" --version
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: Install the 1Password CLI
+    uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50
+    with:
+      version: 2.42.0-beta.01
+    env:
+      CARGO_INCREMENTAL: '0'
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  - name: Build, sign, upload
+    id: upload
+    env:
+      CARGO_INCREMENTAL: '0'
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.op-token }}
+      OP_ENVIRONMENT_ID: ${{ inputs.op-env }}
+      COMMIT: ${{ steps.core.outputs.commit }}
+      ITS_NON_EXEMPT_ENCRYPTION: ${{ vars.IOS_NON_EXEMPT_ENCRYPTION || 'NO' }}
+      ITS_EXPORT_COMPLIANCE_CODE: ${{ vars.IOS_EXPORT_COMPLIANCE_CODE }}
+      TF_GATE: release
+      SAME_OK: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+      TF_DRY_RUN: ${{ false && '1' || '' }}
+      TF_UPLOADER: ${{ vars.IOS_UPLOADER || 'api' }}
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ github.run_id || github.run_id }}
+      VERSION_RELEASE: ${{ inputs.version || '1' }}
+    run: |
+      set -eu
+      test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+      test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+      op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/ios_testflight.sh upload
+    shell: bash
+  - name: No key file is left
+    if: always()
+    run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/ExportOptions.plist"
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
