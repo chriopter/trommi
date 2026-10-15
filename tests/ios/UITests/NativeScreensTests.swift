@@ -1,7 +1,7 @@
 import XCTest
 
-// Real UI automation of the same storeless room used by web and native screenshots.
-// Every launch explicitly selects demo mode: no device store, credentials or hub.
+// Native UI automation: isolated real-account sign-in and explicit storeless demo scenes.
+// Private account and full-size timing gates run only when their inputs are supplied.
 final class NativeScreensTests: XCTestCase {
   private var app: XCUIApplication!
   override func setUpWithError() throws { continueAfterFailure = false }
