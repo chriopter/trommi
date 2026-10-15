@@ -169,11 +169,9 @@ as a quiet info, with a push) and every line linked to it turns `done` with that
 | --- | --- |
 | `src/store.rs` | the state on disk: one directory per slot (0700), a lock, a snapshot and a log of checksummed records; one record per step |
 | `src/vault.rs`, `src/keeper.rs` | the core's `Device` over that journal, on a thread of its own; the device does groups, stored content, joining and sign-in itself |
-| `src/hub.rs` | the hub's routes (`spec/hub-api.md`): JSON, sign-in by signed challenge, the lease header, the stream |
-| `src/client.rs` | the device at work: the hub's order (one cursor for log and envelopes), Welcomes (once per batch), the command gate's answers, the outbox, lease, removal, the rollback guard, and when to stop asking a hub that is none |
+| `src/driver.rs` | the shared `core/client` engine in agent mode, its shared board model and cache; runs effects through `core/io` over the slot's journal, hands commands and lifecycle reports to the MCP server |
 | `src/agent.rs` | what an agent writes: Chat, cards, registers, permission requests, Artifacts and files, helper sessions, the work trail |
 | `src/join.rs` | joining by link with the six emoji |
-| `src/model.rs` | what this agent knows of the board (an agent has no Desk: the client core's Desk, [`core/client/`](../core/client/README.md), is the human devices') |
 | `src/bridge.rs`, `src/html.rs` | every tool, and a human's command as a channel event |
 | `src/server.rs`, `src/mcp.rs`, `src/member.rs`, `src/slots.rs`, `src/slotstore.rs`, `src/door.rs` | the MCP server, this process as a member, key slots per folder, the sockets hooks reach it through |
 | `src/line.rs`, `src/mirror.rs`, `src/trail.rs`, `src/hooks.rs` | the monitor's line, the terminal mirror, the work trail, the permission hooks |
@@ -182,9 +180,10 @@ as a quiet info, with a push) and every line linked to it turns `done` with that
 | `src/launch.rs` | the launcher: passes the MCP session through to the connector and swaps in a new one |
 | `prompt.md`, `tools.json` | every text the agent reads and every tool's schema: the one source, compiled in and checked by `build.rs` |
 
-`prompt.md` and `tools.json` are also what the web app's help page is built from. They used to be read at
-`connector/prompt.md` and `connector-rs/tools.json`; both are here now (`connector/prompt.md`,
-`connector/tools.json`), and the app's build (`app/web/dev/build.mjs`) names the second one at its new place.
+`prompt.md` and `tools.json` also feed the web app's help page. The driver owns no duplicate hub client, sync
+engine or model: authentication, lease headers, catch-up, Welcomes, history, retries, command gating, outbox
+re-sealing and verified removal are the shared core's. The connector keeps its machine/session integration,
+vouching, same-account checks and journal I/O. See [The app core](../core/client/README.md).
 
 ## State and restarts
 
@@ -259,9 +258,9 @@ never announced as an update.
 ## Build and tests
 
 ```
-cargo build --release -p trommi-connector
+cargo build --release --locked -j4 -p trommi-connector
 node connector/build-plugin.mjs [dir]      # the four targets' binaries, as named in a release
-cargo test -p trommi-tests                 # tests/connector/*: units, and scenarios against the real hub
+TROMMI_TESTS_FULL=1 cargo test --locked -j4 -p trommi-tests --test connector_e2e --test connector_sessions
 ```
 
 The four targets are static Linux (`x86_64`, `aarch64`, musl, linked with `rust-lld`, ring's C compiled by clang)

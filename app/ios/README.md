@@ -1,789 +1,181 @@
-# Trommi for iOS
+# Trommi for iPhone and Mac
 
-A native iOS app in Swift and SwiftUI, no web view for the board: the same board as app.trommi.com, verified and
-decrypted on the phone. The protocol ([`spec/v1.md`](../../spec/v1.md)) is not written a second time in Swift: the app
-links [`trommi-core`](../../core/protocol/README.md) (Rust, OpenMLS) as a static library and talks to it through one Swift
-protocol. It is built, signed and shipped from Linux; no Mac is needed.
+Native SwiftUI drawing the [Rust app core](../../core/client/README.md). One AppCore owns the account, sync,
+history, actions, board model, cache, ordered screen views and state-dependent words. Swift folds the generated
+ViewModel and performs native I/O: URLSession, encrypted files, Keychain, notifications, APNs, Live Activities and
+the share sheet. There is no second Swift account, sync or board implementation.
 
 ## Layout
 
-| Folder | What |
+| Path | Responsibility |
 | --- | --- |
-| `TrommiClient/` | A Swift package: everything of the app that is not a view. Four targets, below. |
-| `TrommiApp/` | The SwiftUI app and its three extensions (an [xtool](https://github.com/xtool-org/xtool) project). |
-| `TrommiApp/AppStore/` | What a TestFlight build needs on top: icon, production entitlements, the ship script. |
-| `../../core/bindings/swift/` | The Rust core for Swift: `build.sh`, the Swift package `TrommiCoreRust` it fills, a proof app. |
+| `TrommiApp/Sources/TrommiApp/AppShell.swift` | Starts AppCore, folds renders, forwards taps and focus, holds drawing state and file bytes |
+| `TrommiApp/Sources/TrommiApp/Screens.swift`, `AccountScreen.swift`, `MoreScreens.swift`, `Details.swift`, `ScribbleScreen.swift` | Native screens drawing the core's generated types; gestures, editors and file pickers |
+| `TrommiApp/Sources/TrommiApp/NativeServices.swift` | APNs, local notifications, extension context and encrypted read-ahead pages |
+| `TrommiApp/Sources/TrommiApp/NativeLive.swift` | ActivityKit I/O and drawing the core's ordered waiting cards and counts |
+| `TrommiApp/Sources/TrommiApp/NativeShare.swift` | The App Group's sealed inbox and recipient snapshot; imports go to the core |
+| `TrommiApp/Sources/TrommiApp/NativeDemo.swift` | Bundle I/O and demo navigation; AppCore runs the fixture without a device store |
+| `TrommiClient/Sources/TrommiShell/` | Product/module `TrommiClient`: the serialized native executor and platform storage |
+| `TrommiClient/Sources/ShareInbox/` | Share Extension's encrypted local inbox, intake and App Group access |
+| `TrommiClient/Sources/PushNotify/` | Read-only notification/widget payloads, private key-copy storage and extension I/O |
+| `TrommiClient/Sources/NotifyCoreLive/` | The notification/widget extension's narrow calls into the Rust binding |
+| `TrommiApp/AppStore/` | XcodeGen project, entitlements, metadata, screenshots and shipping tools |
+| `../../core/bindings/swift/` | UniFFI facade, generated Swift types/fold, static libraries and a proof app |
+| `../../tests/ios/` | Native executor/store/transport tests, isolated extension tests and opt-in core observers |
 
-Targets of `TrommiClient`:
+`TrommiClient` is a platform shell despite its retained module name. `CoreSession` is an actor: core calls are
+serialized, results retain their I/O ids, and device writes form a barrier before subsequent effects run. Its
+URLSession transport sends exactly the core's request, disables cookies/cache/redirects, bounds responses before
+buffering and forwards stream bytes in order. Retries, authentication and event parsing belong to Rust.
 
-| Target | What | Links the Rust core |
-| --- | --- | --- |
-| `TrommiClient` | The board model (`Board.swift`, `Desk.swift`), the device store, the hub client and live stream, the engine. `Core.swift` is the core as Swift sees it: the protocols `CoreTools` and `CoreDevice`, one call for one call of `core/protocol/README.md`. No crypto of its own. The Desk's rules (stack, session lists, open requests, what the hub settled) are the client core's ([`core/client/`](../../core/client/README.md)): `Board.projectDesk` hands `ClientDesk` what changed and applies its answer, so it links the library's `ClientDesk` (`core/bindings/swift/build.sh host` before `swift test` on Linux). | the Desk only |
-| `TrommiCoreLive` | `LiveCore`: `CoreTools` on the real library (UniFFI module `TrommiCoreRust`). Its header lists which calls are real, which are stubbed (none) and what of the binding is not bound. | yes |
-| `ShareInbox` | The Share Extension's sealed inbox in the App Group (local storage, Apple's CryptoKit). | no |
-| `PushNotify` | What the Notification Service Extension and the Live Activity widget share with the app. | no |
+## Build and checks
 
-The app and its extensions (`TrommiApp/Package.swift` products, `xtool.yml`):
+The pinned Rust toolchain is in `rust-toolchain.toml`. Swift 6.4 and the matching Xcode 27 SDK build the app;
+ordinary native shell tests also run on Linux. From the repository root:
 
-| Binary | Bundle id | Uses | Links the Rust core |
-| --- | --- | --- | --- |
-| `TrommiApp` | `com.trommi.ios` | everything | yes (about 3 MB) |
-| `TrommiShare.appex` | `com.trommi.ios.share` | `ShareInbox` | no |
-| `TrommiNotify.appex` | `com.trommi.ios.notify` | `PushNotify` | only what opens one push and the envelope that rang (`NotifyCoreLive`); see "Who owns the state" |
-| `TrommiLive.appex` | `com.trommi.ios.live` | `PushNotify` | no |
-
-Each binary that links the core carries its own copy of it. Measured with the proof build of October 2026: the app
-binary grew by 3.1 MB, an extension that linked it by 3.0 MB.
-
-## Build from a clean checkout (Linux)
-
-Needs: [rustup](https://rustup.rs) (the compiler and its targets are named in `rust-toolchain.toml` and installed on
-first use), Swift 6.4, and for anything that runs on a phone the toolchain of "On an iPhone" below.
-
-```bash
-core/bindings/swift/build.sh                                 # the Rust core: lib/linux and lib/ios, UniFFI's Swift file and header
-(cd tests/ios && swift test)                              # the model, the store, and LiveCore against the Linux library
-(cd app/ios/TrommiApp && ulimit -n 65536 && xtool dev build --configuration release)   # xtool/TrommiApp.app
+```sh
+CARGO_BUILD_JOBS=4 nice -n 19 ionice -c3 sh core/bindings/swift/build.sh host
+nice -n 19 ionice -c3 swift test --package-path tests/ios -j 4
+node tests/bindings/manifest.mjs
+node tests/bindings/views.mjs
+node tests/bindings/views-replay.mjs
 ```
 
-The tests are a package of their own in the repository's one tests folder, `tests/ios` (one folder per tested
-target; SwiftPM takes no target outside its package, so `tests/ios/Package.swift` depends on `app/ios/TrommiClient` by
-path). `swift test` is run there.
+Build one heavy step at a time. Rebuild the binding after any core change. `build.sh` writes ignored output into
+`core/bindings/swift/TrommiCoreRust`: UniFFI's Swift file and C header, and `lib/<platform>/libtrommi_core_ffi.a`.
+`host` builds for the machine running the tests; `ios` builds the device and simulator libraries; `macos` builds
+for Apple silicon. `TROMMI_SIMULATOR=0` leaves the simulator out. The iOS archive's duplicate compiler-runtime
+members are removed only after checking their symbols against Apple's SDK runtime; an unchecked archive is not
+for shipping.
 
-### The Rust core
+With an installed darwin Swift SDK on Linux, unsigned module compilation checks the app and extension sources:
 
-`core/bindings/swift/build.sh` (`host`, `ios`, or both without an argument) writes into `core/bindings/swift/TrommiCoreRust/`:
-`lib/<platform>/libtrommi_core_ffi.a`, `Sources/TrommiCoreFFI/include/TrommiCoreFFI.h` and
-`Sources/TrommiCoreRust/TrommiCoreRust.swift`. All three are build output and ignored by git: **after a fresh
-checkout, and after every change under `core/`, run it again** before `swift test` or `xtool dev build`. About two
-minutes the first time, 20 seconds after.
-
-With a hub binary of branch `v2-hub` the tests also run against the real hub:
-`TROMMI_HUB_BIN=<path>/trommi-hub swift test --filter RealHubTests`.
-
-- No Apple SDK and no Apple linker are needed for the library itself: a static library is an archive of object files,
-  which `rustc` writes for `aarch64-apple-ios` on Linux.
-- The package links it with a library search path per platform (`core/bindings/swift/TrommiCoreRust/Package.swift`), not an
-  XCFramework: SwiftPM on Linux refuses an XCFramework, and `swift test` needs the Linux library. SwiftPM allows such a
-  flag only in a package used by path; `app/ios/TrommiClient/Package.swift` names it as `../../../core/bindings/swift/TrommiCoreRust`.
-- The darwin SDK's toolset passes `-all_load` to every link, so the script takes rustc's copy of the compiler runtime's
-  C and assembly helpers out of the iOS archive (Apple's `libclang_rt.ios.a` has the same symbols) and checks every
-  removed symbol against Apple's file. Without the SDK installed, set `DARWIN_CLANG_RT=unchecked`.
-- `core/bindings/swift/ProofApp` is the smallest app that links the core; `xtool dev build` there checks the iOS link alone.
-
-## Who owns the state
-
-The core's rule (`core/protocol/src/store.rs`): exactly one owner works on a stored device state; two would sign two
-different items under one number.
-
-- **The app alone owns the device.** The device's state (its key, the MLS groups, the chains, the outbox) lies in the
-  app's own container (`Application Support/trommi/d-<random>/state`), not in the App Group, sealed under a key that
-  is a Keychain item of the app alone. `DeviceStore` takes an exclusive lock on the folder before it reads and keeps
-  it until the room is closed: a second opener, in this process or another, fails with `busy`. The revision is the
-  check behind the lock.
-- **Written whole, read with suspicion.** One sealed record per batch, flushed to the drive before the core is
-  answered; a write whose outcome is unknown stops the store. On reading, every record is opened, only the end of
-  the log may be incomplete, and a state below its **anchor** (a revision kept in the Keychain, moved forward by
-  every batch that puts something into the outbox) does not load: an older state put back is refused. The folder is
-  left out of backups.
-- **Extensions never open it**, and cannot: no path, no key. They cannot sign, send, or follow a group.
-  - **Share Extension:** writes what was shared into the sealed inbox in the App Group; the app takes it from there
-    and sends it.
-  - **Notification Service Extension:** gets two Keychain items, both `AfterFirstUnlockThisDeviceOnly`. The context
-    (PushNotify `NotifyContext`, access group: the App Group, which all three extensions can read): the push key, the
-    room's id, the hub, the client name and the room's cursor. With the push key it opens the sealed part of a push
-    (room, change number, urgency) and reads ahead. The keys (PushNotify `NotifyKeys`, access group
-    `<team>.com.trommi.ios.notify-keys`, which only the app and this extension are entitled to): of each session
-    group the content key of its CURRENT epoch (core `notify_keys`, spec/v1.md 6.4), never the room group's, never an
-    older one; the app writes them again whenever an epoch moves (`Room.notifyKeysChanged`, NotifyBridge). With them
-    the extension opens the one envelope that rang (core `open_notify_envelope`: the sender's signature, then the
-    body; not the sender's membership, not its chain) and shows a card's title. Such a key opens everything written
-    in that session during that epoch, not only the card. The extension writes nothing to the Keychain and signs
-    nothing.
-  - **Live Activity widget:** holds no key and reads no file. It shows what ActivityKit hands it: the hub's two
-    counts, and the most urgent card (title, session name, urgency, two answers) that the app put in after opening
-    it on the phone. The hub never sees that card; while the phone cannot read the room the app puts none in.
-- **Removed by another device.** The hub ends a removed device's access and names it `role: "removed"` at its next
-  sign-in; that token reads only `GET /v1/groups/{room}/removal`, the room group's Commits up to the removing one.
-  The device hands them to its core; only when the core says a Commit removed it (or it read that Commit in the
-  changes before) is the room marked removed (`Room.removedAt`, kept in room.json), and the app forgets the room
-  and says so on the start screen. A hub that says "removed" without such a Commit, and a bare `not-member`, change
-  nothing: an envelope refused with `not-member` stays in the outbox unless the core's own group state has no leaf
-  of this device there.
-- **A sign-in whose room join got no answer** keeps its device (marked `join-unsure`, never swept) and asks the hub
-  under the device's own key: a member's token resumes it as the room's device, `not-member` gives it up, no
-  answer leaves it for the next sign-in, which resumes it instead of making a second device.
-- **What is not covered:** a phone whose app container AND Keychain an attacker can write. The lock is held while
-  the app is suspended; the folder is not a shared container, where iOS would end an app for that, but this is to
-  be watched on a device.
-
-## Not on Linux
-
-- No simulator: nothing here runs the app. `swift test` runs the model and the core's binding on x86-64 Linux.
-- That the app links for iOS is checked on Linux; how it looks and behaves is verified only on a device.
-- The asset catalog is not compiled by xtool (the icon comes from a PNG; the TestFlight build compiles it with the
-  SDK's `actool`).
-
-## On an iPhone, built on Linux
-
-The steps use [omarchy-apple-dev](https://github.com/joshuaswarren/omarchy-apple-dev) (Arch Linux; checked with Swift
-6.4, xtool 1.20 and the SDK of Xcode 27). Steps 1 to 3 need a person (root rights, an Apple ID, the phone in hand);
-after that, building and shipping are plain commands.
-
-1. **Toolchain (needs root).**
-
-   ```bash
-   git clone https://github.com/joshuaswarren/omarchy-apple-dev ~/.local/share/omarchy-apple-dev
-   cd ~/.local/share/omarchy-apple-dev && ./install-toolchain.sh
-   ```
-
-   It installs `usbmuxd zip base-devel git libimobiledevice openssl poppler libheif` with pacman, `swift-bin` (Swift 6.4)
-   from the AUR, builds xtool from source (about 7 minutes), installs rcodesign, ipsw and pymobiledevice3 in user paths,
-   then stops at the SDK step and names the matching Xcode.
-
-2. **iOS SDK (Apple ID, one download).** Sign in at https://developer.apple.com/download/all/?q=Xcode and download
-   **Xcode 27** (`.xip`, matches Swift 6.4; no Mac needed). Then:
-
-   ```bash
-   cd ~/.local/share/omarchy-apple-dev && XCODE_XIP=~/Downloads/<the Xcode .xip> ./install-toolchain.sh
-   swift sdk list                                    # must print: darwin
-   xtool auth                                        # sign in with the Apple ID (stored in ~/.local/share/xtool)
-   ```
-
-3. **iPhone over USB.** Plug it in with a data cable, unlock it, tap **Trust**. On iOS 16 and later also turn on
-   Settings → Privacy & Security → **Developer Mode** (the phone restarts). Wireless deploy does not work from Linux on
-   iOS 26; USB does.
-
-4. **Bundle id.** `TrommiApp/xtool.yml` says `com.trommi.ios`. With a free Apple ID pick one that is yours alone (for
-   example `com.<you>.trommi`); for TestFlight it must be the id of the app record (step 6).
-
-5. **Run on the phone:**
-
-   ```bash
-   core/bindings/swift/build.sh ios
-   cd app/ios/TrommiApp
-   ulimit -n 65536
-   xtool dev build                                   # xtool/TrommiApp.app
-   ~/.local/share/omarchy-apple-dev/device-run.sh    # installs and starts it on the phone
-   ```
-
-   `xtool dev run` installs only; start the app by tapping its icon. Settings → **Security** → **Self Test** (the last row) runs the
-   core's own check of itself on the phone and shows the result (`CoreProofScreen.swift`).
-
-6. **TestFlight (paid Apple Developer account).** Once, in App Store Connect: Users and Access → Integrations → Team
-   Keys → a key with the **Admin** role; download the `.p8` (only once possible), note **Key ID** and **Issuer ID**.
-   Apps → + → New App with the bundle id of step 4 (the API cannot create apps). Then "TestFlight without CI" below.
-
-## TestFlight without CI
-
-`TrommiApp/AppStore/ship-local.sh [REF]` makes a TestFlight build on a Linux machine (REF defaults to `origin/main`,
-fetched first; `--dry-run` stops at the signed, validated `.ipa`):
-
-```bash
-app/ios/TrommiApp/AppStore/ship-local.sh            # about 5 minutes to the upload, then App Store Connect's processing
+```sh
+nice -n 19 ionice -c3 swift build --build-system native --package-path app/ios/TrommiApp \
+  --swift-sdk darwin --triple arm64-apple-ios -j 4
+nice -n 19 ionice -c3 swift build --build-system native --package-path app/ios/TrommiApp \
+  --swift-sdk darwin --triple arm64-apple-macosx -j 4
 ```
 
-- Built from a clean `git worktree` of REF in a temporary folder, never from the working tree; the script and `asc.py`
-  next to it run from the checkout you start it in.
-- Build number: the highest build App Store Connect has for the app, plus one (`asc.py next-build`); `BUILD_NUMBER`
-  overrides it. Version: `MARKETING_VERSION` in `AppStore/project.yml`.
-- Build: first **`core/bindings/swift/build.sh ios`** in that worktree (a clean worktree has no library; Rust's build folder is
-  kept between runs in `CARGO_TARGET_DIR`, default `~/.cache/trommi-ship/target`), then
-  `xtool dev build --configuration release`, then the app icon from `AppStore/Assets.xcassets` (the SDK's Linux
-  `actool`), `ITSAppUsesNonExemptEncryption` (`ITS_NON_EXEMPT_ENCRYPTION`; "Export compliance" below), and
-  omarchy-apple-dev's `tools/asc.py stamp` and `frameworks` (DT* keys from
-  `~/.cache/xtool/darwin-iPhoneOS<version>.xtoolsdk.version.plist`, for the app and every `PlugIns/*.appex`).
-- Signing: an Apple Distribution certificate and an App Store profile each for `com.trommi.ios`,
-  `com.trommi.ios.share`, `.notify` and `.live` (with `APP_GROUPS=group.com.trommi.ios`), created through the API with
-  the Admin key (remade on each run, so a capability change is picked up); the distribution key stays in the folder
-  `ASC_IDENTITY_DIR` names (0600). Entitlements: the profile's plus `AppStore/TrommiApp.entitlements`
-  (`aps-environment: production`, the App Group, `applinks:app.trommi.com` and `webcredentials:app.trommi.com`,
-  communication notifications: left out
-  with a warning while the portal has not granted them) and, for each extension, `AppStore/<name>.entitlements`
-  (the App Group), each checked against its profile; `rcodesign`, the extensions first.
-- Offline validation (`asc.py validate`), upload with the Build Uploads API (`asc.py upload`), then this folder's
-  `asc.py wait`, `internal … Intern`, and `notes`: "Neu in Build N (sha):" and the subjects of the commits under
-  `app/ios/` since the commit the previous build's What to Test names; `NOTES` overrides it.
-- Needs: cargo (rustup), xtool, `swift-bin` with the darwin SDK, `rcodesign`, `~/pymobile3-venv` (omarchy-apple-dev's
-  installer), and the Admin key; `ASC_KEY_ID` and `ASC_ISSUER_ID` are required, from the environment or the env file
-  the script's header names.
+These are module checks, not an Xcode archive or a device run. CI's unsigned Xcode app job compiles both platforms;
+`ship-apple.yml` builds the libraries, archives, signs and delivers from main after its checks passed. The shell's
+small real-hub observer is `TrommiShellTests.MegaObserverTests`; the fleet is opt-in and is skipped by ordinary
+`swift test`. See the root README for client conformance and correctness runs.
 
-## TestFlight from CI
+## Device storage and ownership
 
-`TrommiApp/AppStore/project.yml` describes the same app for Xcode (generated with XcodeGen, not checked in): an app
-target `Trommi` that links the package's `TrommiApp` library, with the app icon, the production entitlements and the
-Info.plist keys xtool adds; one extension target each. Linux builds do not use it.
+The native AppCore slot is `Application Support/Trommi/AppCore/default`. The migration uses a fresh slot: users
+sign in once after upgrading. Existing encrypted legacy storage is left untouched and is not imported or used as
+a fallback.
 
-**The Xcode path** (the repository's `.github/workflows/ship-apple.yml` with `.github/scripts/ios_testflight.sh` on a
-Mac runner, uploaded to TestFlight). The archive is signed ad hoc (`.github/scripts/ios_archive.sh`: identity "-", no
-profile, no key, so no certificate is made per run); only the export signs, with the cloud-managed Apple
-Distribution certificate through the App Store Connect key. The IPA's entitlements are then checked against the four
-`.entitlements` files (`ios_entitlements.py`), and that very file is uploaded through the App Store Connect Build
-Uploads API (`asc.py upload`; no second Xcode export; the repository variable `IOS_UPLOADER=xcode` goes back to the
-export with destination upload). The apps have their own pipeline, `.github/workflows/ship-apple.yml`, so no other
-part waits for them: on a push to main that changed them, when their inputs differ from those last delivered
-(`.github/scripts/ios_delivered.sh`), it runs the client's tests (and the core's, when it changed), builds the core on
-the Mac and archives and uploads; the upload checks the same again first (`.github/scripts/ios_release_gate.sh`: that
-run's checks, the iOS inputs). By hand, Actions -> ship-apple, action testflight-again with `run_id` and `dry_run`
-signs and checks everything and uploads nothing. The Mac job ends with the upload; waiting for App Store Connect to
-process the build, the group and "What to Test" run in a Linux job after it (`ios_testflight.sh after`). The core for
-Swift is built once per change of `core/`, `Cargo.*` or `rust-toolchain.toml` (and Xcode): `ship-apple.yml` keeps its
-output in the Actions cache under the hash of those paths, and CI leaves out the simulator library
-(`TROMMI_SIMULATOR=0`). What it needs from this folder:
+`DeviceStore` takes the exclusive state-directory lock before reading a key and keeps it until close. The app
+alone owns the MLS device and private keys; extensions never open its state. One encrypted journal record is
+written per batch and flushed before the core hears success. An uncertain write stops the store. The Keychain
+revision anchor refuses a state older than a durable outbox write; the state folder is excluded from backups.
+`ShellStore` separately seals disposable cache entries and splits encoded cache paths into bounded filesystem
+components. Losing the cache costs a catch-up, never a device identity or pending outbox write.
 
-- `core/bindings/swift/build.sh` on the runner before anything is built: `ios` for the archive (the package links
-  `lib/ios/libtrommi_core_ffi.a` by a search path; a device archive needs no XCFramework), `host` for
-  `swift test` in `tests/ios` on the Mac (it links `lib/macos`). The simulator library is chosen with
-  `TROMMI_IOS_SIMULATOR=1`; one checkout builds for the device OR the simulator, not both at once.
-- The package's sources build for macOS as well (ActivityKit is for iOS only; the Keychain is used on a Mac only by
-  the app, "On a Mac"), so the Mac job can run the same tests as Linux.
-- Not verified from here: this text was written on Linux. Whether XcodeGen's project, the archive and the upload go
-  through is what the first run on the runner shows; that the archive carries `PrivacyInfo.xcprivacy` at the bundle's
-  root (`project.yml` lists it) is to be checked on its output.
+Private state, cache, anchor and core-requested secrets use the app's own Keychain access group and
+`AfterFirstUnlockThisDeviceOnly`. The app names the group explicitly; a shared extension item cannot become the
+app's device key. Tests use private files on Linux and on an unsigned Mac test binary. The signed Mac app selects
+the data-protection Keychain at startup.
 
-**Signing the extensions (what CI needs for the push work of 11 October 2026).** Nothing new to set up: no new
-target, bundle id, entitlement or secret.
-- `TrommiNotify` (`com.trommi.ios.notify`) and `TrommiLive` (`com.trommi.ios.live`) keep their one entitlement, the App
-  Group `group.com.trommi.ios` (`AppStore/TrommiNotify.entitlements`, `TrommiLive.entitlements`); `asc.py` turns on
-  APP_GROUPS for both ids, and `ios_entitlements.py` checks the signed .appex against those files. The App Group is
-  also the Keychain access group of the context item, which the widget now reads too (the push key): on iOS an App
-  Group entitlement is enough for that.
-- The content keys of the notification title (11 October 2026) lie in an access group of their own:
-  `keychain-access-groups` in `AppStore/TrommiApp.entitlements` (`$(AppIdentifierPrefix)com.trommi.ios` FIRST, so
-  that an item added without a group, the push key's, stays the app's own; then
-  `$(AppIdentifierPrefix)com.trommi.ios.notify-keys`) and in `AppStore/TrommiNotify.entitlements` (the second only).
-  No portal step: every profile grants `<team>.*`. Xcode fills the prefix; `ios_entitlements.py` and `ship-local.sh`
-  read it as the signing team. xtool's development builds replace `keychain-access-groups` with each bundle's own
-  group, so there the extension finds no keys and shows the plain text.
-- The notification extension's reading ahead is plain HTTPS to the hub: no entitlement, no background mode.
-- The widget now links the Rust core (`NotifyCoreLive`), like the notification extension: each .appex is about 8 MB
-  (a device build, Release). The package links `lib/ios` by a search path as for the app; nothing else changes in
-  `project.yml`.
-- Checked on the Mac mini with Xcode 27.0 (unsigned builds, `CODE_SIGNING_ALLOWED=NO`): the device build and the
-  simulator build (`TROMMI_IOS_SIMULATOR=1`, its own derived data: the package's link path is cached per manifest
-  evaluation) both succeed, and the app launches in the simulator. Signing itself is the cloud-managed export as
-  above; its first run with these changes shows whether Apple's profiles for `.notify` and `.live` need renewing
-  (`-allowProvisioningUpdates` does that).
+A sign-out resets the core's plaintext state and deletes its stored slot/cache and notification copies. A verified
+signed removal does the same and erases the sealed share inbox. The hub's removal claim alone never erases a
+device. If the disk refuses deletion, extension keys are still cleared and the core shows the failure. See
+[Security](../../SECURITY.md) for the complete promises and limits.
 
-`AppStore/asc.py` holds the App Store Connect API steps (the bundle ids with their
-capabilities, the app record check, waiting for the processed build, the group and its tester, "What to Test", the
-external group "Trommi" and Beta App Review, see "Public beta").
-Internal testers must be users of the team under the address they sign in with; when the API refuses the tester (409
-"Tester(s) cannot be assigned"), add them once in App Store Connect → TestFlight → Intern → Testers → +. Cloud-managed
-distribution signing refuses App Manager keys: the key needs the Admin role.
+## Accounts and native screens
 
-### Crash reports
+Settings → Data reads authenticated counts and sizes through `AccountAction::ReadUsage`; labels, values and errors come from the core. Signing out clears that view.
 
-`.github/workflows/nightly.yml` (job `ios_crashes`) reads the TestFlight crash reports every night (the last day) and
-by hand (Actions → nightly → Run workflow, the last `days` days) with the same App Store Connect key, read only
-(`.github/scripts/ios_crashes.sh`, `asc.py crashes`): the crash feedback testers send, each with its crash log, and
-the diagnostic signatures (hangs, launches, disk writes) of the three newest builds. The artifact `ios-crashes` (30
-days) holds the logs and `summary.md`; when there were crashes, the open issue labelled `ios-crash` ("TestFlight
-crashes") gets a comment with build, device, OS, exception and the first frames of the crashed thread. The
-repository and its artifacts are public, so no tester comment, name or e-mail address is read or written; comments are
-read in App Store Connect (TestFlight → Feedback). Test offline: `python3 -B -m unittest discover -s tests/ios/asc`.
+The generated `CoreView.ViewModel` supplies the Desk, cards, sessions, Notes, Off your mind, Settings, Artifacts
+and Scribble Board. Swift uses the core's order, labels, action modes, status lines, history and attachment ids.
+Editors keep only unsent UI input. Pen paths, hit testing, image drawing and theme preferences remain native;
+stroke encoding is `Action::DrawStroke` in Rust. Goals are edited through `SetGoal` and folded through
+`FoldGoals`; the folded desks are a local UI preference.
 
-## Public beta
+Account actions include creating an account, password or Emergency Kit sign-in, recovery, pairing with six emoji,
+inviting an agent, answering self-join requests, changing password/e-mail/kit, replacing the recovery code,
+removing devices and deleting an account. Core account flows check membership history and keep incomplete joins
+durable. Passkeys remain off (`Config.can.passkeys = false`); the native shell holds no parallel passkey flow.
 
-TestFlight's public link is the rolling channel; the App Store gets reviewed versions less often, by hand ("App Store
-release"). `ship-apple.yml` delivers builds of main only: to the internal group "Intern" and, once App
-Store Connect has processed it (VALID), to the external group "Trommi"
-(`asc.py external`), with "What to Test" from the newest day of What's new (`https://app.trommi.com/whats-new.json`, `asc.py whats-new`), and to Beta App
-Review when Apple asks for it (`asc.py beta-review`: the build's external state is `READY_FOR_BETA_SUBMISSION` and it
-has no `betaAppReviewSubmissions` yet; the first build of a new version is reviewed, later builds of it usually go
-without). Before that it fills in the test information: Beta App Review's contact and demo account from
-`metadata/review_information/` (password: `APPSTORE_DEMO_PASSWORD`), the beta description from
-`metadata/en-US/description.txt` and the feedback address. Empty values are not sent, so what was typed in App Store
-Connect stays. The run's summary names the public link. Tests against fixtures, no network:
-`python3 -B -m unittest discover -s tests/ios/asc -v`.
+On a Mac the same sources draw a window with a sidebar and a menu-bar list of the core's Desk rows. Closing the
+window leaves the process in the menu bar. The Mac has APNs through AppKit but no share, notification-service or
+Live Activity extension. File selection and the Scribble canvas are available on both platforms; QR scanning is
+iPhone-only.
 
-Once by hand (the API cannot make the group's public link):
+## APNs, notification titles and Live Activities
 
-1. App Store Connect → the app → TestFlight → External Testing → "+": a group named exactly `Trommi`.
-2. In the group: Public Link → Enable, a tester limit (for example 10,000), copy the link.
-3. The 1Password Environment of the GitHub environment `ios`: `APPSTORE_DEMO_PASSWORD`, the password of
-   `appreview@trommi.com` (`demo_user.txt`).
-4. A contact phone number for Beta App Review: `metadata/review_information/phone_number.txt`, or once in App Store
-   Connect → TestFlight → Test Information.
-5. The link into `site/wrangler.jsonc` (`vars.TESTFLIGHT_URL`): trommi.com/beta then leads there.
+`NativeServices` performs OS permission/registration calls and returns tokens to the core. The core owns push
+policy and hub requests. `Snapshot` supplies counts, ordered waiting cards, share recipients and Live Activity
+policy. ActivityKit token updates go back as `PushToken` events; Rust selects the room/device tag and refuses
+unrelated activity tags. The widget's answer intent requires authentication and forwards the tap to AppCore in
+the app process.
 
-While "Trommi" is missing, the delivery of main fails saying so.
+The extension never holds a device key or MLS state and cannot sign or send. It reads a sealed push using the
+context's push key, then optionally reads the hub's encrypted changes with its limited ticket. The app hands
+those pages to the core for the same checks as any network page. No ticket is put in a URL.
 
-## On a Mac
+The notification title uses a read-only copy of the current content key of each session, never the room key.
+Only the app and notification extension are entitled to that separate Keychain group; the share extension and
+widget are not. `NotifyContext` replaces it when keys change, clears it on sign-out/removal/off, and clears it if
+a replacement fails. The extension checks the envelope's signature and sanitizes its title; it does not verify
+membership or sender-chain position. Before first unlock, without a key or after a key change not yet copied, it
+falls back to neutral text. The full limitations are in [Security](../../SECURITY.md).
 
-The same app runs natively on macOS (SwiftUI, not Catalyst): the target `TrommiMac` in `AppStore/project.yml` links the
-package's `TrommiApp` library for macOS 26, as `Trommi` does for iOS. One source; what is iPhone-only is behind
-`#if os(iOS)` where it is used, and `MacShims.swift` gives the few UIKit names and iPhone-only modifiers the shared
-views use their Mac meaning (an image type, a colour that follows light and dark, a bar title size that means nothing
-on a Mac). `MacApp.swift` holds the Mac's scenes.
-
-- **The window** is the iPad's layout at any width: the sessions as a sidebar beside the stack (the size class is set
-  to regular). Menu items: Settings (Cmd-,), Board → Desk (Cmd-1), Read Again (Cmd-R).
-- **Keys in a message field**, as on the web with a mouse: Return sends, Shift+Return on an open decision or info
-  hands it back with the words (elsewhere a new line), Option+Return is a new line.
-- **The menu bar** holds what the Live Activity holds on the iPhone: a bell with the number waiting and, in its panel,
-  the open questions in the Desk's order; a click opens the card in the window. Closing the window leaves the app in
-  the menu bar.
-- **Signing in with a code:** a Mac has no camera for the phone's QR code, so "Paste a link" takes the link the
-  other device copies (Settings → Invite a Device).
-- **Not on a Mac yet:** haptics, the photo library and camera (Choose File stays), the Scribble Board's canvas
-  (PencilKit), swiping back, the share, notification and Live Activity extensions.
-- **Keychain:** the device's keys (`Keychain.swift`) and the push key are in the data protection Keychain
-  (`kSecUseDataProtectionKeychain`), the iPhone's kind, once the app sets `LocalKey.systemKeychain` at its start. That
-  needs an app signed with an application identifier (a provisioning profile); an unsigned build gets no key and
-  cannot sign in (the demo works). `swift test` on a Mac keeps the files of Linux. The state folder is left out of
-  Time Machine.
-- **Push:** the app registers with APNs through AppKit (`Push.swift`) and hands the hub the token with its bundle id
-  as the topic and the environment its profile names (`Contents/embedded.provisionprofile`). The hub must accept
-  that topic for its APNs key (a token key of the team serves every topic). No Notification Service Extension: a
-  push shows its fixed text.
-
-Build and screenshot on a Mac (unsigned, the demo; the Rust core for the Mac first: `core/bindings/swift/build.sh macos`, on any
-host, writes `lib/macos`):
-
-```bash
-cd app/ios/TrommiApp/AppStore && xcodegen generate --spec project.yml
-xcodebuild build -project Trommi.xcodeproj -scheme TrommiMac -destination "platform=macOS,arch=arm64" \
-  CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO TROMMI_MAC_ENTITLEMENTS=../Mac/TrommiMac.dev.entitlements
-TROMMI_SCREEN=desk TROMMI_MAC_SHOT=desk <the app>/Contents/MacOS/Trommi    # desk-window.png, desk-menu.png
-```
-
-`TROMMI_MAC_SHOT=<name>` beside `TROMMI_SCREEN` draws the main window and the menu bar's panel into the app's
-temporary folder (`~/Library/Containers/<bundle id>/Data/tmp`) and quits; it needs no one at the screen (a build
-Mac over ssh). The window is 1440 x 900 points, drawn at 2880 x 1800 pixels: the Mac App Store's size
-(`TROMMI_STORE_SHOTS=1` leaves out the demo's marks). The pictures are drawn, not photographed; the drawing stands in for what the window server composes (`MacShot.composed`): Liquid Glass of the toolbar's items as a
-capsule of the bars' tint, the sidebar's glass as its own paper, the scroll edge under the bars as the page's paper
-fading out over 44 points.
-
-**TestFlight from CI** (`ship-apple.yml`, jobs `mac` and `mac_processed`, beside the iOS jobs; the steps are
-`.github/scripts/mac_testflight.sh`):
-
-- `asc.py prepare-mac` registers the bundle id of `TrommiMac` (project.yml) with Push Notifications and Associated
-  Domains, and says whether its app record has the macOS platform. While it has not, the job ends green with a
-  notice and builds nothing.
-- The Rust core for the Mac is the `ios` job's host library on the Apple silicon runner (`lib/macos` in the
-  `ios-release` artifact); the app is arm64 only.
-- The archive is signed ad hoc, as the iOS one: Xcode refuses an ad hoc Mac build whose entitlements need a profile,
-  so it is built with `Mac/TrommiMac.dev.entitlements`, then signed ad hoc again with `AppStore/TrommiMac.entitlements`
-  (sandbox, network, files the person picks, push production, associated domains), which `ios_entitlements.py --mac`
-  checks.
-- The export (`method app-store-connect`, signing automatic, the Admin key) signs with the team's cloud-managed
-  "Apple Distribution" certificate, makes the Mac App Store profile and signs the `.pkg` with the cloud-managed "Mac
-  Installer Distribution" certificate; nothing is kept on the runner. The app inside the `.pkg` is checked (bundle id,
-  version, build, profile, entitlements, no `get-task-allow`).
-- Upload of that `.pkg` with the Build Uploads API (`asc.py upload`, `ASC_PLATFORM=MAC_OS`); the repository variable
-  `MAC_UPLOADER=xcode` switches to Xcode's own upload. Build numbers are the highest build of the app record plus one (any platform, so an iOS and a Mac build never share one). Then the group
-  "Intern" and What to Test; the public group and Beta App Review stay with iOS for now.
-
-**Direct download** (outside the store, Developer ID, notarized): `.github/workflows/ship-apple.yml` (job
-`mac_direct`) with `.github/scripts/mac_direct.sh`, released as `mac-v<N>` with `Trommi-macOS.dmg`; README.md "Mac app
-(direct download)".
-
-**Once by hand in App Store Connect** (the API cannot create an app record or add a platform to one). A universal
-purchase (one App Store page, one name, the TestFlight groups of both) needs the iOS bundle id `com.trommi.ios` for
-`TrommiMac`: Apps → Trommi → the **+** beside "iOS App" in the sidebar → macOS. A Mac app of its own
-(`com.trommi.mac`) needs Apps → + → New App (macOS) under another name than "Trommi", `com.trommi.mac` in the hub's
-`APPLE_APNS_TOPIC` (`hub/deploy/install.sh secrets`) and its app id in the web app's association file.
-
-**App Store** (`ship-apple.yml`, an action store-… with platform mac, or `ASC_PLATFORM=MAC_OS store.sh …`): the texts per locale in
-`AppStore/metadata/macos/<locale>` (en-US, de-DE), App Review's notes in `metadata/macos/review_information/notes.txt`,
-the rest of `metadata/` shared with iOS; the screenshots in `AppStore/screenshots/macos/en-US/mac` (2880 x 1800, light
-and dark, the demo, drawn by `TROMMI_MAC_SHOT`). The Mac icon is the iPhone's bell on the Mac's rounded square with
-its margin and shadow (`Mac-*.png` in `AppIcon.appiconset`).
-
-## Export compliance
-
-The app uses standard algorithms only (MLS, HPKE, X25519, Ed25519, ChaCha20-Poly1305, AES-GCM, Argon2id in the Rust
-core), so it is exempt: `ITSAppUsesNonExemptEncryption` is `NO` in
-`TrommiApp/Info.plist`, CI and the ship script write the same, and no export compliance code is written or looked up
-(`IOS_NON_EXEMPT_ENCRYPTION=YES` with `asc.py export-code` stays for a later change). The app is offered in every
-territory, France included: with `NO`, App Store Connect asks for no documents, the French declaration (ANSSI) included;
-that declaration only comes up if the answer ever becomes `YES` with standard algorithms.
-
-## App Store release
-
-Everything App Store Connect shows lies in `TrommiApp/AppStore`: `metadata/` (texts and URLs per locale in `en-US/`,
-`copyright.txt`, categories, `release_type.txt`, `age_rating.json`, `availability.json`, App Review's contact and notes
-in `review_information/`, and `app_privacy.json`, the App Privacy answers) and `screenshots/en-US/iphone-6.9` (1320x2868)
-and `screenshots/en-US/ipad-13` (2064x2752): posters (a headline in the house style above the app in a device frame)
-that `marketing/render.sh` makes on Linux from the raw simulator pictures in `screenshots-raw/`, which `shots.sh` renders
-from the demo on a Mac. Headlines and lines are in `marketing/render.sh`. `store.py` sends them:
-
-    AppStore/store.sh check            # offline: limits, sizes, no alpha; nothing is sent
-    AppStore/store.sh upload [BUILD]   # metadata, screenshots, version of project.yml + the TestFlight build; no submission
-    AppStore/store.sh submit --yes     # to App Review: a command of its own
-    AppStore/store.sh release --yes    # on sale, once approved (release type MANUAL)
-    AppStore/store.sh status
-
-The key comes from `~/.config/trommi/ios.env` (as `ship-local.sh`) or, under `op run --environment <id>`, from
-`APPLE_ASC_KEY*` of the 1Password Environment. CI: Actions → ship-apple → Run workflow, action store-check / store-upload /
-store-submit / store-release / store-status (environment `ios`). `upload` sets price (free) and territories (all, see "Export
-compliance") only when the app has none; it replaces a screenshot set only when its files changed.
-
-Once by hand in App Store Connect, the API has no route for it: App Privacy, from `metadata/app_privacy.json` (Email
-Address and User ID, linked, App Functionality, no tracking). Before the first `upload`:
-`review_information/phone_number.txt` (App Review calls it if something blocks the review). App Review signs in with the demo account
-named in `demo_user.txt` (a filled room, made by `tests/tools/seed_account.rs`; its password in
-`APPSTORE_DEMO_PASSWORD`, which `store.sh` reads from `~/.config/trommi/app-review.env`), or uses the demo ("Try
-the demo" on the start screen), as `review_information/notes.txt` says.
-
-## Privacy manifest
-
-`TrommiApp/Sources/TrommiApp/Resources/PrivacyInfo.xcprivacy`, copied to the root of the app bundle (`xtool.yml`
-`resources:`; not a SwiftPM resource, which would land inside `TrommiApp_TrommiApp.bundle`).
-
-- No tracking, no tracking domains.
-- Collected: the account's e-mail address and the account id (User ID), linked to the person, for app functionality
-  (the hub stores them to sign the person in). Everything else the app sends is encrypted so that the hub cannot read
-  it. The App Privacy answers in App Store Connect say the same (`AppStore/metadata/app_privacy.json`).
-- Required reason APIs: UserDefaults `CA92.1` (the app's own settings); file timestamps `C617.1` (files in the app's
-  own containers: the Share inbox's sweep, the record store's sizes, and `fstat`, which the Rust standard library
-  imports); system boot time `35F9.1` (elapsed time: the cold start in the log, the performance log).
-- An extension that uses such an API carries its own manifest at its own root.
-
-When the code starts or stops using one of these, change the manifest with it. To see what a built binary imports:
-`llvm-nm -u xtool/TrommiApp.app/TrommiApp | grep -E '_(f?stat|lstat|statfs|mach_absolute_time)$'`.
-
-## Account
-
-`Account.swift` speaks the account routes of the hub (`spec/hub-api.md` "The account", `spec/v1.md` 8.8). Every key
-and every sealed copy is the core's; the client names routes and moves bytes.
-
-**How an account is named.** Every account has an account id, a UUID the hub mints; it is public and printed on the
-Emergency Kit. An account may have an e-mail: a password needs one (its keys are derived from it), a passkey does
-not. Log-in and recovery name the account in ONE field, `account`: an e-mail if it contains `@`, else the id.
-
-**What the client sends.**
-
-| Step | Request |
-| --- | --- |
-| Create account, password | `POST /v1/rooms` with `account: { email, password: { auth_key, sealed_copy, kdf }, kit: { auth_key, sealed_copy } }`, then `GET /v1/account` for the id |
-| Create account, passkey | `POST /v1/account/passkey/challenge` (no token) → `{ challenge, account, user_handle }`, then `POST /v1/rooms` with `account: { email?, kit: { auth_key, sealed_copy }, passkey: { attestation_object, client_data_json, sealed_copy, transports } }` |
-| Log in, password | `POST /v1/account/login` `{ account, auth_key }` (`account` is the e-mail: an id is refused on the device, `needs-email`) |
-| Log in, passkey | `POST /v1/account/passkey/challenge`, then `POST /v1/account/passkey/login` `{ credential_id, authenticator_data, client_data_json, signature, user_handle? }` |
-| Forgot password | `POST /v1/account/recover` `{ account, auth_key }` (e-mail or id), then, named by e-mail, `PUT /v1/account/password` `{ auth_key, sealed_copy, kdf, revision, proof: { kit: { auth_key } } }` (the words just used are the proof) |
-| New password, new kit | `PUT /v1/account/password`, `PUT /v1/account/kit` `{ auth_key, sealed_copy, revision, proof }`: `proof` is the way in of now, proved once more (a token alone changes no way in): `{ password: { auth_key } }`, or with a passkey `POST /v1/account/passkeys/challenge` first and `{ passkey: { credential_id, authenticator_data, client_data_json, signature } }` |
-| New recovery code (8.6) | `GET /v1/account`, then `POST /v1/rooms/{room}/recovery-code` `{ commit: { epoch, commit, group_info, sealed_key }, recovery_link, account: { kit: { auth_key, sealed_copy }, password: { sealed_copy } } }` (with a passkey: `passkey: { credential_id, sealed_copy }`), through the outbox |
-| Every device lost (8.7) | `POST /v1/account/recover`, then as the recovery key: `POST /v1/rooms/{room}/recovery`, the room and `GET /v1/groups/{group}/chains/{sender}` of every device that goes, `POST …/recovery/{id}/commits` per part, `POST …/recovery/{id}/finish` `{ recovery_link, account: { kit, password: { auth_key, sealed_copy, kdf } } }` (an account without e-mail: `passkey`, a registration on `POST /v1/account/passkeys/challenge`); `DELETE …/recovery/{id}` if it fails or is not confirmed |
-| An e-mail for an account without one | `PUT /v1/account/email` `{ email, kit: { auth_key, sealed_copy }, revision, proof: { kit: { auth_key } } }` (the kit of before is the proof; `Room.setEmail`; no screen yet) |
-| Add passkey | `POST /v1/account/passkeys/challenge` (twice when a passkey is the proof), `POST /v1/account/passkeys` with `proof` |
-| Log Out | `DELETE /v1/push`, `DELETE /v1/token`, then the device forgets the room |
-| Delete Account | `GET /v1/account`; password: `DELETE /v1/account` `{ password: { auth_key } }` (the password is checked here first); passkey: `POST /v1/account/passkeys/challenge`, then `DELETE /v1/account` `{ passkey: { credential_id, authenticator_data, client_data_json, signature } }`; then the device forgets the room and the start screen says "Your account was deleted." |
-
-The kit's keys are derived from the e-mail if the account has one, else from the account id (`kit_form` in the hub's
-answers; never sent). So the kit of an account with an e-mail opens with the e-mail only, and the id in the field
-opens the kit of an account without one. A refusal that names a wait (`retry_after` in the body or the `retry-after`
-header) is shown with it: "Too many tries. Wait 40 seconds."
-
-**What the client keeps.** Nothing of the account is stored on the device: the id, the e-mail and the kit's form are
-asked of the hub when a screen needs them (`Room.accountStatus`). The password, the kit's words and the recovery
-code live for the length of one call. The kit's words are shown once (`KitScreen.swift`). One exception, for as
-long as it takes: a sign-in with the code that could not join every session group keeps the code in the app's
-Keychain (`join-<folder>`) until the next sync has joined them, and deletes it then (`Room.finishCodeJoin`).
-
-**Signing in on a new device** (8.4, `Room.joinWithRecoveryCode`) is two steps. Until the hub accepted the join of
-the room group, a failure leaves nothing on the device. From then on the device is kept whatever happens:
-`room.json` is written at once, the session groups are joined after it, and what is left of them (the hub did not
-answer, the app was ended) is finished by the next sync. The room is checked in steps, never whole in one call
-(`ServedByHub` in `LiveRecovery.swift`): the GroupInfos first (founding, anchor, the current one of the room group
-and of every live session group), then the Commits of all those logs, page by page and only up to the epoch each
-current GroupInfo names, handed to the core in slices of at most 256 Commits and 16 MiB in the hub's order across
-the groups (`codeCheckStart`, `codeCheckSlice`, `joinRoomChecked`; a session: `sessionCheckStart`,
-`sessionCheckSlice`, `joinSessionChecked`). A check lives in the core's memory only: a relaunch starts it again.
-
-**A new recovery code** (8.6, `Room.replaceRecoveryCode`; Settings → Account → Emergency Kit → "New Recovery Code…", and offered
-when a device is removed under Devices). The password opens the code in force; the core makes the new code and the
-room Commit; the request carries a new Emergency Kit and the code sealed again under the password. The hub applies
-all of it or nothing and removes every other way in (passkeys), which are added again. The new kit is shown in the
-Emergency Kit group; the old one opens nothing any more. If the hub does not answer within 20 seconds the request
-stays in the outbox, no kit is shown, and the person makes a new kit with the password afterwards.
-
-**When every device is lost** (8.7, `Room.recoverAccount`; "New password" → "All my devices are lost", after a
-confirmation that names it). The kit's words open the code; the new device opens a recovery at the hub, checks the
-room in steps as a sign-in does (twice: once for the plan, `recoveryPlanStart`, and once for the device,
-`codeCheckStart` before `recoverChecked`), reads the chains of the devices that go (handed to the core as ONE list rising by change number across
-devices and groups, never chain after chain), and posts the joins, the removals and the new code; the hub publishes
-all of it at once or nothing. The account gets a new kit and the new password; the kit's page comes next, as after
-"Create account". An account without an e-mail needs a new passkey for this, so it waits for passkeys to be switched
-on. Not covered: if the hub published and none of four tries got its answer, the device forgets itself although it
-is in the room; the new password then logs in as on any new device, and Settings makes a new kit.
-
-**The Emergency Kit** carries the twelve words, the account id as text, and a QR code with
-`https://app.trommi.com/#k1.<hub address, base64url>.<account id, 32 hex digits>` (`kitQRText`): an address of the
-web app that opens its recovery screen with hub and id filled in. It is in the fragment, so it reaches no server,
-and it never holds the words. The app itself does not open such a link yet.
-
-### Passkeys: switched off
-
-`Passkeys.offered` is `false` (the owner's decision, 10 October 2026, as on the web): password managers do not all
-give the prf output (1Password does not), so an account that opens only with a passkey is not reliable. Create
-account shows the password form, Log in has no passkey button, and Settings offers "Add Passkey" only to an account
-that has a passkey already (such an account keeps its passkey controls). All the passkey code and its tests stay;
-with the switch on, what follows applies.
-
-`Passkeys.available` is read from `https://app.trommi.com/.well-known/apple-app-site-association` at every start
-(`Passkeys.probe`): passkeys are on once its `webcredentials` names this app ("<team id>.<bundle id>"), and the last
-answer is kept for starts without a network. `Passkeys.forcedOn` is the one constant that switches them on whatever
-the file says. On, Create account shows "Create with passkey" first with the e-mail marked optional and the password
-as the second way, and Log in shows "Log in with passkey" first, with no field (the passkey names its account).
-
-- An account made with a passkey alone has no e-mail and no password. Its account id comes with the tokenless
-  `POST /v1/account/passkey/challenge` (`{ challenge, account, user_handle }`); the passkey's user id is the id's
-  16 bytes, its prf output is asked for at registration, and the Emergency Kit is made under the id
-  (`kitKeysFor(.id)`).
-- Such an account uses a passkey where another asks for the password: the kit's page after a relaunch, Settings →
-  Account → "Make with Passkey", "New Recovery Code…" and "Add Passkey" (`Passkeys.unlock`: one of the account's
-  passkeys answers the hub's challenge for the account; its prf output opens the code here, its assertion is the
-  change's proof).
-- The entitlement `com.apple.developer.associated-domains` holds `webcredentials:app.trommi.com` in both
-  `TrommiApp.entitlements` and `AppStore/TrommiApp.entitlements`.
-- The hub takes `https://app.trommi.com` as a passkey origin (its default when `HUB_ORIGINS` is not set).
-- Only a real phone tests the passkey sheet, the prf output and the association; the flows around them are tested
-  on Linux with a stand-in authenticator (tests/ios AccountTests).
-
-### For the website: the association file
-
-`https://app.trommi.com/.well-known/apple-app-site-association` must be served as `application/json`, without a
-redirect, with exactly this content. `<TEAM_ID>` is the Apple team's prefix and `<XTOOL_ID>` the prefix of the
-development builds; both are in the file the web app serves today (`app/web/public/apple-app-site-association.json`)
-and stay as they are there. The `applinks` part is today's, unchanged; `webcredentials` is new.
-
-```json
-{
-  "applinks": {
-    "details": [
-      {
-        "appIDs": ["<TEAM_ID>.com.trommi.ios", "<TEAM_ID>.XTL-<XTOOL_ID>.com.trommi.ios"],
-        "components": [
-          { "/": "/card/*", "comment": "a card, by its Nr. or id" },
-          { "/": "/chat/*", "comment": "a session, a card of it, its files" },
-          { "/": "/s/*", "comment": "a session, in the links of before (/chat/*)" },
-          { "/": "/settings", "comment": "Settings" },
-          { "/": "/settings/*", "comment": "Settings: sessions, devices, account" }
-        ]
-      }
-    ]
-  },
-  "webcredentials": {
-    "apps": ["<TEAM_ID>.com.trommi.ios", "<TEAM_ID>.XTL-<XTOOL_ID>.com.trommi.ios"]
-  }
-}
-```
-
-`webcredentials` is what lets the app use passkeys (and saved passwords) of `app.trommi.com`. The Emergency Kit's
-link (`/#k1.…`) is deliberately not among the `applinks` components: the app does not open it yet, so it stays with
-the browser. Apple's servers fetch the file and keep it for about a day; a new install reads it from them.
-
-## Keyboard and tab bar
-
-As Messages, Mail and Notes do on iOS 26: no control of our own for the keyboard, the system's behaviour not fought.
-
-- **All screens:** the keyboard goes away by dragging the content down (`.scrollDismissesKeyboard(.interactively)`)
-  or by a tap in the content. The tab bar hides while the keyboard is up and comes back after.
-- **Tab bar (iPhone):** our own glass pill at the bottom (`TabPill` in `Shell.swift`, a safe area inset), not the
-  system tab bar: Chat · Desk · Note as pen drawings (about 26 pt, the line 2.4 pt). The page he is on has full ink on
-  a raised lens, the others are a little muted; while the note is open the lens is on Note, closed it is back on the
-  page under it. Shown on the two lists only (no pushed screen).
-- **Top of the lists (iPhone):** no navigation bar. The place pill (the menu) floats at the top left, the Desk's duck
-  and Blitz at the top right, each a glass capsule on the content (`topPills`, a `safeAreaBar`); no band or hairline,
-  the content fades out under them and the status bar (`scrollEdgeEffectStyle(.soft)`, top and bottom).
-- **Top of a chat and of a card's page:** the same row (`pushedPills`): a round glass back button, in a chat the
-  session's name as a glass pill in the middle (drawing, crown, name, chevron: the menu of the other sessions), "⋯" at
-  the right. No navigation bar there either; the swipe from the left edge still goes back (`PopGesture`).
-- **A card's pictures, videos and files** (`CardGallery.swift`; the rules are `Gallery` in TrommiClient, under
-  `swift test`, the same as the web's `cardMedia`): one stage of a fixed size per card (4:3 of the content width on the
-  phone, 16:10 from 600 pt, at most 52 % / 70 % of the page's height), the same for every picture and video, so nothing
-  moves when another one is shown or a picture comes late. A picture is fitted in and centred, never larger than itself;
-  one more than 1.25 times as tall as wide stands at its width, its top first, and is scrolled inside the stage. A swipe
-  turns to the next; a tap opens the picture large (`PicturesView`), and back from there the stage stands on the picture
-  he was on. A video plays in place (a tap plays and pauses), the corner button opens it large. No line with the file's
-  name: the words an agent gave a picture are a pill at the stage's lower left, the page behind it a chip at the lower
-  right. Under the stage one strip: the pictures and videos small, then the other files as tiles (a tap: the file's
-  sheet), and "2 / 5" in a place of its own at its end. Files only: the strip without a stage. While a picture is
-  fetched and decrypted the stage says "Opening the picture…", and when it does not come why.
-- **Chat:** no tab bar inside a chat (Messages, WhatsApp); it returns on the list. The composer (attach, send) is
-  always at the bottom, a bottom bar (`safeAreaBar`): a tap in it brings the keyboard, it rides on the keyboard and
-  reserves its height, so the last message scrolls clear of it. A tap in the conversation hides the keyboard. The Chat
-  tab always opens on the list (a tap on it pops an open chat). A chat opens at the newest message and stays there
-  while it is at the end: when a message comes in, a picture loads, the keyboard rises or the composer grows
-  (`SessionScreen`: `onScrollGeometryChange`); only his own scrolling takes it away, and earlier pages load by
-  themselves only after he has scrolled. What is attached lies inside the field above the text line, as in Messages
-  (`PendingFiles`, the same in a card's "Ask … something"): a picture as itself (140 pt tall at most), a video as its
-  first frame with a play sign, any other file as a small tile with its kind and name, each with a round × at its
-  corner; the field grows and the chat's bottom inset with it.
-- **Chat list:** a row as in Messages (`ChatRow` in `ChatList.swift`): the session's drawing in a round tinted field
-  (crown and working dot as badges on it), its name and the time of what was said last, two lines at most of what was
-  said last (`ChatTeaser` in `TrommiClient`: his own words with "You: ", a question's title, else the task), and at
-  the right only what needs him (count of open questions, the raised hand, a dot for unread). A main's helpers stay
-  folded, as in the web's sidebar (`UnitStack` in `TrommiClient/Desk.swift`: the stopped ones first and marked): four
-  small drawings and "+N" at the end of the teaser's line; a tap there unfolds them as smaller set-in rows; which are
-  open is kept on the phone. The main's row counts its helpers in. Desks are quiet section heads.
-- **Note:** a full page of yellow paper over the list he came from (`NotePanel` in `Shell.swift`), edge to edge, up
-  under the status bar and on behind the tab pill, which stays and is lit on Note. From the top: a handle, the
-  words, the pictures (each with a thin outline), and one row just above the tab pill: paperclip and bin at the left,
-  "To: …" as a glass pill directly left of the envelope (a long name is cut in its middle); send is the web's envelope
-  with the crown as its seal (`NoteEnvelope`), half faded while there is nothing to send. Sending, throwing away
-  and every other way out put the keyboard away. A tap on Note or another tab, or a drag down on the handle,
-  leaves it; the draft stays on the note. With the keyboard up the tab pill hides and the row sits on the keyboard:
-  the text area shrinks and scrolls (the pictures and the row never give way), and what the keyboard's own frame
-  still covers of the page (`UIResponder.keyboardWillChangeFrameNotification`; the content's keyboard inset ended a
-  little below the keyboard's top edge) is kept free at its bottom. On the iPad the note is a sheet from the Desk's
-  corner button.
-- **Desk:** one text field, the desk's goals under the greeting (`DeskGoals.swift`): a checklist of at most 20 lines
-  of 200 characters (`GOALS_LINES`, `cleanGoals` in `TrommiClient/Desk.swift`); one toggle, a chevron
-  beside them, folds them to their first line and opens them again (`goalsFold`; kept per desk), empty a faint "Goals…", nothing on All desks. A tap
-  writes in place; the keyboard going away keeps it, an emptied field clears it. Otherwise the keyboard only appears
-  in sheets (New Desk, Rename), which the system handles.
-- **Settings:** forms with the system's keyboard handling; a drag dismisses it.
-
-## Push (APNs)
-
-`Sources/TrommiApp/Push.swift`: on the first start with a room the app asks for notifications, registers with Apple
-and hands its device token and a push key of its own to the hub. Apple sees one fixed text for every push ("Something
-new."); the hub's message rides along sealed under that key. A push in the foreground shows as a banner; arriving, it refreshes
-the board; a tap refreshes the board and follows nothing the push carries (a path in it would be the hub's word,
-and could come from a push the extension never saw).
-
-**The notification** (`Sources/TrommiNotify`, the Notification Service Extension; the pushes carry
-`mutable-content: 1`). The extension opens the hub's sealed message with the push key and shows the text its urgency
-calls for ("A new question.", "Urgent: a new question.", "An agent lost its connection." for a push without a
-ticket; `NotifyOpen.text`), threaded by room. Above it, the card's title: after reading ahead it finds the envelope of
-the push's change among the pages kept (or reads that one change, `after` = change − 1, the ticket in the header) and
-opens it with the read-only keys ("Who owns the state"; PushNotify `NotifyTitle`): a version of a card with the push
-flag gives its `title`, one line, at most 120 characters. No keys (before the first unlock, signed out, an xtool
-build), a key of an older epoch (the group moved on while the app slept), anything that does not open or is not a
-card: the title stays "Trommi". Anything that does not open keeps the neutral text. With the push's ticket it then reads ahead, for a few
-seconds at most, what the app will catch up on (`GET /v1/push-changes`, PushNotify `NotifyPrefetch`): the hub's pages
-as they come, ciphertext, into the App Group's container (`ahead/<room>/<after>-<change>.json`, at most 8 MB). The
-app takes a page whose start is its cursor instead of asking the hub (`Room.takeAhead`), and the core checks it like
-any other; signed out, the folder goes. The context (version 4) carries the hub's address, the client name and the
-room's cursor for this. An extension has 24 MB of memory: it never opens the
-device and never follows a group.
-
-**Live Activity** (`Sources/TrommiLive`, a WidgetKit extension; `LiveActivities.swift`): the bell and the count of
-questions waiting in the Dynamic Island and on the lock screen; with the most urgent waiting card (blocking or a
-permission request first, then a knock, then the one waiting longest), its session, its title and, for a decision
-with two options, its two answers as buttons. The hub starts it with a push-to-start push when a question waits,
-updates it with two marks (`working`, `waiting`: 0 or 1 each, never how many), and ends it when nothing waits and no
-agent works. With nothing waiting it shows no "0" but "All answered": the bell, and the working ring with how many
-agents are at work (the sealed count, or the sessions with a working status line that the app counted, `busy`), or
-a tick in the island when none works. The ring stands still: a Live Activity runs no animation of its own. The card is the app's: after a
-change of the board and after each push of the hub, the app puts it into the running activity from what it opened on
-the phone (PushNotify `LiveState`); no title leaves the phone. The hub's pushes also carry the exact counts sealed under
-this phone's push key (`s`); the widget opens them with the core (NotifyCoreLive, the key from the context's Keychain
-item) and shows the numbers. What does not open shows "Questions waiting" and "Agents at work" without numbers until
-the app runs again and writes its own count (`exact`). The buttons are `AnswerCardIntent` (a `LiveActivityIntent`, unlock required): iOS
-runs it in the app's process, which answers the card through the room as a tap on the card would, shows "Answered"
-for a moment, then the next card; an answer that cannot go out offers to open the card. A permission request and
-any other card open in the app. The app hands over tokens: its push-to-start token to every room's hub with a random
-tag per room, and each running activity's token to the hub whose tag its attributes carry; iOS wakes the app in the
-background for that. Push off (Settings · Devices) removes them and ends what runs; signing out ends it too. Past the
-push's stale date the widget dims and says "Not up to date". `NSSupportsLiveActivities` is in `Info.plist`. The
-screenshot hook `TROMMI_SCREEN=desk TROMMI_LIVE=1` starts one with the demo's cards in the simulator;
-`TROMMI_LIVE=clear` with nothing waiting and the demo's sessions at work, `clear-quiet` with nobody at work.
-
-**Universal links** (`Links.swift`): `https://app.trommi.com/card/<Nr. or id>`, `/chat/<session>`,
-`/chat/<session>/card/<ref>` (and `/s/…`, the form of before), `/settings` and `/settings/<sessions|devices|account|theme>` open in the app when it is
-installed (`com.apple.developer.associated-domains: applinks:app.trommi.com`; the web app serves
-`/.well-known/apple-app-site-association` for `NL9YA3V25N.com.trommi.ios` and `NL9YA3V25N.XTL-70CB783D.com.trommi.ios`).
-A long press offers "Open in Safari" as usual. A link that names a card the board does not have yet waits up to 20 s.
-
-- `TrommiApp.entitlements` (`entitlementsPath` in `xtool.yml`) says `aps-environment: development` (the TestFlight
-  builds use `AppStore/TrommiApp.entitlements`, `production`). xtool reads it from the signed binary and turns on Push
-  Notifications for the App ID (`XTL-70CB783D.com.trommi.ios` on the paid team) before it fetches the development
-  profile; the app then gets sandbox tokens and says `environment: sandbox` (read from `embedded.mobileprovision`).
-- The hub sends only when it has the team's APNs key; its topic list must name the installed bundle id
-  (`XTL-70CB783D.com.trommi.ios` for xtool builds). Without it the hub refuses the registration, and the app tries
-  again the next time it comes to the front.
-- App ids (registered through the API with the Admin key): `com.trommi.ios` (Push Notifications, App Groups,
-  Associated Domains), `com.trommi.ios.notify` and `com.trommi.ios.live` (App Groups), and the same with
-  `XTL-70CB783D.` for xtool's development builds.
-- **Once, in the developer portal** (the API cannot): Identifiers → `com.trommi.ios` → Capabilities → **Communication
-  Notifications** → Save; and for each of `com.trommi.ios.notify`, `com.trommi.ios.live`,
-  `XTL-70CB783D.com.trommi.ios.notify`, `XTL-70CB783D.com.trommi.ios.live`: App Groups → Configure → tick
-  `group.com.trommi.ios` → Save (as for the Share Extension below).
+The widget receives sealed counts and opens them through `NotifyCoreLive`; its context permits no signing.
+Titles and answer labels are supplied locally by the app, never in Apple's push payload. ActivityKit updates and
+UI clipping are native; card eligibility and priority are the core's.
 
 ## Share Extension
 
-Trommi in the iOS share sheet (`Sources/TrommiShare`, xtool.yml `extensions:`, AppStore/project.yml target
-`TrommiShareExtension`). Its sheet is the note itself, compact, on the note's yellow paper: what was shared as
-thumbnails (a cross takes one out), a text field, the chip **To: <desk> · <crowned session> ▾** (the desk picked last
-in the sheet, else the one the app's note went to last) and two ways: **Send** (to that crown as a note) and **Keep in
-Note** (into the one note; nothing is sent). After Send it says "Wird gesendet, sobald Trommi öffnet", or "Geht an …"
-when the running app took the share at once.
+`TrommiShare.appex` links only `ShareInbox`, with no device state or sync engine. It seals the selected text,
+links and files into the App Group inbox. Its recipient snapshot contains only ordered desks and their crowned
+sessions. The app reads and claims inbox items, then sends `ImportShare` to Rust. The core checks the account,
+selects the recipient or fallback Note, uploads attachments and deduplicates an import across restarts. The
+inbox is acknowledged only after the core's durable write; unreadable payloads stay for another try. Signing out
+clears the recipient snapshot and releases claims; verified removal or account deletion erases the inbox and key.
 
-- The extension holds no room, no device key, no board: it links only `ShareInbox`, well inside an extension's memory.
-  It seals what was shared into the App Group container `group.com.trommi.ios` (`items/<id>-<n>.sealed` first, the
-  manifest `requests/<id>.sealed` last) and rings the app (Darwin notification `com.trommi.ios.share-inbox`). Pictures
-  are made JPEG of at most 2400 px through ImageIO thumbnails (never decoded whole), other files are taken up to
-  32 MB, at most 20 things per share.
-- Every file is AES-256-GCM (CryptoKit) under the inbox key, 32 random bytes in the Keychain with the App Group as
-  access group (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`; the app makes it, the extension only reads it).
-  The additional data binds each file to its role and name. Nothing lies in plaintext outside the app.
-- The app (`ShareImport.swift`) writes a sealed snapshot of the desks and their crowned sessions (names, ids, hues,
-  the drawings as small PNGs: the extension has no pen) on each change of the board, and imports on coming to the
-  front (after the catch-up) and at once on the ring. A send is taken out of the inbox before it is sealed, so it is
-  never repeated; if it fails, or the session is gone, what was shared goes into the note instead.
-- Not sent from the extension: "Who owns the state".
-- The App Group id per build: `group.com.trommi.ios` in the entitlements. xtool signed in with the API key keeps it
-  as written; signed in with an Apple ID it registers `group.XTL-<team>.com.trommi.ios` and rewrites the entitlement.
-  The code tries both (`ShareGroup`).
-- **Once, in the developer portal** (the API can turn the App Groups capability on, but cannot create a group or
-  assign one): Certificates, Identifiers & Profiles → Identifiers → App Groups → + → `group.com.trommi.ios`. Then for
-  each of `XTL-70CB783D.com.trommi.ios`, `XTL-70CB783D.com.trommi.ios.share` (xtool's development ids; xtool registers
-  the `.share` one on its first `xtool dev run`) and `com.trommi.ios`, `com.trommi.ios.share` (TestFlight; `asc.py
-  prepare` registers them): App Groups → Configure → tick the group → Save. Until then an install fails with an
-  entitlements error, because the profile does not carry the group the app asks for.
+## Demo and screenshots
 
-## Drop onto the app
+“Try the demo” runs `demo/data/fixture.json` in a storeless AppCore. The fixture and files are bundled from
+`TrommiApp/Sources/TrommiApp/Resources/Demo`; no second Swift demo model exists and no hub request is allowed.
+The menu leaves the demo. `TROMMI_SCREEN=<id>` opens a route named by `demo/data/screens.json`; the core's real
+views draw it. `TrommiApp/AppStore/shots.sh` uses this on an iPhone/iPad simulator; App Store screenshot metadata
+and marketing framing live beside it. UI-specific states need review when native layouts change. The former
+Mac-only automatic window/menu capture hook is not implemented by the new shell.
 
-Anything dropped onto the app goes onto the note (`NoteDrop.swift`, `.onDrop` on the shell): pictures, videos and other
-files become its attachments, links and text its words. While something hovers, the app shows a hand-drawn dashed
-outline and one line of glass ("Drop onto the note"); on the drop the note opens (the yellow page on the iPhone, the
-corner sheet on the iPad's Desk). The note on screen takes the drop into what is being written; without one open it
-goes onto the stored note, as a share does (`ShareImport.addToNote`).
+## Xcode, TestFlight and releases
 
-- What a thing becomes is `ShareIntake` (`ShareInbox`, under `swift test`), the same rules as the Share Extension: a
-  picture → JPEG of at most 2400 px; a link (not a file URL) → its address as a line of text; any other data or a file
-  URL → a file with its name and type; plain text → words, a lone http(s) address as a link.
-- The share sheet's limits: 20 things per drop, 32 MB per file, 20 000 characters of text. What is left out is named
-  in a toast.
-- Not in the demo and not signed out (the drop is refused). A text field under the finger takes dropped text itself,
-  as every iOS text field does. Sheets other than the note are not drop targets.
+`TrommiApp/AppStore/project.yml` generates the Xcode project: the iOS app, Mac app and three iOS extensions link
+the Swift package's products. After building the appropriate Rust libraries, an unsigned compile on a Mac is:
 
-## The demo and the drawings
+```sh
+cd app/ios/TrommiApp/AppStore
+xcodegen generate --spec project.yml
+xcodebuild build -project Trommi.xcodeproj -scheme Trommi -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO -jobs 4
+xcodebuild build -project Trommi.xcodeproj -scheme TrommiMac -destination 'platform=macOS,arch=arm64' \
+  CODE_SIGNING_ALLOWED=NO -jobs 4
+```
 
-`DemoMode.swift` shows the web demo's room from `Resources/Demo`, a link to the repository's `demo/data/`
-(`demo/README.md`), which SwiftPM copies into the app in every build. The web's drawings come from
-`Resources/pen.json`; its fonts are bundled as static TTF (OFL, `Resources/Fonts/LICENSES.txt`). Liquid Glass for the
-chrome; the minimum is iOS 27.
+Signed builds need the existing Apple team configuration; no secret belongs in the repository. The main pipeline
+is `.github/workflows/ship-apple.yml`: iOS/Mac archives, TestFlight, and the Developer ID direct-download Mac app.
+It delivers only after checks passed and its inputs differ from the last delivery. PRs have no secrets and
+publish nothing. Apple certificates/profiles and export/notarization checks remain in the shipping scripts.
 
-## Not there yet
+- `.github/scripts/ios_archive.sh`, `ios_testflight.sh`, `ios_entitlements.py`: ad hoc archive, cloud-managed
+  distribution export, validation, upload and processing. `TrommiApp/AppStore/asc.py` handles App Store Connect.
+- `TrommiApp/AppStore/ship-local.sh [REF]`: a separate local TestFlight path from a clean worktree of the ref;
+  `--dry-run` validates without uploading. It requires the owner's preconfigured distribution environment.
+- `.github/scripts/mac_testflight.sh`: Mac App Store/TestFlight export and validation.
+- `.github/scripts/mac_direct.sh`: Developer ID signing, hardened runtime, notarization, stapling and a signed
+  DMG (`mac-v<N>`). It fails closed when signing/notarization configuration is unavailable. See the root README.
+- `TrommiApp/AppStore/store.sh`: metadata and screenshots, status, explicit App Review submission and release.
+  `metadata/` contains the locale texts and privacy answers. App records/platforms and App Privacy still need
+  their existing manual App Store Connect setup.
 
-`TrommiCoreLive` binds every call of `Core.swift` to the core (`core/bindings/swift`, v2-bindings 33a943d). Its header
-(`LiveCore.swift`) lists what is bound and what of the binding is left out. What the app still cannot do:
-
-- **The notification title on a phone.** Tested with the real core on Linux and macOS (`swift test`) and built for
-  iOS; that a TestFlight build's extension reads the keys from the shared access group is to be seen on a phone.
-- **Content from before a device came by link** is read once the group's past is learned (`RoomPast.swift`: the
-  founding GroupInfo and the Commits of the group's log, read page by page, go to the core in slices of at most
-  256 Commits and 16 MiB (`learnStart`, `learnSlice`, `learnFinish`; `PastWalk.swift`), then the changes are read
-  back in the hub's order; what is left to do is noted in `room.json`, so an interrupted run goes on at the next sync). The old
-  items open when the inviting device's key handover arrived; until then they take their places without bodies.
-  Not done: the read back fetches the room's changes from the start again (once per learned past), and the board
-  is rebuilt from them rather than patched.
-- **Replacing the recovery code** (8.6) and **recovery when every device is lost** (8.7) have their callers and
-  screens ("Account"). Both are tested with the real core against `PocketHub` behind the hub's routes
-  (`PocketRoutes.swift`), which checks nothing; neither has met a real hub. With a passkey as the way in, 8.6 has
-  the engine's call (`WayIn.passkey`) and no screen.
-- **Against a real hub** the engine was last run before this binding: `RealHubTests` (founding, signing in with
-  the password, a Commit, the whole recovery) are skipped without `TROMMI_HUB_BIN`, and joining by link through
-  `Room` has no test against a hub yet. Without a hub, the core's side of these paths is tested on the real core
-  (`PocketHub` keeps the hub's order), the engine's on a core that seals nothing (`FakeCore`), and the engine with
-  the real core on `PocketHub` behind the hub's routes (`RoomPastTests`, `RoomRecoveryTests`).
-- The Scribble Board still merges with the reducer of the Swift model (`Canvas.swift`); the core's reducer and its
-  check of a loaded board (`boardReduce`, `boardLoad`) are bound, and nothing calls them yet.
-- Passkeys switch on by themselves once the web app's association file names the app; no passkey ceremony has run on a phone yet ("Account").
-- The first archive on the Mac runner ("TestFlight from CI") is unproven; licence notices for the Rust crates inside the app bundle
-  (`THIRD-PARTY.md` lists them); the memory of the Notification Service Extension with the core linked, measured on
-  a phone.
+The app declares standard encryption (`ITSAppUsesNonExemptEncryption = NO`) in its Info.plist. Privacy manifests
+are copied to the root of the app/extension bundles, outside SwiftPM resource bundles; update them when required
+reason APIs change. The app's universal links and web credentials use the association file under `app/web/public/`.

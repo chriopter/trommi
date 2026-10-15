@@ -1,8 +1,9 @@
 # The Trommi web app
 
 The app at **https://app.trommi.com**: a static, local-first single-page app. Every device makes its own keys, keeps
-the room in IndexedDB, decrypts and renders locally (the client core in a Web Worker, the page with a copy of its
-model: [`core/protocol/README.md`](core/protocol/README.md)), and talks to the hub only in sealed envelopes. No framework: plain ES
+the device and cache in IndexedDB, and decrypts locally. `AppCore` runs in a Web Worker; the page folds its
+ViewModel deltas and draws them ([the shared app core](../../core/client/README.md)). Synchronization, account
+flows, actions, list order and state-dependent texts are all Rust. No framework: plain ES
 modules and CSS, one file per view; deployed as one minified bundle that loads each view when it is first needed
 (Cloudflare Workers static assets: `wrangler.jsonc`, directory `public/`, build step `dev/build.mjs`).
 
@@ -92,8 +93,8 @@ page's list of tools: `connector/tools.json` and `connector/prompt.md`.
 
 1. A view imports only from `app.mjs` and `ui.mjs` (the core through `app.mjs`), never from another view. What two views
    need goes to `ui.mjs` (markup, controllers) or `app.mjs` (data, the room). `ui.mjs` imports nothing.
-2. No crypto in the app: everything crypto, account and keys comes from the core (`gen/vendor`, via `app.mjs` `core()`,
-   `account()`, `scribbleWire()`).
+2. No app decisions or crypto in the page: read `t.vm`, send actions through `t.act`, and report focus. The worker
+   runs the Rust core and performs I/O; it builds no authentication, retry policy or domain model of its own.
 3. `gen/` is never edited by hand and never committed: the build makes it.
 4. A file is split only when it passes about 3000 lines.
 5. The views are `.mjs`, the core is strict TypeScript (`app/web/tsconfig.json`). Importing a module
@@ -163,7 +164,7 @@ instead); files come network first, the cache only offline. On the dev server (`
 ## The Desk
 
 - **Goals:** under the greeting, a desk's own checklist (at most 20 lines of 200 characters: `GOALS_LINES`,
-  `GOALS_LINE_MAX`, `cleanGoals` in `app.mjs`), written in place with a click; empty only a faint "Goals…", nothing on
+  `GOALS_LINE_MAX` are editor limits; Rust `actions::run::clean_goals` validates the text), written in place with a click; empty only a faint "Goals…", nothing on
   All desks. One toggle, a chevron beside them, folds them to their first line and opens them again (folded or
   not is kept per desk in `localStorage` `trommi-goals-folded`), so a long list need not push the cards off the screen. A line that starts with an emoji or a tick box has its sign in a
   column of its own: the words of such lines start under each other. The field grows with its words to twelve rows,
@@ -190,8 +191,7 @@ instead); files come network first, the cache only offline. On the dev server (`
   above the tab pill) with its sign, its word and its count, no card at rest; a tap fans it upward as small cards,
   the running one ends in the way to the complete list. The section
   Off your mind (`offHint`) is a short hinted list of what is put off and closed, beside Artifacts on a wide window;
-  its heading opens `/stacks/off`, every card with a search. Which card lies where is the client core's (the
-  patch's `off_mind`, `core/client/src/off_mind.rs`): a card has one home, a starred card lies in the starred stack
+  its heading opens `/stacks/off`, every card with a search. Which card lies where is the core's `DeskView` and `OffListView` (`core/client/src/off_mind.rs`): a card has one home, a starred card lies in the starred stack
   only. The note stays in its corner (a phone: in the tab pill). Artifacts (the newest four;
   its heading "Artifacts N" is the link that opens `/artifacts`: Media and Pages together, the newest first, the filter
   All · Media · Pages, compact tiles in a soft frame with Open and, on a page, Share as small icons; 25 tiles made at once,
@@ -215,8 +215,7 @@ approached and kept under the Desk (`app.mjs` `keepPad`); the Desk under the boa
 the pad (`whiteboard.mjs` mountPad) as large as the main area; select or frame something and **Send to…** a session.
 One drawing on it is a scribble.
 
-What is drawn is the board of the desk in view (`boardOf` in `whiteboard.mjs`; the ids are the core's `scribble.ts`
-`deskBoard(desk id)`, `ALL_BOARD` and `MAIN_BOARD`, which is also the wire format): one board per desk, one for
+What is drawn is the board of the desk in view (the core's `scribble::desk_board` and `BoardView.board_id` give its identity): one board per desk, one for
 "All desks", and a room without desks draws on the `main` desk's. On "All desks" the page shows All's own board, and
 at its left a column of small cards, one per desk: the desk's drawing and name, its board as a live thumbnail and how
 much is on it (`whiteboardDesks`, controller `whiteboard` `thumbs`: each card's board is opened with `openCanvas` and
@@ -240,16 +239,13 @@ beside the fold button (`sidebar.mjs` `SIDE_FOOT`, `.side-theme`; above it on th
 
 The app says **account**, never "room" (inside, the core founds and joins a room; one account is one room).
 
-- **Create account:** an email and a passkey, or a password (at least 12 characters, the only rule; **Generate** gives
-  five words of the EFF list). This device founds the room. A password is stretched with Argon2id in the core worker
-  and never leaves the device; a passkey unlocks through its `prf` extension. The hub never sees either.
-- **Emergency Kit:** twelve words, made with the account and shown right after (Show, Download, Print). With the kit
-  a forgotten password is replaced or a new passkey made; without it or a way in, nobody can recover the account.
-- **Log in** on a new device: the passkey, email and password, or **Scan a code** from a signed-in device (both show
-  the same six emoji, the signed-in one confirms).
-- **Log out:** the device removes itself from the member list, and every local trace of the app on this origin goes
-  (IndexedDB, Cache Storage, localStorage, sessionStorage).
-- What the hub learns: the email in plaintext and which room it belongs to; nothing it could open.
+- **Create account:** e-mail and password; password derivation, founding and the Emergency Kit belong to the core.
+- **Emergency Kit:** shown once by `AccountView`; recovery checks the room's signed history, replaces the code and
+  removes the other human devices. Nothing on the server can reset an account for its owner.
+- **Sign in:** password, Emergency Kit, or an invite whose six emoji must match. Passkeys remain off.
+- **Sign out:** the core ends the token and wipes the device and cache. It clears content and notification state;
+  the device remains a member until another device removes it.
+- The hub learns the e-mail and membership, never the password or content keys. See [Security](../../SECURITY.md).
 
 ## How it works
 
@@ -289,7 +285,7 @@ The core owns what it stores: the device's state in the database `trommi` (the b
 
 ### The demo room
 
-`?mock=1` runs the same app on `public/demo/demo.mjs`: the core's API and model shape (change sets naming ids,
-optimistic echo, windowed timeline reads) without a hub and without crypto, fed from `/demo/fixture.json`, with agents
-that reply, rework a handed-back card and explain on What??. The demo's code and data are fetched only when the demo
-is opened. The data and the list of `/screens` are the repository's [`demo/`](../../demo/README.md).
+`?mock=1` passes `demo/data/fixture.json` as `Config.demo`. The same Rust App makes the model, views, actions and
+optimistic echoes entirely in memory, with no account store or hub. `public/demo/demo.mjs` handles only `/screens`
+and the UI clicks named by `?state=`. Bundled demo files supply its pictures. The fixture and the list of states
+live in [demo/](../../demo/README.md); no second demo model lives in JavaScript.
