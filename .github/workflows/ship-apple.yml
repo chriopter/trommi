@@ -47,6 +47,7 @@ on:
       - .github/workflows/ship-apple.yml
       - .github/actions/**
       - .github/scripts/changed_parts.sh
+      - .github/scripts/source_tree.sh
       - .github/workflows/pr-check.yml
   workflow_dispatch:
     inputs:

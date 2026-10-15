@@ -21,7 +21,7 @@ else
   echo "nothing to compare with: every part counts as changed"
 fi
 # what every Rust part and app is built on
-shared='core/|client/|Cargo\.toml$|\.config/nextest\.toml$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/pr-check\.yml|\.github/actions/|\.github/scripts/changed_parts\.sh$|\.github/scripts/(inputs|rust_toolchain)\.sh$'
+shared='core/|client/|Cargo\.toml$|\.config/nextest\.toml$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/pr-check\.yml|\.github/actions/|\.github/scripts/changed_parts\.sh$|\.github/scripts/(inputs|source_tree|rust_toolchain)\.sh$'
 # part <name> '<its own paths>': on a pull request, whether its paths (or the shared ones) changed; called,
 # only the named part (always) and the core (when it changed)
 part() {

@@ -41,6 +41,7 @@ on:
       - .github/workflows/ship-connector.yml
       - .github/actions/**
       - .github/scripts/changed_parts.sh
+      - .github/scripts/source_tree.sh
       - .github/workflows/pr-check.yml
       - .github/workflows/sign-release.yml
   workflow_dispatch:

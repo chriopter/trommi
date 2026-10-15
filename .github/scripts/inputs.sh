@@ -14,7 +14,7 @@ set -eu
 commit=${1:-HEAD}
 # every part: the shared core and client core (in every app and in the hub's checks of what it stores), the Rust
 # workspace and its toolchain, this script
-shared='core/ Cargo.toml Cargo.lock rust-toolchain.toml .github/scripts/inputs.sh'
+shared='core/ Cargo.toml Cargo.lock rust-toolchain.toml .github/scripts/inputs.sh .github/scripts/source_tree.sh'
 # what signs the releases of the hub, the updater and the connector
 rust_release='.github/workflows/sign-release.yml release/'
 paths() {
