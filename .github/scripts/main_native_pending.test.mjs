@@ -38,6 +38,35 @@ test('direct Mac recheck emits only a valid output flag and rejects unknown dest
   }
   assert.equal(run('main_native_pending.sh',['unknown']).status,2)
 })
+test('completed delivery markers distinguish iPhone from Mac TestFlight',()=>{
+  const marker=join(root,'markers'), markerBin=join(marker,'bin')
+  mkdirSync(markerBin,{recursive:true})
+  copyFileSync(new URL('ios_delivered.sh',import.meta.url),join(marker,'ios_delivered.sh'))
+  script(join(marker,'inputs.sh'),`printf 'ios %064d\\n' 1\n`)
+  script(join(markerBin,'git'),'exit 0\n')
+  script(join(markerBin,'gh'),`
+last="\${!#}"
+case "$2" in
+  *workflows/main.yml/runs*)
+    side=ios
+    [[ "$last" != *'apple / mac-testflight'* ]] || side=mac
+    job='apple / ios / Publish and deliver'
+    [ "$side" != mac ] || job='apple / mac-testflight / Publish and deliver'
+    printf '42 %s %s\\n' '${'a'.repeat(40)}' "$job"
+    ;;
+  *'/jobs?'*)
+    job='apple / ios / Publish and deliver'
+    [ "$DELIVERED_SIDE" != mac ] || job='apple / mac-testflight / Publish and deliver'
+    [[ "$last" != *"$job"* ]] || printf '%s\\n' "$job"
+    ;;
+esac
+`)
+  for(const side of ['ios','mac']) for(const destination of ['ios','mac']) {
+    const result=spawnSync('sh',[join(marker,'ios_delivered.sh'),destination],{env:{...env,PATH:markerBin+':'+env.PATH,DELIVERED_SIDE:side},encoding:'utf8'})
+    assert.equal(result.status,0,result.stderr)
+    assert.equal(result.stdout,side===destination?'1'.padStart(64,'0')+'\n':'')
+  }
+})
 test('a no-op never processes an absent TestFlight build or attests an absent DMG',()=>{
   const workflow=readFileSync(new URL('../workflows/main-delivery.yml',import.meta.url),'utf8')
   for(const name of ['main-process-ios','main-process-mac','main-notes-ios']) {
