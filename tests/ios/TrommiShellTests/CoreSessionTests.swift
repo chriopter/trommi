@@ -55,6 +55,18 @@ final class CoreSessionTests: XCTestCase {
     _ = try store.run(NativePacket(["op": "put", "delete": [key]]))
     XCTAssertTrue(try store.run(NativePacket(["op": "scan", "prefix": ""])).blobs.isEmpty)
   }
+  func testCachePrefixKeysCanCoexistAtAPathComponentBoundary() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-prefix-cache-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try ShellStore(directory: directory); defer { store.close() }
+    let key = "c1/" + String(repeating: "a", count: 57)
+    let keys = [key, key + "/child", ""]
+    for key in keys { _ = try store.run(NativePacket(["op": "put", "put": [["key": key, "value": 0]]], blobs: [Data(key.utf8)])) }
+    let read = try store.run(NativePacket(["op": "get", "keys": keys]))
+    XCTAssertEqual(read.blobs, keys.map { Data($0.utf8) })
+    let scan = try store.run(NativePacket(["op": "scan", "prefix": ""]))
+    XCTAssertEqual(Set((scan.json["entries"] as? [[String: Any]] ?? []).compactMap { $0["key"] as? String }), Set(keys))
+  }
   func testTheDeviceSpaceIsDurableAndTheCacheIsEncrypted() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-shell-store-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -63,7 +75,8 @@ final class CoreSessionTests: XCTestCase {
     _ = try store.run(NativePacket(["op": "device_apply", "expected_revision": 0, "put": [["key": 0, "value": 1]]], blobs: [Data([1]), Data("private device state".utf8)]))
     _ = try store.run(NativePacket(["op": "put", "put": [["key": "sensitive/cache", "value": 0]]], blobs: [Data("private cached title".utf8)]))
     let cache = directory.appendingPathComponent("cache")
-    for file in try FileManager.default.contentsOfDirectory(at: cache, includingPropertiesForKeys: nil) {
+    for case let file as URL in FileManager.default.enumerator(at: cache, includingPropertiesForKeys: [.isRegularFileKey])! {
+      guard try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { continue }
       let bytes = try Data(contentsOf: file); XCTAssertNil(bytes.range(of: Data("private cached title".utf8)))
     }
     store.close(); store = try ShellStore(directory: directory)

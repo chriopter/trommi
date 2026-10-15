@@ -36,7 +36,7 @@ final class ShellStore {
     let encoded = Array(Data(key.utf8).map { String(format: "%02x", $0) }.joined())
     return stride(from: 0, to: encoded.count, by: 120).reduce(cache) { url, at in
       url.appendingPathComponent(String(encoded[at..<min(at + 120, encoded.count)]))
-    }
+    }.appendingPathComponent("value")
   }
   private func get(_ key: String) throws -> Data? {
     let u = file(key)
@@ -66,8 +66,8 @@ final class ShellStore {
       let prefix = op["prefix"] as? String ?? ""
       guard let enumerator = FileManager.default.enumerator(at: cache, includingPropertiesForKeys: [.isRegularFileKey]) else { throw TrommiError("storage") }
       let names = try enumerator.compactMap { entry -> String? in
-        guard let url = entry as? URL, try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { return nil }
-        return String(url.path.dropFirst(cache.path.count + 1)).replacingOccurrences(of: "/", with: "")
+        guard let url = entry as? URL, url.lastPathComponent == "value", try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { return nil }
+        return String(url.deletingLastPathComponent().path.dropFirst(cache.path.count + 1)).replacingOccurrences(of: "/", with: "")
       }
       let keys = names.compactMap { name -> String? in
         guard name.count % 2 == 0 else { return nil }
