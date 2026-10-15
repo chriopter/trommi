@@ -133,8 +133,8 @@ async function unwrap(wrapKey: CryptoKey, key: Uint8Array, stored: unknown): Pro
  * The device store `name`: the binding's IdbStore, its values wrapped at rest. Nothing is opened and no lock is
  * taken before `load()`. With `wait`, `load()` waits until the tab that owns the state is gone.
  */
-export function openDeviceStore({ name, wait = false, IdbStore }: { name: string; wait?: boolean; IdbStore: IdbStoreClass }): DeviceStore {
-  const inner = new IdbStore(name, { wait })
+export function openDeviceStore({ name, wait = false, steal = false, onLost, IdbStore }: { name: string; wait?: boolean; steal?: boolean; onLost?: () => void; IdbStore: IdbStoreClass }): DeviceStore {
+  const inner = new IdbStore(name, { wait, steal, ...(onLost ? { onLost } : {}) })
   let wrapKey: CryptoKey | null = null
   let making: Promise<CryptoKey> | null = null   // (an empty state: the key, made or read with the first write)
   let empty = false

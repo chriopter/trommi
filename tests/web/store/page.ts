@@ -213,6 +213,21 @@ const tests: [string, () => Promise<void>][] = [
     same([b.revision, shown(b.entries)], [1, '01=mine'], 'what is stored')
     await b.store.close()
   }],
+  ['store: checked takeover fences the old owner before the new owner writes', async () => {
+    const name = fresh('takeover')
+    let lost = 0
+    const a = openDeviceStore({ name, IdbStore, onLost: () => { lost++ } })
+    await a.load(); await a.apply(write(0, [put(bytes(1), 'first')]))
+    const b = openDeviceStore({ name, IdbStore, steal: true })
+    const loaded = await b.load()
+    same([lost, loaded.revision, shown(loaded.entries)], [1, 1, '01=first'], 'the previous owner was fenced')
+    same((await refused(() => a.apply(write(1, [put(bytes(2), 'stale')])), 'stale write')).name, 'StoreConflict', 'late write refused')
+    await b.apply(write(1, [put(bytes(3), 'new owner')]))
+    await a.close(); await b.close()
+    const c = await opened(name)
+    same([c.revision, shown(c.entries)], [2, '01=first 03=new owner'], 'only the current owner wrote')
+    await c.store.close()
+  }],
   ['store: deleteStores is refused while a device has the state open; then it removes the state, the cache and the wrapping key; the next device gets a new key', async () => {
     const name = fresh('deleted')
     const a = await opened(name)

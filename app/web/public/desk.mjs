@@ -369,8 +369,11 @@ function selectWays(root) {
 controller('desk', class extends Controller {
   static targets = ['list', 'news']
   connect() {
-    // (A target is looked up on every read; these elements stay for the page's life: kept once.)
+    // Cache this list's targets; a morph replacing the list reconnects its observers below.
     this.list = this.listTarget; this.news = this.newsTarget; this.up = document.getElementById('knock-up'); this.down = document.getElementById('knock-down')
+    this.across = null
+    this.retarget = new MutationObserver(() => { if (this.element.isConnected && this.list !== this.listTarget) { this.disconnect(); this.connect() } })
+    this.retarget.observe(this.element, { childList: true, subtree: true })
     this.knock = e => this.toKnock(e); this.up?.addEventListener('click', this.knock); this.down?.addEventListener('click', this.knock)
     this.unseen = new Set()      // ids of rows that arrived out of sight
     this.shown = new Set()       // rows in sight now
@@ -403,7 +406,7 @@ controller('desk', class extends Controller {
     addEventListener('resize', this.moved)
     this.offSelect = selectWays(this.element)
   }
-  disconnect() { this.up?.removeEventListener('click', this.knock); this.down?.removeEventListener('click', this.knock); removeEventListener('resize', this.moved); this.io.disconnect(); this.mo.disconnect(); this.ro.disconnect(); cancelAnimationFrame(this.frame); this.offSelect?.() }
+  disconnect() { this.up?.removeEventListener('click', this.knock); this.down?.removeEventListener('click', this.knock); removeEventListener('resize', this.moved); this.io.disconnect(); this.mo.disconnect(); this.ro.disconnect(); this.retarget.disconnect(); cancelAnimationFrame(this.frame); this.offSelect?.() }
   forget(node) { for (const row of this.shown) if (row === node || node.contains(row)) this.shown.delete(row) }
 
   /** Where a row out of sight lies: 'up' or 'down' (by its place against the rows in sight, or the list's own). */
@@ -426,8 +429,8 @@ controller('desk', class extends Controller {
       this.beyond = beyond
       for (const [dir, button] of [['up', this.up], ['down', this.down]]) {
         const n = beyond[dir].length
-        button.hidden = !n
-        if (!n) continue
+        button.hidden = !n || !this.across?.width
+        if (button.hidden) continue
         button.querySelector('span').textContent = knocks(n)
         button.setAttribute('aria-label', `${knocks(n)} ${dir === 'up' ? 'above' : 'below'}: go there`)
         if (this.across) Object.assign(button.parentElement.style, { left: `${this.across.left}px`, width: `${this.across.width}px`, top: dir === 'up' ? `${Math.max(0, Math.round(this.elTop ?? 0))}px` : '', bottom: dir === 'down' ? '0px' : '' })   // (under a phone's top line, not over it)
