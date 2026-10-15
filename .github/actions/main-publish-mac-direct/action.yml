@@ -14,7 +14,16 @@ outputs: {}
 runs:
   using: composite
   steps:
-  - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+  - name: These Mac inputs still need publishing
+    id: pending
+    shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ github.sha }}
+    run: bash .github/scripts/mac_release.sh check
+  - if: steps.pending.outputs.mode == 'build'
+    uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
     with:
       name: mac-direct
       path: ${{ runner.temp }}/mac
@@ -25,11 +34,13 @@ runs:
       COMMIT: ${{ github.sha }}
       MAC_VERSION: ${{ inputs.mac-version }}
   - name: The producing job checked these bytes
+    if: steps.pending.outputs.mode == 'build'
     shell: bash
     env:
       EXPECTED: ${{ inputs.expected-dmg }}
     run: sh .github/scripts/main_artifact.sh "$EXPECTED" "$RUNNER_TEMP/mac/Trommi-macOS.dmg"
   - name: Check, describe
+    if: steps.pending.outputs.mode == 'build'
     run: bash .github/scripts/mac_release.sh prepare "$RUNNER_TEMP/mac"
     shell: bash
     env:
@@ -39,6 +50,7 @@ runs:
       COMMIT: ${{ github.sha }}
       MAC_VERSION: ${{ inputs.mac-version }}
   - name: Attest the files
+    if: steps.pending.outputs.mode == 'build'
     uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
     with:
       subject-path: |
@@ -52,6 +64,7 @@ runs:
       COMMIT: ${{ github.sha }}
       MAC_VERSION: ${{ inputs.mac-version }}
   - name: Release
+    if: steps.pending.outputs.mode == 'build'
     run: bash .github/scripts/mac_release.sh upload "$RUNNER_TEMP/mac"
     shell: bash
     env:

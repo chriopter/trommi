@@ -13,6 +13,11 @@
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$GITHUB_REPOSITORY
+case "${1:-ios}" in
+  ios) main_job='apple / ios / Publish and deliver'; old_job='TestFlight (processed, groups, What to Test, review)' ;;
+  mac) main_job='apple / mac-testflight / Publish and deliver'; old_job='TestFlight (Mac processed, group, What to Test)' ;;
+  *) echo 'ios_delivered.sh: expected ios or mac' >&2; exit 2 ;;
+esac
 # runs: `<id> <commit> <the job that says delivered>` of a workflow
 runs() {
   event="event=$2&"
@@ -23,9 +28,9 @@ runs() {
     --jq '.workflow_runs[] | select(.head_branch == "main" and .head_repository.full_name == "'"$repo"'" and .repository.full_name == "'"$repo"'")
       | "\(.id) \((try (.display_title | capture(" of (?<c>[0-9a-f]{40})$").c) catch null) // .head_sha) '"$3"'"' 2>/dev/null
 }
-list=$( { runs main.yml all 'apple / ios / Publish and deliver'
-          runs ship-apple.yml push 'TestFlight (processed, groups, What to Test, review)'
-          runs ios.yml workflow_run 'iOS / TestFlight (processed, groups, What to Test, review)'; } ) \
+list=$( { runs main.yml all "$main_job"
+          runs ship-apple.yml push "$old_job"
+          [ "${1:-ios}" != ios ] || runs ios.yml workflow_run 'iOS / TestFlight (processed, groups, What to Test, review)'; } ) \
   || { echo "ios_delivered.sh: the runs could not be listed" >&2; exit 0; }
 commit=
 while read -r run sha job; do

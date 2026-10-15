@@ -104,8 +104,17 @@ jobs:
         manifest: ${{ steps.signed.outputs.manifest }}
         tag: ${{ steps.signed.outputs.tag }}
       id: published
+    - name: This native destination still needs these inputs
+      if: inputs.part == 'apple'
+      id: native_pending
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RUN_ID: ${{ github.run_id }}
+        COMMIT: ${{ github.sha }}
+        VERSION: ${{ inputs.version }}
+      run: bash .github/scripts/main_native_pending.sh '${{ inputs.pipeline }}' >> "$GITHUB_OUTPUT"
     - uses: ./.github/actions/main-upload-ios
-      if: inputs.part == 'apple' && inputs.pipeline == 'ios'
+      if: inputs.part == 'apple' && inputs.pipeline == 'ios' && steps.native_pending.outputs.deliver == 'true'
       with:
         non-exempt-encryption: ${{ vars.IOS_NON_EXEMPT_ENCRYPTION || 'NO' }}
         export-compliance-code: ${{ vars.IOS_EXPORT_COMPLIANCE_CODE }}
@@ -116,7 +125,7 @@ jobs:
         expected-checksums: ${{ inputs.native-digest }}
       id: ios
     - uses: ./.github/actions/main-upload-mac
-      if: inputs.part == 'apple' && inputs.pipeline == 'mac-testflight'
+      if: inputs.part == 'apple' && inputs.pipeline == 'mac-testflight' && steps.native_pending.outputs.deliver == 'true'
       with:
         uploader: ${{ vars.MAC_UPLOADER || 'api' }}
         version: ${{ inputs.version }}
@@ -125,14 +134,14 @@ jobs:
         expected-checksums: ${{ inputs.native-digest }}
       id: mac_testflight
     - uses: ./.github/actions/main-sign-mac-direct
-      if: inputs.part == 'apple' && inputs.pipeline == 'mac-direct'
+      if: inputs.part == 'apple' && inputs.pipeline == 'mac-direct' && steps.native_pending.outputs.deliver == 'true'
       with:
         version: ${{ inputs.version }}
         op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
       id: mac_direct
     - name: A TestFlight upload produced a build
-      if: inputs.part == 'apple' && inputs.pipeline != 'mac-direct'
+      if: inputs.part == 'apple' && inputs.pipeline != 'mac-direct' && steps.native_pending.outputs.deliver == 'true' && steps.ios.outputs.ready != 'already' && steps.mac_testflight.outputs.ready != 'already'
       env:
         BUILD: ${{ steps.ios.outputs.build || steps.mac_testflight.outputs.build }}
       run: test -n "$BUILD"
@@ -160,7 +169,7 @@ jobs:
         MAIN_FIELD_app_version: ${{ steps.ios.outputs.version || steps.mac_testflight.outputs.version }}
         MAIN_FIELD_app_build: ${{ steps.ios.outputs.build || steps.mac_testflight.outputs.build }}
         MAIN_FIELD_mac_version: ${{ steps.mac_direct.outputs.version }}
-        MAIN_FIELD_ready: ${{ steps.mac_direct.outputs.ready }}
+        MAIN_FIELD_ready: ${{ steps.native_pending.outputs.deliver == 'false' && 'already' || steps.ios.outputs.ready || steps.mac_testflight.outputs.ready || steps.mac_direct.outputs.ready }}
       run: node .github/scripts/main_metadata.mjs result '${{ inputs.part }}' '${{ inputs.pipeline }}-prepared'
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
@@ -209,6 +218,9 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         MAIN_PREVIOUS_DIGEST: ${{ needs.prepare.outputs.digest }}
       run: node .github/scripts/main_metadata.mjs previous '${{ inputs.part }}' '${{ inputs.pipeline }}-prepared'
+    - name: Native inputs were already delivered
+      if: inputs.part == 'apple' && env.MAIN_READY == 'already'
+      run: echo 'An earlier main run delivered these exact native inputs; no duplicate upload or processing.' >> "$GITHUB_STEP_SUMMARY"
     - uses: ./.github/actions/main-deliver-web
       if: inputs.part == 'web'
       with:
@@ -244,7 +256,7 @@ jobs:
         tailscale-client: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
         tailscale-audience: ${{ secrets.TAILSCALE_AUDIENCE }}
     - uses: ./.github/actions/main-process-ios
-      if: inputs.part == 'apple' && inputs.pipeline == 'ios'
+      if: inputs.part == 'apple' && inputs.pipeline == 'ios' && env.MAIN_READY != 'already'
       with:
         tester: ${{ vars.IOS_TESTFLIGHT_TESTER }}
         app-version: ${{ env.MAIN_APP_VERSION }}
@@ -252,7 +264,7 @@ jobs:
         op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
     - uses: ./.github/actions/main-process-mac
-      if: inputs.part == 'apple' && inputs.pipeline == 'mac-testflight'
+      if: inputs.part == 'apple' && inputs.pipeline == 'mac-testflight' && env.MAIN_READY != 'already'
       with:
         tester: ${{ vars.IOS_TESTFLIGHT_TESTER }}
         app-version: ${{ env.MAIN_APP_VERSION }}
@@ -260,7 +272,7 @@ jobs:
         op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
     - uses: ./.github/actions/main-notes-ios
-      if: inputs.part == 'apple' && inputs.pipeline == 'ios'
+      if: inputs.part == 'apple' && inputs.pipeline == 'ios' && env.MAIN_READY != 'already'
       with:
         version: ${{ inputs.version }}
         app-version: ${{ env.MAIN_APP_VERSION }}
