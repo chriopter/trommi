@@ -384,7 +384,7 @@ src/shell.rs      the shell over the app core: the fold of every Render, the per
 src/platform.rs   what the core asks of the desktop: files for drawing, saving, links, notifications
 src/notify.rs     desktop notifications over the session D-Bus
 src/bridge.rs     cxx-qt: one QObject; the view as JSON text, the person's events in
-core/io           the executor (trommi-io): HTTP, the event stream, the device journal, the cache folder, the timer
+core/io           the executor (trommi-io): HTTP, the event stream, the device/cache journal, the timer
 ```
 
 **Binding.** The App (`core/client`) runs in trommi-io's loop on tokio; each `Effect::Render` is folded with the
@@ -401,7 +401,7 @@ cd app/linux && cargo run --release
 ```
 
 `TROMMI_HUB` sets the hub (default `https://hub.trommi.com`), `TROMMI_LINUX_DIR` the data folder
-(`<dir>/default/device` the device's journal, `<dir>/default/cache` the cache). `cargo test` runs the conformance
+(`<dir>/default/device` holds device and cache namespaces in one journal; `<dir>/default/cache` is imported once from older builds). `cargo test` runs the conformance
 scripts through the app's fold, and the app against the real hub (`tests/hub.rs`, which builds `trommi-hub`).
 `TROMMI_LINUX_SHOT=<file.png>` (with `QT_QPA_PLATFORM=offscreen`) draws the window once, writes the picture and
 quits: CI's smoke test (`.github/workflows/pr-check.yml` on a pull request, `main.yml` on main, only when the

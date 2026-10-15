@@ -7,7 +7,7 @@ impl From<StoreError> for crate::error::Fault {
         let code = match error {
             StoreError::Locked => "state-locked",
             StoreError::Damaged(_) => "state-damaged",
-            StoreError::Io(_) | StoreError::Poisoned => "storage",
+            StoreError::Full | StoreError::Denied | StoreError::Io(_) | StoreError::Poisoned => "storage",
         };
         crate::error::Fault::new(code, error.to_string())
     }

@@ -118,6 +118,14 @@ file cache bytes retain their encrypted hub representation. Metadata binds a mod
 revision. Losing the cache costs a catch-up; it never loses the outbox. Physical storage, encryption at rest,
 locking and filesystem-safe key encoding belong to the executor.
 
+On the web, device batches append one packed, still-encrypted IndexedDB delta with their revision in one
+strict transaction. The log compacts geometrically into bounded checkpoint pages; opening reconstructs the
+current entries without keeping another live device mirror. Schema upgrades retain legacy entries and refuse
+older writers. Empty-store cleanup checks both checkpoint and journal before removing a slot.
+On Linux, device and cache use separate namespaces in the same `core/io` journal, as on the connector. Every
+multi-key cache put/delete commits as one synced record. Old per-key cache files migrate once, with a durable
+marker in the same commit, before removal; a failed write makes further cache reads fail until reopen.
+
 Sign-out drops plaintext model/file/account buffers, ends the token and wipes the slot/cache. A human device is
 erased for removal only after the protocol checked its signed removal. A hub claim alone leaves state intact.
 Extension key clearing precedes erasure writes so a full disk cannot leave a stale key copy; failed erasure remains

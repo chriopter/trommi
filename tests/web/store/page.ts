@@ -13,6 +13,7 @@ const keyOf = (n: number): Uint8Array => new Uint8Array([n >>> 24, n >>> 16, n >
 import type { FakeClient } from './fake-client.ts'
 
 interface Result { name: string; ok: boolean; detail: string }
+let measurement = ''
 
 // The binding as run.mjs serves it (never bundled: the glue fetches its .wasm from beside itself).
 const pkg = '/pkg/'
@@ -68,6 +69,23 @@ async function raw(name: string, store: string): Promise<{ keys: IDBValidKey[]; 
   const [keys, values] = await plain(name, [store], 'readonly', tx => [tx.objectStore(store).getAllKeys(), tx.objectStore(store).getAll()] as const)
   return { keys: keys.result, values: values.result }
 }
+/** Inspect the actual wrapped values in either legacy records or packed checkpoint/journal records. */
+async function rawDevice(name: string): Promise<{ keys: IDBValidKey[]; values: Uint8Array[]; revision: number }> {
+  const [base, log, meta] = await Promise.all([raw(name, 'entries'), raw(name, 'journal'), raw(name, 'meta')])
+  const format = meta.values[meta.keys.indexOf('checkpoint')] as { packed?: boolean } | undefined
+  const current = new Map<string, StoreEntry>()
+  const keep = (entry: StoreEntry) => current.set(hex(entry.key), entry)
+  for (let n = 0; n < base.values.length; n++) {
+    if (format?.packed) for (const entry of base.values[n] as StoreEntry[]) keep(entry)
+    else keep({ key: new Uint8Array(base.keys[n] as ArrayBuffer), value: base.values[n] as Uint8Array })
+  }
+  for (const delta of log.values as StoreWrite[]) {
+    for (const key of delta.delete) current.delete(hex(key))
+    for (const entry of delta.put) keep(entry)
+  }
+  const entries = [...current.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, entry]) => entry)
+  return { keys: entries.map(e => e.key), values: entries.map(e => e.value), revision: Math.max(meta.values[meta.keys.indexOf('revision')] as number ?? 0, ...log.keys as number[]) }
+}
 const contains = (hay: Uint8Array, needle: Uint8Array): boolean => {
   outer: for (let i = 0; i + needle.length <= hay.length; i++) { for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) continue outer; return true }
   return false
@@ -81,6 +99,72 @@ const databases = async (name: string) => (await indexedDB.databases()).map(d =>
 // One page
 
 const tests: [string, () => Promise<void>][] = [
+  ['store: 512 six-key entries use about one physical put each, including packed compaction; reopening retains only the latest values', async () => {
+    const name = fresh('puts')
+    const store = new IdbStore(name)
+    await store.load()
+    const original = IDBObjectStore.prototype.put
+    let puts = 0
+    IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...args: Parameters<IDBObjectStore['put']>) {
+      puts++
+      return original.apply(this, args)
+    }
+    try {
+      for (let revision = 0; revision < 512; revision++) {
+        await store.apply(write(revision, Array.from({ length: 6 }, (_, n) => put(keyOf(n), new Uint8Array(1024).fill(revision % 251)))))
+      }
+    } finally { IDBObjectStore.prototype.put = original; await store.close() }
+    measurement = `${puts} physical puts / 512 entries including compaction (${(puts / 512).toFixed(3)} per entry)`
+    check(puts <= 530, `expected about512 puts, got ${puts}`)
+    check((await raw(name, 'entries')).values.length > 0, 'the workload did not exercise compaction')
+    const again = new IdbStore(name), loaded = await again.load()
+    same([loaded.revision, loaded.entries.length], [512, 6], 'compacted state after reopen')
+    check(loaded.entries.every(e => e.value.length === 1024 && e.value.every(b => b === 511 % 251)), 'compaction lost the last value')
+    await again.close(); await IdbStore.destroy(name)
+  }],
+  ['store: applyAll coalesces writes while checking every intermediate revision; a later conflict commits nothing', async () => {
+    const name = fresh('batch'), store = new IdbStore(name)
+    await store.load()
+    await store.apply(write(0, [put(bytes(1), 'original')]))
+    same((await refused(() => store.applyAll([
+      write(1, [put(bytes(1), 'must not remain')]),
+      write(1, [put(bytes(2), 'wrong revision')]),
+    ]), 'the second revision')).name, 'StoreConflict', 'later conflict')
+    await store.applyAll([
+      write(1, [put(bytes(1), 'intermediate'), put(bytes(2), 'gone')]),
+      write(2, [put(bytes(1), 'final')], [bytes(2)]),
+    ])
+    await store.close()
+    const again = new IdbStore(name), loaded = await again.load()
+    same([loaded.revision, shown(loaded.entries)], [3, '01=final'], 'one atomic batch')
+    await again.close(); await IdbStore.destroy(name)
+  }],
+  ['store: schema1 records migrate without losing their revision or entries and old clients refuse the new schema', async () => {
+    const name = fresh('legacy')
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open(name, 1)
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('entries').put(utf8.encode('legacy'), bytes(1))
+        request.result.createObjectStore('meta').put(7, 'revision')
+      }
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => { request.result.close(); resolve() }
+    })
+    const store = new IdbStore(name), loaded = await store.load()
+    same([loaded.revision, shown(loaded.entries)], [7, '01=legacy'], 'schema1 loaded')
+    await store.apply(write(7, [put(bytes(2), 'new')], [bytes(1)]))
+    await store.close()
+    const again = new IdbStore(name), current = await again.load()
+    same([current.revision, shown(current.entries)], [8, '02=new'], 'old records and new deltas merge')
+    await again.close()
+    const old = await new Promise<string>((resolve, reject) => {
+      const request = indexedDB.open(name, 1)
+      request.onerror = () => resolve(request.error!.name)
+      request.onsuccess = () => { request.result.close(); reject(new Error('an old client opened schema2')) }
+    })
+    same(old, 'VersionError', 'old client refusal')
+    await IdbStore.destroy(name)
+  }],
   ['store: an empty store loads as revision 0 with no entries and makes no wrapping key; load() twice gives the same state; the lock is held from load() to close()', async () => {
     const name = fresh('empty')
     const store = deviceStore(name)
@@ -144,10 +228,10 @@ const tests: [string, () => Promise<void>][] = [
     const secret = crypto.getRandomValues(new Uint8Array(64))
     const a = await opened(name)
     await a.store.apply(write(0, [put(bytes(1), secret), put(bytes(2), secret), put(bytes(3), 'other')]))
-    const once = (await raw(name, 'entries')).values as Uint8Array[]
+    const once = (await rawDevice(name)).values as Uint8Array[]
     await a.store.apply(write(1, [put(bytes(1), secret)]))   // the same value under the same key again
     await a.store.close()
-    const device = await raw(name, 'entries')
+    const device = await rawDevice(name)
     same(device.keys.map(k => hex(new Uint8Array(k as ArrayBuffer))), ['01', '02', '03'], 'the raw keys are the entries\' key bytes')
     const stored = device.values as Uint8Array[]
     for (const v of stored) check(v instanceof Uint8Array && !contains(v, secret.subarray(0, 16)) && !contains(v, utf8.encode('other')), 'a stored value shows its plaintext')
@@ -163,7 +247,15 @@ const tests: [string, () => Promise<void>][] = [
     same(b.entries.map(e => hex(e.value)).sort(), [hex(secret), hex(secret), hex(utf8.encode('other'))].sort(), 'unwrapped on load')
     await b.store.close()
     // a stored value moved under another key does not open (the key is the additional data)
-    await plain(name, ['entries'], 'readwrite', tx => { tx.objectStore('entries').put(stored[0], new Uint8Array([3]).buffer) })
+    await plain(name, ['journal'], 'readwrite', tx => {
+      const journal = tx.objectStore('journal'), latest = journal.openCursor(null, 'prev')
+      latest.onsuccess = () => {
+        const cursor = latest.result!
+        const delta = cursor.value as { put: StoreEntry[] }
+        delta.put = [put(bytes(3), stored[0]!)]
+        cursor.update(delta)
+      }
+    })
     await freed(name)
     const c = deviceStore(name)
     const e = await refused(() => c.load(), 'loading a moved value')
@@ -325,7 +417,7 @@ const tests: [string, () => Promise<void>][] = [
     await device.close()
     await freed(name)
     // nothing of it is stored in the clear, and the binding's own store cannot open it without the unwrapping
-    const stored = (await raw(name, 'entries')).values as Uint8Array[]
+    const stored = (await rawDevice(name)).values as Uint8Array[]
     check(stored.length > 0 && stored.every(v => v[0] === 1 && v.length >= 29), 'the stored entries are not in the wrapped form')
     same((await refused(() => core.Device.open(new IdbStore(name)), 'opening the wrapped state unwrapped')).code, 'storage', 'unwrapped')
     const again = await core.Device.open(deviceStore(name))
@@ -337,7 +429,7 @@ const tests: [string, () => Promise<void>][] = [
     const name = fresh('device-behind')
     const device = await core.Device.create(deviceStore(name))
     const id = hex(await device.id())
-    const before = (await raw(name, 'meta')).values[0] as number
+    const before = (await rawDevice(name)).revision
     await plain(name, ['meta'], 'readwrite', tx => { tx.objectStore('meta').put(before + 1, 'revision') })
     const behind = await refused(() => device.foundRoom(core.generateRecoveryCode(), Date.now()), 'the write behind another owner') as { code?: string; cause?: unknown }
     same([behind.code, behind.cause instanceof core.StoreConflict], ['storage', true], 'the failed call: storage, caused by StoreConflict')
@@ -358,7 +450,7 @@ async function single(): Promise<Result[]> {
   for (const [name, run] of tests) {
     let timer = 0
     const deadline = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('not finished after 30 s')), 30_000) as unknown as number })
-    try { await Promise.race([run(), deadline]); out.push({ name, ok: true, detail: '' }) } catch (e) { out.push({ name, ok: false, detail: String((e as Error)?.message ?? e) }) } finally { clearTimeout(timer) }
+    try { measurement = ''; await Promise.race([run(), deadline]); out.push({ name: name + (measurement ? ` (${measurement})` : ''), ok: true, detail: '' }) } catch (e) { out.push({ name, ok: false, detail: String((e as Error)?.message ?? e) }) } finally { clearTimeout(timer) }
   }
   return out
 }
