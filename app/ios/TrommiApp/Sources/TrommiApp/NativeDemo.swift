@@ -1,8 +1,28 @@
 // Bundled demo I/O and navigation only. AppCore makes the room, screen state, actions and drawing data.
 import Foundation
 import TrommiClient
+#if canImport(Darwin)
+import Darwin
+#endif
 
 enum NativeDemo {
+  static var launchStart = ProcessInfo.processInfo.systemUptime
+  static var measuring: Bool { screen != nil && ProcessInfo.processInfo.environment["TROMMI_SPEED_TRACE"] == "1" }
+  static func ready(rows: Int) -> String? {
+    guard measuring else { return nil }
+    var resident: UInt64 = 0
+    #if canImport(Darwin)
+    var info = mach_task_basic_info()
+    var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+    let status = withUnsafeMutablePointer(to: &info) { pointer in
+      pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count) }
+    }
+    if status == KERN_SUCCESS { resident = info.resident_size }
+    #endif
+    let report: [String: Any] = ["rows": rows, "desk_ms": (ProcessInfo.processInfo.systemUptime - launchStart) * 1000, "resident_bytes": resident, "steps": Spent.take()]
+    guard let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) else { return nil }
+    return String(decoding: data, as: UTF8.self)
+  }
   static var screen: String? { ProcessInfo.processInfo.environment["TROMMI_SCREEN"].flatMap { $0.isEmpty ? nil : $0 } }
   private static func url(_ name: String) -> URL {
     (Bundle.module.resourceURL ?? Bundle.main.bundleURL).appendingPathComponent("Demo/" + name)

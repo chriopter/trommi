@@ -155,6 +155,7 @@ struct Sidebar: View {
 }
 struct DeskScreen: View {
   @EnvironmentObject var shell: AppShell
+  @State private var speedReport: String?
   var body: some View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 20) {
@@ -169,7 +170,8 @@ struct DeskScreen: View {
         if let off = shell.view.desk.off { Button { shell.focus(.off(query: "")) } label: { Label(off.says.en, systemImage: "tray") }.font(Face.display(22)).padding(.top, 24) }
       }.padding(24).frame(maxWidth: 820).frame(maxWidth: .infinity)
     }.accessibilityIdentifier("desk-content")
-      .accessibilityValue(String(shell.view.desk.rows.count))
+      .accessibilityValue(speedReport ?? String(shell.view.desk.rows.count))
+      .onAppear { speedReport = NativeDemo.ready(rows: shell.view.desk.rows.count) }
       .refreshable { shell.act(["do": "retry"]) }
   }
 }

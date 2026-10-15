@@ -42,7 +42,7 @@ enum NativeTab: Equatable { case chat, desk }
       if let hub = ProcessInfo.processInfo.environment["TROMMI_TEST_HUB"],
          let url = URL(string: hub), url.scheme == "http", url.host == "127.0.0.1" { config["hub"] = hub }
       #endif
-      if preview { config["demo"] = try NativeDemo.fixture(); config["can"] = [:] }
+      if preview { config["demo"] = try Spent.time("fixture") { try NativeDemo.fixture() }; config["can"] = [:] }
       await session?.send(NativePacket(["type": "start", "config": config]))
       if !preview {
         for id in UserDefaults.standard.stringArray(forKey: "trommi-goals-folded") ?? [] {
@@ -104,8 +104,8 @@ enum NativeTab: Equatable { case chat, desk }
     switch e["type"] as? String {
     case "render":
       do {
-        let delta = try JSONDecoder().decode(CoreView.ViewDelta.self, from: JSONSerialization.data(withJSONObject: e["delta"]!))
-        try view.apply(delta)
+        let delta = try Spent.time("view.decode") { try JSONDecoder().decode(CoreView.ViewDelta.self, from: JSONSerialization.data(withJSONObject: e["delta"]!)) }
+        try Spent.time("view.fold") { try view.apply(delta) }
         if view.phase == .signedOut { files = [:]; saved = nil; screen = .desk; path = []; tab = .desk }
         if !isDemo { NativeServices.shared.draw(view) }
       } catch { platformError = "The view update was out of order." }

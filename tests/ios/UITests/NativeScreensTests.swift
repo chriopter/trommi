@@ -103,14 +103,18 @@ final class NativeScreensTests: XCTestCase {
     let target = XCUIApplication()
     target.launchEnvironment["TROMMI_SCREEN"] = "desk"
     target.launchEnvironment["TROMMI_FIXTURE"] = fixture
+    target.launchEnvironment["TROMMI_SPEED_TRACE"] = "1"
     let options = XCTMeasureOptions(); options.iterationCount = 3
     measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true), XCTMemoryMetric(application: target)], options: options) {
       target.launch()
       let desk = target.scrollViews["desk-content"]
       XCTAssertTrue(desk.waitForExistence(timeout: 15))
-      let complete = NSPredicate(format: "value == %@", rows)
-      expectation(for: complete, evaluatedWith: desk)
+      expectation(for: NSPredicate(format: "value BEGINSWITH %@", "{"), evaluatedWith: desk)
       waitForExpectations(timeout: 15)
+      guard let text = desk.value as? String, let data = text.data(using: .utf8), let report = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { XCTFail("Missing native startup metrics"); return }
+      XCTAssertEqual((report["rows"] as? NSNumber)?.intValue, Int(rows))
+      let note = XCTAttachment(string: text); note.name = "native-desk-startup"; note.lifetime = .keepAlways; add(note)
+      print("NATIVE_DESK " + text)
       XCTAssertTrue(target.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).firstMatch.exists)
       target.terminate()
     }
