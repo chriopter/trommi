@@ -21,7 +21,11 @@ try {
   let first = await browser.tab()
   // A slow worker must keep the styled loading page, then paint the first actual view; never race a 3 s timer.
   await first.session.send('Page.addScriptToEvaluateOnNewDocument', { source: `globalThis.trommiTestDelayedWorker = true; globalThis.Worker = class extends Worker { postMessage(message, transfer) { if(message?.t === 'start') setTimeout(() => super.postMessage(message, transfer), 4100); else super.postMessage(message, transfer) } }` })
-  await open(first.session)
+  await prepare(first.session); await first.session.send('Page.navigate', { url: APP })
+  await until(first.session, `document.readyState === 'complete' && !!document.getElementById('trommi-opening')`, 'styled loading screen before the delayed worker starts')
+  const loading = await ev(first.session, `({width:document.getElementById('trommi-opening').getBoundingClientRect().width,font:getComputedStyle(document.querySelector('#trommi-opening h1')).fontFamily})`)
+  assert.equal(loading.width, 1280); assert.match(loading.font, /Bricolage Grotesque/)
+  await ready(first.session)
   assert.equal(await ev(first.session, 'globalThis.trommiTestDelayedWorker'), true, 'the slow-worker injection ran')
   for (let n = 0; n < 2; n++) { await first.session.send('Page.reload', { ignoreCache: true }); await sleep(100); await ready(first.session) }
   await first.close(); first = await browser.tab(); await open(first.session)
@@ -43,6 +47,10 @@ try {
   const held = await ev(reopened.session, `navigator.locks.query().then(x=>x.held.filter(l=>l.name==='trommi-core:trommi').length)`)
   assert.equal(held, 1)
   await reopened.close(); await ghost.close()
+  const demo = await browser.tab(); await prepare(demo.session)
+  await demo.session.send('Page.navigate', { url: APP + '/?mock=1' })
+  await until(demo.session, `!!document.querySelector('#desk-list .inbox-fan img[src^="blob:"]') && document.querySelector('#desk-list .inbox-fan img').naturalWidth > 0`, 'first Desk thumbnails load before visiting a card')
+  await demo.close()
   assert.deepEqual(exceptions, [], 'no startup or ownership exceptions')
   console.log('ownership: reload twice, close/reopen, live-owner check, styled busy page, working takeover and stranded-lock recovery passed')
 } finally { await browser?.close(); server.kill(); await new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('exit', resolve) }) }

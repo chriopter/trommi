@@ -9,7 +9,7 @@ import * as desk from './desk.mjs'
 import * as sidebar from './sidebar.mjs'
 import * as notes from './notes.mjs'
 import { DRAWER_VEIL, SIDE_FOOT, cornerNote, markCurrent, phoneBar, sidebarRows, tabBar, topbar } from './sidebar.mjs'
-import { BELL, Controller, attGone, calm, controller, curlHTML, html, keySheet, raw, startUi, toast } from './ui.mjs'
+import { BELL, Controller, attGone, calm, controller, curlHTML, html, keySheet, raw, startUi, toast, useFiles } from './ui.mjs'
 import { movedPath } from './paths.mjs'
 import { rowSheet } from './desk.mjs'
 import * as core from './core.mjs'
@@ -119,6 +119,7 @@ const DESK_KEY = 'trommi-desk'
 let deskInView = read(DESK_KEY)
 
 function createBoard({ views }) {
+  useFiles(core.fileUrl)
   // ---- answers: a response object the router reads ----
   const response = () => ({
     kind: 'none', code: 200, body: '', opts: null, to: null,

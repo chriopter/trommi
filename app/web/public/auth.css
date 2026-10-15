@@ -598,7 +598,7 @@ details.set-group.set-exp > summary { border-radius: 12px; }
 @media (max-width: 400px) { .kit-head { font-size: 15px; letter-spacing: -.01em; } }   /* ("Trommi Emergency Kit" on one line beside Show) */
 
 /* A stopped/other-tab page is the whole page, with the same account-screen type and paper. */
-body > main#trommi-opening, body > main#room.room-elsewhere { grid-column: 1 / -1; grid-row: 1 / -1; display: grid; place-items: center; padding: 32px 24px; background: var(--bg); }
+body > main#trommi-opening, body > main#room.room-elsewhere { grid-column: 1 / -1; grid-row: 1 / -1; display: grid; place-items: center; max-width: none; margin: 0; padding: 32px 24px; background: var(--bg); }
 .room-elsewhere .room-card { width: 100%; max-width: 520px; }
 .room-elsewhere .room-brand { font: 700 28px/1.15 var(--display); }
 .room-elsewhere .room-title { font: 800 clamp(28px, 5vw, 42px)/1.12 var(--display); margin-bottom: 20px; }
