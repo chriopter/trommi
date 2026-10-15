@@ -188,7 +188,7 @@ const PUSH_HOSTS: [&str; 5] = [
 /// `https://host[:port]` of an endpoint if it is a known push service, or one of `extra` (exact `host[:port]`,
 /// for tests, where `http://` is allowed too).
 pub fn endpoint_origin(endpoint: &str, extra: &[String]) -> Option<String> {
-    if endpoint.len() > 1024
+    if endpoint.len() > trommi_wire::push::MAX_ENDPOINT
         || !endpoint.is_ascii()
         || endpoint.bytes().any(|b| b.is_ascii_control() || b == b' ')
     {

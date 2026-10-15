@@ -38,7 +38,7 @@ pub(crate) fn begin(hub: String, email: &str, password: &Secret, entropy: &mut d
         "weak-password" => Text::new("account.weak_password", &format!("The password needs at least {} characters.", account::PASSWORD_MIN)),
         code => Text::new("account.refused", &format!("That password cannot be used ({code}).")),
     })?;
-    let pw = account::password_keys(&email, &password.0, None).map_err(|_| Text::new("account.refused", "That password cannot be used."))?;
+    let pw = account::password_keys(&email, &password.0, Some(account::KDF_RECORD)).map_err(|_| Text::new("account.refused", "That password cannot be used."))?;
     let words = account::generate_kit_words(entropy).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?;
     let text = std::str::from_utf8(words.expose()).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?.to_string();
     let kit = account::kit_keys(&email, &text).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?;
@@ -125,7 +125,7 @@ pub(crate) fn recovery_copies(email: &str, password: &Secret, entropy: &mut dyn 
         "weak-password" => Text::new("account.weak_password", &format!("The password needs at least {} characters.", account::PASSWORD_MIN)),
         code => Text::new("account.refused", &format!("That password cannot be used ({code}).")),
     })?;
-    let pw = account::password_keys(&email, &password.0, None).map_err(|_| Text::new("account.refused", "That password cannot be used."))?;
+    let pw = account::password_keys(&email, &password.0, Some(account::KDF_RECORD)).map_err(|_| Text::new("account.refused", "That password cannot be used."))?;
     let words = account::generate_kit_words(entropy).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?;
     let text = std::str::from_utf8(words.expose()).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?.to_string();
     let kit = account::kit_keys(&email, &text).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?;

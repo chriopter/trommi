@@ -8,3 +8,6 @@ pub const APNS_PLAIN_LEN: usize = MAX_APNS_LEN - 12 - 16;
 pub const APNS_AAD: &[u8] = b"trommi apns v1";
 /// The associated data of a Live Activity's sealed counts.
 pub const LIVE_AAD: &[u8] = b"trommi live v1";
+
+/// Longest Web Push endpoint accepted by the hub and clients.
+pub const MAX_ENDPOINT: usize = 1024;

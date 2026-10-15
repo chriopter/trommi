@@ -223,7 +223,7 @@ impl App {
                     self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.no_email", "This account has no e-mail and password: delete it on a device with its passkey.")), ..Default::default() };
                     return;
                 };
-                let Ok(keys) = trommi_core::account::password_keys(&email, &password.0, None) else {
+                let Ok(keys) = trommi_core::account::password_keys(&email, &password.0, Some(trommi_core::account::KDF_RECORD)) else {
                     self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.wrong_login", "The e-mail or the password is wrong.")), ..Default::default() };
                     return;
                 };

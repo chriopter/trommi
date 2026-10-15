@@ -80,7 +80,7 @@ App logic exists once, in Rust under `core/`:
   generated view types and folds keep both platforms on the same contract. Rust hosts use the crates directly.
 - `core/io/` (`trommi-io`): the Rust executor for HTTP, raw event streams, stores, timers and the device-write barrier,
   used by Linux and the connector. It makes no app decisions.
-- `core/wire/` (`trommi-wire`): formats, refusal codes, route limits and parsers shared with the hub; no keys or I/O.
+- `core/wire/` (`trommi-wire`): formats, refusal codes, route limits, envelope framing and pure membership checks shared with the hub; no keys or I/O.
 
 The apps draw the core's view state, pass taps and focus back, and perform platform services: fetch or URLSession,
 IndexedDB or an encrypted journal, push, notifications, Keychain, file pickers, Live Activities and the share sheet.

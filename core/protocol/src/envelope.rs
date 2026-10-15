@@ -360,26 +360,30 @@ impl Encode for Header {
 
 impl Decode for Header {
     fn read(reader: &mut Reader<'_>) -> Result<Self, Error> {
-        match reader.u8()? {
-            VERSION => {}
-            newer if newer > VERSION => return Err(Error::NewerVersion),
-            _ => return Err(Error::BadFormat),
-        }
-        let kind = reader.u8()?;
-        let flags = reader.u8()?;
-        if flags & !FLAG_PUSH != 0 {
-            return Err(Error::BadFormat);
-        }
-        let group = reader.value()?;
-        let epoch = reader.u64()?;
-        let sender = reader.value()?;
-        let seq = reader.u64()?;
-        if seq == 0 {
-            return Err(Error::BadFormat);
-        }
-        let prev = reader.value()?;
-        let recipient = reader.value()?;
-        let time = reader.u64()?;
+        let mut layout_reader = trommi_wire::layout::Reader::new(reader.as_bytes());
+        let raw =
+            trommi_wire::layout::HeaderLayout::read(&mut layout_reader, true).map_err(|error| {
+                match error {
+                    trommi_wire::layout::HeaderError::NewerVersion => Error::NewerVersion,
+                    trommi_wire::layout::HeaderError::Malformed(_) => Error::BadFormat,
+                }
+            })?;
+        reader.take(layout_reader.position())?;
+        Self::from_layout(raw)
+    }
+}
+impl Header {
+    fn from_layout(raw: trommi_wire::layout::HeaderLayout<'_>) -> Result<Self, Error> {
+        let group = GroupId::from_bytes(raw.group_id)?;
+        let (kind, flags, epoch, seq, time) = (raw.kind, raw.flags, raw.epoch, raw.seq, raw.time);
+        let (sender, prev, recipient) = (
+            DeviceId::new(raw.sender),
+            Hash32::new(raw.prev),
+            DeviceId::new(raw.recipient),
+        );
+        let file_ids = raw.file_ids.into_iter().map(FileId::new).collect();
+        let mut subject_reader = Reader::new(raw.subject);
+        let reader = &mut subject_reader;
         let subject = match kind {
             0 => return Err(Error::BadFormat),
             KIND_ITEM => Subject::Item(Timeline::read(reader)?),
@@ -394,16 +398,6 @@ impl Decode for Header {
                 block: reader.fixed()?,
             },
         };
-        // At most MAX_FILE_IDS ids of a fixed length: the count is checked before any id is built.
-        let listed = reader.opaque()?;
-        if listed.len() > MAX_FILE_IDS * FileId::LEN {
-            return Err(Error::BadFormat);
-        }
-        let mut listed = Reader::new(listed);
-        let mut file_ids: Vec<FileId> = Vec::new();
-        while !listed.is_empty() {
-            file_ids.push(listed.value()?);
-        }
         Ok(Self {
             push: flags & FLAG_PUSH != 0,
             group,
@@ -468,14 +462,19 @@ impl Encode for Envelope {
 
 impl Decode for Envelope {
     fn read(reader: &mut Reader<'_>) -> Result<Self, Error> {
-        let form = reader.u8()?;
-        let header = reader.value()?;
-        let nonce = reader.fixed()?;
-        let content = match form {
-            FORM_FULL => {
-                let ciphertext = reader.opaque()?;
-                // A sealed body within the limit has one of nine lengths. A longer one has its own code: the
-                // hub refuses it once it is chained, and it does not open.
+        let mut framing = trommi_wire::layout::Reader::new(reader.as_bytes());
+        let raw =
+            trommi_wire::layout::EnvelopeLayout::read(&mut framing, true).map_err(|error| {
+                match error {
+                    trommi_wire::layout::HeaderError::NewerVersion => Error::NewerVersion,
+                    trommi_wire::layout::HeaderError::Malformed(_) => Error::BadFormat,
+                }
+            })?;
+        reader.take(framing.position())?;
+        let header = Header::from_layout(raw.header)?;
+        let nonce = raw.nonce;
+        let content = match raw.body {
+            Some(ciphertext) => {
                 if ciphertext.len() <= MAX_PADDED_LEN.saturating_add(TAG_LEN)
                     && !is_bucket(ciphertext.len().saturating_sub(TAG_LEN))
                 {
@@ -483,10 +482,9 @@ impl Decode for Envelope {
                 }
                 Content::Full(ciphertext.to_vec())
             }
-            FORM_PRUNED => Content::Pruned(reader.value()?),
-            _ => return Err(Error::BadFormat),
+            None => Content::Pruned(Hash32::new(raw.body_hash.ok_or(Error::BadFormat)?)),
         };
-        let signature = reader.opaque()?.try_into().map_err(|_| Error::BadFormat)?;
+        let signature = raw.signature;
         Ok(Self {
             header,
             nonce,

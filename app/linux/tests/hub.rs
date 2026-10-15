@@ -82,7 +82,7 @@ fn account_body(room: &trommi_core::ids::RoomId, code: &trommi_core::crypto::Sec
     use trommi_connector::driver::b64;
     use trommi_core::account::{self, Way};
     use trommi_core::crypto::SystemEntropy;
-    let pw = account::password_keys(EMAIL, PASSWORD, None).expect("the password's keys");
+    let pw = account::password_keys(EMAIL, PASSWORD, Some(account::KDF_RECORD)).expect("the password's keys");
     let words = account::generate_kit_words(&mut SystemEntropy).expect("words");
     let words = String::from_utf8(words.expose().to_vec()).expect("text");
     let kit = account::kit_keys(EMAIL, &words).expect("the kit's keys");
