@@ -167,3 +167,9 @@ isolated extensions. `tests/client/mega.rs` compares the shipped shells against 
 seeded correctness runs and the separate opt-in nightly fleet/load tests are described in the root README.
 
 Settings → Data uses `AccountAction::ReadUsage` and `SettingsView.data`. The core authenticates the request, validates counts and sizes, presents the rows and clears them when the account is forgotten.
+
+After a Commit carrying Cuts, the app core asks the protocol device which values now stand for the registers it
+was showing. This covers both listed values and values already read through a sender's chain: the model does
+not keep a value the protocol replay discarded. A device-name register records its source group in the cached
+room record, so a session Cut cannot clear a name learned from the room. Cache layout revision 2 rebuilds older
+model snapshots that lack this provenance; the device's durable protocol state is untouched.

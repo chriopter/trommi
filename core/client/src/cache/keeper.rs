@@ -46,7 +46,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The layout's revision inside the format `c1`: a `meta` of another one is not read.
-const VERSION: u32 = 1;
+// Older snapshots did not record the group of a displayed device register.
+const VERSION: u32 = 2;
 /// A write that failed is tried again after this long.
 const RETRY_MS: u64 = 5_000;
 

@@ -126,6 +126,12 @@ impl Model {
     /// hub's order it dropped (spec 9.3.6). `now`: the clock, for alerts.
     pub fn apply_envelope(&mut self, r: &Received, change: &mut Change, now: u64) -> Applied {
         let applied = self.apply_one(r, change, now);
+        self.apply_register_changes(r, change, now);
+        applied
+    }
+
+    /// Apply only the verified register replacements in a report; its envelope fields provide deletion context.
+    pub fn apply_register_changes(&mut self, r: &Received, change: &mut Change, now: u64) {
         for shown in &r.shown {
             // (a receipt's mark only rises as it comes; one that stood out of the hub's order and went is taken
             //  back, and the value that stands now sets it again)
@@ -158,7 +164,6 @@ impl Model {
                 }
             }
         }
-        applied
     }
 
     fn apply_one(&mut self, r: &Received, change: &mut Change, now: u64) -> Applied {
@@ -1799,8 +1804,12 @@ impl Model {
     }
 
     /// A device's own register `device/<id>`: its name and where it runs, shown on its member and its sessions.
-    fn set_device_register(&mut self, device_id: &str, value: &Value, change: &mut Change) {
+    fn set_device_register(&mut self, device_id: &str, value: &Value, session: &Option<String>, change: &mut Change) {
         let v = value.as_object().cloned().unwrap_or_default();
+        if self.device_register_groups.get(device_id) != Some(session) {
+            self.device_register_groups.insert(device_id.to_string(), session.clone());
+            change.room = true;
+        }
         self.device_registers
             .insert(device_id.to_string(), v.clone());
         if let Some(m) = self.members.get_mut(device_id) {
@@ -1980,7 +1989,7 @@ impl Model {
         }
         if key.starts_with("device/") {
             if current && key == format!("device/{}", r.sender) {
-                self.set_device_register(&r.sender, &value, change);
+                self.set_device_register(&r.sender, &value, &r.session_id, change);
                 change.registers.insert(key);
             }
             return Applied {

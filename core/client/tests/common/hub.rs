@@ -117,6 +117,7 @@ pub struct Obj {
     pub request: bool,
     pub card: bool,
     pub open: bool,
+    pub state: u8,
     pub first_change: u64,
     pub head_change: u64,
     /// The change of its newest version (of a permission request: the request).
@@ -618,6 +619,7 @@ impl Hub {
                         request: fields.object_type == ObjectType::Request,
                         card: fields.object_type == ObjectType::Card,
                         open: true,
+                        state: ObjectState::Open.byte(),
                         first_change: change,
                         head_change: change,
                         version: change,
@@ -625,6 +627,7 @@ impl Hub {
                     });
                     object.head_change = change;
                     object.open = fields.state == ObjectState::Open;
+                    object.state = fields.state.byte();
                     if matches!(header.subject, Subject::Version(_) | Subject::Request(_)) {
                         object.version = change;
                     }
@@ -1201,8 +1204,8 @@ impl Hub {
                 Ok(json!({ "cards": cards, "permission_requests": requests, "notes": [], "artifacts": [], "registers": registers, "groups": [],
                     "counts": counts, "truncated": self.desk_truncated || cut, "change": self.change }))
             }
-            // (point 47) the cards no longer open, newest first by head_change, below `before`; answered is not
-            // told from closed here (state 3)
+            // (point 47) the cards no longer open, newest first by head_change, below `before`;
+            // preserve the signed answered/closed state, as the real hub does.
             ("GET", ["v1", "objects"]) => {
                 self.settled_reads.push(q("before").and_then(|v| v.parse().ok()));
                 let before = q("before").and_then(|v| v.parse::<u64>().ok()).unwrap_or(u64::MAX);
@@ -1214,7 +1217,7 @@ impl Hub {
                 let last = rows.last().map_or(0, |(_, o)| o.head_change);
                 let items: Vec<Value> = rows
                     .iter()
-                    .map(|(id, o)| json!({ "kind": "cards", "object_id": id.to_base64url(), "group_id": b64(o.group.as_bytes()), "state": 3, "urgency": 1, "answered_at": 0,
+                    .map(|(id, o)| json!({ "kind": "cards", "object_id": id.to_base64url(), "group_id": b64(o.group.as_bytes()), "state": o.state, "urgency": 1, "answered_at": 0,
                         "owner": DeviceId::new([0; 32]).to_base64url(), "first_change": o.first_change, "head_change": o.head_change,
                         "version": self.order.iter().find(|i| i.change() == o.version).map(Item::served) }))
                     .collect();

@@ -306,3 +306,7 @@ failed browser. A cold host can take more than the former ten-second allowance. 
 exit status and a bounded tail of stderr. `tests/web/build/browser-start.mjs`, run by the WASM browser gate,
 checks an actual browser delayed by eleven seconds and an early exit with a diagnostic. The build gate also
 checks the actual app worker's WASM URL, digest and bundled binding unconditionally; no pre-switch skip remains.
+
+The browser test command refreshes stale generated binding output before opening the store tests, so a branch
+change cannot exercise an older IndexedDB adapter against the current test page. Rust/Wasm builds still run
+one at a time under the repository build limits.

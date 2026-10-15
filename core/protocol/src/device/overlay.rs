@@ -458,6 +458,14 @@ impl<S: Storage> Device<S> {
         Ok(())
     }
 
+    /// What stands for shared or named-device registers after a Commit changed their chains.
+    /// Uses the same overlay/chain choice as envelope delivery; a Cut can change either source.
+    pub fn shown_registers(&self, group: &GroupId, names: &[String]) -> Result<Vec<RegisterShown>, Error> {
+        self.owner()?;
+        let registers = self.registers(group)?;
+        names.iter().map(|name| self.overlay_shown(group, &registers, (name.clone(), None))).collect()
+    }
+
     /// What stands for a name now: the overlay's value, else the chains' value, else nothing.
     fn overlay_shown(
         &self,

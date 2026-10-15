@@ -112,6 +112,29 @@ fn a_new_slot_joins_the_room_and_its_sessions_with_the_code() {
 }
 
 #[test]
+fn code_signin_joins_a_helper_founded_before_the_new_devices_stream_on_web_and_ios() {
+    for platform in ["web", "ios"] {
+        let mut world = World::new();
+        let helper = {
+            let mut hub = world.hub.borrow_mut();
+            let packages = hub.claim(&[world.me]).expect("the human's KeyPackage");
+            common::sync(&hub, &mut world.agent);
+            let session = world.agent.found_helper(&world.session, &packages, now()).expect("helper founding");
+            assert!(common::post_all(&mut hub, &mut world.agent).is_empty());
+            GroupId::session(world.room.room_id(), session)
+        };
+        let mut sim = blank(&world);
+        sim.send(Event::Start { config: Config { platform: platform.into(), version: "0".into(), hub: HUB_URL.into(), seed: 7, ..Default::default() } });
+        join(&world, &mut sim, code_keys());
+        settle(&world, &mut sim);
+        assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined), "{platform}");
+        assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]), "{platform}");
+        assert!(in_room(&sim, &[world.room, world.group, helper]), "{platform}: an earlier helper must not depend on a new stream notification");
+        no_forbidden(&world);
+    }
+}
+
+#[test]
 fn a_wrong_code_ends_with_nothing_stored() {
     let world = World::new();
     let mut sim = blank(&world);
