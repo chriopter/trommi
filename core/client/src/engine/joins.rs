@@ -87,6 +87,7 @@ pub(super) struct Joining {
     /// The keys of the code; none after a restart, when only the joins already built go on.
     keys: Option<RecoveryKeys>,
     later: Option<Later>,
+    room_keys_recovered: bool,
     /// Still to be read, together.
     together: VecDeque<GroupId>,
     /// Rows of an answer not looked at yet.
@@ -135,6 +136,7 @@ impl Joining {
         Joining {
             keys: None,
             later: None,
+            room_keys_recovered: false,
             together: VecDeque::new(),
             rows: VecDeque::new(),
             alone: VecDeque::new(),
@@ -167,11 +169,13 @@ impl Engine {
             Some(mut joining) => {
                 joining.keys = Some(joins.keys);
                 joining.later = joins.later;
+                joining.room_keys_recovered = false;
                 joining
             }
             None => Joining {
                 keys: Some(joins.keys),
                 later: joins.later,
+                room_keys_recovered: false,
                 together: VecDeque::new(),
                 rows: VecDeque::new(),
                 alone: VecDeque::new(),
@@ -240,6 +244,27 @@ impl Engine {
     }
 
     fn joins_step(&mut self, ctx: &mut Ctx<'_>, j: &mut Joining) {
+        let room = GroupId::room(self.room);
+        if self.past_failed(&room) {
+            let waiting: Vec<_> = j.together.drain(..).chain(j.alone.drain(..))
+                .chain(j.rows.drain(..).map(|row| row.group)).chain(j.one.take().map(|one| one.group)).collect();
+            j.not_joined.extend(waiting.into_iter().map(|g| (g, "bad-group")));
+            return;
+        }
+        if (!j.together.is_empty() || !j.alone.is_empty() || !j.rows.is_empty() || j.one.is_some()) && self.need_past(room) {
+            return;
+        }
+        if !j.room_keys_recovered && self.learned(&room) {
+            if let (Some(keys), Some(later)) = (&j.keys, &j.later) {
+                match self.device.recover_room_keys_after_history(keys, &later.rows, &later.links) {
+                    Ok(missing) => {
+                        if missing.is_some() { self.report(Report::Alert(Alert::MissingLink)); }
+                        j.room_keys_recovered = true;
+                    }
+                    Err(e) => { self.local(ctx, &e); return; }
+                }
+            }
+        }
         loop {
             if self.stopped.is_some() {
                 return;

@@ -2090,6 +2090,8 @@ fn an_anchored_device_join_restarts_then_verifies_its_older_room_history() {
     assert_eq!(joiner.room_history().unwrap().states().next().unwrap().epoch, 3);
     assert_eq!(joiner.content_key(&room.group, 0), Err(Error::NoKey));
     assert_eq!(joiner.recover_room_keys_after_history(&keys, &room.rows, &[]), Err(Error::RoomBehind));
+    assert!(joiner.room_past_required().unwrap());
+    assert_eq!(joiner.update(&room.group, true, now()), Err(Error::RoomBehind));
     let mut commits: Vec<_> = room.commits.iter().enumerate().map(|(index, commit)| recovery::ServedCommit {
         change: index as u64 + 2, commit, recovery_auth: None,
     }).collect();
@@ -2103,6 +2105,7 @@ fn an_anchored_device_join_restarts_then_verifies_its_older_room_history() {
     joiner.learn_history(&room.group, &room.infos[0], &commits).unwrap();
     assert!(joiner.group_past(&room.group).unwrap().unwrap().learned);
     assert_eq!(joiner.room_history().unwrap().states().next().unwrap().epoch, 0);
+    assert!(!joiner.room_past_required().unwrap());
     assert_eq!(joiner.recover_room_keys_after_history(&keys, &room.rows, &[]), Ok(None));
     assert_eq!(joiner.content_key(&room.group, 0), room.device.content_key(&room.group, 0));
     drop(joiner);

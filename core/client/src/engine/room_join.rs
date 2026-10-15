@@ -10,12 +10,13 @@
 //!    the room group whose MAC holds under the code, the one starting point the code authenticates
 //!    ([`select_anchor`]); the rows also hand the device the content keys of the past, so that history opened
 //!    later can be read. Keys, never content.
-//! 2. the room group's GroupInfos of epoch 0 (where the walk starts), of the anchor's epoch (held against the
-//!    anchor) and the current one (what the join is built on, and what the walk must arrive at).
+//! 2. the room group's current GroupInfo and the authenticated anchor. When they agree and no old recovery
+//!    link needs checking, the join starts there. Otherwise the founding is fetched for the complete check.
 //! 3. the room's live session groups (`GET /v1/rooms/{room}/groups`): their checks come after the join of the
 //!    room (`code_check_defer`), and they are joined next.
-//! 4. the room group's Commits below the current epoch (`GET /v1/groups/{room}/log?kind=commit`), handed to the
-//!    protocol core's check in slices: the walk from the founding that proves who holds which role.
+//! 4. the room group's Commits when the complete check needs them, verified in bounded slices. An anchored
+//!    join learns its older room history separately only when a live session or new membership action needs it;
+//!    that backward walk must arrive at the device's held origin before any old facts or keys are used.
 //!
 //! Nothing else: no envelope, no Desk, no Chat. Those come after, as for any device.
 //!
@@ -174,6 +175,8 @@ pub(super) struct Joiner {
     pub(super) sessions_done: bool,
     /// The core holds the check.
     pub(super) started: bool,
+    anchored: bool,
+    settled_at: Option<u64>,
     pub(super) log_after: u64,
     pub(super) reached: u64,
     /// The join in the device's outbox, and whether it may be posted as it is (else the room's epoch is read
@@ -221,6 +224,8 @@ impl Joiner {
             sessions_after: 0,
             sessions_done: false,
             started: false,
+            anchored: false,
+            settled_at: None,
             log_after: 0,
             reached: 0,
             entry: entry.map(|(id, _)| id),
@@ -450,7 +455,8 @@ impl Engine {
         let Some((current_epoch, current)) = j.current.clone() else {
             return self.room_ask(ctx, j, Route::GroupInfo { group: &group, epoch: None }, Read::Info(None));
         };
-        if j.founding.is_none() {
+        let anchored = j.recover.is_none() && anchor_epoch == current_epoch && j.links.is_empty();
+        if !anchored && j.founding.is_none() {
             if current_epoch == 0 {
                 j.founding = Some(current.clone());
             } else {
@@ -459,7 +465,7 @@ impl Engine {
         }
         if j.anchor.is_none() {
             if anchor_epoch == 0 {
-                j.anchor = j.founding.clone();
+                j.anchor = j.founding.clone().or_else(|| (current_epoch == 0).then(|| current.clone()));
             } else if anchor_epoch == current_epoch {
                 j.anchor = Some(current.clone());
             } else {
@@ -478,7 +484,14 @@ impl Engine {
             j.step = RoomJoinStep::Checking;
             self.room_status(j);
             let (founding, anchor) = (j.founding.clone().unwrap_or_default(), j.anchor.clone().unwrap_or_default());
-            self.device.code_check_start(&j.keys, &ServedStart { room, founding: &founding, anchor: &anchor, rows: &j.rows, sessions: &[] }).map_err(|e| RoomJoinError::of(&e))?;
+            let served = ServedStart { room, founding: &founding, anchor: &anchor, rows: &j.rows, sessions: &[] };
+            if anchored {
+                self.device.code_check_start_at_anchor(&j.keys, &served).map_err(|e| RoomJoinError::of(&e))?;
+                j.reached = anchor_epoch;
+                j.anchored = true;
+            } else {
+                self.device.code_check_start(&j.keys, &served).map_err(|e| RoomJoinError::of(&e))?;
+            }
             let later: Vec<GroupId> = j.main.iter().chain(&j.helpers).copied().collect();
             self.device.code_check_defer(&later).map_err(|e| RoomJoinError::of(&e))?;
             j.started = true;
@@ -645,7 +658,10 @@ impl Engine {
     fn room_answered(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner, entry: u64, answer: Result<Option<u64>, Error>) -> Result<(), RoomJoinError> {
         match answer {
             Ok(change) => match self.device.outbox_accepted(entry, trommi_core::device::Accepted { change }) {
-                Ok(()) | Err(Error::NotFound) => self.room_settled(ctx, j),
+                Ok(()) | Err(Error::NotFound) => {
+                    j.settled_at = change;
+                    self.room_settled(ctx, j)
+                },
                 Err(e) => Err(RoomJoinError::of(&e)),
             },
             Err(code) => {
@@ -742,6 +758,14 @@ impl Engine {
         // (the recovery key's token ends here: from now on the device signs in as itself)
         self.token = None;
         self.position = self.device.cursor();
+        if j.anchored {
+            if let Some(change) = j.settled_at {
+                // The fresh leaf starts at its accepted join. Older content comes from the Desk/history;
+                // earlier membership facts remain unlearned until a verified backward walk supplies them.
+                self.position = self.position.max(change);
+                self.floor = Some(self.position);
+            }
+        }
         self.todo_upto = self.position;
         self.report(Report::RoomJoin(RoomJoinStatus::Joined));
         self.report(Report::Groups);

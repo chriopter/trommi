@@ -84,6 +84,7 @@ const SUB_SENT: u8 = 5;
 const SUB_OWED: u8 = 7;
 const SUB_HANDOVER: u8 = 8;
 const SUB_WANTED: u8 = 9;
+const SUB_ANCHORED: u8 = 10;
 const SUB_MAC: u8 = 0;
 const SUB_UNCONFIRMED: u8 = 1;
 const SUB_UNBOUND: u8 = 6;
@@ -668,7 +669,8 @@ impl Staged {
                             | table::REGISTER,
                         ..
                     ]
-            )
+            ) || matches!(key.as_slice(), [table::DEVICE, SUB_ANCHORED, ..])
+                && key.get(2..).is_some_and(|bytes| GroupId::from_bytes(bytes).is_ok_and(|group| group.is_room()))
         };
         self.put.iter().all(|(key, _)| allowed(key)) && self.delete.iter().all(allowed)
     }
@@ -1204,6 +1206,13 @@ fn rebuild(mirror: &BTreeMap<Vec<u8>, Vec<u8>>) -> Result<(Memory, MlsEntries, S
                     })()
                     .map_err(|_| damaged("an owed handover"))?;
                     memory.handovers.insert(parsed.0, parsed.1);
+                }
+                SUB_ANCHORED => {
+                    let group = GroupId::from_bytes(rest.take(rest.remaining())?)
+                        .map_err(|_| damaged("an anchored room record"))?;
+                    if !group.is_room() || !value.is_empty() {
+                        return Err(damaged("an anchored room record"));
+                    }
                 }
                 SUB_WANTED => {
                     let parsed = (|| {
@@ -3479,6 +3488,7 @@ impl<S: Storage> Device<S> {
         new_mac: Option<&Secret<32>>,
         now_ms: u64,
     ) -> Result<Posting, Error> {
+        self.require_room_past()?;
         let meta = self.meta(id)?.clone();
         if meta.archived {
             return Err(Error::Gone);
@@ -3654,7 +3664,22 @@ impl<S: Storage> Device<S> {
         Ok(posting)
     }
 
+    /// Whether an anchored code sign-in still needs its verified pre-join room history before
+    /// judging new membership changes. Ordinary device invites retain their authenticated origin.
+    pub fn room_past_required(&self) -> Result<bool, Error> {
+        let Some(room) = self.memory.record.room.filter(|_| self.is_human()) else { return Ok(false) };
+        let group = GroupId::room(room);
+        Ok(self.stored(&device_key(SUB_ANCHORED, group.as_bytes())).is_some()
+            && self.origin(&group)?.is_some_and(|origin| !origin.learned))
+    }
+
+    fn require_room_past(&self) -> Result<(), Error> {
+        if self.room_past_required()? { return Err(Error::RoomBehind); }
+        Ok(())
+    }
+
     fn room_group(&self) -> Result<GroupId, Error> {
+        self.require_room_past()?;
         let room = self.memory.record.room.ok_or(Error::NoRoom)?;
         if !self.is_human() {
             return Err(Error::Forbidden);
@@ -5444,6 +5469,7 @@ impl<S: Storage> Device<S> {
         if named > epoch {
             return Err(Error::GroupBehind);
         }
+        self.require_room_past()?;
         // 5.4.1: a group's Commits come in the hub's order. One that claims a place at or before the last
         // one's was not there when this device passed it.
         if change <= meta.place {

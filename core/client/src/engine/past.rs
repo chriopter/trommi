@@ -3,7 +3,7 @@ use super::{Asked, Ctx, Engine, Mend, Retry};
 use crate::app::io::IoId;
 use crate::app::LogLevel;
 use crate::hub::{Answer, ChangeItem, Failure, Route};
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use trommi_core::ids::GroupId;
 use trommi_core::recovery::{ServedCommit, MAX_SLICE_COMMITS, MAX_SLICE_LEN};
 
@@ -32,6 +32,7 @@ pub(super) struct Past {
     /// Groups whose past is to be learned, and whether their envelopes are read again whatever comes of it.
     queue: VecDeque<(GroupId, bool)>,
     learning: Option<Learning>,
+    failed: BTreeSet<GroupId>,
     learn_asked: Option<IoId>,
     pub(super) learn_retry: Retry,
     /// A lease was acquired: the live groups whose past is not learned are looked for.
@@ -46,11 +47,31 @@ impl Engine {
     pub(super) fn agent_joined(&mut self, groups: &[GroupId]) {
         if self.agent.is_none() { return; }
         for group in groups {
-            if !self.past.queue.iter().any(|(g, _)| g == group) {
+            if !self.past.failed.contains(group) && !self.past.queue.iter().any(|(g, _)| g == group) {
                 self.past.queue.push_back((*group, true));
             }
         }
     }
+
+    pub(super) fn anchored_past_missing(&self) -> bool {
+        self.device.room_past_required().unwrap_or(true)
+    }
+
+    pub(super) fn need_anchored_past(&mut self) -> bool {
+        self.anchored_past_missing() && self.need_past(GroupId::room(self.room))
+    }
+
+    /// Queue a verified backward walk only when a caller needs the missing epochs.
+    pub(super) fn need_past(&mut self, group: GroupId) -> bool {
+        if self.learned(&group) { return false; }
+        if !self.past.failed.contains(&group) && !self.past.queue.iter().any(|(g, _)| *g == group)
+            && self.past.learning.as_ref().is_none_or(|l| l.group != group) {
+            self.past.queue.push_back((group, false));
+        }
+        true
+    }
+
+    pub(super) fn past_failed(&self, group: &GroupId) -> bool { self.past.failed.contains(group) }
 
     pub(super) fn learned(&self, group: &GroupId) -> bool {
         match self.device.group(group) {
@@ -59,9 +80,9 @@ impl Engine {
         }
     }
 
-    /// The next step of learning a group's past; only while the order waits for no repair.
+    /// The next step of learning a group's past, including when a repair needs those missing epochs.
     pub(super) fn drive_learn(&mut self, ctx: &mut Ctx<'_>) {
-        if self.repair.is_some() || self.stopped.is_some() {
+        if self.stopped.is_some() {
             return;
         }
         let way = &mut self.past;
@@ -91,7 +112,7 @@ impl Engine {
                 let Some((group, reread)) = way.queue.pop_front() else { return };
                 let parent = self.device.group(&group).ok().and_then(|s| s.session).filter(|s| !s.parent.is_zero()).map(|s| GroupId::session(s.room_id, s.parent));
                 let mut todo: VecDeque<GroupId> = std::iter::once(GroupId::room(self.room)).chain(parent).collect();
-                todo.push_back(group);
+                if !group.is_room() { todo.push_back(group); }
                 let learning = Learning { group, todo, started: false, after: 0, weight: 0, reread, learned: true };
                 self.past.learning = Some(learning);
             }
@@ -140,6 +161,8 @@ impl Engine {
             }
             Err(e) => {
                 self.device.learn_abandon(&of);
+                self.past.failed.insert(of);
+                self.report(super::Report::Alert(super::Alert::BadGroup { group: of, change: 0, code: e.code() }));
                 self.local(ctx, &e);
                 if self.stopped.is_some() { return; }
                 ctx.log(LogLevel::Warn, format!("finding: {} (a session's past was not learned)", e.code()));
@@ -212,7 +235,7 @@ impl Engine {
     fn learn_finished(&mut self, _ctx: &mut Ctx<'_>) {
         let Some(learning) = self.past.learning.take() else { return };
         if learning.learned || learning.reread {
-            if self.device.group(&learning.group).is_ok() {
+            if !learning.group.is_room() && self.device.group(&learning.group).is_ok() {
                 let upto = self.position;
                 self.queue(Mend::Group { group: learning.group, after: 0, upto });
             }

@@ -29,7 +29,8 @@
 //! were not built yet are reported as `interrupted`, and whoever holds the code asks again).
 //!
 //! `floor` is where this device's reading of the order began when that was not its start (a device that takes the
-//! hub's Desk as its first picture never pages below it): kept and handed back, set by nobody yet.
+//! hub's Desk as its first picture never pages below it): set at an anchored sign-in's accepted room join,
+//! kept and handed back. Earlier membership facts are learned separately against the device's held origin.
 
 use super::{joins, Asked, Ctx, Engine, Mend};
 use crate::app::io::{Entry, IoResult, StoreAnswer, StoreOp};

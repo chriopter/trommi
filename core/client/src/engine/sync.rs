@@ -698,6 +698,10 @@ impl Engine {
         if self.stopped.is_some() {
             return Err(Error::Storage("the device is closed".into()));
         }
+        if self.need_anchored_past() {
+            self.drive(ctx);
+            return Err(Error::RoomBehind);
+        }
         let result = action(&mut self.device, ctx.now);
         if let Err(e) = &result {
             self.local(ctx, e);
@@ -1756,6 +1760,9 @@ impl Engine {
     }
 
     fn take_log(&mut self, ctx: &mut Ctx<'_>, item: &LogItem, commit: bool, groups_changed: &mut bool) -> Taken {
+        if commit && self.need_anchored_past() {
+            return Taken::Halt;
+        }
         let entry = LogEntry {
             change: item.change,
             group: item.group,
@@ -1880,7 +1887,10 @@ impl Engine {
                         joined.push(j.group)
                     }
                     // (not yet: the room is behind, or this device has not reached the epoch it was made in)
-                    Err(Error::WrongEpoch | Error::RoomBehind) => settled = false,
+                    Err(Error::WrongEpoch | Error::RoomBehind) => {
+                        self.need_anchored_past();
+                        settled = false;
+                    },
                     Err(e) => {
                         self.local(ctx, &e);
                         if self.stopped.is_some() {

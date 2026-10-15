@@ -45,6 +45,14 @@ agent-mode lease/command/removal rules.
 | `src/account/`, `src/selfjoin.rs`, `src/seats.rs`, `src/desk_delete.rs` | Account authority, vouched joins, session founding and resumable desk deletion |
 | `src/status.rs`, `src/sessions.rs`, `src/off_mind.rs` | Shared status, session and card-placement rules used by views |
 
+Code sign-in starts from the room state authenticated by the recovery code when it is current. It joins the
+room before reading old room Commits, starts catch-up at that accepted join, and reads the Desk for current
+content. Live sessions require earlier room states: the engine verifies that backward history in bounded pages
+against its held origin before checking their history or recovering old room keys. New membership actions also
+wait for that verification. A room with no live sessions leaves its old Commits unread, including after restart.
+Recovery and old recovery links retain the complete-history check. Recovery-code keys stay in memory only;
+interrupted unfinished session joins ask for the code again.
+
 ## Events and effects
 
 The Rust types in `src/app/{event,effect,io}.rs` are the contract. The WASM/UniFFI facade's `AppCore` takes an
