@@ -2,10 +2,10 @@
 use super::{Asked, Ctx, Engine, Mend, Retry};
 use crate::app::io::IoId;
 use crate::app::LogLevel;
-use crate::hub::{Answer, ChangeItem, Failure, LogItem, Route};
+use crate::hub::{Answer, ChangeItem, Failure, Route};
 use std::collections::VecDeque;
 use trommi_core::ids::GroupId;
-use trommi_core::recovery::ServedCommit;
+use trommi_core::recovery::{ServedCommit, MAX_SLICE_COMMITS, MAX_SLICE_LEN};
 
 /// Commits asked for in one page of a group's log while its past is learned.
 const LEARN_PAGE: u32 = 1000;
@@ -18,8 +18,7 @@ struct Learning {
     group: GroupId,
     /// Still to learn, in order: the room group, a helper session's main session, the group.
     todo: VecDeque<GroupId>,
-    founding: Option<Vec<u8>>,
-    commits: Vec<LogItem>,
+    started: bool,
     after: u64,
     weight: usize,
     /// Its envelopes are read again whatever came of it (after a Welcome).
@@ -93,7 +92,7 @@ impl Engine {
                 let parent = self.device.group(&group).ok().and_then(|s| s.session).filter(|s| !s.parent.is_zero()).map(|s| GroupId::session(s.room_id, s.parent));
                 let mut todo: VecDeque<GroupId> = std::iter::once(GroupId::room(self.room)).chain(parent).collect();
                 todo.push_back(group);
-                let learning = Learning { group, todo, founding: None, commits: Vec::new(), after: 0, weight: 0, reread, learned: true };
+                let learning = Learning { group, todo, started: false, after: 0, weight: 0, reread, learned: true };
                 self.past.learning = Some(learning);
             }
             // (what is learned already, the core says: a group founded at epoch 0, or learned before)
@@ -111,9 +110,9 @@ impl Engine {
                 continue;
             };
             let learning = self.past.learning.as_ref().expect("a learning");
-            let (route, what) = match learning.founding {
-                None => (Route::GroupInfo { group: &of, epoch: Some(0) }, of),
-                Some(_) => (Route::GroupLog { group: &of, after: learning.after, limit: LEARN_PAGE, commits_only: true }, of),
+            let (route, what) = match learning.started {
+                false => (Route::GroupInfo { group: &of, epoch: Some(0) }, of),
+                true => (Route::GroupLog { group: &of, after: learning.after, limit: LEARN_PAGE, commits_only: true }, of),
             };
             let asked = self.ask(ctx, route, true, |expect| Asked::Learn { expect, group: what });
             self.past.learn_asked = asked;
@@ -122,55 +121,27 @@ impl Engine {
     }
 
     pub(super) fn on_learn(&mut self, ctx: &mut Ctx<'_>, of: GroupId, answer: Result<Answer, Failure>) {
-        let way = &mut self.past;
-        way.learn_asked = None;
-        let Some(learning) = way.learning.as_mut().filter(|l| l.todo.front() == Some(&of)) else { return };
-        match answer {
-            Ok(Answer::GroupInfo { group_info, .. }) if learning.founding.is_none() => {
-                learning.founding = Some(group_info);
-                way.learn_retry.ok();
-                return;
+        self.past.learn_asked = None;
+        if self.past.learning.as_ref().is_none_or(|l| l.todo.front() != Some(&of)) { return; }
+        let result = self.take_past_answer(of, answer);
+        match result {
+            Ok(Some(false)) => (),
+            Ok(None) => {
+                self.past.learn_retry.fail(ctx.now, None, &mut self.jitter);
             }
-            Ok(Answer::GroupLog { items, more }) if learning.founding.is_some() => {
-                way.learn_retry.ok();
-                let asked_after = learning.after;
-                for item in items {
-                    let ChangeItem::Commit(log) = item else { continue };
-                    if log.group != of {
-                        continue;
-                    }
-                    learning.after = learning.after.max(log.n);
-                    learning.weight += log.bytes.len();
-                    learning.commits.push(log);
-                }
-                // (a log that says there is more and does not move on, or that is longer than any group's, ends)
-                if more && learning.after != asked_after && learning.weight <= LEARN_BYTES_MAX {
-                    return;
-                }
-            }
-            Ok(_) | Err(_) => {
-                way.learn_retry.fail(ctx.now, None, &mut self.jitter);
-                return;
-            }
-        }
-        // the whole history is in hand: the core walks it
-        let learning = way.learning.as_mut().expect("a learning");
-        let founding = learning.founding.take().unwrap_or_default();
-        let commits = std::mem::take(&mut learning.commits);
-        (learning.after, learning.weight) = (0, 0);
-        let served: Vec<ServedCommit<'_>> = commits.iter().map(|c| ServedCommit { change: c.change, commit: &c.bytes, recovery_auth: c.recovery_auth.as_deref() }).collect();
-        match self.device.learn_history(&of, &founding, &served) {
-            Ok(_) => {
+            Ok(Some(true)) => {
+                self.past.learn_retry.ok();
                 if let Some(l) = self.past.learning.as_mut() {
                     l.todo.pop_front();
+                    l.started = false;
+                    l.after = 0;
+                    l.weight = 0;
                 }
             }
             Err(e) => {
+                self.device.learn_abandon(&of);
                 self.local(ctx, &e);
-                if self.stopped.is_some() {
-                    return;
-                }
-                // the epochs before this device joined stay unknown: what was written in them is not taken
+                if self.stopped.is_some() { return; }
                 ctx.log(LogLevel::Warn, format!("finding: {} (a session's past was not learned)", e.code()));
                 if let Some(l) = self.past.learning.as_mut() {
                     l.todo.clear();
@@ -179,6 +150,61 @@ impl Engine {
                 self.learn_finished(ctx);
             }
         }
+    }
+
+    /// Verify each bounded slice as it arrives; no page or founding bytes survive this callback.
+    fn take_past_answer(&mut self, of: GroupId, answer: Result<Answer, Failure>) -> Result<Option<bool>, trommi_core::Error> {
+        let l = self.past.learning.as_mut().expect("a learning");
+        let progress = match answer {
+            Ok(Answer::GroupInfo { group_info, .. }) if !l.started => {
+                let progress = self.device.learn_start(&of, &group_info)?;
+                l.started = true;
+                progress
+            }
+            Ok(Answer::GroupLog { items, more }) if l.started => {
+                let old_after = l.after;
+                let commits: Vec<_> = items.iter().filter_map(|item| match item {
+                    ChangeItem::Commit(log) if log.group == of => Some(log),
+                    _ => None,
+                }).collect();
+                let mut rest = commits.as_slice();
+                let mut progress = None;
+                while !rest.is_empty() {
+                    let mut bytes = 0usize;
+                    let count = rest.iter().take(MAX_SLICE_COMMITS).take_while(|c| {
+                        bytes = bytes.saturating_add(c.bytes.len());
+                        bytes <= MAX_SLICE_LEN
+                    }).count();
+                    if count == 0 { return Err(trommi_core::Error::TooLarge); }
+                    let (slice, later) = rest.split_at(count);
+                    let served: Vec<_> = slice.iter().map(|c| ServedCommit {
+                        change: c.change, commit: &c.bytes, recovery_auth: c.recovery_auth.as_deref(),
+                    }).collect();
+                    l.weight = l.weight.saturating_add(slice.iter().map(|c| c.bytes.len()).sum::<usize>());
+                    if l.weight > LEARN_BYTES_MAX { return Err(trommi_core::Error::TooLarge); }
+                    l.after = slice.iter().fold(l.after, |n, c| n.max(c.n));
+                    let reached = self.device.learn_slice(&of, &served)?;
+                    progress = Some(reached);
+                    if reached.epoch >= reached.upto { break; }
+                    rest = later;
+                }
+                if let Some(progress) = progress.filter(|p| p.epoch >= p.upto) {
+                    progress
+                } else if more && l.after > old_after {
+                    self.past.learn_retry.ok();
+                    return Ok(Some(false));
+                } else {
+                    // Finishing a truncated or stalled log refuses it against the held origin.
+                    self.device.learn_finish(&of)?;
+                    return Ok(Some(true));
+                }
+            }
+            Ok(_) | Err(_) => return Ok(None),
+        };
+        self.past.learn_retry.ok();
+        if progress.epoch < progress.upto { return Ok(Some(false)); }
+        self.device.learn_finish(&of)?;
+        Ok(Some(true))
     }
 
     /// The learning of one group ended: its envelopes up to the position are read again when it was learned, or
