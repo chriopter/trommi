@@ -15,6 +15,7 @@ struct Content {
     applied: u64,
     /// The bytes of every key and value put, and of every key deleted, by the batches accepted.
     written: u64,
+    by_table: BTreeMap<u8, (u64, u64)>,
 }
 
 /// A store in memory, for tests: durable is what `apply` accepted. A crash is played by dropping the device and
@@ -52,6 +53,7 @@ impl MemoryStorage {
                 passes_before_failure: None,
                 applied: 0,
                 written: 0,
+                by_table: BTreeMap::new(),
             })),
         }
     }
@@ -75,6 +77,11 @@ impl MemoryStorage {
     /// that keeps a journal appends, and what one that wraps its values encrypts.
     pub fn written(&self) -> u64 {
         self.content().written
+    }
+
+    /// Accepted puts and their key/value bytes in one table, for storage cost measurements.
+    pub fn table_written(&self, table: u8) -> (u64, u64) {
+        self.content().by_table.get(&table).copied().unwrap_or_default()
     }
 
     /// Every entry, ascending by key.
@@ -142,6 +149,13 @@ impl Storage for MemoryStorage {
                 .map(|entry| entry.key.len() + entry.value.len())
                 .sum::<usize>();
         content.written = content.written.saturating_add(carried as u64);
+        for entry in &batch.put {
+            if let Some(table) = entry.key.first() {
+                let cost = content.by_table.entry(*table).or_default();
+                cost.0 += 1;
+                cost.1 += (entry.key.len() + entry.value.len()) as u64;
+            }
+        }
         for key in batch.delete.drain(..) {
             content.entries.remove(&key);
         }

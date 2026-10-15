@@ -7,6 +7,8 @@
 //! An id inside a name (`device/<device id>`, `snooze/<object>`, …) is base64url, as bytes are in JSON (section 2). A value is JSON
 //! text: this module does not look into it, except to hold a Desk's Goals to their limits.
 
+mod storage;
+
 use crate::chain::{GroupFacts, Role};
 use crate::codec::{Reader, Writer};
 use crate::crypto::{self, Entropy};
@@ -346,6 +348,26 @@ fn read_text(reader: &mut Reader<'_>) -> Result<String, Error> {
     String::from_utf8(reader.opaque()?.to_vec()).map_err(|_| Error::BadFormat)
 }
 
+fn write_held(writer: &mut Writer, name: &str, of: Option<DeviceId>, held: &Held) -> Result<(), Error> {
+    writer.opaque(name.as_bytes())?;
+    writer.fixed(of.unwrap_or(DeviceId::ZERO).as_bytes());
+    writer.u64(held.stamp.lamport);
+    writer.fixed(held.stamp.sender.as_bytes());
+    writer.u64(held.stamp.seq);
+    writer.u8(u8::from(held.value.is_some()));
+    writer.opaque(held.value.as_deref().unwrap_or_default().as_bytes())
+}
+
+fn read_held(reader: &mut Reader<'_>) -> Result<(String, Option<DeviceId>, Held), Error> {
+    let name = read_text(reader)?;
+    let of = Some(reader.value::<DeviceId>()?).filter(|device| !device.is_zero());
+    let stamp = Stamp { lamport: reader.u64()?, sender: reader.value()?, seq: reader.u64()? };
+    let present = match reader.u8()? { 0 => false, 1 => true, _ => return Err(Error::BadFormat) };
+    let text = read_text(reader)?;
+    if !present && !text.is_empty() { return Err(Error::BadFormat); }
+    Ok((name, of, Held { stamp, value: present.then_some(text) }))
+}
+
 impl Registers {
     /// No value yet.
     pub fn new() -> Self {
@@ -502,13 +524,7 @@ impl Registers {
         writer.u64(self.largest);
         let mut values = Writer::new();
         for ((name, of), held) in &self.values {
-            values.opaque(name.as_bytes())?;
-            values.fixed(of.unwrap_or(DeviceId::ZERO).as_bytes());
-            values.u64(held.stamp.lamport);
-            values.fixed(held.stamp.sender.as_bytes());
-            values.u64(held.stamp.seq);
-            values.u8(u8::from(held.value.is_some()));
-            values.opaque(held.value.as_deref().unwrap_or_default().as_bytes())?;
+            write_held(&mut values, name, *of, held)?;
         }
         writer.opaque(&values.into_bytes())?;
         let mut names = Writer::new();
@@ -533,26 +549,7 @@ impl Registers {
         };
         let mut values = Reader::new(reader.opaque()?);
         while !values.is_empty() {
-            let name = read_text(&mut values)?;
-            let of = Some(values.value::<DeviceId>()?).filter(|device| !device.is_zero());
-            let stamp = Stamp {
-                lamport: values.u64()?,
-                sender: values.value()?,
-                seq: values.u64()?,
-            };
-            let present = match values.u8()? {
-                0 => false,
-                1 => true,
-                _ => return Err(Error::BadFormat),
-            };
-            let text = read_text(&mut values)?;
-            if !present && !text.is_empty() {
-                return Err(Error::BadFormat);
-            }
-            let held = Held {
-                stamp,
-                value: present.then_some(text),
-            };
+            let (name, of, held) = read_held(&mut values)?;
             if registers.values.insert((name, of), held).is_some() {
                 return Err(Error::BadFormat);
             }

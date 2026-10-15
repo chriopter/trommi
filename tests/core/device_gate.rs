@@ -25,7 +25,15 @@ struct World {
 
 /// Two human devices and an agent in its main session.
 fn world() -> World {
-    let (mut a, mut b, mut agent) = (new_device(), new_device(), new_device());
+    world_on(trommi_tests::MemoryStorage::new())
+}
+
+fn world_on(store: trommi_tests::MemoryStorage) -> World {
+    let (mut a, mut b, mut agent) = (
+        new_device(),
+        new_device(),
+        trommi_tests::new_device_on(store),
+    );
     let (mut hub, _) = found_room(&mut a);
     add_human(&mut hub, &mut a, &mut b);
     publish_some(&mut hub, &mut a, 4);
@@ -272,4 +280,174 @@ fn a_human_writes_to_an_empty_seat_with_no_recipient_and_commands_nobody() {
         w.agent.command(&waiting.envelope_hash, now()),
         Err(Error::NotFound)
     );
+}
+
+#[test]
+fn finished_commands_do_not_grow_a_second_aggregate_gate_log() {
+    let store = trommi_tests::MemoryStorage::new();
+    let mut human = new_device();
+    let mut agent = trommi_tests::new_device_on(store.handle());
+    let (mut hub, _) = found_room(&mut human);
+    publish_some(&mut hub, &mut agent, 4);
+    enrol(&mut hub, &mut human, &mut agent);
+    let group = found_main(&mut hub, &mut human, &agent.id());
+    sync_all(&hub, &mut human);
+    sync_all(&hub, &mut agent);
+    for n in 0..64 {
+        let said = write(&mut hub, &mut human, &chat(&group, &format!("command {n}")));
+        sync_all(&hub, &mut agent);
+        assert!(matches!(
+            agent.command(&said.envelope_hash, now()).unwrap(),
+            Decision::Act(_)
+        ));
+        agent.command_finished(&said.envelope_hash).unwrap();
+        assert_eq!(
+            agent.command(&said.envelope_hash, now()).unwrap(),
+            Decision::Done
+        );
+    }
+    let aggregate = store.get(&[trommi_core::store::table::COMMAND, 0]);
+    println!(
+        "aggregate command-gate bytes after64finished commands: {}",
+        aggregate.as_ref().map_or(0, Vec::len)
+    );
+    assert!(
+        aggregate.is_none(),
+        "per-command receipts already preserve the replay state"
+    );
+}
+
+fn legacy_gate_receipts(receipts: &[(trommi_core::ids::Hash32, bool)]) -> Vec<u8> {
+    let mut values = Vec::new();
+    for (hash, finished) in receipts {
+        values.extend_from_slice(hash.as_bytes());
+        values.push(u8::from(*finished));
+    }
+    let mut writer = trommi_core::codec::Writer::new();
+    writer.opaque(&values).unwrap();
+    let bytes = writer.into_bytes();
+    assert!(trommi_core::objects::GateLog::from_bytes(&bytes).is_ok());
+    bytes
+}
+
+#[test]
+fn legacy_gate_verdicts_are_durable_before_the_aggregate_is_removed() {
+    let store = trommi_tests::MemoryStorage::new();
+    let mut w = world_on(store.handle());
+    let done = write(
+        &mut w.hub,
+        &mut w.a,
+        &chat(&w.main, "completed before upgrade"),
+    );
+    let started = write(
+        &mut w.hub,
+        &mut w.a,
+        &chat(&w.main, "started before upgrade"),
+    );
+    sync_all(&w.hub, &mut w.agent);
+    assert!(matches!(
+        w.agent.command(&done.envelope_hash, now()).unwrap(),
+        Decision::Act(_)
+    ));
+    w.agent.command_finished(&done.envelope_hash).unwrap();
+    assert!(matches!(
+        w.agent.command(&started.envelope_hash, now()).unwrap(),
+        Decision::Act(_)
+    ));
+    let gate = [trommi_core::store::table::COMMAND, 0];
+    store.rewrite(|entries| {
+        entries.insert(
+            gate.to_vec(),
+            legacy_gate_receipts(&[(done.envelope_hash, true), (started.envelope_hash, false)]),
+        );
+        // The old aggregate was authoritative even if a legacy receipt had been recreated as undecided.
+        for hash in [done.envelope_hash, started.envelope_hash] {
+            let key = [
+                &[trommi_core::store::table::COMMAND, 1],
+                hash.as_bytes().as_slice(),
+            ]
+            .concat();
+            *entries.get_mut(&key).unwrap().first_mut().unwrap() = 0;
+        }
+    });
+    drop(w.agent);
+    w.agent = trommi_tests::reopen(store.handle()).unwrap();
+    let before = store.entries();
+    store.fail_apply(1);
+    assert!(w.agent.command(&done.envelope_hash, now()).is_err());
+    assert_eq!(store.entries(), before, "a failed migration changes no receipt or aggregate");
+    drop(w.agent);
+    w.agent = trommi_tests::reopen(store.handle()).unwrap();
+    assert_eq!(
+        w.agent.command(&done.envelope_hash, now()).unwrap(),
+        Decision::Done
+    );
+    assert_eq!(
+        w.agent.command(&started.envelope_hash, now()).unwrap(),
+        Decision::Uncertain
+    );
+    assert!(store.get(&gate).is_none());
+    drop(w.agent);
+    w.agent = trommi_tests::reopen(store.reopened()).unwrap();
+    assert_eq!(
+        w.agent.command(&done.envelope_hash, now()).unwrap(),
+        Decision::Done
+    );
+    assert_eq!(
+        w.agent.command(&started.envelope_hash, now()).unwrap(),
+        Decision::Uncertain
+    );
+}
+
+#[test]
+fn a_legacy_started_receipt_without_its_candidate_is_not_lost_on_upgrade() {
+    let store = trommi_tests::MemoryStorage::new();
+    let mut w = world_on(store.handle());
+    let done = write(
+        &mut w.hub,
+        &mut w.a,
+        &chat(&w.main, "completed before upgrade"),
+    );
+    let started = write(&mut w.hub, &mut w.a, &chat(&w.main, "old detached receipt"));
+    sync_all(&w.hub, &mut w.agent);
+    assert!(matches!(
+        w.agent.command(&done.envelope_hash, now()).unwrap(),
+        Decision::Act(_)
+    ));
+    w.agent.command_finished(&done.envelope_hash).unwrap();
+    assert!(matches!(
+        w.agent.command(&started.envelope_hash, now()).unwrap(),
+        Decision::Act(_)
+    ));
+    let gate = [trommi_core::store::table::COMMAND, 0];
+    let candidate = [
+        &[trommi_core::store::table::COMMAND, 1],
+        started.envelope_hash.as_bytes().as_slice(),
+    ]
+    .concat();
+    store.rewrite(|entries| {
+        entries.insert(
+            gate.to_vec(),
+            legacy_gate_receipts(&[(done.envelope_hash, true), (started.envelope_hash, false)]),
+        );
+        entries.remove(&candidate);
+    });
+    drop(w.agent);
+    w.agent = trommi_tests::reopen(store.handle()).unwrap();
+    assert_eq!(
+        w.agent.command(&done.envelope_hash, now()).unwrap(),
+        Decision::Done
+    );
+    assert!(store.get(&gate).is_none());
+    assert!(
+        store.get(&candidate).is_some(),
+        "the started receipt survives without a body to execute"
+    );
+    drop(w.agent);
+    w.agent = trommi_tests::reopen(store.reopened()).unwrap();
+    assert!(w.agent.commands_uncertain().unwrap().contains(&started.envelope_hash));
+    assert!(matches!(
+        w.agent.command(&started.envelope_hash, now()),
+        Err(Error::NotFound)
+    ));
 }

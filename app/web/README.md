@@ -270,7 +270,7 @@ The app says **account**, never "room" (inside, the core founds and joins a room
 
 ### IndexedDB
 
-The core owns what it stores: the device's state in the database `trommi` (the binding's `IdbStore`: entries and one revision, values wrapped at rest, `trommi:wrap` holds the key; one owner by Web Lock) and its cache in `trommi:app:cache` (string keys, bytes; safe to lose). The app keeps only per-browser conveniences in localStorage: theme (`trommi-theme`), rail (`trommi-rail`), open crowns (`trommi-crowns-open`), the desk in view (`trommi-desk`); the developer switches below are sessionStorage only. The mock room keeps nothing.
+The core owns what it stores: the device's state in the database `trommi` (the binding's `IdbStore`: packed journal deltas and checkpoint pages, revision checked in each strict transaction, values wrapped at rest, `trommi:wrap` holds the key; one owner by Web Lock) and its cache in `trommi:app:cache` (string keys, bytes; safe to lose). The app keeps only per-browser conveniences in localStorage: theme (`trommi-theme`), rail (`trommi-rail`), open crowns (`trommi-crowns-open`), the desk in view (`trommi-desk`); the developer switches below are sessionStorage only. The mock room keeps nothing.
 
 ### Render strategy (performance)
 

@@ -1642,6 +1642,8 @@ impl<S: Storage> Device<S> {
         }
         // A group's objects are held in one form, and every Note version is of a Note.
         self.check_objects()?;
+        self.check_chain_parts()?;
+        self.check_register_parts()?;
         // The records of every group's epochs, learned ones included, against the group's origin.
         self.check_past()
     }
@@ -2825,6 +2827,18 @@ impl<S: Storage> Device<S> {
         for (key, value) in std::mem::take(&mut staged.put) {
             // A copy staged by a build before this one may hold a group's objects in the record of the form
             // before, while the device holds them as entries by now: they become the group's entries.
+            if let Some(group) = facts::whole_registers_of(&key) {
+                self.put_registers(batch, &group, &crate::registers::Registers::from_bytes(&value)?)?;
+                continue;
+            }
+            if let Some(group) = facts::whole_own_ids_of(&key) {
+                self.put_own_ids(batch, &group, &crate::registers::OwnIds::from_bytes(&value)?)?;
+                continue;
+            }
+            if let Some(group) = facts::whole_chains_of(&key) {
+                self.put_chains(batch, &group, &crate::chain::Chains::from_bytes(&value)?)?;
+                continue;
+            }
             if let Some(group) = facts::whole_objects_of(&key) {
                 let objects = Objects::from_bytes(&value)?;
                 self.put_objects(batch, &group, &objects)?;

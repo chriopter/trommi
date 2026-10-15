@@ -16,7 +16,7 @@ board model or list-order policy.
 | `tests/` | Shell, drawing and local-hub integration tests |
 
 This is a separate Cargo workspace so the root Rust workspace does not require Qt. Its dependencies on
-`core/client` and `core/io` are direct path dependencies. The stored device has one owner; cache data is disposable.
+`core/client` and `core/io` are direct path dependencies. The stored device has one owner. Device and cache records use separate namespaces in one journal; each multi-key cache write is atomic and synced. Older per-key cache files migrate once before removal.
 The core handles sign-out, signed-removal verification, history, retries and refusal rollback.
 
 ## Build and check

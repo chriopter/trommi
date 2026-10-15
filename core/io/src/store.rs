@@ -1,25 +1,11 @@
-//! `Effect::Store` on disk: the two spaces of the contract (core/client/README.md, "What is stored").
-//!
-//! ```text
-//! <device dir>/   the device space: the journal (journal.rs: lock, state.snap, state.log), mode 0700. Opening it
-//!                 takes the lock: one owner. A write is one record, synced before it is answered; the revision
-//!                 is kept beside the entries and compared on every `DeviceApply`.
-//! <cache dir>/    the cache space: one file per key, mode 0600, written beside its place and renamed onto it.
-//!                 Not synced: a lost write costs a catch-up, never data.
-//! ```
-//!
-//! A cache key becomes a file name by escaping every byte that is not a letter, a digit, `-` or `_` as `%XX`
-//! (so `/` and `.` are escaped and no key leaves the folder); a key whose name would pass 255 bytes is refused.
-//!
-//! **In one journal** ([`Stores::in_journal`], the connector's slot): the cache space lives beside the device's
-//! entries in the journal the caller opened, under the side keys `[SIDE, b'c', key…]`, each write a record of its
-//! own. What the connector keeps of its own there (other side tags) is not touched.
+//! `Effect::Store` on disk: device and cache are separate namespaces in one durable journal.
+//! Each write is one synced record, holding every put/delete or none. The slot lock owns both
+//! namespaces; device revisions count only device writes. Legacy per-key cache files are
+//! imported once, with a durable marker in the same record, before they are removed.
 
 use crate::journal::{CoreStore, Journal, StoreError};
-use std::collections::BTreeSet;
-use std::io::ErrorKind;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
-use std::path::{Path, PathBuf};
+use std::os::unix::fs::DirBuilderExt;
+use std::path::Path;
 use trommi_client_core::app::{
     Bytes, DeviceEntry, Entry, IoError, IoErrorKind, IoResult, StoreAnswer, StoreOp,
 };
@@ -52,14 +38,8 @@ impl std::error::Error for OpenError {}
 pub struct Stores {
     journal: Journal,
     device: CoreStore,
-    cache: Space,
-}
-
-/// Where the cache space is.
-enum Space {
-    Folder(Cache),
-    /// Beside the device's entries, in the slot's journal.
-    Journal,
+    /// Preserve the former file-backed cache key limits without narrowing connector keys.
+    file_keys: bool,
 }
 
 /// The tag of the cache space's side keys in a journal ([`Stores::in_journal`]).
@@ -78,14 +58,13 @@ fn failed(kind: IoErrorKind, detail: &str) -> IoError {
     }
 }
 
-/// A file system error as the contract sorts it; the detail is the kind's name, never a path.
-fn io_error(e: &std::io::Error) -> IoError {
-    let kind = match e.kind() {
-        ErrorKind::StorageFull | ErrorKind::QuotaExceeded => IoErrorKind::Full,
-        ErrorKind::PermissionDenied => IoErrorKind::Denied,
+fn journal_error(error: StoreError, detail: &str) -> IoError {
+    let kind = match error {
+        StoreError::Full => IoErrorKind::Full,
+        StoreError::Denied => IoErrorKind::Denied,
         _ => IoErrorKind::Failed,
     };
-    failed(kind, &e.kind().to_string())
+    failed(kind, detail)
 }
 
 impl Stores {
@@ -95,15 +74,15 @@ impl Stores {
         let journal = Journal::open(device_dir).map_err(|e| match e {
             StoreError::Locked => OpenError::Locked,
             StoreError::Damaged(what) => OpenError::Damaged(what),
+            StoreError::Full => OpenError::Io("the device is full".into()),
+            StoreError::Denied => OpenError::Io("the file system denied access".into()),
             StoreError::Io(what) => OpenError::Io(what),
             StoreError::Poisoned => OpenError::Io("an earlier write failed".into()),
         })?;
-        let cache = Cache::open(cache_dir).map_err(|e| OpenError::Io(e.kind().to_string()))?;
-        Ok(Stores {
-            device: journal.core_store(),
-            journal,
-            cache: Space::Folder(cache),
-        })
+        migrate_cache(&journal, cache_dir)?;
+        let mut stores = Self::in_journal(journal);
+        stores.file_keys = true;
+        Ok(stores)
     }
 
     /// Both spaces of a slot in a journal the caller opened (and so holds the lock of): the device's entries and,
@@ -112,23 +91,23 @@ impl Stores {
         Stores {
             device: journal.core_store(),
             journal,
-            cache: Space::Journal,
+            file_keys: false,
         }
     }
 
     /// Runs one store op to its end (for `DeviceApply`: durable on return).
     pub fn run(&mut self, op: StoreOp) -> IoResult<StoreAnswer> {
-        match (op, &mut self.cache) {
-            (StoreOp::Get { keys }, Space::Folder(cache)) => cache.get(&keys),
-            (StoreOp::Scan { prefix }, Space::Folder(cache)) => cache.scan(&prefix),
-            (StoreOp::Put { put, delete }, Space::Folder(cache)) => cache.put(put, delete),
-            (StoreOp::Get { keys }, Space::Journal) => Ok(StoreAnswer::Values {
+        if self.journal.is_poisoned() {
+            return IoResult::Err(failed(IoErrorKind::Failed, "an earlier store write failed; reopen the slot"));
+        }
+        match op {
+            StoreOp::Get { keys } => Ok(StoreAnswer::Values {
                 values: keys
                     .iter()
                     .map(|key| self.journal.get(&journal_key(key)).map(|v| Bytes(v.to_vec())))
                     .collect(),
             }),
-            (StoreOp::Scan { prefix }, Space::Journal) => {
+            StoreOp::Scan { prefix } => {
                 let entries = self
                     .journal
                     .scan(&journal_key(&prefix))
@@ -140,21 +119,20 @@ impl Stores {
                     .collect();
                 Ok(StoreAnswer::Entries { entries })
             }
-            (StoreOp::Put { put, delete }, Space::Journal) => self.journal_put(put, delete),
-            (StoreOp::DeviceLoad, _) => self.device_load(),
-            (
-                StoreOp::DeviceApply {
-                    expected_revision,
-                    put,
-                    delete,
-                },
-                _,
-            ) => self.device_apply(expected_revision, put, delete),
+            StoreOp::Put { put, delete } => self.journal_put(put, delete),
+            StoreOp::DeviceLoad => self.device_load(),
+            StoreOp::DeviceApply { expected_revision, put, delete } => self.device_apply(expected_revision, put, delete),
         }
         .into()
     }
 
     fn journal_put(&mut self, put: Vec<Entry>, delete: Vec<String>) -> Result<StoreAnswer, IoError> {
+        // Validate the entire batch before staging any mutation. Keep the legacy key contract.
+        for key in put.iter().map(|entry| &entry.key).chain(delete.iter()) {
+            if self.file_keys && file_name(key).is_none() {
+                return Err(failed(IoErrorKind::Failed, "a cache key is too long or empty"));
+            }
+        }
         for key in delete {
             self.journal.delete(journal_key(&key));
         }
@@ -163,7 +141,7 @@ impl Stores {
         }
         self.journal
             .commit()
-            .map_err(|_| failed(IoErrorKind::Failed, "the cache was not written"))?;
+            .map_err(|error| journal_error(error, "the cache was not written"))?;
         Ok(StoreAnswer::Done)
     }
 
@@ -208,23 +186,9 @@ impl Stores {
             })?;
         // the journal stages a batch; `commit` writes and syncs it. After a failure it stays poisoned: every
         // later op fails, and the shell opens the slot again.
-        self.journal.commit().map_err(|e| match e {
-            StoreError::Io(what) if what.contains("No space") => {
-                failed(IoErrorKind::Full, "no space")
-            }
-            _ => failed(IoErrorKind::Failed, "the device state was not written"),
-        })?;
+        self.journal.commit().map_err(|error| journal_error(error, "the device state was not written"))?;
         Ok(StoreAnswer::Done)
     }
-}
-
-/// The cache space: a folder of files.
-struct Cache {
-    dir: PathBuf,
-    /// Every key stored, read from the folder at the first scan and kept current from then on.
-    keys: Option<BTreeSet<String>>,
-    /// Counts the temporary files of this process.
-    writes: u64,
 }
 
 /// The longest file name a key may give.
@@ -261,113 +225,35 @@ fn key_of(name: &str) -> Option<String> {
     (file_name(&key).as_deref() == Some(name)).then_some(key)
 }
 
-impl Cache {
-    fn open(dir: &Path) -> std::io::Result<Cache> {
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(dir)?;
-        Ok(Cache {
-            dir: dir.to_path_buf(),
-            keys: None,
-            writes: 0,
-        })
-    }
+/// This marker shares the migration's commit, so stale legacy files are never imported again.
+const CACHE_MIGRATED: &[u8] = &[crate::journal::SIDE, b'm', b'c', 1];
 
-    fn path(&self, key: &str) -> Result<PathBuf, IoError> {
-        file_name(key)
-            .map(|name| self.dir.join(name))
-            .ok_or_else(|| failed(IoErrorKind::Failed, "a key no file can have"))
-    }
-
-    fn read(&self, key: &str) -> Result<Option<Vec<u8>>, IoError> {
-        match std::fs::read(self.path(key)?) {
-            Ok(bytes) => Ok(Some(bytes)),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(io_error(&e)),
+fn migrate_cache(journal: &Journal, dir: &Path) -> Result<(), OpenError> {
+    let io = |error: std::io::Error| OpenError::Io(error.kind().to_string());
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir).map_err(io)?;
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(io)? {
+        let entry = entry.map_err(io)?;
+        if let Some(key) = entry.file_name().to_str().and_then(key_of) {
+            files.push((key, entry.path()));
         }
     }
-
-    fn keys(&mut self) -> Result<&mut BTreeSet<String>, IoError> {
-        if self.keys.is_none() {
-            let mut keys = BTreeSet::new();
-            for entry in std::fs::read_dir(&self.dir).map_err(|e| io_error(&e))? {
-                let name = entry.map_err(|e| io_error(&e))?.file_name();
-                if let Some(key) = name.to_str().and_then(key_of) {
-                    keys.insert(key);
-                }
-            }
-            self.keys = Some(keys);
+    match journal.get(CACHE_MIGRATED) {
+        Some(marker) if marker.as_slice() == [1] => {}
+        Some(_) => return Err(OpenError::Damaged("the cache migration marker does not read".into())),
+        None => {
+            // Read everything before staging anything. A failed read cannot commit a partial import.
+            let entries = files.iter().map(|(key, path)| {
+                std::fs::read(path).map(|value| (journal_key(key), value)).map_err(io)
+            }).collect::<Result<Vec<_>, _>>()?;
+            for (key, value) in entries { journal.put(key, value); }
+            journal.put(CACHE_MIGRATED.to_vec(), vec![1]);
+            journal.commit().map_err(|error| OpenError::Io(error.to_string()))?;
         }
-        Ok(self.keys.as_mut().expect("just read"))
     }
-
-    fn get(&mut self, keys: &[String]) -> Result<StoreAnswer, IoError> {
-        let values = keys
-            .iter()
-            .map(|key| Ok(self.read(key)?.map(Bytes)))
-            .collect::<Result<_, IoError>>()?;
-        Ok(StoreAnswer::Values { values })
-    }
-
-    fn scan(&mut self, prefix: &str) -> Result<StoreAnswer, IoError> {
-        let found: Vec<String> = self
-            .keys()?
-            .range(prefix.to_string()..)
-            .take_while(|key| key.starts_with(prefix))
-            .cloned()
-            .collect();
-        let mut entries = Vec::with_capacity(found.len());
-        for key in found {
-            // (a file that went since the folder was read is a key that is not stored)
-            if let Some(value) = self.read(&key)? {
-                entries.push(Entry {
-                    key,
-                    value: value.into(),
-                });
-            }
-        }
-        Ok(StoreAnswer::Entries { entries })
-    }
-
-    fn put(&mut self, put: Vec<Entry>, delete: Vec<String>) -> Result<StoreAnswer, IoError> {
-        for key in delete {
-            match std::fs::remove_file(self.path(&key)?) {
-                Err(e) if e.kind() != ErrorKind::NotFound => return Err(io_error(&e)),
-                _ => {}
-            }
-            if let Some(keys) = self.keys.as_mut() {
-                keys.remove(&key);
-            }
-        }
-        for entry in put {
-            let path = self.path(&entry.key)?;
-            self.writes += 1;
-            let tmp = self
-                .dir
-                .join(format!(".new.{}.{}", std::process::id(), self.writes));
-            let written = (|| {
-                use std::io::Write;
-                let _ = std::fs::remove_file(&tmp);
-                let mut file = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o600)
-                    .open(&tmp)?;
-                file.write_all(&entry.value)?;
-                drop(file);
-                std::fs::rename(&tmp, &path)
-            })();
-            if let Err(e) = written {
-                let _ = std::fs::remove_file(&tmp);
-                return Err(io_error(&e));
-            }
-            if let Some(keys) = self.keys.as_mut() {
-                keys.insert(entry.key);
-            }
-        }
-        Ok(StoreAnswer::Done)
-    }
+    // Cleanup is after the durable marker. If interrupted, reopening repeats cleanup, never import.
+    for (_, path) in files { std::fs::remove_file(path).map_err(io)?; }
+    Ok(())
 }
 
 #[cfg(test)]

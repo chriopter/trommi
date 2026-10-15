@@ -4,6 +4,8 @@ import type { Store, StoredState, StoreWrite } from './trommi-core.js'
 /**
  * A device's store on IndexedDB: one strict transaction per write, the revision compared inside it, and a Web Lock
  * on `name` held from `load` until `close`, so that one tab or worker owns a stored state at a time.
+ * Writes append one packed delta; geometric compaction folds them into bounded checkpoint pages.
+ * Legacy schema1 entries migrate in place; older writers cannot open schema2.
  */
 export class IdbStore implements Store {
   /** `name` names the stored state: one per device. With `wait`, `load` waits for the lock instead of failing. */

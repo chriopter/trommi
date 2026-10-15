@@ -58,7 +58,11 @@ pub enum StoreError {
     /// The files do not read as a state: damaged, or written by a newer connector. The human reconnects the
     /// session; the connector never makes a new key by itself in a directory that holds something.
     Damaged(String),
-    /// The file system failed.
+    /// The device is full or its quota was exceeded.
+    Full,
+    /// The file system denied access.
+    Denied,
+    /// The file system failed for another reason.
     Io(String),
     /// An earlier write failed: what is in memory may be ahead of the files. The journal is opened again.
     Poisoned,
@@ -69,6 +73,8 @@ impl std::fmt::Display for StoreError {
         match self {
             StoreError::Locked => f.write_str("another process holds this state"),
             StoreError::Damaged(what) => write!(f, "the stored state does not read: {what}"),
+            StoreError::Full => f.write_str("the device is full"),
+            StoreError::Denied => f.write_str("the file system denied access"),
             StoreError::Io(what) => write!(f, "the state could not be written: {what}"),
             StoreError::Poisoned => f.write_str("an earlier write of the state failed"),
         }
@@ -79,7 +85,11 @@ impl std::error::Error for StoreError {}
 
 impl From<std::io::Error> for StoreError {
     fn from(error: std::io::Error) -> Self {
-        StoreError::Io(error.to_string())
+        match error.kind() {
+            std::io::ErrorKind::StorageFull | std::io::ErrorKind::QuotaExceeded => Self::Full,
+            std::io::ErrorKind::PermissionDenied => Self::Denied,
+            _ => Self::Io(error.to_string()),
+        }
     }
 }
 
@@ -528,6 +538,11 @@ impl Journal {
     pub fn is_dirty(&self) -> bool {
         let inner = self.lock();
         !inner.staged.is_empty() || inner.staged_core_batches > 0
+    }
+
+    /// Whether an earlier failed write made staged memory unsafe to read until reopen.
+    pub fn is_poisoned(&self) -> bool {
+        self.lock().poisoned
     }
 
     /// Marks the journal as no longer trustworthy in memory: a step was given up between its changes and its

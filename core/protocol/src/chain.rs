@@ -9,6 +9,8 @@
 //! [`crate::objects::Transition`], [`CutEffect`]) for the caller to apply and store in one write. What the
 //! functions need to know about groups they ask a [`GroupFacts`]; what was accepted earlier, a [`ChainRecords`].
 
+mod storage;
+
 use crate::codec::{self, Decode, Encode, Reader, Writer};
 use crate::crypto::{Entropy, Secret, SigningKey};
 use crate::envelope::{self, Body, Draft, Envelope, Header, Slot};
@@ -448,6 +450,10 @@ impl Chains {
         let counts: Vec<CountEntry> = reader.vector().map_err(corrupt)?;
         let starts: Vec<StartEntry> = reader.vector().map_err(corrupt)?;
         reader.finish().map_err(corrupt)?;
+        Self::from_entries(revision, heads, counts, starts)
+    }
+
+    fn from_entries(revision: u64, heads: Vec<HeadEntry>, counts: Vec<CountEntry>, starts: Vec<StartEntry>) -> Result<Self, Error> {
         let mut chains = Self {
             revision,
             ..Self::new()

@@ -4,7 +4,7 @@
 //   rejects, with nothing written, when it aborted; any request in it that fails aborts it.
 // - Durable on return: the transaction asks for durability "strict" (flushed to the disk before it completes),
 //   and a browser that does not say it granted that is refused: nothing weaker is taken silently.
-// - The revision: one number beside the entries. A write is made only if the stored number is the one it names
+// - The revision: the checkpoint revision or the last packed delta revision. A write is made only if the stored number is the one it names
 //   (compared inside the same transaction), and then makes it one more. Otherwise: StoreConflict.
 // - One owner: a Web Lock on the state's name, taken before anything is read and held until close(). A second
 //   tab or worker that opens the same state gets StoreConflict (or waits, with { wait: true }). The database
@@ -19,9 +19,38 @@
 // everything else the app stores. Types: idb-store.d.ts.
 import { StoreConflict } from './trommi-core.js'
 
-const ENTRIES = 'entries'   // key: the entry's key (bytes); value: the entry's value (bytes)
+const ENTRIES = 'entries'   // legacy key/value records, then bounded packed checkpoint pages
+const LOG = 'journal'       // one encrypted delta per transaction, keyed by its final revision
+const COMPACT_ABOVE = 1 << 20
+const PAGE_BYTES = 64 << 10
 const META = 'meta'         // 'revision' -> how many writes were ever applied
 const lockName = name => `trommi-core:${name}`
+
+// Only transiently held while loading or compacting; the open store keeps no second device mirror.
+const keyText = key => Array.from(new Uint8Array(key.buffer ?? key, key.byteOffset ?? 0, key.byteLength), b => b.toString(16).padStart(2, '0')).join('')
+function collect(rows, packed, deltas) {
+  const entries = new Map()
+  const put = entry => entries.set(keyText(entry.key), entry)
+  for (const row of rows) {
+    if (packed) for (const entry of row.value) put(entry)
+    else put({ key: new Uint8Array(row.key), value: row.value })
+  }
+  for (const delta of deltas) {
+    for (const key of delta.delete) entries.delete(keyText(key))
+    for (const entry of delta.put) put(entry)
+  }
+  return [...entries.values()]
+}
+function rowsOf(store, ready) {
+  const rows = []
+  const cursor = store.openCursor()
+  cursor.onsuccess = () => {
+    const at = cursor.result
+    if (!at) { cursor.onsuccess = null; ready(rows); return }
+    rows.push({ key: at.key, value: at.value }); at.continue()
+  }
+}
+const sizeOf = ({ key, value }) => key.byteLength + value.byteLength
 
 /** Resolves when the request succeeded, with its result. */
 const done = request => new Promise((resolve, reject) => {
@@ -95,29 +124,28 @@ export class IdbStore {
       this.#acquiring = lock(lockName(this.#name), this.#wait, this.#steal, this.#waiting.signal, () => this.#taken())
       this.#lock = await this.#acquiring
       if (this.#state !== 'loading') throw new Error('the store was closed while it loaded')
-      const open = indexedDB.open(this.#name, 1)
+      const open = indexedDB.open(this.#name, 2)
       open.onupgradeneeded = () => {
-        open.result.createObjectStore(ENTRIES)
-        open.result.createObjectStore(META)
+        for (const name of [ENTRIES, META, LOG]) {
+          if (!open.result.objectStoreNames.contains(name)) open.result.createObjectStore(name)
+        }
       }
       this.#db = await done(open)
       if (this.#state !== 'loading') throw new Error('the store was closed while it loaded')
-      const transaction = this.#db.transaction([ENTRIES, META], 'readonly')
+      const transaction = this.#db.transaction([ENTRIES, META, LOG], 'readonly')
       const finished = committed(transaction)
-      // One cursor gives each key with its value; two separate lists would have to be trusted to agree.
-      const entries = []
-      const cursor = transaction.objectStore(ENTRIES).openCursor()
-      cursor.onsuccess = () => {
-        const at = cursor.result
-        if (!at) return
-        entries.push({ key: new Uint8Array(at.key), value: at.value })
-        at.continue()
-      }
-      const revision = transaction.objectStore(META).get('revision')
+      let rows = [], deltas = []
+      rowsOf(transaction.objectStore(ENTRIES), result => { rows = result })
+      rowsOf(transaction.objectStore(LOG), result => { deltas = result.map(row => row.value) })
+      const meta = transaction.objectStore(META)
+      const revision = meta.get('revision'), format = meta.get('checkpoint')
       await finished
       if (this.#state !== 'loading') throw new Error('the store was closed while it loaded')
+      const currentRevision = Math.max(revision.result ?? 0, deltas.at(-1)?.revision ?? 0)
+      const entries = collect(rows, format.result?.packed === true, deltas)
+      rows = []; deltas = []
       this.#state = 'open'
-      return { revision: revision.result ?? 0, entries }
+      return { revision: currentRevision, entries }
     } catch (error) {
       await this.close()
       throw error
@@ -140,7 +168,7 @@ export class IdbStore {
   async applyAll(writes) {
     if (this.#lost) throw new StoreConflict('another tab or worker took this state over')
     if (this.#state !== 'open') throw new Error('the store is closed')
-    const transaction = this.#db.transaction([ENTRIES, META], 'readwrite', { durability: 'strict' })
+    const transaction = this.#db.transaction([ENTRIES, META, LOG], 'readwrite', { durability: 'strict' })
     if (transaction.durability !== 'strict') {
       transaction.abort()
       throw new Error('the browser does not grant a strict transaction')
@@ -148,26 +176,74 @@ export class IdbStore {
     const finished = committed(transaction)
     this.#writing.add(transaction)
     const entries = transaction.objectStore(ENTRIES)
-    const meta = transaction.objectStore(META)
-    let conflict = false
-    const stored = meta.get('revision')
-    stored.onsuccess = () => {
-      // The lock may be taken away between the start of the transaction and this answer: nothing is put then.
-      if (this.#lost) { transaction.abort(); return }
-      let revision = stored.result ?? 0
-      for (const write of writes) {
-        if (revision !== write.expectedRevision) { conflict = true; transaction.abort(); return }
-        for (const key of write.delete) entries.delete(exact(key))
-        for (const { key, value } of write.put) entries.put(exact(value), exact(key))
-        revision += 1
-      }
-      meta.put(revision, 'revision')
+    const meta = transaction.objectStore(META), journal = transaction.objectStore(LOG)
+    let conflict = false, failure
+    const stored = meta.get('revision'), last = journal.openCursor(null, 'prev')
+    const append = checkpoint => {
+      try {
+        if (this.#lost) { transaction.abort(); return }
+        let revision = Math.max(stored.result ?? 0, last.result?.value.revision ?? 0)
+        const changed = new Map()
+        for (const write of writes) {
+          if (revision !== write.expectedRevision) { conflict = true; transaction.abort(); return }
+          for (const key of write.delete) changed.set(keyText(key), { key: exact(key) })
+          for (const { key, value } of write.put) changed.set(keyText(key), { key: exact(key), value: exact(value) })
+          revision += 1
+        }
+        const put = [], deleted = []
+        for (const entry of changed.values()) {
+          if (entry.value === undefined) deleted.push(entry.key)
+          else put.push(entry)
+        }
+        const bytes = put.reduce((n, entry) => n + sizeOf(entry), 0) + deleted.reduce((n, key) => n + key.byteLength, 0) + 32
+        const total = (last.result?.value.bytes ?? 0) + bytes
+        const delta = { revision, put, delete: deleted, bytes: total, checkpoint }
+        if (total <= Math.max(COMPACT_ABOVE, checkpoint?.bytes ?? 0)) {
+          journal.put(delta, revision)
+          return
+        }
+        // Geometric compaction, like the native journal: a bounded delta log,
+        // packed checkpoint pages, and its revision all change in this transaction.
+        let rows, deltas
+        const compact = () => {
+          if (!rows || !deltas) return
+          try {
+            const current = collect(rows, checkpoint?.packed === true, [...deltas, delta])
+            entries.clear(); journal.clear()
+            let page = [], size = 0, number = 0, bytes = 0
+            for (const entry of current) {
+              const length = sizeOf(entry)
+              if (page.length && size + length > PAGE_BYTES) {
+                entries.put(page, number++); page = []; size = 0
+              }
+              page.push(entry); size += length; bytes += length
+            }
+            if (page.length) entries.put(page, number)
+            meta.put(revision, 'revision')
+            meta.put({ packed: true, bytes }, 'checkpoint')
+          } catch (error) { failure = error; transaction.abort() }
+        }
+        rowsOf(entries, result => { rows = result; compact() })
+        rowsOf(journal, result => { deltas = result.map(row => row.value); compact() })
+      } catch (error) { failure = error; transaction.abort() }
     }
+    let remaining = 2
+    const ready = () => {
+      if (--remaining) return
+      // The last delta carries its checkpoint descriptor. Read metadata only just
+      // after compaction (or on the first write), not for every ordinary entry.
+      if (last.result) append(last.result.value.checkpoint)
+      else {
+        const checkpoint = meta.get('checkpoint')
+        checkpoint.onsuccess = () => append(checkpoint.result)
+      }
+    }
+    stored.onsuccess = last.onsuccess = ready
     try {
       await finished
     } catch (error) {
       if (this.#lost) throw new StoreConflict('another tab or worker took this state over')
-      throw conflict ? new StoreConflict() : error
+      throw conflict ? new StoreConflict() : failure ?? error
     } finally {
       this.#writing.delete(transaction)
     }

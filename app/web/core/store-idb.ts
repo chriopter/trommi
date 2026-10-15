@@ -271,9 +271,9 @@ function isEmpty(name: string): Promise<boolean> {
       const db = req.result
       const close = (empty: boolean) => { db.close(); resolve(empty) }
       try {
-        const tx = db.transaction(['entries', 'meta'])
-        const count = tx.objectStore('entries').count(), revision = tx.objectStore('meta').get('revision')
-        tx.oncomplete = () => close(count.result === 0 && revision.result === undefined)
+        const tx = db.transaction(['entries', 'meta', ...(db.objectStoreNames.contains('journal') ? ['journal'] : [])])
+        const counts = Array.from(tx.objectStoreNames, name => tx.objectStore(name).count())
+        tx.oncomplete = () => close(counts.every(count => count.result === 0))
         tx.onabort = () => { db.close(); reject(failed('a database of the app could not be read', tx.error)) }
       } catch { close(false) }   // (another layout: not the binding's, not touched)
     }

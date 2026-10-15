@@ -1,5 +1,5 @@
 //! The two spaces on disk: the device space keeps the journal's promises (one owner, a revision, durable), the
-//! cache space is a plain key-value folder.
+//! cache space shares its atomic journal under a separate namespace.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -270,5 +270,90 @@ fn in_one_journal_the_cache_lives_beside_the_device_and_the_owners_own_entries()
     let mut stores = Stores::in_journal(Journal::open(&dir).unwrap());
     assert_eq!(get(&mut stores, &["c1/ab/meta"]), vec![Some(b"m".to_vec())]);
     assert_eq!(device(&mut stores).0, 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_refused_cache_batch_leaves_every_key_unchanged() {
+    let dir = folder("cache-atomic");
+    let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
+    put(&mut stores, &[("existing", b"before"), ("keep", b"yes")], &[]);
+    let result = stores.run(StoreOp::Put {
+        put: vec![
+            Entry { key: "existing".into(), value: b"after".as_slice().into() },
+            Entry { key: "k".repeat(300), value: b"refused".as_slice().into() },
+        ],
+        delete: vec!["keep".into()],
+    });
+    assert!(matches!(result, IoResult::Err(_)));
+    drop(stores);
+    let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
+    assert_eq!(get(&mut stores, &["existing", "keep"]), vec![Some(b"before".to_vec()), Some(b"yes".to_vec())]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn poisoned_cache_state_cannot_be_read_as_if_a_failed_write_had_committed() {
+    use trommi_io::journal::Journal;
+    let dir = folder("cache-poison");
+    let journal = Journal::open(&dir).unwrap();
+    let mut stores = Stores::in_journal(journal.clone());
+    put(&mut stores, &[("engine/requests", b"durable")], &[]);
+    journal.put([&[trommi_io::journal::SIDE, b'c'][..], b"engine/requests"].concat(), b"uncommitted".to_vec());
+    journal.poison();
+    assert!(matches!(stores.run(StoreOp::Get { keys: vec!["engine/requests".into()] }), IoResult::Err(_)));
+    assert!(matches!(stores.run(StoreOp::Scan { prefix: "engine/".into() }), IoResult::Err(_)));
+    drop(stores); drop(journal);
+    let mut stores = Stores::in_journal(Journal::open(&dir).unwrap());
+    assert_eq!(get(&mut stores, &["engine/requests"]), vec![Some(b"durable".to_vec())]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn legacy_cache_migration_keeps_pending_work_and_never_reimports_stale_files() {
+    let dir = folder("cache-migration");
+    let cache = dir.join("cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join("engine%2Froom"), b"room identity").unwrap();
+    std::fs::write(cache.join("engine%2Frequests"), b"pending request").unwrap();
+    std::fs::create_dir(cache.join("unreadable")).unwrap();
+    // A failed read leaves no migration marker or partial import.
+    assert!(Stores::open(&dir.join("device"), &cache).is_err());
+    std::fs::remove_dir(cache.join("unreadable")).unwrap();
+    let mut stores = Stores::open(&dir.join("device"), &cache).unwrap();
+    assert_eq!(get(&mut stores, &["engine/room", "engine/requests"]), vec![Some(b"room identity".to_vec()), Some(b"pending request".to_vec())]);
+    assert_eq!(device(&mut stores), (0, vec![]), "cache migration changes no device revision");
+    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
+    put(&mut stores, &[("engine/room", b"current identity")], &["engine/requests"]);
+    drop(stores);
+    // A crash after the durable migration but before cleanup leaves stale files.
+    std::fs::write(cache.join("engine%2Froom"), b"stale identity").unwrap();
+    std::fs::write(cache.join("engine%2Frequests"), b"already answered").unwrap();
+    let mut stores = Stores::open(&dir.join("device"), &cache).unwrap();
+    assert_eq!(get(&mut stores, &["engine/room", "engine/requests"]), vec![Some(b"current identity".to_vec()), None]);
+    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
+    drop(stores);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn sixty_four_cache_puts_are_one_durable_journal_record() {
+    let dir = folder("cache-cost");
+    let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
+    let log = dir.join("device/state.log");
+    let before = std::fs::metadata(&log).unwrap().len();
+    let entries = (0..64).map(|n| Entry {
+        key: format!("c1/aa/card/{n}"), value: vec![n; 1024].into(),
+    }).collect();
+    ok(stores.run(StoreOp::Put { put: entries, delete: vec![] }));
+    let bytes = std::fs::read(&log).unwrap();
+    let added = &bytes[usize::try_from(before).unwrap()..];
+    let payload = u32::from_le_bytes(added[..4].try_into().unwrap()) as usize;
+    assert_eq!(added.len(), payload + 4 + 32, "all64puts form exactly one journal record");
+    assert_eq!(std::fs::read_dir(dir.join("cache")).unwrap().count(), 0);
+    println!("64 cache puts: one synced journal record, {} appended bytes, no per-key files", added.len());
+    drop(stores);
+    let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
+    assert_eq!(scan(&mut stores, "c1/aa/card/").len(), 64);
     let _ = std::fs::remove_dir_all(&dir);
 }

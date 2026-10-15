@@ -6,7 +6,7 @@
 //!   Handle::send(Event)   ──▶  one task owns the App, one queue of events ──▶   App::handle(now, event)
 //!   Shell::show(effect)   ◀──  Render, Notify, FileReady, SaveFile, …      ◀──  [Effect, …]
 //!                              Http, OpenStream, Cancel   http.rs (reqwest)
-//!                              Store                      store.rs (journal.rs, the cache folder)
+//!                              Store                      store.rs (device/cache namespaces in journal.rs)
 //!                              Timer                      one tokio timer
 //! ```
 //!

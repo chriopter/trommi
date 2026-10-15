@@ -24,7 +24,7 @@ use crate::mls::profile::Cut;
 use crate::mls::rules::Parent;
 use crate::objects::{self, Object, ObjectStates, Objects, Transition};
 use crate::recovery::SessionsAt;
-use crate::registers::Registers;
+use crate::registers::{OwnIds, Registers};
 use crate::store::{self, table, Batch, Storage};
 use openmls::prelude::LeafNodeIndex;
 use std::collections::{BTreeMap, BTreeSet};
@@ -50,6 +50,8 @@ pub(super) const SUB_LISTED_OBJECT: u8 = 12;
 /// Of a listed group, the newest `heads` each human device of the person signed that this device read out
 /// of order: its number in that device's chain and the value. A lower bound for where a chain may start.
 pub(super) const SUB_FLOOR: u8 = 13;
+/// Chain components stored independently, in place of SUB_CHAINS.
+pub(super) const SUB_CHAIN_PARTS: u8 = 14;
 /// The parts of the table of objects: one entry per object, one per version taken of a Note, and the count of
 /// the transitions a group's objects have taken. An envelope reads and writes the one object it is about, so
 /// what it costs does not grow with what its group holds.
@@ -74,6 +76,8 @@ pub(super) const SUB_OWN_IDS: u8 = 1;
 /// A human device's register values read out of the hub's order (9.3.6), by sender and number: kept apart
 /// from the registers its chains build.
 pub(super) const SUB_OVERLAY: u8 = 2;
+pub(super) const SUB_REGISTER_PARTS: u8 = 3;
+pub(super) const SUB_OWN_ID_PARTS: u8 = 4;
 
 const ROLE_NONE: u8 = 0;
 
@@ -420,6 +424,10 @@ pub(super) fn check_entry(key: &[u8], value: &[u8]) -> Result<(), Error> {
                 SUB_EPOCH => codec::decode::<EpochFacts>(value, value.len()).map(|_| ()),
                 SUB_CUT => codec::decode::<Removal>(value, value.len()).map(|_| ()),
                 SUB_CHAINS => Chains::from_bytes(value).map(|_| ()),
+                SUB_CHAIN_PARTS => (|| {
+                    super::group_after(&mut rest)?;
+                    Chains::check_storage_part(rest.take(rest.remaining())?, value)
+                })(),
                 SUB_OWN_CHAIN => OwnChain::from_bytes(value).map(|_| ()),
                 SUB_RECORD => codec::decode::<Record>(value, value.len()).map(|_| ()),
                 SUB_GROUP_STATE => codec::decode::<GroupState>(value, value.len()).map(|_| ()),
@@ -452,6 +460,14 @@ pub(super) fn check_entry(key: &[u8], value: &[u8]) -> Result<(), Error> {
         table::COMMAND => super::content::check_command(key.get(1..).unwrap_or_default(), value),
         table::REGISTER => match rest.u8().map_err(|_| damaged("a key"))? {
             SUB_REGISTERS => Registers::from_bytes(value).map(|_| ()),
+            SUB_REGISTER_PARTS => (|| {
+                super::group_after(&mut rest)?;
+                Registers::check_storage_part(rest.take(rest.remaining())?, value)
+            })(),
+            SUB_OWN_ID_PARTS => (|| {
+                super::group_after(&mut rest)?;
+                OwnIds::check_storage_part(rest.take(rest.remaining())?, value)
+            })(),
             SUB_OWN_IDS => crate::registers::OwnIds::from_bytes(value).map(|_| ()),
             SUB_OVERLAY => super::overlay::check_entry(key.get(2..).unwrap_or_default(), value),
             _ => Err(Error::BadFormat),
@@ -659,6 +675,18 @@ impl<S: Storage> ObjectStates for HeldObjects<'_, S> {
     }
 }
 
+fn whole_group_of(key: &[u8], table: u8, sub: u8) -> Option<GroupId> {
+    let mut rest = Reader::new(key);
+    if rest.u8().ok()? != table || rest.u8().ok()? != sub { return None; }
+    let group = super::group_after(&mut rest).ok()?;
+    rest.finish().ok()?;
+    Some(group)
+}
+
+pub(super) fn whole_chains_of(key: &[u8]) -> Option<GroupId> { whole_group_of(key, table::CHAIN, SUB_CHAINS) }
+pub(super) fn whole_registers_of(key: &[u8]) -> Option<GroupId> { whole_group_of(key, table::REGISTER, SUB_REGISTERS) }
+pub(super) fn whole_own_ids_of(key: &[u8]) -> Option<GroupId> { whole_group_of(key, table::REGISTER, SUB_OWN_IDS) }
+
 impl<S: Storage> Device<S> {
     // ---- the content tables: read through what the running operation wrote ----
 
@@ -690,25 +718,47 @@ impl<S: Storage> Device<S> {
     /// Every stored entry whose key starts with `prefix`, ascending by key, as the running operation left
     /// them.
     pub(super) fn stored_under(&self, prefix: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
-        let mut found: BTreeMap<&[u8], Option<&[u8]>> = self
-            .mirror
-            .range(prefix.to_vec()..)
+        self.stored_refs_under(prefix).into_iter()
+            .filter_map(|(key, value)| Some((key.to_vec(), value?.to_vec())))
+            .collect()
+    }
+
+    fn stored_keys_under(&self, prefix: &[u8]) -> BTreeSet<Vec<u8>> {
+        self.stored_refs_under(prefix).into_iter()
+            .filter_map(|(key, value)| value.map(|_| key.to_vec())).collect()
+    }
+
+    fn stored_refs_under(&self, prefix: &[u8]) -> BTreeMap<&[u8], Option<&[u8]>> {
+        let mut found: BTreeMap<&[u8], Option<&[u8]>> = self.mirror.range(prefix.to_vec()..)
             .take_while(|(key, _)| key.starts_with(prefix))
-            .map(|(key, value)| (key.as_slice(), Some(value.as_slice())))
-            .collect();
-        for (key, value) in self
-            .memory
-            .wire
-            .written
-            .range(prefix.to_vec()..)
-            .take_while(|(key, _)| key.starts_with(prefix))
-        {
+            .map(|(key, value)| (key.as_slice(), Some(value.as_slice()))).collect();
+        for (key, value) in self.memory.wire.written.range(prefix.to_vec()..)
+            .take_while(|(key, _)| key.starts_with(prefix)) {
             found.insert(key, value.as_ref().map(|value| value.as_slice()));
         }
         found
-            .into_iter()
-            .filter_map(|(key, value)| Some((key.to_vec(), value?.to_vec())))
-            .collect()
+    }
+
+    pub(super) fn group_parts(&self, table: u8, sub: u8, group: &GroupId) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let prefix = group_key(table, sub, group, &[]);
+        self.stored_under(&prefix).into_iter()
+            .map(|(key, value)| (key.get(prefix.len()..).unwrap_or_default().to_vec(), value)).collect()
+    }
+
+    /// Migrate a whole record and replace only changed components, in the operation's one batch.
+    pub(super) fn put_group_parts(&mut self, batch: &mut Batch, table: u8, whole: u8, split: u8, group: &GroupId, mut parts: Vec<(Vec<u8>, Vec<u8>)>) {
+        let prefix = group_key(table, split, group, &[]);
+        let mut old = self.stored_keys_under(&prefix);
+        // Bulk migrations reveal no ordering by the private register names.
+        parts.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        for (suffix, value) in parts {
+            let key = [prefix.as_slice(), suffix.as_slice()].concat();
+            old.remove(&key);
+            if self.stored(&key) != Some(value.as_slice()) { self.put_stored(batch, key, value); }
+        }
+        for key in old { self.delete_stored(batch, key); }
+        let whole = group_key(table, whole, group, &[]);
+        if self.stored(&whole).is_some() { self.delete_stored(batch, whole); }
     }
 
     /// Begins an operation of the content layer: what earlier operations wrote is in the store by now.
@@ -984,21 +1034,33 @@ impl<S: Storage> Device<S> {
     // ---- chains, objects, registers ----
 
     pub(super) fn chains(&self, group: &GroupId) -> Result<Chains, Error> {
-        self.stored(&group_key(table::CHAIN, SUB_CHAINS, group, &[]))
-            .map_or(Ok(Chains::new()), Chains::from_bytes)
+        let parts = self.group_parts(table::CHAIN, SUB_CHAIN_PARTS, group);
+        match self.stored(&group_key(table::CHAIN, SUB_CHAINS, group, &[])) {
+            Some(bytes) if parts.is_empty() => Chains::from_bytes(bytes),
+            Some(_) => Err(damaged("mixed whole and split chains")),
+            None => Chains::from_storage_parts(parts),
+        }
     }
 
-    pub(super) fn put_chains(
-        &mut self,
-        batch: &mut Batch,
-        group: &GroupId,
-        chains: &Chains,
-    ) -> Result<(), Error> {
-        self.put_stored(
-            batch,
-            group_key(table::CHAIN, SUB_CHAINS, group, &[]),
-            chains.to_bytes()?,
-        );
+    pub(super) fn put_chains(&mut self, batch: &mut Batch, group: &GroupId, chains: &Chains) -> Result<(), Error> {
+        self.put_group_parts(batch, table::CHAIN, SUB_CHAINS, SUB_CHAIN_PARTS, group, chains.storage_parts()?);
+        Ok(())
+    }
+
+    pub(super) fn check_chain_parts(&self) -> Result<(), Error> {
+        let prefix = [table::CHAIN, SUB_CHAIN_PARTS];
+        let mut groups = BTreeSet::new();
+        for key in self.stored_keys_under(&prefix) {
+            let mut rest = Reader::new(key.get(prefix.len()..).unwrap_or_default());
+            groups.insert(super::group_after(&mut rest).map_err(|_| damaged("a chain component's group"))?);
+        }
+        for group in groups {
+            if self.memory.record.room != Some(group.room_id())
+                || !self.memory.groups.contains_key(&group) && !self.memory.observers.contains_key(&group) {
+                return Err(damaged("a chain component's group"));
+            }
+            self.chains(&group)?;
+        }
         Ok(())
     }
 
@@ -1247,21 +1309,35 @@ impl<S: Storage> Device<S> {
     }
 
     pub(super) fn registers(&self, group: &GroupId) -> Result<Registers, Error> {
-        self.stored(&group_key(table::REGISTER, SUB_REGISTERS, group, &[]))
-            .map_or(Ok(Registers::new()), Registers::from_bytes)
+        let parts = self.group_parts(table::REGISTER, SUB_REGISTER_PARTS, group);
+        match self.stored(&group_key(table::REGISTER, SUB_REGISTERS, group, &[])) {
+            Some(bytes) if parts.is_empty() => Registers::from_bytes(bytes),
+            Some(_) => Err(damaged("mixed whole and split registers")),
+            None => Registers::from_storage_parts(parts),
+        }
     }
 
-    pub(super) fn put_registers(
-        &mut self,
-        batch: &mut Batch,
-        group: &GroupId,
-        registers: &Registers,
-    ) -> Result<(), Error> {
-        self.put_stored(
-            batch,
-            group_key(table::REGISTER, SUB_REGISTERS, group, &[]),
-            registers.to_bytes()?,
-        );
+    pub(super) fn put_registers(&mut self, batch: &mut Batch, group: &GroupId, registers: &Registers) -> Result<(), Error> {
+        self.put_group_parts(batch, table::REGISTER, SUB_REGISTERS, SUB_REGISTER_PARTS, group, registers.storage_parts()?);
+        Ok(())
+    }
+
+    pub(super) fn check_register_parts(&self) -> Result<(), Error> {
+        for sub in [SUB_REGISTER_PARTS, SUB_OWN_ID_PARTS] {
+            let prefix = [table::REGISTER, sub];
+            let mut groups = BTreeSet::new();
+            for key in self.stored_keys_under(&prefix) {
+                let mut rest = Reader::new(key.get(prefix.len()..).unwrap_or_default());
+                groups.insert(super::group_after(&mut rest).map_err(|_| damaged("a register component's group"))?);
+            }
+            for group in groups {
+                if self.memory.record.room != Some(group.room_id())
+                    || !self.memory.groups.contains_key(&group) && !self.memory.observers.contains_key(&group) {
+                    return Err(damaged("a register component's group"));
+                }
+                if sub == SUB_REGISTER_PARTS { self.registers(&group)?; } else { self.own_ids(&group)?; }
+            }
+        }
         Ok(())
     }
 
