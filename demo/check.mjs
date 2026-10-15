@@ -59,6 +59,9 @@ export function readDemo(repo = REPO) {
     const want = first ? slug(s.screen) : `${slug(s.screen)}--${slug(s.state)}`
     if (s.id !== want) problems.push(`${at}: the id of "${s.screen}" / "${s.state}" is ${want}${first ? ' (the first state of a screen is the screen as it is)' : ''}`)
     if (!s.web.path.startsWith('/')) problems.push(`${at}: web.path does not start with /`)
+    const route = s.web.path.split('?')[0].split('/').filter(Boolean)
+    if (route[0] === 'card' && !fixture?.cards?.some(c => c.object_id === route[1])) problems.push(`${at}: card route names no fixture card: ${route[1]}`)
+    if (route[0] === 'chat' && !fixture?.sessions?.some(c => c.agent_device_id?.slice(0, 32) === route[1])) problems.push(`${at}: chat route names no fixture session: ${route[1]}`)
   }
   // (a screen's states stand together: the web lists them under one title)
   const order = states.map(s => s?.screen).filter((x, i, all) => x !== all[i - 1])

@@ -28,7 +28,7 @@ demo/
 
 ## The data
 
-**`data/fixture.json`**: one room as the client core's model (`app/web/core/README.md` "The model"), as JSON:
+**`data/fixture.json`**: one room read by the shared app core (`core/client/src/views/demo.rs`), as JSON:
 
 | Key | What |
 | --- | --- |
@@ -56,7 +56,11 @@ screen as it is:
 | `screen`, `state` | the names shown |
 | `web.path` | the address in the app |
 | `web.state` | the click the web makes once the page is there (`?state=<name>`, `demoState` in `app/web/public/demo/demo.mjs`), or `null` |
-| `web.mock` | the room: `"1"` is the fixture as it is, its times moved to now; any other name is a variant the client builds from it (`loadFixture` in `demo.mjs`) |
+| `web.mock` | the demo marker: `"1"` selects the fixture with times moved to now; historical marker names do not create a second core model |
+
+Card routes name a fixture `object_id`; chat routes name the core session id (the first 32 characters of its
+`agent_device_id`). The same paths drive the web review page and native `TROMMI_SCREEN` launches. The check
+rejects routes whose card or session is missing, so a stale alias cannot silently produce an empty screen.
 
 An empty list is allowed: `/screens` then says that none are listed.
 
@@ -67,6 +71,10 @@ The web app's build (`app/web/dev/build.mjs`) runs the check, then copies the ro
 into the bundle. Neither is in git. The dev server (`app/web/dev/serve.mjs`) does the same from memory on every
 request: an edit here shows at the next reload.
 
+The native app bundles this same data through `app/ios/TrommiApp/Sources/TrommiApp/Resources/Demo`.
+`NativeDemo.swift` reads files and translates the catalog route into a core Focus event; it holds no room model.
+Native UI-specific states are not all mapped yet.
+
 ## The check
 
 `node demo/check.mjs` (`npm run test:demo` in `app/web/`; also run by `npm run test:app` and by the web app's build). It fails when
@@ -74,5 +82,6 @@ request: an edit here shows at the next reload.
 - `fixture.json` or `screens.json` does not parse, lacks a key, has a list or an object of the wrong kind, names no
   human device as the one looking, or is not in its written form (`node demo/check.mjs --write` writes both);
 - a state has no id, an id twice, an id that does not follow from its names, or stands apart from its screen;
+- a card or chat route names no object or session in the fixture; the browser gate also requires real page content;
 - the fixture, `demo.mjs` or a page in `files/` names a file that is not there, or a file is named by nobody;
 - the web app keeps a copy: anything of the demo data tracked in `app/web/public/demo/`.
