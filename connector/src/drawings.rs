@@ -133,7 +133,7 @@ mod tests {
             .filter_map(|l| l.trim().split(':').next().map(String::from)));
         assert_eq!(web, want, "app/web/public/ui.mjs");
 
-        let pen = std::fs::read_to_string(root.join("app/ios/TrommiClient/Sources/TrommiClient/Pen.swift")).unwrap();
+        let pen = std::fs::read_to_string(root.join("app/ios/TrommiApp/Sources/TrommiApp/Pen.swift")).unwrap();
         let kinds_swift = pen.split("static let kinds").nth(1).unwrap().split(']').next().unwrap().to_string();
         let drawings = pen.split("static let drawings = kinds + [").nth(1).unwrap().split(']').next().unwrap().to_string();
         let quoted = |s: &str| -> Vec<String> { s.split('"').skip(1).step_by(2).map(String::from).collect() };

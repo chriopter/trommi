@@ -47,6 +47,8 @@ struct SettingsScreen: View {
   @State private var kitWords = ""
   var body: some View {
     Form {
+      if let problem = shell.view.account.problem { Text(problem.en).foregroundStyle(Ink.deny) }
+      if shell.view.account.step == "working" { ProgressView() }
       Section("Account") { if let email = shell.view.settings.account { Text(email) }; Button("Pair a device") { shell.account(["step": "invite_device"]) }; Button("Invite an agent") { shell.account(["step": "invite_agent", "label": "", "desk": shell.view.sidebar.desk]) }; AccountInvite() }
       Section("Account security") {
         SecureField("Current password", text: $currentPassword)
