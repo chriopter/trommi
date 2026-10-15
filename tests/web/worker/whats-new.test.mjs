@@ -69,7 +69,7 @@ test('the releases: read page by page without a token, up to the old series; a t
   }
   assert.equal((await readReleases({}, { fetch: get, now: 0, cache: null })).length, 103)
   assert.deepEqual(asked.map(a => a[1]), [undefined, undefined], 'unauthenticated')
-  assert.match(asked[0][0], /^https:\/\/api\.github\.com\/repos\/trommi\/trommi\/releases\?per_page=100&page=1$/)
+  assert.match(asked[0][0], /^https:\/\/api\.github\.com\/repos\/chriopter\/trommi\/releases\?per_page=100&page=1$/)
   forget()
   await readReleases({ GITHUB_RELEASES_TOKEN: 'secret' }, { fetch: get, now: 0, cache: null })
   assert.equal(asked.at(-1)[1], 'Bearer secret')
