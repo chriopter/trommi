@@ -48,7 +48,8 @@ final class NativeScreensTests: XCTestCase {
     let erase = app.switches["Erase"]
     XCTAssertTrue(erase.waitForExistence(timeout: 15))
     let previous = erase.value as? String
-    erase.tap()
+    capture("scribble-before-toggle")
+    erase.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
     let changed = NSPredicate(format: "value != %@", previous ?? "")
     expectation(for: changed, evaluatedWith: erase)
     waitForExpectations(timeout: 3)
