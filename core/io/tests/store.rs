@@ -244,3 +244,31 @@ fn the_cache_space_gets_scans_and_puts() {
     assert_eq!(scan(&mut stores, "").len(), 6);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn in_one_journal_the_cache_lives_beside_the_device_and_the_owners_own_entries() {
+    use trommi_io::journal::{Journal, SIDE};
+    let dir = folder("in-journal");
+    let journal = Journal::open(&dir).unwrap();
+    // an entry of the journal's owner of its own (another side tag) is not the cache's
+    journal.put(vec![SIDE, b'k', 1, b'x'], b"mine".to_vec());
+    journal.commit().unwrap();
+    let mut stores = Stores::in_journal(journal.clone());
+    assert_eq!(device(&mut stores), (0, vec![]));
+    ok(apply(&mut stores, 0, vec![entry(b"\x01dev", b"one")], vec![]));
+    put(&mut stores, &[("engine/ab", b"rec"), ("c1/ab/meta", b"m")], &[]);
+    assert_eq!(get(&mut stores, &["engine/ab", "nope"]), vec![Some(b"rec".to_vec()), None]);
+    assert_eq!(scan(&mut stores, "c1/"), vec![("c1/ab/meta".to_string(), b"m".to_vec())]);
+    put(&mut stores, &[], &["engine/ab"]);
+    assert_eq!(get(&mut stores, &["engine/ab"]), vec![None]);
+    // the device space holds only the device's entries; the owner's entry is as it was
+    assert_eq!(device(&mut stores), (1, vec![(b"\x01dev".to_vec(), b"one".to_vec())]));
+    assert_eq!(journal.get(&[SIDE, b'k', 1, b'x']).map(|v| v.to_vec()), Some(b"mine".to_vec()));
+    // all of it is on disk: opened again, the same
+    drop(stores);
+    drop(journal);
+    let mut stores = Stores::in_journal(Journal::open(&dir).unwrap());
+    assert_eq!(get(&mut stores, &["c1/ab/meta"]), vec![Some(b"m".to_vec())]);
+    assert_eq!(device(&mut stores).0, 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}

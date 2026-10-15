@@ -272,6 +272,11 @@ pub struct Hub {
     /// Keys the hub took out of the room: their token reads, per group, the Commits up to the one numbered here in
     /// that group's log (`GET /v1/groups/{group}/removal`), and nothing else.
     pub removed_keys: BTreeMap<DeviceId, BTreeMap<GroupId, u64>>,
+    /// The next so many envelopes posted are voided for their epoch: refused `wrong-epoch`, their number used up,
+    /// a void record in the order in their place (9.0.8).
+    pub voids: u32,
+    /// The KeyPackage a wish was posted with, by the wish's id.
+    pub wish_packages: BTreeMap<u64, Vec<u8>>,
 }
 
 #[derive(Clone)]
@@ -314,6 +319,8 @@ impl Default for Hub {
             leases: BTreeMap::new(),
             links: Vec::new(),
             removed_keys: BTreeMap::new(),
+            voids: 0,
+            wish_packages: BTreeMap::new(),
             streaming: Vec::new(),
             notes: Vec::new(),
             wishes: Vec::new(),
@@ -595,6 +602,11 @@ impl Hub {
                 }
                 *head = seq;
                 self.change += 1;
+                if self.voids > 0 {
+                    self.voids -= 1;
+                    self.order.push(Item::Envelope { change: self.change, group, sender, seq, bytes: bytes.to_vec(), void_code: Some("wrong-epoch".into()) });
+                    return Err(No { voided: true, ..no(Error::WrongEpoch) });
+                }
                 if let trommi_core::envelope::Subject::Register(register) = &header.subject {
                     self.registers.insert((group, sender, register.as_bytes().to_vec()), self.change);
                 }
@@ -1305,7 +1317,12 @@ impl Hub {
             ("POST", ["v1", "requests"]) => {
                 let kind = body["kind"].as_str().filter(|k| ["readmit", "handover", "session"].contains(k)).ok_or(no(Error::BadFormat))?.to_string();
                 let group = body["group"].as_str().and_then(|g| base64url_decode(g).ok()).and_then(|b| GroupId::from_bytes(&b).ok());
-                Ok(json!({ "id": self.wish(&device, &kind, group, now) }))
+                let package = body["key_package"].as_str().and_then(|p| base64url_decode(p).ok());
+                let id = self.wish_with(&device, &kind, group, now, package.as_deref(), None, None);
+                if let Some(package) = package {
+                    self.wish_packages.insert(id, package);
+                }
+                Ok(json!({ "id": id }))
             }
             ("GET", ["v1", "requests"]) => {
                 // (a human device sees every wish of the room, another device its own)

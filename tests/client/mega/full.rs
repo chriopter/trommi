@@ -225,7 +225,7 @@ async fn full_account_held() {
         let group = human.found_session(&admitted).await;
         let main = trommi_connector::util::hex(group.session_id().unwrap().as_bytes());
         let a = client.clone();
-        common::eventually("the agent is in its session", || async { a.core.lock().await.session_id().is_some() }).await;
+        common::eventually("the agent is in its session", || async { a.lock().session_id().is_some() }).await;
         let _ = client
             .set_status(fields(json!({ "profile": { "agent_name": format!("project-{i}") } })), Some(main.clone()))
             .await;

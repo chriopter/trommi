@@ -241,3 +241,27 @@ fn a_leafs_refusal_of_a_commit_is_said_once() {
     let said: Vec<&Alert> = sim.app.alerts().iter().filter(|a| matches!(a, Alert::Rejected { .. })).collect();
     assert_eq!(said, vec![&Alert::Rejected { group: world.group, n: 3, from: founder, committer: Some(agent) }]);
 }
+
+#[test]
+fn a_welcome_into_a_session_that_does_not_open_asks_once_with_a_fresh_key_package() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Live);
+    let me = world.me;
+    let group = GroupId::session(world.room.room_id(), trommi_core::ids::SessionId::new([0x42; 16]));
+    for n in 0..2u64 {
+        {
+            let mut hub = world.hub.borrow_mut();
+            hub.welcomes.push(common::hub::Welcome { id: 9_000 + n, group, bytes: vec![1, 2, 3], device: me });
+            hub.note(vec![me], "welcome", serde_json::json!({ "group_id": trommi_core::ids::base64url_encode(group.as_bytes()) }));
+        }
+        news(&world, &mut sim);
+        sim.advance(1_000);
+        news(&world, &mut sim);
+    }
+    let hub = world.hub.borrow();
+    let wishes: Vec<u64> = hub.wishes.iter().filter(|(_, d, kind, g, _)| *d == me && kind == "readmit" && *g == Some(group)).map(|w| w.0).collect();
+    assert_eq!(wishes.len(), 1, "once: {:?}", hub.wishes);
+    assert!(hub.wish_packages.get(&wishes[0]).is_some_and(|p| !p.is_empty()), "with a fresh KeyPackage");
+}

@@ -15,6 +15,8 @@ path = "src/lib.rs"
 
 [dependencies]
 trommi-core = { path = "../core/protocol" }
+# The app core: the engine in agent mode, the board model, the hub's codec (driver.rs).
+trommi-client-core = { path = "../core/client" }
 # The journal (store.rs): the device state on disk, shared with the app core's native executor.
 trommi-io = { path = "../core/io" }
 # Runtime and transport. TLS is rustls with ring: no system library, so the four targets link statically.

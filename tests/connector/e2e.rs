@@ -7,7 +7,7 @@ use common::{eventually, Admitted, HubProc, Human, TempDir};
 use serde_json::{json, Map, Value};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedReceiver;
-use trommi_connector::client::{Client, ClientEvent, Command};
+use trommi_connector::driver::{Driver as Client, DriverEvent as ClientEvent, Command};
 use trommi_connector::join::join_room;
 use trommi_connector::store::Journal;
 use trommi_core::ids::GroupId;
@@ -152,7 +152,7 @@ async fn room() -> (HubProc, Human, Agent, GroupId) {
     let group = human.found_session(&agent.admitted).await;
     let client = agent.client.clone();
     eventually("the agent is in its session", || async {
-        client.core.lock().await.session_id().is_some()
+        client.lock().session_id().is_some()
     })
     .await;
     (hub, human, agent, group)
@@ -271,7 +271,7 @@ async fn a_takeover_stops_the_first_connector_and_hands_the_session_on() {
         }
     };
     assert_eq!(
-        first.client.core.lock().await.model.room.connection,
+        first.client.lock().connection(),
         "removed"
     );
     let _ = removed;
@@ -280,17 +280,15 @@ async fn a_takeover_stops_the_first_connector_and_hands_the_session_on() {
     let client = second.client.clone();
     let sid = trommi_connector::util::hex(session.as_bytes());
     eventually("the new connector is in the session", || async {
-        client.core.lock().await.session_id().as_deref() == Some(sid.as_str())
+        client.lock().session_id().as_deref() == Some(sid.as_str())
     })
     .await;
     eventually(
         "it read the session's history with the keys handed over",
         || async {
             client
-                .core
                 .lock()
-                .await
-                .model
+                .model()
                 .cards
                 .get(&card)
                 .is_some_and(|c| c.title() == "Blue or green?")
@@ -366,12 +364,12 @@ async fn what_was_written_while_the_hub_was_away_is_sent_once_it_is_back() {
         .await
         .expect("queued");
     assert!(sent.envelope_number.is_none());
-    assert_eq!(agent.client.core.lock().await.outbox.len(), 1);
+    assert_eq!(agent.client.lock().outbox().len(), 1);
 
     // The process dies before the hub is back: nothing but the stored state is left.
     let agent = agent.restart_cold().await;
     assert_eq!(
-        agent.client.core.lock().await.outbox.len(),
+        agent.client.lock().outbox().len(),
         1,
         "the outbox is on disk"
     );
@@ -558,12 +556,12 @@ async fn a_new_agent_reads_an_object_two_senders_wrote_in_turns() {
     eventually(
         "the new agent holds the card as the turns left it",
         || async {
-            let core = client.core.lock().await;
-            core.model.cards.get(&card).is_some_and(|c| {
+            let core = client.lock();
+            core.model().cards.get(&card).is_some_and(|c| {
                 c.object_state == "answered"
                     && c.object_version == 2
                     && c.s("body") == "second"
-                    && c.answer.as_ref().is_some_and(|a| a.choice_strs() == ["b"])
+                    && c.answer.as_ref().is_some_and(|a| a.choices == serde_json::json!(["b"]))
                     && c.answers.len() == 2
             })
         },
@@ -576,7 +574,7 @@ async fn a_new_agent_reads_an_object_two_senders_wrote_in_turns() {
 async fn a_removal_is_verified_only_by_the_commit_the_device_processes_itself() {
     let (_hub, mut human, mut first, group) = room().await;
     let session = group.session_id().expect("a session group");
-    let stood_at = first.client.core.lock().await.cursor;
+    let stood_at = first.client.lock().cursor();
     let second = join(&mut human, Some(session)).await;
     human
         .take_over(&group, first.client.device_id(), &second.admitted)
@@ -627,7 +625,7 @@ async fn a_removal_is_verified_only_by_the_commit_the_device_processes_itself() 
     }
     let _ = second.client.verify_removal(&forged).await;
     assert_ne!(
-        second.client.core.lock().await.model.room.connection,
+        second.client.lock().connection(),
         "removed"
     );
 }

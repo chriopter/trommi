@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
-use trommi_connector::client::Client;
+use trommi_connector::driver::Driver as Client;
 use trommi_connector::join::join_room;
 use trommi_connector::store::Journal;
 use trommi_linux::shell;
@@ -68,7 +68,7 @@ struct Room {
     hub: HubProc,
     /// The agent's connector, kept so its session stays served.
     _agent: std::sync::Arc<Client>,
-    events: tokio::sync::mpsc::UnboundedReceiver<trommi_connector::client::ClientEvent>,
+    events: tokio::sync::mpsc::UnboundedReceiver<trommi_connector::driver::DriverEvent>,
     _agent_dir: TempDir,
 }
 
@@ -79,7 +79,7 @@ const PASSWORD: &str = "correct horse battery staple";
 /// The body of an account made with the room's founding (`POST /v1/rooms` with `account`), as the apps sign up:
 /// copies of the code sealed under the password and under a kit.
 fn account_body(room: &trommi_core::ids::RoomId, code: &trommi_core::crypto::Secret<32>) -> Value {
-    use trommi_connector::hub::b64;
+    use trommi_connector::driver::b64;
     use trommi_core::account::{self, Way};
     use trommi_core::crypto::SystemEntropy;
     let pw = account::password_keys(EMAIL, PASSWORD, None).expect("the password's keys");
@@ -128,7 +128,7 @@ fn room(runtime: &tokio::runtime::Runtime, slot_device: Option<&Path>) -> Room {
         let (agent, events) = Client::open(journal).await.expect("the slot opens");
         agent.start().await.expect("it goes online");
         human.found_session(&admitted).await;
-        common::eventually("the agent is in its session", || async { agent.core.lock().await.session_id().is_some() }).await;
+        common::eventually("the agent is in its session", || async { agent.lock().session_id().is_some() }).await;
         let fields = json!({
             "card_type": "decision", "title": "Blue or green?", "body": "", "urgency": "normal",
             "options": [{ "key": "blue", "label": "Blue" }, { "key": "green", "label": "Green" }],
@@ -242,7 +242,7 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
     let command = scenario.block_on(async {
         loop {
             let event = tokio::time::timeout(Duration::from_secs(90), room.events.recv()).await.expect("the agent hears in time").expect("the agent lives");
-            if let trommi_connector::client::ClientEvent::Command(command) = event {
+            if let trommi_connector::driver::DriverEvent::Command(command) = event {
                 if command.command == "answer" {
                     return command;
                 }
@@ -260,7 +260,7 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
     std::thread::sleep(Duration::from_secs(2));
     let again = scenario.block_on(async {
         while let Ok(event) = room.events.try_recv() {
-            if let trommi_connector::client::ClientEvent::Command(command) = event {
+            if let trommi_connector::driver::DriverEvent::Command(command) = event {
                 if command.command == "answer" {
                     return true;
                 }

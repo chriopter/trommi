@@ -30,7 +30,7 @@
 use super::{Asked, Ctx, Engine, Report};
 use crate::app::io::IoId;
 use crate::app::LogLevel;
-use crate::hub::{Answer, Failure, Route, WishRow, WishRowKind};
+use crate::hub::{Answer, Failure, Route, WishKind, WishRow, WishRowKind};
 use std::collections::VecDeque;
 use trommi_core::ids::{DeviceId, GroupId};
 use trommi_core::Error;
@@ -141,6 +141,28 @@ impl Engine {
                 self.report(Report::Alert(super::Alert::Rejected { group, n, from: row.device, committer: row.committer }));
             }
         }
+    }
+
+    /// A Welcome into a session group did not open (3.7): its KeyPackage is used up, so the device asks to be let in
+    /// again, once per group in a run (`replay`: a Welcome taken before, nothing to ask). A human device asks with a
+    /// fresh KeyPackage, which a human device of the group adds again in one Commit with the Cut of its old leaf;
+    /// an agent device asks without one, as its connector did. The hub's answer changes nothing here.
+    pub(super) fn ask_readmit(&mut self, ctx: &mut Ctx<'_>, group: GroupId, error: &Error) {
+        if *error == Error::Replay || group.is_room() || self.readmit_asked.contains(&group) || self.readmit_asked.len() >= READMITTED_MAX {
+            return;
+        }
+        self.readmit_asked.insert(group);
+        let key_package = if self.device.is_human() {
+            match self.device.key_package(ctx.now) {
+                Ok(package) => Some(package),
+                Err(e) => return self.local(ctx, &e),
+            }
+        } else {
+            None
+        };
+        ctx.log(LogLevel::Info, format!("a Welcome did not open ({}): asked to be let in again", error.code()));
+        let route = Route::Wish { kind: WishKind::Readmit, group: Some(&group), key_package: key_package.as_deref() };
+        self.ask(ctx, route, true, Asked::Told);
     }
 
     fn device_is_human(&self, device: &DeviceId) -> bool {

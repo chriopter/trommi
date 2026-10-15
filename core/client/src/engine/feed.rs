@@ -248,7 +248,7 @@ impl Board {
                     m.apply_stroke_piece(&hex(from.as_bytes()), &hex(board.as_bytes()), piece, now, c);
                 }
             }
-            Report::Founded(_) | Report::LinkJoin(_) | Report::InviteRequest { .. } | Report::FileEvicted { .. } | Report::Alert(_) | Report::Connection(_) | Report::Accepted { .. } | Report::Refused { .. } | Report::Blocked(_) | Report::SessionsJoined { .. } | Report::RoomJoin(_) | Report::Answer(_) | Report::Stopped(_) | Report::Command(_) | Report::Lease(_) => {}
+            Report::Founded(_) | Report::LinkJoin(_) | Report::InviteRequest { .. } | Report::FileEvicted { .. } | Report::Alert(_) | Report::Connection(_) | Report::Accepted { .. } | Report::Refused { .. } | Report::Blocked(_) | Report::SessionsJoined { .. } | Report::RoomJoin(_) | Report::Answer(_) | Report::Stopped(_) | Report::Command(_) | Report::Lease(_) | Report::Resealed { .. } => {}
         }
     }
 
