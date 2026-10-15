@@ -95,4 +95,4 @@ pub const MAX_ROOMS: usize = 16;
 pub const MAX_PASSKEYS: usize = 64;
 /// Most push registrations `GET /v1/push` lists, and the longest endpoint.
 pub const MAX_PUSH: usize = 64;
-pub const MAX_ENDPOINT: usize = 2048;
+pub use trommi_wire::push::MAX_ENDPOINT;

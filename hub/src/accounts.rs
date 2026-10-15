@@ -23,7 +23,8 @@ const PASSKEY_CHALLENGE_MS: u64 = 120_000;
 
 /// spec/v1.md 8.9.1: the one rule of `trommi_wire::account::normalise_email`, which the app core checks too.
 pub fn normalise_email(input: &str) -> Res<String> {
-    trommi_wire::account::normalise_email(input).ok_or_else(|| refuse("bad-email", "not an e-mail address this hub takes"))
+    trommi_wire::account::normalise_email(input)
+        .ok_or_else(|| refuse("bad-email", "not an e-mail address this hub takes"))
 }
 
 /// A slow hash of a login key the device derived. The key is 32 bytes out of the device's own Argon2id over the
@@ -93,11 +94,14 @@ pub fn sealed_copy(v: &Value, key: &str) -> Res<Vec<u8>> {
 /// v1 §16.6: the key derivation record is pinned; the hub stores and returns exactly it.
 pub fn kdf_record(v: &Value) -> Res<String> {
     let k = &v["kdf"];
-    let pinned = k["alg"] == KDF_ALG
-        && k["v"] == KDF_RECORD_VERSION
-        && k["m"] == KDF_MEMORY_KIB
-        && k["t"] == KDF_PASSES
-        && k["p"] == KDF_LANES;
+    let pinned = k.is_object()
+        && trommi_wire::account::pinned_kdf(
+            k["alg"].as_str(),
+            k["v"].as_u64(),
+            k["m"].as_u64(),
+            k["t"].as_u64(),
+            k["p"].as_u64(),
+        );
     if !pinned {
         return Err(refuse(
             "bad-format",
@@ -559,28 +563,66 @@ pub fn rooms_of(c: &Connection, account: i64) -> Res<Vec<Room>> {
 /// groups' logs (Commits and messages) and the files not deleted.
 pub fn usage(c: &Connection, account: i64) -> Res<Value> {
     let rooms: Vec<Vec<u8>> = c
-        .prepare_cached("SELECT room_id FROM account_rooms WHERE account_id = ?1 ORDER BY position")?
+        .prepare_cached(
+            "SELECT room_id FROM account_rooms WHERE account_id = ?1 ORDER BY position",
+        )?
         .query_map([account], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
-    let one = |sql: &str, room: &[u8]| -> Res<i64> { Ok(c.prepare_cached(sql)?.query_row([room], |r| r.get::<_, Option<i64>>(0))?.unwrap_or(0)) };
+    let one = |sql: &str, room: &[u8]| -> Res<i64> {
+        Ok(c.prepare_cached(sql)?
+            .query_row([room], |r| r.get::<_, Option<i64>>(0))?
+            .unwrap_or(0))
+    };
     let (mut groups, mut live, mut commits, mut messages, mut log_bytes) = (0, 0, 0, 0, 0);
-    let (mut envelopes, mut envelope_bytes, mut cards, mut open_cards, mut files, mut file_bytes, mut devices) = (0, 0, 0, 0, 0, 0, 0);
+    let (
+        mut envelopes,
+        mut envelope_bytes,
+        mut cards,
+        mut open_cards,
+        mut files,
+        mut file_bytes,
+        mut devices,
+    ) = (0, 0, 0, 0, 0, 0, 0);
     for room in &rooms {
         groups += one("SELECT count(*) FROM groups WHERE room_id = ?1", room)?;
-        live += one("SELECT count(*) FROM groups WHERE room_id = ?1 AND live = 1 AND archived_at IS NULL", room)?;
-        commits += one("SELECT count(*) FROM group_log WHERE room_id = ?1 AND kind = 'commit'", room)?;
-        messages += one("SELECT count(*) FROM group_log WHERE room_id = ?1 AND kind = 'message'", room)?;
-        log_bytes += one("SELECT sum(length(bytes)) FROM group_log WHERE room_id = ?1", room)?;
+        live += one(
+            "SELECT count(*) FROM groups WHERE room_id = ?1 AND live = 1 AND archived_at IS NULL",
+            room,
+        )?;
+        commits += one(
+            "SELECT count(*) FROM group_log WHERE room_id = ?1 AND kind = 'commit'",
+            room,
+        )?;
+        messages += one(
+            "SELECT count(*) FROM group_log WHERE room_id = ?1 AND kind = 'message'",
+            room,
+        )?;
+        log_bytes += one(
+            "SELECT sum(length(bytes)) FROM group_log WHERE room_id = ?1",
+            room,
+        )?;
         envelopes += one("SELECT count(*) FROM envelopes WHERE room_id = ?1", room)?;
         envelope_bytes += one(
             "SELECT sum(length(header) + length(signature) + length(nonce) + length(body_hash) + coalesce(length(body), 0)) FROM envelopes WHERE room_id = ?1",
             room,
         )?;
         cards += one("SELECT count(*) FROM cards WHERE room_id = ?1", room)?;
-        open_cards += one("SELECT count(*) FROM cards WHERE room_id = ?1 AND state = 1", room)?;
-        files += one("SELECT count(*) FROM files WHERE room_id = ?1 AND deleted_at IS NULL", room)?;
-        file_bytes += one("SELECT sum(size) FROM files WHERE room_id = ?1 AND deleted_at IS NULL", room)?;
-        devices += one("SELECT count(*) FROM devices WHERE room_id = ?1 AND removed_epoch IS NULL", room)?;
+        open_cards += one(
+            "SELECT count(*) FROM cards WHERE room_id = ?1 AND state = 1",
+            room,
+        )?;
+        files += one(
+            "SELECT count(*) FROM files WHERE room_id = ?1 AND deleted_at IS NULL",
+            room,
+        )?;
+        file_bytes += one(
+            "SELECT sum(size) FROM files WHERE room_id = ?1 AND deleted_at IS NULL",
+            room,
+        )?;
+        devices += one(
+            "SELECT count(*) FROM devices WHERE room_id = ?1 AND removed_epoch IS NULL",
+            room,
+        )?;
     }
     Ok(json!({
         "rooms": rooms.len(), "groups": groups, "live_groups": live, "devices": devices,

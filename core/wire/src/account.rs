@@ -10,6 +10,21 @@ pub const KDF_MEMORY_KIB: u32 = 65536;
 pub const KDF_PASSES: u32 = 3;
 pub const KDF_LANES: u32 = 1;
 
+/// The pinned KDF fields, supplied only after checking the record and integer types.
+pub fn pinned_kdf(
+    alg: Option<&str>,
+    version: Option<u64>,
+    memory: Option<u64>,
+    passes: Option<u64>,
+    lanes: Option<u64>,
+) -> bool {
+    alg == Some(KDF_ALG)
+        && version == Some(u64::from(KDF_RECORD_VERSION))
+        && memory == Some(u64::from(KDF_MEMORY_KIB))
+        && passes == Some(u64::from(KDF_PASSES))
+        && lanes == Some(u64::from(KDF_LANES))
+}
+
 /// A sealed copy of a way in: its version byte, a nonce of 12, a key of 32, a tag of 16.
 pub const SEALED_COPY_LEN: usize = 1 + 12 + 32 + 16;
 /// The version byte a sealed copy begins with.

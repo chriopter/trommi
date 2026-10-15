@@ -1063,7 +1063,7 @@ async fn run() -> Res<()> {
 
     let (e2, p2, w2) = (email.clone(), password.clone(), words.clone());
     let human = Human::found_with(&args.hub, move |room, code| {
-        let pw = account::password_keys(&e2, &p2, None).expect("password keys");
+        let pw = account::password_keys(&e2, &p2, Some(account::KDF_RECORD)).expect("password keys");
         let kit = account::kit_keys(&e2, &w2).expect("kit keys");
         let seal = |key, way| b64(&account::seal_code(key, room, way, code, &mut SystemEntropy).expect("sealed"));
         let kdf: Value = serde_json::from_str(account::KDF_RECORD).expect("kdf");

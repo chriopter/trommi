@@ -3,9 +3,9 @@
 //! every struct re-encodes to the bytes it was read from. The hub reads headers and public fields only; nothing
 //! here can open a body.
 //!
-//! The devices read and write the same structs with the protocol core's own typed codec (`core/protocol`), which
-//! also seals, opens and signs; both take their constants from this crate, and `tests/hub/wire.rs` holds the two
-//! to the same bytes.
+//! The protocol's typed envelope codec uses the same borrowed header and envelope framing below. Typed
+//! subject validation stays with each adapter: members can authenticate reserved subjects in history,
+//! while hub input refuses them; hub database numbers must also fit signed 64 bits.
 
 use crate::envelope::{
     FIRST_RESERVED_KIND, FORM_FULL, FORM_PRUNED, LABEL_HASH, LABEL_OBJECT, MAX_FILE_IDS,
@@ -52,11 +52,17 @@ impl<'a> Reader<'a> {
     /// A `uint64` of the wire. Every number the hub stores or compares (epochs, sequence numbers, times) must
     /// fit the database's signed 64 bits; a larger one is refused as malformed, never wrapped.
     pub fn u64(&mut self) -> Parse<u64> {
-        let v = u64::from_be_bytes(self.take(8)?.try_into().expect("eight bytes"));
+        let v = self.u64_all()?;
         if v > i64::MAX as u64 {
             return Err(Malformed("a number above 2^63"));
         }
         Ok(v)
+    }
+    /// All 64 bits for member-side protocol fields; database-facing parsers use `u64`.
+    pub fn u64_all(&mut self) -> Parse<u64> {
+        Ok(u64::from_be_bytes(
+            self.take(8)?.try_into().expect("eight bytes"),
+        ))
     }
     pub fn fixed<const N: usize>(&mut self) -> Parse<[u8; N]> {
         Ok(self.take(N)?.try_into().expect("fixed length"))
@@ -503,30 +509,100 @@ impl From<Malformed> for HeaderError {
     }
 }
 
-impl Header {
-    fn read(r: &mut Reader) -> Result<Self, HeaderError> {
-        let version = r.u8()?;
-        if version > VERSION {
-            return Err(HeaderError::NewerVersion);
+/// Borrowed framing shared by hub headers and the protocol's typed envelope codec.
+/// Reserved subjects are readable by members for authenticated history, and refused on hub input.
+pub struct HeaderLayout<'a> {
+    pub kind: u8,
+    pub flags: u8,
+    pub group_id: &'a [u8],
+    pub epoch: u64,
+    pub sender: [u8; 32],
+    pub seq: u64,
+    pub prev: [u8; 32],
+    pub recipient: [u8; 32],
+    pub time: u64,
+    pub subject: &'a [u8],
+    pub file_ids: Vec<[u8; 16]>,
+}
+impl<'a> HeaderLayout<'a> {
+    pub fn read(r: &mut Reader<'a>, reserved: bool) -> Result<Self, HeaderError> {
+        match r.u8()? {
+            VERSION => {}
+            version if version > VERSION => return Err(HeaderError::NewerVersion),
+            _ => return Err(HeaderError::Malformed("version")),
         }
-        if version != VERSION {
-            return Err(HeaderError::Malformed("version"));
-        }
-        let kind = r.u8()?;
-        let flags = r.u8()?;
+        let (kind, flags) = (r.u8()?, r.u8()?);
         if flags & !FLAG_PUSH != 0 {
             return Err(HeaderError::Malformed("flags"));
         }
-        let group_id = r.vec()?.to_vec();
-        if !(group_id.len() == 32 || group_id.len() == 48) {
+        let group_id = r.vec()?;
+        if !matches!(group_id.len(), 32 | 48) {
             return Err(HeaderError::Malformed("group id length"));
         }
-        let epoch = r.u64()?;
+        let epoch = r.u64_all()?;
         let sender = r.fixed()?;
-        let seq = r.u64()?;
+        let seq = r.u64_all()?;
         let prev = r.fixed()?;
         let recipient = r.fixed()?;
-        let time = r.u64()?;
+        let time = r.u64_all()?;
+        let len = match kind {
+            KIND_ITEM => 18,
+            KIND_REGISTER => 16,
+            KIND_VERSION | KIND_ANSWER | KIND_REQUEST | KIND_VERDICT | KIND_TAKE_BACK => 59,
+            FIRST_RESERVED_KIND..=u8::MAX if reserved => 59,
+            _ => return Err(HeaderError::Malformed("kind")),
+        };
+        let subject = r.take(len)?;
+        let files = r.vec()?;
+        if files.len() % 16 != 0 || files.len() / 16 > MAX_FILE_IDS {
+            return Err(HeaderError::Malformed("file ids"));
+        }
+        if seq == 0 {
+            return Err(HeaderError::Malformed("seq"));
+        }
+        Ok(Self {
+            kind,
+            flags,
+            group_id,
+            epoch,
+            sender,
+            seq,
+            prev,
+            recipient,
+            time,
+            subject,
+            file_ids: files.as_chunks::<16>().0.to_vec(),
+        })
+    }
+}
+
+impl Header {
+    fn read(r: &mut Reader) -> Result<Self, HeaderError> {
+        Self::from_layout(HeaderLayout::read(r, false)?)
+    }
+
+    fn from_layout(raw: HeaderLayout<'_>) -> Result<Self, HeaderError> {
+        let HeaderLayout {
+            kind,
+            flags,
+            epoch,
+            sender,
+            seq,
+            prev,
+            recipient,
+            time,
+            file_ids,
+            ..
+        } = raw;
+        if [epoch, seq, time]
+            .iter()
+            .any(|number| *number > i64::MAX as u64)
+        {
+            return Err(HeaderError::Malformed("a number above 2^63"));
+        }
+        let group_id = raw.group_id.to_vec();
+        let mut subject_reader = Reader::new(raw.subject);
+        let r = &mut subject_reader;
         let subject = match kind {
             KIND_ITEM => {
                 let (timeline_kind, timeline_scope, timeline_ref) = (r.u8()?, r.u8()?, r.fixed()?);
@@ -579,17 +655,6 @@ impl Header {
                 return Err(HeaderError::Malformed("kind"));
             }
         };
-        let files = r.vec()?;
-        if files.len() % 16 != 0 || files.len() / 16 > MAX_FILE_IDS {
-            return Err(HeaderError::Malformed("file ids"));
-        }
-        let file_ids: Vec<[u8; 16]> = files
-            .chunks(16)
-            .map(|c| c.try_into().expect("16"))
-            .collect();
-        if seq == 0 {
-            return Err(HeaderError::Malformed("seq"));
-        }
         Ok(Header {
             kind,
             flags,
@@ -672,27 +737,56 @@ pub struct Envelope {
     pub signature: Vec<u8>,
 }
 
+/// Borrowed envelope framing; payload contents remain encrypted and are not interpreted here.
+pub struct EnvelopeLayout<'a> {
+    pub header: HeaderLayout<'a>,
+    pub header_bytes: &'a [u8],
+    pub nonce: [u8; 12],
+    pub body: Option<&'a [u8]>,
+    pub body_hash: Option<[u8; 32]>,
+    pub signature: [u8; SIGNATURE_LEN],
+}
+impl<'a> EnvelopeLayout<'a> {
+    pub fn read(r: &mut Reader<'a>, reserved: bool) -> Result<Self, HeaderError> {
+        let form = r.u8()?;
+        let start = r.position();
+        let header = HeaderLayout::read(r, reserved)?;
+        let header_bytes = &r.bytes[start..r.position()];
+        let nonce = r.fixed()?;
+        let (body, body_hash) = match form {
+            FORM_FULL => (Some(r.vec()?), None),
+            FORM_PRUNED => (None, Some(r.fixed()?)),
+            _ => return Err(HeaderError::Malformed("form")),
+        };
+        let signature = r
+            .vec()?
+            .try_into()
+            .map_err(|_| HeaderError::Malformed("signature length"))?;
+        Ok(Self {
+            header,
+            header_bytes,
+            nonce,
+            body,
+            body_hash,
+            signature,
+        })
+    }
+}
+
 impl Envelope {
     pub fn parse(bytes: &[u8]) -> Result<Self, HeaderError> {
         let mut r = Reader::new(bytes);
-        let form = r.u8()?;
-        let start = r.position();
-        let header = Header::read(&mut r)?;
-        let header_bytes = bytes[start..r.position()].to_vec();
-        let nonce = r.fixed()?;
-        let (body, body_hash) = match form {
-            FORM_FULL => {
-                let c = r.vec()?;
-                (Some(c.to_vec()), Sha256::digest(c).into())
-            }
-            FORM_PRUNED => (None, r.fixed()?),
-            _ => return Err(HeaderError::Malformed("form")),
-        };
-        let signature = r.vec()?.to_vec();
+        let raw = EnvelopeLayout::read(&mut r, false)?;
         r.end()?;
-        if signature.len() != SIGNATURE_LEN {
-            return Err(HeaderError::Malformed("signature length"));
-        }
+        let header = Header::from_layout(raw.header)?;
+        let header_bytes = raw.header_bytes.to_vec();
+        let nonce = raw.nonce;
+        let body_hash = match raw.body {
+            Some(body) => Sha256::digest(body).into(),
+            None => raw.body_hash.ok_or(HeaderError::Malformed("body hash"))?,
+        };
+        let body = raw.body.map(<[u8]>::to_vec);
+        let signature = raw.signature.to_vec();
         Ok(Envelope {
             header,
             header_bytes,
