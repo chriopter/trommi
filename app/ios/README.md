@@ -161,7 +161,7 @@ HTTP only. Without the private account file this opt-in test is skipped.
 For ordinary launch timing, after building a Release Simulator app, run
 `tests/ios/UITests/startup.sh /absolute/Trommi.app /absolute/mega.json 290 /absolute/evidence` on the Mac.
 It creates and removes its own Simulator, records three process launches, requires the full Desk row count and
-fails if first Desk appearance takes 2 seconds or more. `DESK_BUDGET_MS` changes that budget explicitly.
+fails if launch through first Desk appearance takes 2 seconds or more, including time before app initialization. `DESK_BUDGET_MS` changes that budget explicitly.
 This avoids XCTest's injected launch services; its lifecycle delay is included in the XCTest measurements below.
 
 The opt-in `NativeScreensTests.testFullSizeDeskLaunchAndMemory` measures the same Rust model and native Desk
