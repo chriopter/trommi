@@ -2067,8 +2067,15 @@ impl Engine {
     fn show(&mut self, ctx: &mut Ctx<'_>, item: &EnvelopeItem) {
         let void = Self::void_code(item);
         match self.device.receive_envelope(&item.envelope, item.change, false, void.as_ref(), ctx.now) {
-            Ok(received) if received.outcome != EnvelopeOutcome::Refused => self.report(Report::Envelope { received: Box::new(received), ordered: false }),
-            Ok(_) => {}
+            Ok(received) => {
+                if received.header.group.is_room()
+                    && matches!(received.code, Some(Error::NoKey | Error::GroupBehind | Error::RoomBehind)) {
+                    self.need_anchored_past();
+                }
+                if received.outcome != EnvelopeOutcome::Refused {
+                    self.report(Report::Envelope { received: Box::new(received), ordered: false });
+                }
+            }
             Err(e) => self.local(ctx, &e),
         }
     }

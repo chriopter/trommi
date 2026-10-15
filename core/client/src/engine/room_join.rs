@@ -177,6 +177,7 @@ pub(super) struct Joiner {
     pub(super) started: bool,
     anchored: bool,
     settled_at: Option<u64>,
+    resuming: bool,
     pub(super) log_after: u64,
     pub(super) reached: u64,
     /// The join in the device's outbox, and whether it may be posted as it is (else the room's epoch is read
@@ -226,6 +227,7 @@ impl Joiner {
             started: false,
             anchored: false,
             settled_at: None,
+            resuming: false,
             log_after: 0,
             reached: 0,
             entry: entry.map(|(id, _)| id),
@@ -300,6 +302,20 @@ impl Engine {
         Ok(engine)
     }
 
+    /// Resume a code sign-in's unfinished sessions on the same device; never create another leaf.
+    pub fn resume_room(&mut self, ctx: &mut Ctx<'_>, keys: RecoveryKeys) -> Result<(), RoomJoinError> {
+        if self.room_join.is_some() { return Err(RoomJoinError::Busy); }
+        let history = self.device.room_history().ok_or(RoomJoinError::RoomExists)?;
+        keys.check_room(&history.newest().room).map_err(|e| RoomJoinError::of(&e))?;
+        let mut joiner = Joiner::new(keys, None);
+        joiner.resuming = true;
+        self.room_join = Some(joiner);
+        self.token = None;
+        self.report(Report::RoomJoin(RoomJoinStatus::Step(RoomJoinStep::Reading)));
+        self.drive(ctx);
+        Ok(())
+    }
+
     /// The ids of everything in flight, forgotten: the App drops this engine (a join of the room that failed).
     pub fn forget(&mut self) -> Vec<IoId> {
         std::mem::take(&mut self.pending).into_keys().collect()
@@ -330,7 +346,7 @@ impl Engine {
     fn room_failed(&mut self, ctx: &mut Ctx<'_>, j: Joiner, error: RoomJoinError) {
         // (a recovery opened and not finished gives the room back; its device holds nothing the hub keeps)
         self.recover_drop(ctx, &j);
-        let keep = j.posted && j.entry.is_some();
+        let keep = j.resuming || j.posted && j.entry.is_some();
         if !keep {
             // (what the device wrote first, then everything gone in one write)
             self.flush(ctx);
@@ -757,7 +773,7 @@ impl Engine {
     fn room_joined(&mut self, ctx: &mut Ctx<'_>, j: Joiner) {
         // (the recovery key's token ends here: from now on the device signs in as itself)
         self.token = None;
-        self.position = self.device.cursor();
+        self.position = if j.resuming { self.position.max(self.device.cursor()) } else { self.device.cursor() };
         if j.anchored {
             if let Some(change) = j.settled_at {
                 // The fresh leaf starts at its accepted join. Older content comes from the Desk/history;

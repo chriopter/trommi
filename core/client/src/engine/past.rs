@@ -57,6 +57,12 @@ impl Engine {
         self.device.room_past_required().unwrap_or(true)
     }
 
+    pub(super) fn room_past_pending(&self) -> bool {
+        let room = GroupId::room(self.room);
+        self.past.queue.iter().any(|(g, _)| *g == room)
+            || self.past.learning.as_ref().is_some_and(|l| l.todo.contains(&room))
+    }
+
     pub(super) fn need_anchored_past(&mut self) -> bool {
         self.anchored_past_missing() && self.need_past(GroupId::room(self.room))
     }

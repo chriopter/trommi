@@ -147,3 +147,36 @@ fn an_unreachable_hub_is_said_and_can_be_tried_again() {
     assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined));
     let _ = start;
 }
+
+#[test]
+fn a_password_signin_resumes_unfinished_sessions_on_its_existing_room_leaf() {
+    let world = World::new();
+    let words = with_account(&world);
+    let mut sim = blank(&world, HUB_URL);
+    sim.hold = true;
+    act(&mut sim, AccountAction::SignIn { email: EMAIL.into(), password: Secret(PASSWORD.into()), hub: None });
+    for _ in 0..60 {
+        if sim.app.room_join() == Some(RoomJoinStatus::Joined) { break; }
+        let (id, request) = sim.held.front().cloned().expect("the next sign-in request");
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, got);
+    }
+    assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined));
+    let id = sim.app.engine().unwrap().device().id();
+    sim.restart();
+    sim.hold = false;
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert_eq!(sim.view.account.problem.as_ref().unwrap().key, "account.interrupted");
+    act(&mut sim, AccountAction::SignIn { email: EMAIL.into(), password: Secret("wrong password".into()), hub: None });
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert_eq!(sim.app.engine().unwrap().device().id(), id);
+    assert!(sim.view.account.problem.is_some());
+    act(&mut sim, AccountAction::SignIn { email: EMAIL.into(), password: Secret(PASSWORD.into()), hub: None });
+    settle(&world, &mut sim);
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
+    assert!(sim.app.engine().unwrap().device().group(&world.group).is_ok());
+    assert_eq!(sim.app.engine().unwrap().device().id(), id);
+    no_secret_shown(&sim, &words);
+}

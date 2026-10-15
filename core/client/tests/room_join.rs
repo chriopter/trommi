@@ -399,3 +399,57 @@ fn an_anchored_signin_defers_a_room_prefix_of_thirty_two_updates() {
     assert!(old_commits >= 32);
     println!("anchored sign-in: old prefix {old_commits} Commits / {old_bytes} bytes; fetched 0 Commits / 0 bytes");
 }
+
+#[test]
+fn a_restart_after_the_room_join_asks_for_the_code_and_resumes_without_another_device() {
+    let world = World::new();
+    let mut sim = blank(&world);
+    sim.send(start());
+    sim.hold = true;
+    join(&world, &mut sim, code_keys());
+    for _ in 0..50 {
+        if sim.app.room_join() == Some(RoomJoinStatus::Joined) { break; }
+        let (id, request) = sim.held.front().cloned().unwrap();
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, got);
+    }
+    assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined));
+    let device = sim.app.engine().unwrap().device().id();
+    sim.restart();
+    sim.hold = false;
+    sim.send(start());
+    for _ in 0..5 { serve_all(&world, &mut sim); }
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert_eq!(sim.view.account.step, "sign_in");
+    assert_eq!(sim.view.account.problem.as_ref().unwrap().key, "account.interrupted");
+    // It remains resumable after another process stop; no recovery code was stored.
+    sim.restart();
+    sim.send(start());
+    for _ in 0..5 { serve_all(&world, &mut sim); }
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    join(&world, &mut sim, RecoveryKeys::from_code(Secret::new([0xC1; 32])).unwrap());
+    assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Failed(RoomJoinError::WrongCode)));
+    assert_eq!(sim.app.engine().unwrap().device().id(), device, "a wrong retry never erases the room leaf");
+    join(&world, &mut sim, code_keys());
+    settle(&world, &mut sim);
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
+    assert!(in_room(&sim, &[world.room, world.group]));
+    assert_eq!(sim.app.engine().unwrap().device().id(), device);
+    assert_eq!(seen(&world, &room_commits(&world)), 1);
+}
+
+#[test]
+fn old_room_registers_on_the_first_desk_trigger_verified_history_before_the_code_is_dropped() {
+    let mut world = World::new();
+    world.founder_sets("star/00000000000000000000000000000000", r#"{"at":1}"#);
+    world.hub.borrow_mut().archive(&world.group);
+    let mut sim = blank(&world);
+    sim.send(start());
+    join(&world, &mut sim, code_keys());
+    settle(&world, &mut sim);
+    assert_eq!(sim.view.phase, Phase::Live);
+    let device = sim.app.engine().unwrap().device();
+    assert!(device.group_past(&world.room).unwrap().unwrap().learned);
+    assert_eq!(device.content_key(&world.room, 0), world.founder.content_key(&world.room, 0));
+}

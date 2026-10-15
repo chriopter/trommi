@@ -323,6 +323,17 @@ impl App {
             out.push(log(LogLevel::Warn, "join_room: before start"));
             return out;
         }
+        if self.can_resume_sign_in() && join.recover.is_none() {
+            let matches = self.engine.as_ref().is_some_and(|e| e.room() == join.room && e.hub() == join.hub);
+            if matches {
+                self.signed_in_join = true;
+                let result = self.with_engine(now_ms, &mut out, |engine, ctx| engine.resume_room(ctx, join.keys));
+                if let Some(Err(error)) = result { self.room_join = Some(RoomJoinStatus::Failed(error)); }
+                self.after_engine(now_ms, &mut out);
+                self.render(&mut out);
+                return out;
+            }
+        }
         let canonical = trommi_core::hub_auth::HubAddress::parse(&join.hub).is_ok_and(|a| a.as_str() == join.hub);
         self.room_join = Some(if self.engine.is_some() {
             RoomJoinStatus::Failed(RoomJoinError::RoomExists)
@@ -344,6 +355,11 @@ impl App {
         self.after_engine(now_ms, &mut out);
         self.render(&mut out);
         out
+    }
+
+    fn can_resume_sign_in(&self) -> bool {
+        self.engine.is_some() && self.sessions_not_joined.as_ref().is_some_and(|groups|
+            groups.iter().any(|(_, code)| *code == "interrupted"))
     }
 
     /// An account action (`account`): the sign-ins here; the other flows are W3's.
@@ -394,7 +410,7 @@ impl App {
             }
         };
         let Some(config) = self.config.as_ref() else { return };
-        if self.engine.is_some() || self.room_join_wait.is_some() || self.signing_in.is_some() {
+        if (self.engine.is_some() && !self.can_resume_sign_in()) || self.room_join_wait.is_some() || self.signing_in.is_some() {
             out.push(log(LogLevel::Warn, "account: a sign-in on a slot that has a device or signs in already"));
             return;
         }
@@ -416,7 +432,7 @@ impl App {
     fn passkey_sign_in(&mut self, hub: Option<&str>, out: &mut Vec<Effect>) {
         use crate::account::signin;
         let Some(config) = self.config.as_ref() else { return };
-        if self.engine.is_some() || self.room_join_wait.is_some() || self.signing_in.is_some() {
+        if (self.engine.is_some() && !self.can_resume_sign_in()) || self.room_join_wait.is_some() || self.signing_in.is_some() {
             out.push(log(LogLevel::Warn, "account: a sign-in on a slot that has a device or signs in already"));
             return;
         }
@@ -1797,8 +1813,8 @@ impl App {
                 Report::RoomJoin(status) => {
                     use engine::room_join::RoomJoinStatus;
                     match status {
-                        RoomJoinStatus::Failed(_) => dropped = true,
-                        RoomJoinStatus::Joined => self.next_view.phase = Phase::Opening,
+                        RoomJoinStatus::Failed(_) => dropped = engine.device().room().is_none(),
+                        RoomJoinStatus::Joined => { self.sessions_not_joined = None; self.next_view.phase = Phase::Opening; },
                         _ => {}
                     }
                     self.room_join = Some(status);
@@ -1991,6 +2007,17 @@ impl App {
     /// Puts a `Render` first when the view changed: the shell draws before it starts the I/O.
     fn render(&mut self, out: &mut Vec<Effect>) {
         self.follow_sign_in();
+        if self.can_resume_sign_in() {
+            self.next_view.phase = Phase::SignedOut;
+            if !self.signed_in_join && self.signing_in.is_none()
+                && (self.next_view.account.step != "sign_in" || self.next_view.account.problem.is_none()) {
+                self.next_view.account = crate::views::AccountView {
+                    step: "sign_in".into(),
+                    problem: Some(crate::views::Text::new("account.interrupted", "Signing in was cut off. Sign in again to finish it.")),
+                    ..Default::default()
+                };
+            }
+        }
         self.account_extras();
         let delta = if !self.rendered_once {
             self.rendered_once = true;

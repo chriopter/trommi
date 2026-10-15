@@ -88,6 +88,7 @@ pub(super) struct Joining {
     keys: Option<RecoveryKeys>,
     later: Option<Later>,
     room_keys_recovered: bool,
+    reported: bool,
     /// Still to be read, together.
     together: VecDeque<GroupId>,
     /// Rows of an answer not looked at yet.
@@ -137,6 +138,7 @@ impl Joining {
             keys: None,
             later: None,
             room_keys_recovered: false,
+            reported: false,
             together: VecDeque::new(),
             rows: VecDeque::new(),
             alone: VecDeque::new(),
@@ -170,12 +172,15 @@ impl Engine {
                 joining.keys = Some(joins.keys);
                 joining.later = joins.later;
                 joining.room_keys_recovered = false;
+                joining.reported = false;
+                joining.not_joined.retain(|(_, code)| *code != "interrupted");
                 joining
             }
             None => Joining {
                 keys: Some(joins.keys),
                 later: joins.later,
                 room_keys_recovered: false,
+                reported: false,
                 together: VecDeque::new(),
                 rows: VecDeque::new(),
                 alone: VecDeque::new(),
@@ -190,7 +195,7 @@ impl Engine {
             },
         };
         for group in joins.groups {
-            if !group.is_room() && !joining.together.contains(&group) && !joining.alone.contains(&group) && !joining.posted.contains(&group) {
+            if !group.is_room() && self.device.group(&group).is_err() && !joining.together.contains(&group) && !joining.alone.contains(&group) && !joining.posted.contains(&group) {
                 joining.together.push_back(group);
             }
         }
@@ -200,7 +205,7 @@ impl Engine {
 
     /// Whether the session groups of a sign-in are still being joined.
     pub fn joining_sessions(&self) -> bool {
-        self.joining.is_some()
+        self.joining.as_ref().is_some_and(|j| !j.reported)
     }
 
     pub(super) fn drive_joins(&mut self, ctx: &mut Ctx<'_>) {
@@ -209,6 +214,7 @@ impl Engine {
             return;
         }
         let Some(mut j) = self.joining.take() else { return };
+        if j.reported { self.joining = Some(j); return; }
         if j.asked.is_none() && !j.retry.waiting(ctx.now) {
             self.joins_step(ctx, &mut j);
         }
@@ -228,7 +234,9 @@ impl Engine {
                 j.not_joined.push((group, "refused"));
             }
         }
-        let through = j.asked.is_none() && j.one.is_none() && j.rows.is_empty() && j.together.is_empty() && j.alone.is_empty() && j.posted.is_empty();
+        let room_waits = j.keys.is_some() && self.anchored_past_missing()
+            && (!self.desk.complete || self.room_past_pending());
+        let through = !room_waits && j.asked.is_none() && j.one.is_none() && j.rows.is_empty() && j.together.is_empty() && j.alone.is_empty() && j.posted.is_empty();
         if through {
             // every session's keys are at hand now: the Desk of the joined groups, and what came without its key
             // since the sign-in is read back group by group, from the first such envelope. The room's order is
@@ -237,7 +245,9 @@ impl Engine {
             self.tending.look_for_archived();
             self.keys_came();
             self.report(Report::Groups);
-            self.report(Report::SessionsJoined { joined: j.joined, not_joined: j.not_joined });
+            let interrupted = j.not_joined.iter().any(|(_, code)| *code == "interrupted");
+            self.report(Report::SessionsJoined { joined: j.joined, not_joined: j.not_joined.clone() });
+            if interrupted { j.reported = true; self.joining = Some(j); }
             return self.drive_all(ctx);
         }
         self.joining = Some(j);
@@ -245,6 +255,12 @@ impl Engine {
 
     fn joins_step(&mut self, ctx: &mut Ctx<'_>, j: &mut Joining) {
         let room = GroupId::room(self.room);
+        // Keep the code until the first Desk has revealed whether old room registers need it.
+        // An empty Desk does not trigger history; an old room envelope does.
+        if j.keys.is_some() && j.together.is_empty() && j.alone.is_empty() && j.rows.is_empty() && j.one.is_none()
+            && self.anchored_past_missing() && (!self.desk.complete || self.room_past_pending()) {
+            return;
+        }
         if self.past_failed(&room) {
             let waiting: Vec<_> = j.together.drain(..).chain(j.alone.drain(..))
                 .chain(j.rows.drain(..).map(|row| row.group)).chain(j.one.take().map(|one| one.group)).collect();
