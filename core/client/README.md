@@ -106,6 +106,12 @@ revision check behind the lock refuses another writer. The device space is an at
 (`DeviceLoad`, `DeviceApply { expected_revision, put, delete }`); it contains private state, chains, groups and the
 outbox. Rollback checks never silently make a new identity over unreadable state.
 
+Chain heads, epoch counts and frontiers, register values and their name bindings, and the device's random
+register IDs are stored as separate components. A write replaces only components that changed. Register names
+stay inside values; storage keys use the existing random register IDs. Whole records from earlier builds remain
+readable and are replaced in the same atomic batch as their first update, including staged joins. A failed
+migration leaves the prior state intact; missing components and mixed whole/split forms are storage errors.
+
 The cache space is separate: string keys and bytes, with get/scan/put/delete. Keys start with
 `c1/<room>/`; `src/cache/layout.rs` names the model/meta/window/draft records. Values describe checked model data;
 file cache bytes retain their encrypted hub representation. Metadata binds a model to the device identity and

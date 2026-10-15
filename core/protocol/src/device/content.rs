@@ -580,9 +580,18 @@ impl<S: Storage> Device<S> {
             .map_or(Err(damaged("the own chain")), OwnChain::from_bytes)
     }
 
-    fn own_ids(&self, group: &GroupId) -> Result<OwnIds, Error> {
-        self.stored(&group_key(table::REGISTER, SUB_OWN_IDS, group, &[]))
-            .map_or(Ok(OwnIds::new()), OwnIds::from_bytes)
+    pub(super) fn own_ids(&self, group: &GroupId) -> Result<OwnIds, Error> {
+        let parts = self.group_parts(table::REGISTER, super::facts::SUB_OWN_ID_PARTS, group);
+        match self.stored(&group_key(table::REGISTER, SUB_OWN_IDS, group, &[])) {
+            Some(bytes) if parts.is_empty() => OwnIds::from_bytes(bytes),
+            Some(_) => Err(damaged("mixed whole and split own register ids")),
+            None => OwnIds::from_storage_parts(parts),
+        }
+    }
+
+    pub(super) fn put_own_ids(&mut self, batch: &mut Batch, group: &GroupId, ids: &OwnIds) -> Result<(), Error> {
+        self.put_group_parts(batch, table::REGISTER, SUB_OWN_IDS, super::facts::SUB_OWN_ID_PARTS, group, ids.storage_parts()?);
+        Ok(())
     }
 
     // ---- writing ----
@@ -715,11 +724,7 @@ impl<S: Storage> Device<S> {
                 own.to_bytes()?,
             );
             if let Some(ids) = own_ids {
-                this.put_stored(
-                    batch,
-                    group_key(table::REGISTER, SUB_OWN_IDS, &group, &[]),
-                    ids.to_bytes()?,
-                );
+                this.put_own_ids(batch, &group, &ids)?;
             }
             if let Some(hash) = heads {
                 let mut state = this.group_state(&group)?;

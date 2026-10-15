@@ -2045,3 +2045,84 @@ fn a_dropped_receipt_takes_its_mark_back() {
     shown.take(&got);
     assert_eq!(shown.0.sessions.get(&session).and_then(|s| s.heard_up_to), None);
 }
+
+#[test]
+fn one_more_room_register_does_not_rewrite_the_existing_registers() {
+    let store = trommi_tests::MemoryStorage::new();
+    let mut human = trommi_tests::new_device_on(store.handle());
+    let (mut hub, room) = found_room(&mut human);
+    for n in 0..64 {
+        write(&mut hub, &mut human, &Draft::Register {
+            group: room, name: format!("star/{n:032x}"), value: Some(json(r#"{"at":1}"#)),
+        });
+        sync_all(&hub, &mut human);
+    }
+    let before = store.table_written(trommi_core::store::table::REGISTER);
+    write(&mut hub, &mut human, &Draft::Register {
+        group: room, name: format!("star/{:032x}", 64), value: Some(json(r#"{"at":1}"#)),
+    });
+    sync_all(&hub, &mut human);
+    let after = store.table_written(trommi_core::store::table::REGISTER);
+    let (puts, bytes) = (after.0 - before.0, after.1 - before.1);
+    println!("one register update after64names: {puts} puts / {bytes} bytes");
+    assert!(bytes < 2_000, "one update must not carry every existing value: {bytes} bytes");
+}
+
+#[test]
+fn legacy_chain_and_register_records_migrate_atomically_and_reopen() {
+    use trommi_core::chain::Chains;
+    use trommi_core::registers::{OwnIds, Registers};
+    use trommi_core::store::table;
+    let store = trommi_tests::MemoryStorage::new();
+    let mut human = trommi_tests::new_device_on(store.handle());
+    let (mut hub, room) = found_room(&mut human);
+    let key = |table: u8, sub: u8| {
+        [&[table, sub, room.as_bytes().len() as u8], room.as_bytes()].concat()
+    };
+    let legacy = [
+        (key(table::CHAIN, 2), Chains::new().to_bytes().unwrap()),
+        (key(table::REGISTER, 0), Registers::new().to_bytes().unwrap()),
+        (key(table::REGISTER, 1), OwnIds::new().to_bytes().unwrap()),
+    ];
+    drop(human);
+    store.rewrite(|entries| { for (key, value) in &legacy { entries.insert(key.clone(), value.clone()); } });
+    let mut human = trommi_tests::reopen(store.handle()).unwrap();
+    let name = "star/00000000000000000000000000000001";
+    let draft = Draft::Register { group: room, name: name.into(), value: Some(json(r#"{"at":1}"#)) };
+    store.fail_apply(1);
+    assert!(matches!(human.seal(&draft, None, &[], now()), Err(Error::Storage(_))));
+    for (key, value) in &legacy { assert_eq!(store.get(key).as_ref(), Some(value)); }
+    let sent = write(&mut hub, &mut human, &draft);
+    let envelope = hub.changes_after(human.cursor()).into_iter().find_map(|change| match change {
+        trommi_tests::hub::content::Change::Envelope(envelope) if envelope.hash == sent.envelope_hash => Some(envelope),
+        _ => None,
+    }).unwrap();
+    store.fail_apply(1);
+    assert!(matches!(human.receive_envelope(&envelope.bytes, envelope.change, true, None, now()), Err(Error::Storage(_))));
+    for (key, value) in legacy.iter().take(2) { assert_eq!(store.get(key).as_ref(), Some(value)); }
+    assert_eq!(human.receive_envelope(&envelope.bytes, envelope.change, true, None, now()).unwrap().outcome, EnvelopeOutcome::Applied);
+    for (key, _) in &legacy { assert!(store.get(key).is_none()); }
+    drop(human);
+    let human = trommi_tests::reopen(store.reopened()).unwrap();
+    assert_eq!(human.register(&room, name).unwrap().unwrap().expose(), br#"{"at":1}"#);
+}
+
+#[test]
+fn malformed_component_group_keys_are_storage_errors() {
+    let store = trommi_tests::MemoryStorage::new();
+    let mut human = trommi_tests::new_device_on(store.handle());
+    let (mut hub, room) = found_room(&mut human);
+    write(&mut hub, &mut human, &Draft::Register {
+        group: room, name: "star/00000000000000000000000000000001".into(), value: Some(json(r#"{"at":1}"#)),
+    });
+    sync_all(&hub, &mut human);
+    drop(human);
+    store.rewrite(|entries| {
+        let key = entries.keys().find(|key| key.starts_with(&[trommi_core::store::table::REGISTER, 3])).unwrap().clone();
+        let value = entries.remove(&key).unwrap();
+        let mut bad = key;
+        *bad.get_mut(2).unwrap() = 255;
+        entries.insert(bad, value);
+    });
+    assert!(matches!(trommi_tests::reopen(store), Err(Error::Storage(_))));
+}
