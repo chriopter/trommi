@@ -32,9 +32,7 @@ runs:
     if: steps.core_cache.outputs.cache-hit != 'true'
     run: |
       set -eu
-      rustup toolchain install || rustup show
-      rustup component add llvm-tools
-      rustc --version
+      sh .github/scripts/rust_toolchain.sh --component llvm-tools aarch64-apple-ios aarch64-apple-darwin
       xcodebuild -version
     shell: bash
     env:

@@ -23,8 +23,8 @@ runs:
   - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
     with:
       name: web-release
-      path: release
-      run-id: ${{ github.run_id || github.run_id }}
+      path: ${{ runner.temp }}/main-web-release
+      run-id: ${{ github.run_id }}
       github-token: ${{ github.token }}
     env:
       COMMIT: ${{ github.sha }}
@@ -35,8 +35,8 @@ runs:
       set -eu
       # The artifact is fetched a second time here. Only the manifest's hash came from the job that attested, so
       # every file is checked against that manifest, and nothing may lie beside what it names.
-      [ "$(sha256sum release/manifest.json | cut -d' ' -f1)" = "$MANIFEST" ] || { echo "::error::manifest.json is not the attested one"; exit 1; }
-      cd release
+      [ "$(sha256sum "$RUNNER_TEMP/main-web-release/manifest.json" | cut -d' ' -f1)" = "$MANIFEST" ] || { echo "::error::manifest.json is not the attested one"; exit 1; }
+      cd "$RUNNER_TEMP/main-web-release"
       jq -r '.files[] | "\(.sha256)  \(.name)"' manifest.json > "$RUNNER_TEMP/manifest-sums"
       sha256sum -c --quiet "$RUNNER_TEMP/manifest-sums"
       find . -type f ! -path ./checksums.txt ! -path ./manifest.json | sed 's|^\./||' | sort > "$RUNNER_TEMP/there"
@@ -131,7 +131,7 @@ runs:
       test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
       test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
       wrangler="$PWD/.github/tools/wrangler/node_modules/.bin/wrangler"
-      cd release
+      cd "$RUNNER_TEMP/main-web-release"
       # CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID come from the 1Password Environment
       op run --environment "$OP_ENVIRONMENT_ID" -- "$wrangler" deploy --message "build $VERSION of $COMMIT"
     shell: bash
@@ -172,7 +172,7 @@ runs:
     if: steps.newer.outputs.skip != 'true'
     run: |
       set -u
-      if reason=$(sh .github/scripts/web_smoke.sh release "$COMMIT"); then exit 0; fi
+      if reason=$(sh .github/scripts/web_smoke.sh "$RUNNER_TEMP/main-web-release" "$COMMIT"); then exit 0; fi
       printf 'reason=%s\n' "the smoke test after the delivery failed: $reason; the build before was put back" >> "$GITHUB_OUTPUT"
       echo "::error::$reason"
       exit 1
@@ -193,7 +193,7 @@ runs:
     run: |
       set -eu
       wrangler="$PWD/.github/tools/wrangler/node_modules/.bin/wrangler"
-      cd release
+      cd "$RUNNER_TEMP/main-web-release"
       op run --environment "$OP_ENVIRONMENT_ID" -- "$wrangler" rollback --yes --message "smoke test of build $VERSION ($COMMIT) failed"
       for try in $(seq 1 30); do
         got=$(curl -fsS --max-time 10 "https://app.trommi.com/gen/build.txt?ci=$GITHUB_RUN_ID-back-$try" | sed -n 's/^commit: //p' | head -n 1 || true)
