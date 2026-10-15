@@ -312,6 +312,10 @@ impl Doing<'_> {
                 value.insert("device_name".into(), json!(name));
                 self.registers(action, &[(key, Value::Object(value))])
             }
+            Action::WriteNoteFiles { note_id, text, attachments } => {
+                let own = Map::from_iter([("text".into(), json!(text)), ("attachments".into(), json!(self.files_of(attachments)?))]);
+                self.note_version(action, note_id.as_deref(), Some(own))
+            }
             Action::WriteNote { note_id, text } => self.write_note(action, note_id.as_deref(), Some(text)),
             Action::SendNote { note_id, to } => self.send_note(action, note_id, to.as_deref()),
             Action::UnsendNote { note_id } => {
@@ -322,6 +326,18 @@ impl Doing<'_> {
                 self.note_version(action, Some(note_id), Some(Map::from_iter([("held".to_string(), Value::Null)])))
             }
             Action::DeleteNote { note_id } => self.write_note(action, Some(note_id), None),
+            Action::DrawStroke { board_id, local_id, points, tool, color, width } => {
+                let points: Result<Vec<_>, _> = points.iter().map(|v| {
+                    let p = v.as_array().filter(|p| p.len() >= 2).ok_or_else(bad_id)?;
+                    let number = |n: usize| p.get(n).and_then(Value::as_f64).filter(|v| v.is_finite());
+                    let x = number(0).ok_or_else(bad_id)? * 16.0;
+                    let y = number(1).ok_or_else(bad_id)? * 16.0;
+                    if x.abs() > f64::from(i32::MAX) || y.abs() > f64::from(i32::MAX) { return Err(bad_id()); }
+                    Ok(trommi_core::board_items::Point { x: x.round() as i32, y: y.round() as i32, t: number(2).unwrap_or(0.0).max(0.0) as u32, force: (number(3).unwrap_or(1.0).clamp(0.0, 1.0) * 255.0).round() as u8, azimuth: 0, altitude: 0 })
+                }).collect();
+                let ink = trommi_core::board_items::Ink::new(points?, false, true).map_err(|_| bad_id())?;
+                self.board_item(action, board_id, local_id, &json!({"content_type": "strokes", "strokes": [{"tool": tool, "color": color, "width": width, "points": ink.to_base64url()}]}))
+            }
             Action::BoardItem { board_id, local_id, content } => self.board_item(action, board_id, local_id, content),
             _ => Err(not_done("action.unknown", "This cannot be done here yet.")),
         }
@@ -350,6 +366,17 @@ impl Doing<'_> {
         self.model.echo_timeline_item(&local_id, &timeline, content, None, None, self.now, &mut self.change);
         let draft = Draft::BoardItem { board, payload: SecretBytes::new(payload.into_bytes()) };
         self.seal_echoed(action, &local_id, &draft, None, &files)
+    }
+
+    /// Imports a native share as a note or a message, with the same encrypted file references as every action.
+    pub fn import_share(&mut self, action: &Action, import_id: &str, text: &str, attachments: &[String], to: Option<&String>) -> Result<(), NotDone> {
+        let mut content = Map::from_iter([("text".into(), json!(text)), ("import_id".into(), json!(import_id)), ("attachments".into(), json!(self.files_of(attachments)?))]);
+        if let Some(to) = to {
+            content.insert("note".into(), json!({"object_id": import_id, "written_at": self.now}));
+            self.write(action, Some(to), None, content)
+        } else {
+            self.note_version(action, None, Some(content))
+        }
     }
 
     /// A new Note, a new version of one (`text`), or its closed version (none: deleted), shown at once. While a

@@ -130,26 +130,35 @@ impl App {
             return;
         }
         self.step_send(now_ms, out, |site| Codec.request(site, &Route::SignOut), |_| Step::SignOut);
+        self.forget_local_device(now_ms, out);
+    }
+
+    /// One cleanup path for an explicit sign-out and a removal this device checked itself. Nothing calls it for
+    /// the hub's membership claim alone. Privacy effects precede disk writes, so a failed disk cannot leave the
+    /// extension's old content keys readable. The slot's write failure is still reported after its engine goes.
+    pub(super) fn forget_local_device(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
+        let mut privacy = Vec::new();
+        self.outside_signed_out(&mut privacy);
+        for id in self.next_view.files.keys() { privacy.push(Effect::FileGone { file_id: id.clone() }); }
+        let before = out.len();
         let wiped = self.with_engine(now_ms, out, |engine, ctx| engine.wipe(ctx));
-        if wiped != Some(true) {
-            out.push(log(LogLevel::Warn, "sign out: the device's state was not wiped"));
-        }
-        // (the engine goes; what it still has in flight is only logged when it comes)
-        if let Some(engine) = self.engine.as_mut() {
-            for id in engine.forget() {
-                self.pending.insert(id, Pending::Dropped);
-            }
-        }
-        self.engine = None;
-        self.cache = None;
-        self.push = Default::default();
-        self.outside_signed_out(out);
-        self.board = crate::engine::feed::Board::default();
-        self.past = Default::default();
-        self.stale_views = true;
+        if wiped != Some(true) { out.push(log(LogLevel::Warn, "the stored device could not be erased")); }
+        let writes: Vec<_> = out[before..].iter().filter_map(|e| match e { Effect::Store { id, op: StoreOp::DeviceApply { .. } } => Some(*id), _ => None }).collect();
+        let mut old: Vec<_> = self.pending.keys().copied().collect();
+        if let Some(engine) = self.engine.as_mut() { old.extend(engine.forget()); }
+        let config = self.config.take();
+        let view = std::mem::take(&mut self.view);
+        let rendered = self.rendered_once;
+        let next = self.next_id;
+        // In-flight account steps and plaintext file buffers must not survive into another account.
+        *self = App::new();
+        self.config = config; self.view = view; self.rendered_once = rendered; self.next_id = next;
+        for id in old { self.pending.insert(id, Pending::Dropped); }
+        for id in writes { self.pending.insert(id, Pending::ForgetWrite); }
         self.next_view.phase = Phase::SignedOut;
         self.next_view.account = AccountView { step: "sign_in".into(), ..Default::default() };
-        // the cache space too: every key, read first
+        out.splice(0..0, privacy);
+        out.push(Effect::Timer { at_ms: None });
         let id = self.io(Pending::Wipe);
         out.push(Effect::Store { id, op: StoreOp::Scan { prefix: String::new() } });
     }
@@ -207,6 +216,7 @@ impl App {
             Step::Delete(expect) => match answer(&expect) {
                 Ok(_) => {
                     self.sign_out(now_ms, out);
+                    out.insert(0, Effect::ForgetShared);
                     self.next_view.account = AccountView { step: "found".into(), ..Default::default() };
                 }
                 Err(Failure::Refused { code: Some(code), .. }) if code == "wrong-login" => {

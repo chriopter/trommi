@@ -281,6 +281,8 @@ impl<C: Core, S: Shell> Loop<C, S> {
                 | Effect::FileGone { .. }
                 | Effect::Notify { .. }
                 | Effect::Snapshot { .. }
+                | Effect::ShareInbox { .. }
+                | Effect::ForgetShared
                 | Effect::NotifyContext { .. }
                 | Effect::SaveFile { .. }
                 | Effect::OpenUrl { .. }

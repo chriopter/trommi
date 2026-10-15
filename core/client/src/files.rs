@@ -147,6 +147,8 @@ impl Files {
 
     /// The reference (model spelling, with the key) of a file a body may name: an upload of this device that is
     /// stored, by its local id or its attachment id, or a file the views show.
+    pub(crate) fn upload_failed(&self, id: &str) -> bool { self.states.get(id).is_some_and(|s| s.state == "failed") }
+
     pub fn reference(&self, id: &str) -> Option<&Map<String, Value>> {
         if let Some(u) = self.uploads.get(id).filter(|u| u.request.is_none()) {
             return Some(&u.reference);

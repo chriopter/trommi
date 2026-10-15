@@ -212,7 +212,7 @@ impl Torture {
     async fn start_fleet(&mut self, n: usize) {
         // (MEGA_FLEET_RUNNER: a command that runs the fleet elsewhere and relays the command files, e.g. on a Mac)
         let runner = env("MEGA_FLEET_RUNNER").map(PathBuf::from).unwrap_or_else(|| {
-            self.root.join("tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiCoreLiveTests-test-runner")
+            self.root.join("tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiShellTests-test-runner")
         });
         if !runner.is_file() {
             self.say("no iOS test runner built: the fleet is left out (tests/client/mega/prepare.sh)".into());
@@ -223,7 +223,7 @@ impl Torture {
         std::fs::create_dir_all(&dir).unwrap();
         let log = std::fs::File::create(dir.join("log.txt")).unwrap();
         let child = Command::new(&runner)
-            .arg("TrommiCoreLiveTests.MegaFleetTests/testFleet")
+            .arg("TrommiShellTests.MegaFleetTests/testFleet")
             .env("TROMMI_MEGA_FLEET", &dir)
             .stdin(Stdio::null())
             .stdout(log.try_clone().unwrap())
@@ -241,13 +241,13 @@ impl Torture {
         // the first with the code, every other one paired by one that is in (the newest that is: a chain)
         let t = now();
         let r = self
-            .phone(json!({ "op": "code", "dev": 0, "hub": self.proxy.url, "room_id": self.room_hex, "code": self.code_hex, "live": fleet_live() }))
+            .phone(json!({ "op": "signin", "dev": 0, "hub": self.proxy.url, "email": MEGA_EMAIL, "password": MEGA_PASSWORD, "live": fleet_live() }))
             .await;
         match r {
             Ok(v) => {
                 self.phones.push((true, true));
                 self.metric("phone_signin_ms", now() - t, Some(30_000));
-                self.say(format!("iPhone 0 signed in with the code: {v}"));
+                self.say(format!("iPhone 0 signed in to the test account: {v}"));
             }
             Err(e) => {
                 self.fail(format!("iPhone 0 sign-in: {e}"));

@@ -38,6 +38,7 @@ pub(super) enum Ask {
     State,
     Register,
     Remove,
+    Live,
 }
 
 #[derive(Default)]
@@ -55,6 +56,8 @@ pub(super) struct Push {
     /// The level the hub has, once read.
     pub(super) level: Option<PushChoice>,
     read: bool,
+    live_tokens: Vec<serde_json::Value>,
+    live_sent: std::collections::BTreeSet<String>,
 }
 
 impl Push {
@@ -100,6 +103,7 @@ impl App {
             return;
         }
         if choice == PushChoice::Off {
+            self.push.live_sent.clear();
             self.push.want = None;
             self.push_send(now_ms, out, Ask::Remove);
             let id = self.push_io();
@@ -145,6 +149,7 @@ impl App {
             Ask::Remove => {
                 self.step_send(now_ms, out, |site| Codec.request(site, &Route::PushRemove { endpoint: None }), |expect| Step::Push(Ask::Remove, expect));
             }
+            Ask::Live => {},
             Ask::Register => {
                 let Some(registration) = route_of(&self.push) else {
                     out.push(log(LogLevel::Warn, "push: a token the hub cannot take"));
@@ -175,6 +180,17 @@ impl App {
     /// A token from the platform (`Event::PushToken`, or the answer to a registration): registered with the hub
     /// at the level asked for, or the level the hub had.
     pub(super) fn push_token(&mut self, now_ms: u64, kind: String, token: Option<Vec<u8>>, out: &mut Vec<Effect>) {
+        if kind == "apns_live_activity" {
+            if token.is_none() { self.push.live_tokens.clear(); return; }
+            if let Some(value) = token.and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok()) {
+                if !self.push.live_tokens.contains(&value) {
+                    if self.push.live_tokens.len() >= 16 { self.push.live_tokens.remove(0); }
+                    self.push.live_tokens.push(value);
+                }
+            }
+            self.push_live(now_ms, out);
+            return;
+        }
         let Some(token) = token else {
             self.push.token = None;
             return self.push_send(now_ms, out, Ask::Remove);
@@ -197,6 +213,7 @@ impl App {
 
     /// Reads the hub's push state once the room is live.
     pub(super) fn push_look(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
+        self.push_live(now_ms, out);
         let can = self.config.as_ref().is_some_and(|c| !c.can.push.is_empty());
         if self.push.read || self.engine.is_none() || !can {
             return;
@@ -222,6 +239,7 @@ impl App {
                 self.push.level = self.push.want.take();
             }
             (Ask::Remove, Ok(_)) => {}
+            (Ask::Live, _) => {},
             (_, Err(failure)) => {
                 out.push(log(LogLevel::Warn, &format!("push: {failure:?}")));
                 if self.push.want.take().is_some() {
@@ -233,6 +251,29 @@ impl App {
         }
         let _ = now_ms;
         self.show_push();
+    }
+
+    /// ActivityKit only supplies tokens. The core chooses the room tag and whether a token may be registered.
+    fn push_live(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
+        if self.push.level.is_none_or(|l| l == PushChoice::Off)
+            || !self.config.as_ref().is_some_and(|c| c.can.push == "apns") { return; }
+        let Some(engine) = self.engine.as_ref() else { return };
+        let mut input = b"trommi live activity".to_vec();
+        input.extend_from_slice(engine.room().as_bytes());
+        input.extend_from_slice(engine.device().id().as_bytes());
+        let Ok(hash) = trommi_core::crypto::sha256(&input) else { return };
+        let tag = crate::engine::feed::hex(&hash.as_bytes()[..8]);
+        for value in self.push.live_tokens.clone() {
+            let word = |k| value.get(k).and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+            if !matches!(word("kind").as_str(), "start" | "activity") { continue; }
+            let start = word("kind") == "start";
+            if !start && word("tag") != tag { continue; }
+            let activity = crate::hub::LiveActivity { start, token: word("token"), tag: tag.clone(), environment: word("environment"), topic: word("topic") };
+            let key = format!("{}:{}:{}", activity.start, tag, activity.token);
+            if self.push.live_sent.insert(key) {
+                self.step_send(now_ms, out, move |site| Codec.request(site, &Route::LiveActivity { activity: &activity }), |expect| Step::Push(Ask::Live, expect));
+            }
+        }
     }
 
     pub(super) fn show_push(&mut self) {

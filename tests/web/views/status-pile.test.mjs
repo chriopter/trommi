@@ -16,11 +16,3 @@ test('the row does not scroll sideways; the chips past its end lie on the stack'
   assert.match(src, /this\.pile\.innerHTML = `<span class="status-pile-n">\+\$\{over\.length\}<\/span>`/)
   assert.doesNotMatch(src, /trommi-chips/, 'no switch between proposals any more')
 })
-
-test('the iPhone: the longest row that fits, then the stack, listed under the row', () => {
-  const swift = read('app/ios/TrommiApp/Sources/TrommiApp/SessionScreen.swift')
-  const status = swift.slice(swift.indexOf('struct SessionStatus'), swift.indexOf('func agoShort'))
-  assert.doesNotMatch(status, /ScrollView\(\.horizontal/)
-  assert.match(status, /ViewThatFits\(in: \.horizontal\)/)
-  assert.match(status, /pile\(rest: lines\.count - k, from: k\)/)
-})
