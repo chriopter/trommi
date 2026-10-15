@@ -189,13 +189,16 @@ impl Engine {
     /// archive does: the hub is told (`POST /v1/groups/{group}/archive`, kept across a restart), and once it took
     /// it (or says the group is `gone`), the device archives the group and removes `retire` from the room's agents
     /// by one room Commit, which goes through the outbox like any other. The answer also comes in
-    /// [`Report::Answer`] under the id returned. Refused: `forbidden` (not a human device, or the room group),
-    /// `not-found` (a group this device does not hold), `busy`, `stopped`.
+    /// [`Report::Answer`] under the id returned. An agent device archives the helper sessions it opened, retiring
+    /// nobody (the connector's `archive_child_session`). Refused: `forbidden` (the room group, a human device's
+    /// call from an agent's engine, or an agent that would retire devices), `not-found` (a group this device does
+    /// not hold), `busy`, `stopped`.
     pub fn archive_session(&mut self, ctx: &mut Ctx<'_>, group: GroupId, retire: Vec<DeviceId>) -> Result<IoId, &'static str> {
         if self.stopped.is_some() {
             return Err("stopped");
         }
-        if group.is_room() || !self.device.is_human() {
+        let allowed = if self.device.is_human() { self.agent.is_none() } else { self.agent.is_some() && retire.is_empty() };
+        if group.is_room() || !allowed {
             return Err("forbidden");
         }
         if self.device.group(&group).is_err() {

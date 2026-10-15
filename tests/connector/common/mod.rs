@@ -5,15 +5,16 @@
 #![allow(dead_code)]
 
 pub mod process;
+pub mod hub;
 
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
-use trommi_connector::client::hub_for;
+use hub::hub_for;
 use trommi_connector::error::{Fault, Result};
-use trommi_connector::hub::{b64, unb64, Hub};
+use hub::{b64, unb64, Hub};
 use trommi_connector::keeper::Keeper;
 use trommi_connector::store::Journal;
 use trommi_connector::util::{hex, now_ms};

@@ -891,7 +891,7 @@ pub fn entry_from_wire(e: &Value, with_id: bool) -> Result<Fields> {
 }
 
 /// JavaScript's `String(v)` for what a note's text may be.
-fn js_string(v: &Value) -> String {
+pub(crate) fn js_string(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
         Value::Null => "null".into(),

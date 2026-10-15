@@ -1,6 +1,6 @@
 //! The commands beside the MCP server: join, say, the plugin's hooks, the monitor, the witness, whoami.
 use crate::bridge::{About, Bridge};
-use crate::client::BoxFut;
+use crate::driver::BoxFut;
 use crate::door::{knock, ring};
 use crate::error::{Fault, Result};
 use crate::hooks::{hook_output, hook_request};
@@ -45,8 +45,8 @@ pub async fn join(given: Option<String>) -> Result<String> {
     }
     let c = m.client().unwrap();
     let (room, sid) = {
-        let core = c.core.lock().await;
-        (core.model.room.room_id.clone(), core.session_id())
+        let core = c.lock();
+        (c.room_id().to_base64url(), core.session_id())
     };
     let sid = sid
         .or_else(|| {

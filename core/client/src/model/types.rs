@@ -404,6 +404,32 @@ impl Card {
     pub fn field(&self, name: &str) -> Value {
         self.fields.get(name)
     }
+    /// A content field as text, using the same spelling as an agent's tool result.
+    pub fn s(&self, name: &str) -> String {
+        match self.field(name) { Value::Null => String::new(), v => crate::codec::js_string(&v) }
+    }
+    pub fn title(&self) -> String {
+        self.s("title")
+    }
+    pub fn card_type(&self) -> String {
+        self.field("card_type").as_str().unwrap_or("decision").to_string()
+    }
+    pub fn options(&self) -> Vec<Value> {
+        self.field("options").as_array().cloned().unwrap_or_default()
+    }
+    pub fn option_keys(&self) -> Vec<String> {
+        self.options().iter().map(|o| o.get("key").map(crate::codec::js_string).unwrap_or_else(|| "undefined".into())).collect()
+    }
+    pub fn recommended_list(&self) -> Vec<String> {
+        match self.field("recommended") {
+            Value::Null => Vec::new(),
+            Value::Array(a) => a.iter().map(crate::codec::js_string).collect(),
+            v => vec![crate::codec::js_string(&v)],
+        }
+    }
+    pub fn attachments(&self) -> Vec<Value> {
+        self.field("attachments").as_array().cloned().unwrap_or_default()
+    }
     /// A card of a newer Trommi (its type or schema): read as an info. (`unsupported` may stand as null.)
     pub fn is_unsupported(&self) -> bool {
         match &self.unsupported {

@@ -337,13 +337,24 @@ pub struct AgentSim {
     pub reports: Vec<crate::engine::Report>,
     /// The hub's address the engine is opened with.
     pub hub: String,
+    /// What the connector stored when the device answered its invite: the engine is opened with it
+    /// ([`crate::engine::Engine::open_agent`]).
+    pub invite: Option<crate::engine::AgentInvite>,
     next_id: u64,
 }
 
 impl AgentSim {
     /// An engine over the device state in `io.device`, made an agent's; nothing is asked before [`AgentSim::start`].
     pub fn new(io: Sim, hub: &str) -> Self {
-        let mut sim = AgentSim { io, engine: None, reports: Vec::new(), hub: hub.to_string(), next_id: 1 };
+        let mut sim = AgentSim { io, engine: None, reports: Vec::new(), hub: hub.to_string(), invite: None, next_id: 1 };
+        sim.open();
+        sim
+    }
+
+    /// An engine over the device state in `io.device` of a device that answered an invite, opened with what its
+    /// connector stored ([`crate::engine::Engine::open_agent`]).
+    pub fn invited(io: Sim, hub: &str, invite: crate::engine::AgentInvite) -> Self {
+        let mut sim = AgentSim { io, engine: None, reports: Vec::new(), hub: hub.to_string(), invite: Some(invite), next_id: 1 };
         sim.open();
         sim
     }
@@ -359,8 +370,14 @@ impl AgentSim {
 
     fn open(&mut self) {
         let entries = self.io.device.1.iter().map(|(k, v)| DeviceEntry { key: k.clone().into(), value: v.clone().into() }).collect();
-        let mut engine = crate::engine::Engine::open(&self.hub, "test/0.0.0", 7, self.io.device.0, entries).expect("the stored device opens");
-        engine.become_agent().expect("an agent device");
+        let engine = match &self.invite {
+            Some(invite) => crate::engine::Engine::open_agent(&self.hub, "test/0.0.0", 7, self.io.device.0, entries, invite.clone()).expect("the stored device opens"),
+            None => {
+                let mut engine = crate::engine::Engine::open(&self.hub, "test/0.0.0", 7, self.io.device.0, entries).expect("the stored device opens");
+                engine.become_agent().expect("an agent device");
+                engine
+            }
+        };
         self.engine = Some(engine);
     }
 

@@ -3074,6 +3074,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "trommi-client-core",
  "trommi-core",
  "trommi-io",
  "zeroize",
