@@ -22,6 +22,9 @@ printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::not a comm
 here=$(cd "$(dirname "$0")" && pwd)
 
 gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/gate-run.json"
+if [ "$(jq -r .path "$RUNNER_TEMP/gate-run.json")" = .github/workflows/main.yml ]; then
+  bash "$here/main_release_gate.sh" apple
+else
 jq -e --arg r "$GITHUB_REPOSITORY" --arg c "$COMMIT" \
   '.path == ".github/workflows/ship-apple.yml" and .head_branch == "main" and .event == "push"
    and .repository.full_name == $r and .head_repository.full_name == $r and .head_sha == $c' \
@@ -35,6 +38,8 @@ case "$core" in
   success|skipped) echo "the checks of run $RUN_ID: iOS client $client, core $core" >&2 ;;
   *) echo "::error::Core (check) of run $RUN_ID: ${core:-not there}: nothing is uploaded"; exit 1 ;;
 esac
+
+fi
 
 sum=$(sh "$here/inputs.sh" "$COMMIT" | sed -n 's/^ios //p')
 [ -n "$sum" ] || { echo "::error::no iOS inputs for $COMMIT"; exit 1; }

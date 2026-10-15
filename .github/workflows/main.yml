@@ -1,0 +1,196 @@
+name: main
+'on':
+  push:
+    branches:
+    - main
+    paths:
+    - app/**
+    - core/**
+    - connector/**
+    - hub/**
+    - site/**
+    - tests/**
+    - demo/**
+    - release/**
+    - spec/vectors/**
+    - spec/account-vectors.json
+    - .github/**
+    - .config/nextest.toml
+    - .claude-plugin/**
+    - .node-version
+    - Cargo.toml
+    - Cargo.lock
+    - rust-toolchain.toml
+    - install.sh
+    - THIRD-PARTY.md
+    - '!**/README.md'
+  workflow_dispatch:
+    inputs:
+      part:
+        description: Check all parts or one part and deliver its undelivered inputs
+        type: choice
+        options:
+        - all
+        - connector
+        - linux
+        - site
+        default: all
+permissions: {}
+env:
+  NEXTEST_PROFILE: ci
+  NEXTEST_VERSION: 0.9.148
+  CARGO_INCREMENTAL: '0'
+  CARGO_BUILD_JOBS: '4'
+  NEXTEST_TEST_THREADS: '4'
+jobs:
+  plan:
+    name: Plan and shared checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      checks: ${{ steps.plan.outputs.checks }}
+      deliver: ${{ steps.plan.outputs.deliver }}
+      version: ${{ steps.plan.outputs.version }}
+      core: ${{ steps.core.outcome }}
+      digest: ${{ steps.plan.outputs.digest }}
+      parts: ${{ steps.plan.outputs.parts }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Validate the pipeline contracts
+      run: |
+        node .github/scripts/ci_coverage.mjs
+        node .github/scripts/input_trees.test.mjs
+        node .github/scripts/main_plan.test.mjs
+        node .github/scripts/main_gates.test.mjs
+        node .github/scripts/main_report.test.mjs
+        node .github/scripts/main_baselines.test.mjs
+    - name: Plan affected checks and deliveries
+      id: plan
+      env:
+        GH_TOKEN: ${{ github.token }}
+        MAIN_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.part || '' }}
+      run: bash .github/scripts/main_plan.sh
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        overwrite: true
+        name: main-plan
+        path: ${{ runner.temp }}/main-plan.json
+        if-no-files-found: error
+        retention-days: 30
+    - name: Shared core, once
+      id: core
+      if: steps.plan.outputs.core == 'true'
+      uses: ./.github/actions/check-core
+    - name: Shared core passed
+      if: steps.core.outcome == 'success'
+      run: echo 'Shared core passed for this commit'
+  checks:
+    name: ${{ matrix.name }}
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.checks != '' && needs.plan.outputs.checks != '{"include":[]}' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.checks) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: The shared checks passed
+      if: matrix.part != 'site'
+      env:
+        CORE: ${{ needs.plan.outputs.core }}
+      run: case "$CORE" in success|skipped) ;; *) exit 1;; esac
+    - uses: ./.github/actions/check-web
+      if: matrix.part == 'web'
+    - uses: ./.github/actions/check-hub
+      if: matrix.part == 'hub'
+    - uses: ./.github/actions/check-connector
+      if: matrix.part == 'connector'
+    - uses: ./.github/actions/check-ios-client
+      if: matrix.part == 'apple'
+    - uses: ./.github/actions/check-linux
+      if: matrix.part == 'linux'
+    - uses: ./.github/actions/check-site
+      if: matrix.part == 'site'
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: main-plan
+        path: ${{ runner.temp }}/main-plan
+    - name: Build configuration
+      run: node .github/scripts/main_metadata.mjs configure '${{ matrix.part }}'
+    - name: Checks and build succeeded
+      env:
+        PART: ${{ matrix.part }}
+      run: node .github/scripts/main_metadata.mjs checked "$PART"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        overwrite: true
+        name: main-checked-${{ matrix.part }}
+        path: ${{ runner.temp }}/main-checked.json
+        if-no-files-found: error
+        retention-days: 30
+    env:
+      MAIN_PLAN_DIGEST: ${{ needs.plan.outputs.digest }}
+  parts:
+    name: ${{ matrix.part }}
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.parts != '' && needs.plan.outputs.parts != '{"include":[]}' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.parts) }}
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+      deployments: write
+    uses: ./.github/workflows/main-part.yml
+    with:
+      part: ${{ matrix.part }}
+      name: ${{ matrix.name }}
+      runner: ${{ matrix.runner }}
+      build: ${{ matrix.build }}
+      pipelines: ${{ matrix.pipelines }}
+      core-status: ${{ needs.plan.outputs.core }}
+      version: ${{ needs.plan.outputs.version }}
+      plan-digest: ${{ needs.plan.outputs.digest }}
+    secrets: inherit
+  report:
+    name: Delivery report
+    needs:
+    - plan
+    - checks
+    - parts
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: main-plan
+        path: ${{ runner.temp }}/main-plan
+    - name: Each part's delivery result
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: node .github/scripts/main_report.mjs
+    env:
+      MAIN_PLAN_DIGEST: ${{ needs.plan.outputs.digest }}

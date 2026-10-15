@@ -12,6 +12,7 @@
 // 5. the shells' freeze (core/client/tests/shells.rs) here too: the Core check that runs it is skipped when only a
 //    shell changed, so a grown or new file in a frozen folder reached main unseen (#224's fix itself).
 import fs from 'node:fs'
+import { plan as mainPlan, checkNames } from './main_plan.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -34,6 +35,19 @@ const files = [
 ]
 const workflows = files.map(read).join('\n')
 const problems = []
+
+// These prefixes form the job-name contract used by the artifact gates and last-passed baselines.
+for (const [file,id,name] of [
+  ['main.yml','parts','${{ matrix.part }}'],
+  ['main-part.yml','check','${{ inputs.name }}'],
+  ['main-part.yml','release','${{ matrix.pipeline }}'],
+  ['main-delivery.yml','prepare','Sign and prepare'],
+  ['main-delivery.yml','publish','Publish and deliver'],
+]) {
+  const section=read(`.github/workflows/${file}`).match(new RegExp(`^  ${id}:\\n(.*?)(?=^  [a-z_-]+:|$(?![\\s\\S]))`,'ms'))?.[1]
+  const actual=section?.match(/^    name: (.+)$/m)?.[1]?.replace(/^(['"])(.*)\1$/,'$2')
+  if(actual!==name) problems.push(`${file} job ${id}: update the main gate/baseline name contract when renaming ${name}`)
+}
 
 // 1. crates
 const members = [...read('Cargo.toml').matchAll(/^members = \[(.*?)\]/gms)][0][1].match(/"[^"]+"/g).map(s => s.slice(1, -1))
@@ -71,6 +85,10 @@ for (const [key, command] of Object.entries(scripts)) {
 // the display names of a workflow's jobs; a name with ${{ … }} (a matrix) matches anything there; a job that calls a
 // reusable workflow of this repository has the names "<its name> / <a job name of that workflow>"
 const jobNames = (file, seen = new Set()) => {
+  if (file === '.github/workflows/main.yml') {
+    const full = mainPlan(['core/client/src/app.rs','site/public/index.html'], {web:true,hub:true,connector:true,ios:true,mac:true})
+    return ['Plan and shared checks','Delivery report',...Object.values(checkNames),...full.releases.map(row=>`${row.part} / ${row.name}`),...full.pipelines.flatMap(row=>[row.prepare_job,row.publish_job])]
+  }
   if (seen.has(file) || !fs.existsSync(path.join(repo, file))) return []
   seen.add(file)
   const lines = read(file).split('\n')
@@ -101,7 +119,7 @@ const lookups = [
   /grep -Fx?q "([^"$]+)" "[^"]*jobs\.txt"/g,
 ]
 const sources = [
-  ...files.filter(f => f.startsWith('.github/workflows/')),
+  ...files,
   ...fs.readdirSync(path.join(repo, '.github/scripts')).filter(f => f !== 'ci_coverage.mjs').map(f => `.github/scripts/${f}`),
   ...fs.readdirSync(path.join(repo, 'dev')).filter(f => fs.statSync(path.join(repo, 'dev', f)).isFile()).map(f => `dev/${f}`),
 ]
@@ -110,7 +128,7 @@ for (const file of sources) {
   const text = read(file)
   const own = text.match(/\.path == "\.github\/workflows\/([\w.-]+)"/)?.[1]
   const workflow = file.startsWith('.github/workflows/') ? file : own ? `.github/workflows/${own}` : null
-  const refs = []
+  const refs = [...text.matchAll(/^# ci-job: ([\w.-]+\.yml) (.+)$/gm)].map(([, wf, name]) => [`.github/workflows/${wf}`, name])
   for (const re of lookups) for (const m of text.matchAll(re)) refs.push([workflow, m[1]])
   // ios_delivered.sh: runs <workflow file> <event> '<job>' (a workflow no longer here: its old runs, not checked)
   for (const m of text.matchAll(/\bruns ([\w.-]+\.yml) \w+ '([^']+)'/g)) refs.push([`.github/workflows/${m[1]}`, m[2], true])

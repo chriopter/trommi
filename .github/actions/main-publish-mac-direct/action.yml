@@ -1,0 +1,62 @@
+name: main-publish-mac-direct
+description: The main pipeline steps for main-publish-mac-direct
+inputs:
+  version:
+    description: Release series number
+    default: ''
+  mac-version:
+    description: Direct Mac version
+    default: ''
+  expected-dmg:
+    description: Digest exported by the producing job
+    required: true
+outputs: {}
+runs:
+  using: composite
+  steps:
+  - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+    with:
+      name: mac-direct
+      path: ${{ runner.temp }}/mac
+    env:
+      CARGO_INCREMENTAL: '0'
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ github.sha }}
+      MAC_VERSION: ${{ inputs.mac-version }}
+  - name: The producing job checked these bytes
+    shell: bash
+    env:
+      EXPECTED: ${{ inputs.expected-dmg }}
+    run: sh .github/scripts/main_artifact.sh "$EXPECTED" "$RUNNER_TEMP/mac/Trommi-macOS.dmg"
+  - name: Check, describe
+    run: bash .github/scripts/mac_release.sh prepare "$RUNNER_TEMP/mac"
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ github.sha }}
+      MAC_VERSION: ${{ inputs.mac-version }}
+  - name: Attest the files
+    uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+    with:
+      subject-path: |
+        ${{ runner.temp }}/mac/Trommi-macOS.dmg
+        ${{ runner.temp }}/mac/Trommi-macOS.dmg.sha256
+        ${{ runner.temp }}/mac/Trommi-macOS.json
+    env:
+      CARGO_INCREMENTAL: '0'
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ github.sha }}
+      MAC_VERSION: ${{ inputs.mac-version }}
+  - name: Release
+    run: bash .github/scripts/mac_release.sh upload "$RUNNER_TEMP/mac"
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ github.sha }}
+      MAC_VERSION: ${{ inputs.mac-version }}

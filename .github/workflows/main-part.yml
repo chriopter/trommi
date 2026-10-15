@@ -1,0 +1,144 @@
+name: main part
+'on':
+  workflow_call:
+    inputs:
+      part:
+        type: string
+        required: true
+      name:
+        type: string
+        required: true
+      runner:
+        type: string
+        required: true
+      build:
+        type: boolean
+        required: true
+      version:
+        type: string
+        required: true
+      core-status:
+        type: string
+        required: true
+      plan-digest:
+        type: string
+        required: true
+      pipelines:
+        type: string
+        required: true
+permissions: {}
+env:
+  NEXTEST_PROFILE: ci
+  NEXTEST_VERSION: 0.9.148
+  CARGO_INCREMENTAL: '0'
+  CARGO_BUILD_JOBS: '4'
+  NEXTEST_TEST_THREADS: '4'
+jobs:
+  check:
+    name: ${{ inputs.name }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: The shared checks passed
+      if: inputs.part != 'site'
+      env:
+        CORE: ${{ inputs.core-status }}
+      run: case "$CORE" in success|skipped) ;; *) exit 1;; esac
+    - uses: ./.github/actions/check-web
+      if: inputs.part == 'web'
+    - uses: ./.github/actions/check-hub
+      if: inputs.part == 'hub'
+    - uses: ./.github/actions/check-connector
+      if: inputs.part == 'connector'
+    - uses: ./.github/actions/check-ios-client
+      if: inputs.part == 'apple'
+    - uses: ./.github/actions/check-linux
+      if: inputs.part == 'linux'
+    - uses: ./.github/actions/check-site
+      if: inputs.part == 'site'
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: main-plan
+        path: ${{ runner.temp }}/main-plan
+    - name: Build configuration
+      run: node .github/scripts/main_metadata.mjs configure '${{ inputs.part }}'
+    - uses: ./.github/actions/main-build-web
+      if: inputs.part == 'web' && inputs.build
+      with:
+        version: ${{ inputs.version }}
+        parts: ${{ env.MAIN_PARTS }}
+    - uses: ./.github/actions/main-build-hub
+      if: inputs.part == 'hub' && inputs.build
+      with:
+        version: ${{ inputs.version }}
+        parts: ${{ env.MAIN_PARTS }}
+    - uses: ./.github/actions/main-build-connector
+      if: inputs.part == 'connector' && inputs.build
+      with:
+        version: ${{ inputs.version }}
+        parts: ${{ env.MAIN_PARTS }}
+    - uses: ./.github/actions/main-build-apple
+      if: inputs.part == 'apple' && inputs.build
+    - name: Site inputs
+      if: inputs.part == 'site'
+      run: tar -czf "$RUNNER_TEMP/site-inputs.tar.gz" site .node-version .github/tools/wrangler tests/site
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: inputs.part == 'site'
+      with:
+        overwrite: true
+        name: site-inputs
+        path: ${{ runner.temp }}/site-inputs.tar.gz
+        if-no-files-found: error
+    - name: Bind the produced artifacts
+      id: built
+      run: node .github/scripts/main_metadata.mjs built '${{ inputs.part }}'
+    - name: Checks and build succeeded
+      env:
+        PART: ${{ inputs.part }}
+      run: node .github/scripts/main_metadata.mjs checked "$PART"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        overwrite: true
+        name: main-checked-${{ inputs.part }}
+        path: ${{ runner.temp }}/main-checked.json
+        if-no-files-found: error
+        retention-days: 30
+    env:
+      MAIN_PLAN_DIGEST: ${{ inputs.plan-digest }}
+    outputs:
+      release_digest: ${{ steps.built.outputs.release_digest }}
+      web_digest: ${{ steps.built.outputs.web_digest }}
+      native_digest: ${{ steps.built.outputs.native_digest }}
+      site_digest: ${{ steps.built.outputs.site_digest }}
+  release:
+    name: ${{ matrix.pipeline }}
+    needs: check
+    if: ${{ needs.check.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.pipelines) }}
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+      deployments: write
+    uses: ./.github/workflows/main-delivery.yml
+    with:
+      part: ${{ inputs.part }}
+      pipeline: ${{ matrix.pipeline }}
+      version: ${{ inputs.version }}
+      plan-digest: ${{ inputs.plan-digest }}
+      release-digest: ${{ needs.check.outputs.release_digest }}
+      web-digest: ${{ needs.check.outputs.web_digest }}
+      native-digest: ${{ needs.check.outputs.native_digest }}
+      site-digest: ${{ needs.check.outputs.site_digest }}
+      spec: ${{ toJSON(matrix) }}
+    secrets: inherit

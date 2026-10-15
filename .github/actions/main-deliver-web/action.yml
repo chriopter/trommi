@@ -1,0 +1,220 @@
+name: main-deliver-web
+description: The main pipeline steps for main-deliver-web
+inputs:
+  version:
+    description: Release series number
+    default: ''
+  manifest:
+    description: The manifest hash passed by signing
+    default: ''
+  op-token:
+    description: Scoped 1Password service token
+    default: ''
+  op-env:
+    description: Scoped 1Password environment
+    default: ''
+outputs:
+  reason:
+    description: reason
+    value: ${{ steps.smoke.outputs.reason || steps.ask.outputs.reason }}
+runs:
+  using: composite
+  steps:
+  - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+    with:
+      name: web-release
+      path: release
+      run-id: ${{ github.run_id || github.run_id }}
+      github-token: ${{ github.token }}
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+  - name: The files are the attested ones
+    run: |
+      set -eu
+      # The artifact is fetched a second time here. Only the manifest's hash came from the job that attested, so
+      # every file is checked against that manifest, and nothing may lie beside what it names.
+      [ "$(sha256sum release/manifest.json | cut -d' ' -f1)" = "$MANIFEST" ] || { echo "::error::manifest.json is not the attested one"; exit 1; }
+      cd release
+      jq -r '.files[] | "\(.sha256)  \(.name)"' manifest.json > "$RUNNER_TEMP/manifest-sums"
+      sha256sum -c --quiet "$RUNNER_TEMP/manifest-sums"
+      find . -type f ! -path ./checksums.txt ! -path ./manifest.json | sed 's|^\./||' | sort > "$RUNNER_TEMP/there"
+      jq -r '.files[].name' manifest.json | sort > "$RUNNER_TEMP/named"
+      diff "$RUNNER_TEMP/named" "$RUNNER_TEMP/there" || { echo "::error::the release holds files the attested manifest does not name"; exit 1; }
+    shell: bash
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+  - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+    with:
+      node-version-file: .node-version
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+  - name: wrangler (pinned in .github/tools/wrangler)
+    run: npm ci --no-audit --no-fund --ignore-scripts --prefix .github/tools/wrangler
+    shell: bash
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+  - name: Install the 1Password CLI
+    uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50
+    with:
+      version: 2.42.0-beta.01
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+  - name: Is something newer served already
+    id: newer
+    if: github.event_name == 'push'
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+      GH_TOKEN: ${{ github.token }}
+    run: |
+      set -u
+      # Asked up to three times. What cannot be found out stops the delivery (an older build must not land on a
+      # newer one unseen); a delivery by hand does not ask.
+      page= ; status=
+      for try in 1 2 3; do
+        if page=$(curl -sS --max-time 10 -w '\n%{http_code}' "https://app.trommi.com/gen/build.txt?ci=$GITHUB_RUN_ID-before-$try"); then break; fi
+        page= ; sleep 5
+      done
+      [ -n "$page" ] || { echo "::error::app.trommi.com did not answer: which build it serves is not known, nothing was delivered. Deliver by hand (ship-web, run_id $GITHUB_RUN_ID) once it answers."; exit 1; }
+      served=$(printf '%s\n' "$page" | sed -n 's/^commit: //p' | head -n 1)
+      # a site that names no commit (never delivered to, or not this app): delivering
+      printf '%s' "$served" | grep -Eq '^[0-9a-f]{7,40}$' || { echo "the site names no commit (HTTP $(printf '%s\n' "$page" | tail -n 1)): delivering"; exit 0; }
+      # how the served commit lies to this one: ahead = it comes after this one
+      missing=
+      for try in 1 2 3; do
+        if full=$(gh api "repos/$GITHUB_REPOSITORY/commits/$served" --jq .sha 2>"$RUNNER_TEMP/commit.err"); then
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$COMMIT...$full" --jq .status 2>/dev/null) && break
+        elif grep -Eq 'HTTP (404|422)' "$RUNNER_TEMP/commit.err"; then
+          # GitHub does not know the served commit (history rewritten, e.g. re-signed): it cannot be newer
+          missing=1; break
+        fi
+        status= ; sleep 5
+      done
+      if [ -n "$missing" ]; then
+        if [ "$GITHUB_REF" = refs/heads/main ]; then
+          echo "::notice::app.trommi.com serves $served, a commit this repository does not know: unknown, delivering"
+          exit 0
+        fi
+        echo "::error::app.trommi.com serves $served, a commit this repository does not know; only main delivers then. Nothing was delivered."
+        exit 1
+      fi
+      echo "app.trommi.com serves $served, which is ${status:-unknown} compared with $COMMIT"
+      [ -n "$status" ] || { echo "::error::how $served lies to $COMMIT could not be found out, nothing was delivered. Deliver by hand (ship-web, run_id $GITHUB_RUN_ID)."; exit 1; }
+      if [ "$status" = ahead ]; then
+        echo "skip=true" >> "$GITHUB_OUTPUT"
+        echo "served=$served" >> "$GITHUB_OUTPUT"
+        echo "::notice::app.trommi.com already serves $served, which is newer than this build; nothing was delivered"
+      fi
+    shell: bash
+  - name: Deliver
+    if: steps.newer.outputs.skip != 'true'
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.op-token }}
+      OP_ENVIRONMENT_ID: ${{ inputs.op-env }}
+      WRANGLER_SEND_METRICS: 'false'
+    run: |
+      set -eu
+      test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+      test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+      wrangler="$PWD/.github/tools/wrangler/node_modules/.bin/wrangler"
+      cd release
+      # CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID come from the 1Password Environment
+      op run --environment "$OP_ENVIRONMENT_ID" -- "$wrangler" deploy --message "build $VERSION of $COMMIT"
+    shell: bash
+  - name: Ask app.trommi.com
+    id: ask
+    if: steps.newer.outputs.skip != 'true'
+    run: |
+      set -u
+      short=$(printf '%s' "$COMMIT" | cut -c1-7)
+      got=
+      for try in $(seq 1 30); do
+        got=$(curl -fsS --max-time 10 "https://app.trommi.com/gen/build.txt?ci=$GITHUB_RUN_ID-$try" | sed -n 's/^commit: //p' | head -n 1 || true)
+        echo "try $try: app.trommi.com serves ${got:-nothing}"
+        [ "$got" = "$short" ] && break
+        sleep 5
+      done
+      {
+        echo "### Web app: build $VERSION"
+        echo
+        echo "| | |"
+        echo "|---|---|"
+        echo "| commit | \`$COMMIT\` |"
+        echo "| app.trommi.com serves | \`${got:-nothing}\` |"
+        echo "| manifest (SHA-256) | \`$MANIFEST\` |"
+      } >> "$GITHUB_STEP_SUMMARY"
+      [ "$got" = "$short" ] || {
+        echo "reason=app.trommi.com does not serve $short after two and a half minutes (it serves ${got:-nothing})" >> "$GITHUB_OUTPUT"
+        echo "::error::app.trommi.com does not serve $short"
+        exit 1
+      }
+    shell: bash
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+  - name: Smoke test
+    id: smoke
+    if: steps.newer.outputs.skip != 'true'
+    run: |
+      set -u
+      if reason=$(sh .github/scripts/web_smoke.sh release "$COMMIT"); then exit 0; fi
+      printf 'reason=%s\n' "the smoke test after the delivery failed: $reason; the build before was put back" >> "$GITHUB_OUTPUT"
+      echo "::error::$reason"
+      exit 1
+    shell: bash
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+  - name: Put the build before back
+    if: failure() && steps.smoke.outcome == 'failure'
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.op-token }}
+      OP_ENVIRONMENT_ID: ${{ inputs.op-env }}
+      WRANGLER_SEND_METRICS: 'false'
+    run: |
+      set -eu
+      wrangler="$PWD/.github/tools/wrangler/node_modules/.bin/wrangler"
+      cd release
+      op run --environment "$OP_ENVIRONMENT_ID" -- "$wrangler" rollback --yes --message "smoke test of build $VERSION ($COMMIT) failed"
+      for try in $(seq 1 30); do
+        got=$(curl -fsS --max-time 10 "https://app.trommi.com/gen/build.txt?ci=$GITHUB_RUN_ID-back-$try" | sed -n 's/^commit: //p' | head -n 1 || true)
+        echo "try $try: app.trommi.com serves ${got:-nothing}"
+        [ -n "$got" ] && [ "$got" != "$(printf '%s' "$COMMIT" | cut -c1-7)" ] && { echo "### Web app: put back, serves \`$got\` again" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+        sleep 5
+      done
+      echo "::error::after the rollback app.trommi.com still serves ${got:-nothing}"
+      exit 1
+    shell: bash
+  - name: Nothing was delivered
+    if: steps.newer.outputs.skip == 'true'
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ inputs.version }}
+      MANIFEST: ${{ inputs.manifest }}
+      SERVED: ${{ steps.newer.outputs.served }}
+    run: |
+      {
+        echo "### Web app: build $VERSION was NOT delivered"
+        echo
+        echo "app.trommi.com already serves \`$SERVED\`, a commit that comes after \`$COMMIT\` on main."
+      } >> "$GITHUB_STEP_SUMMARY"
+    shell: bash

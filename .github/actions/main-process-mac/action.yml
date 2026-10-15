@@ -1,0 +1,45 @@
+name: main-process-mac
+description: The main pipeline steps for main-process-mac
+inputs:
+  app-version:
+    description: TestFlight app version
+    default: ''
+  app-build:
+    description: TestFlight app build
+    default: ''
+  op-token:
+    description: Scoped 1Password service token
+    default: ''
+  op-env:
+    description: Scoped 1Password environment
+    default: ''
+outputs: {}
+runs:
+  using: composite
+  steps:
+  - name: Install the 1Password CLI
+    uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50
+    with:
+      version: 2.42.0-beta.01
+    env:
+      CARGO_INCREMENTAL: '0'
+  - name: Wait until processed, hand to the group
+    env:
+      CARGO_INCREMENTAL: '0'
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.op-token }}
+      OP_ENVIRONMENT_ID: ${{ inputs.op-env }}
+      COMMIT: ${{ github.sha }}
+      TF_VERSION: ${{ inputs.app-version }}
+      TF_BUILD: ${{ inputs.app-build }}
+      TESTFLIGHT_TESTER: ${{ vars.IOS_TESTFLIGHT_TESTER }}
+    run: |
+      set -eu
+      test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+      op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/mac_testflight.sh after
+    shell: bash
+  - name: No key file is left
+    if: always()
+    run: rm -rf "$RUNNER_TEMP/asc-mac"
+    shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'

@@ -58,7 +58,7 @@ nice -n 19 ionice -c3 swift build --build-system native --package-path app/ios/T
 ```
 
 These are module checks, not an Xcode archive or a device run. CI's unsigned Xcode app job compiles both platforms;
-`ship-apple.yml` builds the libraries, archives, signs and delivers from main after its checks passed. The shell's
+`main.yml` builds the libraries, archives, signs and delivers from main after its checks passed. The shell's
 small real-hub observer is `TrommiShellTests.MegaObserverTests`; the fleet is opt-in and is skipped by ordinary
 `swift test`. See the root README for client conformance and correctness runs.
 
@@ -161,7 +161,8 @@ xcodebuild build -project Trommi.xcodeproj -scheme TrommiMac -destination 'platf
 ```
 
 Signed builds need the existing Apple team configuration; no secret belongs in the repository. The main pipeline
-is `.github/workflows/ship-apple.yml`: iOS/Mac archives, TestFlight, and the Developer ID direct-download Mac app.
+is `.github/workflows/main.yml`: independent iOS/Mac TestFlight and Developer ID direct-download Mac destinations.
+The manual App Store gate and replay of checked TestFlight artifacts remain in `ship-apple.yml`.
 It delivers only after checks passed and its inputs differ from the last delivery. PRs have no secrets and
 publish nothing. Apple certificates/profiles and export/notarization checks remain in the shipping scripts.
 

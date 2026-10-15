@@ -15,11 +15,16 @@ here=$(cd "$(dirname "$0")" && pwd)
 repo=$GITHUB_REPOSITORY
 # runs: `<id> <commit> <the job that says delivered>` of a workflow
 runs() {
-  gh api "repos/$repo/actions/workflows/$1/runs?event=$2&status=completed&per_page=50" \
+  event="event=$2&"
+  [ "$2" != all ] || event=
+  status="status=completed&"
+  [ "$1" != main.yml ] || status=
+  gh api "repos/$repo/actions/workflows/$1/runs?${event}${status}per_page=50" \
     --jq '.workflow_runs[] | select(.head_branch == "main" and .head_repository.full_name == "'"$repo"'" and .repository.full_name == "'"$repo"'")
       | "\(.id) \((try (.display_title | capture(" of (?<c>[0-9a-f]{40})$").c) catch null) // .head_sha) '"$3"'"' 2>/dev/null
 }
-list=$( { runs ship-apple.yml push 'TestFlight (processed, groups, What to Test, review)'
+list=$( { runs main.yml all 'apple / ios / Publish and deliver'
+          runs ship-apple.yml push 'TestFlight (processed, groups, What to Test, review)'
           runs ios.yml workflow_run 'iOS / TestFlight (processed, groups, What to Test, review)'; } ) \
   || { echo "ios_delivered.sh: the runs could not be listed" >&2; exit 0; }
 commit=

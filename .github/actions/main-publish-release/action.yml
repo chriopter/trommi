@@ -1,0 +1,174 @@
+name: main-publish-release
+description: The main pipeline steps for main-publish-release
+inputs:
+  version:
+    description: Release series number
+    default: ''
+  part:
+    description: Release part
+    default: ''
+  artifact:
+    description: Release artifact name
+    default: ''
+  manifest:
+    description: The manifest hash passed by signing
+    default: ''
+  tag:
+    description: Signed release tag
+    default: ''
+  commit:
+    description: Source commit
+    default: ${{ github.sha }}
+outputs:
+  published:
+    description: published
+    value: ${{ steps.publish.outputs.published }}
+runs:
+  using: composite
+  steps:
+  - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+    with:
+      name: ${{ inputs.artifact }}
+      path: out
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PART: ${{ inputs.part }}
+      TAG: ${{ inputs.tag }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ inputs.commit }}
+      MANIFEST: ${{ inputs.manifest }}
+  - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+    with:
+      name: ${{ inputs.part }}-release-signature
+      path: out
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PART: ${{ inputs.part }}
+      TAG: ${{ inputs.tag }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ inputs.commit }}
+      MANIFEST: ${{ inputs.manifest }}
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    with:
+      ref: ${{ github.sha }}
+      path: repo
+      persist-credentials: 'false'
+      sparse-checkout: |
+        /release/
+        /.github/scripts/release_notes.mjs
+        /.github/scripts/inputs.sh
+      sparse-checkout-cone-mode: 'false'
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PART: ${{ inputs.part }}
+      TAG: ${{ inputs.tag }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ inputs.commit }}
+      MANIFEST: ${{ inputs.manifest }}
+  - name: Check the signature and the files
+    run: |
+      set -eu
+      [ "$(sha256sum out/manifest.json | cut -d' ' -f1)" = "$MANIFEST" ] || { echo "::error::manifest.json is not the one that was signed"; exit 1; }
+      sh repo/release/sign.sh verify out/manifest.json
+      sh repo/release/sign.sh files out/manifest.json
+      mkdir publish
+      jq -r '.assets[].name' out/manifest.json | while read -r name; do cp "out/$name" "publish/$name"; done
+      cp out/manifest.json out/manifest.json.sig publish/
+    shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PART: ${{ inputs.part }}
+      TAG: ${{ inputs.tag }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ inputs.commit }}
+      MANIFEST: ${{ inputs.manifest }}
+  - name: Attest the files
+    uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+    with:
+      subject-path: publish/*
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PART: ${{ inputs.part }}
+      TAG: ${{ inputs.tag }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ inputs.commit }}
+      MANIFEST: ${{ inputs.manifest }}
+  - name: Publish
+    id: publish
+    run: |
+      set -eu
+      echo "published=false" >> "$GITHUB_OUTPUT"
+      # Overtaken: the series holds a higher number, or its newest release is of a commit this one does not come after
+      # (an older run started again). Nothing is published then, and nothing delivered.
+      newest=$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName' | sed -n "s/^$PART-v\([1-9][0-9]*\)\$/\1/p" | sort -n | tail -n 1)
+      if [ -n "$newest" ] && [ "$newest" -gt "$VERSION" ]; then
+        echo "### \`$TAG\`: NOT published, $PART-v$newest is newer" >> "$GITHUB_STEP_SUMMARY"
+        echo "::notice::$PART-v$newest is published already, which is newer than $TAG: nothing is published or delivered"
+        exit 0
+      fi
+      if [ -n "$newest" ] && [ "$newest" != "$VERSION" ]; then
+        theirs=$(gh api "repos/$GH_REPO/commits/$PART-v$newest" --jq .sha)
+        relation=$(gh api "repos/$GH_REPO/compare/$theirs...$COMMIT" --jq .status)
+        case "$relation" in
+          ahead|identical) ;;
+          *)
+            echo "### \`$TAG\`: NOT published, $PART-v$newest is of $theirs, which $COMMIT does not come after ($relation)" >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::$TAG is not published: $COMMIT does not come after $PART-v$newest ($relation)"
+            exit 0
+            ;;
+        esac
+      fi
+      state=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+      if [ "$state" = true ]; then
+        gh release delete "$TAG" --yes
+        state=none
+      fi
+      if [ "$state" = none ]; then
+        if tagged=$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha 2>/dev/null); then
+          [ "$tagged" = "$COMMIT" ] || { echo "::error::the tag $TAG is there already and names $tagged, not $COMMIT"; exit 1; }
+        fi
+        # the notes: the "What's new" lines of the pull requests merged since this series' release before that touch
+        # this part (release_notes.mjs; What's new on the web and the iPhone reads them back); empty notes never stop
+        # a release
+        before=''
+        if [ -n "$newest" ]; then before=$(gh api "repos/$GH_REPO/commits/$PART-v$newest" --jq .sha 2>/dev/null) || before=''; fi
+        {
+          node repo/.github/scripts/release_notes.mjs "$PART" "$before" "$COMMIT" || true
+          echo
+          echo "---"
+          echo
+          echo "The $PART of commit $COMMIT. Signed: manifest.json and manifest.json.sig (release/public-key.pem)."
+        } > "$RUNNER_TEMP/notes.md"
+        gh release create "$TAG" --target "$COMMIT" --latest=false --title "Trommi $TAG" --notes-file "$RUNNER_TEMP/notes.md" \
+          publish/* 2> "$RUNNER_TEMP/create.err" && code=0 || code=$?
+        cat "$RUNNER_TEMP/create.err" >&2
+        if [ "$code" != 0 ]; then
+          # Overtaken: a later commit changed the workflow files and GitHub refuses the tag.
+          if grep -Eq 'HTTP 40[34]' "$RUNNER_TEMP/create.err"; then
+            echo "::notice::$TAG was not published: GitHub refused the tag (a later commit changed the workflow files?); the later run releases"
+            exit 0
+          fi
+          echo "::error::$TAG was not published (gh release create ended with $code)"
+          exit 1
+        fi
+        echo "published $TAG" >> "$GITHUB_STEP_SUMMARY"
+      else
+        gh release download "$TAG" --pattern manifest.json --dir "$RUNNER_TEMP/published"
+        cmp -s "$RUNNER_TEMP/published/manifest.json" publish/manifest.json || { echo "::error::$TAG is published already with another manifest"; exit 1; }
+        echo "$TAG is published already and stays as it is" >> "$GITHUB_STEP_SUMMARY"
+      fi
+      echo "published=true" >> "$GITHUB_OUTPUT"
+    shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PART: ${{ inputs.part }}
+      TAG: ${{ inputs.tag }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ inputs.commit }}
+      MANIFEST: ${{ inputs.manifest }}

@@ -35,6 +35,17 @@ staticlib() {   # staticlib <rust target or ""> <folder under lib/>
   cp "$from/libtrommi_core_ffi.a" "$package/lib/$2/libtrommi_core_ffi.a"
 }
 
+# Keep the deployment target identical for the host archive and a matching Mac app.
+# cargo build writes every crate-type (including staticlib) declared by this package.
+host_triple=$(rustc -vV | sed -n 's/^host: //p')
+if [ "$what" = macos ] && [ "$host_triple" = aarch64-apple-darwin ]; then
+  MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-14.0}
+  export MACOSX_DEPLOYMENT_TARGET
+fi
+host_archive() {
+  mkdir -p "$package/lib/$1"
+  cp "$target/release/libtrommi_core_ffi.a" "$package/lib/$1/libtrommi_core_ffi.a"
+}
 # The bindings are read from a host build of the library (a cdylib), whatever they are for.
 cargo build --release --locked
 cargo build --release --locked --manifest-path bindgen/Cargo.toml
@@ -47,7 +58,7 @@ cp "$generated/TrommiCoreFFI.h" "$package/Sources/TrommiCoreFFI/include/TrommiCo
 cp "$generated/TrommiCoreRust.swift" "$package/Sources/TrommiCoreRust/TrommiCoreRust.swift"
 
 case "$(uname -s)" in Darwin) host=macos ;; *) host=linux ;; esac
-case "$what" in ios|macos) ;; *) staticlib "" "$host" ;; esac
+case "$what" in ios|macos) ;; *) host_archive "$host" ;; esac
 # rustc puts its copy of the compiler runtime's C and assembly helpers (compiler_builtins: outlined atomics,
 # fp_mode) into every static library. The app links Apple's libclang_rt, which has the same symbols. A linker
 # that takes archive members on demand never loads Rust's copy; one told to load every member (-all_load, which the
@@ -96,7 +107,11 @@ without_builtins() {   # without_builtins <rust target> <folder under lib/> <App
 # The Mac app (app/ios/README.md "On a Mac"), built on any host: the library for an Apple silicon Mac in lib/macos,
 # as rustc writes it (a Mac's linker loads archive members on demand, as for the simulator).
 if [ "$what" = macos ]; then
-  MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-14.0} staticlib aarch64-apple-darwin macos
+  if [ "$host_triple" = aarch64-apple-darwin ]; then
+    host_archive macos
+  else
+    MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-14.0} staticlib aarch64-apple-darwin macos
+  fi
   ls -l "$package"/lib/*/libtrommi_core_ffi.a
   exit 0
 fi

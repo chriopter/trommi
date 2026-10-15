@@ -1,0 +1,104 @@
+name: main-build-hub
+description: The main pipeline steps for main-build-hub
+inputs:
+  version:
+    description: Release series number
+    default: ''
+  parts:
+    description: Verified build input hashes and delivery flags
+    default: ''
+outputs: {}
+runs:
+  using: composite
+  steps:
+  - name: Compiler (rust-toolchain.toml), the C compiler for static builds
+    run: |
+      set -eu
+      { sudo apt-get update -q && sudo apt-get install -y -q musl-tools; } > "$RUNNER_TEMP/apt.log" 2>&1 &
+      apt=$!
+      sh .github/scripts/rust_toolchain.sh "$TARGET"
+      wait "$apt" || { cat "$RUNNER_TEMP/apt.log"; echo "::error::musl-tools could not be installed"; exit 1; }
+      tail -n 3 "$RUNNER_TEMP/apt.log"
+    shell: bash
+    env:
+      HUB_SERVER: trommi-hub.tail276436.ts.net
+      HUB_DEPLOY_PORT: '9443'
+      VERSION: ${{ inputs.version }}
+      TARGET: x86_64-unknown-linux-musl
+  - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+    with:
+      prefix-key: v2-rust
+      save-if: ${{ github.ref == 'refs/heads/main' }}
+    env:
+      HUB_SERVER: trommi-hub.tail276436.ts.net
+      HUB_DEPLOY_PORT: '9443'
+      VERSION: ${{ inputs.version }}
+      TARGET: x86_64-unknown-linux-musl
+  - name: Build the release
+    env:
+      HUB_SERVER: trommi-hub.tail276436.ts.net
+      HUB_DEPLOY_PORT: '9443'
+      VERSION: ${{ inputs.version }}
+      TARGET: x86_64-unknown-linux-musl
+      TROMMI_COMMIT: ${{ github.sha }}
+      ALL_PARTS: ${{ inputs.parts }}
+    run: |
+      set -eu
+      export RUSTFLAGS="--remap-path-prefix=$PWD=/src --remap-path-prefix=$HOME/.cargo=/cargo"
+      cargo build --profile dist --locked --target "$TARGET" -p trommi-hub -p trommi-hub-updater
+      mkdir out
+      cp "target/$TARGET/dist/trommi-hub" "out/trommi-hub-$TARGET"
+      cp "target/$TARGET/dist/trommi-hub-updater" "out/trommi-hub-updater-$TARGET"
+      for f in "out/trommi-hub-$TARGET" "out/trommi-hub-updater-$TARGET"; do
+        file "$f" | grep -Eq 'static(ally|-pie) linked' || { echo "::error::$f is not a static binary"; exit 1; }
+      done
+      # the inputs of the hub and of the updater: the server decides by them whether a program changed (hub/updater)
+      PARTS=$(printf '%s\n' "$ALL_PARTS" | grep -E '^(hub|updater) [0-9a-f]{64} (true|false)$' || true)
+      [ "$(printf '%s\n' "$PARTS" | grep -c .)" = 2 ] || { echo "::error::the inputs of the hub and the updater are not known"; exit 1; }
+      PARTS="$PARTS" DATA_EPOCH=$(tr -d ' \n' < hub/data-epoch) release/manifest.sh trommi-hub "$VERSION" "$GITHUB_SHA" out/* > "$RUNNER_TEMP/manifest.json"
+      mv "$RUNNER_TEMP/manifest.json" out/manifest.json
+      release/sign.sh files out/manifest.json
+      cat out/manifest.json
+    shell: bash
+  - name: Try the built hub
+    run: |
+      set -eu
+      data=$(mktemp -d)
+      HUB_HOST=127.0.0.1 HUB_PORT=18790 HUB_DATA="$data" HUB_QUIET=1 "out/trommi-hub-$TARGET" &
+      pid=$!
+      got=
+      for _ in $(seq 1 20); do
+        if got=$(curl -fsS --max-time 2 http://127.0.0.1:18790/healthz); then break; fi
+        sleep 0.5
+      done
+      kill "$pid" || true
+      [ -n "$got" ] || { echo "::error::the built hub did not answer"; exit 1; }
+      echo "$got"
+      [ "$(printf '%s' "$got" | jq -r .commit)" = "$GITHUB_SHA" ] || { echo "::error::the built hub does not report this commit"; exit 1; }
+    shell: bash
+    env:
+      HUB_SERVER: trommi-hub.tail276436.ts.net
+      HUB_DEPLOY_PORT: '9443'
+      VERSION: ${{ inputs.version }}
+      TARGET: x86_64-unknown-linux-musl
+  - name: The hub before runs on data this one migrated
+    env:
+      HUB_SERVER: trommi-hub.tail276436.ts.net
+      HUB_DEPLOY_PORT: '9443'
+      VERSION: ${{ inputs.version }}
+      TARGET: x86_64-unknown-linux-musl
+      GH_TOKEN: ${{ github.token }}
+    run: sh .github/scripts/hub_compat.sh "out/trommi-hub-$TARGET" "$TARGET"
+    shell: bash
+  - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+    with:
+      overwrite: true
+      name: hub-release
+      path: out/
+      if-no-files-found: error
+      retention-days: 30
+    env:
+      HUB_SERVER: trommi-hub.tail276436.ts.net
+      HUB_DEPLOY_PORT: '9443'
+      VERSION: ${{ inputs.version }}
+      TARGET: x86_64-unknown-linux-musl
