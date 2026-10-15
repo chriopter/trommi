@@ -13,7 +13,7 @@ try {
   fs.mkdirSync(path.join(dir, 'release'))
   fs.writeFileSync(path.join(dir, 'release/manifest.sh'), 'source script, not a web artifact')
   const commit = 'a'.repeat(40), file = 'checked app bytes'
-  const manifest = JSON.stringify({ product:'trommi-web', repository:'trommi/trommi', worker:'trommi-app', host:'app.trommi.com', commit, version:'2001', files:[{name:'app.js',sha256:sha(file)}] })
+  const manifest = JSON.stringify({ product:'trommi-web', repository:'chriopter/trommi', worker:'trommi-app', host:'app.trommi.com', commit, version:'2001', files:[{name:'app.js',sha256:sha(file)}] })
   fs.writeFileSync(path.join(artifact, 'app.js'), file)
   fs.writeFileSync(path.join(artifact, 'manifest.json'), manifest)
   fs.writeFileSync(path.join(artifact, 'checksums.txt'), `${sha(file)}  app.js\n${sha(manifest)}  manifest.json\n`)
@@ -22,7 +22,7 @@ try {
     const source = fs.readFileSync(`${root}/.github/actions/${action}/action.yml`, 'utf8')
     const block = source.split(`  - name: ${step}\n`)[1]
     const run = block.match(/    run: \|\n((?:      .*\n|\n)+)/)[1].replace(/^      /gm,'')
-    execFileSync('bash', ['-c',run], { cwd:dir, env:{...process.env,RUNNER_TEMP:temp,GITHUB_OUTPUT:path.join(dir,'outputs'),GITHUB_REPOSITORY:'trommi/trommi',COMMIT:commit,VERSION:'2001',MANIFEST:sha(manifest)},stdio:'pipe' })
+    execFileSync('bash', ['-c',run], { cwd:dir, env:{...process.env,RUNNER_TEMP:temp,GITHUB_OUTPUT:path.join(dir,'outputs'),GITHUB_REPOSITORY:'chriopter/trommi',COMMIT:commit,VERSION:'2001',MANIFEST:sha(manifest)},stdio:'pipe' })
   }
   console.log('main web paths: source release scripts cannot contaminate downloaded artifact gates')
 } finally { fs.rmSync(dir, {recursive:true,force:true}) }

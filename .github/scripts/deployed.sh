@@ -43,7 +43,7 @@ newest_manifest() {
   mkdir -p "$dir"
   gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --pattern manifest.json.sig --dir "$dir" --clobber 2>/dev/null || return 0
   sh "$repo/release/sign.sh" verify "$dir/manifest.json" > /dev/null 2>&1 || { say "the manifest of $tag is not signed by the release key"; return 0; }
-  jq -e --arg r "$GITHUB_REPOSITORY" --arg t "$tag" '.repository == $r and .tag == $t' "$dir/manifest.json" > /dev/null || return 0
+  jq -e --arg r "$GITHUB_REPOSITORY" --arg t "$tag" '(.repository == $r or ($r == "chriopter/trommi" and .repository == "trommi/trommi")) and .tag == $t' "$dir/manifest.json" > /dev/null || return 0
   say "newest release that holds the $1: $tag"
   echo "$dir/manifest.json"
 }

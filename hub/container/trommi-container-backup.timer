@@ -1,0 +1,8 @@
+[Unit]
+Description=Nightly Trommi container backup
+[Timer]
+OnCalendar=*-*-* 03:10:00 Europe/Berlin
+Persistent=true
+Unit=trommi-container-backup.service
+[Install]
+WantedBy=timers.target

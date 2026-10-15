@@ -1,6 +1,6 @@
 // The app's worker (wrangler.jsonc: it runs before the static assets of public/).
 //   - plain http goes to https (WebCrypto only exists on https pages);
-//   - the connector is a signed GitHub release of trommi/trommi (install.sh), never served from here;
+//   - the connector is a signed GitHub release of chriopter/trommi (install.sh), never served from here;
 //   - /.well-known/apple-app-site-association (the iOS app's universal links: /card/…, /chat/…, /settings… open in Trommi
 //     when it is installed; and `webcredentials`: the app may use this site's passkeys) is
 //     public/apple-app-site-association.json, served as JSON, no redirect;

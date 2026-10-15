@@ -28,7 +28,7 @@ One Rust app core runs the web, iPhone, Mac, Linux and connector; the platform s
 2. **An agent**, on a Linux or macOS computer with Claude Code or Codex. Once per machine:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh
+   curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh
    ```
 
 3. In the app: **Invite an agent**. In the project folder start `claude` (or `codex`) and paste the line it shows:
@@ -266,10 +266,9 @@ flowchart LR
 - Graph examples, with releases needed and no earlier undelivered parts: web-only **11 → 6 checks**;
   shared core **54 → 19 checks**. Only affected part rows expand. When all parts need only checks or all need
   delivery, GitHub shows one skipped aggregate for the empty class; a shared-core change uses both classes.
-- **Manual recovery:** `ship-web.yml` still replays a checked web artifact, `ship-hub.yml` delivers a named signed
-  release, and `ship-apple.yml` retains TestFlight replay and the manual App Store gate. Both old `ship-*` runs and
+- **Manual recovery:** `ship-web.yml` still replays a checked web artifact, and `ship-apple.yml` retains TestFlight replay and the manual App Store gate. Both old `ship-*` runs and
   new `main` runs are accepted only after their source and checks are verified. The connector, Linux and site
-  manual entry points dispatch `main` with that part selected. `main` itself can also be run manually.
+  manual entry points dispatch `main` with that part selected. Hub recovery reruns its checked `main` delivery. `main` itself can also be run manually.
 - The new release number is `2000 + main's run number`, above all earlier series when introduced; retries keep
   their number. TestFlight continues to allocate its build numbers through App Store Connect.
 - The hub and the connector have **their own signed release series**, `hub-v<N>` and `connector-v<N>`: one
@@ -289,9 +288,11 @@ flowchart LR
 - **The iPhone and Mac apps** (`main.yml`) go to TestFlight when their checks passed and their inputs differ
   from those last delivered there; then `ios-v<N>` records what changed for them (notes and the TestFlight build, no
   file). The Mac app for direct download is `mac-v<N>`.
-- **The hub:** CI sends no code and has no SSH, only "take `hub-v<N>`" over the private network. The server's updater
-  (its own user, no root) fetches the release itself, checks it against the pinned key, refuses anything older,
-  swaps, and puts the release before back if the new hub is not well within 60 s.
+- **The hub:** checked binaries become an image signed with a separate Cosign ECDSA key; binary manifests keep their Ed25519 key. Only then
+  does CI promote its deployment tag and send an empty authenticated POST to YoloDeploy. The fixed target verifies
+  the digest, waits for Docker health. A failed start returns to the previous image on current data; migrations must stay
+  compatible, and regular verified backups run separately. CI also verifies the public hub's exact
+  commit. See [the container flow, self-hosting and recovery](hub/container/README.md).
 - **The web app** cannot be signed for a browser: every file it serves carries a GitHub build attestation.
 - Pull requests get no secrets and deploy nothing.
 
@@ -302,10 +303,11 @@ release/sign.sh verify manifest.json   # the signature
 release/sign.sh files manifest.json    # each file against the manifest
 
 curl -fsS https://app.trommi.com/index.html -o index.html
-gh attestation verify index.html --repo trommi/trommi
+gh attestation verify index.html --repo chriopter/trommi
 ```
 
-The whole way, what goes wrong and what runs as root: [hub/deploy/README.md](hub/deploy/README.md).
+The current container flow and its limits: [hub/container/README.md](hub/container/README.md). The older binary
+updater and data layout remain documented in [hub/deploy/README.md](hub/deploy/README.md).
 
 </details>
 
@@ -315,7 +317,7 @@ The whole way, what goes wrong and what runs as root: [hub/deploy/README.md](hub
 The Mac app (the target `TrommiMac`, [app/ios/README.md](app/ios/README.md) "Xcode, TestFlight and releases") ships two ways: TestFlight
 and the Mac App Store as before (the manual gate in `ship-apple.yml`), and as **`Trommi-macOS.dmg`** on the GitHub release, outside the
 store. The newest is always at
-[releases/latest/download/Trommi-macOS.dmg](https://github.com/trommi/trommi/releases/latest/download/Trommi-macOS.dmg)
+[releases/latest/download/Trommi-macOS.dmg](https://github.com/chriopter/trommi/releases/latest/download/Trommi-macOS.dmg)
 (Apple silicon, macOS 26).
 
 [`.github/workflows/main-delivery.yml`](.github/workflows/main-delivery.yml) (the `mac-direct` destination), on a
@@ -340,7 +342,7 @@ attestation. Check a download:
 
 ```sh
 shasum -a 256 -c Trommi-macOS.dmg.sha256
-gh attestation verify Trommi-macOS.dmg --repo trommi/trommi
+gh attestation verify Trommi-macOS.dmg --repo chriopter/trommi
 spctl --assess --type open --context context:primary-signature -v Trommi-macOS.dmg   # source=Notarized Developer ID
 ```
 
@@ -532,7 +534,7 @@ nightly ──────────────── nightly.yml: the giant 
 | `core/client/` | the app core: accounts, sync, history, model, cache, actions, notifications and ViewModel, shared by every app and connector |
 | `core/io/` | native Rust executor: HTTP, streams, stores, timer and write barrier |
 | `core/wire/` | what the hub and the app core read the same way: refusal codes, the limits of the hub's routes, the formats of spec/v1.md |
-| `hub/` | the hub (the server) and its updater; `hub/deploy/` installs it |
+| `hub/` | the hub (the server) and its updater; `hub/container/` runs hosting and self-hosting; `hub/deploy/` keeps the legacy installer |
 | `app/web/` | the web app |
 | `app/ios/` | iPhone and Mac SwiftUI shells and isolated iOS extensions |
 | `app/linux/` | Qt/QML shell over the core and native executor |

@@ -25,7 +25,7 @@ use std::path::Path;
 use std::process::Command;
 
 /// The marketplace's source: the repository on GitHub. `TROMMI_MARKETPLACE` names another one (a checkout).
-const MARKETPLACE: &str = "trommi/trommi";
+const MARKETPLACE: &str = "chriopter/trommi";
 /// What of the repository a marketplace needs.
 const SPARSE: [&str; 2] = [".claude-plugin", "connector/plugin"];
 
@@ -325,7 +325,7 @@ pub fn claude() -> Result<Vec<String>, String> {
             run("claude", &args)?;
             done.push(format!(
                 "marketplace trommi: added ({})",
-                source.as_deref().unwrap_or("github.com/trommi/trommi")
+                source.as_deref().unwrap_or("github.com/chriopter/trommi")
             ));
         }
     }

@@ -25,7 +25,7 @@ trommi-connector whoami | claim-key | allow-tools | --version
 Once per machine, in a terminal:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh
 ```
 
 Then once per project folder, inside Claude Code (or Codex) started there, the line "Invite an agent" shows:
@@ -246,7 +246,7 @@ The launcher almost never changes. When a new binary needs another launcher (its
 session runs without one, the update is announced once as before (`kind="update"`, restart required: /mcp →
 Reconnect), and `reload_connector` answers with that restart line.
 
-Releases are built and signed in CI: the releases `connector-v<N>` of `trommi/trommi` (the connector's own series;
+Releases are built and signed in CI: the releases `connector-v<N>` of `chriopter/trommi` (the connector's own series;
 before 13 October 2026 `v<N>`, a release of every part) hold the four binaries, `manifest.json` and `manifest.json.sig` (`release/manifest.sh`, `release/sign.sh`: Ed25519 over
 the manifest's exact bytes). The connector holds the public key (`release/public-key.pem`, compiled in by
 `build.rs`) and checks a binary against a manifest that lies beside it (`src/update.rs`): the signature, then

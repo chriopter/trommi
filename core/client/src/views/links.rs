@@ -301,7 +301,7 @@ mod tests {
         );
         // (the fragment goes, and the full stop that followed it with it, as on the web)
         // an address too long is cut to 34 signs
-        assert_eq!(plain("https://github.com/trommi/trommi/pull/187/files", &a), "github.com/trommi/trommi/pull/187…");
+        assert_eq!(plain("https://github.com/chriopter/trommi/pull/187/files", &a), "github.com/chriopter/trommi/pull/…");
     }
 
     #[test]
