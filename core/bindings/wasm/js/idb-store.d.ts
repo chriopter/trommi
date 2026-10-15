@@ -7,7 +7,7 @@ import type { Store, StoredState, StoreWrite } from './trommi-core.js'
  */
 export class IdbStore implements Store {
   /** `name` names the stored state: one per device. With `wait`, `load` waits for the lock instead of failing. */
-  constructor(name: string, options?: { wait?: boolean })
+  constructor(name: string, options?: { wait?: boolean; steal?: boolean; onLost?: () => void })
   load(): Promise<StoredState>
   apply(write: StoreWrite): Promise<void>
   /** Several writes, in order, in one transaction: all of them or none. */
@@ -18,3 +18,8 @@ export class IdbStore implements Store {
   /** Deletes a stored state for good. StoreConflict while a device has it open. */
   static destroy(name: string): Promise<void>
 }
+
+/** Probe an existing holder through its page, and acquire its store after a checked takeover. */
+export function deviceOwner<T extends { load(): Promise<unknown>; close(): Promise<void> }>(
+  name: string, openStore: (steal: boolean) => T, probePage: (nonce: string) => void, lost: () => void,
+): { open(take: boolean): Promise<T | null>; respond(nonce: string): void; close(): void }

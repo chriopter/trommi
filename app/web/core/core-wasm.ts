@@ -11,7 +11,7 @@ import * as binding from '../../../core/bindings/wasm/js/trommi-core.js'
 import type { Core, ErrorCode } from './core-api.ts'
 
 /** The binding's store on IndexedDB (store-idb.ts is handed this class and wraps it). */
-export { IdbStore } from '../../../core/bindings/wasm/js/idb-store.js'
+export { IdbStore, deviceOwner } from '../../../core/bindings/wasm/js/idb-store.js'
 
 /** The address of the .wasm and the base64 SHA-256 of its bytes (app/web/dev/build.mjs coreFiles). */
 declare const __TROMMI_CORE_WASM__: string

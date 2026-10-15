@@ -9,7 +9,7 @@
 // - One owner: a Web Lock on the state's name, taken before anything is read and held until close(). A second
 //   tab or worker that opens the same state gets StoreConflict (or waits, with { wait: true }). The database
 //   connection stays open as long, so nobody deletes or upgrades the state under a live device. A lock that is
-//   taken away (`steal`, which nothing of Trommi does) is noticed: a write still under way is aborted, unless the
+//   taken away (`steal`, after a checked takeover) is noticed: a write still under way is aborted, unless the
 //   browser already began to commit it, and the next write is a StoreConflict, which closes the device. What the
 //   device reads from memory until then is not fenced; the revision is the check behind it.
 //
@@ -43,14 +43,14 @@ const committed = transaction => new Promise((resolve, reject) => {
  * moment, in the same step in which the browser reports it. With `signal`, a wait for the
  * lock can be given up.
  */
-function lock(name, wait, signal, onLost = () => {}) {
+function lock(name, wait, steal, signal, onLost = () => {}) {
   if (!globalThis.navigator?.locks) return Promise.reject(new Error('Web Locks are not available: one owner cannot be ensured'))
   return new Promise((resolve, reject) => {
     let release
     let stolen
     const lost = new Promise(settle => { stolen = settle })
     // `signal` and `ifAvailable` do not go together: only a request that waits can be given up.
-    const options = wait ? { mode: 'exclusive', signal } : { mode: 'exclusive', ifAvailable: true }
+    const options = steal ? { mode: 'exclusive', steal: true } : wait ? { mode: 'exclusive', signal } : { mode: 'exclusive', ifAvailable: true }
     const request = navigator.locks.request(name, options, held => {
       if (!held) { reject(new StoreConflict('another tab or worker has this state open')); return undefined }
       // The lock is held for as long as this promise is pending.
@@ -68,6 +68,8 @@ function lock(name, wait, signal, onLost = () => {}) {
 export class IdbStore {
   #name
   #wait
+  #steal
+  #onLost
   #state = 'new'    // 'new' → 'loading' → 'open' → 'closed'
   #db = null
   #lock = null                    // the Web Lock, while it is held
@@ -78,9 +80,11 @@ export class IdbStore {
   #writing = new Set()            // the write transactions under way: aborted when the lock is taken away
 
   /** `name` names the stored state: the IndexedDB database and the lock. One per device. */
-  constructor(name, { wait = false } = {}) {
+  constructor(name, { wait = false, steal = false, onLost = () => {} } = {}) {
     this.#name = name
     this.#wait = wait
+    this.#steal = steal
+    this.#onLost = onLost
   }
 
   async load() {
@@ -88,7 +92,7 @@ export class IdbStore {
     this.#state = 'loading'
     try {
       // A lock that is taken away ends this owner: nothing more is written.
-      this.#acquiring = lock(lockName(this.#name), this.#wait, this.#waiting.signal, () => this.#taken())
+      this.#acquiring = lock(lockName(this.#name), this.#wait, this.#steal, this.#waiting.signal, () => this.#taken())
       this.#lock = await this.#acquiring
       if (this.#state !== 'loading') throw new Error('the store was closed while it loaded')
       const open = indexedDB.open(this.#name, 1)
@@ -126,6 +130,7 @@ export class IdbStore {
     for (const transaction of this.#writing) {
       try { transaction.abort() } catch { /* it is committing or done already: the browser no longer takes it back */ }
     }
+    this.#onLost()
   }
 
   apply(write) { return this.applyAll([write]) }
@@ -203,3 +208,39 @@ export class IdbStore {
 
 /** The bytes alone: a view of a larger buffer would be stored with all of that buffer. */
 const exact = bytes => bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice()
+
+// A checked browser lease. openStore supplies the encrypted platform adapter over this fenced store.
+export function deviceOwner(name, openStore, probePage, lost) {
+  const channel = new BroadcastChannel(`trommi-core:${name}`)
+  const nonce = crypto.randomUUID()
+  let owns = false, alive = false, closed = false
+  channel.onmessage = ({ data }) => {
+    if (data?.give && owns) lost()
+    if (typeof data?.probe === 'string' && owns) probePage(data.probe)
+    if (data?.alive === nonce) alive = true
+  }
+  const open = async (steal = false) => {
+    const store = openStore(steal)
+    await store.load()
+    if (closed) { await store.close(); throw new Error('the device owner was closed') }
+    owns = true
+    return store
+  }
+  const conflict = (error) => error?.name === 'StoreConflict'
+  return {
+    async open(take) {
+      try { return await open() } catch (error) { if (!conflict(error)) throw error }
+      // A reload's departing worker may still be releasing its lock. Only a live page answers this probe.
+      channel.postMessage({ probe: nonce })
+      if (take) channel.postMessage({ give: true })
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      if (closed) return null
+      try { return await open() } catch (error) { if (!conflict(error)) throw error }
+      if (alive && !take) return null
+      // The binding fences the revoked owner and aborts unfinished writes before notifying its worker.
+      return open(true)
+    },
+    respond(answer) { if (!closed) channel.postMessage({ alive: answer }) },
+    close() { closed = true; owns = false; channel.close() },
+  }
+}

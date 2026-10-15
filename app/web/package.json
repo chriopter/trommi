@@ -20,7 +20,7 @@
     "test:app": "node dev/check.mjs",
     "test:demo": "node ../../demo/check.mjs",
     "test:web": "node --test ${WEB_TEST_CONCURRENCY:+--test-concurrency=$WEB_TEST_CONCURRENCY} ../../tests/web/views/ ../../tests/web/worker/ ../../tests/web/shell/",
-    "test:browser": "node ../../tests/web/store/run.mjs && node --test ../../tests/web/build/build.test.mjs && node ../../tests/web/build/wasm-load.mjs && node ../../tests/web/proof/proof.mjs && node ../../tests/web/views/overflow.browser.mjs && node ../../tests/web/views/att-gone.browser.mjs && node ../../tests/web/views/file-memory.browser.mjs && node ../../tests/web/views/foot-level.browser.mjs && node ../../tests/web/views/side-foot.browser.mjs && node ../../tests/web/views/dock.browser.mjs && node ../../tests/web/views/security.browser.mjs && node ../../tests/web/views/news.browser.mjs && node ../../tests/web/views/tips.browser.mjs",
+    "test:browser": "node ../../tests/web/store/run.mjs && node ../../tests/web/views/ownership.browser.mjs && node --test ../../tests/web/build/build.test.mjs && node ../../tests/web/build/wasm-load.mjs && node ../../tests/web/proof/proof.mjs && node ../../tests/web/views/overflow.browser.mjs && node ../../tests/web/views/att-gone.browser.mjs && node ../../tests/web/views/file-memory.browser.mjs && node ../../tests/web/views/foot-level.browser.mjs && node ../../tests/web/views/side-foot.browser.mjs && node ../../tests/web/views/dock.browser.mjs && node ../../tests/web/views/security.browser.mjs && node ../../tests/web/views/news.browser.mjs && node ../../tests/web/views/tips.browser.mjs",
     "build:core": "../../core/bindings/wasm/build.sh",
     "build": "node dev/build.mjs",
     "serve": "node dev/serve.mjs"
