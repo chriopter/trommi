@@ -15,6 +15,7 @@ struct RootView: View {
     #endif
   }
   var body: some View {
+    let _ = NativeDemo.mark("root.body")
     NavigationStack(path: $shell.path) {
       Group {
         if shell.view.phase == .starting { ProgressView("Trommi").font(Face.display(30)).frame(maxWidth: .infinity, maxHeight: .infinity) }

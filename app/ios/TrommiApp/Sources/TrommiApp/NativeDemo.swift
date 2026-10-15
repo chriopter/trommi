@@ -9,6 +9,8 @@ enum NativeDemo {
   static var launchStart = ProcessInfo.processInfo.systemUptime
   static var launchTicks = Spent.now
   static var foldedAt: Double?
+  static var checkpoints: [String: Double] = [:]
+  static func mark(_ name: String) { if measuring && checkpoints[name] == nil { checkpoints[name] = (ProcessInfo.processInfo.systemUptime - launchStart) * 1000 } }
   static var measuring: Bool { screen != nil && ProcessInfo.processInfo.environment["TROMMI_SPEED_TRACE"] == "1" }
   static func ready(rows: Int) -> String? {
     guard measuring else { return nil }
@@ -21,7 +23,7 @@ enum NativeDemo {
     }
     if status == KERN_SUCCESS { resident = info.resident_size }
     #endif
-    let report: [String: Any] = ["rows": rows, "desk_ms": (ProcessInfo.processInfo.systemUptime - launchStart) * 1000, "resident_bytes": resident, "folded_ms": foldedAt ?? 0, "steps": Spent.take()]
+    let report: [String: Any] = ["rows": rows, "desk_ms": (ProcessInfo.processInfo.systemUptime - launchStart) * 1000, "resident_bytes": resident, "folded_ms": foldedAt ?? 0, "checkpoints": checkpoints, "steps": Spent.take()]
     guard let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) else { return nil }
     return String(decoding: data, as: UTF8.self)
   }

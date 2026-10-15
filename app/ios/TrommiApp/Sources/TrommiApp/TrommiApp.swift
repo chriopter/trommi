@@ -9,9 +9,11 @@ import TrommiClient
   #else
   @NSApplicationDelegateAdaptor(PushDelegate.self) private var push
   #endif
-  init() { NativeDemo.launchTicks = Spent.now; NativeDemo.launchStart = ProcessInfo.processInfo.systemUptime; Spent.time("fonts") { Face.registerFonts() }; Task { await AppShell.shared.start() } }
+  init() { NativeDemo.launchTicks = Spent.now; NativeDemo.launchStart = ProcessInfo.processInfo.systemUptime; Spent.time("fonts") { Face.registerFonts() }; Task { NativeDemo.mark("startup.task"); await AppShell.shared.start() } }
   private var window: some Scene {
-    WindowGroup {
+    NativeDemo.mark("window")
+    return WindowGroup {
+      let _ = NativeDemo.mark("window.content")
       RootView().environmentObject(shell).tint(Ink.accent)
         .task { await shell.start() }
         .onChange(of: phase) { _, value in shell.scene(value == .active) }
