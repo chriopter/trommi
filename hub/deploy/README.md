@@ -2,6 +2,8 @@
 
 Our hosting now uses the [container and YoloDeploy flow](../container/README.md). The systemd installer and binary
 updater described below remain for older self-hosted installations; they no longer deploy our production hub.
+The `ship-hub.yml` workflow descriptions below are historical: that workflow has been removed. Current CI uses
+`main.yml` and the signed container flow linked above.
 
 How content and keys are organised, how a change becomes a signed release, and how that release reaches the
 server. The short form is in the [README](../../README.md); the security list is [SECURITY.md](../../SECURITY.md).
@@ -197,12 +199,12 @@ kernel, and on tailscaled telling any local user who a tailnet address is (`tail
    that is what a program rollback starts. So a migration only adds (tables, columns with defaults, indexes) and the
    code that stops using something ships first; dropping or reshaping what the hub before reads comes one release
    later, once no hub that needs it can come back. CI checks it on every hub build (`.github/scripts/hub_compat.sh`
-   in `ship-hub.yml`): every hub the updater may put back (the one that runs, the newest released) makes a database, this build's hub migrates it, the hub before
-   must start on it and answer `/healthz`. A migration that cannot be made this way raises the number in
-   `hub/data-epoch` in the same change: the release's manifest says `"data_epoch"`, the CI check is skipped for it,
-   and the updater does not put the program back past it once the new hub has served (before that the data goes back
-   with it, step 2). `SCHEMA_VERSION` in `hub/src/db.rs` changes only together with `hub/data-epoch`: an older hub
-   refuses another schema version.
+   in the main hub build): every hub that may be put back (the one that runs, the newest released) makes a database,
+   this build's hub migrates it, and the hub before must start on it and answer `/healthz`. Increasing `hub/data-epoch`
+   does not skip this check: container rollback preserves current data. `SCHEMA_VERSION` in `hub/src/db.rs` rejects
+   unknown layouts; changing its number alone cannot make rollback compatible. Historical binary updaters also
+   use the signed `data_epoch` to prevent going back across an incompatible epoch after serving, but our container
+   deployment requires predecessor compatibility before publishing regardless of that number.
 
 **The updater updates itself.** Every release brings the updater too. When it differs from the one that runs, the
 deploy puts it in place beside the old one, answers its caller, and ends; systemd starts the new one, which has to
