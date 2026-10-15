@@ -1,0 +1,36 @@
+services:
+  trommi:
+    image: ghcr.io/chriopter/trommi-hub:production
+    container_name: trommi
+    # Match the existing host data/config ownership. No change of production data ownership is needed.
+    user: "995:983"
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file:
+      - path: /home/docker/trommi/config/hub.env
+        format: raw
+      - path: /home/docker/trommi/config/hub-secrets.env
+        format: raw
+    environment:
+      HUB_HOST: 0.0.0.0
+      HUB_PORT: "8080"
+      HUB_DATA: /data
+      HUB_URL: https://hub.trommi.com
+    volumes:
+      - /home/docker/trommi/data:/data
+      - /home/docker/trommi/config:/etc/trommi:ro
+    healthcheck:
+      test: [CMD, /usr/local/bin/trommi-hub, healthcheck]
+      interval: 10s
+      timeout: 4s
+      start_period: 10s
+      retries: 3
+    networks:
+      web:
+        aliases: [trommi]
+networks:
+  web:
+    external: true

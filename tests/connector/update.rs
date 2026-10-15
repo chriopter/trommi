@@ -53,7 +53,7 @@ impl Case {
     fn good(&self, version: u64) -> Vec<u8> {
         manifest(
             "trommi-connector",
-            "trommi/trommi",
+            "chriopter/trommi",
             version,
             &format!("connector-v{version}"),
             &[
@@ -130,7 +130,7 @@ fn an_older_version_another_product_and_another_repository_are_refused() {
     let files: &[(&str, &[u8])] = &[("trommi-connector-x86_64-unknown-linux-musl", &case.binary)];
     assert_eq!(
         signed(
-            manifest("trommi-hub", "trommi/trommi", 7, "hub-v7", files),
+            manifest("trommi-hub", "chriopter/trommi", 7, "hub-v7", files),
             0
         ),
         Err("the manifest is of another product")
@@ -146,7 +146,7 @@ fn an_older_version_another_product_and_another_repository_are_refused() {
         signed(
             manifest(
                 "trommi-connector",
-                "trommi/trommi",
+                "chriopter/trommi",
                 7,
                 "connector-v8",
                 files
@@ -179,7 +179,7 @@ fn a_binary_the_manifest_does_not_name_is_refused() {
 fn manifest_for_another_machine(case: &Case) -> Vec<u8> {
     manifest(
         "trommi-connector",
-        "trommi/trommi",
+        "chriopter/trommi",
         7,
         "connector-v7",
         &[("trommi-connector-aarch64-apple-darwin", &case.binary)],
@@ -294,15 +294,15 @@ fn a_release_of_the_whole_repository_is_taken_by_its_own_tag() {
         case.check(&manifest, &signature, 0)
     };
     assert_eq!(
-        signed(manifest("trommi", "trommi/trommi", 31, "v31", files)),
+        signed(manifest("trommi", "chriopter/trommi", 31, "v31", files)),
         Ok(31)
     );
     assert_eq!(
-        signed(manifest("trommi", "trommi/trommi", 31, "v32", files)),
+        signed(manifest("trommi", "chriopter/trommi", 31, "v32", files)),
         Err("the manifest's tag is not its version's")
     );
     assert_eq!(
-        signed(manifest("trommi", "trommi/trommi", 31, "hub-v31", files)),
+        signed(manifest("trommi", "chriopter/trommi", 31, "hub-v31", files)),
         Err("the manifest's tag is not its version's")
     );
 }
@@ -439,7 +439,7 @@ fn the_connector_is_found_when_the_feed_holds_only_other_parts() {
         "mac-v1049", "mac-v1048", "ios-v1053",
     ]
     .map(|tag| {
-        format!("<entry><link rel=\"alternate\" type=\"text/html\" href=\"https://github.com/trommi/trommi/releases/tag/{tag}\"/></entry>")
+        format!("<entry><link rel=\"alternate\" type=\"text/html\" href=\"https://github.com/chriopter/trommi/releases/tag/{tag}\"/></entry>")
     })
     .concat();
     assert!(tags_in_feed(&feed).is_empty());
@@ -465,7 +465,7 @@ fn the_connector_is_found_when_the_feed_holds_only_other_parts() {
     // a list GitHub refused (its limit without an account) leaves the feed; the feed's tags join the list's
     assert!(tags_in_listing(r#"{"message":"API rate limit exceeded"}"#).is_empty());
     let older_feed = format!(
-        "<entry><link href=\"https://github.com/trommi/trommi/releases/tag/connector-v1044\"/></entry>{feed}"
+        "<entry><link href=\"https://github.com/chriopter/trommi/releases/tag/connector-v1044\"/></entry>{feed}"
     );
     assert_eq!(candidate_tags(None, Some(&older_feed)), ["connector-v1044"]);
     assert_eq!(
@@ -484,7 +484,7 @@ fn the_release_tags_are_read_from_githubs_feed_newest_first() {
     };
     let ours = |tag: &str| {
         entry(&format!(
-            "https://github.com/trommi/trommi/releases/tag/{tag}"
+            "https://github.com/chriopter/trommi/releases/tag/{tag}"
         ))
     };
     let feed = [
@@ -522,4 +522,13 @@ fn the_release_tags_are_read_from_githubs_feed_newest_first() {
     assert_eq!(tag_number("v7"), Some(7));
     assert_eq!(tag_number("v0"), None);
     assert_eq!(tag_number("connector-v"), None);
+}
+
+#[test]
+fn the_pinned_key_accepts_a_pre_transfer_release_without_changing_its_bytes() {
+    let case = Case::new();
+    let bytes = String::from_utf8(case.good(7)).unwrap().replace("chriopter/trommi", trommi_connector::update::LEGACY_REPOSITORY).into_bytes();
+    assert_eq!(case.check(&bytes, &case.sign(&bytes), 0), Ok(7));
+    let wrong = String::from_utf8(bytes).unwrap().replace(trommi_connector::update::LEGACY_REPOSITORY, "somebody/else").into_bytes();
+    assert!(case.check(&wrong, &case.sign(&wrong), 0).is_err());
 }

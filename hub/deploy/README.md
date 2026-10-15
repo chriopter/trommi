@@ -1,5 +1,8 @@
 # Hub deployment and data
 
+Our hosting now uses the [container and YoloDeploy flow](../container/README.md). The systemd installer and binary
+updater described below remain for older self-hosted installations; they no longer deploy our production hub.
+
 How content and keys are organised, how a change becomes a signed release, and how that release reaches the
 server. The short form is in the [README](../../README.md); the security list is [SECURITY.md](../../SECURITY.md).
 

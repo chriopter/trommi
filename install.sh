@@ -1,7 +1,7 @@
 #!/bin/sh
-# Installs the Trommi connector (trommi-connector) from a signed release of github.com/trommi/trommi.
+# Installs the Trommi connector (trommi-connector) from a signed release of github.com/chriopter/trommi.
 #
-#   curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh
 #
 #   install.sh                  the newest release that has a connector for this machine
 #   install.sh --tag <tag>      that release (a release older than the one installed is refused all the same)
@@ -42,7 +42,7 @@ set -eu
 # Everything is in main(), called on the last line: piped into sh, the whole script is read before anything runs.
 main() {
 umask 077
-REPOSITORY=trommi/trommi
+REPOSITORY=chriopter/trommi
 MAX_MANIFEST=1048576
 MAX_BINARY=209715200
 MAX_LISTING=8388608
@@ -208,7 +208,8 @@ product=$(stated "$work/manifest.json" product)
 version=$(stated "$work/manifest.json" version)
 stated_tag=$(stated "$work/manifest.json" tag)
 case $product in trommi-connector|trommi) ;; *) fail "the release is of another product ($product). Nothing was installed." ;; esac
-[ "$(stated "$work/manifest.json" repository)" = "$REPOSITORY" ] || fail "the release is of another repository. Nothing was installed."
+manifest_repository=$(stated "$work/manifest.json" repository)
+{ [ "$manifest_repository" = "$REPOSITORY" ] || [ "$manifest_repository" = trommi/trommi ]; } || fail "the release is of another repository. Nothing was installed."
 printf '%s' "$version" | grep -Eq '^[1-9][0-9]{0,11}$' || fail "the manifest names no version. Nothing was installed."
 case $stated_tag in "v$version"|"connector-v$version") ;; *) fail "the manifest's tag is not its version's. Nothing was installed." ;; esac
 if [ -n "$tag" ] && [ "$stated_tag" != "$tag" ]; then fail "the manifest is of $stated_tag, asked for was $tag. Nothing was installed."; fi

@@ -31,8 +31,14 @@ runs:
       run: |
         set -eu
         # notes of the lowest level differ between shellcheck versions and do not stop the build
-        shellcheck -S warning release/*.sh hub/deploy/*.sh
+        shellcheck -S warning release/*.sh hub/deploy/*.sh .github/scripts/hub_container_check.sh .github/scripts/hub_image_sign.sh .github/scripts/install_cosign.sh
         bash hub/deploy/install.sh check
 
 # The app's client package (app/ios/TrommiClient) with its tests (tests/ios), on Linux: the package does not compile
 # for macOS (ActivityKit). A pull request compiles it with its tests; ship-apple.yml runs them.
+    - name: Deployment HTTP contract (local fixtures)
+      shell: bash
+      run: PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/hub_deliver_test.py
+    - name: Consistent backup and interrupted-snapshot recovery (isolated fixtures)
+      shell: bash
+      run: PYTHONDONTWRITEBYTECODE=1 python3 hub/container/backup_test.py

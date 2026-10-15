@@ -120,7 +120,7 @@ const lookups = [
 ]
 const sources = [
   ...files,
-  ...fs.readdirSync(path.join(repo, '.github/scripts')).filter(f => f !== 'ci_coverage.mjs').map(f => `.github/scripts/${f}`),
+  ...fs.readdirSync(path.join(repo, '.github/scripts')).filter(f => f !== 'ci_coverage.mjs' && fs.statSync(path.join(repo, '.github/scripts', f)).isFile()).map(f => `.github/scripts/${f}`),
   ...fs.readdirSync(path.join(repo, 'dev')).filter(f => fs.statSync(path.join(repo, 'dev', f)).isFile()).map(f => `dev/${f}`),
 ]
 let looked = 0

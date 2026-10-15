@@ -17,7 +17,7 @@ export function redirectOf(href) {
 
 /** The address of the iPhone beta on the site, and where it goes while no TestFlight link is set. */
 export const BETA = '/beta'
-export const BETA_FALLBACK = 'https://github.com/trommi/trommi#install'
+export const BETA_FALLBACK = 'https://github.com/chriopter/trommi#install'
 
 /** Where /beta goes: the configured TestFlight public link when it is one, else the install steps. */
 export function betaOf(link) {

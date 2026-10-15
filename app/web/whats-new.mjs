@@ -20,7 +20,7 @@
 export const WHATS_NEW = '/whats-new.json'
 export const SUMMARIES = '/changelog/CHANGELOG.md'
 export const HISTORY = '/changelog/history.json'
-export const REPO = 'trommi/trommi'
+export const REPO = 'chriopter/trommi'
 const TTL = 600_000        // how long the releases are kept (ms)
 const PAGES = 10           // at most 1000 releases are read
 const KINDS = ['New', 'Better', 'Fixed']

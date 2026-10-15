@@ -4,19 +4,25 @@ inputs:
   tag:
     description: Signed release tag
     default: ''
-  tailscale-client:
-    description: Scoped tailnet client
-    default: ''
-  tailscale-audience:
-    description: Scoped tailnet audience
-    default: ''
+  webhook-url:
+    description: Repository deployment credential
+    required: true
+  cf-client-id:
+    description: Repository deployment credential
+    required: true
+  cf-client-secret:
+    description: Repository deployment credential
+    required: true
+  deploy-token:
+    description: Repository deployment credential
+    required: true
 outputs:
   reason:
     description: reason
-    value: ${{ steps.tell.outputs.reason || steps.outside.outputs.reason }}
+    value: ${{ steps.outside.outputs.reason }}
   running:
     description: running
-    value: ${{ steps.tell.outputs.running }}
+    value: ${{ inputs.tag }}
 runs:
   using: composite
   steps:
@@ -33,143 +39,15 @@ runs:
       printf '%s' "$id" | grep -Eq '^[1-9][0-9]*$'
       echo "id=$id" >> "$GITHUB_OUTPUT"
       gh api --method POST "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" -f state=in_progress -f environment_url=https://hub.trommi.com > /dev/null
-  - name: The release name
-    run: |
-      printf '%s' "$TAG" | grep -Eq '^(hub-)?v[1-9][0-9]{0,11}$' || { echo "::error::not a release: $TAG"; exit 1; }
-    shell: bash
-    env:
-      HUB_SERVER: trommi-hub.tail276436.ts.net
-      HUB_DEPLOY_PORT: '9443'
-      TAG: ${{ inputs.tag || inputs.tag }}
-  - name: Join the tailnet as the CI
-    uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd
-    with:
-      oauth-client-id: ${{ inputs.tailscale-client }}
-      audience: ${{ inputs.tailscale-audience }}
-      tags: tag:trommi-ci
-    env:
-      HUB_SERVER: trommi-hub.tail276436.ts.net
-      HUB_DEPLOY_PORT: '9443'
-      TAG: ${{ inputs.tag || inputs.tag }}
-  - name: Tell the server
-    id: tell
-    run: |
-      set -u
-      url="http://$HUB_SERVER:$HUB_DEPLOY_PORT"
-      # why this run failed, for the issue (job report): one line
-      fail() {
-        printf 'reason=%s\n' "$(printf '%s' "$1" | tr '\n' ' ' | cut -c1-900)" >> "$GITHUB_OUTPUT"
-        echo "::error::$1"
-        exit 1
-      }
-      # Tried again: no connection (the server may be starting after a reboot) and "busy" (another deploy, or the
-      # updater changing itself). Every other answer is final: a deploy that failed is not asked for twice.
-      for try in 1 2 3 4 5 6 7 8 9; do
-        status=0
-        code=$(curl -sS --connect-timeout 10 --max-time 900 -o answer.json -w '%{http_code}' \
-          -X POST -H 'content-type: application/json' --data "{\"tag\":\"$TAG\"}" "$url/deploy") || status=$?
-        if [ "$status" = 6 ] || [ "$status" = 7 ]; then echo "no connection (try $try)"
-        elif [ "$status" = 0 ] && [ "$code" = 503 ]; then echo "the server is busy (try $try)"
-        else break
-        fi
-        sleep 20
-      done
-      if [ "$status" = 6 ] || [ "$status" = 7 ]; then
-        {
-          echo "### Hub: \`$TAG\` is published, NOT delivered"
-          echo
-          echo "Nothing answers on the server's deploy port. If the server has not had its first installation yet,"
-          echo "that is expected: run \`hub/deploy/install.sh install $TAG\` on the owner's laptop."
-          echo "Otherwise the server or its updater is down; once it is back, start this workflow by hand with \`$TAG\`."
-        } >> "$GITHUB_STEP_SUMMARY"
-        fail "$TAG is published but was not delivered: nothing answers on the server's deploy port (not set up yet, or down)"
-      fi
-      if [ "$status" != 0 ] || ! jq -e . answer.json > /dev/null 2>&1; then
-        echo "### Hub: no usable answer from the server (curl exit $status, HTTP $code)" >> "$GITHUB_STEP_SUMMARY"
-        fail "no usable answer from the server's deploy endpoint (curl exit $status, HTTP $code); ask it: ssh root@$HUB_SERVER trommi-hub-updater status"
-      fi
-      printf 'running=%s\n' "$(jq -r '.running // ""' answer.json | tr -cd 'A-Za-z0-9-')" >> "$GITHUB_OUTPUT"
-      {
-        echo "### Hub deploy: $(jq -r .result answer.json)"
-        echo
-        echo "| | |"
-        echo "|---|---|"
-        echo "| asked for | \`$TAG\` |"
-        echo "| hub that runs now | \`$(jq -r '.running // "none"' answer.json)\` |"
-        echo "| commit | \`$(jq -r '.commit // "?"' answer.json)\` |"
-        echo "| SHA-256 of the hub | \`$(jq -r '.sha256 // "?"' answer.json)\` |"
-        echo "| dry run on a copy of the data | $(jq -r 'if .dry_run then .dry_run.result + ": " + .dry_run.detail else "not run" end' answer.json) |"
-        echo "| health | $(jq -r 'if .health then (if .health.ok then "well" else "NOT well: " + .health.detail end) + " after " + (.health.seconds | tostring) + " s" else "not asked" end' answer.json) |"
-        echo "| put back | $(jq -r 'if .rollback_health then (if .rollback_health.ok then "the release before, and it is well" else "the release before, and it is NOT well: " + .rollback_health.detail end) else "no" end' answer.json) |"
-        echo "| data | $(jq -r 'if .data then .data.result + ": " + .data.detail else "untouched" end' answer.json) |"
-        echo "| updater that answered | \`$(jq -r '.updater.release // "?"' answer.json)\`$(jq -r 'if .updater.next then ", changing to `" + .updater.next + "`" else "" end' answer.json)$(jq -r 'if .updater.reverted then "; the updater of `" + .updater.reverted + "` did not come up" else "" end' answer.json) |"
-        echo "| server says | $(jq -r .message answer.json) |"
-      } >> "$GITHUB_STEP_SUMMARY"
-      jq . answer.json
-      # Refused because something newer already runs (a later build got there first): nothing to do, not a failure.
-      running=$(jq -r '.running // ""' answer.json)
-      if [ "$(jq -r .result answer.json)" = refused ] && [ "${running##*v}" -gt "${TAG##*v}" ] 2>/dev/null; then
-        echo "::notice::$running already runs, which is newer than $TAG; nothing was changed"
-        exit 0
-      fi
-      [ "$(jq -r .ok answer.json)" = true ] || fail "the server reports $(jq -r .result answer.json): $(jq -r .message answer.json)"
-      # The hub went in, but the release's updater did not (hub/updater: the deploy stays ok and only says so): the
-      # server keeps an updater older than the release it was told to take. That is a failed delivery too.
-      if jq -r '.message // ""' answer.json | grep -q 'its updater was not taken'; then
-        fail "$TAG: the hub runs, but its updater was not taken: $(jq -r .message answer.json)"
-      fi
-      jq -r '.commit // ""' answer.json > commit.txt
-
-      # The updater replaces itself after it has answered. Wait until the new one answers, or the old one says
-      # that the new one did not come up.
-      next=$(jq -r '.updater.next // empty' answer.json)
-      [ -n "$next" ] || exit 0
-      for _ in $(seq 1 60); do
-        sleep 5
-        curl -sS --connect-timeout 5 --max-time 20 -o status.json "$url/status" 2>/dev/null || continue
-        release=$(jq -r '.updater.release // empty' status.json 2>/dev/null) || continue
-        reverted=$(jq -r '.updater.reverted // empty' status.json 2>/dev/null) || continue
-        if [ "$reverted" = "$next" ]; then
-          echo "The updater of \`$next\` did not come up; the one of \`$release\` runs again. The hub \`$TAG\` runs." >> "$GITHUB_STEP_SUMMARY"
-          fail "the updater of $next did not come up; the server put its previous updater back (the hub $TAG runs)"
-        fi
-        if [ "$release" = "$next" ]; then
-          echo "The updater of \`$next\` runs." >> "$GITHUB_STEP_SUMMARY"
-          exit 0
-        fi
-      done
-      fail "the server's updater did not answer as $next within five minutes"
-    shell: bash
-    env:
-      HUB_SERVER: trommi-hub.tail276436.ts.net
-      HUB_DEPLOY_PORT: '9443'
-      TAG: ${{ inputs.tag || inputs.tag }}
-  - name: The hub from outside
+  - name: Check Access, deploy the fixed target, verify public commit
     id: outside
-    run: |
-      set -u
-      want=$(cat commit.txt 2>/dev/null || true)
-      [ -n "$want" ] || exit 0
-      got=''
-      for _ in $(seq 1 36); do
-        page=$(curl -fsS --max-time 10 https://hub.trommi.com/healthz 2>/dev/null) || page=''
-        got=$(printf '%s' "$page" | jq -r '.commit // ""' 2>/dev/null) || got=''
-        # well, serving, and naming its protocol version (what clients are checked against: 426 client-too-old)
-        if [ "$got" = "$want" ] && printf '%s' "$page" | jq -e '.ok == true and (.protocol_version | type) == "number"' > /dev/null 2>&1; then
-          echo "https://hub.trommi.com answers as $want, well, protocol $(printf '%s' "$page" | jq -r .protocol_version)"
-          exit 0
-        fi
-        sleep 5
-      done
-      reason="https://hub.trommi.com/healthz does not answer as $want after three minutes (it answers as ${got:-nothing})"
-      printf 'reason=%s\n' "$reason" >> "$GITHUB_OUTPUT"
-      echo "::error::$reason"
-      exit 1
     shell: bash
     env:
-      HUB_SERVER: trommi-hub.tail276436.ts.net
-      HUB_DEPLOY_PORT: '9443'
-      TAG: ${{ inputs.tag || inputs.tag }}
+      DEPLOY_WEBHOOK_URL: ${{ inputs.webhook-url }}
+      CF_ACCESS_CLIENT_ID: ${{ inputs.cf-client-id }}
+      CF_ACCESS_CLIENT_SECRET: ${{ inputs.cf-client-secret }}
+      DEPLOY_TOKEN: ${{ inputs.deploy-token }}
+    run: python3 .github/scripts/hub_deliver.py
   - name: Record the hub result
     if: always() && steps.deployment.outputs.id != ''
     shell: bash

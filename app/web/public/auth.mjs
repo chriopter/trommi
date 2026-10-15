@@ -478,7 +478,7 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
     return html`${wrapAt(head)}<span class="clip-link-same" data-same="…">${mid}</span><wbr><span class="clip-link-own">${tail}</span>`
   }
   const step = (state, inner) => html`<li class="clip-step${state ? ` is-${state}` : ''}">${TICKBOX}<div class="clip-step-body">${inner}</div></li>`
-  const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh'
+  const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh'
   const altLine = text => html`<button type="button" class="clip-alt" data-line="slash" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${text.replace(/#.*'$/, "#…'")}</code><span class="clip-copy-word" data-word="Copy">Copy</span></button>`
   const clipboard = () => {
     const av = vm().account ?? {}, state = inviteState('agent'), inv = av.invite ?? {}

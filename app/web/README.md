@@ -83,7 +83,7 @@ public/
 ```
 
 **Inviting an agent.** The invite page (`auth.mjs` `clipboard()`) shows three commands to copy: once per machine
-`curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh` (the connector's signed release,
+`curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh` (the connector's signed release,
 `connector/README.md`), once per program `trommi-connector setup claude` (or `setup codex`), once per folder
 `trommi-connector connect '<link>'` with the invite's link. The iOS app and the website show the same three. The app
 serves no connector binaries. Two of the connector's files feed the help

@@ -15,13 +15,13 @@
 #   dev/resign-history.sh [--source URL] [--branch main] [--keep] KEY
 #   KEY   the public key text ("ssh-ed25519 AAAA… comment"), the same with
 #         a "key::" prefix, or the path of a .pub file
-#   --source  repository to clone (default https://github.com/trommi/trommi.git)
+#   --source  repository to clone (default https://github.com/chriopter/trommi.git)
 #   --branch  branch to re-sign (default main)
 #
 # It never pushes. At the end it prints the exact push command.
 set -euo pipefail
 
-source_url=https://github.com/trommi/trommi.git
+source_url=https://github.com/chriopter/trommi.git
 branch=main
 key=
 while [ $# -gt 0 ]; do

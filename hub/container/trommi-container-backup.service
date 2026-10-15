@@ -1,0 +1,13 @@
+[Unit]
+Description=Consistent private backup of the Trommi container data and configuration
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+UMask=0077
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=100%
+TimeoutStartSec=10min
+ExecStart=/usr/bin/python3 /home/docker/trommi/backup.py
+ExecStopPost=/usr/bin/python3 /home/docker/trommi/backup.py --resume

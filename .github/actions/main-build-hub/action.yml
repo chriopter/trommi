@@ -47,6 +47,7 @@ runs:
       export RUSTFLAGS="--remap-path-prefix=$PWD=/src --remap-path-prefix=$HOME/.cargo=/cargo"
       cargo build --profile dist --locked --target "$TARGET" -p trommi-hub -p trommi-hub-updater
       mkdir out
+      cp release/hub-cosign-public.pem out/hub-cosign-public.pem
       cp "target/$TARGET/dist/trommi-hub" "out/trommi-hub-$TARGET"
       cp "target/$TARGET/dist/trommi-hub-updater" "out/trommi-hub-updater-$TARGET"
       for f in "out/trommi-hub-$TARGET" "out/trommi-hub-updater-$TARGET"; do
@@ -81,6 +82,12 @@ runs:
       HUB_DEPLOY_PORT: '9443'
       VERSION: ${{ inputs.version }}
       TARGET: x86_64-unknown-linux-musl
+  - name: Isolated container healthcheck and exact build identity
+    shell: bash
+    env:
+      TARGET: x86_64-unknown-linux-musl
+      VERSION: ${{ inputs.version }}
+    run: sh .github/scripts/hub_container_check.sh "out/trommi-hub-$TARGET"
   - name: The hub before runs on data this one migrated
     env:
       HUB_SERVER: trommi-hub.tail276436.ts.net
