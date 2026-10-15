@@ -2,13 +2,14 @@
 # Whether the iPhone and Mac apps of a commit may go to TestFlight (ship-apple.yml decides with it, ios_testflight.sh and
 # mac_testflight.sh check it again on the Mac right before the upload):
 #   ios_release_gate.sh decide         prints deliver=true|false (for GITHUB_OUTPUT); exit 1 when the gate does not hold
-#   ios_release_gate.sh wait|verify    exit 0: upload; anything else: nothing is uploaded
+#   ios_release_gate.sh wait|verify    exit 0: upload; 3: already delivered; any other failure: refused.
 # The gate:
 #   - the run RUN_ID is ship-apple.yml of this repository on main (a push), of COMMIT
 #   - its job "iOS client (check)" passed, and "Core (check)" passed or was skipped (the core did not
 #     change): the apps build on the core
 #   - the iOS inputs of COMMIT (.github/scripts/inputs.sh) differ from those last delivered to TestFlight
 #     (.github/scripts/ios_delivered.sh; not known: they differ). SAME_OK=1 (a delivery by hand) skips this one.
+# TF_DESTINATION=mac checks the independently delivered Mac TestFlight inputs (default: ios).
 # Environment: GH_TOKEN (actions: read), GITHUB_REPOSITORY, RUN_ID, COMMIT, RUNNER_TEMP; a checkout of COMMIT.
 set -euo pipefail
 
@@ -43,15 +44,15 @@ fi
 
 sum=$(sh "$here/inputs.sh" "$COMMIT" | sed -n 's/^ios //p')
 [ -n "$sum" ] || { echo "::error::no iOS inputs for $COMMIT"; exit 1; }
-delivered=$(sh "$here/ios_delivered.sh") || delivered=
+delivered=$(sh "$here/ios_delivered.sh" "${TF_DESTINATION:-ios}") || delivered=
 if [ -n "$delivered" ] && [ "$delivered" = "$sum" ]; then
   if [ "$mode" = decide ]; then
     echo "deliver=false"
     exit 0
   fi
   if [ "${SAME_OK:-}" != 1 ]; then
-    echo "::error::TestFlight has the iOS inputs of $COMMIT already ($sum): nothing is uploaded"
-    exit 1
+    echo "::notice::TestFlight already has these ${TF_DESTINATION:-ios} inputs ($sum): nothing is uploaded"
+    exit 3
   fi
 fi
 [ "$mode" != decide ] || echo "deliver=true"

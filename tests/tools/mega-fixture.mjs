@@ -10,8 +10,8 @@
 // CARD_X: each copy's cards that many times (fresh ids); PICTURE_EVERY: every n-th message of the long chat carries
 // one of the demo's pictures (0: none). The extreme run: 53 2000 … `53 50000 2 100` (2,014 sessions, 5,512 cards).
 //
-// Read by tests/ios/TrommiClientTests/SpeedTests.swift (TROMMI_SPEED=1) and, on the simulator, by the app's demo
-// (TROMMI_FIXTURE=<path>, DemoMode.swift).
+// Read by NativeScreensTests.testFullSizeDeskLaunchAndMemory through TROMMI_SPEED_FIXTURE,
+// and by the app's explicit storeless demo through TROMMI_SCREEN=desk and TROMMI_FIXTURE=<path>.
 import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";

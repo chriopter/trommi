@@ -1,7 +1,7 @@
 import XCTest
 
-// Real UI automation of the same storeless room used by web and native screenshots.
-// Every launch explicitly selects demo mode: no device store, credentials or hub.
+// Native UI automation: isolated real-account sign-in and explicit storeless demo scenes.
+// Private account and full-size timing gates run only when their inputs are supplied.
 final class NativeScreensTests: XCTestCase {
   private var app: XCUIApplication!
   override func setUpWithError() throws { continueAfterFailure = false }
@@ -95,4 +95,29 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(app.steppers["Width"].exists)
     capture("scribble-board")
   }
+  func testFullSizeDeskLaunchAndMemory() throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let fixture = env["TROMMI_SPEED_FIXTURE"], let rows = env["TROMMI_SPEED_ROWS"], !fixture.isEmpty, Int(rows) != nil else {
+      throw XCTSkip("Opt-in made-up full-size room; no account or hub")
+    }
+    let target = XCUIApplication()
+    target.launchEnvironment["TROMMI_SCREEN"] = "desk"
+    target.launchEnvironment["TROMMI_FIXTURE"] = fixture
+    target.launchEnvironment["TROMMI_SPEED_TRACE"] = "1"
+    let options = XCTMeasureOptions(); options.iterationCount = 3
+    measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true)], options: options) {
+      target.launch()
+      let desk = target.scrollViews["desk-content"]
+      XCTAssertTrue(desk.waitForExistence(timeout: 15))
+      expectation(for: NSPredicate(format: "value BEGINSWITH %@", "{"), evaluatedWith: desk)
+      waitForExpectations(timeout: 15)
+      guard let text = desk.value as? String, let data = text.data(using: .utf8), let report = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { XCTFail("Missing native startup metrics"); return }
+      XCTAssertEqual((report["rows"] as? NSNumber)?.intValue, Int(rows))
+      let note = XCTAttachment(string: text); note.name = "native-desk-startup"; note.lifetime = .keepAlways; add(note)
+      print("NATIVE_DESK " + text)
+      XCTAssertTrue(target.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).firstMatch.exists)
+      target.terminate()
+    }
+  }
+
 }

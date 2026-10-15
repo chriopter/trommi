@@ -70,6 +70,7 @@ jobs:
         node .github/scripts/main_gates.test.mjs
         node .github/scripts/main_web_paths.test.mjs
         node .github/scripts/main_apple_context.test.mjs
+        node .github/scripts/main_native_pending.test.mjs
         node .github/scripts/main_report.test.mjs
         node .github/scripts/main_baselines.test.mjs
     - name: Plan affected checks and deliveries

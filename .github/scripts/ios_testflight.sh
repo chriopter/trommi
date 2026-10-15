@@ -224,7 +224,14 @@ if [ "${TF_GATE:-}" = release ]; then
   # COMMIT and VERSION are the gate's names; here VERSION is the release number, not the app's
   gate='wait'
   [ "${TF_DRY_RUN:-}" = 1 ] && gate=verify
-  VERSION=$VERSION_RELEASE bash "$here/ios_release_gate.sh" "$gate"
+  if VERSION=$VERSION_RELEASE bash "$here/ios_release_gate.sh" "$gate"; then :; else
+    status=$?
+    if [ "$status" = 3 ]; then
+      [ -z "${GITHUB_OUTPUT:-}" ] || echo 'ready=already' >> "$GITHUB_OUTPUT"
+      exit 0
+    fi
+    exit "$status"
+  fi
 fi
 
 echo "== 6c. Upload =="
@@ -252,7 +259,7 @@ rm -f "$RUNNER_TEMP/ExportOptions.plist"
 if [ "$mode" = upload ]; then
   # the rest runs elsewhere (ios_testflight.sh after) with these
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
-    { echo "version=$version"; echo "build=$build"; } >> "$GITHUB_OUTPUT"
+    { echo "version=$version"; echo "build=$build"; echo "ready=yes"; } >> "$GITHUB_OUTPUT"
   fi
   echo "uploaded: $BUNDLE_ID $version ($build) from $short"
   exit 0

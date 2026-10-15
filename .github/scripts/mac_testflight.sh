@@ -175,7 +175,14 @@ if [ "${TF_GATE:-}" = release ]; then
   echo "== 6b. The release of this run =="
   gate='wait'
   [ "${TF_DRY_RUN:-}" = 1 ] && gate=verify
-  VERSION=$VERSION_RELEASE bash "$here/ios_release_gate.sh" "$gate"
+  if TF_DESTINATION=mac VERSION=$VERSION_RELEASE bash "$here/ios_release_gate.sh" "$gate"; then :; else
+    status=$?
+    if [ "$status" = 3 ]; then
+      [ -z "${GITHUB_OUTPUT:-}" ] || echo 'ready=already' >> "$GITHUB_OUTPUT"
+      exit 0
+    fi
+    exit "$status"
+  fi
 fi
 
 echo "== 6c. Upload =="

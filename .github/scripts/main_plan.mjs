@@ -10,14 +10,14 @@ patterns.site = new RegExp(String.raw`^(${siteOwn}|\.github/actions/|\.github/wo
 export const checkNames = { web: 'Web app (check)', hub: 'Hub (check)', connector: 'Connector (check)', apple: 'iOS client (check)', linux: 'Linux app (check)', site: 'Site (test)' }
 export const changedFor = (part, files) => files.filter(file => !/(^|\/)README\.md$/.test(file)).some(file => patterns[part].test(file))
 export function plan(files, delivery = {}, all = false, requested = '', observed = null) {
-  delivery = { ...delivery }
+  delivery = { ...delivery, mac_testflight: delivery.mac_testflight ?? delivery.ios ?? false }
   const source = files.filter(file => !/(^|\/)README\.md$/.test(file))
   const checks = new Set(Object.keys(checkNames).filter(part => all || source.some(file => patterns[part].test(file))))
   let core = all || source.some(file => patterns.core.test(file))
   if (checks.size === 0 && source.length > 0) { core = true; for (const part of Object.keys(checkNames)) checks.add(part) }
   if (observed) { checks.clear(); for (const part of Object.keys(checkNames)) if (observed[part]) checks.add(part); core = !!observed.core }
   for (const part of ['web', 'hub', 'connector']) if (delivery[part]) checks.add(part)
-  if (delivery.ios || delivery.mac) checks.add('apple')
+  if (delivery.ios || delivery.mac_testflight || delivery.mac) checks.add('apple')
   if (requested) {
     if (!['all','connector','linux','site'].includes(requested)) throw Error('unknown manual part')
     checks.clear()
@@ -38,6 +38,8 @@ export function plan(files, delivery = {}, all = false, requested = '', observed
   for (const part of ['web','hub','connector']) if (delivery[part]) add(part,'release','connector',part==='connector'?'connector':part,part==='hub'?'publish-hub':`main-sign-${part}`,part==='web'?'deploy_web':part==='hub'?'ship-hub':'publish-connector')
   if (delivery.ios) {
     add('apple','ios','ios','ios','ship-apple-ios','main-process-ios','xcode-27')
+  }
+  if (delivery.mac_testflight) {
     add('apple','mac-testflight','ios','ios','ship-apple-mac','main-process-mac','xcode-27')
   }
   if (delivery.mac) add('apple','mac-direct','mac','mac','ship-apple-mac-direct','main-publish-mac-direct','xcode-27')

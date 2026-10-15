@@ -15,9 +15,11 @@ struct RootView: View {
     #endif
   }
   var body: some View {
+    let _ = NativeDemo.mark("root.body")
     NavigationStack(path: $shell.path) {
       Group {
-        if shell.view.phase == .signedOut || shell.view.phase == .starting || shell.view.account.step == "keep_kit" { AccountScreen() }
+        if shell.view.phase == .starting { ProgressView("Trommi").font(Face.display(30)).frame(maxWidth: .infinity, maxHeight: .infinity) }
+        else if shell.view.phase == .signedOut || shell.view.account.step == "keep_kit" { AccountScreen() }
         else if wide {
           HStack(spacing: 0) { Sidebar().frame(width: 258); Divider(); home.frame(maxWidth: .infinity) }
         } else { home }
@@ -155,6 +157,7 @@ struct Sidebar: View {
 }
 struct DeskScreen: View {
   @EnvironmentObject var shell: AppShell
+  @State private var speedReport: String?
   var body: some View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 20) {
@@ -168,7 +171,10 @@ struct DeskScreen: View {
         if let dock = shell.view.desk.running { Dock(dock: dock) }
         if let off = shell.view.desk.off { Button { shell.focus(.off(query: "")) } label: { Label(off.says.en, systemImage: "tray") }.font(Face.display(22)).padding(.top, 24) }
       }.padding(24).frame(maxWidth: 820).frame(maxWidth: .infinity)
-    }.refreshable { shell.act(["do": "retry"]) }
+    }.accessibilityIdentifier("desk-content")
+      .accessibilityValue(speedReport ?? String(shell.view.desk.rows.count))
+      .onAppear { speedReport = NativeDemo.ready(rows: shell.view.desk.rows.count) }
+      .refreshable { shell.act(["do": "retry"]) }
   }
 }
 struct Dock: View {

@@ -185,5 +185,7 @@ schemes:
     test:
       environmentVariables:
         TROMMI_SIGNIN_ACCOUNT_FILE: "$(TROMMI_SIGNIN_ACCOUNT_FILE)"
+        TROMMI_SPEED_FIXTURE: $(TROMMI_SPEED_FIXTURE)
+        TROMMI_SPEED_ROWS: $(TROMMI_SPEED_ROWS)
       targets:
         - TrommiUITests
