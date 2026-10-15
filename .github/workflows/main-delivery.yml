@@ -107,6 +107,9 @@ jobs:
     - uses: ./.github/actions/main-upload-ios
       if: inputs.part == 'apple' && inputs.pipeline == 'ios'
       with:
+        non-exempt-encryption: ${{ vars.IOS_NON_EXEMPT_ENCRYPTION || 'NO' }}
+        export-compliance-code: ${{ vars.IOS_EXPORT_COMPLIANCE_CODE }}
+        uploader: ${{ vars.IOS_UPLOADER || 'api' }}
         version: ${{ inputs.version }}
         op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
@@ -115,6 +118,7 @@ jobs:
     - uses: ./.github/actions/main-upload-mac
       if: inputs.part == 'apple' && inputs.pipeline == 'mac-testflight'
       with:
+        uploader: ${{ vars.MAC_UPLOADER || 'api' }}
         version: ${{ inputs.version }}
         op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         op-env: ${{ secrets.OP_ENVIRONMENT_ID }}
@@ -242,6 +246,7 @@ jobs:
     - uses: ./.github/actions/main-process-ios
       if: inputs.part == 'apple' && inputs.pipeline == 'ios'
       with:
+        tester: ${{ vars.IOS_TESTFLIGHT_TESTER }}
         app-version: ${{ env.MAIN_APP_VERSION }}
         app-build: ${{ env.MAIN_APP_BUILD }}
         op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
@@ -249,6 +254,7 @@ jobs:
     - uses: ./.github/actions/main-process-mac
       if: inputs.part == 'apple' && inputs.pipeline == 'mac-testflight'
       with:
+        tester: ${{ vars.IOS_TESTFLIGHT_TESTER }}
         app-version: ${{ env.MAIN_APP_VERSION }}
         app-build: ${{ env.MAIN_APP_BUILD }}
         op-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}

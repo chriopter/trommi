@@ -1,6 +1,9 @@
 name: main-process-mac
 description: The main pipeline steps for main-process-mac
 inputs:
+  tester:
+    description: Apple delivery configuration
+    default: ''
   app-version:
     description: TestFlight app version
     default: ''
@@ -31,7 +34,7 @@ runs:
       COMMIT: ${{ github.sha }}
       TF_VERSION: ${{ inputs.app-version }}
       TF_BUILD: ${{ inputs.app-build }}
-      TESTFLIGHT_TESTER: ${{ vars.IOS_TESTFLIGHT_TESTER }}
+      TESTFLIGHT_TESTER: ${{ inputs.tester }}
     run: |
       set -eu
       test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
