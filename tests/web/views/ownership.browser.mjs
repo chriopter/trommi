@@ -15,13 +15,14 @@ try {
   const exceptions = []
   const ev = async (p, expression) => { const r = await p.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text); return r.result.value }
   const until = async (p, expression, label) => { for (let n = 0; n < 300; n++) { if (await ev(p, expression).catch(() => false)) return; await sleep(100) } throw Error(`Timed out: ${label}; ${await ev(p, 'JSON.stringify({text:document.body.innerText,vm:window.trommi?.vm(),early:!!globalThis.__trommiCore})')}`) }
-  const prepare = async p => { await p.send('Runtime.enable'); p.on('Runtime.consoleAPICalled', e => { if(e.type === 'error') console.error('page console:', e.args.map(a=>a.value ?? a.description).join(' ')) }); p.on('Runtime.exceptionThrown', e => exceptions.push(e.exceptionDetails.exception?.description ?? e.exceptionDetails.text)); await p.send('Network.enable'); await p.send('Network.setBlockedURLs', { urls: ['*://hub.trommi.com/*', '*://127.0.0.1:8890/*'] }) }
-  const ready = p => until(p, `document.documentElement.hasAttribute('data-ready') && !document.querySelector('#use-here') && document.body.innerText.includes('Create account')`, 'single usable account screen')
+  const prepare = async p => { await p.send('Page.enable'); await p.send('Runtime.enable'); p.on('Runtime.consoleAPICalled', e => { if(e.type === 'error') console.error('page console:', e.args.map(a=>a.value ?? a.description).join(' ')) }); p.on('Runtime.exceptionThrown', e => exceptions.push(e.exceptionDetails.exception?.description ?? e.exceptionDetails.text)); await p.send('Network.enable'); await p.send('Network.setBlockedURLs', { urls: ['*://hub.trommi.com/*', '*://127.0.0.1:8890/*'] }) }
+  const ready = p => until(p, `document.documentElement.hasAttribute('data-ready') && !document.querySelector('#use-here, #trommi-opening') && document.body.innerText.includes('Create account')`, 'single usable account screen')
   const open = async p => { await prepare(p); await p.send('Page.navigate', { url: APP }); await ready(p) }
   let first = await browser.tab()
   // A slow worker must keep the styled loading page, then paint the first actual view; never race a 3 s timer.
-  await first.session.send('Page.addScriptToEvaluateOnNewDocument', { source: `globalThis.Worker = class extends Worker { postMessage(message, transfer) { if(message?.t === 'start') setTimeout(() => super.postMessage(message, transfer), 4100); else super.postMessage(message, transfer) } }` })
+  await first.session.send('Page.addScriptToEvaluateOnNewDocument', { source: `globalThis.trommiTestDelayedWorker = true; globalThis.Worker = class extends Worker { postMessage(message, transfer) { if(message?.t === 'start') setTimeout(() => super.postMessage(message, transfer), 4100); else super.postMessage(message, transfer) } }` })
   await open(first.session)
+  assert.equal(await ev(first.session, 'globalThis.trommiTestDelayedWorker'), true, 'the slow-worker injection ran')
   for (let n = 0; n < 2; n++) { await first.session.send('Page.reload', { ignoreCache: true }); await sleep(100); await ready(first.session) }
   await first.close(); first = await browser.tab(); await open(first.session)
   const second = await browser.tab(); await prepare(second.session); await second.session.send('Page.navigate', { url: APP })

@@ -26,7 +26,7 @@ const urlOf = ({ web }) => `${web.path}${web.path.includes('?') ? '&' : '?'}mock
 
 /** What reaches past the screen's edges, in the page (run there). */
 const PROBE = `(() => {
-  const vw = innerWidth, out = { styled: getComputedStyle(document.body).fontFamily.includes("IBM Plex Sans") && getComputedStyle(document.body).getPropertyValue("--s-4").trim() !== "", page: Math.max(document.scrollingElement.scrollWidth, document.body.scrollWidth) - vw, past: [] }
+  const vw = innerWidth, out = { opening: !!document.getElementById('trommi-opening'), styled: getComputedStyle(document.body).fontFamily.includes("IBM Plex Sans") && getComputedStyle(document.body).getPropertyValue("--s-4").trim() !== "", page: Math.max(document.scrollingElement.scrollWidth, document.body.scrollWidth) - vw, past: [] }
   const shown = el => { for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e); if (c.display === 'none' || c.visibility === 'hidden' || +c.opacity < .05) return false } return true }
   // (an ancestor that clips or scrolls sideways keeps what is in it: a strip of thumbnails, a cut title. Not one as wide
   //  as the screen: that is the page's own scroller, and what it cuts off at the screen's edge is lost)
@@ -76,8 +76,8 @@ try {
     // A missing demo object used to draw an empty/error page that still passed every layout check.
     const content = s.screen === 'Card' ? '#cardpage .tc-title' : s.screen === 'Chat' ? '#session #chat .chat-pane' : null
     const contentReady = !content || await ev(`Boolean(document.querySelector(${JSON.stringify(content)})?.textContent.trim())`)
-    const ok = got.styled && got.page <= 0 && !got.past.length && contentReady
-    console.log(`${ok ? 'ok  ' : 'FAIL'} ${s.id}${ok ? '' : `: ${!got.styled ? 'Trommi stylesheet missing; ' : ''}${!contentReady ? 'screen content missing; ' : ''}${got.page > 0 ? `the page scrolls ${got.page}px sideways; ` : ''}${got.past.map(p => `${p.el} "${p.text}" ${p.left}..${p.right}`).join('; ')}`}`)
+    const ok = !got.opening && got.styled && got.page <= 0 && !got.past.length && contentReady
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${s.id}${ok ? '' : `: ${got.opening ? 'loading page still covers content; ' : ''}${!got.styled ? 'Trommi stylesheet missing; ' : ''}${!contentReady ? 'screen content missing; ' : ''}${got.page > 0 ? `the page scrolls ${got.page}px sideways; ` : ''}${got.past.map(p => `${p.el} "${p.text}" ${p.left}..${p.right}`).join('; ')}`}`)
     if (!ok) failed.push(s.id)
   }
 } finally {

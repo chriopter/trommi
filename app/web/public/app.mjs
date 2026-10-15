@@ -949,6 +949,7 @@ async function start({ take = false } = {}) {
   })
   if (stopped) return
   window.trommi.firstRenderMs = performance.now() - T0
+  document.getElementById('trommi-opening')?.remove()
   await router.visit(location.pathname + location.search + location.hash, { action: 'replace' })
   painted = true
   window.trommi.firstPaintMs = performance.now() - T0
@@ -1001,10 +1002,10 @@ async function boot() {
   if (params.has('mock')) { params.delete('mock'); history.replaceState(history.state, '', `${location.pathname}${params.size ? `?${params}` : ''}${location.hash}`) }
   document.documentElement.classList.toggle('is-demo', Boolean(demo))
   // A link for someone outside the room (/artifact/<share_id>#…): its own small page, no room needed.
-  if (SHARE_PAGE.test(location.pathname)) { await core.startCore(configOf(null), { slot: '' }); return (await view('media')).showShare({ act: core.act, on: core.on, fileUrl: core.fileUrl }) }
+  if (SHARE_PAGE.test(location.pathname)) { await core.startCore(configOf(null), { slot: '' }); document.getElementById('trommi-opening')?.remove(); return (await view('media')).showShare({ act: core.act, on: core.on, fileUrl: core.fileUrl }) }
   // (the demo's account screens, /screens: ?mock=1&onboard=<state> draws one of them; no account, nothing sent)
   const onboard = demo && params.get('onboard')
-  if (onboard) { fontsAfterPaint(); return (await view('auth')).demoScreen(onboard) }
+  if (onboard) { document.getElementById('trommi-opening')?.remove(); fontsAfterPaint(); return (await view('auth')).demoScreen(onboard) }
   keepStorage()
   const take = sessionStorage.getItem('trommi-take-device') === '1'
   sessionStorage.removeItem('trommi-take-device')
