@@ -4,14 +4,13 @@
 //!
 //! The link is used once and never stored. What is stored is what the device must hold the room to afterwards:
 //! which device invited it, and the room epoch and state it starts following the room group at.
-use crate::client::{hub_for, put_room_record, sleep, RoomRecord};
+use crate::driver::{put_room_record, sleep, OpenHub, RoomRecord};
 use crate::error::{Fault, Result};
-use crate::hub::{b64, unb64, Hub};
 use crate::keeper::Keeper;
 use crate::store::Journal;
 use crate::util::{hex, now_ms};
 use crate::vault::Vault;
-use serde_json::{json, Value};
+use trommi_client_core::hub::{Answer, Route};
 use std::sync::Arc;
 use trommi_core::invite::{CheckCode, InviteLink, Offer, Role, SignedOffer, SignedReveal};
 
@@ -49,20 +48,21 @@ const JOIN_RETRY_MS: [u64; 3] = [1000, 2000, 4000];
 /// Runs a join step, asking again with the same bytes while the hub is not reached or busy, a few times
 /// and never past `until`: a network blip never burns the invite. `posted`: the step writes, so an
 /// `invite-used` after a lost answer may be this device's own Request (the Reveal decides). What is still
-/// `offline` after the last try says so, and that the same link may be tried again.
-async fn steady<F, Fut>(until: u64, poll_ms: u64, posted: bool, step: F) -> Result<Value>
+/// `offline` after the last try says so, and that the same link may be tried again. None: `invite-used` after a
+/// lost answer of a step that wrote.
+async fn steady<T, F, Fut>(until: u64, poll_ms: u64, posted: bool, step: F) -> Result<Option<T>>
 where
     F: Fn() -> Fut,
-    Fut: std::future::Future<Output = Result<Value>>,
+    Fut: std::future::Future<Output = Result<T>>,
 {
     let mut maybe_in = false;
     for tried in 0.. {
         match step().await {
-            Ok(v) => return Ok(v),
+            Ok(v) => return Ok(Some(v)),
             Err(fault) if posted && maybe_in && fault.code == "invite-used" => {
-                return Ok(Value::Null)
+                return Ok(None)
             }
-            Err(fault) if crate::hub::is_transient(&fault) => {
+            Err(fault) if crate::driver::is_transient(&fault) => {
                 maybe_in = true;
                 let Some(wait) = JOIN_RETRY_MS.get(tried) else {
                     return Err(unreached(fault));
@@ -106,7 +106,7 @@ fn ago(ms: u64) -> String {
 /// `on_code` is handed the check code as soon as the inviter revealed it; the human compares it in the app.
 /// `poll_ms` is the pause between questions to the hub, `timeout_ms` how long the whole join may take.
 ///
-/// On success the journal holds the device and the room record, and [`crate::client::Client::open`] takes over.
+/// On success the journal holds the device and the room record, and [`crate::driver::Driver::open`] takes over.
 /// On any failure the journal is wiped: a half-made device is of no use.
 pub async fn join_room(
     link: &str,
@@ -146,7 +146,7 @@ async fn answer_invite(
     let link_text = link.trim().to_string();
     let link = InviteLink::parse(&link_text)?;
     let until = now_ms() + timeout_ms;
-    let open = Hub::new(link.hub.as_str(), None, None)?;
+    let open = OpenHub::new(link.hub.as_str())?;
     // The new device: its key, its KeyPackage and its Request are written before the Request leaves (13.2).
     let for_vault = journal.clone();
     let vault = Arc::new(Keeper::spawn(move || Vault::create(for_vault))?);
@@ -157,18 +157,20 @@ async fn answer_invite(
         let joining = vault
             .call(move |v: &mut Vault| v.device.join_link(&for_link, now_ms()))
             .await??;
-        let invite_id = joining.invite_id.to_base64url();
-        let offer_path = format!("/v1/invites/{invite_id}");
-        let offer = steady(until, poll_ms, false, || {
-            open.open_call(reqwest::Method::GET, &offer_path, None)
+        let invite = joining.invite_id;
+        let offer = steady(until, poll_ms, false, || async {
+            open.call(None, &Route::GetInvite { invite: &invite }).await
         })
         .await?;
+        let Some(Answer::Invite(offer)) = offer else {
+            return Err(Fault::new("bad-format", "the hub's invite does not read"));
+        };
         // The MAC binds the Offer to this link; a hub that serves none leaves it empty and the device
         // refuses the Offer (bad-invite).
         let offer = SignedOffer {
-            offer: unb64(&offer, "offer")?,
-            signature: unb64(&offer, "signature")?,
-            mac: unb64(&offer, "mac").unwrap_or_default(),
+            offer: offer.offer,
+            signature: offer.signature,
+            mac: offer.mac.unwrap_or_default(),
         };
         // What the Offer says is checked by the device below; it is read here only for what this side stores.
         let told = Offer::decode(&offer.offer)?;
@@ -202,30 +204,22 @@ async fn answer_invite(
 
         let signed = &request.signed_request;
         on_request(&trommi_core::invite::request_hash(signed)?);
-        let body = json!({
-            "request": b64(&signed.request), "mac": b64(&signed.mac),
-            "signature": b64(&signed.signature),
-        });
         // The same bytes again after a lost answer: the hub answers a repeated Request as the first one, or
         // calls the invite used once the app revealed it (then the Reveal below says whose it took).
-        let request_path = format!("/v1/invites/{invite_id}/request");
-        steady(until, poll_ms, true, || {
-            open.open_call(reqwest::Method::POST, &request_path, Some(&body))
-        })
-        .await?;
+        let post = Route::PostInviteRequest {
+            invite: &invite,
+            request: &signed.request,
+            mac: &signed.mac,
+            signature: &signed.signature,
+        };
+        steady(until, poll_ms, true, || open.call(None, &post)).await?;
 
         // The inviter's Reveal: the code both sides show.
         let reveal = loop {
-            match open
-                .open_call(
-                    reqwest::Method::GET,
-                    &format!("/v1/invites/{invite_id}/reveal"),
-                    None,
-                )
-                .await
-            {
-                Ok(reveal) => break reveal,
-                Err(fault) if fault.code == "not-found" || crate::hub::is_transient(&fault) => {}
+            match open.call(None, &Route::GetReveal { invite: &invite }).await {
+                Ok(Answer::Reveal { reveal, signature }) => break SignedReveal { reveal, signature },
+                Ok(_) => return Err(Fault::new("bad-format", "the hub's Reveal does not read")),
+                Err(fault) if fault.code == "not-found" || crate::driver::is_transient(&fault) => {}
                 Err(fault) => return Err(fault),
             }
             if now_ms() > until {
@@ -235,10 +229,6 @@ async fn answer_invite(
                 ));
             }
             sleep(poll_ms).await;
-        };
-        let reveal = SignedReveal {
-            reveal: unb64(&reveal, "reveal")?,
-            signature: unb64(&reveal, "signature")?,
         };
         let code = vault
             .call(move |v: &mut Vault| -> Result<CheckCode> {
@@ -252,11 +242,26 @@ async fn answer_invite(
         // The hub lets the device sign in once the inviter's Commit names its key (12.3.2): until then it
         // answers `not-member`. That the inviter made that Commit is the device's check when the room
         // group's log brings it (12.1.6).
-        let hub = hub_for(&vault, link.hub.as_str(), link.room_id)?;
+        let address = trommi_core::hub_auth::HubAddress::parse(link.hub.as_str())
+            .map_err(|_| Fault::new("bad-format", "the hub's address is not canonical"))?;
         loop {
-            match hub.get("/v1/welcomes").await {
+            let signed_in = async {
+                let vault = vault.clone();
+                let address = address.clone();
+                let token = open
+                    .sign_in(&link.room_id, move |challenge| {
+                        Box::pin(async move {
+                            Ok(vault
+                                .call(move |v: &mut Vault| v.device.hub_sign_in(&address, challenge))
+                                .await??)
+                        })
+                    })
+                    .await?;
+                open.call(Some(&token), &Route::Welcomes { after: 0 }).await
+            };
+            match signed_in.await {
                 Ok(_) => return Ok(()),
-                Err(fault) if fault.code == "not-member" || crate::hub::is_transient(&fault) => {}
+                Err(fault) if fault.code == "not-member" || crate::driver::is_transient(&fault) => {}
                 Err(fault) => return Err(fault),
             }
             if now_ms() > until {
@@ -280,6 +285,7 @@ async fn answer_invite(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{json, Value};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn offline() -> Fault {
@@ -300,7 +306,8 @@ mod tests {
             }
         })
         .await
-        .unwrap();
+        .unwrap()
+        .expect("an answer");
         assert_eq!(got["offer"], "x");
         assert_eq!(calls.load(Ordering::SeqCst), 3);
     }
@@ -319,8 +326,10 @@ mod tests {
             }
         };
         assert_eq!(
-            steady(now_ms() + 60_000, 5, true, step).await.unwrap(),
-            Value::Null
+            steady::<Value, _, _>(now_ms() + 60_000, 5, true, step)
+                .await
+                .unwrap(),
+            None
         );
         // a first answer that says used is a refusal, and a read is never taken for a post
         let first = steady(now_ms() + 60_000, 5, true, || async {
@@ -329,7 +338,7 @@ mod tests {
         .await;
         assert_eq!(first.unwrap_err().code, "invite-used");
         let calls = AtomicUsize::new(0);
-        let read = steady(now_ms() + 60_000, 5, false, || {
+        let read = steady::<Value, _, _>(now_ms() + 60_000, 5, false, || {
             let n = calls.fetch_add(1, Ordering::SeqCst);
             async move {
                 if n == 0 {

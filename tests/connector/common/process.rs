@@ -142,6 +142,7 @@ impl Seat {
             .env("TROMMI_SAY_MS", "120000")
             // the account and usage of the program (usage.rs) only where a test asks for them
             .env("TROMMI_USAGE", "off")
+            .env("TROMMI_TEST_LOG", std::env::var("TROMMI_TEST_LOG").unwrap_or_default())
             .current_dir(&self.folder)
             .kill_on_drop(true);
         command
@@ -443,15 +444,16 @@ impl Mcp {
 
     /// Waits until the connector is in its room: a tool call no longer says it is not.
     pub async fn ready(&mut self) {
+        let mut last = String::new();
         for _ in 0..450 {
             let (text, failed) = self.call("list_cards", json!({})).await;
             if !failed {
                 return;
             }
-            let _ = text;
+            last = text;
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
-        panic!("the connector never got into its room");
+        panic!("the connector never got into its room: {last}");
     }
 
     /// Ends the server as Claude Code does: its stdin closes.

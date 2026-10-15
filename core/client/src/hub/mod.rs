@@ -16,10 +16,10 @@
 //!   says and stay inside what was asked for. These limits are this client's own, whatever a hub does
 //!   ([`limits`], and `json.rs` for how the JSON itself is bounded).
 //! - **Three kinds of failure**, and only the engine decides what to do with them ([`classify`]):
-//!   - [`Failure::Refused`]: an error status that is no "not now" (4xx but 408/429). `code` is set only for the
+//!   - [`Failure::Refused`]: an error status that is no "not now" (4xx except 408/429, or a checked capacity refusal). `code` is set only for the
 //!     hub's own refusal ([`refusal`]: a code of spec/v1.md 16 under its own status); without one the answer came
 //!     from somewhere else (a proxy), and nothing may be voided or rolled back on it.
-//!   - [`Failure::NotNow`]: try again later (408, 429, 5xx, and `Retry-After` when given).
+//!   - [`Failure::NotNow`]: try again later (408, throttling 429, 5xx, and `Retry-After` when given).
 //!   - [`Failure::Offline`]: no answer at all (an [`IoError`] of kind offline or timeout).
 //! - **A redirect is never followed** (the token would travel with it): a 3xx answer is a bad answer.
 //! - **A request the codec cannot build** (an address that is not canonical, a token of other than plain
@@ -91,6 +91,11 @@ pub fn classify(response: &HttpResponse) -> Result<(), Failure> {
         });
     }
     if status == 408 || status == 429 || status >= 500 {
+        // Capacity is a refusal of this request; retrying it cannot free a helper's place. Only a checked
+        // protocol code under its own status is final: throttling and proxy responses still wait and retry.
+        if status == 429 && refusal(response).is_some_and(|r| r.code == "too-many") {
+            return Err(Failure::Refused { status, code: Some("too-many".into()) });
+        }
         // (the header; without one, the wait the hub's own refusal names in its body)
         let retry_after_ms = match response.header("retry-after") {
             Some(v) => v.trim().parse::<u64>().ok().map(|s| s.saturating_mul(1000)),
@@ -140,6 +145,14 @@ mod tests {
                 .collect(),
             body: body.as_bytes().to_vec().into(),
         }
+    }
+
+    #[test]
+    fn a_named_capacity_refusal_is_final_while_throttling_is_retried() {
+        assert_eq!(classify(&answer(429, &[], r#"{"error":"too-many","message":"at the limit"}"#)),
+            Err(Failure::Refused { status: 429, code: Some("too-many".into()) }));
+        assert!(matches!(classify(&answer(429, &[], r#"{"error":"rate-limited","message":"wait"}"#)), Err(Failure::NotNow { .. })));
+        assert!(matches!(classify(&answer(503, &[], r#"{"error":"too-many","message":"wrong status"}"#)), Err(Failure::NotNow { .. })));
     }
 
     #[test]

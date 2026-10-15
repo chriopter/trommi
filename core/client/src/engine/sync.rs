@@ -31,6 +31,10 @@ pub mod found;
 pub mod link_join;
 #[path = "agent.rs"]
 pub mod agent;
+#[path = "agent_join.rs"]
+pub mod agent_join;
+#[path = "agent_write.rs"]
+pub mod agent_write;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -142,8 +146,15 @@ pub enum Stopped {
     /// An agent device: the hub refuses it as no member, and no Commit it still serves removed it. The state is
     /// kept.
     NotMember,
-    /// An agent device: the room was told of it by another device than the one that invited it (12.1.6).
+    /// An agent device: the room was told of it by another device than the one that invited it (12.1.6), or the
+    /// room's state at the invite's epoch is not the one the invite named.
     BadInvite,
+    /// An agent device: a Welcome was for another group than the hub named, for the room group, or for a main
+    /// session other than the one the invite was for. Nothing of it was written: the stored state is as before.
+    BadWelcome,
+    /// An agent device: what answers at the hub's address is no hub of this protocol (or one too new for this
+    /// client), at the first round or [`agent::NO_HUB_ROUNDS`] rounds in a row. The state is kept.
+    HubUnusable,
 }
 
 impl Stopped {
@@ -240,6 +251,9 @@ pub enum Report {
     Command(Box<agent::AgentCommand>),
     /// An agent device: the lease this process acquired (its generation), or none once it was given up.
     Lease(Option<u64>),
+    /// An agent device: an envelope the hub voided for its epoch was sealed again (`agent_write`). `first`: the
+    /// outbox id of the envelope the caller sealed; `voided`: the one the hub voided; `id`: the new one.
+    Resealed { first: u64, voided: u64, id: u64, envelope_hash: trommi_core::ids::Hash32, object_id: Option<ObjectId> },
 }
 
 /// A wait before the next try of something.
@@ -314,6 +328,8 @@ enum Asked {
     Guard { expect: Expect, group: GroupId, own: u64 },
     /// A page of what the hub still serves of a removal.
     Removal { expect: Expect, group: GroupId },
+    /// A read of an agent's way in (`agent_join`).
+    Way { expect: Expect, what: agent_join::WayRead },
 }
 
 impl Asked {
@@ -334,7 +350,8 @@ impl Asked {
             | Asked::RoomGroups { expect, .. }
             | Asked::RoomRead { expect, .. }
             | Asked::Guard { expect, .. }
-            | Asked::Removal { expect, .. } => Some(expect),
+            | Asked::Removal { expect, .. }
+            | Asked::Way { expect, .. } => Some(expect),
         }
     }
 }
@@ -401,6 +418,9 @@ struct StreamConn<S> {
     /// The change it was opened after.
     from: u64,
     heard_at: u64,
+    /// When it was asked for, and whether it brought a change of the order (an agent's pause before the next).
+    since: u64,
+    brought: bool,
 }
 
 /// The sync engine of one device in one room.
@@ -512,6 +532,8 @@ pub struct Engine {
     requests: requests::Requests,
     /// An agent device's lease, gate and guards (`agent`); none for a human device.
     agent: Option<agent::Agent>,
+    /// The session groups this run asked to be let into again (`events`).
+    readmit_asked: std::collections::BTreeSet<GroupId>,
 }
 
 /// Why a stored device does not open as an engine.
@@ -621,6 +643,7 @@ impl Engine {
             link_join: None,
             requests: requests::Requests::default(),
             agent: None,
+            readmit_asked: Default::default(),
         }
     }
 
@@ -878,11 +901,16 @@ impl Engine {
             self.agent_refused(ctx, r.code);
         }
         let code = refusal.as_ref().map(|r| r.code);
+        if self.agent_no_hub(ctx, &asked, &answer, code) {
+            self.drive(ctx);
+            return true;
+        }
         match asked {
             Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::Request { .. } | Asked::KeptScan | Asked::KeptWrite => {}
             Asked::Lease(_) => self.on_lease(ctx, answer, code),
             Asked::Guard { group, own, .. } => self.on_guard(ctx, group, own, answer, code),
             Asked::Removal { group, .. } => self.on_removal(ctx, group, answer, code),
+            Asked::Way { what, .. } => self.on_way(ctx, what, answer),
             Asked::Link { .. } => self.on_link_answer(ctx, answer),
             Asked::Challenge(_) => self.on_challenge(ctx, answer),
             Asked::Token(_) => self.on_token(ctx, answer),
@@ -921,13 +949,17 @@ impl Engine {
                 // (an answer that is no stream: its body follows and says why, `ended` sorts it)
                 if conn.reader.opened(status, &headers).is_ok() {
                     conn.opened = true;
-                    self.stream_retry.ok();
+                    // (an agent's pause starts small again only after a stream that worked: `agent_stream_ended`)
+                    if self.agent.is_none() {
+                        self.stream_retry.ok();
+                    }
                     self.tending.stream_opened();
                     self.report(Report::StreamOpened);
                 }
             }
             StreamItem::Chunk { bytes } => {
                 let fed = conn.reader.chunk(&bytes);
+                conn.brought |= fed.events.iter().any(|e| matches!(e, StreamEvent::Change(_)));
                 for event in fed.events {
                     self.on_stream_event(ctx, event);
                 }
@@ -943,6 +975,10 @@ impl Engine {
                 }
             }
             StreamItem::Ended | StreamItem::Failed { .. } => {
+                let lived = self.stream.as_ref().map(|s| (s.since, s.brought));
+                if let Some((since, brought)) = lived {
+                    self.agent_stream_ended(ctx, since, brought);
+                }
                 let failure = self.stream.take().and_then(|mut s| s.reader.ended());
                 let retry_after = match &failure {
                     Some(Failure::NotNow { retry_after_ms, .. }) => *retry_after_ms,
@@ -1066,6 +1102,9 @@ impl Engine {
         self.drive_upkeep(ctx);
         self.drive_tending(ctx);
         self.drive_wishes(ctx);
+        // an agent: the past of the groups it joined late, and what the hub voided for its epoch sealed again
+        self.drive_learn(ctx);
+        self.drive_reseal(ctx);
         self.drive_pump(ctx);
         self.flush(ctx);
         self.connect(ctx);
@@ -1727,7 +1766,7 @@ impl Engine {
                 }
                 // The founding of a group this device does not hold: if it was added there, its Welcome waits (the
                 // stream says so only to who is connected then). Read once the items at hand are through.
-                if commit && item.epoch == 0 && matches!(processed, Processed::Skipped) && self.device.is_human() {
+                if commit && item.epoch == 0 && matches!(processed, Processed::Skipped) && (self.device.is_human() || self.agent.is_some()) {
                     self.welcome_waits = (true, true);
                 }
                 self.processed(ctx, item.change, item.group, processed, groups_changed);
@@ -1817,12 +1856,21 @@ impl Engine {
         // `welcomes_after` passes only what is settled: a Welcome read before the room Commit it builds on is read
         // again by the next look (the stream says a Welcome before the Commits ahead of it are taken)
         let mut settled = true;
+        // (an agent device takes a main session other than the invite's only once it holds one)
+        let had_main = self.agent_has_main();
         for row in rows {
             after = after.max(row.id);
-            // (the hub keeps a Welcome until this device writes in its group: one joined before is passed over)
-            if self.device.group(&row.group).is_err() {
+            // (the hub keeps a Welcome until this device writes in its group: one joined before is passed over; an
+            //  agent device is never a leaf of the room group)
+            if self.device.group(&row.group).is_err() && !self.agent_passes_welcome(&row.group) {
                 match self.device.join_welcome(&row.welcome, &expected, ctx.now) {
-                    Ok(j) => joined.push(j.group),
+                    Ok(j) if self.agent_welcome_wrong(&row.group, &j, had_main) => return self.bad_welcome(ctx),
+                    Ok(j) => {
+                        if !j.offending.is_empty() {
+                            ctx.log(LogLevel::Warn, format!("finding: a session this device was added to has {} leaf(s) the room does not allow: its content is not opened until a human device removes them", j.offending.len()));
+                        }
+                        joined.push(j.group)
+                    }
                     // (not yet: the room is behind, or this device has not reached the epoch it was made in)
                     Err(Error::WrongEpoch | Error::RoomBehind) => settled = false,
                     Err(e) => {
@@ -1831,6 +1879,11 @@ impl Engine {
                             return;
                         }
                         self.report(Report::Alert(Alert::Welcome { group: row.group, code: e.code() }));
+                        // 3.7: a Welcome that does not open used up its KeyPackage: the device asks to be let in again
+                        self.ask_readmit(ctx, row.group, &e);
+                        if self.stopped.is_some() {
+                            return;
+                        }
                     }
                 }
             }
@@ -1851,9 +1904,12 @@ impl Engine {
             return;
         }
         self.welcomes_idle = None;
-        self.desk.want = true;
+        // (an agent reads its groups in the hub's order: no Desk)
+        self.desk.want = self.agent.is_none();
         self.tending.look_for_archived();
         self.groups_changed();
+        // (an agent learns the past of what it joined, once the log gave the join its place)
+        self.agent_joined(&joined);
         // A group joined late: its log is handed again from its start up to the position, so the join has its
         // place in the hub's order. What lies after the position comes at its place in the one order.
         self.repair = Some(Repair::Logs { groups: joined.into(), after: 0, asked: false });
@@ -2114,7 +2170,7 @@ impl Engine {
         };
         self.flush(ctx);
         let id = ctx.id();
-        self.stream = Some(StreamConn { id, reader: StreamReader::new(from), opened: false, from, heard_at: ctx.now });
+        self.stream = Some(StreamConn { id, reader: StreamReader::new(from), opened: false, from, heard_at: ctx.now, since: ctx.now, brought: false });
         ctx.out.push(Effect::OpenStream { id, request });
     }
 
@@ -2272,6 +2328,7 @@ impl Engine {
         }
         // (`not-found`: the stream brought this device's own Commit before the POST was answered, and the
         //  core merged it and dropped the entry then)
+        self.agent_written(entry);
         let merged = match self.device.outbox_accepted(entry, Accepted { change: taken.change }) {
             Ok(()) => false,
             Err(Error::NotFound) => true,
@@ -2292,6 +2349,10 @@ impl Engine {
         } else if kind == OutboxKind::Message {
             // (a message of this device is a step of upkeep, a key handover say: the next step is looked for now)
             self.tending.want = true;
+        } else if kind == OutboxKind::Envelope && self.agent.is_some() && !self.stream.as_ref().is_some_and(|s| s.opened) {
+            // (an agent's write is read back at its place at once, so its caller sees it on the board: without a
+            //  stream that is the next page)
+            self.pass = true;
         }
         self.join_answered(kind, group, None);
     }
@@ -2346,6 +2407,13 @@ impl Engine {
             }
         }
         self.pump_retry.ok();
+        // an agent's envelope voided for its epoch is sealed again once the order was read: its sender hears nothing
+        if voided && kind == OutboxKind::Envelope && self.agent_voided(entry, &code) {
+            self.report(Report::Groups);
+            self.pass = true;
+            return None;
+        }
+        self.agent_written(entry);
         self.report(Report::Refused { id: entry, kind, code: code.code(), voided });
         self.report(Report::Groups);
         // the group moved on under it: the log is processed, and whoever asked builds it again

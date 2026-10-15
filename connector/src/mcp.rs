@@ -90,14 +90,14 @@ pub trait Server: Send + Sync + 'static {
     fn initialize(&self, params: &Value) -> Value;
     fn initialized(self: Arc<Self>);
     /// The answer to `tools/list`, as JSON text.
-    fn list_tools(&self) -> crate::client::BoxFut<'_, String>;
+    fn list_tools(&self) -> crate::driver::BoxFut<'_, String>;
     /// A tool call; `meta` is the request's `_meta` (Codex names its thread there).
     fn call_tool(
         self: Arc<Self>,
         name: String,
         args: Value,
         meta: Value,
-    ) -> crate::client::BoxFut<'static, Value>;
+    ) -> crate::driver::BoxFut<'static, Value>;
     fn notification(self: Arc<Self>, method: String, params: Value);
     fn closed(self: Arc<Self>, why: &'static str);
 }

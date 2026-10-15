@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use trommi_connector::client::{Client, ClientEvent};
+use trommi_connector::driver::{Driver as Client, DriverEvent as ClientEvent};
 use trommi_connector::join::join_room;
 use trommi_connector::store::Journal;
 use trommi_connector::util::now_ms;
@@ -105,7 +105,7 @@ const MEGA_PASSWORD: &str = "mega test password 42";
 /// The account's body in the founding (`POST /v1/rooms` with `account`), as the apps sign up: copies of the code
 /// sealed under the password and under a kit.
 fn account_body(room: &trommi_core::ids::RoomId, code: &trommi_core::crypto::Secret<32>) -> Value {
-    use trommi_connector::hub::b64;
+    use trommi_connector::driver::b64;
     use trommi_core::account::{self, Way};
     use trommi_core::crypto::SystemEntropy;
     let pw = account::password_keys(MEGA_EMAIL, MEGA_PASSWORD, None).expect("the password's keys");
@@ -312,14 +312,14 @@ impl World {
     async fn cards(&self) -> Vec<CardView> {
         let mut out = Vec::new();
         for (i, a) in self.agents.iter().enumerate() {
-            let core = a.client.core.lock().await;
-            for c in core.model.cards.values() {
+            let core = a.client.lock();
+            for c in core.model().cards.values() {
                 out.push(CardView {
                     id: c.object_id.clone(),
                     agent: i,
                     state: c.object_state.clone(),
                     in_revision: c.in_revision.is_some(),
-                    info: c.content.get("card_type").and_then(Value::as_str) == Some("info"),
+                    info: c.card_type() == "info",
                 });
             }
         }
@@ -329,8 +329,8 @@ impl World {
     async fn pending_requests(&self) -> Vec<String> {
         let mut out = Vec::new();
         for a in &self.agents {
-            let core = a.client.core.lock().await;
-            for p in core.model.permissions.values() {
+            let core = a.client.lock();
+            for p in core.model().permissions.values() {
                 if p.permission_state == "pending"
                     && p.expires_at > now_ms() + 60_000
                     && !self.short_requests.contains(&p.object_id)
@@ -692,7 +692,7 @@ impl World {
 
     async fn session_of_card(&self, card: &str) -> Option<String> {
         for a in &self.agents {
-            if let Some(c) = a.client.core.lock().await.model.cards.get(card) {
+            if let Some(c) = a.client.lock().model().cards.get(card) {
                 return c.session_id.clone();
             }
         }
@@ -717,9 +717,9 @@ impl World {
         // each of these, beside those its Desk and sessions name)
         let mut ids = BTreeSet::new();
         for a in &self.agents {
-            let core = a.client.core.lock().await;
-            ids.extend(core.model.cards.keys().cloned());
-            ids.extend(core.model.permissions.keys().cloned());
+            let core = a.client.lock();
+            ids.extend(core.model().cards.keys().cloned());
+            ids.extend(core.model().permissions.keys().cloned());
         }
         for o in self.observers.iter_mut().filter(|o| o.signed_in) {
             match o.call(json!({ "op": "snapshot", "ids": ids })).await {
@@ -733,13 +733,13 @@ impl World {
             }
         }
         for (i, a) in self.agents.iter().enumerate() {
-            let core = a.client.core.lock().await;
+            let core = a.client.lock();
             let mut cards = Map::new();
-            for c in core.model.cards.values() {
+            for c in core.model().cards.values() {
                 let answer = c.answer.as_ref().map(|x| {
                     let mut ch: Vec<String> = x
                         .choices
-                        .iter()
+                        .as_array().into_iter().flatten()
                         .filter_map(|v| v.as_str().map(String::from))
                         .collect();
                     ch.sort();
@@ -751,7 +751,7 @@ impl World {
                 );
             }
             let mut perms = Map::new();
-            for p in core.model.permissions.values() {
+            for p in core.model().permissions.values() {
                 perms.insert(p.object_id.clone(), json!({ "state": p.permission_state }));
             }
             snaps.insert(
@@ -1038,7 +1038,7 @@ async fn run_seed(seed: u64, trees: &[(String, PathBuf)], out: &Path, report: &m
         let session = trommi_connector::util::hex(group.session_id().unwrap().as_bytes());
         let c = client.clone();
         common::eventually("the agent is in its session", || async {
-            c.core.lock().await.session_id().is_some()
+            c.lock().session_id().is_some()
         })
         .await;
         let _ = client
@@ -1323,7 +1323,7 @@ async fn speed_of_every_client() {
         let session = trommi_connector::util::hex(group.session_id().unwrap().as_bytes());
         let a = client.clone();
         common::eventually("the agent is in its session", || async {
-            a.core.lock().await.session_id().is_some()
+            a.lock().session_id().is_some()
         })
         .await;
         let _ = client
@@ -1474,10 +1474,8 @@ async fn speed_of_every_client() {
     let _ = agent.settle(60_000).await;
     results.insert("connector_reopen_ms".into(), json!(ms(t)));
     let ids: Vec<String> = agent
-        .core
         .lock()
-        .await
-        .model
+        .model()
         .cards
         .values()
         .filter(|c| c.object_state == "open")
@@ -1496,13 +1494,13 @@ async fn speed_of_every_client() {
         tokio::spawn(async move {
             loop {
                 let open: Vec<String> = {
-                    let core = agent.core.lock().await;
+                    let core = agent.lock();
                     let now = std::time::Instant::now();
                     let mut taken = taken_at.lock().unwrap();
                     for id in &ids {
                         if !taken.contains_key(id)
                             && core
-                                .model
+                                .model()
                                 .cards
                                 .get(id)
                                 .is_some_and(|c| c.object_state != "open")
@@ -1641,7 +1639,7 @@ async fn helper_names_after_a_fresh_signin() {
     let main = trommi_connector::util::hex(group.session_id().unwrap().as_bytes());
     let c = client.clone();
     common::eventually("the agent is in its session", || async {
-        c.core.lock().await.session_id().is_some()
+        c.lock().session_id().is_some()
     })
     .await;
     client

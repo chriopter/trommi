@@ -1,9 +1,9 @@
 //! The bridge: what each tool does in the room, and a human's command (verified and authorised by
 //! the core) as a <channel> event. Every word the agent reads is from connector/prompt.md.
-use crate::client::{BoxFut, Client, Command};
+use crate::driver::{BoxFut, Command, Driver};
 use crate::error::{Fault, Result};
 use crate::html::{clean_fences, fences_hide, fences_show, html_beside, stripped_hint};
-use crate::model::{self, Card};
+use trommi_client_core::model::types::{self as model, Card};
 use crate::util::{now_ms, truthy};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -831,7 +831,7 @@ pub type Notify = Arc<dyn Fn(String, Value, Option<About>) -> BoxFut<'static, ()
 pub type SaveState = Arc<dyn Fn(Value) + Send + Sync>;
 
 pub struct Bridge {
-    pub client: Arc<Client>,
+    pub client: Arc<Driver>,
     notify: Notify,
     cache_dir: PathBuf,
     pub state: Mutex<Map<String, Value>>,
@@ -847,7 +847,7 @@ pub struct Bridge {
 
 impl Bridge {
     pub fn new(
-        client: Arc<Client>,
+        client: Arc<Driver>,
         notify: Notify,
         cache_dir: PathBuf,
         state: Map<String, Value>,
@@ -877,7 +877,7 @@ impl Bridge {
         (self.save)(v);
     }
     fn me(&self) -> String {
-        self.client.me()
+        self.client.me_hex()
     }
 
     // ---- child sessions ----------------------------------------------------------------------------------------
@@ -886,14 +886,14 @@ impl Bridge {
         let known = self.state.lock().unwrap()["children"]
             .get(&key)
             .and_then(|c| c["session_id"].as_str().map(String::from));
-        let c = self.client.core.lock().await;
+        let c = self.client.lock();
         let ids = c.session_ids();
         if let Some(k) = known.filter(|k| ids.contains(k)) {
             return Some(k);
         }
         for sid in c.child_session_ids() {
             let an = c
-                .model
+                .model()
                 .sessions
                 .get(&sid)
                 .and_then(|s| s.profile.as_ref())
@@ -926,7 +926,7 @@ impl Bridge {
     }
     async fn child_name(&self, sid: Option<&str>) -> Option<String> {
         let sid = sid?;
-        let c = self.client.core.lock().await;
+        let c = self.client.lock();
         if Some(sid.to_string()) == c.session_id() {
             return None;
         }
@@ -937,7 +937,7 @@ impl Bridge {
             .find(|x| x["session_id"].as_str() == Some(sid))
             .and_then(|x| x["name"].as_str().map(String::from));
         hit.or_else(|| {
-            c.model
+            c.model()
                 .sessions
                 .get(sid)
                 .and_then(|s| s.profile.as_ref())
@@ -1032,11 +1032,11 @@ impl Bridge {
     /// new one is founded: what the board no longer shows as active no longer counts against the limit.
     async fn sweep_closed_children(&self) {
         let closed: Vec<String> = {
-            let c = self.client.core.lock().await;
+            let c = self.client.lock();
             c.child_session_ids()
                 .into_iter()
                 .filter(|sid| {
-                    c.model
+                    c.model()
                         .sessions
                         .get(sid)
                         .and_then(|s| s.profile.as_ref())
@@ -1057,7 +1057,7 @@ impl Bridge {
     /// A closed child (close_session) that is written to again is open again.
     async fn reopen(&self, sid: &str) -> Result<()> {
         let p = self.my_session(Some(sid)).await.and_then(|s| s.profile);
-        let Some(Value::Object(mut p)) = p else {
+        let Some(mut p) = p else {
             return Ok(());
         };
         if !p.get("closed_at").is_some_and(truthy) {
@@ -1077,8 +1077,7 @@ impl Bridge {
             .my_session(None)
             .await
             .and_then(|s| s.profile)
-            .and_then(|p| p.as_object().cloned())
-            .unwrap_or_default();
+                        .unwrap_or_default();
         if p.get("account") == Some(&account) {
             return Ok(false);
         }
@@ -1089,24 +1088,23 @@ impl Bridge {
         Ok(true)
     }
     async fn my_session(&self, sid: Option<&str>) -> Option<model::Session> {
-        let c = self.client.core.lock().await;
+        let c = self.client.lock();
         let id = sid
             .map(String::from)
             .or_else(|| c.session_id())
             .unwrap_or_else(|| self.me());
-        c.model.sessions.get(&id).cloned()
+        c.model().sessions.get(&id).cloned()
     }
     async fn my_cards(&self) -> Vec<Card> {
-        let c = self.client.core.lock().await;
+        let c = self.client.lock();
         let me = self.me();
         let mut v: Vec<Card> = c
-            .model
+            .model()
             .cards
             .values()
             .filter(|k| {
-                c.model
-                    .holder_of(&k.agent_device_id, k.session_id.as_deref())
-                    == me
+                c.model()
+                    .holder_of(&k.agent_device_id, k.session_id.as_deref()) == Some(me.clone())
             })
             .cloned()
             .collect();
@@ -1137,13 +1135,13 @@ impl Bridge {
         }
     }
     async fn place_of(&self, object_id: &str) -> String {
-        let c = self.client.core.lock().await;
-        match c.model.stack.iter().position(|x| x == object_id) {
+        let c = self.client.lock();
+        match c.model().stack.iter().position(|x| x == object_id) {
             None => "not in the stack yet".into(),
             Some(at) => format!(
                 "position {} of {} in the stack",
                 at + 1,
-                c.model.stack.len()
+                c.model().stack.len()
             ),
         }
     }
@@ -1281,7 +1279,11 @@ impl Bridge {
         let mut paths = vec![];
         let mut image = None;
         let list = list_arg(refs, "attachments").unwrap_or_default();
-        for r in &list {
+        for reference in &list {
+            let r = match crate::agent::attachment_wire(reference) {
+                Ok(reference) => reference,
+                Err(_) => { eprintln!("[trommi] an attachment reference does not read"); continue; }
+            };
             let res: Result<String> = async {
                 let id = s(r.get("file_id"));
                 if trommi_core::ids::FileId::from_base64url(&id).is_err() {
@@ -1293,7 +1295,7 @@ impl Bridge {
                 if file.parent() != Some(self.cache_dir.as_path()) {
                     return Err(err("outside the cache"));
                 }
-                let bytes = self.client.fetch_attachment(r).await?;
+                let bytes = self.client.fetch_attachment(&r).await?;
                 std::fs::create_dir_all(&self.cache_dir)?;
                 let _ = std::fs::set_permissions(
                     &self.cache_dir,
@@ -1641,7 +1643,7 @@ impl Bridge {
                         if present(args.get("urgency")) {
                             json!("")
                         } else {
-                            top.f("urgency_reason").clone()
+                            top.field("urgency_reason").clone()
                         },
                     );
                 }
@@ -1691,7 +1693,7 @@ impl Bridge {
             "withdraw_card" => {
                 let card = self.find_card(args.get("card_id")).await?;
                 if card.object_state == "answered" {
-                    return Err(err(format!("card {} was already decided (choice: {}); the human spent an answer on it, so act on it or call close_card with a summary of why it no longer applies", card.object_id, card.answer.as_ref().and_then(|a| a.choices.first()).map(js_str).unwrap_or_default())));
+                    return Err(err(format!("card {} was already decided (choice: {}); the human spent an answer on it, so act on it or call close_card with a summary of why it no longer applies", card.object_id, card.answer.as_ref().and_then(|a| a.choices.as_array().and_then(|a| a.first())).map(js_str).unwrap_or_default())));
                 }
                 if card.object_state != "open" {
                     return Err(err(format!("card {} is already done", card.object_id)));
@@ -1864,8 +1866,7 @@ impl Bridge {
                     .my_session(sid.as_deref())
                     .await
                     .and_then(|x| x.profile)
-                    .and_then(|p| p.as_object().cloned())
-                    .unwrap_or_default();
+                                        .unwrap_or_default();
                 let mut p = was.clone();
                 p.insert("model".into(), json!(js_str(&args["model"])));
                 p.insert(
@@ -1984,8 +1985,7 @@ impl Bridge {
                             .my_session(Some(&sid))
                             .await
                             .and_then(|x| x.profile)
-                            .and_then(|p| p.as_object().cloned())
-                            .unwrap_or_default();
+                                                        .unwrap_or_default();
                         for (k, v) in profile {
                             p.insert(k, v);
                         }
@@ -2037,8 +2037,7 @@ impl Bridge {
                 }
                 let mut p = sess
                     .and_then(|x| x.profile)
-                    .and_then(|p| p.as_object().cloned())
-                    .unwrap_or_default();
+                                        .unwrap_or_default();
                 p.insert("closed_at".into(), json!(now_ms()));
                 let mut v = Map::new();
                 v.insert("profile".into(), Value::Object(p));
@@ -2150,14 +2149,14 @@ impl Bridge {
                 Ok(format!("published as {id}: \"{title}\" is shown in your conversation on the board, end-to-end encrypted; members open it in the Trommi app. For someone outside the board: share_asset."))
             }
             "list_assets" => {
-                let c = self.client.core.lock().await;
+                let c = self.client.lock();
                 let me = self.me();
                 let shares = self.state.lock().unwrap()["shares"].clone();
-                let list: Vec<Value> = c.model.published.values().filter(|p| c.model.holder_of(&p.agent_device_id, p.session_id.as_deref()) == me && p.object_state != "closed").map(|p| {
+                let list: Vec<Value> = c.model().published.values().filter(|p| c.model().holder_of(&p.agent_device_id, p.session_id.as_deref()) == Some(me.clone()) && p.object_state != "closed").map(|p| {
                     let a0 = p.attachments.get(0).cloned().unwrap_or(Value::Null);
                     let released = shares.get(&p.object_id).and_then(|x| x.as_array()).map(|l| l.iter().filter_map(|x| x["expires_at"].as_u64()).max().unwrap_or(0)).unwrap_or(0);
                     json!({
-                        "id": p.object_id, "title": p.title, "note": if p.note.is_null() { json!("") } else { p.note.clone() }, "state": p.object_state,
+                        "id": p.object_id, "title": p.title, "note": p.note.clone().filter(|v| !v.is_null()).unwrap_or_else(|| json!("")), "state": p.object_state,
                         "type": a0.get("asset_type").filter(|v| !v.is_null()).cloned().unwrap_or_else(|| json!(asset_type_of(&a0.get("media_type").map(js_str).unwrap_or_default()))),
                         "size": a0.get("total_size").cloned().unwrap_or(Value::Null), "released_until": if released > 0 { json!(released) } else { Value::Null },
                     })
@@ -2214,16 +2213,15 @@ impl Bridge {
     }
 
     async fn own_asset(&self, id: Option<&Value>) -> Result<model::Published> {
-        let c = self.client.core.lock().await;
+        let c = self.client.lock();
         let me = self.me();
         let want = s(id);
-        c.model
+        c.model()
             .published
             .values()
             .find(|p| {
-                c.model
-                    .holder_of(&p.agent_device_id, p.session_id.as_deref())
-                    == me
+                c.model()
+                    .holder_of(&p.agent_device_id, p.session_id.as_deref()) == Some(me.clone())
                     && p.object_id == want
             })
             .cloned()
@@ -2263,8 +2261,8 @@ impl Bridge {
     async fn card_line(&self, c: &Card) -> Map<String, Value> {
         let open = c.object_state == "open";
         let stack_pos = {
-            let core = self.client.core.lock().await;
-            core.model
+            let core = self.client.lock();
+            core.model()
                 .stack
                 .iter()
                 .position(|x| *x == c.object_id)
@@ -2286,31 +2284,31 @@ impl Bridge {
             }),
         );
         m.insert("urgency".into(), json!(c.urgency));
-        if open && c.f("working") == &Value::Bool(true) {
+        if open && c.field("working") == Value::Bool(true) {
             m.insert("working".into(), json!(true));
         }
         m.insert(
             "urgency_reason".into(),
-            if c.f("urgency_reason").is_null() {
+            if c.field("urgency_reason").is_null() {
                 json!("")
             } else {
-                c.f("urgency_reason").clone()
+                c.field("urgency_reason").clone()
             },
         );
         m.insert(
             "queue_position".into(),
             stack_pos.map(|p| json!(p)).unwrap_or(Value::Null),
         );
-        m.insert("title".into(), c.f("title").clone());
-        if truthy(c.f("teaser")) {
-            m.insert("teaser".into(), c.f("teaser").clone());
+        m.insert("title".into(), c.field("title").clone());
+        if truthy(&c.field("teaser")) {
+            m.insert("teaser".into(), c.field("teaser").clone());
         }
         m.insert("version".into(), json!(c.object_version));
         if let Some(a) = &c.answer {
             m.insert("answered_version".into(), json!(a.bound_object_version));
             m.insert(
                 "choice".into(),
-                a.choices.first().cloned().unwrap_or(Value::Null),
+                a.choices.as_array().and_then(|a| a.first()).cloned().unwrap_or(Value::Null),
             );
             m.insert("choices".into(), json!(a.choices));
             m.insert(
@@ -2328,40 +2326,40 @@ impl Bridge {
         if let Some(r) = &c.in_revision {
             m.insert("with_agent".into(), json!(r.by));
         }
-        m.insert("multiple".into(), json!(truthy(c.f("allows_multiple"))));
+        m.insert("multiple".into(), json!(truthy(&c.field("allows_multiple"))));
         if open {
             m.insert(
                 "body".into(),
-                if c.f("body").is_null() {
+                if c.field("body").is_null() {
                     json!("")
                 } else {
-                    c.f("body").clone()
+                    c.field("body").clone()
                 },
             );
-            if truthy(c.f("html")) {
-                m.insert("html".into(), c.f("html").clone());
+            if truthy(&c.field("html")) {
+                m.insert("html".into(), c.field("html").clone());
             }
             m.insert(
                 "options".into(),
-                if c.f("options").is_null() {
+                if c.field("options").is_null() {
                     json!([])
                 } else {
-                    c.f("options").clone()
+                    c.field("options").clone()
                 },
             );
-            m.insert("recommended".into(), c.f("recommended").clone());
-            if truthy(c.f("sections")) {
-                m.insert("sections".into(), c.f("sections").clone());
+            m.insert("recommended".into(), c.field("recommended").clone());
+            if truthy(&c.field("sections")) {
+                m.insert("sections".into(), c.field("sections").clone());
             }
         }
-        if truthy(c.f("merged_into_object_id")) {
-            m.insert("merged_into".into(), c.f("merged_into_object_id").clone());
+        if truthy(&c.field("merged_into_object_id")) {
+            m.insert("merged_into".into(), c.field("merged_into_object_id").clone());
         }
-        if c.f("merged_from_object_ids")
+        if c.field("merged_from_object_ids")
             .as_array()
             .is_some_and(|a| !a.is_empty())
         {
-            m.insert("merged_from".into(), c.f("merged_from_object_ids").clone());
+            m.insert("merged_from".into(), c.field("merged_from_object_ids").clone());
         }
         m
     }
@@ -2369,7 +2367,7 @@ impl Bridge {
     async fn revise(&self, args: &Map<String, Value>) -> Result<String> {
         let card = self.find_card(args.get("card_id")).await?;
         if card.object_state == "answered" {
-            return Err(err(format!("card {} was already decided (choice: {}); the human answered the question as it stood, so act on that answer, or call close_card and ask anew with create_decision", card.object_id, card.answer.as_ref().and_then(|a| a.choices.first()).map(js_str).unwrap_or_default())));
+            return Err(err(format!("card {} was already decided (choice: {}); the human answered the question as it stood, so act on that answer, or call close_card and ask anew with create_decision", card.object_id, card.answer.as_ref().and_then(|a| a.choices.as_array().and_then(|a| a.first())).map(js_str).unwrap_or_default())));
         }
         if card.object_state != "open" {
             return Err(err(format!("card {} is already done", card.object_id)));
@@ -2401,12 +2399,12 @@ impl Bridge {
             .get("options")
             .filter(|v| !v.is_null())
             .cloned()
-            .unwrap_or_else(|| card.f("options").clone());
+            .unwrap_or_else(|| card.field("options").clone());
         let multiple = args
             .get("multiple")
             .filter(|v| !v.is_null())
             .cloned()
-            .unwrap_or_else(|| card.f("allows_multiple").clone());
+            .unwrap_or_else(|| card.field("allows_multiple").clone());
         let opt_keys: Vec<String> = options
             .as_array()
             .map(|a| {
@@ -2435,14 +2433,14 @@ impl Bridge {
             args.get("title")
                 .filter(|v| !v.is_null())
                 .cloned()
-                .unwrap_or_else(|| card.f("title").clone()),
+                .unwrap_or_else(|| card.field("title").clone()),
         );
         a.insert(
             "teaser".into(),
             args.get("teaser")
                 .filter(|v| !v.is_null())
                 .cloned()
-                .unwrap_or_else(|| card.f("teaser").clone()),
+                .unwrap_or_else(|| card.field("teaser").clone()),
         );
         if resection {
             if let Some(v) = args.get("sections") {
@@ -2451,22 +2449,22 @@ impl Bridge {
             if let Some(v) = args.get("text") {
                 a.insert("text".into(), v.clone());
             }
-        } else if card.f("sections").as_array().is_some() && !plain {
-            a.insert("sections".into(), card.f("sections").clone());
+        } else if card.field("sections").as_array().is_some() && !plain {
+            a.insert("sections".into(), card.field("sections").clone());
         } else {
             a.insert(
                 "body".into(),
                 args.get("body")
                     .filter(|v| !v.is_null())
                     .cloned()
-                    .unwrap_or_else(|| card.f("body").clone()),
+                    .unwrap_or_else(|| card.field("body").clone()),
             );
             if !info {
                 a.insert("options".into(), options.clone());
             }
         }
         let attachments: Vec<Value> = if args.get("attachments").is_none_or(|v| v.is_null()) {
-            card.attachments()
+            card.attachments().iter().map(crate::agent::attachment_wire).collect::<Result<Vec<_>>>()?
         } else {
             self.upload_all(args.get("attachments")).await?
         };
@@ -2481,7 +2479,7 @@ impl Bridge {
             args.get("html")
                 .filter(|v| !v.is_null())
                 .cloned()
-                .or_else(|| Some(card.f("html").clone()).filter(|v| !v.is_null()))
+                .or_else(|| Some(card.field("html").clone()).filter(|v| !v.is_null()))
         };
         if let Some(h) = html {
             a.insert("html".into(), h);
@@ -2493,7 +2491,7 @@ impl Bridge {
                 .cloned()
                 .unwrap_or_else(|| {
                     if urgency == card.urgency {
-                        card.f("urgency_reason").clone()
+                        card.field("urgency_reason").clone()
                     } else {
                         json!("")
                     }
@@ -2515,7 +2513,7 @@ impl Bridge {
             }
         } else if resection {
             Advice::Absent
-        } else if truthy(&multiple) && card.f("recommended").is_array() {
+        } else if truthy(&multiple) && card.field("recommended").is_array() {
             Advice::Given(json!(kept))
         } else {
             match kept.first() {
@@ -2647,7 +2645,7 @@ impl Bridge {
     pub async fn command(&self, cmd: &Command) {
         let c = &cmd.content;
         let card = match &cmd.object_id {
-            Some(o) => self.client.core.lock().await.model.cards.get(o).cloned(),
+            Some(o) => self.client.lock().model().cards.get(o).cloned(),
             None => None,
         };
         let title = card
@@ -2673,7 +2671,7 @@ impl Bridge {
         if let Some(ch) = &child {
             flags.insert("session".into(), json!(ch));
         }
-        let main_sid = self.client.core.lock().await.session_id();
+        let main_sid = self.client.lock().session_id();
         let about = About {
             session_id: cmd
                 .session_id
@@ -2685,12 +2683,10 @@ impl Bridge {
         let is_mine = match &card {
             Some(k) => {
                 self.client
-                    .core
                     .lock()
-                    .await
-                    .model
+                    .model()
                     .holder_of(&k.agent_device_id, k.session_id.as_deref())
-                    == self.me()
+                    == Some(self.me())
             }
             None => false,
         };
@@ -2925,7 +2921,7 @@ impl Bridge {
                     ]);
                     if card
                         .as_ref()
-                        .is_some_and(|k| truthy(k.f("allows_multiple")))
+                        .is_some_and(|k| truthy(&k.field("allows_multiple")))
                     {
                         m.insert(
                             "choices".into(),
@@ -3012,7 +3008,7 @@ impl Bridge {
                 ]);
                 if card
                     .as_ref()
-                    .is_some_and(|k| truthy(k.f("allows_multiple")))
+                    .is_some_and(|k| truthy(&k.field("allows_multiple")))
                 {
                     m.insert("choices".into(), json!(choices.join(",")));
                 }
@@ -3099,7 +3095,7 @@ impl Bridge {
                 let previous: Vec<String> = cmd.previous_choices.clone();
                 let multiple = card
                     .as_ref()
-                    .is_some_and(|k| truthy(k.f("allows_multiple")));
+                    .is_some_and(|k| truthy(&k.field("allows_multiple")));
                 if was.as_ref().is_some_and(|w| w.answer_action == "shred") {
                     let open_again = if card.as_ref().is_some_and(|k| k.card_type() == "info") {
                         ""
@@ -3382,7 +3378,7 @@ fn marks_block(card: Option<&Card>, marks: &[Value]) -> Vec<String> {
                 card.and_then(|c| {
                     a.get("index")
                         .and_then(|i| i.as_u64())
-                        .and_then(|i| c.f("sections").get(i as usize).cloned())
+                        .and_then(|i| c.field("sections").get(i as usize).cloned())
                 })
             } else {
                 None
@@ -3553,14 +3549,14 @@ fn answered_detail(labels: &str) -> String {
 impl Bridge {
     /// The session a card or line lives in as `set_status` writes it: None for the main session.
     async fn line_session(&self, sid: Option<&str>) -> Option<String> {
-        let main = self.client.core.lock().await.session_id();
+        let main = self.client.lock().session_id();
         sid.filter(|s| Some(s.to_string()) != main)
             .map(String::from)
     }
 
     /// This agent's open decision cards in a session (None: the main session), newest first.
     async fn open_questions(&self, sid: Option<&str>) -> Vec<Card> {
-        let main = self.client.core.lock().await.session_id();
+        let main = self.client.lock().session_id();
         let want = sid.map(String::from).or(main.clone());
         let mut v: Vec<Card> = self
             .my_cards()

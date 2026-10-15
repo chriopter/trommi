@@ -10,6 +10,10 @@
 //!
 //! A cache key becomes a file name by escaping every byte that is not a letter, a digit, `-` or `_` as `%XX`
 //! (so `/` and `.` are escaped and no key leaves the folder); a key whose name would pass 255 bytes is refused.
+//!
+//! **In one journal** ([`Stores::in_journal`], the connector's slot): the cache space lives beside the device's
+//! entries in the journal the caller opened, under the side keys `[SIDE, b'c', key…]`, each write a record of its
+//! own. What the connector keeps of its own there (other side tags) is not touched.
 
 use crate::journal::{CoreStore, Journal, StoreError};
 use std::collections::BTreeSet;
@@ -48,7 +52,23 @@ impl std::error::Error for OpenError {}
 pub struct Stores {
     journal: Journal,
     device: CoreStore,
-    cache: Cache,
+    cache: Space,
+}
+
+/// Where the cache space is.
+enum Space {
+    Folder(Cache),
+    /// Beside the device's entries, in the slot's journal.
+    Journal,
+}
+
+/// The tag of the cache space's side keys in a journal ([`Stores::in_journal`]).
+pub const CACHE_TAG: u8 = b'c';
+
+fn journal_key(key: &str) -> Vec<u8> {
+    let mut out = vec![crate::journal::SIDE, CACHE_TAG];
+    out.extend_from_slice(key.as_bytes());
+    out
 }
 
 fn failed(kind: IoErrorKind, detail: &str) -> IoError {
@@ -82,24 +102,69 @@ impl Stores {
         Ok(Stores {
             device: journal.core_store(),
             journal,
-            cache,
+            cache: Space::Folder(cache),
         })
+    }
+
+    /// Both spaces of a slot in a journal the caller opened (and so holds the lock of): the device's entries and,
+    /// under the side keys `[SIDE, b'c', key…]`, the cache space. For the connector, whose slot is one journal.
+    pub fn in_journal(journal: Journal) -> Stores {
+        Stores {
+            device: journal.core_store(),
+            journal,
+            cache: Space::Journal,
+        }
     }
 
     /// Runs one store op to its end (for `DeviceApply`: durable on return).
     pub fn run(&mut self, op: StoreOp) -> IoResult<StoreAnswer> {
-        match op {
-            StoreOp::Get { keys } => self.cache.get(&keys),
-            StoreOp::Scan { prefix } => self.cache.scan(&prefix),
-            StoreOp::Put { put, delete } => self.cache.put(put, delete),
-            StoreOp::DeviceLoad => self.device_load(),
-            StoreOp::DeviceApply {
-                expected_revision,
-                put,
-                delete,
-            } => self.device_apply(expected_revision, put, delete),
+        match (op, &mut self.cache) {
+            (StoreOp::Get { keys }, Space::Folder(cache)) => cache.get(&keys),
+            (StoreOp::Scan { prefix }, Space::Folder(cache)) => cache.scan(&prefix),
+            (StoreOp::Put { put, delete }, Space::Folder(cache)) => cache.put(put, delete),
+            (StoreOp::Get { keys }, Space::Journal) => Ok(StoreAnswer::Values {
+                values: keys
+                    .iter()
+                    .map(|key| self.journal.get(&journal_key(key)).map(|v| Bytes(v.to_vec())))
+                    .collect(),
+            }),
+            (StoreOp::Scan { prefix }, Space::Journal) => {
+                let entries = self
+                    .journal
+                    .scan(&journal_key(&prefix))
+                    .into_iter()
+                    .filter_map(|(key, value)| {
+                        let key = String::from_utf8(key.get(2..)?.to_vec()).ok()?;
+                        Some(Entry { key, value: value.to_vec().into() })
+                    })
+                    .collect();
+                Ok(StoreAnswer::Entries { entries })
+            }
+            (StoreOp::Put { put, delete }, Space::Journal) => self.journal_put(put, delete),
+            (StoreOp::DeviceLoad, _) => self.device_load(),
+            (
+                StoreOp::DeviceApply {
+                    expected_revision,
+                    put,
+                    delete,
+                },
+                _,
+            ) => self.device_apply(expected_revision, put, delete),
         }
         .into()
+    }
+
+    fn journal_put(&mut self, put: Vec<Entry>, delete: Vec<String>) -> Result<StoreAnswer, IoError> {
+        for key in delete {
+            self.journal.delete(journal_key(&key));
+        }
+        for entry in put {
+            self.journal.put(journal_key(&entry.key), entry.value.0);
+        }
+        self.journal
+            .commit()
+            .map_err(|_| failed(IoErrorKind::Failed, "the cache was not written"))?;
+        Ok(StoreAnswer::Done)
     }
 
     fn device_load(&mut self) -> Result<StoreAnswer, IoError> {

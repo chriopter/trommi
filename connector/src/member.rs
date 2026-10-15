@@ -1,6 +1,6 @@
 //! The member: this process as a member of the room. Key slot, sign-in, lease, stream; joining by an
 //! agent invite link; keys that are out (put aside, the next usable key at once); handing the key over.
-use crate::client::{BoxFut, Client, ClientEvent, Command};
+use crate::driver::{BoxFut, Command, Driver, DriverEvent};
 use crate::door::knock;
 use crate::error::{Fault, Result};
 use crate::hooks::ancestors;
@@ -805,6 +805,7 @@ pub trait Host: Send + Sync {
     fn on_command(&self, cmd: Command) -> BoxFut<'_, ()>;
     fn on_ready(&self) -> BoxFut<'_, ()>;
     fn on_lease_lost(&self) -> BoxFut<'_, ()>;
+    fn on_state_rolled_back(&self) -> BoxFut<'_, ()>;
     fn on_too_old(&self) -> BoxFut<'_, ()>;
     fn on_retired(&self) -> BoxFut<'_, ()>;
     fn on_dropped(&self) -> BoxFut<'_, ()>;
@@ -818,6 +819,9 @@ impl Host for NoHost {
         Box::pin(async {})
     }
     fn on_lease_lost(&self) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+    fn on_state_rolled_back(&self) -> BoxFut<'_, ()> {
         Box::pin(async {})
     }
     fn on_too_old(&self) -> BoxFut<'_, ()> {
@@ -835,7 +839,7 @@ impl Host for NoHost {
 pub struct Me {
     pub phase: String,
     pub error: Option<String>,
-    pub client: Option<Arc<Client>>,
+    pub client: Option<Arc<Driver>>,
     pub room_id: Option<String>,
     pub storage: Option<Arc<SlotStore>>,
     pub session: Option<Value>,
@@ -922,7 +926,7 @@ impl Member {
     pub fn phase(&self) -> String {
         self.me.lock().unwrap().phase.clone()
     }
-    pub fn client(&self) -> Option<Arc<Client>> {
+    pub fn client(&self) -> Option<Arc<Driver>> {
         self.me.lock().unwrap().client.clone()
     }
     pub fn paths(&self) -> Option<SlotPaths> {
@@ -1025,8 +1029,8 @@ impl Member {
     /// Start the client, take the lease, wait for a session; commands flow once the host is ready.
     async fn run(
         self: &Arc<Self>,
-        client: Arc<Client>,
-        mut rx: tokio::sync::mpsc::UnboundedReceiver<ClientEvent>,
+        client: Arc<Driver>,
+        mut rx: tokio::sync::mpsc::UnboundedReceiver<DriverEvent>,
     ) -> Result<()> {
         self.me.lock().unwrap().client = Some(client.clone());
         let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
@@ -1046,7 +1050,7 @@ impl Member {
                     continue;
                 }
                 match e {
-                    ClientEvent::Command(cmd) => {
+                    DriverEvent::Command(cmd) => {
                         if me.phase() == "halted" {
                             eprintln!(
                                 "[trommi] command {} held back: this connector halted",
@@ -1056,7 +1060,7 @@ impl Member {
                         }
                         let _ = cmd_tx.send(*cmd);
                     }
-                    ClientEvent::Removed { replaced, verified } => {
+                    DriverEvent::Removed { replaced, verified } => {
                         me.verified
                             .store(verified, std::sync::atomic::Ordering::SeqCst);
                         if me.phase() != "ready" {
@@ -1065,7 +1069,16 @@ impl Member {
                             me.move_on(c2.clone(), replaced);
                         }
                     }
-                    ClientEvent::Error(err) => {
+                    DriverEvent::Error(err) => {
+                        if err.code == "state-rolled-back" {
+                            {
+                                let mut m = me.me.lock().unwrap();
+                                m.phase = "halted".into();
+                                m.error = Some(err.text());
+                            }
+                            me.host().on_state_rolled_back().await;
+                            continue;
+                        }
                         if err.code == "lease-lost" {
                             {
                                 let mut m = me.me.lock().unwrap();
@@ -1102,7 +1115,7 @@ impl Member {
                         }
                         eprintln!("[trommi] client: {}", err.text());
                     }
-                    ClientEvent::Session { .. } => {}
+                    DriverEvent::Session { .. } => {}
                 }
             }
         });
@@ -1153,12 +1166,12 @@ impl Member {
             Some(rep) = out_rx.recv() => return Err(removed_err(rep)),
         }
         {
-            let c = client.core.lock().await;
-            if c.model.room.connection == "removed" {
-                return Err(removed_err(c.model.room.replaced));
+            let c = client.lock();
+            if c.connection() == "removed" {
+                return Err(removed_err(c.removal().is_some_and(|(replaced, _)| replaced)));
             }
         }
-        if client.core.lock().await.session_id().is_none() {
+        if client.lock().session_id().is_none() {
             self.set_phase("waiting-session");
             eprintln!("[trommi] waiting for the human's app to put this agent into its session");
             tokio::select! {
@@ -1166,7 +1179,7 @@ impl Member {
                 Some(rep) = out_rx.recv() => return Err(removed_err(rep)),
             }
         }
-        let sid = client.core.lock().await.session_id();
+        let sid = client.lock().session_id();
         self.me.lock().unwrap().session = Some(json!({ "agent_session_id": sid }));
         // (the client is known once it said initialize: Codex or Claude Code)
         let mut device_info = self.device_info.clone();
@@ -1252,8 +1265,7 @@ impl Member {
                 self.set_phase("needs-invite");
                 return Ok(());
             }
-            let (client, rx) = Client::open(storage.journal().clone()).await?;
-            storage.attach(&client);
+            let (client, rx) = Driver::open(storage.journal().clone()).await?;
             match self.run(client.clone(), rx).await {
                 Ok(()) => {
                     self.me.lock().unwrap().out = None;
@@ -1303,7 +1315,7 @@ impl Member {
     }
 
     /// The key of a running connector is out: the client stops, the key goes aside, the next usable key opens.
-    fn move_on(self: &Arc<Self>, client: Arc<Client>, replaced: bool) {
+    fn move_on(self: &Arc<Self>, client: Arc<Driver>, replaced: bool) {
         if self.moving.swap(true, std::sync::atomic::Ordering::SeqCst) {
             return;
         }
@@ -1431,8 +1443,7 @@ impl Member {
             if let Some(key_file) = &key_file {
                 write_private(key_file, KEY_MARKER)?;
             }
-            let (client, rx) = Client::open(storage.journal().clone()).await?;
-            storage.attach(&client);
+            let (client, rx) = Driver::open(storage.journal().clone()).await?;
             Ok::<_, Fault>((client, rx))
         }
         .await;

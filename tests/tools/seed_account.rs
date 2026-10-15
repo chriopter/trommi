@@ -38,8 +38,8 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use trommi_connector::client::Client;
-use trommi_connector::hub::b64;
+use trommi_connector::driver::Driver as Client;
+use trommi_connector::driver::b64;
 use trommi_connector::join::join_room;
 use trommi_connector::store::Journal;
 use trommi_connector::util::{random_hex, unhex};
@@ -241,7 +241,7 @@ impl Seeder {
         self.human.found_session(&admitted).await;
         let c = client.clone();
         common::eventually("the agent is in its session", || async {
-            c.core.lock().await.session_id().is_some()
+            c.lock().session_id().is_some()
         })
         .await;
         self.agents.push(Agent { client, _dir: dir });
@@ -494,10 +494,8 @@ impl Seeder {
         let want = id.clone();
         common::eventually("the agent has the answer", || async {
             client
-                .core
                 .lock()
-                .await
-                .model
+                .model()
                 .cards
                 .get(&want)
                 .is_some_and(|c| !c.answers.is_empty())
@@ -730,7 +728,7 @@ impl Seeder {
         let client = self.agents[seat.agent].client.clone();
         let want = id.to_string();
         common::eventually("the agent has the bulk answer", || async {
-            client.core.lock().await.model.cards.get(&want).is_some_and(|c| !c.answers.is_empty())
+            client.lock().model().cards.get(&want).is_some_and(|c| !c.answers.is_empty())
         })
         .await;
         client.close(id, "Done.").await.map_err(|e| format!("bulk close: {e}"))?;
@@ -1025,7 +1023,7 @@ trait SessionNow {
 }
 impl SessionNow for Arc<Client> {
     async fn session_id_now(&self) -> String {
-        self.core.lock().await.session_id().unwrap_or_default()
+        self.lock().session_id().unwrap_or_default()
     }
 }
 

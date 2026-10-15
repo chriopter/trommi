@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 use trommi_connector::line::{clean, goals_block, monitor_line, GOALS_GONE, HEAD, TAIL, TEXT_MAX};
 use trommi_connector::mirror::terminal_input;
-use trommi_connector::model::GOALS_LINES;
+use trommi_client_core::views::board::GOALS_LINES;
 
 fn chat(text: &str) -> String {
     monitor_line(&json!({ "content": text, "meta": { "kind": "chat" }, "echo": { "text": text } }))

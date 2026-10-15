@@ -26,7 +26,7 @@ async fn a_device_that_missed_its_handover_asks_and_reads_what_came_before() {
     let mut phone = ada.add_human().await;
     ada.follow_invites().await;
     // 31 days on, the hub sweeps the old application messages: the handover is gone, the Commits stay.
-    let test = trommi_connector::hub::Hub::new(&hub.url, None, None).unwrap();
+    let test = common::hub::Hub::new(&hub.url, None, None).unwrap();
     test.open_call(
         reqwest::Method::POST,
         "/v1/__test/clock",

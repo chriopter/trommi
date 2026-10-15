@@ -178,6 +178,12 @@ impl Writes {
     pub fn lose(&mut self) {
         lock(&self.inner).lost = true;
     }
+
+    /// The device may write again: for an engine that stopped for another reason than a failed write (an agent out
+    /// by the hub's word, whose removal is then checked), where what it holds is what is stored.
+    pub fn regain(&mut self) {
+        lock(&self.inner).lost = false;
+    }
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@
 //!   trommi-connector driver --home <dir> the interop driver (dev/interop)
 
 use crate::bridge::{About, Bridge};
-use crate::client::{BoxFut, Command};
+use crate::driver::{BoxFut, Command};
 use crate::door::{Door, Gone, MonitorFeed};
 use crate::error::Fault;
 use crate::hooks::HookDesk;
@@ -595,10 +595,8 @@ impl Conn {
                 if a.envelope_number.is_some_and(|n| n > 0) && !self.waits_for(&about) {
                     let no_mark = match (self.member.client(), &a.session_id) {
                         (Some(c), Some(sid)) => c
-                            .core
                             .lock()
-                            .await
-                            .model
+                            .model()
                             .sessions
                             .get(sid)
                             .is_none_or(|s| s.heard_up_to.is_none()),
@@ -831,9 +829,9 @@ impl Conn {
         let Some(c) = self.member.client() else {
             return false;
         };
-        let me = c.me();
-        let core = c.core.lock().await;
-        core.model.sessions.values().any(|s| {
+        let me = c.me_hex();
+        let core = c.lock();
+        core.model().sessions.values().any(|s| {
             (s.agent_device_ids.contains(&me) || s.agent_device_id.as_deref() == Some(&me))
                 && s.status_lines
                     .iter()
@@ -1659,7 +1657,7 @@ impl Conn {
     /// As the voucher: an ask of session `owner` that the human allowed and whose link still holds (its link not
     /// used yet: no Request named), handed to that session's new try instead of a new ask (`vouch-reuse`, and a
     /// `vouch` of it). The asking process becomes the new try's.
-    async fn reuse_ask(&self, c: &Arc<crate::client::Client>, owner: &str, req: &Value) -> Option<Value> {
+    async fn reuse_ask(&self, c: &Arc<crate::driver::Driver>, owner: &str, req: &Value) -> Option<Value> {
         if owner.is_empty() {
             return None;
         }
@@ -1706,7 +1704,7 @@ impl Conn {
         None
     }
     /// As the voucher: takes back every ask of session `owner` but `keep` (it asks at another voucher now).
-    async fn drop_asks(&self, c: &Arc<crate::client::Client>, owner: &str, keep: Option<&str>) -> usize {
+    async fn drop_asks(&self, c: &Arc<crate::driver::Driver>, owner: &str, keep: Option<&str>) -> usize {
         if owner.is_empty() {
             return 0;
         }
@@ -1951,12 +1949,12 @@ impl Conn {
             return out;
         };
         let goals = {
-            let core = c.core.lock().await;
+            let core = c.lock();
             core.session_id().and_then(|sid| {
-                core.model
+                core.model()
                     .sessions
                     .get(&sid)
-                    .and_then(|s| s.desk_goals.clone())
+                    .and_then(|s| s.registers.get("goals").map(|r| r.value.clone()))
             })
         };
         let block = goals.map(|g| line::goals_block(&g)).unwrap_or_default();
@@ -2136,7 +2134,7 @@ impl Conn {
         format!("The connector is current (version {}).", self.loaded)
     }
 
-    fn moved(&self, was: &Option<Arc<crate::client::Client>>) -> bool {
+    fn moved(&self, was: &Option<Arc<crate::driver::Driver>>) -> bool {
         let now = self.member.client();
         let same = match (&now, was) {
             (Some(a), Some(b)) => Arc::ptr_eq(a, b),
@@ -2149,7 +2147,7 @@ impl Conn {
         &self,
         name: &str,
         args: &Value,
-        was: &Option<Arc<crate::client::Client>>,
+        was: &Option<Arc<crate::driver::Driver>>,
         e: Fault,
     ) -> crate::error::Result<String> {
         self.member.clone().claim(false).await;
@@ -2210,16 +2208,16 @@ impl Conn {
         let end = now_ms() + 4000;
         loop {
             let (len, blocked) = {
-                let c = was_c.core.lock().await;
-                (c.outbox.len(), c.model.room.outbox_blocked.is_some())
+                let c = was_c.lock();
+                (c.outbox().len(), c.blocked().is_some())
             };
             if len == 0 || blocked || self.moved(&was) || now_ms() >= end {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
-        if !was_c.core.lock().await.outbox.is_empty() && !self.moved(&was) {
-            let removed = was_c.core.lock().await.model.room.connection == "removed";
+        if !was_c.lock().outbox().is_empty() && !self.moved(&was) {
+            let removed = was_c.lock().connection() == "removed";
             // (the removal reaches the member as an event: it moves on in its own task, a moment later)
             let end = now_ms() + 3000;
             while removed && !self.moved(&was) && now_ms() < end {
@@ -2351,6 +2349,13 @@ impl member::Host for ConnHost {
         Box::pin(async move {
             if let Some(c) = self.0.upgrade() {
                 tokio::spawn(async move { c.bye("lease lost", "lease-lost").await });
+            }
+        })
+    }
+    fn on_state_rolled_back(&self) -> BoxFut<'_, ()> {
+        Box::pin(async move {
+            if let Some(c) = self.0.upgrade() {
+                tokio::spawn(async move { c.bye("the stored state is older than this device's signed writes", "state-rolled-back").await });
             }
         })
     }

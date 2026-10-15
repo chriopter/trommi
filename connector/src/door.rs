@@ -1,6 +1,6 @@
 //! The slot's door (a Unix socket of the process that holds a keyed slot: `say`, the hooks, yielding),
 //! the bell of a Claude Code process, and the monitor's socket. One JSON line in, one JSON line out.
-use crate::client::BoxFut;
+use crate::driver::BoxFut;
 use crate::slots::{uid, SlotPaths};
 use crate::util::{hex, sha256};
 use serde_json::{json, Value};

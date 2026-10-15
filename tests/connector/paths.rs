@@ -145,7 +145,7 @@ async fn online_within(human: &Human, device: &str, ms: u64) -> bool {
 }
 
 async fn test_switch(hub: &HubProc, what: &str, body: Value) {
-    let test = trommi_connector::hub::Hub::new(&hub.url, None, None).unwrap();
+    let test = common::hub::Hub::new(&hub.url, None, None).unwrap();
     test.open_call(reqwest::Method::POST, &format!("/v1/__test/{what}"), Some(&body))
         .await
         .expect("the switch");

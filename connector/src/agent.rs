@@ -1,19 +1,34 @@
 //! What an agent writes: Chat messages, cards and their versions, registers (profile, status lines, `heard`),
 //! permission requests, Artifacts with their files and Share links, the work trail, and helper sessions, which
-//! it founds and keeps itself (spec/v1.md 5.2.5, 5.3.5). Every write is an envelope sealed by the vault, or a
-//! request of the core's device; this file only says what goes into it.
-use crate::client::{Client, Core, SentInfo, Spec};
+//! it founds and keeps itself (spec/v1.md 5.2.5, 5.3.5). Every write is an envelope the engine seals
+//! ([`trommi_client_core::engine::AgentWrite`]), or a step of the engine's device; this file only says what goes
+//! into it. A later version is built from the board model (`core/client/src/model`): its content as the core's
+//! codec writes it back to the wire, its number and the version it follows, held against the object as the device
+//! holds it.
+use crate::driver::{b64, Driver, SentInfo};
 use crate::error::{Fault, Result};
-use crate::hub::{b64, unb64};
-use crate::model::{urgency_of, URGENCIES};
 use crate::util::{hex, now_ms, unhex};
-use crate::vault::Vault;
 use serde_json::{json, Map, Value};
-use trommi_core::crypto::{SecretBytes, SystemEntropy};
-use trommi_core::device::Draft;
-use trommi_core::envelope::{ObjectType, Urgency, SCHEMA_VERSION};
+use trommi_client_core::codec::{encode_body, BodyKind};
+use trommi_client_core::engine::AgentWrite;
+use trommi_client_core::hub::{Answer, Route};
+use trommi_core::crypto::SystemEntropy;
+use trommi_core::envelope::{Urgency, SCHEMA_VERSION};
 use trommi_core::files::{self, FileRef, ShareLink};
-use trommi_core::ids::{DeviceId, FileId, GroupId, Hash32, ObjectId, SessionId, TurnId};
+use trommi_core::ids::{DeviceId, FileId, GroupId, Hash32, ObjectId, SessionId, ShareId, TurnId};
+
+/// The urgencies by name, lowest first.
+pub const URGENCIES: [&str; 4] = ["low", "normal", "high", "critical"];
+
+/// The urgency a name stands for; normal for anything else.
+pub fn urgency_of(name: &str) -> Urgency {
+    match name {
+        "low" => Urgency::Low,
+        "high" => Urgency::High,
+        "critical" => Urgency::Critical,
+        _ => Urgency::Normal,
+    }
+}
 
 fn object_id_of(hex_id: &str) -> Result<ObjectId> {
     unhex(hex_id)
@@ -27,138 +42,51 @@ fn session_id_of(hex_id: &str) -> Result<SessionId> {
         .ok_or_else(|| Fault::plain("not a session id"))
 }
 
-fn with_schema(payload: &str, more: &[(&str, Value)]) -> Result<SecretBytes> {
-    let mut object: Map<String, Value> = serde_json::from_str(payload)?;
+/// A hash the model writes as hex, as the wire writes it.
+fn wire_hash(hex_hash: &str) -> Result<String> {
+    unhex(hex_hash)
+        .filter(|bytes| bytes.len() == 32)
+        .map(|bytes| b64(&bytes))
+        .ok_or_else(|| Fault::new("internal", "a version hash that does not read"))
+}
+
+/// The payload with its schema version and `more` beside what the caller gave.
+fn with_schema(mut object: Map<String, Value>, more: &[(&str, Value)]) -> String {
     object.insert("schema_version".into(), json!(SCHEMA_VERSION));
     for (key, value) in more {
         object.insert((*key).into(), value.clone());
     }
-    Ok(SecretBytes::new(serde_json::to_vec(&object)?))
+    Value::Object(object).to_string()
 }
 
-/// The device's draft for what an envelope is to be: the payload with its schema version, and for a later
-/// version the version it follows and its number, which the model knows.
-pub(crate) fn draft(core: &Core, group: &GroupId, spec: &Spec) -> Result<Draft> {
-    let session = group
-        .session_id()
-        .ok_or_else(|| Fault::new("forbidden", "an agent writes into session groups only"))?;
-    let urgency = |byte: u8| Urgency::from_byte(byte).unwrap_or(Urgency::Normal);
-    let first = |payload: &str, more: &[(&str, Value)]| {
-        let mut fields = vec![
-            ("object_version", json!(1)),
-            ("previous_version_hash", json!(Hash32::ZERO.to_base64url())),
-        ];
-        fields.extend(more.iter().cloned());
-        with_schema(payload, &fields)
-    };
-    Ok(match spec {
-        Spec::SessionChat { payload } => Draft::SessionChat {
-            session,
-            payload: with_schema(payload, &[])?,
-        },
-        Spec::CardChat { card, payload } => Draft::CardChat {
-            session,
-            card: object_id_of(card)?,
-            payload: with_schema(payload, &[])?,
-        },
-        Spec::Register { name, value } => Draft::Register {
-            group: *group,
-            name: name.clone(),
-            value: value
-                .as_ref()
-                .map(|value| SecretBytes::new(value.clone().into_bytes())),
-        },
-        Spec::First {
-            object_type,
-            urgency: level,
-            push,
-            payload,
-        } => {
-            if *object_type == ObjectType::Artifact.byte() {
-                Draft::ArtifactFirst {
-                    session,
-                    payload: first(payload, &[])?,
-                }
-            } else {
-                // 9: the level stands in the body; the header carries only whether it knocks
-                let level = urgency(*level);
-                Draft::CardFirst {
-                    session,
-                    urgency: level,
-                    push: *push,
-                    payload: first(payload, &[("urgency", json!(level.name()))])?,
-                }
-            }
-        }
-        Spec::Later {
-            object,
-            object_type,
-            closed,
-            urgency: level,
-            push,
-            payload,
-        } => {
-            let artifact = *object_type == ObjectType::Artifact.byte();
-            let current = if artifact {
-                core.model
-                    .published
-                    .get(object)
-                    .map(|p| (p.version_hash.clone(), p.object_version))
-            } else {
-                core.model
-                    .cards
-                    .get(object)
-                    .and_then(|c| Some((c.version_hash.clone()?, c.object_version)))
-            };
-            let (hash, version) = current.ok_or_else(|| {
-                Fault::plain(format!(
-                    "{object} is not on the board yet: the hub has not confirmed it"
-                ))
-            })?;
-            let mut fields = vec![
-                ("object_version", json!(version + 1)),
-                ("previous_version_hash", json!(hash)),
-            ];
-            if !artifact {
-                fields.push(("urgency", json!(urgency(*level).name())));
-            }
-            let payload = with_schema(payload, &fields)?;
-            let object_id = object_id_of(object)?;
-            if artifact {
-                Draft::ArtifactVersion {
-                    session,
-                    object_id,
-                    closed: *closed,
-                    payload,
-                }
-            } else {
-                Draft::CardVersion {
-                    session,
-                    object_id,
-                    closed: *closed,
-                    urgency: urgency(*level),
-                    push: *push,
-                    payload,
-                }
-            }
-        }
-        Spec::Request {
-            urgency: level,
-            expires_at,
-            payload,
-        } => Draft::PermissionRequest {
-            session,
-            urgency: urgency(*level),
-            expires_at: *expires_at,
-            push: true,
-            payload: with_schema(payload, &[])?,
-        },
-    })
+/// The fields of the model (non-null) as the wire writes them: the codec's way back.
+fn wire_fields(kind: BodyKind, fields: Map<String, Value>) -> Result<Map<String, Value>> {
+    let fields: Map<String, Value> = fields.into_iter().filter(|(_, v)| !v.is_null()).collect();
+    let text = encode_body(kind, &fields).map_err(|e| {
+        Fault::new(
+            "internal",
+            format!("the board's content does not write back ({e:?})"),
+        )
+    })?;
+    let mut out: Map<String, Value> = serde_json::from_str(&text)?;
+    out.remove("schema_version");
+    Ok(out)
+}
+
+/// The core model names attachments in hex; tool uploads already carry their wire references.
+pub(crate) fn attachment_wire(reference: &Value) -> Result<Value> {
+    if reference.get("attachment_id").is_some() {
+        trommi_client_core::codec::attachment_to_wire(reference)
+            .map(Value::Object)
+            .map_err(|_| Fault::new("bad-format", "the attachment reference does not read"))
+    } else {
+        Ok(reference.clone())
+    }
 }
 
 /// The file ids an item's attachments name: what its header lists (11.2).
-fn file_ids_of(fields: &Map<String, Value>) -> Vec<String> {
-    let mut ids = Vec::new();
+fn file_ids_of(fields: &Map<String, Value>) -> Vec<FileId> {
+    let mut ids: Vec<FileId> = Vec::new();
     for attachment in fields
         .get("attachments")
         .and_then(Value::as_array)
@@ -166,9 +94,13 @@ fn file_ids_of(fields: &Map<String, Value>) -> Vec<String> {
         .flatten()
     {
         for key in ["file_id", "poster_file_id"] {
-            if let Some(id) = attachment.get(key).and_then(Value::as_str) {
-                if FileId::from_base64url(id).is_ok() && !ids.iter().any(|known| known == id) {
-                    ids.push(id.to_string());
+            if let Some(id) = attachment
+                .get(key)
+                .and_then(Value::as_str)
+                .and_then(|id| FileId::from_base64url(id).ok())
+            {
+                if !ids.contains(&id) {
+                    ids.push(id);
                 }
             }
         }
@@ -176,11 +108,46 @@ fn file_ids_of(fields: &Map<String, Value>) -> Vec<String> {
     ids
 }
 
-fn urgency_byte(name: &str) -> u8 {
-    urgency_of(name).byte()
+/// The version an object stands at, as the model shows it and the device holds it: its number and its hash on
+/// the wire. Not yet when the model's version is not the device's current one (the hub has not confirmed it).
+fn current_version(
+    driver: &Driver,
+    session: Option<&str>,
+    object: &str,
+    model_version: Option<(String, i64)>,
+) -> Result<(i64, String)> {
+    let not_yet = || {
+        Fault::plain(format!(
+            "{object} is not on the board yet: the hub has not confirmed it"
+        ))
+    };
+    let (hash, version) = model_version.ok_or_else(not_yet)?;
+    let inner = driver.lock();
+    let group = inner.group_of(session)?;
+    let held = inner
+        .engine()
+        .device()
+        .object(&group, &object_id_of(object)?)
+        .ok()
+        .flatten()
+        .ok_or_else(not_yet)?;
+    if hex(held.current.as_bytes()) != hash {
+        return Err(not_yet());
+    }
+    Ok((version, wire_hash(&hash)?))
 }
 
-impl Client {
+/// A session's id on the wire and its group, from the model's hex (the main one for none).
+fn wire_session(driver: &Driver, session_id: Option<&str>) -> Result<(String, GroupId)> {
+    let inner = driver.lock();
+    let group = inner.group_of(session_id)?;
+    let session = group
+        .session_id()
+        .ok_or_else(|| Fault::new("forbidden", "an agent writes into session groups only"))?;
+    Ok((session.to_base64url(), group))
+}
+
+impl Driver {
     /// A Chat message: in the Chat of the card `object_id`, or of the session (the main one for none).
     pub async fn send_message(
         &self,
@@ -196,24 +163,28 @@ impl Client {
         } else {
             file_ids_of(&fields)
         };
-        let payload = Value::Object(fields).to_string();
-        match object_id {
+        let payload = with_schema(fields, &[]);
+        let write = match object_id {
             Some(card) => {
-                let session = {
-                    let core = self.core.lock().await;
-                    core.model
-                        .cards
-                        .get(&card)
-                        .and_then(|c| c.session_id.clone())
-                };
-                self.send(session.as_deref(), Spec::CardChat { card, payload }, files)
-                    .await
+                let session = self
+                    .lock()
+                    .model()
+                    .cards
+                    .get(&card)
+                    .and_then(|c| c.session_id.clone());
+                let (session, _) = wire_session(self, session.as_deref())?;
+                AgentWrite::CardChat {
+                    session,
+                    card: object_id_of(&card)?.to_base64url(),
+                    payload,
+                }
             }
             None => {
-                self.send(session_id.as_deref(), Spec::SessionChat { payload }, files)
-                    .await
+                let (session, _) = wire_session(self, session_id.as_deref())?;
+                AgentWrite::SessionChat { session, payload }
             }
-        }
+        };
+        self.write(write, &files).await
     }
 
     /// A new card. `fields` is its content with `urgency`; returns the card's id.
@@ -224,18 +195,28 @@ impl Client {
     ) -> Result<String> {
         let urgency = fields
             .remove("urgency")
-            .and_then(|v| v.as_str().map(urgency_byte))
-            .unwrap_or(Urgency::Normal.byte());
+            .and_then(|v| v.as_str().map(urgency_of))
+            .unwrap_or(Urgency::Normal);
         // (a card still being worked on stays off his Desk: no push, spec 9.1.3)
         let push = fields.get("working") != Some(&Value::Bool(true));
         let files = file_ids_of(&fields);
-        let spec = Spec::First {
-            object_type: ObjectType::Card.byte(),
-            urgency,
+        let (session, _) = wire_session(self, session_id.as_deref())?;
+        // 9: the level stands in the body; the header carries only whether it knocks
+        let payload = with_schema(
+            fields,
+            &[
+                ("object_version", json!(1)),
+                ("previous_version_hash", json!(Hash32::ZERO.to_base64url())),
+                ("urgency", json!(urgency.name())),
+            ],
+        );
+        let write = AgentWrite::CardFirst {
+            session,
+            urgency: urgency.byte(),
             push,
-            payload: Value::Object(fields).to_string(),
+            payload,
         };
-        let sent = self.send(session_id.as_deref(), spec, files).await?;
+        let sent = self.write(write, &files).await?;
         sent.object_id
             .ok_or_else(|| Fault::new("internal", "a card without an id"))
     }
@@ -249,24 +230,30 @@ impl Client {
         urgency: Option<String>,
         push: bool,
     ) -> Result<()> {
-        let (mut content, session, level) = {
-            let core = self.core.lock().await;
-            let card = core
-                .model
+        let (fields, session, level, model_version) = {
+            let inner = self.lock();
+            let card = inner
+                .model()
                 .cards
                 .get(object_id)
                 .ok_or_else(|| Fault::plain(format!("no card {object_id}")))?;
-            if card.content_unknown {
+            if card.content_state != "ok" {
                 return Err(Fault::plain(format!(
                     "card {object_id} has a newer version this connector could not read; it cannot be changed from here"
                 )));
             }
+            let fields = match serde_json::to_value(&card.fields)? {
+                Value::Object(fields) => fields,
+                _ => Map::new(),
+            };
             (
-                card.content.clone(),
+                fields,
                 card.session_id.clone(),
                 urgency.unwrap_or_else(|| card.urgency.clone()),
+                card.version_hash.clone().map(|h| (h, card.object_version)),
             )
         };
+        let mut content = wire_fields(BodyKind::Card, fields)?;
         for (key, value) in changes {
             content.insert(key, value);
         }
@@ -287,16 +274,28 @@ impl Client {
         if !URGENCIES.contains(&level.as_str()) {
             return Err(Fault::plain(format!("not an urgency: {level}")));
         }
+        let level = urgency_of(&level);
+        let (version, previous) =
+            current_version(self, session.as_deref(), object_id, model_version)?;
+        let (session, _) = wire_session(self, session.as_deref())?;
         let files = file_ids_of(&content);
-        let spec = Spec::Later {
-            object: object_id.to_string(),
-            object_type: ObjectType::Card.byte(),
+        let payload = with_schema(
+            content,
+            &[
+                ("object_version", json!(version + 1)),
+                ("previous_version_hash", json!(previous)),
+                ("urgency", json!(level.name())),
+            ],
+        );
+        let write = AgentWrite::CardVersion {
+            session,
+            object: object_id_of(object_id)?.to_base64url(),
             closed,
-            urgency: urgency_byte(&level),
+            urgency: level.byte(),
             push,
-            payload: Value::Object(content).to_string(),
+            payload,
         };
-        self.send(session.as_deref(), spec, files).await.map(|_| ())
+        self.write(write, &files).await.map(|_| ())
     }
 
     /// Reworks an open card.
@@ -375,42 +374,63 @@ impl Client {
         fields.insert("note".into(), note.unwrap_or(Value::Null));
         fields.insert("attachments".into(), attachments);
         let files = file_ids_of(&fields);
-        let spec = Spec::First {
-            object_type: ObjectType::Artifact.byte(),
-            urgency: Urgency::Normal.byte(),
-            push: false,
-            payload: Value::Object(fields).to_string(),
-        };
-        let sent = self.send(session_id.as_deref(), spec, files).await?;
+        let (session, _) = wire_session(self, session_id.as_deref())?;
+        let payload = with_schema(
+            fields,
+            &[
+                ("object_version", json!(1)),
+                ("previous_version_hash", json!(Hash32::ZERO.to_base64url())),
+            ],
+        );
+        let sent = self
+            .write(AgentWrite::ArtifactFirst { session, payload }, &files)
+            .await?;
         sent.object_id
             .ok_or_else(|| Fault::new("internal", "an Artifact without an id"))
     }
 
     /// Revokes an Artifact: a closed version; the hub deletes its files and ends its Share links (11.4).
     pub async fn unpublish(&self, object_id: &str) -> Result<()> {
-        let (session, content) = {
-            let core = self.core.lock().await;
-            let p = core
-                .model
+        let (session, fields, model_version) = {
+            let inner = self.lock();
+            let p = inner
+                .model()
                 .published
                 .get(object_id)
                 .ok_or_else(|| Fault::plain(format!("no asset {object_id}")))?;
-            let content = json!({
-                "artifact_type": p.artifact_type, "title": p.title, "note": p.note,
-                "attachments": p.attachments,
-            });
-            (p.session_id.clone(), content)
+            let mut fields = Map::new();
+            fields.insert(
+                "artifact_type".into(),
+                p.artifact_type.clone().unwrap_or(Value::Null),
+            );
+            fields.insert("title".into(), json!(p.title));
+            fields.insert("note".into(), p.note.clone().unwrap_or(Value::Null));
+            fields.insert("attachments".into(), p.attachments.clone());
+            (
+                p.session_id.clone(),
+                fields,
+                Some((p.version_hash.clone(), p.object_version)),
+            )
         };
-        let files = content.as_object().map(file_ids_of).unwrap_or_default();
-        let spec = Spec::Later {
-            object: object_id.to_string(),
-            object_type: ObjectType::Artifact.byte(),
+        let content = wire_fields(BodyKind::Artifact, fields)?;
+        let (version, previous) =
+            current_version(self, session.as_deref(), object_id, model_version)?;
+        let (wire, _) = wire_session(self, session.as_deref())?;
+        let files = file_ids_of(&content);
+        let payload = with_schema(
+            content,
+            &[
+                ("object_version", json!(version + 1)),
+                ("previous_version_hash", json!(previous)),
+            ],
+        );
+        let write = AgentWrite::ArtifactVersion {
+            session: wire,
+            object: object_id_of(object_id)?.to_base64url(),
             closed: true,
-            urgency: Urgency::Normal.byte(),
-            push: false,
-            payload: content.to_string(),
+            payload,
         };
-        self.send(session.as_deref(), spec, files).await.map(|_| ())
+        self.write(write, &files).await.map(|_| ())
     }
 
     /// Sets registers of this agent in a session: `profile`, `status_line/<id>`, `device/<id>`, `heard`. A
@@ -420,11 +440,16 @@ impl Client {
         values: Map<String, Value>,
         session_id: Option<String>,
     ) -> Result<SentInfo> {
+        let (_, group) = wire_session(self, session_id.as_deref())?;
         let mut last = SentInfo::default();
         for (name, value) in values {
             let value = (!value.is_null()).then(|| value.to_string());
-            let spec = Spec::Register { name, value };
-            last = self.send(session_id.as_deref(), spec, Vec::new()).await?;
+            let write = AgentWrite::Register {
+                group: b64(group.as_bytes()),
+                name,
+                value,
+            };
+            last = self.write(write, &[]).await?;
         }
         Ok(last)
     }
@@ -432,36 +457,32 @@ impl Client {
     /// The current value of a shared register of this agent's main session (as JSON text), e.g. a human
     /// device's `join_link/<nonce>` (12.4).
     pub async fn session_register(&self, name: &str) -> Result<Option<String>> {
-        let group = self.core.lock().await.group_of(None)?;
-        let name = name.to_string();
-        self.vault
-            .call(move |v: &mut Vault| {
-                v.device
-                    .register(&group, &name)
-                    .ok()
-                    .flatten()
-                    .map(|value| String::from_utf8_lossy(value.expose()).into_owned())
-            })
-            .await
+        let inner = self.lock();
+        let group = inner.group_of(None)?;
+        Ok(inner
+            .engine()
+            .device()
+            .register(&group, name)
+            .ok()
+            .flatten()
+            .map(|value| String::from_utf8_lossy(value.expose()).into_owned()))
     }
 
     /// Writes this device's label (`device/<id>`: name, platform, folder, host) into its main session, unless
     /// it stands there already.
     pub async fn ensure_device_register(&self, info: &Value) -> Result<()> {
         let name = format!("device/{}", self.me());
-        let group = self.core.lock().await.group_of(None)?;
-        let me = self.device_id();
-        let lookup = name.clone();
-        let held = self
-            .vault
-            .call(move |v: &mut Vault| {
-                v.device
-                    .register_of(&group, &lookup, &me)
-                    .ok()
-                    .flatten()
-                    .map(|value| String::from_utf8_lossy(value.expose()).into_owned())
-            })
-            .await?;
+        let held = {
+            let inner = self.lock();
+            let group = inner.group_of(None)?;
+            inner
+                .engine()
+                .device()
+                .register_of(&group, &name, &self.device_id())
+                .ok()
+                .flatten()
+                .map(|value| String::from_utf8_lossy(value.expose()).into_owned())
+        };
         // Compared as values: the stored text may order its fields otherwise.
         let same = held
             .as_deref()
@@ -477,14 +498,11 @@ impl Client {
 
     /// Notes up to which change of a human's messages this agent has been handed them.
     pub async fn mark_heard(&self, up_to: u64, session_id: Option<String>) -> Result<bool> {
-        let sid = {
-            let core = self.core.lock().await;
-            session_id.clone().or_else(|| core.session_id())
-        };
         let known = {
-            let core = self.core.lock().await;
+            let inner = self.lock();
+            let sid = session_id.clone().or_else(|| inner.session_id());
             sid.as_ref()
-                .and_then(|sid| core.model.sessions.get(sid))
+                .and_then(|sid| inner.model().sessions.get(sid))
                 .and_then(|s| s.heard_up_to)
         };
         if known.is_some_and(|known| known >= up_to) {
@@ -505,15 +523,19 @@ impl Client {
         expires_in_ms: u64,
         session_id: Option<String>,
     ) -> Result<String> {
-        let payload = json!({
-            "tool_name": tool_name, "description": description, "input_preview": input_preview,
-        });
-        let spec = Spec::Request {
+        let mut fields = Map::new();
+        fields.insert("tool_name".into(), json!(tool_name));
+        fields.insert("description".into(), json!(description));
+        fields.insert("input_preview".into(), json!(input_preview));
+        let (session, _) = wire_session(self, session_id.as_deref())?;
+        let write = AgentWrite::PermissionRequest {
+            session,
             urgency: Urgency::High.byte(),
             expires_at: now_ms() + expires_in_ms,
-            payload: payload.to_string(),
+            push: true,
+            payload: with_schema(fields, &[]),
         };
-        let sent = self.send(session_id.as_deref(), spec, Vec::new()).await?;
+        let sent = self.write(write, &[]).await?;
         sent.object_id
             .ok_or_else(|| Fault::new("internal", "a request without an id"))
     }
@@ -527,107 +549,84 @@ impl Client {
     /// Opens a helper session under this agent's main session (5.2.5): the agent founds its group itself, with
     /// every human device of the room, and writes the helper's profile into it. Returns the session id.
     pub async fn open_child_session(&self, profile: Map<String, Value>) -> Result<String> {
-        let session = {
-            let mut core = self.core.lock().await;
-            self.active(&core)?;
-            let main = core
+        self.active()?;
+        let (parent, humans) = {
+            let inner = self.lock();
+            let main = inner
                 .session_id()
                 .ok_or_else(|| Fault::new("no-session", "this agent has no session yet"))?;
-            let parent = session_id_of(&main)?;
-            // What the hub archived meanwhile no longer counts here either (5.2.5, 5.2.10). A hub that cannot
-            // be asked refuses the founding below as well.
-            if let Err(fault) = self.catch_up_archived(&mut core).await {
-                eprintln!("[trommi] archived sessions not checked: {}", fault.message);
-            }
-            let humans: Vec<DeviceId> = self
-                .vault
-                .call(|v: &mut Vault| {
-                    v.device
-                        .room_history()
-                        .map(|h| h.newest().humans.iter().copied().collect())
-                        .unwrap_or_default()
-                })
-                .await?;
-            if humans.is_empty() {
-                return Err(Fault::new(
-                    "room-behind",
-                    "the room's devices are not known yet",
-                ));
-            }
-            // A partial claim: a human device the hub holds no KeyPackage of (one away for long, or not yet
-            // stocked) is left out and added later by a human device of the group (5.2.5, 5.2.7). With none at
-            // all there is nobody to read the session: the founding waits.
-            let claimed = self
-                .hub
-                .post(
-                    "/v1/key-packages/claim",
-                    &json!({ "devices": humans.iter().map(DeviceId::to_base64url).collect::<Vec<_>>(), "partial": true }),
-                )
-                .await?;
-            let by_device = claimed.get("key_packages").unwrap_or(&Value::Null);
-            let mut packages = Vec::new();
-            for human in &humans {
-                if by_device.get(human.to_base64url()).is_some() {
-                    packages.push(unb64(by_device, &human.to_base64url())?);
-                }
-            }
-            if packages.is_empty() {
-                return Err(Fault::new(
-                    "not-found",
-                    "none of the human devices has a KeyPackage at the hub: open the app on one of them and try again",
-                ));
-            }
-            let now = now_ms();
-            let (session, outbox_id) = self
-                .vault
-                .call(move |v: &mut Vault| -> Result<(SessionId, u64)> {
-                    let session = v.device.found_helper(&parent, &packages, now)?;
-                    let id = v.device.outbox().last().map_or(0, |entry| entry.id);
-                    Ok((session, id))
-                })
-                .await??;
-            // The founding is merged where the log shows its first Commit.
-            self.post_and_follow(&mut core).await?;
-            if let Some(fault) = Self::take_refusal(&mut core, outbox_id) {
-                return Err(fault);
-            }
-            let sid = hex(session.as_bytes());
-            if !core.groups.contains_key(&sid) {
-                return Err(Fault::new(
-                    "offline",
-                    "the helper session waits for the hub; try again when the hub is back",
-                ));
-            }
-            sid
+            (session_id_of(&main)?, inner.engine().roles().0)
         };
+        if humans.is_empty() {
+            return Err(Fault::new(
+                "room-behind",
+                "the room's devices are not known yet",
+            ));
+        }
+        // A partial claim: a human device the hub holds no KeyPackage of (one away for long, or not yet
+        // stocked) is left out and added later by a human device of the group (5.2.5, 5.2.7). With none at
+        // all there is nobody to read the session: the founding waits.
+        let claimed = self
+            .ask(Route::ClaimKeyPackages {
+                devices: &humans,
+                partial: true,
+            })
+            .await?;
+        let packages: Vec<Vec<u8>> = match claimed {
+            Answer::Claimed { key_packages, .. } => humans
+                .iter()
+                .filter_map(|human| {
+                    key_packages
+                        .iter()
+                        .find(|(device, _)| device == human)
+                        .map(|(_, package)| package.clone())
+                })
+                .collect(),
+            _ => return Err(Fault::new("bad-format", "the hub's claim does not read")),
+        };
+        if packages.is_empty() {
+            return Err(Fault::new(
+                "not-found",
+                "none of the human devices has a KeyPackage at the hub: open the app on one of them and try again",
+            ));
+        }
+        // The founding is merged where the log shows its first Commit.
+        let (session, _) = self
+            .device_step(move |device, now| device.found_helper(&parent, &packages, now))
+            .await?;
+        let sid = hex(session.as_bytes());
+        let held = self.group_ready(&sid).await;
+        if !held {
+            return Err(Fault::new(
+                "offline",
+                "the helper session waits for the hub; try again when the hub is back",
+            ));
+        }
         let mut values = Map::new();
         values.insert("profile".into(), Value::Object(profile));
-        self.set_status(values, Some(session.clone())).await?;
-        Ok(session)
+        self.set_status(values, Some(sid.clone())).await?;
+        Ok(sid)
     }
 
     /// Archives a helper session this agent opened (5.2.10): the hub takes nothing more for its group, and the
     /// session no longer counts among the main session's live helper sessions (5.2.5). Archived is for good:
     /// what continues it is a new helper session. Archiving one that is archived already is no error.
     pub async fn archive_child_session(&self, session_id: &str) -> Result<()> {
-        let mut core = self.core.lock().await;
-        self.active(&core)?;
-        if core.session_id().as_deref() == Some(session_id) {
-            return Err(Fault::new(
-                "forbidden",
-                "an agent archives only its helper sessions, not its main session",
-            ));
-        }
-        let Ok(group) = core.group_of(Some(session_id)) else {
-            return Ok(());
+        self.active()?;
+        let group = {
+            let inner = self.lock();
+            if inner.session_id().as_deref() == Some(session_id) {
+                return Err(Fault::new(
+                    "forbidden",
+                    "an agent archives only its helper sessions, not its main session",
+                ));
+            }
+            match inner.group_of(Some(session_id)) {
+                Ok(group) => group,
+                Err(_) => return Ok(()),
+            }
         };
-        self.hub
-            .post(
-                &format!("/v1/groups/{}/archive", b64(group.as_bytes())),
-                &json!({}),
-            )
-            .await?;
-        self.take_archived(&mut core, vec![group]).await
+        self.archive(group).await
     }
 
     /// Adds a helper device to a helper session this agent opened (5.2.4), with the KeyPackage the device
@@ -638,19 +637,10 @@ impl Client {
         device: DeviceId,
         key_package: Vec<u8>,
     ) -> Result<()> {
-        let mut core = self.core.lock().await;
-        self.active(&core)?;
-        let group = core.group_of(Some(session_id))?;
-        let now = now_ms();
-        let outbox_id = self
-            .vault
-            .call(move |v: &mut Vault| v.device.add_to_session(&group, &device, &key_package, now))
-            .await??;
-        self.post_and_follow(&mut core).await?;
-        match Self::take_refusal(&mut core, outbox_id) {
-            Some(fault) => Err(fault),
-            None => Ok(()),
-        }
+        let group = self.lock().group_of(Some(session_id))?;
+        self.device_step(move |d, now| d.add_to_session(&group, &device, &key_package, now))
+            .await
+            .map(|_| ())
     }
 
     /// Lets a helper device that lost its state back into a helper session (5.3.5): the opener removes the
@@ -663,28 +653,17 @@ impl Client {
         device: DeviceId,
         key_package: Vec<u8>,
     ) -> Result<()> {
-        let mut core = self.core.lock().await;
-        self.active(&core)?;
-        let group = core.group_of(Some(session_id))?;
-        let now = now_ms();
-        let outbox_id = self
-            .vault
-            .call(move |v: &mut Vault| -> Result<u64> {
-                // The Cut is the old device's last envelope this device accepted (9.0.10).
-                let cut = v.device.cut_of(&group, &old)?;
-                Ok(v.device
-                    .readmit_helper(&group, cut, &device, &key_package, now)?)
-            })
-            .await??;
-        // The Commit is merged where the log shows it; the handover follows it.
-        self.post_and_follow(&mut core).await?;
-        if let Some(fault) = Self::take_refusal(&mut core, outbox_id) {
-            return Err(fault);
-        }
-        self.vault
-            .call(move |v: &mut Vault| v.device.send_handover(&group, &device))
-            .await??;
-        self.post_and_follow(&mut core).await
+        let group = self.lock().group_of(Some(session_id))?;
+        // The Cut is the old device's last envelope this device accepted (9.0.10). The Commit is merged where the
+        // log shows it; the handover follows it.
+        self.device_step(move |d, now| {
+            let cut = d.cut_of(&group, &old)?;
+            d.readmit_helper(&group, cut, &device, &key_package, now)
+        })
+        .await?;
+        self.device_step(move |d, _| d.send_handover(&group, &device))
+            .await
+            .map(|_| ())
     }
 
     /// One step of the running turn's work trail (7.3): an MLS message in the session's group, numbered from 1
@@ -696,9 +675,7 @@ impl Client {
         number: u32,
         step: &Value,
     ) -> Result<()> {
-        let mut core = self.core.lock().await;
-        self.active(&core)?;
-        let group = core.group_of(session_id)?;
+        let group = self.lock().group_of(session_id)?;
         // The step's body as the core writes and checks it (`{ text, tool? }`, with its limits).
         let step = trommi_core::trail::WorkStep {
             text: step
@@ -709,30 +686,19 @@ impl Client {
             tool: step.get("tool").and_then(Value::as_str).map(str::to_owned),
         }
         .encode()?;
-        let now = now_ms();
-        let queued = self
-            .vault
-            .call(move |v: &mut Vault| -> Result<bool> {
-                // A trail is live: while too many steps wait for the hub, new ones are dropped, not queued.
-                let waiting = v
-                    .device
-                    .outbox()
-                    .iter()
-                    .filter(|entry| entry.kind == trommi_core::store::OutboxKind::Message)
-                    .count();
-                if waiting >= crate::client::MAX_WAITING_STEPS {
-                    return Ok(false);
-                }
-                v.device
-                    .send_work_trail(&group, &TurnId::new(turn), number, &step, now)?;
-                Ok(true)
-            })
-            .await??;
-        if !queued {
-            return Ok(());
-        }
-        core.commit()?;
-        self.pump(&mut core).await
+        self.device_queue(move |d, now| {
+            // A trail is live: while too many steps wait for the hub, new ones are dropped, not queued.
+            let waiting = d
+                .outbox()
+                .iter()
+                .filter(|entry| entry.kind == trommi_core::store::OutboxKind::Message)
+                .count();
+            if waiting >= crate::driver::MAX_WAITING_STEPS {
+                return Ok(());
+            }
+            d.send_work_trail(&group, &TurnId::new(turn), number, &step, now)
+                .map(|_| ())
+        })
     }
 
     /// Encrypts a file under a fresh key (section 11), stores it at the hub and returns the attachment
@@ -743,8 +709,18 @@ impl Client {
         meta: Map<String, Value>,
     ) -> Result<Map<String, Value>> {
         let (stored, sealed) = files::encrypt_file(&bytes, &mut SystemEntropy)?;
-        let file_id = sealed.file.file_id.to_base64url();
-        self.hub.put_file(&file_id, stored).await?;
+        let file = sealed.file.file_id;
+        match self
+            .ask(Route::PutFile {
+                file: &file,
+                bytes: &stored,
+            })
+            .await?
+        {
+            Answer::FileStored { .. } => {}
+            _ => return Err(Fault::new("bad-format", "the hub's answer does not read")),
+        }
+        let file_id = file.to_base64url();
         let mut reference = meta;
         reference.insert("file_id".into(), json!(file_id));
         reference.insert(
@@ -755,7 +731,6 @@ impl Client {
         );
         reference.insert("sha256".into(), json!(sealed.file.sha256.to_base64url()));
         reference.insert("total_size".into(), json!(sealed.plain_len));
-        let mut core = self.core.lock().await;
         // Kept under the whole reference (id, key, hash): another reference to the same id finds nothing.
         let cached = format!(
             "{file_id} {} {}",
@@ -768,34 +743,31 @@ impl Client {
                 .and_then(Value::as_str)
                 .unwrap_or("")
         );
-        core.files.push((cached, bytes));
-        if core.files.len() > 16 {
-            core.files.remove(0);
-        }
+        self.file_keep(cached, bytes);
         Ok(reference)
     }
 
     /// Fetches the file an attachment reference names and opens it: the stored bytes are compared with the
     /// reference's SHA-256 before anything is decrypted (11.2).
     pub async fn fetch_attachment(&self, reference: &Value) -> Result<Vec<u8>> {
+        let reference = attachment_wire(reference)?;
         let text = |key: &str| reference.get(key).and_then(Value::as_str).unwrap_or("");
         let file = FileRef::from_base64url(text("file_id"), text("file_key"), text("sha256"))?;
         let file_id = file.file_id.to_base64url();
         let cached = format!("{file_id} {} {}", text("file_key"), text("sha256"));
-        if let Some((_, bytes)) = self
-            .core
-            .lock()
-            .await
-            .files
-            .iter()
-            .find(|(id, _)| *id == cached)
-        {
-            return Ok(bytes.clone());
+        if let Some(bytes) = self.file_cached(&cached) {
+            return Ok(bytes);
         }
-        let stored = self
-            .hub
-            .get_file(&file_id, files::MAX_STORED_LEN as usize)
-            .await?;
+        let stored = match self
+            .ask(Route::GetFile {
+                file: &file.file_id,
+                range: None,
+            })
+            .await?
+        {
+            Answer::File(file) => file.bytes,
+            _ => return Err(Fault::new("bad-format", "the hub's answer does not read")),
+        };
         Ok(files::decrypt_file(&file, &stored)?)
     }
 
@@ -806,33 +778,32 @@ impl Client {
         reference: &Value,
         expires_at: u64,
     ) -> Result<(String, String, u64)> {
+        let reference = attachment_wire(reference)?;
         let text = |key: &str| reference.get(key).and_then(Value::as_str).unwrap_or("");
         let file = FileRef::from_base64url(text("file_id"), text("file_key"), text("sha256"))?;
-        let app = self.core.lock().await.room.app.clone();
-        let link = ShareLink::create(&app, &file, &mut SystemEntropy)?;
-        let share_id = link.share_id.to_base64url();
-        let body = json!({
-            "share_id": share_id,
-            "secret_hash": b64(&crate::util::sha256(link.secret.expose())),
-            "file_id": file.file_id.to_base64url(),
-            "expires_at": expires_at,
-        });
-        let answer = self.hub.post("/v1/shares", &body).await?;
-        let until = answer
-            .get("expires_at")
-            .and_then(Value::as_u64)
-            .unwrap_or(expires_at);
+        let link = ShareLink::create(&self.room().app, &file, &mut SystemEntropy)?;
+        let secret_hash = crate::util::sha256(link.secret.expose());
+        let until = match self
+            .ask(Route::PostShare {
+                share: &link.share_id,
+                secret_hash: &secret_hash,
+                file: &file.file_id,
+                expires_at,
+            })
+            .await?
+        {
+            Answer::Shared { expires_at } => expires_at,
+            _ => expires_at,
+        };
         let text = String::from_utf8_lossy(link.to_text().expose()).into_owned();
-        Ok((share_id, text, until))
+        Ok((link.share_id.to_base64url(), text, until))
     }
 
     /// Ends a Share link.
     pub async fn revoke_share(&self, share_id: &str) -> Result<()> {
-        if trommi_core::ids::ShareId::from_base64url(share_id).is_err() {
-            return Err(Fault::plain("not a share id"));
-        }
-        self.hub
-            .delete(&format!("/v1/shares/{share_id}"))
+        let share =
+            ShareId::from_base64url(share_id).map_err(|_| Fault::plain("not a share id"))?;
+        self.ask(Route::DeleteShare { share: &share })
             .await
             .map(|_| ())
     }
