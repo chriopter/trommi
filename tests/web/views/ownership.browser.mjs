@@ -20,11 +20,16 @@ try {
   const open = async p => { await prepare(p); await p.send('Page.navigate', { url: APP }); await ready(p) }
   let first = await browser.tab()
   // A slow worker must keep the styled loading page, then paint the first actual view; never race a 3 s timer.
-  await first.session.send('Page.addScriptToEvaluateOnNewDocument', { source: `globalThis.trommiTestDelayedWorker = true; globalThis.Worker = class extends Worker { postMessage(message, transfer) { if(message?.t === 'start') setTimeout(() => super.postMessage(message, transfer), 4100); else super.postMessage(message, transfer) } }` })
+  const delayed = await first.session.send('Page.addScriptToEvaluateOnNewDocument', { source: `globalThis.trommiTestDelayedWorker = true; globalThis.Worker = class extends Worker { postMessage(message, transfer) { if(message?.t === 'start') globalThis.trommiTestReleaseWorker = () => super.postMessage(message, transfer); else super.postMessage(message, transfer) } }` })
   await prepare(first.session); await first.session.send('Page.navigate', { url: APP })
-  await until(first.session, `document.readyState === 'complete' && !!document.getElementById('trommi-opening')`, 'styled loading screen before the delayed worker starts')
+  await until(first.session, `document.readyState === 'complete' && typeof globalThis.trommiTestReleaseWorker === 'function' && !!document.getElementById('trommi-opening')`, 'styled loading screen before the delayed worker starts')
+  // Loading assets may take longer than a fixed worker delay on a busy machine.
+  // Hold start until the page was inspected, beyond the former 3 s fallback timer.
+  await sleep(3300)
   const loading = await ev(first.session, `({width:document.getElementById('trommi-opening').getBoundingClientRect().width,font:getComputedStyle(document.querySelector('#trommi-opening h1')).fontFamily})`)
   assert.equal(loading.width, 1280); assert.match(loading.font, /Bricolage Grotesque/)
+  await ev(first.session, 'globalThis.trommiTestReleaseWorker(); true')
+  await first.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: delayed.identifier })
   await ready(first.session)
   assert.equal(await ev(first.session, 'globalThis.trommiTestDelayedWorker'), true, 'the slow-worker injection ran')
   for (let n = 0; n < 2; n++) { await first.session.send('Page.reload', { ignoreCache: true }); await sleep(100); await ready(first.session) }
