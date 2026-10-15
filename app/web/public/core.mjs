@@ -60,8 +60,30 @@ function receive(m) {
       return
     }
     case 'log': (m.level === 'error' ? console.error : m.level === 'warn' ? console.warn : console.debug)('core:', m.text); return
-    case 'busy': case 'taken': emit(m.t, null); return
+    case 'busy': case 'taken':
+      for (const url of urls.values()) URL.revokeObjectURL(url)
+      urls.clear(); asked.clear()
+      worker?.terminate(); worker = null
+      view = fold.emptyView(); lastFocus = ''
+      emit(m.t, null); return
     case 'failed': emit('failed', new Error(m.error)); return
+  }
+}
+
+/** Release decrypted files absent from the painted page. Canvas pictures name their files separately.
+ *  The encrypted browser cache is unaffected; revisiting a file asks the core for its bytes again. */
+export function releaseUnusedFiles(root, canvasFiles = []) {
+  const used = new Set()
+  for (const el of root.querySelectorAll('[src], [href], [data-assetthumb-src-value]')) {
+    for (const attr of ['src', 'href', 'data-assetthumb-src-value']) {
+      const value = el.getAttribute(attr)
+      if (value?.startsWith('blob:')) used.add(value.split('#')[0])
+    }
+  }
+  const canvas = new Set(canvasFiles)
+  for (const [id, url] of urls) if (!used.has(url) && !canvas.has(id)) {
+    URL.revokeObjectURL(url)
+    urls.delete(id)
   }
 }
 
@@ -121,6 +143,7 @@ export async function attach(file) {
 
 // The window in front or not, the network, the time zone: the core hears each change.
 if (typeof document !== 'undefined') {
+  document.addEventListener('turbo:render', () => releaseUnusedFiles(document, (view.board?.shapes ?? []).map(s => s.attachment).filter(Boolean)))
   document.addEventListener('visibilitychange', () => send({ type: document.visibilityState === 'visible' ? 'foreground' : 'background' }))
   addEventListener('online', () => send({ type: 'net', online: true }))
   addEventListener('offline', () => send({ type: 'net', online: false }))

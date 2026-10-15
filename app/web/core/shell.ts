@@ -11,7 +11,7 @@
 
 /** The binding's `AppCore` as the shell uses it: JSON text plus the bytes it names (`core/client/src/app/edge.rs`). */
 export interface Packet { json: string; blobs: Uint8Array[] }
-export interface CoreLike { handle(nowMs: number, event: Packet): Packet }
+export interface CoreLike { handle(nowMs: number, event: Packet): Packet; close?(): void }
 
 /** The device's state of one slot: all or nothing, one revision, one owner (idb-store.js). */
 export interface DeviceSpace {
@@ -91,7 +91,11 @@ export class CoreShell {
 
   /** Ends the shell: requests in flight are aborted, the timer cleared; late results are dropped. */
   close(): void {
+    if (this.closed) return
     this.closed = true
+    this.queue.length = 0
+    this.held = []
+    this.core.close?.()
     for (const c of this.flying.values()) c.abort()
     this.flying.clear()
     if (this.timer) clearTimeout(this.timer)
@@ -110,15 +114,6 @@ export class CoreShell {
     } finally { this.busy = false }
   }
 
-  private result(json: Json): void {
-    this.queue.push({ json, blobs: [] })
-    this.pump()
-  }
-  private resultWith(json: Json, blobs: Uint8Array[]): void {
-    this.queue.push({ json, blobs })
-    this.pump()
-  }
-
   /** Starts one effect, or holds it behind the barrier. */
   private start(effect: Json, blobs: Uint8Array[]): void {
     if (this.closed) return
@@ -135,13 +130,13 @@ export class CoreShell {
         return
       }
       case 'store': return this.store(id, effect['op'] as Json, blobs)
-      case 'secret': return this.result({ type: 'secret', id, result: failure('denied') })
+      case 'secret': return this.send({ type: 'secret', id, result: failure('denied') })
       case 'platform': return void this.platform(id, effect['op'] as Json, blobs)
       case 'timer': {
         if (this.timer) clearTimeout(this.timer)
         this.timer = null
         const at = effect['at_ms'] as number | null
-        if (at != null) this.timer = setTimeout(() => { this.timer = null; this.result({ type: 'wake' }) }, Math.max(0, at - this.now()))
+        if (at != null) this.timer = setTimeout(() => { this.timer = null; this.send({ type: 'wake' }) }, Math.max(0, at - this.now()))
         return
       }
       case 'file_ready': return this.host.fileReady?.(effect['file_id'] as string, effect['media_type'] as string, blobs[effect['bytes'] as number] ?? new Uint8Array())
@@ -156,12 +151,12 @@ export class CoreShell {
   }
 
   private async platform(id: number, op: Json, blobs: Uint8Array[]): Promise<void> {
-    if (!this.host.platform) return this.result({ type: 'platform', id, result: { ok: { answer: 'refused' } } })
+    if (!this.host.platform) return this.send({ type: 'platform', id, result: { ok: { answer: 'refused' } } })
     try {
       const { answer, blobs: out } = await this.host.platform(op, blobs)
-      this.resultWith({ type: 'platform', id, result: { ok: answer } }, out)
+      this.send({ type: 'platform', id, result: { ok: answer } }, out)
     } catch (e) {
-      this.result({ type: 'platform', id, result: failure('failed', String((e as Error)?.message ?? e)) })
+      this.send({ type: 'platform', id, result: failure('failed', String((e as Error)?.message ?? e)) })
     }
   }
 
@@ -198,12 +193,12 @@ export class CoreShell {
       settled()
       if (!this.flying.delete(id)) return
       const headers = [...response.headers].map(([name, value]) => ({ name, value }))
-      this.resultWith({ type: 'http', id, result: { ok: { status: response.status, headers, body: 0 } } }, [body])
+      this.send({ type: 'http', id, result: { ok: { status: response.status, headers, body: 0 } } }, [body])
     } catch (e) {
       settled()
       const error = this.errorOf(e, timedOut(), id)
       if (!this.flying.delete(id) && error.kind === 'cancelled') return
-      this.result({ type: 'http', id, result: { err: error } })
+      this.send({ type: 'http', id, result: { err: error } })
     }
   }
 
@@ -211,8 +206,8 @@ export class CoreShell {
     const { url, init, max, settled } = this.requestOf(id, r, blobs)
     const item = (it: Json, bytes?: Uint8Array): void => {
       if (!this.flying.has(id)) return
-      if (bytes) this.resultWith({ type: 'stream', id, item: { ...it, bytes: 0 } }, [bytes])
-      else this.result({ type: 'stream', id, item: it })
+      if (bytes) this.send({ type: 'stream', id, item: { ...it, bytes: 0 } }, [bytes])
+      else this.send({ type: 'stream', id, item: it })
     }
     try {
       const response = await this.fetcher(url, init)
@@ -292,12 +287,12 @@ export class CoreShell {
       this.barrier = null
       const held = this.held
       this.held = []
-      this.resultWith({ type: 'store', id, result }, blobs)
+      this.send({ type: 'store', id, result }, blobs)
       // (a failed write: what waited behind it is dropped, the core hears only the failure)
       if (ok) for (const h of held) this.start(h.effect, h.blobs)
       return
     }
-    this.resultWith({ type: 'store', id, result }, blobs)
+    this.send({ type: 'store', id, result }, blobs)
   }
 }
 
