@@ -49,7 +49,9 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(erase.waitForExistence(timeout: 15))
     let previous = erase.value as? String
     erase.tap()
-    XCTAssertNotEqual(erase.value as? String, previous)
+    let changed = NSPredicate(format: "value != %@", previous ?? "")
+    expectation(for: changed, evaluatedWith: erase)
+    waitForExpectations(timeout: 3)
     XCTAssertTrue(app.steppers["Width"].exists)
     capture("scribble-board")
   }
