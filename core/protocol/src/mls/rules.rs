@@ -22,6 +22,7 @@ use openmls::prelude::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use tls_codec::Deserialize as _;
+use trommi_wire::rules as wire;
 
 /// The room group at one epoch: who is a human device, who an agent device, and the recovery keys.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -520,6 +521,37 @@ pub fn check_room_commit(verifier: &Verifier<'_>, judged: &Judged<'_>) -> Result
     refuse(humans.len() > most, Error::TooMany)
 }
 
+fn wire_role(history: &RoomHistory, room: &RoomState, device: &DeviceId) -> wire::Standing {
+    wire::standing(
+        room.is_human(device),
+        room.is_agent(device),
+        history.is_revoked(device, room.epoch),
+    )
+}
+fn wire_kind(room: &RoomState, session: &TrommiSession, parent: Parent) -> wire::SessionKind {
+    if session.parent.is_zero() {
+        return wire::SessionKind::Main;
+    }
+    let opener = match parent {
+        Parent::Seat(Some(id)) if room.is_agent(&id) => Some(*id.as_bytes()),
+        _ => None,
+    };
+    wire::SessionKind::Helper { opener }
+}
+fn wire_leaves(
+    history: &RoomHistory,
+    room: &RoomState,
+    leaves: &BTreeSet<DeviceId>,
+) -> Vec<wire::Leaf> {
+    leaves
+        .iter()
+        .map(|device| wire::Leaf {
+            device: *device.as_bytes(),
+            role: wire_role(history, room, device),
+        })
+        .collect()
+}
+
 /// What a session group's leaves are judged against: the room state its Commit names, and the main session a
 /// helper session hangs under.
 struct Allowed<'a> {
@@ -546,17 +578,11 @@ impl Allowed<'_> {
     /// Whether `device` may be a leaf: a human device; in a main session an agent device; in a helper session
     /// its opener, or a helper device, which never was a human or agent device.
     fn allows(&self, device: &DeviceId) -> bool {
-        if self.room.is_human(device) {
-            return true;
-        }
-        if self.history.is_revoked(device, self.room.epoch) {
-            return false;
-        }
-        if self.is_helper_session() {
-            self.is_opener(device) || !self.room.is_agent(device)
-        } else {
-            self.room.is_agent(device)
-        }
+        wire::allows_device(
+            wire_role(self.history, self.room, device),
+            wire_kind(self.room, self.session, self.parent),
+            *device.as_bytes(),
+        )
     }
 
     /// The leaves that are neither human devices nor the opener.
@@ -577,31 +603,14 @@ pub fn disallowed_leaves(
     parent: Parent,
     leaves: &BTreeSet<DeviceId>,
 ) -> Vec<DeviceId> {
-    let allowed = Allowed {
-        history,
-        room,
-        session,
-        parent,
-    };
-    let mut unfit: Vec<DeviceId> = leaves
-        .iter()
-        .filter(|leaf| !allowed.allows(leaf))
-        .copied()
-        .collect();
-    if !allowed.is_helper_session() {
-        // 5.2.2: one agent device at most; of several, none is allowed until one is left. A leaf that is
-        // unfit by itself, such as a removed human device, does not count as one.
-        let agents: Vec<DeviceId> = allowed
-            .others(leaves)
-            .filter(|leaf| allowed.allows(leaf))
-            .copied()
-            .collect();
-        if agents.len() > 1 {
-            unfit.extend(agents);
-            unfit.sort_unstable();
-        }
-    }
-    unfit
+    let entries = wire_leaves(history, room, leaves);
+    wire::disallowed(&wire::SessionLeaves {
+        kind: wire_kind(room, session, parent),
+        entries: &entries,
+    })
+    .into_iter()
+    .map(DeviceId::new)
+    .collect()
 }
 
 /// Why a session group is stale (5.2.8): nobody writes into it, and it takes nothing but a join by 8.4 and
@@ -633,15 +642,14 @@ pub fn staleness(
     parent: Parent,
     leaves: &BTreeSet<DeviceId>,
 ) -> Staleness {
-    let missing_opener = match parent {
-        Parent::Seat(Some(seat)) if !session.parent.is_zero() => {
-            Some(seat).filter(|seat| room.is_agent(seat) && !leaves.contains(seat))
-        }
-        _ => None,
-    };
+    let entries = wire_leaves(history, room, leaves);
+    let facts = wire::staleness(&wire::SessionLeaves {
+        kind: wire_kind(room, session, parent),
+        entries: &entries,
+    });
     Staleness {
-        disallowed: disallowed_leaves(history, room, session, parent, leaves),
-        missing_opener,
+        disallowed: facts.disallowed.into_iter().map(DeviceId::new).collect(),
+        missing_opener: facts.missing_opener.map(DeviceId::new),
     }
 }
 
@@ -654,16 +662,14 @@ pub fn helper_devices(
     parent: Parent,
     leaves: &BTreeSet<DeviceId>,
 ) -> Vec<DeviceId> {
-    let allowed = Allowed {
-        history,
-        room,
-        session,
-        parent,
-    };
-    if !allowed.is_helper_session() {
-        return Vec::new();
-    }
-    allowed.others(leaves).copied().collect()
+    let entries = wire_leaves(history, room, leaves);
+    wire::helper_devices(&wire::SessionLeaves {
+        kind: wire_kind(room, session, parent),
+        entries: &entries,
+    })
+    .into_iter()
+    .map(DeviceId::new)
+    .collect()
 }
 
 /// Judges a Commit of a session group (5.2, 5.3) against the group before it and the room state at its place

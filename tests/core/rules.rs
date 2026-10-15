@@ -1139,3 +1139,70 @@ fn a_room_state_lists_its_human_devices_ascending_and_once() {
         Err(Error::BadFormat)
     );
 }
+
+#[test]
+fn hub_and_members_agree_on_disallowed_leaves_and_staleness() {
+    use trommi_hub::rules as hub;
+    let mut history = history();
+    history.record(state(3, &[H1], &[AGENT])).unwrap();
+    for epoch in [2, 3] {
+        let room = history.at(epoch).unwrap();
+        let candidates = [H1, H2, AGENT, OTHER_AGENT, SUB];
+        let view = hub::RoomView {
+            epoch,
+            state: *room.state.as_bytes(),
+            humans: room.humans.iter().map(|id| *id.as_bytes()).collect(),
+            agents: room.room.agents.iter().map(|id| *id.as_bytes()).collect(),
+            revoked: candidates
+                .into_iter()
+                .map(device)
+                .filter(|id| history.is_revoked(id, epoch))
+                .map(|id| *id.as_bytes())
+                .collect(),
+        };
+        for mode in 0..3 {
+            let (session, parent, kind) = match mode {
+                0 => (
+                    session(SessionId::new([0; 16]), MAIN),
+                    Parent::NotAMainSession,
+                    hub::SessionKind::Main,
+                ),
+                1 => (
+                    session(MAIN, HELPER),
+                    Parent::Seat(Some(device(AGENT))),
+                    hub::SessionKind::Helper {
+                        opener: Some([AGENT; 32]),
+                    },
+                ),
+                _ => (
+                    session(MAIN, HELPER),
+                    Parent::Seat(None),
+                    hub::SessionKind::Helper { opener: None },
+                ),
+            };
+            for listed in [
+                vec![H1],
+                vec![H1, AGENT],
+                vec![H1, AGENT, OTHER_AGENT],
+                vec![H1, H2, OTHER_AGENT, SUB],
+                vec![AGENT, SUB],
+            ] {
+                let leaves = listed.iter().copied().map(device).collect();
+                let raw: Vec<_> = listed.iter().map(|id| [*id; 32]).collect();
+                let expected: Vec<_> = disallowed_leaves(&history, room, &session, parent, &leaves)
+                    .iter()
+                    .map(|id| *id.as_bytes())
+                    .collect();
+                assert_eq!(
+                    hub::offending_leaves(kind, &view, &raw),
+                    expected,
+                    "epoch={epoch} kind={kind:?} leaves={listed:?}"
+                );
+                assert_eq!(
+                    hub::is_stale(kind, &view, &raw),
+                    staleness(&history, room, &session, parent, &leaves).is_stale()
+                );
+            }
+        }
+    }
+}
