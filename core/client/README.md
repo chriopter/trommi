@@ -1,351 +1,169 @@
 # trommi-client-core
 
-The client core, growing into the app core: everything a Trommi app decides, written once in Rust. It sits above
-the protocol core ([`core/protocol/`](../protocol/README.md): MLS, envelopes, chains, the command gate) and below
-the apps. It does no I/O: the app fetches, stores and draws; the core decides.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../../.github/readme/app-core-dark.svg">
-  <img alt="Today: each app keeps its own Desk rules, sync, hub client, actions, account and cache (web in TypeScript, iOS and Mac in Swift, Linux partly in Rust), above the shared client and protocol cores. Target: the apps only draw and run their platform's I/O; core/client holds the view models, actions, sync and cache once, above core/protocol and core/bindings." src="../../.github/readme/app-core-light.svg">
-</picture>
-
-Today the apps still hold part of the logic (left); the app core (`src/app` and its modules, below) takes it over,
-one platform at a time (right).
-
-## What lives here
-
-| File | What | Used by |
-| --- | --- | --- |
-| `src/app/` | **The app core** (`App`): one object per room, `handle(now, Event) -> Vec<Effect>`. The contract's types (`event.rs`, `effect.rs`, `io.rs`), bytes beside the JSON at the edge (`bytes.rs`, `edge.rs`), the conformance scripts (`script.rs`) and an in-memory shell for tests (`sim.rs`). See "The app core" below. | every app (through `AppCore`), tests |
-| `src/views/` | The view model every screen draws (`ViewModel`), sent as `ViewDelta`s; the fold every shell applies (`ViewModel::apply`); texts as `Text { key, args, en }`. Made from the board model by `Board` (`board.rs`: the sessions with desk and crown, the desk in view, the open questions, the answers a session has not picked up for two minutes) and one module per screen: `sidebar.rs` (the desks with what waits on each, a row per session in drawing order: helpers under their main, "Disconnected", desk by desk on All desks, the red hand and the link in words, a folded main's summary), `desk.rs` (the Desk's head: greeting, goals, the sessions that are cut off; the stack of what waits as rows in the core's order, each with its sign, its words and the answers it offers itself: thumbs for a yes or no, two named tiles, the advised way, or the card). `words.rs` holds every sentence and the person's wall clock; `demo.rs` reads the demo room (`demo/data/fixture.json`) as a model; with `Config.demo` the App runs it with no hub and no store (actions done on the model). What a device alone chooses (the desk in view, its zone) is a `Lens`. Snapshots of the demo room: `tests/golden/`. | every app |
-| `src/engine/` | The sync engine (`Engine`): signs in, reads the hub's order from the device's cursor page by page, follows the live stream and resumes it by change number, posts the outbox one entry at a time in order, waits and retries (`Backoff`), and mends what is missing (a Welcome, a stretch of a sender's chain, a group's envelopes) without reading the room again. The protocol core's device runs inside it over `memstore`, whose writes leave as `DeviceApply` barriers. It asks the hub through the codec of `src/hub`, which builds every request and reads every answer strictly. Its module text says what holds by construction (gaps always said, the hub's hints never trusted, every buffer bounded). The hub's Desk is read before the order (with each revised card's first version, so no card moves afterwards), and `feed::Board` feeds the board model from the engine's reports. A sign-in's session groups are joined from outside in one read and one post (`sync::joins`). Upkeep: KeyPackages, `heads` and missing keys on a timer; a stale session cleaned, a human device a session lacks added, the own leaf renewed, the steps of this device's invites taken, an agent without a session seated, the core's findings said (`sync::upkeep`). Across a restart it keeps one record in the app's store (`engine/<room>`: its position and what it still owes), written behind the device's own write. The stream's events beside the order (`sync::events`): a relayed stroke piece drawn, a wish for keys answered with a handover (also from the hub's list in the timed round, each once), an invite's Request and an evicted file handed to the App, an archived session archived (and, once per run and after a join, the hub's list read for one archived meanwhile). A device that closed itself (a write of its state failed otherwise than by another owner, or the device failed) is opened again in place from its stored state by the App, after a wait, at most `REOPEN_TRIES` times in a row. The reading of the past is still to come. **Agent mode** (`engine/agent.rs`, `Engine::become_agent`), for the connector: no Desk first and no human upkeep; nothing is read or written before the process holds the device's lease (`POST /v1/link`, renewed every 20 s, `Trommi-Lease` on writes and the stream, `lease-lost` stops it) and the rollback guard passed (the hub's copy of the device's own chains held against `Device::own_head`, and every own envelope of the order too); the command gate asked in the same step as the envelope, what it lets through reported as `AgentCommand` and kept in the record until `command_done` (uncertain after a restart); a Commit that takes the device out of the room or its main session followed, and the hub's word that it is out checked against the Commits it still serves (`GET /v1/groups/{group}/removal`). Run in tests by `app::sim::AgentSim`. | the App; the connector (to come) |
-| `src/hub/` | The hub's routes without I/O (W2): requests, strict answer checks, failures sorted into refused, not now and offline (`classify`). | the App |
-| `src/actions/` | Every human action by name (`Action`, W3): echo, seal, outbox, replace, roll back. | the App |
-| `src/account/` | Found (with a password or a passkey alone), sign in (password, kit, passkey), join, recover the room with the kit (8.7: `Recover`, run inside the join by `engine/recover.rs`), pair, devices and invites (`AccountAction`, W3). | the App |
-| `src/app/account_change.rs` | The account's ways in on a device in its room: `ReadAccount` (`settings.login`), `CheckUnlock`, `NewKit`, `SetPassword`, `SetEmail`, `AddPasskey`, `RemovePasskey`, `ReplaceRecoveryCode` (8.6). Each proves the way in of now (`Unlock`: password, kit words or a passkey through `PlatformOp::PasskeyGet`) and checks the opened code is the room's in force; a change after the kit's words replaces the code too and shows a new kit. | the App |
-| `src/app/desks.rs` | `RemoveDesk`: drives `desk_delete`'s plan step by step and finishes deletes begun elsewhere; `settings.desk_counts`, `settings.deleting`. | the App |
-| `src/app/push.rs` | Push on this device (`Action::Push`: off, all, knocking): the platform's token (`PlatformOp::PushRegister`, `Event::PushToken`) registered with the hub, the APNs notify key kept as the secret `push-notify-key`; `settings.push`. | the App |
-| `src/app/outside.rs` | What goes outside the window: the widgets' and Live Activity's `Snapshot` (what waits on every desk, the sessions at work), `Notify` for a card that newly waits while the app is in the back, the notification extension's `NotifyContext` (context and each session group's current content key; the notify key read back from its secret at the start). | the App |
-| `src/files.rs` | Files the person attaches, opens, saves and shares (`Action::Attach`, `OpenFile`, `Share`, `RevokeShare`, `CancelFile`): encrypted under a key of its own and uploaded through the engine, named in a line or an answer by its local id or attachment id, fetched, checked and decrypted for `FileReady`/`SaveFile`, Share links shown under the file (`FileView.shares`). Only files the views showed (`views/files_seen.rs`) or this device uploaded may be opened or shared. | the App |
-| `src/scribble/` | The Scribble Board (spec 10): the board in view (`Focus.board`, `Screen::Scribble`) is read once the room is live, from its newest snapshot (the register's file fetched, decrypted, gunzipped, `Board::from_snapshot`) and the items after it (`GET /v1/boards/{board}` pages, read by the engine out of order), else from its first item; its items add up in trommi-core's `board_items::Board`, live as they come; others' stroke pieces grow a `live:` stroke. `Action::BoardItem` echoes into the board's timeline and is laid over the board until the hub's copy came (a refusal takes it back with a toast); `Action::StrokePiece` relays a piece. After 300 items and 4 s of quiet it writes a snapshot (frontier declared, gzip'd file uploaded encrypted, register written, frontier bound). `ViewModel.board` draws it. A desk's delete uses `App::board_work` (read, snapshot now), `App::erase_board` and `App::board_known`. `gzip.rs`: the snapshot file's gzip, written and read without a crate. | the App |
-| `src/cache/` | The one cache format over the key-value store (W5): keys `c1/<room>/<part>`. | the App |
-| `src/desk.rs` | `DeskState`: the Desk of one device. The hub's open list decides (`Listing`): an object open here that the list leaves out, with nothing newer here than the list's change, is held (settled elsewhere); while the app waits for the hub's first list everything open is held (`set_hold_all`). The stack order (urgency, time asked, agent, id), snoozes and archived sessions, each session's open cards, the open permission requests, a request whose time ran out (its deadline, or unread and older than `REQUEST_LIFE_MAX_MS`), a hand back older than the version the hub lists, and when to look again by the clock (`next_wake`). `project(now)` answers with a `Delta`: only what changed (stack and session edits, held and unheld), the whole Desk only the first time and after `clear`. | web, iOS (through `ClientDesk`) |
-| `src/codec.rs` | The bodies of stored content (spec 9.1) between the wire and the model, both ways: ids (base64url ↔ hex), attachment references (`file_id` ↔ `attachment_id`), a message's `artifact_object_id` ↔ `published_object_id`, an Artifact's `shared_until` ↔ `released_until`, register names and the ids in their values, board items (`shape_ids`, 1/16 units ↔ `stroke_ids`, board units) and stroke pieces, read as trommi-core's `board_items` and `trail` read them. `decode_body` (the model's fields), `decode_body_text` (the same as JSON text, read from the body's own text without building it whole: the hot path), `encode_body`, `encode_register`, `register_from_wire`, `file_ids_of`, `decode_piece`, `encode_piece`. The numbers follow JavaScript's, which the web wrote first. | web (`codec.ts`, and every received envelope's `body`), the board model |
-| `src/model/` | The board model (`Model`): cards, answers, requests, notes, published objects, timelines, registers, members and sessions as every app shows them, built from what the protocol core accepted; its Desk is `desk.rs`'s, and each open card carries its snooze as the Desk holds it (`snoozed_until`, `unsnoozed`). `finish(now)` hands an app the patch of what a batch touched, with `wake_at`: when to project again by the clock alone. | web (`ClientModel`, mirrored in `mirror.ts`), iOS (`BoardMirror.swift`) |
-| `src/sessions.rs` | The session list (`SessionRow`): which sessions show, their names, online or gone, archived (the person's choice, a closed helper, a replaced pairing of the same folder), parent, desk and order. The Desk leaves out the cards of the sessions it lists as archived. | web (`BoardState.agents`), iOS (`DeskModel.agents`) |
-| `src/status.rs` | Each session's link (`live`, `oncall`, `asleep`, `cut`, `gone`), its red hand (`blocked`: cut off, gone while working, or a permission request or a blocking question that stands on the Desk) and its quiet hint, decided at the model's clock, with the moment it may change (`recheck_at`). | web and iOS, through the session list |
-| `src/presence.rs` | Presence from the live stream: a `presence` event (`apply_presence_event`: no `hears`, the link report stands; offline as of the event; `lost` an alert) and the opening list of who is here, whole once its `here` came (`stream_opened`, `apply_here`: a device shown online that the list did not name is offline). | web (`client.ts onStream`), iOS (`Room` stream) |
-| `src/seats.rs` | The seat rule: an agent of the room that sits in no session gets its main session from any human device once it is connected and has waited out its grace (30 s; its inviter founds it first), one founding at a time, never a second (`seat_plan`, `after_hub`, `founded`). | web (`engine.ts seatAgents`), iOS (`RoomDevices.swift seatAgents`) |
-| `src/desk_delete.rs` | Deleting a desk, as steps an app does one after the other and asks again: mark the desk's register (`deleting`, so any human device finishes a delete broken off: `desks_deleting`), shred its open cards, archive its sessions, remove the agent devices that sit on no other desk, read and erase its Scribble Board, delete every file its cards, Chats, Artifacts and board name, write a snapshot of the empty board, take the register away. Each step is decided from the model and what the app read of the board, so nothing done is asked for again; `done`/`total` is the progress. `desk_contents` counts what the confirm names. | web, iOS (through `ClientModel`: `desks_deleting`, `desk_contents`, `desk_delete_plan`) |
-| `src/off_mind.rs` | Off your mind (`off_mind`, in the patch as `off_mind` whenever the session list is): what has left the Desk, for the two stacks docked at its foot and the hinted list. The starred stack (the register `star/<card>`, the last starred first, each saying whether it runs); the running stack (the cards with their agents by `card_place`, the one that moved last first, with its status line's words); **a card has one home**: a starred card is in the starred stack only, so the running stack's count is what its fan shows; the put-off cards; the closed cards counted per session, and the 120 closed last. Cards of archived sessions are in none. An app keeps the cards of the desk in view and draws. | web (`desk.mjs offMind`), iOS (`DeskModel.offMind`) |
-| `src/selfjoin.rs` | Self-join (spec 12.4) on the person's side: which asks get a link and which are refused at once (`bad-ask`, `cap`, `busy`), whether a vouched Request is let in, which archived self-joined sessions' devices go, the asks as sidebar rows. | web (`client.ts answerAsks`), iOS (`SelfJoin.swift`) |
-| `examples/codec_speed.rs` | The codec alone: 10 000 card and message bodies read. | by hand |
-| `src/plan.rs` | The load rules of a catch-up as steps (`CatchUp`, `Step`): the Desk once (then its changes since), the open objects' current versions, the history once, Welcomes once per page, then the live stream. | a Rust host, tests |
-| `src/board.rs` | Board facts (`Fact`, `Source`, `Board`): newest to oldest, what history brings may only close. | a Rust host, tests |
-| `src/registers.rs` | Session names and settings as registers; a register never makes a session. | a Rust host, tests |
-| `src/store.rs` | The store interface a Rust host gives (`Store`, `MemoryStore`). | a Rust host |
-| `examples/desk_speed.rs` | The Desk alone: one card at a time and pages of 200. | by hand |
+The app core: every Trommi app decision, written once in Rust. Web, iPhone, Mac and Linux run `App`; the connector
+uses the same engine in agent mode. Platform shells draw or integrate with MCP and execute I/O. The protocol core
+underneath owns MLS, envelopes, chains, command gating and encrypted files. No platform keeps a second sync
+engine, board model or account implementation.
 
 ## The app core
 
-All of an app's logic, once: what every screen shows, the sync with the hub, the actions, the account, the cache.
-An app (a **shell**) draws the view model it is given, passes taps back, and runs the I/O the core asks for. Code:
-`src/app/` and the modules beside it; the types below are the contract every shell is written against.
+`App::handle(now_ms, Event) -> Vec<Effect>` is the human apps' contract. One App owns one slot and receives events
+serially. It has no network/storage handles or UI callbacks. The host supplies time and services; the protocol's
+cryptographic randomness comes from the system and is independent of the retry-jitter seed.
 
-### One loop
-
-```text
-shell                                       App (core/client, no I/O, no clock, no threads)
-  Event::Start { config }            ──▶   handle(now_ms, event) ──▶ [Render, Store{DeviceLoad}]
-  runs each effect, sends its result ──▶   handle(now_ms, Event::Store{id, result}) ──▶ [Render, Http, OpenStream, Timer]
-  Event::Http / Stream / Wake / …    ──▶   …
-  Event::Action { action }           ──▶   …   (a tap, a typed line)
+```mermaid
+sequenceDiagram
+  participant Shell
+  participant App as App (Rust)
+  Shell->>App: Start(config)
+  App-->>Shell: Store(DeviceLoad)
+  Shell->>App: Store(id, result)
+  App-->>Shell: Render, Http, OpenStream, Timer
+  Shell->>App: Focus / Action / I/O result / Wake
+  App-->>Shell: Ordered effects and ViewDelta
 ```
 
-With `Config.hub` empty, a start that loaded a stored device reads the app store's key `room` (`Store{Get}`) before it opens it: the hub of the room this
-slot holds, written by a join with the code before the device's first write.
+`Start` names the platform, version, slot, locale, zone, jitter seed, optional hub and capabilities. An empty hub
+uses the stored room's hub, otherwise the default. `Config.demo` instead supplies the shared fixture and runs the
+same app entirely in memory. The human apps draw only `ViewModel` deltas. The connector needs no human view and
+uses `engine::Engine`, `engine::feed::Board`, the shared model and cache directly, with `become_agent` and the
+agent-mode lease/command/removal rules.
 
-**Signing in with the recovery code.** `App::join_room(now, RoomJoin { hub, room, keys })` on a slot without a device
-in a room (`Phase::SignedOut`) makes the device, reads and checks the room (its sealed keys, the room group's
-GroupInfos, live sessions and Commits; no content), posts the join, and then joins the live session groups with the
-same keys (`App::sessions_not_joined`). `App::room_join()` says where it stands: `Step(Reading | Checking | Joining)`,
-`Waiting { retry_at }`, `Joined`, `Failed(error)` with `error.code()` one of `wrong-recovery`, `not-found`,
-`too-many`, `room-exists`, `interrupted` (a join was posted and its answer never read: the code is asked for again,
-and the join goes on from it), `busy`, the core's code of a room that does not verify, or the hub's refusal. A join
-that fails before it was posted leaves nothing stored; the keys of the code are never stored.
+## What lives here
 
-**Signing in to the account.** `Event::Action { Account { SignIn { email, password, hub } | SignInWithKit { email,
-words, hub } } }` on a slot without a device: the core derives the keys (Argon2id for the password, inside this
-`handle`), sends `POST /v1/account/login` or `/recover` itself (no token), opens the copy of the recovery code the
-hub answers with, and joins the room with it as `App::join_room` does. The hub is the action's `hub`, else
-`Config.hub`, else the default. `view.account.step` is `working` meanwhile, `none` once joined, `sign_in` with a
-`problem` (`account.wrong_login`, `account.wrong_kit`, `account.bad_account`, `account.bad_words`, `account.bad_hub`,
-`account.no_room`, `account.offline`, `account.throttled`, `account.too_many`, `account.interrupted`,
-`account.join_failed`, `account.refused`) when not. Password, words, keys and code are in no `Debug`, log, view or
-stored entry.
-
-**The actions' hub requests.** The App sends no request with a token on its own: an action builds its request with
-the codec's builder for the route (which sets `max_answer`) and hands it to `App::request(now, build, keep)`; the
-engine adds the token, renews it on a `401` and sends the same request again, retries by `Backoff::HUB` (an
-`Interactive` request at most twice, then it is reported as failed; `Background`, `Upload`, `Download` until
-answered), and reports the raw response (2xx or the hub's refusal) or the failure in `App::take_answers()` under the
-id it returned. `keep: Some(name)` keeps a request with side effects across a restart: written to the app store
-(`engine/req/<name>`, without its token) before it is sent, deleted when answered, sent again after a restart and
-answered under the same name. **A kept request must be idempotent at the hub**: it may arrive twice. The routes an
-action may send with `keep`: `POST /v1/groups/{group}/archive`, `DELETE /v1/files/{file}`, `PUT /v1/files/{file}`
-(the same bytes), `DELETE /v1/shares/{share}`, `DELETE /v1/invites/{invite}`, `DELETE /v1/push`, and
-`POST /v1/groups/{group}/reject`. Never with `keep`: a route that makes something new on each arrival
-(`POST /v1/shares`, `POST /v1/invites`, a Request), the account routes, or anything the device's outbox carries
-(Commits, messages, envelopes: those go through `App::act`). Archiving a session is one call, `App::archive_session(now, group, retire)`: the
-archive goes to the hub as a kept request, and once the hub took it the engine archives the group on the device and
-removes the vouched agent devices `retire` from the room's agents by one room Commit, also after a restart. Randomness for what an action makes beside the protocol
-(a file's key, a share link's secret) comes from the device's own source, `Engine::with_entropy`, so a seeded App
-stays exact.
-
-`App::handle(now_ms, Event) -> Vec<Effect>` is the only entry. Time comes in beside each event (`now_ms`, the
-shell's clock); the core never reads a clock. The protocol's randomness is the system's, read inside
-`core/protocol`; the core's own jitter comes from `Config.seed`, so a seeded test repeats exactly. Local-time rules
-("until tomorrow 7:00") use `Config.utc_offset_min` and `Event::Zone`; around a summer-time switch in the night
-such a time can be an hour off, as in today's apps.
-
-| Event (in) | When |
+| Module | Responsibility |
 | --- | --- |
-| `Start { config }` | once, first; the shell holds the device lock (one owner) before it |
-| `Action { action }` | the person did something (`actions::Action`, `account::AccountAction`) |
-| `Focus { focus }` | what the person looks at, and whether the window is in front |
-| `Http { id, result }`, `Stream { id, item }`, `Store { id, result }`, `Secret { id, result }`, `Platform { id, result }` | the result of the effect with that id |
-| `Progress { id, done, total }` | optional: how far a transfer is |
-| `Finished { key, result }` | a transfer that outlived an earlier App (an iOS background upload) ended |
-| `Wake` | the timer of the last `Timer` effect went off |
-| `Foreground`, `Background`, `Net { online }`, `Push { payload }`, `PushToken { kind, token }`, `Zone { utc_offset_min }` | the platform's news |
+| `src/app/` | App lifecycle, account flows, push policy, native shares, invites, external snapshots, and effects |
+| `src/actions/` | Named taps/edits, validation, optimistic echoes, sealing, undo and refusal rollback |
+| `src/engine/` | Authentication, catch-up, Welcomes, live order, outbox, retry timing, history checks and agent mode |
+| `src/hub/` | Hub routes, request construction, authentication/lease headers, strict responses, limits and refusal codes |
+| `src/model/` | One board model, shared by human apps and connector, fed only from checked protocol results |
+| `src/views/` | Ordered screen views, action modes, words, badges, status lines, file references and delta/fold types |
+| `src/cache/` | Revision-bound model records and load/save plans over the shell's disposable key/value space |
+| `src/app/past.rs` | History windows, verified historical versions, transient-failure retry and lazy reads |
+| `src/files.rs`, `src/scribble/` | File lifecycle and encryption requests; board items, packed strokes and snapshots |
+| `src/account/`, `src/selfjoin.rs`, `src/seats.rs`, `src/desk_delete.rs` | Account authority, vouched joins, session founding and resumable desk deletion |
+| `src/status.rs`, `src/sessions.rs`, `src/off_mind.rs` | Shared status, session and card-placement rules used by views |
 
-| Effect (out) | The shell |
+## Events and effects
+
+The Rust types in `src/app/{event,effect,io}.rs` are the contract. The WASM/UniFFI facade's `AppCore` takes an
+`AppPacket`: JSON plus a list of byte buffers; JSON byte fields are indices into that list. Native Rust hosts use
+the typed events directly. There is no serialization of private protocol state to the UI.
+
+| Event | Meaning |
 | --- | --- |
-| `Render { delta }` | folds it into its view state (`ViewModel::apply`) and draws |
-| `Http { id, request }` | sends exactly that request (no auth of its own, no retries, no redirects), reads at most `request.max_answer` bytes of the body, answers `Http` |
-| `OpenStream { id, request }` | opens a streamed GET, passes the raw bytes as `Stream` items (`opened`, `chunk`, `ended`, `failed`); the core parses the event stream |
-| `Cancel { id }` | stops that request or stream |
-| `Store { id, op }` | runs a store op (below), answers `Store` |
-| `Secret { id, op }` | Keychain or the platform's equivalent, answers `Secret` |
-| `Platform { id, op }` | a platform service: a passkey with PRF, push registration; answers `Platform` |
-| `FileReady`, `FileGone` | keeps decrypted bytes under a file id for drawing (views name files by id); drops them |
-| `Timer { at_ms }` | one timer, replacing the last; `None` clears it |
-| `Notify { notice }` | a local notification (`can.notify`): a card or request that newly waits while the app is in the back (after `Background` or `Focus { visible: false }`, or an App launched by a `Push`); never for what waited before, never while the room's history is read, never in front; push off on this device: none, knocking: only the urgent. `id` and `target` are the card's id |
-| `Snapshot { snapshot }` | widgets and Live Activities (`can.snapshots`): `waiting`, `working` (sessions at work), `urgent`, and `cards`, the waiting ones most urgent first (at most 20: id, title, session, kind, urgency, created_ms, options, multiple); sent when it changed, not before the room was read once, empty at a sign-out. A decision is answered from the island with `Action::Answer`, a request with `Action::Verdict` |
-| `NotifyContext { context }` | the notification extension's items (`can.notify` and `can.push` "apns"): `{room, hub, client, cursor, push_key, keys: [{group, epoch, key}]}` (the content key of each session group's current epoch; empty while push is off here) replaces what is stored, again whenever an epoch moves and at `Background` (the cursor); `null` at a sign-out: both items and what the extension read ahead go. Never logged |
-| `SaveFile`, `OpenUrl` | offers bytes as a file; opens a link outside |
-| `Log { level, text }` | writes a line; it never holds content, keys, addresses or tokens |
+| `Start` | Configures and opens the slot, or the in-memory demo |
+| `Focus` | Screen, desk, visibility and optional board in view |
+| `Action` | A tap/editor result; account steps are `Action::Account` |
+| `Http`, `Stream`, `Store`, `Secret`, `Platform` | Result of the effect with the same I/O id |
+| `Wake`, `Net`, `Foreground`, `Background`, `Zone` | Clock/network/lifecycle/zone changes |
+| `Push`, `PushToken` | Raw platform push/token data; the core checks it and owns registration policy |
+| `Progress`, `Finished` | Optional transfer progress or completion |
 
-**The size of an answer is the core's to bound, the shell's to enforce.** Every `HttpRequest` carries `max_answer`,
-the most bytes its answer's body may have (the route's cap; the hub is not trusted with how much it sends). The
-executor stops reading at the first byte beyond it, closes the connection and reports the request as failed with an
-`IoError` of kind `too_large`, which the core takes as a bad answer; a `Content-Length` above the cap fails before the
-body is read. It never hands over a body cut short and never buffers more than the cap. Of an `OpenStream` the cap
-bounds the body of an answer that is no 200; the events of an open stream are bounded by the core, which parses them
-(a line or an event above its limit ends the stream). A request whose JSON names no `max_answer` has 64 KiB.
-
-Ids (`IoId`) are the core's, counting up per App and never reused by it. Each `AppCore` has its own executor: a
-result goes only to the App that asked, and a replaced App's late results are dropped by the shell (its ids start
-at 1 again). A result for an id the core does not know (or cancelled) is dropped. Every number in the contract stays
-below 2^53, so JavaScript holds it exactly; `Config.seed` is a 53-bit number.
-
-### Order
-
-The shell starts the effects of one answer in the order given; after that they may run at the same time. A
-`Render` comes first in an answer, so the screen is drawn before the I/O starts. One exception: a `Store` with
-`DeviceApply` is a **barrier**: no effect after it, of the same answer or of a later one, starts before it
-finished; the shell keeps handling events meanwhile and queues their effects. If it failed, the shell drops every
-effect queued behind it and sends only its error. That is how a sealed message never leaves before the state that
-made it is durable. Events go into the App one at a time, in the order they happened (one queue per
-App).
-
-### Errors and retries
-
-- An HTTP answer of any status is a result, not an error. `hub::classify` sorts it: 2xx; **refused** (4xx but 408
-  and 429: not retried, an action's echo rolls back with a toast); **not now** (408, 429, 5xx: retried, never sooner
-  than a `Retry-After` given in seconds; a date there counts as absent); a 2xx answer the route does not allow is **bad answer** (W2: never half applied).
-- An `IoError` is only "no answer": `offline`, `timeout`, `failed` count as **offline**; `cancelled` is no failure;
-  `too_large` (the body passed `max_answer`) is a **bad answer**;
-  `conflict` on `DeviceApply` means another owner wrote the device state: the App stops (`Phase::Stopped`) and the
-  shell opens the stored state again with a new App. Any other failure of a `DeviceApply` (`full`, `denied`,
-  `failed`) closes the device: the App reads the stored state again itself (`DeviceLoad`) after a wait and opens it
-  in place (`Phase::Opening` meanwhile), at most `app::REOPEN_TRIES` times in a row; then `Phase::Stopped`, and
-  `Event::Foreground` tries once more.
-- Retries are the engine's alone (`engine::Backoff::HUB`: 1 s doubling to 60 s, jittered down by up to a quarter,
-  at least `Retry-After`). A shell never retries. The outbox sends one entry at a time, in order.
-- `Cancel { id }`: the core forgets the id first; a result already on its way is dropped. The request may still
-  have reached the hub, so every request the core cancels is safe to repeat (the outbox's entries carry their own
-  ids).
-- A `bad-format` event at the edge names where the JSON failed, never what it held. `Debug` of an event, a packet, a
-  header, an account action or a platform answer shows no secret, address, token or key.
-- A panic inside the core closes that `AppCore` (`internal` from then on); the shell starts a new one, which reads
-  the stored state again. In the browser a panic stops the module, as today.
-
-### The hub codec
-
-`hub::Codec` is every hub route a human device's app uses, as data (sign-in, catch-up, the live stream, the Desk,
-the outbox, joins, content, files and Share links, invites, the account, push), and an agent device's lease
-(`Route::Link`, with `Site::lease` sent as `Trommi-Lease` on every write and the stream); not the two
-routes of the notification extension that go by a push ticket: `request(site, route)` gives the whole `HttpRequest` and an `Expect` (what
-was asked), `answer(expect, response)` the typed `Answer` or a failure. The hub is not trusted: an answer that is
-not exactly what its route promises is a bad answer as a whole and nothing of it is handed on. The limits are the
-client's own (`hub::limits`): a size cap per answer (also the request's `max_answer`), a count per list, a length
-per byte string, base64url in its one spelling, whole numbers below 2^53, no member named twice, no object named
-twice in a list, change numbers strictly rising and inside the stretch asked for. `hub::StreamReader` is the one
-parser of the live stream: it takes the bytes cut anywhere, bounds a line and an event (4 MiB), and refuses a
-change the stream brought before. `hub::refusal` reads the hub's own refusal (a code of spec/v1.md 16 under its own
-status, with `voided`, the wait, the `epoch` of `epoch-taken`); an error status without one came from a proxy and
-voids nothing. What the real hub answers is recorded in `tests/hub/*.json` by `tests/hub/codec.rs` of the test crate
-(`TROMMI_HUB_VECTORS=write cargo test -p trommi-tests --test hub_codec`) and read back by `tests/hub_vectors.rs`.
-
-### Threads, per platform
-
-The App is single-threaded and synchronous; nothing async crosses a binding.
-
-| Platform | Where the App runs | Who runs the effects |
-| --- | --- | --- |
-| Web | the existing core worker: one `AppCore`, events in the worker's order | a TypeScript executor in the worker: `fetch`, streamed `fetch` for the event stream, IndexedDB (`store-idb.ts`), `setTimeout`; `Render` deltas go to the page by `postMessage` |
-| iOS, iPad, Mac | in process, through UniFFI, on one serial queue (an actor) that owns the `AppCore` | a Swift executor: `URLSession` (a background session for uploads), files and the Keychain, a timer; results are sent back onto that queue. `@Observable` stores per screen fold the deltas on the main actor. The Notification Service Extension never loads the App (memory): it keeps the decrypt facade only. |
-| Linux | in process, the crate itself (no FFI): one tokio task owns the `App` and reads an mpsc queue of events | `core/io`: reqwest and tokio, files, timers (W-S1; shared with the connector later); deltas go to the Qt thread through the cxx-qt bridge |
-| Tests | `app::sim::Sim`: in memory, a clock the test moves | `Sim::execute` |
-
-### Across a binding
-
-`AppCore` in `core/bindings` (UniFFI and wasm, one declaration): `handle(now_ms, AppPacket) -> AppPacket`,
-`view_json()`, `close()`. An `AppPacket` is JSON text plus `blobs`: in the JSON a `Bytes` field is the index of its
-bytes in `blobs` (`app::edge`), so envelopes and files cross as bytes, once per event. The JSON is the serde form of
-`Event` and `Effect` (tag `type`, snake case; actions tag `do`); the shells' own types mirror it (generated from the
-Rust types by W4, never written by hand twice). Outside the edge (scripts, test logs) bytes are base64url.
-
-### What is stored
-
-Two spaces of one key-value store, each app on its own platform store (IndexedDB, files, the Linux app's journal):
-
-- **device** (`DeviceLoad`, `DeviceApply`): the device state of the slot `Config.slot` names (one per room and
-  device; the shell holds that slot's lock before `Start`, and several Apps on one device use several slots): the
-  protocol core's state (keys, groups, chains, the outbox) in its own
-  format (`core/protocol/src/store.rs`): all or nothing, durable on return, one revision checked against
-  `expected_revision`, one owner. Losing it loses the device.
-- **cache** (`Get`, `Scan`, `Put`): string keys `c1/<room hex>/<part>[/<id>]` (`src/cache/`), values the serde JSON
-  of the core's own types, files as the hub stores them (encrypted). Last write wins; a lost write costs a
-  catch-up, never data. A new format counts `c1` up and starts empty.
-  One key per board record (`c1/<room>/model/card/<id>`, `…/model/item/<timeline>/n<number>`, …), so a live line
-  writes its few records and not the board. The App reads `meta`, the Desk's last list and one `Scan` of
-  `c1/<room>/model/` after `DeviceLoad` and before the engine asks the hub anything, so the last board is drawn
-  first. Writes follow the board in three `Put`s (`meta` says `writing`; the records; `meta` names the device's
-  store revision), each behind the device's own writes (the barrier), so the cache never holds what the device
-  did not store. A shell's `Put` needs to be atomic per key only. At the start a cache at the device's revision is
-  the board; one behind it keeps its records but drops the timelines' items (the device will not hand lines it took
-  over again; a timeline is read when opened); any other (`writing`, another device, a newer revision, another
-  layout, a value that does not read) is deleted and built anew. It holds decrypted content (titles, lines,
-  answers), never keys, tokens or the recovery code, and is never sent anywhere.
-
-Secrets the platform guards (a passkey's wrapped key, the iPhone's read-ahead copy for the notification
-extension) go through `Secret`, never the cache.
-
-### How the existing parts plug in
-
-The App holds the parts this crate already has and stops each app from holding its own copy of them:
-
-| Part | In the App |
+| Effect | Shell responsibility |
 | --- | --- |
-| `model/` (`Model`, `Change`) | the board the views are made from; envelopes the protocol core accepted go in, `finish(now)` gives what a batch touched |
-| `desk.rs` (`DeskState`) | inside the model, as today; `views/` turns its projection into `DeskView` |
-| `sessions.rs`, `status.rs` | the sidebar's rows and each session's link and red hand (`SidebarView`, `SessionView`) |
-| `presence.rs` | fed from the event stream the engine parses |
-| `seats.rs`, `selfjoin.rs` | upkeep steps of the engine (W1), their asks as sidebar rows and actions (W3) |
-| `plan.rs`, `board.rs`, `registers.rs` | the catch-up order and the board facts the engine follows |
-| `codec.rs` | every body in and out, as now |
-| `cache/` | the board kept between runs, over the `Store` effect's cache space (W5) |
+| `Render` | Fold `ViewDelta` into the generated ViewModel, then draw |
+| `Http` | Send the exact request, enforce `max_answer`, and return status/headers/raw body |
+| `OpenStream` | Forward ordered raw opened/chunk/ended/failed events; parsing is Rust's |
+| `Cancel`, `Timer` | Cancel that I/O id; replace the single wake-up timer |
+| `Store` | Execute the specified device/cache operation and return its result |
+| `Secret`, `Platform` | Private platform secret storage, push registration or another declared capability |
+| `FileReady`, `FileGone`, `SaveFile`, `OpenUrl` | Drawing bytes, their removal, export and external navigation |
+| `Notify` | Display the core's already selected notification and words |
+| `Snapshot` | Draw widget/Live Activity counts and ordered waiting cards; publish the core's ordered share desks |
+| `NotifyContext` | Replace the notification extension's read-only context/key copy, or clear both |
+| `ShareInbox` | Finish or release a native sealed-inbox claim after the preceding durable write |
+| `ForgetShared` | Erase the native shared inbox/key after account deletion or verified signed removal |
+| `Log` | Diagnostics without content, credentials, keys or tokens |
 
-### What a shell may do
+A request's route, authentication, retry policy and caps come from the core. The executor disables implicit
+redirects and extra credentials and never retries on its own. It rejects a response above `max_answer` before
+buffering more than the limit, including a declared Content-Length above it; it never passes a truncated success.
+For an open stream, the cap bounds a non-200 body and the core bounds/parses each event. The default cap is 64 KiB.
 
-A shell holds **drawing and the platform's own services, nothing else**:
+I/O ids are unique within an App. A closed/replaced App drops late results. A refused platform capability is an
+ordinary result, not an app decision in the shell.
 
-- may: draw the view model; gestures, the pen and the canvas; navigation; the file picker; the platform's push
-  registration, notifications, Keychain, widgets and Live Activities, Share extensions, background tasks; the I/O
-  executor where the platform demands its own (fetch, URLSession, reqwest);
-- may not: decide anything from state (what stands on the Desk, an order, a filter, a badge, whether something is
-  stale), sort or count what the core gave, retry, build a sentence that depends on state, keep a model of its own.
-  A word that depends on state comes as a `Text` from the core.
+## Durability and ownership
 
-The folders where an app still holds logic (web `app/web/core`, iOS `TrommiClient`, Linux `engine/`) may only
-shrink until their switch deletes them: `tests/shells.rs` fails on a new file there or a file that grew, and
-`tests/shells.json` holds the sizes when the freeze began. An agreed exception updates that list in the same pull
-request. The Linux app switches first and is the reference shell; web and iOS/Mac follow its pattern.
+Every core call and its effects preserve their order. A `DeviceApply` is a barrier: no effect behind it, including
+one from a later event, may run until the write is durable. The shell can deliver incoming events while waiting,
+but queues their effects behind that barrier. A failed device write drops what waited behind it and reports the
+failure to the core. No sealed message may leave before its corresponding device/outbox write succeeds.
 
-### Conformance
+The shell holds one exclusive owner lock for a device slot before reading it and retains it until close. The
+revision check behind the lock refuses another writer. The device space is an atomic batch of binary entries
+(`DeviceLoad`, `DeviceApply { expected_revision, put, delete }`); it contains private state, chains, groups and the
+outbox. Rollback checks never silently make a new identity over unreadable state.
 
-One script, every shell, the same view: `tests/conformance/*.json` lists events (with the clock), the effects
-expected after each (`expect_effects`, renders left out) and the view model expected (`expect_view`); an expected
-object needs only the keys it names. `app::script::run` with `CoreShell` is the reference
-(`cargo test -p trommi-client-core --test conformance`); each shell runs the same files through its binding and its
-own fold, in its own test harness (the same thirty lines in Swift, TypeScript and Rust). A shell passes when every
-script holds with its own fold.
+The cache space is separate: string keys and bytes, with get/scan/put/delete. Keys start with
+`c1/<room>/`; `src/cache/layout.rs` names the model/meta/window/draft records. Values describe checked model data;
+file cache bytes retain their encrypted hub representation. Metadata binds a model to the device identity and
+revision. Losing the cache costs a catch-up; it never loses the outbox. Physical storage, encryption at rest,
+locking and filesystem-safe key encoding belong to the executor.
 
-A signed-in room needs real sealed envelopes, which no script can hold, so the scenes of a room (an empty Desk, a
-decision arriving, answered and snoozed on another device, a session falling asleep) are recorded instead:
-`tests/view_scenes.rs` runs each against the stand-in hub on a fixed clock and writes every `Render` delta with the
-view model reached into `tests/conformance/views/<scene>.json` (random ids as stable stand-ins). A stale recording
-fails like a stale golden (`TROMMI_GOLDEN=write` to write them again). Each shell's fold replays the deltas into an
-empty model and must reach that view: the web's `core/bindings/wasm/js/views-fold.js` (`node
-tests/bindings/views-replay.mjs`), Swift's `CoreView.ViewModel.apply` (`tests/bindings/views-replay.swift`), the
-Linux shell's own. The shells' view types are written from the Rust ones by `node tests/bindings/views.mjs --write`
-(`core/bindings/wasm/js/views.d.ts`, `core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/Views.swift`).
+Sign-out drops plaintext model/file/account buffers, ends the token and wipes the slot/cache. A human device is
+erased for removal only after the protocol checked its signed removal. A hub claim alone leaves state intact.
+Extension key clearing precedes erasure writes so a full disk cannot leave a stale key copy; failed erasure remains
+visible. `ForgetShared` is reserved for verified removal/account deletion, so launching an empty slot cannot erase
+legitimate shares waiting to be imported. See [Security](../../SECURITY.md).
 
-### Build order
+## Native integrations
 
-The streams that fill this contract (W1 engine, W2 hub, W3 actions and account, W4 views, W5 cache, W6 torture and
-conformance) and the shell switches (Linux, web, iOS/Mac, each behind the flag `app-core`) keep this surface: they
-add variants and fields, they do not change what is here without a change to this section.
+The core supplies notification text and suppresses initial catch-up/foreground notices. `NotifyContext` carries the
+push key, room/hub/client/cursor and only each session group's current content key; never the room key or device
+key. Turning notifications off clears the content-key copy. Sign-out/removal clears the context as well. Native
+storage failures must clear the previous copy. The notification extension's deliberately narrower verification
+and authority are documented in Security.
 
-## What stays in each app, until its switch
+`Snapshot` is sent only when it changes. It includes waiting/working counts, urgency, ordered cards (at most 20),
+room, ordered share desks/crowns and `live_activity` policy. Unknown policy waits for the core's push-level read;
+false ends the activity. `PushToken` kind `apns_live_activity` uses the core's room/device tag, registration bound
+and duplicate suppression without replacing ordinary APNs registration.
 
-- **Network and the live stream:** the hub's routes, retries, the event stream (web `hub.ts`, iOS `Hub.swift`,
-  `SSE.swift`; the connector `hub.rs`).
-- **Storage:** IndexedDB and the tabs (web), files and the Keychain (iOS), the journal (connector).
-- **The sync engine:** the hub's order, Welcomes, a group's past, gaps in a sender's chain (web `engine.ts`,
-  `room.ts`; iOS `Room*.swift`; connector `client.rs`).
-- **A copy of the board model** to render from, kept by the core's patches (web `mirror.ts`, iOS `BoardMirror.swift`);
-  the connector keeps its own (`model.rs`).
-- **Words:** what a link, a red hand or a snooze says; the core decides which, the app says it.
-- **The UI:** the web's views, SwiftUI; the connector's MCP tools.
+`ImportShare` checks the original room before uploading, waits for every file, picks the current crown or an
+allowed recipient, otherwise keeps a Note, and carries an import id for deduplication after restart. Its inbox
+acknowledgment waits behind the device-write barrier. `WriteNoteFiles` and `DrawStroke` similarly keep attachment
+references and protocol stroke encoding in Rust.
 
-## Status lines
+## What a shell may do
 
-An agent sets its status lines (`set_status`); nothing but the agent changes them, so a line can say "working" or
-"waiting on you" long after its card was put off, answered or closed, or its session went. Every app therefore shows
-a line by one rule, so the line never says more than the Desk's "Off your mind" does:
+A shell draws, navigates and handles input. It owns gestures, layout, image clipping, the pen, native file pickers,
+theme/fold preferences, platform push/notifications, Keychain, widgets, extensions and the requested I/O. It may
+choose how a view fits available space. It may not keep a domain model, sort/filter the core's lists, count badges,
+retry requests, implement account authority, or build words from domain state. State-dependent text is
+`Text { key, args, en }`; generated fields already express the screen's modes and available actions.
 
-- a line of an archived or vanished session: not shown (`gone`);
-- linked to a card (`object_id`), the card's place decides: put off (Later) is `later`, shown quietly; open (on the
-  Desk, or with its agent) is as set; answered and still worked on is `working` at most; else (answered long ago,
-  done, shredded) `done`, which goes after ten minutes;
-- not linked, and not updated for 2 hours: `stale`, shown greyed and still (no sign of work) for a day, then not shown.
+| Platform | Core and executor |
+| --- | --- |
+| Web | `AppCore` in `app/web/core/core-worker.ts`; `shell.ts` uses fetch/IndexedDB, page folds/draws |
+| iPhone/Mac | `AppCore` through UniFFI; `CoreSession` actor in `app/ios/TrommiClient/Sources/TrommiShell`, URLSession and encrypted journal/Keychain |
+| Linux | Rust `App`, `trommi-io`, Qt/QML shell |
+| Connector | Shared agent `Engine`/model/cache through `connector/src/driver.rs`, `trommi-io`, MCP and slot journal |
 
-The apps apply it where they read the lines (web `app.mjs` `lineState`, iOS `Desk.swift` `lineState`); the core's
-red hand and quiet hint count only the lines that are still current (`src/status.rs`, `LINE_STALE_MS`).
+The retired app-logic paths are deleted. `tests/shells.rs` and `tests/shells.json` keep the shrinking-only boundary;
+there is no legacy-mode switch or fallback implementation.
 
-## The body codec across the facade
+## Tests and bindings
 
-`core/bindings/swift/src/codec.rs` hands the codec to both bindings as JSON text: `body_from_wire`, `bodies_from_wire`,
-`body_to_wire`, `board_item_parse`, `register_to_wire`, `register_from_wire`, `register_key_of`,
-`register_name_of`, `body_file_ids`, `attachment_from_wire`, `attachment_to_wire`, `board_entry_from_wire`,
-`shape_id_from_wire`, `shape_id_to_wire`, `piece_from_wire`, `piece_to_wire`. A write the codec refuses is
-`bad-format` with its own code at the head of the message (`bad-argument: …`). Reading is on every envelope that
-arrives, so it is done where the payload already is: `ReceivedEnvelope.body` carries the body read as the kind its
-header names (the model's fields as JSON text, or `newer_schema`, or `bad`); a call per body from JavaScript costs
-about 2 µs in the binding's layer alone.
+```sh
+cargo test --locked -j4 -p trommi-client-core
+cargo test --locked -j4 -p trommi-io
+node tests/bindings/manifest.mjs
+node tests/bindings/views.mjs
+node tests/bindings/views-replay.mjs
+```
 
-## How an app uses it
+Run heavy builds serially under the repository's resource limits. `tests/conformance/*.json` describes input
+scripts, expected effects and views. `tests/view_scenes.rs` records signed-room scenarios into
+`tests/conformance/views/`, and web/Swift folds replay the same deltas. Out-of-order deltas are refused.
+`tests/bindings/views.mjs --write` derives TypeScript and Swift view types from `src/views/mod.rs`; the manifest
+check covers the shared facade. Binding outputs are rebuilt by `core/bindings/{wasm,swift}/build.sh`.
 
-The app keeps one `ClientDesk` per room. After each batch it hands over only what the batch touched (`put_cards`,
-`put_requests`, `remove`, `set_snooze`, `set_archived`), and the hub's list when it read one (`set_listing`), then
-calls `project(now)` and applies the `Delta` to its own lists. The web app hands a batch as one JSON text
-(`put_cards_json`, `project_json`): one crossing per batch instead of one record per card. iOS uses the records.
+Rust suites cover actions, history consistency/recovery, durability, accounts, imports, notifications, agent
+leases/command gates and signed-removal verification. Native shell suites cover executor/store/transport and
+isolated extensions. `tests/client/mega.rs` compares the shipped shells against the local real hub; its small
+seeded correctness runs and the separate opt-in nightly fleet/load tests are described in the root README.
 
-## Tests
-
-`cargo test -p trommi-client-core`. `deltas_give_the_whole_desk` checks, over long seeded random runs, that the
-deltas applied in order always give the Desk projected from nothing. Across the apps:
-`tests/client/mega.rs` (see the root README, "Build and tests").
+Settings → Data uses `AccountAction::ReadUsage` and `SettingsView.data`. The core authenticates the request, validates counts and sizes, presents the rows and clears them when the account is forgotten.
