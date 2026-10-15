@@ -168,7 +168,9 @@ struct DeskScreen: View {
         if let dock = shell.view.desk.running { Dock(dock: dock) }
         if let off = shell.view.desk.off { Button { shell.focus(.off(query: "")) } label: { Label(off.says.en, systemImage: "tray") }.font(Face.display(22)).padding(.top, 24) }
       }.padding(24).frame(maxWidth: 820).frame(maxWidth: .infinity)
-    }.refreshable { shell.act(["do": "retry"]) }
+    }.accessibilityIdentifier("desk-content")
+      .accessibilityValue(String(shell.view.desk.rows.count))
+      .refreshable { shell.act(["do": "retry"]) }
   }
 }
 struct Dock: View {

@@ -7,7 +7,11 @@ enum NativeDemo {
   private static func url(_ name: String) -> URL {
     (Bundle.module.resourceURL ?? Bundle.main.bundleURL).appendingPathComponent("Demo/" + name)
   }
-  static func fixture() throws -> Any { try JSONSerialization.jsonObject(with: Data(contentsOf: url("fixture.json"))) }
+  static func fixture() throws -> Any {
+    let path = ProcessInfo.processInfo.environment["TROMMI_FIXTURE"]
+    let source = screen != nil && path?.isEmpty == false ? URL(fileURLWithPath: path!) : url("fixture.json")
+    return try JSONSerialization.jsonObject(with: Data(contentsOf: source))
+  }
   static func file(_ request: NativePacket) -> NativePacket? {
     guard request.json["method"] as? String == "GET", let text = request.json["url"] as? String, text.hasPrefix("/demo/files/"),
           let name = text.split(separator: "/").last.map(String.init), !name.contains(".."), !name.contains("%"), let data = try? Data(contentsOf: url("files/" + name)) else { return nil }

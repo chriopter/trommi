@@ -95,4 +95,25 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(app.steppers["Width"].exists)
     capture("scribble-board")
   }
+  func testFullSizeDeskLaunchAndMemory() throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let fixture = env["TROMMI_SPEED_FIXTURE"], let rows = env["TROMMI_SPEED_ROWS"], !fixture.isEmpty, Int(rows) != nil else {
+      throw XCTSkip("Opt-in made-up full-size room; no account or hub")
+    }
+    let target = XCUIApplication()
+    target.launchEnvironment["TROMMI_SCREEN"] = "desk"
+    target.launchEnvironment["TROMMI_FIXTURE"] = fixture
+    let options = XCTMeasureOptions(); options.iterationCount = 3
+    measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true), XCTMemoryMetric(application: target)], options: options) {
+      target.launch()
+      let desk = target.scrollViews["desk-content"]
+      XCTAssertTrue(desk.waitForExistence(timeout: 15))
+      let complete = NSPredicate(format: "value == %@", rows)
+      expectation(for: complete, evaluatedWith: desk)
+      waitForExpectations(timeout: 15)
+      XCTAssertTrue(target.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).firstMatch.exists)
+      target.terminate()
+    }
+  }
+
 }
