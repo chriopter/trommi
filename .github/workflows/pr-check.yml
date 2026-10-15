@@ -50,7 +50,9 @@ jobs:
           persist-credentials: false
       # a crate, a test target or a browser test that no workflow runs fails here (.github/scripts/ci_coverage.mjs)
       - name: Every test is run by a workflow
-        run: node .github/scripts/ci_coverage.mjs
+        run: |
+          node .github/scripts/ci_coverage.mjs
+          node .github/scripts/input_trees.test.mjs
       - name: Find the changed parts
         id: find
         env:
