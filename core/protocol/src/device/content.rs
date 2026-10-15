@@ -525,9 +525,18 @@ fn gate_log_key() -> Vec<u8> {
 pub(super) fn check_command(rest: &[u8], value: &[u8]) -> Result<(), Error> {
     match rest.first() {
         Some(&SUB_GATE_LOG) => GateLog::from_bytes(value).map(|_| ()),
-        Some(&SUB_CANDIDATE) => codec::decode::<Candidate>(value, value.len())
-            .and_then(|candidate| Envelope::decode(&candidate.envelope))
-            .map(|_| ()),
+        Some(&SUB_CANDIDATE) => {
+            codec::decode::<Candidate>(value, value.len()).and_then(|candidate| {
+                if candidate.envelope.is_empty()
+                    && candidate.before.is_none()
+                    && matches!(candidate.state, Asked::Started | Asked::Finished)
+                {
+                    Ok(())
+                } else {
+                    Envelope::decode(&candidate.envelope).map(|_| ())
+                }
+            })
+        }
         _ => Err(Error::BadFormat),
     }
 }
@@ -589,8 +598,20 @@ impl<S: Storage> Device<S> {
         }
     }
 
-    pub(super) fn put_own_ids(&mut self, batch: &mut Batch, group: &GroupId, ids: &OwnIds) -> Result<(), Error> {
-        self.put_group_parts(batch, table::REGISTER, SUB_OWN_IDS, super::facts::SUB_OWN_ID_PARTS, group, ids.storage_parts()?);
+    pub(super) fn put_own_ids(
+        &mut self,
+        batch: &mut Batch,
+        group: &GroupId,
+        ids: &OwnIds,
+    ) -> Result<(), Error> {
+        self.put_group_parts(
+            batch,
+            table::REGISTER,
+            SUB_OWN_IDS,
+            super::facts::SUB_OWN_ID_PARTS,
+            group,
+            ids.storage_parts()?,
+        );
         Ok(())
     }
 
@@ -1590,8 +1611,13 @@ impl<S: Storage> Device<S> {
             && header.recipient == self.id
             && !self.is_human()
         {
+            let state = self
+                .stored(&candidate_key(&hash))
+                .map(|stored| codec::decode::<Candidate>(stored, stored.len()))
+                .transpose()?
+                .map_or(Asked::No, |candidate| candidate.state);
             let candidate = Candidate {
-                state: Asked::No,
+                state,
                 before,
                 envelope: bytes.to_vec(),
             };
@@ -1764,9 +1790,34 @@ impl<S: Storage> Device<S> {
 
     // ---- the command gate ----
 
-    fn gate_log(&self) -> Result<GateLog, Error> {
-        self.stored(&gate_log_key())
-            .map_or(Ok(GateLog::new()), GateLog::from_bytes)
+    // Old releases duplicated each durable verdict in a whole-device log. Project
+    // that log into receipts in the same transaction before removing it. A receipt
+    // without a retained envelope is a tombstone, never permission to act again.
+    fn migrate_gate_log(&mut self, batch: &mut Batch) -> Result<(), Error> {
+        let Some(stored) = self.stored(&gate_log_key()) else {
+            return Ok(());
+        };
+        let log = GateLog::from_bytes(stored)?;
+        for (hash, finished) in log.receipts() {
+            let key = candidate_key(hash);
+            let mut candidate = self
+                .stored(&key)
+                .map(|stored| codec::decode::<Candidate>(stored, stored.len()))
+                .transpose()?
+                .unwrap_or(Candidate {
+                    state: Asked::No,
+                    before: None,
+                    envelope: Vec::new(),
+                });
+            candidate.state = if finished {
+                Asked::Finished
+            } else {
+                Asked::Started
+            };
+            self.put_stored(batch, key, codec::encode(&candidate)?);
+        }
+        self.delete_stored(batch, gate_log_key());
+        Ok(())
     }
 
     /// The command gate (9.0.9), for an agent or helper device: whether to act on the envelope with this
@@ -1785,9 +1836,16 @@ impl<S: Storage> Device<S> {
                 return Err(Error::Forbidden);
             }
             let key = candidate_key(envelope_hash);
+            if this.stored(&key).is_none() {
+                return Err(Error::NotFound);
+            }
+            this.migrate_gate_log(batch)?;
             let stored = this.stored(&key).ok_or(Error::NotFound)?;
             let mut candidate: Candidate =
                 codec::decode(stored, stored.len()).map_err(|_| damaged("a command record"))?;
+            if candidate.envelope.is_empty() {
+                return Err(Error::NotFound);
+            }
             let envelope =
                 Envelope::decode(&candidate.envelope).map_err(|_| damaged("a command record"))?;
             if envelope.hash()? != *envelope_hash {
@@ -1802,7 +1860,11 @@ impl<S: Storage> Device<S> {
             if !counts {
                 return Err(Error::NotFound);
             }
-            let mut log = this.gate_log()?;
+            let mut log = match candidate.state {
+                Asked::Started => GateLog::from_receipt(*envelope_hash, false),
+                Asked::Finished => GateLog::from_receipt(*envelope_hash, true),
+                Asked::No | Asked::Refused => GateLog::new(),
+            };
             let decision = {
                 let facts = Facts(this);
                 let content_key = facts
@@ -1853,15 +1915,11 @@ impl<S: Storage> Device<S> {
                 objects::command_gate(&facts, &mut log, &this.id, &opened, &own, now_ms)?
             };
             let asked = match &decision {
-                // The gate lets a command through once. If its own record says nothing of a command that
-                // was let through before, that record is damaged, and nothing is acted on again.
+                // A refused receipt cannot become a fresh permission to act.
                 Decision::Act(_) if candidate.state != Asked::No => {
                     return Err(damaged("the record of started commands"));
                 }
-                Decision::Act(_) => {
-                    this.put_stored(batch, gate_log_key(), log.to_bytes()?);
-                    Asked::Started
-                }
+                Decision::Act(_) => Asked::Started,
                 Decision::Refused(_) => Asked::Refused,
                 Decision::Done | Decision::Uncertain => candidate.state,
             };
@@ -1878,13 +1936,15 @@ impl<S: Storage> Device<S> {
     pub fn command_finished(&mut self, envelope_hash: &Hash32) -> Result<(), Error> {
         self.transact(|this, batch| {
             this.begin(0);
-            let mut log = this.gate_log()?;
-            log.finish(envelope_hash)?;
-            this.put_stored(batch, gate_log_key(), log.to_bytes()?);
+            this.migrate_gate_log(batch)?;
             let key = candidate_key(envelope_hash);
-            if let Some(stored) = this.stored(&key) {
-                let mut candidate: Candidate =
-                    codec::decode(stored, stored.len()).map_err(|_| damaged("a command record"))?;
+            let stored = this.stored(&key).ok_or(Error::NotFound)?;
+            let mut candidate: Candidate =
+                codec::decode(stored, stored.len()).map_err(|_| damaged("a command record"))?;
+            if !matches!(candidate.state, Asked::Started | Asked::Finished) {
+                return Err(Error::NotFound);
+            }
+            if candidate.state != Asked::Finished {
                 candidate.state = Asked::Finished;
                 this.put_stored(batch, key, codec::encode(&candidate)?);
             }
@@ -1903,10 +1963,13 @@ impl<S: Storage> Device<S> {
         for (key, value) in self.stored_under(&prefix) {
             let mut candidate: Candidate =
                 codec::decode(&value, value.len()).map_err(|_| damaged("a command record"))?;
+            if candidate.state != Asked::No {
+                continue;
+            }
             let Ok(envelope) = Envelope::decode(&candidate.envelope) else {
                 return Err(damaged("a command record"));
             };
-            if candidate.state != Asked::No || envelope.header.group != *group {
+            if envelope.header.group != *group {
                 continue;
             }
             let record = self

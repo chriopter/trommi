@@ -843,6 +843,18 @@ impl GateLog {
         Self::default()
     }
 
+    pub(crate) fn from_receipt(hash: Hash32, finished: bool) -> Self {
+        Self {
+            finished: BTreeMap::from([(hash, finished)]),
+        }
+    }
+
+    pub(crate) fn receipts(&self) -> impl Iterator<Item = (&Hash32, bool)> {
+        self.finished
+            .iter()
+            .map(|(hash, finished)| (hash, *finished))
+    }
+
     /// Marks a started command as finished. `not-found` for a command the gate never let through.
     pub fn finish(&mut self, hash: &Hash32) -> Result<(), Error> {
         let finished = self.finished.get_mut(hash).ok_or(Error::NotFound)?;
