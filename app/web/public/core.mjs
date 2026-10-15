@@ -31,6 +31,7 @@ export const vm = () => view
 
 function receive(m) {
   switch (m.t) {
+    case 'owner_probe': worker?.postMessage({ t: 'owner_alive', nonce: m.nonce }); return
     case 'render': {
       try { view = fold.foldView(view, m.delta) } catch (err) { console.error('render', err); return }
       emit('render', view)
@@ -147,7 +148,8 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => send({ type: document.visibilityState === 'visible' ? 'foreground' : 'background' }))
   addEventListener('online', () => send({ type: 'net', online: true }))
   addEventListener('offline', () => send({ type: 'net', online: false }))
-  addEventListener('pagehide', () => send({ type: 'background' }))
+  addEventListener('pagehide', () => { stopCore(); worker?.terminate(); worker = null; globalThis.__trommiCore = null })
+  addEventListener('pageshow', e => { if (e.persisted) location.reload() })
   let zone = -new Date().getTimezoneOffset()
   setInterval(() => { const z = -new Date().getTimezoneOffset(); if (z !== zone) { zone = z; send({ type: 'zone', utc_offset_min: z }) } }, 60_000)
 }

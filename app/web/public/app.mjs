@@ -9,7 +9,7 @@ import * as desk from './desk.mjs'
 import * as sidebar from './sidebar.mjs'
 import * as notes from './notes.mjs'
 import { DRAWER_VEIL, SIDE_FOOT, cornerNote, markCurrent, phoneBar, sidebarRows, tabBar, topbar } from './sidebar.mjs'
-import { Controller, attGone, calm, controller, curlHTML, html, keySheet, raw, startUi, toast } from './ui.mjs'
+import { BELL, Controller, attGone, calm, controller, curlHTML, html, keySheet, raw, startUi, toast } from './ui.mjs'
 import { movedPath } from './paths.mjs'
 import { rowSheet } from './desk.mjs'
 import * as core from './core.mjs'
@@ -900,8 +900,8 @@ function conn(vm) {
 function elsewhere(head, line) {
   document.title = 'Trommi'
   document.body.replaceChildren()
-  document.body.insertAdjacentHTML('beforeend', String(html`<main id="room" class="room room-elsewhere" aria-label="${head}"><div class="room-card"><h1 class="room-title">${head}</h1><p class="room-lead">${line}</p><button type="button" class="room-go" id="use-here">Use it here</button></div></main>`))
-  document.getElementById('use-here').addEventListener('click', () => location.reload(), { once: true })
+  document.body.insertAdjacentHTML('beforeend', String(html`<main id="room" class="room room-elsewhere" aria-label="${head}"><div class="room-card"><div class="room-head"><span class="room-bell">${BELL}</span><span class="room-brand">Trommi</span></div><h1 class="room-title">${head}</h1><p class="room-lead">${line}</p><button type="button" class="room-go" id="use-here">Use it here</button></div></main>`))
+  document.getElementById('use-here').addEventListener('click', () => { sessionStorage.setItem('trommi-take-device', '1'); location.reload() }, { once: true })
 }
 
 // ---- boot ----
@@ -924,20 +924,30 @@ async function start({ take = false } = {}) {
   const b = createBoard({ views: [appView, ...(demoPages ? [demoPages.screensView] : []), ...VIEWS] })
   const router = createRouter({ board: b })
   window.trommi = { board: b, router, vm: core.vm, act: core.act, demo: Boolean(demo), view, ...(demoPages ? { demoState: demoPages.demoState } : {}) }
-  let frame = 0, painted = false
-  const repaint = () => { frame ||= requestAnimationFrame(() => { frame = 0; if (painted) router.refresh(); conn(core.vm()) }) }
+  let frame = 0, painted = false, stopped = false
+  const repaint = () => { frame ||= requestAnimationFrame(() => { frame = 0; if (stopped) return; if (painted) router.refresh(); conn(core.vm()) }) }
   core.on('render', vm => { syncToasts(vm); repaint() })
   core.on('file', repaint)
-  core.on('busy', () => elsewhere('Trommi is open in another tab', 'One tab holds this device at a time. Use it here, and the other tab steps back.'))
-  core.on('taken', () => elsewhere('Trommi moved to another tab', 'Another tab took this device over. Use it here to take it back.'))
-  core.on('failed', err => { console.error('core', err); notice('Trommi could not start here.', String(err?.message ?? err), false, 'failed') })
+  core.on('busy', () => { stopped = true; cancelAnimationFrame(frame); elsewhere('Trommi is open in another tab', 'One tab holds this device at a time. Use it here, and the other tab steps back.'); fontsAfterPaint() })
+  core.on('taken', () => { stopped = true; cancelAnimationFrame(frame); elsewhere('Trommi moved to another tab', 'Another tab took this device over. Use it here to take it back.'); fontsAfterPaint() })
+  core.on('failed', err => { stopped = true; cancelAnimationFrame(frame); console.error('core', err); notice('Trommi could not start here.', String(err?.message ?? err), false, 'failed') })
   let fixture = null
   if (demo) fixture = await fetch('/demo/fixture.json').then(r => r.json()).catch(() => null)
   screenInView = screenOf(location.pathname, location.search)
   await core.startCore(configOf(fixture), { take })
   sendFocus()
-  // The first page waits for the core to say where it stands (stored, signed out, the demo), a moment at most.
-  await new Promise(done => { const t = setTimeout(done, 3000); const stop = core.on('render', vm => { if (vm.phase && vm.phase !== 'starting') { clearTimeout(t); stop(); done() } }) })
+  // A cold worker can take longer than three seconds. Never draw an incomplete model.
+  const ready = vm => vm.phase && vm.phase !== 'starting'
+  if (!ready(core.vm()) && !stopped) await new Promise(done => {
+    let timer
+    const stops = []
+    const finish = () => { clearTimeout(timer); for (const stop of stops) stop(); done() }
+    stops.push(core.on('render', vm => { if (ready(vm)) finish() }))
+    for (const event of ['busy', 'taken', 'failed']) stops.push(core.on(event, finish))
+    timer = setTimeout(() => { stopped = true; notice('Trommi could not start here.', '', false, 'failed'); finish() }, 30_000)
+    if (ready(core.vm()) || stopped) finish()
+  })
+  if (stopped) return
   window.trommi.firstRenderMs = performance.now() - T0
   await router.visit(location.pathname + location.search + location.hash, { action: 'replace' })
   painted = true
@@ -996,7 +1006,9 @@ async function boot() {
   const onboard = demo && params.get('onboard')
   if (onboard) { fontsAfterPaint(); return (await view('auth')).demoScreen(onboard) }
   keepStorage()
-  await start()
+  const take = sessionStorage.getItem('trommi-take-device') === '1'
+  sessionStorage.removeItem('trommi-take-device')
+  await start({ take })
 }
 /** A share page: `/artifact/<share id>` (22 characters of base64url; 32 hex in the links of before). */
 const SHARE_PAGE = /^\/artifact\/(?:[0-9a-f]{32}|[A-Za-z0-9_-]{22})$/

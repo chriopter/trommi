@@ -10,7 +10,7 @@
 // and its answer comes back. What the core hands out (renders, files, links, logs) goes to the page as it comes.
 import { CoreShell, memorySpaces } from './shell.ts'
 import type { CacheSpace, DeviceSpace } from './shell.ts'
-import { IdbStore, loadCore } from './core-wasm.ts'
+import { IdbStore, deviceOwner, loadCore } from './core-wasm.ts'
 import { openCache, openDeviceStore } from './store-idb.ts'
 import type { DeviceStore } from './store-idb.ts'
 
@@ -21,9 +21,11 @@ export type ToCore =
   | { t: 'event'; event: Json; blobs?: Uint8Array[] }
   | { t: 'platform'; id: number; answer?: Json; blobs?: Uint8Array[]; error?: string }
   | { t: 'close' }
+  | { t: 'owner_alive'; nonce: string }
 /** What the worker sends. */
 export type FromCore =
   | { t: 'ready' }
+  | { t: 'owner_probe'; nonce: string }
   | { t: 'busy' }
   | { t: 'taken' }
   | { t: 'started' }
@@ -44,7 +46,7 @@ let shell: CoreShell | null = null
 /** Events the page sent before the core was up: handed in, in order, once it is. */
 let early: { event: Json; blobs: Uint8Array[] }[] | null = []
 let store: DeviceStore | null = null
-let channel: BroadcastChannel | null = null
+let owner: ReturnType<typeof deviceOwner<DeviceStore>> | null = null
 let stopped = false
 const asked = new Map<number, { ok: (r: { answer: Json; blobs: Uint8Array[] }) => void; bad: (e: Error) => void }>()
 let asks = 0
@@ -79,17 +81,12 @@ async function start(m: Extract<ToCore, { t: 'start' }>): Promise<void> {
   if (m.config['demo'] != null || !m.slot) spaces = memorySpaces()
   else {
     // One owner: the lock, or `busy`. With `take` the owner is asked to give it up, and this waits for it.
-    channel = new BroadcastChannel(`trommi-core:${m.slot}`)
-    if (m.take) channel.postMessage({ give: true })
-    store = openDeviceStore({ name: m.slot, wait: Boolean(m.take), IdbStore })
-    try { await store.load() } catch (e) {
-      store = null
-      if ((e as { name?: string })?.name === 'StoreConflict') { channel.close(); channel = null; post({ t: 'busy' }); return }
-      throw e
-    }
-    channel.onmessage = ({ data }) => { if (data?.give) void giveUp() }
+    owner = deviceOwner(m.slot, steal => openDeviceStore({ name: m.slot, steal, onLost: () => { void giveUp() }, IdbStore }), nonce => post({ t: 'owner_probe', nonce }), () => { void giveUp() })
+    store = await owner.open(Boolean(m.take))
+    if (!store) { owner.close(); owner = null; if (!stopped) post({ t: 'busy' }); return }
     spaces = { device: deviceSpace(store), cache: await cacheSpace(`${m.slot}:app`) }
   }
+  if (stopped) return
   shell = new CoreShell({
     core: new core.AppCore(), ...spaces,
     host: {
@@ -120,7 +117,7 @@ async function giveUp(): Promise<void> {
   shell?.send({ type: 'background' })
   shell?.close()
   shell = null
-  channel?.close()
+  owner?.close()
   await store?.close().catch(() => {})
   store = null
   post({ t: 'taken' })
@@ -134,6 +131,9 @@ port.onmessage = ({ data: m }) => {
     case 'event':
       if (shell) shell.send(m.event, m.blobs ?? [])
       else early?.push({ event: m.event, blobs: m.blobs ?? [] })
+      return
+    case 'owner_alive':
+      if (!stopped) owner?.respond(m.nonce)
       return
     case 'platform': {
       const a = asked.get(m.id)
