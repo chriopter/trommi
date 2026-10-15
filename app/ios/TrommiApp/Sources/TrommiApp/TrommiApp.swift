@@ -15,7 +15,6 @@ import TrommiClient
     return WindowGroup {
       let _ = NativeDemo.mark("window.content")
       RootView().environmentObject(shell).tint(Ink.accent)
-        .task { await shell.start() }
         .onChange(of: phase) { _, value in shell.scene(value == .active) }
         .onOpenURL { NativeServices.shared.open($0, shell: shell) }
     }
