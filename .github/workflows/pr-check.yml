@@ -151,7 +151,9 @@ jobs:
         id: core_inputs
         run: |
           set -eu
-          sum=$( { git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          tree=$(sh .github/scripts/source_tree.sh HEAD core/ Cargo.toml Cargo.lock rust-toolchain.toml)
+          xcode=$(xcodebuild -version)
+          sum=$(printf '%s\n%s\n' "$tree" "$xcode" | shasum -a 256 | cut -c1-64)
           echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: core_cache

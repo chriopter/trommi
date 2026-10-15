@@ -35,6 +35,7 @@ if [ "$commit" = paths ]; then
 fi
 for part in web connector ios hub updater; do
   # shellcheck disable=SC2046,SC2086
-  sum=$(git ls-tree -r "$commit" -- $shared $(paths "$part") | LC_ALL=C sort -k4 | sha256sum | cut -d' ' -f1)
+  tree=$(sh "$(dirname "$0")/source_tree.sh" "$commit" $shared $(paths "$part"))
+  sum=$(printf '%s\n' "$tree" | LC_ALL=C sort -k4 | sha256sum | cut -d' ' -f1)
   echo "$part $sum"
 done

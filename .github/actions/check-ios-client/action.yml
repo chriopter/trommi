@@ -10,7 +10,8 @@ runs:
       shell: bash
       run: |
         set -eu
-        sum=$(git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
+        tree=$(sh .github/scripts/source_tree.sh HEAD core/ Cargo.toml Cargo.lock rust-toolchain.toml)
+        sum=$(printf '%s\n' "$tree" | sha256sum | cut -c1-64)
         echo "key=ios-core-host-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
     - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: core_cache
