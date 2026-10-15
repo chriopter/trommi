@@ -16,6 +16,7 @@ class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   if self.path == '/late': time.sleep(0.3)
   self.send_response(302 if self.path == '/redirect' else 200)
+  self.send_header('Content-Type', 'text/event-stream' if self.path == '/stream' else 'application/octet-stream')
   if self.path == '/declared': self.send_header('Content-Length', '1000')
   if self.path == '/redirect': self.send_header('Location', '/unexpected')
   self.end_headers()
@@ -26,7 +27,7 @@ class Handler(BaseHTTPRequestHandler):
     try: self.wfile.write(b'x'); self.wfile.flush(); time.sleep(0.08)
     except (BrokenPipeError, ConnectionResetError): break
    return
-  try: self.wfile.write(b'123456789' if self.path in ('/declared','/body') else b'ok')
+  try: self.wfile.write(b'x' * 1000 if self.path == '/declared' else b'123456789' if self.path == '/body' else b'ok')
   except (BrokenPipeError, ConnectionResetError): pass
 server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
 print(server.server_port, flush=True)

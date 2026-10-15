@@ -67,7 +67,9 @@ final class ShellStore {
       guard let enumerator = FileManager.default.enumerator(at: cache, includingPropertiesForKeys: [.isRegularFileKey]) else { throw TrommiError("storage") }
       let names = try enumerator.compactMap { entry -> String? in
         guard let url = entry as? URL, url.lastPathComponent == "value", try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { return nil }
-        return String(url.deletingLastPathComponent().path.dropFirst(cache.path.count + 1)).replacingOccurrences(of: "/", with: "")
+        // Enumeration may canonicalize /var to /private/var on Darwin. Its depth, unlike the absolute
+        // path prefix, always names exactly the components beneath this cache root.
+        return url.pathComponents.suffix(enumerator.level).dropLast().joined()
       }
       let keys = names.compactMap { name -> String? in
         guard name.count % 2 == 0 else { return nil }
