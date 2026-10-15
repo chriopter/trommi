@@ -73,8 +73,11 @@ try {
     await sleep(s.web.state ? 1200 : 700)
     let got
     try { got = await ev(PROBE) } catch (err) { got = { page: 0, past: [{ el: 'probe', text: err.message.slice(0, 120) }] } }
-    const ok = got.page <= 0 && !got.past.length
-    console.log(`${ok ? 'ok  ' : 'FAIL'} ${s.id}${ok ? '' : `: ${got.page > 0 ? `the page scrolls ${got.page}px sideways; ` : ''}${got.past.map(p => `${p.el} "${p.text}" ${p.left}..${p.right}`).join('; ')}`}`)
+    // A missing demo object used to draw an empty/error page that still passed every layout check.
+    const content = s.screen === 'Card' ? '#cardpage .tc-title' : s.screen === 'Chat' ? '#session #chat .chat-pane' : null
+    const contentReady = !content || await ev(`Boolean(document.querySelector(${JSON.stringify(content)})?.textContent.trim())`)
+    const ok = got.page <= 0 && !got.past.length && contentReady
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${s.id}${ok ? '' : `: ${!contentReady ? 'screen content missing; ' : ''}${got.page > 0 ? `the page scrolls ${got.page}px sideways; ` : ''}${got.past.map(p => `${p.el} "${p.text}" ${p.left}..${p.right}`).join('; ')}`}`)
     if (!ok) failed.push(s.id)
   }
 } finally {
