@@ -4,7 +4,7 @@
 //   - the .wasm is a file of its own under gen/app/, named by its content, byte for byte what core/bindings/wasm/build.sh
 //     wrote; no script of the binding is served beside it (they are inside the worker);
 //   - a worker bundled with the build's constants names the hashed .wasm and its SHA-256 and holds the binding's
-//     scripts; so does the app's own worker once it loads the core (until then that one check is SKIPPED, and said so);
+//     scripts; the app's own worker must also name and verify those same bytes;
 //   - the service worker's shell and the manifest hold the .wasm; the manifest names Rust and wasm-bindgen beside
 //     Node and esbuild, and the core as it names itself;
 //   - the two builds are identical, file for file.
@@ -51,9 +51,7 @@ try {
   const workers = app.filter(f => /^core-worker-[^-]+\.mjs$/.test(f))
   check(workers.length === 1, `gen/app/ holds one core worker (found: ${workers.join(', ') || 'none'})`)
   const worker = workers.length === 1 ? read(`gen/app/${workers[0]}`).toString() : ''
-  let skipped = null
-  if (worker.includes('core-missing')) check(names(worker) && worker.includes('__wbg_'), "the app's worker names the hashed .wasm and its SHA-256 and holds the binding's scripts")
-  else skipped = "SKIPPED: the app's own worker names the hashed .wasm: app/web/core/core-worker.ts does not load core-wasm.ts yet"
+  check(names(worker) && worker.includes('__wbg_'), "the app's worker names the hashed .wasm and its SHA-256 and holds the binding's scripts")
 
   const manifest = JSON.parse(read('gen/manifest.json'))
   const pin = (file, re) => re.exec(fs.readFileSync(path.join(REPO, file), 'utf8'))?.[1]
@@ -70,9 +68,8 @@ try {
   const differ = fa.filter(f => fb.includes(f) && !fs.readFileSync(path.join(a, f)).equals(fs.readFileSync(path.join(b, f))))
   check(differ.length === 0, `two builds are byte-identical (differ: ${differ.join(', ')})`)
 
-  if (skipped) console.log(skipped)
   if (failures.length) { console.error(`build.test: FAILED\n${failures.map(f => `  not true: ${f}`).join('\n')}`); process.exitCode = 1 }
-  else console.log(`build.test: ok, ${checks} checks${skipped ? ', 1 skipped' : ''} (${fa.length} files per build; ${wasm}, ${read(wasm).length} bytes)`)
+  else console.log(`build.test: ok, ${checks} checks (${fa.length} files per build; ${wasm}, ${read(wasm).length} bytes)`)
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true })
 }

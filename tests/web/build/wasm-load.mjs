@@ -2,7 +2,7 @@
 // Content-Security-Policy, and only that way.
 //   node tests/web/build/wasm-load.mjs
 // Builds the app into a temporary folder, serves it with the built _headers (static.mjs), and in headless Chromium
-// starts a module worker that loads core-wasm.ts (probe-worker.mjs; the app's own worker does not load the core yet).
+// starts a module worker that probes core-wasm.ts (the app worker uses the same loader).
 // It checks:
 //   1. as built: the binding's own self test passes there (selfTest(Date.now()): every step ok), versions() answers,
 //      a call that the binding once lacked (hubAddress) is answered by the binding itself, not by a core-missing stand-in
@@ -16,6 +16,7 @@
 //      application/wasm, and core-wasm.ts loads them there too and passes the self test.
 // Chromium is `chromium` on the PATH or the program CHROMIUM names. Without it, or without the core's WASM output and
 // the tools to make it, the test fails and says which.
+import './browser-start.mjs'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'

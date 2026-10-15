@@ -106,12 +106,13 @@ export async function launchChromium({ width = 1440, height = 900, args = [], ke
   const proc = spawn(process.env.CHROMIUM || 'chromium', [
     '--headless=new', '--disable-gpu', '--no-proxy-server', '--disable-extensions', '--disable-component-extensions-with-background-pages', '--hide-scrollbars', '--no-first-run',
     `--user-data-dir=${profile}`, '--remote-debugging-port=0', `--window-size=${width},${height}`, ...args, 'about:blank',
-  ], { stdio: 'ignore', detached: true })
+  ], { stdio: ['ignore', 'ignore', 'pipe'], detached: true })
   guard(proc, { group: true, dirs: keep ? [] : [profile] })
   let gone = false
-  let failure = null
+  let failure = null, ended = null, startupLog = ''
+  proc.stderr.on('data', chunk => { startupLog = (startupLog + chunk).slice(-4000) })
   proc.on('error', err => { failure = err; gone = true })
-  proc.on('exit', () => { gone = true })
+  proc.on('exit', (code, signal) => { ended = signal ? `signal ${signal}` : `exit ${code}`; gone = true })
 
   const sessions = []
   async function close() {
@@ -131,13 +132,15 @@ export async function launchChromium({ width = 1440, height = 900, args = [], ke
   // Chromium picks a free port and writes it into its profile.
   let port = 0
   const portFile = path.join(profile, 'DevToolsActivePort')
-  for (let i = 0; i < 100 && !port && !gone; i++) {
+  const deadline = Date.now() + 30_000
+  while (!port && !gone && Date.now() < deadline) {
     await sleep(100)
     try { port = Number(fs.readFileSync(portFile, 'utf8').split('\n')[0]) || 0 } catch {}
   }
-  if (!port) {
+  if (!port || gone) {
+    const why = failure?.message ?? ended ?? 'no debugging port within 30 seconds'
     await close()
-    throw new Error(`Chromium did not start${failure ? `: ${failure.message}` : ''}. It cannot run inside the command sandbox.`)
+    throw new Error(`Chromium did not start: ${why}${startupLog.trim() ? `\n${startupLog.trim()}` : ''}`)
   }
 
   async function page() {

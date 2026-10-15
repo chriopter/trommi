@@ -300,3 +300,9 @@ unfinished writes before notifying its worker to stop. Page exit terminates its 
 page reloads before using the device. No stored device, keys or cache are deleted to recover ownership.
 The busy/taken screens use the account page's fonts, paper and full-width frame; browser checks assert their
 computed fonts and geometry, and every demo screen must retain the Trommi stylesheet.
+
+The browser driver starts Chrome once and waits up to 30 seconds for its debugging port; it does not retry a
+failed browser. A cold host can take more than the former ten-second allowance. Startup failures include the
+exit status and a bounded tail of stderr. `tests/web/build/browser-start.mjs`, run by the WASM browser gate,
+checks an actual browser delayed by eleven seconds and an early exit with a diagnostic. The build gate also
+checks the actual app worker's WASM URL, digest and bundled binding unconditionally; no pre-switch skip remains.
