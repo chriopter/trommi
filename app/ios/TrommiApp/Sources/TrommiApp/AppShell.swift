@@ -42,7 +42,7 @@ enum NativeTab: Equatable { case chat, desk }
       if let hub = ProcessInfo.processInfo.environment["TROMMI_TEST_HUB"],
          let url = URL(string: hub), url.scheme == "http", url.host == "127.0.0.1" { config["hub"] = hub }
       #endif
-      if preview { config["demo"] = try Spent.time("fixture") { try NativeDemo.fixture() }; config["can"] = [:] }
+      if preview { let fixture: Any = try Spent.time("fixture") { try NativeDemo.fixture() }; config["demo"] = fixture; config["can"] = [:] }
       await session?.send(NativePacket(["type": "start", "config": config]))
       if !preview {
         for id in UserDefaults.standard.stringArray(forKey: "trommi-goals-folded") ?? [] {
