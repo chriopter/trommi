@@ -236,7 +236,7 @@ jobs:
       run: |
         set -u
         sh .github/scripts/inputs.sh > "$RUNNER_TEMP/inputs"
-        for i in $(seq 1 16); do
+        for _ in $(seq 1 16); do
           [ "$(sh .github/scripts/deployed.sh "$RUNNER_TEMP/inputs" hub)" != hub=false ] || exit 0
           sleep 30
         done
