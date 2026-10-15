@@ -6,7 +6,7 @@
 
 Your Claude Code and Codex sessions ask, you answer: chat, decision cards and a Scribble Board, on the web and on
 the iPhone. Everything is encrypted on the devices with MLS (RFC 9420); the server only passes sealed messages on.
-One Rust core does the cryptography for the web app, the iOS app and the connector.
+One Rust app core runs the web, iPhone, Mac, Linux and connector; the platform shells draw and perform I/O.
 
 - 💬 **Chat** with every agent session, the terminal mirrored
 - 🃏 **Decision cards**: the agent asks, you tap an answer
@@ -53,31 +53,41 @@ Updates come by themselves: a running connector installs a new signed release an
 - **Connector:** one signed program that joins a Claude Code or Codex session to your room.
   What the agent is told: [connector/prompt.md](connector/prompt.md).
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/architecture-dark.svg">
-  <img alt="The apps (app/web, app/ios, app/linux) only draw and do their platform's I/O; core/client, the app core in Rust, decides what every screen shows, runs the sync and keeps the cache; core/protocol holds MLS and all cryptography; core/bindings binds both to wasm, UniFFI and plain Rust; core/wire holds what the hub and the app core read the same way (refusal codes, limits, formats) and points to core/client, core/protocol and the hub. The connector and the hub sit beside them, everything on OpenMLS." src=".github/readme/architecture-light.svg">
-</picture>
+```mermaid
+flowchart TB
+  web["Web: HTML/CSS, fetch, IndexedDB"] --> bindings["core/bindings: WebAssembly / UniFFI"]
+  apple["iPhone and Mac: SwiftUI, URLSession, Keychain"] --> bindings
+  bindings --> app["core/client: App, actions, ViewModel"]
+  linux["Linux: Qt/QML"] --> app
+  app --> engine["core/client: engine, model, hub codec, cache"]
+  connector["Connector: MCP, terminal I/O, journal"] --> engine
+  linux --> io["core/io: native I/O executor"]
+  connector --> io
+  engine --> protocol["core/protocol: MLS, envelopes, chains, files"]
+  engine --> wire["core/wire: formats, limits, refusal codes"]
+  hub["Hub: encrypted storage and relay"] --> wire
+  protocol --> mls["OpenMLS"]
+  hub --> mls
+```
 
-All logic is Rust and exists once. Everything Rust shares lives under `core/`:
+App logic exists once, in Rust under `core/`:
 
-- `core/protocol/` (the crate `trommi-core`): MLS, envelopes, chains, the command gate, files: every key and every
-  rule of the protocol.
-- `core/client/` (`trommi-client-core`): the app core. What every app decides the same way: the board model, the
-  Desk (which cards stand on it, what the hub settled, what ran out, what is put off, when to look again), the
-  session list with each session's link and red hand, and the load plan of a catch-up; and, being built now, the
-  sync with the hub, the actions, the cache and the view model of every screen.
-- `core/bindings/` (`swift/`, `wasm/`): one facade, bound to Swift through UniFFI and to the browser through
-  wasm-bindgen; a Rust host (the Linux app) uses the crates directly.
-- `core/wire/` (`trommi-wire`): what the hub and the app core must read the same way, written once: the refusal
-  codes and their statuses, the pages and limits of the hub's routes, the constants of the structs of
-  spec/v1.md, and the hub's strict parsers of those structs. No key, no client logic, no I/O.
+- `core/client/` (`trommi-client-core`): account flows, hub synchronization, history, actions and echoes, the board
+  model, cache, notifications, share imports, and every screen's ordered ViewModel. The human apps run `App`;
+  the connector runs its shared `Engine` in agent mode and reads the shared model.
+- `core/protocol/` (`trommi-core`): MLS, envelopes, chains, the command gate, encrypted files, keys and protocol rules.
+- `core/bindings/{wasm,swift}/`: one facade for the browser and Swift. `AppCore` exchanges events and effects;
+  generated view types and folds keep both platforms on the same contract. Rust hosts use the crates directly.
+- `core/io/` (`trommi-io`): the Rust executor for HTTP, raw event streams, stores, timers and the device-write barrier,
+  used by Linux and the connector. It makes no app decisions.
+- `core/wire/` (`trommi-wire`): formats, refusal codes, route limits and parsers shared with the hub; no keys or I/O.
 
-An app only draws the view model it is given, passes taps back, and does the I/O its platform wants done its own way
-(fetch, URLSession, reqwest), plus the platform's own services (push, notifications, the Keychain, file pickers).
-The picture shows that target; today the web and iOS apps still run their own sync and part of the Desk's rules
-([`core/client/README.md`](core/client/README.md) has the detail). The connector and the hub share no code with the
-apps' layers: the connector sits on `core/protocol`, the hub on OpenMLS and `core/wire` alone. All devices talk to the
-hub with sealed MLS messages, and keys stay on devices.
+The apps draw the core's view state, pass taps and focus back, and perform platform services: fetch or URLSession,
+IndexedDB or an encrypted journal, push, notifications, Keychain, file pickers, Live Activities and the share sheet.
+They keep no second board model or sync implementation, and do not sort lists or decide state-dependent words.
+The connector's driver adapts the same engine to MCP and its journal; its vouching and same-account checks remain
+in the connector. The hub checks public group changes with OpenMLS and `core/wire`; it holds no content keys.
+The contract and platform boundaries are described in [The app core](core/client/README.md).
 
 ## Under the hood
 
@@ -284,7 +294,7 @@ The whole way, what goes wrong and what runs as root: [hub/deploy/README.md](hub
 <details>
 <summary><b>Mac app (direct download)</b> · Developer ID, notarized, on every release</summary>
 
-The Mac app (the target `TrommiMac`, [app/ios/README.md](app/ios/README.md) "On a Mac") ships two ways: TestFlight
+The Mac app (the target `TrommiMac`, [app/ios/README.md](app/ios/README.md) "Xcode, TestFlight and releases") ships two ways: TestFlight
 and the Mac App Store as before (`ship-apple.yml`), and as **`Trommi-macOS.dmg`** on the GitHub release, outside the
 store. The newest is always at
 [releases/latest/download/Trommi-macOS.dmg](https://github.com/trommi/trommi/releases/latest/download/Trommi-macOS.dmg)
@@ -504,11 +514,13 @@ nightly ──────────────── nightly.yml: the giant 
 |---|---|
 | `core/protocol/` | the protocol core in Rust on OpenMLS: MLS, envelopes, chains, files |
 | `core/bindings/` | the one facade over both cores: `wasm/` for the browser, `swift/` for iOS and the Mac |
-| `core/client/` | the app core (Rust): the board model, the Desk's rules and the catch-up's load plan, shared by every app through `core/bindings` |
+| `core/client/` | the app core: accounts, sync, history, model, cache, actions, notifications and ViewModel, shared by every app and connector |
+| `core/io/` | native Rust executor: HTTP, streams, stores, timer and write barrier |
 | `core/wire/` | what the hub and the app core read the same way: refusal codes, the limits of the hub's routes, the formats of spec/v1.md |
 | `hub/` | the hub (the server) and its updater; `hub/deploy/` installs it |
 | `app/web/` | the web app |
-| `app/ios/` | the iOS app (Swift, SwiftUI) |
+| `app/ios/` | iPhone and Mac SwiftUI shells and isolated iOS extensions |
+| `app/linux/` | Qt/QML shell over the core and native executor |
 | `connector/` | the connector: the program and the Claude Code plugin |
 | `demo/` | the demo room, built into the web app and the iOS app |
 | `tests/` | every part's tests, one folder per part; `tests/tools/`: `seed_account.rs`, which fills an account from the demo room (the App Store review account) |
@@ -529,7 +541,7 @@ Rust is pinned in `rust-toolchain.toml`, Node in `.node-version`.
 ```sh
 # Core, hub, connector
 cargo test --locked -p trommi-core
-cargo test --locked -p trommi-client-core   # the client core (the Desk)
+cargo test --locked -p trommi-client-core   # the whole app core
 cargo test --locked -p trommi-tests          # core, hub, connector and deploy tests
 cargo build --release -p trommi-hub -p trommi-connector
 
@@ -539,7 +551,7 @@ cargo build --release -p trommi-hub -p trommi-connector
 (cd app/web && npm test)
 node app/web/dev/serve.mjs 8900               # the app; ?mock=1 for the demo room
 
-# iOS
+# iPhone and Mac
 core/bindings/swift/build.sh                           # the core for Swift
 (cd tests/ios && swift test)
 ```
@@ -555,7 +567,7 @@ requests run its fast cases, `TROMMI_TESTS_FULL=1` (nightly) all; `TROMMI_MATRIX
 connector's log.
 
 All clients against each other (nightly in CI, `.github/workflows/nightly.yml`): the web app (the app core in its
-executor), the iOS app's engine (both with the real core) and the connector, each twice, in one room on a real hub, through one
+executor), the native Swift AppCore executor and the connector, each twice, in one room on a real hub, through one
 long seeded random timeline; it fails where two devices show anything different. Then their speed with 1,000 cards.
 
 ```sh
@@ -582,7 +594,7 @@ crate of its own) are one line each. Every run checks properties, not only "no p
 | `content_flow` | stored content through the hub's and devices' checks, with forgeries | flipped bytes, foreign signatures, non-members and replays are never taken; hub and devices agree |
 | `mls_devices` | real OpenMLS devices against the hub in memory | replayed and flipped log entries change nothing; devices converge; an outsider opens nothing |
 | `hub_api` | every non-streaming route (`api::fuzz_route`, feature `fuzz`) | no `internal` on bad input; nothing of one room served outside it |
-| web model (`tests/web/model/fuzz.test.mjs`) | random stories of core results into `model.ts` | the page's copy and the cache give the model back |
+| App view/cache (`core/client/tests/cache.rs`, `views.rs`) | checked model records and ordered deltas | cache restoration and folds reproduce the core's view |
 | `connector_text` | board text in channel tags, received file names, invite links | no tag can be closed or opened; no hidden characters; files stay in the cache |
 
 ```sh

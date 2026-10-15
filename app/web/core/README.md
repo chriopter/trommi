@@ -3,7 +3,7 @@
 The web app's logic is the Rust app core's (`core/client`, see [its README](../../../core/client/README.md), "The app
 core"), loaded as WebAssembly. This folder only RUNS it in the browser: one `AppCore` in a dedicated Web Worker, the
 I/O it asks for done here, its view model handed to the page (`public/core.mjs`), which draws it. Nothing here decides
-anything about the room. The folder may only shrink (`core/client/tests/shells.json`).
+anything about the room. The shrinking-only freeze (`core/client/tests/shells.json`) now lists only these platform executor files; the retired app logic is deleted.
 
 **TypeScript.** Strict (`app/web/tsconfig.json`, `npx tsc -p .` in `app/web/`). Node 26 runs `.ts` itself (type
 stripping); the build erases the types for the browser.
@@ -23,3 +23,6 @@ The contract between the page and the core is the core's: `Event` and `Action` i
 (`core/client/src/app/`), the view model's types in `core/bindings/wasm/js/views.d.ts`, folded on the page by
 `views-fold.js`. Tests: `tests/web/shell/` (the shell, and against the real hub with `TROMMI_HUB_BIN`),
 `tests/web/store/` (the store in Chromium).
+
+Apple-only `Snapshot`, `NotifyContext`, `ShareInbox` and `ForgetShared` effects need no browser service and are
+ignored. Account authority, push policy, file references and all shared decisions stay in Rust.
