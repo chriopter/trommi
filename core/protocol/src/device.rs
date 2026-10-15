@@ -4161,8 +4161,8 @@ impl<S: Storage> Device<S> {
 
     // ---- joining with the code (8.4, 8.5), replacing it (8.6), recovery (8.7) ----
 
-    /// Takes over what the check of a served room established: the room, its roles from the founding on, the
-    /// code's `recovery_mac`, and every content key the code opened, each marked if it is unconfirmed.
+    /// Takes over what the served-room check established: the room, its verified roles (from the anchor
+    /// or founding), the code's `recovery_mac`, and the keys it opened, marked if unconfirmed.
     fn take_checked(
         &mut self,
         batch: &mut Batch,
@@ -4357,12 +4357,35 @@ impl<S: Storage> Device<S> {
         keys: &RecoveryKeys,
         served: &ServedStart<'_>,
     ) -> Result<(), Error> {
+        self.begin_code_check(keys, served, false)
+    }
+
+    /// Checks from the authenticated anchor, leaving older room history unlearned. The caller
+    /// verifies that past before using old roles, content keys or RecoveryLinks.
+    pub fn code_check_start_at_anchor(
+        &mut self,
+        keys: &RecoveryKeys,
+        served: &ServedStart<'_>,
+    ) -> Result<(), Error> {
+        self.begin_code_check(keys, served, true)
+    }
+
+    fn begin_code_check(
+        &mut self,
+        keys: &RecoveryKeys,
+        served: &ServedStart<'_>,
+        anchored: bool,
+    ) -> Result<(), Error> {
         self.owner()?;
         self.room_check = None;
         if self.memory.record.room.is_some() {
             return Err(Error::RoomExists);
         }
-        self.room_check = Some(recovery::RoomCheck::start(keys, served)?);
+        self.room_check = Some(if anchored {
+            recovery::RoomCheck::start_at_anchor(keys, served)?
+        } else {
+            recovery::RoomCheck::start(keys, served)?
+        });
         Ok(())
     }
 
@@ -4455,6 +4478,40 @@ impl<S: Storage> Device<S> {
             return Err(Error::TooMany);
         }
         Ok(())
+    }
+
+    /// Opens older room keys only after the backward history walk has verified the room's
+    /// roles and key replacements. Returns the public key of a missing RecoveryLink, if any.
+    pub fn recover_room_keys_after_history(
+        &mut self,
+        keys: &RecoveryKeys,
+        rows: &[Vec<u8>],
+        links: &[Vec<u8>],
+    ) -> Result<Option<[u8; 32]>, Error> {
+        self.owner()?;
+        if !self.is_human() { return Err(Error::Forbidden); }
+        let room = self.memory.record.room.ok_or(Error::NoRoom)?;
+        let group = GroupId::room(room);
+        if !self.group_past(&group)?.is_some_and(|past| past.learned) {
+            return Err(Error::RoomBehind);
+        }
+        let history = self.history()?;
+        keys.check_room(&history.newest().room)?;
+        let opened = recovery::open_links(keys, &room, links, &recovery::key_changes(history))?;
+        let own: Vec<_> = rows.iter().filter(|row| {
+            SealedKey::from_bytes(row).is_ok_and(|row| row.context.group == group)
+        }).cloned().collect();
+        let recovered = recovery::select_keys(&room, &own, &opened.openers, history, &|_, _| recovery::Began::Never)?;
+        self.transact(|this, batch| {
+            for key in recovered {
+                if this.keep_key(batch, &key.group, key.epoch, key.key) && !key.confirmed {
+                    batch.put(unconfirmed_key(&key.group, key.epoch), Vec::new());
+                    this.memory.unconfirmed.insert((key.group, key.epoch));
+                }
+            }
+            Ok(())
+        })?;
+        Ok(opened.missing_link)
     }
 
     /// Joins a live session group with the recovery code (8.4, 5.2.7), as a human device that joined the

@@ -2063,3 +2063,48 @@ fn an_anchor_check_requires_the_verified_prefix_before_a_new_role() {
         current: &posted.parts[1], sessions: &[], rows: &room.rows, links: &[],
     }), Err(Error::WrongRecovery)));
 }
+
+#[test]
+fn an_anchored_device_join_restarts_then_verifies_its_older_room_history() {
+    let room = real_room(1, 3);
+    let keys = keys(1);
+    let store = MemoryStorage::new();
+    let mut joiner = Device::create(store.handle(), Box::new(SystemEntropy)).unwrap();
+    joiner.code_check_start_at_anchor(&keys, &recovery::ServedStart {
+        room: room.group.room_id(), founding: b"not fetched", anchor: &room.infos[3], rows: &room.rows, sessions: &[],
+    }).unwrap();
+    joiner.join_room_checked(&keys, &recovery::ServedEnd {
+        current: &room.infos[3], sessions: &[], rows: &room.rows, links: &[],
+    }, now()).unwrap();
+    let posted = joiner.outbox().pop().unwrap();
+    joiner.outbox_accepted(posted.id, Accepted { change: Some(5) }).unwrap();
+    joiner.process_log_entry(&LogEntry { change: 5, group: room.group, kind: LogKind::Commit {
+        bytes: &posted.parts[0], recovery_auth: Some(&posted.parts[3]),
+    } }, now()).unwrap();
+    drop(joiner);
+    let store = store.reopened();
+    let mut joiner = trommi_tests::reopen(store.handle()).unwrap();
+    let past = joiner.group_past(&room.group).unwrap().unwrap();
+    assert_eq!(past.from_epoch, 4);
+    assert!(!past.learned);
+    assert_eq!(joiner.room_history().unwrap().states().next().unwrap().epoch, 3);
+    assert_eq!(joiner.content_key(&room.group, 0), Err(Error::NoKey));
+    assert_eq!(joiner.recover_room_keys_after_history(&keys, &room.rows, &[]), Err(Error::RoomBehind));
+    let mut commits: Vec<_> = room.commits.iter().enumerate().map(|(index, commit)| recovery::ServedCommit {
+        change: index as u64 + 2, commit, recovery_auth: None,
+    }).collect();
+    commits.push(recovery::ServedCommit { change: 5, commit: &posted.parts[0], recovery_auth: Some(&posted.parts[3]) });
+    let mut altered = room.commits[0].clone();
+    altered[0] ^= 1;
+    let mut hostile = commits.clone();
+    hostile[0].commit = &altered;
+    assert!(joiner.learn_history(&room.group, &room.infos[0], &hostile).is_err());
+    assert!(!joiner.group_past(&room.group).unwrap().unwrap().learned);
+    joiner.learn_history(&room.group, &room.infos[0], &commits).unwrap();
+    assert!(joiner.group_past(&room.group).unwrap().unwrap().learned);
+    assert_eq!(joiner.room_history().unwrap().states().next().unwrap().epoch, 0);
+    assert_eq!(joiner.recover_room_keys_after_history(&keys, &room.rows, &[]), Ok(None));
+    assert_eq!(joiner.content_key(&room.group, 0), room.device.content_key(&room.group, 0));
+    drop(joiner);
+    assert!(trommi_tests::reopen(store.reopened()).unwrap().group_past(&room.group).unwrap().unwrap().learned);
+}
