@@ -876,6 +876,9 @@ impl<S: Storage> Device<S> {
         }
         origin.learned = true;
         self.put_stored(batch, origin_key(group), codec::encode(&origin)?);
+        if group.is_room() {
+            self.delete_stored(batch, super::device_key(super::SUB_ANCHORED, group.as_bytes()));
+        }
         Ok(Learned {
             epochs: origin.epoch,
         })
@@ -1030,9 +1033,9 @@ impl<S: Storage> Device<S> {
         Ok(())
     }
 
-    /// A device that joined `group` from outside with the code (8.4) verified the group from its founding
-    /// before it joined: what that walk found becomes its record of the group's past, in the write of the
-    /// join. The walk's last epoch is the one the join ended, at `now_ms`.
+    /// Records the verified complete history of a code join (8.4). An anchored join leaves its origin
+    /// unlearned: older epochs are recorded only after the backward walk verifies them. The complete
+    /// walk's last epoch is the one the join ended, at `now_ms`.
     pub(super) fn record_walked(
         &mut self,
         batch: &mut Batch,
@@ -1040,6 +1043,14 @@ impl<S: Storage> Device<S> {
         walked: &Walked,
         now_ms: u64,
     ) -> Result<(), Error> {
+        // An anchored join keeps its own origin unlearned. No partial prefix is numbered
+        // from zero, and no older epoch becomes readable until a backward walk verifies it.
+        if walked.first_epoch != 0 {
+            if group.is_room() {
+                self.put_stored(batch, super::device_key(super::SUB_ANCHORED, group.as_bytes()), Vec::new());
+            }
+            return Ok(());
+        }
         let mut past = walked.epochs.clone();
         if let Some(last) = past.last_mut() {
             last.end = Some(WalkedEnd {

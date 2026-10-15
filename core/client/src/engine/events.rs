@@ -220,6 +220,7 @@ impl Engine {
 
     /// The wishes for keys that wait, answered once the order is at rest.
     pub(super) fn drive_wishes(&mut self, ctx: &mut Ctx<'_>) {
+        if self.anchored_past_missing() { return; }
         if (self.wishes.queue.is_empty() && self.wishes.readmits.is_empty()) || !self.caught_up || self.pass || !self.todo.is_empty() || self.repair.is_some() {
             return;
         }

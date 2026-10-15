@@ -472,6 +472,25 @@ fn a_new_agent_follows_the_room_from_the_offers_epoch_and_learns_the_past_of_wha
 }
 
 #[test]
+fn learning_the_room_past_verifies_one_commit_pages_without_reading_beyond_its_origin() {
+    let mut world = World::new();
+    let (store, id, invite) = invited(&mut world, None);
+    let mut sim = AgentSim::invited(world.sim_of(&store), common::hub::HUB_URL, invite);
+    sim.start();
+    world.hub.borrow_mut().log_max = Some(1);
+    let group = found_for(&mut world, id);
+    settle(&world, &mut sim);
+    assert_eq!(stopped(&mut sim), None);
+    assert_eq!(sim.engine().main_group(), Some(group));
+    assert!(sim.engine().device().group_past(&world.room).unwrap().unwrap().learned);
+    let room = base64url_encode(world.room.as_bytes());
+    let reads: Vec<_> = seen(&world).into_iter().filter(|s|
+        s.starts_with(&format!("GET /v1/groups/{room}/log?")) && s.contains("kind=commit")
+    ).collect();
+    assert!(reads.len() >= 2, "the verified walk spans pages: {reads:?}");
+}
+
+#[test]
 fn an_agent_that_takes_a_session_over_learns_its_past_and_reads_what_was_written_before() {
     let mut world = World::new();
     world.founder_says("before the takeover");

@@ -33,6 +33,8 @@ pub mod link_join;
 pub mod agent;
 #[path = "agent_join.rs"]
 pub mod agent_join;
+#[path = "past.rs"]
+mod past;
 #[path = "agent_write.rs"]
 pub mod agent_write;
 use std::collections::{BTreeMap, VecDeque};
@@ -329,7 +331,8 @@ enum Asked {
     /// A page of what the hub still serves of a removal.
     Removal { expect: Expect, group: GroupId },
     /// A read of an agent's way in (`agent_join`).
-    Way { expect: Expect, what: agent_join::WayRead },
+    ObserveRoom { expect: Expect },
+    Learn { expect: Expect, group: GroupId },
 }
 
 impl Asked {
@@ -351,7 +354,8 @@ impl Asked {
             | Asked::RoomRead { expect, .. }
             | Asked::Guard { expect, .. }
             | Asked::Removal { expect, .. }
-            | Asked::Way { expect, .. } => Some(expect),
+            | Asked::ObserveRoom { expect }
+            | Asked::Learn { expect, .. } => Some(expect),
         }
     }
 }
@@ -532,6 +536,7 @@ pub struct Engine {
     requests: requests::Requests,
     /// An agent device's lease, gate and guards (`agent`); none for a human device.
     agent: Option<agent::Agent>,
+    past: past::Past,
     /// The session groups this run asked to be let into again (`events`).
     readmit_asked: std::collections::BTreeSet<GroupId>,
 }
@@ -643,6 +648,7 @@ impl Engine {
             link_join: None,
             requests: requests::Requests::default(),
             agent: None,
+            past: past::Past::default(),
             readmit_asked: Default::default(),
         }
     }
@@ -692,6 +698,10 @@ impl Engine {
         if self.stopped.is_some() {
             return Err(Error::Storage("the device is closed".into()));
         }
+        if self.need_anchored_past() {
+            self.drive(ctx);
+            return Err(Error::RoomBehind);
+        }
         let result = action(&mut self.device, ctx.now);
         if let Err(e) = &result {
             self.local(ctx, e);
@@ -713,6 +723,7 @@ impl Engine {
         };
         want(self.auth_retry.at);
         want(self.agent_wake());
+        want(self.past.learn_retry.at);
         want(self.link_join.as_ref().and_then(|j| j.wake()));
         if self.founding.is_some() {
             want(self.pump_retry.at);
@@ -910,7 +921,8 @@ impl Engine {
             Asked::Lease(_) => self.on_lease(ctx, answer, code),
             Asked::Guard { group, own, .. } => self.on_guard(ctx, group, own, answer, code),
             Asked::Removal { group, .. } => self.on_removal(ctx, group, answer, code),
-            Asked::Way { what, .. } => self.on_way(ctx, what, answer),
+            Asked::ObserveRoom { .. } => self.on_observe(ctx, answer),
+            Asked::Learn { group, .. } => self.on_learn(ctx, group, answer),
             Asked::Link { .. } => self.on_link_answer(ctx, answer),
             Asked::Challenge(_) => self.on_challenge(ctx, answer),
             Asked::Token(_) => self.on_token(ctx, answer),
@@ -1748,6 +1760,9 @@ impl Engine {
     }
 
     fn take_log(&mut self, ctx: &mut Ctx<'_>, item: &LogItem, commit: bool, groups_changed: &mut bool) -> Taken {
+        if commit && self.need_anchored_past() {
+            return Taken::Halt;
+        }
         let entry = LogEntry {
             change: item.change,
             group: item.group,
@@ -1872,7 +1887,10 @@ impl Engine {
                         joined.push(j.group)
                     }
                     // (not yet: the room is behind, or this device has not reached the epoch it was made in)
-                    Err(Error::WrongEpoch | Error::RoomBehind) => settled = false,
+                    Err(Error::WrongEpoch | Error::RoomBehind) => {
+                        self.need_anchored_past();
+                        settled = false;
+                    },
                     Err(e) => {
                         self.local(ctx, &e);
                         if self.stopped.is_some() {
@@ -2049,8 +2067,16 @@ impl Engine {
     fn show(&mut self, ctx: &mut Ctx<'_>, item: &EnvelopeItem) {
         let void = Self::void_code(item);
         match self.device.receive_envelope(&item.envelope, item.change, false, void.as_ref(), ctx.now) {
-            Ok(received) if received.outcome != EnvelopeOutcome::Refused => self.report(Report::Envelope { received: Box::new(received), ordered: false }),
-            Ok(_) => {}
+            Ok(received) => {
+                if received.header.group.is_room()
+                    && matches!(received.code, Some(Error::NoKey | Error::GroupBehind | Error::RoomBehind)) {
+                    self.need_anchored_past();
+                    self.note_room_key_need();
+                }
+                if received.outcome != EnvelopeOutcome::Refused {
+                    self.report(Report::Envelope { received: Box::new(received), ordered: false });
+                }
+            }
             Err(e) => self.local(ctx, &e),
         }
     }
