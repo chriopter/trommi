@@ -3041,7 +3041,6 @@ export const errorLine = e => (e ? html`<p class="room-error" role="alert">${e}<
  *  error's own words (the app's own errors are written to be read), else `fallback`. A screen with refusals of its
  *  own words those first (auth.mjs accountError). */
 const REFUSALS = {
-  offline: 'Can\'t reach Trommi. Check your connection.', 'core-missing': 'This version cannot do that yet.',
-  'worker-failed': 'That did not start. Reload and try again.', 'worker-timeout': 'That took too long. Try again.',
+  offline: 'Can\'t reach Trommi. Check your connection.',
 }
 export const sayError = (err, fallback = '') => REFUSALS[err?.code] ?? (err?.message || fallback)
