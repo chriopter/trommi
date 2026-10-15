@@ -28,7 +28,7 @@ demo/
 
 ## The data
 
-**`data/fixture.json`**: one room as the client core's model (`app/web/core/README.md` "The model"), as JSON:
+**`data/fixture.json`**: one room read by the shared app core (`core/client/src/views/demo.rs`), as JSON:
 
 | Key | What |
 | --- | --- |
@@ -57,6 +57,10 @@ screen as it is:
 | `web.path` | the address in the app |
 | `web.state` | the click the web makes once the page is there (`?state=<name>`, `demoState` in `app/web/public/demo/demo.mjs`), or `null` |
 | `web.mock` | the room: `"1"` is the fixture as it is, its times moved to now; any other name is a variant the client builds from it (`loadFixture` in `demo.mjs`) |
+
+Card routes name a fixture `object_id`; chat routes name the core session id (the first 32 characters of its
+`agent_device_id`). The same paths drive the web review page and native `TROMMI_SCREEN` launches. The check
+rejects routes whose card or session is missing, so a stale alias cannot silently produce an empty screen.
 
 An empty list is allowed: `/screens` then says that none are listed.
 
