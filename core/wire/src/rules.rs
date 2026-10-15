@@ -38,7 +38,8 @@ pub struct CommitFacts<'a> {
     pub removes: &'a [Device],
     pub changes_extensions: bool,
     pub before: Snapshot<'a>,
-    pub after: Snapshot<'a>,
+    pub after_room: Option<Room<'a>>,
+    pub after_leaves: Option<&'a [Device]>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cut {
@@ -173,7 +174,6 @@ pub fn check_session_leaves(kind: SessionKind, room: &RoomView, leaves: &[Device
         ));
     }
     match kind {
-        SessionKind::Main if agents > 1 => Err(bad("a main session has one agent device")),
         SessionKind::Helper { .. } if helpers > MAX_HELPER_DEVICES => {
             Err(bad("a helper session has at most 7 helper devices"))
         }
@@ -181,110 +181,148 @@ pub fn check_session_leaves(kind: SessionKind, room: &RoomView, leaves: &[Device
     }
 }
 
-/// 5.2.2 to 5.2.5: who may commit what in a session group. `founding`: the first Commit of the group, which must
-/// leave no human device out. `was_stale`: the group was stale before this Commit. `recovery`: a Commit of a
-/// recovery (8.7), which removes the other human devices from every live session group.
+/// Membership decisions for a session Commit. Callers check signatures, the named room state,
+/// cross-session exclusivity and availability of human KeyPackages separately.
 pub fn check_session_commit(
     kind: SessionKind,
     room: &RoomView,
     facts: &CommitFacts,
     founding: bool,
-    was_stale: bool,
-    recovery: bool,
 ) -> Res<()> {
-    let leaves = &facts.after.leaves;
-    match &facts.by {
-        By::External(joiner) => {
-            // 8.4: only a human device of the room joins from outside (its recovery signature is checked by the
-            // caller). It may enter a stale group, which stays stale until its Removes.
-            if founding {
-                return Err(bad("a founding Commit is the founder's"));
-            }
-            if room.standing(joiner) != Standing::Human {
+    if facts.changes_extensions {
+        return Err(bad("a session's extension never changes"));
+    }
+    let leaves = transition_leaves(facts)?;
+    let (committer, external) = match facts.by {
+        By::Member(id) => (id, false),
+        By::External(id) => (id, true),
+    };
+    let human = room.standing(&committer) == Standing::Human;
+    let opener = matches!(kind, SessionKind::Helper { opener: Some(id) } if id == committer)
+        && room.standing(&committer) == Standing::Agent;
+    if external {
+        if !human
+            || founding
+            || !facts.adds.is_empty()
+            || facts.removes.len() > 1
+            || facts.removes.iter().any(|id| *id != committer)
+        {
+            return Err(bad(
+                "only a human device joins from outside, replacing at most its own leaf",
+            ));
+        }
+        return Ok(());
+    }
+    if !human && !opener {
+        return Err(bad("this device commits nothing in this group"));
+    }
+    for add in &facts.adds {
+        let role = room.standing(&add.device);
+        let fits = if opener {
+            role == Standing::Helper || (founding && role == Standing::Human)
+        } else {
+            allows_device(role, kind, add.device)
+                && (kind == SessionKind::Main || role != Standing::Helper)
+        };
+        if !fits {
+            return Err(bad("the committer cannot add this device"));
+        }
+    }
+    for gone in facts.removes {
+        let role = room.standing(gone);
+        if opener && role == Standing::Human {
+            return Err(bad("an opener removes no human device"));
+        }
+        if kind == (SessionKind::Helper { opener: None }) {
+            let again = role == Standing::Human && facts.adds.iter().any(|add| add.device == *gone);
+            if allows_device(role, kind, *gone) && !again {
                 return Err(bad(
-                    "only a human device of the room joins a session from outside",
+                    "a waiting helper loses only unfit leaves or a human leaf replaced immediately",
                 ));
             }
-            if facts.before.leaves.contains(joiner) {
-                return Err(bad("the joiner is a leaf already"));
-            }
-            return Ok(());
         }
-        By::Member(committer) => {
-            match (room.standing(committer), kind) {
-                (Standing::Human, _) => {
-                    for add in &facts.adds {
-                        let fits = match (room.standing(&add.device), kind) {
-                            (Standing::Human, _) => true,
-                            (Standing::Agent, SessionKind::Main) => true,
-                            // the takeover's last step: the new opener is the main session's agent leaf
-                            (Standing::Agent, SessionKind::Helper { opener }) => {
-                                opener == Some(add.device)
-                            }
-                            _ => false,
-                        };
-                        if !fits {
-                            return Err(bad("a human device adds human devices and the session's agent device only"));
-                        }
-                    }
-                    // 5.2.3: while the main session has no agent leaf, human devices only add human devices and
-                    // remove the leaves the room's state does not allow
-                    if kind == (SessionKind::Helper { opener: None }) && !recovery {
-                        let offending = offending_leaves(kind, room, &facts.before.leaves);
-                        if facts.removes.iter().any(|d| !offending.contains(d)) {
-                            return Err(bad("a waiting helper session loses only the leaves the room's state does not allow"));
-                        }
-                    }
-                }
-                (Standing::Agent, SessionKind::Helper { opener })
-                    if opener.as_ref() == Some(committer) =>
-                {
-                    // 5.2.4: the opener adds devices that are not human devices and removes leaves that are not human
-                    // devices; in the founding Commit also the Adds of every human device.
-                    if was_stale {
-                        return Err(refuse(
-                            "stale-session",
-                            "only a human device repairs a stale group",
-                        ));
-                    }
-                    for add in &facts.adds {
-                        match room.standing(&add.device) {
-                            Standing::Helper => {}
-                            Standing::Human if founding => {}
-                            _ => return Err(bad("an opener adds helper devices only")),
-                        }
-                    }
-                    if facts
-                        .removes
-                        .iter()
-                        .any(|d| room.standing(d) == Standing::Human)
-                    {
-                        return Err(bad("an opener removes no human device"));
-                    }
-                }
-                _ => return Err(bad("this device commits nothing in this group")),
-            }
+        if (kind == SessionKind::Main && role == Standing::Agent)
+            || matches!(kind, SessionKind::Helper { opener: Some(id) } if id == *gone && role == Standing::Agent)
+        {
+            return Err(bad("an enrolled session agent keeps its leaf"));
         }
+    }
+    let entries = leaf_facts(room, facts.before.leaves);
+    let stale_before = staleness(&SessionLeaves {
+        kind,
+        entries: &entries,
+    });
+    if stale_before.is_stale() && !founding {
+        let removed: BTreeSet<_> = facts.removes.iter().copied().collect();
+        let unfit: BTreeSet<_> = stale_before.disallowed.iter().copied().collect();
+        if removed != unfit
+            || facts
+                .adds
+                .iter()
+                .any(|add| room.standing(&add.device) == Standing::Human)
+        {
+            return Err(refuse(
+                "stale-session",
+                "a stale session takes exactly its repair",
+            ));
+        }
+    }
+    let entries = leaf_facts(room, &leaves);
+    let stale = staleness(&SessionLeaves {
+        kind,
+        entries: &entries,
+    });
+    if stale.is_stale() {
+        return Err(
+            if stale
+                .disallowed
+                .iter()
+                .any(|id| !facts.before.leaves.contains(id))
+            {
+                bad("the Commit introduces an unfit leaf")
+            } else {
+                refuse("stale-session", "the session still needs repair")
+            },
+        );
+    }
+    if helper_devices(&SessionLeaves {
+        kind,
+        entries: &entries,
+    })
+    .len()
+        > MAX_HELPER_DEVICES
+    {
+        return Err(refuse(
+            "too-many",
+            "a helper session has at most 7 helper devices",
+        ));
     }
     if founding {
-        if !facts.removes.is_empty() {
-            return Err(bad("a founding Commit removes nobody"));
+        if !facts.removes.is_empty()
+            || facts.before.leaves.len() != 1
+            || !room.humans.iter().any(|id| leaves.contains(id))
+        {
+            return Err(bad(
+                "a founding Commit starts with one leaf, removes nobody and includes a human",
+            ));
         }
-        // 5.2.5: the first Commit of a main session adds its agent device
-        let agents = leaves
-            .iter()
-            .filter(|d| room.standing(d) == Standing::Agent)
-            .count();
-        if kind == SessionKind::Main && agents != 1 {
-            return Err(bad("a main session is founded with its agent device"));
-        }
-        // 5.2.5: at least one human device; one left out must be one the hub holds no KeyPackage of, which the
-        // caller checks (`left_out`)
-        if !room.humans.iter().any(|h| leaves.contains(h)) {
-            return Err(bad("the founding Commit adds no human device"));
+        match kind {
+            SessionKind::Helper { .. } if !opener => {
+                return Err(bad("the opener founds a helper session"))
+            }
+            SessionKind::Main
+                if leaves
+                    .iter()
+                    .filter(|id| room.standing(id) == Standing::Agent)
+                    .count()
+                    != 1 =>
+            {
+                return Err(bad("a main session is founded with its agent device"))
+            }
+            _ => {}
         }
     }
-    check_session_leaves(kind, room, leaves)
+    Ok(())
 }
 
 /// What a room Commit changes besides the tree, read from `TrommiRoom` before and after.
@@ -307,13 +345,17 @@ pub fn check_room_commit(
     humans: usize,
     agents: usize,
 ) -> Res<RoomChange> {
-    let (Some(before), Some(after)) = (&facts.before.room, &facts.after.room) else {
+    let (Some(before), Some(after)) = (&facts.before.room, &facts.after_room) else {
         return Err(bad("the room group keeps its TrommiRoom"));
     };
     let mut change = RoomChange::default();
     match &facts.by {
         // every leaf of the room group is a human device
-        By::Member(_) => {}
+        By::Member(committer) => {
+            if room.standing(committer) != Standing::Human {
+                return Err(bad("only a human device commits in the room"));
+            }
+        }
         By::External(joiner) => {
             if facts.before.leaves.contains(joiner) || room.standing(joiner) != Standing::Helper {
                 return Err(bad(
@@ -351,7 +393,7 @@ pub fn check_room_commit(
             return Err(bad("a key that already has or had a role in the room"));
         }
     }
-    let leaves: BTreeSet<Device> = facts.after.leaves.iter().copied().collect();
+    let leaves: BTreeSet<Device> = transition_leaves(facts)?.into_iter().collect();
     if leaves.intersection(&new).next().is_some() {
         return Err(bad("a human device is not an agent device"));
     }
@@ -361,6 +403,13 @@ pub fn check_room_commit(
             return Err(bad("a recovery key that is a device's key"));
         }
     }
+    let recovering = matches!(facts.by, By::External(_))
+        || (room.humans.len() > crate::mls::MAX_HUMAN_DEVICES && facts.adds.is_empty());
+    let humans = if recovering {
+        humans
+    } else {
+        humans.min(crate::mls::MAX_HUMAN_DEVICES)
+    };
     if leaves.len() > humans {
         return Err(refuse(
             "too-many",
@@ -484,4 +533,39 @@ pub fn helper_devices(facts: &SessionLeaves<'_>) -> Vec<Device> {
         .filter(|leaf| other_leaf(leaf.role, facts.kind, leaf.device))
         .map(|leaf| leaf.device)
         .collect()
+}
+
+/// Apply the verified membership changes once. Observers can also supply their resulting tree for comparison.
+pub fn transition_leaves(facts: &CommitFacts<'_>) -> Res<Vec<Device>> {
+    let mut leaves: BTreeSet<Device> = facts.before.leaves.iter().copied().collect();
+    if leaves.len() != facts.before.leaves.len() {
+        return Err(bad("duplicate device in the group"));
+    }
+    if let By::Member(id) = facts.by {
+        if !leaves.contains(&id) {
+            return Err(bad("the committer is not a leaf"));
+        }
+    }
+    for gone in facts.removes {
+        if !leaves.remove(gone) {
+            return Err(bad("a Remove names no leaf"));
+        }
+    }
+    if let By::External(id) = facts.by {
+        if !leaves.insert(id) {
+            return Err(bad("the joining device is a leaf already"));
+        }
+    }
+    for added in &facts.adds {
+        if !leaves.insert(added.device) {
+            return Err(bad("an Add repeats a device"));
+        }
+    }
+    if let Some(after) = facts.after_leaves {
+        let actual: BTreeSet<_> = after.iter().copied().collect();
+        if after.len() != actual.len() || actual != leaves {
+            return Err(bad("the tree disagrees with its changes"));
+        }
+    }
+    Ok(leaves.into_iter().collect())
 }

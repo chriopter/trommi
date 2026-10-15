@@ -12,8 +12,7 @@ use crate::ids::{DeviceId, GroupId, Hash32, SessionId};
 use crate::mls::key_package;
 use crate::mls::profile::{
     self, CommitNote, GroupKind, TrommiRoom, TrommiSession, MAX_AGENT_DEVICES,
-    MAX_COMMIT_REQUEST_LEN, MAX_HELPER_DEVICES, MAX_HUMAN_DEVICES, MAX_LIVE_HELPERS, MAX_NOTE_LEN,
-    RECOVERY_KEY_LEN,
+    MAX_COMMIT_REQUEST_LEN, MAX_LIVE_HELPERS, MAX_NOTE_LEN, RECOVERY_KEY_LEN,
 };
 use openmls::group::{PublicGroup, StagedCommit};
 use openmls::prelude::{
@@ -412,7 +411,11 @@ fn check_shape(facts: &CommitFacts) -> Result<&CommitNote, Error> {
     let removed: BTreeSet<DeviceId> = facts.removes.iter().copied().collect();
     refuse(removed.len() != facts.removes.len(), Error::BadCommit)?;
     let cut: Vec<DeviceId> = note.cuts.iter().map(|cut| cut.device).collect();
-    refuse(!removed.iter().eq(cut.iter()), Error::BadCommit)?;
+    if facts.external {
+        refuse(!cut.is_empty(), Error::BadCommit)?;
+    } else {
+        refuse(!removed.iter().eq(cut.iter()), Error::BadCommit)?;
+    }
     let added: BTreeSet<DeviceId> = facts.adds.iter().copied().collect();
     refuse(added.len() != facts.adds.len(), Error::BadCommit)?;
     Ok(note)
@@ -433,18 +436,55 @@ pub fn check_room_commit(verifier: &Verifier<'_>, judged: &Judged<'_>) -> Result
         note.room_epoch != before.epoch || note.room_state != before.state,
         Error::BadCommit,
     )?;
-    let revoked = |device: &DeviceId| history.is_revoked(device, before.epoch);
-
-    let mut humans = before.humans.clone();
-    for gone in &facts.removes {
-        refuse(!humans.remove(gone), Error::BadCommit)?;
-    }
+    let room = match &facts.context {
+        ContextChange::None => &before.room,
+        ContextChange::To(GroupKind::Room(room)) => room,
+        ContextChange::To(GroupKind::Session(_)) | ContextChange::Malformed => {
+            return Err(Error::BadCommit)
+        }
+    };
+    let leaves: Vec<_> = before.humans.iter().map(|id| *id.as_bytes()).collect();
+    let old_agents: Vec<_> = before.room.agents.iter().map(|id| *id.as_bytes()).collect();
+    let new_agents: Vec<_> = room.agents.iter().map(|id| *id.as_bytes()).collect();
+    let removes: Vec<_> = facts.removes.iter().map(|id| *id.as_bytes()).collect();
+    let public = wire::CommitFacts {
+        by: if facts.external {
+            wire::By::External(*facts.committer.as_bytes())
+        } else {
+            wire::By::Member(*facts.committer.as_bytes())
+        },
+        adds: facts
+            .adds
+            .iter()
+            .map(|id| wire::Added {
+                device: *id.as_bytes(),
+            })
+            .collect(),
+        removes: &removes,
+        changes_extensions: facts.context != ContextChange::None,
+        before: wire::Snapshot {
+            leaves: &leaves,
+            room: Some(wire::Room {
+                agents: &old_agents,
+                recovery_signature_key: &before.room.recovery_signature_key,
+                recovery_hpke_key: &before.room.recovery_hpke_key,
+            }),
+        },
+        after_room: Some(wire::Room {
+            agents: &new_agents,
+            recovery_signature_key: &room.recovery_signature_key,
+            recovery_hpke_key: &room.recovery_hpke_key,
+        }),
+        after_leaves: None,
+    };
+    wire::check_room_commit(
+        &wire_room(history, before),
+        &public,
+        verifier.max_human_devices,
+        MAX_AGENT_DEVICES,
+    )
+    .map_err(wire_error)?;
     if facts.external {
-        // 5.1.4: the one Commit from a non-member is the join with the code.
-        refuse(
-            revoked(&facts.committer) || before.is_agent(&facts.committer),
-            Error::BadCommit,
-        )?;
         verifier.recovery.verify_join(&JoinClaim {
             group: &facts.group,
             epoch: facts.epoch,
@@ -455,39 +495,10 @@ pub fn check_room_commit(verifier: &Verifier<'_>, judged: &Judged<'_>) -> Result
             recovery_signature_key: &before.room.recovery_signature_key,
             recovery_auth: judged.recovery_auth,
         })?;
-        refuse(!humans.insert(facts.committer), Error::BadCommit)?;
     } else {
-        // 5.1.2: only a human device commits; agent and helper devices are no leaves here.
-        refuse(!before.is_human(&facts.committer), Error::BadCommit)?;
         refuse(judged.recovery_auth.is_some(), Error::BadCommit)?;
     }
-    refuse(facts.adds.len() > 1, Error::BadCommit)?;
-    for added in &facts.adds {
-        // 4.2: a revoked key never returns, and no key is both a human and an agent device. 3.7: nor does
-        // the key of a leaf that this same Commit removes; into the room group there is no second try.
-        let removed_here = facts.removes.contains(added);
-        refuse(
-            revoked(added) || removed_here || !humans.insert(*added),
-            Error::BadCommit,
-        )?;
-    }
 
-    let room = match &facts.context {
-        ContextChange::None => &before.room,
-        ContextChange::To(GroupKind::Room(room)) => room,
-        ContextChange::To(GroupKind::Session(_)) | ContextChange::Malformed => {
-            return Err(Error::BadCommit)
-        }
-    };
-    refuse(room.agents.len() > MAX_AGENT_DEVICES, Error::TooMany)?;
-    for agent in &room.agents {
-        let enrolled_now = !before.is_agent(agent);
-        refuse(enrolled_now && revoked(agent), Error::BadCommit)?;
-        refuse(humans.contains(agent), Error::BadCommit)?;
-    }
-    for gone in &facts.removes {
-        refuse(room.agents.binary_search(gone).is_ok(), Error::BadCommit)?;
-    }
     // 8.1, 8.6: the two recovery keys change together, to keys the room never held, and are no device's key.
     let signature_changed = room.recovery_signature_key != before.room.recovery_signature_key;
     let hpke_changed = room.recovery_hpke_key != before.room.recovery_hpke_key;
@@ -500,27 +511,31 @@ pub fn check_room_commit(verifier: &Verifier<'_>, judged: &Judged<'_>) -> Result
             Error::BadCommit,
         )?;
     }
-    for key in keys {
-        let as_device = DeviceId::new(key);
-        refuse(
-            humans.contains(&as_device) || room.agents.binary_search(&as_device).is_ok(),
-            Error::BadCommit,
-        )?;
-    }
-    // Section 16, 8.7: the limit of human devices. The one beyond it comes only by a join from outside, and a
-    // room that holds one more takes on only Commits that add nobody, so that the recovery's removal passes.
-    // Whether a recovery runs is the hub's to know: it sets the most to the limit outside one, and then no
-    // join makes a device beyond it.
-    let recovering =
-        facts.external || (before.humans.len() > MAX_HUMAN_DEVICES && facts.adds.is_empty());
-    let most = if recovering {
-        verifier.max_human_devices
-    } else {
-        verifier.max_human_devices.min(MAX_HUMAN_DEVICES)
-    };
-    refuse(humans.len() > most, Error::TooMany)
+    Ok(())
 }
 
+fn wire_error(error: wire::Refused) -> Error {
+    match error.code {
+        "room-behind" => Error::RoomBehind,
+        "stale-session" => Error::StaleSession,
+        "too-many" => Error::TooMany,
+        _ => Error::BadCommit,
+    }
+}
+fn wire_room(history: &RoomHistory, room: &RoomState) -> wire::RoomView {
+    wire::RoomView {
+        epoch: room.epoch,
+        state: *room.state.as_bytes(),
+        humans: room.humans.iter().map(|id| *id.as_bytes()).collect(),
+        agents: room.room.agents.iter().map(|id| *id.as_bytes()).collect(),
+        revoked: history
+            .revoked
+            .iter()
+            .filter(|(_, epoch)| **epoch <= room.epoch)
+            .map(|(id, _)| *id.as_bytes())
+            .collect(),
+    }
+}
 fn wire_role(history: &RoomHistory, room: &RoomState, device: &DeviceId) -> wire::Standing {
     wire::standing(
         room.is_human(device),
@@ -550,48 +565,6 @@ fn wire_leaves(
             role: wire_role(history, room, device),
         })
         .collect()
-}
-
-/// What a session group's leaves are judged against: the room state its Commit names, and the main session a
-/// helper session hangs under.
-struct Allowed<'a> {
-    history: &'a RoomHistory,
-    room: &'a RoomState,
-    session: &'a TrommiSession,
-    parent: Parent,
-}
-
-impl Allowed<'_> {
-    fn is_helper_session(&self) -> bool {
-        !self.session.parent.is_zero()
-    }
-
-    /// The opener of a helper session: the main session's agent leaf, as the verifier knows it. A verifier
-    /// that does not know the main session takes no device for the opener.
-    fn is_opener(&self, device: &DeviceId) -> bool {
-        match self.parent {
-            Parent::Seat(seat) => seat == Some(*device) && self.room.is_agent(device),
-            Parent::Unknown | Parent::NotAMainSession => false,
-        }
-    }
-
-    /// Whether `device` may be a leaf: a human device; in a main session an agent device; in a helper session
-    /// its opener, or a helper device, which never was a human or agent device.
-    fn allows(&self, device: &DeviceId) -> bool {
-        wire::allows_device(
-            wire_role(self.history, self.room, device),
-            wire_kind(self.room, self.session, self.parent),
-            *device.as_bytes(),
-        )
-    }
-
-    /// The leaves that are neither human devices nor the opener.
-    fn others<'s>(&'s self, leaves: &'s BTreeSet<DeviceId>) -> impl Iterator<Item = &'s DeviceId> {
-        leaves
-            .iter()
-            .filter(|leaf| !self.room.is_human(leaf))
-            .filter(|leaf| !(self.is_helper_session() && self.is_opener(leaf)))
-    }
 }
 
 /// The leaves of a session group that the room state does not allow (5.2.8): a group with one is stale
@@ -718,109 +691,53 @@ pub fn check_session_commit(
     // 5.2.3: who the opener is follows from the main session's state at this place. A verifier that does not
     // know it judges nothing of the helper session until it does.
     refuse(parent == Parent::Unknown, Error::RoomBehind)?;
-    let allowed = Allowed {
-        history,
-        room,
-        session,
-        parent,
-    };
     let founding = facts.epoch == 0;
-    let committer = &facts.committer;
-    let by_human = room.is_human(committer);
-    let by_opener = helper && !by_human && allowed.is_opener(committer);
-
-    let mut leaves = before.leaves.clone();
-    for gone in &facts.removes {
-        refuse(!leaves.remove(gone), Error::BadCommit)?;
-    }
+    let leaves: Vec<_> = before.leaves.iter().map(|id| *id.as_bytes()).collect();
+    let removes: Vec<_> = facts.removes.iter().map(|id| *id.as_bytes()).collect();
+    let public = wire::CommitFacts {
+        by: if facts.external {
+            wire::By::External(*facts.committer.as_bytes())
+        } else {
+            wire::By::Member(*facts.committer.as_bytes())
+        },
+        adds: facts
+            .adds
+            .iter()
+            .map(|id| wire::Added {
+                device: *id.as_bytes(),
+            })
+            .collect(),
+        removes: &removes,
+        changes_extensions: false,
+        before: wire::Snapshot {
+            leaves: &leaves,
+            room: None,
+        },
+        after_room: None,
+        after_leaves: None,
+    };
+    wire::check_session_commit(
+        wire_kind(room, session, parent),
+        &wire_room(history, room),
+        &public,
+        founding,
+    )
+    .map_err(wire_error)?;
     if facts.external {
-        // 5.2.7, 8.4: a join from outside needs the recovery signature and a joiner in H(r).
-        refuse(!by_human || founding, Error::BadCommit)?;
         verifier.recovery.verify_join(&JoinClaim {
             group: &facts.group,
             epoch: facts.epoch,
-            joiner: committer,
+            joiner: &facts.committer,
             note,
             commit: judged.commit,
             base_group_info: judged.base_group_info,
             recovery_signature_key: &room.room.recovery_signature_key,
             recovery_auth: judged.recovery_auth,
         })?;
-        refuse(!leaves.insert(*committer), Error::BadCommit)?;
     } else {
         refuse(judged.recovery_auth.is_some(), Error::BadCommit)?;
-        refuse(!before.leaves.contains(committer), Error::BadCommit)?;
-        // 5.2.2, 5.2.3: a human device in H(r) commits; in a helper session also its opener.
-        refuse(!by_human && !by_opener, Error::BadCommit)?;
-    }
-
-    for added in &facts.adds {
-        let human = room.is_human(added);
-        let fits = if by_opener {
-            // 5.2.4: the opener adds devices that are not human devices; in the founding Commit also H(r).
-            let helper_device =
-                !human && !room.is_agent(added) && !history.is_revoked(added, room.epoch);
-            helper_device || (founding && human)
-        } else if helper {
-            // A human device adds human devices, and after a takeover the main session's agent leaf.
-            human || allowed.is_opener(added)
-        } else {
-            human || allowed.allows(added)
-        };
-        refuse(!fits || !leaves.insert(*added), Error::BadCommit)?;
-    }
-    for gone in &facts.removes {
-        let human = room.is_human(gone);
-        if by_opener {
-            // 5.2.4: the opener removes no human device.
-            refuse(human, Error::BadCommit)?;
-        } else if helper && parent == Parent::Seat(None) && !facts.external {
-            // 5.2.3: while the main session has no agent leaf, only leaves the room no longer allows go;
-            // and the leaf of a human device that the same Commit adds again (3.7).
-            let again = human && facts.adds.contains(gone);
-            refuse(allowed.allows(gone) && !again, Error::BadCommit)?;
-        }
-        // 5.2.3: the opener is a leaf for as long as it is the main session's agent leaf.
-        let opener = parent == Parent::Seat(Some(*gone)) && room.is_agent(gone);
-        refuse(helper && opener, Error::BadCommit)?;
     }
     if !helper {
-        // 5.2.8, 5.3.1: the leaf of an agent device goes only after the room Commit that took the device
-        // out of `agents`, for a takeover or an empty seat. While the room holds the device its leaf stays:
-        // otherwise a Remove and a later Add would put another device in the seat of one still enrolled.
-        let unseats_enrolled = facts.removes.iter().any(|gone| room.is_agent(gone));
-        refuse(unseats_enrolled, Error::BadCommit)?;
-    }
-
-    // 5.2.8: a leaf the room state does not allow makes the group stale, and so does a helper session's
-    // missing opener. Only the Commit that removes every such leaf and adds that opener is taken, and a join
-    // by 8.4, which leaves the group as stale as it was for that one Commit. The repair is that and nothing
-    // beside it: it removes exactly the leaves the room does not allow and adds no human device.
-    let stale_before = staleness(history, room, session, parent, &before.leaves);
-    if stale_before.is_stale() && !facts.external && !founding {
-        let removed: BTreeSet<DeviceId> = facts.removes.iter().copied().collect();
-        let unfit: BTreeSet<DeviceId> = stale_before.disallowed.iter().copied().collect();
-        let adds_human = facts.adds.iter().any(|added| room.is_human(added));
-        refuse(removed != unfit || adds_human, Error::StaleSession)?;
-    }
-    let stale = staleness(history, room, session, parent, &leaves);
-    if stale.is_stale() && !facts.external {
-        let unfit = &stale.disallowed;
-        let brought = unfit.iter().any(|leaf| !before.leaves.contains(leaf));
-        return Err(if brought {
-            Error::BadCommit
-        } else {
-            Error::StaleSession
-        });
-    }
-
-    if helper {
-        refuse(
-            allowed.others(&leaves).count() > MAX_HELPER_DEVICES,
-            Error::TooMany,
-        )?;
-    } else {
-        // 5.2.2: an agent device is the agent leaf of at most one live main session.
         for added in facts.adds.iter().filter(|added| !room.is_human(added)) {
             let elsewhere = verifier
                 .sessions
@@ -828,27 +745,11 @@ pub fn check_session_commit(
                 .is_some_and(|other| other != session.session_id);
             refuse(elsewhere, Error::BadCommit)?;
         }
-    }
-
-    if founding {
-        // 5.2.5: the first Commit adds the devices of H(r) whose KeyPackages could be had (the hub refuses one
-        // that leaves out a device it holds a KeyPackage of), at least one human device; a human device founds a
-        // main session with its agent device, the opener a helper session. A human device left out is added
-        // later by a human device of the group (5.2.7).
-        refuse(!facts.removes.is_empty(), Error::BadCommit)?;
+    } else if founding {
         refuse(
-            before.leaves.len() != 1 || !room.humans.iter().any(|human| leaves.contains(human)),
-            Error::BadCommit,
+            verifier.sessions.live_helpers(&session.parent) >= MAX_LIVE_HELPERS,
+            Error::TooMany,
         )?;
-        if helper {
-            refuse(!by_opener, Error::BadCommit)?;
-            refuse(
-                verifier.sessions.live_helpers(&session.parent) >= MAX_LIVE_HELPERS,
-                Error::TooMany,
-            )?;
-        } else {
-            refuse(allowed.others(&leaves).count() != 1, Error::BadCommit)?;
-        }
     }
     Ok(())
 }

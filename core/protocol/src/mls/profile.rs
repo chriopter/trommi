@@ -33,7 +33,7 @@ pub const LIFETIME_MARGIN_MS: u64 = 60 * 60 * 1000;
 pub const LIFETIME_MS: u64 = 10 * 365 * 24 * 60 * 60 * 1000;
 
 /// The most human devices of a room, outside a recovery (section 16).
-pub const MAX_HUMAN_DEVICES: usize = 1000;
+pub use trommi_wire::mls::MAX_HUMAN_DEVICES;
 /// The most human devices of a room while a recovery runs.
 pub const MAX_HUMAN_DEVICES_IN_RECOVERY: usize = 1001;
 /// The most enrolled agent devices of a room.

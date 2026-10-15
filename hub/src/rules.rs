@@ -32,7 +32,8 @@ fn facts(value: &CommitFacts) -> wire::CommitFacts<'_> {
         removes: &value.removes,
         changes_extensions: value.changes_extensions,
         before: snapshot(&value.before),
-        after: snapshot(&value.after),
+        after_room: snapshot(&value.after).room,
+        after_leaves: Some(&value.after.leaves),
     }
 }
 pub fn check_note(
@@ -61,11 +62,8 @@ pub fn check_session_commit(
     room: &RoomView,
     change: &CommitFacts,
     founding: bool,
-    was_stale: bool,
-    recovery: bool,
 ) -> Res<()> {
-    wire::check_session_commit(kind, room, &facts(change), founding, was_stale, recovery)
-        .map_err(refused)
+    wire::check_session_commit(kind, room, &facts(change), founding).map_err(refused)
 }
 pub fn check_room_commit(
     room: &RoomView,

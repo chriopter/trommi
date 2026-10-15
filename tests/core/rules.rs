@@ -1206,3 +1206,140 @@ fn hub_and_members_agree_on_disallowed_leaves_and_staleness() {
         }
     }
 }
+
+#[test]
+fn an_enrolled_agent_key_cannot_become_human_in_the_same_room_commit() {
+    let history = history();
+    let mut change = facts(GroupId::room(ROOM), 2, H1, 2);
+    change.adds.push(device(AGENT));
+    let mut after = history.newest().room.clone();
+    after.agents.retain(|id| *id != device(AGENT));
+    change.context = ContextChange::To(GroupKind::Room(after));
+    assert_eq!(room_verdict(&history, &change), Err(Error::BadCommit));
+}
+
+#[test]
+fn hub_and_member_session_changes_have_the_same_verdict() {
+    use trommi_hub::{observer as observed, rules as hub};
+    let mut history = history();
+    history.record(state(3, &[H1], &[AGENT])).unwrap();
+    let view = hub::RoomView {
+        epoch: 3,
+        state: [3; 32],
+        humans: [[H1; 32]].into(),
+        agents: [[AGENT; 32]].into(),
+        revoked: [[H2; 32], [OTHER_AGENT; 32]].into(),
+    };
+    let mut checked = 0;
+    for mode in 0..3 {
+        let (session, kind, seat) = match mode {
+            0 => (
+                session(SessionId::new([0; 16]), MAIN),
+                hub::SessionKind::Main,
+                Parent::NotAMainSession,
+            ),
+            1 => (
+                session(MAIN, HELPER),
+                hub::SessionKind::Helper {
+                    opener: Some([AGENT; 32]),
+                },
+                Parent::Seat(Some(device(AGENT))),
+            ),
+            _ => (
+                session(MAIN, HELPER),
+                hub::SessionKind::Helper { opener: None },
+                Parent::Seat(None),
+            ),
+        };
+        let sessions = Sessions { seat, ..SESSIONS };
+        for listed in [
+            vec![H1],
+            vec![H1, AGENT],
+            vec![H1, H2, AGENT, SUB],
+            vec![H1, SUB],
+            vec![AGENT, SUB],
+        ] {
+            let before = before(session.clone(), &listed, 3);
+            for committer in [H1, AGENT, SUB] {
+                for (adds, removes) in [
+                    (&[][..], &[][..]),
+                    (&[H1][..], &[H1][..]),
+                    (&[AGENT][..], &[][..]),
+                    (&[SUB][..], &[][..]),
+                    (&[][..], &[H2][..]),
+                    (&[][..], &[AGENT][..]),
+                    (&[][..], &[SUB][..]),
+                ] {
+                    let change = adding(
+                        removing(facts(session.group_id(), 1, committer, 3), removes),
+                        adds,
+                    );
+                    let snap = |leaves: Vec<_>| observed::Snapshot {
+                        group_id: vec![],
+                        epoch: 1,
+                        leaves,
+                        room: None,
+                        session: None,
+                        context: vec![],
+                        confirmation_tag: vec![],
+                    };
+                    let after = listed
+                        .iter()
+                        .filter(|id| !removes.contains(id))
+                        .chain(adds.iter())
+                        .map(|id| [*id; 32])
+                        .collect();
+                    let change_hub = observed::CommitFacts {
+                        by: observed::By::Member([committer; 32]),
+                        adds: adds
+                            .iter()
+                            .map(|id| observed::Added {
+                                device: [*id; 32],
+                                key_package_ref: vec![],
+                            })
+                            .collect(),
+                        removes: removes.iter().map(|id| [*id; 32]).collect(),
+                        changes_extensions: false,
+                        has_path: true,
+                        aad: vec![],
+                        before: snap(listed.iter().map(|id| [*id; 32]).collect()),
+                        after: snap(after),
+                    };
+                    let member = session_verdict(&history, &sessions, &before, &change)
+                        .map_err(|error| error.code());
+                    let hub = hub::check_session_commit(kind, &view, &change_hub, false)
+                        .map_err(|error| error.code);
+                    assert_eq!(member, hub, "mode={mode} leaves={listed:?} by={committer} adds={adds:?} removes={removes:?}");
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 315);
+}
+
+#[test]
+fn an_external_join_replacing_its_own_leaf_needs_no_cut() {
+    let history = history();
+    let session = session(SessionId::new([0; 16]), MAIN);
+    let before = before(session.clone(), &[H1, AGENT], 2);
+    let mut change = facts(session.group_id(), 1, H1, 2);
+    change.external = true;
+    change.external_inits = 1;
+    change.removes.push(device(H1));
+    change.note.as_mut().unwrap().join = true;
+    let verifier = Verifier {
+        history: &history,
+        sessions: &SESSIONS,
+        recovery: &AnyJoin,
+        max_human_devices: 1000,
+        room_epoch: 2,
+    };
+    let judged = Judged {
+        facts: &change,
+        commit: b"commit",
+        recovery_auth: Some(b"signed"),
+        base_group_info: None,
+    };
+    assert_eq!(check_session_commit(&verifier, &before, &judged), Ok(()));
+}

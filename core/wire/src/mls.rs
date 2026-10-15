@@ -13,3 +13,6 @@ pub const CUT_LEN: usize = 32 + 8 + 32;
 pub const ROOM_STATE_LABEL: &str = "Trommi Room State";
 /// Most helper devices one session group holds (4.3).
 pub const MAX_HELPER_DEVICES: usize = 7;
+
+/// Most human devices outside recovery (section 16).
+pub const MAX_HUMAN_DEVICES: usize = 1000;

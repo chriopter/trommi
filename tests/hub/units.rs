@@ -495,8 +495,6 @@ mod rules_tests {
             &r,
             &facts(By::Member(d(1)), &[1], &[2, 3, 10], &[]),
             true,
-            false,
-            false,
         )
         .unwrap();
         // a human device may be left out (5.2.5: whether the hub held a KeyPackage of it is delivery.rs's check)
@@ -505,8 +503,6 @@ mod rules_tests {
             &r,
             &facts(By::Member(d(1)), &[1], &[2, 10], &[]),
             true,
-            false,
-            false,
         )
         .unwrap();
         // two agent leaves
@@ -515,9 +511,7 @@ mod rules_tests {
                 MAIN,
                 &r,
                 &facts(By::Member(d(1)), &[1], &[2, 3, 10, 11], &[]),
-                true,
-                false,
-                false
+                true
             )),
             "bad-commit"
         );
@@ -527,9 +521,7 @@ mod rules_tests {
                 MAIN,
                 &r,
                 &facts(By::Member(d(1)), &[1], &[2, 3, 77], &[]),
-                true,
-                false,
-                false
+                true
             )),
             "bad-commit"
         );
@@ -543,8 +535,6 @@ mod rules_tests {
                 MAIN,
                 &r,
                 &facts(By::Member(d(10)), &[1, 10], &[], &[]),
-                false,
-                false,
                 false
             )),
             "bad-commit"
@@ -557,8 +547,6 @@ mod rules_tests {
                 helper,
                 &r,
                 &facts(By::Member(d(50)), &[1, 10, 50], &[], &[]),
-                false,
-                false,
                 false
             )),
             "bad-commit"
@@ -577,8 +565,6 @@ mod rules_tests {
             &r,
             &facts(By::Member(d(10)), &[10], &[1, 2, 50], &[]),
             true,
-            false,
-            false,
         )
         .unwrap();
         // a human device left out is taken (5.2.5); no human device at all is not
@@ -587,8 +573,6 @@ mod rules_tests {
             &r,
             &facts(By::Member(d(10)), &[10], &[1, 50], &[]),
             true,
-            false,
-            false,
         )
         .unwrap();
         assert_eq!(
@@ -596,9 +580,7 @@ mod rules_tests {
                 helper,
                 &r,
                 &facts(By::Member(d(10)), &[10], &[50], &[]),
-                true,
-                false,
-                false
+                true
             )),
             "bad-commit"
         );
@@ -608,8 +590,6 @@ mod rules_tests {
             &r,
             &facts(By::Member(d(10)), &[1, 2, 10, 50], &[51], &[50]),
             false,
-            false,
-            false,
         )
         .unwrap();
         // not a human device, in or out
@@ -618,8 +598,6 @@ mod rules_tests {
                 helper,
                 &r,
                 &facts(By::Member(d(10)), &[1, 10], &[2], &[]),
-                false,
-                false,
                 false
             )),
             "bad-commit"
@@ -629,8 +607,6 @@ mod rules_tests {
                 helper,
                 &r,
                 &facts(By::Member(d(10)), &[1, 2, 10], &[], &[2]),
-                false,
-                false,
                 false
             )),
             "bad-commit"
@@ -641,8 +617,6 @@ mod rules_tests {
                 helper,
                 &r,
                 &facts(By::Member(d(10)), &[1, 2, 10], &[11], &[]),
-                false,
-                false,
                 false
             )),
             "bad-commit"
@@ -653,8 +627,6 @@ mod rules_tests {
                 helper,
                 &r,
                 &facts(By::Member(d(11)), &[1, 2, 11], &[50], &[]),
-                false,
-                false,
                 false
             )),
             "bad-commit"
@@ -667,8 +639,8 @@ mod rules_tests {
             &[],
         );
         assert_eq!(
-            code(check_session_commit(helper, &r, &many, false, false, false)),
-            "bad-commit"
+            code(check_session_commit(helper, &r, &many, false)),
+            "too-many"
         );
     }
 
@@ -683,8 +655,6 @@ mod rules_tests {
                 MAIN,
                 &r,
                 &facts(By::Member(d(1)), &[1, 9, 10], &[], &[]),
-                false,
-                true,
                 false
             )),
             "stale-session"
@@ -694,8 +664,6 @@ mod rules_tests {
             MAIN,
             &r,
             &facts(By::Member(d(1)), &[1, 9, 10], &[], &[9]),
-            false,
-            true,
             false,
         )
         .unwrap();
@@ -714,8 +682,6 @@ mod rules_tests {
             &r,
             &facts(By::Member(d(1)), &[1, 10, 50], &[11], &[10]),
             false,
-            true,
-            false,
         )
         .unwrap();
         // the old opener cannot repair it by itself, nor go on
@@ -724,8 +690,6 @@ mod rules_tests {
                 helper,
                 &r,
                 &facts(By::Member(d(10)), &[1, 10, 50], &[51], &[]),
-                false,
-                true,
                 false
             )),
             "bad-commit"
@@ -741,8 +705,6 @@ mod rules_tests {
             &r,
             &facts(By::Member(d(1)), &[1, 10, 50], &[], &[10]),
             false,
-            true,
-            false,
         )
         .unwrap();
     }
@@ -755,8 +717,6 @@ mod rules_tests {
             &r,
             &facts(By::External(d(2)), &[1, 9, 10], &[], &[]),
             false,
-            true,
-            false,
         )
         .unwrap();
         assert_eq!(
@@ -764,8 +724,6 @@ mod rules_tests {
                 MAIN,
                 &r,
                 &facts(By::External(d(10)), &[1], &[], &[]),
-                false,
-                false,
                 false
             )),
             "bad-commit"
@@ -775,8 +733,6 @@ mod rules_tests {
                 MAIN,
                 &r,
                 &facts(By::External(d(77)), &[1], &[], &[]),
-                false,
-                false,
                 false
             )),
             "bad-commit"
@@ -786,8 +742,6 @@ mod rules_tests {
                 MAIN,
                 &r,
                 &facts(By::External(d(9)), &[1], &[], &[]),
-                false,
-                false,
                 false
             )),
             "bad-commit"
@@ -1751,16 +1705,33 @@ mod push_tests {
             .unwrap();
         let payload: Value = serde_json::from_slice(&start.body).unwrap();
         let state = &payload["aps"]["content-state"];
-        assert_eq!((&state["working"], &state["waiting"]), (&json!(1), &json!(1)));
+        assert_eq!(
+            (&state["working"], &state["waiting"]),
+            (&json!(1), &json!(1))
+        );
         let sealed = unb64(state["s"].as_str().unwrap()).unwrap();
         assert_eq!(open_live_on_phone(&[6; 32], &sealed), Some((2, 5)));
         assert_eq!(open_live_on_phone(&[7; 32], &sealed), None);
         // without a push key of the device: the marks alone
         let plain = a
-            .live_activity("production", &"cd".repeat(32), "com.trommi.app", "tag-1", "update", 2, 5, None, 600_000, 1_700_000_000_000)
+            .live_activity(
+                "production",
+                &"cd".repeat(32),
+                "com.trommi.app",
+                "tag-1",
+                "update",
+                2,
+                5,
+                None,
+                600_000,
+                1_700_000_000_000,
+            )
             .unwrap();
         let plain: Value = serde_json::from_slice(&plain.body).unwrap();
-        assert_eq!(plain["aps"]["content-state"], json!({ "working": 1, "waiting": 1 }));
+        assert_eq!(
+            plain["aps"]["content-state"],
+            json!({ "working": 1, "waiting": 1 })
+        );
         assert_eq!(payload["aps"]["attributes"], json!({ "tag": "tag-1" }));
         assert_eq!(payload["aps"]["relevance-score"], 100);
         assert!(start
@@ -1947,7 +1918,11 @@ mod accounts_tests {
         ] {
             assert_eq!(normalise_email(bad).unwrap_err().code, "bad-email", "{bad}");
         }
-        for good in ["owner@example.com", "a@example..com", "ada.lovelace+notes@sub.example.org"] {
+        for good in [
+            "owner@example.com",
+            "a@example..com",
+            "ada.lovelace+notes@sub.example.org",
+        ] {
             assert_eq!(normalise_email(good).unwrap(), good);
         }
     }

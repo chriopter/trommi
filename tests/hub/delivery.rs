@@ -2275,7 +2275,7 @@ fn what_the_second_review_found_stays_refused() {
     );
     w.ada
         .post_commit(&w.hub, &out, &key)
-        .refused(409, "stale-session");
+        .refused(400, "bad-commit");
 
     // 3.7: a device whose Welcome failed is added again under its key: removed with an empty Cut, added afresh
     let out = w.ada.commit(
