@@ -109,8 +109,7 @@ struct IslandBody: View {
         // right under the island's top, so the title and both answers fit)
         HStack(spacing: 7) {
           Bell(size: 22, ink: .white, rings: ring)
-          (Text(top.agent).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-            + Text(verb(top)).font(.subheadline).foregroundStyle(ring))
+          Text("\(Text(top.agent).font(.subheadline.weight(.semibold)).foregroundStyle(.white))\(Text(verb(top)).font(.subheadline).foregroundStyle(ring))")
             .lineLimit(1)
           Spacer(minLength: 4)
           if s.others > 0 {
