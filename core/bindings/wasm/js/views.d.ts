@@ -1059,6 +1059,8 @@ export interface NoteToView {
 /** Settings: what the list's rows say, and the person's devices (`settings.rs`). What only this device knows (the
  *  theme, the Push level) is the shell's. */
 export interface SettingsView {
+  /** Hub counts and sizes, read only by an authenticated device of this account. */
+  data?: DataView
   /** The account's e-mail, for the row Account; none until the account is read (W3). */
   account: string | null
   /** The person's devices that are in, in the order they joined (the agents are under Agents). */
@@ -1093,6 +1095,19 @@ export interface SettingsView {
   push?: PushView
   /** The account's ways in, once read (`AccountAction::ReadAccount`). */
   login?: LoginView
+}
+
+/** Settings → Data: presentation belongs to the core, never the native HTTP executor. */
+export interface DataView {
+  state: string
+  rows: DataRow[]
+  says: Text | null
+}
+
+export interface DataRow {
+  id: string
+  label: Text
+  value: Text
 }
 
 /** What a desk holds: what its delete takes away. */

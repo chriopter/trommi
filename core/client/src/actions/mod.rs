@@ -204,6 +204,17 @@ pub enum Action {
     },
 
     // ---- notes, scribble, files ----
+    /// A sealed native share inbox item. Recipient selection and upload completion belong to the core.
+    ImportShare {
+        id: String,
+        #[serde(default)] room: Option<String>,
+        #[serde(default)] desk: Option<String>,
+        #[serde(default)] to: Option<String>,
+        #[serde(default)] send: bool,
+        text: String,
+        #[serde(default)] files: Vec<SharedFile>,
+    },
+    WriteNoteFiles { #[serde(default)] note_id: Option<String>, text: String, attachments: Vec<String> },
     WriteNote {
         #[serde(default)]
         note_id: Option<String>,
@@ -228,6 +239,8 @@ pub enum Action {
     /// size, color, wrap?`, or `rect, attachment` (a picture: its file's id, or the attachment's reference) and
     /// `nw?, nh?, mime?, name?`. Shown at once (`BoardShape.local` is `<local_id>/<index>`), taken back with a toast
     /// if the hub refuses it. `local_id`: the shell's own, unique per item.
+    /// A native pen's uncompressed points in board units: x, y, elapsed ms, force 0..1. Packing is shared.
+    DrawStroke { board_id: String, local_id: String, points: Vec<serde_json::Value>, tool: String, color: String, width: u32 },
     BoardItem {
         board_id: String,
         local_id: String,
@@ -296,3 +309,7 @@ pub enum Action {
         toast_id: String,
     },
 }
+
+/// Bytes picked in a native share sheet; never logged.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SharedFile { pub name: String, pub media_type: String, pub bytes: Bytes }

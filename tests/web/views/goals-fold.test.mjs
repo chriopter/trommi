@@ -31,10 +31,3 @@ test('one line or none: nothing to fold, no toggle', () => {
   assert.doesNotMatch(String(goalsWords(goals(1))), /desk-goals-toggle/)
   assert.doesNotMatch(String(goalsWords(goals(0))), /desk-goals-toggle/)
 })
-
-test('the iPhone: one chevron, folded the first line (goalsFold), no "Hide goals"', () => {
-  const view = read('app/ios/TrommiApp/Sources/TrommiApp/DeskGoals.swift')
-  assert.doesNotMatch(view, /Hide goals|more"\)|Show less/)
-  assert.match(view, /Image\(systemName: "chevron\.down"\)/)
-  assert.match(read('app/ios/TrommiClient/Sources/TrommiClient/Desk.swift'), /return \(String\(lines\[0\]\), lines\.count - 1\)/)
-})

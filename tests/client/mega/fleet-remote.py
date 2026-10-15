@@ -71,7 +71,7 @@ def remote() -> None:
     log = open(os.path.join(folder, "log.txt"), "w")
     env = dict(os.environ, TROMMI_MEGA_FLEET=folder)
     runner = subprocess.Popen(
-        ["swift", "test", "--skip-build", "--package-path", "tests/ios", "--filter", "TrommiCoreLiveTests.MegaFleetTests/testFleet"],
+        ["swift", "test", "--skip-build", "--package-path", "tests/ios", "--filter", "TrommiShellTests.MegaFleetTests/testFleet"],
         env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
     )
     open_ones: set[int] = set()

@@ -319,6 +319,7 @@ pub fn settings(b: &Board) -> SettingsView {
     });
 
     SettingsView {
+        data: None,
         account: None,
         login: None,
         room: None,

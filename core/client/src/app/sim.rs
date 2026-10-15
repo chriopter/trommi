@@ -157,6 +157,7 @@ impl Sim {
             }
             self.log.push(effect.clone());
             match effect {
+                Effect::ShareInbox { .. } | Effect::ForgetShared => {},
                 Effect::Render { delta } => self.view.apply(&delta).expect("renders come in order"),
                 Effect::Store { id, op } => {
                     let failed = matches!(op, StoreOp::DeviceApply { .. });

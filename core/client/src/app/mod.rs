@@ -32,6 +32,7 @@ pub mod push;
 mod selfjoin;
 mod kit;
 mod shared;
+mod import;
 pub use shared::SHARED_FILE;
 pub mod script;
 pub mod sim;
@@ -82,6 +83,8 @@ enum Pending {
     FoundLoad,
     /// The cache space read to wipe it (a sign-out).
     Wipe,
+    /// The durable deletion of the slot: failure must remain visible after its engine was forgotten.
+    ForgetWrite,
     /// The device state read for a join by an invite link (`AccountAction::Join`).
     LinkLoad,
     /// The challenge of a founding with a passkey: the hub, the e-mail given.
@@ -148,6 +151,7 @@ pub struct App {
     answers: Vec<engine::requests::Answered>,
     /// Files attached, opened, saved and shared (`crate::files`).
     files: crate::files::Files,
+    imports: BTreeMap<String, import::Import>,
     /// Invites this device opened (`app::invites`).
     invites: invites::Invites,
     /// The account's steps in flight (`app::account_steps`).
@@ -234,6 +238,7 @@ impl App {
             stored_hub: None,
             answers: Vec::new(),
             files: crate::files::Files::default(),
+            imports: BTreeMap::new(),
             invites: invites::Invites::default(),
             steps: account_steps::Steps::default(),
             changes: account_change::Changes::default(),
@@ -812,6 +817,9 @@ impl App {
             }
             _ if self.config.is_none() => out.push(log(LogLevel::Warn, "an event before start")),
             Event::Store { id, result } => match self.pending.remove(&id) {
+                Some(Pending::ForgetWrite) => {
+                    if matches!(result, IoResult::Err(_)) { self.next_view.phase = Phase::Stopped; self.next_view.status = Some(crate::views::Text::new("account.wipe_failed", "The stored device could not be erased. Close the app and try again.")); }
+                },
                 Some(Pending::Wipe) => {
                     if let IoResult::Ok(StoreAnswer::Entries { entries }) = result {
                         self.wipe_cache(entries.into_iter().map(|e| e.key).collect(), &mut out);
@@ -1057,6 +1065,7 @@ impl App {
             Action::SendNote { note_id, to: None } => Action::SendNote { note_id, to: self.next_view.notes.to.as_ref().map(|t| t.session_id.clone()) },
             other => other,
         };
+        if self.queue_import(&action, out) { return; }
         match &action {
             Action::OpenShared { link } => {
                 self.open_shared(link, out);
@@ -1558,7 +1567,7 @@ impl App {
                 self.next_view.phase = Phase::Opening;
                 self.outside_opened(out);
             }
-            Err(OpenError::NoRoom) if !again => self.next_view.phase = Phase::SignedOut,
+            Err(OpenError::NoRoom) if !again => { self.next_view.phase = Phase::SignedOut; self.outside_signed_out(out); },
             Err(OpenError::Interrupted) if !again => {
                 self.next_view.phase = Phase::SignedOut;
                 self.room_join = Some(engine::room_join::RoomJoinStatus::Failed(engine::room_join::RoomJoinError::Interrupted));
@@ -1671,6 +1680,7 @@ impl App {
         let mut fed = false;
         let mut evicted = Vec::new();
         let mut stopped = false;
+        let mut removed = false;
         let mut refused = Vec::new();
         let mut dropped = false;
         let joining_room = engine.joining_room();
@@ -1718,6 +1728,7 @@ impl App {
                     dropped = true;
                     self.room_join = Some(engine::room_join::RoomJoinStatus::Failed(engine::room_join::RoomJoinError::Device("storage")));
                 }
+                Report::Stopped(engine::Stopped::Removed) => { removed = true; },
                 Report::Stopped(why) if why.reopens() => stopped = true,
                 Report::Stopped(_) => {
                     self.next_view.phase = Phase::Stopped;
@@ -1822,6 +1833,11 @@ impl App {
                 }
                 _ => {}
             }
+        }
+        if removed {
+            self.forget_local_device(now_ms, out);
+            out.insert(0, Effect::ForgetShared);
+            return;
         }
         // the windows the past's pages left (their envelopes came as reports above), and what the pages in view
         // and the starred stack still need of it
@@ -1928,6 +1944,7 @@ impl App {
         if self.next_view.phase == Phase::Live {
             self.push_look(now_ms, out);
             self.deliver_notes(now_ms, out);
+            self.drive_imports(now_ms, out);
         }
         // a desk's delete: its next step once the last one shows
         if fed || !self.desks.running.is_empty() {

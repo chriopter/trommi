@@ -201,7 +201,7 @@ fn signing_out_empties_the_widgets() {
     sim.send(start(Abilities { snapshots: true, ..Default::default() }));
     let from = sim.log.len();
     sim.send(Event::Action { action: Action::Account { action: AccountAction::SignOut } });
-    assert_eq!(snapshots(&sim, from), vec![WidgetSnapshot::default()]);
+    assert_eq!(snapshots(&sim, from), vec![WidgetSnapshot { live_activity: Some(false), ..Default::default() }]);
 }
 
 #[test]
@@ -219,4 +219,124 @@ fn the_demo_sends_its_snapshot() {
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+#[test]
+fn native_share_imports_wait_for_uploads_and_never_cross_accounts() {
+    use trommi_client_core::actions::SharedFile;
+    use trommi_client_core::app::Bytes;
+    let world = World::new();
+    let mut sim = world.sim(); sim.send(common::start());
+    let action = |id: &str, room| Action::ImportShare { id: id.into(), room, desk: None, to: None, send: false, text: "From another app".into(), files: vec![SharedFile { name: "note.txt".into(), media_type: "text/plain".into(), bytes: Bytes(b"private file".to_vec()) }] };
+    let wrong = "ab".repeat(16);
+    let from = sim.log.len();
+    sim.send(Event::Action { action: action(&wrong, Some("00".repeat(32))) });
+    assert!(world.hub.borrow().files.is_empty());
+    assert!(sim.log[from..].iter().any(|e| matches!(e, Effect::ShareInbox { id, consumed: true } if id == &wrong)));
+
+    let id = "cd".repeat(16); let import = action(&id, None);
+    sim.hold = true; let from = sim.log.len();
+    sim.send(Event::Action { action: import.clone() });
+    assert!(!sim.log[from..].iter().any(|e| matches!(e, Effect::ShareInbox { consumed: true, .. })));
+    assert!(sim.view.notes.rows.is_empty(), "no note points to a file before it is stored");
+    sim.hold = false;
+    while let Some((io, request)) = sim.held.pop_front() { let got = world.hub.borrow_mut().http(sim.now_ms, &request); sim.answer(io, got); }
+    assert_eq!(world.hub.borrow().files.len(), 1);
+    assert!(sim.log[from..].iter().any(|e| matches!(e, Effect::ShareInbox { id: got, consumed: true } if got == &id)));
+    assert_eq!(sim.view.notes.rows.len(), 1);
+    assert_eq!(sim.view.notes.rows[0].files.len(), 1);
+    let notes = sim.view.notes.rows.len();
+    sim.send(Event::Action { action: import.clone() });
+    assert_eq!(sim.view.notes.rows.len(), notes, "the same inbox item is not imported twice");
+    sim.restart(); sim.send(common::start()); world.stream(&mut sim);
+    sim.send(Event::Action { action: import });
+    assert_eq!(sim.view.notes.rows.len(), notes, "the note's import identity survives a restart");
+}
+
+#[test]
+fn live_activity_tokens_use_the_cores_room_tag_and_do_not_replace_the_apns_registration() {
+    use std::{rc::Rc, cell::RefCell};
+    use trommi_client_core::app::Bytes;
+    let world = World::new();
+    let sent = Rc::new(RefCell::new(Vec::<serde_json::Value>::new())); let got = sent.clone();
+    world.hub.borrow_mut().fault = Some(Box::new(move |_, request: &HttpRequest| {
+        if request.method == "GET" && request.url.ends_with("/v1/push") {
+            return Some(Ok(HttpResponse { status: 200, headers: vec![], body: format!(r#"{{"subscriptions":[{{"kind":"apns","endpoint":"e","level":"all","created_at":1}}],"vapid_public_key":"{}","apns":true}}"#, trommi_core::ids::base64url_encode(&[4; 65])).into_bytes().into() }));
+        }
+        if request.url.ends_with("/v1/live-activity") {
+            got.borrow_mut().push(serde_json::from_slice(&request.body.as_ref().unwrap().0).unwrap());
+            return Some(Ok(HttpResponse { status: 200, headers: vec![], body: b"{}".to_vec().into() }));
+        }
+        None
+    }));
+    let mut sim = world.sim(); sim.send(start(Abilities { push: "apns".into(), ..Default::default() }));
+    let token = |kind: &str, tag: Option<&str>| {
+        let mut body = serde_json::json!({"kind":kind,"token":"test-token","environment":"sandbox","topic":"com.trommi.ios"});
+        if let Some(tag) = tag { body["tag"] = tag.into(); }
+        Event::PushToken { kind: "apns_live_activity".into(), token: Some(Bytes(serde_json::to_vec(&body).unwrap())) }
+    };
+    sim.send(token("start", None)); assert_eq!(sent.borrow().len(), 1);
+    let tag = sent.borrow()[0]["tag"].as_str().unwrap().to_string(); assert_eq!(tag.len(), 16);
+    sim.send(token("start", None)); assert_eq!(sent.borrow().len(), 1, "one registration per token");
+    sim.send(token("activity", Some("another-room"))); assert_eq!(sent.borrow().len(), 1);
+    sim.send(token("activity", Some(&tag))); assert_eq!(sent.borrow().len(), 2);
+    sim.send(Event::Action { action: Action::Push { level: trommi_client_core::app::push::PushChoice::Off } });
+    sim.send(token("activity", Some(&tag))); assert_eq!(sent.borrow().len(), 2, "off never hands over a live token");
+}
+
+#[test]
+fn a_verified_human_removal_clears_the_device_cache_and_notification_keys() {
+    let mut world = World::new(); world.agent_asks("Private question");
+    let mut sim = world.sim();
+    sim.secrets = Some([("push-notify-key".to_string(), vec![9;32])].into_iter().collect());
+    sim.send(start(Abilities { snapshots: true, notify: true, push: "apns".into(), secrets: true, ..Default::default() }));
+    world.peers_sync();
+    let cut = world.founder.cut_of(&world.room, &world.me).unwrap();
+    world.founder.remove_human_devices(&[cut], now()).unwrap();
+    assert!(common::post_all(&mut world.hub.borrow_mut(), &mut world.founder).is_empty());
+    let from = sim.log.len(); assert!(world.stream(&mut sim));
+    assert!(sim.device.1.is_empty(), "a signed removal wipes the protocol state");
+    assert!(sim.log[from..].iter().any(|e| matches!(e, Effect::ForgetShared)));
+    assert!(sim.cache.is_empty(), "the removed device's cache goes too");
+    assert!(contexts(&sim, from).contains(&None), "the extension's copy must go");
+    assert!(sim.secrets.as_ref().unwrap().get("push-notify-key").is_none());
+}
+
+#[test]
+fn an_empty_native_slot_clears_a_stale_extension_context() {
+    let mut sim = Sim::new(now());
+    sim.secrets = Some([("push-notify-key".to_string(), vec![9;32])].into_iter().collect());
+    sim.send(start(Abilities { snapshots: true, notify: true, push: "apns".into(), secrets: true, ..Default::default() }));
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert!(contexts(&sim, 0).contains(&None));
+    assert!(sim.secrets.as_ref().unwrap().get("push-notify-key").is_none());
+}
+
+#[test]
+fn a_hubs_removal_claim_alone_never_erases_a_human_device_or_shared_inbox() {
+    let world = World::new();
+    world.hub.borrow_mut().removed_keys.insert(world.me, Default::default());
+    let mut sim = world.sim();
+    let stored = sim.device.clone();
+    sim.send(start(Abilities { snapshots: true, notify: true, ..Default::default() }));
+    assert!(sim.app.engine().is_some());
+    assert_eq!(sim.device, stored, "only a verified removal may erase this device");
+    assert!(!sim.log.iter().any(|e| matches!(e, Effect::ForgetShared)));
+}
+
+#[test]
+fn a_failed_sign_out_wipe_still_drops_plaintext_and_extension_keys_and_reports_the_failure() {
+    let mut world = World::new(); world.agent_asks("Private question");
+    let mut sim = world.sim();
+    sim.secrets = Some(Default::default());
+    sim.send(start(Abilities { snapshots: true, notify: true, push: "apns".into(), secrets: true, ..Default::default() }));
+    let stored = sim.device.clone(); let from = sim.log.len();
+    sim.device_full = 1;
+    sim.send(Event::Action { action: Action::Account { action: AccountAction::SignOut } });
+    assert_eq!(sim.view.phase, Phase::Stopped);
+    assert_eq!(sim.view.status.as_ref().unwrap().key, "account.wipe_failed");
+    assert_eq!(sim.device, stored, "the disk refused deletion");
+    assert!(sim.app.engine().is_none() && sim.view.cards.is_empty() && sim.view.desk.rows.is_empty());
+    assert!(contexts(&sim, from).contains(&None));
+    assert!(sim.secrets.as_ref().unwrap().get("push-notify-key").is_none());
 }

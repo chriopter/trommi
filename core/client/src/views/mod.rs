@@ -1500,6 +1500,9 @@ pub struct NoteToView {
 /// theme, the Push level) is the shell's.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettingsView {
+    /// Hub counts and sizes, read only by an authenticated device of this account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<DataView>,
     /// The account's e-mail, for the row Account; none until the account is read (W3).
     pub account: Option<String>,
     /// The person's devices that are in, in the order they joined (the agents are under Agents).
@@ -1549,6 +1552,21 @@ pub struct SettingsView {
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login: Option<LoginView>,
+}
+
+/// Settings → Data: presentation belongs to the core, never the native HTTP executor.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataView {
+    pub state: String,
+    pub rows: Vec<DataRow>,
+    pub says: Option<Text>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataRow {
+    pub id: String,
+    pub label: Text,
+    pub value: Text,
 }
 
 /// What a desk holds: what its delete takes away.

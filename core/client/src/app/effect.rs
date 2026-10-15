@@ -84,6 +84,11 @@ pub enum Effect {
     NotifyContext {
         context: Option<NotifyContext>,
     },
+    /// Native share inbox item sealed into the outbox (or discarded for another room): remove it. False:
+    /// keep it for another attempt. Device writes before this effect are barriers as for every other effect.
+    ShareInbox { id: String, consumed: bool },
+    /// The account was deleted or this device verified its removal: erase the native share inbox and its key.
+    ForgetShared,
     /// Offer these bytes to the person as a file (download, share sheet, save dialog).
     SaveFile {
         name: String,
@@ -118,6 +123,14 @@ pub struct Notice {
 /// The board as a widget or a Live Activity shows it, on every desk.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WidgetSnapshot {
+    /// Live Activity policy: unknown until the push level is read; false when off or signed out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_activity: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room: Option<String>,
+    /// The native share sheet's recipients, already in desk order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub desks: Vec<ShareDesk>,
     /// How many cards and requests wait for the person: open, no info, not with its agent, not put off, not of an
     /// archived session, read on this device.
     pub waiting: u32,
@@ -194,3 +207,6 @@ pub enum LogLevel {
     Warn,
     Error,
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShareDesk { pub id: String, pub name: String, pub crown: Option<crate::views::NoteToView> }

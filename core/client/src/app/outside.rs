@@ -99,7 +99,12 @@ pub(crate) fn snapshot_of(model: &crate::model::Model, now: u64) -> WidgetSnapsh
     cards.sort_by(|a, b| rank(b).cmp(&rank(a)).then(a.created_ms.cmp(&b.created_ms)).then_with(|| a.id.cmp(&b.id)));
     let waiting = cards.len() as u32;
     let working = b.agents.iter().filter(|a| a.row.online && a.row.working && !a.row.archived && !a.row.removed).count() as u32;
-    WidgetSnapshot { waiting, working, urgent, cards }
+    let desks = if b.desks.is_empty() {
+        vec![super::effect::ShareDesk { id: String::new(), name: "Personal".into(), crown: crate::views::notes::crown_on(&b, None).map(|a| crate::views::notes::to_of(a, &b)) }]
+    } else {
+        b.desks.iter().map(|desk| super::effect::ShareDesk { id: desk.id.clone(), name: desk.name.clone(), crown: crate::views::notes::crown_on(&b, Some(&desk.id)).map(|a| crate::views::notes::to_of(a, &b)) }).collect()
+    };
+    WidgetSnapshot { waiting, working, urgent, cards, desks, room: None, live_activity: None }
 }
 
 impl App {
@@ -152,13 +157,17 @@ impl App {
     /// Signed out: the extension's context goes, the widgets show nothing, nothing known waits.
     pub(super) fn outside_signed_out(&mut self, out: &mut Vec<Effect>) {
         let (snapshots, _, context) = self.can();
+        if self.config.as_ref().is_some_and(|c| c.can.secrets) {
+            let id = super::io::IoId(self.next_id); self.next_id += 1;
+            out.push(Effect::Secret { id, op: super::SecretOp::Delete { name: super::push::NOTIFY_KEY.into() } });
+        }
         let front = self.outside.front;
         self.outside = Outside { front, ..Default::default() };
         if context {
             out.push(Effect::NotifyContext { context: None });
         }
         if snapshots {
-            let empty = WidgetSnapshot::default();
+            let empty = WidgetSnapshot { live_activity: Some(false), ..Default::default() };
             self.outside.sent = Some(empty.clone());
             out.push(Effect::Snapshot { snapshot: empty });
         }
@@ -181,6 +190,8 @@ impl App {
             return;
         }
         let mut snapshot = snapshot_of(&self.board.model, now_ms);
+        snapshot.live_activity = self.config.as_ref().filter(|c| c.can.push == "apns").and_then(|_| self.push.level.map(|l| l != PushChoice::Off));
+        snapshot.room = self.engine.as_ref().map(|e| crate::engine::feed::hex(e.room().as_bytes()));
         if notify {
             self.outside_notices(&snapshot, out);
         }

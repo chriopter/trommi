@@ -112,6 +112,8 @@ pub enum AccountAction {
     },
     /// Reads the account (`GET /v1/account`) into `view.settings.login`: its e-mail, password, kit and passkeys.
     ReadAccount,
+    /// Reads this account’s stored counts and sizes into Settings → Data.
+    ReadUsage,
     /// Whether this way in opens the account, changing nothing: `step: "unlocked"`, or the problem.
     CheckUnlock {
         unlock: Unlock,

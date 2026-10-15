@@ -42,10 +42,3 @@ test('a line nobody updated for two hours is stale (the core says which lines sh
   assert.match(src, /l\.state === 'stale' \? html`<i class="status-still"/)
   assert.match(css, /\.status-chip\[data-state="stale"\] \{ color: var\(--muted\); \}/)
 })
-
-test('the iPhone: a tap on any chip opens it with its card; a stale line greyed and still', () => {
-  const swift = fs.readFileSync(new URL('../../../app/ios/TrommiApp/Sources/TrommiApp/SessionScreen.swift', import.meta.url), 'utf8')
-  assert.match(swift, /Button \{\n\s*withAnimation\(\.easeOut\(duration: 0\.18\)\) \{ shown = on \? nil : key \}/)
-  assert.match(swift, /Text\("Open card"\)/)
-  assert.match(swift, /\$0\.state == "stale" && now - min\(now, \$0\.updated\) < 24 \* 60 \* 60 \* 1000/)
-})

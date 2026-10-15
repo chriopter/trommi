@@ -57,7 +57,7 @@ fn note_of(n: &Note) -> NoteView {
     }
 }
 
-fn to_of(a: &Agent, b: &Board) -> NoteToView {
+pub(crate) fn to_of(a: &Agent, b: &Board) -> NoteToView {
     let name = a.row.name.trim();
     let desk = a.desk.as_deref().and_then(|d| b.desks.iter().find(|x| x.id == d));
     NoteToView {
@@ -71,7 +71,7 @@ fn to_of(a: &Agent, b: &Board) -> NoteToView {
 }
 
 /// The crowned session a desk's note goes to (none without a crown on it).
-fn crown_on<'b>(b: &'b Board, desk: Option<&str>) -> Option<&'b Agent> {
+pub(crate) fn crown_on<'b>(b: &'b Board, desk: Option<&str>) -> Option<&'b Agent> {
     b.agents.iter().find(|a| a.crowned && !a.row.archived && !a.row.removed && (desk.is_none() || a.desk.as_deref() == desk))
 }
 
