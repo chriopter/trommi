@@ -90,7 +90,7 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Each web delivery is also published as a release `web-v<N>` (web.tar.gz, signed and attested like the others) as
   the record of what went out; browsers do not check it.
 - The iOS app is signed by Apple and ships through TestFlight.
-- The Mac app for direct download (`Trommi-macOS.dmg`, `ship-apple.yml`) is signed with the team's Developer ID certificate
+- The Mac app for direct download (`Trommi-macOS.dmg`, `main.yml`) is signed with the team's Developer ID certificate
   with the hardened runtime, notarized by Apple and stapled; macOS checks that before its first start. It is built when
   the core's checks passed for its commit and the app's inputs differ from those of the newest Mac app, and never
   without the certificate and notarization (the job is skipped instead); it is published as its own release
@@ -136,12 +136,15 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   3. Its pull request into `main`: CI checks it (`pr-check.yml`), and it merges by auto-merge with "Squash and merge"
      once all required checks are green. Builds, TestFlight and deliveries come only from `main`.
 - A pull request runs quick checks only (clippy, every test but the slow ones, the web app's build, the apps
-  compiled), without secrets. On `main` each part has its own pipeline (`ship-<part>.yml`), which runs that part's
-  full tests (and the core's, when it changed) for the commit; a part is delivered only when they passed, and a part
-  that fails opens an issue and is not delivered, while the other parts still are. The iPhone and Mac apps
-  (`ship-apple.yml`) are delivered only when their checks and the core's passed for that commit and their inputs differ
-  from those last delivered to TestFlight. The slowest tests, fuzzing and the torture run with 100 iPhones run every
-  night (`nightly.yml`); a failing night opens an issue.
+  compiled), without secrets. One `main.yml` workflow checks each affected part once and the shared core once,
+  then each part independently builds, signs, publishes and delivers; a part that fails opens an issue and is not
+  delivered, while the other passing parts still can be. Signing jobs that hold the release key execute no built
+  app or connector. Artifact names alone are not a release gate: the actual producing job must have passed and
+  the bytes must match the digest exported by that job, including across retries. The iPhone and Mac apps go to
+  TestFlight only after their checks and the core's passed for that commit and their inputs differ from those
+  last delivered there. The Mac download does not wait for TestFlight processing. Manual recovery still verifies
+  the original main build and its checks; the App Store gate remains manual. The slowest tests, fuzzing and the
+  torture run with 100 iPhones run every night (`nightly.yml`); a failing night opens an issue.
 - `main` is protected: only signed commits, linear history, no force-push, no deletion, changes only through pull requests.
   The squash merge is signed by GitHub, so every commit on `main` is verified. The history before 11 October 2026 was re-signed once by the owner.
 - GitHub secret scanning is on and blocks pushes that contain secrets.

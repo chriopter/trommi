@@ -241,19 +241,37 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  commit["Commit on main"] --> web["ship-web.yml<br/>tests, then app.trommi.com,<br/>web-vN, smoke-tested"]
-  commit --> hubrel["ship-hub.yml<br/>tests, then hub-vN, signed"] --> hub["Hub<br/>the server pulls,<br/>checks, swaps"]
-  commit --> connrel["ship-connector.yml<br/>tests, then connector-vN, signed"] --> conn["Connector<br/>install.sh and update<br/>check the signature"]
-  commit --> apple["ship-apple.yml<br/>tests, then TestFlight,<br/>ios-vN, mac-vN"]
-  commit --> site["ship-site.yml<br/>trommi.com"]
+  commit["Commit on main"] --> plan["main.yml: shared checks once"]
+  plan --> parts["Affected parts: check and build once"]
+  parts --> web["Web: sign, deliver, smoke, publish"]
+  parts --> hub["Hub: sign and publish, then the server pulls and checks"]
+  parts --> connector["Connector: sign, then publish after the hub"]
+  parts --> apple["Independent iPhone, Mac TestFlight and Mac download pipelines"]
+  parts --> linux["Linux: tests and window smoke"]
+  parts --> site["Site: deliver and check from outside"]
 ```
 
-- **Each part has its own pipeline** (`.github/workflows/ship-<part>.yml`): on a push to main that changed the part or
-  the core, it runs that part's full tests (and the core's, when it changed), then delivers, then checks the delivery
-  from outside. It delivers only when what the part has out there was built from other inputs
-  (`.github/scripts/deployed.sh`), so a failed delivery is made again by the next run. No part waits for another; the
-  one exception: a connector release waits until the server runs the hub of the same commit, when that commit changed
-  the hub.
+- **One workflow on main** ([`main.yml`](.github/workflows/main.yml)) plans affected parts, runs the shared core's
+  checks once, and uses the same `check-*` actions as pull requests. Each releasing part has its own
+  [`main-part.yml`](.github/workflows/main-part.yml) check/build job and independent delivery destinations in
+  [`main-delivery.yml`](.github/workflows/main-delivery.yml). One part failing does not prevent another passing
+  part from delivering. The direct Mac download does not wait for TestFlight processing.
+- Delivery compares each part with what it actually has out there, so an earlier failed delivery is retried.
+  Check baselines also advance per part as soon as its checks pass, even while another delivery is still running.
+  README edits are not build inputs. Native bindings reuse the host static archive already built for UniFFI.
+- Release-key commands run in jobs that never execute a built app or connector. Before signing or publishing,
+  the gates verify actual GitHub job conclusions and artifact digests exported through the producing jobs' outputs;
+  an artifact with the right name alone is insufficient. Per-part publication/delivery locks, signatures,
+  attestations, rollback, outside smoke and TestFlight processing/groups remain in force.
+- Graph examples, with releases needed and no earlier undelivered parts: web-only **11 → 6 checks**;
+  shared core **54 → 19 checks**. Only affected part rows expand. When all parts need only checks or all need
+  delivery, GitHub shows one skipped aggregate for the empty class; a shared-core change uses both classes.
+- **Manual recovery:** `ship-web.yml` still replays a checked web artifact, `ship-hub.yml` delivers a named signed
+  release, and `ship-apple.yml` retains TestFlight replay and the manual App Store gate. Both old `ship-*` runs and
+  new `main` runs are accepted only after their source and checks are verified. The connector, Linux and site
+  manual entry points dispatch `main` with that part selected. `main` itself can also be run manually.
+- The new release number is `2000 + main's run number`, above all earlier series when introduced; retries keep
+  their number. TestFlight continues to allocate its build numbers through App Store Connect.
 - The hub and the connector have **their own signed release series**, `hub-v<N>` and `connector-v<N>`: one
   `manifest.json` each (each file's size and SHA-256), signed with Ed25519. Public key:
   [`release/public-key.pem`](release/public-key.pem); the private key lives in 1Password. A connector release waits
@@ -268,7 +286,7 @@ flowchart LR
   only if the secret `GITHUB_RELEASES_TOKEN` happens to be set), fresh for ten minutes in Cloudflare's cache and the
   last good list served on any GitHub error or rate limit; beside it the one summary a day (and at most one picture)
   in `app/web/public/changelog/CHANGELOG.md`, and the days before in `history.json` there (frozen).
-- **The iPhone and Mac apps** (`ship-apple.yml`) go to TestFlight when their checks passed and their inputs differ
+- **The iPhone and Mac apps** (`main.yml`) go to TestFlight when their checks passed and their inputs differ
   from those last delivered there; then `ios-v<N>` records what changed for them (notes and the TestFlight build, no
   file). The Mac app for direct download is `mac-v<N>`.
 - **The hub:** CI sends no code and has no SSH, only "take `hub-v<N>`" over the private network. The server's updater
@@ -295,12 +313,12 @@ The whole way, what goes wrong and what runs as root: [hub/deploy/README.md](hub
 <summary><b>Mac app (direct download)</b> · Developer ID, notarized, on every release</summary>
 
 The Mac app (the target `TrommiMac`, [app/ios/README.md](app/ios/README.md) "Xcode, TestFlight and releases") ships two ways: TestFlight
-and the Mac App Store as before (`ship-apple.yml`), and as **`Trommi-macOS.dmg`** on the GitHub release, outside the
+and the Mac App Store as before (the manual gate in `ship-apple.yml`), and as **`Trommi-macOS.dmg`** on the GitHub release, outside the
 store. The newest is always at
 [releases/latest/download/Trommi-macOS.dmg](https://github.com/trommi/trommi/releases/latest/download/Trommi-macOS.dmg)
 (Apple silicon, macOS 26).
 
-[`.github/workflows/ship-apple.yml`](.github/workflows/ship-apple.yml) (jobs `mac_direct`, `mac_release`), on a
+[`.github/workflows/main-delivery.yml`](.github/workflows/main-delivery.yml) (the `mac-direct` destination), on a
 push to main that changed the apps:
 
 1. **Whether it builds** (`.github/scripts/mac_release.sh check`): the commit's iOS inputs (the Mac app is built from
@@ -346,8 +364,7 @@ ever published. A build on any Mac without secrets (signed ad hoc, the same chec
    step 1 → name "Trommi Mac Direct" → Generate; nothing to download or store, the next run finds it.
 4. GitHub → Settings → Environments → **New environment `mac`**, deployment branches: `main` only, with the secrets
    `OP_SERVICE_ACCOUNT_TOKEN` (a service account that can read that 1Password Environment) and `OP_ENVIRONMENT_ID`.
-5. Delete the `.p12` file. The next push to main that changes the apps builds it (`ship-apple.yml`, job
-   `mac_direct`).
+5. Delete the `.p12` file. The next push to main that changes the apps builds it (`main.yml`, the `mac-direct` destination).
 
 No update feed yet: the app does not update itself (no Sparkle); a new version is a new download.
 
@@ -387,7 +404,7 @@ cd app/linux && cargo run --release
 (`<dir>/default/device` the device's journal, `<dir>/default/cache` the cache). `cargo test` runs the conformance
 scripts through the app's fold, and the app against the real hub (`tests/hub.rs`, which builds `trommi-hub`).
 `TROMMI_LINUX_SHOT=<file.png>` (with `QT_QPA_PLATFORM=offscreen`) draws the window once, writes the picture and
-quits: CI's smoke test (`.github/workflows/pr-check.yml` on a pull request, `ship-linux.yml` on main, only when the
+quits: CI's smoke test (`.github/workflows/pr-check.yml` on a pull request, `main.yml` on main, only when the
 app or what it is built from changed). Pictures over the real hub: `TROMMI_LINUX_SHOTS=<dir> cargo test --test hub
 -- --ignored pictures` (`TROMMI_LINUX_SCENE=card|session`).
 
@@ -491,17 +508,15 @@ pull request ─────────── pr-check.yml: the fast tier of th
    │                     apps compiled), the required checks green, auto-merge,
    │                     squash
    ▼
-main ─────────────────── ship-<part>.yml, each part on its own: its full tests
-                         (and the core's when it changed), then delivered and
-                         checked from outside; one fails: an issue, that part is
-                         not delivered, the others are:
-                           web        ship-web.yml: app.trommi.com, web-v<N>
-                           hub        ship-hub.yml: signed hub-v<N>, the server pulls it
-                           connector  ship-connector.yml: signed connector-v<N>
-                           iOS, Mac   ship-apple.yml: TestFlight "Intern" + "Trommi",
-                                      ios-v<N>, mac-v<N> (Developer ID, notarized)
-                           Linux      ship-linux.yml: tests and smoke test (no release yet)
-                           site       ship-site.yml: trommi.com
+main ─────────────────── main.yml: shared checks once, affected parts checked and
+                         built once; independent signed publication and delivery
+                           web        app.trommi.com, web-v<N>, rollback and smoke
+                           hub        signed hub-v<N>, the server pulls and checks
+                           connector  signed connector-v<N>, after the matching hub
+                           iOS, Mac   independent TestFlight destinations and
+                                      mac-v<N> (Developer ID, notarized)
+                           Linux      tests and window smoke (no release yet)
+                           site       trommi.com, checked from outside
 nightly ──────────────── nightly.yml: the giant tests, fuzzing, every client
                          against each other, the torture run with 100 iPhones,
                          the connector under load, RustSec, TestFlight's crashes

@@ -36,4 +36,4 @@ node app/linux/dev/pen.mjs --check
 Run `app/linux/target/debug/trommi-linux` (or the binary under your `CARGO_TARGET_DIR`). For an isolated smoke test,
 set `TROMMI_LINUX_DIR` to an empty temporary folder, `QT_QPA_PLATFORM=offscreen`, `TROMMI_LINUX_SHOT` to the output
 PNG path and `TROMMI_LINUX_SHOT_AFTER_MS=500`. The picture test is opt-in; ordinary tests need no owner account.
-`ship-linux.yml` runs checks and the offscreen smoke on main; it does not publish an installer yet.
+`main.yml` runs checks and the offscreen smoke on main; it does not publish an installer yet.

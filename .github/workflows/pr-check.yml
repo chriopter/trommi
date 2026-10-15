@@ -50,7 +50,13 @@ jobs:
           persist-credentials: false
       # a crate, a test target or a browser test that no workflow runs fails here (.github/scripts/ci_coverage.mjs)
       - name: Every test is run by a workflow
-        run: node .github/scripts/ci_coverage.mjs
+        run: |
+          node .github/scripts/ci_coverage.mjs
+          node .github/scripts/input_trees.test.mjs
+          node .github/scripts/main_plan.test.mjs
+          node .github/scripts/main_gates.test.mjs
+          node .github/scripts/main_report.test.mjs
+          node .github/scripts/main_baselines.test.mjs
       - name: Find the changed parts
         id: find
         env:
@@ -151,7 +157,9 @@ jobs:
         id: core_inputs
         run: |
           set -eu
-          sum=$( { git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          tree=$(sh .github/scripts/source_tree.sh HEAD core/ Cargo.toml Cargo.lock rust-toolchain.toml .github/actions/check-ios-client/action.yml .github/actions/main-build-apple/action.yml .github/actions/main-sign-mac-direct/action.yml .github/workflows/pr-check.yml .github/workflows/ship-apple.yml .github/workflows/main.yml .github/workflows/main-delivery.yml .github/workflows/main-part.yml)
+          xcode=$(xcodebuild -version)
+          sum=$(printf '%s\n%s\n' "$tree" "$xcode" | shasum -a 256 | cut -c1-64)
           echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: core_cache

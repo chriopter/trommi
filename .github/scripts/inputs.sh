@@ -14,17 +14,17 @@ set -eu
 commit=${1:-HEAD}
 # every part: the shared core and client core (in every app and in the hub's checks of what it stores), the Rust
 # workspace and its toolchain, this script
-shared='core/ Cargo.toml Cargo.lock rust-toolchain.toml .github/scripts/inputs.sh'
+shared='core/ Cargo.toml Cargo.lock rust-toolchain.toml .github/scripts/inputs.sh .github/scripts/source_tree.sh .github/workflows/main.yml .github/workflows/main-delivery.yml .github/workflows/main-part.yml .github/scripts/main_metadata.mjs .github/scripts/main_artifact.sh'
 # what signs the releases of the hub, the updater and the connector
-rust_release='.github/workflows/sign-release.yml release/'
+rust_release='.github/workflows/sign-release.yml release/ .github/actions/main-sign-release/ .github/actions/main-publish-release/'
 paths() {
   case $1 in
-    web) echo "app/web/ connector/tools.json connector/prompt.md demo/ .node-version .github/scripts/web_release.mjs .github/scripts/web_smoke.sh .github/scripts/wasm_core.sh .github/tools/wrangler/ .github/workflows/ship-web.yml .github/workflows/sign-release.yml" ;;
-    connector) echo "connector/ install.sh .claude-plugin/ .node-version .github/workflows/ship-connector.yml $rust_release" ;;
+    web) echo "app/web/ .github/actions/main-build-web/ .github/actions/main-attest-web/ .github/actions/main-deliver-web/ .github/actions/main-sign-release/ .github/actions/main-publish-release/ connector/tools.json connector/prompt.md demo/ .node-version .github/scripts/web_release.mjs .github/scripts/web_smoke.sh .github/scripts/wasm_core.sh .github/tools/wrangler/ .github/workflows/ship-web.yml .github/workflows/sign-release.yml" ;;
+    connector) echo "connector/ .github/actions/main-build-connector/ install.sh .claude-plugin/ .node-version .github/workflows/ship-connector.yml $rust_release" ;;
     # the iPhone app and the Mac app (built from the same paths)
-    ios) echo "app/ios/ demo/ .github/scripts/ios_testflight.sh .github/scripts/ios_archive.sh .github/scripts/ios_entitlements.py .github/scripts/ios_release_gate.sh .github/scripts/ios_delivered.sh .github/scripts/mac_testflight.sh .github/scripts/mac_direct.sh .github/scripts/mac_release.sh .github/workflows/ship-apple.yml" ;;
+    ios) echo "app/ios/ .github/actions/main-build-apple/ .github/actions/main-upload-ios/ .github/actions/main-upload-mac/ .github/actions/main-sign-mac-direct/ .github/actions/main-process-ios/ .github/actions/main-process-mac/ .github/actions/main-publish-mac-direct/ .github/actions/main-notes-ios/ demo/ .github/scripts/ios_testflight.sh .github/scripts/ios_archive.sh .github/scripts/ios_entitlements.py .github/scripts/ios_release_gate.sh .github/scripts/ios_delivered.sh .github/scripts/mac_testflight.sh .github/scripts/mac_direct.sh .github/scripts/mac_release.sh .github/workflows/ship-apple.yml" ;;
     # the hub program: the hub's crate (hub/updater and hub/deploy belong to the updater)
-    hub) echo "hub/Cargo.toml hub/src/ hub/build.rs hub/static/ hub/data-epoch .github/workflows/ship-hub.yml .github/scripts/hub_compat.sh $rust_release" ;;
+    hub) echo ".github/actions/main-build-hub/ .github/actions/main-deliver-hub/ hub/Cargo.toml hub/src/ hub/build.rs hub/static/ hub/data-epoch .github/workflows/ship-hub.yml .github/scripts/hub_compat.sh $rust_release" ;;
     updater) echo "hub/updater/ hub/deploy/ .github/workflows/ship-hub.yml $rust_release" ;;
   esac
 }
@@ -35,6 +35,7 @@ if [ "$commit" = paths ]; then
 fi
 for part in web connector ios hub updater; do
   # shellcheck disable=SC2046,SC2086
-  sum=$(git ls-tree -r "$commit" -- $shared $(paths "$part") | LC_ALL=C sort -k4 | sha256sum | cut -d' ' -f1)
+  tree=$(sh "$(dirname "$0")/source_tree.sh" "$commit" $shared $(paths "$part"))
+  sum=$(printf '%s\n' "$tree" | LC_ALL=C sort -k4 | sha256sum | cut -d' ' -f1)
   echo "$part $sum"
 done

@@ -1,0 +1,116 @@
+name: main-build-connector
+description: The main pipeline steps for main-build-connector
+inputs:
+  version:
+    description: Release series number
+    default: ''
+  parts:
+    description: Verified build input hashes and delivery flags
+    default: ''
+outputs: {}
+runs:
+  using: composite
+  steps:
+  - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+    with:
+      node-version-file: .node-version
+    env:
+      VERSION: ${{ inputs.version }}
+      ZIG_VERSION: 0.14.1
+      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+      ZIGBUILD_VERSION: 0.23.4
+      ALL_PARTS: ${{ inputs.parts }}
+  - name: Pinned cross compilers
+    shell: bash
+    run: |
+      set -eu
+      sh .github/scripts/rust_toolchain.sh x86_64-unknown-linux-musl aarch64-unknown-linux-musl aarch64-apple-darwin x86_64-apple-darwin
+      clang --version | head -n 1
+      curl -fsSL --retry 3 -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+      echo "$ZIG_SHA256  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+      mkdir -p "$RUNNER_TEMP/zig"
+      tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components 1
+      echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
+      cargo install cargo-zigbuild --version "$ZIGBUILD_VERSION" --locked
+    env:
+      VERSION: ${{ inputs.version }}
+      ZIG_VERSION: 0.14.1
+      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+      ZIGBUILD_VERSION: 0.23.4
+      ALL_PARTS: ${{ inputs.parts }}
+  - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+    with:
+      prefix-key: v2-rust
+      key: main-connector-all-targets
+      save-if: ${{ github.ref == 'refs/heads/main' }}
+    env:
+      VERSION: ${{ inputs.version }}
+      ZIG_VERSION: 0.14.1
+      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+      ZIGBUILD_VERSION: 0.23.4
+      ALL_PARTS: ${{ inputs.parts }}
+  - name: Build all four targets
+    run: |
+      set -eu
+      mkdir -p out
+      for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl aarch64-apple-darwin x86_64-apple-darwin; do
+        TROMMI_RELEASE_VERSION="$VERSION" node connector/build-plugin.mjs "$RUNNER_TEMP/dist" --targets "$target"
+        test -f "$RUNNER_TEMP/dist/trommi-connector-$target"
+        cp "$RUNNER_TEMP/dist/trommi-connector-$target" out/
+      done
+    shell: bash
+    env:
+      VERSION: ${{ inputs.version }}
+      ZIG_VERSION: 0.14.1
+      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+      ZIGBUILD_VERSION: 0.23.4
+      ALL_PARTS: ${{ inputs.parts }}
+  - name: Put the release together
+    run: |
+      set -eu
+      for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl aarch64-apple-darwin x86_64-apple-darwin; do
+        [ -f "out/trommi-connector-$target" ] || { echo "::error::no build for $target"; exit 1; }
+        # an artifact does not keep the executable bit
+        chmod 755 "out/trommi-connector-$target"
+        file "out/trommi-connector-$target"
+      done
+      [ "$(find out -type f | wc -l)" = 4 ] || { echo "::error::out/ holds more than the four binaries"; ls -la out; exit 1; }
+      for f in out/trommi-connector-*-linux-musl; do
+        file "$f" | grep -Eq 'static(ally|-pie) linked' || { echo "::error::$f is not a static binary"; exit 1; }
+      done
+      # the connector's inputs (whether a later commit must publish it again: .github/scripts/deployed.sh)
+      PARTS=$(printf '%s\n' "$ALL_PARTS" | grep -E '^connector [0-9a-f]{64} (true|false)$' || true)
+      [ -n "$PARTS" ] || { echo "::error::the connector's inputs are not known"; exit 1; }
+      PARTS="$PARTS" release/manifest.sh trommi-connector "$VERSION" "$GITHUB_SHA" out/* > "$RUNNER_TEMP/manifest.json"
+      mv "$RUNNER_TEMP/manifest.json" out/manifest.json
+      release/sign.sh files out/manifest.json
+      cat out/manifest.json
+    shell: bash
+    env:
+      VERSION: ${{ inputs.version }}
+      ZIG_VERSION: 0.14.1
+      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+      ZIGBUILD_VERSION: 0.23.4
+      ALL_PARTS: ${{ inputs.parts }}
+  - name: Try the built connector
+    run: out/trommi-connector-x86_64-unknown-linux-musl --version
+    shell: bash
+    env:
+      VERSION: ${{ inputs.version }}
+      ZIG_VERSION: 0.14.1
+      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+      ZIGBUILD_VERSION: 0.23.4
+      ALL_PARTS: ${{ inputs.parts }}
+  - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+    with:
+      overwrite: true
+      name: connector-release
+      path: out/
+      if-no-files-found: error
+      retention-days: 30
+    env:
+      VERSION: ${{ inputs.version }}
+      ZIG_VERSION: 0.14.1
+      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+      ZIGBUILD_VERSION: 0.23.4
+      ALL_PARTS: ${{ inputs.parts }}

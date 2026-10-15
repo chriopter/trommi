@@ -10,7 +10,8 @@ runs:
       shell: bash
       run: |
         set -eu
-        sum=$(git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
+        tree=$(sh .github/scripts/source_tree.sh HEAD core/ Cargo.toml Cargo.lock rust-toolchain.toml .github/actions/check-ios-client/action.yml .github/actions/main-build-apple/action.yml .github/actions/main-sign-mac-direct/action.yml .github/workflows/pr-check.yml .github/workflows/ship-apple.yml .github/workflows/main.yml .github/workflows/main-delivery.yml .github/workflows/main-part.yml)
+        sum=$(printf '%s\n' "$tree" | shasum -a 256 | cut -c1-64)
         echo "key=ios-core-host-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
     - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: core_cache
@@ -49,7 +50,7 @@ runs:
         FAST: ${{ github.event_name == 'pull_request' }}
       shell: bash
       run: |
-        if [ "$FAST" = true ]; then swift build --build-tests --package-path tests/ios; else swift test --package-path tests/ios; fi
+        if [ "$FAST" = true ]; then swift build --build-tests --package-path tests/ios -j 4; else swift test --package-path tests/ios -j 4; fi
 
 # The app itself (the Xcode project from AppStore/project.yml) compiled for iOS and for the Mac, on a pull request:
 # what the Linux check of the client package cannot see. Not signed, not archived, no secret. (On main the archive
