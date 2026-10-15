@@ -117,7 +117,7 @@ import AppKit
 
 #if canImport(UIKit)
 final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-  func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool { UNUserNotificationCenter.current().delegate = self; return true }
+  func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool { NativeDemo.mark("delegate.begin"); Spent.time("notification.delegate") { UNUserNotificationCenter.current().delegate = self }; NativeDemo.mark("delegate.end"); return true }
   func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken token: Data) { Task { @MainActor in NativeServices.shared.token(token) } }
   func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) { Task { @MainActor in NativeServices.shared.tokenFailed() } }
   func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler done: @escaping (UIBackgroundFetchResult) -> Void) {

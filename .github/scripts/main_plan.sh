@@ -7,11 +7,13 @@ sh .github/scripts/deployed.sh "$RUNNER_TEMP/main-inputs" > "$RUNNER_TEMP/main-d
 ios=$(sed -n 's/^ios //p' "$RUNNER_TEMP/main-inputs")
 delivered=$(sh .github/scripts/ios_delivered.sh) || delivered=
 if [ -n "$delivered" ] && [ "$delivered" = "$ios" ]; then tf=false; else tf=true; fi
+delivered_mac=$(sh .github/scripts/ios_delivered.sh mac) || delivered_mac=
+if [ -n "$delivered_mac" ] && [ "$delivered_mac" = "$ios" ]; then mac_tf=false; else mac_tf=true; fi
 export VERSION=$((2000 + GITHUB_RUN_NUMBER)) COMMIT=$GITHUB_SHA
 GITHUB_OUTPUT="$RUNNER_TEMP/main-mac" bash .github/scripts/mac_release.sh check
 mac=false
 if grep -q '^mode=build$' "$RUNNER_TEMP/main-mac"; then mac=true; fi
-export MAIN_TF=$tf MAIN_MAC=$mac
+export MAIN_TF=$tf MAIN_MAC_TF=$mac_tf MAIN_MAC=$mac
 node --input-type=module <<'JS'
 import fs from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -19,7 +21,7 @@ import { plan } from './.github/scripts/main_plan.mjs'
 const temp = process.env.RUNNER_TEMP
 const delivery = Object.fromEntries(fs.readFileSync(`${temp}/main-delivery`, 'utf8').trim().split('\n').map(line => { const [part, flag] = line.split('='); return [part, flag === 'true'] }))
 delivery.updater = delivery.hub
-delivery.ios = process.env.MAIN_TF === 'true'; delivery.mac = process.env.MAIN_MAC === 'true'
+delivery.ios = process.env.MAIN_TF === 'true'; delivery.mac_testflight = process.env.MAIN_MAC_TF === 'true'; delivery.mac = process.env.MAIN_MAC === 'true'
 const observed=JSON.parse(fs.readFileSync(`${temp}/main-baselines.json`,'utf8'))
 const result=plan(observed.files,delivery,false,process.env.MAIN_REQUESTED??'',observed.changed)
 const inputs = fs.readFileSync(`${temp}/main-inputs`, 'utf8').trim().split('\n').map(line => `${line} ${result.delivery[line.split(' ')[0]] || false}`).join('\n')

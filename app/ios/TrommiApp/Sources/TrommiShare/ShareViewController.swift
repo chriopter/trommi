@@ -130,27 +130,23 @@ final class ShareModel: ObservableObject {
     let has = { (t: UTType) in p.hasItemConformingToTypeIdentifier(t.identifier) }
     let kind = ShareIntake.kind(.init(image: has(.image), url: has(.url), fileURL: has(.fileURL), data: dataType != nil, text: has(.plainText)))
     if kind == .image {
-      let raw = try await p.loadItemAsync(UTType.image.identifier)
-      let src: CGImageSource?
-      switch raw {
-      case let u as URL: src = CGImageSourceCreateWithURL(u as CFURL, nil)
-      case let d as Data: src = CGImageSourceCreateWithData(d as CFData, nil)
-      case let i as UIImage: src = i.jpegData(compressionQuality: 0.9).flatMap { CGImageSourceCreateWithData($0 as CFData, nil) }
-      default: src = nil
-      }
+      let data = try await p.dataAsync(UTType.image.identifier)
+      let src = data.flatMap { CGImageSourceCreateWithData($0 as CFData, nil) }
       guard let s = src, let pic = ShareImages.jpeg(s, maxPixel: 2400), let thumb = ShareImages.thumb(s) else { throw ShareError.damaged("picture") }
       let name = "picture-\(index + 1).jpg"
       let file = try inbox.addPayload(pic.data, request: id, index: index, name: name)
       return Loaded(item: ShareItem(kind: .image, file: file, name: name, type: "image/jpeg", size: pic.data.count, width: pic.width, height: pic.height), thumb: thumb)
     }
     if kind == .url {
-      if let u = try await p.loadItemAsync(UTType.url.identifier) as? URL {
+      if let raw = try await p.objectAsync(NSURL.self) {
+        let u = raw as URL
         return Loaded(item: ShareItem(kind: .url, name: u.host ?? "link", type: "text/uri-list", text: u.absoluteString))
       }
     }
     if kind == .file {
       let type = dataType ?? UTType.data.identifier
       let ut = UTType(type)
+      let suggestedName = p.suggestedName
       return try await withCheckedThrowingContinuation { (c: CheckedContinuation<Loaded?, Error>) in
         _ = p.loadFileRepresentation(forTypeIdentifier: type) { url, err in
           guard let url = url else { c.resume(throwing: err ?? ShareError.damaged("file")); return }
@@ -158,7 +154,7 @@ final class ShareModel: ObservableObject {
             // the file is valid only inside this handler: read (mapped), seal, write, here
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             let ext = url.pathExtension.isEmpty ? (ut?.preferredFilenameExtension ?? "") : url.pathExtension
-            let name = ShareIntake.fileName(suggested: p.suggestedName, file: url.deletingPathExtension().lastPathComponent, ext: url.pathExtension, typeExt: ut?.preferredFilenameExtension)
+            let name = ShareIntake.fileName(suggested: suggestedName, file: url.deletingPathExtension().lastPathComponent, ext: url.pathExtension, typeExt: ut?.preferredFilenameExtension)
             if size > ShareInbox.maxItemBytes { throw ShareError.tooLarge(name) }
             let d = try Data(contentsOf: url, options: .mappedIfSafe)
             let file = try inbox.addPayload(d, request: id, index: index, name: name)
@@ -169,8 +165,7 @@ final class ShareModel: ObservableObject {
       }
     }
     if p.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-      let raw = try await p.loadItemAsync(UTType.plainText.identifier)
-      let s = (raw as? String) ?? (raw as? Data).flatMap { String(data: $0, encoding: .utf8) } ?? (raw as? NSAttributedString)?.string
+      let s = try await p.objectAsync(NSString.self).map { $0 as String }
       if let item = s.flatMap({ ShareIntake.words($0) }) { return Loaded(item: item) }
     }
     return nil
@@ -216,10 +211,17 @@ final class ShareModel: ObservableObject {
 }
 
 extension NSItemProvider {
-  func loadItemAsync(_ type: String) async throws -> NSSecureCoding? {
+  func dataAsync(_ type: String) async throws -> Data? {
     try await withCheckedThrowingContinuation { c in
-      loadItem(forTypeIdentifier: type, options: nil) { v, e in
-        if let e = e { c.resume(throwing: e) } else { c.resume(returning: v) }
+      _ = loadDataRepresentation(forTypeIdentifier: type) { value, error in
+        if let error { c.resume(throwing: error) } else { c.resume(returning: value) }
+      }
+    }
+  }
+  func objectAsync<T: NSItemProviderReading>(_ type: T.Type) async throws -> T? {
+    try await withCheckedThrowingContinuation { c in
+      _ = loadObject(ofClass: type) { value, error in
+        if let error { c.resume(throwing: error) } else { c.resume(returning: value as? T) }
       }
     }
   }

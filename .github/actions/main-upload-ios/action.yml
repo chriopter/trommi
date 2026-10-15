@@ -23,6 +23,9 @@ inputs:
     description: Digest exported by the producing job
     required: true
 outputs:
+  ready:
+    description: Uploaded or already delivered
+    value: ${{ steps.upload.outputs.ready }}
   commit:
     description: commit
     value: ${{ steps.core.outputs.commit }}

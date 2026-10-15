@@ -27,6 +27,7 @@ enum NativeTab: Equatable { case chat, desk }
   var snapshot: [String: Any] = [:]
   func start(demo: Bool = false) async {
     guard !started else { return }; started = true
+    if NativeDemo.measuring { Spent.add("ui.before_start", since: NativeDemo.launchTicks) }
     isDemo = demo || NativeDemo.screen != nil
     view = CoreView.ViewModel(); files = [:]; saved = nil; snapshot = [:]
     do {
@@ -35,14 +36,14 @@ enum NativeTab: Equatable { case chat, desk }
       #endif
       let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Trommi/AppCore/default")
       let preview = isDemo
-      session = try CoreSession(directory: preview ? nil : dir, network: NativeNetworkHooks(cached: { request in if preview { return NativeDemo.file(request) }; return await NativeServices.shared.prefetched(request) }, before: { _, url in preview && !url.hasPrefix("/demo/files/") ? "denied" : nil })) { [weak self] packet in await self?.effect(packet) }
+      session = try Spent.time("session.init") { try CoreSession(directory: preview ? nil : dir, network: NativeNetworkHooks(cached: { request in if preview { return NativeDemo.file(request) }; return await NativeServices.shared.prefetched(request) }, before: { _, url in preview && !url.hasPrefix("/demo/files/") ? "denied" : nil })) { [weak self] packet in await self?.effect(packet) } }
       var config: [String: Any] = ["platform": Self.platform, "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1", "slot": "default", "seed": UInt64.random(in: 0..<(1 << 53)), "locale": Locale.current.identifier, "utc_offset_min": TimeZone.current.secondsFromGMT() / 60, "can": ["notify": true, "secrets": true, "snapshots": true, "push": "apns", "passkeys": false]]
       #if targetEnvironment(simulator)
       // UI automation uses the real executor and store against its own loopback hub.
       if let hub = ProcessInfo.processInfo.environment["TROMMI_TEST_HUB"],
          let url = URL(string: hub), url.scheme == "http", url.host == "127.0.0.1" { config["hub"] = hub }
       #endif
-      if preview { config["demo"] = try NativeDemo.fixture(); config["can"] = [:] }
+      if preview { let fixture: Any = try Spent.time("fixture") { try NativeDemo.fixture() }; config["demo"] = fixture; config["can"] = [:] }
       await session?.send(NativePacket(["type": "start", "config": config]))
       if !preview {
         for id in UserDefaults.standard.stringArray(forKey: "trommi-goals-folded") ?? [] {
@@ -104,8 +105,9 @@ enum NativeTab: Equatable { case chat, desk }
     switch e["type"] as? String {
     case "render":
       do {
-        let delta = try JSONDecoder().decode(CoreView.ViewDelta.self, from: JSONSerialization.data(withJSONObject: e["delta"]!))
-        try view.apply(delta)
+        let delta = try Spent.time("view.decode") { try JSONDecoder().decode(CoreView.ViewDelta.self, from: JSONSerialization.data(withJSONObject: e["delta"]!)) }
+        try Spent.time("view.fold") { try view.apply(delta) }
+        if NativeDemo.measuring { NativeDemo.foldedAt = (ProcessInfo.processInfo.systemUptime - NativeDemo.launchStart) * 1000 }
         if view.phase == .signedOut { files = [:]; saved = nil; screen = .desk; path = []; tab = .desk }
         if !isDemo { NativeServices.shared.draw(view) }
       } catch { platformError = "The view update was out of order." }
