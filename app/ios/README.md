@@ -158,6 +158,14 @@ keep its seed devices online with `--serve`. The test types the credentials into
 `TROMMI_SCREEN` or injects a demo model. The hub override exists only in Simulator builds and accepts loopback
 HTTP only. Without the private account file this opt-in test is skipped.
 
+The opt-in `NativeScreensTests.testFullSizeDeskLaunchAndMemory` measures the same Rust model and native Desk
+with a made-up large room, separately from real sign-in. Generate one with
+`node tests/tools/mega-fixture.mjs /path/to/mega.json 10 5000 1 0`, then set `TROMMI_SPEED_FIXTURE` to that
+Mac-local file and `TROMMI_SPEED_ROWS=290` in the `TrommiSimulator` test scheme. It records three responsive
+launch measurements and attaches first-Desk timing, row count, resident bytes and boundary timings. Resident
+bytes include shared Simulator mappings; they are not a count of private card storage. No account or hub is
+used by that measurement. The fixture override requires explicit `TROMMI_SCREEN` demo mode.
+
 ## Xcode, TestFlight and releases
 
 `TrommiApp/AppStore/project.yml` generates the Xcode project: the iOS app, Mac app and three iOS extensions link
