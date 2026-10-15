@@ -161,3 +161,27 @@ targets:
         INFOPLIST_FILE: ../Live/Info.plist
         GENERATE_INFOPLIST_FILE: YES
         APPLICATION_EXTENSION_API_ONLY: YES
+
+  TrommiUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ../../../../tests/ios/UITests
+    dependencies:
+      - target: Trommi
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.trommi.ios.uitests
+        SWIFT_VERSION: "5.0"
+        TEST_TARGET_NAME: Trommi
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+schemes:
+  TrommiSimulator:
+    build:
+      targets:
+        Trommi: all
+        TrommiUITests: [test]
+    test:
+      targets:
+        - TrommiUITests

@@ -123,7 +123,7 @@ struct DeskRow: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       if let from = row.from { HStack { AgentMark(mark: from.mark, size: 22); Text(from.path.joined(separator: " › ")).font(Face.text(13)).foregroundStyle(Ink.muted) } }
-      Button { shell.focus(.card(cardId: row.id)) } label: { VStack(alignment: .leading, spacing: 10) { Text(row.title).font(Face.display(24)).foregroundStyle(Ink.fg); Text(row.words).font(Face.text(16)).foregroundStyle(Ink.muted).lineLimit(3) }.frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain)
+      Button { shell.focus(.card(cardId: row.id)) } label: { VStack(alignment: .leading, spacing: 10) { Text(row.title).font(Face.display(24)).foregroundStyle(Ink.fg); Text(row.words).font(Face.text(16)).foregroundStyle(Ink.muted).lineLimit(3) }.frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).accessibilityIdentifier("desk-card-" + row.id)
       ForEach(Array(row.notes.enumerated()), id: \.offset) { Text($0.element.en).font(Face.text(12)).foregroundStyle(Ink.muted) }
       HStack(spacing: 12) {
         ForEach(row.tiles.tiles, id: \.key) { tile in
@@ -168,7 +168,7 @@ struct CardScreen: View {
         if let from = card.from { Text(from.path.joined(separator: " › ")).font(Face.text(14)).foregroundStyle(Ink.muted) }
         HStack { Text(card.nr.en).font(Face.mono(13)); Spacer(); Button { shell.act(["do": "star", "card_id": card.id, "on": !card.starred]) } label: { StarMark(on: card.starred).frame(width: 24, height: 24) }.accessibilityLabel(card.starSays.en) }
         if let work = card.work { Text(work.says.en).font(Face.text(15)); Text(work.words.en).foregroundStyle(Ink.muted) }
-        Text(card.title).font(Face.display(36))
+        Text(card.title).font(Face.display(36)).accessibilityIdentifier("card-title")
         Markdown(text: card.text)
         if !card.html.isEmpty { InlineHTML(html: card.html).frame(minHeight: 240) }
         FileRows(ids: card.files)
@@ -248,7 +248,7 @@ struct TalkRow: View {
       if let work = row.work { WorkDrawing(work: work) }
       if let deed = row.deed { Text(deed.label.en).font(Face.text(13)); ForEach(Array(deed.said.enumerated()), id: \.offset) { Text($0.element.en).font(Face.text(13)) } }
       if let event = row.event { Text(event.label.en).font(Face.text(13)).foregroundStyle(Ink.muted) }
-      if !row.text.isEmpty { Markdown(text: row.text).padding(14).background(row.fromMe ? Ink.accentSoft : Ink.surface2, in: PenBox()) }
+      if !row.text.isEmpty { Markdown(text: row.text).accessibilityIdentifier("talk-message").padding(14).background(row.fromMe ? Ink.accentSoft : Ink.surface2, in: PenBox()) }
       FileRows(ids: row.files)
     }.frame(maxWidth: .infinity, alignment: row.fromMe ? .trailing : .leading)
   }
@@ -263,9 +263,9 @@ struct NativePicture: View {
   var body: some View {
     Group {
       #if canImport(UIKit)
-      if let data = shell.files[id], let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit() } else { ProgressView() }
+      if let data = shell.files[id], let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().accessibilityIdentifier("native-picture") } else { ProgressView() }
       #else
-      if let data = shell.files[id], let image = NSImage(data: data) { Image(nsImage: image).resizable().scaledToFit() } else { ProgressView() }
+      if let data = shell.files[id], let image = NSImage(data: data) { Image(nsImage: image).resizable().scaledToFit().accessibilityIdentifier("native-picture") } else { ProgressView() }
       #endif
     }.task(id: id) { shell.act(["do": "open_file", "attachment_id": id, "save": false]) }
   }
