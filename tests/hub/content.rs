@@ -886,6 +886,10 @@ fn the_desk_counts_objects_per_group_and_settled_ones_come_newest_first_page_by_
     assert!(heads.windows(2).all(|w| w[0] > w[1]), "newest first: {heads:?}");
     assert_eq!(ids(&whole)[0], b64(&theirs));
     assert_eq!(ids(&whole).len(), 5);
+    for (id, _) in &cards[..2] {
+        let row = whole["items"].as_array().unwrap().iter().find(|row| row["object_id"] == b64(id)).unwrap();
+        assert_eq!(row["state"], wire::STATE_ANSWERED, "settled keeps answered distinct from closed");
+    }
     assert_eq!((whole["more"].as_bool(), whole["before"].as_i64()), (Some(false), Some(0)));
     let first = &whole["items"][1];
     assert_eq!((first["kind"].as_str(), first["state"].as_i64(), first["group_id"].as_str()), (Some("cards"), Some(3), Some(b64(&s.group).as_str())));
