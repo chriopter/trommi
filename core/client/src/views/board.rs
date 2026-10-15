@@ -503,6 +503,7 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     view.settings = super::settings::settings(&b);
     view.settings.account = kept.account.take();
     view.settings.login = kept.login.take();
+    view.settings.data = kept.data.take();
     view.settings.room = kept.room.take();
     view.settings.hub = kept.hub.take();
     view.settings.desk_counts = std::mem::take(&mut kept.desk_counts);

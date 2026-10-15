@@ -17,6 +17,7 @@ pub(super) enum Step {
     /// `GET /v1/account` of a deletion: its e-mail derives the password's key.
     ReadAccount { password: crate::account::Secret, expect: Expect },
     Delete(Expect),
+    Usage(Expect),
     SignOut,
     /// A change of the account's ways in (`account_change`).
     Change(super::account_change::Ask, Expect),
@@ -48,6 +49,16 @@ impl App {
     /// `RemoveDevices`, `SignOut`, `DeleteAccount`: true when `action` was one of them.
     pub(super) fn account_step(&mut self, now_ms: u64, action: &AccountAction, out: &mut Vec<Effect>) -> bool {
         match action {
+            AccountAction::ReadUsage => {
+                if self.steps.asked.values().any(|step| matches!(step, Step::Usage(_))) { return true; }
+                let sent = !self.demo && self.step_send(now_ms, out, |site| Codec.request(site, &Route::AccountUsage), Step::Usage);
+                self.next_view.settings.data = Some(crate::views::DataView {
+                    state: if sent { "loading" } else { "failed" }.into(),
+                    rows: Vec::new(),
+                    says: Some(Text::new(if sent { "data.loading" } else { "data.unavailable" },
+                        if sent { "Reading hub data…" } else { "Hub data is available after signing in." })),
+                });
+            }
             AccountAction::RemoveDevices { device_ids } => self.remove_devices(now_ms, device_ids, out),
             AccountAction::SignOut => self.sign_out(now_ms, out),
             AccountAction::DeleteAccount { password } => {
@@ -180,6 +191,13 @@ impl App {
         };
         match step {
             Step::SignOut | Step::Quiet => {}
+            Step::Usage(expect) => {
+                self.next_view.settings.data = Some(match answer(&expect) {
+                    Ok(Answer::Usage(usage)) => usage_view(usage),
+                    _ => crate::views::DataView { state: "failed".into(), rows: Vec::new(),
+                        says: Some(Text::new("data.failed", "Hub data could not be read. Try again.")) },
+                });
+            }
             Step::Push(ask, expect) => {
                 let answer = answer(&expect);
                 self.push_answered(now_ms, ask, answer, out);
@@ -228,4 +246,24 @@ impl App {
             },
         }
     }
+}
+
+fn usage_view(u: crate::hub::AccountUsage) -> crate::views::DataView {
+    use crate::views::{DataRow, DataView};
+    let counts = [
+        ("rooms", "Rooms", u.rooms, false), ("groups", "Groups", u.groups, false),
+        ("live_groups", "Live groups", u.live_groups, false), ("devices", "Devices", u.devices, false),
+        ("commits", "Commits", u.commits, false), ("messages", "Messages", u.messages, false),
+        ("envelopes", "Envelopes", u.envelopes, false), ("cards", "Cards", u.cards, false),
+        ("open_cards", "Open cards", u.open_cards, false), ("files", "Files", u.files, false),
+        ("file_bytes", "Files stored", u.file_bytes, true), ("log_bytes", "Log stored", u.log_bytes, true),
+        ("envelope_bytes", "Envelopes stored", u.envelope_bytes, true), ("total_bytes", "Total stored", u.total_bytes, true),
+    ];
+    DataView { state: "ready".into(), says: Some(Text::new("data.privacy", "Counts and sizes only, for your own account.")),
+        rows: counts.into_iter().map(|(id, label, n, bytes)| {
+            let n = n.to_string();
+            DataRow { id: id.into(), label: Text::new(&format!("data.{id}"), label),
+                value: crate::views::words::say(if bytes { "data.bytes" } else { "data.count" },
+                    if bytes { format!("{n} bytes") } else { n.clone() }, &[("n", &n)]) }
+        }).collect() }
 }

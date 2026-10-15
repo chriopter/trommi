@@ -61,6 +61,13 @@ struct SettingsScreen: View {
         Button("Set e-mail") { shell.account(["step": "set_email", "email": accountEmail, "words": kitWords]); kitWords = "" }
         Button("Delete account", role: .destructive) { shell.account(["step": "delete_account", "password": currentPassword]); currentPassword = "" }
       }
+      Section("Data") {
+        Button("Read hub data") { shell.account(["step": "read_usage"]) }
+        if let data = shell.view.settings.data {
+          if let says = data.says { Text(says.en) }
+          ForEach(data.rows, id: \.id) { row in HStack { Text(row.label.en); Spacer(); Text(row.value.en) } }
+        }
+      }
       Section("Devices") {
         ForEach(shell.view.settings.devices, id: \.id) { device in
           VStack(alignment: .leading) { Text(device.name); Text(device.says.en).font(Face.text(12)); Text(device.fingerprint).font(Face.mono(11)).textSelection(.enabled) }
