@@ -89,6 +89,8 @@ pub struct Model {
     pub desk_order: Vec<String>,
     // what the builder keeps for itself
     pub device_registers: HashMap<String, Map<String, Value>>,
+    /// The group whose device-name value the model is showing (None: the room).
+    pub device_register_groups: BTreeMap<String, Option<String>>,
     pub echoes: HashMap<String, Echo>,
     pub by_hash: HashMap<String, String>,
     pub turns: BTreeMap<String, Turn>,

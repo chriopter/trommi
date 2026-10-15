@@ -167,7 +167,7 @@ fn timeline_meta(t: &Timeline) -> Value {
 impl Model {
     /// The room facts the model keeps.
     pub fn room_json(&self) -> Value {
-        json!({ "key_epoch": self.key_epoch, "recovery_key": self.recovery_key })
+        json!({ "key_epoch": self.key_epoch, "recovery_key": self.recovery_key, "device_register_groups": self.device_register_groups })
     }
 
     /// One card whole, as JSON text (a lean copy reads the rest of a card by it); empty for none.
