@@ -146,6 +146,18 @@ views draw it. `TrommiApp/AppStore/shots.sh` uses this on an iPhone/iPad simulat
 and marketing framing live beside it. UI-specific states need review when native layouts change. The former
 Mac-only automatic window/menu capture hook is not implemented by the new shell.
 
+The compact iPhone frame keeps Chat · Desk · Note in its glass pill. Chat draws the core's ordered session
+rows; cards, conversations and settings push onto the native navigation stack, so Back and swipe-back return
+to the list. The desk picker opens a lazy native sheet, including on a large account.
+
+`NativeScreensTests.testFreshAccountSignInRendersDesk` tests the real sign-in executor and encrypted store,
+then a seeded card, Chat, Note, Back and a durable restart. Set `TROMMI_SIGNIN_ACCOUNT_FILE` in the
+`TrommiSimulator` scheme (or as the Xcode build setting) to a private JSON file with `email` and `password`.
+Use a freshly created Simulator and an isolated hub at `http://127.0.0.1:18874`, populated by `seed-account`;
+keep its seed devices online with `--serve`. The test types the credentials into the real form; it never sets
+`TROMMI_SCREEN` or injects a demo model. The hub override exists only in Simulator builds and accepts loopback
+HTTP only. Without the private account file this opt-in test is skipped.
+
 ## Xcode, TestFlight and releases
 
 `TrommiApp/AppStore/project.yml` generates the Xcode project: the iOS app, Mac app and three iOS extensions link

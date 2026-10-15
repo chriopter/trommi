@@ -1,6 +1,15 @@
 name: main-upload-ios
 description: The main pipeline steps for main-upload-ios
 inputs:
+  non-exempt-encryption:
+    description: Apple delivery configuration
+    default: 'NO'
+  export-compliance-code:
+    description: Apple delivery configuration
+    default: ''
+  uploader:
+    description: Apple delivery configuration
+    default: 'api'
   version:
     description: Release series number
     default: ''
@@ -107,12 +116,12 @@ runs:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.op-token }}
       OP_ENVIRONMENT_ID: ${{ inputs.op-env }}
       COMMIT: ${{ steps.core.outputs.commit }}
-      ITS_NON_EXEMPT_ENCRYPTION: ${{ vars.IOS_NON_EXEMPT_ENCRYPTION || 'NO' }}
-      ITS_EXPORT_COMPLIANCE_CODE: ${{ vars.IOS_EXPORT_COMPLIANCE_CODE }}
+      ITS_NON_EXEMPT_ENCRYPTION: ${{ inputs.non-exempt-encryption }}
+      ITS_EXPORT_COMPLIANCE_CODE: ${{ inputs.export-compliance-code }}
       TF_GATE: release
       SAME_OK: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
       TF_DRY_RUN: ${{ false && '1' || '' }}
-      TF_UPLOADER: ${{ vars.IOS_UPLOADER || 'api' }}
+      TF_UPLOADER: ${{ inputs.uploader }}
       GH_TOKEN: ${{ github.token }}
       RUN_ID: ${{ github.run_id || github.run_id }}
       VERSION_RELEASE: ${{ inputs.version || '1' }}

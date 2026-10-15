@@ -6,6 +6,7 @@ struct RootView: View {
   @EnvironmentObject var shell: AppShell
   @Environment(\.horizontalSizeClass) private var width
   @AppStorage("trommi-theme") private var theme = "system"
+  @State private var showingSidebar = false
   private var wide: Bool {
     #if os(macOS)
     true
@@ -14,18 +15,35 @@ struct RootView: View {
     #endif
   }
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: $shell.path) {
       Group {
         if shell.view.phase == .signedOut || shell.view.phase == .starting || shell.view.account.step == "keep_kit" { AccountScreen() }
         else if wide {
-          HStack(spacing: 0) { Sidebar().frame(width: 258); Divider(); page.frame(maxWidth: .infinity) }
-        } else { page }
+          HStack(spacing: 0) { Sidebar().frame(width: 258); Divider(); home.frame(maxWidth: .infinity) }
+        } else { home }
       }
+      .navigationDestination(for: CoreView.Screen.self) { screen in page(screen) }
+      .onChange(of: shell.path) { _, path in
+        let screen = path.last ?? .desk
+        if shell.screen != screen { shell.show(screen) }
+      }
+      .safeAreaBar(edge: .bottom, spacing: 0) {
+        if !wide, shell.view.phase != .signedOut, shell.view.phase != .starting, shell.path.isEmpty,
+           shell.view.account.step != "keep_kit" { NativeTabPill() }
+      }
+      .sheet(isPresented: $showingSidebar) {
+        NavigationStack {
+          Sidebar(onPick: { showingSidebar = false }).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingSidebar = false } } }
+        }
+      }
+      .onChange(of: shell.screen) { _, _ in showingSidebar = false }
       .background(Ink.bg).foregroundStyle(Ink.fg)
       .preferredColorScheme(theme == "light" ? .light : theme == "dark" ? .dark : nil)
       .toolbar {
         ToolbarItem(placement: .navigation) {
-          Menu { SidebarMenu() } label: { Label(shell.view.sidebar.place.en, systemImage: "bell") }
+          Button { showingSidebar = true } label: {
+            Label(shell.view.sidebar.place.en, systemImage: "bell").labelStyle(.titleAndIcon)
+          }.accessibilityLabel("Choose desk or session")
         }
         ToolbarItem(placement: .primaryAction) {
           Menu {
@@ -44,8 +62,11 @@ struct RootView: View {
       .alert("Trommi", isPresented: Binding(get: { shell.platformError != nil }, set: { if !$0 { shell.platformError = nil } })) { Button("OK") { shell.platformError = nil } } message: { Text(shell.platformError ?? "") }
     }
   }
-  @ViewBuilder var page: some View {
-    switch shell.screen {
+  @ViewBuilder var home: some View {
+    if !wide && shell.tab == .chat { ChatsScreen() } else { DeskScreen() }
+  }
+  @ViewBuilder func page(_ screen: CoreView.Screen) -> some View {
+    switch screen {
     case .desk: DeskScreen()
     case .card(let id): if let card = shell.view.cards[id] { CardScreen(card: card).id(id) } else { ProgressView() }
     case .session(let id): if let page = shell.view.sessions[id] { SessionScreen(page: page).id(id) } else { ProgressView() }
@@ -57,29 +78,70 @@ struct RootView: View {
     }
   }
 }
-struct SidebarMenu: View {
+// UI navigation only. Session order, labels, unread/work state and badges come from CoreView.
+struct NativeTabPill: View {
   @EnvironmentObject var shell: AppShell
   var body: some View {
-    Button("Desk") { shell.focus(.desk) }
-    if let all = shell.view.sidebar.all { Button(all.name.en) { shell.focus(.desk, desk: all.id) } }
-    ForEach(shell.view.sidebar.desks, id: \.id) { desk in Button(desk.name.en) { shell.focus(.desk, desk: desk.id) } }
-    Divider()
-    ForEach(shell.view.sidebar.sessions, id: \.id) { row in Button(row.name.en) { shell.focus(.session(sessionId: row.id)) } }
+    HStack(spacing: 0) {
+      tab(.chat, key: "sketch:bubble", label: "Chat", id: "tab-chat")
+      tab(.desk, key: "sketch:desk", label: "Desk", id: "tab-desk")
+      Button { shell.focus(.notes) } label: { NoteGlyph(color: Ink.fg.opacity(0.6), width: 3.4, written: false).frame(width: 36, height: 36).frame(width: 84, height: 50) }
+        .buttonStyle(.plain).accessibilityLabel("Note").accessibilityIdentifier("tab-note")
+    }
+    .background(alignment: .leading) {
+      Capsule().fill(Ink.tabLens).shadow(color: .black.opacity(0.18), radius: 7, y: 2)
+        .overlay(Capsule().strokeBorder(Ink.fg.opacity(0.08), lineWidth: 0.5))
+        .frame(width: 84, height: 50).offset(x: shell.tab == .chat ? 0 : 84).allowsHitTesting(false)
+    }
+    .padding(4).glass(Capsule()).bottomChrome()
+    .accessibilityElement(children: .contain).accessibilityAddTraits(.isTabBar)
+    .padding(.top, 6).padding(.bottom, bottomSink(23))
+    .animation(.snappy, value: shell.tab)
+  }
+  private func tab(_ tab: NativeTab, key: String, label: String, id: String) -> some View {
+    Button { shell.path = []; shell.tab = tab; shell.show(.desk) } label: {
+      PenMark(key, color: Ink.fg.opacity(shell.tab == tab ? 1 : 0.6), width: 2.4)
+        .frame(width: 34, height: 34).frame(width: 84, height: 50)
+    }.buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
+      .accessibilityAddTraits(shell.tab == tab ? .isSelected : [])
+  }
+}
+struct ChatsScreen: View {
+  @EnvironmentObject var shell: AppShell
+  var body: some View {
+    ScrollView {
+      LazyVStack(alignment: .leading, spacing: 20) {
+        Text("Chat").font(Face.display(38))
+        ForEach(shell.view.sidebar.sessions, id: \.id) { row in
+          Button { shell.focus(.session(sessionId: row.id)) } label: {
+            HStack(spacing: 14) {
+              AgentMark(mark: row.mark, crowned: row.crowned)
+              VStack(alignment: .leading, spacing: 5) {
+                Text(row.name.en).font(Face.text(18, .medium))
+                if let cap = row.cap { Text(cap.word.en).font(Face.text(13)).foregroundStyle(Ink.muted) }
+              }
+              Spacer(); WorkingRing(working: row.working).frame(width: 20, height: 20)
+            }.padding(18).padding(.leading, CGFloat(row.depth) * 12)
+          }.buttonStyle(.plain).background(Ink.surface2, in: PenBox()).accessibilityIdentifier("chat-session-" + row.id)
+        }
+      }.padding(24).frame(maxWidth: 820).frame(maxWidth: .infinity)
+    }
   }
 }
 struct Sidebar: View {
   @EnvironmentObject var shell: AppShell
+  var onPick: () -> Void = {}
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
+      LazyVStack(alignment: .leading, spacing: 16) {
         Text("Trommi").font(Face.display(30)).padding(.bottom, 12)
-        Button("Desk") { shell.focus(.desk) }
-        if let all = shell.view.sidebar.all { Button(all.name.en) { shell.focus(.desk, desk: all.id) } }
-        ForEach(shell.view.sidebar.desks, id: \.id) { desk in Button(desk.name.en) { shell.focus(.desk, desk: desk.id) } }
+        Button("Desk") { shell.focus(.desk); onPick() }
+        if let all = shell.view.sidebar.all { Button(all.name.en) { shell.focus(.desk, desk: all.id); onPick() } }
+        ForEach(shell.view.sidebar.desks, id: \.id) { desk in Button(desk.name.en) { shell.focus(.desk, desk: desk.id); onPick() } }
         Divider()
         ForEach(shell.view.sidebar.sessions, id: \.id) { row in
           if let heading = row.heading { Text(heading.text.en).font(Face.text(12)).foregroundStyle(Ink.muted) }
-          Button { shell.focus(.session(sessionId: row.id)) } label: {
+          Button { shell.focus(.session(sessionId: row.id)); onPick() } label: {
             HStack(spacing: 12) {
               AgentMark(mark: row.mark, crowned: row.crowned)
               VStack(alignment: .leading, spacing: 4) { Text(row.name.en).font(Face.text(15, .medium)); if let cap = row.cap { Text(cap.word.en).font(Face.text(12)).foregroundStyle(Ink.muted) } }

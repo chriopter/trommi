@@ -16,6 +16,45 @@ final class NativeScreensTests: XCTestCase {
     let shot = XCTAttachment(screenshot: app.screenshot())
     shot.name = name; shot.lifetime = .keepAlways; add(shot)
   }
+  func testFreshAccountSignInRendersDesk() throws {
+    guard let path = ProcessInfo.processInfo.environment["TROMMI_SIGNIN_ACCOUNT_FILE"],
+          !path.isEmpty, !path.hasPrefix("$(") else { throw XCTSkip("Set TROMMI_SIGNIN_ACCOUNT_FILE for the isolated real-account gate.") }
+    let account = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as? [String: String])
+    app = XCUIApplication()
+    app.launchEnvironment["TROMMI_TEST_HUB"] = "http://127.0.0.1:18874"
+    app.launch()
+    let email = app.textFields["E-mail or account"]
+    XCTAssertTrue(email.waitForExistence(timeout: 20), app.debugDescription)
+    email.tap(); email.typeText(try XCTUnwrap(account["email"]))
+    let password = app.secureTextFields["Password"]
+    password.tap(); password.typeText(try XCTUnwrap(account["password"]))
+    app.buttons["Sign in"].tap()
+    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 90), "Real sign-in must render the seeded Desk, not an empty page. " + app.debugDescription)
+    XCTAssertFalse(row.label.isEmpty)
+    XCTAssertTrue(app.buttons["tab-chat"].exists, "The signed-in iPhone must keep its Chat · Desk · Note navigation.")
+    XCTAssertTrue(app.buttons["tab-desk"].exists)
+    XCTAssertTrue(app.buttons["tab-note"].exists)
+    capture("real-signin-desk")
+    row.tap()
+    XCTAssertTrue(app.staticTexts["card-title"].waitForExistence(timeout: 15))
+    capture("real-signin-card")
+    app.navigationBars.buttons["Back"].tap()
+    XCTAssertTrue(app.buttons["tab-chat"].waitForExistence(timeout: 10))
+    app.buttons["tab-chat"].tap()
+    let chat = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).firstMatch
+    XCTAssertTrue(chat.waitForExistence(timeout: 10))
+    chat.tap()
+    XCTAssertTrue(app.staticTexts["talk-message"].firstMatch.waitForExistence(timeout: 15))
+    app.navigationBars.buttons["Back"].tap()
+    app.buttons["tab-note"].tap()
+    XCTAssertTrue(app.buttons["Keep in Note"].waitForExistence(timeout: 10))
+    app.navigationBars.buttons["Back"].tap()
+    app.buttons["tab-desk"].tap()
+    XCTAssertTrue(row.waitForExistence(timeout: 10))
+    app.terminate(); app.launch()
+    XCTAssertTrue(row.waitForExistence(timeout: 30), "The signed-in Desk must survive a restart.")
+  }
   func testDeskOpensARealCard() {
     launch("desk")
     let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).firstMatch

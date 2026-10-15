@@ -1,6 +1,9 @@
 name: main-upload-mac
 description: The main pipeline steps for main-upload-mac
 inputs:
+  uploader:
+    description: Apple delivery configuration
+    default: 'api'
   version:
     description: Release series number
     default: ''
@@ -116,7 +119,7 @@ runs:
       TF_GATE: release
       SAME_OK: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
       TF_DRY_RUN: ${{ false && '1' || '' }}
-      TF_UPLOADER: ${{ vars.MAC_UPLOADER || 'api' }}
+      TF_UPLOADER: ${{ inputs.uploader }}
       GH_TOKEN: ${{ github.token }}
       RUN_ID: ${{ github.run_id || github.run_id }}
       VERSION_RELEASE: ${{ inputs.version || '1' }}
