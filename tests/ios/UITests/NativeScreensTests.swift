@@ -198,8 +198,6 @@ final class NativeScreensTests: XCTestCase {
     let teaser = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-teaser-")).firstMatch
     XCTAssertTrue(teaser.waitForExistence(timeout: 15), app.debugDescription)
     XCTAssertFalse(teaser.label.trimmingCharacters(in: .whitespaces).isEmpty, "a row says what was said last")
-    let dot = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-unread-")).firstMatch
-    XCTAssertTrue(dot.waitForExistence(timeout: 5), "words not seen yet are dotted. " + app.debugDescription)
     let helpers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-helpers-")).firstMatch
     XCTAssertTrue(helpers.exists, "a main's helpers lie folded in its row")
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).count
@@ -208,6 +206,10 @@ final class NativeScreensTests: XCTestCase {
     let more = NSPredicate(format: "count > %d", rows)
     expectation(for: more, evaluatedWith: app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")))
     waitForExpectations(timeout: 5)
+    // (a row with questions open shows their count instead of the dot; the demo's helpers without one have words
+    //  not seen yet, as nothing counts as read in the demo)
+    let dot = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-unread-")).firstMatch
+    XCTAssertTrue(dot.waitForExistence(timeout: 5), "words not seen yet are dotted. " + app.debugDescription)
     capture("chats-unfolded")
   }
   func testSessionQuestionsOnlyAndItsMenu() {
@@ -215,6 +217,10 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(app.staticTexts["talk-message"].firstMatch.waitForExistence(timeout: 15))
     app.buttons["session-mode-questions"].tap()
     XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "session-question-")).firstMatch.waitForExistence(timeout: 5), "every question it asked. " + app.debugDescription)
+    // (what waits is listed as the Desk's cards, as many as the switch counts)
+    let count = app.buttons["session-mode-questions"].label.split(separator: " ").compactMap { Int($0) }.first ?? 0
+    XCTAssertGreaterThan(count, 0, app.buttons["session-mode-questions"].label)
+    XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).count, count, "the open questions listed are the ones counted. " + app.debugDescription)
     capture("session-questions")
     app.buttons["session-more"].tap()
     XCTAssertTrue(app.buttons["Rename…"].waitForExistence(timeout: 5))
@@ -222,11 +228,14 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(app.buttons["Move to Desk…"].exists)
     capture("session-menu")
     app.buttons["Rename…"].tap()
-    let field = app.textFields["session-rename-field"]
-    XCTAssertTrue(field.waitForExistence(timeout: 5))
-    field.tap(); field.typeText(" 2")
+    // (an alert's text field does not carry its SwiftUI identifier: it is the alert's one field)
+    let field = app.alerts.textFields.firstMatch
+    XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+    let name = field.value as? String ?? ""
+    XCTAssertFalse(name.isEmpty, "the field starts with the session's name")
+    field.typeText(" 2")
     app.alerts.buttons["Rename"].tap()
-    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", " 2")).firstMatch.waitForExistence(timeout: 5), "renamed. " + app.debugDescription)
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name + " 2")).firstMatch.waitForExistence(timeout: 5), "renamed. " + app.debugDescription)
   }
   func testSettingsHasItsPages() {
     launch("settings")
@@ -259,8 +268,9 @@ final class NativeScreensTests: XCTestCase {
     app.buttons["tab-note"].tap()
     let field = app.descendants(matching: .any)["note-text"]
     XCTAssertTrue(field.waitForExistence(timeout: 5))
-    field.tap()
-    if !app.keyboards.firstMatch.waitForExistence(timeout: 3) { field.tap() }
+    // (a tap on the paper just below the words starts writing, as one on the words does)
+    field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1)).withOffset(CGVector(dx: 0, dy: 24)).tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "the paper below the words is the field's. " + app.debugDescription)
     field.typeText("Buy oat milk")
     XCTAssertFalse(app.buttons["Keep in Note"].exists, "no button to keep it: it keeps itself")
     Thread.sleep(forTimeInterval: 1.2)
