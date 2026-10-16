@@ -597,10 +597,58 @@ details.set-group.set-exp > summary { border-radius: 12px; }
 .ob-error.is-shown + .ob-go { margin-top: var(--s-4); }   /* (the error never sits flush on the button under it) */
 @media (max-width: 400px) { .kit-head { font-size: 15px; letter-spacing: -.01em; } }   /* ("Trommi Emergency Kit" on one line beside Show) */
 
-/* A stopped/other-tab page is the whole page, with the same account-screen type and paper. */
-body > main#trommi-opening, body > main#room.room-elsewhere { grid-column: 1 / -1; grid-row: 1 / -1; display: grid; place-items: center; max-width: none; margin: 0; padding: 32px 24px; background: var(--bg); }
-.room-elsewhere .room-card { width: 100%; max-width: 520px; }
-.room-elsewhere .room-brand { font: 700 28px/1.15 var(--display); }
-.room-elsewhere .room-title { font: 800 clamp(28px, 5vw, 42px)/1.12 var(--display); margin-bottom: 20px; }
-.room-elsewhere .room-lead { color: var(--muted); margin-bottom: 28px; }
-.room-elsewhere button.room-go { border: 0; border-radius: var(--r-pill); background: var(--accent); color: var(--accent-fg); padding: 16px 24px; }
+/* ---- The start (index.html #trommi-opening, app.mjs opening) and the page of a tab that is not the one (app.mjs
+   elsewhere): the whole window, a quiet outline of the Desk in its own look: the sidebar's paper with the bell and three
+   piles, the greeting in the display face with its last word underlined by the pen, one line in the text face, a few
+   rows as faint paper. One thin line shows how far the start is; nothing else moves. ---- */
+body > main.opening { grid-column: 1 / -1; grid-row: 1 / -1; display: grid; grid-template-columns: 272px minmax(0, 1fr); min-height: 0; margin: 0; max-width: none; padding: 0; background: var(--surface); color: var(--fg); overflow: hidden; }
+.opening .op-side { display: flex; flex-direction: column; gap: 18px; padding: 22px 16px; background: var(--bg); border-right: 1px solid var(--line); }
+.opening .op-brand, .opening .op-pill { display: flex; align-items: center; gap: 10px; font: 800 1.45rem/1 var(--display); letter-spacing: -.02em; }
+.opening .op-brand { padding: 2px 4px 14px; }
+.opening .op-pile { display: block; height: 58px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 6px 0 -3px var(--sunken), 0 6px 0 -2px var(--line); }
+.opening .op-main { min-width: 0; overflow: hidden; padding: var(--s-8) var(--gutter) 0; }
+.opening .op-col { max-width: 51rem; margin-inline: auto; padding: 0 var(--s-1); }
+.opening .op-pill { display: none; }
+.opening .op-hello { margin: var(--s-6) 0 0; font: 800 clamp(2.1rem, 3.6vw, 2.9rem)/1.08 var(--display); letter-spacing: -.028em; color: var(--fg); }
+.opening .op-hello em { font-style: normal; padding-bottom: 5px; background: var(--under-ink) left bottom / 100% 9px no-repeat; }
+.opening .op-step { margin: 14px 0 0; min-height: 1.55em; font: 400 var(--t-md)/1.55 var(--font); color: var(--muted); font-variant-numeric: tabular-nums; }
+.opening .op-bar { position: relative; width: min(100%, 320px); height: 3px; margin: 10px 0 0; border-radius: 3px; background: var(--line); overflow: hidden; }
+.opening .op-bar > i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: var(--accent); transition: width var(--d-slow) var(--ease-out); }
+/* (before the core says a step: one short stroke goes slowly to and fro) */
+.opening .op-bar:not(.is-known) > i { width: 28%; animation: op-wait 1.8s var(--ease-in-out) infinite alternate; }
+@keyframes op-wait { from { transform: translateX(-20%); } to { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .opening .op-bar:not(.is-known) > i { animation: none; } .opening .op-bar > i { transition: none; } }
+.opening .op-rows { list-style: none; margin: var(--s-8) 0 0; padding: 0; display: grid; gap: 14px; }
+.opening .op-rows > li { display: flex; align-items: center; gap: 14px; height: 110px; padding: 8px 8px 8px 22px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.opening .op-rows > li > i { flex: 1; max-width: 46%; height: 14px; border-radius: 7px; background: var(--sunken); }
+.opening .op-rows > li:nth-child(2) > i { max-width: 34%; }
+.opening .op-rows > li:nth-child(3) > i { max-width: 52%; }
+.opening .op-rows > li > b { flex: none; width: 92px; height: 100%; border-radius: var(--r-sm); background: var(--sunken); }
+.opening .op-rows > li > b:first-of-type { margin-left: auto; }
+.opening .op-rows > li:nth-child(n+2) { opacity: .7; }
+.opening .op-rows > li:nth-child(n+3) { opacity: .45; }
+.opening .op-rows > li:nth-child(n+4) { opacity: .25; }
+/* the other tab's page: the same, with its words and one way on in place of the line */
+.opening .room-title { margin: var(--s-6) 0 0; font: 800 clamp(2.1rem, 3.6vw, 2.9rem)/1.08 var(--display); letter-spacing: -.028em; }
+.opening .room-title em { font-style: normal; padding-bottom: 5px; background: var(--under-ink) left bottom / 100% 9px no-repeat; }
+.opening .room-lead { margin: 16px 0 28px; font: 400 var(--t-lg)/1.5 var(--font); color: var(--muted); max-width: 30rem; }
+.opening button.room-go { border: 0; border-radius: var(--r-pill); background: var(--accent); color: var(--accent-fg); padding: 16px 26px; font: 600 var(--t-md)/1 var(--font); }
+.opening button.room-go:hover { background: var(--accent-hover); }
+/* a phone: no sidebar; the bell and name as the Desk's top pill, the rows a little lower and closer */
+@media (max-width: 860px) {
+  body > main.opening { grid-template-columns: minmax(0, 1fr); }
+  .opening .op-side { display: none; }
+  .opening .op-main { padding: max(14px, env(safe-area-inset-top)) 16px 0; }
+  .opening .op-pill { display: inline-flex; height: 52px; padding: 0 18px 0 14px; border: 1.5px solid var(--line-strong); border-radius: var(--r-pill); font-size: 1.25rem; }
+  .opening .op-hello, .opening .room-title { margin-top: 26px; font-size: clamp(2rem, 9vw, 2.5rem); }
+  .opening .op-rows { margin-top: var(--s-6); gap: 12px; }
+  .opening .op-rows > li { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 12px; height: auto; padding: 20px 16px 16px; border-radius: var(--r-md); }
+  .opening .op-rows > li > i, .opening .op-rows > li:nth-child(n) > i { grid-column: 1 / -1; width: 72%; max-width: none; }
+  .opening .op-rows > li:nth-child(2) > i { width: 55%; }
+  .opening .op-rows > li > b { width: auto; height: 50px; }
+  .opening .op-rows > li > b:first-of-type { margin-left: 0; }
+}
+/* once the Desk is drawn and the room still opens: one thin line at the window's top, how far along (app.mjs startLine) */
+.start-line { position: fixed; inset: 0 0 auto 0; height: 2px; z-index: var(--z-band); pointer-events: none; }
+.start-line > i { display: block; height: 100%; width: 0; background: var(--accent); opacity: .8; transition: width var(--d-slow) var(--ease-out); }
+@media (prefers-reduced-motion: reduce) { .start-line > i { transition: none; } }

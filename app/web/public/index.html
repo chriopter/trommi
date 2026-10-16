@@ -21,10 +21,15 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/trommi-180.png">
 <script>try{var m=localStorage.getItem('trommi-theme')||'system',r=document.documentElement;r.dataset.themeMode=m;if(m==='dark'||(m!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches))r.dataset.theme='dark';if(localStorage.getItem('trommi-rail')==='folded')r.dataset.rail='folded'}catch(e){}</script>
+<!-- The display and text faces the start screen paints in (Bricolage Grotesque, IBM Plex Sans; latin), fetched first,
+     before the app and its core; fonts.css names every face (a file is fetched only when a face is used). -->
+<link rel="preload" href="/fonts/f1.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/f7.woff2" as="font" type="font/woff2" crossorigin>
 <script type="module" async src="/gen/vendor/core-start.mjs"></script>
 <!-- preload -->
 <!-- /preload -->
 <link rel="stylesheet" href="/fonts/fallback.css">
+<link rel="stylesheet" href="/fonts/fonts.css">
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/sidebar.css">
 <link rel="stylesheet" href="/desk.css">
@@ -40,8 +45,18 @@
 </head>
 <body data-view="chat" data-scope="all" data-t-view="desk" data-t-base="">
 <div id="stream-host" hidden></div>
-<main id="trommi-opening" class="room room-elsewhere" aria-label="Opening Trommi" aria-busy="true">
-<div class="room-card"><div class="room-head"><img src="/icons/trommi.svg" width="34" height="34" alt=""><span class="room-brand">Trommi</span></div><h1 class="room-title">Opening Trommi</h1></div>
+<!-- The start: a quiet outline of the Desk while the app core loads and opens the room (app.mjs opening()). The
+     line under the greeting is the core's own (ViewModel.status, core/client/src/app/start.rs); before the core runs
+     it says only that the app loads. -->
+<main id="trommi-opening" class="opening" aria-labelledby="opening-title" aria-busy="true">
+<div class="op-side" aria-hidden="true"><div class="op-brand"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.1 19Q12.3 18.6 16.7 19L21 19.3"/><path d="M4.8 18.9Q5.2 15.1 5.7 13.7Q6.2 12.3 7.5 11.3Q8.7 10.3 10.3 9.5Q12 8.8 13.7 9.3Q15.3 9.8 16.4 11Q17.5 12.2 18.1 13.7Q18.6 15.2 18.8 17L18.9 18.8"/><path d="M11.8 8.6L12.2 6.9"/><path d="M10 6.6Q11.8 6 12.8 6.4L13.8 6.8"/><path class="brand-mark-ring" d="M18.5 7.3Q19.5 5.8 19.8 5.2L20 4.5"/><path class="brand-mark-ring" d="M20.6 10.3Q21.5 9.4 22.3 8.9L23.1 8.5"/></svg><b>Trommi</b></div><i class="op-pile"></i><i class="op-pile"></i><i class="op-pile"></i></div>
+<div class="op-main"><div class="op-col">
+<div class="op-pill" aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.1 19Q12.3 18.6 16.7 19L21 19.3"/><path d="M4.8 18.9Q5.2 15.1 5.7 13.7Q6.2 12.3 7.5 11.3Q8.7 10.3 10.3 9.5Q12 8.8 13.7 9.3Q15.3 9.8 16.4 11Q17.5 12.2 18.1 13.7Q18.6 15.2 18.8 17L18.9 18.8"/><path d="M11.8 8.6L12.2 6.9"/><path d="M10 6.6Q11.8 6 12.8 6.4L13.8 6.8"/><path class="brand-mark-ring" d="M18.5 7.3Q19.5 5.8 19.8 5.2L20 4.5"/><path class="brand-mark-ring" d="M20.6 10.3Q21.5 9.4 22.3 8.9L23.1 8.5"/></svg><b>Trommi</b></div>
+<h1 class="op-hello" id="opening-title">Opening <em>Trommi.</em></h1>
+<p class="op-step" id="opening-step" role="status">Loading the app</p>
+<div class="op-bar" aria-hidden="true"><i id="opening-bar"></i></div>
+<ol class="op-rows" aria-hidden="true"><li><i></i><b></b><b></b></li><li><i></i><b></b><b></b></li><li><i></i><b></b><b></b></li><li><i></i><b></b><b></b></li></ol>
+</div></div>
 </main>
 </body>
 </html>

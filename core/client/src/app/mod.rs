@@ -34,6 +34,7 @@ mod selfjoin;
 mod kit;
 mod shared;
 mod import;
+mod start;
 pub use shared::SHARED_FILE;
 pub mod script;
 pub mod sim;
@@ -2044,6 +2045,7 @@ impl App {
             }
         }
         self.account_extras();
+        self.start_status();
         let delta = if !self.rendered_once {
             self.rendered_once = true;
             let mut whole = self.next_view.clone();

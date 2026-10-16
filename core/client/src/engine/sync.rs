@@ -451,6 +451,8 @@ pub struct Engine {
     // the hub's order
     /// Every change at or below it was taken by the device, or passed for good.
     position: u64,
+    /// Where the position stood when the first page came: the start of this run's catching up.
+    began: Option<u64>,
     /// The items being taken, in order: a page's, or the stream's.
     todo: VecDeque<ChangeItem>,
     /// Where the position stands once `todo` is through, and whether the hub has more after it.
@@ -602,6 +604,7 @@ impl Engine {
             auth_retry: Retry::default(),
             unauthorised: 0,
             position,
+            began: None,
             todo: VecDeque::new(),
             todo_upto: position,
             todo_more: false,
@@ -687,6 +690,13 @@ impl Engine {
     /// A pass reached the hub's end at least once since this App started.
     pub fn caught_up(&self) -> bool {
         self.caught_up
+    }
+    /// How far the first pass is, while it runs and the hub named its head: changes read since its first page, of
+    /// how many up to that head.
+    pub fn catch_up(&self) -> Option<(u64, u64)> {
+        let began = self.began?;
+        let head = self.head_hint.filter(|head| !self.caught_up && *head > began)?;
+        Some((self.position.clamp(began, head) - began, head - began))
     }
     /// From where the room's order is to be read once more, if it is (the seam to the reading of the past).
     pub fn reread_from(&self) -> Option<u64> {
@@ -1354,6 +1364,7 @@ impl Engine {
             Ok(Answer::Changes(page)) => {
                 self.order_retry.ok();
                 self.page_limit = (self.page_limit * 2).min(PAGE);
+                self.began.get_or_insert(self.position);
                 self.head_hint = page.head;
                 self.todo_upto = page.change;
                 self.todo_more = page.more;

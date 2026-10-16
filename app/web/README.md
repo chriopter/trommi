@@ -302,7 +302,17 @@ page. A holder answers a probe through its page; after one second without an ans
 the lock. Explicit “Use it here” also requests takeover. The binding fences the revoked store and aborts its
 unfinished writes before notifying its worker to stop. Page exit terminates its worker; a restored back/forward
 page reloads before using the device. No stored device, keys or cache are deleted to recover ownership.
-The busy/taken screens use the account page's fonts, paper and full-width frame; browser checks assert their
+**The start.** Until the core has something of the room to draw, `index.html` shows a quiet outline of the Desk
+(`#trommi-opening`: the sidebar's paper with three piles, the greeting "Opening *Trommi.*" in the display face with
+the pen underline, faint rows). Its one line is the core's own (`ViewModel.status` while it starts and opens:
+"Unlocking this device", "Loading your Desk", "Catching up: 120 of 480", "Almost there", with `args` step of steps
+and done of total; `core/client/src/app/start.rs`); before the core runs it says "Loading the app". One thin bar
+under it shows how far along the start is (a slow stroke to and fro until the core names a step). The outline goes
+once the core is past its start and the board this device kept is read (`app.mjs` `startDone`); while the room still
+opens a 2 px line at the window's top goes on until it is open. The two faces it paints in (Bricolage Grotesque,
+IBM Plex Sans; latin) are preloaded and `fonts/fonts.css` is part of the stylesheet bundle, so it is in Trommi's
+type from the first paint, not in the fallbacks. A start that takes over 30 s shows a quiet note with Reload and goes
+on. The busy/taken screens ("Trommi is open in another tab") use the same frame; browser checks assert their
 computed fonts and geometry, and every demo screen must retain the Trommi stylesheet.
 
 The browser driver starts Chrome once and waits up to 30 seconds for its debugging port; it does not retry a
