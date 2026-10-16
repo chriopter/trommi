@@ -80,8 +80,9 @@ final class ShellStore {
       var entries: [[String: Any]] = []
       for key in keys { if let value = try get(key) { entries.append(["key": key, "value": bytes(value)]) } }
       answer = ["answer": "entries", "entries": entries]
-    case "put":
-      for key in op["delete"] as? [String] ?? [] { let u = file(key); if FileManager.default.fileExists(atPath: u.path) { try FileManager.default.removeItem(at: u) } }
+    case "put", "put_durable":
+      let durable = op["op"] as? String == "put_durable"
+      for key in op["delete"] as? [String] ?? [] { let u = file(key); if FileManager.default.fileExists(atPath: u.path) { try FileManager.default.removeItem(at: u); if durable { try DeviceStore.syncDirectory(u.deletingLastPathComponent()) } } }
       for entry in op["put"] as? [[String: Any]] ?? [] {
         guard let key = entry["key"] as? String else { throw TrommiError("bad-format") }
         let nonce = try LocalKey.random(12)
@@ -89,6 +90,12 @@ final class ShellStore {
         try FileManager.default.createDirectory(at: file(key).deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try Data(sealed).write(to: file(key), options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file(key).path)
+        if durable {
+          try DeviceStore.syncFile(file(key))
+          var folder = file(key).deletingLastPathComponent()
+          while folder.path != dir.path { try DeviceStore.syncDirectory(folder); folder.deleteLastPathComponent() }
+          try DeviceStore.syncDirectory(dir)
+        }
       }
     default: throw TrommiError("bad-format")
     }

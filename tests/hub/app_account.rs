@@ -254,3 +254,29 @@ fn an_account_is_made_with_a_passkey_alone() {
     signs_in_with(&hub, key, AccountAction::SignInWithPasskey { hub: None });
     signs_in(&hub, AccountAction::SignInWithKit { email: login.account.clone(), words: secret(&words), hub: None });
 }
+
+#[test]
+fn logout_after_a_real_password_sign_in_is_retired_by_another_apps_verified_commit() {
+    let hub = TestHub::start();
+    let mut keeper = slot(&hub, std::rc::Rc::new(Authenticator::new()));
+    account(&mut keeper, AccountAction::Found { email:EMAIL.into(), password:secret("isolated logout fixture"), hub:None });
+    kit(&mut keeper);
+    until(&mut keeper, "founder live", |s| s.view.phase == Phase::Live);
+    let mut leaving = slot(&hub, std::rc::Rc::new(Authenticator::new()));
+    account(&mut leaving, AccountAction::SignIn { email:EMAIL.into(), password:secret("isolated logout fixture"), hub:None });
+    until(&mut leaving, "second device live", |s| s.view.phase == Phase::Live || s.view.account.problem.is_some());
+    assert_eq!(leaving.view.phase, Phase::Live, "{:?}", leaving.view.account.problem);
+    let device = leaving.app.engine().unwrap().device().id();
+    let room = leaving.app.engine().unwrap().room();
+    catch_up(&mut keeper);
+    assert!(keeper.app.engine().unwrap().roles().0.contains(&device));
+    account(&mut leaving, AccountAction::SignOut);
+    assert_eq!(leaving.view.phase, Phase::SignedOut);
+    assert!(leaving.app.engine().is_none() && leaving.device.1.is_empty() && leaving.cache.is_empty());
+    let active: bool = hub.app.db.read(|c| c.query_row("SELECT removed_epoch IS NULL FROM devices WHERE room_id=?1 AND device=?2", rusqlite::params![room.as_bytes().as_slice(),device.as_bytes().as_slice()], |r| r.get(0))).unwrap();
+    assert!(active, "the server has accepted the public intent but has no authority to remove a human");
+    catch_up(&mut keeper);
+    until(&mut keeper, "the keeper commits the signed-out device removal", |s| !s.app.engine().unwrap().roles().0.contains(&device));
+    let removed: bool = hub.app.db.read(|c| c.query_row("SELECT removed_epoch IS NOT NULL FROM devices WHERE room_id=?1 AND device=?2", rusqlite::params![room.as_bytes().as_slice(),device.as_bytes().as_slice()], |r| r.get(0))).unwrap();
+    assert!(removed, "the real hub accepted the human app's checked Cut/removal Commit");
+}

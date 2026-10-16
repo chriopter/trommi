@@ -70,7 +70,7 @@ struct SettingsScreen: View {
       }
       Section("Devices") {
         ForEach(shell.view.settings.devices, id: \.id) { device in
-          VStack(alignment: .leading) { Text(device.name); Text(device.says.en).font(Face.text(12)); Text(device.fingerprint).font(Face.mono(11)).textSelection(.enabled) }
+          VStack(alignment: .leading) { Text(device.name); Text(device.says.en).font(Face.text(12)); Text(device.fingerprint).font(Face.mono(11)).textSelection(.enabled); if let seen = device.seen { Text(seen.en).font(Face.text(12)) } }
           Button("Remove", role: .destructive) { shell.account(["step": "remove_devices", "device_ids": [device.id]]) }
         }
       }

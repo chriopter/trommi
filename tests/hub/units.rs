@@ -2671,3 +2671,61 @@ mod tree_size {
         assert!(!refused.contains("more leaves than any group"), "{refused}");
     }
 }
+
+mod device_seen_tests {
+    use rusqlite::params;
+    use trommi_hub::{db::Db, devices, error::Refused};
+
+    #[test]
+    fn contact_times_are_private_to_the_room_persist_and_coalesce_without_reviving_devices() {
+        let dir = std::env::temp_dir().join(format!("trommi-seen-{}", trommi_hub::util::hex(&trommi_hub::util::random::<12>())));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("hub.db");
+        let db = Db::open(&path).unwrap();
+        let (room, other, device) = ([1u8; 32], [2u8; 32], [3u8; 32]);
+        db.write(|c| {
+            for r in [room, other] {
+                c.execute("INSERT INTO rooms(room_id, founded_at, room_state, recovery_signature_key, recovery_hpke_key) VALUES (?1, 0, ?2, ?2, ?2)", params![&r[..], &[0u8;32][..]])?;
+                c.execute("INSERT INTO devices(room_id, device, role, added_epoch) VALUES (?1, ?2, 'human', 0)", params![&r[..], &device[..]])?;
+            }
+            devices::touch(c, &room, &device, 100_000)?;
+            devices::touch(c, &room, &device, 130_000)?;
+            devices::touch(c, &other, &device, 150_000)?;
+            devices::touch(c, &room, &[9;32], 999_999)?;
+            Ok::<_, Refused>(())
+        }).unwrap();
+        assert_eq!(db.read(|c| devices::seen(c, &room)).unwrap(), vec![(device, 100_000)]);
+        assert_eq!(db.read(|c| devices::seen(c, &other)).unwrap(), vec![(device, 150_000)]);
+        let agent = [4u8; 32];
+        db.write(|c| {
+            c.execute("INSERT INTO devices(room_id, device, role, added_epoch) VALUES (?1, ?2, 'agent', 0)", params![&room[..], &agent[..]])?;
+            devices::touch(c, &room, &agent, 110_000)?;
+            c.execute("INSERT INTO agent_leases(room_id,device,process,generation,expires_at,hears,working,last_call_at) VALUES (?1,?2,?2,1,250000,1,1,109000)", params![&room[..], &agent[..]])?;
+            Ok::<_, Refused>(())
+        }).unwrap();
+        let snapshot = db.read(|c| devices::snapshot(c, &room, &[9;32], &[device,agent], 200_000)).unwrap();
+        assert_eq!(snapshot.len(), 2, "one row per device even with a stream, lease and contact time");
+        let agent_row = snapshot.iter().find(|r| r["device"] == trommi_hub::util::b64(&agent)).unwrap();
+        assert_eq!((agent_row["online"].as_bool(),agent_row["hears"].as_bool(),agent_row["last_seen_ms"].as_u64()),(Some(true),Some(true),Some(110_000)));
+        let offline = db.read(|c| devices::snapshot(c, &room, &device, &[], 300_000)).unwrap();
+        assert_eq!(offline.len(), 1, "self is absent from the snapshot");
+        assert_eq!(offline[0]["online"], false, "an expired lease is not presence");
+        db.write(|c| {
+            devices::touch(c, &room, &device, 160_000)?;
+            devices::touch(c, &room, &device, 1)?;
+            c.execute("UPDATE devices SET removed_epoch = 1 WHERE room_id = ?1 AND device = ?2", params![&room[..], &device[..]])?;
+            devices::touch(c, &room, &device, 900_000)?;
+            Ok::<_, Refused>(())
+        }).unwrap();
+        drop(db);
+        let again = Db::open(&path).unwrap();
+        assert_eq!(again.read(|c| devices::seen(c, &room)).unwrap(), vec![(device, 160_000), (agent, 110_000)]);
+        let revoked: bool = again.read(|c| c.query_row("SELECT removed_epoch IS NOT NULL FROM devices WHERE room_id = ?1 AND device = ?2", params![&room[..], &device[..]], |r| r.get(0))).unwrap();
+        assert!(revoked);
+        again.write(|c| c.execute("DELETE FROM devices WHERE room_id = ?1", [&room[..]])).unwrap();
+        assert!(again.read(|c| devices::seen(c, &room)).unwrap().is_empty());
+        assert_eq!(again.read(|c| devices::seen(c, &other)).unwrap(), vec![(device, 150_000)]);
+        drop(again);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}

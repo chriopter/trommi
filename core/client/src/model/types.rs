@@ -581,6 +581,9 @@ pub struct Member {
     pub is_me: bool,
     pub is_online: bool,
     pub offline_since: Option<u64>,
+    /// Activity reported by the hub; never used to decide membership or automatic removal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_seen_ms: Option<u64>,
     pub link: Option<Link>,
 }
 

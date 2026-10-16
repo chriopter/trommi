@@ -35,6 +35,8 @@ pub struct PresenceEvent {
     pub last_call_at: Option<u64>,
     #[serde(default)]
     pub offline_since: Option<u64>,
+    #[serde(default)]
+    pub last_seen_ms: Option<u64>,
 }
 
 /// A device id as the model names it (64 hex digits), from the wire's base64url of its 32 bytes or from hex.
@@ -94,6 +96,7 @@ impl Model {
             device_id: id.clone(),
             is_online: e.online,
             offline_since: if e.online { None } else { Some(e.offline_since.unwrap_or(now)) },
+            last_seen_ms: e.last_seen_ms,
             link,
         };
         let was = self.members.get(&id).map(|m| (m.is_online, m.device_role == "agent"));
@@ -118,6 +121,7 @@ impl Model {
                 device_id: m.device_id.clone(),
                 is_online: false,
                 offline_since: Some(now),
+                last_seen_ms: None,
                 link: None,
             })
             .collect();
@@ -204,12 +208,36 @@ mod tests {
         use crate::model::groups::{GroupIn, RolesIn};
         let mut m = Model::new();
         let mut c = Change::new();
-        m.apply_presence_event(&ev(D0, true, Some(true)), &mut c, 10);
+        let mut event = ev(D0, true, Some(true));
+        event.last_seen_ms = Some(8);
+        m.apply_presence_event(&event, &mut c, 10);
+        m.apply_presence_event(&ev(D0, true, None), &mut c, 11);
         assert!(!m.members.contains_key(D0));
         let room = GroupIn { group: "r".into(), session: None, leaves: vec![], disallowed: 0, archived: false, epoch: 1 };
         let roles = RolesIn { epoch: 1, humans: vec![], agents: vec![D0.into()], recovery_fingerprint: None };
         m.apply_groups(&[room], Some(&roles), &mut c);
         assert!(m.members[D0].is_online, "online as the stream said");
         assert_eq!(m.members[D0].link.as_ref().map(|l| l.hears.as_str()), Some("live"));
+        assert_eq!(m.members[D0].last_seen_ms, Some(8), "the complete snapshot's later link row keeps contact metadata");
+    }
+
+    #[test]
+    fn contact_times_never_grant_or_remove_membership_and_do_not_move_backwards() {
+        let mut m = room();
+        let mut c = Change::new();
+        let mut event = ev(D0, false, None);
+        event.last_seen_ms = Some(50);
+        m.apply_presence_event(&event, &mut c, 100);
+        assert_eq!(m.members[D0].last_seen_ms, Some(50));
+        event.last_seen_ms = Some(25);
+        m.apply_presence_event(&event, &mut c, 110);
+        assert_eq!(m.members[D0].last_seen_ms, Some(50));
+        event.last_seen_ms = Some(u64::MAX);
+        m.apply_presence_event(&event, &mut c, 120);
+        assert_eq!(m.members[D0].last_seen_ms, Some(120), "a hub cannot put the display's contact time in the future");
+        assert!(m.members[D0].is_active);
+        let mut unknown = Model::new();
+        unknown.apply_presence_event(&event, &mut c, 130);
+        assert!(unknown.members.is_empty(), "only verified groups create members");
     }
 }

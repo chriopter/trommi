@@ -4524,8 +4524,12 @@ public enum CoreView {
     public var icon: String
     /// When it joined, if known.
     public var addedMs: UInt64?
+    /// Last contact with the hub, when known. It confers no membership authority.
+    public var lastSeenMs: UInt64?
+    /// Core-formatted last-seen text for an offline device.
+    public var seen: Text?
 
-    public init(id: String = "", name: String = "", thisDevice: Bool = false, role: String = "", active: Bool = false, online: Bool = false, state: String = "", says: Text = Text(), fingerprint: String = "", icon: String = "", addedMs: UInt64? = nil) {
+    public init(id: String = "", name: String = "", thisDevice: Bool = false, role: String = "", active: Bool = false, online: Bool = false, state: String = "", says: Text = Text(), fingerprint: String = "", icon: String = "", addedMs: UInt64? = nil, lastSeenMs: UInt64? = nil, seen: Text? = nil) {
       self.id = id
       self.name = name
       self.thisDevice = thisDevice
@@ -4537,6 +4541,8 @@ public enum CoreView {
       self.fingerprint = fingerprint
       self.icon = icon
       self.addedMs = addedMs
+      self.lastSeenMs = lastSeenMs
+      self.seen = seen
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4551,6 +4557,8 @@ public enum CoreView {
       case fingerprint = "fingerprint"
       case icon = "icon"
       case addedMs = "added_ms"
+      case lastSeenMs = "last_seen_ms"
+      case seen = "seen"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4566,6 +4574,8 @@ public enum CoreView {
       self.fingerprint = try c.decodeIfPresent(String.self, forKey: .fingerprint) ?? ""
       self.icon = try c.decodeIfPresent(String.self, forKey: .icon) ?? ""
       self.addedMs = try c.decodeIfPresent(UInt64.self, forKey: .addedMs)
+      self.lastSeenMs = try c.decodeIfPresent(UInt64.self, forKey: .lastSeenMs)
+      self.seen = try c.decodeIfPresent(Text.self, forKey: .seen)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4581,6 +4591,8 @@ public enum CoreView {
       try c.encode(fingerprint, forKey: .fingerprint)
       try c.encode(icon, forKey: .icon)
       try c.encodeIfPresent(addedMs, forKey: .addedMs)
+      try c.encodeIfPresent(lastSeenMs, forKey: .lastSeenMs)
+      try c.encodeIfPresent(seen, forKey: .seen)
     }
   }
 

@@ -15,6 +15,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | **No token** | | |
 | `POST /v1/account/login` · `/recover` · `/passkey/challenge` · `/passkey/login` | see "The account" below | answers with the account's `rooms` (a list; one for now) |
 | `POST /v1/rooms` | `{ group_info, sealed_key, account? }` → `{ room_id }` | founding (5.1.1, 8.2); `room-exists`; `account`: the body of `POST /v1/account`, made in the same transaction |
+| `POST /v1/rooms/{room}/departures` | `{ device, signature }` → `{}` | public self-retirement proof: Ed25519 over `TrommiDeviceDeparture` and the canonical room/device bytes; a human app verifies membership and commits the removal, never the hub |
 | `GET /v1/rooms/{room}/challenge` | → `{ challenge }` | 12.3 |
 | `POST /v1/rooms/{room}/tokens` | `{ auth, signature }` (`auth`: the `HubAuth` bytes) → `{ token, expires_at }` | 12.3; the challenge is used up |
 | `GET /v1/invites/{invite_id}`, `POST …/request`, `GET …/reveal` | → `{ offer, signature, mac, expires_at }` (`mac` null for an invite stored before the MAC); Request + mac + signature; Reveal | by `invite_id` only (12.1); 4 requests per invite |
@@ -50,7 +51,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | `GET /v1/cards/{object}?after=&limit=` (and `/notes/`, `/permission-requests/`, `/artifacts/`) | → `{ items, more, state, owner, … }`: every envelope of the object | pruned ones in pruned form |
 | `GET /v1/groups/{group}/chains/{sender}?after=&limit=` | → envelopes in pruned form, by `seq` | chain checks (9.0.5, 10.3) |
 | `GET /v1/changes?after=&limit=[&active=1\|&group=]` | → `{ items, change, more, head }` | catch-up: everything the asker may see with a change number above `after`; `active=1` without the envelopes of archived groups, `group=` one group's envelopes alone (point 46) |
-| `GET /v1/stream?after=` | server-sent events: `envelope`, `log`, `relay`, `welcome`, `request`, `presence`, `here`, `file_evicted`, `ping` | live; resumes by change number (`after`, or `Last-Event-ID`) |
+| `GET /v1/stream?after=` | server-sent events: `envelope`, `log`, `relay`, `welcome`, `request`, `departure`, `presence`, `here`, `file_evicted`, `ping` | live; resumes by change number (`after`, or `Last-Event-ID`) |
 | **Files, shares, push, presence** | | |
 | `PUT /v1/files/{file_id}` · `GET` (with `Range`) · `DELETE` | bytes | 11; at most 67 125 269 stored bytes, which is 64 MiB of plaintext (`too-large`); `quota-exceeded` |
 | `POST /v1/shares` · `DELETE /v1/shares/{share_id}` | `{ share_id, secret_hash, file_id, expires_at }` | 11.5; `expires_at` at most 180 days ahead |
@@ -69,6 +70,8 @@ written. Catch-up is "everything above N".
 | `accounts`, `passkeys`, `account_rooms` | e-mail, login hashes, KDF record, passkey public keys; account → room | sealed copies of the code | login by e-mail |
 | `rooms` | `room_id`, `founded_at`, `change` | | |
 | `devices` | `room_id`, `device`, `role` (human, agent, helper), `added_epoch`, `removed_epoch`, per group the Cut | | role checks; "never returns" (4.2) |
+| `device_seen` | `room_id`, `device`, `at` | | last verified contact per device; cascades with membership row deletion |
+| `device_departures` | `room_id`, `device`, `signature`, `at` | | signed public retirement intent, replayed to human devices; never a membership change |
 | `key_packages` | `device`, `ref`, `last_resort`, `expires_at`, `bytes` | | claim: (`device`, `last_resort`, oldest) |
 | `groups` | `group_id`, `room_id`, `kind` (room, main, helper), `session_id`, `parent`, `epoch`, `room_epoch`, `live`, `archived_at`, `log_n`, the serialised public group | | by room |
 | `group_log` | `group_id`, `n`, `epoch`, `kind`, `bytes` (a Commit: readable; a message: opaque), `sender` (the posting device), `at`, `change` | messages | **catch up a group**: (`group_id`, `n`) |
@@ -355,12 +358,17 @@ encrypted.
     Welcomes, files and shares are read by their own routes and announced live.
 20. `GET /v1/stream` events: `envelope` and `log` carry the item of `/v1/changes` and its change number as the
     event id; `relay` `{ group_id, epoch, sender, message }`; `welcome` `{ group_id }`; `request`; `presence`
-    `{ device, online, hears?, working?, last_call_at? }`; `file_evicted` `{ file_id }`. Events without a change
+    `{ device, online, hears?, working?, last_call_at?, last_seen_ms? }`; `file_evicted` `{ file_id }`. Events without a change
     number are not replayed. A human device's new stream is first told who is here now: one `presence` per other
-    device with a stream open or an agent lease that runs, with `hears`, `working` and `last_call_at` while its agent lease runs,
+    device with a recorded contact, a stream open or an agent lease that runs, with `hears`, `working` and `last_call_at` while its agent lease runs,
     then one `here` `{}`: the list is whole, and every device it did not name is offline (a stream that was cut missed
     the `online: false` of a device that left meanwhile; the client sets such a device offline as of the `here`). A `presence`
     without `hears` says nothing of the link: the report a client holds stands while the device is online.
+    Contact times record verified sign-in and stream opening/closing, persisted at most once a minute. They
+    are activity hints only, never authority for membership or removal. `departure` carries `{ device, signature }`;
+    it is replayed to human streams until the exact device is removed. The proof cannot retire an agent,
+    helper or recovery key. Unknown keys waiting for their own in-flight join are bounded to 1000 per room
+    for one hour; they create no membership. Known human departures are independent of that queue's limit.
 21. A void record and an envelope beyond a Cut are served in pruned form; the latter only on the chain route,
     marked `cut` (not by a push ticket either). What a Cut cannot bring back stays as it is: the files of an
     Artifact whose closing version was cut are deleted.

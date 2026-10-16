@@ -57,6 +57,8 @@ pub struct DeviceReport {
     pub is_online: bool,
     #[serde(default)]
     pub offline_since: Option<u64>,
+    #[serde(default)]
+    pub last_seen_ms: Option<u64>,
     /// Absent: the report says nothing of the link (null: it says there is none).
     #[serde(
         default,
@@ -177,6 +179,7 @@ impl Model {
                 };
                 m.is_online = r.is_online;
                 m.offline_since = if r.is_online { None } else { r.offline_since };
+                m.last_seen_ms = r.last_seen_ms;
                 m.link = r.link.as_ref().and_then(clean_link);
                 self.members.insert(device_id.to_string(), m);
             }
@@ -195,6 +198,7 @@ impl Model {
                 added_entry_number: epoch,
                 removed_entry_number: None,
                 added_at: None,
+                last_seen_ms: None,
                 is_me,
                 is_online: false,
                 offline_since: None,
@@ -606,6 +610,7 @@ impl Model {
                 // its groups): its report waits for it (`member_of`), the newest one, its link kept as presence does.
                 if self.presence_held.len() < PRESENCE_HELD_MAX || self.presence_held.contains_key(&d.device_id) {
                     let mut r = d.clone();
+                    r.last_seen_ms = r.last_seen_ms.max(self.presence_held.get(&d.device_id).and_then(|h| h.last_seen_ms)).filter(|t| *t > 0).map(|t| t.min(now));
                     if r.link.is_none() && r.is_online {
                         r.link = self.presence_held.get(&d.device_id).and_then(|h| h.link.clone());
                     }
@@ -615,6 +620,9 @@ impl Model {
             };
             m.is_online = d.is_online;
             m.offline_since = if m.is_online { None } else { d.offline_since };
+            if let Some(seen) = d.last_seen_ms.filter(|t| *t > 0) {
+                m.last_seen_ms = Some(m.last_seen_ms.unwrap_or(0).max(seen.min(now)));
+            }
             if let Some(link) = &d.link {
                 m.link = clean_link(link)
             } else if !m.is_online {

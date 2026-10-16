@@ -195,6 +195,14 @@ pub enum StoreOp {
         #[serde(default)]
         delete: Vec<String>,
     },
+    /// As `Put`, but each record and its name must be durable on return. Used for public signed
+    /// logout notices, which cannot be rebuilt after their private signing key is erased.
+    PutDurable {
+        #[serde(default)]
+        put: Vec<Entry>,
+        #[serde(default)]
+        delete: Vec<String>,
+    },
     DeviceLoad,
     DeviceApply {
         expected_revision: u64,

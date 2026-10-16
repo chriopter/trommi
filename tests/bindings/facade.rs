@@ -620,8 +620,9 @@ fn the_app_core_takes_one_event_and_answers_with_its_effects() {
         .unwrap();
     let effects: serde_json::Value = serde_json::from_str(&out.json).unwrap();
     assert_eq!(effects[0]["type"], "render");
-    assert_eq!(effects[1]["op"]["op"], "device_load");
-    let id = effects[1]["id"].as_u64().unwrap();
+    let pending = effects.as_array().unwrap();
+    assert!(pending.iter().any(|e| e["op"]["op"] == "scan" && e["op"]["prefix"] == "public-departure/"));
+    let id = pending.iter().find(|e| e["op"]["op"] == "device_load").unwrap()["id"].as_u64().unwrap();
     let loaded = format!(
         r#"{{"type":"store","id":{id},"result":{{"ok":{{"answer":"device","revision":0,"entries":[]}}}}}}"#
     );

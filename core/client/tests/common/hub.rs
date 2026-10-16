@@ -203,6 +203,7 @@ pub struct Hub {
     challenges: Vec<[u8; 32]>,
     counter: u64,
     pub tokens: BTreeMap<String, (DeviceId, u64)>,
+    pub departures: BTreeMap<DeviceId, Vec<u8>>,
     /// Every request that reached the hub, as "METHOD /path?query".
     pub seen: Vec<String>,
     pub fault: Option<Fault>,
@@ -308,6 +309,7 @@ impl Default for Hub {
             challenges: Vec::new(),
             counter: 0,
             tokens: BTreeMap::new(),
+            departures: BTreeMap::new(),
             seen: Vec::new(),
             fault: None,
             recovery: None,
@@ -864,6 +866,16 @@ impl Hub {
         let method = request.method.as_str();
         // the two routes without a token
         match (method, segs.as_slice()) {
+            ("POST", ["v1", "rooms", room, "departures"]) => {
+                if *room != self.room_id().to_base64url() { return Err(no(Error::WrongRoom)); }
+                let device = DeviceId::from_slice(&bytes("device")).map_err(no)?;
+                let signature = bytes("signature");
+                trommi_core::hub_auth::verify_departure(&self.room_id(), &device, &signature).map_err(no)?;
+                if self.departures.insert(device, signature.clone()).is_none() {
+                    self.note(self.humans(), "departure", json!({"device":device.to_base64url(),"signature":b64(&signature)}));
+                }
+                return Ok(json!({}));
+            }
             ("GET", ["v1", "rooms", _, "challenge"]) => {
                 self.counter += 1;
                 let mut challenge = [0u8; 32];
@@ -1378,6 +1390,12 @@ impl Hub {
         let mut bytes = Vec::new();
         for item in self.order.iter().filter(|i| i.change() > after && !self.hidden.contains(&i.change())) {
             bytes.extend(item.sse());
+        }
+        for (departing, signature) in &self.departures {
+            if *departing != device {
+                let proof = json!({"device":departing.to_base64url(),"signature":b64(signature)});
+                bytes.extend(format!("event: departure\ndata: {proof}\n\n").as_bytes());
+            }
         }
         bytes.extend(b"event: here\ndata: {}\n\n");
         self.streaming.retain(|(d, ..)| *d != device);

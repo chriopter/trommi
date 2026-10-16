@@ -95,6 +95,16 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(app.steppers["Width"].exists)
     capture("scribble-board")
   }
+  func testDevicesShowTheCoresLastSeenText() {
+    launch("settings--devices")
+    let seen = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "last seen 2026-10-08")).firstMatch
+    for _ in 0..<8 {
+      if seen.exists { break }
+      app.swipeUp()
+    }
+    XCTAssertTrue(seen.waitForExistence(timeout: 5), "Offline devices show the core's last-contact text. " + app.debugDescription)
+    capture("devices-last-seen")
+  }
   func testComputerApprovalShowsItsPermissionAndExplicitCommand() {
     launch("settings")
     let approve = app.buttons["Approve a computer"]

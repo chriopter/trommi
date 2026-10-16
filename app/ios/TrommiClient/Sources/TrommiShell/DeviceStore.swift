@@ -372,6 +372,12 @@ public final class DeviceStore: CoreStorage {
     while fsync(fd) != 0 { if errno != EINTR { throw StoreError.failed("sync: errno \(errno)") } }
   }
   /** A new or renamed name is durable once its folder is synced. */
+  static func syncFile(_ file: URL) throws {
+    var fd = open(file.path, O_RDONLY | O_NOFOLLOW)
+    guard fd >= 0 else { throw StoreError.failed("file sync: errno \(errno)") }
+    defer { closeFd(&fd) }
+    try sync(fd)
+  }
   static func syncDirectory(_ dir: URL) throws {
     var fd = open(dir.path, O_RDONLY)
     guard fd >= 0 else { throw StoreError.failed("folder sync: errno \(errno)") }

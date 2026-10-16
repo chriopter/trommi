@@ -193,6 +193,19 @@ pub fn sign(
     Ok(SignedHubAuth { auth, signature })
 }
 
+/// An irrevocable, public request to retire this device key. Human membership must still be checked by
+/// the receiver, which makes the ordinary room removal Commit; the hub cannot authorize removal.
+pub fn sign_departure(key: &SigningKey, room: &RoomId) -> Result<Vec<u8>, Error> {
+    crypto::sign_with_label(key, trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
+        &trommi_wire::signin::departure_content(room.as_bytes(), &key.public()))
+}
+
+/// Checks only the signature and its exact room/device binding, not membership or removal status.
+pub fn verify_departure(room: &RoomId, device: &DeviceId, signature: &[u8]) -> Result<(), Error> {
+    crypto::verify_with_label(device.as_bytes(), trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
+        &trommi_wire::signin::departure_content(room.as_bytes(), device.as_bytes()), signature)
+}
+
 /// Hub side: checks a posted sign-in against the room it was posted for, the hub's own address and the challenge
 /// it issued, and returns the key that signed it. In this order: `bad-format` (not a `HubAuth`), `wrong-room`,
 /// `unauthorised` (the sign-in names another hub), `bad-challenge` (another challenge, or one that ran out),
@@ -224,4 +237,25 @@ pub fn verify(
         &signed.signature,
     )?;
     Ok(auth.device)
+}
+
+#[cfg(test)]
+mod departure_tests {
+    use super::*;
+
+    #[test]
+    fn departure_is_bound_to_its_room_its_own_key_and_its_signature_domain() {
+        let key = SigningKey::from_seed(crypto::Secret::new([7; 32]));
+        let device = DeviceId::new(key.public());
+        let room = RoomId::new([1; 32]);
+        let signature = sign_departure(&key, &room).unwrap();
+        verify_departure(&room, &device, &signature).unwrap();
+        assert!(verify_departure(&RoomId::new([2; 32]), &device, &signature).is_err());
+        let other = DeviceId::new(SigningKey::from_seed(crypto::Secret::new([8; 32])).public());
+        assert!(verify_departure(&room, &other, &signature).is_err());
+        let content = trommi_wire::signin::departure_content(room.as_bytes(), device.as_bytes());
+        let other_domain = crypto::sign_with_label(&key, LABEL, &content).unwrap();
+        assert!(verify_departure(&room, &device, &other_domain).is_err());
+        assert!(verify_departure(&room, &device, &signature[..63]).is_err());
+    }
 }

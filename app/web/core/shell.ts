@@ -23,7 +23,7 @@ export interface DeviceSpace {
 export interface CacheSpace {
   get(keys: string[]): Promise<(Uint8Array | null)[]>
   scan(prefix: string): Promise<{ key: string; value: Uint8Array }[]>
-  put(put: { key: string; value: Uint8Array }[], remove: string[]): Promise<void>
+  put(put: { key: string; value: Uint8Array }[], remove: string[], durable?: boolean): Promise<void>
 }
 /** What only the page can do. */
 export interface ShellHost {
@@ -263,9 +263,9 @@ export class CoreShell {
           const out: Uint8Array[] = []
           return { result: { ok: { answer: 'entries', entries: entries.map(e => ({ key: e.key, value: out.push(e.value) - 1 })) } }, blobs: out }
         }
-        case 'put': {
+        case 'put': case 'put_durable': {
           const put = ((op['put'] as { key: string; value: number }[] | undefined) ?? []).map(e => ({ key: e.key, value: blobs[e.value]! }))
-          await this.cache.put(put, (op['delete'] as string[] | undefined) ?? [])
+          await this.cache.put(put, (op['delete'] as string[] | undefined) ?? [], kind === 'put_durable')
           return { result: { ok: { answer: 'done' } }, blobs: [] }
         }
         default: throw Object.assign(new Error(`a store op this shell does not know: ${kind}`), { kind: 'failed' })

@@ -180,3 +180,24 @@ fn a_password_signin_resumes_unfinished_sessions_on_its_existing_room_leaf() {
     assert_eq!(sim.app.engine().unwrap().device().id(), id);
     no_secret_shown(&sim, &words);
 }
+
+#[test]
+fn cancelling_before_the_login_answer_prevents_a_late_answer_creating_a_device() {
+    let world = World::new();
+    with_account(&world);
+    let before = world.hub.borrow().humans();
+    let mut sim = blank(&world, common::hub::HUB_URL);
+    sim.hold = true;
+    act(&mut sim, AccountAction::SignIn { email:EMAIL.into(), password:Secret(PASSWORD.into()), hub:None });
+    assert!(sim.app.engine().is_none() && !sim.held.is_empty());
+    act(&mut sim, AccountAction::SignOut);
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    sim.hold = false;
+    while let Some((id, request)) = sim.held.pop_front() {
+        let answer = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, answer);
+    }
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert!(sim.app.engine().is_none() && sim.device.1.is_empty() && sim.cache.is_empty());
+    assert_eq!(world.hub.borrow().humans(), before);
+}

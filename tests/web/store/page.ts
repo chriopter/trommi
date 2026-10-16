@@ -400,7 +400,16 @@ const tests: [string, () => Promise<void>][] = [
     same([(await c.range('a/')).map(([k]) => k), await second.get('a/9')], [['a/2', 'a/4'], undefined], 'nothing of it')
     await c.set('a/5', 5, { durable: true })
     same(await second.get('a/5'), 5, 'a durable set')
+    await c.setMany([['public-departure/a', new Uint8Array([1, 2, 3])], ['a/5', undefined]], { durable: true })
     c.close(); second.close()
+    const reopened = await openCache(name)
+    same(Array.from(await reopened.get('public-departure/a') as Uint8Array), [1, 2, 3], 'a durable batch survives reopening')
+    same(await reopened.get('a/5'), undefined, 'the durable batch deletion survives reopening')
+    await reopened.setMany([['public-departure/a', undefined]], { durable: true })
+    reopened.close()
+    const deleted = await openCache(name)
+    same(await deleted.range('public-departure/'), [], 'the public notice deletion survives reopening')
+    deleted.close()
     same((await refused(() => c.get('a'), 'a closed cache')).code, 'storage-failed', 'closed')
   }],
 

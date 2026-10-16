@@ -78,6 +78,8 @@ fn row_of(d: &Member) -> DeviceRow {
         fingerprint: fingerprint_of(d),
         icon: icon_of(d).into(),
         added_ms: d.added_at,
+        last_seen_ms: d.last_seen_ms,
+        seen: None,
     }
 }
 
@@ -290,6 +292,11 @@ pub fn settings(b: &Board) -> SettingsView {
     people.sort_by_key(|d| (d.added_entry_number, !d.is_me, d.device_id.clone()));
     let device_row = |d: &Member| {
         let mut row = row_of(d);
+        row.seen = d.last_seen_ms.filter(|_| !row.online).map(|t| {
+            let at = super::words::local(t, b.lens.utc_offset_min);
+            let when = format!("{:04}-{:02}-{:02} {:02}:{:02}", at.year, at.month, at.day, at.hour, at.minute);
+            say("device.last_seen", format!("last seen {when}"), &[("when", &when)])
+        });
         if computers.contains_key(d.device_id.as_str()) {
             let host = d.host.as_str().filter(|s| !s.is_empty());
             row.name = host.map_or_else(|| "This computer".into(), |h| format!("This computer: {h}"));
@@ -462,5 +469,18 @@ mod tests {
     fn a_fingerprint_without_one_is_the_ids_head_in_fours() {
         let d: Member = serde_json::from_value(member("0123456789abcdefXYZ", "", "human", 0)).unwrap();
         assert_eq!(fingerprint_of(&d), "0123 4567 89ab cdef");
+    }
+
+    #[test]
+    fn offline_contact_times_are_words_from_the_core_in_the_persons_zone() {
+        let mut m = crate::model::Model::new();
+        m.members.insert("phone".into(), Member { device_id: "phone".into(), device_name: "Phone".into(), device_role: "human".into(), is_active: true, last_seen_ms: Some(60_000), ..Default::default() });
+        let lens = Lens { utc_offset_min: 120, ..Default::default() };
+        let view = settings(&Board::new(&m, &lens, 100_000));
+        assert_eq!(view.devices[0].last_seen_ms, Some(60_000));
+        assert_eq!(view.devices[0].seen.as_ref().unwrap().en, "last seen 1970-01-01 02:01");
+        m.members.get_mut("phone").unwrap().is_online = true;
+        let view = settings(&Board::new(&m, &lens, 100_000));
+        assert!(view.devices[0].seen.is_none(), "an online status does not show an old contact time");
     }
 }

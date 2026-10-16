@@ -24,6 +24,7 @@ pub mod event;
 pub mod io;
 mod invites;
 mod account_steps;
+mod departures;
 mod account_change;
 mod desks;
 mod outside;
@@ -69,6 +70,10 @@ const INVITE_REQUESTS_MAX: usize = 64;
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Pending {
     DeviceLoad,
+    DepartureLoad,
+    DepartureSave(String),
+    DepartureHttp(String, crate::hub::Expect),
+    DepartureDelete(String),
     /// A cache entry deleted (a file the hub evicted): nothing waits for it.
     CacheDelete,
     /// The stored room's hub, read at the start when `Config.hub` names none ([`ROOM_KEY`]).
@@ -127,6 +132,8 @@ pub struct App {
     jitter: Jitter,
     /// The sync engine, once the stored device opened.
     engine: Option<Engine>,
+    departures: departures::Departures,
+    logout_requested: bool,
     /// The timer the shell holds.
     timer: Option<u64>,
     /// What the engine reported for the person (until the views show them: W4).
@@ -225,6 +232,8 @@ impl App {
             rendered_once: false,
             jitter: Jitter::new(0),
             engine: None,
+            departures: Default::default(),
+            logout_requested: false,
             timer: None,
             alerts: Vec::new(),
             sessions_not_joined: None,
@@ -794,6 +803,7 @@ impl App {
     /// One event in, the effects out. `now_ms` is the shell's clock (ms since 1970).
     pub fn handle(&mut self, now_ms: u64, event: Event) -> Vec<Effect> {
         let mut out = Vec::new();
+        if !self.departure_event(now_ms, &event) {
         match event {
             Event::Start { config } => {
                 if self.config.is_some() {
@@ -823,6 +833,7 @@ impl App {
                         self.render(&mut out);
                         return out;
                     }
+                    self.start_departures(&mut out);
                     self.next_view.phase = Phase::Starting;
                     let id = self.io(Pending::DeviceLoad);
                     out.push(Effect::Store {
@@ -838,6 +849,7 @@ impl App {
                 },
                 Some(Pending::Wipe) => {
                     if let IoResult::Ok(StoreAnswer::Entries { entries }) = result {
+                        self.departure_entries(&entries, now_ms);
                         self.wipe_cache(entries.into_iter().map(|e| e.key).collect(), &mut out);
                     }
                 }
@@ -901,6 +913,7 @@ impl App {
                 },
                 // (a cache entry that stays is only a cache entry: the hub no longer serves the file)
                 Some(Pending::CacheDelete) => {}
+                Some(Pending::DepartureLoad | Pending::DepartureSave(_) | Pending::DepartureHttp(_, _) | Pending::DepartureDelete(_)) => {}
                 None if self.cache.is_some() && self.cached(now_ms, id, &result, &mut out) => {}
                 None => {
                     let mine = self.with_engine(now_ms, &mut out, |engine, ctx| {
@@ -1037,6 +1050,7 @@ impl App {
                 }
             }
             Event::Foreground => {
+                self.departures.hurry();
                 self.outside_front(Some(true), false);
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_foreground(ctx));
                 // (one that gave up on its stored state tries again when the person comes back)
@@ -1050,6 +1064,7 @@ impl App {
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_background(ctx));
             }
             Event::Net { online } => {
+                if online { self.departures.hurry(); }
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_net(ctx, online));
             }
             // (a push that reached the app: what it rang for is read, as when the app comes to the front)
@@ -1058,6 +1073,9 @@ impl App {
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_foreground(ctx));
             }
         }
+        }
+        self.resume_departure(now_ms, &mut out);
+        self.drive_departures(now_ms, &mut out);
         if self.demo {
             if self.view_wake.is_some_and(|at| now_ms >= at) {
                 self.stale_views = true;
@@ -1691,6 +1709,8 @@ impl App {
     /// What the engine reported since the last event: the phase, the alerts, the timer.
     fn after_engine(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
         let Some(engine) = self.engine.as_mut() else {
+            let wake = self.config.as_ref().and_then(|_| self.departures.wake());
+            if wake != self.timer { self.timer = wake; out.push(Effect::Timer { at_ms:wake }); }
             return;
         };
         let mut fed = false;
@@ -1988,7 +2008,7 @@ impl App {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [self.past.wake(), engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.desks.wake(now_ms), self.notes_wake().map(|at| at.max(now_ms + 1))].into_iter().flatten().min();
+        let wake = [self.past.wake(), engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.desks.wake(now_ms), self.notes_wake().map(|at| at.max(now_ms + 1)), self.departures.wake()].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });
