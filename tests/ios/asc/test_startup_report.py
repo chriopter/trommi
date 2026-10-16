@@ -42,15 +42,22 @@ class StartupReportTests(unittest.TestCase):
                 kwargs['stdout'].write('com.trommi.ios: 7\n'); kwargs['stdout'].flush()
                 finish = clock() + .25
                 return Mock(poll=lambda: None if clock() < finish else 0, wait=lambda **kw: 0)
-            value = report.measure_launch('isolated-sim', Path('/fixture'), path, Path(folder) / 'launch.log', clock, clock.sleep, launch)
+            value = report.measure_launch('isolated-sim', Path('/fixture'), path, Path(folder) / 'launch.log', clock, clock.sleep, launch, wall=lambda:1000 + clock(), born=lambda pid:1000.1)
             self.assertAlmostEqual(value['launch_to_desk_ms'], 750)
+            self.assertAlmostEqual(value['process_to_desk_ms'], 656)
             self.assertGreaterEqual(value['simctl_total_ms'], 1000)
             report.validate_report(value, 290, 2000)
 
     def test_wrong_rows_over_budget_and_impossible_time_are_refused(self):
         for rows, desk, wall in [(289, 600, 750), (290, 600, 2001), (290, 800, 750), (290, 0, 750)]:
             with self.subTest(rows=rows, desk=desk, wall=wall), self.assertRaises(AssertionError):
-                report.validate_report({'rows': rows, 'desk_ms': desk, 'launch_to_desk_ms': wall}, 290, 2000)
+                report.validate_report({'rows': rows, 'desk_ms': desk, 'process_to_desk_ms': wall, 'launch_to_desk_ms': wall}, 290, 2000)
+
+    def test_tool_setup_is_reported_separately_from_the_process_startup_budget(self):
+        value = {'rows':290, 'desk_ms':600, 'process_to_desk_ms':750, 'launch_to_desk_ms':4000}
+        report.validate_report(value, 290, 2000)
+        value['process_to_desk_ms'] = 2001
+        with self.assertRaises(AssertionError): report.validate_report(value, 290, 2000)
 
     def test_other_or_ambiguous_launches_are_refused(self):
         for text in ['another.app: 7', 'com.trommi.ios: 0', 'com.trommi.ios: 7\ncom.trommi.ios: 8']:
