@@ -413,9 +413,11 @@ struct AgentMark: View {
   let mark: String
   var size: CGFloat = 26
   var crowned = false
+  /** Its colour (Pen.hueFor); nil draws it in the bell's green. */
+  var hue: Int? = nil
   var body: some View {
     ZStack(alignment: .topLeading) {
-      PenMark(doc: PenStore.mark(mark), inks: PenInks(stroke: Ink.accent)).frame(width: size, height: size)
+      PenMark(doc: PenStore.mark(mark), inks: PenInks(stroke: hue.map { Tone.mark($0) } ?? Ink.accent)).frame(width: size, height: size)
       if crowned { PenMark("crown").frame(width: size * 0.62, height: size * 0.45).offset(x: -size * 0.12, y: -size * 0.3) }
     }.frame(width: size, height: size)
   }

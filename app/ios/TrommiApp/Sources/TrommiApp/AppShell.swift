@@ -16,6 +16,8 @@ enum NativeTab: Equatable { case chat, desk }
   @Published var screen = CoreView.Screen.desk
   @Published var path: [CoreView.Screen] = []
   @Published var tab = NativeTab.desk
+  /** The note lies over the page he came from (the iPhone's yellow page, a sheet on a wide window). */
+  @Published var noteOpen = false
   @Published var files: [String: Data] = [:]
   @Published var saved: SavedFile?
   @Published var isDemo = false
@@ -55,10 +57,10 @@ enum NativeTab: Equatable { case chat, desk }
     } catch { platformError = "The encrypted device store could not be opened." }
   }
   func enterDemo() {
-    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; path = []; tab = .desk; await start(demo: true) }
+    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; path = []; tab = .desk; noteOpen = false; await start(demo: true) }
   }
   func leaveDemo() {
-    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; path = []; tab = .desk; await start() }
+    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; path = []; tab = .desk; noteOpen = false; await start() }
   }
   static var platform: String {
     #if os(macOS)
@@ -83,10 +85,13 @@ enum NativeTab: Equatable { case chat, desk }
   }
   func account(_ action: [String: Any]) { act(["do": "account", "action": action]) }
   func focus(_ screen: CoreView.Screen, desk: String? = nil) {
+    if screen == .notes { path = []; noteOpen = true; show(screen, desk: desk); return }
+    noteOpen = false
     if screen == .desk { path = []; tab = .desk }
     else if path.last != screen { path.append(screen) }
     show(screen, desk: desk)
   }
+  func closeNote() { guard noteOpen else { return }; noteOpen = false; show(path.last ?? .desk) }
   func show(_ screen: CoreView.Screen, desk: String? = nil) {
     self.screen = screen
     let focus = CoreView.Focus(screen: screen, visible: true, desk: desk ?? view.sidebar.desk)
@@ -108,7 +113,7 @@ enum NativeTab: Equatable { case chat, desk }
         let delta = try Spent.time("view.decode") { try JSONDecoder().decode(CoreView.ViewDelta.self, from: JSONSerialization.data(withJSONObject: e["delta"]!)) }
         try Spent.time("view.fold") { try view.apply(delta) }
         if NativeDemo.measuring { NativeDemo.foldedAt = (ProcessInfo.processInfo.systemUptime - NativeDemo.launchStart) * 1000 }
-        if view.phase == .signedOut { files = [:]; saved = nil; screen = .desk; path = []; tab = .desk }
+        if view.phase == .signedOut { files = [:]; saved = nil; screen = .desk; path = []; tab = .desk; noteOpen = false }
         if !isDemo { NativeServices.shared.draw(view) }
       } catch { platformError = "The view update was out of order." }
     case "file_ready": if let id = e["file_id"] as? String { files[id] = try? packet.bytes(e["bytes"]) }

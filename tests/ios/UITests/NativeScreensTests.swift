@@ -23,12 +23,16 @@ final class NativeScreensTests: XCTestCase {
     app = XCUIApplication()
     app.launchEnvironment["TROMMI_TEST_HUB"] = "http://127.0.0.1:18874"
     app.launch()
-    let email = app.textFields["E-mail or account"]
-    XCTAssertTrue(email.waitForExistence(timeout: 20), app.debugDescription)
+    let login = app.buttons["way-login"]
+    XCTAssertTrue(login.waitForExistence(timeout: 20), app.debugDescription)
+    capture("real-signin-start")
+    login.tap()
+    let email = app.textFields["account-email"]
+    XCTAssertTrue(email.waitForExistence(timeout: 10), app.debugDescription)
     email.tap(); email.typeText(try XCTUnwrap(account["email"]))
-    let password = app.secureTextFields["Password"]
+    let password = app.secureTextFields["account-password"]
     password.tap(); password.typeText(try XCTUnwrap(account["password"]))
-    app.buttons["Sign in"].tap()
+    app.buttons["account-submit"].tap()
     let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).firstMatch
     XCTAssertTrue(row.waitForExistence(timeout: 90), "Real sign-in must render the seeded Desk, not an empty page. " + app.debugDescription)
     XCTAssertFalse(row.label.isEmpty)
@@ -39,17 +43,19 @@ final class NativeScreensTests: XCTestCase {
     row.tap()
     XCTAssertTrue(app.staticTexts["card-title"].waitForExistence(timeout: 15))
     capture("real-signin-card")
-    app.navigationBars.buttons["Back"].tap()
+    app.buttons["back"].tap()
     XCTAssertTrue(app.buttons["tab-chat"].waitForExistence(timeout: 10))
     app.buttons["tab-chat"].tap()
     let chat = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).firstMatch
     XCTAssertTrue(chat.waitForExistence(timeout: 10))
     chat.tap()
     XCTAssertTrue(app.staticTexts["talk-message"].firstMatch.waitForExistence(timeout: 15))
-    app.navigationBars.buttons["Back"].tap()
+    capture("real-signin-chat")
+    app.buttons["back"].tap()
+    XCTAssertTrue(app.buttons["tab-note"].waitForExistence(timeout: 10))
     app.buttons["tab-note"].tap()
     XCTAssertTrue(app.buttons["Keep in Note"].waitForExistence(timeout: 10))
-    app.navigationBars.buttons["Back"].tap()
+    capture("real-signin-note")
     app.buttons["tab-desk"].tap()
     XCTAssertTrue(row.waitForExistence(timeout: 10))
     app.terminate(); app.launch()
