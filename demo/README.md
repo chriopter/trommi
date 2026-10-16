@@ -4,16 +4,16 @@ The room every Trommi client shows as its demo (`?mock=1` on the web), and the l
 app's review page `/screens` walks through. **All of it is made up**: no real room, account, person or address is in
 here, and none may be added.
 
-The room is a made-up plant-care company, Fernly, at the end of a launch week. It has two desks, "main" (Fernly: the
+The room is a made-up plant-care company, Fernly, at the end of a launch week. It has two teams, "main" (Fernly: the
 website, the iOS app, the design system) and "platform" (Platform: payments, the data pipeline, infrastructure, the
 docs), each with its goals. On them work seven main sessions (two of them Codex) with 31 helpers, 2 to 8 each, all
 with plain names ("Fernly Website", "Push Reminders"); each session has its conversation, some with work trails, notes
 and artifacts in it. There are 52 cards: 31 open (yes/no, two and three options with pictures, multiple choice,
 sections, a table, every urgency, two handed back to their agent), and answered, closed, settled, read, shredded,
 withdrawn and merged ones; 14 artifacts, two permission requests already answered, the corner note, a Scribble Board
-per desk and one for All desks, and the 40 pictures, pages and files they name. The Desk is meant to look inviting:
+per team (and one of the view of every team at once, which is gone), and the 40 pictures, pages and files they name. The Desk is meant to look inviting:
 one blocking card, one that knocks, then design and product choices with pictures (oldest first), the plain
-questions after them and the reports last. `/screens` lists the states of the account screens, the Desk on each desk, chats, cards,
+questions after them and the reports last. `/screens` lists the states of the account screens, the Desk on each team, chats, cards,
 Settings and the Scribble Board.
 
 ```
@@ -39,7 +39,7 @@ demo/
 | `cards` | the decision and info cards, each with its versions and answers |
 | `permissions`, `notes`, `published` | waiting permission requests, the corner note, published artifacts |
 | `timelines` | the conversations (`chat:session/<device>`, `chat:card/<object>`) and the Scribble Boards (`scribble:desk/<id>`) |
-| `human` | the human registers: `drafts`, `snoozes`, `ducks`, `crown`, `desks`, `session_settings` |
+| `human` | the human registers: `drafts`, `snoozes`, `ducks`, `crown`, `desks` (the teams), `session_settings` |
 
 An attachment names its file as `url: "/demo/files/<name>"`; the file is `data/files/<name>`.
 

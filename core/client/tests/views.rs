@@ -98,10 +98,7 @@ fn the_demo_rooms_cards() {
 #[test]
 fn the_demo_rooms_notes_and_settings() {
     let (m, now) = demo_room();
-    for (file, team) in [("demo-notes.json", None)] {
-        let lens = lens(team);
-        golden(file, &notes::notes(&Board::new(&m, &lens, now)));
-    }
+    golden("demo-notes.json", &notes::notes(&Board::new(&m, &lens(None), now)));
     let lens = lens(None);
     golden("demo-settings.json", &settings::settings(&Board::new(&m, &lens, now)));
 }
