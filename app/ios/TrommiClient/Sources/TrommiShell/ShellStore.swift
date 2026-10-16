@@ -28,6 +28,11 @@ final class ShellStore {
     let fresh = !FileManager.default.fileExists(atPath: state.path)
     let locked = try DeviceStore(directory: state, key: LocalKey.random(32))
     do {
+      // No state folder: nothing of a device is here (a first start, or the app deleted and installed again, whose
+      // Keychain items outlive it). A key and anchor left from before would refuse the new, empty state for ever
+      // ("older than this device's last known one"): they go, under the state's lock, and the new state gets a new
+      // key, so an old log put back later never opens.
+      if fresh { LocalKey.wipe(dir: dir) }
       let key = try LocalKey.get("state", dir: dir, create: fresh)
       device = try locked.rekeyed(key, anchor: LocalAnchor(dir: dir))
       cacheKey = try LocalKey.get("cache", dir: dir, create: true)

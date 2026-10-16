@@ -29,6 +29,7 @@ struct RootView: View {
           Sidebar().navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360).toolbar(.hidden, for: .navigationBar)
         } detail: { stack(DeskScreen()) }
         .sheet(isPresented: noteBinding) { NavigationStack { NotesScreen() }.presentationDetents([.large]) }
+        .overlay(alignment: .top) { CoreLine() }
       } else {
         // iPhone: Chat · Desk · Note in one glass pill at the bottom. The bar shows on the two lists only: a pushed
         // screen has its own controls at the bottom. Both pages stay alive, so each keeps its scroll position.
@@ -39,6 +40,7 @@ struct RootView: View {
         .overlay { if shell.noteOpen { NotePage() .transition(.move(edge: .bottom)) } }
         .animation(.snappy, value: shell.noteOpen)
         .safeAreaBar(edge: .bottom, spacing: 0) { if shell.path.isEmpty { NativeTabPill() } })
+        .overlay(alignment: .top) { CoreLine() }
       }
     }
     .overlay { ToastHost() }
@@ -69,6 +71,22 @@ struct RootView: View {
     case .settings(let page): SettingsScreen(page: page)
     case .artifacts: ArtifactsScreen()
     case .scribble: ScribbleScreen()
+    }
+  }
+}
+
+/** The core's line over the board (`ViewModel.status`): while it opens, what it does; offline or stopped, that what
+ *  shows is what this device last had. Nothing while the core says nothing. */
+struct CoreLine: View {
+  @EnvironmentObject var shell: AppShell
+  var body: some View {
+    if let line = shell.view.status {
+      Text(line.en).font(Face.text(13, .medium)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.center)
+        .padding(.horizontal, 14).padding(.vertical, 7).glass(Capsule())
+        .padding(.horizontal, 16).padding(.top, 58)
+        .allowsHitTesting(false)
+        .accessibilityIdentifier("core-status")
+        .transition(.opacity)
     }
   }
 }
