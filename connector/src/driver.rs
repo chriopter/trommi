@@ -659,7 +659,7 @@ struct Run {
     shared: Arc<Shared>,
 }
 
-fn lock(inner: &Mutex<Inner>) -> MutexGuard<'_, Inner> {
+fn lock<T>(inner: &Mutex<T>) -> MutexGuard<'_, T> {
     inner.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -688,7 +688,8 @@ impl trommi_io::Shell for Logs {
 pub struct Driver {
     inner: Arc<Mutex<Inner>>,
     shared: Arc<Shared>,
-    handle: trommi_io::Handle,
+    handle: Mutex<Option<trommi_io::Handle>>,
+    task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     journal: Journal,
     me: DeviceId,
     room: RoomId,
@@ -802,12 +803,13 @@ impl Driver {
             inner: inner.clone(),
             shared: shared.clone(),
         };
-        let (handle, _task) = trommi_io::start(run, Logs, stores)
+        let (handle, task) = trommi_io::start(run, Logs, stores)
             .map_err(|e| Fault::new("internal", format!("the driver's loop did not start: {e}")))?;
         let driver = Arc::new(Driver {
             inner,
             shared,
-            handle,
+            handle: Mutex::new(Some(handle)),
+            task: Mutex::new(Some(task)),
             journal,
             me,
             room,
@@ -828,7 +830,9 @@ impl Driver {
 
     /// Wakes the loop: what a call asked for goes out.
     fn poke(&self) {
-        let _ = self.handle.send(Event::Foreground);
+        if let Some(handle) = lock(&self.handle).as_ref() {
+            let _ = handle.send(Event::Foreground);
+        }
     }
 
     /// Calls the engine and lets what it asked for go out.
@@ -962,6 +966,11 @@ impl Driver {
         self.shared.stopped.store(true, Ordering::SeqCst);
         self.call(|engine, ctx| engine.leave(ctx));
         let _ = self.durable().await;
+        // Dropping the queue closes streams and the storage worker. Await that closure before another
+        // computer operation can reopen the same journal; stop must not leave a detached store lock behind.
+        lock(&self.handle).take();
+        let task = lock(&self.task).take();
+        if let Some(task) = task { let _ = task.await; }
     }
 
     async fn durable(&self) -> Result<()> {

@@ -4593,6 +4593,10 @@ public enum CoreView {
     public var inviteId: String?
     /// An invite link to show as text or QR code.
     public var link: String?
+    /// Copyable instructions for this invite, chosen by the core. Contains the invite secret like `link`.
+    public var connectPrompt: String?
+    /// The corresponding Claude Code command. Contains the invite secret; never log it.
+    public var connectCommand: String?
     /// The six emoji to compare, with their words.
     public var emoji: [EmojiView]
     /// The Emergency Kit words to keep, shown once.
@@ -4614,10 +4618,12 @@ public enum CoreView {
     public var kitAccount: String?
     public var kitAddress: String?
 
-    public init(step: String = "", inviteId: String? = nil, link: String? = nil, emoji: [EmojiView] = [], kit: [String] = [], asks: [AskView] = [], problem: Text? = nil, invite: InviteView? = nil, kitDue: Bool = false, kitEmail: String? = nil, kitAccount: String? = nil, kitAddress: String? = nil) {
+    public init(step: String = "", inviteId: String? = nil, link: String? = nil, connectPrompt: String? = nil, connectCommand: String? = nil, emoji: [EmojiView] = [], kit: [String] = [], asks: [AskView] = [], problem: Text? = nil, invite: InviteView? = nil, kitDue: Bool = false, kitEmail: String? = nil, kitAccount: String? = nil, kitAddress: String? = nil) {
       self.step = step
       self.inviteId = inviteId
       self.link = link
+      self.connectPrompt = connectPrompt
+      self.connectCommand = connectCommand
       self.emoji = emoji
       self.kit = kit
       self.asks = asks
@@ -4633,6 +4639,8 @@ public enum CoreView {
       case step = "step"
       case inviteId = "invite_id"
       case link = "link"
+      case connectPrompt = "connect_prompt"
+      case connectCommand = "connect_command"
       case emoji = "emoji"
       case kit = "kit"
       case asks = "asks"
@@ -4649,6 +4657,8 @@ public enum CoreView {
       self.step = try c.decode(String.self, forKey: .step)
       self.inviteId = try c.decodeIfPresent(String.self, forKey: .inviteId)
       self.link = try c.decodeIfPresent(String.self, forKey: .link)
+      self.connectPrompt = try c.decodeIfPresent(String.self, forKey: .connectPrompt)
+      self.connectCommand = try c.decodeIfPresent(String.self, forKey: .connectCommand)
       self.emoji = try c.decodeIfPresent([EmojiView].self, forKey: .emoji) ?? []
       self.kit = try c.decodeIfPresent([String].self, forKey: .kit) ?? []
       self.asks = try c.decodeIfPresent([AskView].self, forKey: .asks) ?? []
@@ -4665,6 +4675,8 @@ public enum CoreView {
       try c.encode(step, forKey: .step)
       try c.encodeIfPresent(inviteId, forKey: .inviteId)
       try c.encodeIfPresent(link, forKey: .link)
+      try c.encodeIfPresent(connectPrompt, forKey: .connectPrompt)
+      try c.encodeIfPresent(connectCommand, forKey: .connectCommand)
       if !emoji.isEmpty { try c.encode(emoji, forKey: .emoji) }
       if !kit.isEmpty { try c.encode(kit, forKey: .kit) }
       if !asks.isEmpty { try c.encode(asks, forKey: .asks) }
@@ -4776,6 +4788,9 @@ public enum CoreView {
   /// An invite this device made, as its page shows it.
   public struct InviteView: Codable, Hashable, Sendable {
     public var inviteId: String
+    public var title: Text
+    public var notice: Text
+    public var computer: Bool
     /// "human" (a device of the person) or "agent".
     public var role: String
     /// "open" (waits for the newcomer), "confirm_code" (the emoji to compare), "adding", "joined".
@@ -4785,8 +4800,11 @@ public enum CoreView {
     /// The newcomer's name once it is known ("" before): the device's own, or the agent's session.
     public var newcomer: String
 
-    public init(inviteId: String = "", role: String = "", state: String = "", expiresMs: UInt64 = 0, newcomer: String = "") {
+    public init(inviteId: String = "", title: Text = Text(), notice: Text = Text(), computer: Bool = false, role: String = "", state: String = "", expiresMs: UInt64 = 0, newcomer: String = "") {
       self.inviteId = inviteId
+      self.title = title
+      self.notice = notice
+      self.computer = computer
       self.role = role
       self.state = state
       self.expiresMs = expiresMs
@@ -4795,6 +4813,9 @@ public enum CoreView {
 
     enum CodingKeys: String, CodingKey {
       case inviteId = "invite_id"
+      case title = "title"
+      case notice = "notice"
+      case computer = "computer"
       case role = "role"
       case state = "state"
       case expiresMs = "expires_ms"
@@ -4804,6 +4825,9 @@ public enum CoreView {
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.inviteId = try c.decode(String.self, forKey: .inviteId)
+      self.title = try c.decodeIfPresent(Text.self, forKey: .title) ?? Text()
+      self.notice = try c.decodeIfPresent(Text.self, forKey: .notice) ?? Text()
+      self.computer = try c.decodeIfPresent(Bool.self, forKey: .computer) ?? false
       self.role = try c.decode(String.self, forKey: .role)
       self.state = try c.decode(String.self, forKey: .state)
       self.expiresMs = try c.decodeIfPresent(UInt64.self, forKey: .expiresMs) ?? 0
@@ -4813,6 +4837,9 @@ public enum CoreView {
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(inviteId, forKey: .inviteId)
+      try c.encode(title, forKey: .title)
+      try c.encode(notice, forKey: .notice)
+      try c.encode(computer, forKey: .computer)
       try c.encode(role, forKey: .role)
       try c.encode(state, forKey: .state)
       try c.encode(expiresMs, forKey: .expiresMs)

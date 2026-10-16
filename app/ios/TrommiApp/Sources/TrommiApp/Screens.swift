@@ -163,7 +163,7 @@ struct DeskScreen: View {
       LazyVStack(alignment: .leading, spacing: 20) {
         if let hello = shell.view.desk.hello { Text(hello.en).font(Face.display(38)).overlay(alignment: .bottom) { PenUnderline().stroke(Ink.accent, lineWidth: 2).frame(height: 5).offset(y: 6) }.padding(.bottom, 20) }
         if let reading = shell.view.desk.reading { Text(reading.en).font(Face.text(14)).foregroundStyle(Ink.muted) }
-        if shell.view.desk.mode == "invite" { Button("Invite an agent", systemImage: "plus") { shell.account(["step": "invite_agent", "label": "", "desk": shell.view.sidebar.desk]) }.buttonStyle(.borderedProminent) }
+        if shell.view.desk.mode == "invite" { Button("Approve a computer", systemImage: "plus") { shell.account(["step": "approve_computer", "label": ""]) }.buttonStyle(.borderedProminent) }
         if let goals = shell.view.desk.goals { GoalsDrawing(goals: goals).id(goals.deskId) }
         ForEach(shell.view.desk.rows, id: \.id) { row in DeskRow(row: row) }
         if let empty = shell.view.desk.empty { VStack(spacing: 12) { Sketch("desk", color: Ink.faint).frame(width: 64, height: 64); Text(empty.en).font(Face.text(16)).foregroundStyle(Ink.muted) }.frame(maxWidth: .infinity).padding(.vertical, 40) }

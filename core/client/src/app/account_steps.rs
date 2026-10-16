@@ -105,6 +105,7 @@ impl App {
     }
 
     fn remove_devices(&mut self, now_ms: u64, device_ids: &[String], out: &mut Vec<Effect>) {
+        let device_ids = crate::machines::removal_targets(&self.board.model, device_ids);
         let Some(engine) = self.engine.as_ref() else { return };
         let (humans, agents) = engine.roles();
         let me = engine.device().id();

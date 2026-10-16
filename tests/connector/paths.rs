@@ -102,7 +102,7 @@ async fn the_update_and_usage_hints_name_commands_that_exist() {
         .expect("connect runs");
     let told = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{told}");
-    assert!(told.contains("trommi-connector connect '<invite link>'"), "{told}");
+    assert!(told.contains("computer-required") && told.contains("Approve a computer") && told.contains("connect"), "{told}");
 }
 
 /// The update card is filed in the human's language: no German words are put into the agent's mouth.
@@ -205,8 +205,7 @@ async fn folders_whose_names_slug_alike_do_not_share_keys() {
     command
         .current_dir(&other)
         .env("TROMMI_FOLDER", &other)
-        .env("TROMMI_SESSION_KEY", "another-session")
-        .env("TROMMI_SELF_JOIN", "0");
+        .env("TROMMI_SESSION_KEY", "another-session");
     let hello = json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "test", "version": "0" } });
     let mut mcp = common::process::Mcp::start_as(command, hello).await;
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -331,43 +330,17 @@ async fn reload_never_claims_a_refused_binary_was_swapped_in() {
     mcp.close().await;
 }
 
-/// Self-join refused for the cap (8 sessions of the account joined so), then the human invites the session by
-/// link: it connects with the connect tool and is on the board, no restart.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_self_join_refused_for_the_cap_then_an_invite_gets_the_session_in() {
+/// A capped activation stays off the board; a direct human invite still connects without restart.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_capped_computer_activation_can_connect_by_a_direct_invite() {
     let hub = HubProc::start().await;
-    let (mut human, seat, group) = joined_with_group(&hub).await;
-    let mut first = seat.serve().await;
-    first.ready().await;
-    let mut second = seat
-        .serve_with(&[
-            ("TROMMI_SESSION_KEY", "test-capped"),
-            ("TROMMI_SELF_JOIN_POLL_MS", "200"),
-            ("TROMMI_SELF_JOIN", "1"),
-        ])
-        .await;
-    for _ in 0..100 {
-        let (text, _) = second.call("reply", json!({ "text": "early" })).await;
-        if text.contains("one tap") {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-    human.refuse_self_join(&group, "cap").await;
-    let mut said = String::new();
-    for _ in 0..100 {
-        let (text, failed) = second.call("reply", json!({ "text": "capped?" })).await;
-        assert!(failed, "{text}");
-        if text.contains("8 sessions") {
-            said = text;
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    }
-    assert!(said.contains("invite"), "{said}");
-    let listed = second.request("tools/list", json!({})).await;
-    assert!(tool_names(&listed).contains(&"connect".to_string()), "{listed}");
-
+    let (mut human, seat, _) = joined_with_group(&hub).await;
+    let computer = seat.approve_computer(&mut human).await;
+    let mut second = seat.serve_with(&[("TROMMI_SESSION_KEY", "test-capped")]).await;
+    let activation = second.call("connect", json!({}));
+    let refuse = human.refuse_activation(&computer, "cap");
+    let ((said, failed), _) = tokio::join!(activation, refuse);
+    assert!(failed && said.contains("cap"), "{said}");
     let mut invite = human.invite(None).await;
     let link = invite.link.clone();
     let connect = second.call("connect", json!({ "link": link }));
@@ -379,5 +352,4 @@ async fn a_self_join_refused_for_the_cap_then_an_invite_gets_the_session_in() {
     assert!(!failed && said.starts_with("Check code:"), "{said}");
     second.ready().await;
     second.close().await;
-    first.close().await;
 }

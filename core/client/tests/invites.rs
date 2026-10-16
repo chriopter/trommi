@@ -156,35 +156,70 @@ fn join_link(sim: &Sim, nonce: &str) -> Option<serde_json::Value> {
 }
 
 #[test]
-fn an_agents_ask_is_refused_past_the_bounds_and_allowed_with_a_link() {
+fn only_a_human_approved_computer_gets_automatic_activation_links() {
     let mut world = World::new();
     let mut sim = world.sim();
     sim.send(start());
-    assert_eq!(sim.view.phase, Phase::Live);
-    // an ask that names no account: refused at once, without the person
-    world.agent_register("join_ask/a1", r#"{"name":"helper","folder":"~/x"}"#);
-    for _ in 0..3 {
-        world.stream(&mut sim);
-        sim.advance(500);
-    }
-    assert_eq!(join_link(&sim, "a1").map(|v| v["refused"].clone()), Some(serde_json::json!("bad-ask")));
-    // an ask with its account: the person allows it, the agent gets a link
-    world.agent_register("join_ask/b2", r#"{"name":"helper","folder":"~/x","account":"acct-1"}"#);
-    world.stream(&mut sim);
-    assert!(join_link(&sim, "b2").is_none(), "it waits for the person");
-    let asks = sim.view.account.asks.clone();
-    assert_eq!(asks.len(), 1, "only the ask that waits: {asks:?}");
-    assert_eq!((asks[0].nonce.as_str(), asks[0].folder.as_str(), asks[0].joining), ("b2", "~/x", false));
-    assert!(asks[0].says.en.starts_with("New Claude session in ~/x"), "{:?}", asks[0].says);
-    account(&mut sim, AccountAction::AnswerAsk { nonce: "b2".into(), allow: true });
-    for _ in 0..3 {
-        world.stream(&mut sim);
-        sim.advance(500);
-    }
-    let link = join_link(&sim, "b2").expect("the answer");
+    world.agent_register("join_ask/a1", r#"{"name":"helper","folder":"~/x","account":"claimed"}"#);
+    for _ in 0..3 { world.stream(&mut sim); sim.advance(500); }
+    assert!(join_link(&sim, "a1").is_none(), "an ordinary agent cannot grant computer authority");
+    assert!(sim.view.account.asks.is_empty(), "no obsolete per-session Allow prompt");
+    let sid = world.session.as_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let device = world.agent.id().as_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>();
+    world.founder_sets(&format!("session/{sid}"), &serde_json::json!({"machine":{"device":device}}).to_string());
+    for _ in 0..5 { world.stream(&mut sim); sim.advance(500); }
+    let link = join_link(&sim, "a1").expect("human grant unblocks the already pending activation");
     assert!(link["link"].as_str().is_some_and(|l| l.contains('#')), "{link}");
-    assert_eq!(world.hub.borrow().invites.len(), 1, "its Offer is at the hub");
-    assert_eq!(sim.view.account.asks.iter().map(|a| (a.nonce.as_str(), a.joining)).collect::<Vec<_>>(), [("b2", true)], "allowed: joining");
-    assert_eq!(sim.view.account.invite, None, "a self-join's invite is not the person's to see");
-    assert_eq!(sim.view.account.step, "", "the person's screen is not taken over: {:?}", sim.view.account);
+    assert_eq!(world.hub.borrow().invites.len(), 1);
+    assert!(sim.view.account.asks.iter().all(|a| a.joining));
+    assert_eq!(sim.view.account.invite, None);
+}
+
+#[test]
+fn computer_approval_is_bound_to_the_confirmed_device_by_the_human_app() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Live);
+    account(&mut sim, AccountAction::ApproveComputer { label: "Workstation".into() });
+    assert_eq!(sim.view.account.step, "invite", "{:?}", sim.view.account.problem);
+    let link = sim.view.account.link.clone().expect("the link");
+    assert!(!format!("{:?}", sim.view.account).contains(&link), "the link stays out of Debug");
+    let shown = sim.view.account.invite.clone().expect("the invite in view");
+    assert_eq!((shown.role.as_str(), shown.state.as_str()), ("agent", "open"));
+    assert!(shown.expires_ms > now(), "it ends later");
+
+    let (mut joiner, _store) = new_peer();
+    let id = newcomer_asks(&world, &mut joiner, &link);
+    sim.advance(3_100);
+    assert_eq!(sim.view.account.step, "compare_emoji", "{:?}", sim.view.account.problem);
+    assert_eq!(sim.view.account.invite.as_ref().map(|i| i.state.as_str()), Some("confirm_code"));
+    let reveal = world.hub.borrow().invites[&id].reveal.clone().expect("the Reveal was published");
+    let code = joiner.join_reveal(&reveal).expect("the code");
+    let words: Vec<String> = sim.view.account.emoji.iter().map(|e| e.word.clone()).collect();
+    assert_eq!(words, code.words().map(String::from).to_vec(), "both screens show the same emoji");
+
+    let invite_id = sim.view.account.invite_id.clone().unwrap();
+    account(&mut sim, AccountAction::ConfirmEmoji { invite_id, matches: true });
+    for _ in 0..20 {
+        world.stream(&mut sim);
+        sim.advance(1_000);
+        if sim.view.account.step == "none" {
+            break;
+        }
+    }
+    assert_eq!(sim.view.account.step, "none", "{:?}", sim.view.account);
+    let (_, agents) = sim.app.engine().unwrap().roles();
+    assert!(agents.contains(&joiner.id()), "the computer is an agent, never a human device");
+    for _ in 0..5 { world.stream(&mut sim); sim.advance(500); }
+    let device = joiner.id().as_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let model = &sim.app.board().model;
+    let (sid, session) = model.sessions.iter().find(|(_, s)| s.agent_device_id.as_deref() == Some(device.as_str())).expect("computer main session");
+    assert_eq!(trommi_client_core::machines::granted_device(model, sid), Some(device.as_str()));
+    assert_eq!(session.registers.get("machine_approved").map(|r| r.value["device"].clone()), Some(serde_json::json!(device)));
+    assert!(!sim.view.settings.devices.iter().any(|r| r.id == device && r.role == "human"));
+    let joined = sim.view.account.invite.clone().expect("the invite stays in view, joined");
+    assert_eq!((joined.state.as_str(), joined.invite_id.as_str()), ("joined", shown.invite_id.as_str()));
+    account(&mut sim, AccountAction::DropInvite { invite_id: joined.invite_id });
+    assert_eq!(sim.view.account.invite, None, "Done: it leaves the view");
 }

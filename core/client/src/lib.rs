@@ -36,6 +36,7 @@ pub mod desk_delete;
 pub mod engine;
 pub mod files;
 pub mod hub;
+pub mod machines;
 pub mod model;
 pub mod off_mind;
 pub mod plan;

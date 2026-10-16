@@ -42,7 +42,7 @@ agent-mode lease/command/removal rules.
 | `src/cache/` | Revision-bound model records and load/save plans over the shell's disposable key/value space |
 | `src/app/past.rs` | History windows, verified historical versions, transient-failure retry and lazy reads |
 | `src/files.rs`, `src/scribble/` | File lifecycle and encryption requests; board items, packed strokes and snapshots |
-| `src/account/`, `src/selfjoin.rs`, `src/seats.rs`, `src/desk_delete.rs` | Account authority, vouched joins, session founding and resumable desk deletion |
+| `src/account/`, `src/machines.rs`, `src/selfjoin.rs`, `src/seats.rs`, `src/desk_delete.rs` | Account authority, computer approval and hash-bound activation, session founding and resumable desk deletion |
 | `src/status.rs`, `src/sessions.rs`, `src/off_mind.rs` | Shared status, session and card-placement rules used by views |
 
 Code sign-in starts from the room state authenticated by the recovery code when it is current. It joins the

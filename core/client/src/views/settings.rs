@@ -17,7 +17,7 @@ use super::words::say;
 use super::{AgentSessionView, AgentView, DeviceRow, MeterView, SettingsView, Text, UsageView};
 use crate::model::types::Member;
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn name_of(d: &Member) -> String {
     if !d.device_name.is_empty() {
@@ -282,11 +282,23 @@ pub fn usage_of(acc: &Value, now: u64) -> Option<UsageView> {
 }
 
 pub fn settings(b: &Board) -> SettingsView {
-    let mut people: Vec<&Member> = b.model.members.values().filter(|d| d.device_role == "human").collect();
+    let computers: BTreeMap<&str, &str> = b.model.sessions.keys()
+        .filter(|s| crate::machines::is_computer(b.model, s))
+        .filter_map(|s| crate::machines::granted_device(b.model, s).map(|d| (d, s.as_str()))).collect();
+    let mut people: Vec<&Member> = b.model.members.values().filter(|d| d.device_role == "human" || computers.contains_key(d.device_id.as_str())).collect();
     // (of two with the same number, which a hub does not give, this device first, then by id: the same on every run)
     people.sort_by_key(|d| (d.added_entry_number, !d.is_me, d.device_id.clone()));
-    let devices: Vec<DeviceRow> = people.iter().filter(|d| d.is_active).map(|d| row_of(d)).collect();
-    let removed: Vec<DeviceRow> = people.iter().filter(|d| !d.is_active).map(|d| row_of(d)).collect();
+    let device_row = |d: &Member| {
+        let mut row = row_of(d);
+        if computers.contains_key(d.device_id.as_str()) {
+            let host = d.host.as_str().filter(|s| !s.is_empty());
+            row.name = host.map_or_else(|| "This computer".into(), |h| format!("This computer: {h}"));
+            if d.is_active { row.says = say("device.approved_computer", "approved computer", &[]); }
+        }
+        row
+    };
+    let devices: Vec<DeviceRow> = people.iter().copied().filter(|d| d.is_active).map(&device_row).collect();
+    let removed: Vec<DeviceRow> = people.iter().copied().filter(|d| !d.is_active).map(device_row).collect();
     let stuck: Vec<String> = devices.iter().filter(|d| d.state == "unfinished").map(|d| d.id.clone()).collect();
 
     // Agents: the sessions grouped by program and computer.
@@ -356,6 +368,25 @@ mod tests {
 
     fn member(id: &str, name: &str, role: &str, added: u64) -> Value {
         json!({ "device_id": id, "device_role": role, "device_name": name, "is_active": true, "added_entry_number": added, "is_me": false, "is_online": false })
+    }
+
+    #[test]
+    fn computer_approval_has_a_devices_row_and_never_a_conversation() {
+        let mut m = crate::model::Model::new();
+        m.members.insert("computer-device".into(), Member { device_id:"computer-device".into(), device_role:"agent".into(), is_active:true, host:json!("workstation"), ..Default::default() });
+        let session = m.session_of("computer");
+        session.agent_device_id = Some("computer-device".into());
+        session.group_id = Some("held".into());
+        session.settings = Some(json!({"machine":{"device":"computer-device"}}));
+        assert_eq!(crate::sessions::session_list(&m, false).len(), 1, "agent settings cannot hide a conversation");
+        m.human.insert("session/computer".into(), crate::model::types::HumanRegister { value:json!({"machine":{"device":"computer-device"}}), ..Default::default() });
+        assert!(crate::sessions::session_list(&m, false).is_empty());
+        let lens = Lens::default();
+        let v = settings(&Board::new(&m, &lens, NOW));
+        assert_eq!(v.devices.len(), 1);
+        assert_eq!(v.devices[0].name, "This computer: workstation");
+        assert_eq!(v.devices[0].says.en, "approved computer");
+        assert!(v.agent_list.is_empty());
     }
 
     #[test]

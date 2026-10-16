@@ -1795,6 +1795,12 @@ pub struct AccountView {
     /// An invite link to show as text or QR code.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
+    /// Copyable instructions for this invite, chosen by the core. Contains the invite secret like `link`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_prompt: Option<String>,
+    /// The corresponding Claude Code command. Contains the invite secret; never log it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_command: Option<String>,
     /// The six emoji to compare, with their words.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emoji: Vec<EmojiView>,
@@ -1832,6 +1838,8 @@ impl std::fmt::Debug for AccountView {
             .field("step", &self.step)
             .field("invite_id", &self.invite_id)
             .field("link", &self.link.as_ref().map(|_| "<redacted>"))
+            .field("connect_prompt", &self.connect_prompt.as_ref().map(|_| "<redacted>"))
+            .field("connect_command", &self.connect_command.as_ref().map(|_| "<redacted>"))
             .field("emoji", &self.emoji)
             .field("kit", &format_args!("<{} words redacted>", self.kit.len()))
             .field("asks", &self.asks)
@@ -1879,6 +1887,12 @@ pub struct AskView {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InviteView {
     pub invite_id: String,
+    #[serde(default)]
+    pub title: Text,
+    #[serde(default)]
+    pub notice: Text,
+    #[serde(default)]
+    pub computer: bool,
     /// "human" (a device of the person) or "agent".
     pub role: String,
     /// "open" (waits for the newcomer), "confirm_code" (the emoji to compare), "adding", "joined".

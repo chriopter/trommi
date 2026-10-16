@@ -90,9 +90,9 @@ fn label(which: &str) -> &'static str {
 /// What to do next, one line.
 fn next(which: &str) -> &'static str {
     if which == "codex" {
-        "quit every running Codex and start it again (a running Codex does not load new MCP servers), in a project folder; then ask it to connect to Trommi with the link from \"Invite an agent\" in the Trommi app."
+        "quit every running Codex and start it again (a running Codex does not load new MCP servers), in a project folder; then ask it to connect to Trommi with the command from \"Approve a computer\" in the Trommi app."
     } else {
-        "start claude in a project folder and paste what \"Invite an agent\" in the Trommi app shows (the prompt with the link, or /trommi:connect '<link>')."
+        "start claude in a project folder and paste what \"Approve a computer\" in the Trommi app shows (the prompt with the link, or /trommi:connect --computer '<link>')."
     }
 }
 

@@ -14,6 +14,7 @@ pub mod html;
 pub mod join;
 pub mod keeper;
 pub mod launch;
+pub mod machine;
 pub mod line;
 pub mod mcp;
 pub mod member;
@@ -29,7 +30,7 @@ pub mod trail;
 pub mod update;
 pub mod usage;
 pub mod util;
-pub mod vouch;
+pub mod identity;
 pub mod vault;
 
 /// Sent as `Trommi-Client` on every request; the hub answers `client-too-old` when it wants a newer one.

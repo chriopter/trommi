@@ -96,6 +96,11 @@ pub enum AccountAction {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         desk: Option<String>,
     },
+    /// Approve one computer by emoji, after which its local sessions activate without another tap.
+    ApproveComputer {
+        #[serde(default)]
+        label: String,
+    },
     /// Ends an invite this device made: an open one is burned at the hub (its link does nothing any more); a joined
     /// one only leaves the view (`AccountView.invite`).
     DropInvite {

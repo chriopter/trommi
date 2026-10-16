@@ -27,7 +27,9 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::mpsc;
 
 /// What a launcher and its child agree on: these names, the environment below, the order of a swap.
-pub const ABI: u32 = 1;
+// Computer approval changes connect's schema and initialization instructions. Existing clients must
+// reinitialize once instead of retaining the old required-link tool contract after a hot swap.
+pub const ABI: u32 = 2;
 /// Child → launcher: a new binary stands at the path; swap it in.
 pub const SWAP: &str = "trommi/launch/swap";
 /// Launcher → child: hand over and exit.

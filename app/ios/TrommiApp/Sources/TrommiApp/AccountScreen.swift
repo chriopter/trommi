@@ -54,14 +54,20 @@ struct AccountScreen: View {
 struct AccountInvite: View {
   @EnvironmentObject var shell: AppShell
   var body: some View {
-    if let link = shell.view.account.link { Text(link).font(Face.mono(13)).textSelection(.enabled); ShareLink(item: link) }
+    if let invite = shell.view.account.invite {
+      Text(invite.title.en).font(Face.display(22))
+      Text(invite.notice.en).font(Face.text(14))
+    }
+    if let prompt = shell.view.account.connectPrompt { Text(prompt).font(Face.mono(13)).textSelection(.enabled); ShareLink(item: prompt) }
+    else if let link = shell.view.account.link { Text(link).font(Face.mono(13)).textSelection(.enabled); ShareLink(item: link) }
     if !shell.view.account.emoji.isEmpty { Text(shell.view.account.emoji.map(\.emoji).joined(separator: " ")).font(.largeTitle) }
-    if let id = shell.view.account.inviteId { HStack { Button("They match") { shell.account(["step": "confirm_emoji", "invite_id": id, "matches": true]) }; Button("Cancel") { shell.account(["step": "drop_invite"]) } } }
+    if let id = shell.view.account.inviteId { HStack { Button("They match") { shell.account(["step": "confirm_emoji", "invite_id": id, "matches": true]) }; Button("Cancel") { shell.account(["step": "drop_invite", "invite_id": id]) } } }
     ForEach(shell.view.account.asks, id: \.nonce) { ask in
       VStack(alignment: .leading, spacing: 12) {
         Text(ask.name).font(Face.display(22))
         Text(ask.host).font(Face.text(14))
-        HStack { Button("Deny") { shell.account(["step": "answer_ask", "nonce": ask.nonce, "allow": false]) }; Button("Allow") { shell.account(["step": "answer_ask", "nonce": ask.nonce, "allow": true]) }.buttonStyle(.borderedProminent) }
+        Text(ask.says.en).font(Face.text(14))
+        ProgressView()
       }.padding().background(Ink.surface2, in: PenBox())
     }
   }

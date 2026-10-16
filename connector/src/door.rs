@@ -129,7 +129,7 @@ pub fn open_door_at(file: &Path, handler: Handler) -> std::io::Result<Door> {
 }
 async fn serve(sock: UnixStream, handler: Handler) {
     // Only this user's own processes (the directory is private already; this holds also where it is not):
-    // a door hands out what this connector may do, a self-join link (spec/v1.md 12.4) among it.
+    // a door hands out what this connector may do; computer activation uses its own briefly locked key.
     if !sock.peer_cred().is_ok_and(|c| c.uid() == uid()) {
         return;
     }

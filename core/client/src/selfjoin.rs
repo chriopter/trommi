@@ -1,25 +1,16 @@
-//! Self-join (spec/v1.md 12.4) on the person's side, the part that decides, once for every app: an agent asks in its
-//! main session to let in a new session of its own machine and account (`join_ask/<nonce>`). A human device answers in
-//! `join_link/<nonce>` with an agent invite link (the person's Allow) or `{ refused }`; past the bounds it refuses
-//! without asking. The new session's Request is let in without the emoji only when the ask names its hash and the
-//! voucher still stands. An archived session that joined so takes its device along.
-//!
-//! - [`asks`]: the unanswered asks of live main sessions whose group this device holds, each with the refusal it gets
-//!   at once (`bad-ask`: no account; `cap`: [`MAX_VOUCHED`] live self-joined sessions of that account or
-//!   [`MAX_VOUCHED_ROOM`] in the room; `busy`: [`MAX_VOUCHED_OPEN`] links open), the links this device has open and
-//!   the asks it lets through in the same look counted in;
-//! - [`verdict`]: whether a vouched Request is let in (None while the ask names no hash yet);
-//! - [`to_retire`]: the devices of archived self-joined sessions still in the room;
-//! - [`join_rows`]: the asks as the sidebar shows them (ask, or joining while the link's invite is under way).
+//! Hash-bound activation on a computer explicitly approved by a human (spec 12.4).
+//! Only authenticated human room grants confer authority. The human app opens bounded agent invites
+//! automatically and confirms the Request named by that computer; ordinary agents cannot vouch.
+//! Archived admitted sessions are retired, and computer removal cascades through `machines`.
 use crate::model::types::Session;
 use crate::model::Model;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The most live sessions of one account that joined by themselves, open links counted in.
+/// The most live sessions of one approved computer that joined by themselves, open links counted in.
 pub const MAX_VOUCHED: usize = 8;
-/// The most of all accounts together (the account is the asking agent's word: this bounds a lying agent).
+/// The most admitted sessions of all computers together.
 pub const MAX_VOUCHED_ROOM: usize = 24;
 /// The most vouched links open at once on one device (the hub keeps 16 open invites a room).
 pub const MAX_VOUCHED_OPEN: usize = 8;
@@ -30,7 +21,7 @@ pub struct Ask {
     pub session_id: String,
     pub nonce: String,
     pub ask: Value,
-    /// Why it is refused at once (`bad-ask`, `cap`, `busy`), or None: it waits for the person's tap.
+    /// Why it is refused at once (`bad-ask`, `cap`, `busy`), or None: the human app may open an activation link.
     pub refused: Option<String>,
     /// The name the new session gets ([`ask_name`]).
     pub name: String,
@@ -114,7 +105,7 @@ fn open_asks(m: &Model) -> Vec<(&Session, &str, &Value)> {
     out
 }
 
-/// The accounts of the live sessions that joined by themselves.
+/// The computer quota keys of live admitted sessions.
 fn vouched_accounts(m: &Model) -> Vec<String> {
     m.sessions
         .values()
@@ -135,11 +126,11 @@ pub fn asks(m: &Model, answered: &BTreeSet<String>, pending: &[String]) -> Vec<A
         if answered.contains(nonce) {
             continue;
         }
-        let account = ask.get("account").and_then(Value::as_str).unwrap_or("").to_string();
+        let account = crate::machines::quota(&s.session_id);
         let full = accounts.iter().filter(|a| **a == account).count() >= MAX_VOUCHED
             || accounts.len() >= MAX_VOUCHED_ROOM;
-        let refused = if account.is_empty() {
-            Some("bad-ask")
+        let refused = if !crate::machines::approved(m, &s.session_id) {
+            Some("computer-required")
         } else if full {
             Some("cap")
         } else if open >= MAX_VOUCHED_OPEN {
@@ -173,7 +164,7 @@ pub fn verdict(m: &Model, session_id: &str, nonce: &str, request_hash: &str) -> 
         .and_then(|r| r.value.get("request_hash"))
         .and_then(Value::as_str)
         .filter(|h| !h.is_empty())?;
-    let standing = s.is_active && !truthy(setting(s, "archived"));
+    let standing = crate::machines::approved(m, session_id);
     Some(standing && named == request_hash)
 }
 
@@ -283,6 +274,9 @@ mod tests {
         let s = m.session_of(S1);
         s.group_id = Some("g".into());
         s.agent_device_id = Some(AGENT.into());
+        let grant = json!({"machine":{"device":AGENT}});
+        s.settings = Some(grant.clone());
+        m.human.insert(format!("session/{S1}"), crate::model::types::HumanRegister { value: grant, ..Default::default() });
         m
     }
     fn reg(m: &mut Model, sid: &str, key: &str, value: Value) {
@@ -318,14 +312,16 @@ mod tests {
     fn the_bounds() {
         let mut m = room();
         reg(&mut m, S1, "join_ask/b0", ask(""));
-        assert_eq!(asks(&m, &BTreeSet::new(), &[])[0].refused.as_deref(), Some("bad-ask"));
+        assert_eq!(asks(&m, &BTreeSet::new(), &[])[0].refused, None, "program accounts do not confer computer authority");
+        m.human.clear();
+        assert_eq!(asks(&m, &BTreeSet::new(), &[])[0].refused.as_deref(), Some("computer-required"));
         let mut m = room();
         for i in 0..10 {
             reg(&mut m, S1, &format!("join_ask/c{i}"), ask("acct"));
         }
         let got = asks(&m, &BTreeSet::new(), &[]);
         assert_eq!(got.iter().filter(|a| a.refused.is_none()).count(), MAX_VOUCHED, "ten at once: eight links");
-        let pending = vec!["acct".to_string(); 8];
+        let pending = vec![crate::machines::quota(S1); 8];
         assert_eq!(asks(&m, &BTreeSet::new(), &pending).iter().filter(|a| a.refused.is_none()).count(), 0);
         let mut m = room();
         for i in 0..30 {
@@ -333,7 +329,11 @@ mod tests {
         }
         let got = asks(&m, &BTreeSet::new(), &[]);
         assert_eq!(got.iter().filter(|a| a.refused.is_none()).count(), MAX_VOUCHED_OPEN);
-        assert_eq!(got.iter().filter(|a| a.refused.as_deref() == Some("busy")).count(), 30 - MAX_VOUCHED_OPEN);
+        assert_eq!(got.iter().filter(|a| a.refused.as_deref() == Some("cap")).count(), 30 - MAX_VOUCHED, "changing claimed accounts cannot evade a computer's quota");
+        let busy: Vec<String> = (0..MAX_VOUCHED_OPEN).map(|i| format!("other-machine-{i}")).collect();
+        assert!(asks(&m, &BTreeSet::new(), &busy).iter().all(|a| a.refused.as_deref() == Some("busy")), "open invites on other computers bound concurrent work");
+        let pending: Vec<String> = (0..MAX_VOUCHED_ROOM).map(|i| format!("other-machine-{i}")).collect();
+        assert!(asks(&m, &BTreeSet::new(), &pending).iter().all(|a| a.refused.as_deref() == Some("cap")), "the room bound includes other computers");
     }
 
     #[test]
@@ -346,6 +346,7 @@ mod tests {
         assert_eq!(verdict(&m, S1, "e1", "HASH"), Some(true));
         assert_eq!(verdict(&m, S1, "e1", "OTHER"), Some(false));
         m.sessions.get_mut(S1).unwrap().settings = Some(json!({ "archived": true }));
+        m.human.get_mut(&format!("session/{S1}")).unwrap().value["archived"] = json!(true);
         assert_eq!(verdict(&m, S1, "e1", "HASH"), Some(false), "an archived voucher vouches for nobody");
     }
 

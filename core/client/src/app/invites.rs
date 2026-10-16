@@ -47,10 +47,12 @@ pub(super) struct Vouch {
     pub(super) account: String,
     pub(super) account_label: String,
     pub(super) by_name: String,
+    pub(super) machine: Option<String>,
 }
 
 pub(super) struct Inviting {
     role: Role,
+    computer: bool,
     pub(super) vouch: Option<Vouch>,
     /// The link, kept for a vouched one until it is written for the asking agent.
     link: Option<String>,
@@ -78,6 +80,7 @@ struct Joined {
     role: Role,
     newcomer: DeviceId,
     label: String,
+    computer: bool,
 }
 
 #[derive(Default)]
@@ -110,6 +113,18 @@ impl App {
             AccountAction::InviteAgent { label, desk } => {
                 self.invite_open(now_ms, Role::Agent, label.clone(), desk.clone(), None, out);
             }
+            AccountAction::ApproveComputer { label } => {
+                if self.invite_open(now_ms, Role::Agent, label.clone(), None, None, out) {
+                    if let Some(id) = self.next_view.account.invite_id.as_deref().and_then(unhex).map(InviteId::new) {
+                        if let Some(invite) = self.invites.open.get_mut(&id) { invite.computer = true; }
+                    }
+                    if let Some(link) = self.next_view.account.link.as_deref() {
+                        let (prompt, command) = connect_words(link, true);
+                        self.next_view.account.connect_prompt = Some(prompt);
+                        self.next_view.account.connect_command = Some(command);
+                    }
+                }
+            }
             AccountAction::ConfirmEmoji { invite_id, matches } => self.invite_confirm(now_ms, invite_id, *matches, out),
             AccountAction::DropInvite { invite_id } => self.invite_drop(now_ms, invite_id, out),
             _ => return false,
@@ -119,6 +134,21 @@ impl App {
 
     pub(super) fn invite_open(&mut self, now_ms: u64, role: Role, label: String, desk: Option<String>, vouch: Option<Vouch>, out: &mut Vec<Effect>) -> bool {
         let shown = vouch.is_none();
+        if self.demo {
+            // A made-up invite for /screens; no protocol state, usable secret, hub or storage is created.
+            let invite = InviteId::new([0; 16]);
+            let link = "https://app.trommi.com/#demo-invite".to_string();
+            self.invites.open.clear();
+            self.invites.joined = None;
+            self.invites.open.insert(invite, Inviting { role, computer:false, vouch:None, link:None, label, desk,
+                expires_at:now_ms + role.invite_life_ms(), stage:Stage::Open,
+                next_look:u64::MAX, asked:None });
+            let (prompt, command) = connect_words(&link, false);
+            self.next_view.account = AccountView { step:"invite".into(), invite_id:Some(hex(invite.as_bytes())),
+                link:Some(link), connect_prompt:(role == Role::Agent).then_some(prompt),
+                connect_command:(role == Role::Agent).then_some(command), ..Default::default() };
+            return true;
+        }
         let Some(engine) = self.engine.as_ref() else {
             self.next_view.account = problem("action.no_room", "Sign in first.");
             return false;
@@ -152,7 +182,7 @@ impl App {
         }
         let link = String::from_utf8(opened.link.expose().to_vec()).unwrap_or_default();
         let offer = opened.signed_offer;
-        self.invites.open.insert(invite, Inviting { role, vouch, link: (!shown).then(|| link.clone()), label, desk, expires_at: opened.expires_at, stage: Stage::Publishing, next_look: now_ms + LOOK_MS, asked: None });
+        self.invites.open.insert(invite, Inviting { role, computer: false, vouch, link: (!shown).then(|| link.clone()), label, desk, expires_at: opened.expires_at, stage: Stage::Publishing, next_look: now_ms + LOOK_MS, asked: None });
         let asked = self.invite_send(
             now_ms,
             out,
@@ -163,7 +193,12 @@ impl App {
             i.asked = asked;
         }
         if shown {
-            self.next_view.account = AccountView { step: "invite".into(), invite_id: Some(hex(invite.as_bytes())), link: Some(link), ..Default::default() };
+            let (prompt, command) = connect_words(&link, false);
+            self.next_view.account = AccountView {
+                step: "invite".into(), invite_id: Some(hex(invite.as_bytes())), link: Some(link),
+                connect_prompt: (role == Role::Agent).then_some(prompt),
+                connect_command: (role == Role::Agent).then_some(command), ..Default::default()
+            };
         }
         true
     }
@@ -371,14 +406,17 @@ impl App {
             if !inside && steps.contains(&invite) {
                 continue;
             }
+            let device = hex(newcomer.as_bytes());
+            let session = self.board.model.sessions.iter().find(|(_, s)| s.agent_device_id.as_deref() == Some(device.as_str()) && s.parent_session_id.is_none()).map(|(k, _)| k.clone());
+            let needs_session = self.invites.open.get(&invite).is_some_and(|i| i.role == Role::Agent && (i.computer || !i.label.is_empty() || i.desk.is_some() || i.vouch.is_some()));
+            // Keep the human's approval until the authenticated main session is available to bind it to.
+            if inside && needs_session && session.is_none() { continue }
             let Some(i) = self.invites.open.remove(&invite) else { continue };
             if !inside {
                 self.next_view.account = problem("invite.removed", "The new device is not in the room.");
                 continue;
             }
-            if i.role == Role::Agent && (!i.label.is_empty() || i.desk.is_some() || i.vouch.is_some()) {
-                let device = hex(newcomer.as_bytes());
-                let session = self.board.model.sessions.iter().find(|(_, s)| s.agent_device_id.as_deref() == Some(device.as_str()) && s.parent_session_id.is_none()).map(|(k, _)| k.clone());
+            if needs_session {
                 if let Some(session) = session {
                     let mut place = serde_json::Map::new();
                     if !i.label.is_empty() {
@@ -388,13 +426,26 @@ impl App {
                         place.insert("desk".into(), json!(desk));
                     }
                     if let Some(v) = &i.vouch {
-                        place.insert("vouched".into(), json!({ "by": v.session_id, "by_name": v.by_name, "account": v.account, "account_label": v.account_label }));
+                        let mut vouched = json!({ "by": v.session_id, "by_name": v.by_name, "account": v.account, "account_label": v.account_label });
+                        if let Some(machine) = &v.machine {
+                            vouched["machine"] = json!(machine);
+                            vouched["device"] = json!(device);
+                        }
+                        place.insert("vouched".into(), vouched);
                     }
-                    self.doing(now_ms, out, |doing| doing.session_settings(&session, place));
+                    if i.computer {
+                        place.insert("machine".into(), json!({ "device": device }));
+                    }
+                    self.doing(now_ms, out, |doing| {
+                        doing.session_settings(&session, place);
+                        if i.computer {
+                            doing.session_register(&session, "machine_approved", &json!({ "device": device }));
+                        }
+                    });
                 }
             }
             if i.vouch.is_none() {
-                self.invites.joined = Some(Joined { invite, role: i.role, newcomer, label: i.label.clone() });
+                self.invites.joined = Some(Joined { invite, role: i.role, newcomer, label: i.label.clone(), computer: i.computer });
                 self.next_view.account = AccountView { step: "none".into(), ..Default::default() };
             }
         }
@@ -430,6 +481,15 @@ impl App {
             }
         };
         let role_of = |role: Role| if role == Role::Agent { "agent" } else { "human" }.to_string();
+        let words = |role, computer| {
+            if computer {
+                (Text::new("invite.computer", "Approve a computer"), Text::new("invite.computer_notice", &format!("Approving this computer lets its local agent sessions connect without another tap, up to {} at once. Remove this computer to remove those sessions too.", crate::selfjoin::MAX_VOUCHED)))
+            } else if role == Role::Agent {
+                (Text::new("invite.agent", "Invite an agent"), Text::new("invite.agent_notice", "Connect this one session by comparing six emoji."))
+            } else {
+                (Text::new("invite.human", "Pair a device"), Text::new("invite.human_notice", "Compare the six emoji on both devices."))
+            }
+        };
         let shown = self.next_view.account.invite_id.as_deref().and_then(unhex).map(InviteId::new);
         if let Some((id, i)) = shown.and_then(|id| self.invites.open.get(&id).map(|i| (id, i))).filter(|(_, i)| i.vouch.is_none()) {
             let (state, newcomer) = match &i.stage {
@@ -437,10 +497,12 @@ impl App {
                 Stage::Compare { newcomer, .. } => ("confirm_code", name(newcomer, i.role, &i.label)),
                 Stage::Adding { newcomer } => ("adding", name(newcomer, i.role, &i.label)),
             };
-            return Some(InviteView { invite_id: hex(id.as_bytes()), role: role_of(i.role), state: state.into(), expires_ms: i.expires_at, newcomer });
+            let (title, notice) = words(i.role, i.computer);
+            return Some(InviteView { invite_id: hex(id.as_bytes()), title, notice, computer: i.computer, role: role_of(i.role), state: state.into(), expires_ms: i.expires_at, newcomer });
         }
         let j = self.invites.joined.as_ref()?;
-        Some(InviteView { invite_id: hex(j.invite.as_bytes()), role: role_of(j.role), state: "joined".into(), expires_ms: 0, newcomer: name(&j.newcomer, j.role, &j.label) })
+        let (title, notice) = words(j.role, j.computer);
+        Some(InviteView { invite_id: hex(j.invite.as_bytes()), title, notice, computer: j.computer, role: role_of(j.role), state: "joined".into(), expires_ms: 0, newcomer: name(&j.newcomer, j.role, &j.label) })
     }
 
     /// The state of each vouched link open here, by its invite's id (hex): a self-join that is under way.
@@ -485,6 +547,19 @@ pub(super) fn emoji_of(code: [u8; 6]) -> Vec<EmojiView> {
         .collect()
 }
 
+fn connect_words(link: &str, computer: bool) -> (String, String) {
+    let quoted = format!("'{}'", link.replace('\'', "'\\''"));
+    if computer {
+        (
+            format!("Approve this computer in Trommi with this invite link: {quoted}. Call the Trommi connect tool with this link and computer=true."),
+            format!("/trommi:connect --computer {quoted}"),
+        )
+    } else {
+        (format!("Connect to Trommi with this invite link: {quoted}"), format!("/trommi:connect {quoted}"))
+    }
+}
+
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -498,4 +573,19 @@ fn unhex(text: &str) -> Option<[u8; 16]> {
         *o = u8::from_str_radix(text.get(i * 2..i * 2 + 2)?, 16).ok()?;
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod computer_tests {
+    use super::*;
+
+    #[test]
+    fn copyable_invite_instructions_are_redacted_with_the_link() {
+        let (prompt, command) = connect_words("private-invite-secret", true);
+        let view = AccountView { link: Some("private-invite-secret".into()), connect_prompt: Some(prompt), connect_command: Some(command), ..Default::default() };
+        assert!(!format!("{view:?}").contains("private-invite-secret"));
+        let json = serde_json::to_value(view).unwrap();
+        assert!(json["connect_prompt"].as_str().unwrap().contains("computer=true"));
+        assert!(json["connect_command"].as_str().unwrap().contains("--computer"));
+    }
 }
