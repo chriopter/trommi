@@ -923,4 +923,22 @@ mod tests {
         let (g, shown) = gallery(&b, "pages", artifacts(&b));
         assert_eq!((shown.len(), g.none.map(|t| t.en)), (0, Some("No pages yet.".to_string())));
     }
+
+    #[test]
+    fn the_desks_foot_keeps_every_artifact_and_only_the_gallery_filters() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.published = vec![json!({
+            "object_id": "pic", "agent_device_id": dev("a"), "title": "pic", "sent_at": 1, "envelope_number": 1, "object_state": "open",
+            "attachments": [{ "attachment_id": "f-pic", "media_type": "image/png", "file_name": "x" }],
+        })];
+        let m = r.model(NOW);
+        let mut view = crate::views::ViewModel::default();
+        let desk = Lens { artifacts: true, ..Default::default() };
+        crate::views::board::render(&m, &desk, NOW, &mut view);
+        assert_eq!((view.artifacts.as_ref().map(Vec::len), view.gallery.is_none()), (Some(1), true));
+        let pages = Lens { artifacts: true, gallery: Some("pages".into()), ..Default::default() };
+        crate::views::board::render(&m, &pages, NOW, &mut view);
+        assert_eq!((view.artifacts.as_ref().map(Vec::len), view.gallery.as_ref().map(|g| g.kind.as_str())), (Some(0), Some("pages")));
+    }
 }
