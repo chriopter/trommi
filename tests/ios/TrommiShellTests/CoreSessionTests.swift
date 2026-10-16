@@ -172,6 +172,29 @@ final class CoreSessionTests: XCTestCase {
     XCTAssertTrue(try store.run(NativePacket(["op": "scan", "prefix": "public-departure/"])).blobs.isEmpty)
     store.close()
   }
+  func testAStateFolderGoneWithItsKeysLeftStartsEmptyAndTheOldLogNeverOpensAgain() throws {
+    // (the app deleted and installed again: its folder is gone, its Keychain items stay)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-reinstall-\(UUID().uuidString)")
+    let aside = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-reinstall-old-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory); try? FileManager.default.removeItem(at: aside) }
+    let state = directory.appendingPathComponent("state")
+    var store = try ShellStore(directory: directory)
+    _ = try store.run(NativePacket(["op": "device_load"]))
+    for revision in 0..<3 {
+      _ = try store.run(NativePacket(["op": "device_apply", "expected_revision": revision, "put": [["key": 0, "value": 1]]], blobs: [Data([1]), Data("old device \(revision)".utf8)]))
+    }
+    store.close()
+    try FileManager.default.moveItem(at: state, to: aside)
+    store = try ShellStore(directory: directory)
+    let empty = try store.run(NativePacket(["op": "device_load"]))
+    XCTAssertEqual((empty.json["revision"] as? NSNumber)?.uint64Value, 0, "a new install starts with an empty state, not a refused one")
+    _ = try store.run(NativePacket(["op": "device_apply", "expected_revision": 0, "put": [["key": 0, "value": 1]]], blobs: [Data([1]), Data("new device".utf8)]))
+    store.close()
+    // the old log put back: it is sealed under the old key, which is gone
+    try FileManager.default.removeItem(at: state)
+    try FileManager.default.moveItem(at: aside, to: state)
+    XCTAssertThrowsError(try { let s = try ShellStore(directory: directory); defer { s.close() }; _ = try s.run(NativePacket(["op": "device_load"])) }())
+  }
   func testTheDeviceSpaceIsDurableAndTheCacheIsEncrypted() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-shell-store-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
