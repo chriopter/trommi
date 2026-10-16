@@ -35,6 +35,8 @@ mod kit;
 mod shared;
 mod import;
 mod start;
+mod seen;
+mod ways;
 pub use shared::SHARED_FILE;
 pub mod script;
 pub mod sim;
@@ -109,6 +111,9 @@ enum Pending {
     Shared,
     /// A file of the demo room, by its address.
     DemoFile(crate::files::DemoOpen),
+    /// The Chat list's read marks, read from the cache and written to it (`app::seen`).
+    SeenRead,
+    SeenWrite,
 }
 
 /// The app store's key that names the room of this slot and its hub: written by a join with the code before the
@@ -216,6 +221,10 @@ pub struct App {
     scribble: crate::scribble::Scribble,
     /// The past read on demand: a session's or a card's history, the starred cards (`app::past`).
     past: past::Past,
+    /// The note `KeepNote` made last on this device (`app::ways`).
+    made_note: Option<String>,
+    /// What the Chat list counts as read, kept in the cache (`app::seen`).
+    seen: seen::Seen,
 }
 
 impl Default for App {
@@ -278,6 +287,8 @@ impl App {
             goals_check: false,
             scribble: crate::scribble::Scribble::default(),
             past: past::Past::default(),
+            made_note: None,
+            seen: seen::Seen::default(),
         }
     }
 
@@ -826,6 +837,7 @@ impl App {
                                 self.past = Default::default();
                                 self.board.model = model;
                                 self.demo = true;
+                                self.seen_demo();
                                 self.next_view.account = crate::views::AccountView { step: "none".into(), ..Default::default() };
                                 self.next_view.phase = Phase::Live;
                                 self.stale_views = true;
@@ -919,6 +931,8 @@ impl App {
                 },
                 // (a cache entry that stays is only a cache entry: the hub no longer serves the file)
                 Some(Pending::CacheDelete) => {}
+                Some(Pending::SeenRead) => self.seen_read(&result),
+                Some(Pending::SeenWrite) => self.seen_written(id, &result, &mut out),
                 Some(Pending::DepartureLoad | Pending::DepartureSave(_) | Pending::DepartureHttp(_, _) | Pending::DepartureDelete(_)) => {}
                 None if self.cache.is_some() && self.cached(now_ms, id, &result, &mut out) => {}
                 None => {
@@ -1021,7 +1035,7 @@ impl App {
                 }
                 // (every desk's board small: Settings, and the boards of All desks)
                 let all = focus.desk.as_deref() == Some(crate::views::board::ALL_DESKS);
-                self.lens.thumbs = matches!(focus.screen, Screen::Settings) || (all && board.is_some());
+                self.lens.thumbs = matches!(focus.screen, Screen::Settings { .. }) || (all && board.is_some());
                 self.scribble.thumbs = self.lens.thumbs;
                 if self.lens.thumbs && !self.demo {
                     for (desk, _) in crate::sessions::desks_in_order(&self.board.model) {
@@ -1032,7 +1046,11 @@ impl App {
                 }
                 self.lens.desk = focus.desk;
                 // (the gallery, and the Desk's foot shows its newest)
-                self.lens.artifacts = matches!(focus.screen, Screen::Artifacts | Screen::Desk);
+                self.lens.artifacts = matches!(focus.screen, Screen::Artifacts { .. } | Screen::Desk);
+                self.lens.gallery = match &focus.screen {
+                    Screen::Artifacts { kind } => Some(kind.clone()),
+                    _ => None,
+                };
                 let (session, card, off) = match focus.screen {
                     Screen::Session { session_id } => (Some(session_id), None, None),
                     Screen::Card { card_id } => (None, Some(card_id), None),
@@ -1045,6 +1063,7 @@ impl App {
                 self.lens.card = card;
                 self.lens.off = off;
                 self.stale_views = true;
+                self.seen.looking = focus.visible;
                 self.outside_front(Some(focus.visible), false);
             }
             Event::Wake => {
@@ -1056,6 +1075,8 @@ impl App {
                 }
             }
             Event::Foreground => {
+                self.seen.looking = true;
+                self.stale_views = true;
                 self.departures.hurry();
                 self.outside_front(Some(true), false);
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_foreground(ctx));
@@ -1066,6 +1087,7 @@ impl App {
                 }
             }
             Event::Background => {
+                self.seen.looking = false;
                 self.outside_front(Some(false), false);
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_background(ctx));
             }
@@ -1139,6 +1161,28 @@ impl App {
                     self.lens.goals_folded.push(desk_id.clone());
                 }
                 self.stale_views = true;
+                return;
+            }
+            Action::FoldHelpers { session_id, open } => {
+                self.lens.unfolded.retain(|s| s != session_id);
+                if *open {
+                    self.lens.unfolded.push(session_id.clone());
+                }
+                self.stale_views = true;
+                return;
+            }
+            Action::Batch { way, card_ids } => {
+                return self.batch(now_ms, way, card_ids, out);
+            }
+            Action::KeepNote { note_id, text, attachments } => {
+                let Some(keep) = self.keep_note(note_id.as_deref(), text, attachments) else { return };
+                let fresh = matches!(keep, Action::WriteNoteFiles { note_id: None, .. });
+                let before: std::collections::BTreeSet<String> = self.sent.notes.keys().cloned().collect();
+                self.action(now_ms, keep, out);
+                if fresh {
+                    // (the note it made: the next keep writes into it, also before the page has its id)
+                    self.made_note = self.sent.notes.keys().find(|k| !before.contains(*k)).cloned().or(self.made_note.take());
+                }
                 return;
             }
             _ => {}
@@ -1238,6 +1282,7 @@ impl App {
 
     /// The demo's views, made again when they went stale. Its boards are in the model alone.
     fn after_demo(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
+        self.seen_tend(out);
         if self.stale_views {
             self.outside.due = true;
             self.stale_views = false;
@@ -1603,6 +1648,9 @@ impl App {
                 let room = engine::feed::hex(engine.room().as_bytes());
                 let device = engine::feed::hex(engine.device().id().as_bytes());
                 self.cache = Some(crate::cache::Keeper::open(&room, &device, revision, &mut self.next_id, out));
+                if !again {
+                    self.seen_open(&room, out);
+                }
                 self.engine = Some(engine);
                 self.next_view.phase = Phase::Opening;
                 self.outside_opened(out);
@@ -1878,6 +1926,7 @@ impl App {
         }
         if removed {
             self.forget_local_device(now_ms, out);
+            self.next_view.account.notice = Some(account_steps::removed());
             out.insert(0, Effect::ForgetShared);
             return;
         }
@@ -1994,6 +2043,9 @@ impl App {
         }
         // The board's units: made again when the model, the lens or the clock moved (every unit whole; a unit that
         // did not change is not sent, `ViewModel::diff`).
+        if self.stale_views || view_due {
+            self.seen_tend(out);
+        }
         if self.stale_views || view_due {
             self.stale_views = false;
             self.lens.reading = self.board.model.reading;

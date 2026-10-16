@@ -2422,5 +2422,78 @@
       "n": "29"
     },
     "en": "Blitz: 29 open cards"
+  },
+  "duck": {
+    "card_ids": [
+      "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
+      "0bfe44d41f866466dc1f6246fabac244",
+      "185b315a758472a6fc1faed37e49f875",
+      "e77e5a529e1d3a4bd3046ce602a34c1e",
+      "6deb90374cb873045fe03e39c3ab0348",
+      "a67da9b30d2f07d256c6b646e8c34f36",
+      "0d9331a1172e43e9157fbd722d87bf1a",
+      "8b91e8761d15b3933a6412af44da7851",
+      "41bc4fad4b14457d7f16a660d518d474",
+      "de6f89dc61b5db9b5ad8cd2eaf14abce",
+      "a2706545530be0dce3b13417c2728966",
+      "177482f5593de33230dfeb8e72506993",
+      "cf5922f1d3baa4cf7dd0d9b573716bfb",
+      "7e86fa6e752b2ff5cf636658aa14f1f0",
+      "d50337f0e7318660c4d9a0062426dea5",
+      "e842d16a6c7d9a0075b0a77b5932f3bb",
+      "637adcc6eae4b4ac30b47509a3071884",
+      "9abad6a52b4b6dc3d096f87bff346aa9",
+      "daa202f98097523fa1f1fe18068f8322",
+      "43a72b8f7d9de1aac4aeeae1367076c0",
+      "a38afef6dbdd056db8042980f2b83336",
+      "29e26860adecd0578df14c491915b27a",
+      "992640bed603743781e3241f6a2de105",
+      "95a7444523d097bff745b891bc2166cf",
+      "8b26d4c112fa4617ad968fe6f311704e",
+      "9c9f4031e513b80e68c67139a12e408b",
+      "e3eb869558332fec907b2752f54a608a",
+      "58f19345f724a39460db70a4377995c8",
+      "76ab0cafab45f8b2011853527a3dc10e"
+    ],
+    "tip": {
+      "key": "desk.duck.tip.all",
+      "args": {
+        "decisions": "24",
+        "n": "29",
+        "reads": "5"
+      },
+      "en": "I don’t give a duck: for all 29 open cards"
+    },
+    "what": {
+      "key": "desk.duck.what",
+      "args": {
+        "decisions": "24",
+        "n": "29",
+        "reads": "5"
+      },
+      "en": "24 decisions go to the agents, 5 cards to read are closed"
+    },
+    "ask": {
+      "key": "desk.duck.ask",
+      "args": {
+        "decisions": "24",
+        "n": "29",
+        "reads": "5"
+      },
+      "en": "Duck all 29?"
+    },
+    "yes": {
+      "key": "desk.duck.yes",
+      "args": {
+        "decisions": "24",
+        "n": "29",
+        "reads": "5"
+      },
+      "en": "Yes, duck them all"
+    },
+    "no": {
+      "key": "desk.duck.no",
+      "en": "Cancel"
+    }
   }
 }

@@ -233,7 +233,10 @@
                 "online": false,
                 "open": 0,
                 "slug": "00000002eeee",
+                "tucked": false,
+                "unfolded": false,
                 "unheard": 0,
+                "unread": false,
                 "working": false
               }
             ],
@@ -479,7 +482,10 @@
                 "online": false,
                 "open": 0,
                 "slug": "00000002eeee",
+                "tucked": false,
+                "unfolded": false,
                 "unheard": 0,
+                "unread": false,
                 "working": false
               }
             ],
@@ -742,6 +748,17 @@
                 "hushed": false,
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
+                "last": {
+                  "at_ms": 1791900300010,
+                  "text": "Ship it?",
+                  "when": {
+                    "args": {
+                      "time": "14:05"
+                    },
+                    "en": "14:05",
+                    "key": "chat.when.today"
+                  }
+                },
                 "link": "gone",
                 "main": true,
                 "mark": "00000002eeee",
@@ -759,7 +776,10 @@
                   "key": "badge.offline_open"
                 },
                 "slug": "00000002eeee",
+                "tucked": false,
+                "unfolded": false,
                 "unheard": 0,
+                "unread": false,
                 "working": false
               }
             ],
@@ -780,6 +800,51 @@
               "key": "desk.blitz.one"
             },
             "done": [],
+            "duck": {
+              "ask": {
+                "args": {
+                  "decisions": "1",
+                  "n": "1",
+                  "reads": "0"
+                },
+                "en": "Duck it?",
+                "key": "desk.duck.ask.one"
+              },
+              "card_ids": [
+                "00000006eeeeeeeeeeeeeeeeeeeeeeee"
+              ],
+              "no": {
+                "en": "Cancel",
+                "key": "desk.duck.no"
+              },
+              "tip": {
+                "args": {
+                  "decisions": "1",
+                  "n": "1",
+                  "reads": "0"
+                },
+                "en": "I don’t give a duck: for the one open decision",
+                "key": "desk.duck.tip.one"
+              },
+              "what": {
+                "args": {
+                  "decisions": "1",
+                  "n": "1",
+                  "reads": "0"
+                },
+                "en": "1 decision goes to the agents",
+                "key": "desk.duck.what.go"
+              },
+              "yes": {
+                "args": {
+                  "decisions": "1",
+                  "n": "1",
+                  "reads": "0"
+                },
+                "en": "Yes, duck it",
+                "key": "desk.duck.yes.one"
+              }
+            },
             "goals": {
               "desk_id": "main",
               "foldable": false,
@@ -1032,6 +1097,51 @@
         "key": "desk.blitz.one"
       },
       "done": [],
+      "duck": {
+        "ask": {
+          "args": {
+            "decisions": "1",
+            "n": "1",
+            "reads": "0"
+          },
+          "en": "Duck it?",
+          "key": "desk.duck.ask.one"
+        },
+        "card_ids": [
+          "00000006eeeeeeeeeeeeeeeeeeeeeeee"
+        ],
+        "no": {
+          "en": "Cancel",
+          "key": "desk.duck.no"
+        },
+        "tip": {
+          "args": {
+            "decisions": "1",
+            "n": "1",
+            "reads": "0"
+          },
+          "en": "I don’t give a duck: for the one open decision",
+          "key": "desk.duck.tip.one"
+        },
+        "what": {
+          "args": {
+            "decisions": "1",
+            "n": "1",
+            "reads": "0"
+          },
+          "en": "1 decision goes to the agents",
+          "key": "desk.duck.what.go"
+        },
+        "yes": {
+          "args": {
+            "decisions": "1",
+            "n": "1",
+            "reads": "0"
+          },
+          "en": "Yes, duck it",
+          "key": "desk.duck.yes.one"
+        }
+      },
       "goals": {
         "desk_id": "main",
         "foldable": false,
@@ -1331,6 +1441,17 @@
           "hushed": false,
           "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
           "knocks": false,
+          "last": {
+            "at_ms": 1791900300010,
+            "text": "Ship it?",
+            "when": {
+              "args": {
+                "time": "14:05"
+              },
+              "en": "14:05",
+              "key": "chat.when.today"
+            }
+          },
           "link": "gone",
           "main": true,
           "mark": "00000002eeee",
@@ -1348,7 +1469,10 @@
             "key": "badge.offline_open"
           },
           "slug": "00000002eeee",
+          "tucked": false,
+          "unfolded": false,
           "unheard": 0,
+          "unread": false,
           "working": false
         }
       ],

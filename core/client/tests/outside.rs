@@ -298,6 +298,7 @@ fn a_verified_human_removal_clears_the_device_cache_and_notification_keys() {
     assert!(sim.device.1.is_empty(), "a signed removal wipes the protocol state");
     assert!(sim.log[from..].iter().any(|e| matches!(e, Effect::ForgetShared)));
     assert!(sim.cache.is_empty(), "the removed device's cache goes too");
+    assert_eq!(sim.view.account.notice.as_ref().map(|t| t.key.as_str()), Some("account.notice.removed"), "the start screen says why");
     assert!(contexts(&sim, from).contains(&None), "the extension's copy must go");
     assert!(sim.secrets.as_ref().unwrap().get("push-notify-key").is_none());
 }

@@ -1088,5 +1088,62 @@
       "n": "13"
     },
     "en": "Blitz: 13 open cards"
+  },
+  "duck": {
+    "card_ids": [
+      "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
+      "6deb90374cb873045fe03e39c3ab0348",
+      "a67da9b30d2f07d256c6b646e8c34f36",
+      "0d9331a1172e43e9157fbd722d87bf1a",
+      "41bc4fad4b14457d7f16a660d518d474",
+      "a2706545530be0dce3b13417c2728966",
+      "cf5922f1d3baa4cf7dd0d9b573716bfb",
+      "d50337f0e7318660c4d9a0062426dea5",
+      "e842d16a6c7d9a0075b0a77b5932f3bb",
+      "9abad6a52b4b6dc3d096f87bff346aa9",
+      "43a72b8f7d9de1aac4aeeae1367076c0",
+      "992640bed603743781e3241f6a2de105",
+      "8b26d4c112fa4617ad968fe6f311704e"
+    ],
+    "tip": {
+      "key": "desk.duck.tip.all",
+      "args": {
+        "decisions": "10",
+        "n": "13",
+        "reads": "3"
+      },
+      "en": "I don’t give a duck: for all 13 open cards"
+    },
+    "what": {
+      "key": "desk.duck.what",
+      "args": {
+        "decisions": "10",
+        "n": "13",
+        "reads": "3"
+      },
+      "en": "10 decisions go to the agents, 3 cards to read are closed"
+    },
+    "ask": {
+      "key": "desk.duck.ask",
+      "args": {
+        "decisions": "10",
+        "n": "13",
+        "reads": "3"
+      },
+      "en": "Duck all 13?"
+    },
+    "yes": {
+      "key": "desk.duck.yes",
+      "args": {
+        "decisions": "10",
+        "n": "13",
+        "reads": "3"
+      },
+      "en": "Yes, duck them all"
+    },
+    "no": {
+      "key": "desk.duck.no",
+      "en": "Cancel"
+    }
   }
 }

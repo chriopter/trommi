@@ -668,3 +668,68 @@ fn a_note_sent_waits_for_undo_then_goes_to_its_session() {
     assert!(!open_notes(&sim).contains(&id), "the note is gone");
     assert!(sim.view.toasts.iter().all(|t| t.text.key == "notes.sent"), "{:?}", sim.view.toasts);
 }
+
+fn keep(sim: &mut Sim, id: Option<&str>, text: &str) {
+    act(sim, Action::KeepNote { note_id: id.map(str::to_string), text: text.into(), attachments: vec![] });
+}
+
+#[test]
+fn a_kept_note_is_made_once_written_when_it_changes_and_thrown_away_when_emptied() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    keep(&mut sim, None, "   ");
+    assert!(open_notes(&sim).is_empty(), "no words: no note");
+    // typed on before the page has the new note's id: the same note, never a second one
+    keep(&mut sim, None, "buy");
+    keep(&mut sim, None, "buy milk");
+    let ids = open_notes(&sim);
+    assert_eq!(ids.len(), 1, "{ids:?}");
+    assert_eq!(note(&sim, &ids[0])["text"], json!("buy milk"));
+    assert_eq!(sim.view.notes.corner.as_deref(), Some(ids[0].as_str()));
+    serve(&world, &mut sim);
+    world.stream(&mut sim);
+    serve(&world, &mut sim);
+    world.stream(&mut sim);
+    let posts = envelope_posts(&world);
+    keep(&mut sim, Some(&ids[0]), "buy milk");
+    assert_eq!(envelope_posts(&world), posts, "the same words: nothing is written");
+    keep(&mut sim, Some(&ids[0]), "buy oat milk");
+    assert_eq!(note(&sim, &ids[0])["text"], json!("buy oat milk"));
+    keep(&mut sim, Some(&ids[0]), "");
+    assert!(open_notes(&sim).is_empty(), "emptied: thrown away");
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+    // a note gone meanwhile (sent, thrown away elsewhere): the words make a new one
+    keep(&mut sim, Some(&ids[0]), "again");
+    let now = open_notes(&sim);
+    assert_eq!(now.len(), 1);
+    assert_ne!(now[0], ids[0]);
+}
+
+#[test]
+fn the_duck_for_all_clears_the_desk_with_one_toast_whose_undo_takes_all_back() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    world.agent_asks("Merge it?");
+    assert!(world.stream(&mut sim));
+    let duck = sim.view.desk.duck.clone().expect("the duck beside Blitz");
+    assert_eq!((duck.card_ids.len(), duck.ask.en.as_str()), (2, "Duck all 2?"));
+    act(&mut sim, Action::Batch { way: "sweep".into(), card_ids: duck.card_ids.clone() });
+    assert!(sim.view.desk.rows.is_empty() && sim.view.desk.duck.is_none(), "cleared at once");
+    for id in &duck.card_ids {
+        let c = &sim.app.board().model.cards[id];
+        assert_eq!((c.object_state.as_str(), c.answer.as_ref().map(|a| a.trusted)), ("answered", Some(true)), "left to the agent");
+    }
+    assert_eq!(sim.view.toasts.len(), 1, "one toast for all: {:?}", sim.view.toasts);
+    let toast = sim.view.toasts[0].clone();
+    assert_eq!((toast.text.en.as_str(), toast.line.as_ref().map(|l| l.en.as_str())), ("Left to the agents", Some("2 cards")));
+    let undo = toast.action.clone().expect("Undo");
+    assert_eq!(undo, Action::Batch { way: "reopen".into(), card_ids: duck.card_ids.clone() });
+    serve(&world, &mut sim);
+    world.stream(&mut sim);
+    act(&mut sim, undo);
+    world.stream(&mut sim);
+    assert_eq!(sim.view.desk.rows.len(), 2, "both back on the Desk");
+    assert_eq!(sim.view.toasts.len(), 1, "an Undo makes no toast of its own");
+}
