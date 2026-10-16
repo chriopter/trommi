@@ -277,7 +277,7 @@ pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
     out
 }
 
-/// The teams that are there (a register `team/<id>` with a value), in the menu's order: the place he dragged each to
+/// The teams that are there (a register `desk/<id>` with a value), in the menu's order: the place he dragged each to
 /// (`order`), else the first team ("main") first, then by age. Each with its name ("Personal" when it has none).
 pub fn teams_in_order(m: &Model) -> Vec<(String, String)> {
     let mut d: Vec<(String, Option<f64>, u64, String)> = m

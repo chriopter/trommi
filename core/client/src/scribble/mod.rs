@@ -5,14 +5,14 @@
 //! `loadBoard` and `writeSnapshot` of before.
 //!
 //! - **Reading**: when a board comes into view (`Focus.board`, `Screen::Scribble`) and the room is live, the
-//!   register `scribble_snapshot/team/<board>` names the newest snapshot. Its file is fetched, decrypted, unpacked
+//!   register `scribble_snapshot/desk/<board>` names the newest snapshot. Its file is fetched, decrypted, unpacked
 //!   (`gzip`) and loaded (`Board::from_snapshot`, with the register's frontier); then the board's items are read in
 //!   pages (`GET /v1/boards/{board}`) from `items_after_change()` on, each item read by the engine out of the hub's
 //!   order as a Desk's version is. A snapshot that does not load is dropped and the board read from its first item.
 //!   What arrives meanwhile (live items, the pages) is held and applied in the hub's order once the last page came.
 //! - **Live**: a board item the engine reports is applied at once to every board that is read; a stroke piece grows
 //!   the stroke shown under `live:<sender>/<stroke>` until its finished form arrives (or nothing came for a while).
-//! - **Own items**: `Action::BoardItem` echoes into the model's timeline `scribble:team/<board>` (`actions::run`);
+//! - **Own items**: `Action::BoardItem` echoes into the model's timeline `scribble:desk/<board>` (`actions::run`);
 //!   the view lays those echoes over the board until the hub's copy is applied, and a refusal takes them back.
 //! - **Snapshots**: after [`SNAP_EVERY`] items and [`SNAP_IDLE_MS`] without one, with nothing of this device in
 //!   flight for the board and every item read: the frontier is declared (`POST /v1/boards/{board}/frontier`), the
@@ -66,7 +66,7 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
     (0..text.len()).step_by(2).map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok()).collect()
 }
 
-/// The board a model id names: `team/<32 hex>`.
+/// The board a model id names: `desk/<32 hex>`.
 pub fn board_of(id: &str) -> Option<BoardId> {
     let hex = id.strip_prefix("desk/")?;
     if hex.len() != 32 || hex.bytes().any(|b| b.is_ascii_uppercase()) {
@@ -938,7 +938,7 @@ fn lay(shapes: &mut Vec<BoardShape>, refs: &mut BTreeMap<String, Map<String, Val
 }
 
 /// A board that lives in the model alone (the demo room: no hub, no snapshot): every item of its timeline
-/// `scribble:team/<board>` in the order they were sent, ready to draw, and the references of its pictures.
+/// `scribble:desk/<board>` in the order they were sent, ready to draw, and the references of its pictures.
 pub fn model_board(model: &Model, board: &BoardId) -> (BoardView, BTreeMap<String, Map<String, Value>>) {
     let id = format!("desk/{}", hex(board.as_bytes()));
     let mut shapes = Vec::new();

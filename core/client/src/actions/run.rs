@@ -461,7 +461,7 @@ impl Doing<'_> {
     }
 
     /// Each live main session on a team carries that team's goals for its agent (9.3.4, web `syncGoals`): its
-    /// group's register `goals` = `{team_id, team_name, goals}`, or none when the team has none. Written where it
+    /// group's register `goals` = `{desk_id, desk_name, goals}`, or none when the team has none. Written where it
     /// differs from what the group holds and was not written already; no echo, no toast (the person did not act).
     pub fn sync_goals(&mut self) {
         let mut writes = Vec::new();

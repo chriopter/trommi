@@ -226,7 +226,7 @@ impl<'a> Board<'a> {
             .into_iter()
             .map(|row| {
                 let own = teams.first().map(|first| if has(&row.team) { row.team.clone() } else { first.id.clone() });
-                // The crown: a team's own (its register `team/<id>`, `crown`) decides on that team; a team without
+                // The crown: a team's own (its register `desk/<id>`, `crown`) decides on that team; a team without
                 // one keeps the room's single crown, if that session stands on it.
                 let crowned = match own.as_ref().and_then(|d| teams.iter().find(|x| &x.id == d)).and_then(|d| d.crown.as_ref()) {
                     None => row.starred,

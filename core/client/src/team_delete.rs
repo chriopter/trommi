@@ -17,7 +17,7 @@
 //!    deleted at the hub at once (`DELETE /v1/files/{file}`, a human device may delete any file; an answer
 //!    `not-found` counts as done).
 //! 7. `WriteSnapshot`: a snapshot of the empty board, so the hub prunes the board's items (10.9).
-//! 8. `RemoveTeam`: the team's register is taken away (`team/<id>` null).
+//! 8. `RemoveTeam`: the team's register is taken away (`desk/<id>` null).
 //!
 //! The hub drops the sealed copies itself: a settled object's bodies and an archived group's messages after 30 days
 //! (spec 9.4.1, 14.3), the board's items once a snapshot covers them (9.4.3).
