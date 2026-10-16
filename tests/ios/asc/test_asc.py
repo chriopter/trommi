@@ -1,4 +1,5 @@
-"""The App Store Connect steps of the public beta (asc.py external, beta-review, whats-new), dry: every API call is
+"""The App Store Connect steps of the public beta (asc.py external, beta-review, whats-new), the upload's retries and
+its pick-up of an earlier upload, dry: every API call is
 answered from fixtures/api.json and recorded, nothing goes to the network and no key is needed.
 
     python3 -m unittest discover -s tests/ios/asc -v
@@ -21,7 +22,7 @@ class Fake:
         self.answers = {**copy.deepcopy(API), **over}
         self.sent = []
 
-    def __call__(self, method, path, body=None, ok=()):
+    def __call__(self, method, path, body=None, ok=(), budget=None):
         self.sent.append((method, path, body))
         key = f"{method} {path}"
         if key not in self.answers:
@@ -275,6 +276,182 @@ class WhatsNew(Base):
     def test_not_whats_new(self):
         code, _, _ = self.run_with(None, asc.whats_new, str(HERE / "fixtures/crash.txt"))
         self.assertNotEqual(code, 0)
+
+
+class Http:
+    """Stands in for urllib.request.urlopen: each entry of `script` is an exception to raise or bytes to answer."""
+
+    def __init__(self, *script):
+        self.script, self.seen = list(script), []
+
+    def __call__(self, req, timeout=None):
+        self.seen.append((req.get_method(), req.full_url, timeout))
+        step = self.script.pop(0)
+        if isinstance(step, BaseException):
+            raise step
+
+        class Resp(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+        return Resp(step)
+
+
+def http_error(code, body=b'{"errors":[{"code":"UNEXPECTED_ERROR"}]}', headers=None):
+    import email.message, urllib.error
+    h = email.message.Message()
+    for k, v in (headers or {}).items():
+        h[k] = v
+    return urllib.error.HTTPError("https://api.appstoreconnect.apple.com/x", code, "err", h, io.BytesIO(body))
+
+
+class Retries(Base):
+    def setUp(self):
+        super().setUp()
+        self.patched = (asc.urllib.request.urlopen, asc._sleep, asc.token, asc._clock)
+        self.pauses = []
+        asc._sleep = self.pauses.append
+        asc._clock = lambda: sum(self.pauses)   # time passes only in the pauses
+        asc.token = lambda: "not-a-token"
+
+    def tearDown(self):
+        asc.urllib.request.urlopen, asc._sleep, asc.token, asc._clock = self.patched
+        super().tearDown()
+
+    def run_http(self, http, *args, **kw):
+        asc.urllib.request.urlopen = http
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                return asc.call(*args, **kw), err.getvalue()
+            except SystemExit as e:
+                return e.code, err.getvalue()
+
+    def test_500_and_a_timeout_are_tried_again(self):
+        http = Http(http_error(500), TimeoutError("The read operation timed out"), http_error(503, headers={"Retry-After": "7"}), b'{"data": []}')
+        got, err = self.run_http(http, "GET", "/v1/bundleIds")
+        self.assertEqual(got, {"data": []})
+        self.assertEqual(len(http.seen), 4)
+        self.assertEqual(self.pauses, [5, 10, 7])
+        self.assertIn("HTTP 500 UNEXPECTED_ERROR; trying again", err)
+        self.assertIn("TimeoutError", err)
+        self.assertEqual({t for _, _, t in http.seen}, {asc.TIMEOUT})
+        self.assertNotIn("not-a-token", err)
+
+    def test_a_client_error_is_not_tried_again(self):
+        http = Http(http_error(404, b'{"errors":[{"code":"NOT_FOUND","detail":"gone"}]}'))
+        got, _ = self.run_http(http, "GET", "/v1/x", ok=(404,))
+        self.assertEqual(got["error"], 404)
+        self.assertEqual(len(http.seen), 1)
+        http = Http(http_error(403))
+        got, err = self.run_http(http, "GET", "/v1/x")
+        self.assertEqual(got, 1)
+        self.assertIn("HTTP 403", err)
+
+    def test_apple_down_for_good_fails_saying_so(self):
+        http = Http(*[http_error(500)] * 50)
+        got, err = self.run_http(http, "GET", "/v1/buildUploads/u1", budget=30)
+        self.assertEqual(got, 1)
+        self.assertEqual(self.pauses, [5, 10])   # 15 s spent; one more pause (20 s) would pass the 30 s
+        self.assertIn("App Store Connect is down or very slow", err)
+        self.assertIn("run the job again later", err)
+
+
+def ipa(directory, build="158"):
+    import plistlib, zipfile
+    path = os.path.join(directory, "Trommi.ipa")
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("Payload/Trommi.app/Info.plist", plistlib.dumps(
+            {"CFBundleIdentifier": "com.trommi.ios", "CFBundleShortVersionString": "1.0.0", "CFBundleVersion": build}))
+        z.writestr("Symbols/x.symbols", b"x")
+    return path
+
+
+class Upload(Base):
+    BUILD = "GET /v1/builds?filter[app]=app1&filter[version]=158&filter[preReleaseVersion.version]=1.0.0&filter[preReleaseVersion.platform]=IOS&limit=1"
+    UPLOADS = "GET /v1/apps/app1/buildUploads?filter[cfBundleVersion]=158&filter[platform]=IOS&limit=50"
+
+    def setUp(self):
+        super().setUp()
+        self.patched = (asc._sleep, asc.urllib.request.urlopen)
+        asc._sleep = lambda s: None
+
+    def tearDown(self):
+        asc._sleep, asc.urllib.request.urlopen = self.patched
+        super().tearDown()
+
+    def upload(self, fake):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            return self.run_with(fake, asc.upload, ipa(d), "1.0.0", "158")
+
+    def answers(self, uploads=(), build=()):
+        return {"GET /v1/apps?filter[bundleId]=com.trommi.ios": {"data": [{"id": "app1", "attributes": {"bundleId": "com.trommi.ios"}}]},
+                self.BUILD: {"data": list(build)}, self.UPLOADS: {"data": list(uploads)}}
+
+    @staticmethod
+    def up(uid, state):
+        return {"id": uid, "attributes": {"cfBundleVersion": "158", "cfBundleShortVersionString": "1.0.0", "platform": "IOS",
+                                          "state": {"state": state}}}
+
+    def test_a_build_app_store_connect_has_is_not_sent_again(self):
+        fake = Fake(**self.answers(build=[{"id": "b158", "attributes": {"processingState": "PROCESSING"}}]))
+        code, out, err = self.upload(fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("nothing to upload", out)
+        self.assertEqual(fake.writes(), [])
+
+    def test_an_upload_that_went_through_is_waited_for_not_sent(self):
+        fake = Fake(**self.answers(uploads=[self.up("u-old", "FAILED"), self.up("u1", "PROCESSING")]),
+                    **{"GET /v1/buildUploads/u1": {"data": self.up("u1", "COMPLETE")}})
+        code, out, err = self.upload(fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("buildUpload u1 of 1.0.0 (158) is there already (PROCESSING): not sent again", out)
+        self.assertIn("buildUpload u1: COMPLETE", out)
+        self.assertEqual(fake.writes(), [])
+
+    def test_a_409_on_the_upload_picks_up_the_one_made_by_the_lost_try(self):
+        class Twice(Fake):
+            n = 0
+
+            def __call__(self, method, path, body=None, ok=(), budget=None):
+                if f"{method} {path}" == Upload.UPLOADS:
+                    Twice.n += 1
+                    if Twice.n == 1:
+                        self.sent.append((method, path, body))
+                        return {"data": []}
+                return super().__call__(method, path, body, ok, budget)
+        fake = Twice(**self.answers(uploads=[self.up("u1", "AWAITING_UPLOAD")]), **{
+            "POST /v1/buildUploads": {"error": 409, "codes": ["ENTITY_ERROR"], "detail": "exists"},
+            "GET /v1/buildUploads/u1/buildUploadFiles?limit=50": {"data": []},
+            "POST /v1/buildUploadFiles": {"data": {"id": "f1", "attributes": {"uploadOperations": [
+                {"method": "PUT", "url": "https://upload.example/p1", "offset": 0, "length": 10, "requestHeaders": []}]}}},
+            "PATCH /v1/buildUploadFiles/f1": {},
+            "GET /v1/buildUploads/u1": {"data": self.up("u1", "COMPLETE")}})
+        asc.urllib.request.urlopen = Http(http_error(500), b"")
+        code, out, err = self.upload(fake)
+        self.assertEqual(code, 0, err)
+        self.assertEqual([(m, p) for m, p, _ in fake.writes()], [
+            ("POST", "/v1/buildUploads"), ("POST", "/v1/buildUploadFiles"), ("PATCH", "/v1/buildUploadFiles/f1")])
+        self.assertEqual(fake.writes()[1][2]["data"]["relationships"]["buildUpload"]["data"]["id"], "u1")
+        self.assertIn("upload of the part at 0: HTTP 500", err)
+
+    def test_a_failed_earlier_upload_fails_with_its_errors(self):
+        failed = self.up("u1", "FAILED")
+        failed["attributes"]["state"]["errors"] = [{"code": "90062", "description": "bundle version must be higher"}]
+        code, out, err = self.upload(Fake(**self.answers(uploads=[failed])))
+        self.assertEqual(code, 1)
+        self.assertIn("90062: bundle version must be higher", out)
+        self.assertIn("a new run takes the next build number", err)
+
+    def test_the_next_build_number_counts_uploads_not_listed_yet(self):
+        fake = Fake(**{"GET /v1/apps?filter[bundleId]=com.trommi.ios": {"data": [{"id": "app1", "attributes": {"bundleId": "com.trommi.ios"}}]},
+                       "GET /v1/builds?filter[app]=app1&limit=200&fields[builds]=version,uploadedDate": {"data": [{"attributes": {"version": "157"}}]},
+                       "GET /v1/apps/app1/buildUploads?limit=200": {"data": [{"attributes": {"cfBundleVersion": "158"}}, {"attributes": {"cfBundleVersion": "159"}}]}})
+        code, out, err = self.run_with(fake, asc.next_build)
+        self.assertEqual((code, out.strip()), (0, "160"), err)
 
 
 if __name__ == "__main__":
