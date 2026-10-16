@@ -376,3 +376,15 @@ fn a_durable_public_notice_survives_private_device_erasure_and_its_ack_survives_
     drop(stores);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn cache_names_are_ordered_and_never_include_device_entries_or_cached_values() {
+    let dir = folder("cache-names");
+    let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
+    ok(apply(&mut stores, 0, vec![entry(b"private-device-key", b"secret")], vec![]));
+    put(&mut stores, &[("private/b", b"big value"), ("private/a", b"another value"), ("other", b"unrelated")], &[]);
+    assert_eq!(ok(stores.run(StoreOp::Keys { prefix:"private/".into() })), StoreAnswer::Keys { keys:vec!["private/a".into(),"private/b".into()] });
+    assert_eq!(ok(stores.run(StoreOp::Keys { prefix:String::new() })), StoreAnswer::Keys { keys:vec!["other".into(),"private/a".into(),"private/b".into()] });
+    drop(stores);
+    let _ = std::fs::remove_dir_all(dir);
+}

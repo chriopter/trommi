@@ -67,6 +67,73 @@ final class CoreSessionTests: XCTestCase {
     let scan = try store.run(NativePacket(["op": "scan", "prefix": ""]))
     XCTAssertEqual(Set((scan.json["entries"] as? [[String: Any]] ?? []).compactMap { $0["key"] as? String }), Set(keys))
   }
+  func testCacheNamesIncludeUnreadableValuesWithoutReadingOrReturningThem() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-cache-names-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try ShellStore(directory: directory); defer { store.close() }
+    let key = "c1/private/corrupt"
+    _ = try store.run(NativePacket(["op": "put", "put": [["key": key, "value": 0]]], blobs: [Data("private cached value".utf8)]))
+    let cache = directory.appendingPathComponent("cache")
+    for case let file as URL in FileManager.default.enumerator(at: cache, includingPropertiesForKeys: [.isRegularFileKey])! {
+      if file.lastPathComponent == "value" { try Data([1, 2, 3]).write(to: file) }
+    }
+    let answer = try store.run(NativePacket(["op": "keys", "prefix": "c1/"]))
+    XCTAssertEqual(answer.json["answer"] as? String, "keys")
+    XCTAssertEqual(answer.json["keys"] as? [String], [key])
+    XCTAssertTrue(answer.blobs.isEmpty)
+    _ = try store.run(NativePacket(["op": "put", "delete": [key]]))
+    XCTAssertEqual(try store.run(NativePacket(["op": "keys", "prefix": ""])).json["keys"] as? [String], [])
+  }
+  func testCachePrefixesDistinguishUtf8NamesAndCrossLongPathBoundaries() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-unicode-prefix-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try ShellStore(directory: directory); defer { store.close() }
+    let keys = ["é/one", "e\u{301}/two", String(repeating: "雪", count: 80) + "/child"]
+    for (index, key) in keys.enumerated() {
+      _ = try store.run(NativePacket(["op": "put", "put": [["key": key, "value": 0]]], blobs: [Data([UInt8(index)])]))
+    }
+    XCTAssertEqual(try store.run(NativePacket(["op": "scan", "prefix": "é/"])).blobs, [Data([0])])
+    XCTAssertEqual(try store.run(NativePacket(["op": "scan", "prefix": "e\u{301}/"])).blobs, [Data([1])])
+    XCTAssertEqual(try store.run(NativePacket(["op": "scan", "prefix": String(repeating: "雪", count: 61)])).blobs, [Data([2])])
+    XCTAssertTrue(try store.run(NativePacket(["op": "scan", "prefix": String(repeating: "雪", count: 81)])).blobs.isEmpty)
+  }
+  func testCachePrefixScansAndEmptyDeviceStartupWithUnrelatedRecords() async throws {
+    let rows = max(1, min(100_000, Int(ProcessInfo.processInfo.environment["TROMMI_STORE_BENCH_ROWS"] ?? "128") ?? 128))
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-prefix-bench-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try ShellStore(directory: directory)
+    let privatePrefix = "c1/" + String(repeating: "ab", count: 32) + "/model/card/"
+    let publicKey = "public-departure/fixture-room.device"
+    let entries: [[String: Any]] = (0..<rows).map { ["key": privatePrefix + String(format: "%08d", $0), "value": 0] }
+    _ = try store.run(NativePacket(["op": "put", "put": entries + [["key": publicKey, "value": 0]]], blobs: [Data("isolated benchmark record".utf8)]))
+    func elapsed(_ since: UInt64) -> Double { Double(DispatchTime.now().uptimeNanoseconds - since) / 1_000_000 }
+    var measurements: [String: Any] = ["rows": rows]
+    for (name, prefix, count) in [("public_hit_ms", "public-departure/", 1), ("public_miss_ms", "public-departure/no-such-room", 0), ("full_scan_ms", "", rows + 1), ("names_only_ms", "", rows + 1)] {
+      var samples = [Double]()
+      for _ in 0..<5 {
+        let began = DispatchTime.now().uptimeNanoseconds
+        let answer = try store.run(NativePacket(["op": name == "names_only_ms" ? "keys" : "scan", "prefix": prefix]))
+        samples.append(elapsed(began))
+        if name == "names_only_ms" {
+          XCTAssertEqual((answer.json["keys"] as? [String])?.count, count)
+          XCTAssertTrue(answer.blobs.isEmpty)
+        } else { XCTAssertEqual((answer.json["entries"] as? [[String: Any]])?.count, count) }
+      }
+      measurements[name] = samples
+    }
+    store.close()
+    let drawn = Drawn()
+    let began = DispatchTime.now().uptimeNanoseconds
+    let session = try CoreSession(directory: directory) { packet in await drawn.take(packet) }
+    measurements["construct_ms"] = elapsed(began)
+    await session.send(NativePacket(["type": "start", "config": ["platform": "test", "version": "0", "seed": 7]]))
+    measurements["construct_to_signed_out_ms"] = elapsed(began)
+    let model = await drawn.value()
+    XCTAssertEqual(model.phase, .signedOut)
+    await session.close()
+    let data = try JSONSerialization.data(withJSONObject: measurements, options: [.sortedKeys])
+    print("TROMMI_CACHE_PREFIX_BENCH " + String(decoding: data, as: UTF8.self))
+  }
   func testDurableCacheWritesAndDeletesSurviveReopening() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-durable-cache-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }

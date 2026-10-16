@@ -73,7 +73,10 @@ alone owns the MLS device and private keys; extensions never open its state. One
 written per batch and flushed before the core hears success. An uncertain write stops the store. The Keychain
 revision anchor refuses a state older than a durable outbox write; the state folder is excluded from backups.
 `ShellStore` separately seals disposable cache entries and splits encoded cache paths into bounded filesystem
-components. Losing the cache costs a catch-up, never a device identity or pending outbox write.
+components. Prefix scans skip unrelated encoded subtrees and reuse enumerated file URLs; names-only listings
+do not read or decrypt values. Disposable model cache loss costs a catch-up, never a device identity or pending
+protocol outbox write. Public signed logout notices are durable until checked acknowledgement, as described in
+[the app core](../../core/client/README.md).
 
 Private state, cache, anchor and core-requested secrets use the app's own Keychain access group and
 `AfterFirstUnlockThisDeviceOnly`. The app names the group explicitly; a shared extension item cannot become the
@@ -161,7 +164,10 @@ HTTP only. Without the private account file this opt-in test is skipped.
 For ordinary launch timing, after building a Release Simulator app, run
 `tests/ios/UITests/startup.sh /absolute/Trommi.app /absolute/mega.json 290 /absolute/evidence` on the Mac.
 It creates and removes its own Simulator, records three process launches, requires the full Desk row count and
-fails if launch through first Desk appearance takes 2 seconds or more, including time before app initialization. `DESK_BUDGET_MS` changes that budget explicitly.
+fails if launch through first Desk appearance takes 2 seconds or more, including time before app initialization.
+The helper uses one Python process for the clock interval, accepts only the PID returned by `simctl`, and
+records first-report time separately from command completion. This also works on the Mac's Python 3.9, whose
+monotonic clock origins differ between processes. `DESK_BUDGET_MS` changes the budget explicitly.
 This avoids XCTest's injected launch services; its lifecycle delay is included in the XCTest measurements below.
 
 The opt-in `NativeScreensTests.testFullSizeDeskLaunchAndMemory` measures the same Rust model and native Desk
@@ -171,6 +177,23 @@ Mac-local file and `TROMMI_SPEED_ROWS=290` in the `TrommiSimulator` test scheme.
 launch measurements and attaches first-Desk timing, row count, resident bytes and boundary timings. Resident
 bytes include shared Simulator mappings; they are not a count of private card storage. No account or hub is
 used by that measurement. The fixture override requires explicit `TROMMI_SCREEN` demo mode.
+
+For a bounded cache I/O benchmark, run `CoreSessionTests.testCachePrefixScansAndEmptyDeviceStartupWithUnrelatedRecords`
+with `TROMMI_STORE_BENCH_ROWS=1000` or `10000` (ordinary tests default to 128). It creates private temporary
+stores with encrypted 24-byte values; no account, system Keychain or owner data is used. On the same Mac mini,
+five-sample scan medians and one empty-device `CoreSession` startup sample gave:
+
+| Cached records | Operation | Before (ms) | After (ms) |
+| --- | --- | ---: | ---: |
+| 1,000 | Public-prefix lookup | 219.44 | 0.51 |
+| 1,000 | Full value scan | 967.63 | 327.91 |
+| 1,000 | Empty-device core startup | 215.87 | 18.30 |
+| 10,000 | Public-prefix lookup | 2,289.65 | 0.53 |
+| 10,000 | Full value scan | 10,286.19 | 3,521.40 |
+| 10,000 | Empty-device core startup | 2,415.09 | 13.62 |
+
+These measure storage and an empty-device core, separately from a rendered Desk or a physical iPhone launch.
+Encryption and the existing filename layout stay the same.
 
 ## Xcode, TestFlight and releases
 

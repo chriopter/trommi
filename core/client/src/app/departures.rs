@@ -59,6 +59,7 @@ impl Pending {
     pub(super) fn is_departure(&self) -> bool { matches!(self, Self::DepartureLoad | Self::DepartureSave(_) | Self::DepartureHttp(_, _) | Self::DepartureDelete(_)) }
 }
 impl Departures {
+    pub(super) fn loaded(&self) -> bool { self.loaded }
     pub(super) fn keeps(&self, key: &str) -> bool { self.records.contains_key(key) }
     pub(super) fn wake(&self) -> Option<u64> {
         let waiting = (self.records.values().filter(|r| r.busy).count() < MAX_ACTIVE)

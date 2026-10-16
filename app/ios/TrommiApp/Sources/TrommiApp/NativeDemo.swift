@@ -23,7 +23,7 @@ enum NativeDemo {
     }
     if status == KERN_SUCCESS { resident = info.resident_size }
     #endif
-    let report: [String: Any] = ["rows": rows, "desk_ms": (ProcessInfo.processInfo.systemUptime - launchStart) * 1000, "resident_bytes": resident, "folded_ms": foldedAt ?? 0, "checkpoints": checkpoints, "steps": Spent.take()]
+    let report: [String: Any] = ["process_id": ProcessInfo.processInfo.processIdentifier, "rows": rows, "desk_ms": (ProcessInfo.processInfo.systemUptime - launchStart) * 1000, "resident_bytes": resident, "folded_ms": foldedAt ?? 0, "checkpoints": checkpoints, "steps": Spent.take()]
     guard let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) else { return nil }
     let text = String(decoding: data, as: UTF8.self)
     // A normal simctl launch can be measured without XCTest injecting its startup services.
