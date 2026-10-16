@@ -312,6 +312,48 @@ pub struct SidebarView {
     /// How many of his answers the sessions of the team in view have not picked up.
     #[serde(default)]
     pub unheard: u32,
+    /// Every team as a stack, in the menu's order (the wide sidebar: all teams at once). Folded, a team shows its
+    /// head with its sessions as card edges under it; open, its sessions' rows. The phone draws `sessions` instead.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stacks: Vec<TeamStackView>,
+}
+
+/// A team in the wide sidebar: its head, and its sessions as a folded stack or as rows.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamStackView {
+    pub id: String,
+    pub name: Text,
+    /// The team in view (its Desk is the Desk).
+    pub selected: bool,
+    /// Folded on this device (`Action::FoldTeam`; unless chosen there: every team but the one in view). A team
+    /// without sessions is never folded.
+    pub folded: bool,
+    /// The open questions of the team's sessions.
+    pub waiting: u32,
+    /// One of them knocks.
+    #[serde(default)]
+    pub knocks: bool,
+    /// What the head says to a screen reader and as its hint: "3 agents, 2 questions open".
+    pub says: Text,
+    /// Folded: a card edge per session (at most [`STACK_EDGES`]), in the rows' order. What knocks is said by the
+    /// head's number, not by an edge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edges: Vec<StackEdgeView>,
+    /// Its sessions, one row each, in drawing order (connected first): also while folded, for the rail and the keys.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sessions: Vec<SessionRowView>,
+}
+
+/// So many sessions have a card edge of their own in a folded team's stack.
+pub const STACK_EDGES: usize = 6;
+
+/// A session's card edge in a folded team's stack.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StackEdgeView {
+    /// The session's key (its row's id).
+    pub id: String,
+    /// What draws it (its row's mark): the edge takes its colour.
+    pub mark: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

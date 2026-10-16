@@ -85,6 +85,26 @@
               "key": "team.personal"
             },
             "sessions": [],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "0"
+                  },
+                  "en": "0 agents",
+                  "key": "team.stack"
+                },
+                "selected": true,
+                "waiting": 0
+              }
+            ],
             "stopped": 0,
             "team": "main",
             "teams": [
@@ -219,6 +239,73 @@
                 "unheard": 0,
                 "unread": false,
                 "working": false
+              }
+            ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": true,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "gone",
+                      "line": {
+                        "args": {
+                          "at": "",
+                          "name": "Loading …",
+                          "program": "Claude Code"
+                        },
+                        "en": "Loading … is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                        "key": "link.gone.line_silent"
+                      },
+                      "short": {
+                        "en": "Gone",
+                        "key": "link.gone.short"
+                      },
+                      "word": {
+                        "args": {
+                          "at": ""
+                        },
+                        "en": "gone",
+                        "key": "link.gone.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":off",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "gone",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "Loading …",
+                      "key": "session.name"
+                    },
+                    "online": false,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
               }
             ],
             "stopped": 0,
@@ -464,6 +551,73 @@
                 "unheard": 0,
                 "unread": false,
                 "working": false
+              }
+            ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": true,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "gone",
+                      "line": {
+                        "args": {
+                          "at": "",
+                          "name": "00000002eeee",
+                          "program": "Claude Code"
+                        },
+                        "en": "00000002eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                        "key": "link.gone.line_silent"
+                      },
+                      "short": {
+                        "en": "Gone",
+                        "key": "link.gone.short"
+                      },
+                      "word": {
+                        "args": {
+                          "at": ""
+                        },
+                        "en": "gone",
+                        "key": "link.gone.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":off",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "gone",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": false,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
               }
             ],
             "stopped": 0,
@@ -734,6 +888,69 @@
                 "working": false
               }
             ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": false,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "oncall",
+                      "line": {
+                        "args": {
+                          "min": "1",
+                          "name": "00000002eeee"
+                        },
+                        "en": "00000002eeee hears you on its next step; its last one was 1 min ago.",
+                        "key": "link.oncall.line"
+                      },
+                      "short": {
+                        "en": "Hears you on its next step",
+                        "key": "link.oncall.short"
+                      },
+                      "word": {
+                        "en": "on its next step",
+                        "key": "link.oncall.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":on",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "oncall",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": true,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
+              }
+            ],
             "stopped": 0,
             "team": "main",
             "teams": [
@@ -950,6 +1167,69 @@
                 "working": false
               }
             ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": false,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "oncall",
+                      "line": {
+                        "args": {
+                          "min": "2",
+                          "name": "00000002eeee"
+                        },
+                        "en": "00000002eeee hears you on its next step; its last one was 2 min ago.",
+                        "key": "link.oncall.line"
+                      },
+                      "short": {
+                        "en": "Hears you on its next step",
+                        "key": "link.oncall.short"
+                      },
+                      "word": {
+                        "en": "on its next step",
+                        "key": "link.oncall.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":on",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "oncall",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": true,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
+              }
+            ],
             "stopped": 0,
             "team": "main",
             "teams": [
@@ -1024,6 +1304,69 @@
                 "unheard": 0,
                 "unread": false,
                 "working": false
+              }
+            ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": false,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "oncall",
+                      "line": {
+                        "args": {
+                          "min": "3",
+                          "name": "00000002eeee"
+                        },
+                        "en": "00000002eeee hears you on its next step; its last one was 3 min ago.",
+                        "key": "link.oncall.line"
+                      },
+                      "short": {
+                        "en": "Hears you on its next step",
+                        "key": "link.oncall.short"
+                      },
+                      "word": {
+                        "en": "on its next step",
+                        "key": "link.oncall.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":on",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "oncall",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": true,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
               }
             ],
             "stopped": 0,
@@ -1102,6 +1445,69 @@
                 "working": false
               }
             ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": false,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "oncall",
+                      "line": {
+                        "args": {
+                          "min": "4",
+                          "name": "00000002eeee"
+                        },
+                        "en": "00000002eeee hears you on its next step; its last one was 4 min ago.",
+                        "key": "link.oncall.line"
+                      },
+                      "short": {
+                        "en": "Hears you on its next step",
+                        "key": "link.oncall.short"
+                      },
+                      "word": {
+                        "en": "on its next step",
+                        "key": "link.oncall.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":on",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "oncall",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": true,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
+              }
+            ],
             "stopped": 0,
             "team": "main",
             "teams": [
@@ -1176,6 +1582,69 @@
                 "unheard": 0,
                 "unread": false,
                 "working": false
+              }
+            ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": false,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "oncall",
+                      "line": {
+                        "args": {
+                          "min": "5",
+                          "name": "00000002eeee"
+                        },
+                        "en": "00000002eeee hears you on its next step; its last one was 5 min ago.",
+                        "key": "link.oncall.line"
+                      },
+                      "short": {
+                        "en": "Hears you on its next step",
+                        "key": "link.oncall.short"
+                      },
+                      "word": {
+                        "en": "on its next step",
+                        "key": "link.oncall.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":on",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "oncall",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": true,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
               }
             ],
             "stopped": 0,
@@ -1254,6 +1723,69 @@
                 "working": false
               }
             ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": false,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "oncall",
+                      "line": {
+                        "args": {
+                          "min": "6",
+                          "name": "00000002eeee"
+                        },
+                        "en": "00000002eeee hears you on its next step; its last one was 6 min ago.",
+                        "key": "link.oncall.line"
+                      },
+                      "short": {
+                        "en": "Hears you on its next step",
+                        "key": "link.oncall.short"
+                      },
+                      "word": {
+                        "en": "on its next step",
+                        "key": "link.oncall.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":on",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "oncall",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": true,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
+              }
+            ],
             "stopped": 0,
             "team": "main",
             "teams": [
@@ -1328,6 +1860,69 @@
                 "unheard": 0,
                 "unread": false,
                 "working": false
+              }
+            ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": false,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "oncall",
+                      "line": {
+                        "args": {
+                          "min": "7",
+                          "name": "00000002eeee"
+                        },
+                        "en": "00000002eeee hears you on its next step; its last one was 7 min ago.",
+                        "key": "link.oncall.line"
+                      },
+                      "short": {
+                        "en": "Hears you on its next step",
+                        "key": "link.oncall.short"
+                      },
+                      "word": {
+                        "en": "on its next step",
+                        "key": "link.oncall.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":on",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "oncall",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": true,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
               }
             ],
             "stopped": 0,
@@ -1406,6 +2001,69 @@
                 "working": false
               }
             ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": false,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "oncall",
+                      "line": {
+                        "args": {
+                          "min": "8",
+                          "name": "00000002eeee"
+                        },
+                        "en": "00000002eeee hears you on its next step; its last one was 8 min ago.",
+                        "key": "link.oncall.line"
+                      },
+                      "short": {
+                        "en": "Hears you on its next step",
+                        "key": "link.oncall.short"
+                      },
+                      "word": {
+                        "en": "on its next step",
+                        "key": "link.oncall.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":on",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "oncall",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": true,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
+              }
+            ],
             "stopped": 0,
             "team": "main",
             "teams": [
@@ -1480,6 +2138,69 @@
                 "unheard": 0,
                 "unread": false,
                 "working": false
+              }
+            ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": false,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "oncall",
+                      "line": {
+                        "args": {
+                          "min": "9",
+                          "name": "00000002eeee"
+                        },
+                        "en": "00000002eeee hears you on its next step; its last one was 9 min ago.",
+                        "key": "link.oncall.line"
+                      },
+                      "short": {
+                        "en": "Hears you on its next step",
+                        "key": "link.oncall.short"
+                      },
+                      "word": {
+                        "en": "on its next step",
+                        "key": "link.oncall.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":on",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "oncall",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": true,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
               }
             ],
             "stopped": 0,
@@ -1562,6 +2283,75 @@
                 "unheard": 0,
                 "unread": false,
                 "working": false
+              }
+            ],
+            "stacks": [
+              {
+                "folded": false,
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "says": {
+                  "args": {
+                    "agents": "1"
+                  },
+                  "en": "1 agent",
+                  "key": "team.stack.one"
+                },
+                "selected": true,
+                "sessions": [
+                  {
+                    "away": false,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "asleep",
+                      "line": {
+                        "args": {
+                          "min": "10",
+                          "name": "00000002eeee"
+                        },
+                        "en": "00000002eeee is not listening: it hears you only on its next step, and its last one was 10 min ago.",
+                        "key": "link.asleep.line"
+                      },
+                      "short": {
+                        "args": {
+                          "min": "10"
+                        },
+                        "en": "Not listening for 10 min",
+                        "key": "link.asleep.short"
+                      },
+                      "word": {
+                        "args": {
+                          "min": "10"
+                        },
+                        "en": "not listening · 10 min",
+                        "key": "link.asleep.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":on",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "asleep",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": true,
+                    "open": 0,
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
+                "waiting": 0
               }
             ],
             "stopped": 0,
@@ -1819,6 +2609,75 @@
           "unheard": 0,
           "unread": false,
           "working": false
+        }
+      ],
+      "stacks": [
+        {
+          "folded": false,
+          "id": "main",
+          "knocks": false,
+          "name": {
+            "en": "Personal",
+            "key": "team.personal"
+          },
+          "says": {
+            "args": {
+              "agents": "1"
+            },
+            "en": "1 agent",
+            "key": "team.stack.one"
+          },
+          "selected": true,
+          "sessions": [
+            {
+              "away": false,
+              "blocked": false,
+              "cap": {
+                "kind": "asleep",
+                "line": {
+                  "args": {
+                    "min": "10",
+                    "name": "00000002eeee"
+                  },
+                  "en": "00000002eeee is not listening: it hears you only on its next step, and its last one was 10 min ago.",
+                  "key": "link.asleep.line"
+                },
+                "short": {
+                  "args": {
+                    "min": "10"
+                  },
+                  "en": "Not listening for 10 min",
+                  "key": "link.asleep.short"
+                },
+                "word": {
+                  "args": {
+                    "min": "10"
+                  },
+                  "en": "not listening · 10 min",
+                  "key": "link.asleep.word"
+                }
+              },
+              "crowned": false,
+              "group": ":on",
+              "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+              "knocks": false,
+              "link": "asleep",
+              "main": true,
+              "mark": "00000002eeee",
+              "name": {
+                "en": "00000002eeee",
+                "key": "session.name"
+              },
+              "online": true,
+              "open": 0,
+              "slug": "00000002eeee",
+              "team_id": "main",
+              "unheard": 0,
+              "unread": false,
+              "working": false
+            }
+          ],
+          "waiting": 0
         }
       ],
       "stopped": 0,

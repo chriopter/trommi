@@ -196,7 +196,12 @@ instead); files come network first, the cache only offline. On the dev server (`
   All · Media · Pages, compact tiles in a soft frame with Open and, on a page, Share as small icons; 25 tiles made at once,
   the rest as they come near).
 - **Note:** one drawn yellow note at the window's bottom-right; it unfolds there to write, takes attachments, sends to the crown of the team in view; a square sheet on a wide window (`sidebar.mjs` `cornerNote`).
-- **Sidebar:** the Desk box (the team in view; its chevron opens the Trommi menu, the teams at its top with what waits on each), the sessions of that team (each with its helpers as dots under its name, tallies, the red hand), "New agent" and
+- **Sidebar:** on a wide screen the Trommi box (its chevron opens the Trommi menu) and every team as a stack
+  (`sidebar.mjs` `teamHead`, the core's `TeamStackView`): its desk drawing, name and what waits; folded, its sessions
+  lie under it as a fan of card edges, open, as rows (each with its helpers as dots under its name, tallies, the red
+  hand). The switch beside a team or its edges fold and open it (`FoldTeam`, kept per device); its name goes to its
+  Desk. A phone keeps the Desk box with the team in view (its chevron opens the menu, the teams at its top) and the
+  sessions of that team. Then "New agent" and
   the Trommi menu at its foot. One sidebar, two presentations (`sidebar.css` "A phone"): beside the page on a wide
   screen (foldable to a rail), a drawer up to 860px that a finger from the left edge slides in over the dimmed page (a
   tap beside it, a push back, Esc or a choice closes it). A phone's top line is the pill (the desk's drawing and name;

@@ -2,7 +2,7 @@
 // Desk box with the Trommi menu, the phone's bars and drawer, and the corner note. Everything it shows is the app
 // core's view model (vm.sidebar, vm.notes, vm.settings); what the person does goes to the core as an action (t.act).
 // The markup is the one app.css and sidebar.css style.
-import { BELL, Controller, PLUS, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, el, html, linkCap, raw, sk, sketchSvg, showToast, whoOf, fileSrc } from './ui.mjs'
+import { BELL, Controller, PLUS, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, edgeQuirk, el, html, linkCap, raw, sk, sketchSvg, showToast, whoOf, fileSrc } from './ui.mjs'
 
 /** The board's toolkit (register): the controllers send their actions with it. */
 let T = null
@@ -10,12 +10,12 @@ let T = null
 /** A session's helpers in its row (HelperDotsView): a dot each, filled while that helper works, and "3 helpers". */
 const helperDots = h => (h ? html`<small class="agent-helpers" title="${h.says.en}">${h.working.map(on => html`<i${on ? raw(' class="is-on"') : ''}></i>`)}<span>${h.says.en}</span></small>` : '')
 
-/** One row of the sidebar (SessionRowView). */
-function row(r, base) {
+/** One row of the sidebar (SessionRowView). stack: the team it stands under (TeamStackView), on a wide screen. */
+function row(r, base, stack = null) {
   const who = whoOf(r), name = r.name.en, working = Boolean(r.online && r.working)
-  const cls = ['agent-row', r.main && 'is-main', r.open || r.hand ? 'has-badge' : '', !r.online && 'is-offline'].filter(Boolean).join(' ')
+  const cls = ['agent-row', r.main && 'is-main', r.open || r.hand ? 'has-badge' : '', !r.online && 'is-offline', stack && (stack.selected ? 'of-team-in-view' : 'of-other-team'), stack?.folded && 'in-folded-team'].filter(Boolean).join(' ')
   const order = r.group || ''
-  return html`<div class="${cls}" id="agent-${r.id}" data-unit="${r.id}" data-slug="${r.slug}"${order ? html` data-order="${order}"` : ''}>
+  return html`<div class="${cls}" id="agent-${r.id}" data-unit="${r.id}" data-slug="${r.slug}"${stack ? html` data-team-of="${stack.id}"` : ''}${order ? html` data-order="${order}"` : ''}>
 <a class="agent-entry" data-nav href="${base}/chat/${encodeURIComponent(r.slug)}" draggable="false"${order ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"') : ''} title="${working ? 'Working' : ''}">${avatar(who, { working })}<span class="agent-text"><strong>${name}</strong>${working ? html`<span class="sr-only"> (working)</span>` : ''}${linkCap(r.cap)}${helperDots(r.helpers)}</span></a>
 ${badge(r, base, true)}
 </div>`
@@ -262,9 +262,32 @@ export function joinRow(ask) {
 /** The rows of #agents (vm.sidebar.sessions, in the core's order: the sessions of the team in view), then the
  *  self-join asks and New Agent…. */
 export function sidebarRows(vm, base) {
-  const rows = vm?.sidebar?.sessions ?? []
+  const rows = vm?.sidebar?.sessions ?? [], stacks = vm?.sidebar?.stacks ?? []
   const invite = html`${(vm?.account?.asks ?? []).map(joinRow)}${inviteAgentButton()}`
-  return html`${rows.map(r => row(r, base))}${invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
+  // (a wide screen: every team as a stack, its head and then its rows, all flat children of #agents so the order's
+  //  drag and the keys treat them as before; a phone shows the rows of the team in view alone: sidebar.css)
+  const list = stacks.length ? stacks.map(st => html`${teamHead(st, base)}${(st.sessions ?? []).map(r => row(r, base, st))}`) : rows.map(r => row(r, base))
+  return html`${list}${invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
+}
+
+// ---- every team as a stack (a wide screen: TeamStackView) ----
+// A team's head: its desk drawing (the lamp lit while something waits on it), its name, the number of its open
+// questions, and the switch that folds it. Folded, its sessions lie under the head as card edges, a little crooked,
+// each in its session's colour (the core's edges; what knocks is the head's red number); a click on
+// them, or on the switch, opens the team (FoldTeam), and the head's name goes to the team's Desk. Which teams are
+// folded is this device's: kept in localStorage and sent to the core again at the start (register).
+const TEAMS_FOLDED = 'trommi-teams-folded'
+const teamsFolded = () => { try { const v = JSON.parse(localStorage.getItem(TEAMS_FOLDED) ?? '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {} } catch { return {} } }
+const keepFold = (id, folded) => { try { localStorage.setItem(TEAMS_FOLDED, JSON.stringify({ ...teamsFolded(), [id]: folded })) } catch {} }
+const FOLD_SWITCH = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M7.2 9.8Q9.8 12.4 12.1 14.9Q14.6 12.2 17 9.6"/></svg>')
+function teamHead(st, base) {
+  const name = st.name.en, n = (st.sessions ?? []).length, edges = st.edges ?? []
+  const cls = ['team-head', st.selected && 'is-in-view', st.folded && 'is-folded', st.knocks && 'is-knock', !n && 'is-empty'].filter(Boolean).join(' ')
+  return html`<div class="${cls}" id="team-${st.id}" data-team="${st.id}" style="--n:${edges.length}">
+<a class="team-go" data-nav draggable="false" href="${base}/?team=${encodeURIComponent(st.id)}" data-team-go="${st.id}" title="${name}" aria-label="${name}: ${st.says.en}"${st.selected ? raw(' aria-current="true"') : ''}><span class="team-lamp">${deskMark(st.waiting > 0)}</span><strong>${name}</strong>${st.waiting ? html`<i class="team-n" aria-hidden="true">${st.waiting}</i>` : ''}</a>
+${n ? html`<button type="button" class="team-fold" data-team-fold="${st.id}" aria-expanded="${String(!st.folded)}" aria-label="${st.folded ? `Show the agents of ${name}` : `Fold ${name}`}" title="${st.folded ? 'Show agents' : 'Fold'}">${FOLD_SWITCH}</button>` : ''}
+${st.folded ? html`<span class="team-edges" data-team-fold="${st.id}" title="Show agents" aria-hidden="true">${edges.map((e, i) => { const q = edgeQuirk(e.id); return html`<i style="--i:${i};--hue:${whoOf(e).hue};--tilt:${q.tilt}deg;--dx:${q.dx}px">${raw(q.svg)}</i>` })}</span>` : ''}
+</div>`
 }
 
 /** The Desk box's drawing: the desk with its lamp lit while something waits on it (the open questions of the desk in
@@ -521,7 +544,7 @@ const teamChevron = html`<button type="button" class="team-switch-open" aria-has
 export function topbar(vm, base, isDesk, session = null) {
   const s = sessionOf(vm, session), place = placeName(vm)
   return html`<header class="topbar"><div class="brand">
-<h1 class="deskpill"><a href="${base}/" data-nav draggable="false" class="desk-go" id="desk-go" title="${place}"${isDesk ? raw(' aria-current=""') : ''}><span class="desk-lamp" id="desk-lamp">${deskLamp(vm)}</span>${BELL}${teamPlace(vm)}</a>${teamChevron}
+<h1 class="deskpill"><a href="${base}/" data-nav draggable="false" class="desk-go" id="desk-go" title="${place}"${isDesk ? raw(' aria-current=""') : ''}><span class="desk-lamp" id="desk-lamp">${deskLamp(vm)}</span>${BELL}${teamPlace(vm)}<b class="wide-word">Trommi</b></a>${teamChevron}
 <button type="button" class="brand-open" id="brand-menu"${s ? html` data-session="${s.id}"` : ''} aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" aria-label="Where you are: ${place}. Menu: teams, places, settings" title="Menu (Ctrl K)">${raw(String(BELL).replace('class="brand-mark"', 'class="brand-mark open-mark"'))}<b class="open-word">Trommi</b>${pillPlace(vm, s)}<span class="conn open-conn" id="conn" data-state="connecting" role="status"><i aria-hidden="true"></i><span id="conn-text" class="tc-sr">Connecting</span></span><span class="brand-fold">${sk('unfold')}</span></button>${inDemo() ? html`<a class="pill-demo" href="${base}/screens?mock=1" target="_blank" rel="noopener" title="Demo">Demo · All screens</a>` : ''}</h1>
 ${menuDoors(vm, base)}
 <button type="button" class="rail-tag" aria-haspopup="menu" aria-controls="brand-doors" title="Switch team" aria-label="Team ${place}: switch teams"><span class="rail-tag-string" aria-hidden="true"></span><span class="rail-tag-paper"><b>${tagLines(place).map(l => html`<span>${l}</span>`)}</b></span></button>
@@ -943,6 +966,22 @@ controller('rail', class extends Controller {
 // ---- the frame's wiring, once ----
 export function register(t) {
   T = t
+  // (the teams folded or opened on this device: the core holds them for its run)
+  for (const [team_id, folded] of Object.entries(teamsFolded())) t.act({ do: 'fold_team', team_id, folded: Boolean(folded) })
+  // A team's stack folds and opens (its switch, its edges); its name goes to its Desk, and opens it there.
+  document.addEventListener('click', e => {
+    const el = e.target instanceof Element ? e.target : null
+    const fold = el?.closest('#agents [data-team-fold]')
+    if (fold) {
+      e.preventDefault()
+      const id = fold.dataset.teamFold, folded = !fold.closest('.team-head')?.classList.contains('is-folded')
+      keepFold(id, folded)
+      t.act({ do: 'fold_team', team_id: id, folded })
+      return
+    }
+    const go = el?.closest('#agents [data-team-go]')
+    if (go && !go.closest('.is-in-view')) keepFold(go.dataset.teamGo, false)
+  })
   import('./app.mjs').then(m => { newsLatestDay = m.newsLatestDay })
   t.get(/^\/chats$/, ({ req, res }) => t.page(req, res, { title: 'Chats · Trommi', view: 'chats', main: chatsMain(t.vm(), t.BASE) }))
   document.addEventListener('turbo:load', () => { const m = /^\/chat\/([^/?#]+)$/.exec(location.pathname); if (m) chatOpened(decodeURIComponent(m[1])) })
