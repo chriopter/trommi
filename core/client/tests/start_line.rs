@@ -43,3 +43,15 @@ fn a_start_says_each_step_in_order_and_how_far_the_catching_up_is() {
     assert!(number(total) >= 520, "{lines:?}");
     assert_eq!(sim.view.status, None);
 }
+
+#[test]
+fn a_device_that_does_not_load_says_it_stopped_instead_of_showing_an_empty_desk() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.load_fails = u32::MAX;
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Stopped);
+    let status = sim.view.status.clone().expect("a stopped app says so");
+    assert_eq!(status.key, "phase.stopped");
+    assert!(!status.en.is_empty());
+}

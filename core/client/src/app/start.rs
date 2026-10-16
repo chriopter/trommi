@@ -8,7 +8,9 @@
 //!    once the hub named its head; plain "Catching up" before).
 //! 4. `start.almost` "Almost there": the order is read, the live stream is being opened.
 //!
-//! Once open (live, offline, signed out) the line is gone. A line that is not the start's (a stop's reason) is left.
+//! Once open and live, or signed out, the line is gone. Offline and stopped have a line of their own, so no shell
+//! shows the board it last had as if it were now (`phase.offline`, `phase.stopped`). A line set elsewhere (a stop's
+//! own reason, `account.wipe_failed`) is left.
 
 use super::App;
 use crate::views::words::say;
@@ -49,6 +51,8 @@ pub fn line(phase: Phase, board_read: bool, pass: Option<Option<(u64, u64)>>, ca
             }
             None => Some(step("3", "start.catching_up", "Catching up".into(), &[])),
         },
+        Phase::Offline => Some(say("phase.offline", "Offline: what this device last had", &[])),
+        Phase::Stopped => Some(say("phase.stopped", "Stopped: close Trommi and open it again", &[])),
         _ => None,
     }
 }
@@ -56,7 +60,7 @@ pub fn line(phase: Phase, board_read: bool, pass: Option<Option<(u64, u64)>>, ca
 impl App {
     /// Sets the start's line for this render (see the module).
     pub(super) fn start_status(&mut self) {
-        let ours = self.next_view.status.as_ref().is_none_or(|t| t.key.starts_with("start."));
+        let ours = self.next_view.status.as_ref().is_none_or(|t| t.key.starts_with("start.") || t.key.starts_with("phase."));
         if !ours {
             return;
         }
@@ -95,8 +99,14 @@ mod tests {
 
     #[test]
     fn an_open_app_has_no_start_line() {
-        for phase in [Phase::Live, Phase::Offline, Phase::SignedOut, Phase::Stopped] {
+        for phase in [Phase::Live, Phase::SignedOut] {
             assert_eq!(line(phase, true, Some(Some((1, 2))), false), None, "{phase:?}");
         }
+    }
+
+    #[test]
+    fn offline_and_stopped_say_so() {
+        assert_eq!(line(Phase::Offline, true, None, true).map(|t| t.key), Some("phase.offline".into()));
+        assert_eq!(line(Phase::Stopped, true, None, true).map(|t| t.key), Some("phase.stopped".into()));
     }
 }
