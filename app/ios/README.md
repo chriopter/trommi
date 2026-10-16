@@ -98,7 +98,12 @@ The generated `CoreView.ViewModel` supplies the Desk, cards, sessions, Notes, Of
 and Scribble Board. Swift uses the core's order, labels, action modes, status lines, history and attachment ids.
 Editors keep only unsent UI input. Pen paths, hit testing, image drawing and theme preferences remain native;
 stroke encoding is `Action::DrawStroke` in Rust. Goals are edited through `SetGoal` and folded through
-`FoldGoals`; the folded desks are a local UI preference.
+`FoldGoals`; the folded desks are a local UI preference. A main's helpers fold the same way (`FoldHelpers`, kept as
+`trommi-stacks-open`). The Desk's duck for all and Blitz draw `desk.duck` (sent back as `Batch` "sweep") and
+`desk.blitz`; the Chat list draws each row's `last` (teaser and time) and `unread` (read marks the core keeps in its
+cache); Settings has a page per `Screen.settings(page:)`; the Artifacts filter is `Screen.artifacts(kind:)` with
+the words of `view.gallery`; the note saves itself with `KeepNote` a moment after typing and when it is left; the
+start screen shows `account.notice` (logged out, removed, account deleted).
 
 Account actions include creating an account, password or Emergency Kit sign-in, recovery, pairing with six emoji,
 inviting an agent, answering self-join requests, changing password/e-mail/kit, replacing the recovery code,

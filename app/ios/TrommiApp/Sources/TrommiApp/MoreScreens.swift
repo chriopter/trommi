@@ -132,6 +132,8 @@ struct NotesScreen: View {
   @State private var attachments: [String] = []
   @State private var loadedId: String?
   @State private var importing = false
+  /** The keep that waits for him to pause typing (the web's 600 ms). */
+  @State private var pause: Task<Void, Never>?
   @FocusState private var focused: Bool
   private var notes: CoreView.NotesView { shell.view.notes }
   private var corner: CoreView.NoteView? { notes.corner.flatMap { id in notes.rows.first { $0.id == id } } }
@@ -165,9 +167,6 @@ struct NotesScreen: View {
             .buttonStyle(.plain).accessibilityLabel("Attach")
           Button { bin() } label: { Image(systemName: "trash").font(.system(size: 17)).frame(width: 44, height: 44) }
             .buttonStyle(.plain).accessibilityLabel("Delete Note").disabled(corner == nil && empty)
-          Button { keep() } label: { Image(systemName: "checkmark.circle").font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44) }
-            .buttonStyle(.plain).disabled(empty).opacity(empty ? 0.5 : 1)
-            .accessibilityLabel("Keep in Note")
           Spacer(minLength: 4)
           recipient
           send.disabled(empty || (notes.to == nil && notes.choose.isEmpty)).opacity(empty || (notes.to == nil && notes.choose.isEmpty) ? 0.5 : 1)
@@ -196,8 +195,11 @@ struct NotesScreen: View {
     .scrollContentBackground(.hidden)
     .background(Ink.noteYellow.ignoresSafeArea())
     .onAppear { load() }
+    // (a note written on another device fills an empty page; the one this page made is the core's to follow)
     .onChange(of: notes.corner) { _, _ in if text.isEmpty && attachments.isEmpty { load() } }
-    .onDisappear { focused = false; hideKeyboard() }
+    .onChange(of: text) { _, _ in later() }
+    .onChange(of: attachments) { _, _ in later() }
+    .onDisappear { keep(); focused = false; hideKeyboard() }
     .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
       if case .success(let urls) = result { for url in urls { if let id = shell.attach(url) { attachments.append(id) } } }
     }
@@ -206,24 +208,32 @@ struct NotesScreen: View {
     guard let c = corner, loadedId != c.id else { return }
     loadedId = c.id; text = c.text; attachments = c.files.map(\.fileId)
   }
-  private func written() -> [String: Any] {
-    var action: [String: Any] = ["do": "write_note_files", "text": text, "attachments": attachments]
-    if let id = notes.corner { action["note_id"] = id }
+  /** The note as it stands, for the core to keep (`KeepNote`: it decides whether that makes, changes or bins one). */
+  private func written(send: Bool = false, to: String? = nil) -> [String: Any] {
+    var action: [String: Any] = ["do": "keep_note", "text": text, "attachments": attachments]
+    if let id = loadedId { action["note_id"] = id }
+    if send { action["send"] = true; if let to { action["to"] = to } }
     return action
   }
-  private func keep() { shell.act(written()); focused = false; hideKeyboard() }
+  /** Saved by itself: a moment after he stops typing, and when he leaves the page. */
+  private func later() {
+    pause?.cancel()
+    pause = Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 600_000_000)
+      if !Task.isCancelled { keep() }
+    }
+  }
+  private func keep() { pause?.cancel(); shell.act(written()) }
   private func bin() {
-    if let id = notes.corner { shell.act(["do": "delete_note", "note_id": id]) }
+    pause?.cancel()
+    if let id = loadedId ?? notes.corner { shell.act(["do": "delete_note", "note_id": id]) }
     text = ""; attachments = []; loadedId = nil; focused = false; hideKeyboard()
   }
   private func sendTo(_ to: String?) {
-    shell.act(written())
-    if let id = notes.corner {
-      var action: [String: Any] = ["do": "send_note", "note_id": id]
-      if let to { action["to"] = to }
-      shell.act(action)
-      text = ""; attachments = []; loadedId = nil
-    }
+    pause?.cancel()
+    shell.act(written(send: true, to: to))
+    text = ""; attachments = []; loadedId = nil
+    pause?.cancel()
     focused = false; hideKeyboard()
   }
   /** "To: …": the crowned session the note goes to, or the choice of a desk's crown on All desks. */
@@ -374,8 +384,14 @@ private struct DeviceIcon: View {
   var body: some View { if icon == "phone" { PenMark("draw:phone", color: Ink.fg) } else { Sketch(icon.isEmpty ? "laptop" : icon) } }
 }
 
+/**
+ * Settings as the iPhone drew it before: a list (the invitations as two tiles, then a row per page with what it holds
+ * on the right) and a page of its own for Agents, Desks, Devices, Account, Theme, Data and Security
+ * (`Screen.settings(page:)`). What each row and page says is the core's; which page is open is the stack's.
+ */
 struct SettingsScreen: View {
   @EnvironmentObject var shell: AppShell
+  let page: String
   @AppStorage("trommi-theme") private var theme = "system"
   @State private var deskName = ""
   @State private var currentPassword = ""
@@ -385,64 +401,43 @@ struct SettingsScreen: View {
   @State private var leaving = false
   @State private var deleting = false
   @State private var removing: CoreView.AgentView?
+  /** The page a web address names (`/settings/<page>`); "" for the list. Navigation only. */
+  static func page(of part: String?) -> String {
+    switch part {
+    case "sessions": return "agents"
+    case "agents", "desks", "devices", "account", "theme", "data", "security": return part ?? ""
+    default: return ""
+    }
+  }
+  private var title: String {
+    switch page {
+    case "agents": "Agents"
+    case "desks": "Desks"
+    case "devices": "Devices"
+    case "account": "Account"
+    case "theme": "Theme"
+    case "data": "Data"
+    case "security": "Security"
+    default: "Settings"
+    }
+  }
   var body: some View {
     let s = shell.view.settings
     ScrollView {
       VStack(alignment: .leading, spacing: 26) {
-        PageHeading(text: "Settings")
+        PageHeading(text: title)
         if let problem = shell.view.account.problem { Text(problem.en).font(Face.text(15)).foregroundStyle(Ink.urgCritical) }
         if shell.view.account.step == "working" { ProgressView().frame(maxWidth: .infinity) }
-        invites
-        SetGroup(header: "Account") {
-          SetRow(title: s.account ?? s.login?.email ?? "Account", detail: nil) { Sketch(s.account == nil ? "key" : "letter") }
-          if let login = s.login {
-            SetRule()
-            Text("Account ID \(login.account)").font(Face.mono(12)).foregroundStyle(Ink.muted).textSelection(.enabled)
-              .padding(.horizontal, 16).padding(.vertical, 10).frame(maxWidth: .infinity, alignment: .leading)
-          }
+        switch page {
+        case "agents": agents(s)
+        case "desks": desks
+        case "devices": devices(s); pushGroup
+        case "account": account(s)
+        case "theme": themeGroup
+        case "data": dataGroup(s)
+        case "security": security(s)
+        default: home(s)
         }
-        SetGroup(header: "Ways In", footer: "Changing how your account opens asks for your current password again: being logged in here is not enough.") {
-          SetField(title: "Current password", text: $currentPassword, secure: true)
-          SetField(title: "New password", text: $nextPassword, secure: true)
-          SetRule(inset: 16)
-          way("Change password", "lock") { shell.account(["step": "set_password", "unlock": ["by": "password", "password": currentPassword], "next": nextPassword]); currentPassword = ""; nextPassword = "" }
-          SetRule()
-          way("New Emergency Kit", "page") { shell.account(["step": "new_kit", "unlock": ["by": "password", "password": currentPassword]]); currentPassword = "" }
-          SetRule()
-          way("Replace recovery code", "key") { shell.account(["step": "replace_recovery_code", "unlock": ["by": "password", "password": currentPassword]]); currentPassword = "" }
-        }
-        SetGroup(header: "E-mail", footer: "With the twelve words of your Emergency Kit.") {
-          SetField(title: "E-mail", text: $accountEmail)
-          SetField(title: "Emergency Kit words", text: $kitWords, secure: true)
-          way("Set e-mail", "letter") { shell.account(["step": "set_email", "email": accountEmail, "words": kitWords]); kitWords = "" }
-        }
-        devices(s)
-        SetGroup(header: "Push on This Device") {
-          pushRow("all", "Everything", "bell"); SetRule()
-          pushRow("knocking", "Only Knocking", "knock"); SetRule()
-          pushRow("off", "Off", "snooze")
-        }
-        agents(s)
-        desks
-        SetGroup(header: "Theme") {
-          themeRow("system", "System", "sun"); SetRule()
-          themeRow("light", "Light", "sun"); SetRule()
-          themeRow("dark", "Dark", "moon")
-        }
-        SetGroup(header: "Data", footer: s.data?.says?.en) {
-          Button { shell.account(["step": "read_usage"]) } label: { SetRow(title: "Read hub data", chevron: true) { Image(systemName: "chart.bar").font(.system(size: 19)).foregroundStyle(Ink.fg) } }.buttonStyle(.plain)
-          ForEach(s.data?.rows ?? [], id: \.id) { row in SetRule(); SetRow(title: row.label.en, detail: row.value.en) { EmptyView() } }
-        }
-        SetGroup(footer: "This device forgets the room and its keys. Your other devices and your agents carry on.") {
-          Button { leaving = true } label: { SetRow(title: "Sign out…", tint: Ink.urgCritical) { Sketch("logout", color: Ink.urgCritical) } }.buttonStyle(.plain)
-        }
-        SetGroup(footer: "Deletes your account and everything Trommi keeps for it. Your current password above confirms it. This cannot be undone.") {
-          Button { deleting = true } label: { SetRow(title: "Delete account…", tint: Ink.urgCritical) { Sketch("bin", color: Ink.urgCritical) } }.buttonStyle(.plain)
-        }
-        VStack(spacing: 4) {
-          if let room = s.room { Text("room \(room) · key epoch \(s.keyEpoch)").font(Face.mono(12)).foregroundStyle(Ink.faint).textSelection(.enabled) }
-          if let hub = s.hub { Text(hub).font(Face.mono(12)).foregroundStyle(Ink.faint) }
-        }.frame(maxWidth: .infinity).multilineTextAlignment(.center)
       }
       .padding(.horizontal, 16).padding(.bottom, 90)
       .frame(maxWidth: 680).frame(maxWidth: .infinity)
@@ -450,6 +445,7 @@ struct SettingsScreen: View {
     .background(Ink.bg.ignoresSafeArea())
     .scrollDismissesKeyboard(.interactively)
     .pushedPills(center: { EmptyView() }, trailing: { EmptyView() })
+    .accessibilityIdentifier("settings-" + (page.isEmpty ? "list" : page))
     .confirmationDialog("Sign Out of This Device?", isPresented: $leaving, titleVisibility: .visible) {
       Button("Sign out", role: .destructive) { shell.account(["step": "sign_out"]) }
     } message: { Text("This device signs in again with e-mail and password or by scanning the code of a signed-in device.") }
@@ -459,6 +455,110 @@ struct SettingsScreen: View {
     .confirmationDialog(removing?.name.en ?? "", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
       Button("Remove from This Account", role: .destructive) { if let agent = removing { shell.account(["step": "remove_devices", "device_ids": agent.devices]) }; removing = nil }
     } message: { Text(removing?.remove?.en ?? "") }
+  }
+
+  /** A row that opens a page of Settings. */
+  private func link<Icon: View>(_ to: String, _ title: String, detail: String?, @ViewBuilder icon: () -> Icon) -> some View {
+    Button { shell.focus(.settings(page: to)) } label: { SetRow(title: title, detail: detail, chevron: true) { icon() } }
+      .buttonStyle(.plain).accessibilityIdentifier("settings-row-" + to)
+  }
+
+  /** The list: the invitations, then a row per page. */
+  @ViewBuilder private func home(_ s: CoreView.SettingsView) -> some View {
+    invites
+    SetGroup {
+      link("agents", "Agents", detail: s.agents?.en) { Sketch("terminal") }
+      SetRule()
+      link("desks", "Desks", detail: s.desks?.en) { Sketch("desk") }
+      SetRule()
+      link("devices", "Devices", detail: s.devicesSays?.en) { PenMark("draw:phone", color: Ink.fg) }
+      SetRule()
+      link("account", "Account", detail: shell.isDemo ? "Demo" : s.account ?? s.login?.email) { Sketch("key") }
+    }
+    SetGroup {
+      link("theme", "Theme", detail: theme == "light" ? "Light" : theme == "dark" ? "Dark" : "System") { Sketch(theme == "dark" ? "moon" : "sun") }
+    }
+    SetGroup {
+      link("data", "Data", detail: nil) { Image(systemName: "chart.bar").font(.system(size: 19)).foregroundStyle(Ink.fg) }
+      SetRule()
+      link("security", "Security", detail: "Keys, devices, room") { Sketch("lock") }
+      SetRule()
+      // (App Review 5.1.1(i): the privacy policy reachable inside the app)
+      Link(destination: URL(string: "https://trommi.com/privacy")!) { SetRow(title: "Privacy Policy", chevron: true) { Image(systemName: "hand.raised").font(.system(size: 20)).foregroundStyle(Ink.fg) } }.buttonStyle(.plain)
+    }
+    SetGroup(footer: "This device forgets the room and its keys. Your other devices and your agents carry on.") {
+      Button { leaving = true } label: { SetRow(title: "Sign out…", tint: Ink.urgCritical) { Sketch("logout", color: Ink.urgCritical) } }.buttonStyle(.plain)
+    }
+    roomLine(s)
+  }
+
+  /** The account: who, its ways in, its e-mail, deleting it. */
+  @ViewBuilder private func account(_ s: CoreView.SettingsView) -> some View {
+    SetGroup(header: "Account") {
+      SetRow(title: s.account ?? s.login?.email ?? "Account", detail: nil) { Sketch(s.account == nil ? "key" : "letter") }
+      if let login = s.login {
+        SetRule()
+        Text("Account ID \(login.account)").font(Face.mono(12)).foregroundStyle(Ink.muted).textSelection(.enabled)
+          .padding(.horizontal, 16).padding(.vertical, 10).frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }
+    SetGroup(header: "Ways In", footer: "Changing how your account opens asks for your current password again: being logged in here is not enough.") {
+      SetField(title: "Current password", text: $currentPassword, secure: true)
+      SetField(title: "New password", text: $nextPassword, secure: true)
+      SetRule(inset: 16)
+      way("Change password", "lock") { shell.account(["step": "set_password", "unlock": ["by": "password", "password": currentPassword], "next": nextPassword]); currentPassword = ""; nextPassword = "" }
+      SetRule()
+      way("New Emergency Kit", "page") { shell.account(["step": "new_kit", "unlock": ["by": "password", "password": currentPassword]]); currentPassword = "" }
+      SetRule()
+      way("Replace recovery code", "key") { shell.account(["step": "replace_recovery_code", "unlock": ["by": "password", "password": currentPassword]]); currentPassword = "" }
+    }
+    SetGroup(header: "E-mail", footer: "With the twelve words of your Emergency Kit.") {
+      SetField(title: "E-mail", text: $accountEmail)
+      SetField(title: "Emergency Kit words", text: $kitWords, secure: true)
+      way("Set e-mail", "letter") { shell.account(["step": "set_email", "email": accountEmail, "words": kitWords]); kitWords = "" }
+    }
+    SetGroup(footer: "This device forgets the room and its keys. Your other devices and your agents carry on.") {
+      Button { leaving = true } label: { SetRow(title: "Sign out…", tint: Ink.urgCritical) { Sketch("logout", color: Ink.urgCritical) } }.buttonStyle(.plain)
+    }
+    SetGroup(footer: "Deletes your account and everything Trommi keeps for it. Your current password above confirms it. This cannot be undone.") {
+      Button { deleting = true } label: { SetRow(title: "Delete account…", tint: Ink.urgCritical) { Sketch("bin", color: Ink.urgCritical) } }.buttonStyle(.plain)
+    }
+  }
+  private var pushGroup: some View {
+    SetGroup(header: "Push on This Device") {
+      pushRow("all", "Everything", "bell"); SetRule()
+      pushRow("knocking", "Only Knocking", "knock"); SetRule()
+      pushRow("off", "Off", "snooze")
+    }
+  }
+  private var themeGroup: some View {
+    SetGroup(header: "Theme") {
+      themeRow("system", "System", "sun"); SetRule()
+      themeRow("light", "Light", "sun"); SetRule()
+      themeRow("dark", "Dark", "moon")
+    }
+  }
+  private func dataGroup(_ s: CoreView.SettingsView) -> some View {
+    SetGroup(header: "Data", footer: s.data?.says?.en) {
+      Button { shell.account(["step": "read_usage"]) } label: { SetRow(title: "Read hub data", chevron: true) { Image(systemName: "chart.bar").font(.system(size: 19)).foregroundStyle(Ink.fg) } }.buttonStyle(.plain)
+      ForEach(s.data?.rows ?? [], id: \.id) { row in SetRule(); SetRow(title: row.label.en, detail: row.value.en) { EmptyView() } }
+    }
+  }
+  /** Security: the room this device is in, its key epoch, and the devices' fingerprints. */
+  @ViewBuilder private func security(_ s: CoreView.SettingsView) -> some View {
+    SetGroup(header: "Devices", footer: "The fingerprint comes from the device's own key: it must look the same on every device.") {
+      ForEach(Array(s.devices.enumerated()), id: \.element.id) { i, device in
+        if i > 0 { SetRule() }
+        SetRow(title: device.name, detail: device.fingerprint) { DeviceIcon(icon: device.icon) }
+      }
+    }
+    roomLine(s)
+  }
+  private func roomLine(_ s: CoreView.SettingsView) -> some View {
+    VStack(spacing: 4) {
+      if let room = s.room { Text("room \(room) · key epoch \(s.keyEpoch)").font(Face.mono(12)).foregroundStyle(Ink.faint).textSelection(.enabled) }
+      if let hub = s.hub { Text(hub).font(Face.mono(12)).foregroundStyle(Ink.faint) }
+    }.frame(maxWidth: .infinity).multilineTextAlignment(.center)
   }
 
   /** The invitations as two equal tiles, then what an invite in progress shows (AccountInvite). */
@@ -622,8 +722,9 @@ struct ArtifactsScreen: View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 14) {
         PageHeading(text: "Artifacts")
-        if (shell.view.artifacts ?? []).isEmpty {
-          Text("Nothing yet: what the agents publish shows here.").font(Face.text(15)).foregroundStyle(Ink.muted)
+        if let g = shell.view.gallery {
+          if !g.kinds.isEmpty { kinds(g) } else { Text(g.lead.en).font(Face.text(15)).foregroundStyle(Ink.muted) }
+          if let none = g.none { Text(none.en).font(Face.text(15)).foregroundStyle(Ink.muted).padding(.vertical, 20).frame(maxWidth: .infinity).accessibilityIdentifier("artifacts-none") }
         }
         ForEach(shell.view.artifacts ?? [], id: \.id) { artifact in ArtifactCard(artifact: artifact) }
       }
@@ -632,6 +733,27 @@ struct ArtifactsScreen: View {
     }
     .background(Ink.bg)
     .pushedPills(center: { EmptyView() }, trailing: { EmptyView() })
+  }
+  /** The filter as one quiet segmented track: All · Media · Pages (the core's choices). */
+  private func kinds(_ g: CoreView.GalleryView) -> some View {
+    HStack(spacing: 4) {
+      ForEach(g.kinds, id: \.key) { k in
+        Button { pick(k.key) } label: {
+          Text(k.label.en).font(Face.text(16, k.on ? .semibold : .regular)).foregroundStyle(Ink.fg)
+            .frame(maxWidth: .infinity, minHeight: 40)
+            .background { if k.on { Capsule().fill(Ink.surface).shadow(color: .black.opacity(0.08), radius: 2, y: 1) } }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(k.on ? .isSelected : [])
+        .accessibilityIdentifier("artifacts-kind-" + (k.key.isEmpty ? "all" : k.key))
+      }
+    }
+    .padding(4).background(Capsule().fill(Ink.sunken))
+  }
+  private func pick(_ kind: String) {
+    let screen = CoreView.Screen.artifacts(kind: kind)
+    if case .artifacts = shell.path.last { shell.path[shell.path.count - 1] = screen } else { shell.show(screen) }
   }
 }
 /** One published thing: its kind's drawing, the kind, the title, who sent it, its files. */
