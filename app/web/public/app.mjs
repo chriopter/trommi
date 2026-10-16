@@ -117,6 +117,9 @@ const write = (k, v) => { try { if (v == null) localStorage.removeItem(k); else 
 /** The team in view on this browser (kept per device, sent as Focus.team): a team's id, or null (the core's first). */
 const TEAM_KEY = 'trommi-team'
 let teamInView = read(TEAM_KEY)
+/** The wide sidebar's level on this browser (sent as Focus.in_team). */
+const LEVEL_KEY = 'trommi-sidebar-level'
+let inTeam = read(LEVEL_KEY) === 'team'
 /** The Scribble Board of the team in view: the one chosen here, else the one the core shows. */
 const teamBoard = () => teamInView ?? core.vm()?.sidebar?.team ?? ''
 
@@ -148,6 +151,8 @@ function createBoard({ views }) {
     /** The team in view: its id, or null for the core's first. */
     team: () => teamInView,
     setTeam(d) { teamInView = d || null; write(TEAM_KEY, teamInView); sendFocus() },
+    /** The wide sidebar inside the team in view (true) or at every team (SidebarView.level), kept per device. */
+    setInTeam(on) { inTeam = Boolean(on); write(LEVEL_KEY, inTeam ? 'team' : 'teams'); sendFocus() },
     toast: opts => stream('prepend', 'says-host', toast(opts)),
     get(pattern, handler) { gets.push({ pattern, handler }) },
     post(pattern, handler) { posts.push({ pattern, handler }) },
@@ -195,7 +200,7 @@ let screenInView = { screen: 'desk' }
 let boardInView = null
 /** The core hears what is in view: the page's screen, the team, the Scribble Board beside it, whether the window is seen. */
 function sendFocus() {
-  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}) })
+  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(inTeam ? { in_team: true } : {}) })
 }
 /** The core's Screen for an address (before the page is drawn: its unit is then in the model). */
 export function screenOf(pathname, search = '') {

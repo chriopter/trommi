@@ -1441,5 +1441,39 @@
       }
     ]
   },
-  "archived": false
+  "archived": false,
+  "tabs": [
+    {
+      "key": "details",
+      "label": {
+        "key": "panel.details",
+        "en": "Details"
+      },
+      "count": 0
+    },
+    {
+      "key": "questions",
+      "label": {
+        "key": "panel.questions",
+        "en": "Questions"
+      },
+      "count": 3
+    },
+    {
+      "key": "helpers",
+      "label": {
+        "key": "panel.helpers",
+        "en": "Helpers"
+      },
+      "count": 4
+    },
+    {
+      "key": "files",
+      "label": {
+        "key": "panel.files",
+        "en": "Files"
+      },
+      "count": 7
+    }
+  ]
 }
