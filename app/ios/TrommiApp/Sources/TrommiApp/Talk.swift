@@ -50,17 +50,6 @@ struct ChatsScreen: View {
     let byId = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     List {
       ForEach(rows.filter { !$0.tucked }, id: \.id) { row in
-        if let heading = row.heading {
-          HStack(spacing: 8) {
-            Text(heading.text.en).font(Face.text(13, .semibold, relativeTo: .footnote)).kerning(0.3).foregroundStyle(Ink.muted).lineLimit(1)
-            if heading.kind == "away" { DashedRule().frame(height: 1) }
-            Spacer(minLength: 0)
-          }
-          .padding(.top, 14).padding(.bottom, 4)
-          .accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader)
-          .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
-          .listRowBackground(Color.clear).listRowSeparator(.hidden)
-        }
         ChatRow(row: row, byId: byId, mainHue: row.parent.flatMap { byId[$0] }.map { Pen.hueFor(id: $0.slug.isEmpty ? $0.id : $0.slug, mark: $0.mark) })
       }
     }
@@ -747,9 +736,9 @@ struct SessionScreen: View {
             Button { drawing = true } label: { Label("Change Icon…", systemImage: "scribble") }
             Toggle(isOn: Binding(get: { page.crowned }, set: { _ in shell.act(["do": "crown_session", "session_id": page.id, "on": !page.crowned]) })) { Label("Main Session", systemImage: "crown") }
             // (a helper goes with its main)
-            let others = shell.view.sidebar.desks.filter { $0.id != page.deskId }
+            let others = shell.view.sidebar.teams.filter { $0.id != page.teamId }
             if page.parent == nil && !others.isEmpty {
-              Menu { ForEach(others, id: \.id) { desk in Button(desk.name.en) { shell.act(["do": "move_session", "session_id": page.id, "desk_id": desk.id]) } } } label: { Label("Move to Desk…", systemImage: "rectangle.stack") }
+              Menu { ForEach(others, id: \.id) { team in Button(team.name.en) { shell.act(["do": "move_session", "session_id": page.id, "team_id": team.id]) } } } label: { Label("Move to Team…", systemImage: "rectangle.stack") }
             }
             Button(role: .destructive) { shell.act(["do": "archive_session", "session_id": page.id, "on": true]) } label: { Label("Archive", systemImage: "archivebox") }
           } label: { Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(Ink.fg).pillCircle() }
@@ -766,7 +755,7 @@ struct SessionScreen: View {
     }
     .sheet(isPresented: $drawing) { DrawingPicker(page: page) { mark in shell.act(["do": "session_icon", "session_id": page.id, "icon": mark]); drawing = false } }
   }
-  /** The title: the session's drawing and name ▾, a glass menu of the desk's sessions to switch to. */
+  /** The title: the session's drawing and name ▾, a glass menu of the team's sessions to switch to. */
   private var header: some View {
     Menu {
       ForEach(shell.view.sidebar.sessions, id: \.id) { s in

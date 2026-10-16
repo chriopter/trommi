@@ -1,5 +1,5 @@
 // TrommiShare: Trommi in the iOS share sheet. The sheet is the note (ShareSheet.swift): what was shared as thumbnails,
-// a text field, "To: <desk> · <crowned session> ▾" (the last one used picked) and two ways: Send (to that crown) and
+// a text field, "To: <team> · <crowned session> ▾" (the last one used picked) and two ways: Send (to that crown) and
 // Keep in Note (into the one note; nothing is sent). The extension holds no room, no device key and no board: it seals
 // what was shared into the App Group's inbox (ShareInbox, AES-256-GCM under the inbox key in the shared Keychain item)
 // and rings the app (a Darwin notification). The app imports it into the note, or sends it to the crowned session
@@ -74,22 +74,22 @@ final class ShareModel: ObservableObject {
   @Published var skipped: [String] = []
   @Published var phase: Phase = .loading
   @Published var text = ""
-  /** The desk whose crowned session gets a Send. */
-  @Published var desk: String?
+  /** The team whose crowned session gets a Send. */
+  @Published var team: String?
   let inbox: ShareInbox?
   let snapshot: ShareSnapshot?
   /** The share being written: its payloads are sealed into the inbox as they load, the manifest only on Send or Keep. */
   let requestId = ShareInbox.newId()
   var close: (Bool) -> Void = { _ in }
-  private static let lastKey = "share-last-desk"
+  private static let lastKey = "share-last-team"
 
   init() {
     inbox = ShareGroup.inbox(create: false)
     snapshot = inbox?.readSnapshot()
-    desk = snapshot?.preselect(last: UserDefaults.standard.string(forKey: Self.lastKey))?.id
+    team = snapshot?.preselect(last: UserDefaults.standard.string(forKey: Self.lastKey))?.id
   }
 
-  var picked: ShareSnapshot.Desk? { snapshot?.crowned.first { $0.id == desk } }
+  var picked: ShareSnapshot.Team? { snapshot?.crowned.first { $0.id == team } }
   var isDone: Bool { if case .done = phase { return true }; return false }
   private var hasSomething: Bool { !items.isEmpty || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
   var canKeep: Bool { inbox != nil && (phase == .editing || isFailed) && hasSomething }
@@ -97,7 +97,7 @@ final class ShareModel: ObservableObject {
   private var isFailed: Bool { if case .failed = phase { return true }; return false }
 
   func pick(_ id: String) {
-    desk = id
+    team = id
     UserDefaults.standard.set(id, forKey: Self.lastKey)
   }
   func remove(_ id: UUID) { items.removeAll { $0.id == id } }
@@ -177,7 +177,7 @@ final class ShareModel: ObservableObject {
     guard let inbox = inbox, action == .send ? canSend : canKeep else { return }
     let d = action == .send ? picked : nil
     phase = .saving
-    let r = ShareRequest(id: requestId, action: action, to: d?.crown?.id, toName: d?.crown?.name, desk: d?.id,
+    let r = ShareRequest(id: requestId, action: action, to: d?.crown?.id, toName: d?.crown?.name, team: d?.id,
                          room: snapshot?.room, text: text, items: items.map { $0.item })
     do {
       try inbox.commit(r)

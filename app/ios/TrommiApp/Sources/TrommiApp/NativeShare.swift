@@ -29,7 +29,7 @@ import ShareInbox
       if unreadable { inbox.release(request.id); claimed.remove(request.id); shell.platformError = "A shared file could not be opened. The share is kept for another try."; continue }
       var action: [String: Any] = ["do": "import_share", "id": request.id, "send": request.action == .send, "text": request.words, "files": files]
       if let room = request.room { action["room"] = room }
-      if let desk = request.desk { action["desk"] = desk }
+      if let team = request.team { action["team"] = team }
       if let to = request.to { action["to"] = to }
       shell.act(action, blobs: blobs)
     }
@@ -45,11 +45,11 @@ import ShareInbox
       for id in claimed { inbox?.release(id) }; claimed = []
       return
     }
-    let desks = (value["desks"] as? [[String: Any]] ?? []).map { desk -> ShareSnapshot.Desk in
-      let crown = (desk["crown"] as? [String: Any]).map { c in ShareSnapshot.Crown(id: c["session_id"] as? String ?? "", name: c["name"] as? String ?? "", mark: drawing(c["mark"] as? String ?? "")) }
-      return ShareSnapshot.Desk(id: desk["id"] as? String ?? "", name: desk["name"] as? String ?? "", crown: crown)
+    let teams = (value["teams"] as? [[String: Any]] ?? []).map { team -> ShareSnapshot.Team in
+      let crown = (team["crown"] as? [String: Any]).map { c in ShareSnapshot.Crown(id: c["session_id"] as? String ?? "", name: c["name"] as? String ?? "", mark: drawing(c["mark"] as? String ?? "")) }
+      return ShareSnapshot.Team(id: team["id"] as? String ?? "", name: team["name"] as? String ?? "", crown: crown)
     }
-    var snapshot = ShareSnapshot(room: room, desks: desks)
+    var snapshot = ShareSnapshot(room: room, teams: teams)
     if let last { snapshot.written = last.written; if snapshot == last { return } }
     snapshot.written = ShareInbox.nowMs()
     do { try inbox?.writeSnapshot(snapshot); last = snapshot } catch { inbox?.clearSnapshot(); last = nil }

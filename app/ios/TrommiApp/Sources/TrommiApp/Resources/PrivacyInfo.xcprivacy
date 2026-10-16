@@ -10,7 +10,7 @@
   encrypted so that the hub cannot read it.
 
   Required reason APIs:
-    UserDefaults      CA92.1  the app's own settings (desk, theme, push level, read marks)
+    UserDefaults      CA92.1  the app's own settings (team, theme, push level, read marks)
     file timestamps   C617.1  files inside the app's own containers: the Share inbox's sweep reads modification
                               dates, the record store reads sizes, and the Rust core's standard library imports fstat
     system boot time  35F9.1  elapsed time inside the app (cold start in the log, the performance log)

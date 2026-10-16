@@ -1,5 +1,5 @@
 // The share sheet's face: the note itself, as the app shows it (the yellow paper, its ink, IBM Plex Sans), compact.
-// What was shared as thumbnails, a text field, "To: <desk> · <crowned session> ▾", and two ways: Send (to that crown)
+// What was shared as thumbnails, a text field, "To: <team> · <crowned session> ▾", and two ways: Send (to that crown)
 // and Keep in Note. The drawings come from the app's snapshot as small pictures (the extension has no pen of its own).
 import Foundation
 import ShareInbox
@@ -49,20 +49,20 @@ struct ShareRoot: View {
     .frame(minHeight: 36)
   }
 
-  /** "To: <desk drawing> Desk · <session drawing> Session ▾": the desks' crowned sessions, the last one used picked. */
+  /** "To: <team drawing> Team · <session drawing> Session ▾": the teams' crowned sessions, the last one used picked. */
   @ViewBuilder private var recipient: some View {
     let crowned = model.snapshot?.crowned ?? []
     if crowned.isEmpty {
       Text(L("To: no main session", "An: keine Hauptsession")).font(SFace.text(15)).foregroundStyle(SInk.noteInk.opacity(0.6))
     } else {
       Menu {
-        Section(L("Main Session of a Desk", "Hauptsession eines Desks")) {
+        Section(L("Main Session of a Team", "Hauptsession eines Teams")) {
           ForEach(crowned) { d in
             Button { model.pick(d.id) } label: {
               Label {
                 Text("\(d.name) · \(d.crown?.name ?? "")")
               } icon: {
-                if d.id == model.desk { Image(systemName: "checkmark") } else { picture(d.crown?.mark, template: false) ?? Image(systemName: "person") }
+                if d.id == model.team { Image(systemName: "checkmark") } else { picture(d.crown?.mark, template: false) ?? Image(systemName: "person") }
               }
             }
           }
@@ -76,7 +76,7 @@ struct ShareRoot: View {
       Text(L("To:", "An:")).foregroundStyle(SInk.noteInk.opacity(0.7))
       if let d = model.picked {
         if (model.snapshot?.crowned.count ?? 0) > 1 {
-          picture(model.snapshot?.deskMark, template: true)?.resizable().scaledToFit().frame(width: 18, height: 18).foregroundStyle(SInk.noteInk.opacity(0.7))
+          picture(model.snapshot?.teamMark, template: true)?.resizable().scaledToFit().frame(width: 18, height: 18).foregroundStyle(SInk.noteInk.opacity(0.7))
           Text(d.name).foregroundStyle(SInk.noteInk.opacity(0.7)).lineLimit(1)
           Text("·").foregroundStyle(SInk.noteInk.opacity(0.5))
         }
@@ -115,7 +115,7 @@ struct ShareRoot: View {
       actions
       if model.snapshot?.crowned.isEmpty ?? true {
         Text(model.snapshot == nil ? L("Open Trommi once: then its main sessions show here.", "Öffne Trommi einmal: dann stehen hier seine Hauptsessions.")
-                                   : L("Make a session the main session of its desk (its ⋯ menu): then you can send to it.", "Mach eine Session zur Hauptsession ihres Desks (ihr ⋯-Menü): dann kannst du an sie senden."))
+                                   : L("Make a session the main session of its team (its ⋯ menu): then you can send to it.", "Mach eine Session zur Hauptsession ihres Teams (ihr ⋯-Menü): dann kannst du an sie senden."))
           .font(SFace.text(13)).foregroundStyle(SInk.noteInk.opacity(0.7))
       }
     }
