@@ -155,8 +155,17 @@ The compact iPhone frame keeps Chat · Desk · Note in its glass pill. Chat draw
 rows; cards, conversations and settings push onto the native navigation stack, so Back and swipe-back return
 to the list. The desk picker opens a lazy native sheet, including on a large account.
 
-`NativeScreensTests.testFreshAccountSignInRendersDesk` tests the real sign-in executor and encrypted store,
-then a seeded card, Chat, Note, Back and a durable restart. Set `TROMMI_SIGNIN_ACCOUNT_FILE` in the
+The views draw the look the app had before the shared core (sign-in, Desk, card, Chat, note, settings, the glass
+bar): `Chrome.swift` holds the shared parts (the top pills, tiles, the start screens' buttons and fields). Which
+sign-in form is open (start, create, log in, new password, scan) is the screen's own navigation; what is under way,
+problems, emoji and kit words come from `view.account`.
+
+`LookTests` holds the signed-out start screen, light and dark, against `tests/ios/UITests/Reference/*.png` (iPhone 17
+Pro, iOS 27; the status bar is left out, at most 0.4 % of the pixels may differ). A meant design change replaces the
+reference with the test's `<name>-now` attachment.
+
+`NativeScreensTests.testFreshAccountSignInRendersDesk` tests the real sign-in executor and encrypted store
+(start screen, Log in, the form), then a seeded card, Chat, Note, Back and a durable restart. Set `TROMMI_SIGNIN_ACCOUNT_FILE` in the
 `TrommiSimulator` scheme (or as the Xcode build setting) to a private JSON file with `email` and `password`.
 Use a freshly created Simulator and an isolated hub at `http://127.0.0.1:18874`, populated by `seed-account`;
 keep its seed devices online with `--serve`. The test types the credentials into the real form; it never sets
