@@ -14,7 +14,7 @@ function agentCard(g, i, base) {
   return html`<section class="set-group ag-card" id="agent-${i}" aria-label="${g.name.en}">
 <div class="ag-head"><span class="ag-head-ico">${sk('terminal')}</span><span class="ag-head-words"><b>${name}</b><small>${dot(g.online)}${g.state.en}${g.online || !g.seen_ms ? '' : html` ${agoSpan(g.seen_ms)}`} · ${g.count.en}</small></span>
 ${g.remove && g.devices?.length ? html`<details class="ag-more"><summary title="More" aria-label="More for ${g.name.en}">${sk('more')}</summary><form method="post" action="${base}/agents/remove" class="ag-menu"><input type="hidden" name="key" value="${g.key}"><p>${g.remove.en}</p><button type="submit" class="room-danger">Remove from This Account</button></form></details>` : ''}</div>
-${usage(g.usage)}<ul class="ag-tree">${g.sessions.map(a => html`<li><a class="ag-sess" href="${base}/chat/${encodeURIComponent(a.slug)}" data-nav>${avatar(whoOf(a), { crown: false })}<span class="set-two"><b>${a.name.en}</b><small>${a.desk.en}${a.folder ? html` · <span class="room-mono">${a.folder}</span>` : ''}</small></span>${a.helpers_says ? html`<span class="ag-helpers">${a.helpers_says.en}</span>` : html`<span></span>`}<span class="set-detail">${dot(a.online)}${a.state.en}</span>${SET_CHEVRON}</a></li>`)}</ul></section>`
+${usage(g.usage)}<ul class="ag-tree">${g.sessions.map(a => html`<li><a class="ag-sess" href="${base}/chat/${encodeURIComponent(a.slug)}" data-nav>${avatar(whoOf(a), { crown: false })}<span class="set-two"><b>${a.name.en}</b><small>${a.team.en}${a.folder ? html` · <span class="room-mono">${a.folder}</span>` : ''}</small></span>${a.helpers_says ? html`<span class="ag-helpers">${a.helpers_says.en}</span>` : html`<span></span>`}<span class="set-detail">${dot(a.online)}${a.state.en}</span>${SET_CHEVRON}</a></li>`)}</ul></section>`
 }
 /** The page's main (SettingsView). */
 export function agentsMain(set, base, { error = '' } = {}) {
@@ -41,7 +41,7 @@ export function register(t) {
   const rowOf = id => t.vm().sidebar?.sessions?.find(x => x.id === id) ?? null
   const sessionOf = id => t.vm().sessions?.[id] ?? rowOf(id)
   const nameOf = id => sessionOf(id)?.name?.en ?? ''
-  const deskName = id => t.vm().sidebar?.desks?.find(d => d.id === id)?.name?.en || 'Personal'
+  const teamName = id => t.vm().sidebar?.teams?.find(d => d.id === id)?.name?.en || 'Personal'
   // The drawings of one session's picker: a frame, fetched when the picker is opened.
   t.get(/^\/sessions\/([^/]+)\/marks$/, ({ req, res, url, match }) => {
     const s = sessionOf(decodeURIComponent(match[1]))
@@ -53,17 +53,17 @@ export function register(t) {
   const backOf = path => (typeof path === 'string' && /^\/(?!\/)/.test(path) && !/[\\\r\n]/.test(path) ? path : '')
   const undo = (id, fields) => ({ action: `${sessionForms({ id }, BASE)}/edit`, fields })
 
-  /** label, icon, desk, parent, group, archived: whichever the form names, each its Action. Returns the stream to answer with. */
+  /** label, icon, team, parent, group, archived: whichever the form names, each its Action. Returns the stream to answer with. */
   function edit(id, form) {
     if (form.has('label')) t.act({ do: 'rename_session', session_id: id, name: String(form.get('label')).trim() })
     if (form.has('icon')) t.act({ do: 'session_icon', session_id: id, icon: String(form.get('icon')) || null })
     if (form.has('parent')) t.act({ do: 'session_parent', session_id: id, parent: String(form.get('parent')) || null })
     if (form.has('group')) t.act({ do: 'session_group', session_id: id, group: String(form.get('group')) || null })
-    if (form.has('desk')) {
-      const was = sessionOf(id)?.desk_id, to = String(form.get('desk'))
-      t.act({ do: 'move_session', session_id: id, desk_id: to })
-      // (from the session's own page: on to the Desk, the session is not on this desk any more)
-      if (form.has('moved')) return html`${form.has('leave') ? t.stream('visit', `${BASE}/`) : ''}${t.toast({ head: `Moved to ${deskName(to)}`, line: nameOf(id), undo: was ? undo(id, { desk: was, moved: '1' }) : null })}`
+    if (form.has('team')) {
+      const was = sessionOf(id)?.team_id, to = String(form.get('team'))
+      t.act({ do: 'move_session', session_id: id, team_id: to })
+      // (from the session's own page: on to the Desk, the session is not on this team any more)
+      if (form.has('moved')) return html`${form.has('leave') ? t.stream('visit', `${BASE}/`) : ''}${t.toast({ head: `Moved to ${teamName(to)}`, line: nameOf(id), undo: was ? undo(id, { team: was, moved: '1' }) : null })}`
     }
     if (form.has('archived')) {
       const on = form.get('archived') === '1'

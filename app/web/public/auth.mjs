@@ -403,7 +403,7 @@ ${note ? html`<p class="room-lead" id="logout-last">${note}</p>` : ''}<p class="
 <form method="post" action="/pair" class="set-agent"><input type="hidden" name="role" value="computer"><button type="submit" class="set-row" id="settings-invite-agent"><span class="set-ico">${PLUS}</span><b>Approve Computer…</b><span class="set-detail">a command for Claude Code</span>${SET_CHEVRON}</button></form></section>`}
 <nav class="set-group" aria-label="Settings">
 ${setRow({ href: '/settings/agents', icon: sk('terminal'), word: 'Agents', detail: s.agents?.en ?? '', id: 'settings-agents' })}
-${setRow({ href: '/settings/desks', icon: sk('desk'), word: 'Desks', detail: s.desks?.en ?? '', id: 'settings-desks' })}
+${setRow({ href: '/settings/teams', icon: sk('desk'), word: 'Teams', detail: s.teams?.en ?? '', id: 'settings-teams' })}
 ${setRow({ href: '/settings/devices', icon: art('phone'), word: 'Devices', detail: s.devices_says?.en ?? '', id: 'settings-devices' })}
 ${setRow({ href: '/settings/account', icon: sk('key'), word: 'Account', detail: s.account ?? '', id: 'settings-account' })}
 </nav>
@@ -422,10 +422,10 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
   })
   t.post(/^\/pair$/, ({ res, form }) => {
     if (['agent', 'computer'].includes(String(form.get('role')))) {
-      const desk = t.desk()
+      const team = t.team()
       local.invite = { kind: 'agent' }
       if (form.get('role') === 'computer') t.account({ step: 'approve_computer', label: field(form, 'label').trim() })
-      else t.account({ step: 'invite_agent', label: field(form, 'label').trim(), ...(desk && desk !== 'all' ? { desk } : {}) })
+      else t.account({ step: 'invite_agent', label: field(form, 'label').trim(), ...(team ? { team } : {}) })
       return t.redirect(res, '/pair/agent')
     }
     local.invite = { kind: 'device' }

@@ -64,7 +64,7 @@ public/
   ui.mjs               what every view shares: html, the pen, words, toasts, the controllers (controller(name, class)),
                        rich text, agent layouts, keys, a card's row, a session's mark, the room's frame
   auth.mjs/.css        account screens, passkeys, password, Emergency Kit, recovery, pairing, devices, settings, log out
-  desk  card  session  sidebar  notes  media  agents  desks  whiteboard   (.mjs + .css each)
+  desk  card  session  sidebar  notes  media  agents  teams  whiteboard   (.mjs + .css each)
   proof.mjs            Self Test (the core's self test), a row of Settings → Security
   news.mjs             What's new: /whats-new.json (whats-new.mjs, the worker's: the releases' notes), from the menu
   core.mjs             the page's side of the app core (its worker: core/core-worker.ts): the view model, actions, focus, files
@@ -163,10 +163,9 @@ instead); files come network first, the cache only offline. On the dev server (`
 
 ## The Desk
 
-- **Goals:** under the greeting, a desk's own checklist (at most 20 lines of 200 characters: `GOALS_LINES`,
-  `GOALS_LINE_MAX` are editor limits; Rust `actions::run::clean_goals` validates the text), written in place with a click; empty only a faint "Goals…", nothing on
-  All desks. One toggle, a chevron beside them, folds them to their first line and opens them again (folded or
-  not is kept per desk in `localStorage` `trommi-goals-folded`), so a long list need not push the cards off the screen. A line that starts with an emoji or a tick box has its sign in a
+- **Goals:** under the greeting, the team's own checklist (at most 20 lines of 200 characters: `GOALS_LINES`,
+  `GOALS_LINE_MAX` are editor limits; Rust `actions::run::clean_goals` validates the text), written in place with a click; empty only a faint "Goals…". One toggle, a chevron beside them, folds them to their first line and opens them again (folded or
+  not is kept per team in `localStorage` `trommi-goals-folded`), so a long list need not push the cards off the screen. A line that starts with an emoji or a tick box has its sign in a
   column of its own: the words of such lines start under each other. The field grows with its words to twelve rows,
   then it scrolls. Leaving the field always keeps what was written: on `blur`, and also on a press outside it, when the
   page is hidden or left, and when the field is found to be no longer the active element (a document without focus, a
@@ -196,8 +195,8 @@ instead); files come network first, the cache only offline. On the dev server (`
   its heading "Artifacts N" is the link that opens `/artifacts`: Media and Pages together, the newest first, the filter
   All · Media · Pages, compact tiles in a soft frame with Open and, on a page, Share as small icons; 25 tiles made at once,
   the rest as they come near).
-- **Note:** one drawn yellow note at the window's bottom-right; it unfolds there to write, takes attachments, sends to the crown (on All Desks: to a desk's crowned session, chosen where several desks have one); a square sheet on a wide window (`sidebar.mjs` `cornerNote`).
-- **Sidebar:** the Desk box, the sessions (a main with its helpers on a pen bracket, tallies, the red hand), "New agent" and
+- **Note:** one drawn yellow note at the window's bottom-right; it unfolds there to write, takes attachments, sends to the crown of the team in view; a square sheet on a wide window (`sidebar.mjs` `cornerNote`).
+- **Sidebar:** the Desk box (the team in view; its chevron opens the Trommi menu, the teams at its top with what waits on each), the sessions of that team (a main with its helpers on a pen bracket, tallies, the red hand), "New agent" and
   the Trommi menu at its foot. One sidebar, two presentations (`sidebar.css` "A phone"): beside the page on a wide
   screen (foldable to a rail), a drawer up to 860px that a finger from the left edge slides in over the dimmed page (a
   tap beside it, a push back, Esc or a choice closes it). A phone's top line is the pill (the desk's drawing and name;
@@ -215,13 +214,9 @@ approached and kept under the Desk (`app.mjs` `keepPad`); the Desk under the boa
 the pad (`whiteboard.mjs` mountPad) as large as the main area; select or frame something and **Send to…** a session.
 One drawing on it is a scribble.
 
-What is drawn is the board of the desk in view (the core's `scribble::desk_board` and `BoardView.board_id` give its identity): one board per desk, one for
-"All desks", and a room without desks draws on the `main` desk's. On "All desks" the page shows All's own board, and
-at its left a column of small cards, one per desk: the desk's drawing and name, its board as a live thumbnail and how
-much is on it (`whiteboardDesks`, controller `whiteboard` `thumbs`: each card's board is opened with `openCanvas` and
-painted small); a click opens that desk's board (`/scribble-board?desk=<id>` switches the desk and stays on the
-board). On a desk the page shows that desk's board with one quiet line at the top left: back to All desks, and the
-desk's name. A room with one desk or none shows neither.
+What is drawn is the board of the team in view (the core's `scribble::team_board` and `BoardView.board_id` give its
+identity): one board per team, and a room without teams draws on the `main` team's. `/scribble-board?team=<id>`
+switches the team and stays on the board. Settings · Teams shows every team's board small (controller `thumbs`).
 
 **Parking the corner note (wide windows).** On the Scribble Board the yellow corner note can be dragged onto the board
 (`sidebar.mjs` controller `corner-note` `park`, event `trommi:park-note`, taken by `whiteboard.mjs`): closed, the
@@ -266,11 +261,11 @@ The app says **account**, never "room" (inside, the core founds and joins a room
 
 ### Addresses
 
-`/` the Desk · `/desk/:id` switch desk · `/blitz` Blitz · `/artifacts` Artifacts (`?kind=media`, `?kind=pages`) · `/scribble-board` the Scribble Board · `/card/:nr` a card (`?v=n` an older version, `/picture/:n` a picture) · `/chat/:session` a session (`/files`, `/files/:n`, `/artifact/:id` one of its Artifacts) · `/chat/:session/card/:nr` a card from its session · `/chats` the list of chats · `/artifact/:share` a Share link's page · `/settings` Settings: one list (Invite a Device and Invite an Agent side by side, the device's code in place, `?pair=<invite>`; a row per page) · `/settings/agents` the agents (a program on a computer) with their sessions as a tree (`/settings/sessions` leads there) · `/settings/desks` every desk as a card with its board small and its counts; the bin deletes a desk with everything on it (held to confirm; client core `team_delete.rs`, finished on the next start when broken off) · `/settings/devices` your devices (phones, tablets, browsers) and Push (`/:device_id` one device: its fingerprint, Rename or Remove; `/removed` the removed ones) · `/settings/account` the account (`/password`, `/passkeys`, `/kit`, `/email`: each way in on its page, a change asks "Confirm it is you") · `/settings/theme` · `/settings/keys` · `/pair/:invite_id` an invite · `/join#v1.<hub>.<room>.<secret>` joining (the secret never reaches a server and leaves the address bar once read). The addresses of before, `/s/…` and `/a/…`, move to `/chat/…` and `/artifact/…` (a 301 of `worker.js`, and the router in the page: `public/paths.mjs`).
+`/` the Desk · `/team/:id` and `/?team=<id>` switch team · `/blitz` Blitz · `/artifacts` Artifacts (`?kind=media`, `?kind=pages`) · `/scribble-board` the Scribble Board · `/card/:nr` a card (`?v=n` an older version, `/picture/:n` a picture) · `/chat/:session` a session (`/files`, `/files/:n`, `/artifact/:id` one of its Artifacts) · `/chat/:session/card/:nr` a card from its session · `/chats` the list of chats · `/artifact/:share` a Share link's page · `/settings` Settings: one list (Invite a Device and Invite an Agent side by side, the device's code in place, `?pair=<invite>`; a row per page) · `/settings/agents` the agents (a program on a computer) with their sessions as a tree (`/settings/sessions` leads there) · `/settings/teams` every team as a card with its board small and its counts; the bin deletes a team with everything on it (held to confirm; client core `team_delete.rs`, finished on the next start when broken off) · `/settings/devices` your devices (phones, tablets, browsers) and Push (`/:device_id` one device: its fingerprint, Rename or Remove; `/removed` the removed ones) · `/settings/account` the account (`/password`, `/passkeys`, `/kit`, `/email`: each way in on its page, a change asks "Confirm it is you") · `/settings/theme` · `/settings/keys` · `/pair/:invite_id` an invite · `/join#v1.<hub>.<room>.<secret>` joining (the secret never reaches a server and leaves the address bar once read). The addresses of before, `/s/…` and `/a/…`, move to `/chat/…` and `/artifact/…` (a 301 of `worker.js`, and the router in the page: `public/paths.mjs`).
 
 ### IndexedDB
 
-The core owns what it stores: the device's state in the database `trommi` (the binding's `IdbStore`: packed journal deltas and checkpoint pages, revision checked in each strict transaction, values wrapped at rest, `trommi:wrap` holds the key; one owner by Web Lock) and its cache in `trommi:app:cache` (string keys, bytes; safe to lose). The app keeps only per-browser conveniences in localStorage: theme (`trommi-theme`), rail (`trommi-rail`), open crowns (`trommi-crowns-open`), the desk in view (`trommi-desk`); the developer switches below are sessionStorage only. The mock room keeps nothing.
+The core owns what it stores: the device's state in the database `trommi` (the binding's `IdbStore`: packed journal deltas and checkpoint pages, revision checked in each strict transaction, values wrapped at rest, `trommi:wrap` holds the key; one owner by Web Lock) and its cache in `trommi:app:cache` (string keys, bytes; safe to lose). The app keeps only per-browser conveniences in localStorage: theme (`trommi-theme`), rail (`trommi-rail`), open crowns (`trommi-crowns-open`), the team in view (`trommi-team`, sent to the core as `Focus.team`); the developer switches below are sessionStorage only. The mock room keeps nothing.
 
 ### Render strategy (performance)
 

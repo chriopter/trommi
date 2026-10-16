@@ -10,7 +10,7 @@ const T = en => ({ key: 'k', en })
 const agent = (program, host, more = {}) => ({
   key: `${program} · ${host}`, program, host, name: T(`${program} on ${host || 'an unnamed computer'}`), online: true, state: T('connected'), seen_ms: 0,
   count: T('1 session, 2 helpers'), total: 3, devices: ['d1', 'd2'], remove: T(`${program} on ${host} and its 3 sessions can read nothing new after this.`),
-  sessions: [{ id: 'k1', slug: 'web', name: T('Web'), mark: 'draw:leaf', desk: T('Personal desk'), folder: '~/code/web', helpers: 2, helpers_says: T('+2 helpers'), online: true, state: T('connected') }],
+  sessions: [{ id: 'k1', slug: 'web', name: T('Web'), mark: 'draw:leaf', team: T('Personal team'), folder: '~/code/web', helpers: 2, helpers_says: T('+2 helpers'), online: true, state: T('connected') }],
   ...more,
 })
 
@@ -22,7 +22,7 @@ test('the page: one card per agent, "<program> on <computer>", its sessions as b
   assert.match(page, /<b>Claude Code <span>on laptop<\/span><\/b>/)
   assert.match(page, /href="\/chat\/web" data-nav>/)
   assert.match(page, /\+2 helpers/)
-  assert.match(page, /Personal desk · <span class="room-mono">~\/code\/web<\/span>/)
+  assert.match(page, /Personal team · <span class="room-mono">~\/code\/web<\/span>/)
   assert.match(page, /away · last seen <span class="ago" data-ts="5">/)
   assert.match(page, /action="\/agents\/remove"[\s\S]*?name="key" value="Claude Code · laptop"[\s\S]*?can read nothing new after this\.[\s\S]*?Remove from This Account/)
   assert.match(page, /Invite an Agent…/)

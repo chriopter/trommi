@@ -311,8 +311,6 @@ const SKETCH = {
   bubble: [[[4.4, 8.6], [6, 6.4], [12, 6], [18.2, 6.4], [19.8, 8.8], [19.6, 14.6], [17.8, 16.8], [11.6, 17], [8.4, 20.6], [8.2, 17], [5.8, 16.6], [4.3, 14.4], [4.5, 8.2]]],
   // a desk with its lamp: the top, two legs, the lamp's foot, its arm with a knee, the shade bent over the top
   desk: [[[2.4, 12.6], [12, 12.2], [21.6, 12.6]], [[4.6, 12.9], [4.9, 17], [4.6, 20.8]], [[19.4, 12.9], [19.1, 17], [19.4, 20.8]], [[15.4, 12], [17.4, 12.1], [19.4, 12]], [[17.4, 11.8], [19.6, 7.6], [19.9, 7.2], [19.4, 6.8], [14.6, 4.2]], [[14.8, 2.6], [11.4, 3.4], [9.4, 5.6], [8.8, 7.6], [9.2, 8], [15.4, 6.2], [15.8, 5.8], [15.4, 3.4], [14.6, 2.5]]],
-  // All Desks: two desks, one behind the other (the overall desk over its children)
-  desks: [[[1.8, 15.4], [10.6, 15.1], [18.8, 15.4]], [[3.8, 15.7], [4, 18.6], [3.8, 21.4]], [[16.8, 15.7], [16.6, 18.6], [16.8, 21.4]], [[6.6, 8.6], [14.4, 8.3], [22.2, 8.6]], [[20.4, 8.9], [20.2, 11.6], [20.4, 14.2]], [[8.4, 8.9], [8.5, 11.2], [8.4, 13.4]], [[11.2, 8.2], [12.8, 5.2], [15.6, 3.4]]],
   // a table: a sheet ruled into cells
   grid: [[[4, 5.6], [12, 5.3], [20, 5.6], [20.2, 12], [20, 18.6], [12, 18.8], [4.2, 18.5], [3.9, 12], [4.1, 5.3]], [[4.4, 10], [19.8, 10.2]], [[10, 5.8], [10.2, 18.4]]],
   // three options, one of them ticked
@@ -1956,7 +1954,7 @@ controller('title', class extends Controller {
 
 // ---- controller "pops" ----
 // Small things that open right at their control: <details class="t-pick"> with its content
-// lying over the page (rename, the drawings, a choice of desk or main agent, the phone's sheet of a line).
+// lying over the page (rename, the drawings, a choice of team or main agent, the phone's sheet of a line).
 // The views render them; this only does what <details> does not do by itself:
 //   - Escape or a click beside it closes; opening one closes the others; a "Cancel"/"Close" (data-pop-close) closes
 //   - the keyboard goes into the field of the one that opened, its text selected
@@ -2041,7 +2039,7 @@ controller('pops', class extends Controller {
 
 // ---- controller "later" ----
 // A <details> whose content is made only when it opens (agents.mjs, ui.mjs LATER): the lists
-// of an Agents line (lay together with…, main agent, desk, the phone's sheet) wait in a <template>; the grid of
+// of an Agents line (lay together with…, main agent, team, the phone's sheet) wait in a <template>; the grid of
 // 52 drawings is made here from ui.mjs marksFrame. A page of many sessions would otherwise carry
 // thousands of elements nobody opened.
 
@@ -2176,7 +2174,7 @@ export function markControl(agent, base, { stay = false, back = '', cls = 'ledge
  */
 export const sessionHeadEdit = (agent, base, { back = '', stay = false } = {}) => html`<span class="t-session-edit" data-controller="pops">${markControl(agent, base, { stay, back, cls: 't-head-mark' })}${crownControl(agent, base, { stay, back })}${renameControl(agent, base, { stay, back, cls: 't-head-name' })}</span>`
 
-/** The crown as a switch on the corner of the mark: one per desk, given by the human's hand (the hub takes it from whoever wore it). */
+/** The crown as a switch on the corner of the mark: one per team, given by the human's hand (the hub takes it from whoever wore it). */
 const crownControl = (agent, base, { stay = false, back = '' } = {}) => html`<form class="t-crown-form" method="post" action="${sessionForms(agent, base)}/star">${answerFields({ stay, back })}<button class="crown-toggle" type="submit" name="starred" value="${agent.starred ? '0' : '1'}" aria-pressed="${String(Boolean(agent.starred))}" title="${agent.starred ? 'Take crown' : 'Crown'}" aria-label="${agent.name}: ${agent.starred ? 'wears the crown of its desk, take it off' : 'give the crown'}">${raw(crownSvg())}</button></form>`
 
 // ---- keys ----
@@ -2186,7 +2184,7 @@ const crownControl = (agent, base, { stay = false, back = '' } = {}) => html`<fo
 
 /** scope: where the keys count ('desk' | 'card' | 'picture' | 'app'). keys: 'j', 'ArrowDown', 'g d' (g, then d),
  *  '1…9' (any of them; the action gets the number), 'Mod+k'. repeat: may fire while held. typing: also in a field.
- *  needs: listed and taken only where the page has it ('sidebar': the sessions' list; 'desks': the menu's desks,
+ *  needs: listed and taken only where the page has it ('sidebar': the sessions' list; 'teams': the menu's teams,
  *  and not on the Agents page, where D is a line's drawing). native: listed, handled where it lives (the key is left alone). verb: the longer wording for the sheet. */
 export const LAYOUT = [
   { scope: 'desk', title: 'On the Desk', keys: [
@@ -2230,12 +2228,12 @@ export const LAYOUT = [
     { id: 'note.new', keys: ['n'], does: 'a new note' },
     { id: 'go.desk', keys: ['g d', 'g i'], does: 'Desk', verb: 'go to the Desk' },
     { id: 'go.agents', keys: ['g a'], does: 'Agents', verb: 'go to Settings · Agents' },
-    { id: 'go.jump', keys: ['Mod+k', 'g j'], does: 'menu', verb: 'open the Trommi menu: desks and places' },
+    { id: 'go.jump', keys: ['Mod+k', 'g j'], does: 'menu', verb: 'open the Trommi menu: teams and places' },
     { id: 'go.walk', keys: ['g b'], does: 'Blitz', verb: 'Blitz: every open card, one after the other' },
     { id: 'go.artifacts', keys: ['g m', 'g p'], does: 'Artifacts', verb: 'go to the Artifacts: every picture, video, file and page your agents made' },
-    // 0…9 alone are the desks' (0 All desks, 1…9 the desks in the menu's order); G then 1…9 are the sessions'.
+    // 1…9 alone are the teams' (in the menu's order); G then 1…9 are the sessions'.
     { id: 'go.session', keys: ['g 1…9'], does: 'session 1 to 9', verb: 'go to that session of the sidebar', needs: 'sidebar' },
-    { id: 'desk.switch', keys: ['0…9'], does: 'All desks (0), desk 1 to 9', verb: 'switch to that desk; 0: All desks', needs: 'desks' },
+    { id: 'team.switch', keys: ['1…9'], does: 'team 1 to 9', verb: 'switch to that team of the menu', needs: 'teams' },
     { id: 'session.next', keys: ['.'], does: 'next session', needs: 'sidebar' },
     { id: 'session.prev', keys: [','], does: 'previous session', needs: 'sidebar' },
     { id: 'pen', keys: ['p'], does: 'turn the page: the Scribble Board on the back of the Desk, and back' },
@@ -2413,9 +2411,9 @@ function start(signal) {
     $('#brand-menu')?.setAttribute('aria-expanded', 'true')
   }
   const sessions = () => [...document.querySelectorAll('#agents .agent-row[data-unit]')].filter(shown).map(r => r.querySelector('.agent-entry')).filter(Boolean)
-  const desks = () => [...document.querySelectorAll('#brand-doors .menu-desk[data-desk]')]
+  const teams = () => [...document.querySelectorAll('#brand-doors .menu-team[data-team]')]
   const HAS = {
-    desks: () => desks().length > 0,
+    teams: () => teams().length > 0,
     sidebar: () => Boolean($('#agents')),
   }
   function sessionStep(by) {
@@ -2481,7 +2479,7 @@ function start(signal) {
     'go.walk': () => go(`${base()}/blitz`),
     'go.artifacts': () => go(`${base()}/artifacts`),
     'go.jump': () => openJump(),
-    'desk.switch': n => { press(deskByNumber(desks(), n)) },
+    'team.switch': n => { press(teamByNumber(teams(), n)) },
     'go.session': n => { press(sessions()[n - 1]) },
     'session.next': () => sessionStep(1),
     'session.prev': () => sessionStep(-1),
@@ -2696,7 +2694,7 @@ ${from && !slim ? html`<a class="inbox-gutter" data-nav href="${base}/chat/${enc
 <div class="inbox-content">
 <header class="inbox-row-head"></header>
 ${media.length ? html`<a class="inbox-fan" data-nav href="${href}${media.some(m => m.kind === 'image') ? '/picture/1' : ''}" aria-label="${row.media_says?.en ?? 'Look at the pictures'}">${media.slice(0, 3).map(m => { const url = fileSrc(m.file_id); return m.kind === 'image' ? html`<img${url ? html` src="${url}"` : ''} alt="" loading="lazy" decoding="async" width="56" height="42">` : html`<video${url ? html` src="${url}#t=0.001"` : ''} muted playsinline preload="metadata"></video>` })}</a>` : ''}
-${from ? html`<button class="row-mark" type="button" style="--hue:${from.hue}" data-tip="Select" aria-label="Select: ${row.title}" aria-pressed="false" data-select>${markArt(from)}<span class="row-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.4 12.6Q8.8 15.1 10.4 17Q14 11.4 18.2 7.2"/></svg></span></button>` : ''}<a class="inbox-text${from ? ' has-sender' : ''}" data-nav href="${href}" data-tip="${row.title}">${from && !slim ? html`<span class="inbox-from-mark inbox-who" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt(from)}</span>` : ''}<strong class="inbox-question" data-controller="fit">${slim && from ? html`<span class="row-stamp" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt({ ...from, crowned: false })}</span>` : ''}${knock ? html`<span class="row-urg is-${row.sign}" role="img" title="${row.sign_says?.en ?? ''}" aria-label="${row.sign_says?.en ?? ''}">${row.sign === 'block' ? raw(handSvg()) : sk('knock')}</span>` : row.sign === 'whenever' && !info ? html`<span class="row-urg is-whenever" role="img" title="Whenever" aria-label="Whenever">${sk('whenever')}</span>` : ''}${row.starred ? starMark() : ''}${row.title}</strong>${from && !slim ? html`<span class="row-meta"><span class="row-meta-mark">${raw(doodleSvg(from.mark))}</span><span class="row-meta-who">${from.name}</span><span class="row-meta-dot">·</span>${agoSpan(row.created_ms, 'row-meta-ago')}</span>` : ''}${about || words ? html`<span class="inbox-body">${row.from?.desk ? html`<span class="row-desk" title="Desk ${row.from.desk}">${row.from.desk}</span>` : ''}${about ? html`<span class="inbox-body-about">${about}</span>` : ''}${words ? html`<span class="inbox-body-text">${about ? ` · ${words}` : words}</span>` : ''}</span>` : ''}</a>
+${from ? html`<button class="row-mark" type="button" style="--hue:${from.hue}" data-tip="Select" aria-label="Select: ${row.title}" aria-pressed="false" data-select>${markArt(from)}<span class="row-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.4 12.6Q8.8 15.1 10.4 17Q14 11.4 18.2 7.2"/></svg></span></button>` : ''}<a class="inbox-text${from ? ' has-sender' : ''}" data-nav href="${href}" data-tip="${row.title}">${from && !slim ? html`<span class="inbox-from-mark inbox-who" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt(from)}</span>` : ''}<strong class="inbox-question" data-controller="fit">${slim && from ? html`<span class="row-stamp" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt({ ...from, crowned: false })}</span>` : ''}${knock ? html`<span class="row-urg is-${row.sign}" role="img" title="${row.sign_says?.en ?? ''}" aria-label="${row.sign_says?.en ?? ''}">${row.sign === 'block' ? raw(handSvg()) : sk('knock')}</span>` : row.sign === 'whenever' && !info ? html`<span class="row-urg is-whenever" role="img" title="Whenever" aria-label="Whenever">${sk('whenever')}</span>` : ''}${row.starred ? starMark() : ''}${row.title}</strong>${from && !slim ? html`<span class="row-meta"><span class="row-meta-mark">${raw(doodleSvg(from.mark))}</span><span class="row-meta-who">${from.name}</span><span class="row-meta-dot">·</span>${agoSpan(row.created_ms, 'row-meta-ago')}</span>` : ''}${about || words ? html`<span class="inbox-body">${about ? html`<span class="inbox-body-about">${about}</span>` : ''}${words ? html`<span class="inbox-body-text">${about ? ` · ${words}` : words}</span>` : ''}</span>` : ''}</a>
 <span class="inbox-when" title="${ago(row.created_ms)}"><form class="inbox-tabs" method="post" action="${act('snooze')}"><input type="hidden" name="stay" value="1">
 ${ways.has('later') ? html`<button class="inbox-tab-act inbox-later is-tag" type="submit" formaction="${act('snooze')}" aria-label="${WORDS.later}: put this question off; it waits for you below" title="${WORDS.later}">${LATER_TAG}</button>` : ''}
 ${ways.has('reverse') ? tab('inbox-revise', 'reverse', WORDS.revise, WORDS.revise, act('revise'), true) : ''}
@@ -2762,7 +2760,7 @@ export const linkNote = (note, { id = '' } = {}) => (note ? html`<aside class="l
 /** The slip above the Desk's questions (SlipView[]): one line per session that is cut off, with the step in its terminal. */
 export const linkSlip = (slips, base) => html`<section class="link-slip" id="link-slip" role="alert" aria-label="Sessions that are cut off"${slips?.length ? '' : raw(' hidden')}>${(slips ?? []).map(x => html`<p><a data-nav href="${base}/chat/${encodeURIComponent(x.session_id)}">${sk('ear-off')}<span>${x.text.en}</span></a><span class="link-fix">${x.fix.say.en} <code>${x.fix.code}</code></span></p>`)}</section>`
 
-// The plus of the rows that add something (invite an agent: POST /pair, role agent; a new desk).
+// The plus of the rows that add something (invite an agent: POST /pair, role agent; a new team).
 export const PLUS = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M12.3 5.2C11.9 9.7 12 14.2 12.1 18.9"/><path d="M5.3 12.4C9.8 11.8 14.3 11.9 18.8 12.2"/></svg>')
 
 // ---- what the agents sent: the Desk's Artifacts pile and the page /artifacts ----
@@ -2984,9 +2982,9 @@ export const settingsPage = (title, inner, { id = 'room', cls = 'room', lead = '
 /** Devices and Account (auth.mjs): a page under Settings in the account screens' own main (#room). */
 export const roomPage = (title, inner, lead = '') => settingsPage(title, inner, { lead })
 /** The short list of keys (the "?" sheet's), for Settings · Keyboard Shortcuts. */
-/** The menu's desk entry a number key picks: 0 All desks (there while there are two desks or more), 1…9 the desks
- *  in the menu's order, All desks not counted. Nothing for a number past the last. entries: elements with data-desk. */
-export const deskByNumber = (entries, n) => (n === 0 ? entries.find(d => d.dataset.desk === 'all') : entries.filter(d => d.dataset.desk !== 'all')[n - 1]) ?? null
+/** The menu's team entry a number key picks: 1…9 the teams in the menu's order. Nothing for a number past the last.
+ *  entries: elements with data-team. */
+export const teamByNumber = (entries, n) => (n >= 1 ? entries[n - 1] : null) ?? null
 export const keysList = () => html`<dl class="set-keys">${SHORT.map(k => html`<div><dt>${k.keys.map((spec, i) => html`${i ? html`<i>or</i>` : ''}${caps(spec)}`)}</dt><dd>${k.does}</dd></div>`)}</dl>`
 export const errorLine = e => (e ? html`<p class="room-error" role="alert">${e}</p>` : '')
 /** What a refused action says on screen: the line for a refusal every screen may meet (by its code), else the

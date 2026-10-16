@@ -1,4 +1,4 @@
-// goals-fold.test.mjs: the desk's goals fold with ONE toggle (the owner, 13 October 2026: "nur ein Auf- und
+// goals-fold.test.mjs: the team's goals fold with ONE toggle (the owner, 13 October 2026: "nur ein Auf- und
 // Zuklappen, kein 'Hide goals'"): folded, the first line; open, every line (desk.mjs goalsWords, controller "goals").
 //   node --test tests/web/views/
 import test from 'node:test'
@@ -8,7 +8,7 @@ import { goalsWords } from '../../../app/web/public/desk.mjs'
 
 const read = f => fs.readFileSync(new URL(`../../../${f}`, import.meta.url), 'utf8')
 /** A GoalsView of n lines, as the core makes it (views.d.ts). */
-const goals = n => ({ desk_id: 'main', lines: Array.from({ length: n }, (_, i) => `goal ${i + 1}`), foldable: n > 1, folded: false,
+const goals = n => ({ team_id: 'main', lines: Array.from({ length: n }, (_, i) => `goal ${i + 1}`), foldable: n > 1, folded: false,
   ...(n > 1 ? { show_all: { key: 'desk.goals.show_all', en: `Show all ${n} goals` }, toggle: { key: 'desk.goals.fold', en: 'Show the first goal only' } } : {}) })
 
 test('open: every line and one chevron; no "Hide goals", no "+N more"', () => {
