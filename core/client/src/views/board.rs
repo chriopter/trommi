@@ -54,9 +54,10 @@ pub struct Lens {
     /// The teams whose goals are folded to their first line on this device (web localStorage
     /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
     pub goals_folded: Vec<String>,
-    /// The wide sidebar shows the team in view from inside (its chats) rather than every team as a stack
-    /// (`Focus.in_team`; web localStorage `trommi-sidebar-level`).
-    pub in_team: bool,
+    /// The Desk is home: every team's questions, not the team in view's (`Focus.desk_all`).
+    pub desk_all: bool,
+    /// The teams unfolded in the wide sidebar (`Focus.open_teams`).
+    pub open_teams: Vec<String>,
     /// What this device has shown of each session's words: the newest envelope number of its agent's words when
     /// its chat was last in view, by session key (the cache's `seen`). None until it is read: nothing counts as
     /// unread meanwhile.
@@ -329,6 +330,12 @@ impl<'a> Board<'a> {
             Some(i) => self.agents[i].on_team,
             None => self.teams.is_empty() || self.team.as_deref() == self.teams.first().map(|d| d.id.as_str()),
         }
+    }
+
+    /// Whether what belongs to this session stands on the Desk in view: home holds every team's, else the team in
+    /// view's.
+    pub fn on_desk(&self, agent: Option<usize>) -> bool {
+        self.lens.desk_all || self.in_view(agent)
     }
 
     /// The team a card of this session counts on, in a room with teams.

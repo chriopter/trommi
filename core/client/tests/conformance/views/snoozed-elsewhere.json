@@ -34,8 +34,8 @@
             },
             "sidebar": {
               "badge": 0,
+              "desk_all": false,
               "knocking": 0,
-              "level": "",
               "place": {
                 "en": "",
                 "key": ""
@@ -80,8 +80,8 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
+            "desk_all": false,
             "knocking": 0,
-            "level": "teams",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -95,6 +95,7 @@
                   "en": "Personal",
                   "key": "team.personal"
                 },
+                "open": false,
                 "says": {
                   "args": {
                     "agents": "0"
@@ -190,8 +191,8 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
+            "desk_all": false,
             "knocking": 0,
-            "level": "teams",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -252,12 +253,19 @@
                     "mark": "00000002eeee"
                   }
                 ],
+                "faces": [
+                  {
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "00000002eeee"
+                  }
+                ],
                 "id": "main",
                 "knocks": false,
                 "name": {
                   "en": "Personal",
                   "key": "team.personal"
                 },
+                "open": false,
                 "says": {
                   "args": {
                     "agents": "1"
@@ -266,6 +274,54 @@
                   "key": "team.stack.one"
                 },
                 "selected": true,
+                "sessions": [
+                  {
+                    "away": true,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "gone",
+                      "line": {
+                        "args": {
+                          "at": "",
+                          "name": "Loading …",
+                          "program": "Claude Code"
+                        },
+                        "en": "Loading … is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                        "key": "link.gone.line_silent"
+                      },
+                      "short": {
+                        "en": "Gone",
+                        "key": "link.gone.short"
+                      },
+                      "word": {
+                        "args": {
+                          "at": ""
+                        },
+                        "en": "gone",
+                        "key": "link.gone.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":off",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "link": "gone",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "Loading …",
+                      "key": "session.name"
+                    },
+                    "online": false,
+                    "open": 0,
+                    "signal": "",
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
                 "waiting": 0
               }
             ],
@@ -462,8 +518,8 @@
           "part": "sidebar",
           "view": {
             "badge": 1,
+            "desk_all": false,
             "knocking": 0,
-            "level": "teams",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -542,12 +598,19 @@
                     "mark": "00000002eeee"
                   }
                 ],
+                "faces": [
+                  {
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "00000002eeee"
+                  }
+                ],
                 "id": "main",
                 "knocks": false,
                 "name": {
                   "en": "Personal",
                   "key": "team.personal"
                 },
+                "open": false,
                 "says": {
                   "args": {
                     "agents": "1",
@@ -557,6 +620,72 @@
                   "key": "team.stack.one.open.one"
                 },
                 "selected": true,
+                "sessions": [
+                  {
+                    "away": true,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "gone",
+                      "line": {
+                        "args": {
+                          "at": "",
+                          "name": "00000002eeee",
+                          "program": "Claude Code"
+                        },
+                        "en": "00000002eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                        "key": "link.gone.line_silent"
+                      },
+                      "short": {
+                        "en": "Gone",
+                        "key": "link.gone.short"
+                      },
+                      "word": {
+                        "args": {
+                          "at": ""
+                        },
+                        "en": "gone",
+                        "key": "link.gone.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":off",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "last": {
+                      "at_ms": 1791900300010,
+                      "text": "Ship it?",
+                      "when": {
+                        "args": {
+                          "time": "14:05"
+                        },
+                        "en": "14:05",
+                        "key": "chat.when.today"
+                      }
+                    },
+                    "link": "gone",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": false,
+                    "open": 1,
+                    "says": {
+                      "args": {
+                        "n": "1"
+                      },
+                      "en": "Disconnected, 1 question open",
+                      "key": "badge.offline_open"
+                    },
+                    "signal": "waiting",
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
                 "waiting": 1
               }
             ],
@@ -1045,8 +1174,8 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
+            "desk_all": false,
             "knocking": 0,
-            "level": "teams",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -1118,12 +1247,19 @@
                     "mark": "00000002eeee"
                   }
                 ],
+                "faces": [
+                  {
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "00000002eeee"
+                  }
+                ],
                 "id": "main",
                 "knocks": false,
                 "name": {
                   "en": "Personal",
                   "key": "team.personal"
                 },
+                "open": false,
                 "says": {
                   "args": {
                     "agents": "1"
@@ -1132,6 +1268,65 @@
                   "key": "team.stack.one"
                 },
                 "selected": true,
+                "sessions": [
+                  {
+                    "away": true,
+                    "blocked": false,
+                    "cap": {
+                      "kind": "gone",
+                      "line": {
+                        "args": {
+                          "at": "",
+                          "name": "00000002eeee",
+                          "program": "Claude Code"
+                        },
+                        "en": "00000002eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                        "key": "link.gone.line_silent"
+                      },
+                      "short": {
+                        "en": "Gone",
+                        "key": "link.gone.short"
+                      },
+                      "word": {
+                        "args": {
+                          "at": ""
+                        },
+                        "en": "gone",
+                        "key": "link.gone.word"
+                      }
+                    },
+                    "crowned": false,
+                    "group": ":off",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "knocks": false,
+                    "last": {
+                      "at_ms": 1791900300010,
+                      "text": "Ship it?",
+                      "when": {
+                        "args": {
+                          "time": "14:05"
+                        },
+                        "en": "14:05",
+                        "key": "chat.when.today"
+                      }
+                    },
+                    "link": "gone",
+                    "main": true,
+                    "mark": "00000002eeee",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": false,
+                    "open": 0,
+                    "signal": "",
+                    "slug": "00000002eeee",
+                    "team_id": "main",
+                    "unheard": 0,
+                    "unread": false,
+                    "working": false
+                  }
+                ],
                 "waiting": 0
               }
             ],
@@ -1431,8 +1626,8 @@
     },
     "sidebar": {
       "badge": 0,
+      "desk_all": false,
       "knocking": 0,
-      "level": "teams",
       "place": {
         "en": "Personal",
         "key": "team.personal"
@@ -1504,12 +1699,19 @@
               "mark": "00000002eeee"
             }
           ],
+          "faces": [
+            {
+              "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+              "mark": "00000002eeee"
+            }
+          ],
           "id": "main",
           "knocks": false,
           "name": {
             "en": "Personal",
             "key": "team.personal"
           },
+          "open": false,
           "says": {
             "args": {
               "agents": "1"
@@ -1518,6 +1720,65 @@
             "key": "team.stack.one"
           },
           "selected": true,
+          "sessions": [
+            {
+              "away": true,
+              "blocked": false,
+              "cap": {
+                "kind": "gone",
+                "line": {
+                  "args": {
+                    "at": "",
+                    "name": "00000002eeee",
+                    "program": "Claude Code"
+                  },
+                  "en": "00000002eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                  "key": "link.gone.line_silent"
+                },
+                "short": {
+                  "en": "Gone",
+                  "key": "link.gone.short"
+                },
+                "word": {
+                  "args": {
+                    "at": ""
+                  },
+                  "en": "gone",
+                  "key": "link.gone.word"
+                }
+              },
+              "crowned": false,
+              "group": ":off",
+              "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+              "knocks": false,
+              "last": {
+                "at_ms": 1791900300010,
+                "text": "Ship it?",
+                "when": {
+                  "args": {
+                    "time": "14:05"
+                  },
+                  "en": "14:05",
+                  "key": "chat.when.today"
+                }
+              },
+              "link": "gone",
+              "main": true,
+              "mark": "00000002eeee",
+              "name": {
+                "en": "00000002eeee",
+                "key": "session.name"
+              },
+              "online": false,
+              "open": 0,
+              "signal": "",
+              "slug": "00000002eeee",
+              "team_id": "main",
+              "unheard": 0,
+              "unread": false,
+              "working": false
+            }
+          ],
           "waiting": 0
         }
       ],

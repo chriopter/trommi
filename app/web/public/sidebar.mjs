@@ -12,11 +12,11 @@ const SIGNAL_SAYS = { stopped: 'Stopped', waiting: 'Waits for you', unread: 'New
 const signalDot = r => (r.signal ? html`<i class="agent-signal" data-signal="${r.signal}" role="img" aria-label="${SIGNAL_SAYS[r.signal] ?? ''}"></i>` : '')
 /** One row of the sidebar (SessionRowView): on a wide screen a calm chat row (drawing, name, what was said last, one
  *  sign); a phone keeps its counts, helper dots and caps (sidebar.css). */
-function row(r, base) {
+function row(r, base, st = null, last = false) {
   const who = whoOf(r), name = r.name.en, working = Boolean(r.online && r.working)
-  const cls = ['agent-row', r.main && 'is-main', r.open || r.hand ? 'has-badge' : '', !r.online && 'is-offline'].filter(Boolean).join(' ')
+  const cls = ['agent-row', r.main && 'is-main', r.open || r.hand ? 'has-badge' : '', !r.online && 'is-offline', st && (st.team_in_view ? 'of-team-in-view' : 'of-other-team'), st && !st.open && 'in-folded-team', last && 'is-last'].filter(Boolean).join(' ')
   const order = r.group || ''
-  return html`<div class="${cls}" id="agent-${r.id}" data-unit="${r.id}" data-slug="${r.slug}"${order ? html` data-order="${order}"` : ''}>
+  return html`<div class="${cls}" id="agent-${r.id}" data-unit="${r.id}" data-slug="${r.slug}"${st ? html` data-team-of="${st.id}"` : ''}${order ? html` data-order="${order}"` : ''}>
 <a class="agent-entry" data-nav href="${base}/chat/${encodeURIComponent(r.slug)}" draggable="false"${order ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"') : ''} title="${working ? 'Working' : ''}">${avatar(who, { working })}<span class="agent-text"><strong>${name}</strong>${working ? html`<span class="sr-only"> (working)</span>` : ''}${linkCap(r.cap)}<span class="agent-teaser">${r.last?.text ?? ''}</span></span>${signalDot(r)}</a>
 ${badge(r, base, true)}
 </div>`
@@ -265,34 +265,90 @@ export function joinRow(ask) {
  *  alone (sidebar.css). Then the self-join asks and New Agent…. */
 export function sidebarRows(vm, base) {
   const sb = vm?.sidebar ?? {}, rows = sb.sessions ?? [], stacks = sb.stacks ?? []
-  const level = stacks.length && sb.level !== 'team' ? 'teams' : 'team'
   const invite = html`${(vm?.account?.asks ?? []).map(joinRow)}${inviteAgentButton()}`
-  const team = stacks.find(st => st.selected)
-  const head = level === 'teams'
-    ? html`<span class="side-level" data-level="teams" hidden></span>${stacks.map(st => teamStack(st, base))}`
-    : html`<span class="side-level" data-level="team" hidden></span>${team ? teamInside(team, vm, base) : ''}`
-  return html`${head}${rows.map(r => row(r, base))}${invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
+  // (a wide screen: every team as a stack, its head and then its chats, all flat children of #agents so the order's
+  //  drag and the keys treat them as before; a phone shows the chats of the team in view alone: sidebar.css)
+  const inView = sb.team
+  const list = stacks.length
+    ? stacks.map(st => { const s = { ...st, team_in_view: st.id === inView }, rs = st.sessions ?? []; return html`${teamStack(s, base)}${rs.map((r, i) => row(r, base, s, i === rs.length - 1))}` })
+    : rows.map(r => row(r, base))
+  return html`${list}${invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
 }
 
-// ---- the wide sidebar's two levels (SidebarView.level, TeamStackView) ----
-// First level: every team as a stack, its head (desk drawing, name, what waits) over a fan of its sessions' card
-// edges, a little crooked, each in its session's colour. A click goes into the team: it becomes the team in view and
-// the sidebar shows its chats (Focus.in_team, kept per device by app.mjs); "‹ Teams"
-// goes back out. The bell at the top is home: the Desk, and the sidebar's first level.
+// ---- every team as a stack (a wide screen: TeamStackView) ----
+// A team is a stack: its head card (desk drawing, name, what waits; a click opens the team's Desk) over its chats.
+// Folded they lie under the head as card edges, a little crooked, each in its session's colour; a click on the stack
+// fans them out under the head, held by a bracket drawn with the pen, and a click on the bracket folds them back (the
+// old helpers' stack, before #317). Which teams are open is this browser's (app.mjs openTeams, sent to the core as
+// Focus.open_teams; TeamStackView.open). The bell at the top is home: every team's Desk.
+/** A team's picture, as a group's: its sessions' own marks (TeamStackView.faces), small and overlapping; an empty
+ *  team a quiet dashed ring. */
+const teamFaces = faces => html`<span class="team-faces" data-n="${faces.length}" aria-hidden="true">${faces.map(f => avatar({ ...whoOf(f), online: true }, { crown: false }))}</span>`
 function teamStack(st, base) {
-  const name = st.name.en, edges = st.edges ?? []
-  const cls = ['team-head', 'is-stack', st.selected && 'is-in-view', st.knocks && 'is-knock', !edges.length && 'is-empty'].filter(Boolean).join(' ')
-  return html`<a class="${cls}" id="team-${st.id}" data-nav draggable="false" href="${base}/?team=${encodeURIComponent(st.id)}" data-team-in="${st.id}" style="--n:${edges.length}" title="${name}" aria-label="${name}: ${st.says.en}"><span class="team-go"><span class="team-lamp">${deskMark(st.waiting > 0)}</span><strong>${name}</strong>${st.waiting ? html`<i class="team-n" aria-hidden="true">${st.waiting}</i>` : ''}</span><span class="team-edges" aria-hidden="true">${edges.map((e, i) => { const q = edgeQuirk(e.id); return html`<i style="--i:${i};--hue:${whoOf(e).hue};--tilt:${q.tilt}deg;--dx:${q.dx}px">${raw(q.svg)}</i>` })}</span></a>`
+  const name = st.name.en, edges = st.edges ?? [], n = (st.sessions ?? []).length
+  const cls = ['team-head', st.selected && 'is-in-view', st.knocks && 'is-knock', !n && 'is-empty'].filter(Boolean).join(' ')
+  const tip = st.open ? 'Fold' : 'Show chats'
+  return html`<div class="${cls}" id="team-${st.id}" data-team="${st.id}" data-fold="${st.open ? 'open' : 'shut'}" style="--n:${st.open ? 0 : edges.length}" data-controller="lean" data-action="pointermove->lean#follow pointerleave->lean#rest">
+<a class="team-go" data-nav draggable="false" href="${base}/?team=${encodeURIComponent(st.id)}" title="${name}" aria-label="${name}: ${st.says.en}. Its Desk"${st.selected ? raw(' aria-current="true"') : ''}>${teamFaces(st.faces ?? [])}<strong>${name}</strong>${st.waiting ? html`<i class="team-n" aria-hidden="true">${st.waiting}</i>` : ''}</a>
+${n ? html`<button type="button" class="team-edges" data-team-fold="${st.id}" aria-expanded="${String(st.open)}" title="${tip}" aria-label="${st.open ? `Fold ${name}` : `Show the chats of ${name}`}"${st.open ? raw(' hidden') : ''}>${edges.map((e, i) => { const q = edgeQuirk(e.id); return html`<i style="--i:${i};--hue:${whoOf(e).hue};--tilt:${q.tilt}deg;--dx:${q.dx}px">${raw(q.svg)}</i>` })}</button>
+<svg class="team-bracket" aria-hidden="true"${st.open ? '' : raw(' hidden')}><path/><path class="team-bracket-hit" data-team-fold="${st.id}"><title>Fold</title></path></svg>` : ''}
+</div>`
 }
-const BACK = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M14.6 6.2Q11.6 9.2 8.8 12.1Q11.7 14.9 14.4 17.9"/></svg>')
-/** Inside a team: the way back to every team, the team's name, and its places (its Desk, its Scribble Board). */
-function teamInside(st, vm, base) {
-  const name = st.name.en, desk = location.pathname === `${base}/` || location.pathname === '/'
-  return html`<div class="team-inside" id="team-inside-${st.id}"><button type="button" class="team-out" data-team-out aria-label="Back to all teams" title="Teams">${BACK}<span>Teams</span></button><h2 class="team-title">${name}</h2></div>
-<a class="team-place-row" id="team-desk" data-nav draggable="false" href="${base}/"${desk ? raw(' aria-current="page"') : ''}><span class="team-lamp">${deskMark(st.waiting > 0)}</span><b>Desk</b>${st.waiting ? html`<i class="team-n${st.knocks ? ' is-knock' : ''}">${st.waiting}</i>` : ''}</a>
-<a class="team-place-row" id="team-scribble" data-nav draggable="false" href="${base}/scribble-board">${sk('pen')}<b>Scribble</b></a>
-<span class="team-chats-h" id="team-chats-h">Chats</span>`
+
+// The bracket of an open team: drawn with the pen down the left side of its chats, from its head to its last chat.
+const wob = (i, sz) => (((Math.sin(i * 127.1 + 3.7) * 43758.5453) % 1 + 1) % 1 - .5) * 2 * sz
+function penLine(pts) {
+  let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [x, y] = pts[i], [nx, ny] = pts[i + 1]
+    d += ` Q ${x.toFixed(1)} ${y.toFixed(1)} ${((x + nx) / 2).toFixed(1)} ${((y + ny) / 2).toFixed(1)}`
+  }
+  const last = pts.at(-1)
+  return `${d} L ${last[0].toFixed(1)} ${last[1].toFixed(1)}`
 }
+function teamBrackets() {
+  const heads = [...document.querySelectorAll('#agents .team-head')]
+  heads.forEach((head, gi) => {
+    const svg = head.querySelector(':scope > .team-bracket'), edges = head.querySelector(':scope > .team-edges')
+    const open = head.dataset.fold === 'open'
+    if (edges) edges.hidden = open
+    if (!svg) return
+    const rows = [...document.querySelectorAll(`#agents .agent-row[data-team-of="${CSS.escape(head.dataset.team)}"]`)]
+    if (!open || !rows.length || document.documentElement.dataset.rail === 'folded') { svg.hidden = true; return }
+    svg.hidden = false
+    const G = head.getBoundingClientRect(), last = rows.at(-1).getBoundingClientRect()
+    if (!G.height) return
+    const w = i => wob(gi * 17 + i, 1.1)
+    const x = 4, h = 7, y0 = G.height - 4, y1 = last.bottom - G.top - 8
+    const pts = [[x + h, y0 - 4], [x, y0 + 5 + w(1)], [x + w(2), (y0 + y1) / 2], [x, y1 + w(3)], [x + h, y1]]
+    for (const p of svg.querySelectorAll('path')) p.setAttribute('d', penLine(pts))
+  })
+}
+
+// ---- controller "lean" ----
+// A folded team's stack: when the pointer thumbs it, its card edges fan out towards the side the mouse is on (sets
+// --lean and --lean-abs on the head; the CSS turns them into the fan). A mouse or pen only, not under reduced motion.
+controller('lean', class extends Controller {
+  disconnect() { this.rest() }
+  follow(event) {
+    if (event.pointerType === 'touch' || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    this.x = event.clientX
+    if (!this.frame) this.frame = requestAnimationFrame(() => this.set())
+  }
+  set() {
+    this.frame = 0
+    const box = this.element.getBoundingClientRect()
+    if (!box.width) return
+    const lean = Math.max(-1, Math.min(1, ((this.x - box.left) / box.width) * 2 - 1))
+    this.element.style.setProperty('--lean', lean.toFixed(2))
+    this.element.style.setProperty('--lean-abs', Math.abs(lean).toFixed(2))
+  }
+  rest() {
+    cancelAnimationFrame(this.frame); this.frame = 0
+    this.element.style.removeProperty('--lean')
+    this.element.style.removeProperty('--lean-abs')
+  }
+})
 
 /** The Desk box's drawing: the desk with its lamp lit while something waits on it (the open questions of the desk in
  *  view), dark when it is clear. */
@@ -549,8 +605,8 @@ export function topbar(vm, base, isDesk, session = null) {
   const s = sessionOf(vm, session), place = placeName(vm)
   return html`<header class="topbar"><div class="brand">
 <h1 class="deskpill"><a href="${base}/" data-nav draggable="false" class="desk-go" id="desk-go" title="${place}"${isDesk ? raw(' aria-current=""') : ''}><span class="desk-lamp" id="desk-lamp">${deskLamp(vm)}</span>${BELL}${teamPlace(vm)}</a>${teamChevron}
-<button type="button" class="brand-open" id="brand-menu"${s ? html` data-session="${s.id}"` : ''} aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" aria-label="Where you are: ${place}. Menu: teams, places, settings" title="Menu (Ctrl K)">${raw(String(BELL).replace('class="brand-mark"', 'class="brand-mark open-mark"'))}<span class="open-me" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12.1 6.3Q14.6 6.4 14.7 9Q14.5 11.6 12 11.7Q9.5 11.5 9.4 9Q9.5 6.4 12.1 6.3Z"/><path d="M6.6 18.6Q7.6 14.2 12 14.1Q16.4 14.2 17.4 18.6"/></svg></span><b class="open-word">Trommi</b><b class="open-word-wide">Settings</b>${pillPlace(vm, s)}<span class="conn open-conn" id="conn" data-state="connecting" role="status"><i aria-hidden="true"></i><span id="conn-text" class="tc-sr">Connecting</span></span><span class="brand-fold">${sk('unfold')}</span></button>${inDemo() ? html`<a class="pill-demo" href="${base}/screens?mock=1" target="_blank" rel="noopener" title="Demo">Demo · All screens</a>` : ''}</h1>
-<div class="side-top"><a class="side-home" href="${base}/" data-nav draggable="false" title="Desk" aria-label="Home: the Desk and every team">${BELL}</a><span class="side-tools"><a class="side-tool" href="${base}/stacks/off" data-nav draggable="false" title="Search" aria-label="Search">${sk('search')}</a><form method="post" action="/pair" class="side-tool-form"><input type="hidden" name="role" value="computer"><button type="submit" class="side-tool" title="New agent" aria-label="Approve a computer: a new agent">${PLUS}</button></form></span></div>
+<button type="button" class="brand-open" id="brand-menu"${s ? html` data-session="${s.id}"` : ''} aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" aria-label="Where you are: ${place}. Menu: teams, places, settings" title="Menu (Ctrl K)">${raw(String(BELL).replace('class="brand-mark"', 'class="brand-mark open-mark"'))}<span class="open-me" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12.1 6.3Q14.6 6.4 14.7 9Q14.5 11.6 12 11.7Q9.5 11.5 9.4 9Q9.5 6.4 12.1 6.3Z"/><path d="M6.6 18.6Q7.6 14.2 12 14.1Q16.4 14.2 17.4 18.6"/></svg></span><b class="open-word">Trommi</b>${pillPlace(vm, s)}<span class="conn open-conn" id="conn" data-state="connecting" role="status"><i aria-hidden="true"></i><span id="conn-text" class="tc-sr">Connecting</span></span><span class="brand-fold">${sk('unfold')}</span></button>${inDemo() ? html`<a class="pill-demo" href="${base}/screens?mock=1" target="_blank" rel="noopener" title="Demo">Demo · All screens</a>` : ''}</h1>
+<div class="side-top"><a class="side-home" href="${base}/?home" data-nav draggable="false" title="Desk" aria-label="Desk: every team's questions"${vm?.sidebar?.desk_all && isDesk ? raw(' aria-current="page"') : ''}>${BELL}</a><span class="side-tools"><a class="side-tool" href="${base}/stacks/off" data-nav draggable="false" title="Search" aria-label="Search">${sk('search')}</a><span class="side-add"><button type="button" class="side-tool" id="side-add" title="Add" aria-label="Add: an agent, a team, a scribble" aria-haspopup="menu" aria-expanded="false" aria-controls="side-add-menu">${PLUS}</button><span class="side-add-menu" id="side-add-menu" role="menu" hidden><form method="post" action="/pair"><input type="hidden" name="role" value="computer"><button type="submit" role="menuitem">${sk('laptop')}<span>Add agent</span></button></form><button type="button" role="menuitem" id="side-add-team">${sk('desk')}<span>Add team</span></button><form class="side-add-form" id="side-add-team-form" hidden><input maxlength="40" placeholder="Name of the new team" aria-label="Name of the new team" autocomplete="off"></form><a role="menuitem" href="${base}/scribble-board" data-nav draggable="false">${sk('pen')}<span>Scribble</span></a></span></span></span></div>
 ${menuDoors(vm, base)}
 <button type="button" class="rail-tag" aria-haspopup="menu" aria-controls="brand-doors" title="Switch team" aria-label="Team ${place}: switch teams"><span class="rail-tag-string" aria-hidden="true"></span><span class="rail-tag-paper"><b>${tagLines(place).map(l => html`<span>${l}</span>`)}</b></span></button>
 </div></header>`
@@ -1012,11 +1068,42 @@ controller('rail', class extends Controller {
 // ---- the frame's wiring, once ----
 export function register(t) {
   T = t
-  // Into a team (its stack), back out ("‹ Teams"), home (the bell: the Desk and the first level).
+  // The + at the top: Add agent (the invite of a computer), Add team (a name, then AddTeam), Scribble.
+  document.addEventListener('click', e => {
+    const el = e.target instanceof Element ? e.target : null, menu = $('#side-add-menu'), plus = $('#side-add')
+    if (!menu || !plus) return
+    const shut = () => { menu.hidden = true; plus.setAttribute('aria-expanded', 'false'); const f = $('#side-add-team-form'); if (f) f.hidden = true }
+    if (el?.closest('#side-add')) { const open = menu.hidden; shut(); menu.hidden = !open; plus.setAttribute('aria-expanded', String(open)); return }
+    if (el?.closest('#side-add-team')) { const f = $('#side-add-team-form'); f.hidden = false; f.querySelector('input').focus(); return }
+    if (!el?.closest('#side-add-menu') || el.closest('a, form[action] button')) shut()
+  })
+  document.addEventListener('submit', async e => {
+    if (!(e.target instanceof Element) || e.target.id !== 'side-add-team-form') return
+    e.preventDefault()
+    const field = e.target.querySelector('input'), name = field.value.trim()
+    if (!name) return field.focus()
+    field.value = ''
+    $('#side-add-menu').hidden = true
+    const made = await addTeam(name)
+    if (made) window.trommi?.router?.visit(`/?team=${encodeURIComponent(made.id)}`)
+  })
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { const m = $('#side-add-menu'); if (m && !m.hidden) { m.hidden = true; $('#side-add')?.setAttribute('aria-expanded', 'false') } } })
+  // A team's stack fans its chats out under it, its bracket folds them back (the core keeps which are open).
+  let drawing = 0
+  const brackets = () => { if (!drawing) drawing = requestAnimationFrame(() => { drawing = 0; teamBrackets() }) }
+  addEventListener('resize', brackets)
+  new MutationObserver(brackets).observe(document.documentElement, { childList: true, subtree: true })
   document.addEventListener('click', e => {
     const el = e.target instanceof Element ? e.target : null
-    if (el?.closest('#agents [data-team-in]')) { t.setInTeam(true); return }
-    if (el?.closest('#agents [data-team-out], .side-home')) { if (el.closest('[data-team-out]')) e.preventDefault(); t.setInTeam(false) }
+    const fold = el?.closest('#agents [data-team-fold]')
+    if (fold) {
+      e.preventDefault()
+      const id = fold.getAttribute('data-team-fold'), head = document.getElementById(`team-${id}`), open = head?.dataset.fold !== 'open'
+      // (at once, before the core draws it again: the stack fans out or folds)
+      if (head) { head.dataset.fold = open ? 'open' : 'shut'; for (const r of document.querySelectorAll(`#agents .agent-row[data-team-of="${CSS.escape(id)}"]`)) r.classList.toggle('in-folded-team', !open); requestAnimationFrame(teamBrackets) }
+      const ids = new Set(t.openTeams()); if (open) ids.add(id); else ids.delete(id)
+      t.setOpenTeams([...ids])
+    }
   })
   import('./app.mjs').then(m => { newsLatestDay = m.newsLatestDay })
   t.get(/^\/chats$/, ({ req, res }) => t.page(req, res, { title: 'Chats · Trommi', view: 'chats', main: chatsMain(t.vm(), t.BASE) }))

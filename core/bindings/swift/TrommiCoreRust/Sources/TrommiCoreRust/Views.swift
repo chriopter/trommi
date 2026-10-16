@@ -65,16 +65,20 @@ public enum CoreView {
     /// The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a team's id or "all" for that
     /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
     public var board: String?
-    /// The wide sidebar is inside the team in view (its chats), not at every team as a stack (`SidebarView.level`).
+    /// The Desk in view is home, every team's (the bell at the top), not the team in view's (a team's head).
     /// This device's: the shell keeps it.
-    public var inTeam: Bool
+    public var deskAll: Bool
+    /// The teams unfolded in the wide sidebar, their chats under their stack (`TeamStackView.open`). This device's:
+    /// the shell keeps them.
+    public var openTeams: [String]
 
-    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, inTeam: Bool = false) {
+    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, deskAll: Bool = false, openTeams: [String] = []) {
       self.screen = screen
       self.visible = visible
       self.team = team
       self.board = board
-      self.inTeam = inTeam
+      self.deskAll = deskAll
+      self.openTeams = openTeams
     }
 
     enum CodingKeys: String, CodingKey {
@@ -82,7 +86,8 @@ public enum CoreView {
       case visible = "visible"
       case team = "team"
       case board = "board"
-      case inTeam = "in_team"
+      case deskAll = "desk_all"
+      case openTeams = "open_teams"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -91,7 +96,8 @@ public enum CoreView {
       self.visible = try c.decodeIfPresent(Bool.self, forKey: .visible) ?? true
       self.team = try c.decodeIfPresent(String.self, forKey: .team)
       self.board = try c.decodeIfPresent(String.self, forKey: .board)
-      self.inTeam = try c.decodeIfPresent(Bool.self, forKey: .inTeam) ?? false
+      self.deskAll = try c.decodeIfPresent(Bool.self, forKey: .deskAll) ?? false
+      self.openTeams = try c.decodeIfPresent([String].self, forKey: .openTeams) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -100,7 +106,8 @@ public enum CoreView {
       try c.encode(visible, forKey: .visible)
       try c.encodeIfPresent(team, forKey: .team)
       try c.encodeIfPresent(board, forKey: .board)
-      try c.encode(inTeam, forKey: .inTeam)
+      try c.encode(deskAll, forKey: .deskAll)
+      if !openTeams.isEmpty { try c.encode(openTeams, forKey: .openTeams) }
     }
   }
 
@@ -523,14 +530,13 @@ public enum CoreView {
     public var working: UInt32
     /// How many of his answers the sessions of the team in view have not picked up.
     public var unheard: UInt32
-    /// Every team as a stack of its sessions' card edges, in the menu's order: the wide sidebar's first level. A
-    /// click on one goes into it (the team in view, `level` "team"). The phone draws `sessions` instead.
+    /// Every team as a stack, in the menu's order (the wide sidebar): folded, its head over a fan of its sessions'
+    /// card edges; open, its chats under it. The phone draws `sessions` instead.
     public var stacks: [TeamStackView]
-    /// What the wide sidebar shows: "teams" (every team as a stack) or "team" (inside the team in view: its chats,
-    /// `sessions`, and the way back). This device's choice (`Focus.in_team`); "teams" until made.
-    public var level: String
+    /// The Desk in view is every team's (home, `Focus.desk_all`): no team's head is marked.
+    public var deskAll: Bool
 
-    public init(teams: [TeamTab] = [], sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], level: String = "") {
+    public init(teams: [TeamTab] = [], sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], deskAll: Bool = false) {
       self.teams = teams
       self.sessions = sessions
       self.badge = badge
@@ -542,7 +548,7 @@ public enum CoreView {
       self.working = working
       self.unheard = unheard
       self.stacks = stacks
-      self.level = level
+      self.deskAll = deskAll
     }
 
     enum CodingKeys: String, CodingKey {
@@ -557,7 +563,7 @@ public enum CoreView {
       case working = "working"
       case unheard = "unheard"
       case stacks = "stacks"
-      case level = "level"
+      case deskAll = "desk_all"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -573,7 +579,7 @@ public enum CoreView {
       self.working = try c.decodeIfPresent(UInt32.self, forKey: .working) ?? 0
       self.unheard = try c.decodeIfPresent(UInt32.self, forKey: .unheard) ?? 0
       self.stacks = try c.decodeIfPresent([TeamStackView].self, forKey: .stacks) ?? []
-      self.level = try c.decodeIfPresent(String.self, forKey: .level) ?? ""
+      self.deskAll = try c.decodeIfPresent(Bool.self, forKey: .deskAll) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -589,16 +595,18 @@ public enum CoreView {
       try c.encode(working, forKey: .working)
       try c.encode(unheard, forKey: .unheard)
       if !stacks.isEmpty { try c.encode(stacks, forKey: .stacks) }
-      try c.encode(level, forKey: .level)
+      try c.encode(deskAll, forKey: .deskAll)
     }
   }
 
-  /// A team in the wide sidebar's first level: its head over a fan of its sessions' card edges.
+  /// A team in the wide sidebar: its head (a click opens its Desk) over its sessions, folded to a stack or open.
   public struct TeamStackView: Codable, Hashable, Sendable {
     public var id: String
     public var name: Text
-    /// The team in view (its Desk is the Desk).
+    /// The team in view and its Desk is the Desk (not on home, `desk_all`).
     public var selected: Bool
+    /// Open on this device (`Focus.open_teams`): its chats stand under its head; folded, they lie as its stack.
+    public var open: Bool
     /// The open questions of the team's sessions.
     public var waiting: UInt32
     /// One of them knocks.
@@ -608,25 +616,36 @@ public enum CoreView {
     /// A card edge per session (at most [`STACK_EDGES`]), in the rows' order. What knocks is said by the head's
     /// number, not by an edge.
     public var edges: [StackEdgeView]
+    /// Its picture, as a group's: up to three of its sessions' own marks, overlapping, the crowned one first, then in
+    /// the rows' order; none for a team without sessions (a quiet placeholder).
+    public var faces: [StackEdgeView]
+    /// Its sessions, one row each, in drawing order (connected first); drawn while open.
+    public var sessions: [SessionRowView]
 
-    public init(id: String = "", name: Text = Text(), selected: Bool = false, waiting: UInt32 = 0, knocks: Bool = false, says: Text = Text(), edges: [StackEdgeView] = []) {
+    public init(id: String = "", name: Text = Text(), selected: Bool = false, open: Bool = false, waiting: UInt32 = 0, knocks: Bool = false, says: Text = Text(), edges: [StackEdgeView] = [], faces: [StackEdgeView] = [], sessions: [SessionRowView] = []) {
       self.id = id
       self.name = name
       self.selected = selected
+      self.open = open
       self.waiting = waiting
       self.knocks = knocks
       self.says = says
       self.edges = edges
+      self.faces = faces
+      self.sessions = sessions
     }
 
     enum CodingKeys: String, CodingKey {
       case id = "id"
       case name = "name"
       case selected = "selected"
+      case open = "open"
       case waiting = "waiting"
       case knocks = "knocks"
       case says = "says"
       case edges = "edges"
+      case faces = "faces"
+      case sessions = "sessions"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -634,10 +653,13 @@ public enum CoreView {
       self.id = try c.decode(String.self, forKey: .id)
       self.name = try c.decode(Text.self, forKey: .name)
       self.selected = try c.decode(Bool.self, forKey: .selected)
+      self.open = try c.decodeIfPresent(Bool.self, forKey: .open) ?? false
       self.waiting = try c.decode(UInt32.self, forKey: .waiting)
       self.knocks = try c.decodeIfPresent(Bool.self, forKey: .knocks) ?? false
       self.says = try c.decode(Text.self, forKey: .says)
       self.edges = try c.decodeIfPresent([StackEdgeView].self, forKey: .edges) ?? []
+      self.faces = try c.decodeIfPresent([StackEdgeView].self, forKey: .faces) ?? []
+      self.sessions = try c.decodeIfPresent([SessionRowView].self, forKey: .sessions) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -645,14 +667,17 @@ public enum CoreView {
       try c.encode(id, forKey: .id)
       try c.encode(name, forKey: .name)
       try c.encode(selected, forKey: .selected)
+      try c.encode(open, forKey: .open)
       try c.encode(waiting, forKey: .waiting)
       try c.encode(knocks, forKey: .knocks)
       try c.encode(says, forKey: .says)
       if !edges.isEmpty { try c.encode(edges, forKey: .edges) }
+      if !faces.isEmpty { try c.encode(faces, forKey: .faces) }
+      if !sessions.isEmpty { try c.encode(sessions, forKey: .sessions) }
     }
   }
 
-  /// A session's card edge in a folded team's stack.
+  /// A session in a team's stack: its card edge, or its face in the team's picture.
   public struct StackEdgeView: Codable, Hashable, Sendable {
     /// The session's key (its row's id).
     public var id: String
