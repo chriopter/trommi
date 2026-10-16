@@ -110,7 +110,7 @@ import AppKit
     let parts = url.path.split(separator: "/").map(String.init)
     if parts.first == "card", parts.count > 1 { shell.focus(.card(cardId: parts[1])) }
     else if parts.first == "chat", parts.count > 1 { shell.focus(.session(sessionId: parts[1])) }
-    else if parts.first == "settings" { shell.focus(.settings) }
+    else if parts.first == "settings" { shell.focus(.settings(page: SettingsScreen.page(of: parts.dropFirst().first))) }
     else { shell.focus(.desk) }
   }
 }

@@ -124,3 +124,38 @@ fn the_desks_rows_do_not_move_while_history_is_read() {
     let desks = rendered(&sim, from).iter().filter(|p| **p == "desk").count();
     assert!(desks <= 1, "the Desk was sent {desks} times while history was read");
 }
+
+#[test]
+fn the_chat_list_dots_what_was_said_since_the_chat_was_last_in_view_and_keeps_it() {
+    let mut world = World::new();
+    world.agent_says("hello there");
+    let mut sim = world.sim();
+    sim.send(start());
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, desk: None, board: None } });
+    let row = sim.view.sidebar.sessions[0].clone();
+    assert_eq!(row.last.as_ref().map(|l| l.text.as_str()), Some("hello there"));
+    assert!(!row.unread, "the first look reads everything said before it");
+    assert!(sim.cache.keys().any(|k| k.ends_with("/seen")), "the marks are kept in the cache");
+    world.agent_says("news");
+    assert!(world.stream(&mut sim));
+    let row = sim.view.sidebar.sessions[0].clone();
+    assert_eq!((row.last.as_ref().map(|l| l.text.as_str()), row.unread), (Some("news"), true));
+    // the chat in view: read
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: row.id.clone() }, visible: true, desk: None, board: None } });
+    assert!(!sim.view.sidebar.sessions[0].unread);
+    // a chat in view that is not shown (a window behind others) reads nothing
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: row.id.clone() }, visible: false, desk: None, board: None } });
+    world.agent_says("later");
+    assert!(world.stream(&mut sim));
+    assert!(sim.view.sidebar.sessions[0].unread);
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, desk: None, board: None } });
+    // kept across a start
+    sim.restart();
+    sim.send(start());
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, desk: None, board: None } });
+    assert!(sim.view.sidebar.sessions[0].unread, "still unread after a start");
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: row.id.clone() }, visible: true, desk: None, board: None } });
+    sim.restart();
+    sim.send(start());
+    assert!(!sim.view.sidebar.sessions[0].unread, "read stays read after a start");
+}

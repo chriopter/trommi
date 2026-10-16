@@ -18,6 +18,7 @@ fn signing_out_wipes_the_slot() {
     assert!(!sim.device.1.is_empty() && !sim.cache.is_empty());
     sim.send(Event::Action { action: Action::Account { action: AccountAction::SignOut } });
     assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert_eq!(sim.view.account.notice.as_ref().map(|t| t.en.as_str()), Some("Logged out."), "the start screen says so");
     assert!(sim.app.engine().is_none());
     assert!(sim.device.1.is_empty(), "the device's state is gone");
     assert!(sim.cache.is_empty(), "the cache is gone: {:?}", sim.cache.keys().collect::<Vec<_>>());

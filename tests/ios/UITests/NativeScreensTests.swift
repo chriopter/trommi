@@ -54,12 +54,23 @@ final class NativeScreensTests: XCTestCase {
     app.buttons["back"].tap()
     XCTAssertTrue(app.buttons["tab-note"].waitForExistence(timeout: 10))
     app.buttons["tab-note"].tap()
-    XCTAssertTrue(app.buttons["Keep in Note"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["note-text"].waitForExistence(timeout: 10))
     capture("real-signin-note")
     app.buttons["tab-desk"].tap()
     XCTAssertTrue(row.waitForExistence(timeout: 10))
     app.terminate(); app.launch()
     XCTAssertTrue(row.waitForExistence(timeout: 30), "The signed-in Desk must survive a restart.")
+    // signing out: the start screen says so
+    app.buttons["place-pill"].tap()
+    app.buttons["Settings"].firstMatch.tap()
+    let signOut = app.buttons["Sign out…"].firstMatch
+    for _ in 0..<6 where !signOut.isHittable { app.swipeUp() }
+    signOut.tap()
+    app.buttons["Sign out"].firstMatch.tap()
+    let notice = app.staticTexts["account-notice"]
+    XCTAssertTrue(notice.waitForExistence(timeout: 30), app.debugDescription)
+    XCTAssertEqual(notice.label, "Logged out.")
+    capture("real-signin-logged-out")
   }
   func testDeskOpensARealCard() {
     launch("desk")
@@ -121,6 +132,106 @@ final class NativeScreensTests: XCTestCase {
     let command = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "computer=true")).firstMatch
     XCTAssertTrue(command.exists, "The copied instructions must explicitly request computer approval.")
     capture("computer-approval-permission")
+  }
+  // ---- what came back after the move to the app core: the duck for all, Blitz, the Chat list, the session's
+  // switch and menu, Settings' pages, the Artifacts filter, the note that saves itself ----
+  func testDeskDuckForAllAndBlitz() {
+    launch("desk")
+    let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-"))
+    XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 15))
+    let duck = app.buttons["desk-duck"], blitz = app.buttons["desk-blitz"]
+    XCTAssertTrue(duck.exists && blitz.exists, "the duck for all and Blitz stand at the Desk's top right. " + app.debugDescription)
+    capture("desk-ways")
+    blitz.tap()
+    XCTAssertTrue(app.staticTexts["card-title"].waitForExistence(timeout: 10), "Blitz opens the first open card")
+    app.buttons["back"].tap()
+    XCTAssertTrue(duck.waitForExistence(timeout: 10))
+    duck.tap()
+    let yes = app.alerts.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Yes")).firstMatch
+    XCTAssertTrue(yes.waitForExistence(timeout: 5), app.debugDescription)
+    capture("desk-duck-ask")
+    yes.tap()
+    let toast = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Left to the agents")).firstMatch
+    XCTAssertTrue(toast.waitForExistence(timeout: 10), "one toast with its Undo. " + app.debugDescription)
+    XCTAssertFalse(duck.exists, "nothing left to duck")
+    capture("desk-duck-done")
+  }
+  func testChatListShowsTeasersUnreadDotsAndFoldsHelpers() {
+    launch("chats")
+    let teaser = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-teaser-")).firstMatch
+    XCTAssertTrue(teaser.waitForExistence(timeout: 15), app.debugDescription)
+    XCTAssertFalse(teaser.label.trimmingCharacters(in: .whitespaces).isEmpty, "a row says what was said last")
+    let dot = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-unread-")).firstMatch
+    XCTAssertTrue(dot.waitForExistence(timeout: 5), "words not seen yet are dotted. " + app.debugDescription)
+    let helpers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-helpers-")).firstMatch
+    XCTAssertTrue(helpers.exists, "a main's helpers lie folded in its row")
+    let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).count
+    capture("chats-folded")
+    helpers.tap()
+    let more = NSPredicate(format: "count > %d", rows)
+    expectation(for: more, evaluatedWith: app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")))
+    waitForExpectations(timeout: 5)
+    capture("chats-unfolded")
+  }
+  func testSessionQuestionsOnlyAndItsMenu() {
+    launch("chat")
+    XCTAssertTrue(app.staticTexts["talk-message"].firstMatch.waitForExistence(timeout: 15))
+    app.buttons["session-mode-questions"].tap()
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "session-question-")).firstMatch.waitForExistence(timeout: 5), "every question it asked. " + app.debugDescription)
+    capture("session-questions")
+    app.buttons["session-more"].tap()
+    XCTAssertTrue(app.buttons["Rename…"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Change Icon…"].exists)
+    XCTAssertTrue(app.buttons["Move to Desk…"].exists)
+    capture("session-menu")
+    app.buttons["Rename…"].tap()
+    let field = app.textFields["session-rename-field"]
+    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    field.tap(); field.typeText(" 2")
+    app.alerts.buttons["Rename"].tap()
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", " 2")).firstMatch.waitForExistence(timeout: 5), "renamed. " + app.debugDescription)
+  }
+  func testSettingsHasItsPages() {
+    launch("settings")
+    let devices = app.buttons["settings-row-devices"]
+    XCTAssertTrue(devices.waitForExistence(timeout: 15))
+    XCTAssertTrue(app.buttons["settings-row-agents"].exists && app.buttons["settings-row-account"].exists)
+    capture("settings-list")
+    devices.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["settings-devices"].waitForExistence(timeout: 5))
+    capture("settings-devices")
+    app.buttons["back"].tap()
+    app.buttons["settings-row-account"].tap()
+    XCTAssertTrue(app.buttons["Change password"].waitForExistence(timeout: 5))
+  }
+  func testArtifactsFilter() {
+    launch("artifacts")
+    let pages = app.buttons["artifacts-kind-pages"]
+    XCTAssertTrue(pages.waitForExistence(timeout: 15), app.debugDescription)
+    capture("artifacts-all")
+    pages.tap()
+    expectation(for: NSPredicate(format: "selected == true"), evaluatedWith: pages)
+    waitForExpectations(timeout: 5)
+    capture("artifacts-pages")
+    app.buttons["artifacts-kind-media"].tap()
+    capture("artifacts-media")
+  }
+  func testTheNoteSavesItself() {
+    launch("desk")
+    XCTAssertTrue(app.buttons["tab-note"].waitForExistence(timeout: 15))
+    app.buttons["tab-note"].tap()
+    let field = app.descendants(matching: .any)["note-text"]
+    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    field.tap()
+    if !app.keyboards.firstMatch.waitForExistence(timeout: 3) { field.tap() }
+    field.typeText("Buy oat milk")
+    XCTAssertFalse(app.buttons["Keep in Note"].exists, "no button to keep it: it keeps itself")
+    Thread.sleep(forTimeInterval: 1.2)
+    app.buttons["tab-desk"].tap()
+    app.buttons["tab-note"].tap()
+    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    XCTAssertTrue((field.value as? String ?? "").contains("Buy oat milk"), "kept while typing, there again when it opens: \(String(describing: field.value))")
+    capture("note-kept")
   }
   func testFullSizeDeskLaunchAndMemory() throws {
     let env = ProcessInfo.processInfo.environment

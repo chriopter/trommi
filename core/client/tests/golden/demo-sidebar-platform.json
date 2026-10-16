@@ -62,8 +62,37 @@
             "n": "3"
           },
           "en": "Working, 3 questions open"
+        },
+        "lie": [
+          "abd7fe86006071776f1a614589e82f00",
+          "814719292f007b90bc4649fb09f25cb2",
+          "a7b41f11fd76b678e5918ee35812d2a9",
+          "3bd3ace8b6de2ee5cb6d3b12fa402bbc"
+        ],
+        "more": 1,
+        "helpers": {
+          "key": "session.helpers",
+          "args": {
+            "n": "5"
+          },
+          "en": "5 helpers"
+        },
+        "unread": false
+      },
+      "unfolded": false,
+      "tucked": false,
+      "last": {
+        "text": "It is built twice, as a sheet and as a page; Checkout put both on your Desk. Load Testing runs k6 against staging once you allow it.",
+        "at_ms": 1791457920000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "13:12"
+          },
+          "en": "13:12"
         }
-      }
+      },
+      "unread": false
     },
     {
       "id": "abd7fe86006071776f1a614589e82f00",
@@ -87,7 +116,21 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "The webhook route keeps the raw body now, tested through the real middleware.",
+        "at_ms": 1791297000000,
+        "when": {
+          "key": "chat.when.weekday",
+          "args": {
+            "weekday": "Tuesday"
+          },
+          "en": "Tuesday"
+        }
+      },
+      "unread": false
     },
     {
       "id": "814719292f007b90bc4649fb09f25cb2",
@@ -118,7 +161,21 @@
           "n": "1"
         },
         "en": "1 question open"
-      }
+      },
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "The sheet: people come from the plant list and go back to it.",
+        "at_ms": 1791468960000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:16"
+          },
+          "en": "16:16"
+        }
+      },
+      "unread": false
     },
     {
       "id": "a7b41f11fd76b678e5918ee35812d2a9",
@@ -149,7 +206,21 @@
           "n": "1"
         },
         "en": "1 question open"
-      }
+      },
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Which invoice details can people change themselves?",
+        "at_ms": 1791466920000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "15:42"
+          },
+          "en": "15:42"
+        }
+      },
+      "unread": false
     },
     {
       "id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc",
@@ -180,7 +251,21 @@
           "n": "1"
         },
         "en": "1 question open"
-      }
+      },
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Show prices with VAT included everywhere?",
+        "at_ms": 1791466560000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "15:36"
+          },
+          "en": "15:36"
+        }
+      },
+      "unread": false
     },
     {
       "id": "9c85d0efb2d287a50dc2229f9feca1b7",
@@ -204,7 +289,21 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Next run: 400 users for 10 minutes. It waits for your OK.",
+        "at_ms": 1791469620000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:27"
+          },
+          "en": "16:27"
+        }
+      },
+      "unread": false
     },
     {
       "id": "f14180d4caac441522269c631a745866",
@@ -251,8 +350,36 @@
             "n": "2"
           },
           "en": "Working, 2 questions open"
+        },
+        "lie": [
+          "6d0f80f37efa69182ed78ec23e418847",
+          "f503d3b7ab487a30735894fc52ccdb31",
+          "36f6070677c607aa723892800065eca5"
+        ],
+        "more": 0,
+        "helpers": {
+          "key": "session.helpers",
+          "args": {
+            "n": "3"
+          },
+          "en": "3 helpers"
+        },
+        "unread": false
+      },
+      "unfolded": false,
+      "tucked": false,
+      "last": {
+        "text": "How long to keep raw events is on your Desk; I merged the CDC schedule question into it.",
+        "at_ms": 1791467640000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "15:54"
+          },
+          "en": "15:54"
         }
-      }
+      },
+      "unread": false
     },
     {
       "id": "6d0f80f37efa69182ed78ec23e418847",
@@ -276,7 +403,18 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "IP and e-mail are dropped; country is kept.",
+        "at_ms": 1791379500000,
+        "when": {
+          "key": "chat.when.yesterday",
+          "en": "Yesterday"
+        }
+      },
+      "unread": false
     },
     {
       "id": "f503d3b7ab487a30735894fc52ccdb31",
@@ -300,7 +438,21 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "57 tests, all green.",
+        "at_ms": 1791462000000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "14:20"
+          },
+          "en": "14:20"
+        }
+      },
+      "unread": false
     },
     {
       "id": "36f6070677c607aa723892800065eca5",
@@ -331,7 +483,21 @@
           "n": "1"
         },
         "en": "1 question open"
-      }
+      },
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Because opening the app counts. With “watered a plant” it is 14,960. Which one is on your Desk.",
+        "at_ms": 1791468120000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:02"
+          },
+          "en": "16:02"
+        }
+      },
+      "unread": false
     },
     {
       "id": "5ef619647e0e8185fef0e3be40ff4809",
@@ -398,8 +564,37 @@
             "why": "Waiting for you: a blocking question"
           },
           "en": "Stopped: Waiting for you: a blocking question, 3 questions open"
+        },
+        "lie": [
+          "200ea427ff43dfe6b1e6771fbc19f91e",
+          "1e7c3773ece2ab64dba5343140e7c0b0",
+          "1f4ee7520853d151015e6105ba5a9794",
+          "35228108ffe60cf6c012ee2780f3aeca"
+        ],
+        "more": 3,
+        "helpers": {
+          "key": "session.helpers",
+          "args": {
+            "n": "7"
+          },
+          "en": "7 helpers"
+        },
+        "unread": false
+      },
+      "unfolded": false,
+      "tucked": false,
+      "last": {
+        "text": "The primary disk is at 91%. Critical card on your Desk.",
+        "at_ms": 1791469680000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:28"
+          },
+          "en": "16:28"
         }
-      }
+      },
+      "unread": false
     },
     {
       "id": "200ea427ff43dfe6b1e6771fbc19f91e",
@@ -430,7 +625,21 @@
           "n": "1"
         },
         "en": "1 question open"
-      }
+      },
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Plan attached to the card. terraform apply waits for your OK.",
+        "at_ms": 1791468960000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:16"
+          },
+          "en": "16:16"
+        }
+      },
+      "unread": false
     },
     {
       "id": "1e7c3773ece2ab64dba5343140e7c0b0",
@@ -461,7 +670,21 @@
           "n": "1"
         },
         "en": "1 question open"
-      }
+      },
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Upgrade production to Kubernetes 1.33 on Wednesday night?",
+        "at_ms": 1791468000000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:00"
+          },
+          "en": "16:00"
+        }
+      },
+      "unread": false
     },
     {
       "id": "1f4ee7520853d151015e6105ba5a9794",
@@ -485,7 +708,21 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Failover drill on Friday at 07:00; I post on the status page the day before.",
+        "at_ms": 1791460320000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "13:52"
+          },
+          "en": "13:52"
+        }
+      },
+      "unread": false
     },
     {
       "id": "35228108ffe60cf6c012ee2780f3aeca",
@@ -509,7 +746,21 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "All plant photos come from the CDN.",
+        "at_ms": 1791433800000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "06:30"
+          },
+          "en": "06:30"
+        }
+      },
+      "unread": false
     },
     {
       "id": "a2d31bdc652e59b7c91dee15d1ef5cfc",
@@ -533,7 +784,18 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Sunday restore test: 11 minutes, checks green.",
+        "at_ms": 1791367800000,
+        "when": {
+          "key": "chat.when.yesterday",
+          "en": "Yesterday"
+        }
+      },
+      "unread": false
     },
     {
       "id": "0b966a14a8c6ed46dd4ecc1ecfa50ad3",
@@ -557,7 +819,21 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "p95 is down to 138 ms.",
+        "at_ms": 1791462000000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "14:20"
+          },
+          "en": "14:20"
+        }
+      },
+      "unread": false
     },
     {
       "id": "8693f72066947d694979af982d64ae9a",
@@ -581,7 +857,21 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Cloud bill: €2,380 a month less from December",
+        "at_ms": 1791451800000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "11:30"
+          },
+          "en": "11:30"
+        }
+      },
+      "unread": false
     },
     {
       "id": "eeb9fe76ad84d2405625d15419ce6083",
@@ -627,8 +917,35 @@
             "n": "2"
           },
           "en": "Working, 2 questions open"
+        },
+        "lie": [
+          "5d7a2ba080769d76d188155abcdb8d06",
+          "761b525b4045435aea626e866242d436"
+        ],
+        "more": 0,
+        "helpers": {
+          "key": "session.helpers",
+          "args": {
+            "n": "2"
+          },
+          "en": "2 helpers"
+        },
+        "unread": false
+      },
+      "unfolded": false,
+      "tucked": false,
+      "last": {
+        "text": "Guides: 6 of 9 written. Reminders, households and holiday mode are done.",
+        "at_ms": 1791469320000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:22"
+          },
+          "en": "16:22"
         }
-      }
+      },
+      "unread": false
     },
     {
       "id": "5d7a2ba080769d76d188155abcdb8d06",
@@ -659,7 +976,21 @@
           "n": "1"
         },
         "en": "1 question open"
-      }
+      },
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Generate the API reference from the OpenAPI file?",
+        "at_ms": 1791468360000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:06"
+          },
+          "en": "16:06"
+        }
+      },
+      "unread": false
     },
     {
       "id": "761b525b4045435aea626e866242d436",
@@ -683,7 +1014,21 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "unfolded": false,
+      "tucked": true,
+      "last": {
+        "text": "Search index built at deploy, 38 kB.",
+        "at_ms": 1791425400000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "04:10"
+          },
+          "en": "04:10"
+        }
+      },
+      "unread": false
     }
   ],
   "badge": 10,

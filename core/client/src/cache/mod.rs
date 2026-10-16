@@ -37,6 +37,8 @@ pub mod part {
     pub const FILE: &str = "file";
     /// What the person typed and did not send: `draft/<place>`.
     pub const DRAFT: &str = "draft";
+    /// What the Chat list counts as read on this device: one record (`app::seen`).
+    pub const SEEN: &str = "seen";
 }
 
 /// The key of a part of a room's cache: `c1/<room>/<part>` or `c1/<room>/<part>/<id>`.

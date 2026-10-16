@@ -51,6 +51,9 @@ enum NativeTab: Equatable { case chat, desk }
         for id in UserDefaults.standard.stringArray(forKey: "trommi-goals-folded") ?? [] {
           await session?.send(NativePacket(["type": "action", "action": ["do": "fold_goals", "desk_id": id, "folded": true]]))
         }
+        for id in UserDefaults.standard.stringArray(forKey: Self.stacksOpen) ?? [] {
+          await session?.send(NativePacket(["type": "action", "action": ["do": "fold_helpers", "session_id": id, "open": true]]))
+        }
       }
       for event in inboxEvents { await session?.send(event) }; inboxEvents = []
       if preview { NativeDemo.route(NativeDemo.screen ?? "desk", shell: self) } else { NativeServices.shared.attach(self) }
@@ -75,11 +78,18 @@ enum NativeTab: Equatable { case chat, desk }
     let before = tail
     tail = Task { await before?.value; await session.send(event) }
   }
+  /** The mains whose helpers are unfolded on this device (the core's `FoldHelpers`, sent again at the start). */
+  static let stacksOpen = "trommi-stacks-open"
   func act(_ action: [String: Any], blobs: [Data] = []) {
     if !isDemo, action["do"] as? String == "fold_goals", let id = action["desk_id"] as? String {
       var folded = UserDefaults.standard.stringArray(forKey: "trommi-goals-folded") ?? []
       folded.removeAll { $0 == id }; if action["folded"] as? Bool == true { folded.append(id) }
       UserDefaults.standard.set(folded, forKey: "trommi-goals-folded")
+    }
+    if !isDemo, action["do"] as? String == "fold_helpers", let id = action["session_id"] as? String {
+      var open = UserDefaults.standard.stringArray(forKey: Self.stacksOpen) ?? []
+      open.removeAll { $0 == id }; if action["open"] as? Bool == true { open.append(id) }
+      UserDefaults.standard.set(open, forKey: Self.stacksOpen)
     }
     send(["type": "action", "action": action], blobs: blobs)
   }
