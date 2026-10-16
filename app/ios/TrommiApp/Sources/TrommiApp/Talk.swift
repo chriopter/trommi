@@ -51,21 +51,21 @@ struct ChatsScreen: View {
     .environment(\.defaultMinListRowHeight, 1)
     .contentMargins(.bottom, 100, for: .scrollContent)
     .background(Ink.bg)
-    .topPills(leading: { PlacePill() }, trailing: { EmptyView() })
+    .topPills(leading: { PlacePill(round: true) }, trailing: { EmptyView() })
     .refreshable { shell.act(["do": "retry"]) }
     .accessibilityIdentifier("chat-list")
   }
 }
 
-/** One session of the Chat list, flat and on one line each: its drawing in a round tinted field (a green dot while
- *  it works), the crown small before its name, its helpers as small dots (filled while one works), when it said
- *  something last at the right; under it one line of what was said last, and beside that only what needs him: the
- *  raised hand, how many questions wait, or a dot for words not seen yet. */
+/** One session of the Chat list, as calm as a messenger's: its drawing large in a round tinted field (a small green
+ *  badge on its corner while it works), the name, when it said something last at the right; under it one grey line of
+ *  what was said last and, when something is new or waits for him, one dot. No lines, counts or chips; its helpers
+ *  are said to VoiceOver only (they are listed in the session). */
 struct ChatRow: View {
   @EnvironmentObject var shell: AppShell
   let row: CoreView.SessionRowView
   var body: some View {
-    let side: CGFloat = 44
+    let side: CGFloat = 52
     let hue = Pen.hueFor(id: row.slug.isEmpty ? row.id : row.slug, mark: row.mark)
     let working = row.working
     let teaser = row.last?.text ?? row.cap?.word.en ?? ""
@@ -73,29 +73,27 @@ struct ChatRow: View {
     ZStack {
       Button { shell.focus(.session(sessionId: row.id)) } label: { Rectangle().fill(Color.clear).contentShape(Rectangle()) }
         .buttonStyle(.plain)
-        .accessibilityLabel([row.name.en, working ? "working" : row.online ? "" : "not connected", teaser, row.last?.when.en ?? ""].filter { !$0.isEmpty }.joined(separator: ". "))
+        .accessibilityLabel([row.name.en, working ? "working" : row.online ? "" : "not connected", row.helpers?.says.en ?? "", teaser, row.last?.when.en ?? ""].filter { !$0.isEmpty }.joined(separator: ". "))
         .accessibilityIdentifier("chat-session-" + row.id)
-      HStack(alignment: .center, spacing: 12) {
-        AgentMark(mark: row.mark, size: side * 0.6, hue: hue)
+      HStack(alignment: .center, spacing: 14) {
+        AgentMark(mark: row.mark, size: side * 0.56, hue: hue)
           .frame(width: side, height: side)
           .background(Circle().fill(Tone.color(hue: hue, .wash)))
           .opacity(row.online ? 1 : 0.6)
-          .overlay(alignment: .bottomTrailing) { if working { Circle().fill(Ink.stDone).frame(width: 10, height: 10).overlay(Circle().stroke(Ink.bg, lineWidth: 2)) } }
+          .overlay(alignment: .bottomTrailing) { if working { Circle().fill(Ink.stDone).frame(width: 13, height: 13).overlay(Circle().stroke(Ink.bg, lineWidth: 2.5)).offset(x: 1, y: 1) } }
           .allowsHitTesting(false)
           .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 3) {
-          HStack(alignment: .center, spacing: 6) {
-            if row.crowned { PenMark("crown").frame(width: 15, height: 11).allowsHitTesting(false).accessibilityHidden(true) }
-            Text(row.name.en).font(Face.text(17, .semibold)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text(row.name.en).font(Face.text(17, .medium)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
               .allowsHitTesting(false).accessibilityHidden(true)
-            if let h = row.helpers { helpers(h) }
             Spacer(minLength: 6)
             if let when = row.last?.when.en {
-              Text(when).font(Face.text(13, relativeTo: .footnote)).foregroundStyle(Ink.faint).lineLimit(1).fixedSize()
+              Text(when).font(Face.text(14, relativeTo: .footnote)).foregroundStyle(Ink.faint).lineLimit(1).fixedSize()
                 .allowsHitTesting(false).accessibilityHidden(true)
             }
           }
-          HStack(alignment: .center, spacing: 8) {
+          HStack(alignment: .center, spacing: 10) {
             Text(teaser.isEmpty ? " " : teaser).font(Face.text(15, relativeTo: .subheadline))
               .foregroundStyle(row.last == nil && (row.cap?.kind == "unheard" || row.cap?.kind == "cut") ? Ink.urgHigh : Ink.muted)
               .lineLimit(1)
@@ -106,43 +104,21 @@ struct ChatRow: View {
           }
         }
       }
-      .padding(.vertical, 11)
+      .padding(.vertical, 12)
     }
-    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+    .listRowInsets(EdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 20))
     .listRowBackground(Color.clear)
-    .listRowSeparatorTint(Ink.line)
-    .listRowSeparator(.visible, edges: .bottom)
-    .listRowSeparator(.hidden, edges: .top)
-    .alignmentGuide(.listRowSeparatorLeading) { _ in side + 12 }
+    .listRowSeparator(.hidden)
   }
 
-  /** What needs him, at the end of the teaser's line: the raised hand, how many questions wait, or a dot. */
+  /** One dot at the end of the teaser's line, as a messenger's unread one: words not seen yet, or a question or a
+   *  raised hand that waits for him. */
   @ViewBuilder private func badge() -> some View {
-    let open = row.open
-    if row.hand != nil { PenMark("hand", color: Ink.surface, blocked: true).frame(width: 22, height: 22).accessibilityLabel(row.says?.en ?? "Stopped") }
-    else if open > 0 {
-      Text("\(open)").font(Face.text(12, .bold, relativeTo: .footnote)).foregroundStyle(Ink.bg).monospacedDigit()
-        .padding(.horizontal, 6).frame(minWidth: 20, minHeight: 20).background(Capsule().fill(Ink.fg))
-        .accessibilityLabel(row.says?.en ?? "\(open)")
-    } else if row.unread {
-      Circle().fill(Ink.accent).frame(width: 10, height: 10).accessibilityLabel("New message").accessibilityIdentifier("chat-unread-" + row.id)
+    if row.unread || row.open > 0 || row.hand != nil {
+      Circle().fill(Ink.accent).frame(width: 10, height: 10)
+        .accessibilityLabel(row.says?.en ?? "New message")
+        .accessibilityIdentifier("chat-unread-" + row.id)
     }
-  }
-
-  /** A session's helpers beside its name (`HelperDotsView`): a small dot each, filled while that helper works. */
-  private func helpers(_ h: CoreView.HelperDotsView) -> some View {
-    HStack(spacing: 3) {
-      ForEach(Array(h.working.enumerated()), id: \.offset) { _, on in
-        Circle().fill(on ? Ink.accent : Color.clear).overlay(Circle().stroke(on ? Color.clear : Ink.faint, lineWidth: 1.2)).frame(width: 6, height: 6)
-      }
-    }
-    .padding(.horizontal, 6).frame(height: 18)
-    .background(Capsule().fill(Ink.sunken))
-    .fixedSize()
-    .allowsHitTesting(false)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(h.says.en)
-    .accessibilityIdentifier("chat-helpers-" + row.id)
   }
 }
 
@@ -714,7 +690,7 @@ struct SessionScreen: View {
           }
         }
       }
-      .sessionBar { header } trailing: {
+      .pushedPills { header } trailing: {
           Menu {
             Toggle(isOn: $onlyQuestions) { Label(page.open > 0 ? "Questions Only (\(page.open))" : "Questions Only", systemImage: "questionmark.circle") }
             Button { newName = page.name.en; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
@@ -744,12 +720,11 @@ struct SessionScreen: View {
     }
     .sheet(isPresented: $drawing) { DrawingPicker(page: page) { mark in shell.act(["do": "session_icon", "session_id": page.id, "icon": mark]); drawing = false } }
   }
-  /** Back and the title in one glass pill at the left: the arrow goes back, the session's drawing and name open a
-   *  menu of the team's sessions to switch to; a dot says connected (green), stopped (red) or not connected. */
+  /** The title in its own glass pill in the middle of the top row (back and ⋯ are round buttons of their own): the
+   *  session's drawing, with a tiny dot on its corner (connected green, stopped red, else a ring), and its name; a
+   *  tap opens a menu of the team's sessions to switch to. */
   private var header: some View {
-    HStack(spacing: 0) {
-      BackArrow()
-      Menu {
+    Menu {
       ForEach(shell.view.sidebar.sessions, id: \.id) { s in
         Button {
           if shell.path.isEmpty { shell.path = [.session(sessionId: s.id)] } else { shell.path[shell.path.count - 1] = .session(sessionId: s.id) }
@@ -757,23 +732,27 @@ struct SessionScreen: View {
           Label { Text(s.name.en) } icon: { if s.id == page.id { Image(systemName: "checkmark") } else if s.crowned { Image(systemName: "crown") } }
         }
       }
-      } label: {
-        HStack(spacing: 7) {
-          AgentMark(mark: page.mark, size: 22, crowned: page.crowned, hue: hue)
-          Text(page.name.en).font(Face.display(17, .bold)).foregroundStyle(Ink.fg).lineLimit(1).minimumScaleFactor(0.85).truncationMode(.middle)
-          if page.blocked { Circle().fill(Ink.urgCritical).frame(width: 7, height: 7) }
-          else if page.dot.on { Circle().fill(Ink.stDone).frame(width: 7, height: 7) }
-          else { Circle().strokeBorder(Ink.faint, lineWidth: 1.5).frame(width: 7, height: 7) }
-        }
-        .padding(.trailing, 16).frame(height: 44)
-        .contentShape(Rectangle())
+    } label: {
+      HStack(spacing: 8) {
+        AgentMark(mark: page.mark, size: 22, hue: hue)
+          .overlay(alignment: .bottomTrailing) {
+            Group {
+              if page.blocked { Circle().fill(Ink.urgCritical) }
+              else if page.dot.on { Circle().fill(Ink.stDone) }
+              else { Circle().fill(Ink.bg).overlay(Circle().strokeBorder(Ink.faint, lineWidth: 1.5)) }
+            }
+            .frame(width: 8, height: 8).offset(x: 3, y: 2)
+          }
+        Text(page.name.en).font(Face.text(17, .semibold)).foregroundStyle(Ink.fg).lineLimit(1).minimumScaleFactor(0.85).truncationMode(.middle)
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel("\(page.name.en)\(page.modelLabel.isEmpty ? "" : ", \(page.modelLabel)"), \(page.dot.says.en): switch chat")
-      .accessibilityHint(page.quiet?.en ?? "")
+      .padding(.horizontal, 16).frame(height: 44)
+      .glass(Capsule(), interactive: true)
+      .contentShape(Capsule())
     }
-    .padding(.leading, 4)
-    .glass(Capsule(), interactive: true)
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(page.name.en)\(page.modelLabel.isEmpty ? "" : ", \(page.modelLabel)"), \(page.dot.says.en): switch chat")
+    .accessibilityHint(page.quiet?.en ?? "")
+    .accessibilityIdentifier("session-title")
   }
 }
 
