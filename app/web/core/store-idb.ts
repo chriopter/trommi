@@ -53,6 +53,8 @@ export interface Cache {
   set(key: string, value: unknown, opts?: { durable?: boolean }): Promise<void>
   /** `undefined` deletes; one transaction: all of the entries or none. */
   setMany(entries: [key: string, value: unknown | undefined][], options?: { durable?: boolean }): Promise<void>
+  /** Names only: cached bodies are not read or structured-cloned. */
+  keys(prefix: string): Promise<string[]>
   /** The records whose key starts with `prefix`, in key order; `after` and `before` are exclusive bounds. */
   range(prefix: string, opts?: { after?: string; before?: string; limit?: number; reverse?: boolean }): Promise<[string, unknown][]>
   delete(key: string): Promise<void>
@@ -202,6 +204,10 @@ export async function openCache(name: string): Promise<Cache> {
   }
   return {
     async get(key) { return requested(store('readonly').get(key)) },
+    async keys(prefix) {
+      const range = prefix ? IDBKeyRange.bound(prefix, prefix + '\uffff') : undefined
+      return (await requested(store('readonly').getAllKeys(range))).filter((key): key is string => typeof key === 'string' && key.startsWith(prefix))
+    },
     set(key, value, { durable = false } = {}) { return written(s => { s.put(value, key) }, durable) },
     delete(key) { return written(s => { s.delete(key) }) },
     setMany(entries, { durable = false } = {}) { return written(s => { for (const [key, value] of entries) { if (value === undefined) s.delete(key); else s.put(value, key) } }, durable) },

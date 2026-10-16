@@ -23,6 +23,7 @@ export interface DeviceSpace {
 export interface CacheSpace {
   get(keys: string[]): Promise<(Uint8Array | null)[]>
   scan(prefix: string): Promise<{ key: string; value: Uint8Array }[]>
+  keys(prefix: string): Promise<string[]>
   put(put: { key: string; value: Uint8Array }[], remove: string[], durable?: boolean): Promise<void>
 }
 /** What only the page can do. */
@@ -263,6 +264,7 @@ export class CoreShell {
           const out: Uint8Array[] = []
           return { result: { ok: { answer: 'entries', entries: entries.map(e => ({ key: e.key, value: out.push(e.value) - 1 })) } }, blobs: out }
         }
+        case 'keys': return { result: { ok: { answer: 'keys', keys: await this.cache.keys(op['prefix'] as string) } }, blobs: [] }
         case 'put': case 'put_durable': {
           const put = ((op['put'] as { key: string; value: number }[] | undefined) ?? []).map(e => ({ key: e.key, value: blobs[e.value]! }))
           await this.cache.put(put, (op['delete'] as string[] | undefined) ?? [], kind === 'put_durable')
@@ -334,6 +336,7 @@ export function memorySpaces(): { device: DeviceSpace; cache: CacheSpace } {
     cache: {
       get: async keys => keys.map(k => kv.get(k) ?? null),
       scan: async prefix => [...kv].filter(([k]) => k.startsWith(prefix)).sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, value]) => ({ key, value })),
+      keys: async prefix => [...kv.keys()].filter(k => k.startsWith(prefix)).sort(),
       put: async (put, remove) => { for (const k of remove) kv.delete(k); for (const e of put) kv.set(e.key, e.value) },
     },
   }

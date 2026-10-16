@@ -1,5 +1,5 @@
 // The two AppCore storage spaces. DeviceStore retains the exclusive lock, durable encrypted journal and
-// Keychain revision anchor; the cache contains only encrypted, disposable values. No application decisions.
+// Keychain revision anchor; the cache holds encrypted values and public logout notices. No application decisions.
 import Foundation
 
 public struct NativePacket: @unchecked Sendable {
@@ -30,20 +30,41 @@ final class ShellStore {
     } catch { locked.close(); throw error }
   }
   func close() { device.close() }
+  private static let digits = Array("0123456789abcdef".utf8)
+  private static func encoded(_ key: String) -> [UInt8] {
+    var bytes = [UInt8](); bytes.reserveCapacity(key.utf8.count * 2)
+    for byte in key.utf8 { bytes.append(digits[Int(byte >> 4)]); bytes.append(digits[Int(byte & 15)]) }
+    return bytes
+  }
+  private static func decoded(_ name: String) -> String? {
+    let hex = Array(name.utf8)
+    guard hex.count % 2 == 0 else { return nil }
+    func nibble(_ byte: UInt8) -> UInt8? {
+      switch byte { case 48...57: return byte - 48; case 97...102: return byte - 87; case 65...70: return byte - 55; default: return nil }
+    }
+    var bytes = [UInt8](); bytes.reserveCapacity(hex.count / 2)
+    for at in stride(from: 0, to: hex.count, by: 2) {
+      guard let high = nibble(hex[at]), let low = nibble(hex[at + 1]) else { return nil }
+      bytes.append(high << 4 | low)
+    }
+    return String(bytes: bytes, encoding: .utf8)
+  }
   private func file(_ key: String) -> URL {
-    // Core keys can include both a room and a timeline id. Split their reversible encoding so no component
-    // exceeds the filesystem limit; the bytes and their authenticated key remain unchanged.
-    let encoded = Array(Data(key.utf8).map { String(format: "%02x", $0) }.joined())
+    // Keep the existing reversible layout and its 120-byte components, including the empty key.
+    let encoded = Self.encoded(key)
     return stride(from: 0, to: encoded.count, by: 120).reduce(cache) { url, at in
-      url.appendingPathComponent(String(encoded[at..<min(at + 120, encoded.count)]))
+      url.appendingPathComponent(String(decoding: encoded[at..<min(at + 120, encoded.count)], as: UTF8.self))
     }.appendingPathComponent("value")
   }
-  private func get(_ key: String) throws -> Data? {
-    let u = file(key)
-    guard FileManager.default.fileExists(atPath: u.path) else { return nil }
-    let b = Bytes(try Data(contentsOf: u))
+  private func value(at url: URL, key: String) throws -> Data? {
+    let b = Bytes(try Data(contentsOf: url))
     guard b.count >= 28 else { return nil }
     return try? Data(gcmOpen(key: cacheKey, nonce: Bytes(b.prefix(12)), aad: Bytes(key.utf8), Bytes(b.dropFirst(12))))
+  }
+  private func get(_ key: String) throws -> Data? {
+    let url = file(key)
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    return try value(at: url, key: key)
   }
   func run(_ packet: NativePacket) throws -> NativePacket {
     let op = packet.json; var blobs: [Data] = []
@@ -62,23 +83,30 @@ final class ShellStore {
       answer = ["answer": "values", "values": try (op["keys"] as? [String] ?? []).map { key -> Any in
         if let value = try get(key) { return bytes(value) }; return NSNull()
       }]
-    case "scan":
+    case "scan", "keys":
       let prefix = op["prefix"] as? String ?? ""
       guard let enumerator = FileManager.default.enumerator(at: cache, includingPropertiesForKeys: [.isRegularFileKey]) else { throw TrommiError("storage") }
-      let names = try enumerator.compactMap { entry -> String? in
-        guard let url = entry as? URL, url.lastPathComponent == "value", try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { return nil }
-        // Enumeration may canonicalize /var to /private/var on Darwin. Its depth, unlike the absolute
-        // path prefix, always names exactly the components beneath this cache root.
-        return url.pathComponents.suffix(enumerator.level).dropLast().joined()
-      }
-      let keys = names.compactMap { name -> String? in
-        guard name.count % 2 == 0 else { return nil }
-        var data = Data(); var at = name.startIndex
-        while at < name.endIndex { let end = name.index(at, offsetBy: 2); guard let b = UInt8(name[at..<end], radix: 16) else { return nil }; data.append(b); at = end }
-        return String(data: data, encoding: .utf8)
-      }.filter { $0.hasPrefix(prefix) }.sorted()
+      let wanted = String(decoding: Self.encoded(prefix), as: UTF8.self)
+      let found = try enumerator.compactMap { entry -> (String, URL)? in
+        guard let url = entry as? URL else { return nil }
+        // Depth handles Darwin's /var → /private/var canonicalization without absolute-path guesses.
+        let components = url.pathComponents.suffix(enumerator.level)
+        if url.lastPathComponent != "value" {
+          let branch = components.joined()
+          if !wanted.hasPrefix(branch) && !branch.hasPrefix(wanted) { enumerator.skipDescendants() }
+          return nil
+        }
+        let name = components.dropLast().joined()
+        guard name.hasPrefix(wanted), try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true,
+              let key = Self.decoded(name) else { return nil }
+        return (key, url)
+      }.sorted { $0.0 < $1.0 }
+      if op["op"] as? String == "keys" { answer = ["answer":"keys", "keys":found.map { $0.0 }]; break }
       var entries: [[String: Any]] = []
-      for key in keys { if let value = try get(key) { entries.append(["key": key, "value": bytes(value)]) } }
+      for (key, url) in found {
+        // Enumeration already found the file: do not encode its key and stat the same path again.
+        if let value = try value(at: url, key: key) { entries.append(["key": key, "value": bytes(value)]) }
+      }
       answer = ["answer": "entries", "entries": entries]
     case "put", "put_durable":
       let durable = op["op"] as? String == "put_durable"

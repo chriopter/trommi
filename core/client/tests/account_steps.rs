@@ -336,3 +336,41 @@ fn a_public_queue_prefix_cannot_hide_private_or_forged_cache_from_logout_erasure
     assert_eq!(notice["device"], world.me.to_base64url());
     assert!(notice.get("token").is_none());
 }
+
+#[test]
+fn logout_erases_large_cached_values_by_name_without_loading_them_through_the_core() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.cache.insert("c1/unrelated/large-private-file".into(), vec![7; 8 * 1024 * 1024]);
+    sim.send(start());
+    sim.log.clear();
+    sim.send(Event::Action { action:Action::Account { action:AccountAction::SignOut } });
+    assert!(sim.cache.is_empty() && sim.device.1.is_empty());
+    assert!(sim.log.iter().any(|effect| matches!(effect, trommi_client_core::app::Effect::Store { op:trommi_client_core::app::StoreOp::Keys { prefix }, .. } if prefix.is_empty())));
+    assert!(!sim.log.iter().any(|effect| matches!(effect, trommi_client_core::app::Effect::Store { op:trommi_client_core::app::StoreOp::Scan { prefix }, .. } if prefix.is_empty())), "private cached bodies never need to cross the binding just to be erased");
+}
+
+#[test]
+fn logout_preserves_unread_public_notices_when_the_initial_notice_scan_failed() {
+    use trommi_client_core::app::{Effect, StoreOp, IoResult, IoError, IoErrorKind};
+    let world = World::new();
+    let (old, _) = common::new_peer();
+    let room = world.room.room_id();
+    let old_key = format!("public-departure/{}.{}", room.to_base64url(), old.id().to_base64url());
+    let notice = serde_json::to_vec(&serde_json::json!({"hub":"https://hub.example", "room":room.to_base64url(), "device":old.id().to_base64url(), "signature":old.sign_departure_for(&room).unwrap()})).unwrap();
+    let mut sim = world.sim();
+    sim.cache.insert(old_key.clone(), notice);
+    let effects = sim.app.handle(common::now(), start());
+    let scan = effects.iter().find_map(|e| match e { Effect::Store { id, op:StoreOp::Scan { prefix } } if prefix == "public-departure/" => Some(*id), _ => None }).unwrap();
+    sim.run(effects.into_iter().filter(|e| !matches!(e, Effect::Store { id, .. } if *id == scan)).collect());
+    sim.send(Event::Store { id:scan, result:IoResult::Err(IoError::new(IoErrorKind::Failed)) });
+    world.hub.borrow_mut().fault = Some(Box::new(|_, request| {
+        request.url.ends_with("/departures").then(|| Err(IoError::new(IoErrorKind::Offline)))
+    }));
+    sim.log.clear();
+    sim.send(Event::Action { action:Action::Account { action:AccountAction::SignOut } });
+    assert!(sim.device.1.is_empty());
+    assert!(sim.cache.contains_key(&old_key), "a failed startup scan must not turn a valid old retirement into private cache to erase");
+    assert_eq!(sim.cache.len(), 2, "only the two validated public notices remain");
+    assert!(sim.log.iter().any(|e| matches!(e, Effect::Store { op:StoreOp::Scan { prefix }, .. } if prefix.is_empty())), "the exceptional path first validates the unread records");
+}

@@ -199,8 +199,14 @@ impl App {
         self.next_view.account = AccountView { step: "sign_in".into(), ..Default::default() };
         out.splice(0..0, privacy);
         out.push(Effect::Timer { at_ms: None });
-        let id = self.io(Pending::Wipe);
-        out.push(Effect::Store { id, op: StoreOp::Scan { prefix: String::new() } });
+        let (pending, op) = if self.departures.loaded() {
+            (Pending::WipeKeys, StoreOp::Keys { prefix:String::new() })
+        } else {
+            // A failed startup notice read must not erase a valid queued retirement from disk.
+            (Pending::Wipe, StoreOp::Scan { prefix:String::new() })
+        };
+        let id = self.io(pending);
+        out.push(Effect::Store { id, op });
     }
 
     /// The keys the cache space holds, all to go.

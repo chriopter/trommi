@@ -51,7 +51,9 @@ content. Live sessions require earlier room states: the engine verifies that bac
 against its held origin before checking their history or recovering old room keys. New membership actions also
 wait for that verification. Old room settings on the first Desk also trigger it. A first Desk with neither old
 room values nor live sessions leaves old room Commits unread, including after restart. Recovery and old recovery
-links retain the complete-history check. Recovery-code keys stay in memory only; an interrupted sign-in asks for
+links retain the complete-history check. Opening older messages in a held session also requests its missing verified epochs, in room/main/helper order,
+then reads back the envelopes and requests missing content keys through the existing handover flow. A failed
+network read retries; an unverified history never becomes readable content. Recovery-code keys stay in memory only; an interrupted sign-in asks for
 the code again on the same device when its old keys or unfinished session joins still need it.
 
 ## Events and effects
@@ -112,7 +114,7 @@ stay inside values; storage keys use the existing random register IDs. Whole rec
 readable and are replaced in the same atomic batch as their first update, including staged joins. A failed
 migration leaves the prior state intact; missing components and mixed whole/split forms are storage errors.
 
-The cache space is separate: string keys and bytes, with get/scan/put/delete. Keys start with
+The cache space is separate: string keys and bytes, with get/scan/keys/put/delete. Keys start with
 `c1/<room>/`; `src/cache/layout.rs` names the model/meta/window/draft records. Values describe checked model data;
 file cache bytes retain their encrypted hub representation. Metadata binds a model to the device identity and
 revision. Losing disposable model cache costs a catch-up; it never loses the protocol outbox. Physical storage, encryption at rest,
@@ -135,6 +137,11 @@ arbitrary queue length; at most eight delivery operations run together. They sha
 retry after restart without opening a device, and are deleted durably only after a checked hub acknowledgement.
 A current or later human app verifies the exact signature and actual human membership, waits for anchored room
 history, and makes the ordinary room Cut/removal Commit. Missing names and activity hints never authorize removal.
+
+After the public-notice startup scan succeeds, sign-out lists cache names with `StoreOp::Keys` rather than
+reading and copying private values through the binding. Rust journals enumerate their key index, IndexedDB
+uses `getAllKeys`, and the native store lists encoded filenames without decrypting values. If that initial
+public-notice scan failed, sign-out retains a full scan so an unread valid departure notice survives erasure.
 
 Sign-out drops plaintext model/file/account buffers, ends the token and wipes the slot and private cache. A human device is
 erased for removal only after the protocol checked its signed removal. A hub claim alone leaves state intact.
