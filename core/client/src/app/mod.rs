@@ -1040,12 +1040,6 @@ impl App {
                         }
                     }
                 }
-                // (a team switched to opens in the wide sidebar: the person goes to see its sessions)
-                if let (Some(was), Some(now)) = (self.lens.team.as_ref(), focus.team.as_ref()) {
-                    if was != now {
-                        self.lens.teams_folded.insert(now.clone(), false);
-                    }
-                }
                 self.lens.team = focus.team;
                 // (the gallery, and the Desk's foot shows its newest)
                 self.lens.artifacts = matches!(focus.screen, Screen::Artifacts { .. } | Screen::Desk);
@@ -1157,8 +1151,8 @@ impl App {
                 }
                 return;
             }
-            Action::FoldTeam { team_id, folded } => {
-                self.lens.teams_folded.insert(team_id.clone(), *folded);
+            Action::SidebarLevel { in_team } => {
+                self.lens.in_team = *in_team;
                 self.stale_views = true;
                 return;
             }

@@ -136,31 +136,29 @@ export interface SidebarView {
   working: number
   /** How many of his answers the sessions of the team in view have not picked up. */
   unheard: number
-  /** Every team as a stack, in the menu's order (the wide sidebar: all teams at once). Folded, a team shows its
-   *  head with its sessions as card edges under it; open, its sessions' rows. The phone draws `sessions` instead. */
+  /** Every team as a stack of its sessions' card edges, in the menu's order: the wide sidebar's first level. A
+   *  click on one goes into it (the team in view, `level` "team"). The phone draws `sessions` instead. */
   stacks?: TeamStackView[]
+  /** What the wide sidebar shows: "teams" (every team as a stack) or "team" (inside the team in view: its chats,
+   *  `sessions`, and the way back). This device's choice (`Action::SidebarLevel`); "teams" until made. */
+  level: string
 }
 
-/** A team in the wide sidebar: its head, and its sessions as a folded stack or as rows. */
+/** A team in the wide sidebar's first level: its head over a fan of its sessions' card edges. */
 export interface TeamStackView {
   id: string
   name: Text
   /** The team in view (its Desk is the Desk). */
   selected: boolean
-  /** Folded on this device (`Action::FoldTeam`; unless chosen there: every team but the one in view). A team
-   *  without sessions is never folded. */
-  folded: boolean
   /** The open questions of the team's sessions. */
   waiting: number
   /** One of them knocks. */
   knocks: boolean
-  /** What the head says to a screen reader and as its hint: "3 agents, 2 questions open". */
+  /** What the head says to a screen reader: "3 agents, 2 questions open". */
   says: Text
-  /** Folded: a card edge per session (at most [`STACK_EDGES`]), in the rows' order. What knocks is said by the
-   *  head's number, not by an edge. */
+  /** A card edge per session (at most [`STACK_EDGES`]), in the rows' order. What knocks is said by the head's
+   *  number, not by an edge. */
   edges?: StackEdgeView[]
-  /** Its sessions, one row each, in drawing order (connected first): also while folded, for the rail and the keys. */
-  sessions?: SessionRowView[]
 }
 
 /** A session's card edge in a folded team's stack. */
@@ -226,6 +224,9 @@ export interface SessionRowView {
   last?: LastSaidView
   /** Its agent said something this device has not shown yet (the chat was not open since): the Chat list's dot. */
   unread: boolean
+  /** The one quiet sign of a calm chat row: "stopped" (the red hand), "waiting" (a question waits for him),
+   *  "unread" (new words), or "" for none. */
+  signal: string
 }
 
 /** What a conversation said last, for its row in the Chat list. */
@@ -688,6 +689,18 @@ export interface SessionView {
   helpers?: HelperListView
   /** In the Archive: the More menu offers "Back from the Archive" (`ArchiveSession` with `on: false`). */
   archived: boolean
+  /** The tabs of its side panel (a click on its name opens it), in order: "details" always, then "questions",
+   *  "helpers" and "files" where it has some. */
+  tabs?: PanelTabView[]
+}
+
+/** A tab of a session's side panel. */
+export interface PanelTabView {
+  /** "details", "questions", "helpers", "files". */
+  key: string
+  label: Text
+  /** What it counts beside its label (the questions that wait, the helpers, the files); 0: no number. */
+  count: number
 }
 
 /** The dot beside a session's name. */

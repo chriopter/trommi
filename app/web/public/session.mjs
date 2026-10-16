@@ -117,7 +117,7 @@ const DOTS = raw('<svg class="t-head-dots" viewBox="0 0 24 24" aria-hidden="true
 const forms = (s, base) => `${base}/sessions/${encodeURIComponent(s.id)}`
 /** The session's More menu: Files, Move to Team… and Copy Invite Link (not for a helper: it goes with its main), Archive (while it is away; "Back from the Archive"
  *  once in it), Delete…. */
-function sessionMore(s, vm, base) {
+function sessionMore(s, vm, base, { inline = false } = {}) {
   const name = s.name.en, n = s.files?.length ?? 0
   const files = n ? html`<a role="menuitem" class="desk-move-files" href="${sessionPath(s, base)}/files" data-action="files#toggle" aria-controls="files-drawer-${s.id}" title="Files">${ico('clip')}<span>Files</span><b>${n}</b></a><hr class="desk-move-rule">` : ''
   const others = (vm.sidebar?.teams ?? []).length < 2 ? [] : vm.sidebar.teams.filter(d => d.id !== s.team_id)
@@ -126,9 +126,11 @@ function sessionMore(s, vm, base) {
   const del = html`<details class="desk-move-sub desk-move-delete"><summary role="menuitem">${sk('bin')}<span>Delete…</span></summary>
 <form class="session-delete-ask" method="post" action="${forms(s, base)}/delete"><input type="hidden" name="stay" value="1"><p><b>Delete ${name}?</b> Its connector is removed from the room and the session moves to the archive with its helpers. Open questions are shredded.</p>
 <div class="desk-duck-ways"><button type="submit" class="session-delete-yes">${sk('bin')}<span>Delete</span></button><button type="button" class="desk-duck-no" data-pop-close>Cancel</button></div></form></details>`
+  const entries = html`${others.length ? html`<details class="desk-move-sub"><summary role="menuitem">${sk('desk')}<span>Move to Team…</span></summary>${others.map(move)}</details>` : ''}
+<form method="post" action="/pair" data-turbo-frame="_top"><input type="hidden" name="role" value="agent"><input type="hidden" name="continue" value="${s.id}"><button type="submit" role="menuitem">${sk('key')}<span>Copy Invite Link</span></button></form><hr class="desk-move-rule">${archive}${del}`
+  if (inline) return html`<div class="desk-move panel-acts" role="group" aria-label="${name}: actions">${entries}</div>`
   return html`<details class="t-pick t-pick-desk"><summary class="t-head-desk t-head-more" title="More" aria-label="${name}: more">${DOTS}</summary>
-<div class="desk-move t-pop" role="menu" aria-label="More for ${name}">${files}${others.length ? html`<details class="desk-move-sub"><summary role="menuitem">${sk('desk')}<span>Move to Team…</span></summary>${others.map(move)}</details>` : ''}
-<form method="post" action="/pair" data-turbo-frame="_top"><input type="hidden" name="role" value="agent"><input type="hidden" name="continue" value="${s.id}"><button type="submit" role="menuitem">${sk('key')}<span>Copy Invite Link</span></button></form><hr class="desk-move-rule">${archive}${del}</div></details>`
+<div class="desk-move t-pop" role="menu" aria-label="More for ${name}">${files}${entries}</div></details>`
 }
 /** The session's drawing and name (the mark opens the drawings, the crown crowns, the name renames: ui.mjs), its dot,
  *  its model, the More menu, and the raised red hand when it is stopped (else the quiet hint). */
@@ -250,19 +252,47 @@ function filesList(s, vm, t) {
 /** The drawer from the right (a sheet from below on a phone), open at /chat/<slug>/files. */
 const filesDrawer = (s, vm, t, open) => html`<aside class="files-drawer" id="files-drawer-${s.id}" data-files-target="drawer" aria-label="Files of this session"${open ? '' : raw(' hidden')}><header class="files-head"><h3>Files</h3><a class="files-close" data-nav href="${sessionPath(s, t.BASE)}" data-action="files#close" aria-label="Close the files">${ico('close')}</a></header><div class="files-frame">${open ? filesList(s, vm, t) : ''}</div></aside>`
 
+// ---- the side panel: a click on the name opens it (a wide screen), its tabs the core's (SessionView.tabs) ----
+const PANEL_TABS = new Set(['details', 'questions', 'helpers', 'files'])
+/** The pill at the top: the drawing, the name and the dot; it opens the panel (and closes it again). */
+function headPill(s, base, tab) {
+  const d = s.dot, open = Boolean(tab)
+  return html`<a class="head-pill" id="head-pill-${s.id}" data-nav href="${sessionPath(s, base)}${open ? '' : '/panel/details'}" aria-expanded="${String(open)}" aria-controls="side-panel-${s.id}" title="${s.name.en}" aria-label="${s.name.en}: ${open ? 'close the details' : 'details'}">${agentMark(s)}<b>${s.name.en}</b><span class="head-dot${d.on ? ' is-on' : ''}"${d.link ? html` data-link="${d.link}"` : ''} role="img" aria-label="${d.says.en}"><i></i></span>${s.open ? html`<i class="head-pill-n" aria-label="${s.open_word?.en ?? ''}">${s.open}</i>` : ''}</a>`
+}
+const fact = (label, value) => (value ? html`<div class="panel-fact"><dt>${label}</dt><dd>${value}</dd></div>` : '')
+function panelBody(s, vm, t, tab) {
+  const base = t.BASE
+  if (tab === 'questions') return questionList(s, base)
+  if (tab === 'helpers') return helperList(s)
+  if (tab === 'files') return filesList(s, vm, t)
+  const team = (vm.sidebar?.teams ?? []).find(d => d.id === s.team_id)
+  return html`<dl class="panel-facts">${fact('Model', s.model_label ? html`<span title="${s.model}">${s.model_label}</span>` : '')}${fact('Connection', s.dot.word.en)}${fact('Usage', usageRings(s.usage))}${fact('Team', team?.name.en ?? '')}${s.hand ? fact('Stopped', s.hand.text.en) : s.quiet ? fact('Quiet', s.quiet.en) : ''}</dl>${sessionMore(s, vm, base, { inline: true })}`
+}
+function sidePanel(s, vm, t, tab) {
+  if (!tab) return html`<aside class="side-panel" id="side-panel-${s.id}" hidden></aside>`
+  const here = sessionPath(s, t.BASE)
+  return html`<aside class="side-panel" id="side-panel-${s.id}" aria-label="${s.name.en}: details">
+<header class="panel-top"><a class="panel-close" data-nav href="${here}" aria-label="Close" title="Close">${ico('close')}</a></header>
+<div class="panel-who">${sessionHeadEdit({ ...whoOf(s), starred: s.crowned }, t.BASE, { stay: true })}<span class="panel-sub">${s.model_label || s.dot.word.en}</span></div>
+<nav class="panel-tabs" aria-label="${s.name.en}">${(s.tabs ?? []).map(x => html`<a data-nav data-turbo-action="replace" href="${here}/panel/${x.key}"${x.key === tab ? raw(' aria-current="page"') : ''}>${x.label.en}${x.count ? html`<b>${x.count}</b>` : ''}</a>`)}</nav>
+<div class="panel-body">${panelBody(s, vm, t, tab)}</div>
+</aside>`
+}
+
 // ---- the page ----
 /** mode: '' (the talk) | 'questions' | 'files' (the talk, the drawer open). */
-function sessionMain(s, vm, t, { mode = '', text = '', focus = false } = {}) {
+function sessionMain(s, vm, t, { mode = '', text = '', focus = false, panel = '' } = {}) {
   const base = t.BASE
   const body = mode === 'questions' ? html`<div class="pane-list pane-questions"><div class="column">${questionList(s, base)}</div></div>`
     : html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${s.earlier ? html`<form class="log-earlier" id="earlier-${s.id}" method="post" action="${sessionPath(s, base)}/earlier"><button type="submit" class="log-earlier-link" data-log-target="earlier">${s.earlier.says.en}${s.earlier.left ? html`<b>${s.earlier.left}${s.earlier.hub ? '+' : ''}</b>` : ''}</button></form>` : ''}${s.talk.length ? talk(s, vm, t) : s.empty ? empty(s, base) : ''}<div id="log-end-${s.id}" hidden></div>${helperList(s)}${sessionStatus(s, base)}</div></div>`
-  return html`<main id="session" aria-label="Session: ${s.name.en}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}>
-<header class="pane-title">${sessionWho(s, vm, base)}${sessionFilters(s, base, mode)}<div class="head-use" id="session-use-${s.id}">${usageRings(s.usage)}</div></header>${sessionFilters(s, base, mode, { phone: true })}
+  return html`<main id="session" aria-label="Session: ${s.name.en}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}${panel ? raw(' data-panel-open') : ''}>
+<header class="pane-title">${headPill(s, base, panel)}${sessionWho(s, vm, base)}${sessionFilters(s, base, mode)}<div class="head-use" id="session-use-${s.id}">${usageRings(s.usage)}</div></header>${sessionFilters(s, base, mode, { phone: true })}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
 <div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' ? '' : sessionOpen(s, base)}<div class="column session-compose">${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus })}</div></div>
 </div></section>
 ${filesDrawer(s, vm, t, mode === 'files')}
+${sidePanel(s, vm, t, panel)}
 </main>`
 }
 
@@ -300,6 +330,7 @@ export function register(t) {
     const s = await find(req, res, match[1])
     if (s) send(req, res, s, { text: (url.searchParams.get('say') ?? '').slice(0, 2000), focus: url.searchParams.has('say') })
   })
+  t.get(/^\/chat\/([^/+]+)\/panel\/(\w+)$/, async ({ req, res, match }) => { const s = await find(req, res, match[1]); if (s) send(req, res, s, { panel: PANEL_TABS.has(match[2]) && (s.tabs ?? []).some(x => x.key === match[2]) ? match[2] : 'details' }) })
   t.get(/^\/chat\/([^/+]+)\/(questions|files)$/, async ({ req, res, match }) => { const s = await find(req, res, match[1]); if (s) send(req, res, s, { mode: match[2] }) })
   t.get(/^\/chat\/([^/+]+)\/files\/([\w-]+)$/, async ({ req, res, url, match }) => {
     const s = await find(req, res, match[1])

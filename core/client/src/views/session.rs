@@ -24,7 +24,7 @@ use super::desk::{card_row, request_row, shown_title};
 use super::sidebar::{hand_of, link_of};
 use super::talk::{card_ref, choices_of, event_label_by, events_of, in_order, items_of, Entry, Side, UNSENT};
 use super::words::{local, next_midnight, quiet_words, say};
-use super::{CardRefView, DotView, EmptyTalkView, EventView, FixView, HelperListView, HelperRowView, LinkNoteView, LinkWords, MoreView, SessionView, StatusLineView, TalkRow, Text};
+use super::{CardRefView, DotView, EmptyTalkView, EventView, FixView, HelperListView, HelperRowView, LinkNoteView, LinkWords, MoreView, PanelTabView, SessionView, StatusLineView, TalkRow, Text};
 use crate::model::types::Card;
 use crate::off_mind::went_at;
 use crate::status::card_place;
@@ -421,6 +421,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         usage,
         helpers: helper_list(b, idx),
         archived: a.row.archived,
+        tabs: Vec::new(),
         questions: Vec::new(),
         files: Vec::new(),
         id: a.row.key.clone(),
@@ -552,6 +553,24 @@ fn piles(b: &Board, v: &mut SessionView) {
     found.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
     let mut seen = std::collections::HashSet::new();
     v.files = found.into_iter().filter(|(_, id)| seen.insert(id.clone())).map(|(_, id)| id).collect();
+    v.tabs = panel_tabs(v);
+}
+
+/// The tabs of a session's side panel: Details always; Questions, Helpers and Files where it has some, each with
+/// what it counts (the questions that wait for him, the helpers, the files).
+fn panel_tabs(v: &SessionView) -> Vec<PanelTabView> {
+    let tab = |key: &str, label: &str, count: usize| PanelTabView { key: key.into(), label: say(&format!("panel.{key}"), label, &[]), count: count as u32 };
+    let mut tabs = vec![tab("details", "Details", 0)];
+    if !v.questions.is_empty() || v.open > 0 {
+        tabs.push(tab("questions", "Questions", v.open as usize));
+    }
+    if let Some(h) = &v.helpers {
+        tabs.push(tab("helpers", "Helpers", h.rows.len()));
+    }
+    if !v.files.is_empty() {
+        tabs.push(tab("files", "Files", v.files.len()));
+    }
+    tabs
 }
 
 /// Every Artifact this device holds, the newest first, with its session's name and its files.

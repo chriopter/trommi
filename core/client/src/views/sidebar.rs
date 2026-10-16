@@ -251,7 +251,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
     let asked = asked_last(b);
     let rows = rows_of(b, &units, &asked);
 
-    // ---- every team as a stack (the wide sidebar) ----
+    // ---- every team as a stack (the wide sidebar's first level) ----
     let stacks: Vec<TeamStackView> = tabs
         .iter()
         .map(|t| {
@@ -262,22 +262,14 @@ pub fn sidebar(b: &Board) -> SidebarView {
                 let mine = units_where(b, |a| a.team.as_deref() == Some(t.id.as_str()));
                 rows_of(b, &mine, &asked)
             };
-            let folded = !sessions.is_empty() && b.lens.teams_folded.get(&t.id).copied().unwrap_or(!t.selected);
-            let edges: Vec<StackEdgeView> = if folded {
-                sessions.iter().take(STACK_EDGES).map(|r| StackEdgeView { id: r.id.clone(), mark: r.mark.clone() }).collect()
-            } else {
-                Vec::new()
-            };
             TeamStackView {
                 id: t.id.clone(),
                 name: t.name.clone(),
                 selected: t.selected,
-                folded,
                 waiting: t.waiting,
                 knocks: t.knocks,
                 says: stack_words(sessions.len(), t.waiting),
-                edges,
-                sessions,
+                edges: sessions.iter().take(STACK_EDGES).map(|r| StackEdgeView { id: r.id.clone(), mark: r.mark.clone() }).collect(),
             }
         })
         .collect();
@@ -288,6 +280,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
     }
     SidebarView {
         stacks,
+        level: if b.lens.in_team { "team" } else { "teams" }.into(),
         teams: tabs,
         sessions: rows,
         badge,
@@ -314,6 +307,19 @@ fn rows_of(b: &Board, units: &[Unit], asked: &HashMap<usize, (u64, String)>) -> 
         }
     }
     rows
+}
+
+/// The one quiet sign of a calm chat row: stopped before a waiting question before new words.
+fn signal(stopped: bool, open: u32, unread: bool) -> &'static str {
+    if stopped {
+        "stopped"
+    } else if open > 0 {
+        "waiting"
+    } else if unread {
+        "unread"
+    } else {
+        ""
+    }
 }
 
 /// A team's head in words: "3 agents, 2 questions open".
@@ -385,6 +391,7 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, asked: &H
         group,
         last: last_said(b, unit.agent, asked.get(&unit.agent)),
         unread: unread(b, unit.agent),
+        signal: signal(unit.hand.is_some(), unit.open, unread(b, unit.agent)).into(),
     }
 }
 
@@ -490,10 +497,10 @@ mod tests {
         assert_eq!(view(&r, None).team, "main");
     }
 
-    /// The wide sidebar: every team as a stack, the one in view open, the others folded with a card edge per
-    /// session and what waits on them; the device's own choice wins, and an empty team never folds.
+    /// The wide sidebar: every team as a stack of its sessions' card edges, with what waits on it; the level is
+    /// this device's ("teams" until it goes into one), and a row says its one quiet sign.
     #[test]
-    fn every_team_is_a_stack_folded_but_the_one_in_view() {
+    fn every_team_is_a_stack_and_the_sidebar_goes_into_one() {
         let mut r = Room { teams: two_teams(), ..Default::default() };
         r.teams["empty"] = json!({ "name": "Empty", "created_at": 3 });
         r.session("a-work", None, true);
@@ -506,20 +513,16 @@ mod tests {
         let m = r.model(NOW);
         let mut lens = Lens { team: Some("main".into()), ..Default::default() };
         let v = sidebar(&Board::new(&m, &lens, NOW));
-        let st = |v: &SidebarView| v.stacks.iter().map(|s| (s.id.clone(), s.selected, s.folded, s.waiting, s.knocks)).collect::<Vec<_>>();
-        assert_eq!(st(&v), [("main".into(), true, false, 0, false), ("lab".into(), false, true, 2, true), ("empty".into(), false, false, 0, false)]);
-        let lab = &v.stacks[1];
-        assert_eq!(lab.sessions.iter().map(|r| r.slug.as_str()).collect::<Vec<_>>(), ["b-lab", "d-lab"]);
-        assert_eq!(lab.edges.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), [lab.sessions[0].id.as_str(), lab.sessions[1].id.as_str()]);
-        assert_eq!((lab.says.en.as_str(), lab.sessions[1].open), ("2 agents, 2 questions open", 2));
-        assert!(v.stacks[0].edges.is_empty() && v.stacks[0].sessions == v.sessions);
-        assert_eq!(v.sessions.len(), 1, "the phone's rows: the team in view alone");
-        // (folded and opened on this device)
-        lens.teams_folded.insert("main".into(), true);
-        lens.teams_folded.insert("lab".into(), false);
+        let st = v.stacks.iter().map(|s| (s.id.as_str(), s.selected, s.waiting, s.knocks, s.edges.len())).collect::<Vec<_>>();
+        assert_eq!(st, [("main", true, 0, false, 1), ("lab", false, 2, true, 2), ("empty", false, 0, false, 0)]);
+        assert_eq!(v.stacks[1].says.en, "2 agents, 2 questions open");
+        assert_eq!(v.level, "teams");
+        assert_eq!(v.sessions.len(), 1, "the rows: the team in view alone");
+        lens.in_team = true;
+        lens.team = Some("lab".into());
         let v = sidebar(&Board::new(&m, &lens, NOW));
-        assert_eq!(st(&v)[..2], [("main".into(), true, true, 0, false), ("lab".into(), false, false, 2, true)]);
-        assert!(v.stacks[1].edges.is_empty() && v.stacks[0].edges.len() == 1);
+        assert_eq!(v.level, "team");
+        assert_eq!(v.sessions.iter().map(|r| (r.slug.as_str(), r.signal.as_str())).collect::<Vec<_>>(), [("b-lab", ""), ("d-lab", "waiting")]);
     }
 
     #[test]

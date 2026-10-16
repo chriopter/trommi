@@ -204,11 +204,10 @@ pub enum Action {
         team_id: String,
         folded: bool,
     },
-    /// A team folded to its stack in the wide sidebar, or open to its sessions' rows (`TeamStackView.folded`).
-    /// This device's alone: the shell keeps what the view model says and sends it again after a start.
-    FoldTeam {
-        team_id: String,
-        folded: bool,
+    /// The wide sidebar goes into the team in view (its chats) or back out to every team as a stack
+    /// (`SidebarView.level`). This device's alone: the shell keeps it and sends it again after a start.
+    SidebarLevel {
+        in_team: bool,
     },
 
     // ---- notes, scribble, files ----
