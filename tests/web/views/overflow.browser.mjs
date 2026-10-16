@@ -76,12 +76,13 @@ try {
     // A missing demo object used to draw an empty/error page that still passed every layout check.
     const content = s.screen === 'Card' ? '#cardpage .tc-title' : s.screen === 'Chat' ? '#session #chat .chat-pane' : null
     const contentReady = !content || await ev(`Boolean(document.querySelector(${JSON.stringify(content)})?.textContent.trim())`)
-    const approval = !['desk--invite-an-agent', 'settings--invite-an-agent'].includes(s.id) || await ev(`(() => {
+    const approval = !['desk--approve-a-computer', 'settings--approve-a-computer'].includes(s.id) || await ev(`(() => {
       const clip = document.querySelector('#invite-agent .clip');
       return clip?.querySelector('h2')?.textContent === 'Approve a computer'
         && clip.textContent.includes('without another tap')
         && clip.querySelector('.clip-alt')?.getAttribute('data-invite-clip-text-param')?.includes('--computer');
     })()`)
+    if (!approval) console.log('approval detail', await ev(`JSON.stringify({path:location.pathname, title:document.querySelector('#invite-agent h2')?.textContent, step:window.trommi?.vm()?.account?.step, invite:window.trommi?.vm()?.account?.invite?.title?.en})`))
     const ok = !got.opening && got.styled && got.page <= 0 && !got.past.length && contentReady && approval
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${s.id}${ok ? '' : `: ${got.opening ? 'loading page still covers content; ' : ''}${!got.styled ? 'Trommi stylesheet missing; ' : ''}${!contentReady ? 'screen content missing; ' : ''}${!approval ? 'computer approval permission or command missing; ' : ''}${got.page > 0 ? `the page scrolls ${got.page}px sideways; ` : ''}${got.past.map(p => `${p.el} "${p.text}" ${p.left}..${p.right}`).join('; ')}`}`)
     if (!ok) failed.push(s.id)

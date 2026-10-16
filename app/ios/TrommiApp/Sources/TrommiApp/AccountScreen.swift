@@ -67,7 +67,7 @@ struct AccountInvite: View {
         Text(ask.name).font(Face.display(22))
         Text(ask.host).font(Face.text(14))
         Text(ask.says.en).font(Face.text(14))
-        ProgressView() }
+        ProgressView()
       }.padding().background(Ink.surface2, in: PenBox())
     }
   }

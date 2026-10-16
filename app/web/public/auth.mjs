@@ -461,6 +461,7 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
   const altLine = text => html`<button type="button" class="clip-alt" data-line="slash" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${text.replace(/#.*'$/, "#…'")}</code><span class="clip-copy-word" data-word="Copy">Copy</span></button>`
   const clipboard = () => {
     const av = vm().account ?? {}, state = inviteState('agent'), inv = av.invite ?? {}
+    if (!inv.invite_id && !av.problem) return html`<main id="room" class="room room-clip" aria-busy="true"><section class="clip">${CLAMP}<progress></progress></section></main>`
     const open = state === 'open', joined = state === 'joined', coming = state === 'adding', ask = state === 'confirm_code', dead = state === 'failed'
     const done = open ? '' : 'done'
     const last = ask ? html`<div class="clip-ask" role="group" aria-label="Confirm the agent"><b>An agent wants to join.</b>
@@ -486,7 +487,7 @@ ${step(joined ? 'done' : dead ? 'dead' : ask ? 'ask' : open ? '' : 'wait', last)
 </ol>${foot}</section></div></main>`
   }
   t.get(/^\/pair\/agent$/, ({ req, res }) => {
-    if (inviteState('agent') === 'none') return t.redirect(res, '/settings')
+    if (inviteState('agent') === 'none' && local.invite?.kind !== 'agent') return t.redirect(res, '/settings')
     page(req, res, vm().account?.invite?.title?.en ?? '', clipboard(), { view: 'invite' })
   })
 
