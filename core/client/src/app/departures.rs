@@ -102,6 +102,7 @@ impl App {
                 && !self.pending.values().any(|p| matches!(p, Pending::DeviceLoad | Pending::RoomKey)) {
                 self.logout_requested = false;
                 self.forget_local_device(now, out);
+                self.next_view.account.notice = Some(super::account_steps::logged_out());
                 return;
             }
         }

@@ -507,6 +507,40 @@ pub fn artifacts(b: &Board) -> Vec<super::ArtifactView> {
         .collect()
 }
 
+/// A page: an Artifact whose first file is HTML (the web's gallery filter, `media.mjs` `typeOf`).
+fn is_page(b: &Board, a: &super::ArtifactView) -> bool {
+    let Some(first) = a.files.first() else { return false };
+    b.model.published.get(&a.id).and_then(|p| p.attachments.as_array()).into_iter().flatten()
+        .find(|x| x.get("attachment_id").and_then(serde_json::Value::as_str) == Some(first.as_str()))
+        .and_then(|x| x.get("media_type")).and_then(serde_json::Value::as_str) == Some("text/html")
+}
+
+/// The gallery's filter over every Artifact (`all`, the newest first): its words, and what it lets through.
+/// `kind`: "" every one, "media" the pictures, videos and files, "pages" the pages; another word counts as "".
+pub fn gallery(b: &Board, kind: &str, all: Vec<super::ArtifactView>) -> (super::GalleryView, Vec<super::ArtifactView>) {
+    let kind = if matches!(kind, "media" | "pages") { kind } else { "" };
+    let pages = all.iter().filter(|a| is_page(b, a)).count() as u32;
+    let total = all.len() as u32;
+    let kinds = if total == 0 {
+        Vec::new()
+    } else {
+        [("", say("gallery.all", "All", &[]), total), ("media", say("gallery.media", "Media", &[]), total - pages), ("pages", say("gallery.pages", "Pages", &[]), pages)]
+            .into_iter()
+            .map(|(key, label, count)| super::GalleryKindView { key: key.into(), label, count, on: key == kind })
+            .collect()
+    };
+    let shown: Vec<super::ArtifactView> = all.into_iter().filter(|a| kind.is_empty() || is_page(b, a) == (kind == "pages")).collect();
+    let lead = if total == 0 {
+        say("gallery.lead.empty", "Nothing yet: pictures, videos, pages and files your agents send show up here.", &[])
+    } else {
+        say("gallery.lead", "Every picture, video, file and page your agents made, the newest first.", &[])
+    };
+    let none = (total > 0 && shown.is_empty()).then(|| {
+        if kind == "pages" { say("gallery.none.pages", "No pages yet.", &[]) } else { say("gallery.none.media", "No pictures, videos or files yet.", &[]) }
+    });
+    (super::GalleryView { kind: kind.into(), kinds, lead, none }, shown)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -854,5 +888,57 @@ mod tests {
         assert!(session(&b, "nobody").is_none());
         // (by its key, or by its short id of the address)
         assert_eq!(session(&b, "a").map(|v| v.id), Some(dev("a")));
+    }
+
+    #[test]
+    fn the_gallery_filters_media_and_pages() {
+        let lens = Lens::default();
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let art = |id: &str, at: u64, media_type: &str| json!({
+            "object_id": id, "agent_device_id": dev("a"), "title": id, "sent_at": at, "envelope_number": at, "object_state": "open",
+            "attachments": [{ "attachment_id": format!("f-{id}"), "media_type": media_type, "file_name": "x" }],
+        });
+        let m = r.model(NOW);
+        let b = Board::new(&m, &lens, NOW);
+        let (g, shown) = gallery(&b, "", artifacts(&b));
+        assert_eq!((g.kinds.len(), g.lead.key.as_str(), g.none.is_none(), shown.len()), (0, "gallery.lead.empty", true, 0));
+        r.published = vec![art("pic", 1, "image/png"), art("page", 2, "text/html"), art("doc", 3, "application/pdf")];
+        let m = r.model(NOW);
+        let b = Board::new(&m, &lens, NOW);
+        let ids = |l: &[crate::views::ArtifactView]| l.iter().map(|a| a.id.clone()).collect::<Vec<_>>();
+        let (g, shown) = gallery(&b, "", artifacts(&b));
+        assert_eq!(ids(&shown), ["doc", "page", "pic"]);
+        assert_eq!(g.kinds.iter().map(|k| (k.key.as_str(), k.label.en.as_str(), k.count, k.on)).collect::<Vec<_>>(), [("", "All", 3, true), ("media", "Media", 2, false), ("pages", "Pages", 1, false)]);
+        let (g, shown) = gallery(&b, "pages", artifacts(&b));
+        assert_eq!((ids(&shown), g.kind.as_str(), g.kinds[2].on), (vec!["page".to_string()], "pages", true));
+        let (_, shown) = gallery(&b, "media", artifacts(&b));
+        assert_eq!(ids(&shown), ["doc", "pic"]);
+        let (g, _) = gallery(&b, "bogus", artifacts(&b));
+        assert_eq!(g.kind, "", "an unknown filter shows every one");
+        // a filter that lets nothing through says so
+        r.published = vec![art("pic", 1, "image/png")];
+        let m = r.model(NOW);
+        let b = Board::new(&m, &lens, NOW);
+        let (g, shown) = gallery(&b, "pages", artifacts(&b));
+        assert_eq!((shown.len(), g.none.map(|t| t.en)), (0, Some("No pages yet.".to_string())));
+    }
+
+    #[test]
+    fn the_desks_foot_keeps_every_artifact_and_only_the_gallery_filters() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.published = vec![json!({
+            "object_id": "pic", "agent_device_id": dev("a"), "title": "pic", "sent_at": 1, "envelope_number": 1, "object_state": "open",
+            "attachments": [{ "attachment_id": "f-pic", "media_type": "image/png", "file_name": "x" }],
+        })];
+        let m = r.model(NOW);
+        let mut view = crate::views::ViewModel::default();
+        let desk = Lens { artifacts: true, ..Default::default() };
+        crate::views::board::render(&m, &desk, NOW, &mut view);
+        assert_eq!((view.artifacts.as_ref().map(Vec::len), view.gallery.is_none()), (Some(1), true));
+        let pages = Lens { artifacts: true, gallery: Some("pages".into()), ..Default::default() };
+        crate::views::board::render(&m, &pages, NOW, &mut view);
+        assert_eq!((view.artifacts.as_ref().map(Vec::len), view.gallery.as_ref().map(|g| g.kind.as_str())), (Some(0), Some("pages")));
     }
 }

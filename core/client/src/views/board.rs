@@ -58,6 +58,15 @@ pub struct Lens {
     /// The desks whose goals are folded to their first line on this device (web localStorage
     /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
     pub goals_folded: Vec<String>,
+    /// The main sessions whose helpers this device shows unfolded (`Action::FoldHelpers`; iOS keeps them in
+    /// @AppStorage `trommi-stacks-open` and sends them again at the start).
+    pub unfolded: Vec<String>,
+    /// What this device has shown of each session's words: the newest envelope number of its agent's words when
+    /// its chat was last in view, by session key (the cache's `seen`). None until it is read: nothing counts as
+    /// unread meanwhile.
+    pub seen: Option<std::collections::BTreeMap<String, u64>>,
+    /// The gallery is in view, with its filter (`Screen::Artifacts.kind`): "", "media" or "pages".
+    pub gallery: Option<String>,
     /// How many pages of a session's talk show ([`TALK_PAGE`] rows each), for that session (its key or short id);
     /// none, or another session: one page.
     pub talk_window: Option<(String, u32)>,
@@ -496,6 +505,13 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     view.desk = super::desk::desk_with(&b, &off);
     view.off = lens.off.as_deref().map(|q| super::off::off_list(&b, &off, q));
     view.artifacts = lens.artifacts.then(|| super::session::artifacts(&b));
+    view.gallery = None;
+    // (the gallery filters what it lists; the Desk's foot keeps every one)
+    if let Some(kind) = lens.gallery.as_deref() {
+        let (gallery, shown) = super::session::gallery(&b, kind, view.artifacts.take().unwrap_or_default());
+        view.gallery = Some(gallery);
+        view.artifacts = Some(shown);
+    }
     view.notes = super::notes::notes(&b);
     // (what the account read keeps: the e-mail is the account's, W3)
     // (what the App adds beside the model: the account read, the room, the desks' deletes)

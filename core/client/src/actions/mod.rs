@@ -91,6 +91,14 @@ pub enum Action {
         card_id: String,
         on: bool,
     },
+    /// Several cards at once, one toast for all with an Undo that takes them all back. `way`: "sweep" (the duck for
+    /// all: a decision is left to its agent, a card to read is closed as read), "later", "wake", "duck", "read",
+    /// "shred", "reopen" (the Undo of the others). A card the way does not fit (a request, a card of another kind)
+    /// is left as it is.
+    Batch {
+        way: String,
+        card_ids: Vec<String>,
+    },
 
     // ---- talk ----
     /// A line to a session's agent (or to a card's chat).
@@ -196,6 +204,12 @@ pub enum Action {
         desk_id: String,
         text: String,
     },
+    /// A main session's helpers unfolded under it (`open`) or folded into its row (`SessionRowView.unfolded`). This
+    /// device's alone: the shell keeps the unfolded mains and sends them again after a start.
+    FoldHelpers {
+        session_id: String,
+        open: bool,
+    },
     /// A desk's goals folded to their first line, or open again (`GoalsView.folded`). This device's alone: the shell
     /// keeps the folded desks and sends them again after a start.
     FoldGoals {
@@ -213,6 +227,22 @@ pub enum Action {
         #[serde(default)] send: bool,
         text: String,
         #[serde(default)] files: Vec<SharedFile>,
+    },
+    /// The note being written, kept as it stands (the note page saves by itself while he types and when he leaves
+    /// it): `note_id` is the note the page shows (none: a new one). The core decides: a new note once there are
+    /// words, a new version when they changed, the note thrown away when it was emptied, nothing else. A file still
+    /// uploading is left out until the next keep. `send`: then sent as `SendNote` (to `to`, else the crown's), also
+    /// a note made by this very keep.
+    KeepNote {
+        #[serde(default)]
+        note_id: Option<String>,
+        text: String,
+        #[serde(default)]
+        attachments: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        send: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to: Option<String>,
     },
     WriteNoteFiles { #[serde(default)] note_id: Option<String>, text: String, attachments: Vec<String> },
     WriteNote {

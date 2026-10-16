@@ -119,9 +119,18 @@ pub enum Screen {
     Scribble {
         board_id: String,
     },
-    /// The gallery of every Artifact the agents published.
-    Artifacts,
-    Settings,
+    /// The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
+    /// videos and files, "pages" the pages.
+    Artifacts {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        kind: String,
+    },
+    /// Settings: its list (`page` ""), or one of its pages ("agents", "desks", "devices", "account", "theme",
+    /// "data", "security").
+    Settings {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        page: String,
+    },
 }
 
 /// Everything the shell draws. Serialised, this is what the conformance scripts compare.
@@ -156,6 +165,10 @@ pub struct ViewModel {
     /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`, and on the Desk, whose foot shows the newest), the newest first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<Vec<ArtifactView>>,
+    /// The gallery's filter and its words, while `Screen::Artifacts` is in view (`artifacts` then holds what the
+    /// filter lets through); none else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gallery: Option<GalleryView>,
     /// Every desk's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
     /// desks); none else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -222,6 +235,10 @@ pub enum ViewPart {
     /// The gallery of Artifacts, whole; none when it is left.
     Artifacts {
         view: Option<Vec<ArtifactView>>,
+    },
+    /// The gallery's filter and words, whole; none when it is left.
+    Gallery {
+        view: Option<GalleryView>,
     },
     /// The desks' boards small, whole; none when no page shows them.
     Thumbs {
@@ -384,6 +401,29 @@ pub struct SessionRowView {
     /// A main with helpers, drawn folded: what the row then shows for all of them together.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folded: Option<FoldView>,
+    /// A main whose helpers this device shows unfolded under it (`Action::FoldHelpers`); folded is the rest state.
+    #[serde(default)]
+    pub unfolded: bool,
+    /// A helper whose main is folded on this device: it is drawn in its main's row, not as a row of its own.
+    #[serde(default)]
+    pub tucked: bool,
+    /// What was said last in its conversation (his words with "You: "), or the question it put to him last: the
+    /// Chat list's teaser; none while this device holds nothing said there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last: Option<LastSaidView>,
+    /// Its agent said something this device has not shown yet (the chat was not open since): the Chat list's dot.
+    #[serde(default)]
+    pub unread: bool,
+}
+
+/// What a conversation said last, for its row in the Chat list.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LastSaidView {
+    /// Its first words as one plain line (200 characters at most): "You: …" for his own.
+    pub text: String,
+    pub at_ms: u64,
+    /// When, as a chat list says it: "14:05" today, "Yesterday", a weekday within the week, "3 Oct", "03.10.25".
+    pub when: Text,
 }
 
 /// A main and its helpers as one folded row.
@@ -402,6 +442,18 @@ pub struct FoldView {
     /// The helpers that are stopped: their edges show it while the row is folded.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stopped: Vec<String>,
+    /// The helpers drawn small at the end of the folded row: four at most, the stopped ones first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lie: Vec<String>,
+    /// How many helpers more there are than `lie` draws ("+3").
+    #[serde(default)]
+    pub more: u32,
+    /// "1 helper", "3 helpers".
+    #[serde(default)]
+    pub helpers: Text,
+    /// One of the helpers has words this device has not shown yet.
+    #[serde(default)]
+    pub unread: bool,
 }
 
 /// Why a session is stopped: the red hand.
@@ -517,9 +569,62 @@ pub struct DeskView {
     /// What Blitz walks through and the duck closes ("Blitz: 3 open cards"); none when nothing waits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blitz: Option<Text>,
+    /// The duck for all beside Blitz: what one press leaves to the agents (a decision) or reads (an info) at once,
+    /// after one question; none when nothing of that waits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duck: Option<DuckAllView>,
     /// The sessions that are cut off, above the questions: one line each, with the step in its terminal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub slip: Vec<SlipView>,
+}
+
+/// The duck for all: the cards it clears (`Action::Batch` with way "sweep") and its words (the web's `duckAll`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DuckAllView {
+    /// The cards it clears, in the Desk's order: the open decisions (left to their agents) and what is only to
+    /// read (closed as read); never a request, nothing not read on this device yet.
+    pub card_ids: Vec<String>,
+    /// The button's name: "I don’t give a duck: for all 3 open cards".
+    pub tip: Text,
+    /// How many of which, for a screen reader: "2 decisions go to the agents, 1 card to read is closed".
+    pub what: Text,
+    /// The one question it asks: "Duck all 3?"; only cards to read: "Close all 2 as read?".
+    pub ask: Text,
+    /// The yes: "Yes, duck them all", "Yes, all read".
+    pub yes: Text,
+    /// The quiet way out: "Cancel".
+    pub no: Text,
+}
+
+/// The gallery's filter (`Screen::Artifacts.kind`) and what its page says.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GalleryView {
+    /// The filter in force: "", "media" or "pages".
+    #[serde(default)]
+    pub kind: String,
+    /// The filter's choices, in order ("All", "Media", "Pages"); none while there is no Artifact at all.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<GalleryKindView>,
+    /// The line under the page's title.
+    pub lead: Text,
+    /// What the page says when the filter lets nothing through ("No pages yet."); none when it shows something.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub none: Option<Text>,
+}
+
+/// One choice of the gallery's filter.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GalleryKindView {
+    /// "", "media" or "pages": what `Screen::Artifacts.kind` takes.
+    #[serde(default)]
+    pub key: String,
+    pub label: Text,
+    /// How many it lets through.
+    #[serde(default)]
+    pub count: u32,
+    /// It is the one in force.
+    #[serde(default)]
+    pub on: bool,
 }
 
 /// One of the two stacks docked at the Desk's foot (the owner's pick of 13 October 2026: two small tabs, the
@@ -1836,6 +1941,10 @@ pub struct AccountView {
     pub kit_account: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kit_address: Option<String>,
+    /// A word on the start screen about how this device came to be signed out: "Logged out." after the person's
+    /// own sign-out, or that another device removed it. Gone with the next step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<Text>,
 }
 
 impl std::fmt::Debug for AccountView {
@@ -1852,6 +1961,7 @@ impl std::fmt::Debug for AccountView {
             .field("problem", &self.problem)
             .field("invite", &self.invite)
             .field("kit_due", &self.kit_due)
+            .field("notice", &self.notice)
             .finish()
     }
 }
@@ -2121,6 +2231,7 @@ impl ViewModel {
                 },
                 ViewPart::Board { view } => self.board = view.clone(),
                 ViewPart::Artifacts { view } => self.artifacts = view.clone(),
+                ViewPart::Gallery { view } => self.gallery = view.clone(),
                 ViewPart::Thumbs { view } => self.thumbs = view.clone(),
                 ViewPart::Toasts { toasts } => self.toasts = toasts.clone(),
             }
@@ -2225,6 +2336,11 @@ impl ViewModel {
                 view: next.artifacts.clone(),
             });
         }
+        if self.gallery != next.gallery {
+            parts.push(ViewPart::Gallery {
+                view: next.gallery.clone(),
+            });
+        }
         if self.thumbs != next.thumbs {
             parts.push(ViewPart::Thumbs {
                 view: next.thumbs.clone(),
@@ -2272,6 +2388,18 @@ mod tests {
             })
         );
         assert!(b.diff(&b).is_none());
+    }
+
+    #[test]
+    fn a_settings_page_and_a_gallery_filter_travel_only_when_set() {
+        let plain = |s: &Screen| serde_json::to_value(s).unwrap();
+        assert_eq!(plain(&Screen::Settings { page: String::new() }), serde_json::json!({ "screen": "settings" }));
+        assert_eq!(plain(&Screen::Settings { page: "devices".into() }), serde_json::json!({ "screen": "settings", "page": "devices" }));
+        assert_eq!(plain(&Screen::Artifacts { kind: "pages".into() }), serde_json::json!({ "screen": "artifacts", "kind": "pages" }));
+        let read: Screen = serde_json::from_value(serde_json::json!({ "screen": "artifacts" })).unwrap();
+        assert_eq!(read, Screen::Artifacts { kind: String::new() });
+        let read: Screen = serde_json::from_value(serde_json::json!({ "screen": "settings", "page": "account" })).unwrap();
+        assert_eq!(read, Screen::Settings { page: "account".into() });
     }
 
     #[test]

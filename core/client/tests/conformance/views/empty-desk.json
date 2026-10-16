@@ -233,7 +233,10 @@
                 "online": false,
                 "open": 0,
                 "slug": "00000002eeee",
+                "tucked": false,
+                "unfolded": false,
                 "unheard": 0,
+                "unread": false,
                 "working": false
               }
             ],
@@ -479,7 +482,10 @@
                 "online": false,
                 "open": 0,
                 "slug": "00000002eeee",
+                "tucked": false,
+                "unfolded": false,
                 "unheard": 0,
+                "unread": false,
                 "working": false
               }
             ],
@@ -928,7 +934,10 @@
           "online": false,
           "open": 0,
           "slug": "00000002eeee",
+          "tucked": false,
+          "unfolded": false,
           "unheard": 0,
+          "unread": false,
           "working": false
         }
       ],

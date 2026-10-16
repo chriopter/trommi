@@ -123,6 +123,8 @@ struct AccountScreen: View {
 
   private var start: some View {
     ObShell(title: "Your agents ring. Answer anywhere.", lead: "Claude Code and Codex ask as cards on your phone. One tap, and they keep working. End-to-end encrypted.", underlined: true) {
+      // (how this device came to be signed out: the core's word)
+      if let notice = account.notice { Text(notice.en).font(Face.text(15, .medium)).foregroundStyle(Ink.accent).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("account-notice") }
       if let problem { ObError(text: problem) }
       VStack(spacing: 12) {
         Button("Create account") { go(.create) }.buttonStyle(ObGo()).accessibilityIdentifier("way-create")

@@ -66,7 +66,7 @@ struct RootView: View {
     case .session(let id): if let page = shell.view.sessions[id] { SessionScreen(page: page).id(id) } else { Loading() }
     case .notes: NotesScreen()
     case .off: OffScreen()
-    case .settings: SettingsScreen()
+    case .settings(let page): SettingsScreen(page: page)
     case .artifacts: ArtifactsScreen()
     case .scribble: ScribbleScreen()
     }
@@ -195,7 +195,7 @@ struct PlacePill: View {
       }
       Section {
         Button { go(.scribble(boardId: side.desk)) } label: { Label("Scribble", systemImage: "scribble.variable") }
-        Button { go(.artifacts) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
+        Button { go(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
         Button { go(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
       }
       Section {
@@ -207,7 +207,7 @@ struct PlacePill: View {
           } label: { Label("Notifications", systemImage: push.level == "off" ? "bell.slash" : push.level == "knocking" ? "bell.badge" : "bell") }
           .pickerStyle(.menu)
         }
-        Button { go(.settings); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "gearshape") }
+        Button { go(.settings(page: "")); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "gearshape") }
         if !shell.isDemo { Button { shell.enterDemo() } label: { Label("Demo", systemImage: "play.rectangle") } }
       }
     } label: {
@@ -267,7 +267,7 @@ struct Sidebar: View {
             ForEach(side.desks, id: \.id) { deskItem($0) }
             DashedRule().frame(height: 1).padding(.horizontal, 14).padding(.vertical, 8)
           }
-          ForEach(side.sessions, id: \.id) { row in
+          ForEach(side.sessions.filter { !$0.tucked }, id: \.id) { row in
             if let heading = row.heading {
               HStack(spacing: 10) {
                 Text(heading.text.en.uppercased()).font(Face.text(12, .semibold)).kerning(1.2).foregroundStyle(Ink.muted).fixedSize()
@@ -276,7 +276,7 @@ struct Sidebar: View {
             }
             SessionRow(row: row).padding(.leading, CGFloat(row.depth) * 18)
           }
-          Button { shell.focus(.settings); shell.account(["step": "read_account"]) } label: {
+          Button { shell.focus(.settings(page: "")); shell.account(["step": "read_account"]) } label: {
             HStack(spacing: 12) { PenMark("ui:PLUS").frame(width: 22, height: 22).padding(.leading, 6); Text("New Agent…").font(Face.text(16, .medium)) }
               .foregroundStyle(side.sessions.isEmpty ? Ink.accent : Ink.muted).padding(.vertical, 10).padding(.horizontal, 12)
           }.buttonStyle(.plain)
@@ -284,9 +284,9 @@ struct Sidebar: View {
       }
       Divider().overlay(Ink.line)
       Menu {
-        Button { shell.focus(.settings); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "key") }
+        Button { shell.focus(.settings(page: "")); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "key") }
         Button { shell.focus(.scribble(boardId: side.desk)) } label: { Label("Scribble", systemImage: "scribble.variable") }
-        Button { shell.focus(.artifacts) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
+        Button { shell.focus(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
         Button { shell.focus(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
         Button { shell.focus(.notes) } label: { Label("Note", systemImage: "note.text") }
         if shell.isDemo { Button { shell.leaveDemo() } label: { Label("Leave Demo", systemImage: "rectangle.portrait.and.arrow.right") } }
@@ -317,33 +317,48 @@ struct Sidebar: View {
   }
 }
 
-/** One session in the sidebar: its mark, its name, how it hears, what waits. */
+/** One session in the sidebar: its mark, its name, how it hears, what waits; a main's helpers fold under it. */
 struct SessionRow: View {
   @EnvironmentObject var shell: AppShell
   let row: CoreView.SessionRowView
   var body: some View {
     let current = shell.path.last == .session(sessionId: row.id)
-    Button { shell.focus(.session(sessionId: row.id)) } label: {
-      HStack(spacing: 12) {
-        AgentMark(row: row, size: 30).opacity(row.online ? 1 : 0.6)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(row.name.en).font(Face.text(17, .medium)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
-          if let cap = row.cap {
-            Text(cap.word.en).font(Face.text(13)).foregroundStyle(cap.kind == "unheard" ? Ink.urgHigh : Ink.muted).lineLimit(1)
+    // (folded, the row speaks for its helpers too)
+    let fold = row.unfolded ? nil : row.folded
+    HStack(spacing: 0) {
+      Button { shell.focus(.session(sessionId: row.id)) } label: {
+        HStack(spacing: 12) {
+          AgentMark(row: row, size: 30).opacity(row.online ? 1 : 0.6)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(row.name.en).font(Face.text(17, .medium)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
+            if let cap = row.cap {
+              Text(cap.word.en).font(Face.text(13)).foregroundStyle(cap.kind == "unheard" ? Ink.urgHigh : Ink.muted).lineLimit(1)
+            }
           }
+          Spacer(minLength: 4)
+          if (fold?.working ?? row.working) && fold?.hand == nil && !row.blocked && (fold?.open ?? row.open) == 0 { WorkingRing(working: true).frame(width: 18, height: 18) }
+          SessionBadge(open: fold?.open ?? row.open, stopped: fold?.hand != nil || row.blocked, says: (fold?.says ?? row.says)?.en)
+          if row.unread || (fold?.unread ?? false), (fold?.open ?? row.open) == 0 { Circle().fill(Ink.accent).frame(width: 8, height: 8).accessibilityLabel("New message") }
         }
-        Spacer(minLength: 4)
-        if row.working && !row.blocked && row.open == 0 { WorkingRing(working: true).frame(width: 18, height: 18) }
-        SessionBadge(open: row.open, stopped: row.blocked, says: row.says?.en)
+        .padding(.leading, 14).padding(.trailing, row.folded == nil ? 14 : 4).padding(.vertical, 8)
+        .contentShape(Rectangle())
       }
-      .padding(.horizontal, 14).padding(.vertical, 8)
-      .background(RoundedRectangle(cornerRadius: 12).fill(current ? Ink.accentSoft : .clear))
-      .contentShape(Rectangle())
-      .opacity(row.hushed ? 0.6 : 1)
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("sidebar-session-" + row.id)
+      if let f = row.folded {
+        Button { withAnimation(.snappy) { shell.act(["do": "fold_helpers", "session_id": row.id, "open": !row.unfolded]) } } label: {
+          HStack(spacing: 2) {
+            Text("\(f.lie.count + Int(f.more))").font(Face.text(12, .semibold)).foregroundStyle(Ink.muted)
+            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Ink.faint).rotationEffect(.degrees(row.unfolded ? 180 : 0))
+          }.frame(minWidth: 36, minHeight: 36).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).padding(.trailing, 6)
+        .accessibilityLabel(f.helpers.en).accessibilityHint(row.unfolded ? "Folds them" : "Unfolds them")
+      }
     }
-    .buttonStyle(.plain)
+    .background(RoundedRectangle(cornerRadius: 12).fill(current ? Ink.accentSoft : .clear))
+    .opacity(row.hushed ? 0.6 : 1)
     .padding(.horizontal, 6)
-    .accessibilityIdentifier("sidebar-session-" + row.id)
   }
 }
 
@@ -394,18 +409,57 @@ struct DeskTop: ViewModifier {
   let regular: Bool
   func body(content: Content) -> some View {
     #if os(macOS)
-    content.navigationTitle(shell.view.sidebar.place.en)
+    content.navigationTitle(shell.view.sidebar.place.en).toolbar { ToolbarItem(placement: .primaryAction) { DeskWays() } }
     #else
     if regular {
       content.navigationBarTitleDisplayMode(.inline).toolbar {
         ToolbarItem(placement: .principal) {
           HStack(spacing: 8) { PenMark("sketch:desk").frame(width: 24, height: 24); Text(shell.view.sidebar.place.en).font(Face.display(19, .bold)).foregroundStyle(Ink.fg) }
         }
+        ToolbarItem(placement: .primaryAction) { DeskWays() }
       }
     } else {
-      content.topPills { PlacePill() } trailing: { EmptyView() }
+      content.topPills { PlacePill() } trailing: { DeskWays() }
     }
     #endif
+  }
+}
+
+/**
+ * The Desk's two ways at the top right (beside the place pill): the duck for all and Blitz with its count, as two
+ * small round glass buttons. The duck asks once, in the core's words (`desk.duck`), "Cancel" as the quiet way; Blitz
+ * opens the first open card, whose page walks on to the next.
+ */
+struct DeskWays: View {
+  @EnvironmentObject var shell: AppShell
+  @State private var asking = false
+  var body: some View {
+    let desk = shell.view.desk
+    HStack(spacing: 10) {
+      if let duck = desk.duck {
+        Button { asking = true } label: {
+          PenMark("sketch:duck", color: Ink.fg, duck: false).frame(width: 24, height: 20).pillCircle()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(duck.tip.en).accessibilityHint(duck.what.en).accessibilityIdentifier("desk-duck")
+        .alert(duck.ask.en, isPresented: $asking) {
+          Button(duck.no.en, role: .cancel) {}
+          Button(duck.yes.en) { shell.act(["do": "batch", "way": "sweep", "card_ids": duck.cardIds]) }
+            .keyboardShortcut(.defaultAction).accessibilityHint(duck.what.en)
+        } message: { Text(duck.what.en) }
+      }
+      if let blitz = desk.blitz, let first = desk.rows.first {
+        Button { shell.focus(.card(cardId: first.id)) } label: {
+          PenMark("desk:BOLT").frame(width: 20, height: 20).pillCircle()
+            .overlay(alignment: .topTrailing) {
+              Text(blitz.args["n"] ?? "").font(Face.text(10, .bold)).foregroundStyle(Ink.bg).monospacedDigit()
+                .padding(.horizontal, 4).frame(minWidth: 17, minHeight: 17).background(Capsule().fill(Ink.fg)).offset(x: 3, y: -2)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(blitz.en).accessibilityIdentifier("desk-blitz")
+      }
+    }
   }
 }
 

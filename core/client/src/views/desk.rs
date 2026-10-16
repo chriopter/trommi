@@ -176,8 +176,47 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         slip: cut,
         ..Default::default()
     };
+    // (beside Blitz, as on the web: where Blitz shows)
+    view.duck = view.blitz.as_ref().and_then(|_| duck_all(&view.rows));
     super::off::fill_desk(b, off, &mut view);
     view
+}
+
+/// The duck for all over the Desk's rows: a decision goes to its agent, a card to read is closed; a request, and a
+/// card not read here yet, are never touched (the web's `duckAll`, the iPhone's `DeskTools`).
+fn duck_all(rows: &[DeskRowView]) -> Option<super::DuckAllView> {
+    let mine = |kind: &str| rows.iter().filter(|r| r.kind == kind && !r.loading && !r.newer).count();
+    let (asks, reads) = (mine("decision"), mine("info"));
+    let n = asks + reads;
+    if n == 0 {
+        return None;
+    }
+    let card_ids = rows.iter().filter(|r| matches!(r.kind.as_str(), "decision" | "info") && !r.loading && !r.newer).map(|r| r.id.clone()).collect();
+    let (ns, a, r) = (n.to_string(), asks.to_string(), reads.to_string());
+    let args: &[(&str, &str)] = &[("n", &ns), ("decisions", &a), ("reads", &r)];
+    let goes = if asks == 1 { "1 decision goes".to_string() } else { format!("{asks} decisions go") };
+    let closed = if reads == 1 { "1 card to read is".to_string() } else { format!("{reads} cards to read are") };
+    let (ask, yes) = match (asks > 0, n == 1) {
+        (true, true) => (say("desk.duck.ask.one", "Duck it?", args), say("desk.duck.yes.one", "Yes, duck it", args)),
+        (true, false) => (say("desk.duck.ask", format!("Duck all {n}?"), args), say("desk.duck.yes", "Yes, duck them all", args)),
+        (false, true) => (say("desk.duck.ask.read_one", "Close it as read?", args), say("desk.duck.yes.read_one", "Yes, read", args)),
+        (false, false) => (say("desk.duck.ask.read", format!("Close all {n} as read?"), args), say("desk.duck.yes.read", "Yes, all read", args)),
+    };
+    let what = if reads == 0 {
+        say("desk.duck.what.go", format!("{goes} to the agents"), args)
+    } else if asks == 0 {
+        say("desk.duck.what.read", format!("{closed} closed"), args)
+    } else {
+        say("desk.duck.what", format!("{goes} to the agents, {closed} closed"), args)
+    };
+    let tip = match (reads == 0, asks == 0, n == 1) {
+        (true, _, true) => say("desk.duck.tip.one", "I don’t give a duck: for the one open decision", args),
+        (true, _, false) => say("desk.duck.tip", format!("I don’t give a duck: for all {n} open decisions"), args),
+        (false, true, true) => say("desk.duck.tip.read_one", "I don’t give a duck: close the one card to read", args),
+        (false, true, false) => say("desk.duck.tip.read", format!("I don’t give a duck: close all {n} cards to read"), args),
+        _ => say("desk.duck.tip.all", format!("I don’t give a duck: for all {n} open cards"), args),
+    };
+    Some(super::DuckAllView { card_ids, tip, what, ask, yes, no: say("desk.duck.no", "Cancel", &[]) })
 }
 
 /// One of the greetings, the same for a whole run of the app; a calm one when no question waits.
@@ -832,5 +871,36 @@ mod tests {
         let mut r = Room::default();
         r.session("a", None, true);
         assert_eq!(view(&r, None).goals.unwrap().desk_id, "main");
+    }
+
+    #[test]
+    fn the_duck_for_all_leaves_the_decisions_to_the_agents_and_reads_the_rest() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let v = view(&r, None);
+        assert!(v.duck.is_none(), "nothing waits: no duck");
+        r.card("q1", "a", "decision", "normal");
+        r.request("p-read", "a", "ok");
+        let v = view(&r, None);
+        let d = v.duck.clone().unwrap();
+        assert_eq!(d.card_ids, ["q1"], "a request is never ducked");
+        assert_eq!((d.ask.en.as_str(), d.yes.en.as_str(), d.tip.en.as_str(), d.what.en.as_str(), d.no.en.as_str()),
+            ("Duck it?", "Yes, duck it", "I don’t give a duck: for the one open decision", "1 decision goes to the agents", "Cancel"));
+        r.card("i1", "a", "info", "normal");
+        r.card("i2", "a", "info", "normal");
+        let c = r.card("q-loading", "a", "decision", "normal");
+        c["content_state"] = json!("header");
+        let d = view(&r, None).duck.unwrap();
+        assert_eq!(d.card_ids.len(), 3, "not what is not read here yet: {:?}", d.card_ids);
+        assert_eq!((d.ask.en.as_str(), d.yes.en.as_str(), d.tip.en.as_str(), d.what.en.as_str()),
+            ("Duck all 3?", "Yes, duck them all", "I don’t give a duck: for all 3 open cards", "1 decision goes to the agents, 2 cards to read are closed"));
+        assert_eq!(d.ask.args.get("n").map(String::as_str), Some("3"));
+        // only cards to read
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.card("i1", "a", "info", "normal");
+        r.card("i2", "a", "info", "normal");
+        let d = view(&r, None).duck.unwrap();
+        assert_eq!((d.ask.en.as_str(), d.yes.en.as_str(), d.what.en.as_str()), ("Close all 2 as read?", "Yes, all read", "2 cards to read are closed"));
     }
 }

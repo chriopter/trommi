@@ -166,6 +166,7 @@ impl App {
         }
         self.step_send(now_ms, out, |site| Codec.request(site, &Route::SignOut), |_| Step::SignOut);
         self.forget_local_device(now_ms, out);
+        self.next_view.account.notice = Some(logged_out());
     }
 
     /// One cleanup path for an explicit sign-out and a removal this device checked itself. Nothing calls it for
@@ -271,7 +272,7 @@ impl App {
                 Ok(_) => {
                     self.sign_out(now_ms, out);
                     out.insert(0, Effect::ForgetShared);
-                    self.next_view.account = AccountView { step: "found".into(), ..Default::default() };
+                    self.next_view.account = AccountView { step: "found".into(), notice: Some(Text::new("account.notice.deleted", "Your account was deleted.")), ..Default::default() };
                 }
                 Err(Failure::Refused { code: Some(code), .. }) if code == "wrong-login" => {
                     self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.wrong_login", "The e-mail or the password is wrong.")), ..Default::default() };
@@ -302,4 +303,14 @@ fn usage_view(u: crate::hub::AccountUsage) -> crate::views::DataView {
                 value: crate::views::words::say(if bytes { "data.bytes" } else { "data.count" },
                     if bytes { format!("{n} bytes") } else { n.clone() }, &[("n", &n)]) }
         }).collect() }
+}
+
+/// The start screen's word after the person's own sign-out.
+pub(super) fn logged_out() -> crate::views::Text {
+    crate::views::Text::new("account.notice.logged_out", "Logged out.")
+}
+
+/// The start screen's word after another device removed this one (a removal this device checked itself).
+pub(super) fn removed() -> crate::views::Text {
+    crate::views::Text::new("account.notice.removed", "This device was removed from your account by another device. Nothing of it is left here.")
 }

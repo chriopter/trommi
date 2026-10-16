@@ -31,9 +31,12 @@ export type Screen =
   /** The page Off your mind, the complete list, with the search's words (empty: all). */
   | { screen: 'off'; query: string }
   | { screen: 'scribble'; board_id: string }
-  /** The gallery of every Artifact the agents published. */
-  | { screen: 'artifacts' }
-  | { screen: 'settings' }
+  /** The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
+   *  videos and files, "pages" the pages. */
+  | { screen: 'artifacts'; kind?: string }
+  /** Settings: its list (`page` ""), or one of its pages ("agents", "desks", "devices", "account", "theme",
+   *  "data", "security"). */
+  | { screen: 'settings'; page?: string }
 
 /** Everything the shell draws. Serialised, this is what the conformance scripts compare. */
 export interface ViewModel {
@@ -59,6 +62,9 @@ export interface ViewModel {
   board?: BoardView
   /** The gallery of Artifacts, while it is in view (`Screen::Artifacts`, and on the Desk, whose foot shows the newest), the newest first. */
   artifacts?: ArtifactView[]
+  /** The gallery's filter and its words, while `Screen::Artifacts` is in view (`artifacts` then holds what the
+   *  filter lets through); none else. */
+  gallery?: GalleryView
   /** Every desk's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
    *  desks); none else. */
   thumbs?: ThumbView[]
@@ -89,6 +95,8 @@ export type ViewPart =
   | { part: 'board'; view: BoardView | null }
   /** The gallery of Artifacts, whole; none when it is left. */
   | { part: 'artifacts'; view: ArtifactView[] | null }
+  /** The gallery's filter and words, whole; none when it is left. */
+  | { part: 'gallery'; view: GalleryView | null }
   /** The desks' boards small, whole; none when no page shows them. */
   | { part: 'thumbs'; view: ThumbView[] | null }
   | { part: 'toasts'; toasts: Toast[] }
@@ -194,6 +202,24 @@ export interface SessionRowView {
   says?: Text
   /** A main with helpers, drawn folded: what the row then shows for all of them together. */
   folded?: FoldView
+  /** A main whose helpers this device shows unfolded under it (`Action::FoldHelpers`); folded is the rest state. */
+  unfolded: boolean
+  /** A helper whose main is folded on this device: it is drawn in its main's row, not as a row of its own. */
+  tucked: boolean
+  /** What was said last in its conversation (his words with "You: "), or the question it put to him last: the
+   *  Chat list's teaser; none while this device holds nothing said there. */
+  last?: LastSaidView
+  /** Its agent said something this device has not shown yet (the chat was not open since): the Chat list's dot. */
+  unread: boolean
+}
+
+/** What a conversation said last, for its row in the Chat list. */
+export interface LastSaidView {
+  /** Its first words as one plain line (200 characters at most): "You: …" for his own. */
+  text: string
+  at_ms: number
+  /** When, as a chat list says it: "14:05" today, "Yesterday", a weekday within the week, "3 Oct", "03.10.25". */
+  when: Text
 }
 
 /** A main and its helpers as one folded row. */
@@ -208,6 +234,14 @@ export interface FoldView {
   says?: Text
   /** The helpers that are stopped: their edges show it while the row is folded. */
   stopped?: string[]
+  /** The helpers drawn small at the end of the folded row: four at most, the stopped ones first. */
+  lie?: string[]
+  /** How many helpers more there are than `lie` draws ("+3"). */
+  more: number
+  /** "1 helper", "3 helpers". */
+  helpers: Text
+  /** One of the helpers has words this device has not shown yet. */
+  unread: boolean
 }
 
 /** Why a session is stopped: the red hand. */
@@ -298,8 +332,51 @@ export interface DeskView {
   waiting: number
   /** What Blitz walks through and the duck closes ("Blitz: 3 open cards"); none when nothing waits. */
   blitz?: Text
+  /** The duck for all beside Blitz: what one press leaves to the agents (a decision) or reads (an info) at once,
+   *  after one question; none when nothing of that waits. */
+  duck?: DuckAllView
   /** The sessions that are cut off, above the questions: one line each, with the step in its terminal. */
   slip?: SlipView[]
+}
+
+/** The duck for all: the cards it clears (`Action::Batch` with way "sweep") and its words (the web's `duckAll`). */
+export interface DuckAllView {
+  /** The cards it clears, in the Desk's order: the open decisions (left to their agents) and what is only to
+   *  read (closed as read); never a request, nothing not read on this device yet. */
+  card_ids: string[]
+  /** The button's name: "I don’t give a duck: for all 3 open cards". */
+  tip: Text
+  /** How many of which, for a screen reader: "2 decisions go to the agents, 1 card to read is closed". */
+  what: Text
+  /** The one question it asks: "Duck all 3?"; only cards to read: "Close all 2 as read?". */
+  ask: Text
+  /** The yes: "Yes, duck them all", "Yes, all read". */
+  yes: Text
+  /** The quiet way out: "Cancel". */
+  no: Text
+}
+
+/** The gallery's filter (`Screen::Artifacts.kind`) and what its page says. */
+export interface GalleryView {
+  /** The filter in force: "", "media" or "pages". */
+  kind: string
+  /** The filter's choices, in order ("All", "Media", "Pages"); none while there is no Artifact at all. */
+  kinds?: GalleryKindView[]
+  /** The line under the page's title. */
+  lead: Text
+  /** What the page says when the filter lets nothing through ("No pages yet."); none when it shows something. */
+  none?: Text
+}
+
+/** One choice of the gallery's filter. */
+export interface GalleryKindView {
+  /** "", "media" or "pages": what `Screen::Artifacts.kind` takes. */
+  key: string
+  label: Text
+  /** How many it lets through. */
+  count: number
+  /** It is the one in force. */
+  on: boolean
 }
 
 /** One of the two stacks docked at the Desk's foot (the owner's pick of 13 October 2026: two small tabs, the
@@ -1313,6 +1390,9 @@ export interface AccountView {
   kit_email?: string
   kit_account?: string
   kit_address?: string
+  /** A word on the start screen about how this device came to be signed out: "Logged out." after the person's
+   *  own sign-out, or that another device removed it. Gone with the next step. */
+  notice?: Text
 }
 
 export interface EmojiView {

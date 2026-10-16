@@ -245,7 +245,7 @@ fn settings_show_every_desks_board_small() {
     sim.send(Event::Action { action: Action::BoardItem { board_id: main.clone(), local_id: "s1".into(), content: json!({ "content_type": "strokes", "strokes": [stroke(&[(0, 0), (8, 8)])] }) } });
     world.stream(&mut sim);
     assert_eq!(sim.view.thumbs, None, "no page shows them");
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Settings, ..Default::default() } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Settings { page: String::new() }, ..Default::default() } });
     for _ in 0..4 {
         world.stream(&mut sim);
         sim.advance(500);

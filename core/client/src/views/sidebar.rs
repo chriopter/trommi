@@ -14,9 +14,131 @@
 //! - a helper has no link of its own (its main's says it for both); what a helper's session has not picked up is
 //!   told once, on its main.
 
-use super::board::{Board, ALL_DESKS, DEFAULT_DESK};
-use super::words::{badge_words, hand_words, link_words, say, unheard_words, LinkSubject};
-use super::{CapView, DeskTab, FoldView, HandView, HeadingView, LinkWords, SessionRowView, SidebarView, Text};
+use super::board::{key_of, Board, ALL_DESKS, DEFAULT_DESK};
+use super::links::plain;
+use super::words::{badge_words, hand_words, link_words, local, next_midnight, say, unheard_words, LinkSubject};
+use super::{CapView, DeskTab, FoldView, HandView, HeadingView, LastSaidView, LinkWords, SessionRowView, SidebarView, Text};
+use crate::model::Model;
+use serde_json::Value;
+use std::collections::HashMap;
+
+/// So many helpers are drawn small at the end of a folded main's row; the rest are counted ("+3").
+pub const LIE_MAX: usize = 4;
+/// The Chat list's teaser is cut to so many characters.
+pub const TEASER_MAX: usize = 200;
+
+/// A chat item's sender is the person (one of his devices).
+fn from_human(m: &Model, item: &crate::model::types::TimelineItem) -> bool {
+    let dev = item.get("sender_device_id").and_then(Value::as_str).unwrap_or("");
+    m.my_device_id.as_deref() == Some(dev) || m.members.get(dev).is_some_and(|x| x.device_role == "human")
+}
+
+/// A chat item that is something said: a message whose words are read here, not a step of a turn's trail.
+fn said(item: &crate::model::types::TimelineItem) -> Option<&Value> {
+    let state = item.get("item_state").and_then(Value::as_str).unwrap_or("");
+    let kind = item.get("content_type").and_then(Value::as_str).unwrap_or("message");
+    if kind != "message" || !matches!(state, "" | "loaded") {
+        return None;
+    }
+    let c = item.get("content")?;
+    (c.get("terminal").and_then(Value::as_str) != Some("work")).then_some(c)
+}
+
+/// The newest envelope number of what a session's agent said in its chat (`key`: the session's key); none while
+/// this device holds nothing it said. The Chat list's dot compares it with `Lens::seen`.
+pub fn newest_word(m: &Model, key: &str) -> Option<u64> {
+    let t = m.timelines.get(&format!("chat:session/{key}"))?;
+    t.items.values().rev().find_map(|i| {
+        let c = said(i)?;
+        let typed = c.get("terminal").and_then(Value::as_str) == Some("input");
+        (!from_human(m, i) && !typed).then(|| i.get("envelope_number").and_then(Value::as_u64)).flatten()
+    })
+}
+
+/// The newest word of every session this device holds a chat of, by session key.
+pub fn newest_words(m: &Model) -> std::collections::BTreeMap<String, u64> {
+    m.timelines
+        .keys()
+        .filter_map(|k| k.strip_prefix("chat:session/"))
+        .filter_map(|key| newest_word(m, key).map(|n| (key.to_string(), n)))
+        .collect()
+}
+
+/// When, as a chat list says it: today the time, yesterday "Yesterday", within the week the weekday, this year the
+/// day and month, else the date (the iPhone's `ChatTeaser.stamp`).
+pub fn chat_when(ts: u64, now: u64, zone: i32) -> Text {
+    const WEEKDAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let (a, n) = (local(ts, zone), local(now, zone));
+    let days = n.days - a.days;
+    if days <= 0 {
+        let time = format!("{:02}:{:02}", a.hour, a.minute);
+        say("chat.when.today", time.clone(), &[("time", &time)])
+    } else if days == 1 {
+        say("chat.when.yesterday", "Yesterday", &[])
+    } else if days < 7 {
+        let weekday = WEEKDAYS[(a.days + 4).rem_euclid(7) as usize];
+        say("chat.when.weekday", weekday, &[("weekday", weekday)])
+    } else if a.year == n.year {
+        let (day, month) = (a.day.to_string(), MONTHS[(a.month - 1) as usize]);
+        say("chat.when.date", format!("{day} {month}"), &[("day", &day), ("month", month)])
+    } else {
+        let date = format!("{:02}.{:02}.{:02}", a.day, a.month, a.year.rem_euclid(100));
+        say("chat.when.long", date.clone(), &[("date", &date)])
+    }
+}
+
+/// The newest question each session put to the person (its time and title), by index of `Board::agents`.
+fn asked_last(b: &Board) -> HashMap<usize, (u64, String)> {
+    let mut out: HashMap<usize, (u64, String)> = HashMap::new();
+    for c in b.model.cards.values() {
+        let Some(&i) = b.by_key.get(key_of(&c.session_id, &c.agent_device_id)) else { continue };
+        let title = c.field("title").as_str().unwrap_or("").trim().to_string();
+        if title.is_empty() || out.get(&i).is_some_and(|(at, _)| *at >= c.created_at) {
+            continue;
+        }
+        out.insert(i, (c.created_at, title));
+    }
+    out
+}
+
+/// What a session's chat said last: his words ("You: …") or the agent's, or the question it put to him last.
+fn last_said(b: &Board, agent: usize, asked: Option<&(u64, String)>) -> Option<LastSaidView> {
+    let m = b.model;
+    let key = &b.agents[agent].row.key;
+    let words = m.timelines.get(&format!("chat:session/{key}")).and_then(|t| {
+        t.items.values().rev().find_map(|i| {
+            let c = said(i)?;
+            let mut text = plain(c.get("text").and_then(Value::as_str).unwrap_or(""), b.assets());
+            if text.is_empty() {
+                let n = c.get("attachments").and_then(Value::as_array).map_or(0, Vec::len);
+                text = match n {
+                    0 => return None,
+                    1 => "Attachment".into(),
+                    n => format!("{n} attachments"),
+                };
+            }
+            let mine = from_human(m, i) || c.get("terminal").and_then(Value::as_str) == Some("input");
+            let at = i.get("sent_at").and_then(Value::as_u64).unwrap_or(0);
+            Some((at, if mine { format!("You: {text}") } else { text }))
+        })
+    });
+    let (at, text) = match (words, asked) {
+        (Some(w), Some(q)) if q.0 > w.0 => q.clone(),
+        (Some(w), _) => w,
+        (None, Some(q)) => q.clone(),
+        (None, None) => return None,
+    };
+    let text: String = text.chars().take(TEASER_MAX).collect();
+    Some(LastSaidView { text, at_ms: at, when: chat_when(at, b.now, b.lens.utc_offset_min) })
+}
+
+/// Its agent said something this device has not shown yet.
+fn unread(b: &Board, agent: usize) -> bool {
+    let Some(seen) = b.lens.seen.as_ref() else { return false };
+    let key = &b.agents[agent].row.key;
+    newest_word(b.model, key).is_some_and(|n| n > seen.get(key).copied().unwrap_or(0))
+}
 
 /// One row before it is laid out: a session with what waits on it.
 pub(super) struct Unit {
@@ -173,6 +295,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
     } else {
         vec![(None, top.clone())]
     };
+    let asked = asked_last(b);
     let mut rows: Vec<SessionRowView> = Vec::new();
     for (desk, mine) in parts {
         let on: Vec<usize> = mine.iter().copied().filter(|u| live(&units[*u])).collect();
@@ -188,14 +311,18 @@ pub fn sidebar(b: &Board) -> SidebarView {
         for (away, list) in [(false, on), (true, off)] {
             for u in list {
                 let group = format!("{}:{}", b.agents[units[u].agent].desk.as_deref().unwrap_or(""), if away { "off" } else { "on" });
-                rows.push(row(b, &units, u, away, group, heading.take()));
+                rows.push(row(b, &units, u, away, group, heading.take(), &asked));
                 for s in units[u].subs.clone() {
-                    rows.push(row(b, &units, s, away, String::new(), None));
+                    rows.push(row(b, &units, s, away, String::new(), None, &asked));
                 }
             }
         }
     }
 
+    // (a teaser's "14:05" turns into "Yesterday" at midnight)
+    if rows.iter().any(|r| r.last.is_some()) {
+        b.wake_at(Some(next_midnight(b.now, b.lens.utc_offset_min)));
+    }
     SidebarView {
         desks: tabs,
         sessions: rows,
@@ -211,7 +338,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
     }
 }
 
-fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, heading: Option<HeadingView>) -> SessionRowView {
+fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, heading: Option<HeadingView>, asked: &HashMap<usize, (u64, String)>) -> SessionRowView {
     let unit = &units[u];
     let a = &b.agents[unit.agent];
     let key = |x: usize| b.agents[units[x].agent].row.key.clone();
@@ -247,6 +374,11 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, heading: 
         let mut order = all.clone();
         order.sort_by_key(|x| x.agent);
         let hand = order.iter().find_map(|x| x.hand.clone());
+        // (the helpers drawn small at the row's end: the stopped ones first, then in the list's order)
+        let mut lie: Vec<usize> = unit.subs.iter().copied().filter(|s| units[*s].hand.is_some()).collect();
+        lie.extend(unit.subs.iter().copied().filter(|s| units[*s].hand.is_none()));
+        let n = unit.subs.len();
+        let ns = n.to_string();
         FoldView {
             says: says(hand.as_ref(), open, online, working),
             open,
@@ -255,8 +387,13 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, heading: 
             working,
             hand,
             stopped: unit.subs.iter().filter(|s| units[**s].hand.is_some()).map(|s| key(*s)).collect(),
+            more: n.saturating_sub(LIE_MAX) as u32,
+            lie: lie.into_iter().take(LIE_MAX).map(key).collect(),
+            helpers: if n == 1 { say("session.helpers.one", "1 helper", &[("n", "1")]) } else { say("session.helpers", format!("{n} helpers"), &[("n", &ns)]) },
+            unread: unit.subs.iter().any(|s| unread(b, units[*s].agent)),
         }
     });
+    let unfolded = !unit.subs.is_empty() && b.lens.unfolded.contains(&a.row.key);
     SessionRowView {
         id: a.row.key.clone(),
         name: say("session.name", a.row.name.as_str(), &[]),
@@ -283,6 +420,10 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, heading: 
         heading,
         group,
         folded,
+        unfolded,
+        tucked: main.is_some_and(|m| !b.lens.unfolded.contains(&b.agents[m.agent].row.key)),
+        last: last_said(b, unit.agent, asked.get(&unit.agent)),
+        unread: unread(b, unit.agent),
     }
 }
 
@@ -497,7 +638,8 @@ mod tests {
         let (v, wake) = view_at(&r, None, NOW + MIN);
         let cap = row(&v, "a").cap.clone().unwrap();
         assert_eq!((cap.kind.as_str(), cap.word.en.as_str(), cap.short.en.as_str(), cap.line), ("unheard", "1 answer waits", "Not heard yet", None));
-        assert_eq!((v.unheard, wake), (1, None));
+        // (nothing turns late any more; the teasers' times change at midnight)
+        assert_eq!((v.unheard, wake), (1, Some(next_midnight(NOW + MIN, 0))));
 
         // (a helper's is told once, on its main: the helper's row stays calm)
         r.answered("helper", "b-help", NOW - 5 * MIN, 60);
@@ -564,5 +706,83 @@ mod tests {
         let v = view(&r, None);
         assert_eq!(v.sessions.iter().map(|x| (x.slug.as_str(), x.name.en.as_str(), x.mark.as_str())).collect::<Vec<_>>(), [("a", "a", "draw:leaf"), ("b", "Renamed", "draw:key"), ("c", "c", "c")]);
         assert_eq!(row(&v, "a").id, dev("a"));
+    }
+
+    #[test]
+    fn a_row_says_what_was_said_last_and_when() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.session("b", None, true);
+        r.session("c", None, true);
+        r.session("d", None, true);
+        r.say("a", None, 10, "a", 30 * MIN, json!({ "text": "## Plan\n- **ship** it\n```\ncode\n```" }));
+        r.say("a", None, 11, "me", 20 * MIN, json!({ "text": "Go ahead" }));
+        // (a turn's trail is no word: the teaser stays on his)
+        r.say("a", None, 12, "a", 10 * MIN, json!({ "terminal": "work", "work": { "turn": "t1", "items": [] } }));
+        r.say("b", None, 20, "b", 2 * 24 * 60 * MIN, json!({ "text": "", "attachments": [{ "attachment_id": "f1" }, { "attachment_id": "f2" }] }));
+        // (a question put to him after the last word is what was said last)
+        r.say("c", None, 30, "c", 24 * 60 * MIN, json!({ "text": "earlier" }));
+        r.card("Ship it?", "c", "decision", "normal");
+        let (v, wake) = view_at(&r, None, NOW);
+        let last = |slug: &str| row(&v, slug).last.as_ref().map(|l| (l.text.as_str(), l.when.en.as_str()));
+        assert_eq!(last("a"), Some(("You: Go ahead", "13:45")));
+        assert_eq!(last("b"), Some(("2 attachments", "Sunday")));
+        assert_eq!(last("c"), Some(("Ship it?", "13:55")));
+        assert_eq!(last("d"), None);
+        assert_eq!(row(&v, "a").last.as_ref().unwrap().at_ms, NOW - 20 * MIN);
+        assert_eq!(wake, Some(next_midnight(NOW, 0)), "at midnight 13:45 becomes Yesterday");
+        assert_eq!(chat_when(NOW - 24 * 60 * MIN, NOW, 0).en, "Yesterday");
+        assert_eq!(chat_when(NOW - 30 * 24 * 60 * MIN, NOW, 0).en, "13 Sep");
+        assert_eq!(chat_when(NOW - 400 * 24 * 60 * MIN, NOW, 0).en, "08.09.25");
+        // (the agent's words only, its newest first)
+        let m = r.model(NOW);
+        assert_eq!((newest_word(&m, &dev("a")), newest_word(&m, &dev("d"))), (Some(10), None));
+    }
+
+    #[test]
+    fn a_dot_marks_words_this_device_has_not_shown() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.session("b-help", Some("a"), true);
+        r.say("a", None, 10, "a", 5 * MIN, json!({ "text": "one" }));
+        r.say("b-help", None, 20, "b-help", 4 * MIN, json!({ "text": "two" }));
+        let m = r.model(NOW);
+        let at = |seen: Option<Vec<(&str, u64)>>| {
+            let lens = Lens { seen: seen.map(|l| l.into_iter().map(|(k, n)| (dev(k), n)).collect()), ..Default::default() };
+            let v = sidebar(&Board::new(&m, &lens, NOW));
+            (row(&v, "a").unread, row(&v, "b-help").unread, row(&v, "a").folded.as_ref().unwrap().unread)
+        };
+        assert_eq!(at(None), (false, false, false), "nothing counts as unread before the marks are read");
+        assert_eq!(at(Some(vec![])), (true, true, true));
+        assert_eq!(at(Some(vec![("a", 10)])), (false, true, true));
+        assert_eq!(at(Some(vec![("a", 10), ("b-help", 20)])), (false, false, false));
+        // (his own words are never unread)
+        let mut r2 = Room::default();
+        r2.session("a", None, true);
+        r2.say("a", None, 10, "me", MIN, json!({ "text": "mine" }));
+        let m2 = r2.model(NOW);
+        let lens = Lens { seen: Some(Default::default()), ..Default::default() };
+        assert!(!row(&sidebar(&Board::new(&m2, &lens, NOW)), "a").unread);
+    }
+
+    #[test]
+    fn a_folded_main_draws_four_helpers_the_stopped_first_and_counts_the_rest() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        for h in ["h1", "h2", "h3", "h4", "h5", "h6"] {
+            r.session(h, Some("a"), true);
+        }
+        r.card("q", "h5", "decision", "critical");
+        let m = r.model(NOW);
+        let v = sidebar(&Board::new(&m, &Lens::default(), NOW));
+        let f = row(&v, "a").folded.clone().unwrap();
+        assert_eq!(f.lie, [dev("h5"), dev("h1"), dev("h2"), dev("h3")]);
+        assert_eq!((f.more, f.helpers.en.as_str()), (2, "6 helpers"));
+        assert!(!row(&v, "a").unfolded && row(&v, "h1").tucked, "folded at rest");
+        // unfolded on this device: the helpers are rows of their own
+        let lens = Lens { unfolded: vec![dev("a")], ..Default::default() };
+        let v = sidebar(&Board::new(&m, &lens, NOW));
+        assert!(row(&v, "a").unfolded && !row(&v, "h1").tucked);
+        assert!(!row(&v, "a").tucked, "a main is never tucked");
     }
 }

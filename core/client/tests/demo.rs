@@ -81,7 +81,7 @@ fn the_demo_shows_its_scribble_boards_folds_goals_and_adds_a_desk_with_undo() {
     assert_eq!(sim.view.thumbs, None, "no page shows the boards small");
 
     // Settings: every desk's board small, counted, without what only drawing it large needs
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Settings, desk: Some("main".into()), ..Default::default() } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Settings { page: String::new() }, desk: Some("main".into()), ..Default::default() } });
     let thumbs = sim.view.thumbs.clone().expect("the boards small");
     assert_eq!(thumbs.iter().map(|t| t.desk_id.as_str()).collect::<Vec<_>>(), ["main", "platform"]);
     assert_eq!(thumbs[0].count as usize, now.shapes.len());
