@@ -143,11 +143,14 @@ struct NotesScreen: View {
       VStack(alignment: .leading, spacing: 10) {
         TextField("", text: $text, prompt: Text("Write a note…").foregroundStyle(Ink.noteInk.opacity(0.45)), axis: .vertical)
           .font(Face.text(18)).foregroundStyle(Ink.noteInk).lineSpacing(4)
-          .lineLimit(4...)
-          .frame(maxWidth: .infinity, alignment: .leading)
           .focused($focused)
-          .padding(.top, 8)
           .accessibilityIdentifier("note-text")
+          // (the paper below the words is the field's too: a vertical field's empty lines take no tap, so its
+          //  height is a frame around it that starts writing)
+          .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
+          .contentShape(Rectangle())
+          .onTapGesture { focused = true }
+          .padding(.top, 8)
         if !attachments.isEmpty {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {

@@ -824,15 +824,15 @@ struct SessionModeSwitch: View {
   }
 }
 
-/** Only the questions of a session: what waits as the Desk's cards, then every question it asked (the web's
- *  `questionList`, from `SessionView.questions`). */
+/** Only the questions of a session: what waits for him as the Desk's cards (`SessionView.waiting`, what the count
+ *  counts), then every question it asked (the web's `questionList`, from `SessionView.questions`). */
 struct SessionQuestions: View {
   @EnvironmentObject var shell: AppShell
   let page: CoreView.SessionView
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       Text(page.openWord?.en ?? "No question waits for you.").font(Face.display(22, .bold)).foregroundStyle(Ink.fg).padding(.top, 10)
-      ForEach(page.talk.compactMap { $0.row }, id: \.id) { row in DeskRow(row: row) }
+      ForEach(page.waiting, id: \.id) { row in DeskRow(row: row) }
       if !page.questions.isEmpty {
         HStack(spacing: 8) {
           Text("ALL QUESTIONS").font(Face.text(12, .semibold)).kerning(0.9).foregroundStyle(Ink.muted)
