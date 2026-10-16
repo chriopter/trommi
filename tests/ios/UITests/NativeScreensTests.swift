@@ -134,6 +134,9 @@ final class NativeScreensTests: XCTestCase {
     let message = app.staticTexts["talk-message"].firstMatch
     XCTAssertTrue(message.waitForExistence(timeout: 15))
     XCTAssertFalse(message.label.isEmpty)
+    // (the top row: round back, the title in its own pill in the middle, round ⋯)
+    XCTAssertTrue(app.buttons["back"].exists && app.buttons["session-title"].exists && app.buttons["session-more"].exists, app.debugDescription)
+    XCTAssertLessThan(abs(app.buttons["session-title"].frame.midX - app.windows.firstMatch.frame.midX), 30, "the title sits in the middle")
     capture("chat")
   }
   /** The chat's "+" offers the Photo Library (lost once in the switch to the app core: it opened Files only), and a
@@ -219,16 +222,33 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertFalse(duck.exists, "nothing left to duck")
     capture("desk-duck-done")
   }
-  func testChatListShowsTeasersAndHelpersAsDots() {
+  func testChatListIsCalm() {
     launch("chats")
     let teaser = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-teaser-")).firstMatch
     XCTAssertTrue(teaser.waitForExistence(timeout: 15), app.debugDescription)
     XCTAssertFalse(teaser.label.trimmingCharacters(in: .whitespaces).isEmpty, "a row says what was said last")
-    // (a session's helpers are dots in its row, no rows of their own)
-    let helpers = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-helpers-")).firstMatch
-    XCTAssertTrue(helpers.exists, "a session's helpers are dots in its row. " + app.debugDescription)
-    XCTAssertTrue(helpers.label.hasSuffix("helpers") || helpers.label.hasSuffix("helper"), helpers.label)
+    // (calm, as a messenger's: a session's helpers are said, not drawn; what is new or waits is one dot; the team
+    // switch is one round button with the teams in its menu)
+    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "chat-session-", "helper")).firstMatch
+    XCTAssertTrue(row.exists, "a row says its helpers. " + app.debugDescription)
+    XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-helpers-")).firstMatch.exists, "no helper dots")
+    let dot = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-unread-")).firstMatch
+    XCTAssertTrue(dot.exists, "a row with open questions shows the one dot. " + app.debugDescription)
+    XCTAssertTrue(app.buttons["place-pill"].exists, "the team switch. " + app.debugDescription)
     capture("chats")
+  }
+  func testChatListAndChatInDark() {
+    app = XCUIApplication()
+    app.launchArguments += ["-trommi-theme", "dark"]
+    app.launchEnvironment["TROMMI_SCREEN"] = "chats"
+    app.launch()
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).firstMatch.waitForExistence(timeout: 15))
+    Thread.sleep(forTimeInterval: 1)
+    capture("chats-dark")
+    app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).firstMatch.tap()
+    XCTAssertTrue(app.buttons["session-title"].waitForExistence(timeout: 10))
+    Thread.sleep(forTimeInterval: 1)
+    capture("chat-dark")
   }
   func testSessionQuestionsOnlyAndItsMenu() {
     launch("chat")

@@ -216,6 +216,8 @@ struct NativeTabPill: View {
  */
 struct PlacePill: View {
   @EnvironmentObject var shell: AppShell
+  /** Round: only the team's drawing in a round glass button (the Chat list); else the drawing with the team's name. */
+  var round = false
   var body: some View {
     let side = shell.view.sidebar
     Menu {
@@ -241,14 +243,21 @@ struct PlacePill: View {
         if !shell.isDemo { Button { shell.enterDemo() } label: { Label("Demo", systemImage: "play.rectangle") } }
       }
     } label: {
-      HStack(spacing: 7) {
+      if round {
         PenMark("sketch:desk", color: Ink.fg).frame(width: 22, height: 22)
           .overlay(alignment: .topLeading) { if side.waiting > 0 { Circle().fill(Ink.yellow).frame(width: 7, height: 7).offset(x: 3, y: 1) } }
-        Text(side.place.en).font(Face.display(17, .bold)).foregroundStyle(Ink.fg).lineLimit(1)
-        Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.muted)
+          .frame(width: 44, height: 44)
+          .glass(Circle(), interactive: true)
+      } else {
+        HStack(spacing: 7) {
+          PenMark("sketch:desk", color: Ink.fg).frame(width: 22, height: 22)
+            .overlay(alignment: .topLeading) { if side.waiting > 0 { Circle().fill(Ink.yellow).frame(width: 7, height: 7).offset(x: 3, y: 1) } }
+          Text(side.place.en).font(Face.display(17, .bold)).foregroundStyle(Ink.fg).lineLimit(1)
+          Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.muted)
+        }
+        .padding(.horizontal, 14).frame(height: 44)
+        .glass(Capsule(), interactive: true)
       }
-      .padding(.horizontal, 14).frame(height: 44)
-      .glass(Capsule(), interactive: true)
     }
     .accessibilityLabel("\(side.place.en), Menu")
     .accessibilityIdentifier("place-pill")
