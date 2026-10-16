@@ -1539,7 +1539,7 @@ impl Conn {
             return format!("A new connector is in place; it is swapped in now, without a restart, and the tools are listed again. (This answer is from the connector that ran so far, version {}.)", self.loaded);
         }
         if disk != self.loaded {
-            return format!("A new connector is in place; it runs once this session's connector is started again. {} Tell the human so.", crate::host::restart_line());
+            return format!("A new connector is in place. This client must restart to reload its tools and instructions. {} Tell the human so.", crate::host::restart_line());
         }
         format!("The connector is current (version {}).", self.loaded)
     }
@@ -2634,7 +2634,7 @@ impl Conn {
     async fn on_update(&self, version: &str, restart: bool) {
         let how = if restart {
             format!(
-                "It needs a real restart: the card says \"{}\"",
+                "Tell the human it needs a real client restart to reload its tools and instructions: the card says \"{}\"",
                 crate::host::restart_line()
             )
         } else {
