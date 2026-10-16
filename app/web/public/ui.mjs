@@ -498,6 +498,26 @@ function hueOf(id) {
 /** The colour of a session's mark. agent: { id, mark }. */
 export const hueFor = agent => drawingHue(drawingOf(agent.mark)) ?? hueOf(agent.id)
 
+// ---- a session's card edge in a folded team's stack (sidebar.mjs teamHead) ----
+function edgeLine(pts) {
+  let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [x, y] = pts[i], [nx, ny] = pts[i + 1]
+    d += ` Q ${x.toFixed(1)} ${y.toFixed(1)} ${((x + nx) / 2).toFixed(1)} ${((y + ny) / 2).toFixed(1)}`
+  }
+  const last = pts.at(-1)
+  return `${d} L ${last[0].toFixed(1)} ${last[1].toFixed(1)}`
+}
+/** { tilt, dx, svg } for the session with this id: its edge drawn with the pen, a little crooked, its own. */
+export function edgeQuirk(id) {
+  return once(`edge:${id}`, () => {
+    const r = seeded(`edge:${id}`), j = s => (r() - .5) * 2 * s
+    const tilt = j(.75).toFixed(2), dx = j(2.2).toFixed(1), sag = j(.55), l = j(.5), rr = j(.5), ya = 12.9 + j(.6), yb = 12.9 + j(.6), xa = 30 + j(8), xb = 68 + j(8), sl = j(1), sr = j(1)
+    const line = (c, k) => edgeLine([[l * k, -2], [-l * k, 6 + sl], [c * .1, 11.3 + l * .6], [c, 12.9 + sag * .4], [xa, ya], [xb, yb], [100 - c, 12.9 - sag * .4], [100 - c * .1, 11.3 + rr * .6], [100 - rr * k, 6 + sr], [100 + rr * k, -2]])
+    return { tilt, dx, svg: `<svg viewBox="0 0 100 15" preserveAspectRatio="none" aria-hidden="true"><path class="e-w" d="${line(4.5, .5)}"/><path class="e-n" d="${line(15, 1.6)}"/></svg>` }
+  })
+}
+
 // ---- small drawings of the Desk ----
 
 

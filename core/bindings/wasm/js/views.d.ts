@@ -136,6 +136,39 @@ export interface SidebarView {
   working: number
   /** How many of his answers the sessions of the team in view have not picked up. */
   unheard: number
+  /** Every team as a stack, in the menu's order (the wide sidebar: all teams at once). Folded, a team shows its
+   *  head with its sessions as card edges under it; open, its sessions' rows. The phone draws `sessions` instead. */
+  stacks?: TeamStackView[]
+}
+
+/** A team in the wide sidebar: its head, and its sessions as a folded stack or as rows. */
+export interface TeamStackView {
+  id: string
+  name: Text
+  /** The team in view (its Desk is the Desk). */
+  selected: boolean
+  /** Folded on this device (`Action::FoldTeam`; unless chosen there: every team but the one in view). A team
+   *  without sessions is never folded. */
+  folded: boolean
+  /** The open questions of the team's sessions. */
+  waiting: number
+  /** One of them knocks. */
+  knocks: boolean
+  /** What the head says to a screen reader and as its hint: "3 agents, 2 questions open". */
+  says: Text
+  /** Folded: a card edge per session (at most [`STACK_EDGES`]), in the rows' order. What knocks is said by the
+   *  head's number, not by an edge. */
+  edges?: StackEdgeView[]
+  /** Its sessions, one row each, in drawing order (connected first): also while folded, for the rail and the keys. */
+  sessions?: SessionRowView[]
+}
+
+/** A session's card edge in a folded team's stack. */
+export interface StackEdgeView {
+  /** The session's key (its row's id). */
+  id: string
+  /** What draws it (its row's mark): the edge takes its colour. */
+  mark: string
 }
 
 export interface TeamTab {

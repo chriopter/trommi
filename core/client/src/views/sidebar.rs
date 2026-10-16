@@ -13,7 +13,7 @@
 use super::board::{key_of, Board, DEFAULT_TEAM};
 use super::links::plain;
 use super::words::{badge_words, hand_words, link_words, local, next_midnight, say, unheard_words, LinkSubject};
-use super::{CapView, HandView, HelperDotsView, LastSaidView, LinkWords, SessionRowView, SidebarView, TeamTab, Text};
+use super::{CapView, HandView, HelperDotsView, LastSaidView, LinkWords, SessionRowView, SidebarView, StackEdgeView, TeamStackView, TeamTab, Text, STACK_EDGES};
 use crate::model::Model;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -185,9 +185,15 @@ fn team_name(name: &str) -> Text {
 
 /// The units of the team in view: one per session that is not archived and stands on it, in the list's order.
 pub(super) fn units_of(b: &Board) -> Vec<Unit> {
+    units_where(b, |a| a.on_team)
+}
+
+/// The units of the sessions that are not archived and pass `on`, in the list's order.
+fn units_where(b: &Board, on: impl Fn(&super::board::Agent) -> bool) -> Vec<Unit> {
     // ---- the units: one per session that stands here ----
-    let here: Vec<usize> = (0..b.agents.len()).filter(|i| !b.agents[*i].row.archived && b.agents[*i].on_team).collect();
-    let fresh_of = |i: usize| b.fresh().filter(move |f| f.agent == Some(i));
+    let here: Vec<usize> = (0..b.agents.len()).filter(|i| !b.agents[*i].row.archived && on(&b.agents[*i])).collect();
+    // (a session's questions are its own wherever its team is: Fresh.agent names it)
+    let fresh_of = |i: usize| b.all_fresh.iter().filter(move |f| f.agent == Some(i));
     let units: Vec<Unit> = here
         .iter()
         .map(|&i| {
@@ -243,23 +249,45 @@ pub fn sidebar(b: &Board) -> SidebarView {
 
     // ---- the rows, in drawing order ----
     let asked = asked_last(b);
-    let mut rows: Vec<SessionRowView> = Vec::new();
-    let on: Vec<usize> = (0..units.len()).filter(|u| units[*u].online).collect();
-    let off: Vec<usize> = (0..units.len()).filter(|u| !units[*u].online).collect();
-    // (the connected rows first, then those that are away, with no line between them; a row that is away says so
-    //  itself, greyed, with its cap)
-    for (away, list) in [(false, on), (true, off)] {
-        for u in list {
-            let group = format!("{}:{}", b.agents[units[u].agent].team.as_deref().unwrap_or(""), if away { "off" } else { "on" });
-            rows.push(row(b, &units, u, away, group, &asked));
-        }
-    }
+    let rows = rows_of(b, &units, &asked);
+
+    // ---- every team as a stack (the wide sidebar) ----
+    let stacks: Vec<TeamStackView> = tabs
+        .iter()
+        .map(|t| {
+            let sessions = if t.selected {
+                rows.clone()
+            } else {
+                // (in a room without teams there is one, and it is in view)
+                let mine = units_where(b, |a| a.team.as_deref() == Some(t.id.as_str()));
+                rows_of(b, &mine, &asked)
+            };
+            let folded = !sessions.is_empty() && b.lens.teams_folded.get(&t.id).copied().unwrap_or(!t.selected);
+            let edges: Vec<StackEdgeView> = if folded {
+                sessions.iter().take(STACK_EDGES).map(|r| StackEdgeView { id: r.id.clone(), mark: r.mark.clone() }).collect()
+            } else {
+                Vec::new()
+            };
+            TeamStackView {
+                id: t.id.clone(),
+                name: t.name.clone(),
+                selected: t.selected,
+                folded,
+                waiting: t.waiting,
+                knocks: t.knocks,
+                says: stack_words(sessions.len(), t.waiting),
+                edges,
+                sessions,
+            }
+        })
+        .collect();
 
     // (a teaser's "14:05" turns into "Yesterday" at midnight)
     if rows.iter().any(|r| r.last.is_some()) {
         b.wake_at(Some(next_midnight(b.now, b.lens.utc_offset_min)));
     }
     SidebarView {
+        stacks,
         teams: tabs,
         sessions: rows,
         badge,
@@ -270,6 +298,35 @@ pub fn sidebar(b: &Board) -> SidebarView {
         stopped: units.iter().filter(|u| u.hand.is_some()).count() as u32,
         working: units.iter().filter(|u| u.working).count() as u32,
         unheard: units.iter().map(|u| u.unheard).sum(),
+    }
+}
+
+/// The rows of these units in drawing order: the connected ones first, then those that are away, with no line
+/// between them (a row that is away says so itself, greyed, with its cap).
+fn rows_of(b: &Board, units: &[Unit], asked: &HashMap<usize, (u64, String)>) -> Vec<SessionRowView> {
+    let mut rows = Vec::new();
+    let on: Vec<usize> = (0..units.len()).filter(|u| units[*u].online).collect();
+    let off: Vec<usize> = (0..units.len()).filter(|u| !units[*u].online).collect();
+    for (away, list) in [(false, on), (true, off)] {
+        for u in list {
+            let group = format!("{}:{}", b.agents[units[u].agent].team.as_deref().unwrap_or(""), if away { "off" } else { "on" });
+            rows.push(row(b, units, u, away, group, asked));
+        }
+    }
+    rows
+}
+
+/// A team's head in words: "3 agents, 2 questions open".
+fn stack_words(agents: usize, waiting: u32) -> Text {
+    let a = agents.to_string();
+    let w = waiting.to_string();
+    match (agents, waiting) {
+        (1, 0) => say("team.stack.one", "1 agent", &[("agents", &a)]),
+        (_, 0) => say("team.stack", format!("{agents} agents"), &[("agents", &a)]),
+        (1, 1) => say("team.stack.one.open.one", "1 agent, 1 question open", &[("agents", &a), ("open", &w)]),
+        (1, _) => say("team.stack.one.open", format!("1 agent, {waiting} questions open"), &[("agents", &a), ("open", &w)]),
+        (_, 1) => say("team.stack.open.one", format!("{agents} agents, 1 question open"), &[("agents", &a), ("open", &w)]),
+        _ => say("team.stack.open", format!("{agents} agents, {waiting} questions open"), &[("agents", &a), ("open", &w)]),
     }
 }
 
@@ -431,6 +488,38 @@ mod tests {
         assert_eq!(view(&r, Some("nowhere")).team, "main");
         // none chosen yet (a fresh sign-in): the first
         assert_eq!(view(&r, None).team, "main");
+    }
+
+    /// The wide sidebar: every team as a stack, the one in view open, the others folded with a card edge per
+    /// session and what waits on them; the device's own choice wins, and an empty team never folds.
+    #[test]
+    fn every_team_is_a_stack_folded_but_the_one_in_view() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        r.teams["empty"] = json!({ "name": "Empty", "created_at": 3 });
+        r.session("a-work", None, true);
+        r.session("b-lab", None, true);
+        r.session("d-lab", None, false);
+        r.on_team("b-lab", "lab");
+        r.on_team("d-lab", "lab");
+        r.card("q1", "d-lab", "decision", "high");
+        r.card("q2", "d-lab", "decision", "normal");
+        let m = r.model(NOW);
+        let mut lens = Lens { team: Some("main".into()), ..Default::default() };
+        let v = sidebar(&Board::new(&m, &lens, NOW));
+        let st = |v: &SidebarView| v.stacks.iter().map(|s| (s.id.clone(), s.selected, s.folded, s.waiting, s.knocks)).collect::<Vec<_>>();
+        assert_eq!(st(&v), [("main".into(), true, false, 0, false), ("lab".into(), false, true, 2, true), ("empty".into(), false, false, 0, false)]);
+        let lab = &v.stacks[1];
+        assert_eq!(lab.sessions.iter().map(|r| r.slug.as_str()).collect::<Vec<_>>(), ["b-lab", "d-lab"]);
+        assert_eq!(lab.edges.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), [lab.sessions[0].id.as_str(), lab.sessions[1].id.as_str()]);
+        assert_eq!((lab.says.en.as_str(), lab.sessions[1].open), ("2 agents, 2 questions open", 2));
+        assert!(v.stacks[0].edges.is_empty() && v.stacks[0].sessions == v.sessions);
+        assert_eq!(v.sessions.len(), 1, "the phone's rows: the team in view alone");
+        // (folded and opened on this device)
+        lens.teams_folded.insert("main".into(), true);
+        lens.teams_folded.insert("lab".into(), false);
+        let v = sidebar(&Board::new(&m, &lens, NOW));
+        assert_eq!(st(&v)[..2], [("main".into(), true, true, 0, false), ("lab".into(), false, false, 2, true)]);
+        assert!(v.stacks[1].edges.is_empty() && v.stacks[0].edges.len() == 1);
     }
 
     #[test]
