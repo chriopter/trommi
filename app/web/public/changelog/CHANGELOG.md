@@ -12,6 +12,16 @@ notes, pick the two to four things people will notice most. A day may have at mo
 (`?mock=1`, never real data), webp, at most 150 KB. The days before the releases had notes are in history.json
 (frozen).
 
+## 15 October 2026
+
+Interrupted sign-ins resume on the same device, keeping your conversations and settings. Connectors recover their
+sessions reliably, and web tabs release pictures and pages when you leave their views.
+
+## 14 October 2026
+
+Starred cards, drafts and desk settings stay put while a device catches up. Session history and Done counts return
+reliably, and new desks and notes offer Undo. Invites show who is joining and their progress until Done.
+
 ## 13 October 2026
 
 Signing in takes under a second, and every helper keeps its name and cards afterwards. Running work lies as a stack
