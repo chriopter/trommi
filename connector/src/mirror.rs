@@ -365,9 +365,10 @@ pub fn codex_input(input: &Value) -> bool {
 
 /// The message the connector queues to wake a Codex session ("[Trommi] 2 new board events for you: …").
 pub fn is_codex_wake(prompt: &str) -> bool {
-    Regex::new(r"^\[Trommi\] \d+ new board events? for you")
-        .unwrap()
-        .is_match(prompt)
+    prompt.starts_with("[Trommi] Back on the board:")
+        || Regex::new(r"^\[Trommi\] \d+ new board events? for you")
+            .unwrap()
+            .is_match(prompt)
 }
 
 /// The line a hook hands its connector, or None when this hook has nothing to say. `kind`: "prompt" or "stop".
