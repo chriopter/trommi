@@ -7,9 +7,6 @@ import { BELL, Controller, PLUS, paintTopStrip, nextThemeMode, setThemeMode, ava
 /** The board's toolkit (register): the controllers send their actions with it. */
 let T = null
 
-/** A session's helpers in its row (HelperDotsView): a dot each, filled while that helper works, and "3 helpers". */
-const helperDots = h => (h ? html`<small class="agent-helpers" title="${h.says.en}">${h.working.map(on => html`<i${on ? raw(' class="is-on"') : ''}></i>`)}<span>${h.says.en}</span></small>` : '')
-
 /** The one quiet sign of a calm row (SessionRowView.signal), for a wide screen. */
 const SIGNAL_SAYS = { stopped: 'Stopped', waiting: 'Waits for you', unread: 'New' }
 const signalDot = r => (r.signal ? html`<i class="agent-signal" data-signal="${r.signal}" role="img" aria-label="${SIGNAL_SAYS[r.signal] ?? ''}"></i>` : '')
@@ -20,7 +17,7 @@ function row(r, base) {
   const cls = ['agent-row', r.main && 'is-main', r.open || r.hand ? 'has-badge' : '', !r.online && 'is-offline'].filter(Boolean).join(' ')
   const order = r.group || ''
   return html`<div class="${cls}" id="agent-${r.id}" data-unit="${r.id}" data-slug="${r.slug}"${order ? html` data-order="${order}"` : ''}>
-<a class="agent-entry" data-nav href="${base}/chat/${encodeURIComponent(r.slug)}" draggable="false"${order ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"') : ''} title="${working ? 'Working' : ''}">${avatar(who, { working })}<span class="agent-text"><strong>${name}</strong>${working ? html`<span class="sr-only"> (working)</span>` : ''}${linkCap(r.cap)}${helperDots(r.helpers)}<span class="agent-teaser">${r.last?.text ?? ''}</span></span>${signalDot(r)}</a>
+<a class="agent-entry" data-nav href="${base}/chat/${encodeURIComponent(r.slug)}" draggable="false"${order ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"') : ''} title="${working ? 'Working' : ''}">${avatar(who, { working })}<span class="agent-text"><strong>${name}</strong>${working ? html`<span class="sr-only"> (working)</span>` : ''}${linkCap(r.cap)}<span class="agent-teaser">${r.last?.text ?? ''}</span></span>${signalDot(r)}</a>
 ${badge(r, base, true)}
 </div>`
 }
@@ -280,11 +277,8 @@ export function sidebarRows(vm, base) {
 // ---- the wide sidebar's two levels (SidebarView.level, TeamStackView) ----
 // First level: every team as a stack, its head (desk drawing, name, what waits) over a fan of its sessions' card
 // edges, a little crooked, each in its session's colour. A click goes into the team: it becomes the team in view and
-// the sidebar shows its chats (Action::SidebarLevel, kept per device and sent to the core again at the start); "‹ Teams"
+// the sidebar shows its chats (Focus.in_team, kept per device by app.mjs); "‹ Teams"
 // goes back out. The bell at the top is home: the Desk, and the sidebar's first level.
-const LEVEL_KEY = 'trommi-sidebar-level'
-const keepLevel = inTeam => { try { localStorage.setItem(LEVEL_KEY, inTeam ? 'team' : 'teams') } catch {} }
-const keptLevel = () => { try { return localStorage.getItem(LEVEL_KEY) === 'team' } catch { return false } }
 function teamStack(st, base) {
   const name = st.name.en, edges = st.edges ?? []
   const cls = ['team-head', 'is-stack', st.selected && 'is-in-view', st.knocks && 'is-knock', !edges.length && 'is-empty'].filter(Boolean).join(' ')
@@ -528,7 +522,7 @@ function menuDoors(vm, base) {
 // on its left (a child of the Desk box's header), the
 // button that folds the sidebar to a rail at its right end, and left of it the theme switch (Light, Dark, System:
 // on a wide window this is its one place; a phone has no foot and keeps the switch in the Trommi menu).
-export const SIDE_FOOT = raw(`<div class="side-foot"><button type="button" class="side-theme" aria-label="Theme: Light, Dark or System (T)" title="Theme (T)">${sketchSvg('moon', 'ico-moon')}${sketchSvg('sun', 'ico-sun')}<i class="ico-auto" aria-hidden="true">A</i></button><button type="button" class="rail-fold" data-controller="rail" data-action="click->rail#toggle pointerover@document->rail#tip focusin@document->rail#tip focusout@document->rail#untip turbo:before-cache@document->rail#untip" title="Fold ( [ )" aria-label="Fold the sidebar to a rail ( [ )" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.3 4.4Q4.8 11.6 5.4 19.7"/><path d="M15.1 6.1Q12.2 9.2 9.1 12.1Q12.1 14.7 14.8 18"/></svg></button></div>`)
+export const SIDE_FOOT = raw(`<div class="side-foot"><button type="button" class="side-theme" aria-label="Theme: Light, Dark or System (T)" title="Theme (T)">${sketchSvg('moon', 'ico-moon')}${sketchSvg('sun', 'ico-sun')}<i class="ico-auto" aria-hidden="true">A</i></button><button type="button" class="rail-fold" data-controller="rail" data-action="click->rail#toggle pointerover@document->rail#tip focusin@document->rail#tip focusout@document->rail#untip turbo:before-cache@document->rail#untip" title="Fold ( [ )" aria-label="Fold the sidebar to a rail ( [ )" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.3 4.4Q4.8 11.6 5.4 19.7"/><path d="M15.1 6.1Q12.2 9.2 9.1 12.1Q12.1 14.7 14.8 18"/></svg></button></div><div class="side-resize" data-controller="side-resize" data-action="pointerdown->side-resize#down keydown->side-resize#key dblclick->side-resize#flip" role="separator" aria-orientation="vertical" aria-label="Sidebar width: drag, or the arrow keys" tabindex="0"></div>`)
 
 /** The team's name on the rail's tag: two short lines at most, whole words (a word too long is cut by its line). */
 function tagLines(name) {
@@ -924,6 +918,47 @@ const KEY = 'trommi-rail'
 const wide = () => matchMedia('(min-width: 861px)').matches
 const folded = () => document.documentElement.dataset.rail === 'folded'
 
+// ---- controller "side-resize" ----
+// The sidebar's width: its right edge is dragged (a thin handle, a line under the pointer), or moved with the arrow
+// keys; under SNAP it becomes the rail, dragged out again the sidebar comes back. Never narrower than the rail: the
+// sidebar stays. Remembered per browser ('trommi-side-w', and the rail as before); the page's head sets both before
+// the first paint (index.html). The key [ still folds and opens the rail (controller "rail").
+const SIDE_W = 'trommi-side-w', SIDE_MIN = 208, SIDE_MAX = 420, SNAP = 150
+const sideNow = () => parseInt(document.documentElement.style.getPropertyValue('--side'), 10) || 272
+controller('side-resize', class extends Controller {
+  down(event) {
+    if (!wide() || event.button > 0) return
+    event.preventDefault()
+    const el = this.element, root = document.documentElement
+    el.setPointerCapture(event.pointerId)
+    root.classList.add('is-resizing')
+    const was = sideNow(), move = e => this.to(e.clientX)
+    // (dragged into the rail: the width before stays the one the rail opens to again)
+    const up = () => { for (const [n, f] of [['pointermove', move], ['pointerup', up], ['pointercancel', up]]) el.removeEventListener(n, f); root.classList.remove('is-resizing'); if (folded()) root.style.setProperty('--side', `${was}px`); this.keep() }
+    for (const [n, f] of [['pointermove', move], ['pointerup', up], ['pointercancel', up]]) el.addEventListener(n, f)
+  }
+  /** The edge at x: the rail under SNAP, else that width within its bounds. */
+  to(x) {
+    if (x < SNAP) return this.rail(true)
+    this.rail(false)
+    document.documentElement.style.setProperty('--side', `${Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, x)))}px`)
+  }
+  rail(on) {
+    if (on === folded()) return
+    if (on) document.documentElement.dataset.rail = 'folded'; else delete document.documentElement.dataset.rail
+    dispatchEvent(new Event('resize'))
+  }
+  keep() { try { folded() ? localStorage.setItem(KEY, 'folded') : localStorage.removeItem(KEY); localStorage.setItem(SIDE_W, String(sideNow())) } catch {} }
+  key(event) {
+    const step = { ArrowLeft: -16, ArrowRight: 16 }[event.key]
+    if (!step || !wide()) return
+    event.preventDefault()
+    this.to(folded() ? (step > 0 ? SIDE_MIN : 0) : sideNow() + step < SIDE_MIN ? 0 : sideNow() + step)
+    this.keep()
+  }
+  flip() { this.rail(!folded()); this.keep() }
+})
+
 controller('rail', class extends Controller {
   connect() { this.paint() }
   disconnect() { this.untip() }
@@ -977,13 +1012,11 @@ controller('rail', class extends Controller {
 // ---- the frame's wiring, once ----
 export function register(t) {
   T = t
-  // (the sidebar's level on this device: the core holds it for its run)
-  if (keptLevel()) t.act({ do: 'sidebar_level', in_team: true })
   // Into a team (its stack), back out ("‹ Teams"), home (the bell: the Desk and the first level).
   document.addEventListener('click', e => {
     const el = e.target instanceof Element ? e.target : null
-    if (el?.closest('#agents [data-team-in]')) { keepLevel(true); t.act({ do: 'sidebar_level', in_team: true }); return }
-    if (el?.closest('#agents [data-team-out], .side-home')) { if (el.closest('[data-team-out]')) e.preventDefault(); keepLevel(false); t.act({ do: 'sidebar_level', in_team: false }) }
+    if (el?.closest('#agents [data-team-in]')) { t.setInTeam(true); return }
+    if (el?.closest('#agents [data-team-out], .side-home')) { if (el.closest('[data-team-out]')) e.preventDefault(); t.setInTeam(false) }
   })
   import('./app.mjs').then(m => { newsLatestDay = m.newsLatestDay })
   t.get(/^\/chats$/, ({ req, res }) => t.page(req, res, { title: 'Chats · Trommi', view: 'chats', main: chatsMain(t.vm(), t.BASE) }))

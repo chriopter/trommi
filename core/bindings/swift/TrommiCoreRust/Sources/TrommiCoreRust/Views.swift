@@ -65,12 +65,16 @@ public enum CoreView {
     /// The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a team's id or "all" for that
     /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
     public var board: String?
+    /// The wide sidebar is inside the team in view (its chats), not at every team as a stack (`SidebarView.level`).
+    /// This device's: the shell keeps it.
+    public var inTeam: Bool
 
-    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil) {
+    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, inTeam: Bool = false) {
       self.screen = screen
       self.visible = visible
       self.team = team
       self.board = board
+      self.inTeam = inTeam
     }
 
     enum CodingKeys: String, CodingKey {
@@ -78,6 +82,7 @@ public enum CoreView {
       case visible = "visible"
       case team = "team"
       case board = "board"
+      case inTeam = "in_team"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -86,6 +91,7 @@ public enum CoreView {
       self.visible = try c.decodeIfPresent(Bool.self, forKey: .visible) ?? true
       self.team = try c.decodeIfPresent(String.self, forKey: .team)
       self.board = try c.decodeIfPresent(String.self, forKey: .board)
+      self.inTeam = try c.decodeIfPresent(Bool.self, forKey: .inTeam) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -94,6 +100,7 @@ public enum CoreView {
       try c.encode(visible, forKey: .visible)
       try c.encodeIfPresent(team, forKey: .team)
       try c.encodeIfPresent(board, forKey: .board)
+      try c.encode(inTeam, forKey: .inTeam)
     }
   }
 
@@ -520,7 +527,7 @@ public enum CoreView {
     /// click on one goes into it (the team in view, `level` "team"). The phone draws `sessions` instead.
     public var stacks: [TeamStackView]
     /// What the wide sidebar shows: "teams" (every team as a stack) or "team" (inside the team in view: its chats,
-    /// `sessions`, and the way back). This device's choice (`Action::SidebarLevel`); "teams" until made.
+    /// `sessions`, and the way back). This device's choice (`Focus.in_team`); "teams" until made.
     public var level: String
 
     public init(teams: [TeamTab] = [], sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], level: String = "") {

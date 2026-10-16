@@ -166,7 +166,7 @@ html:where([data-ui]), :where([data-ui]) body { margin: 0; overflow: hidden; ove
   height: 100vh;
   height: var(--app-h, 100dvh);
   display: grid;
-  grid-template-columns: 272px minmax(0, 1fr);
+  grid-template-columns: var(--side, 272px) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   background: var(--surface);
   color: var(--fg);

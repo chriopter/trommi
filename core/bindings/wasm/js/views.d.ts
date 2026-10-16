@@ -21,6 +21,9 @@ export interface Focus {
   /** The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a team's id or "all" for that
    *  team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`. */
   board?: string
+  /** The wide sidebar is inside the team in view (its chats), not at every team as a stack (`SidebarView.level`).
+   *  This device's: the shell keeps it. */
+  in_team: boolean
 }
 
 export type Screen =
@@ -140,7 +143,7 @@ export interface SidebarView {
    *  click on one goes into it (the team in view, `level` "team"). The phone draws `sessions` instead. */
   stacks?: TeamStackView[]
   /** What the wide sidebar shows: "teams" (every team as a stack) or "team" (inside the team in view: its chats,
-   *  `sessions`, and the way back). This device's choice (`Action::SidebarLevel`); "teams" until made. */
+   *  `sessions`, and the way back). This device's choice (`Focus.in_team`); "teams" until made. */
   level: string
 }
 

@@ -1041,6 +1041,7 @@ impl App {
                     }
                 }
                 self.lens.team = focus.team;
+                self.lens.in_team = focus.in_team;
                 // (the gallery, and the Desk's foot shows its newest)
                 self.lens.artifacts = matches!(focus.screen, Screen::Artifacts { .. } | Screen::Desk);
                 self.lens.gallery = match &focus.screen {
@@ -1149,11 +1150,6 @@ impl App {
                         crate::views::MoreOf::Off { .. } => self.past.more_settled(engine, &mut ctx),
                     }
                 }
-                return;
-            }
-            Action::SidebarLevel { in_team } => {
-                self.lens.in_team = *in_team;
-                self.stale_views = true;
                 return;
             }
             Action::FoldGoals { team_id, folded } => {

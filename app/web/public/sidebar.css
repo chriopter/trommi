@@ -241,7 +241,7 @@ button.agent-badge:active { scale: .95; }
   .topbar .desk-go:hover { background: none; }
   .topbar .desk-go .brand-mark { display: none; }
   .topbar .desk-go > .sketch { flex: none; width: 28px; height: 28px; margin: 0 15px 0 9px; stroke-width: 1.6; }
-  :root[data-rail="folded"] { --side: 76px; }
+  :root[data-rail="folded"] { --side: 76px !important; }
   .topbar .desk-go { border-radius: 14px; }
   /* (the Desk box shows its desk drawing; the bell stands in the menu's button) */
   html body .topbar .desk-go .brand-mark { display: none; }
@@ -1127,3 +1127,20 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
 }
 @media (min-width: 861px) and (prefers-reduced-motion: reduce) { #agents .team-edges i { transition: none; } }
 @media (min-width: 861px) { #agents .team-head.is-in-view .team-go { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fg) 55%, var(--line-strong)); } }
+
+/* ---- the sidebar's edge: dragged to resize it (controller "side-resize"); the fold button is gone, [ still folds ---- */
+.side-resize { display: none; }
+@media (min-width: 861px) {
+  .side-foot .rail-fold { display: none !important; }
+  .side-resize { display: block; position: fixed; z-index: 11; top: 0; bottom: 0; left: calc(var(--side) - 3px); width: 7px; cursor: col-resize; touch-action: none; }
+  .side-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background var(--d-fast); }
+  .side-resize:hover::after, .side-resize:focus-visible::after, :root.is-resizing .side-resize::after { left: 2px; width: 3px; background: var(--line-strong); }
+  .side-resize:focus-visible { outline: none; }
+  :root.is-resizing, :root.is-resizing * { cursor: col-resize !important; user-select: none !important; }
+  .topbar .brand-open { width: calc(var(--side) - 32px) !important; }
+}
+/* (the rail's foot holds the account mark alone now: no fold button under it) */
+@media (min-width: 861px) {
+  :root[data-rail="folded"] { --foot: 60px; }
+  html[data-rail="folded"] .topbar .brand-open { bottom: 8px !important; }
+}

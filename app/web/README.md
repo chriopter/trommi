@@ -196,12 +196,14 @@ instead); files come network first, the cache only offline. On the dev server (`
   All · Media · Pages, compact tiles in a soft frame with Open and, on a page, Share as small icons; 25 tiles made at once,
   the rest as they come near).
 - **Note:** one drawn yellow note at the window's bottom-right; it unfolds there to write, takes attachments, sends to the crown of the team in view; a square sheet on a wide window (`sidebar.mjs` `cornerNote`).
-- **Sidebar:** on a wide screen the Trommi box (its chevron opens the Trommi menu) and every team as a stack
-  (`sidebar.mjs` `teamHead`, the core's `TeamStackView`): its desk drawing, name and what waits; folded, its sessions
-  lie under it as a fan of card edges, open, as rows (each with its helpers as dots under its name, tallies, the red
-  hand). The switch beside a team or its edges fold and open it (`FoldTeam`, kept per device); its name goes to its
-  Desk. A phone keeps the Desk box with the team in view (its chevron opens the menu, the teams at its top) and the
-  sessions of that team. Then "New agent" and
+- **Sidebar:** on a wide screen a calm list with two levels (`sidebar.mjs` `sidebarRows`, the core's `SidebarView.level`,
+  kept per device as `Focus.in_team`). At its top the bell (home: the Desk and the first level), Search and +. The first
+  level is every team as a stack (`TeamStackView`): its desk drawing, name and what waits over a fan of its sessions'
+  card edges; a click goes into the team. Inside: "‹ Teams", the team's name, its Desk and Scribble Board, and its chats
+  as calm rows (drawing, name, one grey line of what was said last, one small sign: `SessionRowView.signal`). The
+  sidebar's right edge is dragged to resize it (`side-resize`, kept per device); dragged narrow it becomes the rail
+  (the key [ folds and opens it too). A phone keeps the Desk box with the team in view (its chevron opens the menu,
+  the teams at its top) and the sessions of that team. Then "New agent" and
   the Trommi menu at its foot. One sidebar, two presentations (`sidebar.css` "A phone"): beside the page on a wide
   screen (foldable to a rail), a drawer up to 860px that a finger from the left edge slides in over the dimmed page (a
   tap beside it, a push back, Esc or a choice closes it). A phone's top line is the pill (the desk's drawing and name;
@@ -232,8 +234,8 @@ Files that are no pictures stay with the note.
 
 **The board's controls.** One row at the foot: undo and redo at its head, a hairline, the tools, the
 picture clip, and beside it the cut-out drawing. The zoom (out, 100 %, in, fit) is a small capsule at the top right,
-beside the turned corner. Light or dark is not the board's: on a wide window the switch stands at the sidebar's foot
-beside the fold button (`sidebar.mjs` `SIDE_FOOT`, `.side-theme`; above it on the rail); a phone, which has no sidebar foot, keeps it in the menu. The board has no "?" button: `?` opens its shortcuts.
+beside the turned corner. Light or dark is not the board's: the switch stands in the Trommi menu (on a wide window it
+opens from the sidebar's foot, Settings). The board has no "?" button: `?` opens its shortcuts.
 
 ## The account
 

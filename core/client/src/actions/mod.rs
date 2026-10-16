@@ -204,11 +204,6 @@ pub enum Action {
         team_id: String,
         folded: bool,
     },
-    /// The wide sidebar goes into the team in view (its chats) or back out to every team as a stack
-    /// (`SidebarView.level`). This device's alone: the shell keeps it and sends it again after a start.
-    SidebarLevel {
-        in_team: bool,
-    },
 
     // ---- notes, scribble, files ----
     /// A sealed native share inbox item. Recipient selection and upload completion belong to the core.

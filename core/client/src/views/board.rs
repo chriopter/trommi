@@ -55,7 +55,7 @@ pub struct Lens {
     /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
     pub goals_folded: Vec<String>,
     /// The wide sidebar shows the team in view from inside (its chats) rather than every team as a stack
-    /// (`Action::SidebarLevel`; web localStorage `trommi-sidebar-level`).
+    /// (`Focus.in_team`; web localStorage `trommi-sidebar-level`).
     pub in_team: bool,
     /// What this device has shown of each session's words: the newest envelope number of its agent's words when
     /// its chat was last in view, by session key (the cache's `seen`). None until it is read: nothing counts as

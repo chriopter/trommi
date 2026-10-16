@@ -93,6 +93,10 @@ pub struct Focus {
     /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
+    /// The wide sidebar is inside the team in view (its chats), not at every team as a stack (`SidebarView.level`).
+    /// This device's: the shell keeps it.
+    #[serde(default)]
+    pub in_team: bool,
 }
 
 fn yes() -> bool {
@@ -317,7 +321,7 @@ pub struct SidebarView {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stacks: Vec<TeamStackView>,
     /// What the wide sidebar shows: "teams" (every team as a stack) or "team" (inside the team in view: its chats,
-    /// `sessions`, and the way back). This device's choice (`Action::SidebarLevel`); "teams" until made.
+    /// `sessions`, and the way back). This device's choice (`Focus.in_team`); "teams" until made.
     #[serde(default)]
     pub level: String,
 }

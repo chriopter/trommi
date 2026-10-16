@@ -1,4 +1,4 @@
-// side-foot.browser.mjs: on a wide screen the sidebar's foot (theme and fold buttons, .side-foot) never stands on a
+// side-foot.browser.mjs: on a wide screen the sidebar's foot (its Settings button, .side-foot) never stands on a
 // session row, the last one included, scrolled or not; and a row of a new session that asks to join shows its host
 // and who vouched for it whole, its Allow and Deny inside the sidebar (the owner's board, 2026-10-14: Deny under the
 // fold button, "wants to …" cut). Demo room (?mock=1) with a join row put last, a window too low for every row,
@@ -22,7 +22,7 @@ const PROBE = `(async () => {
   row.innerHTML = String(joinRow({ nonce: 'ab12', name: 'valiido', folder: '~/git/valiido', host: 'christophers-macbook-pro.local', kind: 'Claude', vouched_by: 'valiido.com Article', joining: false, says: { en: 'New Claude session in ~/git/valiido on christophers-macbook-pro.local, vouched for by valiido.com Article' } }))
   list.append(row.firstElementChild)
   const rect = el => el.getBoundingClientRect()
-  const buttons = [...document.querySelectorAll('.side-foot button')].filter(b => getComputedStyle(b).display !== 'none').map(rect)
+  const buttons = [...document.querySelectorAll('.side-foot button, .topbar .brand-open')].filter(b => getComputedStyle(b).display !== 'none').map(rect)
   const rows = () => [...list.querySelectorAll(':scope > .agent-row, :scope > .agent-invite')].map(rect)
   const hits = () => { const out = []; for (const r of rows()) for (const b of buttons) { const vis = Math.min(r.bottom, rect(list).bottom) - Math.max(r.top, rect(list).top); if (vis > 0 && r.left < b.right && b.left < r.right && Math.max(r.top, rect(list).top) < b.bottom && b.top < Math.min(r.bottom, rect(list).bottom)) out.push([Math.round(r.top), Math.round(b.top)]) } return out }
   // rows behind the foot's strip are hidden by it: a hit counts only where a row shows at the button's place
@@ -54,6 +54,8 @@ const failed = []
 try {
   const page = await browser.page()
   await page.send('Runtime.enable'); await page.send('Page.enable')
+  // (the chats are in the list once the sidebar is inside a team: SidebarView.level)
+  await page.send('Page.addScriptToEvaluateOnNewDocument', { source: "try{localStorage.setItem('trommi-sidebar-level','team')}catch(e){}" })
   const ev = async x => { const r = await page.send('Runtime.evaluate', { expression: x, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text); return r.result.value }
   for (const rail of ['open', 'folded']) {
     await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 420, deviceScaleFactor: 1, mobile: false })
