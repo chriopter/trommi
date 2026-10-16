@@ -249,32 +249,32 @@ async fn the_largest_attachment_and_asset_go_through() {
     mcp.close().await;
 }
 
-/// An agent opens helper sessions up to the limit (100 live); the next one is refused in words that say what to
-/// do (close one), and after close_session a new one opens.
-/// Up to the limit (2-3 minutes) only with TROMMI_TESTS_FULL=1, as the nightly run (.github/workflows/nightly.yml)
-/// has it; otherwise (pull requests, main, a local run) ten helpers, one closed and one opened in its place. The
-/// limit itself is checked on every run by the core (core_groups_helper,
-/// a_main_session_has_at_most_a_hundred_live_helper_sessions).
+/// An agent with 100 helpers: each gets its "Working on" card and status line in the agent's own session, named,
+/// and no group is founded for any of them.
+/// All 100 (1-2 minutes) only with TROMMI_TESTS_FULL=1, as the nightly run (.github/workflows/nightly.yml) has it;
+/// otherwise (pull requests, main, a local run) ten.
 #[tokio::test(flavor = "multi_thread")]
-async fn helper_sessions_up_to_the_limit_then_close_one_to_open_another() {
+async fn a_hundred_helpers_live_in_one_session() {
     let full = std::env::var_os("TROMMI_TESTS_FULL").is_some_and(|v| v == "1");
+    let n = if full { 100 } else { 10 };
     let hub = HubProc::start().await;
-    let (_human, seat) = joined_on(&hub).await;
+    let (mut human, seat) = joined_on(&hub).await;
+    human.sync().await;
+    let groups = human.groups().await.len();
     let mut mcp = seat.serve().await;
     mcp.ready().await;
-    for n in 0..if full { 100 } else { 10 } {
-        let (said, failed) = mcp.call("open_session", json!({ "name": format!("H{n}") })).await;
-        assert!(!failed, "helper {n}: {said}");
+    for i in 0..n {
+        let said = mcp
+            .ok("start_task", json!({ "helper": format!("H{i}"), "title": format!("Task {i}"), "id": format!("h{i}") }))
+            .await;
+        assert!(said.contains(&format!("status \"h{i}\" is working")), "helper {i}: {said}");
     }
-    if full {
-        let (said, failed) = mcp.call("open_session", json!({ "name": "One more" })).await;
-        eprintln!("101st: {said}");
-        assert!(failed, "{said}");
-        assert!(said.contains("close_session"), "{said}");
-    }
-    mcp.ok("close_session", json!({ "name": "H0" })).await;
-    let said = mcp.ok("open_session", json!({ "name": "One more" })).await;
-    assert!(said.starts_with("child session opened"), "{said}");
+    let listed: serde_json::Value =
+        serde_json::from_str(&mcp.ok("list_cards", json!({ "helper": "H7" })).await).expect("JSON");
+    assert_eq!(listed.as_array().map(Vec::len), Some(1), "{listed}");
+    human.sync().await;
+    assert_eq!(human.groups().await.len(), groups, "no group for a helper");
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
     mcp.close().await;
 }
 

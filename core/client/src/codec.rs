@@ -96,12 +96,13 @@ impl BodyKind {
         match self {
             Self::Message => &[
                 "content_type", "text", "details", "html", "attachments", "explain", "hand_back", "present_card",
-                "copied_cards", "marks", "terminal", "note", "published_object_id",
+                "copied_cards", "marks", "terminal", "note", "published_object_id", "helper",
             ],
             Self::Card => &[
                 "object_version", "previous_version_hash", "card_type", "title", "teaser", "body", "options",
                 "sections", "html", "allows_multiple", "recommended", "urgency_reason", "attachments", "change_note",
                 "close_summary", "withdraw_reason", "merged_into_object_id", "merged_from_object_ids", "working",
+                "helper",
             ],
             Self::Artifact => &[
                 "object_version", "previous_version_hash", "artifact_type", "title", "note", "attachments",

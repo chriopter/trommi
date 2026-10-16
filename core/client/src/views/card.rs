@@ -807,7 +807,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         number,
         nr,
         status: status.into(),
-        from: from_of(b, agent),
+        from: from_of(b, agent, Some(c)),
         knock: knock.flatten(),
         work: agent.and_then(|i| work_of(b, c, i, heard_up_to)),
         asked_ms: c.history.last().filter(|_| c.history.len() > 1).map(|h| h.sent_at).unwrap_or(c.created_at),
@@ -885,7 +885,7 @@ fn request(b: &Board, p: &PermissionRequest, number: u32, nr: Text, walk: &[Stri
         number,
         nr,
         status: if p.catching_up { "catching" } else if open { "open" } else { "done" }.into(),
-        from: from_of(b, agent),
+        from: from_of(b, agent, None),
         knock: live.then(|| say("row.knock.permission", "Knock! Permission", &[])),
         asked_ms: p.sent_at,
         place: place_of(&p.object_id, walk),
@@ -1158,14 +1158,16 @@ mod tests {
         r.stars = json!({ "q2": { "at": 5 } });
         let v = view(&r, "q2");
         assert_eq!((v.number, v.nr.en.as_str(), v.status.as_str(), v.kind.as_str(), v.urgency, en(&v.knock)), (2, "Nr. 2", "open", "decision", 3, "Knock! Blocking"));
-        assert_eq!(v.from.as_ref().map(|f| f.path.clone()), Some(vec!["Work".to_string(), "a".into(), "b".into()]));
+        // (b is a helper session of before: its card stands in its main's path, the helper named beside it)
+        assert_eq!(v.from.as_ref().map(|f| f.path.clone()), Some(vec!["Work".to_string(), "a".into()]));
+        assert_eq!(v.from.as_ref().and_then(|f| f.helper.as_ref()).map(|t| t.en.as_str()), Some("Helper b"));
         assert_eq!(notes(&v), ["replaces 2 questions", "revised", "2 messages below"]);
         // (what blocks stands first on the Desk: its place among what waits, with its neighbours)
         let p = v.place.as_ref().unwrap();
         assert_eq!((p.at, p.of, p.says.en.as_str(), p.prev.as_deref(), p.next.as_deref()), (1, 3, "1 of 3", None, Some("p1")));
         assert_eq!((v.history, v.asked_ms), (1, NOW - 4 * MIN));
         assert_eq!(v.versions.iter().map(|x| (x.n, x.title.as_str(), x.note.as_str(), x.at_ms)).collect::<Vec<_>>(), [(1, "First try", "Shorter.", NOW - 9 * MIN)]);
-        assert_eq!((v.starred, v.star_says.en.as_str(), v.ask.en.as_str()), (true, "Starred", "Ask b something, or say what is missing…"));
+        assert_eq!((v.starred, v.star_says.en.as_str(), v.ask.en.as_str()), (true, "Starred", "Ask a something, or say what is missing…"));
         assert_eq!(v.merged_from.iter().map(|x| (x.id.as_str(), x.number)).collect::<Vec<_>>(), [("q1", 1), ("gone", 0)]);
         // the comments: what happened to it and what was said, in the hub's order
         assert_eq!(v.talk.iter().map(|x| (x.id.as_str(), x.kind.as_str())).collect::<Vec<_>>(), [("v101a", "event"), ("v120r", "event"), ("e130", "user"), ("e131", "agent")]);

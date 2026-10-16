@@ -38,9 +38,10 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   make nor swap that Request. Each activation gets a separate agent device and session, with no access to other
   sessions' history. Any program running as that OS user can use the approved computer key to request sessions;
   approval is for that computer user, across program accounts and config folders. Removing the computer removes
-  its admitted sessions and helpers too; a session taken over by another device does not inherit its approval
-  or removal relationship. Missing registers or the hub's online/device list never prove a computer's removal:
-  automatic cleanup requires verified room membership. Existing ordinary agents gain no computer authority.
+  its admitted sessions too, with their helpers' cards and any helper session of before; a session taken over by
+  another device does not inherit its approval or removal relationship. Missing registers or the hub's
+  online/device list never prove a computer's removal: automatic cleanup requires verified room membership.
+  Existing ordinary agents gain no computer authority.
 - Signing out erases the device key, private cache and extension keys immediately. A public self-retirement
   notice, signed by that exact device for that room, stays durably queued without any bearer or content key
   until the hub acknowledges it. The next online human app checks the signature and verified human membership

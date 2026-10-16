@@ -112,6 +112,7 @@ pub const CARD_CONTENT_FIELDS: &[&str] = &[
     "merged_into_object_id",
     "merged_from_object_ids",
     "working",
+    "helper",
 ];
 /// One content field of a card: a plain value as it is; a list or object (options, sections, attachments) as its JSON
 /// text, read only by the apps (as `Value`s they would take several times their text, a thousand cards' worth).
@@ -178,7 +179,7 @@ impl<'de> Deserialize<'de> for Slot {
 /// A card's content fields, one slot per name of `CARD_CONTENT_FIELDS` (the newest version's body; a field it lacks
 /// holds its default). Slots, not a map: a thousand cards would keep a thousand maps of the same seventeen names.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct CardFields([Slot; 17]);
+pub struct CardFields([Slot; 18]);
 
 impl CardFields {
     fn slot(name: &str) -> Option<usize> {
@@ -292,6 +293,7 @@ struct CardIn {
     merged_into_object_id: Option<Slot>,
     merged_from_object_ids: Option<Slot>,
     working: Option<Slot>,
+    helper: Option<Slot>,
     object_version: i64,
     version_hash: Option<String>,
     envelope_number: u64,
@@ -333,6 +335,7 @@ impl From<CardIn> for Card {
             c.merged_into_object_id,
             c.merged_from_object_ids,
             c.working,
+            c.helper,
         ];
         Card {
             object_id: c.object_id,
@@ -596,6 +599,9 @@ pub struct StatusLine {
     pub state: Value,
     pub detail: Value,
     pub object_id: Value,
+    /// The helper (an agent's subagent) whose line it is (`helpers.rs`); none for the agent's own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper: Option<String>,
     pub envelope_number: u64,
     pub updated_at: u64,
 }

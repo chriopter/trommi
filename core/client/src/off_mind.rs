@@ -114,9 +114,7 @@ pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, n
             by_session.insert(s, r);
         }
         if let Some(d) = r.agent_device_id.as_deref() {
-            if r.parent.is_none() || !by_device.contains_key(d) {
-                by_device.insert(d, r);
-            }
+            by_device.insert(d, r);
         }
     }
     let row_of = |c: &Card| -> Option<&SessionRow> {

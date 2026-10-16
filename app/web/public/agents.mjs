@@ -53,11 +53,10 @@ export function register(t) {
   const backOf = path => (typeof path === 'string' && /^\/(?!\/)/.test(path) && !/[\\\r\n]/.test(path) ? path : '')
   const undo = (id, fields) => ({ action: `${sessionForms({ id }, BASE)}/edit`, fields })
 
-  /** label, icon, team, parent, group, archived: whichever the form names, each its Action. Returns the stream to answer with. */
+  /** label, icon, team, group, archived: whichever the form names, each its Action. Returns the stream to answer with. */
   function edit(id, form) {
     if (form.has('label')) t.act({ do: 'rename_session', session_id: id, name: String(form.get('label')).trim() })
     if (form.has('icon')) t.act({ do: 'session_icon', session_id: id, icon: String(form.get('icon')) || null })
-    if (form.has('parent')) t.act({ do: 'session_parent', session_id: id, parent: String(form.get('parent')) || null })
     if (form.has('group')) t.act({ do: 'session_group', session_id: id, group: String(form.get('group')) || null })
     if (form.has('team')) {
       const was = sessionOf(id)?.team_id, to = String(form.get('team'))

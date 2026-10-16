@@ -324,6 +324,9 @@ pub fn items_of(b: &Board, t: &Timeline, card: Option<&Card>, heard_up_to: Optio
         row.scribble = from_human && list.is_some_and(|l| l.len() == 1 && str_of(&l[0], "file_name") == SCRIBBLE_FILE);
         row.details = titled(str_of(c, "details"), b.assets());
         row.html = str_of(c, "html").to_string();
+        if !from_human {
+            row.helper = crate::helpers::name_of(c.get("helper"));
+        }
         let published = str_of(c, "published_object_id");
         if !published.is_empty() {
             // (a revoked Artifact leaves the conversation)

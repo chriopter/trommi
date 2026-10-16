@@ -1,5 +1,5 @@
 //! The drawings a session can wear as its symbol, from connector/drawings.json: the one list the agent's tool
-//! descriptions, the check of a given icon and the default by session name all come from. The apps hold the same
+//! descriptions and the check of a given icon come from. The apps hold the same
 //! names in the same order (app/web/public/ui.mjs, app/ios/.../Pen.swift); a test keeps the three equal.
 use serde_json::Value;
 use std::sync::OnceLock;
@@ -55,29 +55,6 @@ pub fn mark_of(given: &str) -> Result<String, String> {
     ))
 }
 
-/// The drawing that fits a session's name ("CI" -> branch, "Web" -> browser), or None when nothing fits; the
-/// board then keeps its seeded scribble. Matches the whole name or any word of it, ignoring case.
-pub fn default_for(session_name: &str) -> Option<String> {
-    let lower = session_name.trim().to_lowercase();
-    let words: Vec<&str> = lower
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .collect();
-    for d in all() {
-        if d.name == lower || d.topics.contains(&lower) {
-            return Some(format!("draw:{}", d.name));
-        }
-    }
-    for w in words {
-        for d in all() {
-            if d.name == w || d.topics.iter().any(|t| t == w) {
-                return Some(format!("draw:{}", d.name));
-            }
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,17 +83,6 @@ mod tests {
         assert_eq!(mark_of(" Draw:Rocket ").unwrap(), "draw:rocket");
         let e = mark_of("spaceship").unwrap_err();
         assert!(e.contains("spaceship") && e.contains("rocket (release)") && e.contains("burst (spark)"), "{e}");
-    }
-
-    #[test]
-    fn the_default_follows_the_session_name() {
-        for (n, d) in [("CI", "branch"), ("Web", "browser"), ("iOS", "phone"), ("Design", "brush"), ("Docs", "book"),
-            ("Video", "mic"), ("Mac", "anchor"), ("Linux", "terminal"), ("Core", "lock"), ("Connector", "arrow"),
-            ("Release", "rocket"), ("web-tests", "browser"), ("Trommi", "bell")] {
-            assert_eq!(default_for(n).as_deref(), Some(format!("draw:{d}").as_str()), "{n}");
-        }
-        assert_eq!(default_for("Zebra"), None);
-        assert_eq!(default_for(""), None);
     }
 
     /// The web and the iOS app hold the same drawings, in the same order, as drawings.json.

@@ -171,7 +171,8 @@ fn asked_entry(e: &OutboxEntry) -> Value {
 
 #[test]
 fn the_codec_and_the_real_hub_agree() {
-    let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000")]));
+    // (helper sessions of before, as a hub still serves them)
+    let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000"), ("HUB_HELPER_SESSIONS", "1")]));
     let mut rec = Recorder {
         port: w.hub.port,
         url: w.hub.url.clone(),
@@ -437,7 +438,8 @@ fn signing_in_and_joining_through_the_codec() {
     use trommi_client_core::hub::{GroupRowKind, ObjectRoute, Role, WishKind};
     use trommi_core::ids::{DeviceId, ObjectId};
 
-    let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000")]));
+    // (helper sessions of before, as a hub still serves them)
+    let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000"), ("HUB_HELPER_SESSIONS", "1")]));
     let mut rec = Recorder {
         port: w.hub.port,
         url: w.hub.url.clone(),
@@ -658,7 +660,8 @@ fn the_desk_files_and_the_rest_through_the_codec() {
     use trommi_client_core::hub::{ByteRange, DeskOnly, ObjectRoute, Role, Timeline};
     use trommi_core::ids::{BoardId, DeviceId, FileId, Hash32, ObjectId, SessionId, ShareId};
 
-    let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000")]));
+    // (helper sessions of before, as a hub still serves them)
+    let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000"), ("HUB_HELPER_SESSIONS", "1")]));
     let mut rec = Recorder {
         port: w.hub.port,
         url: w.hub.url.clone(),

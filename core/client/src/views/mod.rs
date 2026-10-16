@@ -332,15 +332,12 @@ pub struct SessionRowView {
     /// The session's key in the model (`Screen::Session`, the actions' `session_id`, `ViewModel.sessions`).
     pub id: String,
     pub name: Text,
-    /// "live", "oncall", "asleep", "cut", "gone" (core/client/src/status.rs); "" for a helper under its main (it
-    /// runs inside its main's process: the main's link says it for both).
+    /// "live", "oncall", "asleep", "cut", "gone" (core/client/src/status.rs).
     pub link: String,
     /// The red hand.
     pub blocked: bool,
-    /// How many of his answers it has not picked up for two minutes; a main counts its helpers' too.
+    /// How many of his answers it has not picked up for two minutes.
     pub unheard: u32,
-    /// 0 for a row of its own, 1 for a helper under its main.
-    pub depth: u32,
     /// Its short id on the board: its address (`/chat/<slug>`).
     #[serde(default)]
     pub slug: String,
@@ -355,18 +352,15 @@ pub struct SessionRowView {
     /// Connected and at work (a status line of it shows "working").
     #[serde(default)]
     pub working: bool,
-    /// A main session: one that says so, or one with helpers.
+    /// A main session: one that says so.
     #[serde(default)]
     pub main: bool,
     /// The crowned session of its team (the one a note goes to).
     #[serde(default)]
     pub crowned: bool,
-    /// Its main's id, for a helper drawn under it.
+    /// Its helpers (its agent's subagents), small under its name: "3 helpers" with a dot each; none without.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent: Option<String>,
-    /// Its helpers' ids, in drawing order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub subs: Vec<String>,
+    pub helpers: Option<HelperDotsView>,
     /// Its open questions: what waits for the person on the Desk (no infos, nothing that is with its agent).
     #[serde(default)]
     pub open: u32,
@@ -379,27 +373,15 @@ pub struct SessionRowView {
     /// The small line under its name: its link when it does not hear at once, else the answers it has not picked up.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cap: Option<CapView>,
-    /// A helper whose main is not listening, cut off or gone: drawn hushed.
-    #[serde(default)]
-    pub hushed: bool,
-    /// Not connected, and none of its helpers is: it stands under "Disconnected".
+    /// Not connected: it stands under "Disconnected".
     #[serde(default)]
     pub away: bool,
-    /// The part of the list a main row may be dragged within (its team, connected or not); "" for a helper.
+    /// The part of the list a row may be dragged within (its team, connected or not).
     #[serde(default)]
     pub group: String,
     /// What its badge says to a screen reader ("Working, 2 questions open"); none without a badge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub says: Option<Text>,
-    /// A main with helpers, drawn folded: what the row then shows for all of them together.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub folded: Option<FoldView>,
-    /// A main whose helpers this device shows unfolded under it (`Action::FoldHelpers`); folded is the rest state.
-    #[serde(default)]
-    pub unfolded: bool,
-    /// A helper whose main is folded on this device: it is drawn in its main's row, not as a row of its own.
-    #[serde(default)]
-    pub tucked: bool,
     /// What was said last in its conversation (his words with "You: "), or the question it put to him last: the
     /// Chat list's teaser; none while this device holds nothing said there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -419,34 +401,32 @@ pub struct LastSaidView {
     pub when: Text,
 }
 
-/// A main and its helpers as one folded row.
+/// A session's helpers in its sidebar row: how many, and a dot each.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FoldView {
-    pub open: u32,
-    pub knocks: bool,
-    /// One of them is connected.
-    pub online: bool,
-    pub working: bool,
-    /// The first of them that is stopped.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hand: Option<HandView>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub says: Option<Text>,
-    /// The helpers that are stopped: their edges show it while the row is folded.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub stopped: Vec<String>,
-    /// The helpers drawn small at the end of the folded row: four at most, the stopped ones first.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub lie: Vec<String>,
-    /// How many helpers more there are than `lie` draws ("+3").
-    #[serde(default)]
-    pub more: u32,
+pub struct HelperDotsView {
     /// "1 helper", "3 helpers".
-    #[serde(default)]
-    pub helpers: Text,
-    /// One of the helpers has words this device has not shown yet.
-    #[serde(default)]
-    pub unread: bool,
+    pub says: Text,
+    /// One dot per helper, in order: filled while that helper works.
+    pub working: Vec<bool>,
+}
+
+/// A session's helpers on its page: a short list, name and state, no way into a chat of their own.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HelperListView {
+    /// "3 helpers".
+    pub head: Text,
+    /// "1 working · their cards come with this session".
+    pub sub: Text,
+    pub rows: Vec<HelperRowView>,
+}
+
+/// One helper of a session's page.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HelperRowView {
+    pub name: String,
+    pub working: bool,
+    /// "Working · 1 open question", "1 open question", "Done".
+    pub says: Text,
 }
 
 /// Why a session is stopped: the red hand.
@@ -829,9 +809,12 @@ pub struct FromView {
     pub name: String,
     /// What draws the session (`SessionRowView::mark`).
     pub mark: String,
-    /// Where it stands, for the line above a card's title ("Team › Main › Helper"): its team while there are two
-    /// or more, its main for a helper, itself.
+    /// Where it stands, for the line above a card's title ("Team › Session"): its team while there are two or
+    /// more, itself.
     pub path: Vec<String>,
+    /// The helper (its agent's subagent) it comes from, for a chip beside the path: "Helper Icons".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helper: Option<Text>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -925,7 +908,7 @@ pub struct SessionView {
     pub crowned: bool,
     #[serde(default)]
     pub online: bool,
-    /// Where it stands: its team (while there are two or more), its main (for a helper), itself.
+    /// Where it stands: its team (while there are two or more), itself.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<String>,
     /// The model it runs on, as the heading says it ("Opus 5.5"); "" when it named none.
@@ -971,13 +954,13 @@ pub struct SessionView {
     /// An empty conversation: the card of the agent that joined, and three ways to start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<EmptyTalkView>,
-    /// Its agent's account and how much of it is used (the heading's rings: the week and the 5-hour window); a
-    /// helper without one of its own shows its main's. None without a plan or an e-mail.
+    /// Its agent's account and how much of it is used (the heading's rings: the week and the 5-hour window). None
+    /// without a plan or an e-mail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<UsageView>,
-    /// The main session it is a helper of (its key); none for a main.
+    /// Its helpers (its agent's subagents), above the status lines; none without.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent: Option<String>,
+    pub helpers: Option<HelperListView>,
     /// In the Archive: the More menu offers "Back from the Archive" (`ArchiveSession` with `on: false`).
     #[serde(default)]
     pub archived: bool,
@@ -1085,6 +1068,9 @@ pub struct TalkRow {
     /// On a card's page, his What?? that has no answer yet: "Waiting for the explanation."
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waits: Option<Text>,
+    /// The helper (its agent's subagent) that wrote it, beside the agent's name; none for the agent's own words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helper: Option<String>,
 }
 
 /// A card as a row of a conversation names it.
@@ -1184,6 +1170,9 @@ pub struct WorkLineView {
 pub struct StatusLineView {
     pub id: String,
     pub label: String,
+    /// The helper (its agent's subagent) whose line it is, drawn before its label; none for the agent's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helper: Option<String>,
     pub detail: String,
     /// "working", "decision", "later", "done" (for ten minutes), "stale" (greyed and still, for a day).
     pub state: String,

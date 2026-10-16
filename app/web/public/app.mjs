@@ -399,7 +399,7 @@ function bodyParts({ view, vm, base = '', main, sidebar = true, current = null, 
     if (model) parts.push({ key: 'phonebar', html: String(phoneBar(model, base, { view, current, title })) })
     parts.push({ key: 'topbar', html: String(topbar(model, base, view === 'desk', view === 'session' ? current : null)) })
     // (the same rows on every page: the session in view is marked after the paint, sidebar.mjs markCurrent)
-    parts.push({ key: 'agents', html: String(html`<nav id="agents" aria-label="Sessions" data-controller="folds order">${sidebarRows(model, base)}</nav>`) })
+    parts.push({ key: 'agents', html: String(html`<nav id="agents" aria-label="Sessions" data-controller="order">${sidebarRows(model, base)}</nav>`) })
     parts.push({ key: 'foot', html: String(SIDE_FOOT) })
     parts.push({ key: 'veil', html: String(DRAWER_VEIL) })
     if (model) parts.push({ key: 'note', html: String(cornerNote(model, base)) })

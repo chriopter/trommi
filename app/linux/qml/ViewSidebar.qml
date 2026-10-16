@@ -5,8 +5,8 @@ import "pen.mjs" as Pen
 
 // The sidebar, drawn from the app core's view model alone (ViewModel.sidebar, core/client/src/views): the team in
 // view with a dropdown of the teams, then one row per session of that team in the order given, each with its
-// drawing, its name, the small line under it, and its badge. Nothing here is counted, ordered or worded: the only
-// state of this file's own is which mains the person unfolded.
+// drawing, its name, the small line under it, its helpers as dots, and its badge. Nothing here is counted, ordered
+// or worded.
 Rectangle {
     id: root
     required property var theme
@@ -19,12 +19,7 @@ Rectangle {
     signal team_chosen(string id)
     color: theme.bg
 
-    /** The mains the person unfolded here (their helpers show as rows of their own). */
-    property var unfolded: ({})
-    readonly property var all: sidebar.sessions || []
-    /** The rows by id, for a helper's drawing on its main's edge. */
-    readonly property var byId: { const m = {}; for (const s of all) m[s.id] = s; return m }
-    readonly property var shown: all.filter(s => s.depth === 0 || !!unfolded[s.parent])
+    readonly property var shown: sidebar.sessions || []
 
     function hueOf(s) { return Pen.hueFor({ id: s.slug || s.id, mark: s.mark }) }
     // the drawing of the small line's kind (sidebar.css)
@@ -128,58 +123,29 @@ Rectangle {
             required property var modelData
             required property int index
             readonly property var s: modelData
-            readonly property bool sub: s.depth > 0
-            readonly property bool isFolded: !!s.folded && !root.unfolded[s.id]
-            /** What the row shows: folded, the core's word for the main and its helpers together. */
-            readonly property var face: isFolded ? s.folded : s
+            /** What the row shows. */
+            readonly property var face: s
             readonly property real hue: root.hueOf(s)
-            readonly property var edges: isFolded ? (s.subs || []).slice(0, 6) : []
             width: list.width - 2
 
             Item {
                 id: card
                 width: parent.width
-                height: entry.height + (slot.edges.length ? 12 + slot.edges.length * 2.4 : 0) + (slot.sub ? 6 : 34)
-                opacity: slot.s.hushed ? 0.6 : 1
-
-                // the helpers' edges under a folded main: one each, in its own hue; a stopped one in the warning's
-                Repeater {
-                    model: slot.edges
-                    delegate: PenMark {
-                        required property var modelData
-                        required property int index
-                        readonly property var sub: root.byId[modelData] || ({ id: modelData })
-                        readonly property var quirk: Pen.edgeQuirk(sub.slug || sub.id)
-                        readonly property real h: root.hueOf(sub)
-                        readonly property bool stopped: ((slot.s.folded || {}).stopped || []).indexOf(modelData) >= 0
-                        readonly property color ground: theme.dark ? theme.mix(theme.tone(h, "edge"), theme.bg, .3) : theme.tone(h, "edge")
-                        x: 7 + Number(quirk.dx)
-                        y: entry.height - 10 + (slot.edges.length - index) * 2.4
-                        z: -(slot.edges.length - index)
-                        width: entry.width - 14; height: 16
-                        rotation: Number(quirk.tilt)
-                        turned: false
-                        svg: quirk.svg
-                        ink: stopped ? theme.urgCritical : theme.dark ? theme.mix(theme.tone(h, "pen"), theme.bg, .45) : theme.tone(h, "pen"); lineWidth: 1.3
-                        fills: ({ "e-w": ground, "e-n": ground })
-                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { const u = Object.assign({}, root.unfolded); u[slot.s.id] = true; root.unfolded = u } }
-                    }
-                }
+                height: entry.height + 34
 
                 Rectangle {
                     id: entry
-                    x: slot.sub ? 20 : 0
-                    width: card.width - x
-                    height: slot.sub ? 42 : 51
-                    radius: slot.sub ? 12 : 14
+                    width: card.width
+                    height: 51
+                    radius: 14
                     color: theme.surface
                     border.width: 1
                     border.color: theme.lineStrong
 
                     PenMark {
                         id: mark
-                        x: slot.sub ? 10 : 12; anchors.verticalCenter: parent.verticalCenter
-                        width: slot.sub ? 28 : 38; height: width
+                        x: 12; anchors.verticalCenter: parent.verticalCenter
+                        width: 38; height: width
                         svg: Pen.doodleSvg(slot.s.mark || slot.s.slug || slot.s.id)
                         ink: slot.face.online ? theme.tone(slot.hue, "pen") : theme.grey(theme.tone(slot.hue, "pen"))
                         opacity: slot.face.online ? 1 : 0.6
@@ -200,7 +166,7 @@ Rectangle {
                         Label {
                             text: slot.s.name ? slot.s.name.en : ""
                             color: slot.face.online ? theme.fg : theme.muted
-                            font.pixelSize: slot.sub ? 14 : 17; font.weight: slot.sub ? Font.DemiBold : Font.Bold
+                            font.pixelSize: 17; font.weight: Font.Bold
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
@@ -209,6 +175,22 @@ Rectangle {
                             spacing: 3
                             PenMark { Layout.preferredWidth: 16; Layout.preferredHeight: 16; svg: slot.s.cap ? Pen.sketchSvg(root.capSign(slot.s.cap.kind)) : ""; ink: theme.faint; lineWidth: 1.9 }
                             Label { text: slot.s.cap ? slot.s.cap.word.en : ""; color: theme.faint; font.pixelSize: 12 }
+                        }
+                        // its helpers (its agent's subagents): a dot each, filled while that helper works, and "3 helpers"
+                        RowLayout {
+                            visible: !!slot.s.helpers
+                            spacing: 4
+                            Repeater {
+                                model: slot.s.helpers ? slot.s.helpers.working : []
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: 7; height: 7; radius: 3.5
+                                    color: modelData ? theme.accent : "transparent"
+                                    border.width: modelData ? 0 : 1.5
+                                    border.color: theme.faint
+                                }
+                            }
+                            Label { text: slot.s.helpers ? slot.s.helpers.says.en : ""; color: theme.muted; font.pixelSize: 12; Layout.leftMargin: 2 }
                         }
                     }
                     // the badge: the raised hand when it is stopped, else its open questions as a tally or a figure
@@ -238,14 +220,11 @@ Rectangle {
                             ink: badge.ink; lineWidth: 1.8
                         }
                     }
-                    // a row opens its session's page; a main with helpers also folds and unfolds
+                    // a row opens its session's page
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (slot.s.folded) { const u = Object.assign({}, root.unfolded); u[slot.s.id] = !u[slot.s.id]; root.unfolded = u }
-                            root.go({ screen: "session", session_id: slot.s.id })
-                        }
+                        onClicked: root.go({ screen: "session", session_id: slot.s.id })
                     }
                 }
             }

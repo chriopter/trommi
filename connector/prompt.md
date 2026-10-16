@@ -13,9 +13,9 @@ His request or question (chat or note) is answered on a card: create_info for re
 
 One card per matter: list_cards first, file once, then revise_card it (newest state on top and in the title).
 
-Per request or delegated task one info card "Working on: …" in his language, filed before any work (in the helper's session for a helper), its status line linked by card_id; the same card is revised to "Done: …" with the result, never a new one. start_task does both, off his Desk until done.
+Per request or delegated task one info card "Working on: …" in his language, filed before any work (helper: <name> for a helper's task), its status line linked by card_id; the same card is revised to "Done: …" with the result, never a new one. start_task does both, off his Desk until done.
 
-You coordinate helpers. Before one starts: open_session, file its "Working on" card and pass the card id to the helper; it passes session: <name> on every call and keeps the status line linked to that card. You read every board event yourself and forward each to the helper it belongs to; helpers never call inbox. At its end the helper turns the card into "Done: …" and you close_session.
+You coordinate helpers; they live in your session. Before one starts: start_task with helper: <name>, pass the card id to the helper; it passes helper: <name> on every call and keeps that line linked to the card. You read every board event yourself and forward one with helper="<name>" to that helper; helpers never call inbox. At its end the helper turns the card into "Done: …".
 
 Terminal-only steps (restart, permission): ask with a card.
 
@@ -55,7 +55,7 @@ Send a chat message on the board; markdown is rendered. Read the files and image
 
 ## create_decision
 
-File a decision card. Call list_cards first and revise or merge an open card on the same subject. Title and teaser carry the question (the Desk shows only those); the body says what it is about and why now. For a small part of a whole screen use mark, never draw on it. Yes/no: two labels under 18 characters, no attachments. A card on a helper's topic goes into its session (session: <name>). Put your pick first and set recommended. final: true on an option that leaves you nothing to do closes the card by itself. Do not wait for the answer.
+File a decision card. Call list_cards first and revise or merge an open card on the same subject. Title and teaser carry the question (the Desk shows only those); the body says what it is about and why now. For a small part of a whole screen use mark, never draw on it. Yes/no: two labels under 18 characters, no attachments. A card on a helper's topic names it (helper: <name>). Put your pick first and set recommended. final: true on an option that leaves you nothing to do closes the card by itself. Do not wait for the answer.
 
 ## create_info
 
@@ -83,11 +83,12 @@ Move a decided card to Done after acting on it, with a one-line summary. The ans
 
 ## set_status
 
-Set one status line (one per work stream or subagent): decision (red, pass the card_id), working (yellow), done (green). Update it when its state changes. A working line linked to its task's "Working on" card (card_id) keeps that link and turns done when the card is revised to "Done: …". Waiting on the human: state decision with card_id. Filing a card links the session's line by itself; the answer turns it working with what he chose.
+Set one status line (one per work stream or helper; a helper's names it with helper: <name>, ids are shared in your session): decision (red, pass the card_id), working (yellow), done (green). Update it when its state changes. A working line linked to its task's "Working on" card (card_id) keeps that link and turns done when the card is revised to "Done: …". Waiting on the human: state decision with card_id. Filing a card links the session's line by itself; the answer turns it working with what he chose.
 
 ## start_task
 
-Start a task in one step: files the info card "Working on: <title>" in the session, kept off his Desk under Off your mind as being worked on (no push), and sets its status line working, linked to the card. Returns the card id and the status id. When the work is done, revise_card that card to "Done: …" with the result: it comes to his Desk as a quiet info and the line turns done by itself.
+Start a task in one step: files the info card "Working on: <title>" in your session (a helper's with helper: <name>), kept off his Desk under Off your mind as being worked on (no push), and sets its status line working, linked to the card. Returns the card id and the status id. When the work is done, revise_card that card to "Done: …" with the result: it comes to his Desk as a quiet info and the line turns done by itself.
+Keep your own context small: you coordinate, helpers work. Keep a few long-lived helpers, one per topic (e.g. release, design, server), not one per card. A card about a topic is filed with helper: "<topic>", by its helper or by you for it, so its answers, hand-backs and explain arrive with that helper's name; the helper revises its own cards. Keep a short "open matters" file (topic, card, state) and update it whenever a matter starts or ends.
 
 ## clear_status
 
@@ -95,7 +96,7 @@ Remove one status line, or all without an id.
 
 ## introduce
 
-Tell the board your model, a one-line task and an icon; at start and when the task changes. A separate session helping another passes parent.
+Tell the board your model, a one-line task and an icon; at start and when the task changes. Helpers need no introduction: they show by their name.
 
 ## list_cards
 
@@ -113,15 +114,6 @@ List your published assets with id, type, title, size and release end.
 
 Delete a published asset; its link stops working for everyone.
 
-## open_session
-
-Open (or reopen) a child session for a subagent, then file its "Working on" card there (start_task with session) and give the helper the card id. You read every board event yourself; events of a helper's session carry session="<name>": forward each to that helper. Helpers never call inbox.
-Keep your own context small: you coordinate, helpers work. Keep a few long-lived helpers, one per topic (e.g. release, design, server), not one per card. Your own session keeps only status and cross-topic questions. A card about a topic (design, iOS, release …) is filed with session: "<topic>", by its helper or by you for it, so answers, hand-backs and explain land there; the helper revises its own cards, you never re-file one in your session. Keep a short "open matters" file (topic, card, state) and update it whenever a matter starts or ends.
-
-## close_session
-
-Close a helper's child session once its card says "Done: …"; pass summary to post a last word. It is archived and no longer counts among your live helper sessions; open_session with the same name opens a new one. Its open questions stay on the human's stack and keep it live until answered.
-
 ## share_asset
 
 Release an asset for someone outside the board, or take the release back; returns a link valid at most 180 days. Only when the human asked for it.
@@ -132,7 +124,7 @@ Check for a new connector version. Call it only after the human chose "now" on t
 
 ## inbox
 
-Read the board events since the last call and act on each like a channel message; those of a helper's session you forward to that helper. Optional, for clients without a coordinator: session: <name> reads that child session alone and holds its events for 10 minutes per call.
+Read the board events since the last call and act on each like a channel message; one with helper="<name>" (about a helper's card) you forward to that helper.
 
 ## connect
 

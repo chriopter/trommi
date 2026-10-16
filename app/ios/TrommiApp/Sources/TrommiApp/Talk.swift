@@ -38,18 +38,13 @@ struct TalkWho { var mark: String; var name: String; var hue: Int }
 
 /**
  * The Chat page's list, calm as Messages': one flat row per session (`ChatRow`), the team switch at the top (the
- * place pill). A main's helpers lie folded in its row as "+N"; a tap there unfolds them under it (`FoldHelpers`,
- * kept on this device).
+ * place pill). A session's helpers are dots in its row (`helpers`).
  */
 struct ChatsScreen: View {
   @EnvironmentObject var shell: AppShell
   var body: some View {
-    let rows = shell.view.sidebar.sessions
-    let byId = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     List {
-      ForEach(rows.filter { !$0.tucked }, id: \.id) { row in
-        ChatRow(row: row, mainHue: row.parent.flatMap { byId[$0] }.map { Pen.hueFor(id: $0.slug.isEmpty ? $0.id : $0.slug, mark: $0.mark) })
-      }
+      ForEach(shell.view.sidebar.sessions, id: \.id) { row in ChatRow(row: row) }
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
@@ -63,23 +58,18 @@ struct ChatsScreen: View {
 }
 
 /** One session of the Chat list, flat and on one line each: its drawing in a round tinted field (a green dot while
- *  it works), the crown small before its name, its helpers as a small "+N" chip (a tap unfolds them under it), when
- *  it said something last at the right; under it one line of what was said last, and beside that only what needs him:
- *  the raised hand, how many questions wait, or a dot for words not seen yet. An unfolded helper (depth 1) is a
- *  smaller row on its main's quiet tone. */
+ *  it works), the crown small before its name, its helpers as small dots (filled while one works), when it said
+ *  something last at the right; under it one line of what was said last, and beside that only what needs him: the
+ *  raised hand, how many questions wait, or a dot for words not seen yet. */
 struct ChatRow: View {
   @EnvironmentObject var shell: AppShell
   let row: CoreView.SessionRowView
-  var mainHue: Int? = nil
   var body: some View {
-    let small = row.depth > 0
-    let side: CGFloat = small ? 34 : 44
+    let side: CGFloat = 44
     let hue = Pen.hueFor(id: row.slug.isEmpty ? row.id : row.slug, mark: row.mark)
-    // (folded, the row speaks for its helpers too)
-    let fold = row.unfolded ? nil : row.folded
-    let working = fold?.working ?? row.working
+    let working = row.working
     let teaser = row.last?.text ?? row.cap?.word.en ?? ""
-    // The whole row opens the chat (a button under it); only the helpers' chip on top takes its own tap.
+    // The whole row opens the chat (a button under it).
     ZStack {
       Button { shell.focus(.session(sessionId: row.id)) } label: { Rectangle().fill(Color.clear).contentShape(Rectangle()) }
         .buttonStyle(.plain)
@@ -96,9 +86,9 @@ struct ChatRow: View {
         VStack(alignment: .leading, spacing: 3) {
           HStack(alignment: .center, spacing: 6) {
             if row.crowned { PenMark("crown").frame(width: 15, height: 11).allowsHitTesting(false).accessibilityHidden(true) }
-            Text(row.name.en).font(Face.text(small ? 15 : 17, .semibold)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
+            Text(row.name.en).font(Face.text(17, .semibold)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
               .allowsHitTesting(false).accessibilityHidden(true)
-            if let f = row.folded { helpers(f) }
+            if let h = row.helpers { helpers(h) }
             Spacer(minLength: 6)
             if let when = row.last?.when.en {
               Text(when).font(Face.text(13, relativeTo: .footnote)).foregroundStyle(Ink.faint).lineLimit(1).fixedSize()
@@ -106,59 +96,52 @@ struct ChatRow: View {
             }
           }
           HStack(alignment: .center, spacing: 8) {
-            Text(teaser.isEmpty ? " " : teaser).font(Face.text(small ? 14 : 15, relativeTo: .subheadline))
+            Text(teaser.isEmpty ? " " : teaser).font(Face.text(15, relativeTo: .subheadline))
               .foregroundStyle(row.last == nil && (row.cap?.kind == "unheard" || row.cap?.kind == "cut") ? Ink.urgHigh : Ink.muted)
               .lineLimit(1)
               .frame(maxWidth: .infinity, alignment: .leading)
               .allowsHitTesting(false)
               .accessibilityIdentifier("chat-teaser-" + row.id)
-            badge(fold).allowsHitTesting(false)
+            badge().allowsHitTesting(false)
           }
         }
       }
-      .padding(.vertical, small ? 8 : 11)
-      .padding(.horizontal, small ? 10 : 0)
+      .padding(.vertical, 11)
     }
-    .background { if small { RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Tone.color(hue: mainHue ?? hue, .wash).opacity(0.55)) } }
-    .opacity(row.hushed ? 0.6 : 1)
-    .listRowInsets(EdgeInsets(top: small ? 2 : 0, leading: small ? 12 : 20, bottom: small ? 2 : 0, trailing: small ? 12 : 20))
+    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
     .listRowBackground(Color.clear)
     .listRowSeparatorTint(Ink.line)
-    .listRowSeparator(small || row.unfolded ? .hidden : .visible, edges: .bottom)
+    .listRowSeparator(.visible, edges: .bottom)
     .listRowSeparator(.hidden, edges: .top)
     .alignmentGuide(.listRowSeparatorLeading) { _ in side + 12 }
   }
 
   /** What needs him, at the end of the teaser's line: the raised hand, how many questions wait, or a dot. */
-  @ViewBuilder private func badge(_ fold: CoreView.FoldView?) -> some View {
-    let open = fold?.open ?? row.open
-    if (fold?.hand ?? row.hand) != nil { PenMark("hand", color: Ink.surface, blocked: true).frame(width: 22, height: 22).accessibilityLabel(row.says?.en ?? "Stopped") }
+  @ViewBuilder private func badge() -> some View {
+    let open = row.open
+    if row.hand != nil { PenMark("hand", color: Ink.surface, blocked: true).frame(width: 22, height: 22).accessibilityLabel(row.says?.en ?? "Stopped") }
     else if open > 0 {
       Text("\(open)").font(Face.text(12, .bold, relativeTo: .footnote)).foregroundStyle(Ink.bg).monospacedDigit()
         .padding(.horizontal, 6).frame(minWidth: 20, minHeight: 20).background(Capsule().fill(Ink.fg))
-        .accessibilityLabel((fold?.says ?? row.says)?.en ?? "\(open)")
-    } else if row.unread || (fold?.unread ?? false) {
+        .accessibilityLabel(row.says?.en ?? "\(open)")
+    } else if row.unread {
       Circle().fill(Ink.accent).frame(width: 10, height: 10).accessibilityLabel("New message").accessibilityIdentifier("chat-unread-" + row.id)
     }
   }
 
-  /** A main's helpers beside its name: "+N" as a small chip (a stopped one makes it red); a tap unfolds them under
-   *  the row, a second folds them. */
-  private func helpers(_ f: CoreView.FoldView) -> some View {
-    Button { withAnimation(.snappy) { shell.act(["do": "fold_helpers", "session_id": row.id, "open": !row.unfolded]) } } label: {
-      HStack(spacing: 3) {
-        Text("+\(f.lie.count + Int(f.more))").font(Face.text(12, .semibold, relativeTo: .caption)).monospacedDigit()
-        Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).rotationEffect(.degrees(row.unfolded ? 180 : 0))
+  /** A session's helpers beside its name (`HelperDotsView`): a small dot each, filled while that helper works. */
+  private func helpers(_ h: CoreView.HelperDotsView) -> some View {
+    HStack(spacing: 3) {
+      ForEach(Array(h.working.enumerated()), id: \.offset) { _, on in
+        Circle().fill(on ? Ink.accent : Color.clear).overlay(Circle().stroke(on ? Color.clear : Ink.faint, lineWidth: 1.2)).frame(width: 6, height: 6)
       }
-      .foregroundStyle(f.stopped.isEmpty ? Ink.muted : Ink.urgCritical)
-      .padding(.horizontal, 7).frame(height: 20)
-      .background(Capsule().fill(Ink.sunken))
-      .frame(minWidth: 44, minHeight: 32).contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .padding(.horizontal, 6).frame(height: 18)
+    .background(Capsule().fill(Ink.sunken))
     .fixedSize()
-    .accessibilityLabel(f.helpers.en)
-    .accessibilityHint(row.unfolded ? "Folds them" : "Unfolds them")
+    .allowsHitTesting(false)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(h.says.en)
     .accessibilityIdentifier("chat-helpers-" + row.id)
   }
 }
@@ -249,6 +232,12 @@ struct CardScreen: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("From \(from.path.joined(separator: ", "))")
+        // a helper's card: the helper (its agent's subagent) it comes from
+        if let helper = from.helper {
+          HStack(spacing: 5) { Circle().fill(Ink.accent).frame(width: 6, height: 6); Text(helper.en).font(Face.text(12, .semibold)).foregroundStyle(Ink.fg) }
+            .padding(.horizontal, 9).padding(.vertical, 3).background(Capsule().fill(Ink.sunken))
+            .accessibilityIdentifier("card-helper")
+        }
       }
       Text(card.title).font(Face.display(30, .heavy)).foregroundStyle(Ink.fg).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
         .accessibilityIdentifier("card-title")
@@ -731,9 +720,8 @@ struct SessionScreen: View {
             Button { newName = page.name.en; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
             Button { drawing = true } label: { Label("Change Icon…", systemImage: "scribble") }
             Toggle(isOn: Binding(get: { page.crowned }, set: { _ in shell.act(["do": "crown_session", "session_id": page.id, "on": !page.crowned]) })) { Label("Main Session", systemImage: "crown") }
-            // (a helper goes with its main)
             let others = shell.view.sidebar.teams.filter { $0.id != page.teamId }
-            if page.parent == nil && !others.isEmpty {
+            if !others.isEmpty {
               Menu { ForEach(others, id: \.id) { team in Button(team.name.en) { shell.act(["do": "move_session", "session_id": page.id, "team_id": team.id]) } } } label: { Label("Move to Team…", systemImage: "rectangle.stack") }
             }
             Button(role: .destructive) { shell.act(["do": "archive_session", "session_id": page.id, "on": true]) } label: { Label("Archive", systemImage: "archivebox") }
@@ -914,6 +902,29 @@ struct EmptyChat: View {
   }
 }
 
+/** A session's helpers (its agent's subagents), above its status lines: "3 helpers", then a row each with a dot while
+ *  it works, its name and how it stands. No way into a chat of their own: their cards and words are the session's. */
+struct HelperList: View {
+  let list: CoreView.HelperListView
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      (Text(list.head.en).font(Face.text(14, .bold)).foregroundColor(Ink.fg) + Text("  " + list.sub.en).font(Face.text(12)).foregroundColor(Ink.muted))
+      ForEach(Array(list.rows.enumerated()), id: \.offset) { _, h in
+        HStack(spacing: 8) {
+          Circle().fill(h.working ? Ink.accent : Color.clear).overlay(Circle().stroke(h.working ? Color.clear : Ink.faint, lineWidth: 1.4)).frame(width: 8, height: 8)
+          Text(h.name).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+          Text(h.says.en).font(Face.text(13)).foregroundStyle(Ink.muted).lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+      }
+    }
+    .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Ink.lineStrong, lineWidth: 1))
+    .accessibilityIdentifier("session-helpers")
+  }
+}
+
 /** The session's running work at the end of the chat: "<name> is working" and its status lines as small chips; a tap on
  *  a chip opens its whole text and the way to its card. */
 struct SessionStatus: View {
@@ -922,8 +933,9 @@ struct SessionStatus: View {
   let hue: Int
   @State private var shown: String? = nil
   var body: some View {
-    if page.answering != nil || !page.statusLines.isEmpty {
+    if page.answering != nil || !page.statusLines.isEmpty || page.helpers != nil {
       VStack(alignment: .leading, spacing: 8) {
+        if let helpers = page.helpers { HelperList(list: helpers) }
         if let answering = page.answering {
           HStack(spacing: 8) { AgentMark(mark: page.mark, size: 16, hue: hue); Text(answering.en).font(Face.text(14)).foregroundStyle(Ink.muted); TypingDots() }
         }
@@ -946,6 +958,7 @@ struct SessionStatus: View {
           else if t.state == "later" { Sketch("snooze", color: Ink.faint) }
           else { Sketch("tick", color: Ink.faint) }
         }.frame(width: 16, height: 16)
+        if let helper = t.helper { Text(helper).font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).lineLimit(1) }
         Text(t.label).font(Face.text(14, .semibold)).foregroundStyle(quiet ? Ink.muted : Ink.fg).lineLimit(1).frame(maxWidth: 150, alignment: .leading)
         if t.updatedMs > 0 { Text(talkAgoShort(t.updatedMs)).font(Face.text(12)).monospacedDigit().foregroundStyle(Ink.faint) }
       }
@@ -1109,6 +1122,7 @@ struct TalkRow: View {
       if !row.cont {
         HStack(spacing: 6) {
           if let who { AgentMark(mark: who.mark, size: 18, hue: who.hue); Text(who.name).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted) }
+          if let helper = row.helper { Text(helper).font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).padding(.horizontal, 7).padding(.vertical, 1).background(Capsule().fill(Ink.sunken)) }
           Text(talkClock(row.timeMs)).font(Face.text(11)).foregroundStyle(Ink.faint)
           if row.terminal { Text(">_").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(Ink.faint) }
         }

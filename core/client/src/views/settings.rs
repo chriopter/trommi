@@ -121,18 +121,16 @@ fn plural(n: usize, one: &str, many: &str) -> String {
 }
 
 /// The page Agents (the web's `agentsOf` and `agentsMain`): the sessions that are not archived, removed or one's own,
-/// grouped by program and computer; under each its main sessions, a helper counted beside its main when that main is
-/// of the same agent; the most sessions first, then by program and computer.
+/// grouped by program and computer; under each its sessions, each with its helpers counted beside it; the most
+/// sessions first, then by program and computer.
 pub fn agents_page(b: &Board) -> Vec<AgentView> {
     let m = b.model;
     let me = m.my_device_id.as_deref();
     let member_of = |i: usize| b.agents[i].row.agent_device_id.as_deref().and_then(|d| m.members.get(d));
     let text = |v: &Value| v.as_str().unwrap_or("").to_string();
     let mut groups: Vec<(String, &'static str, String, Vec<usize>)> = Vec::new();
-    // (a helper whose own device the room does not list goes with its main session's program and computer)
-    let parent_of = |i: usize| b.agents[i].row.parent.as_deref().and_then(|p| b.agents.iter().position(|x| x.row.id == p));
     for (i, a) in b.agents.iter().enumerate().filter(|(_, a)| !a.row.archived && !a.row.removed && !a.row.own) {
-        let member = member_of(i).or_else(|| parent_of(i).and_then(member_of));
+        let member = member_of(i);
         let program = program_of(b, &a.row.key, member);
         let host = member.map(|d| text(&d.host)).unwrap_or_default();
         let key = format!("{program} · {host}");
@@ -151,8 +149,7 @@ pub fn agents_page(b: &Board) -> Vec<AgentView> {
     let mut out: Vec<AgentView> = groups
         .into_iter()
         .map(|(key, program, host, list)| {
-            let ids: Vec<&str> = list.iter().map(|i| b.agents[*i].row.id.as_str()).collect();
-            let tops: Vec<usize> = list.iter().copied().filter(|i| b.agents[*i].row.parent.as_deref().is_none_or(|p| !ids.contains(&p))).collect();
+            let tops = list.clone();
             let online = list.iter().any(|i| b.agents[*i].row.online);
             let mut devices: Vec<String> = Vec::new();
             for i in &list {
@@ -167,7 +164,7 @@ pub fn agents_page(b: &Board) -> Vec<AgentView> {
                 .iter()
                 .map(|&i| {
                     let a = &b.agents[i];
-                    let helpers = list.iter().filter(|x| b.agents[**x].row.parent.as_deref() == Some(a.row.id.as_str())).count();
+                    let helpers = b.helpers(i).len();
                     let team = b.teams.iter().find(|d| Some(&d.id) == a.team.as_ref()).map(|d| d.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Personal".into());
                     let h = helpers.to_string();
                     AgentSessionView {
@@ -184,7 +181,7 @@ pub fn agents_page(b: &Board) -> Vec<AgentView> {
                     }
                 })
                 .collect();
-            let n_helpers = list.len() - tops.len();
+            let n_helpers: usize = tops.iter().map(|i| b.helpers(*i).len()).sum();
             let (t, h) = (tops.len().to_string(), n_helpers.to_string());
             let count = if n_helpers > 0 {
                 say("agents.count.helpers", format!("{}, {}", plural(tops.len(), "session", "sessions"), plural(n_helpers, "helper", "helpers")), &[("sessions", &t), ("helpers", &h)])
@@ -408,7 +405,7 @@ mod tests {
         gone["is_active"] = json!(false);
         r.members = vec![member("hung", "", "human", 3), phone, me, gone, member("agentdev", "fernly", "agent", 4)];
         r.session("a", None, true);
-        r.session("b", Some("a"), true);
+        r.session("b", None, true);
         let m = r.model(NOW);
         let lens = Lens::default();
         let v = settings(&Board::new(&m, &lens, NOW));
@@ -444,20 +441,20 @@ mod tests {
         r.members = vec![mac, b2, cx];
         r.session("a", None, true)["profile"]["account"] = json!({ "plan": "max", "email": "x@y.z",
             "five_hour": { "used": 81.6, "resets_at": NOW + 3_600_000 }, "weekly": { "used": 10, "resets_at": NOW - 1 } });
-        r.session("a-help", Some("a"), false);
+        r.sessions[0]["status_lines"] = json!([{ "id": "l", "label": "Icons", "state": "working", "helper": "Icons", "updated_at": NOW - 60_000 }]);
         r.session("b", None, false);
         r.session("c", None, false)["profile"]["account"] = json!({ "kind": "codex", "plan": "prolite", "credits": 1234.4, "full_resets": 1 });
         let m = r.model(NOW);
         let lens = Lens::default();
         let v = settings(&Board::new(&m, &lens, NOW));
         let names: Vec<(&str, &str, &str, u32)> = v.agent_list.iter().map(|g| (g.name.en.as_str(), g.state.en.as_str(), g.count.en.as_str(), g.total)).collect();
-        assert_eq!(names, [("Claude Code on MacBook", "connected", "2 sessions, 1 helper", 3), ("Codex on an unnamed computer", "away · last seen", "1 session", 1)]);
-        assert_eq!(v.agents_lead.unwrap().en, "2 agents on 2 computers · 4 sessions");
+        assert_eq!(names, [("Claude Code on MacBook", "connected", "2 sessions, 1 helper", 2), ("Codex on an unnamed computer", "away · last seen", "1 session", 1)]);
+        assert_eq!(v.agents_lead.unwrap().en, "2 agents on 2 computers · 3 sessions");
         let g = &v.agent_list[0];
         let rows: Vec<(&str, &str, &str, Option<&str>, &str)> =
             g.sessions.iter().map(|s| (s.slug.as_str(), s.team.en.as_str(), s.folder.as_str(), s.helpers_says.as_ref().map(|t| t.en.as_str()), s.state.en.as_str())).collect();
         assert_eq!(rows, [(g.sessions[0].slug.as_str(), "Personal team", "~/git/x", Some("+1 helper"), "connected"), (g.sessions[1].slug.as_str(), "Personal team", "", None, "away")]);
-        assert_eq!(g.remove.as_ref().unwrap().en, "Claude Code on MacBook and its 3 sessions can read nothing new after this. The others get a new key; the history stays.");
+        assert_eq!(g.remove.as_ref().unwrap().en, "Claude Code on MacBook and its 2 sessions can read nothing new after this. The others get a new key; the history stays.");
         let u = g.usage.clone().unwrap();
         assert_eq!((u.plan.as_str(), u.email.as_str()), ("Claude Max", "x@y.z"));
         assert_eq!(u.meters.iter().map(|m| (m.key.as_str(), m.used, m.hot, m.reset_ms)).collect::<Vec<_>>(), [("five_hour", 82, true, Some(NOW + 3_600_000))]);

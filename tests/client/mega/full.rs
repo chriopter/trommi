@@ -3,11 +3,11 @@
 //! The room, written oldest first, as months of use leave it:
 //! - `FULL_HUMANS` human devices (10): the stand-in that founded it and others let in by link, each with KeyPackages
 //!   (every session founded after them has them as members);
-//! - `FULL_AGENTS` agents (30), each its main session and `FULL_HELPERS` helper sessions (4): 150 sessions;
-//! - the first agents' sessions are the old ones: written, then archived (helpers by their agent, main sessions at the
-//!   hub); `FULL_LIVE_AGENTS` (10) agents stay, each with `FULL_LIVE_HELPERS` (2) live helpers: 30 live sessions;
-//! - `FULL_CARDS` cards (12 000), nearly all closed by their agent, spread as a real account is: a live main session
-//!   weighs 20, a live helper 3, an archived session 1 (so the live sessions hold about 70 %); per live session
+//! - `FULL_AGENTS` agents (30), each its main session (its helpers write into it);
+//! - the first agents' sessions are the old ones: written, then archived at the hub; `FULL_LIVE_AGENTS` (10) agents
+//!   stay;
+//! - `FULL_CARDS` cards (12 000), nearly all closed by their agent, spread as a real account is: a live session
+//!   weighs 20, an archived session 1; per live session
 //!   `FULL_OPEN` (2) open on the Desk, one "working" info (Off your mind) and `FULL_ANSWERED` (120 in all) answered
 //!   and closed by the person;
 //! - `FULL_CHAT` Chat lines (4 500), `FULL_PICTURES` cards with a picture (150, 20–60 KB each), `FULL_ARTIFACTS`
@@ -179,9 +179,7 @@ async fn write_agent(client: Arc<Client>, plan: Plan, seed: u64) -> (Vec<String>
 async fn full_account_held() {
     let humans_n = num("FULL_HUMANS", 10);
     let agents_n = num("FULL_AGENTS", 30);
-    let helpers_n = num("FULL_HELPERS", 4);
     let live_agents = num("FULL_LIVE_AGENTS", 10).min(agents_n);
-    let live_helpers = num("FULL_LIVE_HELPERS", 2).min(helpers_n);
     let cards_n = num("FULL_CARDS", 12_000);
     let chat_n = num("FULL_CHAT", 4_500);
     let pictures_n = num("FULL_PICTURES", 150);
@@ -218,7 +216,7 @@ async fn full_account_held() {
     }
     log(format!("{humans_n} human devices"));
 
-    // the agents, each its main session and its helpers; the sessions of agent i are the i-th oldest
+    // the agents, each its main session; the session of agent i is the i-th oldest
     let mut agents = Vec::new();
     for i in 0..agents_n {
         let (client, drain, dir, admitted) = join_agent(&mut human).await;
@@ -229,42 +227,21 @@ async fn full_account_held() {
         let _ = client
             .set_status(fields(json!({ "profile": { "agent_name": format!("project-{i}") } })), Some(main.clone()))
             .await;
-        let mut helpers = Vec::new();
-        for h in 0..helpers_n {
-            let id = client
-                .open_child_session(fields(json!({ "agent_name": format!("helper {h} of project-{i}") })))
-                .await
-                .expect("a helper session");
-            helpers.push(id);
-        }
-        agents.push((client, drain, dir, group, main, helpers));
+        agents.push((client, drain, dir, group, main));
     }
-    log(format!("{agents_n} agents, {} sessions", agents_n * (1 + helpers_n)));
+    log(format!("{agents_n} agents, {agents_n} sessions"));
 
-    // what each session holds: the archived ones (old agents; the first helpers of the live agents) first
-    let sessions_total = agents_n * (1 + helpers_n);
+    // what each session holds
     let live_from = agents_n - live_agents;
     let mut jobs = Vec::new();
-    let live_sessions = live_agents * (1 + live_helpers);
-    let answered_per_session = answered_n / live_sessions.max(1);
-    // How a real account is spread: the live main sessions run for months and hold most of it (weight 20), a live
-    // helper some (3), an archived session a little (1); the Artifacts sit in the live main sessions.
-    let weight = |archived: bool, main: bool| if archived { 1 } else if main { 20 } else { 3 };
-    let weights: usize = (0..agents_n)
-        .map(|i| {
-            let live = i >= live_from;
-            weight(!live, true) + (0..helpers_n).map(|h| weight(!(live && h >= helpers_n - live_helpers), false)).sum::<usize>()
-        })
-        .sum();
-    for (i, (client, _, _, _, main, helpers)) in agents.iter().enumerate() {
+    let answered_per_session = answered_n / live_agents.max(1);
+    // How a real account is spread: the live sessions run for months and hold most of it (weight 20), an archived
+    // session a little (1); the Artifacts sit in the live sessions.
+    let weight = |archived: bool, _main: bool| if archived { 1 } else { 20 };
+    let weights: usize = (0..agents_n).map(|i| weight(i < live_from, true)).sum();
+    for (i, (client, _, _, _, main)) in agents.iter().enumerate() {
         let live = i >= live_from;
-        let mut sessions: Vec<(String, bool, bool)> = helpers
-            .iter()
-            .enumerate()
-            .map(|(h, s)| (s.clone(), !(live && h >= helpers_n - live_helpers), false))
-            .collect();
-        sessions.sort_by_key(|(_, archived, _)| !*archived);
-        sessions.push((main.clone(), !live, true));
+        let sessions: Vec<(String, bool, bool)> = vec![(main.clone(), !live, true)];
         let sessions = sessions
             .into_iter()
             .map(|(session, archived, is_main)| {
@@ -280,7 +257,6 @@ async fn full_account_held() {
                 }
             })
             .collect();
-        let _ = sessions_total;
         let plan = Plan {
             sessions,
             open: open_n,
@@ -300,16 +276,10 @@ async fn full_account_held() {
     }
     log(format!("written: {counts:?}"));
 
-    // archived: the helpers by their agent, the old main sessions at the hub
+    // archived: the old main sessions at the hub
     let mut archived = 0;
-    for (i, (client, _, _, group, _, helpers)) in agents.iter().enumerate() {
+    for (i, (_, _, _, group, _)) in agents.iter().enumerate() {
         let live = i >= live_from;
-        for (h, s) in helpers.iter().enumerate() {
-            if !(live && h >= helpers_n - live_helpers) {
-                client.archive_child_session(s).await.expect("a helper archived");
-                archived += 1;
-            }
-        }
         if !live {
             human.archive(group).await;
             archived += 1;
@@ -344,9 +314,9 @@ async fn full_account_held() {
     let head = human.hub.get("/v1/changes?after=0&limit=1").await.ok();
     counts.insert("humans".into(), humans_n);
     counts.insert("agents".into(), agents_n);
-    counts.insert("sessions".into(), sessions_total);
+    counts.insert("sessions".into(), agents_n);
     counts.insert("archived".into(), archived);
-    counts.insert("live_sessions".into(), live_sessions);
+    counts.insert("live_sessions".into(), live_agents);
     counts.insert("answered".into(), answers);
     let fixture = json!({
         "hub": hub.url, "room_id": room_hex, "code": code_hex, "email": MEGA_EMAIL, "password": MEGA_PASSWORD, "counts": counts,

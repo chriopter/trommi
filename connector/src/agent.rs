@@ -15,7 +15,7 @@ use trommi_client_core::hub::{Answer, Route};
 use trommi_core::crypto::SystemEntropy;
 use trommi_core::envelope::{Urgency, SCHEMA_VERSION};
 use trommi_core::files::{self, FileRef, ShareLink};
-use trommi_core::ids::{DeviceId, FileId, GroupId, Hash32, ObjectId, SessionId, ShareId, TurnId};
+use trommi_core::ids::{FileId, GroupId, Hash32, ObjectId, ShareId, TurnId};
 
 /// The urgencies by name, lowest first.
 pub const URGENCIES: [&str; 4] = ["low", "normal", "high", "critical"];
@@ -34,12 +34,6 @@ fn object_id_of(hex_id: &str) -> Result<ObjectId> {
     unhex(hex_id)
         .and_then(|bytes| ObjectId::from_slice(&bytes).ok())
         .ok_or_else(|| Fault::plain(format!("not an object id: {hex_id}")))
-}
-
-fn session_id_of(hex_id: &str) -> Result<SessionId> {
-    unhex(hex_id)
-        .and_then(|bytes| SessionId::from_slice(&bytes).ok())
-        .ok_or_else(|| Fault::plain("not a session id"))
 }
 
 /// A hash the model writes as hex, as the wire writes it.
@@ -546,71 +540,8 @@ impl Driver {
         Ok(false)
     }
 
-    /// Opens a helper session under this agent's main session (5.2.5): the agent founds its group itself, with
-    /// every human device of the room, and writes the helper's profile into it. Returns the session id.
-    pub async fn open_child_session(&self, profile: Map<String, Value>) -> Result<String> {
-        self.active()?;
-        let (parent, humans) = {
-            let inner = self.lock();
-            let main = inner
-                .session_id()
-                .ok_or_else(|| Fault::new("no-session", "this agent has no session yet"))?;
-            (session_id_of(&main)?, inner.engine().roles().0)
-        };
-        if humans.is_empty() {
-            return Err(Fault::new(
-                "room-behind",
-                "the room's devices are not known yet",
-            ));
-        }
-        // A partial claim: a human device the hub holds no KeyPackage of (one away for long, or not yet
-        // stocked) is left out and added later by a human device of the group (5.2.5, 5.2.7). With none at
-        // all there is nobody to read the session: the founding waits.
-        let claimed = self
-            .ask(Route::ClaimKeyPackages {
-                devices: &humans,
-                partial: true,
-            })
-            .await?;
-        let packages: Vec<Vec<u8>> = match claimed {
-            Answer::Claimed { key_packages, .. } => humans
-                .iter()
-                .filter_map(|human| {
-                    key_packages
-                        .iter()
-                        .find(|(device, _)| device == human)
-                        .map(|(_, package)| package.clone())
-                })
-                .collect(),
-            _ => return Err(Fault::new("bad-format", "the hub's claim does not read")),
-        };
-        if packages.is_empty() {
-            return Err(Fault::new(
-                "not-found",
-                "none of the human devices has a KeyPackage at the hub: open the app on one of them and try again",
-            ));
-        }
-        // The founding is merged where the log shows its first Commit.
-        let (session, _) = self
-            .device_step(move |device, now| device.found_helper(&parent, &packages, now))
-            .await?;
-        let sid = hex(session.as_bytes());
-        let held = self.group_ready(&sid).await;
-        if !held {
-            return Err(Fault::new(
-                "offline",
-                "the helper session waits for the hub; try again when the hub is back",
-            ));
-        }
-        let mut values = Map::new();
-        values.insert("profile".into(), Value::Object(profile));
-        self.set_status(values, Some(sid.clone())).await?;
-        Ok(sid)
-    }
-
-    /// Archives a helper session this agent opened (5.2.10): the hub takes nothing more for its group, and the
-    /// session no longer counts among the main session's live helper sessions (5.2.5). Archived is for good:
-    /// what continues it is a new helper session. Archiving one that is archived already is no error.
+    /// Archives a helper session of before this agent opened (5.2.10): the hub takes nothing more for its group.
+    /// Archiving one that is archived already is no error.
     pub async fn archive_child_session(&self, session_id: &str) -> Result<()> {
         self.active()?;
         let group = {
@@ -627,43 +558,6 @@ impl Driver {
             }
         };
         self.archive(group).await
-    }
-
-    /// Adds a helper device to a helper session this agent opened (5.2.4), with the KeyPackage the device
-    /// handed over outside the hub: a subagent that runs a connector of its own.
-    pub async fn admit_helper(
-        &self,
-        session_id: &str,
-        device: DeviceId,
-        key_package: Vec<u8>,
-    ) -> Result<()> {
-        let group = self.lock().group_of(Some(session_id))?;
-        self.device_step(move |d, now| d.add_to_session(&group, &device, &key_package, now))
-            .await
-            .map(|_| ())
-    }
-
-    /// Lets a helper device that lost its state back into a helper session (5.3.5): the opener removes the
-    /// old leaf with its Cut, adds the new device with the KeyPackage it handed over outside the hub, and
-    /// hands it the session's keys.
-    pub async fn readmit_helper(
-        &self,
-        session_id: &str,
-        old: DeviceId,
-        device: DeviceId,
-        key_package: Vec<u8>,
-    ) -> Result<()> {
-        let group = self.lock().group_of(Some(session_id))?;
-        // The Cut is the old device's last envelope this device accepted (9.0.10). The Commit is merged where the
-        // log shows it; the handover follows it.
-        self.device_step(move |d, now| {
-            let cut = d.cut_of(&group, &old)?;
-            d.readmit_helper(&group, cut, &device, &key_package, now)
-        })
-        .await?;
-        self.device_step(move |d, _| d.send_handover(&group, &device))
-            .await
-            .map(|_| ())
     }
 
     /// One step of the running turn's work trail (7.3): an MLS message in the session's group, numbered from 1

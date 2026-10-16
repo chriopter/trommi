@@ -26,6 +26,7 @@
     "5c8d5717eb0331231e72aa5220774ead",
     "aaef4af6b38e79001f510e100a5a67da",
     "13552895ad6558b518427f8b32606e9a",
+    "351c951e79a7a862fc6fbd6d499f66e9",
     "246ebea0994ccda03d8cc8bbf724b2ff",
     "ec2f5263fac9174007a1f17b148b8314"
   ],
@@ -44,24 +45,31 @@
         "id": "f35bf13aea8cdbfd193cfddc38f543fb",
         "title": "Promote the replica in a failover drill on Friday?",
         "from": {
-          "session_id": "1f4ee7520853d151015e6105ba5a9794",
-          "name": "Database Replica",
-          "mark": "draw:database",
+          "session_id": "5ef619647e0e8185fef0e3be40ff4809",
+          "name": "Infrastructure",
+          "mark": "draw:mountain",
           "path": [
             "Platform",
-            "Infrastructure",
-            "Database Replica"
-          ]
+            "Infrastructure"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Database Replica"
+            },
+            "en": "Helper Database Replica"
+          }
         },
         "line": {
-          "key": "dock.line.on_it",
+          "key": "dock.line.label",
           "args": {
-            "name": "Database Replica"
+            "label": "us-east",
+            "name": "Infrastructure"
           },
-          "en": "Database Replica · on it"
+          "en": "Infrastructure · us-east"
         },
         "running": true,
-        "at_ms": 1791460200000
+        "at_ms": 1791468960000
       }
     ],
     "all": {
@@ -75,24 +83,31 @@
         "id": "f35bf13aea8cdbfd193cfddc38f543fb",
         "title": "Promote the replica in a failover drill on Friday?",
         "from": {
-          "session_id": "1f4ee7520853d151015e6105ba5a9794",
-          "name": "Database Replica",
-          "mark": "draw:database",
+          "session_id": "5ef619647e0e8185fef0e3be40ff4809",
+          "name": "Infrastructure",
+          "mark": "draw:mountain",
           "path": [
             "Platform",
-            "Infrastructure",
-            "Database Replica"
-          ]
+            "Infrastructure"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Database Replica"
+            },
+            "en": "Helper Database Replica"
+          }
         },
         "line": {
-          "key": "dock.line.on_it",
+          "key": "dock.line.label",
           "args": {
-            "name": "Database Replica"
+            "label": "us-east",
+            "name": "Infrastructure"
           },
-          "en": "Database Replica · on it"
+          "en": "Infrastructure · us-east"
         },
         "running": true,
-        "at_ms": 1791460200000
+        "at_ms": 1791468960000
       }
     ],
     "rows": [
@@ -136,12 +151,12 @@
     "says": {
       "key": "off.hint.done",
       "args": {
-        "done": "9"
+        "done": "10"
       },
-      "en": "9 done"
+      "en": "10 done"
     },
     "put_off": 0,
-    "closed": 9
+    "closed": 10
   },
   "mode": "desk",
   "hello": {
@@ -274,14 +289,20 @@
       "starred": false,
       "created_ms": 1791458400000,
       "from": {
-        "session_id": "9c85d0efb2d287a50dc2229f9feca1b7",
-        "name": "Load Testing",
-        "mark": "draw:burst",
+        "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+        "name": "Payments",
+        "mark": "draw:lock",
         "path": [
           "Platform",
-          "Payments",
-          "Load Testing"
-        ]
+          "Payments"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Load Testing"
+          },
+          "en": "Helper Load Testing"
+        }
       },
       "run": 1,
       "tiles": {
@@ -306,16 +327,22 @@
       "starred": false,
       "created_ms": 1791457800000,
       "from": {
-        "session_id": "0b966a14a8c6ed46dd4ecc1ecfa50ad3",
-        "name": "Monitoring",
-        "mark": "draw:eye",
+        "session_id": "5ef619647e0e8185fef0e3be40ff4809",
+        "name": "Infrastructure",
+        "mark": "draw:mountain",
         "path": [
           "Platform",
-          "Infrastructure",
-          "Monitoring"
-        ]
+          "Infrastructure"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Monitoring"
+          },
+          "en": "Helper Monitoring"
+        }
       },
-      "run": 1,
+      "run": 2,
       "media": [
         {
           "file_id": "61f9ea1d8c58b7bce8ca8f54b4ef2db2",
@@ -351,16 +378,22 @@
       "starred": false,
       "created_ms": 1791451800000,
       "from": {
-        "session_id": "8693f72066947d694979af982d64ae9a",
-        "name": "Cloud Costs",
-        "mark": "draw:comb",
+        "session_id": "5ef619647e0e8185fef0e3be40ff4809",
+        "name": "Infrastructure",
+        "mark": "draw:mountain",
         "path": [
           "Platform",
-          "Infrastructure",
-          "Cloud Costs"
-        ]
+          "Infrastructure"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Cloud Costs"
+          },
+          "en": "Helper Cloud Costs"
+        }
       },
-      "run": 1,
+      "run": 0,
       "media": [
         {
           "file_id": "b9d7464f359973927b3dcbe4e28b9141",
@@ -400,14 +433,20 @@
       "starred": false,
       "created_ms": 1791468360000,
       "from": {
-        "session_id": "5d7a2ba080769d76d188155abcdb8d06",
-        "name": "API Reference",
-        "mark": "draw:terminal",
+        "session_id": "eeb9fe76ad84d2405625d15419ce6083",
+        "name": "Docs",
+        "mark": "draw:book",
         "path": [
           "Platform",
-          "Docs",
-          "API Reference"
-        ]
+          "Docs"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "API Reference"
+          },
+          "en": "Helper API Reference"
+        }
       },
       "run": 1,
       "tiles": {
@@ -479,16 +518,22 @@
       "starred": false,
       "created_ms": 1791466560000,
       "from": {
-        "session_id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc",
-        "name": "Tax & VAT",
-        "mark": "draw:key",
+        "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+        "name": "Payments",
+        "mark": "draw:lock",
         "path": [
           "Platform",
-          "Payments",
-          "Tax & VAT"
-        ]
+          "Payments"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Tax & VAT"
+          },
+          "en": "Helper Tax & VAT"
+        }
       },
-      "run": 1,
+      "run": 2,
       "tiles": {
         "kind": "pair",
         "tiles": [
@@ -554,16 +599,22 @@
       "starred": false,
       "created_ms": 1791466920000,
       "from": {
-        "session_id": "a7b41f11fd76b678e5918ee35812d2a9",
-        "name": "Invoices",
-        "mark": "draw:book",
+        "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+        "name": "Payments",
+        "mark": "draw:lock",
         "path": [
           "Platform",
-          "Payments",
-          "Invoices"
-        ]
+          "Payments"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Invoices"
+          },
+          "en": "Helper Invoices"
+        }
       },
-      "run": 1,
+      "run": 0,
       "tiles": {
         "kind": "choose",
         "others": 0,
@@ -594,14 +645,20 @@
       "starred": false,
       "created_ms": 1791468000000,
       "from": {
-        "session_id": "1e7c3773ece2ab64dba5343140e7c0b0",
-        "name": "Kubernetes",
-        "mark": "draw:boat",
+        "session_id": "5ef619647e0e8185fef0e3be40ff4809",
+        "name": "Infrastructure",
+        "mark": "draw:mountain",
         "path": [
           "Platform",
-          "Infrastructure",
-          "Kubernetes"
-        ]
+          "Infrastructure"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Kubernetes"
+          },
+          "en": "Helper Kubernetes"
+        }
       },
       "run": 1,
       "tiles": {
@@ -781,7 +838,7 @@
           "Data Pipeline"
         ]
       },
-      "run": 1,
+      "run": 2,
       "media": [
         {
           "file_id": "70d771d464c0d437ecab1f509b47e5e5",
@@ -849,16 +906,22 @@
       "starred": false,
       "created_ms": 1791465480000,
       "from": {
-        "session_id": "36f6070677c607aa723892800065eca5",
-        "name": "Dashboards",
-        "mark": "draw:eye",
+        "session_id": "f14180d4caac441522269c631a745866",
+        "name": "Data Pipeline",
+        "mark": "draw:database",
         "path": [
           "Platform",
-          "Data Pipeline",
-          "Dashboards"
-        ]
+          "Data Pipeline"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Dashboards"
+          },
+          "en": "Helper Dashboards"
+        }
       },
-      "run": 1,
+      "run": 0,
       "media": [
         {
           "file_id": "3d154a92f7b328d07c3d88cc578abd5c",
@@ -937,14 +1000,20 @@
       "starred": false,
       "created_ms": 1791463320000,
       "from": {
-        "session_id": "814719292f007b90bc4649fb09f25cb2",
-        "name": "Checkout",
-        "mark": "draw:cup",
+        "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+        "name": "Payments",
+        "mark": "draw:lock",
         "path": [
           "Platform",
-          "Payments",
-          "Checkout"
-        ]
+          "Payments"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Checkout"
+          },
+          "en": "Helper Checkout"
+        }
       },
       "run": 1,
       "media": [
@@ -1029,14 +1098,20 @@
       "starred": false,
       "created_ms": 1791467640000,
       "from": {
-        "session_id": "200ea427ff43dfe6b1e6771fbc19f91e",
-        "name": "Terraform",
-        "mark": "draw:house",
+        "session_id": "5ef619647e0e8185fef0e3be40ff4809",
+        "name": "Infrastructure",
+        "mark": "draw:mountain",
         "path": [
           "Platform",
-          "Infrastructure",
-          "Terraform"
-        ]
+          "Infrastructure"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Terraform"
+          },
+          "en": "Helper Terraform"
+        }
       },
       "run": 1,
       "media": [

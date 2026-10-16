@@ -36,6 +36,13 @@ Item {
             color: theme.faint; font.pixelSize: 12
         }
 
+        // the helper (its agent's subagent) that wrote the words below, when it was one
+        Label {
+            visible: !!root.row.helper && !root.row.cont
+            Layout.alignment: Qt.AlignLeft
+            text: root.row.helper || ""
+            color: theme.muted; font.pixelSize: 12; font.weight: Font.DemiBold
+        }
         // words: his bubble, the agent's text, a note
         Rectangle {
             visible: ["user", "agent", "note", "newer"].indexOf(root.row.kind) >= 0

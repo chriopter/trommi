@@ -57,10 +57,12 @@ fn bytes(w: &World, dev: &Dev, path: &str) -> (usize, Value) {
 
 #[test]
 fn only_active_sessions_are_loaded_and_archived_ones_when_opened() {
-    let mut w = World::on(TestHub::start_with(&[(
-        "HUB_LIMIT_ENVELOPES_PER_SECOND",
-        "100000",
-    )]));
+    // (helper sessions of before, as the owner's room still holds them: a hub serves them, it founds none since
+    //  16 October 2026 but for a test of them)
+    let mut w = World::on(TestHub::start_with(&[
+        ("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000"),
+        ("HUB_HELPER_SESSIONS", "1"),
+    ]));
     let mut agent = w.enrol_agent();
     let (session, _main) = w.found_main(&mut [], Some(&mut agent));
     let humans = [w.ada.id()];

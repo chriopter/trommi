@@ -83,6 +83,14 @@ Item {
                 }
                 Label { text: root.card.nr ? root.card.nr.en : ""; color: theme.faint; font.pixelSize: 13 }
             }
+            // a helper's card: the helper (its agent's subagent) it comes from
+            Label {
+                visible: !!(root.card.from && root.card.from.helper)
+                text: root.card.from && root.card.from.helper ? root.card.from.helper.en : ""
+                color: theme.fg; font.pixelSize: 12; font.weight: Font.DemiBold
+                leftPadding: 8; rightPadding: 8; topPadding: 2; bottomPadding: 2
+                background: Rectangle { radius: height / 2; color: theme.sunken }
+            }
             Label {
                 visible: !!root.card.knock
                 text: root.card.knock ? root.card.knock.en : ""

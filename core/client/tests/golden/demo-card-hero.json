@@ -1,6 +1,6 @@
 {
   "id": "a38afef6dbdd056db8042980f2b83336",
-  "session_id": "afe6ff94d965b37dccfee8d7d194f2f5",
+  "session_id": "54ddca7af4029f0526984da1e346d833",
   "kind": "decision",
   "state": "open",
   "urgency": 1,
@@ -44,14 +44,20 @@
   },
   "status": "open",
   "from": {
-    "session_id": "afe6ff94d965b37dccfee8d7d194f2f5",
-    "name": "Landing Page",
-    "mark": "draw:brush",
+    "session_id": "54ddca7af4029f0526984da1e346d833",
+    "name": "Fernly Website",
+    "mark": "draw:leaf",
     "path": [
       "Fernly",
-      "Fernly Website",
-      "Landing Page"
-    ]
+      "Fernly Website"
+    ],
+    "helper": {
+      "key": "from.helper",
+      "args": {
+        "name": "Landing Page"
+      },
+      "en": "Helper Landing Page"
+    }
   },
   "asked_ms": 1791460800000,
   "place": {
@@ -91,9 +97,9 @@
   "ask": {
     "key": "card.ask",
     "args": {
-      "name": "Landing Page"
+      "name": "Fernly Website"
     },
-    "en": "Ask Landing Page something, or say what is missing…"
+    "en": "Ask Fernly Website something, or say what is missing…"
   },
   "star_says": {
     "key": "card.star",
@@ -121,9 +127,9 @@
         "label": {
           "key": "event.asked_by",
           "args": {
-            "name": "Landing Page"
+            "name": "Fernly Website"
           },
-          "en": "Landing Page asked"
+          "en": "Fernly Website asked"
         },
         "text": "Which hero for the landing page?",
         "echo": false,

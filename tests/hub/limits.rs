@@ -235,7 +235,8 @@ fn devices_and_sessions_of_a_room() {
     let mut w = world(&[
         ("HUB_LIMIT_HUMANS", "2"),
         ("HUB_LIMIT_AGENTS", "1"),
-        ("HUB_LIMIT_HELPERS_PER_MAIN", "2"),
+        // (a helper session of before, as a hub still serves them)
+        ("HUB_HELPER_SESSIONS", "1"),
     ]);
     let room = w.room;
     let mut bea = w.add_human();
@@ -267,45 +268,14 @@ fn devices_and_sessions_of_a_room() {
     w.set_agents(&[agent.id(), second.id()])
         .refused(429, "too-many");
 
-    // 16: live helper sessions per main session 100: here 2
     w.catch_up(&mut bea, &room);
     let (session, _main) = w.found_main(&mut [&mut bea], Some(&mut agent));
     let humans = [w.ada.id(), bea.id()];
-    let mut helper_groups = vec![];
-    for i in 0..3 {
-        let (group, reply, _) = w.found_helper(&mut agent, &session, &humans, &[]);
-        if i < 2 {
-            reply.ok();
-            helper_groups.push(group);
-        } else {
-            reply.refused(429, "too-many");
-        }
-    }
-    // an archived one no longer counts
-    w.ada
-        .post(
-            &w.hub,
-            &format!("/v1/groups/{}/archive", b64(&helper_groups[0])),
-            &json!({}),
-        )
-        .ok();
-    let (third, reply, _) = w.found_helper(&mut agent, &session, &humans, &[]);
+    let (helper_group, reply, _) = w.found_helper(&mut agent, &session, &humans, &[]);
     reply.ok();
-    w.found_helper(&mut agent, &session, &humans, &[])
-        .1
-        .refused(429, "too-many");
-    // nor one its opener archived (5.2.10)
-    agent
-        .post(
-            &w.hub,
-            &format!("/v1/groups/{}/archive", b64(&third)),
-            &json!({}),
-        )
-        .ok();
-    w.found_helper(&mut agent, &session, &humans, &[]).1.ok();
 
     // 16: devices added by an opener 7
-    let group = helper_groups[1].clone();
+    let group = helper_group;
     let now = w.ada.room_now();
     for i in 0..8 {
         let out = agent.commit(
@@ -342,6 +312,8 @@ fn what_a_room_may_hold() {
         ("HUB_QUOTA_VOIDS", "1"),
         ("HUB_QUOTA_GROUPS", "3"),
         ("HUB_QUOTA_HELPER_DEVICES", "1"),
+        // (a helper session of before and its helper device, as a hub still serves them)
+        ("HUB_HELPER_SESSIONS", "1"),
         ("HUB_LIMIT_FILE", "1000"),
         ("HUB_ROOM_QUOTA", "1500"),
         ("HUB_LIMIT_SHARES_PER_ROOM", "2"),
@@ -745,7 +717,7 @@ fn the_defaults_at_their_exact_values() {
 }
 
 #[test]
-fn agent_devices_and_helper_sessions_at_their_exact_values() {
+fn agent_devices_at_their_exact_values() {
     // (the rates are lifted: this test makes in seconds what a room makes in years)
     let mut w = world(&[
         ("HUB_LIMIT_OPEN_REQUESTS_PER_IP_MINUTE", "100000"),
@@ -754,7 +726,6 @@ fn agent_devices_and_helper_sessions_at_their_exact_values() {
     ]);
     // 256 enrolled agent devices: the 257th is refused
     let mut agents: Vec<[u8; 32]> = vec![];
-    let mut first = None;
     for i in 0..257 {
         let dev = Dev::new();
         invite(&w.hub, &w.ada, &dev, 2, ZERO16);
@@ -764,27 +735,10 @@ fn agent_devices_and_helper_sessions_at_their_exact_values() {
         if i < 256 {
             reply.ok();
             agents = next;
-            if i == 0 {
-                first = Some(dev);
-            }
         } else {
             reply.refused(429, "too-many");
         }
     }
-    // 100 live helper sessions under one main session: the 101st is refused
-    let mut agent = first.unwrap();
-    agent.sign_in(&w.hub, &w.room).ok();
-    agent.link(&w.hub).ok();
-    agent.upload_key_packages(&w.hub, 1).ok();
-    let (session, _) = w.found_main(&mut [], Some(&mut agent));
-    let humans = [w.ada.id()];
-    boundary(
-        "live helper sessions of a main session",
-        100,
-        |_| w.found_helper(&mut agent, &session, &humans, &[]).1,
-        429,
-        "too-many",
-    );
 }
 
 #[test]

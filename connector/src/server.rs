@@ -4,7 +4,7 @@
 //!   trommi-connector serve            MCP server (the launcher's child)
 //!   trommi-connector connect <link>   join a room with an agent invite link, then exit (also: join)
 //!   trommi-connector whoami           print room, key file and folder
-//!   trommi-connector say "<text>" [--session <name>] [--urgent]
+//!   trommi-connector say "<text>" [--helper <name>] [--urgent]
 //!   trommi-connector permission|notice|denied|resolved    the plugin's hooks (hook JSON on stdin)
 //!   trommi-connector prompt|stop      the plugin's hooks of the terminal mirror (mirror.rs)
 //!   trommi-connector trail            the plugin's hooks of a turn's trail (trail.rs)
@@ -150,17 +150,6 @@ pub(crate) fn clean_name(v: &Value) -> String {
         .to_string();
     crate::util::js_trim(&b).chars().take(40).collect()
 }
-/// The child session an event belongs to, lower case ("" for the agent's own session).
-fn event_session(params: &Value) -> String {
-    params
-        .get("meta")
-        .and_then(|m| m.get("session"))
-        .filter(|v| !v.is_null())
-        .map(js_string)
-        .unwrap_or_default()
-        .trim()
-        .to_lowercase()
-}
 /// A channel event as Claude Code gets it: without `echo`, which is the monitor line's alone (line.rs).
 fn wire(mut params: Value) -> Value {
     if let Some(o) = params.as_object_mut() {
@@ -196,8 +185,8 @@ pub async fn say_with(bridge: Arc<Bridge>, req: Value) -> crate::error::Result<S
         return Err(Fault::plain("at most 4000 characters"));
     }
     let mut args = Map::new();
-    if let Some(s) = req.get("session").filter(|v| crate::util::truthy(v)) {
-        args.insert("session".into(), json!(js_string(s)));
+    if let Some(h) = ["helper", "session"].iter().find_map(|k| req.get(*k).filter(|v| crate::util::truthy(v))) {
+        args.insert("helper".into(), json!(js_string(h)));
     }
     if !req.get("urgent").is_some_and(crate::util::truthy) {
         args.insert("text".into(), json!(text));
@@ -293,9 +282,6 @@ pub struct Conn {
     missed: Mutex<Vec<Missed>>,
     deaf_told: AtomicBool,
     marks: Mutex<HashMap<String, u64>>,
-    /// Child sessions a helper reads itself (`inbox` with session): lower-case name → (name, last read in ms).
-    /// Their events wait for that helper alone; plain `inbox`, the monitor and channel events skip them.
-    claims: Mutex<HashMap<String, (String, u64)>>,
     mark_timer: AtomicBool,
     hint: Mutex<Option<String>>,
     door: Mutex<Option<Door>>,
@@ -441,88 +427,6 @@ impl Conn {
         }
         self.save_missed();
     }
-    /// Whether a helper reads this child session itself (a claim that has not lapsed).
-    fn claimed(&self, name: &str) -> bool {
-        !name.is_empty() && self.claims.lock().unwrap().contains_key(name)
-    }
-    /// A helper reads its child session: claims it, or keeps its claim.
-    fn claim(&self, key: &str, name: &str) {
-        self.claims
-            .lock()
-            .unwrap()
-            .insert(key.to_string(), (name.to_string(), now_ms()));
-    }
-    /// How many events wait for a child session.
-    fn waiting_in(&self, key: &str) -> usize {
-        self.missed
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|e| event_session(&e.params) == key)
-            .count()
-    }
-    /// Ends a claim; the events it held go to the coordinator again, with a notice when some wait.
-    async fn unclaim(&self, key: &str, why: &str) {
-        let Some((name, _)) = self.claims.lock().unwrap().remove(key) else {
-            return;
-        };
-        let n = self.waiting_in(key);
-        if n > 0 {
-            let s = if n == 1 { "" } else { "s" };
-            self.helper_notice(&name, format!("{why}, {n} event{s} waiting"))
-                .await;
-        }
-    }
-    /// Claims whose helper has not read its session for `TROMMI_CLAIM_MS` (10 minutes) lapse.
-    async fn lapse_claims(&self) {
-        let ttl = env_ms("TROMMI_CLAIM_MS", 600_000);
-        let now = now_ms();
-        let gone: Vec<String> = self
-            .claims
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(_, (_, at))| now.saturating_sub(*at) >= ttl)
-            .map(|(k, _)| k.clone())
-            .collect();
-        for k in gone {
-            self.unclaim(&k, "helper gone").await;
-        }
-    }
-    /// A short line for the coordinator about a claimed child session (README "Helpers and their events").
-    async fn helper_notice(&self, name: &str, note: String) {
-        let params = json!({ "content": format!("{name}: {note}"), "meta": { "kind": "helper", "helper": name, "note": note } });
-        self.notify("notifications/claude/channel", params, None)
-            .await;
-    }
-    /// After a helper's tool call in its claimed session: a card it marked "Done: …" is told to the coordinator.
-    async fn note_done(&self, name: &str, args: &Value) {
-        let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("");
-        if !crate::bridge::done_title(title) {
-            return;
-        }
-        let key = if name == "revise_card" {
-            let bridge = self.bridge.lock().unwrap().clone();
-            match bridge {
-                Some(b) => b
-                    .card_session_name(args.get("card_id"))
-                    .await
-                    .map(|n| n.trim().to_lowercase())
-                    .unwrap_or_default(),
-                None => String::new(),
-            }
-        } else {
-            args.get("session")
-                .and_then(|v| v.as_str())
-                .map(|s| s.trim().to_lowercase())
-                .unwrap_or_default()
-        };
-        let who = self.claims.lock().unwrap().get(&key).map(|c| c.0.clone());
-        if let Some(who) = who {
-            let t: String = title.trim().chars().take(80).collect();
-            self.helper_notice(&who, format!("filed \"{t}\"")).await;
-        }
-    }
     fn waits_for(&self, about: &Option<About>) -> bool {
         let Some(sid) = about.as_ref().and_then(|a| a.session_id.clone()) else {
             return false;
@@ -575,11 +479,6 @@ impl Conn {
             }
         }
         let event = method == "notifications/claude/channel";
-        if event && self.claimed(&event_session(&params)) {
-            // a helper reads this session itself: no monitor line, no channel event, it waits for inbox(session)
-            self.stash(params, about);
-            return;
-        }
         if !self.heard() && event {
             if let Some(a) = &about {
                 if a.envelope_number.is_some_and(|n| n > 0) && !self.waits_for(&about) {
@@ -638,20 +537,13 @@ impl Conn {
             }
         }
     }
-    /// `said` with the waiting events for this caller: a helper's call (child) gets only its own.
-    fn with_missed(&self, said: &str, child: Option<&str>) -> String {
-        let events: Vec<Missed> = self
-            .missed
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|e| match child {
-                Some(c) => event_session(&e.params) == c,
-                // the coordinator: not the events of a session a helper reads itself
-                None => !self.claimed(&event_session(&e.params)),
-            })
-            .cloned()
-            .collect();
+    /// `said` with the waiting events. A helper's call (one that names its helper) gets none: every board event is
+    /// the coordinator's, who forwards a helper's to it (README "Helpers and their events").
+    fn with_missed(&self, said: &str, helper: Option<&str>) -> String {
+        if helper.is_some() {
+            return said.to_string();
+        }
+        let events: Vec<Missed> = self.missed.lock().unwrap().clone();
         let deaf_told = self.deaf_told.load(Ordering::SeqCst);
         if if self.hears_live() {
             events.is_empty()
@@ -673,17 +565,13 @@ impl Conn {
                 }
             }
             self.save_missed();
-            if child.is_none() {
-                for e in &events {
-                    let own = e.from.is_empty() || e.from == self.cfg.session;
-                    self.mirror.heard(e.params.get("meta"), own);
-                }
+            for e in &events {
+                let own = e.from.is_empty() || e.from == self.cfg.session;
+                self.mirror.heard(e.params.get("meta"), own);
             }
             let abouts: Vec<Option<About>> = events.iter().map(|e| e.about.clone()).collect();
             self.receipt(&abouts);
-            if child.is_none() {
-                self.waking.store(false, Ordering::SeqCst);
-            }
+            self.waking.store(false, Ordering::SeqCst);
         }
         let head = if self.hears_live() {
             String::new()
@@ -1004,7 +892,6 @@ impl Conn {
             let m = self.member.clone();
             tokio::spawn(async move { m.claim(false).await });
         }
-        self.lapse_claims().await;
         self.look_around();
         self.sync_link().await;
         self.present();
@@ -1570,7 +1457,7 @@ impl Conn {
             // an answer of a turn one card started goes into the card's thread, then a pointer line to the card into
             // the session's chat; a card this connector does not know (any more) gets the answer in the chat
             let sent = match (&item.work, item.kind, &item.card) {
-                (Some(e), _, _) => b.work(e.target.as_deref(), &e.work).await,
+                (Some(e), _, _) => b.work(&e.work).await,
                 (None, "answer", Some(card)) => match b.answer_on_card(card, &item.text).await {
                     Ok(Some(title)) => {
                         self.touch();
@@ -1769,7 +1656,19 @@ impl Conn {
             st2.set("channel", v);
         });
         let b = Bridge::new(client.clone(), notify, paths.cache.clone(), state, save);
-        *self.bridge.lock().unwrap() = Some(b);
+        *self.bridge.lock().unwrap() = Some(b.clone());
+        // the helper sessions of before this agent opened: archived once nothing of them waits, after the first
+        // catch-up has read the hub's order to its end
+        let online = client.clone();
+        tokio::spawn(async move {
+            for _ in 0..600 {
+                if online.is_online() {
+                    b.retire_children().await;
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
         // the Codex thread this slot last served: a restarted or swapped-in connector wakes it before its first call
         if crate::host::is_codex() {
             match crate::host::thread() {
@@ -2117,11 +2016,12 @@ impl mcp::Server for Conn {
             let error =
                 |t: String| json!({ "content": [{ "type": "text", "text": t }], "isError": true });
             self.use_.lock().unwrap().calls += 1;
-            let child = args
-                .get("session")
-                .and_then(|v| v.as_str())
+            // (a call for a helper: `helper`, or `session` as older tools name it)
+            let child = ["helper", "session"]
+                .iter()
+                .filter_map(|k| args.get(*k).and_then(|v| v.as_str()))
                 .map(|s| s.trim().to_lowercase())
-                .filter(|s| !s.is_empty());
+                .find(|s| !s.is_empty());
             let res: Value = async {
                 if name == "reload_connector" {
                     return text(self.with_missed(&self.reload().await, child.as_deref()));
@@ -2133,26 +2033,10 @@ impl mcp::Server for Conn {
                     };
                 }
                 self.wake().await;
-                if name == "inbox" {
-                    if let Some(c) = &child {
-                        // a helper reads its own child session, and claims it (README "Helpers and their events")
-                        let shown = args
-                            .get("session")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .trim()
-                            .to_string();
-                        self.claim(c, &shown);
-                        let events =
-                            crate::util::js_trim(&self.with_missed("", Some(c))).to_string();
-                        return text(if events.is_empty() {
-                            format!("No new board events in {shown}.")
-                        } else {
-                            events
-                        });
-                    }
+                if name == "inbox" && child.is_some() {
+                    // (every board event is the coordinator's, who forwards a helper's: README "Helpers and their events")
+                    return text("No board events for a helper: the agent that runs you reads them and forwards yours.".into());
                 }
-                self.lapse_claims().await;
                 if name == "inbox"
                     && (!self.missed.lock().unwrap().is_empty()
                         || self.bridge.lock().unwrap().is_some())
@@ -2189,24 +2073,7 @@ impl mcp::Server for Conn {
                                 card.as_deref(),
                             );
                         }
-                        let claimed = child.as_deref().is_some_and(|c| self.claimed(c));
-                        // (a claimed session's events go out with inbox(session) alone)
-                        let out = if claimed {
-                            out
-                        } else {
-                            self.with_missed(&out, child.as_deref())
-                        };
-                        if name == "close_session" {
-                            let key = args
-                                .get("name")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .trim()
-                                .to_lowercase();
-                            self.unclaim(&key, "session closed").await;
-                        } else if name == "create_info" || name == "revise_card" {
-                            self.note_done(&name, &args).await;
-                        }
+                        let out = self.with_missed(&out, child.as_deref());
                         self.touch();
                         self.sync_link().await;
                         let out = if child.is_none() {
@@ -2306,7 +2173,6 @@ pub async fn main_server() {
         missed: Mutex::new(vec![]),
         deaf_told: AtomicBool::new(false),
         marks: Mutex::new(HashMap::new()),
-        claims: Mutex::new(HashMap::new()),
         mark_timer: AtomicBool::new(false),
         hint: Mutex::new(None),
         door: Mutex::new(None),
