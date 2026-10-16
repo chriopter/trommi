@@ -164,12 +164,11 @@ HTTP only. Without the private account file this opt-in test is skipped.
 For ordinary launch timing, after building a Release Simulator app, run
 `tests/ios/UITests/startup.sh /absolute/Trommi.app /absolute/mega.json 290 /absolute/evidence` on the Mac.
 It creates and removes its own Simulator, records three process launches, requires the full Desk row count and
-fails if process creation through first Desk appearance takes 2 seconds or more, including time before app initialization.
+fails if the launch request through first Desk appearance takes 2 seconds or more, including command setup and time before app initialization.
 The helper accepts only the PID returned by `simctl`, reads that process's creation timestamp through Darwin's
 `PROC_PIDTBSDINFO`, and records command-to-Desk and command-completion time separately. Command setup can
-precede process creation by several seconds after Simulator creation; it remains visible in the evidence but
-is outside the app process budget. The command interval uses one Python process, since the Mac's Python 3.9
-monotonic clock origins differ between processes. `DESK_BUDGET_MS` changes the process budget explicitly.
+precede process creation by several seconds after Simulator creation; it remains part of the launch budget as well as visible in the evidence. The command interval uses one Python process, since the Mac's Python 3.9
+monotonic clock origins differ between processes. `DESK_BUDGET_MS` changes the launch budget explicitly; process timing alone cannot satisfy it.
 This avoids XCTest's injected launch services; its lifecycle delay is included in the XCTest measurements below.
 
 The opt-in `NativeScreensTests.testFullSizeDeskLaunchAndMemory` measures the same Rust model and native Desk

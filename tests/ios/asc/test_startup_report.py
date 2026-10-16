@@ -53,8 +53,10 @@ class StartupReportTests(unittest.TestCase):
             with self.subTest(rows=rows, desk=desk, wall=wall), self.assertRaises(AssertionError):
                 report.validate_report({'rows': rows, 'desk_ms': desk, 'process_to_desk_ms': wall, 'launch_to_desk_ms': wall}, 290, 2000)
 
-    def test_tool_setup_is_reported_separately_from_the_process_startup_budget(self):
+    def test_a_fast_process_does_not_hide_an_over_budget_cold_launch(self):
         value = {'rows':290, 'desk_ms':600, 'process_to_desk_ms':750, 'launch_to_desk_ms':4000}
+        with self.assertRaises(AssertionError): report.validate_report(value, 290, 2000)
+        value['launch_to_desk_ms'] = 1000
         report.validate_report(value, 290, 2000)
         value['process_to_desk_ms'] = 2001
         with self.assertRaises(AssertionError): report.validate_report(value, 290, 2000)

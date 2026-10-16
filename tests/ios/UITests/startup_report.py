@@ -74,8 +74,8 @@ def measure_launch(sim, fixture, report, launch_log, clock=time.monotonic, sleep
 
 def validate_report(value, rows, budget):
     assert value['rows'] == rows, value
-    assert 0 < value['desk_ms'] <= value['process_to_desk_ms'] < budget, value
-    assert value['process_to_desk_ms'] <= value['launch_to_desk_ms'] + 5, value
+    assert 0 < value['desk_ms'] <= value['process_to_desk_ms'] <= value['launch_to_desk_ms'] + 5, value
+    assert value['launch_to_desk_ms'] < budget, value
 
 
 def wait_for_exit(pid):
