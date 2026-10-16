@@ -136,6 +136,32 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertFalse(message.label.isEmpty)
     capture("chat")
   }
+  /** The chat's "+" offers the Photo Library (lost once in the switch to the app core: it opened Files only), and a
+   *  photo picked there goes out with the message. */
+  func testChatPlusAttachesAPhoto() {
+    launch("chat")
+    let plus = app.buttons["attach"].firstMatch
+    XCTAssertTrue(plus.waitForExistence(timeout: 15), app.debugDescription)
+    plus.tap()
+    let photos = app.buttons["attach-photos"]
+    XCTAssertTrue(photos.waitForExistence(timeout: 5), "the + offers the Photo Library. " + app.debugDescription)
+    XCTAssertTrue(app.buttons["attach-file"].exists, "the + offers Choose File.")
+    capture("chat-plus-menu")
+    photos.tap()
+    let photo = app.images.matching(NSPredicate(format: "identifier BEGINSWITH %@ OR label BEGINSWITH %@", "PXGGridLayout", "Photo")).firstMatch
+    guard photo.waitForExistence(timeout: 15) else { capture("chat-photo-picker"); return }
+    capture("chat-photo-picker")
+    photo.tap()
+    let add = app.buttons["Add"]
+    if add.waitForExistence(timeout: 3) { add.tap() }
+    let chip = app.buttons["Remove"].firstMatch
+    XCTAssertTrue(chip.waitForExistence(timeout: 15), "the picked photo lies in the composer. " + app.debugDescription)
+    capture("chat-photo-attached")
+    app.buttons["Send"].firstMatch.tap()
+    XCTAssertTrue(chip.waitForNonExistence(timeout: 10), "sent: the composer is empty again. " + app.debugDescription)
+    XCTAssertFalse(app.staticTexts["That line cannot be sent."].waitForExistence(timeout: 2), "the line with the photo went out.")
+    capture("chat-photo-sent")
+  }
   func testScribbleBoardControlsRespond() {
     launch("scribble-board")
     let erase = app.switches["Erase"]

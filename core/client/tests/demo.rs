@@ -56,6 +56,19 @@ fn the_demo_opens_its_files_by_their_address_and_keeps_what_is_attached() {
     sim.log.clear();
     sim.send(Event::Action { action: Action::OpenFile { attachment_id: "local-1".into(), save: false } });
     assert!(sim.log.iter().any(|e| matches!(e, Effect::FileReady { bytes, .. } if bytes.0 == b"mine")));
+
+    // a photo picked in a chat goes out with the line, as on a real room, and opens from the line
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    sim.send(Event::Action { action: Action::Attach { local_id: "photo-1".into(), name: "photo-1.jpg".into(), media_type: "image/jpeg".into(), bytes: b"jpeg".to_vec().into() } });
+    let attachment = sim.view.files["photo-1"].attachment_id.clone().expect("its id");
+    assert_eq!(attachment.len(), 32, "an attachment id as a body names one: {attachment}");
+    sim.send(Event::Action { action: Action::Write { session_id: session.clone(), card_id: None, text: String::new(), attachments: vec!["photo-1".into()], marks: vec![], copied_cards: vec![] } });
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: session.clone() }, ..Default::default() } });
+    assert!(sim.view.sessions[&session].talk.iter().any(|r| r.files == [attachment.clone()]), "the line names the photo");
+    sim.log.clear();
+    sim.send(Event::Action { action: Action::OpenFile { attachment_id: attachment.clone(), save: false } });
+    assert!(sim.log.iter().any(|e| matches!(e, Effect::FileReady { file_id, bytes, .. } if *file_id == attachment && bytes.0 == b"jpeg")));
 }
 
 #[test]
