@@ -28,8 +28,11 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
   asc.py upload IPA VERSION BUILD [--dry-run]
                                     uploads the signed .ipa through the Build Uploads API (no second Xcode export),
                                     after checking it is BUNDLE_ID VERSION (BUILD); waits until the upload is COMPLETE.
+                                    Idempotent: when App Store Connect has that build or an upload of it already (a run
+                                    started again), it is picked up and waited for, not sent twice
                                     --dry-run: the same checks, offline, and prints what would be sent; nothing is sent
-  asc.py next-build                 the highest build number App Store Connect has for the app (any platform), plus one
+  asc.py next-build                 the highest build number App Store Connect has for the app (any platform, builds and
+                                    uploads), plus one
   asc.py last-sha                   the commit of the newest build whose What to Test names one ("(abc1234)")
   asc.py crashes OUT_DIR [SINCE]    read only: TestFlight crash feedback newer than SINCE (ISO 8601, default 3 days
                                     ago) with each crash log as a file, the diagnostic signatures (hangs, launches,
@@ -43,11 +46,15 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
   asc.py export-code                the code of the app's APPROVED export compliance documentation (the newest if
                                     several), read only; fails listing every declaration's state and date if none is
 
+Every API call is tried again with growing pauses on HTTP 429/5xx, a timeout or a dropped connection, for up to
+ASC_RETRY_SECONDS (default 900) per call, each request with ASC_TIMEOUT seconds (default 120); then the step fails
+saying App Store Connect is down. Other errors fail at once.
+
 Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (the .p8 file). ASC_PLATFORM: IOS (the default) or MAC_OS; with
 MAC_OS, wait, last-sha and upload look at the Mac's builds only (IOS: the iOS ones) and upload takes a signed .pkg. Nothing here prints
 key material or tokens.
 """
-import base64, datetime, hashlib, json, os, plistlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
+import base64, datetime, hashlib, http.client, json, os, plistlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
 
 API = "https://api.appstoreconnect.apple.com"
 PLATFORM = os.environ.get("ASC_PLATFORM") or "IOS"
@@ -100,13 +107,68 @@ def token():
     return _token[1]
 
 
-def call(method, path, body=None, ok=()):
-    """ok: HTTP error codes that are expected answers (the call then returns {})."""
-    req = urllib.request.Request(API + path, method=method, data=None if body is None else json.dumps(body).encode(),
-                                 headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
+# App Store Connect answers 500 UNEXPECTED_ERROR, 502/503/504 or nothing at all for minutes at a time while the rest of
+# it works (2026-10-16: four deliveries in a row failed on single GETs). Such answers are tried again, with growing
+# pauses, until RETRY_SECONDS have passed for that one call; every other error fails at once.
+TIMEOUT = int(os.environ.get("ASC_TIMEOUT") or 120)          # seconds per request (connect, and each read)
+RETRY_SECONDS = int(os.environ.get("ASC_RETRY_SECONDS") or 900)
+RETRY_CODES = (429, 500, 502, 503, 504)
+_sleep, _clock = time.sleep, time.monotonic   # (the tests replace them)
+
+
+class Unavailable(Exception):
+    """App Store Connect did not answer properly within the retry budget."""
+
+
+def _pause(attempt, retry_after=None):
+    if retry_after and str(retry_after).isdigit():
+        return min(int(retry_after), 120)
+    return min(5 * 2 ** attempt, 60)
+
+
+def retrying(what, send, budget=None):
+    """send(), and again after a 5xx/429 answer, a timeout or a dropped connection, until `budget` seconds passed.
+    Returns what send() returns; an HTTPError that is no reason to try again is raised as it is."""
+    budget = RETRY_SECONDS if budget is None else budget
+    start, attempt = _clock(), 0
+    while True:
+        retry_after = None
+        try:
+            return send()
+        except urllib.error.HTTPError as e:
+            if e.code not in RETRY_CODES:
+                raise
+            retry_after = e.headers.get("Retry-After") if e.headers else None
+            text = e.read().decode(errors="replace")
+            codes = ", ".join(x.get("code", "") for x in _errors(text) if x.get("code"))
+            why = f"HTTP {e.code} {codes}".strip()
+        except (TimeoutError, ConnectionError, http.client.HTTPException, urllib.error.URLError, OSError) as e:
+            why = f"{type(e).__name__}: {getattr(e, 'reason', None) or e}"
+        pause = _pause(attempt, retry_after)
+        spent = _clock() - start
+        if spent + pause > budget:
+            raise Unavailable(f"{what}: no proper answer from App Store Connect in {int(spent)} s and "
+                              f"{attempt + 1} attempt(s), last: {why}")
+        attempt += 1
+        # (stderr: some commands' stdout is their value)
+        print(f"::warning::{what}: {why}; trying again in {pause} s (attempt {attempt + 1})", file=sys.stderr, flush=True)
+        _sleep(pause)
+
+
+def call(method, path, body=None, ok=(), budget=None):
+    """ok: HTTP error codes that are expected answers (the call then returns {"error": code, ...}). A 5xx/429 answer, a
+    timeout or a dropped connection is tried again (retrying); when App Store Connect stays away, the step fails saying
+    that it is Apple's side. budget: seconds of trying again for this call (default RETRY_SECONDS)."""
+    data = None if body is None else json.dumps(body).encode()
+
+    def send():
+        req = urllib.request.Request(API + path, method=method, data=data,
+                                     headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            return resp.read()
+
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            raw = resp.read()
+        raw = retrying(f"{method} {path}", send, budget)
     except urllib.error.HTTPError as e:
         text = e.read().decode(errors="replace")
         if e.code in ok:
@@ -114,6 +176,9 @@ def call(method, path, body=None, ok=()):
             return {"error": e.code, "codes": [x.get("code", "") for x in errs],
                     "detail": "; ".join(x.get("detail", "") for x in errs)}
         die(f"{method} {path}: HTTP {e.code} {text}")
+    except Unavailable as e:
+        die(f"{e}. App Store Connect is down or very slow (https://developer.apple.com/system-status/), not the build: "
+            "run the job again later; an upload that already went through is picked up, not sent twice")
     return json.loads(raw) if raw else {}
 
 
@@ -175,7 +240,7 @@ def prepare(bundle):
             name, state = p["attributes"]["name"], p["attributes"]["profileState"]
             if name.startswith(f"omarchy-apple-dev {ident} ") and state != "ACTIVE":
                 print(f"removing the {state} profile '{name}'")
-                call("DELETE", f"/v1/profiles/{p['id']}")
+                call("DELETE", f"/v1/profiles/{p['id']}", ok=(404,))  # (404: a try before this one removed it)
     aid = app_id(bundle)
     if not aid:
         die(f"no App Store Connect app record for {bundle}: create it once in App Store Connect (Apps > + > New App; "
@@ -320,44 +385,148 @@ def upload(ipa, version, build, *flags):
               "PUT the parts, PATCH uploaded=true with the MD5, then poll until COMPLETE; nothing was sent")
         return
     aid = app_id(bundle) or die("no app record")
-    upload_id = call("POST", "/v1/buildUploads", {"data": {"type": "buildUploads", "attributes": {
-        "cfBundleShortVersionString": version, "cfBundleVersion": build, "platform": PLATFORM},
-        "relationships": {"app": rel("apps", aid)}}})["data"]["id"]
-    file = call("POST", "/v1/buildUploadFiles", {"data": {"type": "buildUploadFiles", "attributes": {
-        "assetType": "ASSET", "fileName": os.path.basename(ipa), "fileSize": size, "uti": uti},
-        "relationships": {"buildUpload": rel("buildUploads", upload_id)}}})["data"]
-    ops = file["attributes"]["uploadOperations"]
+    # Idempotent: a run started again (or a call tried again after a lost answer) picks up what App Store Connect has
+    # of this version and build already instead of sending it twice.
+    row = build_row(aid, version, build)
+    if row:
+        print(f"build {version} ({build}) is in App Store Connect already ({row['attributes'].get('processingState')}): "
+              "nothing to upload")
+        return
+    up = existing_upload(aid, version, build)
+    if up and up["state"] == "FAILED":
+        upload_report(up["id"], up["attrs"].get("state") or {})
+        die(f"App Store Connect refused an earlier upload of {version} ({build}) (buildUpload {up['id']}, FAILED): the "
+            "errors are above; a new run takes the next build number")
+    if up and up["state"] in ("COMPLETE", "PROCESSING"):
+        print(f"buildUpload {up['id']} of {version} ({build}) is there already ({up['state']}): not sent again")
+        return finish_upload(aid, version, build, up["id"])
+    if up:
+        upload_id = up["id"]
+        print(f"buildUpload {upload_id} of {version} ({build}) is there already ({up['state'] or 'no state'}): its file is sent")
+    else:
+        made = call("POST", "/v1/buildUploads", {"data": {"type": "buildUploads", "attributes": {
+            "cfBundleShortVersionString": version, "cfBundleVersion": build, "platform": PLATFORM},
+            "relationships": {"app": rel("apps", aid)}}}, ok=(409,))
+        if "error" in made:
+            # an earlier attempt of this call went through although its answer was lost, or another machine took the
+            # number: either way App Store Connect names the upload of this version and build
+            up = existing_upload(aid, version, build)
+            if not up:
+                die(f"App Store Connect refused the upload of {version} ({build}): HTTP 409 {made['detail']}")
+            if up["state"] in ("COMPLETE", "PROCESSING"):
+                return finish_upload(aid, version, build, up["id"])
+            upload_id = up["id"]
+        else:
+            upload_id = made["data"]["id"]
+    file = upload_file(upload_id, os.path.basename(ipa), size, uti)
+    ops = file["attributes"].get("uploadOperations") or []
+    if not ops:
+        die(f"App Store Connect named no upload operations for buildUploadFile {file['id']}")
     with open(ipa, "rb") as f:
         for op in ops:
             f.seek(op["offset"])
             part = f.read(op["length"])
             headers = {h["name"]: h["value"] for h in op.get("requestHeaders") or []}
-            for attempt in range(3):
-                try:
-                    req = urllib.request.Request(op["url"], data=part, method=op["method"], headers=headers)
-                    with urllib.request.urlopen(req, timeout=600) as resp:
-                        resp.read()
-                    break
-                except (urllib.error.URLError, TimeoutError) as e:
-                    if attempt == 2:
-                        die(f"upload of the part at {op['offset']} failed: {e}")
-                    time.sleep(5)
+
+            def put():
+                req = urllib.request.Request(op["url"], data=part, method=op["method"], headers=headers)
+                with urllib.request.urlopen(req, timeout=600) as resp:
+                    return resp.read()
+            try:
+                retrying(f"upload of the part at {op['offset']}", put)
+            except urllib.error.HTTPError as e:
+                die(f"upload of the part at {op['offset']} ({op['length']} bytes): HTTP {e.code} "
+                    f"{e.read().decode(errors='replace')[:300]}")
+            except Unavailable as e:
+                die(f"{e}. App Store Connect's upload storage is down or very slow: run the job again later")
     print(f"uploaded {size} bytes in {len(ops)} part(s)", flush=True)
-    call("PATCH", f"/v1/buildUploadFiles/{file['id']}", {"data": {"type": "buildUploadFiles", "id": file["id"],
-         "attributes": {"uploaded": True, "sourceFileChecksums": {
-             "file": {"hash": md5.hexdigest(), "algorithm": "MD5"}}}}})
-    state = {}
-    for _ in range(120):
-        state = call("GET", f"/v1/buildUploads/{upload_id}")["data"]["attributes"].get("state") or {}
-        if state.get("state") in ("COMPLETE", "FAILED"):
-            break
-        time.sleep(15)
+    done = call("PATCH", f"/v1/buildUploadFiles/{file['id']}", {"data": {"type": "buildUploadFiles", "id": file["id"],
+                "attributes": {"uploaded": True, "sourceFileChecksums": {
+                    "file": {"hash": md5.hexdigest(), "algorithm": "MD5"}}}}}, ok=(409,))
+    if "error" in done:
+        # (a PATCH tried again after a lost answer: the first one went through)
+        print(f"buildUploadFile {file['id']}: marked as uploaded already ({done['detail']})")
+    finish_upload(aid, version, build, upload_id)
+
+
+def build_row(aid, version, build):
+    """The build VERSION (BUILD) of this platform as App Store Connect lists it, or None (not there, or not yet)."""
+    rows = call("GET", f"/v1/builds?filter[app]={aid}&filter[version]={q(build)}"
+                       f"&filter[preReleaseVersion.version]={q(version)}{platform_filter()}&limit=1")["data"]
+    return rows[0] if rows else None
+
+
+def existing_upload(aid, version, build):
+    """The newest buildUpload of this version, build and platform: {"id", "state", "attrs"}, or None. COMPLETE or
+    PROCESSING ones win over the others."""
+    page = call("GET", f"/v1/apps/{aid}/buildUploads?filter[cfBundleVersion]={q(build)}&filter[platform]={PLATFORM}"
+                       "&limit=50", ok=(400, 403, 404))
+    if "error" in page:
+        print(f"::warning::the build uploads of the app could not be listed (HTTP {page['error']} {page['detail']}): "
+              "an earlier upload of this build is not looked for", file=sys.stderr)
+        return None
+    found = []
+    for u in page.get("data") or []:
+        a = u.get("attributes") or {}
+        if (a.get("cfBundleVersion"), a.get("cfBundleShortVersionString")) != (build, version):
+            continue
+        if a.get("platform") not in (None, PLATFORM):
+            continue
+        state = (a.get("state") or {}).get("state") or ""
+        found.append({"id": u["id"], "state": state, "attrs": a,
+                      "rank": (state in ("COMPLETE", "PROCESSING"), a.get("uploadedDate") or a.get("createdDate") or "")})
+    return max(found, key=lambda u: u["rank"]) if found else None
+
+
+def upload_file(upload_id, name, size, uti):
+    """The buildUploadFile of that upload to send the file into: a new one, or, when App Store Connect has one that
+    waits for its parts (an attempt before this one), that one."""
+    def waiting():
+        files = call("GET", f"/v1/buildUploads/{upload_id}/buildUploadFiles?limit=50", ok=(403, 404))
+        for f in files.get("data") or []:
+            a = f.get("attributes") or {}
+            if a.get("fileName") == name and a.get("fileSize") == size and a.get("uploadOperations"):
+                return f
+        return None
+    again = waiting()
+    if again:
+        print(f"buildUploadFile {again['id']} waits for its parts: it is used")
+        return again
+    made = call("POST", "/v1/buildUploadFiles", {"data": {"type": "buildUploadFiles", "attributes": {
+        "assetType": "ASSET", "fileName": name, "fileSize": size, "uti": uti},
+        "relationships": {"buildUpload": rel("buildUploads", upload_id)}}}, ok=(409,))
+    if "error" in made:
+        again = waiting()
+        if not again:
+            die(f"App Store Connect refused the file of buildUpload {upload_id}: HTTP 409 {made['detail']}")
+        return again
+    return made["data"]
+
+
+def upload_report(upload_id, state):
     print(f"buildUpload {upload_id}: {state.get('state')}")
     for kind in ("errors", "warnings", "infos"):
         for item in state.get(kind) or []:
             print(f"  {kind[:-1]} {item.get('code')}: {item.get('description')}")
+
+
+def finish_upload(aid, version, build, upload_id, rounds=120, pause=15):
+    """Waits until App Store Connect has taken the upload (COMPLETE), up to rounds x pause seconds. The build showing up
+    in the build list counts as taken too."""
+    state = {}
+    for i in range(rounds):
+        state = call("GET", f"/v1/buildUploads/{upload_id}")["data"]["attributes"].get("state") or {}
+        if state.get("state") in ("COMPLETE", "FAILED"):
+            break
+        if i % 4 == 3 and build_row(aid, version, build):
+            print(f"build {version} ({build}) is listed by App Store Connect")
+            state = {**state, "state": "COMPLETE"}
+            break
+        _sleep(pause)
+    upload_report(upload_id, state)
     if state.get("state") != "COMPLETE":
-        die(f"App Store Connect did not take the upload ({state.get('state') or 'no answer'})")
+        die(f"App Store Connect did not take the upload of {version} ({build}) (buildUpload {upload_id}: "
+            f"{state.get('state') or 'no answer'}{' after ' + str(rounds * pause // 60) + ' minutes' if state.get('state') != 'FAILED' else ''})")
 
 
 def builds(aid, every_platform=False):
@@ -375,7 +544,25 @@ def next_build():
     aid = app_id(os.environ["BUNDLE_ID"]) or die("no app record")
     # over every platform of the record: an iOS and a Mac build never share a number
     numbers = [int(b["attributes"]["version"]) for b in builds(aid, every_platform=True) if b["attributes"]["version"].isdigit()]
+    # and over the uploads: an upload that went through shows up in the build list only minutes later, and a run
+    # started again before that must not take its number
+    numbers += [int(n) for n in upload_numbers(aid) if n.isdigit()]
     print(max(numbers, default=0) + 1)
+
+
+def upload_numbers(aid):
+    """The build numbers of every buildUpload of the app (any platform); none when they cannot be listed."""
+    out, path = [], f"/v1/apps/{aid}/buildUploads?limit=200"
+    while path:
+        page = call("GET", path, ok=(400, 403, 404))
+        if "error" in page:
+            print(f"::warning::the build uploads of the app could not be listed (HTTP {page['error']}): the build "
+                  "number counts the listed builds only", file=sys.stderr)
+            return out
+        out += [(u.get("attributes") or {}).get("cfBundleVersion") or "" for u in page.get("data") or []]
+        nxt = (page.get("links") or {}).get("next")
+        path = nxt[len(API):] if nxt else None
+    return out
 
 
 def last_sha():
