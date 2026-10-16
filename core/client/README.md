@@ -196,3 +196,5 @@ was showing. This covers both listed values and values already read through a se
 not keep a value the protocol replay discarded. A device-name register records its source group in the cached
 room record, so a session Cut cannot clear a name learned from the room. Cache layout revision 2 rebuilds older
 model snapshots that lack this provenance; the device's durable protocol state is untouched.
+
+The Devices view formats the hub's last-contact hints in the person's timezone. Presence can hold a bounded report until a signed group names its device; activity never creates membership or authorizes removal.

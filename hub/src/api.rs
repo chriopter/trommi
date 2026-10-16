@@ -595,6 +595,8 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             let room = id::<32>(room)?;
             let (auth, signature) = (rq.bytes("auth")?, rq.bytes("signature")?);
             let (token, expires_at, who) = app.read(|x| app.sessions.sign_in(x.c, x.obs, &app.cfg.url, &room, &auth, &signature, x.now))?;
+            let device = trommi_wire::layout::HubAuth::parse(&auth)?.device;
+            app.db.write(|c| crate::devices::touch(c, &room, &device, t))?;
             let role = match who {
                 Some(Who::Human) => "human",
                 Some(Who::Agent) => "agent",

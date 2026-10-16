@@ -1781,6 +1781,12 @@ pub struct DeviceRow {
     /// When it joined, if known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added_ms: Option<u64>,
+    /// Last contact with the hub, when known. It confers no membership authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen_ms: Option<u64>,
+    /// Core-formatted last-seen text for an offline device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seen: Option<Text>,
 }
 
 /// The account's flows as a screen shows them. `step` names the screen; the fields it needs are filled.

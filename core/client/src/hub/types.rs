@@ -1181,6 +1181,8 @@ pub struct Presence {
     pub hears: Option<bool>,
     pub working: Option<bool>,
     pub last_call_at: Option<u64>,
+    /// Hub activity metadata, never membership evidence.
+    pub last_seen_ms: Option<u64>,
 }
 
 /// `Debug` that names the type and what orders it, never the bytes it holds (content, a Welcome, a KeyPackage).

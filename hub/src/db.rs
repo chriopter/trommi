@@ -48,6 +48,14 @@ CREATE TABLE IF NOT EXISTS board_frontiers (
 /// `epoch` (written before) holds its own. At 1000 human devices a founding's Welcome is some 0.3 MB, and it is
 /// for every one of them.
 const ADDED_TO_5: &str = "
+-- Activity metadata only: never membership or authority to remove a device. Older schema-5 hubs ignore it.
+CREATE TABLE IF NOT EXISTS device_seen (
+  room_id BLOB NOT NULL,
+  device BLOB NOT NULL CHECK (length(device) = 32),
+  at INTEGER NOT NULL CHECK (at >= 0),
+  PRIMARY KEY (room_id, device),
+  FOREIGN KEY (room_id, device) REFERENCES devices(room_id, device) ON DELETE CASCADE
+) STRICT, WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS welcome_bytes (
   group_id       BLOB NOT NULL,
   epoch          INTEGER NOT NULL,

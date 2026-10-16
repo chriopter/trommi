@@ -1274,6 +1274,10 @@ export interface DeviceRow {
   icon: string
   /** When it joined, if known. */
   added_ms?: number
+  /** Last contact with the hub, when known. It confers no membership authority. */
+  last_seen_ms?: number
+  /** Core-formatted last-seen text for an offline device. */
+  seen?: Text
 }
 
 /** The account's flows as a screen shows them. `step` names the screen; the fields it needs are filled.

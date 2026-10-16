@@ -15,6 +15,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Sizes are padded: stored messages, MLS messages and new files are rounded up to fixed buckets (a file to 4 KiB at
   least, and above that at most about 12 % larger), so a size tells little of the content. Files from before
   11 October 2026 keep their exact size.
+- The hub records when a device last signed in or opened or closed its stream (persistent times coalesced to a minute).
+  Settings → Devices shows offline contact times. These are hub activity hints, never evidence for membership or removal.
 - Settings → Data shows you what the hub keeps of your account: counts and sizes only, to your own devices only.
 - Your password never leaves your device; the hub keeps only a slow hash of a key derived from it.
 - Each wrong password makes that guesser wait longer (up to 15 minutes); no account is ever locked.

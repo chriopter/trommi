@@ -768,6 +768,8 @@ impl App {
 
     fn tell_closed(self: &Arc<Self>, auth: &Auth, generation: Option<u64>) {
         let _ = self.db.write(|c| {
+            let now = util::now();
+            crate::devices::touch(c, &auth.room, &auth.device, now)?;
             let online = self.live.online(&auth.room, &auth.device);
             if !online && lease_holds(c, auth, util::now())? {
                 return Ok::<_, Refused>(());
@@ -776,7 +778,7 @@ impl App {
             self.presence(
                 &auth.room,
                 &auth.device,
-                json!({ "device": b64(&auth.device), "online": online }),
+                json!({ "device": b64(&auth.device), "online": online, "last_seen_ms": now }),
             );
             Ok(())
         });
@@ -906,51 +908,17 @@ impl App {
     /// change of presence is published after it, so the newest word on a device always comes last.)
     pub fn stream_opened(self: &Arc<Self>, auth: &Auth, stream: &crate::live::Stream) {
         let _ = self.db.write(|c| {
+            let now = util::now();
+            crate::devices::touch(c, &auth.room, &auth.device, now)?;
             self.presence(
                 &auth.room,
                 &auth.device,
-                json!({ "device": b64(&auth.device), "online": true }),
+                json!({ "device": b64(&auth.device), "online": true, "last_seen_ms": now }),
             );
             if auth.who != Who::Human {
                 return Ok::<_, Refused>(());
             }
-            use rusqlite::OptionalExtension;
-            let now = util::now() as i64;
-            let mut lease = c.prepare_cached(
-                "SELECT hears, working, last_call_at FROM agent_leases WHERE room_id = ?1 AND device = ?2 AND expires_at > ?3",
-            )?;
-            for device in self.live.online_devices(&auth.room) {
-                if device == auth.device {
-                    continue;
-                }
-                let link: Option<(bool, bool, i64)> = lease
-                    .query_row(params![&auth.room[..], &device[..], now], |r| {
-                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-                    })
-                    .optional()?;
-                let data = match link {
-                    Some((hears, working, last_call_at)) => json!({
-                        "device": b64(&device), "online": true, "hears": hears, "working": working, "last_call_at": last_call_at,
-                    }),
-                    None => json!({ "device": b64(&device), "online": true }),
-                };
-                stream.send_now(crate::live::sse("presence", None, &data));
-            }
-            // an agent between two streams whose lease holds is here too
-            let streaming = self.live.online_devices(&auth.room);
-            let mut held = c.prepare_cached(
-                "SELECT device, hears, working, last_call_at FROM agent_leases WHERE room_id = ?1 AND expires_at > ?2",
-            )?;
-            let rows = held
-                .query_map(params![&auth.room[..], now], |r| {
-                    Ok((store::fixed::<32>(r.get(0)?)?, r.get::<_, bool>(1)?, r.get::<_, bool>(2)?, r.get::<_, i64>(3)?))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            for (device, hears, working, last_call_at) in rows {
-                if device == auth.device || streaming.contains(&device) {
-                    continue;
-                }
-                let data = json!({ "device": b64(&device), "online": true, "hears": hears, "working": working, "last_call_at": last_call_at });
+            for data in crate::devices::snapshot(c, &auth.room, &auth.device, &self.live.online_devices(&auth.room), now)? {
                 stream.send_now(crate::live::sse("presence", None, &data));
             }
             // the list is whole: a device it did not name is not here (a client whose stream was cut missed its

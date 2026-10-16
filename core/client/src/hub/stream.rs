@@ -376,6 +376,7 @@ impl StreamReader {
                     .maybe("last_call_at")
                     .map(|v| v.int("presence: last_call_at"))
                     .transpose()?,
+                last_seen_ms: o.maybe("last_seen_ms").map(|v| v.int("presence: last_seen_ms")).transpose()?,
             }),
             _ => StreamEvent::Here,
         }))
