@@ -1040,13 +1040,8 @@ impl App {
                         }
                     }
                 }
-                // (a team switched to opens in the wide sidebar: the person goes to see its sessions)
-                if let (Some(was), Some(now)) = (self.lens.team.as_ref(), focus.team.as_ref()) {
-                    if was != now {
-                        self.lens.teams_folded.insert(now.clone(), false);
-                    }
-                }
                 self.lens.team = focus.team;
+                self.lens.in_team = focus.in_team;
                 // (the gallery, and the Desk's foot shows its newest)
                 self.lens.artifacts = matches!(focus.screen, Screen::Artifacts { .. } | Screen::Desk);
                 self.lens.gallery = match &focus.screen {
@@ -1155,11 +1150,6 @@ impl App {
                         crate::views::MoreOf::Off { .. } => self.past.more_settled(engine, &mut ctx),
                     }
                 }
-                return;
-            }
-            Action::FoldTeam { team_id, folded } => {
-                self.lens.teams_folded.insert(team_id.clone(), *folded);
-                self.stale_views = true;
                 return;
             }
             Action::FoldGoals { team_id, folded } => {

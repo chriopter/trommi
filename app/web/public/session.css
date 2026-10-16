@@ -837,3 +837,46 @@ a.files-where:hover span { text-decoration: underline; }
 .status-more { display: grid; justify-items: start; gap: 6px; margin-top: 6px; padding: 8px; border-radius: 14px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong); width: max-content; max-width: 100%; }
 .status-more[hidden] { display: none; }
 .status-more > .status-chip { max-width: min(28rem, 100%); }
+
+/* ---- A calm chat (a wide screen; session.mjs headPill, sidePanel, the core's SessionView.tabs) ----
+   The head is one pill in the middle (drawing, name, a small dot, what waits); a click opens the side panel at the
+   right: the drawing and name large, then its tabs (Details with the model, use and the actions, Questions, Helpers,
+   Files). The filter, the use rings and ⋯ live there now; the helpers leave the conversation for the panel. A phone
+   keeps its head as before. */
+.head-pill, .side-panel { display: none; }
+@media (min-width: 861px) {
+  #session .pane-title { justify-content: center !important; min-height: 64px; border-bottom: 0 !important; }
+  #session .pane-title > :is(.pane-who, .session-mode, .head-use) { display: none !important; }
+  .head-pill { display: inline-flex; align-items: center; gap: 10px; max-width: min(420px, 100%); height: 44px; padding: 0 16px 0 8px; border-radius: 22px; background: var(--bg); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-sm); color: var(--fg); text-decoration: none; }
+  .head-pill:hover, .head-pill[aria-expanded="true"] { background: var(--sunken); }
+  .head-pill .agent-avatar, .head-pill .msg-mark, .head-pill > :first-child { flex: none; width: 30px; height: 30px; }
+  .head-pill b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 15px/1.2 var(--font); }
+  .head-pill .head-dot { flex: none; }
+  .head-pill-n { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--urg-critical); color: #fff; font: 700 12px/20px var(--font); font-style: normal; text-align: center; }
+  #chat .session-helpers { display: none; }
+
+  .side-panel:not([hidden]) { position: fixed; z-index: var(--z-panel); top: 0; right: 0; bottom: 0; width: 360px; display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--line); }
+  .panel-top { flex: none; display: flex; justify-content: flex-end; padding: var(--s-3); }
+  .panel-close { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--sunken); color: var(--muted); }
+  .panel-close:hover { color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong); }
+  .panel-close .ico { width: 18px; height: 18px; }
+  .panel-who { flex: none; display: grid; justify-items: center; gap: 6px; padding: 0 var(--s-4) var(--s-4); text-align: center; }
+  .panel-who .t-session-edit { flex-direction: column; align-items: center; gap: 10px; }
+  .panel-who .agent-avatar { width: 76px !important; height: 76px !important; }
+  .panel-who .t-head-name strong { font: 800 1.35rem/1.2 var(--display); }
+  .panel-sub { color: var(--muted); font-size: 13px; }
+  .panel-tabs { flex: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; padding: 0 var(--s-2) var(--s-3); border-bottom: 1px solid var(--line); }
+  .panel-tabs a { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 9px; border-radius: 16px; color: var(--muted); text-decoration: none; font: 600 13px/1 var(--font); }
+  .panel-tabs a:hover { color: var(--fg); }
+  .panel-tabs a[aria-current] { background: var(--sunken); color: var(--fg); }
+  .panel-tabs b { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--line); font: 700 11px/18px var(--font); text-align: center; }
+  .panel-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--s-4); }
+  .panel-body .session-helpers { margin: 0; }
+  .panel-body .session-cards .inbox-head { display: none; }
+  .panel-facts { display: grid; gap: var(--s-3); margin: 0 0 var(--s-4); }
+  .panel-fact { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: var(--s-3); }
+  .panel-fact dt { color: var(--faint); font-size: 13px; }
+  .panel-fact dd { margin: 0; min-width: 0; }
+  .panel-acts { position: static; display: grid; gap: 2px; padding: var(--s-2) 0 0; border-top: 1px solid var(--line); box-shadow: none; background: none; }
+}
+@media (min-width: 1280px) { #session[data-panel-open] { padding-right: 360px; } }

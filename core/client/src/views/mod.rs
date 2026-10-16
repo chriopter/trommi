@@ -93,6 +93,10 @@ pub struct Focus {
     /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
+    /// The wide sidebar is inside the team in view (its chats), not at every team as a stack (`SidebarView.level`).
+    /// This device's: the shell keeps it.
+    #[serde(default)]
+    pub in_team: bool,
 }
 
 fn yes() -> bool {
@@ -312,36 +316,34 @@ pub struct SidebarView {
     /// How many of his answers the sessions of the team in view have not picked up.
     #[serde(default)]
     pub unheard: u32,
-    /// Every team as a stack, in the menu's order (the wide sidebar: all teams at once). Folded, a team shows its
-    /// head with its sessions as card edges under it; open, its sessions' rows. The phone draws `sessions` instead.
+    /// Every team as a stack of its sessions' card edges, in the menu's order: the wide sidebar's first level. A
+    /// click on one goes into it (the team in view, `level` "team"). The phone draws `sessions` instead.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stacks: Vec<TeamStackView>,
+    /// What the wide sidebar shows: "teams" (every team as a stack) or "team" (inside the team in view: its chats,
+    /// `sessions`, and the way back). This device's choice (`Focus.in_team`); "teams" until made.
+    #[serde(default)]
+    pub level: String,
 }
 
-/// A team in the wide sidebar: its head, and its sessions as a folded stack or as rows.
+/// A team in the wide sidebar's first level: its head over a fan of its sessions' card edges.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamStackView {
     pub id: String,
     pub name: Text,
     /// The team in view (its Desk is the Desk).
     pub selected: bool,
-    /// Folded on this device (`Action::FoldTeam`; unless chosen there: every team but the one in view). A team
-    /// without sessions is never folded.
-    pub folded: bool,
     /// The open questions of the team's sessions.
     pub waiting: u32,
     /// One of them knocks.
     #[serde(default)]
     pub knocks: bool,
-    /// What the head says to a screen reader and as its hint: "3 agents, 2 questions open".
+    /// What the head says to a screen reader: "3 agents, 2 questions open".
     pub says: Text,
-    /// Folded: a card edge per session (at most [`STACK_EDGES`]), in the rows' order. What knocks is said by the
-    /// head's number, not by an edge.
+    /// A card edge per session (at most [`STACK_EDGES`]), in the rows' order. What knocks is said by the head's
+    /// number, not by an edge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edges: Vec<StackEdgeView>,
-    /// Its sessions, one row each, in drawing order (connected first): also while folded, for the rail and the keys.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sessions: Vec<SessionRowView>,
 }
 
 /// So many sessions have a card edge of their own in a folded team's stack.
@@ -431,6 +433,10 @@ pub struct SessionRowView {
     /// Its agent said something this device has not shown yet (the chat was not open since): the Chat list's dot.
     #[serde(default)]
     pub unread: bool,
+    /// The one quiet sign of a calm chat row: "stopped" (the red hand), "waiting" (a question waits for him),
+    /// "unread" (new words), or "" for none.
+    #[serde(default)]
+    pub signal: String,
 }
 
 /// What a conversation said last, for its row in the Chat list.
@@ -1006,6 +1012,21 @@ pub struct SessionView {
     /// In the Archive: the More menu offers "Back from the Archive" (`ArchiveSession` with `on: false`).
     #[serde(default)]
     pub archived: bool,
+    /// The tabs of its side panel (a click on its name opens it), in order: "details" always, then "questions",
+    /// "helpers" and "files" where it has some.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tabs: Vec<PanelTabView>,
+}
+
+/// A tab of a session's side panel.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelTabView {
+    /// "details", "questions", "helpers", "files".
+    pub key: String,
+    pub label: Text,
+    /// What it counts beside its label (the questions that wait, the helpers, the files); 0: no number.
+    #[serde(default)]
+    pub count: u32,
 }
 
 /// The dot beside a session's name.

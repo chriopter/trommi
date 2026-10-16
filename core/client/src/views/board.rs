@@ -14,7 +14,7 @@ use crate::helpers::Helper;
 use crate::sessions::{teams_in_order, session_list_and_helpers, SessionRow};
 use serde_json::Value;
 use std::cell::{Cell, OnceCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 /// The team a room without teams shows in its menu.
 pub const DEFAULT_TEAM: &str = "main";
@@ -54,9 +54,9 @@ pub struct Lens {
     /// The teams whose goals are folded to their first line on this device (web localStorage
     /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
     pub goals_folded: Vec<String>,
-    /// The teams this device folded (true) or opened (false) in the wide sidebar (`Action::FoldTeam`; web
-    /// localStorage `trommi-teams-folded`). A team not named here is folded unless it is the team in view.
-    pub teams_folded: BTreeMap<String, bool>,
+    /// The wide sidebar shows the team in view from inside (its chats) rather than every team as a stack
+    /// (`Focus.in_team`; web localStorage `trommi-sidebar-level`).
+    pub in_team: bool,
     /// What this device has shown of each session's words: the newest envelope number of its agent's words when
     /// its chat was last in view, by session key (the cache's `seen`). None until it is read: nothing counts as
     /// unread meanwhile.
