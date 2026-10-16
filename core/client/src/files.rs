@@ -192,18 +192,24 @@ impl Files {
         })
     }
 
-    /// `Attach` in the demo room: no hub; the file is ready at once under its local id, its bytes kept here.
+    /// `Attach` in the demo room: no hub; the file is ready at once under its local id, its bytes kept here. Its
+    /// reference is a whole one (an attachment id of 32 hex digits, a key and a SHA-256), so a line or an answer
+    /// that names it is sealed as on a real room; nothing is encrypted, the key is never used.
     pub fn demo_attach(&mut self, local_id: &str, name: &str, media_type: &str, bytes: &Bytes) {
+        let digest = |data: &[u8]| trommi_core::crypto::sha256(data).map(|h| *h.as_bytes()).unwrap_or([0; 32]);
+        let attachment_id = hex(&digest(format!("demo-file/{local_id}").as_bytes())[..16]);
         let mut reference = Map::new();
-        reference.insert("attachment_id".into(), json!(local_id));
+        reference.insert("attachment_id".into(), json!(attachment_id));
+        reference.insert("file_key".into(), json!(b64(&[0; 32])));
+        reference.insert("sha256".into(), json!(b64(&digest(&bytes.0))));
         reference.insert("file_name".into(), json!(if name.trim().is_empty() { "file" } else { name.trim() }));
         reference.insert("media_type".into(), json!(if media_type.is_empty() { "application/octet-stream" } else { media_type }));
         reference.insert("total_size".into(), json!(bytes.0.len()));
         let mut view = view_of(&reference);
         view.state = "ready".into();
-        view.attachment_id = Some(local_id.to_string());
+        view.attachment_id = Some(attachment_id.clone());
         self.states.insert(local_id.to_string(), view);
-        self.keep_plain(local_id, bytes.clone());
+        self.keep_plain(&attachment_id, bytes.clone());
         self.uploads.insert(local_id.to_string(), Upload { reference, sha256: [0; 32], request: None });
     }
 

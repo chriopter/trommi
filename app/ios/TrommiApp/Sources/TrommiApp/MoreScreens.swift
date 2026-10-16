@@ -131,7 +131,6 @@ struct NotesScreen: View {
   @State private var text = ""
   @State private var attachments: [String] = []
   @State private var loadedId: String?
-  @State private var importing = false
   /** The keep that waits for him to pause typing (the web's 600 ms). */
   @State private var pause: Task<Void, Never>?
   @FocusState private var focused: Bool
@@ -166,8 +165,7 @@ struct NotesScreen: View {
         }
         Spacer(minLength: 12)
         HStack(spacing: 2) {
-          Button { importing = true } label: { Image(systemName: "paperclip").font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44) }
-            .buttonStyle(.plain).accessibilityLabel("Attach")
+          AttachMenu(ids: $attachments) { Image(systemName: "paperclip").font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44) }
           Button { bin() } label: { Image(systemName: "trash").font(.system(size: 17)).frame(width: 44, height: 44) }
             .buttonStyle(.plain).accessibilityLabel("Delete Note").disabled(corner == nil && empty)
           Spacer(minLength: 4)
@@ -203,9 +201,6 @@ struct NotesScreen: View {
     .onChange(of: text) { _, _ in later() }
     .onChange(of: attachments) { _, _ in later() }
     .onDisappear { keep(); focused = false; hideKeyboard() }
-    .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-      if case .success(let urls) = result { for url in urls { if let id = shell.attach(url) { attachments.append(id) } } }
-    }
   }
   private func load() {
     guard let c = corner, loadedId != c.id else { return }

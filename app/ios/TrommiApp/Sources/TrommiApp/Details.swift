@@ -9,7 +9,6 @@ import WebKit
 struct AttachmentPicker: View {
   @EnvironmentObject var shell: AppShell
   @Binding var ids: [String]
-  @State private var picking = false
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       ForEach(ids, id: \.self) { id in
@@ -22,13 +21,10 @@ struct AttachmentPicker: View {
         }
         .padding(.leading, 12).padding(.trailing, 4).background(Capsule().fill(Ink.sunken))
       }
-      Button { picking = true } label: {
+      AttachMenu(ids: $ids) {
         HStack(spacing: 6) { Image(systemName: "paperclip").font(.system(size: 14, weight: .semibold)); Text("Attach").font(Face.text(15, .semibold)) }
           .foregroundStyle(Ink.fg).padding(.horizontal, 14).frame(minHeight: 40).glass(Capsule(), interactive: true)
       }
-      .buttonStyle(.plain)
-    }.fileImporter(isPresented: $picking, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-      if case .success(let urls) = result { for url in urls { if let id = shell.attach(url) { ids.append(id) } } }
     }
   }
 }
