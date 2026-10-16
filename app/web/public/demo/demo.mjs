@@ -20,11 +20,13 @@ for (const s of STATES) {
 }
 const frameSrc = (path, state, mock = '1') => `${path}${path.includes('?') ? '&' : '?'}mock=${mock || '1'}${state ? `&state=${state}` : ''}`
 function screensMain() {
-  // One screen: its title (opens it alone), its states as small buttons; the pair of frames shows the chosen one.
+  // One screen: its title (opens it alone), its states as a list; the pair of frames shows the chosen one.
   const screen = ([title, path, states, first = '', base = '']) => {
     const all = [['As it is', path, first, base], ...states.map(([label, p, st, mock]) => [label, p || path, st ?? '', mock])]
     const src = frameSrc(path, first, base)
-    const list = states.length ? `<div class="scr-states" role="group" aria-label="${title}: states">${all.map(([label], i) => `<button type="button" class="scr-state" data-action="screens#state" data-at="${i}"${i ? '' : ' aria-pressed="true"'}>${label}</button>`).join('')}</div>` : ''
+    // the states: one column (a listbox) beside the frames, as tall as they are and scrolling inside; the arrow keys step
+    const id = `scr-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+    const list = states.length ? `<ul class="scr-states" role="listbox" tabindex="0" aria-label="${title}: states" aria-activedescendant="${id}-0" data-action="keydown->screens#key">${all.map(([label], i) => `<li role="option" id="${id}-${i}" class="scr-state" data-action="click->screens#state" data-at="${i}" title="${label}" aria-selected="${i ? 'false' : 'true'}">${label}</li>`).join('')}</ul>` : ''
     return `<figure class="scr-item" data-states='${JSON.stringify(all.map(([label, p, st, mock]) => ({ label, src: frameSrc(p, st, mock) }))).replace(/'/g, '&#39;')}'><figcaption><a href="${src}" target="_blank" rel="noopener" class="scr-title">${title}</a> <code>${path}</code></figcaption><div class="scr-row"><div class="scr-pair"><div class="scr-box is-wide"><iframe data-src="${src}" title="${title}, desktop" loading="lazy" width="1440" height="900" tabindex="-1"></iframe></div><div class="scr-box is-phone"><iframe data-src="${src}" title="${title}, phone" loading="lazy" width="390" height="844" tabindex="-1"></iframe></div></div>${list}</div></figure>`
   }
   return `<main id="screens" class="scr-page" data-controller="screens"><link rel="stylesheet" href="/demo/screens.css"><header class="scr-head"><h1>All screens</h1><p>Every screen once, its states beside it; a title opens it alone.</p><button type="button" class="scr-theme is-tour" data-action="screens#tour">▶ Play tour</button><button type="button" class="scr-theme" data-action="screens#eager" title="Load all">Load all</button><button type="button" class="scr-theme" data-action="screens#theme">Light / dark</button></header>
@@ -45,30 +47,55 @@ export function screensController({ Controller, controller }) {
       this.layout()
     }
     disconnect() { this.io?.disconnect(); this.ro?.disconnect(); this.endTour() }
-    // The whole width: the pair of frames as large as the row allows (never above its real size), the states at the far
-    // right in as few columns as keep their list no taller than the frames. A narrow window: the frames stacked, the
-    // states a wrapping grid under them (screens.css).
+    // The whole width: the pair of frames as large as the row allows (never above its real size), the states in one
+    // column at the far right, as tall as the frames and scrolling inside. A narrow window: the frames stacked, the states
+    // one row under them that scrolls sideways (screens.css).
     layout() {
       const W = this.element.clientWidth - 2 * parseFloat(getComputedStyle(this.element).paddingLeft || '0')
       if (!(W > 0) || W === this.laidOut) return
       this.laidOut = W
-      const narrow = W < 860, COL = 196, GAP = 6, ROW = 30, PAIR = 1440 + 390 + 12
+      const narrow = W < 860, COL = 248, PAIR = 1440 + 390 + 12
       for (const item of this.element.querySelectorAll('.scr-item')) {
         const n = item.querySelectorAll('.scr-state').length
-        let cols = n ? 1 : 0, s = Math.min(1, W / 1440), p = Math.min(.6, W / 390)
-        if (!narrow) {
-          const fit = k => Math.min(1, (W - (k ? k * COL + (k - 1) * GAP + 20 : 0)) / PAIR)
-          while (n && cols < 4 && Math.ceil(n / cols) * ROW > 900 * fit(cols)) cols++
-          s = p = fit(cols)
-        }
-        item.style.setProperty('--s', s.toFixed(4)); item.style.setProperty('--p', p.toFixed(4)); item.style.setProperty('--cols', String(cols || 1)); item.style.setProperty('--rows', String(Math.ceil(n / (cols || 1)) || 1))
+        let s = Math.min(1, W / 1440), p = Math.min(.6, W / 390)
+        if (!narrow) s = p = Math.min(1, (W - (n ? COL + 20 : 0)) / PAIR)
+        item.style.setProperty('--s', s.toFixed(4)); item.style.setProperty('--p', p.toFixed(4))
+        const list = item.querySelector('.scr-states'), on = list?.querySelector('[aria-selected="true"]')
+        if (on) requestAnimationFrame(() => this.reveal(list, on))
       }
       this.element.classList.toggle('is-narrow', narrow)
     }
+    // The arrow keys in a screen's list: the next or the one before (Down/Right, Up/Left), Home and End the first and last
+    key(e) {
+      const list = e.currentTarget, all = [...list.querySelectorAll('.scr-state')]
+      const at = all.findIndex(o => o.getAttribute('aria-selected') === 'true'), last = all.length - 1
+      const to = { ArrowDown: at + 1, ArrowRight: at + 1, ArrowUp: at - 1, ArrowLeft: at - 1, Home: 0, End: last }[e.key]
+      if (to === undefined || e.altKey || e.ctrlKey || e.metaKey) return
+      e.preventDefault()
+      const i = Math.max(0, Math.min(last, to))
+      if (i !== at) this.pick(list.closest('.scr-item'), i, 120)
+    }
+    // A click on a state
+    state(e) { const o = e.currentTarget; o.closest('.scr-states').focus({ preventScroll: true }); this.pick(o.closest('.scr-item'), Number(o.dataset.at), 0) }
+    // The chosen state marked and kept in view at once; the frames follow (after a moment while keys step fast)
+    pick(item, i, wait) {
+      const list = item.querySelector('.scr-states')
+      for (const o of list.querySelectorAll('.scr-state')) o.setAttribute('aria-selected', String(Number(o.dataset.at) === i))
+      const on = list.querySelector(`[data-at="${i}"]`)
+      list.setAttribute('aria-activedescendant', on.id)
+      this.reveal(list, on)
+      clearTimeout(item.switching)
+      if (wait) item.switching = setTimeout(() => this.show(item, i), wait); else this.show(item, i)
+    }
+    // Scrolls only the list (never the page) so the option is inside it (the list is the options' offsetParent)
+    reveal(list, o) {
+      const across = list.scrollWidth > list.clientWidth + 1 && list.scrollHeight <= list.clientHeight + 1
+      if (across) { const l = o.offsetLeft, r = l + o.offsetWidth; if (l < list.scrollLeft) list.scrollLeft = l - 8; else if (r > list.scrollLeft + list.clientWidth) list.scrollLeft = r - list.clientWidth + 8 }
+      else { const t = o.offsetTop, b = t + o.offsetHeight; if (t < list.scrollTop) list.scrollTop = t - 6; else if (b > list.scrollTop + list.clientHeight) list.scrollTop = b - list.clientHeight + 6 }
+    }
     // A state of a screen: the same pair of frames shows it
-    state(e) {
-      const b = e.currentTarget, item = b.closest('.scr-item'), st = JSON.parse(item.dataset.states)[Number(b.dataset.at)]
-      for (const x of item.querySelectorAll('.scr-state')) x.setAttribute('aria-pressed', String(x === b))
+    show(item, i) {
+      const st = JSON.parse(item.dataset.states)[i]
       const url = new URL(st.src, location.origin), q = url.searchParams, mock = q.get('mock') || '1', name = q.get('state') || ''
       q.delete('mock'); q.delete('state')
       const path = url.pathname + (q.toString() ? `?${q}` : '')
