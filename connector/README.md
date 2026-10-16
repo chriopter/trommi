@@ -110,8 +110,12 @@ connector; `src/host.rs`) differs from Claude Code in four ways, and the connect
   connector, before its first call: a Codex connector in the room that leaves notes its thread
   (`<keys>/<base>.codex.<hash>`, with its launcher when it hands over in a swap). The connector swapped in under
   the same launcher takes that thread and key at once; a connector of the folder that starts within
-  `TROMMI_CODEX_RETURN_MS` (10 minutes) of another's end wakes that thread once, and the thread's next call
-  names its own connector, which takes its key. A
+  `TROMMI_CODEX_RETURN_MS` (10 minutes) of another's end wakes that thread once ("[Trommi] Back on the board: …"),
+  and the thread's next call names its own connector, which takes its key. A connector that does not know its
+  thread looks for such a note on every tick: Codex may start a thread's new connector before it ends the old
+  one (`codex resume` of a loaded thread). A Codex connector that ends with its input, its parent or a signal
+  says no last word: the next connector of the thread takes the key within the lease, so the board does not show
+  the agent as gone meanwhile (a Codex that really quit shows as gone when the lease runs out, after 60 s). A
   woken turn that never called `inbox` does not leave the session deaf: the next event wakes it again once
   `TROMMI_CODEX_REWAKE_MS` (3 minutes) passed since the last wake.
 - It never asks for the tool list again: an unconnected session lists every tool with `connect`.
@@ -121,7 +125,12 @@ connector; `src/host.rs`) differs from Claude Code in four ways, and the connect
   `hooks.json` holds its Stop and UserPromptSubmit hooks and `config.toml` trusts them; only then do the
   instructions say that the final text reaches the board by itself. Codex's hook input names the turn (`turn_id`,
   used where Claude Code has `prompt_id`) and the thread (`session_id`): a connector takes only its own thread's
-  hooks, and the queued wake ("[Trommi] N new board events …") counts as the board's, not as the human's typing,
+  hooks; a connector whose thread is named opens a bell of that thread (`bell-t-<hash>.sock`), which a hook rings
+  first, since one Codex app server runs the connectors of all its threads. A hook of a thread that is in a
+  Trommi room while no connector serves it by name wakes that thread (at most once per `TROMMI_CODEX_REWAKE_MS`;
+  not for a Trommi tool call, which names it anyway). Codex starts its MCP servers without `XDG_RUNTIME_DIR` but
+  its hooks with it: the sockets' directory falls back to `/run/user/<uid>` so that both find the same bells. The
+  queued wake ("[Trommi] N new board events …") counts as the board's, not as the human's typing,
   so a turn a card's answer started puts its final text under that card.
 - Its words differ: the instructions take "# In Codex" from `prompt.md` (inbox at every turn, never run the
   connector in a shell, restart Codex when the tools are missing), and every restart or update line says to quit
@@ -130,7 +139,11 @@ connector; `src/host.rs`) differs from Claude Code in four ways, and the connect
 `tests/connector/codex.rs` drives the connector as Codex 0.160 does (its `initialize`, `_meta`, no new tool
 list, a `codex` script that notes the queued wakes). `tests/connector/codex_real.rs` runs a real Codex (its app server,
 one session over many turns) against a local hub, opt-in: `cargo test -p trommi-tests --test connector_codex_real
--- --ignored --nocapture` (`CODEX_MODEL`, `TROMMI_CODEX_RUNS`).
+-- --ignored --nocapture` (`CODEX_MODEL`, `TROMMI_CODEX_RUNS`). `a_real_codex_tui_soak` in the same file runs a
+real Codex TUI in tmux for `TROMMI_SOAK_MINUTES` (default 120), its MCP servers in Codex's app-server daemon (as
+`codex resume` runs them): idle stretches, a turn after each event, a hot swap, a daemon restart, a terminal detach
+and resize, Codex quit and resumed; it samples the agent's lease on the hub every 2 s, writes the presence timeline
+to `TROMMI_SOAK_LOG` and fails on an offline stretch longer than `TROMMI_SOAK_MAX_GAP_S` (10).
 
 ## Helpers and their events
 

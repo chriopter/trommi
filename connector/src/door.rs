@@ -10,12 +10,16 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 
-/// $XDG_RUNTIME_DIR (or the temp dir)/trommi-<uid>, 0700, this user's own.
+/// $XDG_RUNTIME_DIR (or /run/user/<uid>, or the temp dir)/trommi-<uid>, 0700, this user's own.
+///
+/// Codex starts its MCP servers with few variables (no XDG_RUNTIME_DIR) but its hooks with all of them: without the
+/// fallback to /run/user/<uid> the connector's bell lay under /tmp and no Codex hook ever reached it.
 pub fn door_dir() -> std::io::Result<PathBuf> {
     let base = std::env::var("XDG_RUNTIME_DIR")
         .ok()
         .filter(|x| !x.is_empty())
         .map(PathBuf::from)
+        .or_else(user_runtime_dir)
         .unwrap_or_else(std::env::temp_dir);
     let dir = base.join(format!("trommi-{}", uid()));
     std::fs::create_dir_all(&dir)?;
@@ -28,6 +32,12 @@ pub fn door_dir() -> std::io::Result<PathBuf> {
         )));
     }
     Ok(dir)
+}
+/// /run/user/<uid> when it is this user's private directory (what XDG_RUNTIME_DIR names in a login session).
+fn user_runtime_dir() -> Option<PathBuf> {
+    let dir = PathBuf::from(format!("/run/user/{}", uid()));
+    let st = std::fs::symlink_metadata(&dir).ok()?;
+    (st.is_dir() && st.uid() == uid() && st.mode() & 0o077 == 0).then_some(dir)
 }
 pub fn door_of(p: &SlotPaths) -> std::io::Result<PathBuf> {
     let resolved = absolute(&p.key_file);
@@ -226,18 +236,31 @@ pub fn bell_path(claude_pid: u32) -> PathBuf {
         .unwrap()
         .join(format!("bell-{claude_pid}.sock"))
 }
-/// A hook's ring at the connector of its own Claude Code process, if one runs.
-pub async fn ring(pids: &[u32], timeout_ms: u64) -> Option<Value> {
-    for p in pids {
-        let f = bell_path(*p);
-        if !f.exists() {
-            continue;
-        }
-        return knock_at(&f, &json!({ "op": "awake", "ancestors": pids }), timeout_ms)
-            .await
-            .ok();
+/// The bell of the connector that serves this Codex thread (it opens it once its thread is named): the hooks of a
+/// thread find their own connector by it, also where one Codex app server runs the connectors of many threads.
+pub fn thread_bell_path(thread: &str) -> PathBuf {
+    socket_path(0).parent().unwrap().join(format!(
+        "bell-t-{}.sock",
+        &hex(&sha256(thread.as_bytes()))[..12]
+    ))
+}
+/// Where a hook rings: the bell of its Codex thread's connector first, then those of its ancestor processes.
+pub fn hook_bells(thread: Option<&str>, pids: &[u32]) -> Vec<PathBuf> {
+    let mut out = vec![];
+    if let Some(t) = thread {
+        out.push(thread_bell_path(t));
     }
-    None
+    out.extend(pids.iter().map(|p| bell_path(*p)));
+    out.into_iter().filter(|f| f.exists()).collect()
+}
+/// A hook's ring at the connector of its own Claude Code process (or Codex thread), if one runs.
+pub async fn ring(pids: &[u32], thread: Option<&str>, timeout_ms: u64) -> Option<Value> {
+    let f = hook_bells(thread, pids).into_iter().next()?;
+    let mut req = json!({ "op": "awake", "ancestors": pids });
+    if let Some(t) = thread {
+        req["thread"] = json!(t);
+    }
+    knock_at(&f, &req, timeout_ms).await.ok()
 }
 
 // ---- the monitor ----------------------------------------------------------------------------------------------

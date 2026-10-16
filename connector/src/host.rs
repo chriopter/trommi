@@ -174,6 +174,26 @@ pub async fn wake_thread(thread: &str, text: &str) -> bool {
     }
 }
 
+/// What wakes a Codex thread whose connector was started anew and does not know its thread yet.
+pub const RETURN_WAKE: &str = "[Trommi] Back on the board: Codex started this session's Trommi connector anew. Call the trommi inbox tool now.";
+
+/// The same as [`wake_thread`], from a short-lived process (a hook): `codex queue` runs on by itself.
+pub fn wake_detached(thread: &str, text: &str) {
+    if !valid_thread(thread) {
+        return;
+    }
+    let mut cmd = std::process::Command::new(codex_program());
+    if let Some(home) = codex_home() {
+        cmd.env("CODEX_HOME", home);
+    }
+    cmd.args(["queue", "--thread", thread, "--message", text])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    let _ = cmd.spawn();
+}
+
 /// The program's name, for texts the human reads.
 pub fn name() -> &'static str {
     if is_codex() {

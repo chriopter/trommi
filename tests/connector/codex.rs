@@ -1024,3 +1024,148 @@ async fn a_codex_session_stays_on_the_board_across_a_hot_swap_and_a_restart() {
     assert!(human.findings.is_empty(), "{:?}", human.findings);
     mcp.close().await;
 }
+
+/// Runs a hook as Codex does: `trommi-connector <kind>` with Codex's input on stdin, with Codex's full environment
+/// (`xdg`: its XDG_RUNTIME_DIR) and `codex` standing for the script that notes each `codex queue`.
+async fn codex_hook(seat: &Seat, codex: &Path, xdg: &Path, kind: &str, input: &Value) {
+    use tokio::io::AsyncWriteExt;
+    let mut child = seat
+        .command(&[kind])
+        .env_remove("TROMMI_SESSION_KEY")
+        .env("XDG_RUNTIME_DIR", xdg)
+        .env("TROMMI_CODEX_BIN", codex)
+        .env("TROMMI_CODEX_REWAKE_MS", "0")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("the hook starts");
+    let mut stdin = child.stdin.take().expect("its stdin");
+    stdin
+        .write_all(input.to_string().as_bytes())
+        .await
+        .expect("the hook reads");
+    drop(stdin);
+    tokio::time::timeout(std::time::Duration::from_secs(60), child.wait())
+        .await
+        .expect("the hook ends in time")
+        .expect("the hook ran");
+}
+
+/// The owner's case of 2026-10-16, 13:51: `codex resume` of a thread that was loaded already. Codex started the
+/// thread's new connector before it ended the old one, which noted its thread only as it left: the new one had
+/// looked for the note once, at its start, and slept. And a word typed into Codex did not wake it either: Codex
+/// starts its MCP servers without XDG_RUNTIME_DIR, so the connector's bell lay under the temp dir while the hooks,
+/// which get Codex's whole environment, rang under /run/user/<uid>; and a connector that does not know its thread
+/// refuses a hook anyway. Now an unnamed connector looks for the note on every tick, the door directory falls back
+/// to /run/user/<uid>, a named connector opens a bell of its thread, and a hook of a Trommi thread that no
+/// connector serves by name wakes that thread.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_codex_thread_comes_back_after_a_resume_and_by_its_hooks() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let (codex, codex_calls) = fake_codex(seat.home.path());
+    let thread = "01a13951-b78c-77a2-b72e-88f496583c3e";
+    let bin = seat.home.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let program = bin.join("trommi-connector");
+    std::fs::write(
+        &program,
+        std::fs::read(connector_binary()).expect("the built connector"),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        &program,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let env = [("TROMMI_LINK_TICK_MS", "500")];
+    let mut old = serve_launched_codex(&seat, &codex, &program, thread, &env).await;
+    let _ = old.request("tools/list", json!({})).await;
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = old.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await
+    };
+    let ((said, failed), group) = tokio::join!(connect, admit);
+    assert!(!failed && said.starts_with("Check code:"), "{said}");
+    old.ready().await;
+
+    // `codex resume`: the new connector starts first, the old one ends a moment later.
+    let before = wakes(&codex_calls, thread);
+    let mut new = serve_launched_codex(&seat, &codex, &program, thread, &env).await;
+    let _ = new.request("tools/list", json!({})).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    old.close().await;
+    let wake = woken(&codex_calls, thread, before).await;
+    assert!(wake.contains("Back on the board"), "{wake}");
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Nach dem Resume." }),
+        )
+        .await
+        .expect("the human writes");
+    inbox_holds(&mut new, "Nach dem Resume.").await;
+
+    // A connector that starts long after the old one ended finds no note. Started as Codex starts it, without
+    // XDG_RUNTIME_DIR; the hooks run with Codex's whole environment.
+    new.close().await;
+    let uid = std::os::unix::fs::MetadataExt::uid(&std::fs::metadata(seat.home.path()).unwrap());
+    let runtime = PathBuf::from(format!("/run/user/{uid}"));
+    let (xdg, bare) = if runtime.is_dir() {
+        (runtime, true)
+    } else {
+        (seat.run_dir().to_path_buf(), false)
+    };
+    let mut command = seat.command_of(&program, &[]);
+    command
+        .env_remove("TROMMI_LAUNCH")
+        .env_remove("TROMMI_SESSION_KEY")
+        .env("TROMMI_CHANNEL_EVENTS", "off")
+        .env("TROMMI_CODEX_BIN", &codex)
+        .env("TROMMI_CODEX_WAKE_MS", "300")
+        .env("TROMMI_CODEX_RETURN_MS", "1");
+    if bare {
+        command.env_remove("XDG_RUNTIME_DIR");
+    }
+    let mut late = common::process::Mcp::start_as(command, common::process::codex_hello()).await;
+    late.call_meta = Some(common::process::codex_meta(thread));
+    let _ = late.request("tools/list", json!({})).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    let before = wakes(&codex_calls, thread);
+    let prompt = json!({ "session_id": thread, "turn_id": "t1", "transcript_path": null, "cwd": seat.folder.display().to_string(), "model": "gpt-6-luna", "permission_mode": "default", "hook_event_name": "UserPromptSubmit", "prompt": "hi" });
+    codex_hook(&seat, &codex, &xdg, "prompt", &prompt).await;
+    let wake = woken(&codex_calls, thread, before).await;
+    assert!(wake.contains("Back on the board"), "{wake}");
+    // The woken turn calls the board: the connector is the thread's now, opens its bell, and the next hooks reach it
+    // instead of waking the thread again.
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Nach dem Hook." }),
+        )
+        .await
+        .expect("the human writes");
+    inbox_holds(&mut late, "Nach dem Hook.").await;
+    let after = wakes(&codex_calls, thread);
+    codex_hook(&seat, &codex, &xdg, "prompt", &prompt).await;
+    let stop = json!({ "session_id": thread, "turn_id": "t1", "transcript_path": null, "cwd": seat.folder.display().to_string(), "model": "gpt-6-luna", "permission_mode": "default", "hook_event_name": "Stop", "stop_hook_active": false, "last_assistant_message": "Hallo." });
+    codex_hook(&seat, &codex, &xdg, "stop", &stop).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    assert_eq!(
+        wakes(&codex_calls, thread),
+        after,
+        "a served thread is not woken"
+    );
+    // A Codex thread that is in no Trommi room is never woken by its hooks.
+    let stranger = "01a13951-0000-7000-8000-00000000abcd";
+    let other = json!({ "session_id": stranger, "turn_id": "t2", "transcript_path": null, "cwd": seat.folder.display().to_string(), "model": "gpt-6-luna", "permission_mode": "default", "hook_event_name": "UserPromptSubmit", "prompt": "hi" });
+    codex_hook(&seat, &codex, &xdg, "prompt", &other).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    assert_eq!(wakes(&codex_calls, stranger), 0);
+    late.close().await;
+}

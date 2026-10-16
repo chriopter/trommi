@@ -24,6 +24,7 @@ use common::process::connector_binary;
 use common::{HubProc, Human, TempDir};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
@@ -770,4 +771,460 @@ async fn a_real_codex_with_trommi_hooks() {
     assert!(human.findings.is_empty(), "{:?}", human.findings);
     let _ = std::fs::remove_dir_all(&run);
     let _ = thread;
+}
+
+// ---- soak: a real Codex TUI for hours -----------------------------------------------------------------------------
+
+/// `tmux -L <server> <args…>`.
+fn tmux(server: &str, args: &[&str]) -> String {
+    let out = std::process::Command::new("tmux")
+        .arg("-L")
+        .arg(server)
+        .args(args)
+        .output()
+        .expect("tmux runs");
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// Types a line into the pane as a human does: the text, a pause, Enter (again while the text still stands in the
+/// composer: a TUI may take a fast paste's Enter for a new line).
+async fn type_line(server: &str, text: &str) {
+    tmux(server, &["send-keys", "-t", "soak", "-l", text]);
+    let head: String = text.chars().take(30).collect();
+    for _ in 0..6 {
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        tmux(server, &["send-keys", "-t", "soak", "Enter"]);
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let screen = tmux(server, &["capture-pane", "-p", "-t", "soak"]);
+        let waiting = screen
+            .lines()
+            .rev()
+            .find(|l| l.trim_start().starts_with('›'))
+            .is_some_and(|l| l.contains(&head));
+        if !waiting {
+            return;
+        }
+    }
+}
+
+/// The agent's chat line holding `text`, written by `me`.
+async fn said_by(human: &mut Human, me: &trommi_core::ids::DeviceId, text: &str) -> bool {
+    human.sync().await;
+    human
+        .items
+        .iter()
+        .any(|(_, s, p)| s == me && p["text"].as_str().is_some_and(|t| t.contains(text)))
+}
+
+/// One sample of the agent's presence on the hub: (ms since the start, online, hears).
+type Sample = (u64, bool, bool);
+
+/// What the hub says of the agents' leases now: online when a lease runs, and whether it hears.
+fn presence(db: &Path) -> Option<(bool, bool)> {
+    let c = rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .ok()?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let row: Option<(i64, bool)> = c
+        .query_row(
+            "SELECT expires_at, hears FROM agent_leases ORDER BY expires_at DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
+    Some(match row {
+        Some((exp, hears)) => (exp > now, exp > now && hears),
+        None => (false, false),
+    })
+}
+
+/// A real Codex TUI in tmux, its MCP servers in Codex's app-server daemon (as `codex resume` runs them on the
+/// owner's desktop), against a local hub, for TROMMI_SOAK_MINUTES (default 120): idle stretches, a turn after
+/// each event, one hot swap of the connector, one restart of the app-server daemon, a detach and reattach of the
+/// terminal with a resize, and Codex quit and resumed. The agent's presence is sampled on the hub every 2 s and
+/// written to TROMMI_SOAK_LOG; no offline stretch may last longer than TROMMI_SOAK_MAX_GAP_S (default 10).
+///
+/// ```text
+/// CODEX_HOME=<test home> TROMMI_SOAK_MINUTES=120 cargo test -p trommi-tests --test connector_codex_real \
+///   -- --ignored a_real_codex_tui_soak --nocapture
+/// ```
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "runs a real Codex TUI for hours (model calls); see its comment"]
+async fn a_real_codex_tui_soak() {
+    let codex_home = test_codex_home();
+    let minutes: u64 = std::env::var("TROMMI_SOAK_MINUTES")
+        .ok()
+        .and_then(|m| m.parse().ok())
+        .unwrap_or(120);
+    let max_gap_ms: u64 = 1000
+        * std::env::var("TROMMI_SOAK_MAX_GAP_S")
+            .ok()
+            .and_then(|m| m.parse().ok())
+            .unwrap_or(10);
+    let log_file = std::env::var("TROMMI_SOAK_LOG")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir().join("trommi-soak.log"));
+    let model = std::env::var("CODEX_MODEL").unwrap_or("gpt-6-luna".into());
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let state = TempDir::new("codex-soak");
+    let project = state.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("README.md"), "# A project\n").unwrap();
+    // the connector as install.sh puts it, in a home of the test's; keys under that home
+    let home = state.path().join("home");
+    let bin = home.join(".local/share/trommi/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let program = bin.join("trommi-connector");
+    let original = std::fs::read(connector_binary()).expect("the built connector");
+    std::fs::write(&program, &original).unwrap();
+    std::fs::set_permissions(
+        &program,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let uid = std::os::unix::fs::MetadataExt::uid(&std::fs::metadata(&home).unwrap());
+    let runtime = format!("/run/user/{uid}");
+    let started = Instant::now();
+    let events: Arc<std::sync::Mutex<Vec<(u64, String)>>> = Default::default();
+    let note = |what: &str| {
+        let at = started.elapsed().as_millis() as u64;
+        eprintln!("[soak {:>7.1} min] {what}", at as f64 / 60_000.0);
+        events.lock().unwrap().push((at, what.to_string()));
+    };
+
+    // setup codex (MCP server and hooks), the hooks trusted as /hooks does
+    let said = connector_cli(&home, &["setup", "codex"]);
+    assert!(said.contains("hooks in"), "{said}");
+    {
+        let run = std::env::temp_dir().join(format!("rs{}", trommi_connector::util::random_hex(3)));
+        std::fs::create_dir_all(&run).unwrap();
+        let setup = Setup {
+            hub_url: hub.url.clone(),
+            program: program.clone(),
+            keys: home.join(".local/share/trommi/keys"),
+            run,
+            project: project.clone(),
+        };
+        let mut codex = Codex::start(&setup).await;
+        let n = trust_hooks(&mut codex, &project).await;
+        note(&format!("trusted {n} hooks"));
+        codex.close().await;
+    }
+
+    // Codex's app-server daemon, started as the owner's desktop has it: HOME, XDG_RUNTIME_DIR, CODEX_HOME
+    let daemon = |cmd: &str| -> Value {
+        let out = std::process::Command::new("codex")
+            .args(["app-server", "daemon", cmd])
+            .env("HOME", &home)
+            .env("CODEX_HOME", &codex_home)
+            .env("XDG_RUNTIME_DIR", &runtime)
+            .current_dir(&project)
+            .output()
+            .expect("codex runs");
+        let text = String::from_utf8_lossy(&out.stdout);
+        text.lines()
+            .rev()
+            .find_map(|l| serde_json::from_str::<Value>(l).ok())
+            .unwrap_or(Value::Null)
+    };
+    let _ = daemon("stop");
+    // (a daemon or updater of this Codex home left from an earlier run would start the app server with its own HOME)
+    let _ = std::process::Command::new("pkill")
+        .args([
+            "-f",
+            &format!("{}/packages/app-server-daemon", codex_home.display()),
+        ])
+        .status();
+    let up = daemon("start");
+    let socket = up["socketPath"]
+        .as_str()
+        .expect("the daemon's socket")
+        .to_string();
+    // the app server must run with the test's HOME: its connectors keep their keys under it, never the user's
+    let pid = up["pid"].as_u64().expect("the daemon's pid");
+    let environ = std::fs::read(format!("/proc/{pid}/environ")).unwrap_or_default();
+    let want = format!("HOME={}", home.display());
+    assert!(
+        environ.split(|b| *b == 0).any(|kv| kv == want.as_bytes()),
+        "the app-server daemon (pid {pid}) does not run with the test's HOME"
+    );
+    note(&format!("daemon: {up}"));
+
+    // the TUI in tmux, in a shell of its own pane
+    let server = format!("trommi-soak-{}", trommi_connector::util::random_hex(3));
+    tmux(
+        &server,
+        &[
+            "new-session",
+            "-d",
+            "-s",
+            "soak",
+            "-x",
+            "180",
+            "-y",
+            "50",
+            "-c",
+            &project.display().to_string(),
+            "bash --norc --noprofile",
+        ],
+    );
+    let codex_line = |resume: Option<&str>| {
+        format!(
+            "env HOME='{}' CODEX_HOME='{}' XDG_RUNTIME_DIR='{}' codex {} --remote 'unix://{}' -m '{}' -c 'approval_policy=\"never\"' -c 'projects.\"{}\".trust_level=\"trusted\"'",
+            home.display(),
+            codex_home.display(),
+            runtime,
+            resume.map(|t| format!("resume {t}")).unwrap_or_default(),
+            socket,
+            model,
+            project.display()
+        )
+    };
+    type_line(&server, &codex_line(None)).await;
+    tokio::time::sleep(Duration::from_secs(8)).await;
+
+    // connect by link; the human admits while the agent waits
+    let invite = human.invite(None).await;
+    let link = invite.link.clone();
+    *PENDING.lock().unwrap() = Some(invite);
+    type_line(
+        &server,
+        &format!("Connect to Trommi with this invite link: {link}"),
+    )
+    .await;
+    let until = Instant::now() + Duration::from_secs(240);
+    while GROUP.lock().unwrap().is_none() && Instant::now() < until {
+        human_admits(&mut human).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    let group = GROUP.lock().unwrap().expect("the session was founded");
+    let me = human.seat(&group).await.expect("the agent");
+    note("connected");
+
+    // presence: every 2 s
+    let db = hub.data.path().join("hub.db");
+    let samples: Arc<std::sync::Mutex<Vec<Sample>>> = Default::default();
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let sampler = {
+        let (samples, stop, db) = (samples.clone(), stop.clone(), db.clone());
+        tokio::spawn(async move {
+            while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                if let Some((online, hears)) = presence(&db) {
+                    samples.lock().unwrap().push((
+                        started.elapsed().as_millis() as u64,
+                        online,
+                        hears,
+                    ));
+                }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        })
+    };
+
+    // the thread's key, wherever under this home the connector keeps it
+    let find_thread = || {
+        let mut dirs = vec![home.clone()];
+        while let Some(d) = dirs.pop() {
+            for f in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+                let path = f.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else if path.to_string_lossy().ends_with(".owner") {
+                    let v: Value =
+                        serde_json::from_str(&std::fs::read_to_string(&path).ok()?).ok()?;
+                    if let Some(t) = v["owner"].as_str().and_then(|o| o.strip_prefix("codex:")) {
+                        return Some(t.to_string());
+                    }
+                }
+            }
+        }
+        None
+    };
+    let mut thread = None;
+    for _ in 0..120 {
+        thread = find_thread();
+        if thread.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    let thread = thread.expect("the thread's key");
+    note(&format!("thread {thread}"));
+
+    // one turn: the human writes on the board, the agent is woken and answers there
+    let mut n = 0u32;
+    // A turn: the human writes on the board, the agent is woken and answers (by reply or its final text, which the
+    // terminal mirror brings to the board). A request the agent read inside another turn and left may go
+    // unanswered once: it is asked again, and the turn counts only if the second ask is answered.
+    let mut asked_twice = 0u32;
+    macro_rules! turn {
+        ($why:expr) => {{
+            let mut ok = false;
+            for attempt in 0..2 {
+                n += 1;
+                let want = format!("{}", 7000 + n * 13);
+                let text = format!(
+                    "Rechne 7000 + {} und schreib nur das Ergebnis in den Trommi-Chat.",
+                    n * 13
+                );
+                human
+                    .say(&group, json!({ "content_type": "message", "text": text }))
+                    .await
+                    .expect("the human writes");
+                let until = Instant::now() + Duration::from_secs(240);
+                while Instant::now() < until {
+                    if said_by(&mut human, &me, &want).await {
+                        ok = true;
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+                if ok {
+                    if attempt > 0 {
+                        asked_twice += 1;
+                    }
+                    break;
+                }
+            }
+            note(&format!(
+                "turn after {}: {}",
+                $why,
+                if ok { "answered" } else { "NO ANSWER" }
+            ));
+            assert!(ok, "the agent answered after {}", $why);
+        }};
+    }
+    let idle_until =
+        |frac: f64| started + Duration::from_secs((minutes as f64 * 60.0 * frac) as u64);
+    // (the connect turn ends first: a request it reads inside its own tool calls is not this test's turn)
+    tokio::time::sleep(Duration::from_secs(45)).await;
+    turn!("connect");
+    tokio::time::sleep_until(idle_until(0.15).into()).await;
+    turn!("an idle stretch");
+
+    // 1. hot swap
+    tokio::time::sleep_until(idle_until(0.2).into()).await;
+    let mut changed = original.clone();
+    changed.extend_from_slice(b"\nsoak build");
+    let new_file = bin.join(".new.trommi-connector");
+    std::fs::write(&new_file, &changed).unwrap();
+    std::fs::set_permissions(
+        &new_file,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    std::fs::rename(&new_file, &program).unwrap();
+    note("hot swap: a new connector binary is in place");
+    tokio::time::sleep(Duration::from_secs(90)).await;
+    turn!("the hot swap");
+
+    // 2. the app-server daemon restarts (as when Codex updates itself)
+    tokio::time::sleep_until(idle_until(0.4).into()).await;
+    let up = daemon("restart");
+    note(&format!("daemon restarted: {}", up["status"]));
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    let screen = tmux(&server, &["capture-pane", "-p", "-t", "soak"]);
+    if !screen.contains("›") {
+        note("the TUI ended with the daemon: resumed");
+        type_line(&server, &codex_line(Some(&thread))).await;
+    }
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    turn!("the daemon restart");
+
+    // 3. the terminal is detached and reattached, and resized
+    tokio::time::sleep_until(idle_until(0.6).into()).await;
+    let client = std::process::Command::new("script")
+        .args([
+            "-qfc",
+            &format!("tmux -L {server} attach -t soak"),
+            "/dev/null",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    tmux(&server, &["detach-client", "-s", "soak"]);
+    if let Ok(mut c) = client {
+        let _ = c.kill();
+    }
+    tmux(
+        &server,
+        &["resize-window", "-t", "soak", "-x", "120", "-y", "40"],
+    );
+    note("terminal attached, detached and resized");
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    turn!("the detach");
+
+    // 4. Codex quit and resumed (`codex resume <thread>`)
+    tokio::time::sleep_until(idle_until(0.8).into()).await;
+    tmux(&server, &["send-keys", "-t", "soak", "C-c"]);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    tmux(&server, &["send-keys", "-t", "soak", "C-c"]);
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    type_line(&server, &codex_line(Some(&thread))).await;
+    note("Codex quit and resumed");
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    turn!("the resume");
+
+    tokio::time::sleep_until(idle_until(1.0).into()).await;
+    turn!("the last idle stretch");
+    stop.store(true, std::sync::atomic::Ordering::SeqCst);
+    let _ = sampler.await;
+
+    // the presence timeline: transitions and the longest offline stretch after connecting
+    let samples = samples.lock().unwrap().clone();
+    let mut lines = vec![];
+    let mut last: Option<(bool, bool)> = None;
+    let (mut gap_from, mut worst) = (None::<u64>, 0u64);
+    for (at, online, hears) in &samples {
+        if last != Some((*online, *hears)) {
+            lines.push(format!(
+                "{:>8.1} min  {}{}",
+                *at as f64 / 60_000.0,
+                if *online { "online" } else { "OFFLINE" },
+                if *hears { ", hears" } else { "" }
+            ));
+            last = Some((*online, *hears));
+        }
+        match (online, gap_from) {
+            (false, None) => gap_from = Some(*at),
+            (true, Some(from)) => {
+                worst = worst.max(at - from);
+                gap_from = None;
+            }
+            _ => {}
+        }
+    }
+    if let (Some(from), Some((end, _, _))) = (gap_from, samples.last()) {
+        worst = worst.max(end - from);
+    }
+    let mut report = String::new();
+    report.push_str(&format!(
+        "soak: {minutes} min, {} samples, longest offline stretch {:.1} s, turns asked twice: {asked_twice}\n\nevents:\n",
+        samples.len(),
+        worst as f64 / 1000.0
+    ));
+    for (at, what) in events.lock().unwrap().iter() {
+        report.push_str(&format!("{:>8.1} min  {what}\n", *at as f64 / 60_000.0));
+    }
+    report.push_str("\npresence:\n");
+    for l in &lines {
+        report.push_str(l);
+        report.push('\n');
+    }
+    let _ = std::fs::write(&log_file, &report);
+    eprintln!("{report}");
+
+    tmux(&server, &["kill-server"]);
+    let _ = daemon("stop");
+    connector_cli(&home, &["remove", "codex"]);
+    assert!(
+        worst <= max_gap_ms,
+        "the agent was offline for {:.1} s:\n{report}",
+        worst as f64 / 1000.0
+    );
 }

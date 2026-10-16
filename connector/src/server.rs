@@ -300,6 +300,9 @@ pub struct Conn {
     hint: Mutex<Option<String>>,
     door: Mutex<Option<Door>>,
     bell: Mutex<Option<Door>>,
+    /// The bell's handler, and the bell of this connector's Codex thread (open once the thread is named).
+    bell_handler: Mutex<Option<door::Handler>>,
+    thread_bell: Mutex<Option<Door>>,
     use_: Mutex<Use>,
     unused_ms: u64,
     idle_ms: u64,
@@ -928,7 +931,74 @@ impl Conn {
             });
         }
     }
+    /// The notes of Codex connectors that left this folder (slots::codex_return), for a Codex connector that does
+    /// not know its thread yet: the thread of the connector before it under the same launcher becomes this one's
+    /// (its bell opens); the thread of one that ended a moment ago is returned, to be woken. Looked at when this
+    /// connector starts and on every tick while it is unnamed: Codex may start the new connector before it ends
+    /// the old one, which notes its thread only as it leaves.
+    fn codex_notes(&self) -> Option<String> {
+        if !crate::host::is_codex() || !self.cfg.owner().is_empty() {
+            return None;
+        }
+        let launcher = crate::launch::launched().then(std::os::unix::process::parent_id);
+        match crate::slots::codex_return(
+            &self.cfg.keys_dir,
+            &self.cfg.base,
+            launcher,
+            now_ms(),
+            env_ms("TROMMI_CODEX_RETURN_MS", 600_000),
+        )? {
+            crate::slots::CodexReturn::Take(thread) => {
+                if crate::host::note_call_meta(&json!({ "threadId": thread })) {
+                    member::set_thread_owner(&thread);
+                    self.open_thread_bell();
+                    eprintln!("[trommi] Codex thread {thread}: taken over from the connector before this one");
+                }
+                None
+            }
+            crate::slots::CodexReturn::Wake(thread) => Some(thread),
+        }
+    }
+    fn wake_returning(thread: String) {
+        if crate::host::wake_off() {
+            return;
+        }
+        eprintln!("[trommi] Codex thread {thread} lost its connector a moment ago: waking it");
+        tokio::spawn(async move {
+            crate::host::wake_thread(&thread, crate::host::RETURN_WAKE).await;
+        });
+    }
+    /// The bell of this connector's Codex thread (door::thread_bell_path), once the thread is named.
+    fn open_thread_bell(&self) {
+        let Some(thread) = crate::host::thread() else {
+            return;
+        };
+        let Some(handler) = self.bell_handler.lock().unwrap().clone() else {
+            return;
+        };
+        let mut b = self.thread_bell.lock().unwrap();
+        if b.is_some() {
+            return;
+        }
+        match door::open_door_at(&door::thread_bell_path(&thread), handler) {
+            Ok(d) => *b = Some(d),
+            Err(e) => eprintln!("[trommi] the bell of the Codex thread is not open: {e}"),
+        }
+    }
     async fn tick(&self) {
+        // a Codex connector that does not know its thread yet: the connector before it may have noted it meanwhile
+        if crate::host::is_codex()
+            && self.cfg.owner().is_empty()
+            && !self.leaving.load(Ordering::SeqCst)
+        {
+            if let Some(thread) = self.codex_notes() {
+                Self::wake_returning(thread);
+            }
+            if !self.cfg.owner().is_empty() {
+                let m = self.member.clone();
+                tokio::spawn(async move { m.claim(false).await });
+            }
+        }
         // a key a join in this session's shell made (`trommi-connector connect`), in case its ring was missed
         if self.member.phase() == "needs-invite" && member::key_waiting(&self.cfg) {
             let m = self.member.clone();
@@ -992,6 +1062,9 @@ impl Conn {
             d.close();
         }
         if let Some(b) = self.bell.lock().unwrap().take() {
+            b.close();
+        }
+        if let Some(b) = self.thread_bell.lock().unwrap().take() {
             b.close();
         }
         if let Some(f) = &self.feed {
@@ -1710,6 +1783,7 @@ impl Conn {
                     }
                 }
             }
+            self.open_thread_bell();
         }
         self.take_waiting(&storage).await;
         // what waited, or came while the thread was not known yet, wakes the Codex session now
@@ -1925,26 +1999,7 @@ impl mcp::Server for Conn {
             // connector before it under the same launcher (a hot swap) noted its thread: then that thread is this
             // one's. A connector of this folder that ended a moment ago (Codex restarted its app server): its
             // thread is woken, and its next call names its connector, which then takes its key.
-            let mut wake_thread = None;
-            if crate::host::is_codex() && self.cfg.owner().is_empty() {
-                let launcher = crate::launch::launched().then(std::os::unix::process::parent_id);
-                match crate::slots::codex_return(
-                    &self.cfg.keys_dir,
-                    &self.cfg.base,
-                    launcher,
-                    now_ms(),
-                    env_ms("TROMMI_CODEX_RETURN_MS", 600_000),
-                ) {
-                    Some(crate::slots::CodexReturn::Take(thread)) => {
-                        if crate::host::note_call_meta(&json!({ "threadId": thread })) {
-                            member::set_thread_owner(&thread);
-                            eprintln!("[trommi] Codex thread {thread}: taken over from the connector before this one");
-                        }
-                    }
-                    Some(crate::slots::CodexReturn::Wake(thread)) => wake_thread = Some(thread),
-                    None => {}
-                }
-            }
+            let wake_thread = self.codex_notes();
             let codex_unnamed = crate::host::is_codex() && self.cfg.owner().is_empty();
             let mut now = !codex_unnamed;
             let mut why = if codex_unnamed {
@@ -1999,13 +2054,8 @@ impl mcp::Server for Conn {
                     me.tick().await;
                 }
             });
-            if let Some(thread) = wake_thread.filter(|_| !crate::host::wake_off()) {
-                eprintln!(
-                    "[trommi] Codex thread {thread} lost its connector a moment ago: waking it"
-                );
-                tokio::spawn(async move {
-                    crate::host::wake_thread(&thread, "[Trommi] Codex started this session's Trommi connector anew: call the trommi inbox tool now, so this session is back on the board.").await;
-                });
+            if let Some(thread) = wake_thread {
+                Self::wake_returning(thread);
             }
             if !now {
                 eprintln!("[trommi] asleep ({why}): this process takes the Trommi key when its session is used (a Trommi tool call, a hook)");
@@ -2055,6 +2105,7 @@ impl mcp::Server for Conn {
                 if let Some(st) = self.member.me.lock().unwrap().storage.clone() {
                     st.set("codex_thread", json!(crate::host::thread()));
                 }
+                self.open_thread_bell();
                 eprintln!(
                     "[trommi] Codex thread {}: board events wake it",
                     crate::host::thread().unwrap_or_default()
@@ -2260,6 +2311,8 @@ pub async fn main_server() {
         hint: Mutex::new(None),
         door: Mutex::new(None),
         bell: Mutex::new(None),
+        bell_handler: Mutex::new(None),
+        thread_bell: Mutex::new(None),
         use_: Mutex::new(Use::default()),
         unused_ms: env_ms("TROMMI_UNUSED_MS", 60_000),
         idle_ms: env_ms("TROMMI_IDLE_MS", 1_800_000),
@@ -2341,6 +2394,7 @@ pub async fn main_server() {
                 json!({ "ok": true, "phase": c.member.phase() })
             })
         });
+    *conn.bell_handler.lock().unwrap() = Some(bell_handler.clone());
     let bell_file = door::bell_path(ppid());
     let _ = std::fs::create_dir_all(bell_file.parent().unwrap());
     let _ = std::fs::set_permissions(

@@ -79,7 +79,7 @@ async fn finish_join(m: Arc<Member>) -> Result<String> {
     }
     m.stop().await;
     if running {
-        let _ = ring(&up, 300).await;
+        let _ = ring(&up, None, 300).await;
     }
     Ok(if running {
         format!("{out}\nThe Trommi MCP server of this session goes online with this key now; its board tools appear in a moment.")
@@ -232,6 +232,7 @@ pub async fn hook(kind: &str) -> String {
     let mut text = String::new();
     let _ = tokio::io::AsyncReadExt::read_to_string(&mut tokio::io::stdin(), &mut text).await;
     let input: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    codex_thread_seen(&input);
     let Some(request) = hook_request(kind, &input) else {
         return String::new();
     };
@@ -256,7 +257,11 @@ pub async fn hook(kind: &str) -> String {
                 .collect()
         })
         .unwrap_or_default();
-    ring(&pids, 15_000).await;
+    let thread = request
+        .get("thread")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    ring(&pids, thread.as_deref(), 15_000).await;
     let wait = request.get("wait_ms").and_then(|v| v.as_u64()).unwrap_or(0);
     for p in command_slots(&cfg, &room_id) {
         let n = p.slot;
@@ -278,9 +283,6 @@ pub async fn hook(kind: &str) -> String {
 /// The hooks of the terminal mirror (`prompt`: UserPromptSubmit, `stop`: Stop): one line to the connector of this
 /// Claude Code process through its bell, which answers at once. Prints nothing, fails silently, never waits long.
 pub async fn mirror_hook(kind: &str) {
-    if !crate::mirror::enabled() {
-        return;
-    }
     let mut bytes = vec![];
     let _ = tokio::io::AsyncReadExt::read_to_end(
         &mut tokio::io::AsyncReadExt::take(tokio::io::stdin(), 8 * 1024 * 1024),
@@ -288,27 +290,70 @@ pub async fn mirror_hook(kind: &str) {
     )
     .await;
     let input: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    codex_thread_seen(&input);
+    if !crate::mirror::enabled() {
+        return;
+    }
     let pids = crate::hooks::ancestors(8);
     let Some(request) = crate::mirror::hook_request(kind, &input, &pids) else {
         return;
     };
-    for p in &pids {
-        let f = crate::door::bell_path(*p);
-        if f.exists() {
-            let _ = crate::door::knock_at(&f, &request, crate::mirror::HOOK_MS).await;
-            return;
-        }
+    let thread = request["thread"].as_str();
+    if let Some(f) = crate::door::hook_bells(thread, &pids).into_iter().next() {
+        let _ = crate::door::knock_at(&f, &request, crate::mirror::HOOK_MS).await;
     }
+}
+
+/// A hook of a Codex thread that is in a Trommi room while no connector serves it by name (Codex started its MCP
+/// server anew and the new one does not know its thread until the agent's next Trommi call): the thread is woken
+/// once (`codex queue`), so its next turn calls the board and its own connector takes its key. Identity is never
+/// guessed: whichever process serves the thread learns it from that call. At most once per
+/// TROMMI_CODEX_REWAKE_MS (3 minutes) per thread; not for a hook of a Trommi tool call (that call names it).
+pub fn codex_thread_seen(input: &Value) {
+    if !crate::mirror::codex_input(input) || crate::host::wake_off() {
+        return;
+    }
+    let Some(thread) = input.get("session_id").and_then(|v| v.as_str()) else {
+        return;
+    };
+    if input
+        .get("tool_name")
+        .and_then(|v| v.as_str())
+        .is_some_and(|t| t.contains("trommi"))
+        || std::os::unix::net::UnixStream::connect(crate::door::thread_bell_path(thread)).is_ok()
+    {
+        return;
+    }
+    let cfg = connector_config(None, false);
+    if member::own_slots(&cfg, &format!("codex:{thread}")).is_empty() {
+        return;
+    }
+    let Ok(dir) = crate::door::door_dir() else {
+        return;
+    };
+    let marker = dir.join(format!(
+        "woke-codex-{}",
+        &crate::util::hex(&crate::util::sha256(thread.as_bytes()))[..16]
+    ));
+    let rewake = std::env::var("TROMMI_CODEX_REWAKE_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(180_000);
+    let fresh = std::fs::metadata(&marker)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| (age.as_millis() as u64) < rewake);
+    if fresh || write_private(&marker, "").is_err() {
+        return;
+    }
+    crate::host::wake_detached(thread, crate::host::RETURN_WAKE);
 }
 
 /// The hooks of a turn's trail (PreToolUse, PostToolUse, PostToolUseFailure, MessageDisplay, SubagentStart,
 /// SubagentStop, SessionEnd, StopFailure; trail.rs): one line to the connector of this Claude Code process through
 /// its bell. Prints nothing, fails silently, never waits long.
 pub async fn trail_hook() {
-    let level = crate::mirror::level();
-    if level < crate::mirror::Level::Steps {
-        return;
-    }
     let mut bytes = vec![];
     let _ = tokio::io::AsyncReadExt::read_to_end(
         &mut tokio::io::AsyncReadExt::take(tokio::io::stdin(), 8 * 1024 * 1024),
@@ -316,16 +361,18 @@ pub async fn trail_hook() {
     )
     .await;
     let input: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    codex_thread_seen(&input);
+    let level = crate::mirror::level();
+    if level < crate::mirror::Level::Steps {
+        return;
+    }
     let pids = crate::hooks::ancestors(8);
     let Some(request) = crate::trail::hook_request(&input, &pids, level) else {
         return;
     };
-    for p in &pids {
-        let f = crate::door::bell_path(*p);
-        if f.exists() {
-            let _ = crate::door::knock_at(&f, &request, crate::mirror::HOOK_MS).await;
-            return;
-        }
+    let thread = request.get("thread").and_then(|v| v.as_str());
+    if let Some(f) = crate::door::hook_bells(thread, &pids).into_iter().next() {
+        let _ = crate::door::knock_at(&f, &request, crate::mirror::HOOK_MS).await;
     }
 }
 
