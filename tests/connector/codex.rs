@@ -891,3 +891,136 @@ async fn a_codex_session_activates_on_the_approved_computer_across_program_accou
     }
     drop((parent_a, parent_b));
 }
+
+/// Codex as it really starts the connector: through the launcher, with no session key in the environment (Codex
+/// names its thread only in the `_meta` of a tool call).
+async fn serve_launched_codex(
+    seat: &Seat,
+    codex: &Path,
+    program: &Path,
+    thread: &str,
+    env: &[(&str, &str)],
+) -> common::process::Mcp {
+    let mut command = seat.command_of(program, &[]);
+    command
+        .env_remove("TROMMI_LAUNCH")
+        .env_remove("TROMMI_SESSION_KEY")
+        .env("TROMMI_CHANNEL_EVENTS", "off")
+        .env("TROMMI_CODEX_BIN", codex)
+        .env("TROMMI_CODEX_WAKE_MS", "300");
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let mut mcp = common::process::Mcp::start_as(command, common::process::codex_hello()).await;
+    mcp.call_meta = Some(common::process::codex_meta(thread));
+    mcp
+}
+
+/// The owner's case of 2026-10-16: a Codex agent showed as gone again and again. A connector that replaced the
+/// one of a running Codex session (a hot swap, or Codex restarting its app server, which starts its MCP servers
+/// anew) did not know the session's thread: Codex names it only with its next Trommi call, so the new connector
+/// stayed asleep, held no key, and the agent was off the board until the human wrote to it in the terminal. Now
+/// the swapped-in connector takes over the thread of the one before it under the same launcher at once, and a
+/// connector started after the old one ended wakes that thread, whose next call puts it back on the board.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_codex_session_stays_on_the_board_across_a_hot_swap_and_a_restart() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let (codex, codex_calls) = fake_codex(seat.home.path());
+    let thread = "01a13951-b78c-77a2-b72e-88f496583c3d";
+    let bin = seat.home.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let program = bin.join("trommi-connector");
+    let original = std::fs::read(connector_binary()).expect("the built connector");
+    std::fs::write(&program, &original).unwrap();
+    std::fs::set_permissions(
+        &program,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let env = [("TROMMI_UPDATE_POLL_MS", "1000")];
+    let mut mcp = serve_launched_codex(&seat, &codex, &program, thread, &env).await;
+    let _ = mcp.request("tools/list", json!({})).await;
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = mcp.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await
+    };
+    let ((said, failed), group) = tokio::join!(connect, admit);
+    assert!(!failed && said.starts_with("Check code:"), "{said}");
+    mcp.ready().await;
+    let before = wakes(&codex_calls, thread);
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Vor dem Tausch." }),
+        )
+        .await
+        .expect("the human writes");
+    woken(&codex_calls, thread, before).await;
+    inbox_holds(&mut mcp, "Vor dem Tausch.").await;
+
+    // Hot swap while the session is idle: no tool call follows, yet the new connector is in the room and a board
+    // event wakes the thread.
+    let mut changed = original.clone();
+    changed.extend_from_slice(b"\nanother build");
+    let new_file = bin.join(".new.trommi-connector");
+    std::fs::write(&new_file, &changed).unwrap();
+    std::fs::set_permissions(
+        &new_file,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    std::fs::rename(&new_file, &program).unwrap();
+    mcp.notification("notifications/tools/list_changed").await;
+    let before = wakes(&codex_calls, thread);
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Nach dem Tausch." }),
+        )
+        .await
+        .expect("the human writes");
+    woken(&codex_calls, thread, before).await;
+    inbox_holds(&mut mcp, "Nach dem Tausch.").await;
+
+    // Codex restarts its app server: the connector's input ends, a new one starts for the same thread and is
+    // never called. It wakes the thread, and the thread's next call brings it back with what came meanwhile.
+    mcp.close().await;
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Während des Neustarts." }),
+        )
+        .await
+        .expect("the human writes");
+    let before = wakes(&codex_calls, thread);
+    let mut mcp = serve_launched_codex(&seat, &codex, &program, thread, &env).await;
+    let _ = mcp.request("tools/list", json!({})).await;
+    let wake = woken(&codex_calls, thread, before).await;
+    assert!(
+        wake.contains("[Trommi]") && wake.contains("inbox"),
+        "{wake}"
+    );
+    inbox_holds(&mut mcp, "Während des Neustarts.").await;
+    // Only once: a second connector of the folder later wakes nobody.
+    let after = wakes(&codex_calls, thread);
+    let other = serve_launched_codex(
+        &seat,
+        &codex,
+        &program,
+        "01a13951-0000-7000-8000-000000000001",
+        &env,
+    )
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+    assert_eq!(wakes(&codex_calls, thread), after, "no second wake");
+    other.close().await;
+    mcp.ok("reply", json!({ "text": "Wieder da." })).await;
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    mcp.close().await;
+}
