@@ -852,6 +852,7 @@ struct SessionQuestions: View {
         }
       }
     }
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("session-questions")
   }
 }

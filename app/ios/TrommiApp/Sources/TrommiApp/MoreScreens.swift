@@ -425,7 +425,7 @@ struct SettingsScreen: View {
     let s = shell.view.settings
     ScrollView {
       VStack(alignment: .leading, spacing: 26) {
-        PageHeading(text: title)
+        PageHeading(text: title).accessibilityIdentifier("settings-" + (page.isEmpty ? "list" : page))
         if let problem = shell.view.account.problem { Text(problem.en).font(Face.text(15)).foregroundStyle(Ink.urgCritical) }
         if shell.view.account.step == "working" { ProgressView().frame(maxWidth: .infinity) }
         switch page {
@@ -445,7 +445,6 @@ struct SettingsScreen: View {
     .background(Ink.bg.ignoresSafeArea())
     .scrollDismissesKeyboard(.interactively)
     .pushedPills(center: { EmptyView() }, trailing: { EmptyView() })
-    .accessibilityIdentifier("settings-" + (page.isEmpty ? "list" : page))
     .confirmationDialog("Sign Out of This Device?", isPresented: $leaving, titleVisibility: .visible) {
       Button("Sign out", role: .destructive) { shell.account(["step": "sign_out"]) }
     } message: { Text("This device signs in again with e-mail and password or by scanning the code of a signed-in device.") }

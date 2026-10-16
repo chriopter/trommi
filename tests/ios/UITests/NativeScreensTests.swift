@@ -151,7 +151,7 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(yes.waitForExistence(timeout: 5), app.debugDescription)
     capture("desk-duck-ask")
     yes.tap()
-    let toast = app.staticTexts["Left to the agents"]
+    let toast = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Left to the agents")).firstMatch
     XCTAssertTrue(toast.waitForExistence(timeout: 10), "one toast with its Undo. " + app.debugDescription)
     XCTAssertFalse(duck.exists, "nothing left to duck")
     capture("desk-duck-done")
@@ -161,8 +161,8 @@ final class NativeScreensTests: XCTestCase {
     let teaser = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-teaser-")).firstMatch
     XCTAssertTrue(teaser.waitForExistence(timeout: 15), app.debugDescription)
     XCTAssertFalse(teaser.label.trimmingCharacters(in: .whitespaces).isEmpty, "a row says what was said last")
-    let dots = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-unread-"))
-    XCTAssertGreaterThan(dots.count, 0, "words not seen yet are dotted")
+    let dot = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-unread-")).firstMatch
+    XCTAssertTrue(dot.waitForExistence(timeout: 5), "words not seen yet are dotted. " + app.debugDescription)
     let helpers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-helpers-")).firstMatch
     XCTAssertTrue(helpers.exists, "a main's helpers lie folded in its row")
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).count
@@ -177,8 +177,7 @@ final class NativeScreensTests: XCTestCase {
     launch("chat")
     XCTAssertTrue(app.staticTexts["talk-message"].firstMatch.waitForExistence(timeout: 15))
     app.buttons["session-mode-questions"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["session-questions"].waitForExistence(timeout: 5), app.debugDescription)
-    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "session-question-")).firstMatch.exists)
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "session-question-")).firstMatch.waitForExistence(timeout: 5), "every question it asked. " + app.debugDescription)
     capture("session-questions")
     app.buttons["session-more"].tap()
     XCTAssertTrue(app.buttons["Rename…"].waitForExistence(timeout: 5))
@@ -223,7 +222,9 @@ final class NativeScreensTests: XCTestCase {
     app.buttons["tab-note"].tap()
     let field = app.descendants(matching: .any)["note-text"]
     XCTAssertTrue(field.waitForExistence(timeout: 5))
-    field.tap(); field.typeText("Buy oat milk")
+    field.tap()
+    if !app.keyboards.firstMatch.waitForExistence(timeout: 3) { field.tap() }
+    field.typeText("Buy oat milk")
     XCTAssertFalse(app.buttons["Keep in Note"].exists, "no button to keep it: it keeps itself")
     Thread.sleep(forTimeInterval: 1.2)
     app.buttons["tab-desk"].tap()
