@@ -23,6 +23,8 @@ pub const TABLES: &[(&str, &str, &str, &str)] = &[
     ("Accounts and sign-in", "account_sources", "keyed hashes of the addresses an account was signed in to from", ""),
     ("Rooms and devices", "rooms", "room id, founding time, change counter, counts, recovery public keys", ""),
     ("Rooms and devices", "devices", "device public key, role, epochs", ""),
+    ("Rooms and devices", "device_seen", "device public key, last verified contact", ""),
+    ("Rooms and devices", "device_departures", "device public key, signed public retirement notice, time", ""),
     ("Rooms and devices", "invites", "the signed Offer with its MAC, expiry, use", ""),
     ("Rooms and devices", "invite_requests", "Requests and Reveal of an invite", ""),
     ("Rooms and devices", "requests", "device, kind, group, time", ""),

@@ -70,6 +70,8 @@ written. Catch-up is "everything above N".
 | `accounts`, `passkeys`, `account_rooms` | e-mail, login hashes, KDF record, passkey public keys; account → room | sealed copies of the code | login by e-mail |
 | `rooms` | `room_id`, `founded_at`, `change` | | |
 | `devices` | `room_id`, `device`, `role` (human, agent, helper), `added_epoch`, `removed_epoch`, per group the Cut | | role checks; "never returns" (4.2) |
+| `device_seen` | `room_id`, `device`, `at` | | last verified contact per device; cascades with membership row deletion |
+| `device_departures` | `room_id`, `device`, `signature`, `at` | | signed public retirement intent, replayed to human devices; never a membership change |
 | `key_packages` | `device`, `ref`, `last_resort`, `expires_at`, `bytes` | | claim: (`device`, `last_resort`, oldest) |
 | `groups` | `group_id`, `room_id`, `kind` (room, main, helper), `session_id`, `parent`, `epoch`, `room_epoch`, `live`, `archived_at`, `log_n`, the serialised public group | | by room |
 | `group_log` | `group_id`, `n`, `epoch`, `kind`, `bytes` (a Commit: readable; a message: opaque), `sender` (the posting device), `at`, `change` | messages | **catch up a group**: (`group_id`, `n`) |
