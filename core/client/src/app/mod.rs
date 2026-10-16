@@ -1174,14 +1174,25 @@ impl App {
             Action::Batch { way, card_ids } => {
                 return self.batch(now_ms, way, card_ids, out);
             }
-            Action::KeepNote { note_id, text, attachments } => {
-                let Some(keep) = self.keep_note(note_id.as_deref(), text, attachments) else { return };
-                let fresh = matches!(keep, Action::WriteNoteFiles { note_id: None, .. });
-                let before: std::collections::BTreeSet<String> = self.sent.notes.keys().cloned().collect();
-                self.action(now_ms, keep, out);
-                if fresh {
-                    // (the note it made: the next keep writes into it, also before the page has its id)
-                    self.made_note = self.sent.notes.keys().find(|k| !before.contains(*k)).cloned().or(self.made_note.take());
+            Action::KeepNote { note_id, text, attachments, send, to } => {
+                let keep = self.keep_note(note_id.as_deref(), text, attachments);
+                let mut kept = match &keep {
+                    Some(Action::WriteNoteFiles { note_id: Some(id), .. }) => Some(id.clone()),
+                    None => note_id.clone().or_else(|| self.made_note.clone()),
+                    _ => None,
+                };
+                if let Some(keep) = keep {
+                    let fresh = matches!(keep, Action::WriteNoteFiles { note_id: None, .. });
+                    let before: std::collections::BTreeSet<String> = self.sent.notes.keys().cloned().collect();
+                    self.action(now_ms, keep, out);
+                    if fresh {
+                        // (the note it made: the next keep writes into it, also before the page has its id)
+                        self.made_note = self.sent.notes.keys().find(|k| !before.contains(*k)).cloned().or(self.made_note.take());
+                        kept = self.made_note.clone();
+                    }
+                }
+                if let (true, Some(note_id)) = (*send, kept) {
+                    self.action(now_ms, Action::SendNote { note_id, to: to.clone() }, out);
                 }
                 return;
             }

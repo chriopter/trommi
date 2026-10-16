@@ -231,13 +231,18 @@ pub enum Action {
     /// The note being written, kept as it stands (the note page saves by itself while he types and when he leaves
     /// it): `note_id` is the note the page shows (none: a new one). The core decides: a new note once there are
     /// words, a new version when they changed, the note thrown away when it was emptied, nothing else. A file still
-    /// uploading is left out until the next keep.
+    /// uploading is left out until the next keep. `send`: then sent as `SendNote` (to `to`, else the crown's), also
+    /// a note made by this very keep.
     KeepNote {
         #[serde(default)]
         note_id: Option<String>,
         text: String,
         #[serde(default)]
         attachments: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        send: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to: Option<String>,
     },
     WriteNoteFiles { #[serde(default)] note_id: Option<String>, text: String, attachments: Vec<String> },
     WriteNote {

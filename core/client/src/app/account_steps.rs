@@ -272,7 +272,7 @@ impl App {
                 Ok(_) => {
                     self.sign_out(now_ms, out);
                     out.insert(0, Effect::ForgetShared);
-                    self.next_view.account = AccountView { step: "found".into(), ..Default::default() };
+                    self.next_view.account = AccountView { step: "found".into(), notice: Some(Text::new("account.notice.deleted", "Your account was deleted.")), ..Default::default() };
                 }
                 Err(Failure::Refused { code: Some(code), .. }) if code == "wrong-login" => {
                     self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.wrong_login", "The e-mail or the password is wrong.")), ..Default::default() };

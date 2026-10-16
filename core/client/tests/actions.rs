@@ -670,7 +670,7 @@ fn a_note_sent_waits_for_undo_then_goes_to_its_session() {
 }
 
 fn keep(sim: &mut Sim, id: Option<&str>, text: &str) {
-    act(sim, Action::KeepNote { note_id: id.map(str::to_string), text: text.into(), attachments: vec![] });
+    act(sim, Action::KeepNote { note_id: id.map(str::to_string), text: text.into(), attachments: vec![], send: false, to: None });
 }
 
 #[test]
@@ -732,4 +732,18 @@ fn the_duck_for_all_clears_the_desk_with_one_toast_whose_undo_takes_all_back() {
     world.stream(&mut sim);
     assert_eq!(sim.view.desk.rows.len(), 2, "both back on the Desk");
     assert_eq!(sim.view.toasts.len(), 1, "an Undo makes no toast of its own");
+}
+
+#[test]
+fn a_note_written_and_sent_at_once_goes_as_one() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    act(&mut sim, Action::KeepNote { note_id: None, text: "ship friday".into(), attachments: vec![], send: true, to: Some(session) });
+    assert!(sim.view.notes.corner.is_none(), "held for the Undo: it leaves the corner at once");
+    assert_eq!(sim.view.toasts.last().map(|t| t.text.en.as_str()), Some("Note sent."));
+    let held: Vec<_> = sim.app.board().model.notes.values().filter(|n| n.get("held").is_some_and(|h| !h.is_null())).collect();
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0]["text"], json!("ship friday"));
 }
