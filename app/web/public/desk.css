@@ -1150,7 +1150,7 @@ body > main#inbox { contain: strict; }
 .pile-rest[data-g="trash"] .pile-rest-mark { color: var(--faint); }
 .pile-rest[data-shredded] b { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent); }
 
-/* ---- the Desk's foot (desk.mjs offHint, deskDock; the owner's picks of 13 October 2026: "zwei Stapel wie HEY", drawn as "nur zwei Reiter") ----
+/* ---- the Desk's foot (desk.mjs offHint; since 17 October 2026 no docked stacks: starred and running stand at the head of the section) ----
    The section Off your mind: a short hinted list, its rows fading, beside Artifacts on a wide window. */
 .oym-hint { gap: 0; text-align: left; }
 .oym-hint-list { display: grid; gap: 3px; justify-items: start; padding: 0 4px 2px; color: var(--muted); text-decoration: none; text-align: left; font: 400 var(--t-xs)/1.3 var(--font); }
@@ -1173,43 +1173,23 @@ body > main#inbox { contain: strict; }
   .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks { grid-column: 3 / -1; align-self: start; }
   :is(#inbox, #session) .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks.stack-tabs { margin-top: 56px; }
 }
-/* (the last rows scroll clear of the dock) */
-main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bottom: 64px; }
-/* The dock: two tabs at the window's lower edge, in the Desk's layer (fixed; gone with the Desk, so not on a card's
-   page). Each: its sign, its word, how many; the cards themselves only in the fan. */
-.oym-dock { position: fixed; z-index: var(--z-pop); bottom: 0; left: calc(var(--side, 0px) + (100vw - var(--side, 0px)) / 2); translate: -50% 0; display: flex; align-items: flex-end; gap: 12px; }
-.oym-dock[hidden], .desk-layer:has(.sel-bar:not([hidden])) .oym-dock, :root.is-choosing .oym-dock { display: none; }
-.dock-stack { position: relative; }
-.dock-tab { display: inline-flex; align-items: center; gap: 8px; padding: 11px 16px calc(11px + env(safe-area-inset-bottom, 0px)); border: 1px solid var(--line-strong); border-bottom: 0; border-radius: 13px 11px 0 0; background: var(--surface); color: var(--fg); font: 600 var(--t-sm)/1 var(--font); box-shadow: var(--shadow-md); list-style: none; cursor: pointer; white-space: nowrap; }
-.dock-tab::-webkit-details-marker { display: none; }
-.dock-tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.dock-tab > :is(.sketch, svg) { flex: none; width: 15px; height: 15px; }
-.dock-tab > .agent-ring { position: static; inset: auto; color: var(--muted); }
-.dock-stack[data-k="star"] > .dock-tab > .sketch { color: #c99a13; fill: color-mix(in srgb, #e8b923 55%, transparent); }
-.dock-tab > b { font-weight: inherit; }
-.dock-tab > em { min-width: 18px; box-sizing: border-box; padding: 3px 6px; border-radius: var(--r-pill); background: var(--fg); color: var(--bg); font: 700 11px/1 var(--font); font-style: normal; text-align: center; font-variant-numeric: tabular-nums; }
-@media (any-hover: hover) { .dock-tab:hover { border-color: var(--fg); } a.dock-card:hover { border-color: var(--fg); } }
-.dock-stack[open] > .dock-tab { background: var(--sunken); }
-/* fanned: small cards of a fixed width upward, each a little askew (never a card that spans the window) */
-.dock-fan { position: absolute; left: -10px; bottom: calc(100% + 4px); display: grid; gap: 7px; max-height: min(64dvh, 540px); overflow-y: auto; padding: 8px 10px; scrollbar-width: thin; }
-.dock-stack:not([open]) > .dock-fan { display: none; }
-.dock-card { display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 10px; width: min(300px, calc(100vw - 60px)); box-sizing: border-box; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 13px 11px 14px 12px; background: var(--surface); color: var(--fg); text-decoration: none; text-align: left; box-shadow: 0 4px 14px rgb(0 0 0 / .16); }
-.dock-card .agent-avatar { width: 26px; height: 26px; }
-.dock-card > span { display: grid; gap: 2px; min-width: 0; }
-.dock-card b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; font: 600 var(--t-sm)/1.25 var(--font); }
-.dock-card small { color: var(--muted); font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dock-fan > .dock-card:nth-child(odd) { rotate: -1.4deg; }
-.dock-fan > .dock-card:nth-child(even) { rotate: 1.1deg; translate: 5px 0; }
-.dock-fan > .dock-card:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.dock-all { justify-self: start; display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 8px 14px; border: 1.5px solid var(--fg); border-radius: var(--r-pill); background: var(--surface); color: var(--fg); font: 600 var(--t-sm)/1 var(--font); text-decoration: none; }
-.dock-all .sketch { width: 14px; height: 14px; }
-@media (prefers-reduced-motion: reduce) { .dock-fan > .dock-card { rotate: none; translate: none; } }
-/* a phone: the two tabs are pills above the tab pill; the running one's fan opens from its right edge */
+/* The cards at the head of the section, starred and running, one calm row each (as the iPhone's OffHint): the
+   agent's drawing in its turning ring while it runs, the title, "agent · status line". In the Desk's scroll, never
+   over it. */
+.oym-runs { display: grid; gap: 2px; margin: 0 0 10px; }
+.oym-run { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 44px; padding: 2px 4px; border-radius: 10px; color: var(--fg); text-decoration: none; text-align: left; }
+.oym-run-mark { position: relative; display: grid; place-items: center; width: 28px; height: 28px; }
+.oym-run-mark .agent-avatar { width: 20px; height: 20px; }
+.oym-run:not([data-running]) .oym-run-mark .agent-avatar { width: 24px; height: 24px; }
+.oym-run-mark .agent-ring { color: var(--accent); }
+.oym-run-words { display: grid; gap: 1px; min-width: 0; }
+.oym-run-words b { display: block; font: 600 var(--t-sm)/1.3 var(--font); }
+.oym-run-words b, .oym-run-words small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oym-run-words small { color: var(--muted); font-size: var(--t-xs); }
+.oym-run-more { justify-self: start; min-height: 32px; display: inline-flex; align-items: center; margin-left: 42px; color: var(--muted); font: 600 var(--t-xs)/1 var(--font); text-decoration: none; }
+@media (any-hover: hover) { .oym-run:hover { background: var(--sunken); } .oym-run-more:hover { color: var(--fg); } }
+.oym-run:focus-visible, .oym-run-more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 @media (max-width: 860px) {
-  .oym-dock { left: 50%; bottom: calc(86px + env(safe-area-inset-bottom, 0px)); gap: 10px; }
-  .dock-tab { padding: 9px 14px; border: 1px solid var(--line-strong); border-radius: var(--r-pill); }
-  .dock-stack[data-k="run"]:not(:only-child) .dock-fan { left: auto; right: -10px; }
   :is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .oym-hint { margin-top: 40px; }
   :is(#inbox, #session) .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks.stack-tabs { margin-top: 20px; }
-  main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bottom: 140px; }
 }

@@ -1,5 +1,5 @@
 // foot-level.browser.mjs: at the foot of the Desk (demo room, ?mock=1) the sections Off your mind and Artifacts stand
-// level when they sit side by side: heading against heading, the first row against the first tile. Checked at two
+// level when they sit side by side: heading against heading, the first row (a starred or running card, else a put-off or closed one) against the first tile. Checked at two
 // window widths, with and without the list of work before them (#desk-ip), since each used to bring its own space.
 //   node tests/web/views/foot-level.browser.mjs      (needs Chromium; serves the app from its sources itself)
 import net from 'node:net'
@@ -17,7 +17,7 @@ const SIZES = [{ name: '1440 wide', width: 1440, height: 1000 }, { name: '1100 w
 const PROBE = `(() => {
   const top = s => { const el = document.querySelector(s); return el ? Math.round(el.getBoundingClientRect().top * 10) / 10 : null }
   const left = s => document.querySelector(s)?.getBoundingClientRect().left ?? null
-  const measure = () => ({ offHead: top('#desk-end .end-head'), artHead: top('#desk-artifacts .end-head'), offRow: top('#desk-end .oym-hint-row'), artTile: top('#desk-artifacts .df-thumb'), beside: left('#desk-artifacts') > left('#desk-end') + 50 })
+  const measure = () => ({ offHead: top('#desk-end .end-head'), artHead: top('#desk-artifacts .end-head'), offRow: top('#desk-end :is(.oym-run, .oym-hint-row)'), artTile: top('#desk-artifacts .df-thumb'), beside: left('#desk-artifacts') > left('#desk-end') + 50 })
   const plain = measure()
   const ip = document.querySelector('#desk-ip'), was = ip?.hidden
   if (ip) ip.hidden = !was
