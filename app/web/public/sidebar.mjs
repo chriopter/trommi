@@ -56,7 +56,7 @@ export function markCurrent(current) {
   if (agents && watching.target !== agents) { watching.disconnect(); watching.observe(agents, { childList: true, subtree: true }); watching.target = agents }
 }
 
-const inviteAgentButton = () => html`<form method="post" action="/pair" class="agent-invite" id="agent-invite"><input type="hidden" name="role" value="agent"><button type="submit" class="agent-invite-go" id="sidebar-invite" title="Invite an agent" aria-label="Invite an agent">${PLUS}<span class="agent-invite-label">New Agent…</span></button></form>`
+const inviteAgentButton = () => html`<form method="post" action="/pair" class="agent-invite" id="agent-invite"><input type="hidden" name="role" value="computer"><button type="submit" class="agent-invite-go" id="sidebar-invite" title="Approve a computer" aria-label="Approve a computer">${PLUS}<span class="agent-invite-label">Approve Computer…</span></button></form>`
 
 // ---- the note: one only, at the bottom right ----
 // One drawn yellow sticky at the window's bottom-right, a part of the frame beside the sidebar (app.mjs bodyParts).

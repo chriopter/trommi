@@ -3025,8 +3025,6 @@ export const setRow = ({ href, icon = '', word, detail = '', id = '' }) => html`
 /** What an agent invite asks the human to paste into claude or codex in the project folder: first a plain prompt with the
  *  link, which any agent with the connector's MCP server turns into its connect tool (no plugin command needed), then
  *  the Claude Code plugin's slash command, the shorter way. The iOS invite (agentConnectSteps) shows the same. */
-export const connectPrompt = link => `Connect to Trommi with this invite link: '${link}'`
-export const connectCommand = link => `/trommi:connect '${link}'`
 
 export const settingsPage = (title, inner, { id = 'room', cls = 'room', lead = '', back = true, backWord = 'Settings' } = {}) => html`<main id="${id}" class="${cls} set-page" aria-label="${title}"><div class="set-col">${back ? html`<a class="set-back" href="${back === true ? '/settings' : back}" data-nav>${BACK_CHEVRON}<span>${backWord}</span></a>` : ''}<header class="set-head"><h2>${title}</h2>${lead ? html`<p>${lead}</p>` : ''}</header>${inner}</div></main>`
 /** Devices and Account (auth.mjs): a page under Settings in the account screens' own main (#room). */

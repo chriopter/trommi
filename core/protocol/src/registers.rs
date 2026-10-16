@@ -36,6 +36,8 @@ pub const GOALS: &str = "goals";
 pub const JOIN_ASK: &str = "join_ask/";
 /// The prefix under which a human device answers it with an invite link for that agent alone (section 12.4).
 pub const JOIN_LINK: &str = "join_link/";
+/// Human acknowledgement that this exact computer device was emoji-approved (12.4.1).
+pub const MACHINE_APPROVED: &str = "machine_approved";
 /// The prefix of the name of a Desk, whose value carries the Desk's Goals.
 pub const DESK: &str = "desk/";
 /// The most lines Goals have.
@@ -251,7 +253,7 @@ pub fn name_owner(name: &str, in_room: bool) -> Option<NameOwner> {
             ]);
         return room_humans.then_some(NameOwner::RoomHumans);
     }
-    if name == GOALS || has_prefix(&[JOIN_LINK]) {
+    if name == GOALS || name == MACHINE_APPROVED || has_prefix(&[JOIN_LINK]) {
         return Some(NameOwner::SessionHumans);
     }
     let session_devices =

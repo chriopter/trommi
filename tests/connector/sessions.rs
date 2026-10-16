@@ -43,8 +43,9 @@ struct Machine {
     a: Human,
     b: Human,
     codex_bin: PathBuf,
-    /// The main session of every agent on a board: (account, group). A running one may vouch for a new session.
+    /// Each conversation device's main session: (account, group). Computers are tracked separately.
     groups: Vec<(char, GroupId)>,
+    computers: Vec<(char, GroupId)>,
 }
 
 impl Machine {
@@ -67,6 +68,7 @@ impl Machine {
             b,
             codex_bin,
             groups: vec![],
+            computers: vec![],
         }
     }
 
@@ -76,25 +78,19 @@ impl Machine {
         f
     }
 
-    /// The human of `account` allows the next ask to let a session in, whichever running session vouched.
+    async fn approve_computer(&mut self, account: char) -> GroupId {
+        if let Some((_, group)) = self.computers.iter().find(|(a, _)| *a == account) { return *group }
+        let human = if account == 'A' { &mut self.a } else { &mut self.b };
+        let group = self.seat.approve_computer(human).await;
+        self.computers.push((account, group));
+        group
+    }
+
     async fn admit_any(&mut self, account: char) -> (DeviceId, GroupId) {
-        let groups: Vec<GroupId> = self
-            .groups
-            .iter()
-            .filter(|(a, _)| *a == account)
-            .map(|(_, g)| *g)
-            .collect();
-        for _ in 0..300 {
-            for g in &groups {
-                if self.human(account).open_ask(g).await.is_some() {
-                    let (admitted, group, _) = self.human(account).admit_self_join(g).await;
-                    self.groups.push((account, group));
-                    return (admitted.device, group);
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-        panic!("no session of account {account} asked to let a session in");
+        let computer = self.computers.iter().find(|(a, _)| *a == account).expect("approved computer").1;
+        let (admitted, group, _) = self.human(account).admit_activation(&computer).await;
+        self.groups.push((account, group));
+        (admitted.device, group)
     }
 
     fn human(&mut self, account: char) -> &mut Human {
@@ -164,7 +160,6 @@ impl Session {
             .env("TROMMI_FOLDER", &self.folder)
             .current_dir(&self.folder)
             .env("TROMMI_PARENT_PID", self.parent.id().unwrap().to_string())
-            .env("TROMMI_SELF_JOIN_POLL_MS", "200")
             .env("TROMMI_CONNECT_WAIT_MS", "60000");
         match self.client {
             Client::Claude => {
@@ -246,17 +241,18 @@ impl Session {
         self.mcp().ready().await;
     }
 
-    /// Joins by itself, vouched by `voucher`, whose human allows it.
-    async fn self_join(&mut self, m: &mut Machine, voucher: &Session) {
-        let (account, _, _) = voucher.on.expect("a session of the account is on the board");
-        let said = self.refused("inbox").await;
-        assert!(
-            !said.contains("Call the tool again"),
-            "{}: {said}",
-            self.name
-        );
-        let (device, new_group) = m.admit_any(account).await;
-        self.on = Some((account, device, new_group));
+    /// Explicitly activate on the selected board, using the approved computer even if no session runs.
+    async fn activate(&mut self, m: &mut Machine, voucher: &Session) {
+        let (account, _, _) = voucher.on.expect("the selected board");
+        m.approve_computer(account).await;
+        let room = m.human(account).room.to_base64url();
+        std::fs::create_dir_all(self.folder.join(".trommi")).unwrap();
+        std::fs::write(self.folder.join(".trommi/joined"), room).unwrap();
+        let activation = self.mcp().call("connect", json!({}));
+        let admit = m.admit_any(account);
+        let ((said, failed), (device, group)) = tokio::join!(activation, admit);
+        assert!(!failed, "explicit activation: {said}");
+        self.on = Some((account, device, group));
         self.mcp().ready().await;
     }
 
@@ -354,7 +350,7 @@ fn says_what_to_do(client: Client, said: &str) {
         !said.contains("Call the tool again"),
         "no loop: {said}"
     );
-    assert!(said.to_lowercase().contains("invite an agent"), "{said}");
+    assert!(said.to_lowercase().contains("connect"), "{said}");
     match client {
         Client::Codex => assert!(said.contains("connect"), "{said}"),
         Client::Claude => assert!(said.contains("/trommi:connect"), "{said}"),
@@ -392,10 +388,10 @@ async fn fresh_sessions_one_after_another_in_one_folder(client: Client) {
     s1.connect(&mut m, 'A').await;
     let mut s2 = Session::new(&m, "s2", client, "project", "cfg");
     s2.start(&m).await;
-    s2.self_join(&mut m, &s1).await;
+    s2.activate(&mut m, &s1).await;
     let mut s3 = Session::new(&m, "s3", client, "project", "cfg");
     s3.start(&m).await;
-    s3.self_join(&mut m, &s2).await;
+    s3.activate(&mut m, &s2).await;
     all_on_board(&mut m, &mut [&mut s1, &mut s2, &mut s3]).await;
     s1.resume(&m).await;
     s2.resume(&m).await;
@@ -411,10 +407,10 @@ async fn fresh_sessions_one_after_another_in_other_folders(client: Client) {
     s1.connect(&mut m, 'A').await;
     let mut s2 = Session::new(&m, "s2", client, "two", "cfg");
     s2.start(&m).await;
-    s2.self_join(&mut m, &s1).await;
+    s2.activate(&mut m, &s1).await;
     let mut s3 = Session::new(&m, "s3", client, "three", "cfg");
     s3.start(&m).await;
-    s3.self_join(&mut m, &s1).await;
+    s3.activate(&mut m, &s1).await;
     s1.resume(&m).await;
     all_on_board(&mut m, &mut [&mut s1, &mut s2, &mut s3]).await;
 }
@@ -434,17 +430,15 @@ async fn many_fresh_sessions_at_once(client: Client) {
     for s in news.iter_mut() {
         s.start(&m).await;
     }
-    // every one is used at once: each asks to be let in
-    let calls = news
-        .iter_mut()
-        .map(|s| async move { s.mcp().call("inbox", json!({})).await });
-    for (said, failed) in futures_join_all(calls).await {
-        assert!(failed && !said.contains("Call the tool again"), "{said}");
-    }
-    let mut admitted = vec![];
-    for _ in 0..news.len() {
-        admitted.push(m.admit_any('A').await);
-    }
+    m.approve_computer('A').await;
+    let calls = news.iter_mut().map(|s| async move { s.mcp().call("connect", json!({})).await });
+    let admissions = async {
+        let mut admitted = vec![];
+        for _ in 0..4 { admitted.push(m.admit_any('A').await); }
+        admitted
+    };
+    let (answers, admitted) = tokio::join!(futures_join_all(calls), admissions);
+    for (said, failed) in answers { assert!(!failed, "{said}"); }
     for s in news.iter_mut() {
         s.mcp().ready().await;
     }
@@ -540,10 +534,10 @@ async fn accounts_a_and_b_across_folders(client: Client) {
     s2.connect(&mut m, 'B').await;
     let mut s3 = Session::new(&m, "s3", client, "one", "cfg");
     s3.start(&m).await;
-    s3.self_join(&mut m, &s1).await;
+    s3.activate(&mut m, &s1).await;
     let mut s4 = Session::new(&m, "s4", client, "two", "cfg");
     s4.start(&m).await;
-    s4.self_join(&mut m, &s2).await;
+    s4.activate(&mut m, &s2).await;
     let mut s5 = Session::new(&m, "s5", client, "three", "cfg");
     s5.start(&m).await;
     let said = s5.refused("inbox").await;
@@ -564,7 +558,7 @@ async fn an_mcp_restart_and_a_killed_connector_keep_the_member(client: Client) {
     s1.connect(&mut m, 'A').await;
     let mut s2 = Session::new(&m, "s2", client, "project", "cfg");
     s2.start(&m).await;
-    s2.self_join(&mut m, &s1).await;
+    s2.activate(&mut m, &s1).await;
     // /mcp Reconnect: the old connector is still there when the new one starts
     let old = s1.start(&m).await;
     all_on_board(&mut m, &mut [&mut s1, &mut s2]).await;
@@ -581,13 +575,13 @@ async fn an_mcp_restart_and_a_killed_connector_keep_the_member(client: Client) {
     let _ = gone.child.wait().await;
     let mut s3 = Session::new(&m, "s3", client, "project", "cfg");
     s3.start(&m).await;
-    s3.self_join(&mut m, &s1).await;
+    s3.activate(&mut m, &s1).await;
     s2.start(&m).await;
     all_on_board(&mut m, &mut [&mut s1, &mut s2, &mut s3]).await;
 }
 
 both!(true, the_stale_key_of_a_closed_session_stays_its_own);
-/// A session ends; a fresh one in its folder, with nobody running to vouch, does not take the ended one's key:
+/// A session ends; a fresh one in its folder, without explicit activation, does not take the ended one's key:
 /// it says how to get in and joins by link. The ended session resumed is itself again.
 async fn the_stale_key_of_a_closed_session_stays_its_own(client: Client) {
     let mut m = Machine::new().await;
@@ -604,49 +598,34 @@ async fn the_stale_key_of_a_closed_session_stays_its_own(client: Client) {
     all_on_board(&mut m, &mut [&mut s1, &mut s2]).await;
 }
 
-both!(false, a_self_join_beside_a_pending_link_join);
-/// A fresh session waits for its self-join while the human gives it a link: the link wins. Another fresh session
-/// joins by itself while a third joins by link at the same time.
-async fn a_self_join_beside_a_pending_link_join(client: Client) {
+both!(false, explicit_activation_beside_a_link_join);
+/// Explicit activation and a direct invite proceed concurrently, into separate accounts and devices.
+async fn explicit_activation_beside_a_link_join(client: Client) {
     let mut m = Machine::new().await;
     let mut s1 = Session::new(&m, "s1", client, "project", "cfg");
     s1.start(&m).await;
     s1.connect(&mut m, 'A').await;
+    let computer = m.approve_computer('A').await;
     let mut s2 = Session::new(&m, "s2", client, "project", "cfg");
+    let mut s3 = Session::new(&m, "s3", client, "other", "cfg");
     s2.start(&m).await;
-    let said = s2.refused("inbox").await;
-    assert!(said.contains("joining by itself"), "{said}");
-    s2.connect(&mut m, 'A').await;
-    let (_, _, group) = s1.on.unwrap();
-    for _ in 0..100 {
-        if m.a.open_ask(&group).await.is_none() {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    }
-    assert!(m.a.open_ask(&group).await.is_none(), "the ask is taken back");
-    // one by itself, one by link, at once
-    let mut s3 = Session::new(&m, "s3", client, "project", "cfg");
-    let mut s4 = Session::new(&m, "s4", client, "other", "cfg");
     s3.start(&m).await;
-    s4.start(&m).await;
-    let said = s3.refused("inbox").await;
-    assert!(said.contains("joining by itself"), "{said}");
+    assert!(s2.refused("inbox").await.contains("connect"));
+    assert_eq!(m.a.open_asks(&computer).await, 0);
     let mut invite = m.b.invite(None).await;
     let link = invite.link.clone();
-    let connect = s4.mcp.as_mut().unwrap().call("connect", json!({ "link": link }));
-    let link_join = async {
+    let activation = s2.mcp().call("connect", json!({}));
+    let admit_activation = m.a.admit_activation(&computer);
+    let connect = s3.mcp().call("connect", json!({"link":link}));
+    let admit_link = async {
         let admitted = m.b.admit(&mut invite).await;
-        let g4 = m.b.found_session(&admitted).await;
-        (admitted.device, g4)
+        (admitted.device, m.b.found_session(&admitted).await)
     };
-    let (d4, g4) = joined("s4", connect, link_join).await;
-    let (d3, g3) = m.admit_any('A').await;
-    s4.on = Some(('B', d4, g4));
-    s3.on = Some(('A', d3, g3));
-    s3.mcp().ready().await;
-    s4.mcp().ready().await;
-    all_on_board(&mut m, &mut [&mut s1, &mut s2, &mut s3, &mut s4]).await;
+    let ((said, failed), (child, group, _), (device, direct_group)) = tokio::join!(activation, admit_activation, joined("direct", connect, admit_link));
+    assert!(!failed, "{said}");
+    s2.on = Some(('A', child.device, group));
+    s3.on = Some(('B', device, direct_group));
+    all_on_board(&mut m, &mut [&mut s1, &mut s2, &mut s3]).await;
 }
 
 both!(true, connect_asleep_awake_and_in_the_other_accounts_room);
@@ -694,9 +673,8 @@ async fn connect_asleep_awake_and_in_the_other_accounts_room(client: Client) {
 }
 
 both!(true, two_accounts_of_the_agent_program);
-/// Two accounts of the agent program on the machine (two config folders): a session of the second is not
-/// vouched for by the first (spec/v1.md 12.4.1), says how to get in, joins by link; later sessions of the
-/// second account join by themselves.
+/// Program config folders confer no computer authority. Direct invites remain usable; later sessions
+/// of either config activate through the same approved computer.
 async fn two_accounts_of_the_agent_program(client: Client) {
     let mut m = Machine::new().await;
     let mut s1 = Session::new(&m, "s1", client, "project", "cfg-x");
@@ -704,19 +682,12 @@ async fn two_accounts_of_the_agent_program(client: Client) {
     s1.connect(&mut m, 'A').await;
     let mut s2 = Session::new(&m, "s2", client, "project", "cfg-y");
     s2.start(&m).await;
-    let mut said = String::new();
-    for _ in 0..50 {
-        said = s2.refused("inbox").await;
-        if !said.contains("joining by itself") {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    }
+    let said = s2.refused("inbox").await;
     says_what_to_do(client, &said);
     s2.connect(&mut m, 'A').await;
     let mut s3 = Session::new(&m, "s3", client, "project", "cfg-y");
     s3.start(&m).await;
-    s3.self_join(&mut m, &s2).await;
+    s3.activate(&mut m, &s2).await;
     all_on_board(&mut m, &mut [&mut s1, &mut s2, &mut s3]).await;
 }
 
@@ -735,10 +706,10 @@ async fn claude_and_codex_in_one_folder_with_both_accounts() {
     x1.connect(&mut m, 'B').await;
     let mut c2 = Session::new(&m, "claude2", Client::Claude, "project", "cfg-claude");
     c2.start(&m).await;
-    c2.self_join(&mut m, &c1).await;
+    c2.activate(&mut m, &c1).await;
     let mut x2 = Session::new(&m, "codex2", Client::Codex, "project", "cfg-codex");
     x2.start(&m).await;
-    x2.self_join(&mut m, &x1).await;
+    x2.activate(&mut m, &x1).await;
     x1.resume(&m).await;
     c1.resume(&m).await;
     all_on_board(&mut m, &mut [&mut c1, &mut x1, &mut c2, &mut x2]).await;
@@ -758,10 +729,10 @@ async fn codex_app_server_threads_share_a_parent() {
     t1.connect(&mut m, 'A').await;
     let mut t2 = t1.sibling(&m, "t2", "project");
     t2.start(&m).await;
-    t2.self_join(&mut m, &t1).await;
+    t2.activate(&mut m, &t1).await;
     let mut t3 = t1.sibling(&m, "t3", "other");
     t3.start(&m).await;
-    t3.self_join(&mut m, &t1).await;
+    t3.activate(&mut m, &t1).await;
     all_on_board(&mut m, &mut [&mut t1, &mut t2, &mut t3]).await;
     // the app server starts t1's connector again (the thread resumed in the same process)
     t1.close().await;
@@ -813,7 +784,7 @@ async fn a_key_of_no_known_session_is_never_taken(client: Client) {
     s1.connect(&mut m, 'A').await;
     let mut s2 = Session::new(&m, "s2", client, "project", "cfg");
     s2.start(&m).await;
-    s2.self_join(&mut m, &s1).await;
+    s2.activate(&mut m, &s1).await;
     s1.close().await;
     s2.close().await;
     // s1's key without a record; s2's naming a process that ended
@@ -905,45 +876,6 @@ async fn a_resumed_session_waits_for_its_own_key_and_never_joins_anew() {
     assert_eq!(owner_files(&m, &s1.owner()).len(), 1, "one key for the session");
 }
 
-/// One session is one ask (12.4.6): a connector that asks again after it started again replaces its earlier ask,
-/// and the ask of a session that ended is taken back; the person never sees an ask per try.
-#[tokio::test(flavor = "multi_thread")]
-async fn one_session_is_one_ask() {
-    let mut m = Machine::new().await;
-    let mut v = Session::new(&m, "v", Client::Claude, "one", "cfg");
-    v.start(&m).await;
-    v.connect(&mut m, 'A').await;
-    let (_, _, vg) = v.on.unwrap();
-
-    // a session that asks and ends before the person answers
-    let mut gone = Session::new(&m, "gone", Client::Claude, "two", "cfg");
-    gone.start(&m).await;
-    let _ = gone.refused("inbox").await;
-    asks_settle(&mut m, &vg, 1, 15_000).await.expect("its ask");
-    gone.close().await;
-    asks_settle(&mut m, &vg, 0, 20_000)
-        .await
-        .expect("the ask of a session that ended is taken back");
-
-    // a session whose connector starts again (an /mcp Reconnect) while its ask waits, and asks again
-    let mut s2 = Session::new(&m, "s2", Client::Claude, "three", "cfg");
-    s2.start(&m).await;
-    let _ = s2.refused("inbox").await;
-    asks_settle(&mut m, &vg, 1, 15_000).await.expect("its ask");
-    s2.close().await;
-    s2.start(&m).await;
-    let _ = s2.refused("inbox").await;
-    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
-    asks_settle(&mut m, &vg, 1, 20_000)
-        .await
-        .expect("one ask for the session");
-    let (device, group) = m.admit_any('A').await;
-    s2.on = Some(('A', device, group));
-    s2.mcp().ready().await;
-    all_on_board(&mut m, &mut [&mut v, &mut s2]).await;
-    asks_settle(&mut m, &vg, 0, 15_000).await.expect("no ask left");
-}
-
 /// A session's door, as another connector of this machine knocks at it.
 async fn knock_session(m: &Machine, s: &Session, req: serde_json::Value) -> serde_json::Value {
     assert!(s.on.is_some(), "{} is on the board", s.name);
@@ -978,79 +910,15 @@ async fn knock_session(m: &Machine, s: &Session, req: serde_json::Value) -> serd
     panic!("{}: no key of its own", s.name);
 }
 
-/// One session is one ask across every session that could vouch for it (the owner's board, 2026-10-14: an ask per
-/// try and voucher): a try at another voucher takes the earlier ask back there, and a session whose ask the person
-/// allowed already gets that link again while it holds and is unused, instead of a new ask.
-#[tokio::test(flavor = "multi_thread")]
-async fn one_ask_across_vouchers_and_an_allowed_link_is_used_again() {
+/// The removed running-voucher protocol never grants authority, even to a local peer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ordinary_sessions_refuse_the_removed_voucher_protocol() {
     let mut m = Machine::new().await;
-    let mut v1 = Session::new(&m, "v1", Client::Claude, "one", "cfg");
-    v1.start(&m).await;
-    v1.connect(&mut m, 'A').await;
-    let mut v2 = Session::new(&m, "v2", Client::Claude, "two", "cfg");
-    v2.start(&m).await;
-    v2.connect(&mut m, 'A').await;
-    let (_, _, g1) = v1.on.unwrap();
-    let (_, _, g2) = v2.on.unwrap();
-
-    // a session of the same account asks, as its connector does (self_join), at the first voucher
-    let config = m.seat.home.path().join("cfg");
-    let account = hex(&trommi_connector::util::sha256(
-        format!("claude:{}", trommi_connector::member::resolve(&config.display().to_string()).display()).as_bytes(),
-    ))[..16]
-        .to_string();
-    let owner = format!("cc:{}", uuid());
-    let agent = trommi_connector::vouch::agent_identity(&owner).unwrap();
-    let asker = program_process();
-    let ask = json!({ "op": "vouch", "owner": owner, "account": account, "account_label": "claude cfg", "name": "three",
-        "folder": "~/three", "host": "desktop", "pid": asker.id().unwrap(), "agent": agent });
-    let r1 = knock_session(&m, &v1, ask.clone()).await;
-    assert_eq!(r1["ok"], true, "{r1}");
-    asks_settle(&mut m, &g1, 1, 15_000).await.expect("its ask at the first voucher");
-    let n1 = r1["nonce"].as_str().unwrap().to_string();
-    assert_eq!(
-        m.a.register(&g1, &format!("join_ask/{n1}")).await.unwrap()["agent"],
-        json!(agent),
-        "the ask names who the session is"
-    );
-
-    // its next try at the second voucher: the first takes its ask back (the connector knocks there with vouch-drop)
-    let r2 = knock_session(&m, &v2, ask.clone()).await;
-    assert_eq!(r2["ok"], true, "{r2}");
-    let n2 = r2["nonce"].as_str().unwrap().to_string();
-    let take_back = json!({ "op": "vouch-drop", "owner": owner, "account": account });
-    assert_eq!(knock_session(&m, &v1, take_back).await["dropped"], 1);
-    asks_settle(&mut m, &g1, 0, 15_000).await.expect("no ask left at the first voucher");
-    asks_settle(&mut m, &g2, 1, 15_000).await.expect("one ask at the second");
-    // another account's session cannot take it back
-    let foreign = json!({ "op": "vouch-drop", "owner": owner, "account": "0000000000000000" });
-    assert_eq!(knock_session(&m, &v2, foreign).await["ok"], false);
-
-    // the person allows it; the try stops before it joins; the next try gets the same link, no new ask
-    let invite = m.a.invite(None).await;
-    m.a.set_register(&g2, &format!("join_link/{n2}"), Some(json!({ "link": invite.link, "invite_id": "x" })))
-        .await
-        .expect("the link is written");
-    let reuse = json!({ "op": "vouch-reuse", "owner": owner, "account": account, "pid": asker.id().unwrap() });
-    let mut again = json!(null);
-    for _ in 0..100 {
-        again = knock_session(&m, &v2, reuse.clone()).await;
-        if again["ok"] == true {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-    assert_eq!(again["nonce"].as_str(), Some(n2.as_str()), "{again}");
-    let asked = knock_session(&m, &v2, ask.clone()).await;
-    assert_eq!(asked["nonce"].as_str(), Some(n2.as_str()), "a vouch of it gets the allowed ask too");
-    assert_eq!(knock_session(&m, &v1, reuse.clone()).await["ok"], false, "none held at the first");
-    // used (its Request named): never handed out again
-    let hash = json!({ "op": "vouch-hash", "nonce": n2, "owner": owner, "request_hash": "AAAA" });
-    assert_eq!(knock_session(&m, &v2, hash).await["ok"], true);
-    assert_eq!(knock_session(&m, &v2, reuse).await["ok"], false);
-    let fresh = knock_session(&m, &v2, ask).await;
-    assert_ne!(fresh["nonce"].as_str(), Some(n2.as_str()));
-    drop(asker);
+    let mut session = Session::new(&m, "ordinary", Client::Claude, "one", "cfg");
+    session.start(&m).await;
+    session.connect(&mut m, 'A').await;
+    let reply = knock_session(&m, &session, json!({"op":"vouch","owner":"cc:other","account":"claimed"})).await;
+    assert_ne!(reply["ok"], true, "ordinary agents cannot admit sessions: {reply}");
 }
 
 /// The link of an invite for the coordinator's own session, given to `trommi-connector connect` in a terminal of
@@ -1144,4 +1012,67 @@ async fn a_codex_connector_keeps_its_first_thread() {
     all_on_board(&mut m, &mut [&mut t1]).await;
     assert!(owner_files(&m, &format!("codex:{other}")).is_empty());
     assert_eq!(owner_files(&m, &t1.owner()).len(), 1);
+}
+
+/// The public MCP path: approve a computer with emoji once, then explicitly activate another session
+/// after the approving connector ended. Merely starting and listing/calling tools never asks to join.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn approved_computer_activates_only_explicit_sessions_without_a_running_voucher() {
+    let mut m = Machine::new().await;
+    let mut first = Session::new(&m, "approval", Client::Claude, "one", "cfg");
+    first.start(&m).await;
+    let mut invite = m.a.invite(None).await;
+    let link = invite.link.clone();
+    let human = &mut m.a;
+    let connect = first.mcp().call("connect", json!({"link":link,"computer":true}));
+    let admit = async {
+        let machine = human.admit(&mut invite).await;
+        eprintln!("computer emoji enrolment confirmed");
+        let group = human.found_session(&machine).await;
+        let sid = hex(group.session_id().unwrap().as_bytes());
+        let room = GroupId::room(human.room);
+        human.set_register(&room, &format!("session/{sid}"), Some(json!({"machine":{"device":hex(machine.device.as_bytes())}}))).await.unwrap();
+        human.set_register(&group, "machine_approved", Some(json!({"device":hex(machine.device.as_bytes())}))).await.unwrap();
+        eprintln!("computer grant and acknowledgement posted; waiting for first activation");
+        let (child, session, _) = human.admit_activation(&group).await;
+        (machine.device, group, child.device, session)
+    };
+    let (computer, group, device, session) = joined("computer approval", connect, admit).await;
+    assert_ne!(computer, device, "computer authority and conversation are separate devices");
+    first.on = Some(('A', device, session));
+    m.groups.push(('A', group));
+    first.mcp().ready().await;
+    first.speaks(&mut m).await;
+    first.close().await;
+    let mut second = Session::new(&m, "activation", Client::Claude, "two", "another-program-config");
+    second.start(&m).await;
+    let said = second.refused("inbox").await;
+    assert!(said.contains("connect"), "{said}");
+    assert_eq!(m.a.open_asks(&group).await, 0, "startup, tools/list and inbox do not activate");
+    let activation = second.mcp().call("connect", json!({}));
+    let admit = m.a.admit_activation(&group);
+    let ((said, failed), (child, session, _)) = tokio::join!(activation, admit);
+    assert!(!failed, "{said}");
+    assert_ne!(child.device, device);
+    assert_ne!(child.device, computer);
+    second.on = Some(('A', child.device, session));
+    second.mcp().ready().await;
+    second.speaks(&mut m).await;
+    second.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_fresh_mcp_never_consumes_an_invite_from_its_environment() {
+    let mut m = Machine::new().await;
+    let invite = m.a.invite(None).await;
+    let session = Session::new(&m, "unactivated", Client::Claude, "project", "cfg");
+    let mut command = session.command(&m);
+    command.env("TROMMI_INVITE", &invite.link);
+    let mut mcp = Mcp::start_as(command, json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-code","version":"2.1.0"}})).await;
+    let _ = mcp.request("tools/list", json!({})).await;
+    let (said, failed) = mcp.call("inbox", json!({})).await;
+    assert!(failed && said.contains("connect"), "{said}");
+    let served = m.a.hub.get(&format!("/v1/invites/{}", trommi_core::invite::InviteLink::parse(&invite.link).unwrap().invite_id().unwrap().to_base64url())).await.unwrap();
+    assert_eq!(served["requests"].as_array().unwrap().len(), 0, "an environment variable is no activation command");
+    mcp.close().await;
 }

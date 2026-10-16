@@ -586,7 +586,7 @@ impl Human {
     /// `voucher` (a main session group), answers it with an agent invite link in `join_link/<nonce>`, accepts the
     /// Request that comes, and confirms it on its own once the ask names that Request's hash; then founds the new
     /// session. Returns the device and its main session group, and the ask as it was answered.
-    pub async fn admit_self_join(&mut self, voucher: &GroupId) -> (Admitted, GroupId, Value) {
+    pub async fn admit_activation(&mut self, voucher: &GroupId) -> (Admitted, GroupId, Value) {
         let mut nonce = None;
         for _ in 0..600 {
             nonce = self.open_ask(voucher).await;
@@ -753,13 +753,8 @@ impl Human {
         open
     }
 
-    /// The person taps Deny on the next ask of the agent of `voucher` (12.4): `join_link/<nonce>` = `{ refused: denied }`.
-    pub async fn deny_self_join(&mut self, voucher: &GroupId) {
-        self.refuse_self_join(voucher, "denied").await
-    }
-
     /// Answers the newest ask in the session of `voucher` with `{ refused: why }` (`denied`, `cap`, `busy`).
-    pub async fn refuse_self_join(&mut self, voucher: &GroupId, why: &str) {
+    pub async fn refuse_activation(&mut self, voucher: &GroupId, why: &str) {
         let session = hex(voucher.session_id().expect("a session group").as_bytes());
         let mut nonce = None;
         for _ in 0..600 {

@@ -80,6 +80,30 @@ impl Seat {
         }
     }
 
+    /// Provision a real emoji-approved computer key, using the same authenticated records as the human App.
+    pub async fn approve_computer(&self, human: &mut super::Human) -> trommi_core::ids::GroupId {
+        use trommi_connector::{machine, member::Cfg, util::hex};
+        use trommi_core::ids::GroupId;
+        let cfg = Cfg { keys_dir:self.home.path().join("keys"), folder:self.folder.clone(), shown:"~/project".into(),
+            host:"test".into(), base:"test".into(), session:"test-computer".into(), owner:"test-computer".into(),
+            takeover_ms:1, hub_url:self.hub_url.clone(), room:String::new() };
+        let mut invite = human.invite(None).await;
+        let link = invite.link.clone();
+        let member = machine::approval_member(&cfg, &link).unwrap();
+        let approval = machine::approve(&cfg, &link, &member);
+        let admit = async {
+            let device = human.admit(&mut invite).await;
+            let group = human.found_session(&device).await;
+            let sid = hex(group.session_id().unwrap().as_bytes());
+            human.set_register(&GroupId::room(human.room), &format!("session/{sid}"), Some(json!({"machine":{"device":hex(device.device.as_bytes())}}))).await.unwrap();
+            human.set_register(&group, "machine_approved", Some(json!({"device":hex(device.device.as_bytes())}))).await.unwrap();
+            group
+        };
+        let (approved, group) = tokio::join!(approval, admit);
+        approved.unwrap();
+        group
+    }
+
     /// A second machine state of the same device: this seat's home copied as it is now (keys, slots, state),
     /// with the same session, without the slot claims of `running` (so the twin does not stop it as the
     /// earlier connector of its session). A process on the seat and one on its twin are one device to the

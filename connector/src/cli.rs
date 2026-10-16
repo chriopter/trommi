@@ -11,15 +11,8 @@ use crate::util::now_ms;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-/// `join <link>`: join a room with an agent invite link (or TROMMI_INVITE), then exit.
-pub async fn join(given: Option<String>) -> Result<String> {
-    let link = given
-        .or_else(|| member::env("TROMMI_INVITE"))
-        .ok_or_else(|| {
-            Fault::plain(
-                "usage: trommi-connector connect '<invite link>' (the link from \"Invite an agent\" in the Trommi app)",
-            )
-        })?;
+/// `join <link>`: explicitly join one session by a human-supplied link, then exit.
+async fn join(link: String) -> Result<String> {
     let m = Member::new(connector_config(None, true));
     eprintln!("[trommi] joining; confirm this session in the Trommi app");
     let replace_held = std::env::var("TROMMI_JOIN_OTHER").as_deref() != Ok("1");
@@ -43,7 +36,11 @@ pub async fn join(given: Option<String>) -> Result<String> {
             }
         )));
     }
-    let c = m.client().unwrap();
+    finish_join(m).await
+}
+
+async fn finish_join(m: Arc<Member>) -> Result<String> {
+    let c = m.client().ok_or_else(|| Fault::plain("This session did not finish connecting"))?;
     let (room, sid) = {
         let core = c.lock();
         (c.room_id().to_base64url(), core.session_id())
@@ -91,6 +88,27 @@ pub async fn join(given: Option<String>) -> Result<String> {
     })
 }
 
+/// Explicit activation, or one computer approval followed by this session's activation.
+async fn connect(argv: &[String]) -> Result<String> {
+    let computer = argv.iter().any(|a| a == "--computer");
+    let args: Vec<_> = argv.iter().filter(|a| a.as_str() != "--computer").collect();
+    if args.len() > 1 { return Err(Fault::plain("usage: connect [--computer '<invite link>']")) }
+    if !computer && !args.is_empty() { return join(args[0].clone()).await }
+    let cfg = connector_config(None, true);
+    let member = Member::new(cfg.clone());
+    let result = async {
+        if computer {
+            let link = args.first().ok_or_else(|| Fault::plain("Approve a computer in Trommi, then run connect --computer '<link>'"))?;
+            let machine = crate::machine::approval_member(&cfg, link)?;
+            crate::machine::approve(&cfg, link, &machine).await?;
+        }
+        member.open(false).await?;
+        crate::machine::activate(&cfg, &member).await
+    }.await;
+    if let Err(error) = result { member.release().await; return Err(error) }
+    finish_join(member).await
+}
+
 fn not_in_room(phase: &str) -> String {
     match phase {
         "waiting-session" => {
@@ -127,7 +145,6 @@ pub async fn say(argv: &[String]) -> Result<String> {
         ));
     }
     let mut cfg = connector_config(None, true);
-    cfg.invite = String::new();
     cfg.session = format!("say:{}", pid());
     let Some(room_id) = resolve_room(&cfg)? else {
         return Err(Fault::plain(format!(
@@ -227,8 +244,7 @@ pub async fn hook(kind: &str) -> String {
                 .filter(|x| !x.is_empty())
                 .map(String::from)
         });
-    let mut cfg = connector_config(folder, false);
-    cfg.invite = String::new();
+    let cfg = connector_config(folder, false);
     let Ok(Some(room_id)) = resolve_room(&cfg) else {
         return String::new();
     };
@@ -351,8 +367,7 @@ pub async fn last_word(cfg: &member::Cfg, room_id: &str, t: &Value) -> bool {
 
 /// `witness <session>`: waits out the grace; if the session is then cut off and nobody holds its key, says so.
 pub async fn witness(session: Option<String>) {
-    let mut cfg = connector_config(None, false);
-    cfg.invite = String::new();
+    let cfg = connector_config(None, false);
     let (Ok(Some(room_id)), Some(session)) = (resolve_room(&cfg), session) else {
         return;
     };
@@ -432,8 +447,7 @@ pub fn allow_tools() -> std::io::Result<()> {
 /// (`cc:<CLAUDE_CODE_SESSION_ID>` or `key:<TROMMI_SESSION_KEY>`), so that no other session takes it while this
 /// one's connector restarts. Only a key nobody owns yet; never one of another session, never a takeover.
 pub async fn claim_key() -> Result<String> {
-    let mut cfg = connector_config(None, false);
-    cfg.invite = String::new();
+    let cfg = connector_config(None, false);
     if cfg.owner().is_empty() {
         return Err(Fault::plain(
             "no agent session here: run it from the Claude Code session whose key it is (CLAUDE_CODE_SESSION_ID) or with TROMMI_SESSION_KEY",
@@ -477,7 +491,7 @@ pub async fn run(argv: &[String]) -> i32 {
     let cmd = argv.first().map(|s| s.as_str()).unwrap_or("");
     let given = argv.get(1).cloned();
     match cmd {
-        "join" | "connect" => match join(given).await {
+        "join" | "connect" => match connect(&argv[1..]).await {
             Ok(s) => {
                 println!("{s}");
                 0

@@ -1285,6 +1285,10 @@ export interface AccountView {
   invite_id?: string
   /** An invite link to show as text or QR code. */
   link?: string
+  /** Copyable instructions for this invite, chosen by the core. Contains the invite secret like `link`. */
+  connect_prompt?: string
+  /** The corresponding Claude Code command. Contains the invite secret; never log it. */
+  connect_command?: string
   /** The six emoji to compare, with their words. */
   emoji?: EmojiView[]
   /** The Emergency Kit words to keep, shown once. */
@@ -1334,6 +1338,9 @@ export interface AskView {
 /** An invite this device made, as its page shows it. */
 export interface InviteView {
   invite_id: string
+  title: Text
+  notice: Text
+  computer: boolean
   /** "human" (a device of the person) or "agent". */
   role: string
   /** "open" (waits for the newcomer), "confirm_code" (the emoji to compare), "adding", "joined". */

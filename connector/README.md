@@ -7,7 +7,9 @@ the wire comes from [`trommi-core`](../core/protocol); nothing of the first prot
 ```
 trommi-connector                     MCP stdio server "trommi" (what Claude Code starts): the launcher, which runs `serve`
 trommi-connector serve               the MCP server itself, as the launcher's child (TROMMI_LAUNCH=0 runs it without one)
-trommi-connector connect <link>      join a room with an agent invite link, for scripts (also: join; or TROMMI_INVITE)
+trommi-connector connect             explicitly activate this session on the approved computer
+trommi-connector connect --computer <link> approve this computer once, then activate this session
+trommi-connector connect <link>      join just one session by a human invite (also: join)
 trommi-connector say "<text>" [--session <name>] [--urgent]
 trommi-connector permission|notice|denied|resolved    the plugin's hooks (JSON on stdin)
 trommi-connector prompt|stop         the terminal mirror's hooks (UserPromptSubmit, Stop)
@@ -28,13 +30,16 @@ Once per machine, in a terminal:
 curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh
 ```
 
-Then once per project folder, inside Claude Code (or Codex) started there, the line "Invite an agent" shows:
+Approve this computer once: inside Claude Code (or Codex) started in a project folder, paste the command
+**Approve a computer** shows in Trommi:
 
 ```
-Connect to Trommi with this invite link: '<invite link>'
+Approve this computer in Trommi with this invite link: '<invite link>'. Call the Trommi connect tool with this link and computer=true.
 ```
 
-or, in Claude Code, the plugin's command `/trommi:connect '<invite link>'`.
+or, in Claude Code, the plugin's command `/trommi:connect --computer '<invite link>'`. Compare the six emoji in the terminal and the app,
+then confirm in the app. Each later session activates with `/trommi:connect` without a link; it stays off the board
+until that command. An online human app is needed, but no running agent session.
 
 `setup claude` runs every `claude plugin …` command in its own environment, so with `CLAUDE_CONFIG_DIR` set (one of
 several Claude Code accounts) the plugin goes into that account. Claude Code keeps a copy of the plugin per version
@@ -42,8 +47,9 @@ and `claude plugin update` copies nothing while the version stays the same; `set
 copy with the marketplace's plugin folder and installs it afresh when a file is missing or differs (an older copy
 without `commands/connect.md` has no `/trommi:connect`), and turns the plugin on when it is off.
 
-A session whose folder is in no room yet starts unconnected: its MCP server offers one tool, `connect(link)`, and
-the pasted prompt, or the plugin's command `/trommi:connect`, makes the agent call it. The tool runs the same join as
+A session whose folder is in no room yet starts unconnected: its MCP server offers one tool, `connect`, and
+the human's command `/trommi:connect` activates it using the approved computer. A computer-approval command
+with a link and `--computer` first performs the emoji approval. A bare link remains a one-session invite. The tool runs the same join as
 `trommi-connector connect` for this folder (an expired link is refused before a hub is asked, the Offer's MAC is
 checked, …) and answers with the six emoji and their words, which the agent shows in the chat. Once the human taps
 "They match" in the app, the same process goes online and announces its board tools (`notifications/tools/list_changed`);
@@ -183,7 +189,7 @@ as a quiet info, with a push) and every line linked to it turns `done` with that
 `prompt.md` and `tools.json` also feed the web app's help page. The driver owns no duplicate hub client, sync
 engine or model: authentication, lease headers, catch-up, Welcomes, history, retries, command gating, outbox
 re-sealing and verified removal are the shared core's. The connector keeps its machine/session integration,
-vouching, same-account checks and journal I/O. See [The app core](../core/client/README.md).
+computer-key locking and journal I/O. See [The app core](../core/client/README.md).
 
 ## State and restarts
 
@@ -210,19 +216,25 @@ first one's board session: it is a member of its own, which joins by itself (bel
 key, also in another folder or under another account of Claude Code; a new `claude` in the folder is a new session. A session whose own key lies
 on this machine never joins by itself: while an earlier connector of it still holds that key, it asks that one to hand it over, says so, and
 takes the key once it is free (each tick, and when a terminal `connect` of it rings); a key a terminal `connect` made for it in any folder is
-taken the same way. A new session of the same machine and account joins by itself (spec/v1.md 12.4, `src/vouch.rs`),
-in any folder: as soon as its connector starts or the client lists its tools (and again on a Trommi tool call or a
-hook), a session without a key of its own asks a running connector of the same account
-to vouch for it; that one writes `join_ask/<nonce>` into its main session; the human's app asks "Allow new Claude
-session …?", and on Allow answers with an invite link (`join_link/<nonce>`; on Deny with `denied`, and this process
-does not ask again); the new session joins with it, the voucher passes the Request's hash on, and the app confirms
-that Request (one tap instead of the emoji). A voucher keeps one ask per session: a new ask of the same session
-takes the earlier one back, and an ask whose asking connector ended is taken back within a tick. Meanwhile the session lists every board tool and connect, whose
-description says that it joins by itself and needs no link; the tools answer "joining by itself … waiting for the
-human to allow it", and when it is in, the client is told to list the tools again. If it cannot join by itself (no
-running session of the account to vouch, denied), it offers connect alone with the reason. The new session's first
-message says who vouched. It is on by default (the web and iPhone apps answer asks since v225); `TROMMI_SELF_JOIN=0`
-turns it off. Another account needs one invite by link.
+taken the same way.
+
+A fresh session stays off the board until explicitly activated. In Trommi choose **Approve a computer**, copy its
+command to the agent, compare the six emoji and confirm them in the app. The command uses
+`/trommi:connect --computer '<link>'` (MCP `connect` with `computer: true`). This creates a separate computer key at
+`keys/<room>/machine/` and activates the current session. Later sessions use `/trommi:connect` with no link. No
+running session is needed to vouch; an online human app answers the approved computer's hash-bound requests.
+Starting the connector, listing tools and calling a board tool do not activate a fresh session. A bare human-supplied
+invite link continues to join just one session, without granting computer authority.
+
+Approval covers this OS user across Claude Code/Codex accounts. Any process running as that user can request up to
+8 live agent sessions without another tap, at most 24 in a room. Remove the computer in Devices to remove its
+admitted sessions and helpers. Ordinary agent metadata never grants approval; the authenticated human room register
+binds it to the exact computer device. The connector briefly locks and opens the computer state for each operation,
+releasing it between polls. Activation uses the explicitly chosen room, then `.trommi/joined`, otherwise the only
+approved board; several boards require a choice. New identified session keys use
+`keys/<room>/s/<sha256(owner)[..16]>/`; existing owned legacy slots are resumed where they are, without migration.
+Activation waits up to 15 minutes for the human app to be online. See [the protocol](../spec/v1.md#124-computer-approval-and-explicit-session-activation).
+
 `trommi-connector claim-key`, run inside a session, makes
 the key its running connector holds that session's when nobody owns it yet (a key from a terminal `join`).
 

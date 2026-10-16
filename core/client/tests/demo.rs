@@ -105,3 +105,16 @@ fn the_demo_shows_its_scribble_boards_folds_goals_and_adds_a_desk_with_undo() {
     assert!(sim.view.sidebar.desks.iter().any(|d| d.id == desk_id), "the toast names the new desk");
     assert_eq!(sim.view.sidebar.desks.len(), before + 1);
 }
+
+#[test]
+fn demo_computer_approval_shows_the_real_permission_and_command_without_io() {
+    let f = fixture();
+    let mut sim = Sim::new(f["made_at"].as_u64().unwrap());
+    sim.send(Event::Start { config:Config { demo:Some(f), ..Default::default() } });
+    sim.send(Event::Action { action:Action::Account { action:trommi_client_core::account::AccountAction::ApproveComputer { label:String::new() } } });
+    let shown = sim.view.account.invite.as_ref().expect("the approval screen");
+    assert_eq!(shown.title.en, "Approve a computer");
+    assert!(shown.notice.en.contains("without another tap"));
+    assert!(sim.view.account.connect_command.as_deref().unwrap().contains("--computer"));
+    assert!(sim.log.iter().all(|e| !matches!(e, Effect::Http { .. } | Effect::Store { .. } | Effect::OpenStream { .. })));
+}

@@ -118,8 +118,8 @@ pub async fn join_room(
     join_room_with(link, journal, on_code, |_| {}, poll_ms, timeout_ms).await
 }
 
-/// [`join_room`], and `on_request` is handed the hash of this device's Request before it leaves (12.1; a self-join
-/// passes it on to the human devices through its voucher, 12.4).
+/// [`join_room`], and `on_request` is handed the hash of this device's Request before it leaves (12.1; computer activation
+/// passes it on to the human devices through the approved computer key, 12.4).
 pub async fn join_room_with(
     link: &str,
     journal: Journal,

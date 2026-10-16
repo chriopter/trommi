@@ -31,15 +31,16 @@ One Rust app core runs the web, iPhone, Mac, Linux and connector; the platform s
    curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh
    ```
 
-3. In the app: **Invite an agent**. In the project folder start `claude` (or `codex`) and paste the line it shows:
+3. In the app: **Approve a computer**. In the project folder start `claude` (or `codex`) and paste the line it shows:
 
    ```
-   Connect to Trommi with this invite link: '<link>'
+   Approve this computer in Trommi with this invite link: '<link>'. Call the Trommi connect tool with this link and computer=true.
    ```
 
-   In Claude Code the plugin's slash command does the same: `/trommi:connect '<link>'`. Claude Code asks once
+   In Claude Code the plugin's slash command does the same: `/trommi:connect --computer '<link>'`. Claude Code asks once
    whether to use the trommi MCP server: choose "Use this MCP server". Six emoji appear in the terminal and in the
-   app; tap "They match".
+   app; tap "They match". Later sessions stay off the board until you run `/trommi:connect` without a link
+   (or ask Codex to connect). An online Trommi app answers; no other agent session needs to be running.
 
 Updates come by themselves: a running connector installs a new signed release and swaps it in, no restart and no
 /mcp → Reconnect. By hand: `trommi-connector update`.
@@ -85,7 +86,7 @@ App logic exists once, in Rust under `core/`:
 The apps draw the core's view state, pass taps and focus back, and perform platform services: fetch or URLSession,
 IndexedDB or an encrypted journal, push, notifications, Keychain, file pickers, Live Activities and the share sheet.
 They keep no second board model or sync implementation, and do not sort lists or decide state-dependent words.
-The connector's driver adapts the same engine to MCP and its journal; its vouching and same-account checks remain
+The connector's driver adapts the same engine to MCP and its journal; its computer-key locking and platform I/O remain
 in the connector. The hub checks public group changes with OpenMLS and `core/wire`; it holds no content keys.
 The contract and platform boundaries are described in [The app core](core/client/README.md).
 
@@ -579,7 +580,7 @@ a failing night opens an issue labelled nightly-failed).
 
 The session matrix (`tests/connector/sessions.rs`, test `connector_sessions`): many Claude Code and Codex sessions on
 one machine, two Trommi accounts, one folder and several, resume, /mcp restart, a killed connector, a stale key, a
-self-join beside a link join. Each case ends with every session on its account's board with a key of its own. Pull
+explicit computer activation beside a link join. Each case ends with every session on its account's board with a key of its own. Pull
 requests run its fast cases, `TROMMI_TESTS_FULL=1` (nightly) all; `TROMMI_MATRIX_LOGS=<folder>` keeps each
 connector's log.
 

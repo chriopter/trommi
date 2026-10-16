@@ -195,7 +195,7 @@ pub fn tools_list_json(inbox: bool) -> String {
 }
 
 /// The same with the connect tool in front: for a client that never asks for the list again (Codex), and for a
-/// session that joins by itself, in a session whose folder is in no room yet.
+/// session activated explicitly on a computer.
 pub fn tools_list_json_with_connect(inbox: bool, note: Option<&str>) -> String {
     let all = tools_list_json(inbox);
     let rest = all.strip_prefix("{\"tools\":[").unwrap_or("]}");
@@ -207,7 +207,7 @@ pub fn connect_list_json(note: Option<&str>) -> String {
     format!("{{\"tools\":[{}]}}", connect_tool(note))
 }
 
-/// The connect tool as JSON text; with a self-join `note` (where joining by itself stands) in front of its
+/// The connect tool as JSON text; with an optional connection status `note` in front of its
 /// description.
 fn connect_tool(note: Option<&str>) -> String {
     let Ok(doc) = serde_json::from_str::<RawTools>(tools_text()) else {
@@ -220,17 +220,7 @@ fn connect_tool(note: Option<&str>) -> String {
     let Ok(mut v) = serde_json::from_str::<Value>(&tool) else {
         return tool;
     };
-    let joining = note.contains("joining by itself");
-    let said = format!(
-        "{}{} {}",
-        note.trim_end_matches('.'),
-        if joining {
-            ". No invite link is needed while it joins by itself: do not ask the human for one; the board tools work once the human allowed it."
-        } else {
-            "."
-        },
-        v["description"].as_str().unwrap_or("")
-    );
+    let said = format!("{}. {}", note.trim_end_matches('.'), v["description"].as_str().unwrap_or(""));
     v["description"] = Value::String(said);
     v.to_string()
 }

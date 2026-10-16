@@ -611,7 +611,6 @@ async fn serve_bare_codex(
         .env("TROMMI_CHANNEL_EVENTS", "off")
         .env("TROMMI_CODEX_BIN", codex)
         .env("TROMMI_CODEX_WAKE_MS", "300")
-        .env("TROMMI_SELF_JOIN_POLL_MS", "200")
         .env("CODEX_HOME", codex_home)
         .env("TROMMI_PARENT_PID", parent.to_string());
     let mut mcp = common::process::Mcp::start_as(command, common::process::codex_hello()).await;
@@ -619,7 +618,7 @@ async fn serve_bare_codex(
     mcp
 }
 
-/// Two Claude Code sessions joined in one folder (the first by a terminal's `join`, the second by self-join),
+/// Two Claude Code sessions joined by separate explicit invites in one folder,
 /// both running. Returns the seat, the first session's group and both servers.
 async fn two_claude_sessions(
     human: &mut Human,
@@ -643,12 +642,16 @@ async fn two_claude_sessions(
     let mut second = seat
         .serve_with(&[
             ("TROMMI_SESSION_KEY", "test-second"),
-            ("TROMMI_SELF_JOIN_POLL_MS", "200"),
         ])
         .await;
     let (said, failed) = second.call("reply", json!({ "text": "too early" })).await;
     assert!(failed, "{said}");
-    human.admit_self_join(&group).await;
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = second.call("connect", json!({"link":link}));
+    let admit = async { let device = human.admit(&mut invite).await; human.found_session(&device).await; };
+    let ((said, failed), _) = tokio::join!(connect, admit);
+    assert!(!failed, "{said}");
     second.ready().await;
     (group, first, second)
 }
@@ -679,7 +682,7 @@ async fn a_codex_session_connects_by_link_in_a_folder_with_other_sessions_keys()
     assert!(failed, "{said}");
     assert!(!said.contains("Call the tool again"), "{said}");
     assert!(
-        said.contains("link") && said.contains("Invite an agent"),
+        said.contains("command") && said.contains("Approve a computer"),
         "it asks for the link of an invite: {said}"
     );
 
@@ -717,12 +720,10 @@ async fn a_codex_session_connects_by_link_in_a_folder_with_other_sessions_keys()
     drop(parent);
 }
 
-/// Self-join for Codex (spec/v1.md 12.4.1): a Codex account is invited once by link; a later Codex session of the
-/// same account (`CODEX_HOME`) joins by itself, vouched by the running one, also in a folder whose keys belong to
-/// other sessions. The Claude Code sessions there do not vouch for it (another account), and before a link is
-/// there the first Codex session is told so in words that lead to an invite and connect.
+/// Codex explicitly activates on the same approved computer as other programs. Each session has a
+/// separate key, and inbox never joins a fresh session. A direct invite still works beside activation.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_second_codex_session_joins_by_itself_vouched_by_the_first_codex() {
+async fn a_codex_session_activates_on_the_approved_computer_across_program_accounts() {
     let hub = HubProc::start().await;
     let mut human = Human::found(&hub.url).await;
     let seat = Seat::new(&hub.url);
@@ -759,7 +760,7 @@ async fn a_second_codex_session_joins_by_itself_vouched_by_the_first_codex() {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
     assert!(
-        said.contains("Invite an agent") && said.contains("call connect"),
+        said.contains("connect"),
         "it says how this Codex gets in: {said}"
     );
     assert!(!said.contains("Call the tool again"), "{said}");
@@ -780,14 +781,18 @@ async fn a_second_codex_session_joins_by_itself_vouched_by_the_first_codex() {
     assert!(!failed && said.starts_with("Check code:"), "{said}");
     a.ready().await;
 
-    // The second Codex of the same account, in the same folder: vouched by the first Codex, one tap.
+    let computer = seat.approve_computer(&mut human).await;
+    // A second Codex explicitly activates through the approved computer.
     let parent_b = codex_process();
     let thread_b = "01a129c9-b755-7380-8769-c46a0f75a6d4";
     let mut b =
         serve_bare_codex(&seat, &codex, &codex_home, parent_b.id().unwrap(), thread_b).await;
     let (said, failed) = b.call("inbox", json!({})).await;
     assert!(failed, "{said}");
-    let (admitted_b, _group_b, ask) = human.admit_self_join(&group_a).await;
+    let activation = b.call("connect", json!({}));
+    let admit = human.admit_activation(&computer);
+    let ((said, failed), (admitted_b, _group_b, ask)) = tokio::join!(activation, admit);
+    assert!(!failed, "{said}");
     assert!(
         ask["account_label"]
             .as_str()
@@ -802,19 +807,13 @@ async fn a_second_codex_session_joins_by_itself_vouched_by_the_first_codex() {
         .iter()
         .any(|(_, sender, p)| *sender == admitted_b.device && p["text"] == "second Codex"));
 
-    // A third Codex whose self-join waits for the app, and the human gives it an invite link meanwhile: the link
-    // wins, and the waiting self-join gives up instead of joining a second time.
+    // A third Codex stays off the board until given a direct invite.
     let parent_c = codex_process();
     let thread_c = "01a129c9-b755-7380-8769-c46a0f75a6e5";
     let mut c =
         serve_bare_codex(&seat, &codex, &codex_home, parent_c.id().unwrap(), thread_c).await;
     let (said, failed) = c.call("inbox", json!({})).await;
     assert!(failed, "{said}");
-    let (said, failed) = c.call("connect", json!({})).await;
-    assert!(
-        failed && said.contains("Invite an agent") && said.contains("connect"),
-        "{said}"
-    );
     let mut invite = human.invite(None).await;
     let link = invite.link.clone();
     let connect = c.call("connect", json!({ "link": link }));

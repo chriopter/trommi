@@ -1394,11 +1394,12 @@
         "link": {
           "type": "string",
           "description": "The agent invite link the human gave, as it is (https://…/join#…)"
+        },
+        "computer": {
+          "type": "boolean",
+          "description": "Approve this computer once using a link explicitly supplied by the human. Without a link, connect activates this session on its approved computer."
         }
       },
-      "required": [
-        "link"
-      ],
       "additionalProperties": false
     }
   },

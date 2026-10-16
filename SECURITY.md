@@ -27,16 +27,18 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - An invite link holds a secret the hub never sees, so the hub cannot slip in an invite of its own.
 - Invite links work once and expire: 10 minutes for a device, 15 for an agent.
 - A new device gets in only after you compare six emoji on both screens; this stops the hub adding its own.
-- One exception, self-join: for a new Claude Code or Codex session vouched for by a session that is already on the
-  board, runs on the same machine as the same OS user and the same client and config folder, one tap ("Allow")
-  takes the place of the six emoji. Nothing is opened before that tap. Your app then confirms only the Request whose
-  hash the vouching agent passed on end-to-end, and only while that agent's session is still live; the hub can
-  neither make nor swap that Request. "Deny" refuses it. The new device is an agent of its own new session: it reads
-  that session (and helpers it opens), never another session's history. At most 8 such live sessions per account
-  and 24 per room, open links counted in; archiving one removes its device, also when an app finds it archived
-  elsewhere. Account, name and host in the prompt are the vouching agent's word: an agent you no longer trust, or a
-  program running as that OS user, can ask, and removing an agent leaves the sessions it vouched for; archive those
-  too.
+- A computer can be approved once with an invite and the six emoji. The human app records approval in an
+  authenticated room register bound to that exact agent device, never in agent-writable metadata. A new agent
+  session stays off the board until explicitly activated with `connect`; startup and listing or calling other
+  tools do not activate it. An approved computer can then request up to 8 live sessions without another tap,
+  with at most 24 admitted sessions per room and 8 open activation links per human app. An online human app
+  opens the invite and confirms only the Request whose hash the computer passed end-to-end; the hub can neither
+  make nor swap that Request. Each activation gets a separate agent device and session, with no access to other
+  sessions' history. Any program running as that OS user can use the approved computer key to request sessions;
+  approval is for that computer user, across program accounts and config folders. Removing the computer removes
+  its admitted sessions and helpers too; a session taken over by another device does not inherit its approval
+  or removal relationship. Missing registers or the hub's online/device list never prove a computer's removal:
+  automatic cleanup requires verified room membership. Existing ordinary agents gain no computer authority.
 - A removed device loses access at once.
 - A device deletes its data only after checking the signed removal itself, never on the hub's word alone.
 - A new device starts from the hub's list of what is open and reads what is new. Older entries are fetched when

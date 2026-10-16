@@ -1,9 +1,6 @@
-//! Self-join on the person's side, done (spec/v1.md 12.4; the rules are `crate::selfjoin`; web `client.ts`
-//! `answerAsks`, `answerVouch`, `vouchConfirm`, `retireDevice`): an agent's ask past the bounds is refused at once
-//! (`join_link/<nonce>` = `{ refused }` in the asking session's group); `AnswerAsk` allows one (an agent invite
-//! vouched for by that session, its link written for the agent once the hub holds it) or denies it; the Request of a
-//! vouched link is let in when the ask names its hash and the voucher still stands, and burned otherwise; the device
-//! of an archived session that joined by itself goes. Only while live, and each ask answered once by this device.
+//! Human-side computer activation: bounded automatic invites and exact Request-hash confirmation.
+//! Shared rules live in `selfjoin` and `machines`; only authenticated human approval grants authority.
+//! Archived admitted sessions and children of a verified removed computer are retired here.
 
 use super::invites::Vouch;
 use super::{App, Effect, Phase};
@@ -44,9 +41,10 @@ impl App {
         let vouch = Vouch {
             nonce: nonce.clone(),
             session_id: ask.session_id.clone(),
-            account: text(&ask.ask, "account"),
-            account_label: text(&ask.ask, "account_label"),
+            account: crate::machines::quota(&ask.session_id),
+            account_label: "Approved computer".into(),
             by_name: Some(text(&settings, "name")).filter(|n| !n.is_empty()).unwrap_or_else(|| text(&ask.ask, "vouched_by")),
+            machine: crate::machines::granted_device(&self.board.model, &ask.session_id).map(String::from),
         };
         let label: String = ask.name.chars().take(120).collect();
         let desk = settings.get("desk").and_then(Value::as_str).map(String::from);
@@ -56,8 +54,7 @@ impl App {
         true
     }
 
-    /// The asks as the screens show them (`AccountView.asks`): those that wait for Allow or Deny, and those allowed
-    /// whose session is still joining. An ask this device answered or refused leaves at once.
+    /// Approved computer activations still joining, for progress displays. There is no per-session tap.
     pub(super) fn asks_view(&self) -> Vec<crate::views::AskView> {
         if self.engine.is_none() {
             return Vec::new();
@@ -65,7 +62,7 @@ impl App {
         let states = self.vouched_states();
         crate::selfjoin::join_rows(&self.board.model, &states)
             .into_iter()
-            .filter(|r| r.state != "ask" || !self.selfjoin.answered.contains(&r.nonce))
+            .filter(|r| r.state == "joining" && crate::machines::approved(&self.board.model, &r.session_id))
             .map(|r| {
                 let place = if r.folder.is_empty() { r.name.clone() } else { r.folder.clone() };
                 let on = if r.host.is_empty() { String::new() } else { format!(" on {}", r.host) };
@@ -105,11 +102,16 @@ impl App {
         let (pending, waiting) = self.vouched_open();
         let refusals: Vec<(String, String, String)> = crate::selfjoin::asks(&self.board.model, &self.selfjoin.answered, &pending)
             .into_iter()
-            .filter_map(|a| a.refused.map(|why| (a.session_id, a.nonce, why)))
+            .filter_map(|a| a.refused.filter(|why| why != "computer-required").map(|why| (a.session_id, a.nonce, why)))
             .collect();
         for (session, nonce, why) in refusals {
             self.selfjoin.answered.insert(nonce.clone());
             self.answer_ask(now_ms, &session, &nonce, json!({ "refused": why }), out);
+        }
+        let allowed: Vec<String> = crate::selfjoin::asks(&self.board.model, &self.selfjoin.answered, &pending)
+            .into_iter().filter(|a| a.refused.is_none()).map(|a| a.nonce).collect();
+        for nonce in allowed {
+            self.selfjoin_action(now_ms, &AccountAction::AnswerAsk { nonce, allow: true }, out);
         }
         for (invite_id, vouch, hash) in waiting {
             if self.selfjoin.decided.contains(&invite_id) {
@@ -119,12 +121,13 @@ impl App {
             self.selfjoin.decided.insert(invite_id.clone());
             self.invite_confirm(now_ms, &invite_id, verdict, out);
         }
-        let agents = self.engine.as_ref().map(|e| e.roles().1).unwrap_or_default();
-        for device in crate::selfjoin::to_retire(&self.board.model) {
-            let present = agents.iter().any(|a| a.as_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>() == device);
-            if present && self.selfjoin.retiring.insert(device.clone()) {
-                self.account_step(now_ms, &AccountAction::RemoveDevices { device_ids: vec![device] }, out);
-            }
+        let enrolled: BTreeSet<String> = self.engine.as_ref().map(|e| e.roles().1).unwrap_or_default()
+            .iter().map(|a| crate::engine::feed::hex(a.as_bytes())).collect();
+        let retiring = crate::selfjoin::to_retire(&self.board.model).into_iter()
+            .chain(crate::machines::retired_children(&self.board.model, &enrolled));
+        let devices: Vec<String> = retiring.filter(|d| enrolled.contains(d) && self.selfjoin.retiring.insert(d.clone())).collect();
+        if !devices.is_empty() {
+            self.account_step(now_ms, &AccountAction::RemoveDevices { device_ids: devices }, out);
         }
     }
 }

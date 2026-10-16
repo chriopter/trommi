@@ -100,7 +100,6 @@ pub struct Cfg {
     pub owner: String,
     pub takeover_ms: u64,
     pub hub_url: String,
-    pub invite: String,
     pub room: String,
 }
 /// The Codex thread this process serves, as the owner of its slots (`codex:<thread>`), once a tool call named it.
@@ -184,7 +183,6 @@ pub fn connector_config(folder_override: Option<String>, write: bool) -> Cfg {
         owner,
         takeover_ms,
         hub_url: env("TROMMI_HUB").unwrap_or_else(|| "https://hub.trommi.com".into()),
-        invite: env("TROMMI_INVITE").unwrap_or_default(),
         room: env("TROMMI_ROOM").unwrap_or_default(),
     }
 }
@@ -209,11 +207,12 @@ pub fn slots_in(cfg: &Cfg, dir: &Path) -> Vec<u32> {
 }
 /// The file in the folder that names the room this folder joined last (written by a join).
 fn joined_file(cfg: &Cfg) -> PathBuf {
-    cfg.folder.join(".trommi").join("room")
+    cfg.folder.join(".trommi").join("joined")
 }
 /// The room this folder joined last, as a join wrote it.
 pub fn joined_room(cfg: &Cfg) -> Option<String> {
-    let text = std::fs::read_to_string(joined_file(cfg)).ok()?;
+    let text = std::fs::read_to_string(joined_file(cfg))
+        .or_else(|_| std::fs::read_to_string(cfg.folder.join(".trommi/room"))).ok()?;
     let room = text.trim();
     is_room_id(room).then(|| room.to_string())
 }
@@ -273,15 +272,12 @@ fn room_shown(cfg: &Cfg, room_id: &str) -> String {
         .unwrap_or_else(|| "without a key".into());
     format!("the room {made} ({room_id})")
 }
-/// The room this folder belongs to: from the invite link, TROMMI_ROOM, or the room with a key of this folder.
+/// The room this folder belongs to: from TROMMI_ROOM, or the room with a key of this folder.
 /// Keys of a format this connector cannot open are left alone (one log line). With keys of several rooms, the
 /// room this folder joined last decides; without that note it is an error that names the rooms.
 pub fn resolve_room(cfg: &Cfg) -> Result<Option<String>> {
     if !cfg.room.is_empty() {
         return Ok(Some(cfg.room.clone()));
-    }
-    if !cfg.invite.is_empty() {
-        return Ok(Some(room_of_link(&cfg.invite)?.0));
     }
     // A session with an id: the room of its own key, found by its exact owner wherever it lies; no folder note and
     // no other session's key decides (keys of two accounts in one folder, a folder changed).
@@ -361,7 +357,7 @@ pub fn room_slot_dirs(room: &Path) -> Vec<PathBuf> {
     let mut dirs = vec![room.to_path_buf()];
     if let Ok(rd) = std::fs::read_dir(room.join("s")) {
         let mut sessions: Vec<_> = rd.filter_map(|e| e.ok()).filter(|e| {
-            e.file_type().is_ok_and(|t| t.is_dir()) && crate::vouch::is_identity(&e.file_name().to_string_lossy())
+            e.file_type().is_ok_and(|t| t.is_dir()) && crate::identity::is_identity(&e.file_name().to_string_lossy())
         }).map(|e| e.path()).collect();
         sessions.sort();
         dirs.extend(sessions);
@@ -371,6 +367,9 @@ pub fn room_slot_dirs(room: &Path) -> Vec<PathBuf> {
 /// New identified sessions keep their state in an owner directory, independent of folder and account.
 /// Replacement joins use another slot here until the original device has been safely replaced.
 fn session_dir(cfg: &Cfg, room: &str, owner: &str) -> PathBuf {
+    if owner == format!("machine:{room}") {
+        return cfg.keys_dir.join(room).join("machine");
+    }
     cfg.keys_dir.join(room).join("s").join(&crate::util::hex(&crate::util::sha256(owner.as_bytes()))[..16])
 }
 fn new_paths(cfg: &Cfg, room: &str, slot: u32) -> SlotPaths {
@@ -855,7 +854,7 @@ pub struct Me {
     pub joining: bool,
     /// The check code of the join under way, once the inviter revealed it: (the six emoji, their words).
     pub check_code: Option<(Vec<String>, Vec<String>)>,
-    /// The hash of the Request of the join under way (base64url), once it is made: a self-join passes it on (12.4).
+    /// The hash of the Request of the join under way (base64url), once it is made: computer activation passes it on (12.4).
     pub request_hash: Option<String>,
 }
 
@@ -1193,7 +1192,7 @@ impl Member {
             device_info["platform"] = json!("codex");
         }
         // (who this session is across its devices: one entry and one name for it in the human's list, 9.3.3)
-        if let Some(agent) = crate::vouch::agent_identity(&self.cfg.owner()) {
+        if let Some(agent) = crate::identity::agent_identity(&self.cfg.owner()) {
             device_info["agent"] = json!(agent);
         }
         if let Err(e) = client.ensure_device_register(&device_info).await {
@@ -1219,10 +1218,6 @@ impl Member {
             let storage = self.storage_for(&room_id, ask).await?;
             let p = self.paths().unwrap();
             if !p.has_key {
-                let has_out = self.me.lock().unwrap().out.is_some();
-                if !self.cfg.invite.is_empty() && !has_out {
-                    return Box::pin(self.join(&self.cfg.invite.clone(), false, false)).await;
-                }
                 let out = if p.busy.is_empty() {
                     self.me
                         .lock()
@@ -1696,7 +1691,7 @@ mod session_key_tests {
     impl Fixture {
         fn new(owner: &str) -> Self {
             let dir = std::env::temp_dir().join(format!("trommi-session-paths-{}", crate::util::random_hex(16)));
-            Self(Cfg { keys_dir: dir.clone(), folder: dir.join("project"), shown: "~/project".into(), host: "test".into(), base: "test-project".into(), session: owner.into(), owner: owner.into(), takeover_ms: 1, hub_url: "http://127.0.0.1:9".into(), invite: String::new(), room: String::new() })
+            Self(Cfg { keys_dir: dir.clone(), folder: dir.join("project"), shown: "~/project".into(), host: "test".into(), base: "test-project".into(), session: owner.into(), owner: owner.into(), takeover_ms: 1, hub_url: "http://127.0.0.1:9".into(), room: String::new() })
         }
         fn room(&self) -> String { trommi_core::ids::RoomId::new([7; 32]).to_base64url() }
         fn keyed(&self, p: &SlotPaths, owner: &str) {
