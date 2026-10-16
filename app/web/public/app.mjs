@@ -1027,7 +1027,15 @@ async function start({ take = false } = {}) {
 }
 
 /** The page starts here (index.html loads this module; importing it elsewhere, as tests in Node do, does nothing). */
+// The page itself never scrolls, only its panes do: the root and the body are overflow: hidden, which a script can
+// still scroll (a scrollIntoView, a focus without preventScroll), and then the head and the composer stand half outside
+// the window. Whatever scrolls them is put back at once (tests/web/views/fit.browser.mjs).
+const pinPage = () => document.addEventListener('scroll', e => {
+  for (const el of [document.scrollingElement, document.body]) if (el && (e.target === el || e.target === document) && (el.scrollTop || el.scrollLeft)) el.scrollTo(0, 0)
+}, { capture: true, passive: true })
+
 async function boot() {
+  pinPage()
   T0 = performance.now()
   // An address of before (/s/…, /a/…; paths.mjs): the address bar shows its new form from the start.
   const moved = movedPath(location.pathname)
