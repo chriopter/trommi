@@ -34,12 +34,12 @@ export function goalsWords(g, folded = false) {
   return html`<button type="button" class="desk-goals-show${g.lines.length ? '' : ' is-empty'}" data-action="goals#edit" title="Goals">${g.lines.length ? g.lines.map(line) : 'Goals…'}</button>${fold}`
 }
 
-/** The Desk of a new account (DeskView.mode "invite"): a calm note with one way on, inviting the first agent (POST
- *  /pair, role agent: the Devices page's form). */
+/** The Desk of a new account (DeskView.mode "invite"): a calm note with one way on, approving a computer (POST
+ *  /pair, role computer: the Devices page's form). */
 const deskInvite = () => html`<header class="inbox-head" id="desk-head" data-controller="title" data-title-count-value="0"><section class="desk-invite" id="desk-invite" aria-labelledby="desk-invite-title">
-${sk('heads', 'desk-invite-art')}<h2 id="desk-invite-title">Invite your first agent</h2>
-<p>You get one command for any computer with Claude Code: run it in the project folder, then start Claude Code there with plain <code>claude</code>. Its questions land here.</p>
-<form method="post" action="/pair"><input type="hidden" name="role" value="agent"><button type="submit" class="desk-invite-go" id="desk-invite-go">${PLUS}<span>Invite an agent</span></button></form>
+${sk('heads', 'desk-invite-art')}<h2 id="desk-invite-title">Approve your computer</h2>
+<p>Approve your computer once, then activate each Claude Code or Codex session with one command. Its questions land here.</p>
+<form method="post" action="/pair"><input type="hidden" name="role" value="computer"><button type="submit" class="desk-invite-go" id="desk-invite-go">${PLUS}<span>Approve a computer</span></button></form>
 </section></header>`
 
 // ---- the walk's button: Blitz ----

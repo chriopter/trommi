@@ -365,6 +365,7 @@ fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>) {
     // of a session this device does not hold made it)
     let list: Vec<&Session> = all
         .into_iter()
+        .filter(|s| !crate::machines::is_computer(m, &s.session_id))
         .filter(|s| (s.is_active && s.agent_device_id.is_some()) || !s.card_ids.is_empty())
         .collect();
     let me = m.my_device_id.clone().unwrap_or_default();

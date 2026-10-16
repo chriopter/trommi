@@ -295,8 +295,8 @@ pub fn yield_state(
         },
     }
 }
-pub fn claims_at_start(spare: bool, reconnect: bool, others: usize, joining: bool) -> bool {
-    !spare && (reconnect || joining || others == 0)
+pub fn claims_at_start(spare: bool, reconnect: bool, others: usize) -> bool {
+    !spare && (reconnect || others == 0)
 }
 fn here_file(dir: &Path, base: &str, p: u32) -> PathBuf {
     dir.join(format!("{base}.here.{p}"))

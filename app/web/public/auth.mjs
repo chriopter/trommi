@@ -9,7 +9,7 @@
 // form was sent (its busy button), which invite was asked for here, whether the kit's words are shown.
 // app.mjs asks gate(vm, url) on every visit while signed out or while a step runs: the address the page must be on.
 // The UI says "account", never "room". Calm and sober: pen drawings only on the choice buttons.
-import { BELL, Controller, PLUS, SET_CHEVRON, askToast, connectCommand, connectPrompt, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode } from './ui.mjs'
+import { BELL, Controller, PLUS, SET_CHEVRON, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode } from './ui.mjs'
 import { passkeysOn, pushObstacle } from './app.mjs'
 
 // (the page's core and the QR reader come when first needed: this module also loads in Node, for its tests)
@@ -240,23 +240,8 @@ function screenOpts(name, vm, url) {
   }
 }
 
-// ---- self-join asks (vm.account.asks): a toast that asks, on any page, until it is answered ----
-const askShown = new Map()
-function syncAsks(vm) {
-  const now = new Map((vm.account?.asks ?? []).filter(a => !a.joining).map(a => [a.nonce, a]))
-  for (const [nonce, el] of askShown) if (!now.has(nonce) || !el.isConnected) { el.remove(); askShown.delete(nonce) }
-  const host = document.getElementById('says-host')
-  if (!host) return
-  for (const [nonce, a] of now) {
-    if (askShown.has(nonce)) continue
-    host.insertAdjacentHTML('afterbegin', String(askToast({ id: `ask-${nonce}`, head: 'A new session wants to join', line: a.says.en, action: `/vouch/${nonce}`, field: 'allow', yes: 'Allow', no: 'Deny' })))
-    askShown.set(nonce, host.firstElementChild)
-  }
-}
-
 // ---- the routes ----
 export function register(t) {
-  if (typeof document !== 'undefined') { import('./app.mjs').then(app => app.onCore('render', syncAsks)); syncAsks(t.vm()) }
   const vm = () => t.vm()
   const page = (req, res, title, main, extra = {}) => t.page(req, res, { title: `${title} · Trommi`, view: 'room', main, ...extra })
   const sent = (path, word, passkey = false) => { local.sent = { path, word, passkey }; local.begun = true; local.loggedOut = false; if (path !== '/forgot' && path !== '/new-way') local.words = null }
@@ -383,7 +368,7 @@ ${note ? html`<p class="room-lead" id="logout-last">${note}</p>` : ''}<p class="
   const TERMINAL = html`<span class="set-term-bar" aria-hidden="true"><i></i><i></i><i></i></span><span class="set-term-code" aria-hidden="true"><span>$ claude</span><span>&gt; join trommi ab3f…9c2e</span><span>&gt; check the six emoji</span></span>`
   const inviteTiles = () => html`<section class="set-invite-tiles" aria-label="Invite">
 <form method="post" action="/pair" class="set-tile"><input type="hidden" name="role" value="human"><button type="submit" class="set-tile-art set-qr" id="settings-pair" aria-label="Show Code: the code to invite a device"><span class="set-qr-code">${FAKE_QR}</span><span class="set-qr-show">Show Code</span></button><span class="set-text"><b>Invite a Device</b><small>A phone or another computer scans the code. Made when you ask, works once.</small></span></form>
-<form method="post" action="/pair" class="set-tile set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-tile-art set-term" id="settings-invite-agent" aria-label="Show Command: the command to invite an agent"><span class="set-term-in">${TERMINAL}</span><span class="set-qr-show">Show Command</span></button><span class="set-text"><b>Invite an Agent</b><small>Claude Code or Codex runs one command in your project and joins.</small></span></form>
+<form method="post" action="/pair" class="set-tile set-agent"><input type="hidden" name="role" value="computer"><button type="submit" class="set-tile-art set-term" id="settings-invite-agent" aria-label="Show Command: the command to invite an agent"><span class="set-term-in">${TERMINAL}</span><span class="set-qr-show">Show Command</span></button><span class="set-text"><b>Approve a Computer</b><small>Approve it once; activate each agent session with one command.</small></span></form>
 </section>`
   const matchButtons = (inviteId, back) => html`<div class="check-answer">${['yes', 'no'].map(v => html`<form method="post" action="/pair/confirm"><input type="hidden" name="invite_id" value="${inviteId}"><input type="hidden" name="in" value="${back}"><input type="hidden" name="match" value="${v}"><button type="submit" class="${v === 'yes' ? 'room-primary check-yes' : 'check-no'}">${v === 'yes' ? 'They match' : 'They don\'t match'}</button></form>`)}</div>`
   const copyBox = (value, label) => html`<div class="room-link" data-controller="room"><input readonly value="${value}" aria-label="${label}" data-room-target="field" data-action="focus->room#select"><button type="button" data-action="room#copy" data-room-text-param="${value}"><span data-room-target="label">Copy</span></button></div>`
@@ -414,7 +399,7 @@ ${note ? html`<p class="room-lead" id="logout-last">${note}</p>` : ''}<p class="
   const homeMain = () => {
     const s = vm().settings ?? {}, invite = deviceInvite()
     return settingsPage('Settings', html`${!invite ? inviteTiles() : html`<section class="set-group set-invites" aria-label="Invite">${invite}
-<form method="post" action="/pair" class="set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-row" id="settings-invite-agent"><span class="set-ico">${PLUS}</span><b>Invite Agent…</b><span class="set-detail">a command for Claude Code</span>${SET_CHEVRON}</button></form></section>`}
+<form method="post" action="/pair" class="set-agent"><input type="hidden" name="role" value="computer"><button type="submit" class="set-row" id="settings-invite-agent"><span class="set-ico">${PLUS}</span><b>Approve Computer…</b><span class="set-detail">a command for Claude Code</span>${SET_CHEVRON}</button></form></section>`}
 <nav class="set-group" aria-label="Settings">
 ${setRow({ href: '/settings/agents', icon: sk('terminal'), word: 'Agents', detail: s.agents?.en ?? '', id: 'settings-agents' })}
 ${setRow({ href: '/settings/desks', icon: sk('desk'), word: 'Desks', detail: s.desks?.en ?? '', id: 'settings-desks' })}
@@ -435,10 +420,11 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
     page(req, res, 'Settings', homeMain(), { view: 'settings' })
   })
   t.post(/^\/pair$/, ({ res, form }) => {
-    if (form.get('role') === 'agent') {
+    if (['agent', 'computer'].includes(String(form.get('role')))) {
       const desk = t.desk()
       local.invite = { kind: 'agent' }
-      t.account({ step: 'invite_agent', label: field(form, 'label').trim(), ...(desk && desk !== 'all' ? { desk } : {}) })
+      if (form.get('role') === 'computer') t.account({ step: 'approve_computer', label: field(form, 'label').trim() })
+      else t.account({ step: 'invite_agent', label: field(form, 'label').trim(), ...(desk && desk !== 'all' ? { desk } : {}) })
       return t.redirect(res, '/pair/agent')
     }
     local.invite = { kind: 'device' }
@@ -455,13 +441,6 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
     local.invite = null
     t.redirect(res, back)
   })
-  // Self-join: the person's Allow or Deny for an agent's ask.
-  t.post(/^\/vouch\/([0-9A-Za-z_-]{1,128})$/, ({ res, match, form }) => {
-    t.account({ step: 'answer_ask', nonce: match[1], allow: form.get('allow') === 'yes' })
-    document.getElementById(`ask-${match[1]}`)?.remove()
-    t.done(res)
-  })
-
   // ---- /pair/agent: inviting an agent, a clipboard with a short checklist ----
   // Two lines, each one big thing to press (it copies): install the connector (once per machine), then a plain prompt
   // with the link pasted into the agent in the project folder; then the emoji to compare, and the agent is in.
@@ -482,6 +461,7 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
   const altLine = text => html`<button type="button" class="clip-alt" data-line="slash" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${text.replace(/#.*'$/, "#…'")}</code><span class="clip-copy-word" data-word="Copy">Copy</span></button>`
   const clipboard = () => {
     const av = vm().account ?? {}, state = inviteState('agent'), inv = av.invite ?? {}
+    if (!inv.invite_id && !av.problem) return html`<main id="room" class="room room-clip" aria-busy="true"><section class="clip">${CLAMP}<progress></progress></section></main>`
     const open = state === 'open', joined = state === 'joined', coming = state === 'adding', ask = state === 'confirm_code', dead = state === 'failed'
     const done = open ? '' : 'done'
     const last = ask ? html`<div class="clip-ask" role="group" aria-label="Confirm the agent"><b>An agent wants to join.</b>
@@ -494,21 +474,21 @@ ${matchButtons(av.invite_id, 'agent')}
       : dead ? html`<b>${av.problem.en}</b>`
       : html`<b>Compare the six emoji Claude shows with the ones here</b><small>Nobody is added before you tap "They match".</small>`
     const foot = joined ? dropButton(inv, 'Done', 'room-done clip-done', 'clip-done')
-      : dead ? html`<form method="post" action="/pair" class="clip-again"><input type="hidden" name="role" value="agent"><button type="submit">New link</button></form>`
+      : dead ? html`<form method="post" action="/pair" class="clip-again"><input type="hidden" name="role" value="computer"><button type="submit">New link</button></form>`
       : coming ? html`<p class="clip-note">The link is in use: this page stays until the agent is in.</p>`
       : html`<p class="clip-note">The link works once · ${leftWords(inv.expires_ms)}</p>`
-    return html`<main id="room" class="room room-clip" aria-label="Invite an agent"><div id="invite-agent" class="room-invite" data-state="${state}">
+    return html`<main id="room" class="room room-clip" aria-label="${inv.title?.en ?? ''}"><div id="invite-agent" class="room-invite" data-state="${state}">
 <section class="clip" data-controller="invite-clip">${CLAMP}
-<h2>Invite an agent</h2><p class="clip-sub">On a Linux or macOS computer with Claude Code or Codex.</p>
+<h2>${inv.title?.en ?? ''}</h2><p class="clip-sub">${inv.notice?.en ?? ''}</p>
 <ol class="clip-list">
 ${step(done, html`<b>First time on this computer? Install:</b>${open ? html`${copyLine(INSTALL, 'Copy', 'install')}<small>Skip this if you have installed Trommi before (check: <code>trommi-connector --version</code>).</small>` : ''}`)}
-${step(done, html`<b>In your project folder, start claude (or codex) and paste:</b>${open ? html`${copyLine(connectPrompt(av.link), 'Copy', 'connect', connectShown(connectPrompt(av.link)))}<small class="clip-or">Or in Claude Code, the slash command: ${altLine(connectCommand(av.link))}</small><small>Claude Code asks once whether to use the trommi MCP server: choose "Use this MCP server". In Codex: start Codex again if it was running when Trommi was installed.</small>` : ''}`)}
+${step(done, html`<b>In your project folder, start claude (or codex) and paste:</b>${open ? html`${copyLine(av.connect_prompt ?? '', 'Copy', 'connect', connectShown(av.connect_prompt ?? ''))}<small class="clip-or">Or in Claude Code, the slash command: ${altLine(av.connect_command ?? '')}</small><small>Claude Code asks once whether to use the trommi MCP server: choose "Use this MCP server". In Codex: start Codex again if it was running when Trommi was installed.</small>` : ''}`)}
 ${step(joined ? 'done' : dead ? 'dead' : ask ? 'ask' : open ? '' : 'wait', last)}
 </ol>${foot}</section></div></main>`
   }
   t.get(/^\/pair\/agent$/, ({ req, res }) => {
-    if (inviteState('agent') === 'none') return t.redirect(res, '/settings')
-    page(req, res, 'Invite an agent', clipboard(), { view: 'invite' })
+    if (inviteState('agent') === 'none' && local.invite?.kind !== 'agent') return t.redirect(res, '/settings')
+    page(req, res, vm().account?.invite?.title?.en ?? '', clipboard(), { view: 'invite' })
   })
 
   // ---- /settings/devices: the person's devices (phones, tablets, browsers), each with a page of its own, and Push.

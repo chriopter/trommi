@@ -202,7 +202,7 @@ export async function demoState(name, { now = false } = {}) {
     'pair-emoji': () => click('#settings-pair'),   // (the demo's new device answers after a moment: the six emoji come in place)
     'agent-more': () => click('#agent-0 .ag-more > summary'),
     invite: () => click('#settings-invite-agent'),
-    'desk-invite': () => click('#desk-invite-go'),
+    'desk-invite': () => click('#desk-invite-go') || click('#sidebar-invite'),
     'invite-emoji': async () => { click('.t-head-more'); await wait(200); [...document.querySelectorAll('.desk-move button')].find(b => /invite link/.test(b.textContent))?.click() },
     'invite-ended': () => click('#settings-invite-agent'),
     share: async () => { click('#artifacts-list .shr-copy'); await wait(400); const d = $('#artifacts-list .shr.is-on details'); if (d) d.open = true },

@@ -95,6 +95,17 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(app.steppers["Width"].exists)
     capture("scribble-board")
   }
+  func testComputerApprovalShowsItsPermissionAndExplicitCommand() {
+    launch("settings")
+    let approve = app.buttons["Approve a computer"]
+    XCTAssertTrue(approve.waitForExistence(timeout: 15))
+    approve.tap()
+    let permission = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "without another tap")).firstMatch
+    XCTAssertTrue(permission.waitForExistence(timeout: 10), "Computer approval must explain the authority it grants. " + app.debugDescription)
+    let command = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "computer=true")).firstMatch
+    XCTAssertTrue(command.exists, "The copied instructions must explicitly request computer approval.")
+    capture("computer-approval-permission")
+  }
   func testFullSizeDeskLaunchAndMemory() throws {
     let env = ProcessInfo.processInfo.environment
     guard let fixture = env["TROMMI_SPEED_FIXTURE"], let rows = env["TROMMI_SPEED_ROWS"], !fixture.isEmpty, Int(rows) != nil else {
