@@ -26,7 +26,8 @@ pub fn desk(b: &Board) -> DeskView {
 /// The Desk, with what has left it as the core's `off_mind` says (made once per render).
 pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
     let m = b.model;
-    let units = units_of(b);
+    // (home holds every team's sessions; else the team in view's)
+    let units = if b.lens.desk_all { super::sidebar::units_all(b) } else { units_of(b) };
     let agent_of = |session: &Option<String>, device: &str| b.by_key.get(key_of(session, device)).copied();
 
     // ---- the rows ----
@@ -35,13 +36,13 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         .stack
         .iter()
         .filter_map(|id| m.cards.get(id))
-        .filter(|c| c.object_state == "open" && !c.catching_up && c.in_revision.is_none() && b.in_view(agent_of(&c.session_id, &c.agent_device_id)))
+        .filter(|c| c.object_state == "open" && !c.catching_up && c.in_revision.is_none() && b.on_desk(agent_of(&c.session_id, &c.agent_device_id)))
         .map(|c| c.object_id.as_str())
         .chain(
             m.open_permission_ids
                 .iter()
                 .filter_map(|id| m.permissions.get(id))
-                .filter(|p| p.permission_state == "pending" && !p.catching_up && b.in_view(agent_of(&p.session_id, &p.agent_device_id)))
+                .filter(|p| p.permission_state == "pending" && !p.catching_up && b.on_desk(agent_of(&p.session_id, &p.agent_device_id)))
                 .map(|p| p.object_id.as_str()),
         )
         .collect();
@@ -73,7 +74,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
     }
 
     // ---- the head ----
-    let questions = b.fresh().count() as u32;
+    let questions = b.all_fresh.iter().filter(|f| b.on_desk(f.agent)).count() as u32;
     let cut: Vec<SlipView> = units
         .iter()
         .filter_map(|u| u.link.as_ref().filter(|l| l.state == "cut").map(|l| (u, l)))
@@ -124,7 +125,8 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         };
         ("desk", Some(hello))
     };
-    let goals = (!units.is_empty()).then(|| {
+    // (goals are a team's: home shows none)
+    let goals = (!units.is_empty() && !b.lens.desk_all).then(|| {
         let team = b.team.clone().unwrap_or_else(|| DEFAULT_TEAM.into());
         let text = b.teams.iter().find(|d| d.id == team).map(|d| d.goals.as_str()).unwrap_or("");
         let lines: Vec<String> = if text.is_empty() { Vec::new() } else { text.split('\n').map(String::from).collect() };
@@ -147,7 +149,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
             let agent = agent_of(&c.session_id, &c.agent_device_id);
             // (an info its agent still works on is with the agent from the start, never on the Desk's stack)
             let works = c.field("working") == Value::Bool(true) && c.snoozed_until.is_none() && !agent.is_some_and(|i| b.agents[i].row.archived);
-            c.object_state == "open" && !c.catching_up && b.in_view(agent) && (m.stack.contains(&c.object_id) || works)
+            c.object_state == "open" && !c.catching_up && b.on_desk(agent) && (m.stack.contains(&c.object_id) || works)
         });
     let empty = (!any_open).then(|| {
         if reading {
@@ -711,6 +713,11 @@ mod tests {
         assert_eq!(view(&r, Some("lab")).stack, ["q-lab"]);
         assert_eq!(view(&r, Some("all")).stack, v.stack);
         assert_eq!(view(&r, None).stack, v.stack);
+        // home: every team's questions on one Desk, in the core's order, and no team's goals
+        let home = view_with(&r, &Lens { team: Some("main".into()), desk_all: true, ..Default::default() });
+        assert!(home.stack.contains(&"q-lab".to_string()) && home.stack.len() == v.stack.len() + 1);
+        assert_eq!(home.waiting, v.waiting + 1);
+        assert!(home.goals.is_none());
     }
 
     #[test]

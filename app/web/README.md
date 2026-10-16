@@ -196,13 +196,14 @@ instead); files come network first, the cache only offline. On the dev server (`
   All · Media · Pages, compact tiles in a soft frame with Open and, on a page, Share as small icons; 25 tiles made at once,
   the rest as they come near).
 - **Note:** one drawn yellow note at the window's bottom-right; it unfolds there to write, takes attachments, sends to the crown of the team in view; a square sheet on a wide window (`sidebar.mjs` `cornerNote`).
-- **Sidebar:** on a wide screen a calm list with two levels (`sidebar.mjs` `sidebarRows`, the core's `SidebarView.level`,
-  kept per device as `Focus.in_team`). At its top the bell (home: the Desk and the first level), Search and +. The first
-  level is every team as a stack (`TeamStackView`): its desk drawing, name and what waits over a fan of its sessions'
-  card edges; a click goes into the team. Inside: "‹ Teams", the team's name, its Desk and Scribble Board, and its chats
-  as calm rows (drawing, name, one grey line of what was said last, one small sign: `SessionRowView.signal`). The
-  sidebar's right edge is dragged to resize it (`side-resize`, kept per device); dragged narrow it becomes the rail
-  (the key [ folds and opens it too). A phone keeps the Desk box with the team in view (its chevron opens the menu,
+- **Sidebar:** on a wide screen one calm list (`sidebar.mjs` `sidebarRows`, `teamStack`). At its top the bell (home:
+  one Desk of every team, `Focus.desk_all`), Search and + (Add agent, Add team, Scribble). Then every team as a stack
+  (`TeamStackView`): its head card with a group picture of its agents' marks (`faces`) and what waits (a click opens
+  the team's Desk); a click on the stack fans its chats out under it, held by a pen bracket, and a click on the bracket
+  folds them back (`Focus.open_teams`, kept per device). A chat is a calm row (drawing, name, one grey line, one sign:
+  `SessionRowView.signal`). The sidebar's right edge is dragged to resize it (`side-resize`, kept per device); dragged
+  narrow it becomes the rail (the key [ folds and opens it too). At the foot the account mark and a chevron open the
+  menu: Settings, What's new, Demo, Log out, and one row of push, theme and help. A phone keeps the Desk box with the team in view (its chevron opens the menu,
   the teams at its top) and the sessions of that team. Then "New agent" and
   the Trommi menu at its foot. One sidebar, two presentations (`sidebar.css` "A phone"): beside the page on a wide
   screen (foldable to a rail), a drawer up to 860px that a finger from the left edge slides in over the dimmed page (a

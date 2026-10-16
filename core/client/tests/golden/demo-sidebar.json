@@ -211,6 +211,7 @@
         "en": "Fernly"
       },
       "selected": true,
+      "open": false,
       "waiting": 14,
       "knocks": true,
       "says": {
@@ -234,6 +235,191 @@
           "id": "9aa575fae2c64ece4ae4ab1b783673da",
           "mark": "draw:diamond"
         }
+      ],
+      "faces": [
+        {
+          "id": "54ddca7af4029f0526984da1e346d833",
+          "mark": "draw:leaf"
+        },
+        {
+          "id": "4abc388943bda4956b58dc2d5eb3e7e1",
+          "mark": "draw:phone"
+        },
+        {
+          "id": "9aa575fae2c64ece4ae4ab1b783673da",
+          "mark": "draw:diamond"
+        }
+      ],
+      "sessions": [
+        {
+          "id": "54ddca7af4029f0526984da1e346d833",
+          "name": {
+            "key": "session.name",
+            "en": "Fernly Website"
+          },
+          "link": "live",
+          "blocked": false,
+          "unheard": 0,
+          "slug": "fernly-web",
+          "mark": "draw:leaf",
+          "team_id": "main",
+          "online": true,
+          "working": true,
+          "main": true,
+          "crowned": true,
+          "helpers": {
+            "says": {
+              "key": "session.helpers",
+              "args": {
+                "n": "6"
+              },
+              "en": "6 helpers"
+            },
+            "working": [
+              false,
+              false,
+              false,
+              false,
+              true,
+              true
+            ]
+          },
+          "open": 8,
+          "knocks": false,
+          "away": false,
+          "group": "main:on",
+          "says": {
+            "key": "badge.working_open",
+            "args": {
+              "n": "8"
+            },
+            "en": "Working, 8 questions open"
+          },
+          "last": {
+            "text": "41 of 44 green; the Safari checkout test fails 2 of 12 runs, always on the iframe. Question on your Desk.",
+            "at_ms": 1791469440000,
+            "when": {
+              "key": "chat.when.today",
+              "args": {
+                "time": "16:24"
+              },
+              "en": "16:24"
+            }
+          },
+          "unread": false,
+          "signal": "waiting"
+        },
+        {
+          "id": "4abc388943bda4956b58dc2d5eb3e7e1",
+          "name": {
+            "key": "session.name",
+            "en": "Fernly App"
+          },
+          "link": "live",
+          "blocked": false,
+          "unheard": 0,
+          "slug": "fernly-ios",
+          "mark": "draw:phone",
+          "team_id": "main",
+          "online": true,
+          "working": true,
+          "main": true,
+          "crowned": false,
+          "helpers": {
+            "says": {
+              "key": "session.helpers",
+              "args": {
+                "n": "4"
+              },
+              "en": "4 helpers"
+            },
+            "working": [
+              false,
+              false,
+              true,
+              true
+            ]
+          },
+          "open": 3,
+          "knocks": false,
+          "away": false,
+          "group": "main:on",
+          "says": {
+            "key": "badge.working_open",
+            "args": {
+              "n": "3"
+            },
+            "en": "Working, 3 questions open"
+          },
+          "last": {
+            "text": "Testing time-zone changes for the daily time.",
+            "at_ms": 1791469260000,
+            "when": {
+              "key": "chat.when.today",
+              "args": {
+                "time": "16:21"
+              },
+              "en": "16:21"
+            }
+          },
+          "unread": false,
+          "signal": "waiting"
+        },
+        {
+          "id": "9aa575fae2c64ece4ae4ab1b783673da",
+          "name": {
+            "key": "session.name",
+            "en": "Design System"
+          },
+          "link": "live",
+          "blocked": false,
+          "unheard": 0,
+          "slug": "design-system",
+          "mark": "draw:diamond",
+          "team_id": "main",
+          "online": true,
+          "working": true,
+          "main": true,
+          "crowned": false,
+          "helpers": {
+            "says": {
+              "key": "session.helpers",
+              "args": {
+                "n": "3"
+              },
+              "en": "3 helpers"
+            },
+            "working": [
+              true,
+              false,
+              false
+            ]
+          },
+          "open": 3,
+          "knocks": true,
+          "away": false,
+          "group": "main:on",
+          "says": {
+            "key": "badge.working_open",
+            "args": {
+              "n": "3"
+            },
+            "en": "Working, 3 questions open"
+          },
+          "last": {
+            "text": "Explained on the card.",
+            "at_ms": 1791469260000,
+            "when": {
+              "key": "chat.when.today",
+              "args": {
+                "time": "16:21"
+              },
+              "en": "16:21"
+            }
+          },
+          "unread": false,
+          "signal": "waiting"
+        }
       ]
     },
     {
@@ -243,6 +429,7 @@
         "en": "Platform"
       },
       "selected": false,
+      "open": false,
       "waiting": 10,
       "knocks": true,
       "says": {
@@ -270,8 +457,251 @@
           "id": "eeb9fe76ad84d2405625d15419ce6083",
           "mark": "draw:book"
         }
+      ],
+      "faces": [
+        {
+          "id": "9ace71aadae23ea1f467d62b83b1d604",
+          "mark": "draw:lock"
+        },
+        {
+          "id": "f14180d4caac441522269c631a745866",
+          "mark": "draw:database"
+        },
+        {
+          "id": "5ef619647e0e8185fef0e3be40ff4809",
+          "mark": "draw:mountain"
+        }
+      ],
+      "sessions": [
+        {
+          "id": "9ace71aadae23ea1f467d62b83b1d604",
+          "name": {
+            "key": "session.name",
+            "en": "Payments"
+          },
+          "link": "live",
+          "blocked": false,
+          "unheard": 0,
+          "slug": "payments-service",
+          "mark": "draw:lock",
+          "team_id": "platform",
+          "online": true,
+          "working": true,
+          "main": true,
+          "crowned": true,
+          "helpers": {
+            "says": {
+              "key": "session.helpers",
+              "args": {
+                "n": "4"
+              },
+              "en": "4 helpers"
+            },
+            "working": [
+              true,
+              false,
+              false,
+              false
+            ]
+          },
+          "open": 3,
+          "knocks": false,
+          "away": false,
+          "group": "platform:on",
+          "says": {
+            "key": "badge.working_open",
+            "args": {
+              "n": "3"
+            },
+            "en": "Working, 3 questions open"
+          },
+          "last": {
+            "text": "Next run: 400 users for 10 minutes. It waits for your OK.",
+            "at_ms": 1791469620000,
+            "when": {
+              "key": "chat.when.today",
+              "args": {
+                "time": "16:27"
+              },
+              "en": "16:27"
+            }
+          },
+          "unread": false,
+          "signal": "waiting"
+        },
+        {
+          "id": "f14180d4caac441522269c631a745866",
+          "name": {
+            "key": "session.name",
+            "en": "Data Pipeline"
+          },
+          "link": "live",
+          "blocked": false,
+          "unheard": 0,
+          "slug": "data-pipeline",
+          "mark": "draw:database",
+          "team_id": "platform",
+          "online": true,
+          "working": true,
+          "main": true,
+          "crowned": false,
+          "helpers": {
+            "says": {
+              "key": "session.helpers.one",
+              "args": {
+                "n": "1"
+              },
+              "en": "1 helper"
+            },
+            "working": [
+              false
+            ]
+          },
+          "open": 2,
+          "knocks": false,
+          "away": false,
+          "group": "platform:on",
+          "says": {
+            "key": "badge.working_open",
+            "args": {
+              "n": "2"
+            },
+            "en": "Working, 2 questions open"
+          },
+          "last": {
+            "text": "Because opening the app counts. With “watered a plant” it is 14,960. Which one is on your Desk.",
+            "at_ms": 1791468120000,
+            "when": {
+              "key": "chat.when.today",
+              "args": {
+                "time": "16:02"
+              },
+              "en": "16:02"
+            }
+          },
+          "unread": false,
+          "signal": "waiting"
+        },
+        {
+          "id": "5ef619647e0e8185fef0e3be40ff4809",
+          "name": {
+            "key": "session.name",
+            "en": "Infrastructure"
+          },
+          "link": "live",
+          "blocked": true,
+          "unheard": 0,
+          "slug": "infra",
+          "mark": "draw:mountain",
+          "team_id": "platform",
+          "online": true,
+          "working": true,
+          "main": true,
+          "crowned": false,
+          "helpers": {
+            "says": {
+              "key": "session.helpers",
+              "args": {
+                "n": "5"
+              },
+              "en": "5 helpers"
+            },
+            "working": [
+              false,
+              false,
+              false,
+              false,
+              false
+            ]
+          },
+          "open": 3,
+          "knocks": true,
+          "hand": {
+            "why": "blocking",
+            "text": {
+              "key": "hand.blocking",
+              "en": "Waiting for you: a blocking question"
+            }
+          },
+          "away": false,
+          "group": "platform:on",
+          "says": {
+            "key": "badge.stopped_open",
+            "args": {
+              "n": "3",
+              "why": "Waiting for you: a blocking question"
+            },
+            "en": "Stopped: Waiting for you: a blocking question, 3 questions open"
+          },
+          "last": {
+            "text": "The primary disk is at 91%. Critical card on your Desk.",
+            "at_ms": 1791469680000,
+            "when": {
+              "key": "chat.when.today",
+              "args": {
+                "time": "16:28"
+              },
+              "en": "16:28"
+            }
+          },
+          "unread": false,
+          "signal": "stopped"
+        },
+        {
+          "id": "eeb9fe76ad84d2405625d15419ce6083",
+          "name": {
+            "key": "session.name",
+            "en": "Docs"
+          },
+          "link": "live",
+          "blocked": false,
+          "unheard": 0,
+          "slug": "docs-site",
+          "mark": "draw:book",
+          "team_id": "platform",
+          "online": true,
+          "working": true,
+          "main": true,
+          "crowned": false,
+          "helpers": {
+            "says": {
+              "key": "session.helpers.one",
+              "args": {
+                "n": "1"
+              },
+              "en": "1 helper"
+            },
+            "working": [
+              false
+            ]
+          },
+          "open": 2,
+          "knocks": false,
+          "away": false,
+          "group": "platform:on",
+          "says": {
+            "key": "badge.working_open",
+            "args": {
+              "n": "2"
+            },
+            "en": "Working, 2 questions open"
+          },
+          "last": {
+            "text": "Guides: 6 of 9 written. Reminders, households and holiday mode are done.",
+            "at_ms": 1791469320000,
+            "when": {
+              "key": "chat.when.today",
+              "args": {
+                "time": "16:22"
+              },
+              "en": "16:22"
+            }
+          },
+          "unread": false,
+          "signal": "waiting"
+        }
       ]
     }
   ],
-  "level": "teams"
+  "desk_all": false
 }

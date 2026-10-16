@@ -117,9 +117,12 @@ const write = (k, v) => { try { if (v == null) localStorage.removeItem(k); else 
 /** The team in view on this browser (kept per device, sent as Focus.team): a team's id, or null (the core's first). */
 const TEAM_KEY = 'trommi-team'
 let teamInView = read(TEAM_KEY)
-/** The wide sidebar's level on this browser (sent as Focus.in_team). */
-const LEVEL_KEY = 'trommi-sidebar-level'
-let inTeam = read(LEVEL_KEY) === 'team'
+/** Home: the Desk of every team (the bell at the sidebar's top; sent as Focus.desk_all), kept per browser. */
+const HOME_KEY = 'trommi-desk-all'
+let deskAll = read(HOME_KEY) === '1'
+/** The teams unfolded in the wide sidebar on this browser (sent as Focus.open_teams). */
+const OPEN_KEY = 'trommi-teams-open'
+let openTeams = (() => { try { const v = JSON.parse(read(OPEN_KEY, '[]')); return Array.isArray(v) ? v.map(String).slice(0, 50) : [] } catch { return [] } })()
 /** The Scribble Board of the team in view: the one chosen here, else the one the core shows. */
 const teamBoard = () => teamInView ?? core.vm()?.sidebar?.team ?? ''
 
@@ -150,9 +153,12 @@ function createBoard({ views }) {
     saveFile: core.saveFile,
     /** The team in view: its id, or null for the core's first. */
     team: () => teamInView,
-    setTeam(d) { teamInView = d || null; write(TEAM_KEY, teamInView); sendFocus() },
-    /** The wide sidebar inside the team in view (true) or at every team (SidebarView.level), kept per device. */
-    setInTeam(on) { inTeam = Boolean(on); write(LEVEL_KEY, inTeam ? 'team' : 'teams'); sendFocus() },
+    setTeam(d) { teamInView = d || null; write(TEAM_KEY, teamInView); deskAll = false; write(HOME_KEY, null); sendFocus() },
+    /** Home: the Desk of every team. */
+    setHome() { deskAll = true; write(HOME_KEY, '1'); sendFocus() },
+    /** The teams unfolded in the wide sidebar. */
+    openTeams: () => openTeams,
+    setOpenTeams(ids) { openTeams = [...new Set(ids.map(String))].slice(0, 50); write(OPEN_KEY, JSON.stringify(openTeams)); sendFocus() },
     toast: opts => stream('prepend', 'says-host', toast(opts)),
     get(pattern, handler) { gets.push({ pattern, handler }) },
     post(pattern, handler) { posts.push({ pattern, handler }) },
@@ -200,7 +206,7 @@ let screenInView = { screen: 'desk' }
 let boardInView = null
 /** The core hears what is in view: the page's screen, the team, the Scribble Board beside it, whether the window is seen. */
 function sendFocus() {
-  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(inTeam ? { in_team: true } : {}) })
+  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(deskAll ? { desk_all: true } : {}), ...(openTeams.length ? { open_teams: openTeams } : {}) })
 }
 /** The core's Screen for an address (before the page is drawn: its unit is then in the model). */
 export function screenOf(pathname, search = '') {
@@ -889,7 +895,11 @@ const appView = { register(t) {
     t.done(res)
   })
   // The menu's "switch team" (/?team=<id>) and /team/<id>: the team is this browser's; the address is the Desk's again.
-  t.get(/^\/$/, ({ res, url }) => { const d = url.searchParams.get('team'); if (d == null) return false; t.setTeam(d); t.redirect(res, '/') })
+  t.get(/^\/$/, ({ res, url }) => {
+    // (home: the bell at the sidebar's top, the Desk of every team)
+    if (url.searchParams.has('home')) { t.setHome(); return t.redirect(res, '/') }
+    const d = url.searchParams.get('team'); if (d == null) return false; t.setTeam(d); t.redirect(res, '/')
+  })
   t.get(/^\/team\/([\w-]+)$/, ({ res, match }) => { t.setTeam(match[1]); t.redirect(res, '/') })
   t.get(/^\/scribble-board$/, ({ res, url }) => { const d = url.searchParams.get('team'); if (d == null) return false; t.setTeam(d); t.redirect(res, '/scribble-board') })
 } }

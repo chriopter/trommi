@@ -1041,7 +1041,8 @@ impl App {
                     }
                 }
                 self.lens.team = focus.team;
-                self.lens.in_team = focus.in_team;
+                self.lens.desk_all = focus.desk_all;
+                self.lens.open_teams = focus.open_teams;
                 // (the gallery, and the Desk's foot shows its newest)
                 self.lens.artifacts = matches!(focus.screen, Screen::Artifacts { .. } | Screen::Desk);
                 self.lens.gallery = match &focus.screen {

@@ -188,6 +188,14 @@ pub(super) fn units_of(b: &Board) -> Vec<Unit> {
     units_where(b, |a| a.on_team)
 }
 
+/// So many of a team's sessions make its picture.
+const TEAM_FACES: usize = 3;
+
+/// The units of every team's sessions that are not archived (home's Desk).
+pub(super) fn units_all(b: &Board) -> Vec<Unit> {
+    units_where(b, |_| true)
+}
+
 /// The units of the sessions that are not archived and pass `on`, in the list's order.
 fn units_where(b: &Board, on: impl Fn(&super::board::Agent) -> bool) -> Vec<Unit> {
     // ---- the units: one per session that stands here ----
@@ -245,7 +253,11 @@ pub fn sidebar(b: &Board) -> SidebarView {
     // c628976b: "Nur der Desk im Blick"; the web counted every team and showed red on a knock). What waits on the
     // other teams stands in the menu, team by team.
     let badge = b.fresh().count() as u32;
-    let place = team_name(teams.iter().find(|(id, _)| *id == in_view).map(|(_, n)| n.as_str()).unwrap_or(""));
+    let place = if b.lens.desk_all {
+        say("team.all", "All teams", &[])
+    } else {
+        team_name(teams.iter().find(|(id, _)| *id == in_view).map(|(_, n)| n.as_str()).unwrap_or(""))
+    };
 
     // ---- the rows, in drawing order ----
     let asked = asked_last(b);
@@ -265,11 +277,15 @@ pub fn sidebar(b: &Board) -> SidebarView {
             TeamStackView {
                 id: t.id.clone(),
                 name: t.name.clone(),
-                selected: t.selected,
+                selected: t.selected && !b.lens.desk_all,
+                open: !sessions.is_empty() && b.lens.open_teams.contains(&t.id),
                 waiting: t.waiting,
                 knocks: t.knocks,
                 says: stack_words(sessions.len(), t.waiting),
                 edges: sessions.iter().take(STACK_EDGES).map(|r| StackEdgeView { id: r.id.clone(), mark: r.mark.clone() }).collect(),
+                // (a group's picture: the crowned one first, then in the rows' order)
+                faces: sessions.iter().filter(|r| r.crowned).chain(sessions.iter().filter(|r| !r.crowned)).take(TEAM_FACES).map(|r| StackEdgeView { id: r.id.clone(), mark: r.mark.clone() }).collect(),
+                sessions,
             }
         })
         .collect();
@@ -280,7 +296,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
     }
     SidebarView {
         stacks,
-        level: if b.lens.in_team { "team" } else { "teams" }.into(),
+        desk_all: b.lens.desk_all,
         teams: tabs,
         sessions: rows,
         badge,
@@ -497,10 +513,10 @@ mod tests {
         assert_eq!(view(&r, None).team, "main");
     }
 
-    /// The wide sidebar: every team as a stack of its sessions' card edges, with what waits on it; the level is
-    /// this device's ("teams" until it goes into one), and a row says its one quiet sign.
+    /// The wide sidebar: every team as a stack of its sessions' card edges with what waits on it, open where this
+    /// device unfolded it; on home (`desk_all`) no team is marked.
     #[test]
-    fn every_team_is_a_stack_and_the_sidebar_goes_into_one() {
+    fn every_team_is_a_stack_open_where_unfolded() {
         let mut r = Room { teams: two_teams(), ..Default::default() };
         r.teams["empty"] = json!({ "name": "Empty", "created_at": 3 });
         r.session("a-work", None, true);
@@ -513,16 +529,18 @@ mod tests {
         let m = r.model(NOW);
         let mut lens = Lens { team: Some("main".into()), ..Default::default() };
         let v = sidebar(&Board::new(&m, &lens, NOW));
-        let st = v.stacks.iter().map(|s| (s.id.as_str(), s.selected, s.waiting, s.knocks, s.edges.len())).collect::<Vec<_>>();
-        assert_eq!(st, [("main", true, 0, false, 1), ("lab", false, 2, true, 2), ("empty", false, 0, false, 0)]);
+        let st = |v: &SidebarView| v.stacks.iter().map(|s| (s.id.clone(), s.selected, s.open, s.waiting, s.knocks, s.edges.len())).collect::<Vec<_>>();
+        assert_eq!(st(&v), [("main".into(), true, false, 0, false, 1), ("lab".into(), false, false, 2, true, 2), ("empty".into(), false, false, 0, false, 0)]);
         assert_eq!(v.stacks[1].says.en, "2 agents, 2 questions open");
-        assert_eq!(v.level, "teams");
-        assert_eq!(v.sessions.len(), 1, "the rows: the team in view alone");
-        lens.in_team = true;
-        lens.team = Some("lab".into());
+        assert_eq!(v.stacks[1].sessions.iter().map(|r| (r.slug.as_str(), r.signal.as_str())).collect::<Vec<_>>(), [("b-lab", ""), ("d-lab", "waiting")]);
+        assert_eq!(v.sessions.len(), 1, "the phone's rows: the team in view alone");
+        lens.open_teams = vec!["lab".into(), "empty".into()];
+        lens.desk_all = true;
         let v = sidebar(&Board::new(&m, &lens, NOW));
-        assert_eq!(v.level, "team");
-        assert_eq!(v.sessions.iter().map(|r| (r.slug.as_str(), r.signal.as_str())).collect::<Vec<_>>(), [("b-lab", ""), ("d-lab", "waiting")]);
+        assert_eq!(st(&v)[..2], [("main".into(), false, false, 0, false, 1), ("lab".into(), false, true, 2, true, 2)]);
+        assert!(!v.stacks[2].open && v.stacks[2].faces.is_empty(), "an empty team never opens and has no faces");
+        assert_eq!(v.stacks[1].faces.len(), 2);
+        assert_eq!((v.desk_all, v.place.en.as_str()), (true, "All teams"));
     }
 
     #[test]
