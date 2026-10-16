@@ -85,7 +85,7 @@ jobs:
           status=0
           TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" cargo nextest run --locked -p trommi-tests --no-fail-fast \
             --test hub_limits --test core_groups_concurrency --test connector_paths \
-            -E 'test(=a_room_of_a_thousand_human_devices) | test(=a_device_catches_up_across_twenty_groups_in_the_hubs_order_only) | test(=helper_sessions_up_to_the_limit_then_close_one_to_open_another)' \
+            -E 'test(=a_room_of_a_thousand_human_devices) | test(=a_device_catches_up_across_twenty_groups_in_the_hubs_order_only) | test(=a_hundred_helpers_live_in_one_session)' \
             2>&1 | tee "$RUNNER_TEMP/nextest.log" || status=$?
           # all three ran: a filter that matches fewer (a test renamed) is a failure too
           grep -Eq 'Starting 3 tests' "$RUNNER_TEMP/nextest.log" || { echo "::error::not the three full-size tests"; status=1; }

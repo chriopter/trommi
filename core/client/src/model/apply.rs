@@ -1886,6 +1886,7 @@ impl Model {
                         state: g("state").unwrap_or(Value::Null),
                         detail: g("detail").unwrap_or(Value::Null),
                         object_id: g("object_id").unwrap_or(Value::Null),
+                        helper: crate::helpers::name_of(value.get("helper")),
                         envelope_number: r.change,
                         updated_at: r.time,
                     };

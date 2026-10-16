@@ -740,22 +740,18 @@ impl Torture {
     async fn helpers(&mut self, k: usize, n: usize) {
         let name = self.agents[k].name.clone();
         let Some(mcp) = self.agents[k].mcp.as_mut() else { return };
-        let mut opened = Vec::new();
+        let mut started = Vec::new();
         for i in 0..n {
             let h = format!("H{i}");
-            let (text, failed) = mcp.call("open_session", json!({ "name": h })).await;
+            let (text, failed) = mcp.call("start_task", json!({ "helper": h, "title": format!("Task of {h}") })).await;
             if failed {
-                self.log.push(format!("{name}: open_session {h} refused: {}", tail(&text, 200)));
+                self.log.push(format!("{name}: start_task for {h} refused: {}", tail(&text, 200)));
                 break;
             }
-            opened.push(h);
+            started.push(h);
         }
-        let close = opened.len() / 2;
-        for h in opened.iter().take(close) {
-            let _ = mcp.call("close_session", json!({ "name": h })).await;
-        }
-        self.agents[k].helpers.extend(opened.iter().skip(close).cloned());
-        self.say(format!("{name} opens {} helper sessions, closes {close}", opened.len()));
+        self.agents[k].helpers.extend(started.iter().cloned());
+        self.say(format!("{name} starts {} helpers in its session", started.len()));
     }
 
     async fn answer_some(&mut self) {

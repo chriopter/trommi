@@ -832,14 +832,14 @@ fn a_turn_one_card_started_answers_on_that_card_and_any_other_turn_in_the_chat()
     m.heard(Some(&json!({ "kind": "chat", "note": "1" })), true);
     hooked(&m, "stop", &stop("Answer three.", "p3"));
     assert_eq!(routed(&m), vec![("answer", "Answer three.".into(), None)]);
-    // two cards, a card in a child session, one from another session: the chat
+    // two cards, a helper's card, one from another session: the chat
     for (n, (meta, own)) in [
         (
             json!({ "kind": "decision", "card_id": "ffffffffffffffffffffffffffffffff" }),
             true,
         ),
         (
-            json!({ "kind": "decision", "card_id": CARD, "session": "Design" }),
+            json!({ "kind": "decision", "card_id": CARD, "helper": "Design" }),
             true,
         ),
         (json!({ "kind": "chat", "card_id": CARD }), false),

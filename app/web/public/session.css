@@ -569,6 +569,19 @@ form.log-earlier { display: contents; }
 #session a.event { text-align: left; user-select: text; -webkit-user-select: text; }
 #session a.msg-about { text-align: left; }
 /* What the session is at, at the end of the conversation: its running work as one row of chips. */
+/* ---- the session's helpers (session.mjs helperList): its agent's subagents, a short list above the status lines ---- */
+.session-helpers { margin-top: var(--s-6); padding: 10px 14px; border-radius: 14px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong); }
+.session-helpers h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 0 0 4px; color: var(--fg); font: 700 var(--t-sm)/1.3 var(--font); }
+.session-helpers h3 small { color: var(--muted); font-weight: 500; }
+.session-helpers ul { margin: 0; padding: 0; list-style: none; }
+.session-helpers li { display: grid; grid-template-columns: 10px auto 1fr; align-items: baseline; gap: 4px 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.session-helpers li:first-child { border-top: 0; }
+.session-helpers li i { width: 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--faint); translate: 0 -1px; }
+.session-helpers li.is-working i { background: var(--accent); box-shadow: none; }
+.session-helpers li b { font: 600 var(--t-sm)/1.3 var(--font); }
+.session-helpers li span { min-width: 0; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); }
+.status-helper { flex: none; color: var(--muted); font: 600 11px/1.2 var(--font); }
+.msg-helper { padding: 1px 8px; border-radius: 999px; background: var(--sunken); color: var(--muted); font: 600 12px/1.5 var(--font); }
 .session-status { display: grid; gap: 6px; justify-items: stretch; margin-top: var(--s-6); }
 .session-status[hidden] { display: none; }
 .session-status .working { margin-top: var(--s-2); }

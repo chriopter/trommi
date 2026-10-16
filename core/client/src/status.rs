@@ -264,14 +264,13 @@ fn earliest(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     }
 }
 
-/// The status of a session as listed (`archived`, `removed`, `online`, `has_parent` as the session list decided).
+/// The status of a session as listed (`archived`, `removed`, `online` as the session list decided).
 pub fn status_of(
     ctx: &Context,
     s: &Session,
     archived: bool,
     removed: bool,
     online: bool,
-    has_parent: bool,
 ) -> Status {
     let m = ctx.model;
     let now = ctx.now;
@@ -358,11 +357,7 @@ pub fn status_of(
                 });
             }
             if working {
-                let mut last = s.last_activity_at;
-                if has_parent {
-                    last = last.max(device_active);
-                }
-                last = working_lines.iter().copied().fold(last, u64::max);
+                let last = working_lines.iter().copied().fold(s.last_activity_at, u64::max);
                 if now.saturating_sub(last) >= QUIET_MS {
                     quiet_since = Some(last);
                 } else {

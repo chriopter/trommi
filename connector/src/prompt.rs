@@ -258,14 +258,6 @@ pub fn reload_tool() -> Value {
 pub fn inbox_tool() -> Value {
     with_description(&tools_doc()["inbox"])
 }
-pub fn session_tools() -> Vec<String> {
-    tools_doc()["session_tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect()
-}
 pub fn examples() -> &'static Value {
     &tools_doc()["examples"]
 }

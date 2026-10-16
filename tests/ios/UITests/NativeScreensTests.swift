@@ -219,24 +219,16 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertFalse(duck.exists, "nothing left to duck")
     capture("desk-duck-done")
   }
-  func testChatListShowsTeasersUnreadDotsAndFoldsHelpers() {
+  func testChatListShowsTeasersAndHelpersAsDots() {
     launch("chats")
     let teaser = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-teaser-")).firstMatch
     XCTAssertTrue(teaser.waitForExistence(timeout: 15), app.debugDescription)
     XCTAssertFalse(teaser.label.trimmingCharacters(in: .whitespaces).isEmpty, "a row says what was said last")
-    let helpers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-helpers-")).firstMatch
-    XCTAssertTrue(helpers.exists, "a main's helpers lie folded in its row")
-    let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).count
-    capture("chats-folded")
-    helpers.tap()
-    let more = NSPredicate(format: "count > %d", rows)
-    expectation(for: more, evaluatedWith: app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")))
-    waitForExpectations(timeout: 5)
-    // (a row with questions open shows their count instead of the dot; the demo's helpers without one have words
-    //  not seen yet, as nothing counts as read in the demo)
-    let dot = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-unread-")).firstMatch
-    XCTAssertTrue(dot.waitForExistence(timeout: 5), "words not seen yet are dotted. " + app.debugDescription)
-    capture("chats-unfolded")
+    // (a session's helpers are dots in its row, no rows of their own)
+    let helpers = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-helpers-")).firstMatch
+    XCTAssertTrue(helpers.exists, "a session's helpers are dots in its row. " + app.debugDescription)
+    XCTAssertTrue(helpers.label.hasSuffix("helpers") || helpers.label.hasSuffix("helper"), helpers.label)
+    capture("chats")
   }
   func testSessionQuestionsOnlyAndItsMenu() {
     launch("chat")

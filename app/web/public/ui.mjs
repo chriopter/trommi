@@ -498,26 +498,6 @@ function hueOf(id) {
 /** The colour of a session's mark. agent: { id, mark }. */
 export const hueFor = agent => drawingHue(drawingOf(agent.mark)) ?? hueOf(agent.id)
 
-// ---- a sub's card edge in a folded main's stack ----
-function penLine(pts) {
-  let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`
-  for (let i = 1; i < pts.length - 1; i++) {
-    const [x, y] = pts[i], [nx, ny] = pts[i + 1]
-    d += ` Q ${x.toFixed(1)} ${y.toFixed(1)} ${((x + nx) / 2).toFixed(1)} ${((y + ny) / 2).toFixed(1)}`
-  }
-  const last = pts.at(-1)
-  return `${d} L ${last[0].toFixed(1)} ${last[1].toFixed(1)}`
-}
-/** { tilt, dx, svg } for the session with this id. */
-export function edgeQuirk(id) {
-  return once(`edge:${id}`, () => {
-    const r = seeded(`edge:${id}`), j = s => (r() - .5) * 2 * s
-    const tilt = j(.75).toFixed(2), dx = j(2.2).toFixed(1), sag = j(.55), l = j(.5), rr = j(.5), ya = 12.9 + j(.6), yb = 12.9 + j(.6), xa = 30 + j(8), xb = 68 + j(8), sl = j(1), sr = j(1)
-    const line = (c, k) => penLine([[l * k, -2], [-l * k, 6 + sl], [c * .1, 11.3 + l * .6], [c, 12.9 + sag * .4], [xa, ya], [xb, yb], [100 - c, 12.9 - sag * .4], [100 - c * .1, 11.3 + rr * .6], [100 - rr * k, 6 + sr], [100 + rr * k, -2]])
-    return { tilt, dx, svg: `<svg viewBox="0 0 100 15" preserveAspectRatio="none" aria-hidden="true"><path class="e-w" d="${line(4.5, .5)}"/><path class="e-n" d="${line(15, 1.6)}"/></svg>` }
-  })
-}
-
 // ---- small drawings of the Desk ----
 
 
@@ -2694,7 +2674,7 @@ ${from && !slim ? html`<a class="inbox-gutter" data-nav href="${base}/chat/${enc
 <div class="inbox-content">
 <header class="inbox-row-head"></header>
 ${media.length ? html`<a class="inbox-fan" data-nav href="${href}${media.some(m => m.kind === 'image') ? '/picture/1' : ''}" aria-label="${row.media_says?.en ?? 'Look at the pictures'}">${media.slice(0, 3).map(m => { const url = fileSrc(m.file_id); return m.kind === 'image' ? html`<img${url ? html` src="${url}"` : ''} alt="" loading="lazy" decoding="async" width="56" height="42">` : html`<video${url ? html` src="${url}#t=0.001"` : ''} muted playsinline preload="metadata"></video>` })}</a>` : ''}
-${from ? html`<button class="row-mark" type="button" style="--hue:${from.hue}" data-tip="Select" aria-label="Select: ${row.title}" aria-pressed="false" data-select>${markArt(from)}<span class="row-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.4 12.6Q8.8 15.1 10.4 17Q14 11.4 18.2 7.2"/></svg></span></button>` : ''}<a class="inbox-text${from ? ' has-sender' : ''}" data-nav href="${href}" data-tip="${row.title}">${from && !slim ? html`<span class="inbox-from-mark inbox-who" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt(from)}</span>` : ''}<strong class="inbox-question" data-controller="fit">${slim && from ? html`<span class="row-stamp" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt({ ...from, crowned: false })}</span>` : ''}${knock ? html`<span class="row-urg is-${row.sign}" role="img" title="${row.sign_says?.en ?? ''}" aria-label="${row.sign_says?.en ?? ''}">${row.sign === 'block' ? raw(handSvg()) : sk('knock')}</span>` : row.sign === 'whenever' && !info ? html`<span class="row-urg is-whenever" role="img" title="Whenever" aria-label="Whenever">${sk('whenever')}</span>` : ''}${row.starred ? starMark() : ''}${row.title}</strong>${from && !slim ? html`<span class="row-meta"><span class="row-meta-mark">${raw(doodleSvg(from.mark))}</span><span class="row-meta-who">${from.name}</span><span class="row-meta-dot">·</span>${agoSpan(row.created_ms, 'row-meta-ago')}</span>` : ''}${about || words ? html`<span class="inbox-body">${about ? html`<span class="inbox-body-about">${about}</span>` : ''}${words ? html`<span class="inbox-body-text">${about ? ` · ${words}` : words}</span>` : ''}</span>` : ''}</a>
+${from ? html`<button class="row-mark" type="button" style="--hue:${from.hue}" data-tip="Select" aria-label="Select: ${row.title}" aria-pressed="false" data-select>${markArt(from)}<span class="row-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.4 12.6Q8.8 15.1 10.4 17Q14 11.4 18.2 7.2"/></svg></span></button>` : ''}<a class="inbox-text${from ? ' has-sender' : ''}" data-nav href="${href}" data-tip="${row.title}">${from && !slim ? html`<span class="inbox-from-mark inbox-who" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt(from)}</span>` : ''}<strong class="inbox-question" data-controller="fit">${slim && from ? html`<span class="row-stamp" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt({ ...from, crowned: false })}</span>` : ''}${knock ? html`<span class="row-urg is-${row.sign}" role="img" title="${row.sign_says?.en ?? ''}" aria-label="${row.sign_says?.en ?? ''}">${row.sign === 'block' ? raw(handSvg()) : sk('knock')}</span>` : row.sign === 'whenever' && !info ? html`<span class="row-urg is-whenever" role="img" title="Whenever" aria-label="Whenever">${sk('whenever')}</span>` : ''}${row.starred ? starMark() : ''}${row.title}</strong>${from && !slim ? html`<span class="row-meta"><span class="row-meta-mark">${raw(doodleSvg(from.mark))}</span><span class="row-meta-who">${from.name}</span>${row.from?.helper ? html`<span class="row-meta-dot">·</span><span class="row-meta-helper">${row.from.helper.en}</span>` : ''}<span class="row-meta-dot">·</span>${agoSpan(row.created_ms, 'row-meta-ago')}</span>` : ''}${about || words ? html`<span class="inbox-body">${about ? html`<span class="inbox-body-about">${about}</span>` : ''}${words ? html`<span class="inbox-body-text">${about ? ` · ${words}` : words}</span>` : ''}</span>` : ''}</a>
 <span class="inbox-when" title="${ago(row.created_ms)}"><form class="inbox-tabs" method="post" action="${act('snooze')}"><input type="hidden" name="stay" value="1">
 ${ways.has('later') ? html`<button class="inbox-tab-act inbox-later is-tag" type="submit" formaction="${act('snooze')}" aria-label="${WORDS.later}: put this question off; it waits for you below" title="${WORDS.later}">${LATER_TAG}</button>` : ''}
 ${ways.has('reverse') ? tab('inbox-revise', 'reverse', WORDS.revise, WORDS.revise, act('revise'), true) : ''}
@@ -2739,13 +2719,13 @@ export const smallMark = agent => html`<span class="inbox-from-mark" style="--hu
 const TALLY = ['M3.9 2.2Q2.6 7.6 2.5 13.9', 'M8.6 1.6Q8.4 8.4 7.3 13.2', 'M13.7 2.6Q12.5 7.2 12.6 14.2', 'M18.6 1.9Q18.3 8.6 17.2 13.5']
 const tallySvg = n => { const w = n > 4 ? 22 : n * 5 + 1; return `<svg class="agent-tally" viewBox="0 0 ${w} 16" width="${w}" height="16" aria-hidden="true">${TALLY.slice(0, Math.min(n, 4)).map(d => `<path d="${d}"/>`).join('')}${n > 4 ? '<path d="M.9 11.8Q10.5 7.6 21.1 3.5"/>' : ''}</svg>` }
 /** A sidebar row's badge (SessionRowView, or its FoldView with the row's id). */
-export function badge(row, base, tally = false, fold = null) {
-  const open = (fold ?? row).open, hand = (fold ?? row).hand ?? null, online = (fold ?? row).online, working = (fold ?? row).working
+export function badge(row, base, tally = false) {
+  const { open, online, working } = row, hand = row.hand ?? null
   if (!open && !hand) return ''
   const inner = hand ? raw(handSvg()) : !tally ? html`${raw(ringSvg())}<b>${open}</b>` : open > 5 ? html`<b>${open}</b>` : raw(tallySvg(open))
   const data = html` data-state="${hand ? 'blocked' : 'open'}"${hand ? html` data-why="${hand.why}"` : ''}${!online ? raw(' data-offline') : ''}${online && working ? raw(' data-working') : ''}`
   const name = row.name?.en ?? row.name
-  return html`<a class="agent-badge" data-nav href="${base}/chat/${encodeURIComponent(row.slug ?? row.id)}"${data} title="${hand ? 'Stopped' : `${open} open`}" aria-label="${name}: ${(fold ?? row).says?.en ?? `${open} open`}">${inner}</a>`
+  return html`<a class="agent-badge" data-nav href="${base}/chat/${encodeURIComponent(row.slug ?? row.id)}"${data} title="${hand ? 'Stopped' : `${open} open`}" aria-label="${name}: ${row.says?.en ?? `${open} open`}">${inner}</a>`
 }
 
 // ---- a session's link: whether it hears the human (app.mjs linkOf, heardOf) ----

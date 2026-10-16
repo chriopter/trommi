@@ -14,8 +14,8 @@
 //!   both are written to `--env-out` (mode 0600) as `APPSTORE_DEMO_USER`, `APPSTORE_DEMO_PASSWORD` and
 //!   `TROMMI_REVIEW_KIT`, and never printed;
 //! - one connector device (the connector's own client, in process) per main session of the fixture, joined by
-//!   link and confirmed by the human device; each writes its profile and opens its helper sessions as the
-//!   connector does (the opener writes for its helpers);
+//!   link and confirmed by the human device; each writes its profile, and what its helpers wrote, named, into its
+//!   session as the connector does;
 //! - the content in the order of its times in the fixture: cards with their pictures, Chats (the agents' and the
 //!   human's), work trails, Artifacts; the human device answers, reads and shreds where the fixture did, and the
 //!   agents close, withdraw and merge;
@@ -294,28 +294,6 @@ impl Seeder {
             );
             self.count("main sessions");
             println!("main session {}", s["agent_session_id"]);
-            self.pace().await;
-        }
-        for s in sessions.iter().filter(|s| s["profile"]["is_main"] != true) {
-            let parent = s["profile"]["parent_session"].as_str().unwrap_or("");
-            let agent = *main_of
-                .get(parent)
-                .ok_or(format!("no main session {parent}"))?;
-            let sid = self.agents[agent]
-                .client
-                .open_child_session(obj(&profile_of(&s["profile"])))
-                .await
-                .map_err(|e| format!("helper {}: {e}", s["agent_session_id"]))?;
-            let device = s["agent_device_id"].as_str().unwrap_or("").to_string();
-            self.seats.insert(
-                device,
-                Seat {
-                    agent,
-                    session: Some(sid.clone()),
-                    sid,
-                },
-            );
-            self.count("helper sessions");
             self.pace().await;
         }
         Ok(())
@@ -841,7 +819,7 @@ impl Seeder {
                     .map(|o| json!(wire(&o)));
                 values.insert(
                     format!("status_line/{}", line["id"].as_str().unwrap_or("x")),
-                    json!({ "label": line["label"], "state": line["state"], "detail": line["detail"], "object_id": object.unwrap_or(Value::Null) }),
+                    json!({ "label": line["label"], "state": line["state"], "detail": line["detail"], "object_id": object.unwrap_or(Value::Null), "helper": line["helper"] }),
                 );
             }
             if !values.is_empty() {

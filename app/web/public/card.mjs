@@ -114,11 +114,11 @@ ${all > 1 || others.length ? html`<div class="tc-thumbs"><span class="tc-roll">$
 }
 
 // ---- the left column: who, title, one quiet line, the text, the picture, the options explained ----
-/** Who a card comes from, above its title: the session's drawing and where it stands, desk › main session › itself,
- *  its name in bold; a link to the session. */
+/** Who a card comes from, above its title: the session's drawing and where it stands, team › session, its name in
+ *  bold; a link to the session. A helper's card names the helper in a chip under it (FromView.helper). */
 function fromLine(from, base) {
   const who = whoOf(from), path = from.path?.length ? from.path : [from.name], name = path.at(-1)
-  return html`<a class="tc-fromline" data-nav href="${base}/chat/${encodeURIComponent(from.session_id)}" style="--hue:${who.hue}" aria-label="From ${path.join(', ')}">${raw(doodleSvg(from.mark))}${path.slice(0, -1).map(p => html`<span>${p}</span><i aria-hidden="true">›</i>`)}<b>${name}</b></a>`
+  return html`<a class="tc-fromline" data-nav href="${base}/chat/${encodeURIComponent(from.session_id)}" style="--hue:${who.hue}" aria-label="From ${path.join(', ')}${from.helper ? `, ${from.helper.en}` : ''}">${raw(doodleSvg(from.mark))}${path.slice(0, -1).map(p => html`<span>${p}</span><i aria-hidden="true">›</i>`)}<b>${name}</b></a>${from.helper ? html`<span class="tc-helper">${from.helper.en}</span>` : ''}`
 }
 /** The strip above the title while the card's session works on it (CardWorkView): its drawing redrawing itself,
  *  "<session> is working on it", its status line and how long ago that was said, the pen line under it. */

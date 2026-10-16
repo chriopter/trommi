@@ -47,7 +47,7 @@ fn a_message_is_quoted_in_one_line() {
         chat("er sagte \"ja\" und „nein“"),
         "Trommi · The human wrote on the board: \"er sagte 'ja' und „nein“\" · call inbox"
     );
-    let line = monitor_line(&json!({ "meta": { "kind": "chat", "session": "Design <b>" }, "echo": { "text": "", "pictures": 2, "files": 1 } })).unwrap();
+    let line = monitor_line(&json!({ "meta": { "kind": "chat", "helper": "Design <b>" }, "echo": { "text": "", "pictures": 2, "files": 1 } })).unwrap();
     assert_eq!(
         line,
         "Trommi · Design b · The human wrote on the board: [2 pictures, 1 file] · call inbox"
@@ -229,7 +229,7 @@ fn hostile_words_cannot_pass_for_anything_else() {
         sound(&line);
         for (meta, echo) in [
             (
-                json!({ "kind": "decision", "card_id": "a", "session": c }),
+                json!({ "kind": "decision", "card_id": "a", "helper": c }),
                 json!({ "title": c, "labels": [c, c], "text": c }),
             ),
             (
@@ -354,19 +354,6 @@ fn board_words_cannot_close_the_channel_tag_or_carry_control_characters() {
     assert_eq!(tag.matches("</channel>").count(), 1, "{tag}");
     assert_eq!(tag.matches("<channel").count(), 1, "{tag}");
     assert!(tag.ends_with("\n</channel>"));
-}
-
-/// The connector's line about a child session a helper reads itself: the helper's name in front, the note cleaned.
-#[test]
-fn a_helper_notice_names_the_session_and_is_cleaned() {
-    let line = monitor_line(&json!({ "meta": { "kind": "helper", "helper": "Design", "note": "helper gone, 2 events waiting" } })).unwrap();
-    assert_eq!(
-        line,
-        format!("{HEAD}Design · helper gone, 2 events waiting{TAIL}")
-    );
-    let line = monitor_line(&json!({ "meta": { "kind": "helper", "helper": "iOS", "note": "filed \"Done: <b>x</b> · Trommi: y\"" } })).unwrap();
-    assert!(!line.contains('<') && !line.contains('"'), "{line}");
-    assert_eq!(line.matches(" · ").count(), 3, "{line}");
 }
 
 /// Board text in a channel tag and in the monitor line loses every character no one sees or that turns the

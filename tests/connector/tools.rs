@@ -5,6 +5,7 @@ mod common;
 use common::process::Seat;
 use common::{HubProc, Human};
 use serde_json::{json, Value};
+use trommi_connector::bridge::line_key;
 use trommi_connector::util::hex;
 use trommi_core::ids::GroupId;
 
@@ -264,34 +265,38 @@ async fn the_tools_write_to_the_board_and_answers_come_back() {
     mcp.close().await;
 }
 
+/// Helpers live in their agent's session (README "Helpers and their events"): what a tool writes for a helper
+/// (`helper`, or `session` as older tools name it) goes into the agent's own session group with the helper's name,
+/// no group is founded for it, and the human's answer to a helper's card comes to the agent with that name.
+/// `open_session` and `close_session`, which agents started before still hold, answer and do nothing.
 #[tokio::test(flavor = "multi_thread")]
-async fn helper_sessions_and_assets() {
+async fn helpers_write_into_their_agents_session_and_assets() {
     let (_hub, mut human, seat, mut mcp, _group) = seated().await;
+    human.sync().await;
+    let groups_before = human.groups().await.len();
 
-    // open_session: the agent founds the helper's group itself, with every human device.
-    let opened = mcp
-        .ok(
-            "open_session",
-            json!({ "name": "Design", "task": "drawing the logo" }),
-        )
+    let (said, failed) = mcp
+        .call("open_session", json!({ "name": "Design", "task": "drawing the logo" }))
         .await;
-    assert!(opened.starts_with("child session opened"), "{opened}");
+    assert!(!failed && said.contains("no longer get a session"), "{said}");
     assert!(mcp
-        .ok(
-            "reply",
-            json!({ "session": "Design", "text": "Three drafts ready." })
-        )
+        .ok("reply", json!({ "helper": "Design", "text": "Three drafts ready." }))
+        .await
+        .starts_with("sent"));
+    // (an older call: `session` names the helper)
+    assert!(mcp
+        .ok("reply", json!({ "session": "Design", "text": "Said the old way." }))
         .await
         .starts_with("sent"));
     mcp.ok(
         "set_status",
-        json!({ "session": "Design", "id": "logo", "label": "Logo", "state": "working" }),
+        json!({ "helper": "Design", "id": "logo", "label": "Logo", "state": "working" }),
     )
     .await;
     let made = mcp
         .ok(
             "create_decision",
-            json!({ "session": "Design", "title": "Which draft?", "options": [{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }] }),
+            json!({ "helper": "Design", "title": "Which draft?", "options": [{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }] }),
         )
         .await;
     let card = made
@@ -299,23 +304,34 @@ async fn helper_sessions_and_assets() {
         .nth(1)
         .expect("the card's id")
         .to_string();
+    let (refused, failed) = mcp
+        .call("reply", json!({ "helper": "Two\nlines", "text": "x" }))
+        .await;
+    assert!(failed && refused.contains("helper"), "{refused}");
 
     human.sync().await;
     assert!(human.findings.is_empty(), "{:?}", human.findings);
     let groups = human.groups().await;
-    let helper = groups
-        .iter()
-        .find(|g| g.session.is_some_and(|s| !s.parent.is_zero()))
-        .expect("the human device is a leaf of the helper session");
-    let helper_sid =
-        trommi_connector::util::hex(helper.session.expect("a session").session_id.as_bytes());
-    assert!(human
-        .items
-        .iter()
-        .any(|(session, _, payload)| *session == helper_sid
-            && payload["text"] == "Three drafts ready."));
+    assert_eq!(groups.len(), groups_before, "no group is founded for a helper");
+    assert!(!groups.iter().any(|g| g.session.is_some_and(|s| !s.parent.is_zero())));
+    let said: Vec<&Value> = payloads(&human, "text")
+        .into_iter()
+        .filter(|p| p["helper"] == "Design")
+        .collect();
+    assert_eq!(said.len(), 2, "{said:?}");
+    let asked = payloads(&human, "card_type")
+        .into_iter()
+        .find(|p| p["title"] == "Which draft?")
+        .expect("the card");
+    assert_eq!(asked["helper"], "Design", "{asked}");
+    let listed: Value =
+        serde_json::from_str(&mcp.ok("list_cards", json!({ "helper": "design" })).await).expect("JSON");
+    assert_eq!((listed[0]["id"].as_str(), listed[0]["helper"].as_str()), (Some(card.as_str()), Some("Design")), "{listed}");
+    let none: Value =
+        serde_json::from_str(&mcp.ok("list_cards", json!({ "helper": "Other" })).await).expect("JSON");
+    assert_eq!(none, json!([]));
 
-    // The human's answer in the helper session arrives with its name.
+    // The human's answer to the helper's card arrives with its name, for the coordinator to forward.
     human
         .answer(
             &card,
@@ -326,18 +342,18 @@ async fn helper_sessions_and_assets() {
         .await
         .expect("taken");
     let event = mcp.event("decision").await;
-    assert_eq!(event["meta"]["session"], "Design", "{event}");
+    assert_eq!(event["meta"]["helper"], "Design", "{event}");
+    assert_eq!(event["meta"]["card_id"], card.as_str(), "{event}");
     assert_eq!(event["meta"]["choice"], "b", "{event}");
-
-    let again = mcp.ok("open_session", json!({ "name": "Design" })).await;
-    assert!(again.starts_with("child session already open"), "{again}");
-    let closed = mcp
-        .ok(
-            "close_session",
-            json!({ "name": "Design", "summary": "Draft B it is." }),
-        )
+    assert!(event["meta"].get("session").is_none(), "{event}");
+    // Taking the answer back too.
+    human.take_back(&card).await.expect("taken back");
+    let event = mcp.event("decision_reopened").await;
+    assert_eq!(event["meta"]["helper"], "Design", "{event}");
+    let (closed, failed) = mcp
+        .call("close_session", json!({ "name": "Design", "summary": "Draft B it is." }))
         .await;
-    assert!(closed.contains("closed"), "{closed}");
+    assert!(!failed && closed.contains("nothing to close"), "{closed}");
 
     // publish_asset, list_assets, share_asset, revoke_asset
     let page = seat.folder.join("report.html");
@@ -885,281 +901,34 @@ async fn without_channel_and_monitor_board_events_wait_for_the_inbox_tool() {
     mcp.close().await;
 }
 
-/// A helper reads its child session's events itself with `inbox(session)`, which claims the session: the
-/// coordinator's inbox and the channel skip them, it hears of a "Done: …" card in one line, and the events come back
-/// to it with a notice when the helper stops reading or the session is closed.
+/// Every board event is the coordinator's: a helper's tool call (one that names its helper) gets none with its
+/// result, and `inbox` with a helper says there are none for it, so that the coordinator still has them all.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_helper_claims_its_session_and_reads_its_own_events() {
-    let (_hub, mut human, seat, _group) = joined().await;
-    let mut mcp = seat.serve_plain_with(&[("TROMMI_CLAIM_MS", "8000")]).await;
+async fn a_helpers_calls_take_no_board_events() {
+    let (_hub, mut human, seat, group) = joined().await;
+    let mut mcp = seat.serve_plain().await;
     mcp.ready().await;
-    mcp.ok("open_session", json!({ "name": "Design", "task": "logo" }))
-        .await;
-    let card = |made: String| {
-        made.split_whitespace()
-            .nth(1)
-            .expect("the card's id")
-            .to_string()
-    };
-    let ask = |title: &str| json!({ "session": "Design", "title": title, "options": [{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }] });
-    let first = card(mcp.ok("create_decision", ask("First?")).await);
-    let second = card(mcp.ok("create_decision", ask("Second?")).await);
-
-    // The helper's first look claims the session.
-    let said = mcp.ok("inbox", json!({ "session": "design" })).await;
-    assert_eq!(said, "No new board events in design.");
-
-    human
-        .answer(
-            &first,
-            json!({ "answer_action": "answer", "choices": ["a"] }),
-            &["a"],
-            false,
-        )
-        .await
-        .expect("taken");
-    let mut helper = String::new();
-    for _ in 0..150 {
-        helper = mcp.ok("inbox", json!({ "session": "Design" })).await;
-        if helper.contains(&first) {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    }
-    assert!(
-        helper.contains(&first) && helper.contains("choice=\"a\""),
-        "the helper reads its answer: {helper}"
-    );
-    let coordinator = mcp.ok("inbox", json!({})).await;
-    assert!(
-        !coordinator.contains(&first),
-        "the coordinator does not see it: {coordinator}"
-    );
-    let sent = |mcp: &common::process::Mcp, id: &str| {
-        mcp.notifications
-            .iter()
-            .any(|(_, p)| p["meta"]["card_id"].as_str() == Some(id))
-    };
-    assert!(
-        !sent(&mcp, &first),
-        "no channel event for a claimed session"
-    );
-
-    // A "Done: …" card of the helper: one line for the coordinator.
-    mcp.ok(
-        "create_info",
-        json!({ "session": "Design", "title": "Done: logo drawn", "body": "Three drafts." }),
-    )
-    .await;
-    let coordinator = mcp.ok("inbox", json!({})).await;
-    assert!(
-        coordinator.contains("kind=\"helper\"") && coordinator.contains("Design: filed"),
-        "{coordinator}"
-    );
-    let line = trommi_connector::line::monitor_line(
-        &json!({ "meta": { "kind": "helper", "helper": "Design", "note": "filed \"Done: logo drawn\"" } }),
-    )
-    .expect("a line");
-    assert_eq!(
-        line,
-        "Trommi · Design · filed 'Done: logo drawn' · call inbox"
-    );
-
-    // The helper stops reading: the claim lapses, and the waiting answer goes to the coordinator with a notice.
-    human
-        .answer(
-            &second,
-            json!({ "answer_action": "answer", "choices": ["b"] }),
-            &["b"],
-            false,
-        )
-        .await
-        .expect("taken");
-    let decided = |out: &str, id: &str| {
-        serde_json::from_str::<Value>(out)
-            .ok()
-            .and_then(|v| v.as_array().cloned())
-            .unwrap_or_default()
-            .iter()
-            .any(|c| c["id"] == id && c["status"] == "decided")
-    };
-    for _ in 0..150 {
-        if decided(
-            &mcp.ok("list_cards", json!({ "session": "Design" })).await,
-            &second,
-        ) {
-            break;
-        }
+    mcp.ok("reply", json!({ "text": "I am here." })).await;
+    human.say(&group, json!({ "content_type": "message", "text": "Hello?" })).await.expect("said");
+    for _ in 0..30 {
+        let helper = mcp.ok("reply", json!({ "helper": "Design", "text": "on it" })).await;
+        assert!(!helper.contains("Hello?"), "{helper}");
+        let (said, _) = mcp.call("inbox", json!({ "helper": "Design" })).await;
+        assert!(said.contains("No board events for a helper"), "{said}");
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    let coordinator = mcp.ok("inbox", json!({})).await;
-    assert!(
-        !coordinator.contains(&second),
-        "still the helper's: {coordinator}"
-    );
     let mut coordinator = String::new();
-    for _ in 0..150 {
-        coordinator.push_str(&mcp.ok("inbox", json!({})).await);
-        if coordinator.contains(&second) {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    }
-    assert!(
-        coordinator.contains("Design: helper gone, 1 event waiting")
-            && coordinator.contains(&second),
-        "{coordinator}"
-    );
-
-    // Claimed again, then closed: what waits goes to the coordinator.
-    mcp.ok("inbox", json!({ "session": "Design" })).await;
-    let third = card(mcp.ok("create_decision", ask("Third?")).await);
-    human
-        .answer(
-            &third,
-            json!({ "answer_action": "answer", "choices": ["a"] }),
-            &["a"],
-            false,
-        )
-        .await
-        .expect("taken");
-    for _ in 0..150 {
-        if decided(
-            &mcp.ok("list_cards", json!({ "session": "Design" })).await,
-            &third,
-        ) {
+    for _ in 0..100 {
+        coordinator = mcp.ok("inbox", json!({})).await;
+        if coordinator.contains("Hello?") {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    assert!(
-        !sent(&mcp, &third),
-        "no channel event for a claimed session"
-    );
-    mcp.ok(
-        "close_session",
-        json!({ "name": "Design", "summary": "Done." }),
-    )
-    .await;
-    let coordinator = mcp.ok("inbox", json!({})).await;
-    assert!(
-        coordinator.contains("Design: session closed, 1 event waiting")
-            && coordinator.contains(&third),
-        "{coordinator}"
-    );
+    assert!(coordinator.contains("Hello?"), "{coordinator}");
     mcp.close().await;
 }
 
-/// The session id in open_session's answer: `…: "<name>" (<id>), …`.
-fn opened_sid(answer: &str) -> String {
-    answer
-        .split_once(" (")
-        .and_then(|(_, rest)| rest.split_once(')'))
-        .map(|(sid, _)| sid.to_string())
-        .unwrap_or_else(|| panic!("no session id in {answer}"))
-}
-
-/// What the owner met: closed helper sessions went on counting at the hub and in the core (the board only hid
-/// them), until open_session was refused `too-many` with four on view. A closed one is archived now and frees
-/// its place; one with an open question stays live until it is answered; one a human archived is no longer
-/// "already open"; a closed name opens a new session. (The hub's limit is lowered to 3 here.)
-#[tokio::test(flavor = "multi_thread")]
-async fn closed_helper_sessions_are_archived_and_free_their_place() {
-    let hub = HubProc::start_with(&[("HUB_LIMIT_HELPERS_PER_MAIN", "3")]).await;
-    let (_hub, mut human, _seat, mut mcp, _group) = seated_on(hub, None, &[]).await;
-    let mut sids = std::collections::BTreeMap::new();
-    for name in ["A", "B", "C"] {
-        let opened = mcp.ok("open_session", json!({ "name": name })).await;
-        assert!(opened.starts_with("child session opened"), "{opened}");
-        sids.insert(name, opened_sid(&opened));
-    }
-    let (refused, failed) = mcp.call("open_session", json!({ "name": "D" })).await;
-    assert!(
-        failed && refused.contains("live helper sessions"),
-        "{refused}"
-    );
-
-    // closed without an open question: archived, its place free
-    let closed = mcp.ok("close_session", json!({ "name": "A" })).await;
-    assert!(closed.contains("closed and archived"), "{closed}");
-    let opened = mcp.ok("open_session", json!({ "name": "D" })).await;
-    assert!(opened.starts_with("child session opened"), "{opened}");
-    sids.insert("D", opened_sid(&opened));
-
-    // closed with an open question: live (and counted) until it is answered
-    let made = mcp
-        .ok(
-            "create_decision",
-            json!({ "session": "B", "title": "Which?", "options": [{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }] }),
-        )
-        .await;
-    let card = made
-        .split_whitespace()
-        .nth(1)
-        .expect("the card's id")
-        .to_string();
-    let closed = mcp.ok("close_session", json!({ "name": "B" })).await;
-    assert!(closed.contains("1 open question of it stays"), "{closed}");
-    let (refused, failed) = mcp.call("open_session", json!({ "name": "E" })).await;
-    assert!(
-        failed && refused.contains("live helper sessions"),
-        "{refused}"
-    );
-    human.sync().await;
-    human
-        .answer(
-            &card,
-            json!({ "answer_action": "answer", "choices": ["b"] }),
-            &["b"],
-            false,
-        )
-        .await
-        .expect("taken");
-    mcp.event("decision").await;
-    let opened = mcp.ok("open_session", json!({ "name": "E" })).await;
-    assert!(opened.starts_with("child session opened"), "{opened}");
-
-    // a session a human archived is over for the connector too: the same name opens a new one
-    human.sync().await;
-    let c = human
-        .groups()
-        .await
-        .into_iter()
-        .find(|g| {
-            g.session
-                .is_some_and(|s| hex(s.session_id.as_bytes()) == sids["C"])
-        })
-        .expect("the human device is a leaf of C")
-        .group;
-    human.archive(&c).await;
-    // (it hears it from the hub's stream; until then the name still finds the live C)
-    let mut reopened = String::new();
-    for _ in 0..300 {
-        reopened = mcp.ok("open_session", json!({ "name": "C" })).await;
-        if !reopened.starts_with("child session already open") {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-    assert!(reopened.starts_with("child session opened"), "{reopened}");
-    assert_ne!(opened_sid(&reopened), sids["C"]);
-
-    // a closed name opens a new session, not the archived one
-    let closed = mcp.ok("close_session", json!({ "name": "D" })).await;
-    assert!(closed.contains("closed and archived"), "{closed}");
-    let opened = mcp.ok("open_session", json!({ "name": "A" })).await;
-    assert!(opened.starts_with("child session opened"), "{opened}");
-    assert_ne!(opened_sid(&opened), sids["A"]);
-    let (refused, failed) = mcp.call("open_session", json!({ "name": "F" })).await;
-    assert!(
-        failed && refused.contains("live helper sessions"),
-        "{refused}"
-    );
-    mcp.close().await;
-}
-
-/// A link past its deadline is refused by the connector itself, at once and with a plain reason, before a slot
-/// is made or the hub is asked.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_expired_link_is_refused_before_anything_is_asked() {
     let hub = HubProc::start().await;
@@ -1560,7 +1329,7 @@ done
 /// A status line follows its question: filing a card links the session's line to it (decision), a line that
 /// says in words that it waits on the human is linked too, and the human's answer turns every line on the card
 /// back to working with what he chose. A session without a line gets one of the connector's own for the card,
-/// which goes with close_card.
+/// which goes with close_card. A helper's lines and the agent's own are apart.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_status_line_follows_its_question_to_the_answer() {
     let (_hub, mut human, _seat, mut mcp, group) = seated().await;
@@ -1568,20 +1337,15 @@ async fn a_status_line_follows_its_question_to_the_answer() {
     let ask = |session: Option<&str>, title: &str| {
         let mut a = json!({ "title": title, "options": [{ "key": "a", "label": "Ring" }, { "key": "b", "label": "Kreis" }] });
         if let Some(s) = session {
-            a["session"] = json!(s);
+            a["helper"] = json!(s);
         }
         a
     };
 
-    // In a helper's session: its one working line waits on the card it files.
-    mcp.ok(
-        "open_session",
-        json!({ "name": "Design", "task": "UNO tile" }),
-    )
-    .await;
+    // A helper's one working line waits on the card it files.
     mcp.ok(
         "set_status",
-        json!({ "session": "Design", "id": "uno", "label": "UNO-Kachel", "state": "working", "detail": "baut Vorschläge" }),
+        json!({ "helper": "Design", "id": "uno", "label": "UNO-Kachel", "state": "working", "detail": "baut Vorschläge" }),
     )
     .await;
     let card = id(&mcp
@@ -1591,7 +1355,7 @@ async fn a_status_line_follows_its_question_to_the_answer() {
     let said = mcp
         .ok(
             "set_status",
-            json!({ "session": "Design", "id": "uno", "state": "working", "detail": "2 Vorschläge, wartet auf deine Wahl" }),
+            json!({ "helper": "Design", "id": "uno", "state": "working", "detail": "2 Vorschläge, wartet auf deine Wahl" }),
         )
         .await;
     assert!(
@@ -1599,19 +1363,15 @@ async fn a_status_line_follows_its_question_to_the_answer() {
         "{said}"
     );
     human.sync().await;
-    let helper = human
-        .groups()
-        .await
-        .into_iter()
-        .find(|g| g.session.is_some_and(|s| !s.parent.is_zero()))
-        .expect("the helper's session")
-        .group;
+    // (the helper's line stands in the agent's own session, named)
+    let helper = group;
     let line = human
-        .register(&helper, "status_line/uno")
+        .register(&helper, &format!("status_line/{}", line_key(Some("Design"), "uno")))
         .await
         .expect("the line");
     assert_eq!(line["state"], "decision", "{line}");
     assert_eq!(line["object_id"], card.as_str(), "{line}");
+    assert_eq!(line["helper"], "Design", "{line}");
 
     // The human answers: the line is working again and says what he chose.
     human
@@ -1627,7 +1387,7 @@ async fn a_status_line_follows_its_question_to_the_answer() {
     for _ in 0..300 {
         human.sync().await;
         line = human
-            .register(&helper, "status_line/uno")
+            .register(&helper, &format!("status_line/{}", line_key(Some("Design"), "uno")))
             .await
             .unwrap_or(Value::Null);
         if line["state"] == "working" {
@@ -1638,8 +1398,18 @@ async fn a_status_line_follows_its_question_to_the_answer() {
     assert_eq!(line["state"], "working", "{line}");
     assert_eq!(line["detail"], "Antwort da: Kreis", "{line}");
     assert_eq!(line["label"], "UNO-Kachel", "{line}");
+    assert_eq!(line["helper"], "Design", "{line}");
+    // (another helper's line of the same id stands apart, as it did in a session of its own before)
+    mcp.ok(
+        "set_status",
+        json!({ "helper": "Other", "id": "uno", "label": "Other", "state": "working" }),
+    )
+    .await;
+    human.sync().await;
+    assert_eq!(human.register(&helper, &format!("status_line/{}", line_key(Some("Other"), "uno"))).await.expect("its line")["label"], "Other");
+    assert_eq!(human.register(&helper, &format!("status_line/{}", line_key(Some("Design"), "uno"))).await.expect("the line")["label"], "UNO-Kachel");
 
-    // In the main session with no line: the connector makes one for the card; the answer turns it to working,
+    // The agent's own question, with no line of its own (the helper's working line is not its): the connector makes one for the card; the answer turns it to working,
     // and close_card takes it away.
     let card = id(&mcp.ok("create_decision", ask(None, "Ship it?")).await);
     let own = format!("status_line/q-{}", &card[..8]);
@@ -1705,16 +1475,11 @@ async fn a_status_line_follows_its_question_to_the_answer() {
 /// is revised to "Done: …".
 #[tokio::test(flavor = "multi_thread")]
 async fn start_task_files_its_card_and_line_and_done_flips_the_line() {
-    let (_hub, mut human, _seat, mut mcp, _group) = seated().await;
-    mcp.ok(
-        "open_session",
-        json!({ "name": "Release", "task": "Migration" }),
-    )
-    .await;
+    let (_hub, mut human, _seat, mut mcp, group) = seated().await;
     let said = mcp
         .ok(
             "start_task",
-            json!({ "session": "Release", "title": "Migration der Tabelle orders", "detail": "testet auf Staging" }),
+            json!({ "helper": "Release", "title": "Migration der Tabelle orders", "detail": "testet auf Staging" }),
         )
         .await;
     let card = said
@@ -1726,7 +1491,7 @@ async fn start_task_files_its_card_and_line_and_done_flips_the_line() {
     let line_id = "migration-der-tabelle-orders";
     assert!(said.contains(&format!("status \"{line_id}\"")), "{said}");
     let listed: Value =
-        serde_json::from_str(&mcp.ok("list_cards", json!({ "session": "Release" })).await)
+        serde_json::from_str(&mcp.ok("list_cards", json!({ "helper": "Release" })).await)
             .expect("JSON");
     assert_eq!(listed[0]["id"], card.as_str(), "{listed}");
     assert_eq!(
@@ -1743,30 +1508,27 @@ async fn start_task_files_its_card_and_line_and_done_flips_the_line() {
         "the agent is told where it is: {said}"
     );
 
+    assert_eq!(listed[0]["helper"], "Release", "{listed}");
+
     human.sync().await;
-    let helper = human
-        .groups()
-        .await
-        .into_iter()
-        .find(|g| g.session.is_some_and(|s| !s.parent.is_zero()))
-        .expect("the helper's session")
-        .group;
-    let key = format!("status_line/{line_id}");
+    let helper = group;
+    let key = format!("status_line/{}", line_key(Some("Release"), line_id));
     let line = human.register(&helper, &key).await.expect("the line");
     assert_eq!(line["state"], "working", "{line}");
+    assert_eq!(line["helper"], "Release", "{line}");
     assert_eq!(line["object_id"], card.as_str(), "{line}");
     assert_eq!(line["detail"], "testet auf Staging", "{line}");
 
     // An update without card_id keeps the link; a question gets a line of its own.
     mcp.ok(
         "set_status",
-        json!({ "session": "Release", "id": line_id, "state": "working", "detail": "läuft auf Produktion" }),
+        json!({ "helper": "Release", "id": line_id, "state": "working", "detail": "läuft auf Produktion" }),
     )
     .await;
     let asked = mcp
         .ok(
             "create_decision",
-            json!({ "session": "Release", "title": "Jetzt ausrollen?", "options": [{ "key": "a", "label": "Jetzt" }, { "key": "b", "label": "Später" }] }),
+            json!({ "helper": "Release", "title": "Jetzt ausrollen?", "options": [{ "key": "a", "label": "Jetzt" }, { "key": "b", "label": "Später" }] }),
         )
         .await;
     let question = asked.split_whitespace().nth(1).expect("an id").to_string();
@@ -1801,7 +1563,7 @@ async fn start_task_files_its_card_and_line_and_done_flips_the_line() {
         "{line}"
     );
     let listed: Value =
-        serde_json::from_str(&mcp.ok("list_cards", json!({ "session": "Release" })).await)
+        serde_json::from_str(&mcp.ok("list_cards", json!({ "helper": "Release" })).await)
             .expect("JSON");
     let done = listed
         .as_array()
@@ -1827,6 +1589,7 @@ async fn start_task_files_its_card_and_line_and_done_flips_the_line() {
         versions.iter().any(|p| p.get("working").is_none() && p["title"].as_str().unwrap().starts_with("Done")),
         "{versions:?}"
     );
+    assert!(versions.iter().all(|p| p["helper"] == "Release"), "every version keeps its helper: {versions:?}");
 
     // A title that already says it ("Arbeite an: …") is kept, the id is given.
     let said = mcp
@@ -2207,13 +1970,13 @@ async fn a_human_message_keeps_a_live_session_online_and_reaches_inbox() {
     mcp.close().await;
 }
 
-/// The agent can know the drawings: both `icon` descriptions list them, a name works without its prefix and an
-/// unknown one is an error that lists the valid ones; a helper named after its topic needs no icon.
+/// The agent can know the drawings: the `icon` description lists them, a name works without its prefix and an
+/// unknown one is an error that lists the valid ones.
 #[tokio::test(flavor = "multi_thread")]
 async fn symbols_are_listed_by_name_and_checked() {
     let (_hub, _human, _seat, mut mcp, _group) = seated().await;
     let listed = mcp.request("tools/list", json!({})).await;
-    for tool in ["introduce", "open_session"] {
+    for tool in ["introduce"] {
         let t = listed["tools"]
             .as_array()
             .unwrap()
@@ -2223,12 +1986,10 @@ async fn symbols_are_listed_by_name_and_checked() {
         let d = t["inputSchema"]["properties"]["icon"]["description"].as_str().unwrap();
         assert!(d.contains("rocket (release)") && d.contains("branch (git)") && !d.contains("{drawings}"), "{tool}: {d}");
     }
-    let (said, bad) = mcp.call("open_session", json!({ "name": "Spacey", "icon": "spaceship" })).await;
+    let (said, bad) = mcp.call("introduce", json!({ "model": "m", "icon": "spaceship" })).await;
     assert!(bad && said.contains("spaceship") && said.contains("rocket (release)"), "{said}");
     let (said, bad) = mcp.call("introduce", json!({ "model": "m", "icon": "nope" })).await;
     assert!(bad && said.contains("burst (spark)"), "{said}");
-    assert!(mcp.ok("open_session", json!({ "name": "CI" })).await.starts_with("child session opened"));
-    assert!(mcp.ok("open_session", json!({ "name": "Other", "icon": "rocket" })).await.starts_with("child session opened"));
     assert_eq!(mcp.ok("introduce", json!({ "model": "m", "icon": "draw:bell" })).await, "noted");
     mcp.close().await;
 }

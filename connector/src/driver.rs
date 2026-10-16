@@ -904,15 +904,6 @@ impl Driver {
         }
     }
 
-    /// Waits for the founding's Commit to be verified and merged, not merely accepted by the hub.
-    pub(crate) async fn group_ready(&self, session: &str) -> bool {
-        self.wait(PLACE_WAIT, |inner| {
-            inner.engine.device().groups().ok()?.into_iter().any(|group| {
-                !group.archived && !group.pending && group.session.is_some_and(|s| hex(s.session_id.as_bytes()) == session)
-            }).then_some(())
-        }).await.is_some()
-    }
-
     /// Whether the hub's stream is open and the order read to its end.
     pub fn is_online(&self) -> bool {
         self.lock().engine.connection() == Connection::Live
@@ -1202,41 +1193,6 @@ impl Driver {
             .await;
         }
         Ok(change)
-    }
-
-    /// A step of the device that puts a request into its outbox (a founding, a Commit, a message): done with the
-    /// engine's device, then waited for like a write. The outbox id of the last entry it made is waited for.
-    pub(crate) async fn device_step<T: Send>(
-        &self,
-        step: impl FnOnce(&mut crate::driver::EngineDevice, u64) -> std::result::Result<T, trommi_core::Error>,
-    ) -> Result<(T, Option<u64>)> {
-        self.active()?;
-        let done = self.call(|engine, ctx| {
-            if !engine.agent_signs() {
-                return Err(trommi_core::Error::Busy);
-            }
-            engine.act(ctx, |device, now| {
-                let before = device.outbox().last().map_or(0, |e| e.id);
-                let value = step(device, now)?;
-                let last = device.outbox().last().map(|e| e.id).filter(|id| *id > before);
-                Ok((value, last))
-            })
-        });
-        let (value, last) = match done {
-            Ok(done) => done,
-            Err(trommi_core::Error::Busy) => {
-                return Err(Fault::new(
-                    "offline",
-                    "the Trommi hub has not been reached since this connector started (no network, or the hub is down); it keeps trying by itself: call the tool again in a minute. Nothing was sent",
-                ))
-            }
-            Err(e) => return Err(e.into()),
-        };
-        let change = match last {
-            Some(id) => self.taken(id, None).await?,
-            None => None,
-        };
-        Ok((value, change))
     }
 
     /// A step of the device that writes nothing to the hub yet (a work-trail step waits in the outbox); `false`

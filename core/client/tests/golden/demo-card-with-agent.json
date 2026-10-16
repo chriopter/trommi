@@ -1,6 +1,6 @@
 {
   "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
-  "session_id": "425412ed2b37ef1052c0a8ecc47949f1",
+  "session_id": "54ddca7af4029f0526984da1e346d833",
   "kind": "decision",
   "state": "open",
   "urgency": 1,
@@ -43,14 +43,36 @@
   },
   "status": "open",
   "from": {
-    "session_id": "425412ed2b37ef1052c0a8ecc47949f1",
-    "name": "Search & Social",
-    "mark": "draw:eye",
+    "session_id": "54ddca7af4029f0526984da1e346d833",
+    "name": "Fernly Website",
+    "mark": "draw:leaf",
     "path": [
       "Fernly",
-      "Fernly Website",
-      "Search & Social"
-    ]
+      "Fernly Website"
+    ],
+    "helper": {
+      "key": "from.helper",
+      "args": {
+        "name": "Search & Social"
+      },
+      "en": "Helper Search & Social"
+    }
+  },
+  "work": {
+    "session_id": "54ddca7af4029f0526984da1e346d833",
+    "mark": "draw:leaf",
+    "says": {
+      "key": "card.work",
+      "args": {
+        "name": "Fernly Website"
+      },
+      "en": "Fernly Website is working on it"
+    },
+    "words": {
+      "key": "card.work.line",
+      "en": "Launch checklist · 14 of 19 done"
+    },
+    "at_ms": 1791469560000
   },
   "asked_ms": 1791468000000,
   "notes": [
@@ -83,38 +105,12 @@
     "back": "takeback",
     "finished": false
   },
-  "note": {
-    "tone": "gone",
-    "receipt": {
-      "key": "card.receipt.waits",
-      "args": {
-        "name": "Search & Social"
-      },
-      "en": "Your answer waits for Search & Social."
-    },
-    "line": {
-      "key": "link.gone.line_silent",
-      "args": {
-        "at": "",
-        "name": "Search & Social",
-        "program": "Claude Code"
-      },
-      "en": "Search & Social is gone: it stopped without a word: its session ended, was killed, or its machine is off the network."
-    },
-    "fix": {
-      "say": {
-        "key": "link.fix.start_again",
-        "en": "Start it again in its folder:"
-      },
-      "code": "claude --continue"
-    }
-  },
   "ask": {
-    "key": "card.ask.gone",
+    "key": "card.ask",
     "args": {
-      "name": "Search & Social"
+      "name": "Fernly Website"
     },
-    "en": "Search & Social is gone. What you write waits for it…"
+    "en": "Ask Fernly Website something, or say what is missing…"
   },
   "star_says": {
     "key": "card.star",
@@ -142,9 +138,9 @@
         "label": {
           "key": "event.asked_by",
           "args": {
-            "name": "Search & Social"
+            "name": "Fernly Website"
           },
-          "en": "Search & Social asked"
+          "en": "Fernly Website asked"
         },
         "text": "Social card for the launch: photo or illustration?",
         "echo": false,

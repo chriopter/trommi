@@ -10,7 +10,8 @@
 use super::words::earliest;
 use crate::model::types::{Card, PermissionRequest};
 use crate::model::Model;
-use crate::sessions::{teams_in_order, session_list, SessionRow};
+use crate::helpers::Helper;
+use crate::sessions::{teams_in_order, session_list_and_helpers, SessionRow};
 use serde_json::Value;
 use std::cell::{Cell, OnceCell};
 use std::collections::HashMap;
@@ -53,9 +54,6 @@ pub struct Lens {
     /// The teams whose goals are folded to their first line on this device (web localStorage
     /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
     pub goals_folded: Vec<String>,
-    /// The main sessions whose helpers this device shows unfolded (`Action::FoldHelpers`; iOS keeps them in
-    /// @AppStorage `trommi-stacks-open` and sends them again at the start).
-    pub unfolded: Vec<String>,
     /// What this device has shown of each session's words: the newest envelope number of its agent's words when
     /// its chat was last in view, by session key (the cache's `seen`). None until it is read: nothing counts as
     /// unread meanwhile.
@@ -161,8 +159,13 @@ pub struct Board<'a> {
     pub now: u64,
     /// Every session of the list, in its order (archived ones too).
     pub agents: Vec<Agent>,
-    /// By session key.
+    /// By session key (a helper session of before: its main's, `sessions::LegacyHelper`).
     pub by_key: HashMap<String, usize>,
+    /// The helper sessions of before whose main has an entry: their key to the helper's name (for their cards and
+    /// their Chat, archived ones too).
+    pub legacy: std::collections::BTreeMap<String, String>,
+    /// Of them, the ones off the Desk (archived): no helper of the session's list.
+    pub legacy_archived: std::collections::BTreeSet<String>,
     /// By the board's id of a session (`SessionRow::id`).
     pub by_id: HashMap<String, usize>,
     /// The teams in the menu's order; empty in a room without teams.
@@ -174,6 +177,7 @@ pub struct Board<'a> {
     /// How many of his answers each session has not picked up for [`UNHEARD_MS`], by index of `agents`.
     pub unheard: HashMap<usize, u32>,
     wake: Cell<Option<u64>>,
+    helpers: OnceCell<HashMap<usize, Vec<Helper>>>,
     numbers: OnceCell<HashMap<String, u32>>,
     assets: OnceCell<super::links::Assets>,
 }
@@ -221,7 +225,7 @@ impl<'a> Board<'a> {
             Some(d) if has(d) => d.to_string(),
             _ => first.id.clone(),
         });
-        let rows = session_list(model, lens.reading);
+        let (rows, legacy_rows) = session_list_and_helpers(model, lens.reading);
         let agents: Vec<Agent> = rows
             .into_iter()
             .map(|row| {
@@ -234,7 +238,7 @@ impl<'a> Board<'a> {
                         Some(s) => row.session_id.as_deref() == Some(s),
                         None => {
                             let dev = c.get("agent_device_id").and_then(Value::as_str).filter(|s| !s.is_empty());
-                            dev.is_some() && dev == row.agent_device_id.as_deref() && row.parent.is_none()
+                            dev.is_some() && dev == row.agent_device_id.as_deref()
                         }
                     },
                 };
@@ -253,7 +257,19 @@ impl<'a> Board<'a> {
                 }
             })
             .collect();
-        let by_key: HashMap<String, usize> = agents.iter().enumerate().map(|(i, a)| (a.row.key.clone(), i)).collect();
+        let mut by_key: HashMap<String, usize> = agents.iter().enumerate().map(|(i, a)| (a.row.key.clone(), i)).collect();
+        // (a helper session of before has no entry: its cards count under its main)
+        let mut legacy = std::collections::BTreeMap::new();
+        let mut legacy_archived = std::collections::BTreeSet::new();
+        for h in legacy_rows {
+            if let Some(&i) = by_key.get(&h.main) {
+                if h.archived {
+                    legacy_archived.insert(h.key.clone());
+                }
+                legacy.insert(h.key.clone(), h.name);
+                by_key.insert(h.key, i);
+            }
+        }
         let by_id: HashMap<String, usize> = agents.iter().enumerate().map(|(i, a)| (a.row.id.clone(), i)).collect();
 
         let mut all_fresh = Vec::new();
@@ -287,12 +303,15 @@ impl<'a> Board<'a> {
             now,
             agents,
             by_key,
+            legacy,
+            legacy_archived,
             by_id,
             teams,
             team,
             all_fresh,
             unheard: HashMap::new(),
             wake: Cell::new(None),
+            helpers: OnceCell::new(),
             numbers: OnceCell::new(),
             assets: OnceCell::new(),
         };
@@ -329,6 +348,48 @@ impl<'a> Board<'a> {
             filed.into_iter().enumerate().map(|(i, (_, id))| (id.to_string(), i as u32 + 1)).collect()
         });
         all.get(id).copied().unwrap_or(0)
+    }
+
+    /// The helper a card comes from (`helpers.rs`).
+    pub fn helper_of(&self, c: &Card) -> Option<String> {
+        crate::helpers::of_card(c, &self.legacy)
+    }
+
+    /// A session's helpers, in the order they first showed (`helpers.rs`): none for one without.
+    pub fn helpers(&self, agent: usize) -> &[Helper] {
+        let all = self.helpers.get_or_init(|| {
+            let m = self.model;
+            let fresh: std::collections::HashSet<&str> = self.all_fresh.iter().map(|f| f.id.as_str()).collect();
+            let mut cards: HashMap<usize, Vec<crate::helpers::HelperCard>> = HashMap::new();
+            for c in m.cards.values().filter(|c| c.object_state != "closed" && !c.session_id.as_ref().is_some_and(|s| self.legacy_archived.contains(s))) {
+                let Some(name) = self.helper_of(c) else { continue };
+                let Some(&i) = self.by_key.get(key_of(&c.session_id, &c.agent_device_id)) else { continue };
+                cards.entry(i).or_default().push((c, Some(name), fresh.contains(c.object_id.as_str())));
+            }
+            let mut out = HashMap::new();
+            for (i, a) in self.agents.iter().enumerate() {
+                let lines = m.sessions.get(&a.row.key).map(|s| s.status_lines.as_slice()).unwrap_or(&[]);
+                let now = self.now;
+                let shown = |t: &crate::model::types::StatusLine| -> Option<&str> {
+                    let state = a.row.lines.get(&t.id)?.as_str();
+                    let age = now.saturating_sub(t.updated_at);
+                    match state {
+                        "working" | "decision" | "later" => Some(state),
+                        "done" if age < super::session::WORKING_WINDOW_MS => {
+                            self.wake_at(Some(t.updated_at + super::session::WORKING_WINDOW_MS));
+                            Some(state)
+                        }
+                        _ => None,
+                    }
+                };
+                let list = crate::helpers::helpers_of(lines, shown, cards.remove(&i).unwrap_or_default());
+                if !list.is_empty() {
+                    out.insert(i, list);
+                }
+            }
+            out
+        });
+        all.get(&agent).map(Vec::as_slice).unwrap_or(&[])
     }
 
     /// The board's Artifacts, for naming the links to them.

@@ -100,9 +100,9 @@
             "type": "boolean",
             "description": "With card_id on a handed-back card: true puts it before the human again unchanged; left out, the card stays with you. \"Explain\" answers present it by themselves."
           },
-          "session": {
+          "helper": {
             "type": "string",
-            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
+            "description": "A helper (your subagent) this is for, by its short name (e.g. \"Design\"): it shows inside your session with that name, and answers come to you with meta helper. Left out: yours."
           }
         },
         "required": [
@@ -327,9 +327,9 @@
             ],
             "description": "Key of your pick (a list with multiple: true); shown circled. Leave out without a preference."
           },
-          "session": {
+          "helper": {
             "type": "string",
-            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
+            "description": "A helper (your subagent) this is for, by its short name (e.g. \"Design\"): it shows inside your session with that name, and answers come to you with meta helper. Left out: yours."
           }
         },
         "required": [
@@ -471,9 +471,9 @@
             "type": "string",
             "description": "What waits on this; expected for high and critical"
           },
-          "session": {
+          "helper": {
             "type": "string",
-            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
+            "description": "A helper (your subagent) this is for, by its short name (e.g. \"Design\"): it shows inside your session with that name, and answers come to you with meta helper. Left out: yours."
           }
         },
         "required": [
@@ -930,9 +930,9 @@
             ],
             "description": "Key of your pick (a list with multiple: true); shown circled. Leave out without a preference."
           },
-          "session": {
+          "helper": {
             "type": "string",
-            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
+            "description": "A helper (your subagent) this is for, by its short name (e.g. \"Design\"): it shows inside your session with that name, and answers come to you with meta helper. Left out: yours."
           }
         },
         "required": [
@@ -1061,9 +1061,9 @@
             "type": "string",
             "description": "The card: for decision the question, the line turns working (yellow) with the choice when it is answered; for working the task's \"Working on\" card, the line turns done when that card is revised to \"Done: …\"."
           },
-          "session": {
+          "helper": {
             "type": "string",
-            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
+            "description": "A helper (your subagent) this is for, by its short name (e.g. \"Design\"): it shows inside your session with that name, and answers come to you with meta helper. Left out: yours."
           }
         },
         "required": [
@@ -1089,9 +1089,9 @@
             "type": "string",
             "description": "The card's title in the human's language, e.g. \"Arbeite an: Login-Seite\"; without \"Working on:\" or \"Arbeite an:\" at its start, \"Working on: \" is put in front"
           },
-          "session": {
+          "helper": {
             "type": "string",
-            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
+            "description": "A helper (your subagent) this is for, by its short name (e.g. \"Design\"): it shows inside your session with that name, and answers come to you with meta helper. Left out: yours."
           },
           "detail": {
             "type": "string",
@@ -1120,9 +1120,9 @@
           "id": {
             "type": "string"
           },
-          "session": {
+          "helper": {
             "type": "string",
-            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
+            "description": "A helper (your subagent) this is for, by its short name (e.g. \"Design\"): it shows inside your session with that name, and answers come to you with meta helper. Left out: yours."
           }
         }
       }
@@ -1148,18 +1148,6 @@
           "icon": {
             "type": "string",
             "description": "Your symbol: one of {drawings}. Left out, one fitting the session's name is used; one the human picked stays."
-          },
-          "parent": {
-            "type": "string",
-            "description": "As a helper: id or name of your main session; \"\" to stand alone."
-          },
-          "main": {
-            "type": "boolean",
-            "description": "true: you lead helper sessions (implied once you have helpers)."
-          },
-          "session": {
-            "type": "string",
-            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
           }
         },
         "required": [
@@ -1176,9 +1164,9 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "session": {
+          "helper": {
             "type": "string",
-            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
+            "description": "Only the cards of this helper (your subagent), by its short name. Left out: all of yours."
           }
         }
       }
@@ -1220,9 +1208,9 @@
             "type": "string",
             "description": "Optional line shown with the link"
           },
-          "session": {
+          "helper": {
             "type": "string",
-            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
+            "description": "A helper (your subagent) this is for, by its short name (e.g. \"Design\"): it shows inside your session with that name, and answers come to you with meta helper. Left out: yours."
           }
         }
       }
@@ -1255,68 +1243,6 @@
         },
         "required": [
           "id"
-        ]
-      }
-    },
-    {
-      "_meta": {
-        "anthropic/alwaysLoad": true
-      },
-      "name": "open_session",
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false,
-        "openWorldHint": false
-      },
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "The helper's short name, shown on the board, e.g. \"Design\""
-          },
-          "task": {
-            "type": "string",
-            "description": "What the helper works on, one line"
-          },
-          "icon": {
-            "type": "string",
-            "description": "The helper's symbol: one of {drawings}. Left out, one fitting its name is used (CI, Web, iOS, Design …)."
-          },
-          "model": {
-            "type": "string",
-            "description": "The model the helper runs as"
-          }
-        },
-        "required": [
-          "name"
-        ]
-      }
-    },
-    {
-      "_meta": {
-        "anthropic/alwaysLoad": true
-      },
-      "name": "close_session",
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false,
-        "openWorldHint": false
-      },
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "The helper's short name, as given to open_session"
-          },
-          "summary": {
-            "type": "string",
-            "description": "Optional: the helper's result, posted before closing"
-          }
-        },
-        "required": [
-          "name"
         ]
       }
     },
@@ -1373,12 +1299,7 @@
     },
     "inputSchema": {
       "type": "object",
-      "properties": {
-        "session": {
-          "type": "string",
-          "description": "Optional, without a coordinator: a child session (e.g. \"Design\"); only its events, held for you 10 minutes per call."
-        }
-      }
+      "properties": {}
     }
   },
   "connect": {
@@ -1403,18 +1324,6 @@
       "additionalProperties": false
     }
   },
-  "session_tools": [
-    "reply",
-    "create_decision",
-    "create_info",
-    "merge_cards",
-    "set_status",
-    "start_task",
-    "clear_status",
-    "introduce",
-    "list_cards",
-    "publish_asset"
-  ],
   "examples": {
     "reply": {
       "text": "Three ways to run the migration. **Tonight at 2** is the cheapest: 40 seconds of lock while hardly anyone is online.",
@@ -1539,7 +1448,7 @@
     },
     "start_task": {
       "title": "Migration of the orders table",
-      "session": "Release",
+      "helper": "Release",
       "detail": "testing on staging"
     },
     "clear_status": {
@@ -1563,15 +1472,6 @@
     "share_asset": {
       "id": "q3n0XWb1kq0lYb6m3v8K2A",
       "expires_hours": 72
-    },
-    "open_session": {
-      "name": "Design",
-      "task": "Pictures for the landing page",
-      "icon": "brush"
-    },
-    "close_session": {
-      "name": "Design",
-      "summary": "Three landing page pictures are in out/landing/, the blue one recommended"
     }
   },
   "events": [

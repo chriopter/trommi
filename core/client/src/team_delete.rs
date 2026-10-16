@@ -26,7 +26,7 @@
 //! the board (`Known`), so a step that was done already (on this device or another) is never asked for again, and a
 //! delete broken off anywhere goes on from where it stands. The app does the step it is given and asks again.
 use crate::model::Model;
-use crate::sessions::{session_list, SessionRow};
+use crate::sessions::{session_list_and_helpers, SessionRow};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -172,7 +172,7 @@ impl Model {
 
     /// What team `team_id` holds, counted (for the confirm). `board`: the team's board as read, if it is.
     pub fn team_contents(&self, team_id: &str, board: Option<&BoardKnown>) -> Counts {
-        let rows = session_list(self, false);
+        let rows = self.rows_with_helpers();
         let (counts, _, _) = self.team_left(team_id, &rows, board, &BTreeSet::new());
         counts
     }
@@ -181,7 +181,7 @@ impl Model {
     pub fn team_delete_plan(&self, team_id: &str, known: &Known, by: &str, now: u64) -> Plan {
         let teams = teams_of(self);
         let register = register_of(team_id);
-        let rows = session_list(self, false);
+        let rows = self.rows_with_helpers();
         let (left, units, work) = self.team_left(team_id, &rows, known.board.as_ref(), &known.files_gone);
         let plan = |step: Step, total: u64| Plan {
             step,
@@ -248,6 +248,26 @@ impl Model {
         plan(step, total)
     }
 
+    /// The session list, and a row for each helper session of before (`sessions::LegacyHelper`, which the list
+    /// leaves out): it stands on its main's team and goes with it.
+    fn rows_with_helpers(&self) -> Vec<SessionRow> {
+        let (mut rows, legacy) = session_list_and_helpers(self, false);
+        for h in legacy {
+            let Some(main) = rows.iter().find(|r| r.key == h.main) else { continue };
+            let row = SessionRow {
+                key: h.key.clone(),
+                session_id: Some(h.key.clone()),
+                agent_device_id: self.sessions.get(&h.key).and_then(|s| s.agent_device_id.clone()),
+                name: h.name.clone(),
+                team: main.team.clone(),
+                archived: h.archived,
+                ..Default::default()
+            };
+            rows.push(row);
+        }
+        rows
+    }
+
     /// What is left on the team: the counts, the units of work left (for the progress) and the work itself.
     fn team_left(
         &self,
@@ -275,7 +295,7 @@ impl Model {
         let mut w = Work::default();
         let mut files = BTreeSet::new();
         for r in here.iter() {
-            match (r.archived, r.parent.is_some() || !r.main) {
+            match (r.archived, !r.main) {
                 (true, _) => c.archived += 1,
                 (false, true) => c.helpers += 1,
                 (false, false) => c.sessions += 1,

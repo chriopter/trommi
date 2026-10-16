@@ -8,161 +8,35 @@
   "blocked": false,
   "talk": [
     {
-      "id": "e784000",
-      "from_me": true,
-      "text": "Morning. Plan for the week: pricing on staging, onboarding, then the launch on Monday.",
-      "time_ms": 1791376200000,
-      "heard": false,
-      "pending": false,
-      "kind": "user",
-      "number": 784000,
-      "day": {
-        "key": "day.yesterday",
-        "en": "Yesterday"
-      },
-      "cont": false,
-      "terminal": false,
-      "scribble": false
-    },
-    {
-      "id": "e784060",
+      "id": "e860920",
       "from_me": false,
-      "text": "On it. I split it up:\n\n- **Landing Page**: the hero and the sections\n- **Copywriting**: plan names, buttons, the e-mails\n- **Onboarding**: sign-up in three steps\n- **Page Speed** and **Testing** in parallel\n- **Search & Social** last\n\nQuestions come to your Desk as cards.",
-      "time_ms": 1791376260000,
-      "heard": false,
-      "pending": false,
-      "kind": "agent",
-      "number": 784060,
-      "cont": false,
-      "terminal": false,
-      "scribble": false
-    },
-    {
-      "id": "v787600a",
-      "from_me": false,
-      "text": "",
-      "time_ms": 1791379800000,
-      "heard": false,
-      "pending": false,
-      "kind": "event",
-      "number": 787600,
-      "cont": false,
-      "terminal": false,
-      "card": {
-        "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
-        "number": 14,
-        "title": "Remind in the morning or in the evening?"
-      },
-      "event": {
-        "kind": "decided",
-        "label": {
-          "key": "event.you_chose",
-          "en": "You chose"
-        },
-        "about": "Remind in the morning or in the evening?",
-        "text": "Morning, 8:00",
-        "echo": false,
-        "asked": false
-      },
-      "scribble": false
-    },
-    {
-      "id": "e787900",
-      "from_me": false,
-      "text": "Morning reminders at 8:00 are the default now, in the browser’s time zone.",
-      "time_ms": 1791380100000,
-      "heard": false,
-      "pending": false,
-      "kind": "agent",
-      "number": 787900,
-      "cont": false,
-      "terminal": false,
-      "scribble": false
-    },
-    {
-      "id": "v788200d",
-      "from_me": false,
-      "text": "",
-      "time_ms": 1791380400000,
-      "heard": false,
-      "pending": false,
-      "kind": "event",
-      "number": 788200,
-      "cont": false,
-      "terminal": false,
-      "card": {
-        "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
-        "number": 14,
-        "title": "Remind in the morning or in the evening?"
-      },
-      "event": {
-        "kind": "decided",
-        "label": {
-          "key": "event.you_chose",
-          "en": "You chose"
-        },
-        "about": "Remind in the morning or in the evening?",
-        "text": "Morning, 8:00",
-        "echo": true,
-        "asked": false,
-        "said": [
-          {
-            "key": "deed.note",
-            "args": {
-              "note": "I water before work."
-            },
-            "en": "“I water before work.”"
-          }
-        ]
-      },
-      "scribble": false
-    },
-    {
-      "id": "e811600",
-      "from_me": false,
-      "text": "Pricing is on staging with the three plans.",
-      "time_ms": 1791403800000,
+      "text": "Yes: the phone moves under the buttons and the big plant goes. This is the page from top to bottom:",
+      "time_ms": 1791453120000,
       "heard": false,
       "pending": false,
       "files": [
-        "32411e6dafa3269067bac5b4f8837ef3"
+        "802fca719c40014777ae8bbf02deb82c"
       ],
       "kind": "agent",
-      "number": 811600,
+      "number": 860920,
       "cont": false,
       "terminal": false,
-      "scribble": false
+      "scribble": false,
+      "helper": "Landing Page"
     },
     {
-      "id": "e841601",
-      "from_me": true,
-      "text": "Nice. Where is the checklist?",
-      "time_ms": 1791433800000,
-      "heard": false,
-      "pending": false,
-      "kind": "user",
-      "number": 841601,
-      "day": {
-        "key": "day.today",
-        "en": "Today"
-      },
-      "cont": false,
-      "terminal": false,
-      "scribble": false
-    },
-    {
-      "id": "e841720",
+      "id": "e865600",
       "from_me": false,
-      "text": "A page with all 19 items; I tick them off as helpers finish.",
-      "time_ms": 1791433920000,
+      "text": "44 tests: sign-up, first plant, checkout with three test cards, reminders, sharing.",
+      "time_ms": 1791457800000,
       "heard": false,
       "pending": false,
-      "kind": "artifact",
-      "number": 841720,
+      "kind": "agent",
+      "number": 865600,
       "cont": false,
       "terminal": false,
-      "published": "308b09b5ec295aea43082f237e3a896c",
-      "scribble": false
+      "scribble": false,
+      "helper": "Testing"
     },
     {
       "id": "v871900i",
@@ -210,6 +84,78 @@
       "cont": false,
       "terminal": false,
       "scribble": false
+    },
+    {
+      "id": "e873101",
+      "from_me": false,
+      "text": "Largest paint 1.4 s, first load 98 kB. Info card is on your Desk.",
+      "time_ms": 1791465300000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 873101,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Page Speed"
+    },
+    {
+      "id": "v873401i",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791459000000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 873401,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "185b315a758472a6fc1faed37e49f875",
+        "number": 31,
+        "title": "Landing page: 1.4 s on a mid-range phone over 4G"
+      },
+      "event": {
+        "kind": "info",
+        "label": {
+          "key": "event.info_by",
+          "args": {
+            "name": "Fernly Website"
+          },
+          "en": "Fernly Website wrote"
+        },
+        "text": "Landing page: 1.4 s on a mid-range phone over 4G",
+        "echo": false,
+        "asked": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "e873640",
+      "from_me": true,
+      "text": "Good enough for Monday.",
+      "time_ms": 1791465840000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 873640,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e873700",
+      "from_me": false,
+      "text": "Then I stop here. Next would be the fonts (42 kB), after the launch.",
+      "time_ms": 1791465900000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 873700,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Page Speed"
     },
     {
       "id": "e873880",
@@ -388,6 +334,119 @@
       "scribble": false
     },
     {
+      "id": "v874480a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791465120000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 874480,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "7e86fa6e752b2ff5cf636658aa14f1f0",
+        "number": 34,
+        "title": "Ask for notifications on step 3, or after the first watering?"
+      },
+      "row": {
+        "id": "7e86fa6e752b2ff5cf636658aa14f1f0",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Ask for notifications on step 3, or after the first watering?",
+        "words": "On step 3 more people say yes; after the first watering they know why we ask.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791465120000,
+        "from": {
+          "session_id": "54ddca7af4029f0526984da1e346d833",
+          "name": "Fernly Website",
+          "mark": "draw:leaf",
+          "path": [
+            "Fernly",
+            "Fernly Website"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Onboarding"
+            },
+            "en": "Helper Onboarding"
+          }
+        },
+        "run": 0,
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "step-3",
+              "label": "On step 3",
+              "thumb": "no",
+              "thumbs": false,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "On step 3"
+                },
+                "en": "On step 3"
+              }
+            },
+            {
+              "key": "after",
+              "label": "After the first watering",
+              "thumb": "yes",
+              "thumbs": false,
+              "lead": true,
+              "advised": true,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "tip": {
+                "key": "tile.recommended",
+                "en": "Recommended"
+              },
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "After the first watering"
+                },
+                "en": "After the first watering"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "e874481",
+      "from_me": false,
+      "text": "When we ask for notifications is the last open point. On your Desk.",
+      "time_ms": 1791466680000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 874481,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Onboarding"
+    },
+    {
       "id": "e874901",
       "from_me": true,
       "text": "People keep asking for a summary by mail, by the way.",
@@ -510,6 +569,400 @@
       "scribble": false
     },
     {
+      "id": "v875620a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791462240000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 875620,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "daa202f98097523fa1f1fe18068f8322",
+        "number": 40,
+        "title": "What should the sign-up button say?"
+      },
+      "row": {
+        "id": "daa202f98097523fa1f1fe18068f8322",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "What should the sign-up button say?",
+        "words": "“Start free” is short and known. “Add your first plant” says what happens next.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791462240000,
+        "from": {
+          "session_id": "54ddca7af4029f0526984da1e346d833",
+          "name": "Fernly Website",
+          "mark": "draw:leaf",
+          "path": [
+            "Fernly",
+            "Fernly Website"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Copywriting"
+            },
+            "en": "Helper Copywriting"
+          }
+        },
+        "run": 0,
+        "media": [
+          {
+            "file_id": "8e7b3c0820dd6aa84a00b08e6545c8a6",
+            "kind": "image"
+          },
+          {
+            "file_id": "054e9e60c4233ff9af85d19539690062",
+            "kind": "image"
+          }
+        ],
+        "media_says": {
+          "key": "row.media",
+          "args": {
+            "n": "2"
+          },
+          "en": "Look at 2 pictures and videos"
+        },
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "start-free",
+              "label": "Start free",
+              "thumb": "no",
+              "thumbs": false,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Start free"
+                },
+                "en": "Start free"
+              }
+            },
+            {
+              "key": "first-plant",
+              "label": "Add your first plant",
+              "thumb": "yes",
+              "thumbs": false,
+              "lead": true,
+              "advised": true,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "tip": {
+                "key": "tile.recommended",
+                "en": "Recommended"
+              },
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Add your first plant"
+                },
+                "en": "Add your first plant"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "e875621",
+      "from_me": false,
+      "text": "One more: the button on step 1. Both versions are on your Desk, each with its picture.",
+      "time_ms": 1791467820000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 875621,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Copywriting"
+    },
+    {
+      "id": "e875740",
+      "from_me": false,
+      "text": "The social card is on your Desk: photo or illustration.",
+      "time_ms": 1791467940000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 875740,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Search & Social"
+    },
+    {
+      "id": "v875800a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791468000000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 875800,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        "number": 41,
+        "title": "Social card for the launch: photo or illustration?"
+      },
+      "event": {
+        "kind": "handed",
+        "label": {
+          "key": "event.handed",
+          "en": "With the agent"
+        },
+        "about": "Social card for the launch: photo or illustration?",
+        "echo": false,
+        "asked": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "e875801",
+      "from_me": true,
+      "text": "Make the phone a little smaller on laptops.",
+      "time_ms": 1791468000000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 875801,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "v876040a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791460800000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 876040,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "a38afef6dbdd056db8042980f2b83336",
+        "number": 43,
+        "title": "Which hero for the landing page?"
+      },
+      "row": {
+        "id": "a38afef6dbdd056db8042980f2b83336",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Which hero for the landing page?",
+        "words": "Same words, two layouts. The split one shows the app on a phone right away.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791460800000,
+        "from": {
+          "session_id": "54ddca7af4029f0526984da1e346d833",
+          "name": "Fernly Website",
+          "mark": "draw:leaf",
+          "path": [
+            "Fernly",
+            "Fernly Website"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Landing Page"
+            },
+            "en": "Helper Landing Page"
+          }
+        },
+        "run": 0,
+        "media": [
+          {
+            "file_id": "689be4d14b8c7e0929da081e6bc78714",
+            "kind": "image"
+          },
+          {
+            "file_id": "2696c38e6cc7b29aa0904b353c4d5855",
+            "kind": "image"
+          }
+        ],
+        "media_says": {
+          "key": "row.media",
+          "args": {
+            "n": "2"
+          },
+          "en": "Look at 2 pictures and videos"
+        },
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "centered",
+              "label": "Centered",
+              "thumb": "no",
+              "thumbs": false,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Centered"
+                },
+                "en": "Centered"
+              }
+            },
+            {
+              "key": "split",
+              "label": "Split",
+              "thumb": "yes",
+              "thumbs": false,
+              "lead": true,
+              "advised": true,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "tip": {
+                "key": "tile.recommended",
+                "en": "Recommended"
+              },
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Split"
+                },
+                "en": "Split"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876041",
+      "from_me": false,
+      "text": "Done, 10% smaller from 1280 px. Both versions on your Desk again.",
+      "time_ms": 1791468240000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876041,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Landing Page"
+    },
+    {
+      "id": "e876101",
+      "from_me": true,
+      "text": "Neither. Show the app on a phone, with the drawn plants behind it.",
+      "time_ms": 1791468300000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 876101,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        "number": 41,
+        "title": "Social card for the launch: photo or illustration?"
+      },
+      "deed": {
+        "kind": "handed_back",
+        "label": {
+          "key": "event.handed_back",
+          "en": "You handed it back"
+        },
+        "about": "Social card for the launch: photo or illustration?",
+        "echo": false,
+        "asked": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876160",
+      "from_me": false,
+      "text": "Background: on a 13-inch laptop the centered hero shows the headline and the buttons, the shelf only after scrolling.",
+      "time_ms": 1791468360000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876160,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "a38afef6dbdd056db8042980f2b83336",
+        "number": 43,
+        "title": "Which hero for the landing page?"
+      },
+      "details": "Measured at three window heights:\n\n| Window | Centered: plants visible | Split: app visible |\n| --- | --- | --- |\n| 1440 × 900 | half | all of it |\n| 1280 × 720 | no | most |\n| 390 × 844 | no | after one swipe |",
+      "scribble": false
+    },
+    {
+      "id": "e876220",
+      "from_me": false,
+      "text": "Good, that is what people will see first anyway. I am making the new card now.",
+      "time_ms": 1791468420000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876220,
+      "cont": true,
+      "terminal": false,
+      "card": {
+        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        "number": 41,
+        "title": "Social card for the launch: photo or illustration?"
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876221",
+      "from_me": false,
+      "text": "Reworking it as you said: the app on a phone, drawn plants behind.",
+      "time_ms": 1791468420000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876221,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Search & Social"
+    },
+    {
       "id": "e876340",
       "from_me": true,
       "text": "What blocks Monday?",
@@ -522,6 +975,42 @@
       "terminal": false,
       "scribble": false,
       "written_ms": 1791468000000
+    },
+    {
+      "id": "e876400",
+      "from_me": true,
+      "text": "Does the phone in the split one cost loading time?",
+      "time_ms": 1791468600000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 876400,
+      "cont": true,
+      "terminal": false,
+      "card": {
+        "id": "a38afef6dbdd056db8042980f2b83336",
+        "number": 43,
+        "title": "Which hero for the landing page?"
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876460",
+      "from_me": false,
+      "text": "No. It is drawn in HTML and CSS, no picture: 6 kB more.",
+      "time_ms": 1791468660000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876460,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "a38afef6dbdd056db8042980f2b83336",
+        "number": 43,
+        "title": "Which hero for the landing page?"
+      },
+      "scribble": false
     },
     {
       "id": "v876520a",
@@ -647,6 +1136,84 @@
       "scribble": false
     },
     {
+      "id": "e876881",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791469081000,
+      "heard": false,
+      "pending": false,
+      "kind": "work",
+      "number": 876881,
+      "cont": false,
+      "terminal": false,
+      "work": {
+        "turn": "e2e-1",
+        "state": "done",
+        "head": {
+          "key": "work.done_took",
+          "args": {
+            "took": "18 s"
+          },
+          "en": "Worked 18 s"
+        },
+        "sum": {
+          "key": "work.sum",
+          "args": {
+            "failed": "1",
+            "helpers": "0",
+            "steps": "3"
+          },
+          "en": "3 steps · 1 with an error"
+        },
+        "lines": [
+          {
+            "id": "toolu_cea6ee17f4be",
+            "kind": "step",
+            "state": "failed",
+            "says": {
+              "key": "work.step.failed",
+              "en": "failed"
+            },
+            "tool": "Bash",
+            "what": "npx playwright test --project=webkit",
+            "took": "7 min"
+          },
+          {
+            "id": "toolu_5735fec0f961",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Read",
+            "what": "tests/checkout.spec.ts",
+            "took": "1 s"
+          },
+          {
+            "id": "say:e2e-1:2",
+            "kind": "text",
+            "state": "",
+            "text": "The Stripe iframe loads after the 10 s timeout in WebKit, about one run in six."
+          },
+          {
+            "id": "toolu_161e672ea85b",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Bash",
+            "what": "npx playwright test checkout --project=webkit --repeat-each=12",
+            "took": "6 min"
+          }
+        ]
+      },
+      "scribble": false,
+      "helper": "Testing"
+    },
+    {
       "id": "e876940",
       "from_me": false,
       "text": "Status page link in the footer, the 404 page, two redirects from the beta domain, and the Safari test. All under an hour except the test.",
@@ -663,6 +1230,119 @@
         "title": "Launch on Monday at 09:00, or on Tuesday?"
       },
       "scribble": false
+    },
+    {
+      "id": "v877240a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791467280000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 877240,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "9c9f4031e513b80e68c67139a12e408b",
+        "number": 49,
+        "title": "Skip the flaky Safari checkout test until after the launch?"
+      },
+      "row": {
+        "id": "9c9f4031e513b80e68c67139a12e408b",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Skip the flaky Safari checkout test until after the launch?",
+        "words": "It fails 1 run in 6, only in WebKit, only on the payment iframe. The flow works by hand.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791467280000,
+        "from": {
+          "session_id": "54ddca7af4029f0526984da1e346d833",
+          "name": "Fernly Website",
+          "mark": "draw:leaf",
+          "path": [
+            "Fernly",
+            "Fernly Website"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Testing"
+            },
+            "en": "Helper Testing"
+          }
+        },
+        "run": 0,
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "keep",
+              "label": "Keep it blocking",
+              "thumb": "no",
+              "thumbs": false,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Keep it blocking"
+                },
+                "en": "Keep it blocking"
+              }
+            },
+            {
+              "key": "skip",
+              "label": "Skip until Tuesday",
+              "thumb": "yes",
+              "thumbs": false,
+              "lead": true,
+              "advised": true,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "tip": {
+                "key": "tile.recommended",
+                "en": "Recommended"
+              },
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Skip until Tuesday"
+                },
+                "en": "Skip until Tuesday"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "e877241",
+      "from_me": false,
+      "text": "41 of 44 green; the Safari checkout test fails 2 of 12 runs, always on the iframe. Question on your Desk.",
+      "time_ms": 1791469440000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 877241,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Testing"
     },
     {
       "id": "e877361",
@@ -737,6 +1417,238 @@
         ]
       },
       "scribble": false
+    },
+    {
+      "id": "v877490a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791461880000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 877490,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "58f19345f724a39460db70a4377995c8",
+        "number": 53,
+        "title": "Which drawing welcomes new people?"
+      },
+      "row": {
+        "id": "58f19345f724a39460db70a4377995c8",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Which drawing welcomes new people?",
+        "words": "The first screen of sign-up gets one illustration. Both are drawn and ready.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791461880000,
+        "from": {
+          "session_id": "54ddca7af4029f0526984da1e346d833",
+          "name": "Fernly Website",
+          "mark": "draw:leaf",
+          "path": [
+            "Fernly",
+            "Fernly Website"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Onboarding"
+            },
+            "en": "Helper Onboarding"
+          }
+        },
+        "run": 0,
+        "media": [
+          {
+            "file_id": "574e8196f2e02ec8f2f70e688e486e9d",
+            "kind": "image"
+          },
+          {
+            "file_id": "e64cf09f6137c36798d71ba354434af1",
+            "kind": "image"
+          }
+        ],
+        "media_says": {
+          "key": "row.media",
+          "args": {
+            "n": "2"
+          },
+          "en": "Look at 2 pictures and videos"
+        },
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "can",
+              "label": "Watering can",
+              "thumb": "no",
+              "thumbs": false,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Watering can"
+                },
+                "en": "Watering can"
+              }
+            },
+            {
+              "key": "seedling",
+              "label": "Happy seedling",
+              "thumb": "yes",
+              "thumbs": false,
+              "lead": true,
+              "advised": true,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "tip": {
+                "key": "tile.recommended",
+                "en": "Recommended"
+              },
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Happy seedling"
+                },
+                "en": "Happy seedling"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "v877491a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791462600000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 877491,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "76ab0cafab45f8b2011853527a3dc10e",
+        "number": 54,
+        "title": "Which headline for the launch?"
+      },
+      "row": {
+        "id": "76ab0cafab45f8b2011853527a3dc10e",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Which headline for the launch?",
+        "words": "Two lines for the landing page, the App Store and the launch post.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791462600000,
+        "from": {
+          "session_id": "54ddca7af4029f0526984da1e346d833",
+          "name": "Fernly Website",
+          "mark": "draw:leaf",
+          "path": [
+            "Fernly",
+            "Fernly Website"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Copywriting"
+            },
+            "en": "Helper Copywriting"
+          }
+        },
+        "run": 0,
+        "media": [
+          {
+            "file_id": "d0251727672dc341e809f3887bd18eda",
+            "kind": "image"
+          },
+          {
+            "file_id": "4cd498ba9f1b9f007c756119b2d039f9",
+            "kind": "image"
+          }
+        ],
+        "media_says": {
+          "key": "row.media",
+          "args": {
+            "n": "2"
+          },
+          "en": "Look at 2 pictures and videos"
+        },
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "autopilot",
+              "label": "On autopilot",
+              "thumb": "no",
+              "thumbs": false,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "On autopilot"
+                },
+                "en": "On autopilot"
+              }
+            },
+            {
+              "key": "thirsty",
+              "label": "Thirsty plant",
+              "thumb": "yes",
+              "thumbs": false,
+              "lead": true,
+              "advised": true,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "tip": {
+                "key": "tile.recommended",
+                "en": "Recommended"
+              },
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Thirsty plant"
+                },
+                "en": "Thirsty plant"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
     }
   ],
   "status_lines": [
@@ -765,7 +1677,12 @@
         "key": "line.working",
         "en": "working"
       },
-      "updated_ms": 1791469560000
+      "updated_ms": 1791469560000,
+      "card": {
+        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        "number": 41,
+        "title": "Social card for the launch: photo or illustration?"
+      }
     },
     {
       "id": "email",
@@ -782,18 +1699,133 @@
         "number": 38,
         "title": "Send a weekly summary e-mail on Sundays?"
       }
+    },
+    {
+      "id": "landing-page-hero",
+      "label": "Hero",
+      "helper": "Landing Page",
+      "detail": "Centered or split?",
+      "state": "decision",
+      "says": {
+        "key": "line.decision",
+        "en": "waits on you"
+      },
+      "updated_ms": 1791468240000,
+      "card": {
+        "id": "a38afef6dbdd056db8042980f2b83336",
+        "number": 43,
+        "title": "Which hero for the landing page?"
+      }
+    },
+    {
+      "id": "copy-button",
+      "label": "Sign-up button",
+      "helper": "Copywriting",
+      "detail": "Two versions on your Desk",
+      "state": "decision",
+      "says": {
+        "key": "line.decision",
+        "en": "waits on you"
+      },
+      "updated_ms": 1791467820000,
+      "card": {
+        "id": "daa202f98097523fa1f1fe18068f8322",
+        "number": 40,
+        "title": "What should the sign-up button say?"
+      }
+    },
+    {
+      "id": "onboarding-ask",
+      "label": "Notifications",
+      "helper": "Onboarding",
+      "detail": "When to ask",
+      "state": "decision",
+      "says": {
+        "key": "line.decision",
+        "en": "waits on you"
+      },
+      "updated_ms": 1791466680000,
+      "card": {
+        "id": "7e86fa6e752b2ff5cf636658aa14f1f0",
+        "number": 34,
+        "title": "Ask for notifications on step 3, or after the first watering?"
+      }
+    },
+    {
+      "id": "e2e-tests-suite",
+      "label": "Test suite",
+      "helper": "Testing",
+      "detail": "41 of 44 green, Safari flaky",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469440000
+    },
+    {
+      "id": "seo-og",
+      "label": "Social card",
+      "helper": "Search & Social",
+      "detail": "Reworking: the app on a phone",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791468000000
     }
   ],
   "questions": [
+    {
+      "id": "76ab0cafab45f8b2011853527a3dc10e",
+      "number": 54,
+      "title": "Which headline for the launch?"
+    },
+    {
+      "id": "58f19345f724a39460db70a4377995c8",
+      "number": 53,
+      "title": "Which drawing welcomes new people?"
+    },
+    {
+      "id": "9c9f4031e513b80e68c67139a12e408b",
+      "number": 49,
+      "title": "Skip the flaky Safari checkout test until after the launch?"
+    },
     {
       "id": "95a7444523d097bff745b891bc2166cf",
       "number": 46,
       "title": "Launch on Monday at 09:00, or on Tuesday?"
     },
     {
+      "id": "a38afef6dbdd056db8042980f2b83336",
+      "number": 43,
+      "title": "Which hero for the landing page?"
+    },
+    {
+      "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+      "number": 41,
+      "title": "Social card for the launch: photo or illustration?"
+    },
+    {
+      "id": "daa202f98097523fa1f1fe18068f8322",
+      "number": 40,
+      "title": "What should the sign-up button say?"
+    },
+    {
       "id": "637adcc6eae4b4ac30b47509a3071884",
       "number": 38,
       "title": "Send a weekly summary e-mail on Sundays?"
+    },
+    {
+      "id": "7e86fa6e752b2ff5cf636658aa14f1f0",
+      "number": 34,
+      "title": "Ask for notifications on step 3, or after the first watering?"
+    },
+    {
+      "id": "185b315a758472a6fc1faed37e49f875",
+      "number": 31,
+      "title": "Landing page: 1.4 s on a mid-range phone over 4G"
     },
     {
       "id": "e77e5a529e1d3a4bd3046ce602a34c1e",
@@ -804,17 +1836,62 @@
       "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
       "number": 14,
       "title": "Remind in the morning or in the evening?"
+    },
+    {
+      "id": "e43f3b8e342d703dba381ecb7317e670",
+      "number": 9,
+      "title": "Keep a testimonials section on the landing page?"
+    },
+    {
+      "id": "e3245eb6a15862875ad911755de9e171",
+      "number": 7,
+      "title": "What do we call the three plans?"
+    },
+    {
+      "id": "ecf4dce02716faba82fe8b6d05c7ecf2",
+      "number": 6,
+      "title": "Sign in with an e-mail link only, no passwords?"
+    },
+    {
+      "id": "006373ba27def50d7e29577e42cdac36",
+      "number": 3,
+      "title": "Run the end-to-end tests on every pull request?"
     }
   ],
   "files": [
+    "d0251727672dc341e809f3887bd18eda",
+    "4cd498ba9f1b9f007c756119b2d039f9",
+    "574e8196f2e02ec8f2f70e688e486e9d",
+    "e64cf09f6137c36798d71ba354434af1",
     "5e206d84ca2b38134b8164b2135760cd",
+    "689be4d14b8c7e0929da081e6bc78714",
+    "2696c38e6cc7b29aa0904b353c4d5855",
+    "14ae48930f6f2048127e9103e88db787",
+    "8e7b3c0820dd6aa84a00b08e6545c8a6",
+    "054e9e60c4233ff9af85d19539690062",
+    "38b651db1d080e9313df741240bd125d",
     "7251fba1c16a29dc90d9fd4f706daf11",
     "c11ba9616d097302b2a8b1c9b19b3e4b",
+    "103992833d02d92663e478f8f8ab76be",
+    "802fca719c40014777ae8bbf02deb82c",
     "d02cbe914970950dec12b8066505481a",
     "886c5651e28e6fc20d28b64f97fb9678",
-    "32411e6dafa3269067bac5b4f8837ef3"
+    "32411e6dafa3269067bac5b4f8837ef3",
+    "3c18736acb115be25a8f65b6a4cd50b3"
   ],
   "has_more": false,
+  "earlier": {
+    "left": 28,
+    "hub": false,
+    "says": {
+      "key": "session.earlier",
+      "args": {
+        "left": "28"
+      },
+      "en": "Earlier messages"
+    },
+    "pages": 2
+  },
   "slug": "fernly-web",
   "mark": "draw:leaf",
   "team_id": "main",
@@ -848,6 +1925,87 @@
     "en": "Message to the agent"
   },
   "waiting": [
+    {
+      "id": "7e86fa6e752b2ff5cf636658aa14f1f0",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Ask for notifications on step 3, or after the first watering?",
+      "words": "On step 3 more people say yes; after the first watering they know why we ask.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791465120000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Onboarding"
+          },
+          "en": "Helper Onboarding"
+        }
+      },
+      "run": 0,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "step-3",
+            "label": "On step 3",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "On step 3"
+              },
+              "en": "On step 3"
+            }
+          },
+          {
+            "key": "after",
+            "label": "After the first watering",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "After the first watering"
+              },
+              "en": "After the first watering"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
     {
       "id": "637adcc6eae4b4ac30b47509a3071884",
       "kind": "decision",
@@ -914,6 +2072,202 @@
                 "label": "Yes"
               },
               "en": "Yes"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "daa202f98097523fa1f1fe18068f8322",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "What should the sign-up button say?",
+      "words": "“Start free” is short and known. “Add your first plant” says what happens next.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791462240000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Copywriting"
+          },
+          "en": "Helper Copywriting"
+        }
+      },
+      "run": 0,
+      "media": [
+        {
+          "file_id": "8e7b3c0820dd6aa84a00b08e6545c8a6",
+          "kind": "image"
+        },
+        {
+          "file_id": "054e9e60c4233ff9af85d19539690062",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "start-free",
+            "label": "Start free",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Start free"
+              },
+              "en": "Start free"
+            }
+          },
+          {
+            "key": "first-plant",
+            "label": "Add your first plant",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Add your first plant"
+              },
+              "en": "Add your first plant"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "a38afef6dbdd056db8042980f2b83336",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Which hero for the landing page?",
+      "words": "Same words, two layouts. The split one shows the app on a phone right away.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791460800000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Landing Page"
+          },
+          "en": "Helper Landing Page"
+        }
+      },
+      "run": 0,
+      "media": [
+        {
+          "file_id": "689be4d14b8c7e0929da081e6bc78714",
+          "kind": "image"
+        },
+        {
+          "file_id": "2696c38e6cc7b29aa0904b353c4d5855",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "centered",
+            "label": "Centered",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Centered"
+              },
+              "en": "Centered"
+            }
+          },
+          {
+            "key": "split",
+            "label": "Split",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Split"
+              },
+              "en": "Split"
             }
           }
         ],
@@ -999,24 +2353,301 @@
         "duck",
         "shred"
       ]
+    },
+    {
+      "id": "9c9f4031e513b80e68c67139a12e408b",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Skip the flaky Safari checkout test until after the launch?",
+      "words": "It fails 1 run in 6, only in WebKit, only on the payment iframe. The flow works by hand.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791467280000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Testing"
+          },
+          "en": "Helper Testing"
+        }
+      },
+      "run": 0,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "keep",
+            "label": "Keep it blocking",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Keep it blocking"
+              },
+              "en": "Keep it blocking"
+            }
+          },
+          {
+            "key": "skip",
+            "label": "Skip until Tuesday",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Skip until Tuesday"
+              },
+              "en": "Skip until Tuesday"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "58f19345f724a39460db70a4377995c8",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Which drawing welcomes new people?",
+      "words": "The first screen of sign-up gets one illustration. Both are drawn and ready.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791461880000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Onboarding"
+          },
+          "en": "Helper Onboarding"
+        }
+      },
+      "run": 0,
+      "media": [
+        {
+          "file_id": "574e8196f2e02ec8f2f70e688e486e9d",
+          "kind": "image"
+        },
+        {
+          "file_id": "e64cf09f6137c36798d71ba354434af1",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "can",
+            "label": "Watering can",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Watering can"
+              },
+              "en": "Watering can"
+            }
+          },
+          {
+            "key": "seedling",
+            "label": "Happy seedling",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Happy seedling"
+              },
+              "en": "Happy seedling"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "76ab0cafab45f8b2011853527a3dc10e",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Which headline for the launch?",
+      "words": "Two lines for the landing page, the App Store and the launch post.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791462600000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Copywriting"
+          },
+          "en": "Helper Copywriting"
+        }
+      },
+      "run": 0,
+      "media": [
+        {
+          "file_id": "d0251727672dc341e809f3887bd18eda",
+          "kind": "image"
+        },
+        {
+          "file_id": "4cd498ba9f1b9f007c756119b2d039f9",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "autopilot",
+            "label": "On autopilot",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "On autopilot"
+              },
+              "en": "On autopilot"
+            }
+          },
+          {
+            "key": "thirsty",
+            "label": "Thirsty plant",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Thirsty plant"
+              },
+              "en": "Thirsty plant"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
     }
   ],
-  "open": 2,
+  "open": 8,
   "open_word": {
     "key": "session.open",
     "args": {
-      "n": "2"
+      "n": "8"
     },
-    "en": "2 open"
+    "en": "8 open"
   },
   "open_says": {
     "key": "session.open.some",
     "args": {
-      "n": "2"
+      "n": "8"
     },
-    "en": "2 open questions: go to the first one"
+    "en": "8 open questions: go to the first one"
   },
-  "first_open": "v875200a",
+  "first_open": "v874480a",
   "usage": {
     "plan": "Claude Max",
     "email": "ada@example.org",
@@ -1036,6 +2667,84 @@
         "used": 84,
         "hot": true,
         "reset_ms": 1791741000000
+      }
+    ]
+  },
+  "helpers": {
+    "head": {
+      "key": "session.helpers",
+      "args": {
+        "n": "6"
+      },
+      "en": "6 helpers"
+    },
+    "sub": {
+      "key": "helpers.sub",
+      "args": {
+        "n": "2"
+      },
+      "en": "2 working · their cards come with this session"
+    },
+    "rows": [
+      {
+        "name": "Page Speed",
+        "working": false,
+        "says": {
+          "key": "helper.idle",
+          "en": "Not working"
+        }
+      },
+      {
+        "name": "Landing Page",
+        "working": false,
+        "says": {
+          "key": "helper.open",
+          "args": {
+            "n": "1"
+          },
+          "en": "1 open question"
+        }
+      },
+      {
+        "name": "Onboarding",
+        "working": false,
+        "says": {
+          "key": "helper.open",
+          "args": {
+            "n": "2"
+          },
+          "en": "2 open questions"
+        }
+      },
+      {
+        "name": "Copywriting",
+        "working": false,
+        "says": {
+          "key": "helper.open",
+          "args": {
+            "n": "2"
+          },
+          "en": "2 open questions"
+        }
+      },
+      {
+        "name": "Testing",
+        "working": true,
+        "says": {
+          "key": "helper.working.open",
+          "args": {
+            "n": "1"
+          },
+          "en": "Working · 1 open question"
+        }
+      },
+      {
+        "name": "Search & Social",
+        "working": true,
+        "says": {
+          "key": "helper.working",
+          "en": "Working"
+        }
       }
     ]
   },

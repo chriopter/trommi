@@ -30,11 +30,13 @@ pub fn dev(name: &str) -> String {
 }
 
 impl Room {
+    /// A session; with `parent`, a helper session of before under that session (`sessions::LegacyHelper`).
     pub fn session(&mut self, name: &str, parent: Option<&str>, online: bool) -> &mut Value {
         self.sessions.push(json!({
+            "parent_session_id": parent.map(dev),
             "agent_device_id": dev(name), "agent_session_id": name, "device_name": name, "is_active": true, "is_online": online,
             "offline_since": if online { Value::Null } else { json!(NOW - 38 * MIN) },
-            "profile": { "agent_name": name, "parent_session": parent, "is_main": parent.is_none() },
+            "profile": { "agent_name": name, "is_main": parent.is_none() },
             "status_lines": [],
         }));
         self.sessions.last_mut().unwrap()

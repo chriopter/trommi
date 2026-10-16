@@ -142,7 +142,7 @@ private final class NativeObserver {
     }
     await focus(["screen": "desk"])
     let view = await state.model(); var sessions: [String: Any] = [:]
-    for row in view.sidebar.sessions { sessions[row.id] = ["agent_name": row.name.en, "parent": row.parent as Any? ?? null] }
+    for row in view.sidebar.sessions { sessions[row.id] = ["agent_name": row.name.en, "parent": null] }
     return ["desk": view.desk.stack, "permissions_open": view.desk.rows.filter { $0.kind == "request" }.map(\.id), "cards": cards, "permissions": permissions, "sessions": sessions, "snoozed": view.desk.later.sorted(), "snooze_values": snooze, "debug": ["phase": view.phase.rawValue, "toasts": view.toasts.map { $0.text.en }]]
   }
   func run(_ cmd: [String: Any]) async throws -> Any {
@@ -167,7 +167,7 @@ private final class NativeObserver {
     case "faults": await state.setFaults(cmd); return [:] as [String: Any]
     case "snapshot": return try await snapshot(cmd["ids"] as? [String] ?? [])
     case "stats", "unsettled": return await state.stats(cmd["reset"] as? Bool == true)
-    case "shown": return (await state.model()).sidebar.sessions.map { ["session": $0.id, "name": $0.name.en, "online": $0.online, "agent": null, "parent": $0.parent as Any? ?? null] as [String: Any] }
+    case "shown": return (await state.model()).sidebar.sessions.map { ["session": $0.id, "name": $0.name.en, "online": $0.online, "agent": null, "parent": null] as [String: Any] }
     case "presence_log": return await state.log(cmd["reset"] as? Bool == true)
     case "answer": await act(["do": "answer", "card_id": cmd["card"] ?? "", "choices": cmd["choices"] ?? []])
     case "take_back": await act(["do": "decide_again", "card_id": cmd["card"] ?? ""])

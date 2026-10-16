@@ -6,8 +6,9 @@ here, and none may be added.
 
 The room is a made-up plant-care company, Fernly, at the end of a launch week. It has two teams, "main" (Fernly: the
 website, the iOS app, the design system) and "platform" (Platform: payments, the data pipeline, infrastructure, the
-docs), each with its goals. On them work seven main sessions (two of them Codex) with 31 helpers, 2 to 8 each, all
-with plain names ("Fernly Website", "Push Reminders"); each session has its conversation, some with work trails, notes
+docs), each with its goals. On them work seven main sessions (two of them Codex) with 31 helpers, 1 to 8 each, all
+with plain names ("Fernly Website", "Push Reminders"); a helper's cards, status lines and words stand in its
+session with its name; each session has its conversation, some with work trails, notes
 and artifacts in it. There are 52 cards: 31 open (yes/no, two and three options with pictures, multiple choice,
 sections, a table, every urgency, two handed back to their agent), and answered, closed, settled, read, shredded,
 withdrawn and merged ones; 14 artifacts, two permission requests already answered, the corner note, a Scribble Board

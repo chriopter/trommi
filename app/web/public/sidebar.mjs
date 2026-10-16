@@ -1,40 +1,30 @@
-// The frame around every page: the sidebar (#agents: one row per session, a main with its helpers under it), the
+// The frame around every page: the sidebar (#agents: one row per session, its helpers a small line in it), the
 // Desk box with the Trommi menu, the phone's bars and drawer, and the corner note. Everything it shows is the app
 // core's view model (vm.sidebar, vm.notes, vm.settings); what the person does goes to the core as an action (t.act).
 // The markup is the one app.css and sidebar.css style.
-import { BELL, Controller, PLUS, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, edgeQuirk, el, html, linkCap, raw, sk, sketchSvg, showToast, whoOf, fileSrc } from './ui.mjs'
-const EDGES = 7   // more subs than this lie in a folded stack without an edge of their own
+import { BELL, Controller, PLUS, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, el, html, linkCap, raw, sk, sketchSvg, showToast, whoOf, fileSrc } from './ui.mjs'
 
 /** The board's toolkit (register): the controllers send their actions with it. */
 let T = null
 
-/** One row of the sidebar (SessionRowView). byId: the rows by id (a main's helpers). */
-function row(r, base, byId) {
-  const subs = (r.subs ?? []).map(id => byId.get(id)).filter(Boolean)
-  const fold = subs.length ? r.folded ?? null : null   // (a main is drawn folded; the controller "folds" opens the ones this browser unfolded)
-  const shown = fold ?? r
-  const who = whoOf(r), name = r.name.en, working = Boolean(shown.online && shown.working)
-  const names = subs.map(s => s.name.en)
-  // (the hint is short; the label names them all)
-  const tip = subs.length ? `Show ${names.length === 1 ? 'sub' : `${names.length} subs`}` : ''
-  const label = subs.length ? `Unfold ${name}'s ${names.length === 1 ? 'sub' : `${names.length} subs`}: ${names.join(', ')}` : ''
-  const stopped = new Set(fold?.stopped ?? [])
-  const lie = subs.length > EDGES ? [...subs.filter(s => stopped.has(s.id)), ...subs.filter(s => !stopped.has(s.id))].slice(0, EDGES) : subs
-  const cls = ['agent-row', r.parent && 'is-sub', (r.main || subs.length) && 'is-main', shown.open || shown.hand ? 'has-badge' : '', !r.online && 'is-offline', r.hushed && 'is-hushed'].filter(Boolean).join(' ')
-  const order = !r.parent && r.group ? r.group : ''
-  return html`<div class="${cls}" id="agent-${r.id}" data-folds-target="row" data-unit="${r.id}" data-slug="${r.slug}"${r.parent ? html` data-parent="${r.parent}" hidden` : ''}${order ? html` data-order="${order}"` : ''}${subs.length ? html` data-fold="shut" style="--ghue:${who.hue};--n:${lie.length}" data-controller="lean" data-action="pointermove->lean#follow pointerleave->lean#rest"` : ''}>
-<a class="agent-entry" data-nav href="${base}/chat/${encodeURIComponent(r.slug)}" draggable="false"${order ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"') : ''} title="${working ? 'Working' : ''}">${avatar(who, { crown: !subs.length, working })}<span class="agent-text"><strong>${name}</strong>${working ? html`<span class="sr-only"> (working)</span>` : ''}${linkCap(r.cap)}</span></a>
-${subs.length ? html`<button class="crown-fold${r.crowned ? '' : ' is-plain'}" type="button" aria-expanded="false" title="${tip}" aria-label="${label}" data-action="click->folds#toggle" data-folds-id-param="${r.id}">${r.crowned ? raw(crownSvg()) : ''}</button>
-<svg class="crown-bracket" aria-hidden="true" data-folds-target="bracket"><path/><path class="crown-bracket-hit" data-action="click->folds#toggle" data-folds-id-param="${r.id}"><title>Fold ${name}'s subs</title></path></svg>
-<span class="crown-edges" title="${tip}" data-action="click->folds#toggle" data-folds-id-param="${r.id}">${lie.map((s, i) => { const q = edgeQuirk(s.id); return html`<i${stopped.has(s.id) ? raw(' class="is-knock"') : ''} style="--i:${i};--hue:${whoOf(s).hue};--tilt:${q.tilt}deg;--dx:${q.dx}px">${raw(q.svg)}</i>` })}</span>
-<button type="button" class="rail-subs" data-action="click->folds#toggle" data-folds-id-param="${r.id}" title="${tip}" aria-label="${label}">${subs.length}</button>` : ''}${badge(r, base, true, fold)}
+/** A session's helpers in its row (HelperDotsView): a dot each, filled while that helper works, and "3 helpers". */
+const helperDots = h => (h ? html`<small class="agent-helpers" title="${h.says.en}">${h.working.map(on => html`<i${on ? raw(' class="is-on"') : ''}></i>`)}<span>${h.says.en}</span></small>` : '')
+
+/** One row of the sidebar (SessionRowView). */
+function row(r, base) {
+  const who = whoOf(r), name = r.name.en, working = Boolean(r.online && r.working)
+  const cls = ['agent-row', r.main && 'is-main', r.open || r.hand ? 'has-badge' : '', !r.online && 'is-offline'].filter(Boolean).join(' ')
+  const order = r.group || ''
+  return html`<div class="${cls}" id="agent-${r.id}" data-unit="${r.id}" data-slug="${r.slug}"${order ? html` data-order="${order}"` : ''}>
+<a class="agent-entry" data-nav href="${base}/chat/${encodeURIComponent(r.slug)}" draggable="false"${order ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"') : ''} title="${working ? 'Working' : ''}">${avatar(who, { working })}<span class="agent-text"><strong>${name}</strong>${working ? html`<span class="sr-only"> (working)</span>` : ''}${linkCap(r.cap)}${helperDots(r.helpers)}</span></a>
+${badge(r, base, true)}
 </div>`
 }
 
 // ---- the session in view, marked in the sidebar ----
 // The rows are the same markup on every page (so a page change keeps the sidebar's nodes as they are, app.mjs
 // paintBody); which one is the session in view is set on them here, after every page and whenever rows are put in:
-// .is-active and aria-current on its row, .has-active on its main's. The session: its key or its slug.
+// .is-active and aria-current on its row. The session: its key or its slug.
 let inView = null
 function paintCurrent(root = document) {
   const rows = [...root.querySelectorAll('#agents .agent-row[data-unit]')]
@@ -43,7 +33,6 @@ function paintCurrent(root = document) {
     const on = r === here, entry = r.querySelector(':scope > .agent-entry')
     r.classList.toggle('is-active', on)
     if (on) entry?.setAttribute('aria-current', 'page'); else entry?.removeAttribute('aria-current')
-    r.classList.toggle('has-active', Boolean(here?.dataset.parent) && r.dataset.unit === here.dataset.parent)
   }
 }
 let watching = null
@@ -274,9 +263,8 @@ export function joinRow(ask) {
  *  self-join asks and New Agent…. */
 export function sidebarRows(vm, base) {
   const rows = vm?.sidebar?.sessions ?? []
-  const byId = new Map(rows.map(r => [r.id, r]))
   const invite = html`${(vm?.account?.asks ?? []).map(joinRow)}${inviteAgentButton()}`
-  return html`${rows.map(r => row(r, base, byId))}${invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
+  return html`${rows.map(r => row(r, base))}${invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
 }
 
 /** The Desk box's drawing: the desk with its lamp lit while something waits on it (the open questions of the desk in
@@ -285,67 +273,9 @@ const deskLamp = vm => deskMark((vm?.sidebar?.waiting ?? 0) > 0)
 
 
 const $ = (sel, root = document) => root.querySelector(sel)
-const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback } }
-const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)) } catch {} }
 
-// The sidebar: a main's subs fold away behind its crown. Which mains are open is this browser's own (localStorage);
-// they are rendered folded, and every row that arrives (also by a stream) is put the way this browser has it.
-const FOLD_KEY = 'trommi-crowns-open'
-// An unfolded main's subs are held together by a bracket drawn with the pen down their left side;
-// folded, the subs lie as card edges under the main and the bracket is gone.
-const wob = (i, s) => (((Math.sin(i * 127.1 + 3.7) * 43758.5453) % 1 + 1) % 1 - .5) * 2 * s
-function penLine(pts) {
-  let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`
-  for (let i = 1; i < pts.length - 1; i++) {
-    const [x, y] = pts[i], [nx, ny] = pts[i + 1]
-    d += ` Q ${x.toFixed(1)} ${y.toFixed(1)} ${((x + nx) / 2).toFixed(1)} ${((y + ny) / 2).toFixed(1)}`
-  }
-  const last = pts.at(-1)
-  return `${d} L ${last[0].toFixed(1)} ${last[1].toFixed(1)}`
-}
-controller('folds', class extends Controller {
-  static targets = ['row', 'bracket']
-  connect() { this.draw = () => this.brackets(); addEventListener('resize', this.draw); requestAnimationFrame(this.draw) }
-  disconnect() { removeEventListener('resize', this.draw) }
-  rowTargetConnected(row) { this.apply(row); cancelAnimationFrame(this.frame); this.frame = requestAnimationFrame(() => this.brackets()) }
-  brackets() {
-    // Nothing unfolded: no bracket to draw, and no layout to force.
-    if (!this.element.querySelector('.agent-row[data-fold="open"]') || document.documentElement.dataset.rail === 'folded') { for (const svg of this.bracketTargets) svg.style.display = 'none'; return }
-    this.bracketTargets.forEach((svg, gi) => {
-      const main = svg.closest('.agent-row')
-      const subs = this.rowTargets.filter(r => r.dataset.parent === main?.dataset.unit && !r.hidden)
-      if (!main || main.dataset.fold !== 'open' || !subs.length) { svg.style.display = 'none'; return }
-      svg.style.display = ''
-      const G = main.getBoundingClientRect(), last = subs.at(-1).getBoundingClientRect()
-      const w = i => wob(gi * 17 + i, 1.1)
-      const x = 4, h = 7, y0 = G.height - 4, y1 = last.bottom - G.top - 8
-      const pts = [[x + h, y0 - 4], [x, y0 + 5 + w(1)], [x + w(2), (y0 + y1) / 2], [x, y1 + w(3)], [x + h, y1]]
-      for (const p of svg.querySelectorAll('path')) p.setAttribute('d', penLine(pts))
-    })
-  }
-  toggle({ params: { id } }) {
-    const open = new Set(read(FOLD_KEY, []))
-    // (on the rail a main's helpers are its stack and count: a click opens the sidebar with them unfolded)
-    if (document.documentElement.dataset.rail === 'folded') { open.add(id); write(FOLD_KEY, [...open]); for (const row of this.rowTargets) this.apply(row); document.querySelector('.rail-fold')?.click(); return }
-    if (open.has(id)) open.delete(id); else open.add(id)
-    write(FOLD_KEY, [...open])
-    for (const row of this.rowTargets) this.apply(row)
-    this.brackets()
-  }
-  apply(row) {
-    const open = new Set(read(FOLD_KEY, []))
-    if (row.dataset.parent) row.hidden = !open.has(row.dataset.parent)
-    if (!row.hasAttribute('data-fold')) return
-    const is = open.has(row.dataset.unit)
-    row.dataset.fold = is ? 'open' : 'shut'
-    row.querySelector('.crown-fold')?.setAttribute('aria-expanded', String(is))
-    const edges = row.querySelector('.crown-edges')
-    if (edges) edges.hidden = is
-  }
-})
-
-// ---- the sessions' order: a main row is picked up and dragged up or down within its part (its desk, connected or
-// not); its helpers go with it. A mouse lifts it as soon as it moves, a finger after a short hold (a swipe still
+// ---- the sessions' order: a row is picked up and dragged up or down within its part (its desk, connected or
+// not). A mouse lifts it as soon as it moves, a finger after a short hold (a swipe still
 // scrolls). A ghost of the row follows the pointer; where it would land the row's place stays open, outlined in
 // pencil, and the others make room. Escape puts it back. On a focused row Alt+↑/↓ moves it one place. Let go, and
 // the new place goes to the core (PlaceSession { before | after }: the sessions' registers, on every device). ----
@@ -364,10 +294,10 @@ controller('order', class extends Controller {
     this.element.removeEventListener('keydown', this.keys)
     this.element.removeEventListener('click', this.noClick, true)
   }
-  /** The main rows of one part, in the order they stand. */
+  /** The rows of one part, in the order they stand. */
   peers(row) { return [...this.element.querySelectorAll(`:scope > .agent-row[data-order="${CSS.escape(row.dataset.order)}"]`)] }
-  /** A main row and the rows of its helpers after it. */
-  block(row) { const out = [row]; for (let n = row.nextElementSibling; n?.dataset.parent === row.dataset.unit; n = n.nextElementSibling) out.push(n); return out }
+  /** The rows that move with a row: itself. */
+  block(row) { return [row] }
   /** Puts a block directly before `ref` (null: after the last row of `last`'s block), the others sliding into place. */
   place(rows, ref, peers) {
     const was = new Map(peers.map(p => [p, p.getBoundingClientRect().top]))
@@ -403,7 +333,7 @@ controller('order', class extends Controller {
 
   down(event) {
     const row = event.target.closest?.('.agent-row[data-order]')
-    if (!row || row.parentElement !== this.element || event.button > 0 || event.target.closest('button, .agent-badge, .crown-edges, .crown-bracket')) return
+    if (!row || row.parentElement !== this.element || event.button > 0 || event.target.closest('button, .agent-badge')) return
     if (document.documentElement.dataset.rail === 'folded' || this.peers(row).length < 2) return
     const id = event.pointerId, touch = event.pointerType !== 'mouse', x0 = event.clientX, y0 = event.clientY
     let live = false, timer = 0, ghost = null, grabAt = 0, home = null, start = '', kids = []
@@ -417,7 +347,7 @@ controller('order', class extends Controller {
       const box = row.getBoundingClientRect()
       grabAt = y0 - box.top
       ghost = row.cloneNode(true)
-      for (const n of [ghost, ...ghost.querySelectorAll('[id], [data-controller], [data-folds-target], [data-action]')]) { n.removeAttribute('id'); n.removeAttribute('data-controller'); n.removeAttribute('data-folds-target'); n.removeAttribute('data-action') }
+      for (const n of [ghost, ...ghost.querySelectorAll('[id], [data-controller], [data-action]')]) { n.removeAttribute('id'); n.removeAttribute('data-controller'); n.removeAttribute('data-action') }
       delete ghost.dataset.unit; delete ghost.dataset.order
       ghost.classList.add('order-ghost'); ghost.classList.remove('is-active', 'has-active')
       ghost.setAttribute('aria-hidden', 'true'); ghost.inert = true
@@ -1007,34 +937,6 @@ controller('rail', class extends Controller {
     this.note?.remove()
     if (this.off) document.getElementById('agents')?.removeEventListener('scroll', this.off)
     this.note = this.row = this.off = null
-  }
-})
-
-// ---- controller "lean" ----
-// A crowned main's folded stack in the sidebar (sidebar.mjs, sidebar.css): when the pointer thumbs it, its
-// card edges fan out towards the side the mouse is on. Over the middle they go straight down, at the right they lean
-// right, at the left they lean left. Sets --lean (-1 … 1) and --lean-abs (0 … 1) on the row; the CSS turns them into
-// the fan. A mouse or pen only (a touch has no hover), and nothing under prefers-reduced-motion.
-
-controller('lean', class extends Controller {
-  disconnect() { this.rest() }
-  follow(event) {
-    if (event.pointerType === 'touch' || matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    this.x = event.clientX
-    if (!this.frame) this.frame = requestAnimationFrame(() => this.set())
-  }
-  set() {
-    this.frame = 0
-    const box = this.element.getBoundingClientRect()
-    if (!box.width) return
-    const lean = Math.max(-1, Math.min(1, ((this.x - box.left) / box.width) * 2 - 1))
-    this.element.style.setProperty('--lean', lean.toFixed(2))
-    this.element.style.setProperty('--lean-abs', Math.abs(lean).toFixed(2))
-  }
-  rest() {
-    cancelAnimationFrame(this.frame); this.frame = 0
-    this.element.style.removeProperty('--lean')
-    this.element.style.removeProperty('--lean-abs')
   }
 })
 
