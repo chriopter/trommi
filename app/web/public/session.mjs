@@ -225,12 +225,12 @@ const composer = (s, base, { text = '', focus = false } = {}) => html`<form clas
 </form>`
 const sendError = (s, text = '') => html`<p class="send-error" id="session-error-${s.id}" role="alert"${text ? '' : raw(' hidden')}>${text}</p>`
 
-// ---- the questions (SessionView.questions): what waits as Desk rows (the open ones of the talk), then every question ----
+// ---- the questions (SessionView.questions): what waits as Desk rows (SessionView.waiting), then every question ----
 function questionList(s, base) {
-  const open = s.talk.filter(r => r.kind === 'ask' && r.row)
+  const open = s.waiting ?? []
   const line = q => html`<a class="event event-asked cont" id="q-${q.id}" data-nav href="${cardPath(q, s, base)}" title="Nr. ${q.number}"><span class="event-ico">${ico('asked')}</span><span class="event-body"><span class="event-kind">Nr. ${q.number}</span><span class="event-about">${q.title}</span></span></a>`
   return html`<div class="session-cards" id="session-questions-${s.id}"><header class="inbox-head"><div class="inbox-title"><h2>${s.open_word?.en ?? 'No question waits for you.'}</h2></div></header>
-<div class="inbox-groups">${open.length ? runSection(whoOf(s), open.map(r => raw(String(deskRow(r.row, base)).replaceAll(`href="${base}/card/`, `href="${sessionPath(s, base)}/card/`))), open.length) : ''}</div>
+<div class="inbox-groups">${open.length ? runSection(whoOf(s), open.map(r => raw(String(deskRow(r, base)).replaceAll(`href="${base}/card/`, `href="${sessionPath(s, base)}/card/`))), open.length) : ''}</div>
 ${s.questions?.length ? html`<h3 class="hist-heading"><span>All questions</span><b>${s.questions.length}</b></h3><div class="session-past">${s.questions.map(line)}</div>` : ''}</div>`
 }
 

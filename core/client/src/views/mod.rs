@@ -967,7 +967,11 @@ pub struct SessionView {
     /// "<name> is working": his word was the last, a short while ago.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answering: Option<Text>,
-    /// Its questions that wait for the person (its infos too), and the way to the first of them.
+    /// Its questions that wait for the person (decisions and approvals, never a card to read), as their Desk rows,
+    /// in the order they came: what its page "Questions" lists as open.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waiting: Vec<DeskRowView>,
+    /// How many of them (`waiting`), and the way to the first of them.
     #[serde(default)]
     pub open: u32,
     /// "3 open".
@@ -1945,6 +1949,11 @@ pub struct AccountView {
     /// own sign-out, or that another device removed it. Gone with the next step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notice: Option<Text>,
+    /// A sign-in that was cut off before all its sessions were joined (the app was closed or reloaded meanwhile):
+    /// the device is in the room and the app runs on, and these words ask for the way in again (`SignIn`, its
+    /// passkey or its kit), which finishes the joins. None otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume: Option<Text>,
 }
 
 impl std::fmt::Debug for AccountView {

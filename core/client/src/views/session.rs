@@ -10,11 +10,14 @@
 //!   line that says what became of it (answered, done, shredded, with the agent, put off);
 //! - rows of one side that follow each other within five minutes of the same day are a run; a new day gets a line;
 //! - a status line shows while it is working, waits on him or is put off with its card; a done one for ten minutes;
-//!   a stale one (nobody updated it for two hours) greyed and still for a day; never one of a gone session;
+//!   a stale one (nobody updated it for two hours) greyed and still for a day; never one of a gone session, and a
+//!   gone or cut off session is never "working" on what he wrote;
+//! - its open questions are the decisions and approvals that wait for him (`waiting`, its count `open`): a card to
+//!   read is not one;
 //! - above the field: why the session does not hear (cut off, gone, not listening) with the step in its terminal,
 //!   or that his last message was not picked up for two minutes.
 
-use super::board::{key_of, Board, Lens, TALK_PAGE, UNHEARD_MS};
+use super::board::{key_of, reads_as_info, Board, Lens, TALK_PAGE, UNHEARD_MS};
 use super::desk::{card_row, request_row, shown_title};
 use super::sidebar::{hand_of, link_of};
 use super::talk::{card_ref, choices_of, event_label_by, events_of, in_order, items_of, Entry, Side, UNSENT};
@@ -196,8 +199,24 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
             ask_at.insert(card.clone(), e.row.id.clone());
         }
     }
-    // (its questions that wait: its infos too, on its own page they count)
-    let fresh: Vec<&str> = cards.iter().filter(|c| waits(c, &on_stack)).map(|c| c.object_id.as_str()).chain(asks.iter().copied()).collect();
+    // (its questions that wait for him: something to read is not a question, and its line in the talk is the
+    //  board's; the count says what the page "Questions" lists)
+    let mut fresh: Vec<(u64, &str)> = cards
+        .iter()
+        .filter(|c| waits(c, &on_stack) && !reads_as_info(c))
+        .map(|c| (c.first_envelope_number, c.object_id.as_str()))
+        .chain(asks.iter().filter_map(|id| m.permissions.get(*id)).map(|p| (p.envelope_number, p.object_id.as_str())))
+        .collect();
+    fresh.sort();
+    let fresh: Vec<&str> = fresh.into_iter().map(|(_, id)| id).collect();
+    let waiting: Vec<super::DeskRowView> = fresh
+        .iter()
+        .filter_map(|id| match (m.cards.get(*id), m.permissions.get(*id)) {
+            (Some(c), _) => Some(card_row(b, c, Some(idx))),
+            (None, Some(p)) => Some(request_row(b, p, Some(idx))),
+            _ => None,
+        })
+        .collect();
 
     let has_more = chat.is_some_and(|t| t.has_more);
     let day_of = |ts: u64| local(ts, zone).days;
@@ -315,7 +334,11 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         Some("asleep" | "oncall") => say("compose.next_step", "Reaches the agent on its next step", &[]),
         _ => say("compose", "Message to the agent", &[]),
     };
+    // (a session that is gone, or cut off from its tools, does not work on what he wrote, and runs nothing)
+    let link_state = link.as_ref().map(|l| l.state.as_str()).unwrap_or("");
+    let gone = link_state == "gone";
     let answering = match last_said {
+        _ if gone || link_state == "cut" => None,
         Some((Side::User, ts)) if now.saturating_sub(ts) < WORKING_WINDOW_MS => {
             b.wake_at(Some(ts + WORKING_WINDOW_MS));
             Some(say("session.answering", format!("{name} is working"), &[("name", name)]))
@@ -344,6 +367,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
     };
     let status_lines: Vec<StatusLineView> = lines
         .iter()
+        .filter(|_| !gone)
         .filter_map(|t| {
             let state = state_of(&t.id);
             let age = now.saturating_sub(t.updated_at);
@@ -373,7 +397,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         })
         .collect();
 
-    let open = fresh.len() as u32;
+    let open = waiting.len() as u32;
     let n = open.to_string();
     let account_of = |key: &str| m.sessions.get(key).and_then(|s| s.profile.as_ref()).and_then(|p| p.get("account")).filter(|v| v.is_object());
     let usage = account_of(&a.row.key)
@@ -399,6 +423,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
                 say("session.starter.sum", "Sum up what you did last.", &[]),
             ],
         }),
+        waiting,
         first_open: fresh.iter().find_map(|id| ask_at.get(*id)).filter(|row| talk.iter().any(|r| &r.id == *row && r.kind == "ask")).cloned(),
         talk,
         status_lines,
@@ -666,14 +691,64 @@ mod tests {
         let ask = v.talk[1].row.as_ref().unwrap();
         assert_eq!((ask.id.as_str(), ask.tiles.kind.as_str(), v.talk[1].card.as_ref().unwrap().number), ("q-open", "pair", 1));
         assert_eq!((v.talk[7].row.as_ref().unwrap().kind.as_str(), v.talk[7].card.as_ref().unwrap().number), ("request", 6));
-        // (something to read is the board's line; it counts as open on the session's own page)
+        // (something to read is the board's line; it is no open question)
         assert_eq!(event(&v.talk[2]), ("info", "a wrote", "", "q-read"));
         assert_eq!(event(&v.talk[3]), ("handed", "With the agent", "q-back", ""));
         assert_eq!(event(&v.talk[4]), ("snoozed", "Later", "q-later", ""));
         assert_eq!(event(&v.talk[5]), ("decided", "You chose", "q-done", "Ship it"));
         // (the answer's own event only repeats what the question's line says)
         assert_eq!((event(&v.talk[6]), v.talk[6].event.as_ref().unwrap().echo), (("decided", "You chose", "q-done", "Ship it"), true));
-        assert_eq!((v.open, en(&v.open_word), en(&v.open_says), v.first_open.as_deref()), (3, "3 open", "3 open questions: go to the first one", Some("v100a")));
+        assert_eq!((v.open, en(&v.open_word), en(&v.open_says), v.first_open.as_deref()), (2, "2 open", "2 open questions: go to the first one", Some("v100a")));
+        // (the page "Questions" lists as open exactly what the count counts)
+        assert_eq!(v.waiting.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["q-open", "p1"]);
+    }
+
+    /// The count of open questions is what the page "Questions" lists as open: cards to read that wait on the Desk
+    /// count for nothing, and a question whose line is not in the talk (not read yet, or before the window) counts
+    /// and is listed.
+    #[test]
+    fn the_open_count_is_the_open_questions_listed() {
+        let mut r = Room::default();
+        r.session("a", None, false);
+        let history = |n: u64, title: &str| json!([{ "object_version": 1, "envelope_number": n, "sent_at": NOW - 10 * MIN, "object_state": "open", "content": { "title": title } }]);
+        // (two infos, done and working, on the Desk: no question)
+        r.card("done", "a", "info", "normal")["versions"] = history(101, "Done: two new bikes");
+        r.card("works", "a", "info", "normal")["versions"] = history(102, "Working on: used bikes");
+        let v = view(&r, "a");
+        assert_eq!((v.open, v.open_word.is_none(), v.open_says.is_none(), v.first_open.is_none(), v.waiting.is_empty()), (0, true, true, true, true));
+        assert_eq!(v.questions.len(), 2, "both are in the list of every question");
+        // (a decision with no line in the talk: counted and listed all the same)
+        r.card("q", "a", "decision", "normal");
+        let v = view(&r, "a");
+        assert_eq!((v.open, en(&v.open_word), v.waiting.len(), v.waiting[0].id.as_str()), (1, "1 open", 1, "q"));
+    }
+
+    /// A session that is gone works on nothing: neither his last word ("is working") nor a status line it left
+    /// running (a card of two days ago); cut off, it does not work on his word either.
+    #[test]
+    fn a_gone_session_is_not_working() {
+        let line = json!([{ "id": "w", "label": "Used bikes", "state": "working", "detail": "", "object_id": "works", "updated_at": NOW - 48 * 60 * MIN, "envelope_number": 1 }]);
+        let mut r = Room::default();
+        r.session("a", None, false)["status_lines"] = line.clone();
+        r.card("works", "a", "info", "normal")["working"] = json!(true);
+        r.say("a", None, 41, "me", MIN, msg("hi"));
+        let v = view(&r, "a");
+        assert_eq!(v.link, "gone");
+        assert_eq!((v.answering.as_ref(), v.status_lines.len()), (None, 0));
+        assert!(v.note.is_some(), "it says that it is gone instead");
+        // (connected, the same session works on his word and shows its line)
+        let mut r = Room::default();
+        r.session("a", None, true)["status_lines"] = line;
+        r.card("works", "a", "info", "normal")["working"] = json!(true);
+        r.say("a", None, 41, "me", MIN, msg("hi"));
+        let v = view(&r, "a");
+        assert_eq!((en(&v.answering), v.status_lines.len()), ("a is working", 1));
+        // (cut off: it cannot hear him, so it is not working on what he wrote)
+        let mut r = Room::default();
+        r.session("b", None, false)["link"] = json!({ "hears": "live", "attached": true, "exit": { "reason": "stdin", "claude": "alive" } });
+        r.say("b", None, 41, "me", MIN, msg("hi"));
+        let v = view(&r, "b");
+        assert_eq!((v.link.as_str(), v.answering.as_ref()), ("cut", None));
     }
 
     #[test]

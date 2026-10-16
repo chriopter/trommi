@@ -693,7 +693,8 @@ impl App {
                     copies
                 });
                 let effects = self.join_room(now_ms, engine::room_join::RoomJoin { hub, room, keys, recover });
-                out.extend(effects.into_iter().filter(|e| !matches!(e, Effect::Render { .. })));
+                // (its render too: each render moves the view's revision on, and a shell folds every one in order)
+                out.extend(effects);
             }
             Err(problem) => self.sign_in_failed(problem),
         }
@@ -2096,17 +2097,11 @@ impl App {
     /// Puts a `Render` first when the view changed: the shell draws before it starts the I/O.
     fn render(&mut self, out: &mut Vec<Effect>) {
         self.follow_sign_in();
-        if self.can_resume_sign_in() {
-            self.next_view.phase = Phase::SignedOut;
-            if !self.signed_in_join && self.signing_in.is_none()
-                && (self.next_view.account.step != "sign_in" || self.next_view.account.problem.is_none()) {
-                self.next_view.account = crate::views::AccountView {
-                    step: "sign_in".into(),
-                    problem: Some(crate::views::Text::new("account.interrupted", "Signing in was cut off. Sign in again to finish it.")),
-                    ..Default::default()
-                };
-            }
-        }
+        // A sign-in cut off before its sessions were joined (a reload, the app closed): the device is in its room,
+        // so the app opens as it would (a reload or a link lands on its page), and asks for the way in again on
+        // the side; giving it finishes the joins (`join_room`). It never signs the device out.
+        self.next_view.account.resume = (self.can_resume_sign_in() && !self.signed_in_join)
+            .then(|| crate::views::Text::new("account.interrupted", "Signing in was cut off. Sign in again to finish it."));
         self.account_extras();
         self.start_status();
         let delta = if !self.rendered_once {

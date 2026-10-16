@@ -107,3 +107,18 @@ test('Settings: rows from SettingsView, devices with their words, Push sends its
   await b.request('POST', '/pair/drop', { invite_id: 'ab' })
   assert.deepEqual(b.sent.at(-1), { do: 'account', action: { step: 'drop_invite', invite_id: 'ab' } })
 })
+
+test('a sign-in cut off before its sessions were joined: every address opens, and Log in asks again with the core\'s words', async () => {
+  const b = board()
+  const resume = { key: 'account.interrupted', en: 'Signing in was cut off. Sign in again to finish it.', args: {} }
+  b.set({ phase: 'live', account: { step: '', resume } })
+  for (const p of ['/', '/chat/eb86630b214a', '/settings/account']) assert.equal(auth.gate({ ...BASE, phase: 'live', account: { step: '', resume } }, new URL(p, 'http://app')), null, p)
+  const login = await b.request('GET', '/login')
+  assert.equal(login.kind, 'page')
+  assert.match(login.main, /Signing in was cut off\. Sign in again to finish it\./)
+  await b.request('POST', '/login', { account: 'ada@example.org', password: 'correct horse battery staple' })
+  assert.deepEqual(b.sent.at(-1), { do: 'account', action: { step: 'sign_in', email: 'ada@example.org', password: 'correct horse battery staple' } })
+  // (finished: Log in leads to the Desk again)
+  b.set({ phase: 'live', account: { step: 'none' } })
+  assert.equal((await b.request('GET', '/login')).kind, 'redirect')
+})

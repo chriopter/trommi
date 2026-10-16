@@ -896,6 +896,26 @@ function conn(vm) {
   if (el) el.dataset.state = state
   if (text) text.textContent = vm.status?.en ?? words
   startLine(vm)
+  resumeLine(vm)
+}
+
+// ---- a sign-in that was cut off ----
+// The core's AccountView.resume: the device is in its room and the app runs, but some sessions wait for the way in
+// again. One calm line at the top says so, with the way to /login (not on the account screens themselves).
+function resumeLine(vm) {
+  let line = document.getElementById('resume-line')
+  const words = vm.account?.resume?.en
+  if (!words || /^\/(?:login|forgot|new-way|kit)(?:\/|$)/.test(location.pathname)) { line?.remove(); return }
+  if (!line) {
+    line = Object.assign(document.createElement('div'), { id: 'resume-line', className: 'room-notice is-top' })
+    line.dataset.why = 'resume'
+    line.setAttribute('role', 'status')
+    const go = Object.assign(document.createElement('a'), { className: 'room-notice-go', href: '/login', textContent: 'Log in' })
+    go.dataset.nav = ''
+    line.append(document.createElement('span'), go)
+    document.body.append(line)
+  }
+  if (line.firstChild.textContent !== words) line.firstChild.textContent = words
 }
 
 // ---- the start ----
@@ -1045,7 +1065,7 @@ function keepStorage() { try { navigator.storage?.persist?.().catch(() => {}) } 
 
 /** A calm full-width line at the foot (styled by auth.css), with "Reload". update: fetch the new build first. */
 export function notice(text, detail, update, why = '') {
-  if (document.querySelector('.room-notice')) return
+  if (document.querySelector('.room-notice:not([data-why="resume"])')) return
   const box = document.createElement('div')
   box.className = 'room-notice'
   if (why) box.dataset.why = why
