@@ -404,7 +404,7 @@ struct DeskScreen: View {
         }
         if let off = desk.off { OffHint(off: off) }
       }
-      .padding(.horizontal, 16).padding(.bottom, 120 + (desk.starred != nil || desk.running != nil ? 54 : 0))
+      .padding(.horizontal, 16).padding(.bottom, 120 + (desk.starred != nil ? 54 : 0))
       .frame(maxWidth: 760).frame(maxWidth: .infinity)
     }
     .accessibilityIdentifier("desk-content")
@@ -412,7 +412,7 @@ struct DeskScreen: View {
     .onAppear { speedReport = NativeDemo.ready(rows: desk.rows.count) }
     .refreshable { shell.act(["do": "retry"]) }
     .background(Ink.bg)
-    .overlay(alignment: .bottom) { DeskDock(starred: desk.starred, running: desk.running).padding(.bottom, hSize == .regular ? 20 : 84) }
+    .overlay(alignment: .bottom) { DeskDock(starred: desk.starred).padding(.bottom, hSize == .regular ? 20 : 84) }
     .modifier(DeskTop(regular: hSize == .regular))
   }
 }
@@ -659,13 +659,28 @@ struct CardWays: View {
 
 // ---- under the stack ---------------------------------------------------------------------------------------------
 
-/** The section Off your mind on the Desk: the first rows, fading, and how many there are; it opens the whole list. */
+/** The section Off your mind on the Desk: what runs at its head (each card with its agent and status line, no stack
+ *  floating over the Desk), then the first rows put off or closed, fading, and how many there are; it opens the
+ *  whole list. */
 struct OffHint: View {
   @EnvironmentObject var shell: AppShell
   let off: CoreView.OffHintView
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       EndDivider(title: "Off your mind", more: { shell.focus(.off(query: "")) }).padding(.bottom, 4)
+      if !off.running.isEmpty {
+        VStack(alignment: .leading, spacing: 2) {
+          ForEach(off.running, id: \.id) { r in running(r) }
+          if let more = off.runningMore {
+            Button { shell.focus(.off(query: "")) } label: {
+              Text(more.en).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted).frame(minHeight: 32).contentShape(Rectangle())
+            }.buttonStyle(.plain).padding(.leading, 36)
+          }
+        }
+        .padding(.bottom, off.rows.isEmpty ? 0 : 10)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("off-running")
+      }
       Button { shell.focus(.off(query: "")) } label: {
         VStack(alignment: .leading, spacing: 4) {
           ForEach(Array(off.rows.enumerated()), id: \.element.id) { i, r in
@@ -682,23 +697,38 @@ struct OffHint: View {
       .accessibilityLabel("Off your mind: \(off.says.en)")
     }.padding(.top, 8)
   }
+  /** A card its agent works on: the agent's drawing in its turning ring, the title, who and what (its status line). */
+  private func running(_ r: CoreView.DockRowView) -> some View {
+    Button { shell.focus(.card(cardId: r.id)) } label: {
+      HStack(spacing: 10) {
+        AgentMark(from: r.from, size: 18)
+          .frame(width: 26, height: 26)
+          .overlay { WorkingRing(working: true, color: Ink.accent).frame(width: 28, height: 28) }
+        VStack(alignment: .leading, spacing: 1) {
+          Text(r.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+          Text(r.line.en).font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1)
+        }
+        Spacer(minLength: 0)
+      }
+      .frame(minHeight: 44).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(r.title), \(r.line.en)")
+    .accessibilityIdentifier("off-running-" + r.id)
+  }
 }
-/** The dock at the bottom of the Desk: two stacks, his starred cards and the cards still running, each a small tab;
- *  a tap fans the cards upward. Which card lies where is the core's (`desk.starred`, `desk.running`). */
+/** The dock at the bottom of the Desk: his starred cards as a small tab; a tap fans them upward. Which card lies
+ *  where is the core's (`desk.starred`). The cards still running stand in Off your mind (`OffHint`), not here: a
+ *  stack over the Desk was too much in the middle of the room. */
 struct DeskDock: View {
   @EnvironmentObject var shell: AppShell
   let starred: CoreView.DockView?
-  let running: CoreView.DockView?
   @State private var open: String? = nil
   var body: some View {
-    if starred != nil || running != nil {
-      VStack(alignment: open == "run" && starred != nil ? .trailing : .leading, spacing: 4) {
-        if open == "star", let starred { fan(starred) }
-        if open == "run", let running { fan(running) }
-        HStack(spacing: 10) {
-          if let starred { tab(starred, word: "Starred") }
-          if let running { tab(running, word: "Running") }
-        }
+    if let starred {
+      VStack(alignment: .leading, spacing: 4) {
+        if open == "star" { fan(starred) }
+        tab(starred, word: "Starred")
       }
       .padding(.horizontal, 8)
       .frame(maxWidth: 640)
@@ -708,8 +738,7 @@ struct DeskDock: View {
     let on = open == dock.key
     return Button { withAnimation(.easeOut(duration: 0.2)) { open = on ? nil : dock.key } } label: {
       HStack(spacing: 8) {
-        if dock.key == "star" { StarMark().frame(width: 15, height: 15) }
-        else { WorkingRing(working: true, color: Ink.muted).frame(width: 15, height: 15) }
+        StarMark().frame(width: 15, height: 15)
         Text(word).font(Face.text(13, .semibold)).foregroundStyle(Ink.fg)
         Text("\(dock.count)").font(Face.text(11, .bold)).monospacedDigit().foregroundStyle(Ink.bg)
           .padding(.horizontal, 6).padding(.vertical, 3).frame(minWidth: 18).background(Capsule().fill(Ink.fg))

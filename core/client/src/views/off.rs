@@ -7,7 +7,8 @@
 //! - a card counts where its session stands now; a card of a session the list does not show is in none;
 //! - the starred stack: the last starred first; the running stack: the one that moved last first, starred ones left
 //!   out (a card has one home);
-//! - the hint: the put-off cards, then the closed ones the newest first, the first three; "2 put off · 14 done";
+//! - the hint: the running stack's first three cards at its head ("2 more running" beyond them), then the put-off cards, then the
+//!   closed ones the newest first, the first three; "2 put off · 14 done";
 //! - the page: every card with its agent (starred ones too, each in its place by time), then the put-off cards, then
 //!   every closed card (done and thrown away merged, the newest first); a search keeps the cards whose title, session
 //!   name (and, for one with its agent, status line) hold every word.
@@ -146,7 +147,10 @@ pub fn fill_desk(b: &Board, off: &OffMind, desk: &mut DeskView) {
     // ---- the hint ----
     let closed: u64 = b.agents.iter().filter(|a| a.on_team).filter_map(|a| off.closed.get(&a.row.key)).sum();
     let put_off = desk.later.len();
-    desk.off = (put_off > 0 || closed > 0).then(|| {
+    let running: Vec<DockRowView> = desk.running.as_ref().map(|d| d.rows.iter().take(HINT_ROWS).cloned().collect()).unwrap_or_default();
+    let more = desk.running.as_ref().map_or(0, |d| d.rows.len().saturating_sub(running.len()));
+    let running_more = (more > 0).then(|| count_says("off.hint.running_more", more, "more running"));
+    desk.off = (put_off > 0 || closed > 0 || !running.is_empty()).then(|| {
         let rows = desk
             .later
             .iter()
@@ -158,9 +162,10 @@ pub fn fill_desk(b: &Board, off: &OffMind, desk: &mut DeskView) {
         let says = match (put_off > 0, closed > 0) {
             (true, true) => say("off.hint.both", format!("{p} put off · {d} done"), &[("put_off", &p), ("done", &d)]),
             (true, false) => say("off.hint.put_off", format!("{p} put off"), &[("put_off", &p)]),
-            _ => say("off.hint.done", format!("{d} done"), &[("done", &d)]),
+            (false, true) => say("off.hint.done", format!("{d} done"), &[("done", &d)]),
+            (false, false) => say("off.hint.none", "Nothing done yet", &[]),
         };
-        OffHintView { rows, says, put_off: put_off as u32, closed: closed as u32 }
+        OffHintView { running, running_more, rows, says, put_off: put_off as u32, closed: closed as u32 }
     });
 }
 
@@ -294,8 +299,12 @@ mod tests {
         assert_eq!(d.off_your_mind, ["run-new", "run-star", "run-old"], "the complete list holds the starred one in its place by time");
         // the other team: its own running card only
         let (d, _) = render(&room(), &Lens { team: Some("lab".into()), ..Default::default() });
-        assert!(d.starred.is_none() && d.off.is_none());
+        assert!(d.starred.is_none());
         assert_eq!(ids(&d.running.unwrap().rows, |r| &r.id), ["lab-run"]);
+        // (what runs stands in the hint too, so the iPhone needs no stack over the Desk)
+        let h = d.off.unwrap();
+        assert_eq!(ids(&h.running, |r| &r.id), ["lab-run"]);
+        assert_eq!((h.running_more, h.says.en.as_str(), h.rows.len()), (None, "Nothing done yet", 0));
     }
 
     #[test]
@@ -305,6 +314,8 @@ mod tests {
         assert_eq!(d.done, ["shredded", "done-1"]);
         let h = d.off.unwrap();
         assert_eq!((h.says.en.as_str(), h.put_off, h.closed), ("2 put off · 2 done", 2, 2));
+        assert_eq!(ids(&h.running, |r| &r.id), ["run-new", "run-old"], "the running stack's cards head the hint, no starred one");
+        assert!(h.running_more.is_none(), "all of them shown");
         assert_eq!(h.rows.iter().map(|r| (r.id.as_str(), r.mark.as_str(), r.says.en.as_str())).collect::<Vec<_>>(), [("later-2", "snooze", "Later"), ("later-1", "snooze", "Later"), ("shredded", "shred", "Shredded")]);
         // (put off until the next morning, in the person's zone: NOW is Tue 13 Oct 2026 14:05 UTC)
         let (d, _) = render(&room(), &Lens { utc_offset_min: 120, ..Default::default() });

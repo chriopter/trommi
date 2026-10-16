@@ -644,6 +644,14 @@ pub struct DockRowView {
 /// The section Off your mind under the Desk: a short hinted list that opens the complete list (`Screen::Off`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OffHintView {
+    /// The cards being worked on, the one that moved last first (at most three): on the iPhone they stand here, at
+    /// the head of the section, instead of a docked stack over the Desk. A starred card is not among them (it lies
+    /// in the starred stack).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub running: Vec<DockRowView>,
+    /// "2 more running": how many run beyond those shown, leading to the complete list; none while all are shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running_more: Option<Text>,
     /// The first rows, put off first, then the closed ones, the newest first (at most three; the shell fades them).
     pub rows: Vec<OffRowView>,
     /// "2 put off · 14 done".
