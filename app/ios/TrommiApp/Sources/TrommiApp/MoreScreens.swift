@@ -137,11 +137,11 @@ struct NotesScreen: View {
   private var corner: CoreView.NoteView? { notes.corner.flatMap { id in notes.rows.first { $0.id == id } } }
   var body: some View {
     let empty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
-    ScrollView {
+    GeometryReader { geo in ScrollView {
       VStack(alignment: .leading, spacing: 10) {
         TextField("", text: $text, prompt: Text("Write a note…").foregroundStyle(Ink.noteInk.opacity(0.45)), axis: .vertical)
           .font(Face.text(18)).foregroundStyle(Ink.noteInk).lineSpacing(4)
-          .lineLimit(15...)
+          .lineLimit(4...)
           .frame(maxWidth: .infinity, alignment: .leading)
           .focused($focused)
           .padding(.top, 8)
@@ -159,7 +159,8 @@ struct NotesScreen: View {
             }.padding(.top, 6).padding(.trailing, 8)
           }
         }
-        HStack(spacing: 6) {
+        Spacer(minLength: 12)
+        HStack(spacing: 2) {
           Button { importing = true } label: { Image(systemName: "paperclip").font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44) }
             .buttonStyle(.plain).accessibilityLabel("Attach")
           Button { bin() } label: { Image(systemName: "trash").font(.system(size: 17)).frame(width: 44, height: 44) }
@@ -168,7 +169,7 @@ struct NotesScreen: View {
             .buttonStyle(.plain).disabled(empty).opacity(empty ? 0.5 : 1)
             .accessibilityLabel("Keep in Note")
           Spacer(minLength: 4)
-          recipient.fixedSize()
+          recipient
           send.disabled(empty || (notes.to == nil && notes.choose.isEmpty)).opacity(empty || (notes.to == nil && notes.choose.isEmpty) ? 0.5 : 1)
         }
         .foregroundStyle(Ink.noteInk)
@@ -188,8 +189,9 @@ struct NotesScreen: View {
         }
       }
       .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 100)
+      .frame(minHeight: geo.size.height, alignment: .top)
       .frame(maxWidth: 760).frame(maxWidth: .infinity, alignment: .leading)
-    }
+    } }
     .scrollDismissesKeyboard(.interactively)
     .scrollContentBackground(.hidden)
     .background(Ink.noteYellow.ignoresSafeArea())
@@ -231,7 +233,7 @@ struct NotesScreen: View {
       Text(notes.to?.name ?? "No Session").fontWeight(.semibold).foregroundStyle(Ink.noteInk).lineLimit(1).truncationMode(.middle)
       if !notes.choose.isEmpty { Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Ink.noteInk.opacity(0.7)) }
     }
-    .font(Face.text(15)).padding(.horizontal, 14).frame(minHeight: 40)
+    .lineLimit(1).font(Face.text(15)).padding(.horizontal, 14).frame(minHeight: 40)
     .glass(Capsule(), interactive: true).contentShape(Capsule())
     if notes.choose.isEmpty { label.accessibilityLabel("Recipient: \(notes.to?.name ?? "none")") }
     else {
