@@ -1446,51 +1446,6 @@ controller('curl', class extends Controller {
 })
 
 // ---- windowed rendering: what is out of sight comes after the first paint ----
-// A long list (a conversation's window, the Desk's rows) renders the part in view now and leaves a marker for the rest:
-// later(key, html) keeps the rest's markup and gives <template data-later="key">. Once the page is painted (an idle
-// moment, at the latest LATER_MS later) the marker is replaced by the rest, parsed in one go and put in a few nodes at a
-// time, so neither the visit nor the fill is one long task. The key must be the same for the same list (the page's
-// parts are compared by their markup); a marker whose page went away is forgotten.
-const laterParts = new Map()
-const LATER_MS = 250, LATER_SLICE = 12
-/** The rest of a list, put in after the first paint. key: [\w-]+, the same for the same list. rest: its markup, or a
- *  function that makes it (called then: what is out of sight costs nothing before the first paint). */
-export function later(key, rest) {
-  if (typeof rest !== 'function' && !String(rest ?? '').trim()) return ''
-  laterParts.set(key, rest)
-  return raw(`<template data-later="${key}"></template>`)
-}
-const idle = f => (globalThis.requestIdleCallback ? requestIdleCallback(f, { timeout: LATER_MS }) : setTimeout(f, 16))
-function fillLater(marker) {
-  const key = marker.dataset.later, rest = laterParts.get(key)
-  if (rest == null || marker.dataset.filling) return
-  marker.dataset.filling = '1'
-  idle(() => {
-    if (!marker.isConnected) return
-    if (laterParts.get(key) === rest) laterParts.delete(key)
-    const t = document.createElement('template')
-    t.innerHTML = String(typeof rest === 'function' ? rest() : rest)
-    const nodes = [...t.content.childNodes]
-    const step = () => {
-      if (!marker.isConnected) return
-      marker.before(...nodes.splice(0, LATER_SLICE))
-      if (nodes.length) setTimeout(step, 0); else marker.remove()
-    }
-    step()
-  })
-}
-/** Markers anywhere in the page, now and whenever a page or a stream puts one in (startUi). */
-function watchLater() {
-  for (const m of document.querySelectorAll('template[data-later]')) fillLater(m)
-  new MutationObserver(list => {
-    for (const ch of list) for (const n of ch.addedNodes) {
-      if (n.nodeType !== 1) continue
-      if (n.matches('template[data-later]')) fillLater(n)
-      else if (n.firstElementChild) for (const m of n.querySelectorAll('template[data-later]')) fillLater(m)
-    }
-  }).observe(document.documentElement, { childList: true, subtree: true })
-}
-
 /** Shift held: <html data-shift>, set in the keydown itself; CSS does every swap (a card's Send: card.css, the Desk's
  *  rows: desk.css), nothing is rendered. data-shift-field beside it while the keyboard is in a field (the Desk's rows
  *  do not turn then). So a capital does not flicker: a key typed into a field while Shift is down takes the state
@@ -1545,7 +1500,6 @@ function watchShift() {
 export function startUi() {
   watchShift()
   stimulus.start()
-  watchLater()
   setInterval(() => { for (const n of document.querySelectorAll('[data-ts]')) n.textContent = 'short' in n.dataset ? agoShort(Number(n.dataset.ts)) : ago(Number(n.dataset.ts)) }, 30000)
   document.addEventListener('turbo:submit-start', e => { e.detail.formSubmission.submitter?.classList.add('is-picked') })
   document.addEventListener('turbo:submit-end', e => { e.detail.formSubmission.submitter?.classList.remove('is-picked') })

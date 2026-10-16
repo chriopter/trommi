@@ -1,6 +1,11 @@
 // The two AppCore storage spaces. DeviceStore retains the exclusive lock, durable encrypted journal and
 // Keychain revision anchor; the cache holds encrypted values and public logout notices. No application decisions.
 import Foundation
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 public struct NativePacket: @unchecked Sendable {
   public var json: [String: Any]
@@ -66,6 +71,17 @@ final class ShellStore {
     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
     return try value(at: url, key: key)
   }
+  private func remove(_ url: URL, durable: Bool) throws {
+    guard FileManager.default.fileExists(atPath: url.path) else { return }
+    try FileManager.default.removeItem(at: url)
+    var folder = url.deletingLastPathComponent()
+    if durable { try DeviceStore.syncDirectory(folder) }
+    // rmdir removes only an empty directory atomically: a sibling value can never be removed.
+    while folder.path != cache.path && rmdir(folder.path) == 0 {
+      folder.deleteLastPathComponent()
+      if durable { try DeviceStore.syncDirectory(folder) }
+    }
+  }
   func run(_ packet: NativePacket) throws -> NativePacket {
     let op = packet.json; var blobs: [Data] = []
     func bytes(_ data: Data) -> Int { blobs.append(data); return blobs.count - 1 }
@@ -110,17 +126,18 @@ final class ShellStore {
       answer = ["answer": "entries", "entries": entries]
     case "put", "put_durable":
       let durable = op["op"] as? String == "put_durable"
-      for key in op["delete"] as? [String] ?? [] { let u = file(key); if FileManager.default.fileExists(atPath: u.path) { try FileManager.default.removeItem(at: u); if durable { try DeviceStore.syncDirectory(u.deletingLastPathComponent()) } } }
+      for key in op["delete"] as? [String] ?? [] { try remove(file(key), durable: durable) }
       for entry in op["put"] as? [[String: Any]] ?? [] {
         guard let key = entry["key"] as? String else { throw TrommiError("bad-format") }
+        let url = file(key)
         let nonce = try LocalKey.random(12)
         let sealed = nonce + (try gcmSeal(key: cacheKey, nonce: nonce, aad: Bytes(key.utf8), Bytes(packet.bytes(entry["value"]))))
-        try FileManager.default.createDirectory(at: file(key).deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try Data(sealed).write(to: file(key), options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file(key).path)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try Data(sealed).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         if durable {
-          try DeviceStore.syncFile(file(key))
-          var folder = file(key).deletingLastPathComponent()
+          try DeviceStore.syncFile(url)
+          var folder = url.deletingLastPathComponent()
           while folder.path != dir.path { try DeviceStore.syncDirectory(folder); folder.deleteLastPathComponent() }
           try DeviceStore.syncDirectory(dir)
         }

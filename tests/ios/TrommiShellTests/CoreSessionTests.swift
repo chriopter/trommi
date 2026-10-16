@@ -134,6 +134,30 @@ final class CoreSessionTests: XCTestCase {
     let data = try JSONSerialization.data(withJSONObject: measurements, options: [.sortedKeys])
     print("TROMMI_CACHE_PREFIX_BENCH " + String(decoding: data, as: UTF8.self))
   }
+  func testDeletingCacheRecordsDoesNotLeaveAScanOfTheirEmptyPaths() throws {
+    let rows = Int(ProcessInfo.processInfo.environment["TROMMI_DELETE_BENCH_ROWS"] ?? "32") ?? 32
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-delete-bench-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try ShellStore(directory: directory); defer { store.close() }
+    let prefix = "private/" + String(repeating: "ab", count: 80) + "/"
+    let keys = (0..<rows).map { prefix + String(format: "%08d", $0) }
+    let keep = prefix + "keep"
+    _ = try store.run(NativePacket(["op": "put", "put": (keys + [keep]).map { ["key": $0, "value": 0] }], blobs: [Data([42])]))
+    _ = try store.run(NativePacket(["op": "put", "delete": keys]))
+    var scans = [Double]()
+    for _ in 0..<5 {
+      let began = DispatchTime.now().uptimeNanoseconds
+      let answer = try store.run(NativePacket(["op": "keys", "prefix": ""]))
+      scans.append(Double(DispatchTime.now().uptimeNanoseconds - began) / 1_000_000)
+      XCTAssertEqual(answer.json["keys"] as? [String], [keep])
+    }
+    XCTAssertEqual(try store.run(NativePacket(["op": "get", "keys": [keep]])).blobs, [Data([42])])
+    let data = try JSONSerialization.data(withJSONObject: ["rows": rows, "scan_ms": scans], options: [.sortedKeys])
+    print("TROMMI_DELETED_CACHE_BENCH " + String(decoding: data, as: UTF8.self))
+    _ = try store.run(NativePacket(["op": "put_durable", "delete": [keep]]))
+    let paths = FileManager.default.enumerator(at: directory.appendingPathComponent("cache"), includingPropertiesForKeys: nil)!
+    XCTAssertNil(paths.nextObject(), "Deleting the last value must prune empty encoded paths, keeping the cache root.")
+  }
   func testDurableCacheWritesAndDeletesSurviveReopening() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-durable-cache-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
