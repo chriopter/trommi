@@ -290,7 +290,11 @@ optimistic echoes entirely in memory, with no account store or hub. `public/demo
 and the UI clicks named by `?state=`. Bundled demo files supply its pictures. The fixture and the list of states
 live in [demo/](../../demo/README.md); no second demo model lives in JavaScript.
 
-Decrypted file URLs live only while the painted page or the Scribble canvas references them; leaving those views revokes them. Published-page text previews keep at most eight documents of at most 1 Mi characters each. The encrypted picture cache remains separate. Giving the device to another tab closes its WASM core and worker, clears decrypted file URLs and drops late I/O results. `tests/web/views/file-memory.browser.mjs` checks file release in an isolated browser without an account or hub.
+Decrypted file URLs live only while the painted page or the Scribble canvas references them; leaving those views revokes them. Published-page text previews keep at most eight documents of at most 1 Mi characters each. The encrypted picture cache remains separate. Giving the device to another tab closes its WASM core and worker, clears decrypted file URLs and drops late I/O results. `tests/web/views/file-memory.browser.mjs` checks file release in an isolated browser without an account or hub. The ownership browser check uses weak references and a real collection cycle to verify that leaving the actual Desk releases its observed offscreen rows. The bounded demo sample had zero detached survivors from 39 observations even before cleanup. The unused generic deferred-list helper and its mutation observer were removed. These checks do not establish the cause of a long-open renderer reaching 12.8 GB; long-run RSS validation remains separate.
+
+Keyed DOM updates keep the cursor on the replacement when a row at that cursor changes element type. The
+ownership browser gate exercises replacing the first row while adding a second; real-account updates must
+not throw `insertBefore` errors or stop repainting.
 
 The browser ownership gate (`tests/web/views/ownership.browser.mjs`) runs the deployed bundle and service worker:
 reload twice, close/reopen, a genuinely live second tab, explicit takeover, and a stranded lock without a live

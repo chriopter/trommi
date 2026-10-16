@@ -2,6 +2,8 @@
 //! the object state rule, the indexes with the app's names, and the reads built on them. The hub never opens a
 //! body: everything here works on the signed header, the chain numbers and hashes.
 
+use std::collections::BTreeSet;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 
@@ -1205,14 +1207,8 @@ fn collect(rows: &mut rusqlite::Rows, limit: i64, pruned: bool) -> Res<(Vec<Valu
 /// the groups, in what the asker may read.
 pub fn desk(c: &Connection, auth: &Auth, only: &Only) -> Res<Value> {
     auth.member()?;
-    let readable = store::readable_groups(c, auth)?;
-    let archived = archived_groups(c, &auth.room)?;
-    let sees = |group: &[u8]| {
-        readable
-            .as_ref()
-            .is_none_or(|g| g.iter().any(|x| x == group))
-            && only.takes(!archived.iter().any(|x| x == group))
-    };
+    let scope = ReadScope::load(c, auth, only)?;
+    let sees = |group: &[u8]| scope.sees(group);
     let mut out = json!({});
     let (mut desk_bytes, mut truncated, mut any) = (0usize, false, false);
     for (table, _) in OBJECT_TABLES {
@@ -1358,18 +1354,14 @@ pub fn settled_objects(
     only: &Only,
 ) -> Res<Value> {
     auth.member()?;
-    let readable = store::readable_groups(c, auth)?;
-    let archived = archived_groups(c, &auth.room)?;
-    let sees = |g: &[u8]| {
-        readable.as_ref().is_none_or(|r| r.iter().any(|x| x == g))
-            && only.takes(!archived.iter().any(|x| x == g))
-            && group.is_none_or(|one| one == g)
-    };
+    let scope = ReadScope::load(c, auth, only)?;
+    let readable = &scope.readable;
+    let sees = |g: &[u8]| scope.sees(g) && group.is_none_or(|one| one == g);
     // An asker that may read only some groups (an agent or helper device), or that names one, is asked in SQL for
     // those groups alone: nothing of a group it may not read is looked at, so neither `more` nor `before` can tell
     // of one. A human device may read every group; it is asked over the room (`active=1` skips the archived rows,
     // which it may read as well).
-    let groups: Option<Vec<Vec<u8>>> = match (group, &readable) {
+    let groups: Option<Vec<Vec<u8>>> = match (group, readable) {
         (Some(one), _) => Some(if sees(one) { vec![one.to_vec()] } else { vec![] }),
         (None, Some(list)) => Some(list.iter().filter(|g| sees(g)).cloned().collect()),
         (None, None) => None,
@@ -1481,12 +1473,37 @@ pub fn settled_objects(
     }))
 }
 
-/// The archived groups of a room.
-fn archived_groups(c: &Connection, room: &Room) -> Res<Vec<Vec<u8>>> {
-    Ok(c
-        .prepare_cached("SELECT group_id FROM groups WHERE room_id = ?1 AND live = 0")?
-        .query_map([&room[..]], |r| r.get(0))?
-        .collect::<rusqlite::Result<_>>()?)
+/// The same read boundary for full and brief Desks and settled objects. An unrestricted
+/// read needs no archive list; filtered reads use indexed membership rather than rescanning it per object.
+struct ReadScope<'a> {
+    readable: Option<BTreeSet<Vec<u8>>>,
+    archived: BTreeSet<Vec<u8>>,
+    only: &'a Only,
+}
+
+impl<'a> ReadScope<'a> {
+    fn load(c: &Connection, auth: &Auth, only: &'a Only) -> Res<Self> {
+        let readable = store::readable_groups(c, auth)?.map(|groups| groups.into_iter().collect());
+        let archived = if only.active || only.archived {
+            c.prepare_cached("SELECT group_id FROM groups WHERE room_id = ?1 AND live = 0")?
+                .query_map([&auth.room[..]], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?
+        } else {
+            BTreeSet::new()
+        };
+        Ok(Self {
+            readable,
+            archived,
+            only,
+        })
+    }
+
+    fn sees(&self, group: &[u8]) -> bool {
+        self.readable
+            .as_ref()
+            .is_none_or(|groups| groups.contains(group))
+            && self.only.takes(!self.archived.contains(group))
+    }
 }
 
 /// `GET /v1/desk?brief=1&since=`: the Desk's open cards and permission requests as ids and change numbers only,
@@ -1495,14 +1512,8 @@ fn archived_groups(c: &Connection, room: &Room) -> Res<Vec<Vec<u8>>> {
 /// ones no longer open named in `settled`. Nothing in it that the full Desk does not show.
 pub fn desk_brief(c: &Connection, auth: &Auth, since: Option<i64>, only: &Only) -> Res<Value> {
     auth.member()?;
-    let readable = store::readable_groups(c, auth)?;
-    let archived = archived_groups(c, &auth.room)?;
-    let sees = |group: &[u8]| {
-        readable
-            .as_ref()
-            .is_none_or(|g| g.iter().any(|x| x == group))
-            && only.takes(!archived.iter().any(|x| x == group))
-    };
+    let scope = ReadScope::load(c, auth, only)?;
+    let sees = |group: &[u8]| scope.sees(group);
     let mut out = json!({});
     let mut truncated = false;
     let mut settled = Vec::new();
@@ -1933,4 +1944,39 @@ pub fn prune_due(
         })?;
     }
     Ok(pruned)
+}
+
+#[cfg(test)]
+mod read_scope_tests {
+    use super::*;
+
+    #[test]
+    fn desk_scopes_keep_room_membership_and_archive_filters_separate() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch("CREATE TABLE groups (group_id BLOB, room_id BLOB, live INTEGER);
+            CREATE TABLE group_members (group_id BLOB, device BLOB, removed_epoch INTEGER);").unwrap();
+        let room = [1; 32];
+        let device = [2; 32];
+        for (group, owner, live, removed) in [
+            (b"live".as_slice(), room, 1, None),
+            (b"archived".as_slice(), room, 0, None),
+            (b"removed".as_slice(), room, 1, Some(1)),
+            (b"foreign".as_slice(), [3; 32], 1, None),
+        ] {
+            c.execute("INSERT INTO groups VALUES (?1, ?2, ?3)", params![group, &owner[..], live]).unwrap();
+            c.execute("INSERT INTO group_members VALUES (?1, ?2, ?3)", params![group, &device[..], removed]).unwrap();
+        }
+        for who in [Who::Human, Who::Agent, Who::Helper, Who::Spent] {
+            let auth = Auth { room, device, who };
+            for (active, archived) in [(false, false), (true, false), (false, true), (true, true)] {
+                let only = Only { active, archived, group: None };
+                let scope = ReadScope::load(&c, &auth, &only).unwrap();
+                assert_eq!(scope.sees(b"live"), who != Who::Spent && !archived);
+                assert_eq!(scope.sees(b"archived"), who != Who::Spent && !active);
+                assert_eq!(scope.sees(b"removed"), who == Who::Human && !archived);
+                // Human group selection is bounded by each route's room SQL, while agents' membership is too.
+                if who != Who::Human { assert!(!scope.sees(b"foreign")); }
+            }
+        }
+    }
 }

@@ -74,7 +74,9 @@ written per batch and flushed before the core hears success. An uncertain write 
 revision anchor refuses a state older than a durable outbox write; the state folder is excluded from backups.
 `ShellStore` separately seals disposable cache entries and splits encoded cache paths into bounded filesystem
 components. Prefix scans skip unrelated encoded subtrees and reuse enumerated file URLs; names-only listings
-do not read or decrypt values. Disposable model cache loss costs a catch-up, never a device identity or pending
+do not read or decrypt values. Deleting values prunes only empty encoded directories with atomic `rmdir`;
+durable deletion syncs each surviving parent. A sibling value and the cache root stay in place. Writes encode
+their destination once. Disposable model cache loss costs a catch-up, never a device identity or pending
 protocol outbox write. Public signed logout notices are durable until checked acknowledgement, as described in
 [the app core](../../core/client/README.md).
 
@@ -192,6 +194,11 @@ five-sample scan medians and one empty-device `CoreSession` startup sample gave:
 | 10,000 | Public-prefix lookup | 2,289.65 | 0.53 |
 | 10,000 | Full value scan | 10,286.19 | 3,521.40 |
 | 10,000 | Empty-device core startup | 2,415.09 | 13.62 |
+
+`CoreSessionTests.testDeletingCacheRecordsDoesNotLeaveAScanOfTheirEmptyPaths` checks deletion, a surviving
+sibling and durable removal of the last value. With `TROMMI_DELETE_BENCH_ROWS=1000`, five names-only scans
+after deletion had a median of 122.47 ms before empty-directory pruning and 0.53 ms after, on the same Mac
+mini in Release. The ordinary test uses 32 values.
 
 These measure storage and an empty-device core, separately from a rendered Desk or a physical iPhone launch.
 Encryption and the existing filename layout stay the same.
