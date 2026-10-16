@@ -50,7 +50,8 @@ ApplicationWindow {
 
     Trommi {
         id: trommi
-        Component.onCompleted: trommi.start()
+        // started, the core is told the page and the team last chosen on this device
+        Component.onCompleted: { trommi.start(); window.go(window.place) }
     }
 
     // the app core's view model, as the shell folded it (shell.rs)
@@ -59,7 +60,15 @@ ApplicationWindow {
     property var place: ({ screen: "desk" })
     function go(screen) {
         window.place = screen
-        trommi.send_event(JSON.stringify({ type: "focus", focus: { screen: screen, visible: window.active } }))
+        const focus = { screen: screen, visible: window.active }
+        // the team in view (kept on this device, bridge.rs `team`); none: the core shows the first
+        if (trommi.team !== "") focus.team = trommi.team
+        trommi.send_event(JSON.stringify({ type: "focus", focus: focus }))
+    }
+    /** The person chose a team in the sidebar: kept for the next start, and the core told with the page in view. */
+    function chooseTeam(id) {
+        trommi.choose_team(id)
+        go(place)
     }
     /** A tap on the core's view: an `Action`, in the contract's spelling. */
     function act(action) { trommi.send_event(JSON.stringify({ type: "action", action: action })) }
@@ -163,6 +172,7 @@ ApplicationWindow {
                 sidebar: window.view.sidebar || ({})
                 onTheme_toggled: trommi.set_theme(theme.dark ? "light" : "dark")
                 onGo: (screen) => window.go(screen)
+                onTeam_chosen: (id) => window.chooseTeam(id)
             }
 
             Rectangle {
