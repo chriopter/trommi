@@ -60,23 +60,23 @@ public enum CoreView {
     public var screen: Screen
     /// The window (or app) is in front and visible.
     public var visible: Bool
-    /// The desk in view: a desk's id, "all" for every desk at once, none when none was chosen (every desk at once where there are two or more).
-    public var desk: String?
-    /// The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a desk's id or "all" for that
-    /// desk's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
+    /// The team in view: a team's id; none when none was chosen, or one that is gone: the first team.
+    public var team: String?
+    /// The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a team's id or "all" for that
+    /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
     public var board: String?
 
-    public init(screen: Screen = .desk, visible: Bool = true, desk: String? = nil, board: String? = nil) {
+    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil) {
       self.screen = screen
       self.visible = visible
-      self.desk = desk
+      self.team = team
       self.board = board
     }
 
     enum CodingKeys: String, CodingKey {
       case screen = "screen"
       case visible = "visible"
-      case desk = "desk"
+      case team = "team"
       case board = "board"
     }
 
@@ -84,7 +84,7 @@ public enum CoreView {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.screen = try c.decode(Screen.self, forKey: .screen)
       self.visible = try c.decodeIfPresent(Bool.self, forKey: .visible) ?? true
-      self.desk = try c.decodeIfPresent(String.self, forKey: .desk)
+      self.team = try c.decodeIfPresent(String.self, forKey: .team)
       self.board = try c.decodeIfPresent(String.self, forKey: .board)
     }
 
@@ -92,7 +92,7 @@ public enum CoreView {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(screen, forKey: .screen)
       try c.encode(visible, forKey: .visible)
-      try c.encodeIfPresent(desk, forKey: .desk)
+      try c.encodeIfPresent(team, forKey: .team)
       try c.encodeIfPresent(board, forKey: .board)
     }
   }
@@ -108,7 +108,7 @@ public enum CoreView {
     /// The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
     /// videos and files, "pages" the pages.
     case artifacts(kind: String)
-    /// Settings: its list (`page` ""), or one of its pages ("agents", "desks", "devices", "account", "theme",
+    /// Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
     /// "data", "security").
     case settings(page: String)
 
@@ -195,8 +195,8 @@ public enum CoreView {
     /// The gallery's filter and its words, while `Screen::Artifacts` is in view (`artifacts` then holds what the
     /// filter lets through); none else.
     public var gallery: GalleryView?
-    /// Every desk's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
-    /// desks); none else.
+    /// Every team's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
+    /// teams); none else.
     public var thumbs: [ThumbView]?
     public var toasts: [Toast]
 
@@ -331,7 +331,7 @@ public enum CoreView {
     case artifacts(view: [ArtifactView]?)
     /// The gallery's filter and words, whole; none when it is left.
     case gallery(view: GalleryView?)
-    /// The desks' boards small, whole; none when no page shows them.
+    /// The teams' boards small, whole; none when no page shows them.
     case thumbs(view: [ThumbView]?)
     case toasts(toasts: [Toast])
 
@@ -492,39 +492,36 @@ public enum CoreView {
     }
   }
 
-  /// The sidebar (the phone: the menu's desks, the list of chats, the tab pill's numbers): the desks, and one row per
-  /// session of the desk in view, in the order they are drawn.
+  /// The sidebar (the phone: the menu's teams, the list of chats, the tab pill's numbers): the teams, and one row per
+  /// session of the team in view, in the order they are drawn.
   public struct SidebarView: Codable, Hashable, Sendable {
-    /// The desks, in the menu's order. A room without desks has one: "Personal".
-    public var desks: [DeskTab]
-    /// The sessions of the desk in view, one row each, in drawing order: a main, then its helpers.
+    /// The teams, in the menu's order. A room without teams has one: "Personal".
+    public var teams: [TeamTab]
+    /// The sessions of the team in view, one row each, in drawing order: a main, then its helpers.
     public var sessions: [SessionRowView]
-    /// The number on the app icon and the tab: the open questions of the desk in view (no infos, nothing that is
+    /// The number on the app icon and the tab: the open questions of the team in view (no infos, nothing that is
     /// with its agent). Never drawn red.
     public var badge: UInt32
-    /// The desk in view: its id, or "all".
-    public var desk: String
-    /// "All Desks", the row above the desks: there with two desks or more.
-    public var all: DeskTab?
-    /// Where the person is, for the head: the desk's name, or "All desks".
+    /// The team in view: its id.
+    public var team: String
+    /// Where the person is, for the head and the team switch: the team's name.
     public var place: Text
-    /// The open questions of the desk in view (its lamp is lit while there are some).
+    /// The open questions of the team in view (its lamp is lit while there are some).
     public var waiting: UInt32
     /// How many of them knock.
     public var knocking: UInt32
-    /// How many rows of the desk in view are stopped (the red hand).
+    /// How many rows of the team in view are stopped (the red hand).
     public var stopped: UInt32
     /// How many of them are at work.
     public var working: UInt32
-    /// How many of his answers the sessions of the desk in view have not picked up.
+    /// How many of his answers the sessions of the team in view have not picked up.
     public var unheard: UInt32
 
-    public init(desks: [DeskTab] = [], sessions: [SessionRowView] = [], badge: UInt32 = 0, desk: String = "", all: DeskTab? = nil, place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0) {
-      self.desks = desks
+    public init(teams: [TeamTab] = [], sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0) {
+      self.teams = teams
       self.sessions = sessions
       self.badge = badge
-      self.desk = desk
-      self.all = all
+      self.team = team
       self.place = place
       self.waiting = waiting
       self.knocking = knocking
@@ -534,11 +531,10 @@ public enum CoreView {
     }
 
     enum CodingKeys: String, CodingKey {
-      case desks = "desks"
+      case teams = "teams"
       case sessions = "sessions"
       case badge = "badge"
-      case desk = "desk"
-      case all = "all"
+      case team = "team"
       case place = "place"
       case waiting = "waiting"
       case knocking = "knocking"
@@ -549,11 +545,10 @@ public enum CoreView {
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
-      self.desks = try c.decode([DeskTab].self, forKey: .desks)
+      self.teams = try c.decode([TeamTab].self, forKey: .teams)
       self.sessions = try c.decode([SessionRowView].self, forKey: .sessions)
       self.badge = try c.decode(UInt32.self, forKey: .badge)
-      self.desk = try c.decodeIfPresent(String.self, forKey: .desk) ?? ""
-      self.all = try c.decodeIfPresent(DeskTab.self, forKey: .all)
+      self.team = try c.decodeIfPresent(String.self, forKey: .team) ?? ""
       self.place = try c.decodeIfPresent(Text.self, forKey: .place) ?? Text()
       self.waiting = try c.decodeIfPresent(UInt32.self, forKey: .waiting) ?? 0
       self.knocking = try c.decodeIfPresent(UInt32.self, forKey: .knocking) ?? 0
@@ -564,11 +559,10 @@ public enum CoreView {
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
-      try c.encode(desks, forKey: .desks)
+      try c.encode(teams, forKey: .teams)
       try c.encode(sessions, forKey: .sessions)
       try c.encode(badge, forKey: .badge)
-      try c.encode(desk, forKey: .desk)
-      try c.encodeIfPresent(all, forKey: .all)
+      try c.encode(team, forKey: .team)
       try c.encode(place, forKey: .place)
       try c.encode(waiting, forKey: .waiting)
       try c.encode(knocking, forKey: .knocking)
@@ -578,10 +572,10 @@ public enum CoreView {
     }
   }
 
-  public struct DeskTab: Codable, Hashable, Sendable {
+  public struct TeamTab: Codable, Hashable, Sendable {
     public var id: String
     public var name: Text
-    /// The open questions of the desk's sessions.
+    /// The open questions of the team's sessions.
     public var waiting: UInt32
     public var selected: Bool
     /// One of them knocks.
@@ -640,14 +634,14 @@ public enum CoreView {
     public var slug: String
     /// What draws it: the icon the person or the agent chose ("draw:leaf"), else its slug.
     public var mark: String
-    /// The desk it stands on.
-    public var deskId: String
+    /// The team it stands on.
+    public var teamId: String
     public var online: Bool
     /// Connected and at work (a status line of it shows "working").
     public var working: Bool
     /// A main session: one that says so, or one with helpers.
     public var main: Bool
-    /// The crowned session of its desk (the one a note goes to).
+    /// The crowned session of its team (the one a note goes to).
     public var crowned: Bool
     /// Its main's id, for a helper drawn under it.
     public var parent: String?
@@ -665,10 +659,7 @@ public enum CoreView {
     public var hushed: Bool
     /// Not connected, and none of its helpers is: it stands under "Disconnected".
     public var away: Bool
-    /// The line drawn above this row: "Disconnected" over the first row that is away, a desk's name over its first
-    /// row on All desks.
-    public var heading: HeadingView?
-    /// The part of the list a main row may be dragged within (its desk, connected or not); "" for a helper.
+    /// The part of the list a main row may be dragged within (its team, connected or not); "" for a helper.
     public var group: String
     /// What its badge says to a screen reader ("Working, 2 questions open"); none without a badge.
     public var says: Text?
@@ -684,7 +675,7 @@ public enum CoreView {
     /// Its agent said something this device has not shown yet (the chat was not open since): the Chat list's dot.
     public var unread: Bool
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, unheard: UInt32 = 0, depth: UInt32 = 0, slug: String = "", mark: String = "", deskId: String = "", online: Bool = false, working: Bool = false, main: Bool = false, crowned: Bool = false, parent: String? = nil, subs: [String] = [], open: UInt32 = 0, knocks: Bool = false, hand: HandView? = nil, cap: CapView? = nil, hushed: Bool = false, away: Bool = false, heading: HeadingView? = nil, group: String = "", says: Text? = nil, folded: FoldView? = nil, unfolded: Bool = false, tucked: Bool = false, last: LastSaidView? = nil, unread: Bool = false) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, unheard: UInt32 = 0, depth: UInt32 = 0, slug: String = "", mark: String = "", teamId: String = "", online: Bool = false, working: Bool = false, main: Bool = false, crowned: Bool = false, parent: String? = nil, subs: [String] = [], open: UInt32 = 0, knocks: Bool = false, hand: HandView? = nil, cap: CapView? = nil, hushed: Bool = false, away: Bool = false, group: String = "", says: Text? = nil, folded: FoldView? = nil, unfolded: Bool = false, tucked: Bool = false, last: LastSaidView? = nil, unread: Bool = false) {
       self.id = id
       self.name = name
       self.link = link
@@ -693,7 +684,7 @@ public enum CoreView {
       self.depth = depth
       self.slug = slug
       self.mark = mark
-      self.deskId = deskId
+      self.teamId = teamId
       self.online = online
       self.working = working
       self.main = main
@@ -706,7 +697,6 @@ public enum CoreView {
       self.cap = cap
       self.hushed = hushed
       self.away = away
-      self.heading = heading
       self.group = group
       self.says = says
       self.folded = folded
@@ -725,7 +715,7 @@ public enum CoreView {
       case depth = "depth"
       case slug = "slug"
       case mark = "mark"
-      case deskId = "desk_id"
+      case teamId = "team_id"
       case online = "online"
       case working = "working"
       case main = "main"
@@ -738,7 +728,6 @@ public enum CoreView {
       case cap = "cap"
       case hushed = "hushed"
       case away = "away"
-      case heading = "heading"
       case group = "group"
       case says = "says"
       case folded = "folded"
@@ -758,7 +747,7 @@ public enum CoreView {
       self.depth = try c.decode(UInt32.self, forKey: .depth)
       self.slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
       self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
-      self.deskId = try c.decodeIfPresent(String.self, forKey: .deskId) ?? ""
+      self.teamId = try c.decodeIfPresent(String.self, forKey: .teamId) ?? ""
       self.online = try c.decodeIfPresent(Bool.self, forKey: .online) ?? false
       self.working = try c.decodeIfPresent(Bool.self, forKey: .working) ?? false
       self.main = try c.decodeIfPresent(Bool.self, forKey: .main) ?? false
@@ -771,7 +760,6 @@ public enum CoreView {
       self.cap = try c.decodeIfPresent(CapView.self, forKey: .cap)
       self.hushed = try c.decodeIfPresent(Bool.self, forKey: .hushed) ?? false
       self.away = try c.decodeIfPresent(Bool.self, forKey: .away) ?? false
-      self.heading = try c.decodeIfPresent(HeadingView.self, forKey: .heading)
       self.group = try c.decodeIfPresent(String.self, forKey: .group) ?? ""
       self.says = try c.decodeIfPresent(Text.self, forKey: .says)
       self.folded = try c.decodeIfPresent(FoldView.self, forKey: .folded)
@@ -791,7 +779,7 @@ public enum CoreView {
       try c.encode(depth, forKey: .depth)
       try c.encode(slug, forKey: .slug)
       try c.encode(mark, forKey: .mark)
-      try c.encode(deskId, forKey: .deskId)
+      try c.encode(teamId, forKey: .teamId)
       try c.encode(online, forKey: .online)
       try c.encode(working, forKey: .working)
       try c.encode(main, forKey: .main)
@@ -804,7 +792,6 @@ public enum CoreView {
       try c.encodeIfPresent(cap, forKey: .cap)
       try c.encode(hushed, forKey: .hushed)
       try c.encode(away, forKey: .away)
-      try c.encodeIfPresent(heading, forKey: .heading)
       try c.encode(group, forKey: .group)
       try c.encodeIfPresent(says, forKey: .says)
       try c.encodeIfPresent(folded, forKey: .folded)
@@ -1006,46 +993,6 @@ public enum CoreView {
     }
   }
 
-  /// A line above a row of the sidebar.
-  public struct HeadingView: Codable, Hashable, Sendable {
-    /// "away" ("Disconnected") or "desk" (a desk's name, on All desks).
-    public var kind: String
-    public var text: Text
-    /// For "desk": the desk, and its open questions.
-    public var deskId: String?
-    public var waiting: UInt32
-
-    public init(kind: String = "", text: Text = Text(), deskId: String? = nil, waiting: UInt32 = 0) {
-      self.kind = kind
-      self.text = text
-      self.deskId = deskId
-      self.waiting = waiting
-    }
-
-    enum CodingKeys: String, CodingKey {
-      case kind = "kind"
-      case text = "text"
-      case deskId = "desk_id"
-      case waiting = "waiting"
-    }
-
-    public init(from decoder: any Decoder) throws {
-      let c = try decoder.container(keyedBy: CodingKeys.self)
-      self.kind = try c.decode(String.self, forKey: .kind)
-      self.text = try c.decode(Text.self, forKey: .text)
-      self.deskId = try c.decodeIfPresent(String.self, forKey: .deskId)
-      self.waiting = try c.decodeIfPresent(UInt32.self, forKey: .waiting) ?? 0
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-      var c = encoder.container(keyedBy: CodingKeys.self)
-      try c.encode(kind, forKey: .kind)
-      try c.encode(text, forKey: .text)
-      try c.encodeIfPresent(deskId, forKey: .deskId)
-      try c.encode(waiting, forKey: .waiting)
-    }
-  }
-
   /// A session's link in words: whether it hears the person, and what to do when it does not.
   public struct LinkWords: Codable, Hashable, Sendable {
     /// "live", "oncall", "asleep", "cut", "gone".
@@ -1128,11 +1075,11 @@ public enum CoreView {
     }
   }
 
-  /// The Desk of the desk in view: its head, and the stack of what waits for the person as rows.
+  /// The Desk of the team in view: its head, and the stack of what waits for the person as rows.
   public struct DeskView: Codable, Hashable, Sendable {
     /// Card and request ids, in the Desk's order: the ids of `rows`.
     public var stack: [String]
-    /// Off your mind, of the desk in view (`off.rs`, from the core's `off_mind`): the cards with their agents,
+    /// Off your mind, of the team in view (`off.rs`, from the core's `off_mind`): the cards with their agents,
     /// starred ones too, the one that moved last first (the complete list's top part).
     public var offYourMind: [String]
     /// The put-off cards, the last put off first.
@@ -1150,13 +1097,13 @@ public enum CoreView {
     /// What stands in the list's place when nothing is open at all ("Questions land here.").
     public var empty: Text?
     /// "invite" (no session stands here yet: invite the first agent), "reading" (none yet, and the room is still
-    /// being read), "desk".
+    /// being read), "team".
     public var mode: String
     /// The one big line at the top; none for "invite".
     public var hello: Text?
     /// How far the reading of the room's past is ("Reading your history: 12,400 of 27,000"), while it is read.
     public var reading: Text?
-    /// The desk's goals; none on All desks.
+    /// The team's goals; none on All teams.
     public var goals: GoalsView?
     /// What waits, in the Desk's order: the questions and what is only to read.
     public var rows: [DeskRowView]
@@ -1501,7 +1448,7 @@ public enum CoreView {
     /// "2 put off · 14 done".
     public var says: Text
     public var putOff: UInt32
-    /// Every closed card of the desk in view, counted (not only the ones named).
+    /// Every closed card of the team in view, counted (not only the ones named).
     public var closed: UInt32
 
     public init(rows: [OffRowView] = [], says: Text = Text(), putOff: UInt32 = 0, closed: UInt32 = 0) {
@@ -1599,7 +1546,7 @@ public enum CoreView {
     }
   }
 
-  /// The page Off your mind: every card off the Desk of the desk in view. What runs as live cards, the one that moved
+  /// The page Off your mind: every card off the Desk of the team in view. What runs as live cards, the one that moved
   /// last first; then what is put off, the last put off first; then what is closed, the newest first. Each card in its
   /// place by time, none lifted. Kept to the search's words.
   public struct OffListView: Codable, Hashable, Sendable {
@@ -1762,9 +1709,9 @@ public enum CoreView {
     }
   }
 
-  /// A desk's goals: a note of the person's, at most twenty lines.
+  /// A team's goals: a note of the person's, at most twenty lines.
   public struct GoalsView: Codable, Hashable, Sendable {
-    public var deskId: String
+    public var teamId: String
     /// The lines; empty when there are none (the shell shows its faint "Goals…").
     public var lines: [String]
     /// Two lines or more: one toggle folds them to the first line. Whether they are folded is this device's.
@@ -1778,8 +1725,8 @@ public enum CoreView {
     /// foldable.
     public var toggle: Text?
 
-    public init(deskId: String = "", lines: [String] = [], foldable: Bool = false, showAll: Text? = nil, folded: Bool = false, toggle: Text? = nil) {
-      self.deskId = deskId
+    public init(teamId: String = "", lines: [String] = [], foldable: Bool = false, showAll: Text? = nil, folded: Bool = false, toggle: Text? = nil) {
+      self.teamId = teamId
       self.lines = lines
       self.foldable = foldable
       self.showAll = showAll
@@ -1788,7 +1735,7 @@ public enum CoreView {
     }
 
     enum CodingKeys: String, CodingKey {
-      case deskId = "desk_id"
+      case teamId = "team_id"
       case lines = "lines"
       case foldable = "foldable"
       case showAll = "show_all"
@@ -1798,7 +1745,7 @@ public enum CoreView {
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
-      self.deskId = try c.decode(String.self, forKey: .deskId)
+      self.teamId = try c.decode(String.self, forKey: .teamId)
       self.lines = try c.decode([String].self, forKey: .lines)
       self.foldable = try c.decode(Bool.self, forKey: .foldable)
       self.showAll = try c.decodeIfPresent(Text.self, forKey: .showAll)
@@ -1808,7 +1755,7 @@ public enum CoreView {
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
-      try c.encode(deskId, forKey: .deskId)
+      try c.encode(teamId, forKey: .teamId)
       try c.encode(lines, forKey: .lines)
       try c.encode(foldable, forKey: .foldable)
       try c.encodeIfPresent(showAll, forKey: .showAll)
@@ -1979,18 +1926,15 @@ public enum CoreView {
     public var name: String
     /// What draws the session (`SessionRowView::mark`).
     public var mark: String
-    /// Where it stands, for the line above a card's title ("Desk › Main › Helper"): its desk while there are two
+    /// Where it stands, for the line above a card's title ("Team › Main › Helper"): its team while there are two
     /// or more, its main for a helper, itself.
     public var path: [String]
-    /// Its desk's name, on All desks only: the small chip before the row's words.
-    public var desk: String?
 
-    public init(sessionId: String = "", name: String = "", mark: String = "", path: [String] = [], desk: String? = nil) {
+    public init(sessionId: String = "", name: String = "", mark: String = "", path: [String] = []) {
       self.sessionId = sessionId
       self.name = name
       self.mark = mark
       self.path = path
-      self.desk = desk
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1998,7 +1942,6 @@ public enum CoreView {
       case name = "name"
       case mark = "mark"
       case path = "path"
-      case desk = "desk"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2007,7 +1950,6 @@ public enum CoreView {
       self.name = try c.decode(String.self, forKey: .name)
       self.mark = try c.decode(String.self, forKey: .mark)
       self.path = try c.decode([String].self, forKey: .path)
-      self.desk = try c.decodeIfPresent(String.self, forKey: .desk)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2016,7 +1958,6 @@ public enum CoreView {
       try c.encode(name, forKey: .name)
       try c.encode(mark, forKey: .mark)
       try c.encode(path, forKey: .path)
-      try c.encodeIfPresent(desk, forKey: .desk)
     }
   }
 
@@ -2200,11 +2141,11 @@ public enum CoreView {
     public var slug: String
     /// What draws it (`SessionRowView::mark`).
     public var mark: String
-    public var deskId: String
+    public var teamId: String
     public var main: Bool
     public var crowned: Bool
     public var online: Bool
-    /// Where it stands: its desk (while there are two or more), its main (for a helper), itself.
+    /// Where it stands: its team (while there are two or more), its main (for a helper), itself.
     public var path: [String]
     /// The model it runs on, as the heading says it ("Opus 5.5"); "" when it named none.
     public var modelLabel: String
@@ -2243,7 +2184,7 @@ public enum CoreView {
     /// In the Archive: the More menu offers "Back from the Archive" (`ArchiveSession` with `on: false`).
     public var archived: Bool
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", deskId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, parent: String? = nil, archived: Bool = false) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, parent: String? = nil, archived: Bool = false) {
       self.id = id
       self.name = name
       self.link = link
@@ -2256,7 +2197,7 @@ public enum CoreView {
       self.earlier = earlier
       self.slug = slug
       self.mark = mark
-      self.deskId = deskId
+      self.teamId = teamId
       self.main = main
       self.crowned = crowned
       self.online = online
@@ -2293,7 +2234,7 @@ public enum CoreView {
       case earlier = "earlier"
       case slug = "slug"
       case mark = "mark"
-      case deskId = "desk_id"
+      case teamId = "team_id"
       case main = "main"
       case crowned = "crowned"
       case online = "online"
@@ -2331,7 +2272,7 @@ public enum CoreView {
       self.earlier = try c.decodeIfPresent(MoreView.self, forKey: .earlier)
       self.slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
       self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
-      self.deskId = try c.decodeIfPresent(String.self, forKey: .deskId) ?? ""
+      self.teamId = try c.decodeIfPresent(String.self, forKey: .teamId) ?? ""
       self.main = try c.decodeIfPresent(Bool.self, forKey: .main) ?? false
       self.crowned = try c.decodeIfPresent(Bool.self, forKey: .crowned) ?? false
       self.online = try c.decodeIfPresent(Bool.self, forKey: .online) ?? false
@@ -2369,7 +2310,7 @@ public enum CoreView {
       try c.encodeIfPresent(earlier, forKey: .earlier)
       try c.encode(slug, forKey: .slug)
       try c.encode(mark, forKey: .mark)
-      try c.encode(deskId, forKey: .deskId)
+      try c.encode(teamId, forKey: .teamId)
       try c.encode(main, forKey: .main)
       try c.encode(crowned, forKey: .crowned)
       try c.encode(online, forKey: .online)
@@ -3004,7 +2945,7 @@ public enum CoreView {
     public var nr: Text
     /// Where it stands: "catching" (settled elsewhere, its outcome on the way), "open", "decided", "shredded", "done".
     public var status: String
-    /// Who it comes from, above its title: "Desk › Main › Helper" (`FromView::path`).
+    /// Who it comes from, above its title: "Team › Main › Helper" (`FromView::path`).
     public var from: FromView?
     /// "Knock! Blocking", while it is open and knocks.
     public var knock: Text?
@@ -3056,7 +2997,7 @@ public enum CoreView {
     /// (`Lens::comments_window`, `MoreOf::Comments`); none when it shows everything there is.
     public var earlier: MoreView?
     /// Once it is settled (not open, not catching up): the way on that the page offers right after the person
-    /// answered here (the shell shows it then): the next open question of the desk in view, or that there is none.
+    /// answered here (the shell shows it then): the next open question of the team in view, or that there is none.
     public var after: AfterView?
 
     public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil) {
@@ -3807,7 +3748,7 @@ public enum CoreView {
     }
   }
 
-  /// The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`).
+  /// The person's notes (the room's, the same on every team) and the one in the corner (`notes.rs`).
   public struct NotesView: Codable, Hashable, Sendable {
     /// The ids of the notes that show, the last written first (the ids of `rows`). A sent note held for the toast's
     /// Undo shows nowhere.
@@ -3822,24 +3763,18 @@ public enum CoreView {
     public var says: Text
     /// The crowned session it goes to; none when no session wears the crown here.
     public var to: NoteToView?
-    /// All desks, and it goes to another desk's crown than the desk chosen last: the send names it.
-    public var far: Bool
-    /// All desks with two crowned desks or more: the person picks one (each desk's crown, in the desks' order).
-    public var choose: [NoteToView]
     /// What the send says ("Send to Fernly").
     public var sendSays: Text?
     /// In the send's place without a crown: "Give a session the crown to send" (opens Settings · Agents).
     public var noCrown: Text?
 
-    public init(notes: [String] = [], rows: [NoteView] = [], corner: String? = nil, written: Bool = false, says: Text = Text(), to: NoteToView? = nil, far: Bool = false, choose: [NoteToView] = [], sendSays: Text? = nil, noCrown: Text? = nil) {
+    public init(notes: [String] = [], rows: [NoteView] = [], corner: String? = nil, written: Bool = false, says: Text = Text(), to: NoteToView? = nil, sendSays: Text? = nil, noCrown: Text? = nil) {
       self.notes = notes
       self.rows = rows
       self.corner = corner
       self.written = written
       self.says = says
       self.to = to
-      self.far = far
-      self.choose = choose
       self.sendSays = sendSays
       self.noCrown = noCrown
     }
@@ -3851,8 +3786,6 @@ public enum CoreView {
       case written = "written"
       case says = "says"
       case to = "to"
-      case far = "far"
-      case choose = "choose"
       case sendSays = "send_says"
       case noCrown = "no_crown"
     }
@@ -3865,8 +3798,6 @@ public enum CoreView {
       self.written = try c.decodeIfPresent(Bool.self, forKey: .written) ?? false
       self.says = try c.decodeIfPresent(Text.self, forKey: .says) ?? Text()
       self.to = try c.decodeIfPresent(NoteToView.self, forKey: .to)
-      self.far = try c.decodeIfPresent(Bool.self, forKey: .far) ?? false
-      self.choose = try c.decodeIfPresent([NoteToView].self, forKey: .choose) ?? []
       self.sendSays = try c.decodeIfPresent(Text.self, forKey: .sendSays)
       self.noCrown = try c.decodeIfPresent(Text.self, forKey: .noCrown)
     }
@@ -3879,8 +3810,6 @@ public enum CoreView {
       try c.encode(written, forKey: .written)
       try c.encode(says, forKey: .says)
       try c.encodeIfPresent(to, forKey: .to)
-      try c.encode(far, forKey: .far)
-      if !choose.isEmpty { try c.encode(choose, forKey: .choose) }
       try c.encodeIfPresent(sendSays, forKey: .sendSays)
       try c.encodeIfPresent(noCrown, forKey: .noCrown)
     }
@@ -3981,24 +3910,24 @@ public enum CoreView {
     public var name: String
     /// What draws it (`SessionRowView::mark`).
     public var mark: String
-    public var deskId: String
-    /// Its desk's name ("Personal" for one without), for the choice on All desks.
-    public var desk: String
+    public var teamId: String
+    /// Its team's name ("Personal" for one without).
+    public var team: String
 
-    public init(sessionId: String = "", name: String = "", mark: String = "", deskId: String = "", desk: String = "") {
+    public init(sessionId: String = "", name: String = "", mark: String = "", teamId: String = "", team: String = "") {
       self.sessionId = sessionId
       self.name = name
       self.mark = mark
-      self.deskId = deskId
-      self.desk = desk
+      self.teamId = teamId
+      self.team = team
     }
 
     enum CodingKeys: String, CodingKey {
       case sessionId = "session_id"
       case name = "name"
       case mark = "mark"
-      case deskId = "desk_id"
-      case desk = "desk"
+      case teamId = "team_id"
+      case team = "team"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4006,8 +3935,8 @@ public enum CoreView {
       self.sessionId = try c.decode(String.self, forKey: .sessionId)
       self.name = try c.decode(String.self, forKey: .name)
       self.mark = try c.decode(String.self, forKey: .mark)
-      self.deskId = try c.decodeIfPresent(String.self, forKey: .deskId) ?? ""
-      self.desk = try c.decodeIfPresent(String.self, forKey: .desk) ?? ""
+      self.teamId = try c.decodeIfPresent(String.self, forKey: .teamId) ?? ""
+      self.team = try c.decodeIfPresent(String.self, forKey: .team) ?? ""
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4015,8 +3944,8 @@ public enum CoreView {
       try c.encode(sessionId, forKey: .sessionId)
       try c.encode(name, forKey: .name)
       try c.encode(mark, forKey: .mark)
-      try c.encode(deskId, forKey: .deskId)
-      try c.encode(desk, forKey: .desk)
+      try c.encode(teamId, forKey: .teamId)
+      try c.encode(team, forKey: .team)
     }
   }
 
@@ -4042,8 +3971,8 @@ public enum CoreView {
     public var agentList: [AgentView]
     /// The line under the page's title: "2 agents on 1 computer · 5 sessions"; none without an agent.
     public var agentsLead: Text?
-    /// The row Desks: "3 desks"; none in a room without desks.
-    public var desks: Text?
+    /// The row Teams: "3 teams"; none in a room without teams.
+    public var teams: Text?
     /// The row Devices: "2 devices".
     public var devicesSays: Text?
     /// The room's key epoch (the version line at the list's foot).
@@ -4051,16 +3980,16 @@ public enum CoreView {
     /// The room's id (hex) and its hub, for the page that proves the room.
     public var room: String?
     public var hub: String?
-    /// What each desk holds, for the confirm of its delete (its board counted once read on this device).
-    public var deskCounts: [DeskCountsView]
-    /// The desks being deleted, with how far.
-    public var deleting: [DeskDeleteView]
+    /// What each team holds, for the confirm of its delete (its board counted once read on this device).
+    public var teamCounts: [TeamCountsView]
+    /// The teams being deleted, with how far.
+    public var deleting: [TeamDeleteView]
     /// Push on this device, where the platform has push.
     public var push: PushView?
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     public var login: LoginView?
 
-    public init(data: DataView? = nil, account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, deskCounts: [DeskCountsView] = [], deleting: [DeskDeleteView] = [], push: PushView? = nil, login: LoginView? = nil) {
+    public init(data: DataView? = nil, account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, teams: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, teamCounts: [TeamCountsView] = [], deleting: [TeamDeleteView] = [], push: PushView? = nil, login: LoginView? = nil) {
       self.data = data
       self.account = account
       self.devices = devices
@@ -4070,12 +3999,12 @@ public enum CoreView {
       self.agents = agents
       self.agentList = agentList
       self.agentsLead = agentsLead
-      self.desks = desks
+      self.teams = teams
       self.devicesSays = devicesSays
       self.keyEpoch = keyEpoch
       self.room = room
       self.hub = hub
-      self.deskCounts = deskCounts
+      self.teamCounts = teamCounts
       self.deleting = deleting
       self.push = push
       self.login = login
@@ -4091,12 +4020,12 @@ public enum CoreView {
       case agents = "agents"
       case agentList = "agent_list"
       case agentsLead = "agents_lead"
-      case desks = "desks"
+      case teams = "teams"
       case devicesSays = "devices_says"
       case keyEpoch = "key_epoch"
       case room = "room"
       case hub = "hub"
-      case deskCounts = "desk_counts"
+      case teamCounts = "team_counts"
       case deleting = "deleting"
       case push = "push"
       case login = "login"
@@ -4113,13 +4042,13 @@ public enum CoreView {
       self.agents = try c.decodeIfPresent(Text.self, forKey: .agents)
       self.agentList = try c.decodeIfPresent([AgentView].self, forKey: .agentList) ?? []
       self.agentsLead = try c.decodeIfPresent(Text.self, forKey: .agentsLead)
-      self.desks = try c.decodeIfPresent(Text.self, forKey: .desks)
+      self.teams = try c.decodeIfPresent(Text.self, forKey: .teams)
       self.devicesSays = try c.decodeIfPresent(Text.self, forKey: .devicesSays)
       self.keyEpoch = try c.decodeIfPresent(UInt64.self, forKey: .keyEpoch) ?? 0
       self.room = try c.decodeIfPresent(String.self, forKey: .room)
       self.hub = try c.decodeIfPresent(String.self, forKey: .hub)
-      self.deskCounts = try c.decodeIfPresent([DeskCountsView].self, forKey: .deskCounts) ?? []
-      self.deleting = try c.decodeIfPresent([DeskDeleteView].self, forKey: .deleting) ?? []
+      self.teamCounts = try c.decodeIfPresent([TeamCountsView].self, forKey: .teamCounts) ?? []
+      self.deleting = try c.decodeIfPresent([TeamDeleteView].self, forKey: .deleting) ?? []
       self.push = try c.decodeIfPresent(PushView.self, forKey: .push)
       self.login = try c.decodeIfPresent(LoginView.self, forKey: .login)
     }
@@ -4135,12 +4064,12 @@ public enum CoreView {
       try c.encodeIfPresent(agents, forKey: .agents)
       if !agentList.isEmpty { try c.encode(agentList, forKey: .agentList) }
       try c.encodeIfPresent(agentsLead, forKey: .agentsLead)
-      try c.encodeIfPresent(desks, forKey: .desks)
+      try c.encodeIfPresent(teams, forKey: .teams)
       try c.encodeIfPresent(devicesSays, forKey: .devicesSays)
       try c.encode(keyEpoch, forKey: .keyEpoch)
       try c.encodeIfPresent(room, forKey: .room)
       try c.encodeIfPresent(hub, forKey: .hub)
-      if !deskCounts.isEmpty { try c.encode(deskCounts, forKey: .deskCounts) }
+      if !teamCounts.isEmpty { try c.encode(teamCounts, forKey: .teamCounts) }
       if !deleting.isEmpty { try c.encode(deleting, forKey: .deleting) }
       try c.encodeIfPresent(push, forKey: .push)
       try c.encodeIfPresent(login, forKey: .login)
@@ -4212,9 +4141,9 @@ public enum CoreView {
     }
   }
 
-  /// What a desk holds: what its delete takes away.
-  public struct DeskCountsView: Codable, Hashable, Sendable {
-    public var deskId: String
+  /// What a team holds: what its delete takes away.
+  public struct TeamCountsView: Codable, Hashable, Sendable {
+    public var teamId: String
     public var sessions: UInt64
     public var helpers: UInt64
     public var archived: UInt64
@@ -4230,8 +4159,8 @@ public enum CoreView {
     public var artifacts: UInt64
     public var goals: UInt64
 
-    public init(deskId: String = "", sessions: UInt64 = 0, helpers: UInt64 = 0, archived: UInt64 = 0, openCards: UInt64 = 0, doneCards: UInt64 = 0, agents: UInt64 = 0, board: UInt64? = nil, pictures: UInt64? = nil, notes: UInt64? = nil, files: UInt64 = 0, artifacts: UInt64 = 0, goals: UInt64 = 0) {
-      self.deskId = deskId
+    public init(teamId: String = "", sessions: UInt64 = 0, helpers: UInt64 = 0, archived: UInt64 = 0, openCards: UInt64 = 0, doneCards: UInt64 = 0, agents: UInt64 = 0, board: UInt64? = nil, pictures: UInt64? = nil, notes: UInt64? = nil, files: UInt64 = 0, artifacts: UInt64 = 0, goals: UInt64 = 0) {
+      self.teamId = teamId
       self.sessions = sessions
       self.helpers = helpers
       self.archived = archived
@@ -4247,7 +4176,7 @@ public enum CoreView {
     }
 
     enum CodingKeys: String, CodingKey {
-      case deskId = "desk_id"
+      case teamId = "team_id"
       case sessions = "sessions"
       case helpers = "helpers"
       case archived = "archived"
@@ -4264,7 +4193,7 @@ public enum CoreView {
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
-      self.deskId = try c.decode(String.self, forKey: .deskId)
+      self.teamId = try c.decode(String.self, forKey: .teamId)
       self.sessions = try c.decode(UInt64.self, forKey: .sessions)
       self.helpers = try c.decode(UInt64.self, forKey: .helpers)
       self.archived = try c.decode(UInt64.self, forKey: .archived)
@@ -4281,7 +4210,7 @@ public enum CoreView {
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
-      try c.encode(deskId, forKey: .deskId)
+      try c.encode(teamId, forKey: .teamId)
       try c.encode(sessions, forKey: .sessions)
       try c.encode(helpers, forKey: .helpers)
       try c.encode(archived, forKey: .archived)
@@ -4383,34 +4312,34 @@ public enum CoreView {
     }
   }
 
-  /// A desk's delete in progress: units done of the total.
-  public struct DeskDeleteView: Codable, Hashable, Sendable {
-    public var deskId: String
+  /// A team's delete in progress: units done of the total.
+  public struct TeamDeleteView: Codable, Hashable, Sendable {
+    public var teamId: String
     public var done: UInt64
     public var total: UInt64
 
-    public init(deskId: String = "", done: UInt64 = 0, total: UInt64 = 0) {
-      self.deskId = deskId
+    public init(teamId: String = "", done: UInt64 = 0, total: UInt64 = 0) {
+      self.teamId = teamId
       self.done = done
       self.total = total
     }
 
     enum CodingKeys: String, CodingKey {
-      case deskId = "desk_id"
+      case teamId = "team_id"
       case done = "done"
       case total = "total"
     }
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
-      self.deskId = try c.decode(String.self, forKey: .deskId)
+      self.teamId = try c.decode(String.self, forKey: .teamId)
       self.done = try c.decode(UInt64.self, forKey: .done)
       self.total = try c.decode(UInt64.self, forKey: .total)
     }
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
-      try c.encode(deskId, forKey: .deskId)
+      try c.encode(teamId, forKey: .teamId)
       try c.encode(done, forKey: .done)
       try c.encode(total, forKey: .total)
     }
@@ -4598,8 +4527,8 @@ public enum CoreView {
     public var name: Text
     /// What draws it (`SessionRowView::mark`).
     public var mark: String
-    /// "Work desk".
-    public var desk: Text
+    /// "Work team".
+    public var team: Text
     /// Its folder on the computer; "" when unknown.
     public var folder: String
     public var helpers: UInt32
@@ -4609,12 +4538,12 @@ public enum CoreView {
     /// "connected", "away".
     public var state: Text
 
-    public init(id: String = "", slug: String = "", name: Text = Text(), mark: String = "", desk: Text = Text(), folder: String = "", helpers: UInt32 = 0, helpersSays: Text? = nil, online: Bool = false, state: Text = Text()) {
+    public init(id: String = "", slug: String = "", name: Text = Text(), mark: String = "", team: Text = Text(), folder: String = "", helpers: UInt32 = 0, helpersSays: Text? = nil, online: Bool = false, state: Text = Text()) {
       self.id = id
       self.slug = slug
       self.name = name
       self.mark = mark
-      self.desk = desk
+      self.team = team
       self.folder = folder
       self.helpers = helpers
       self.helpersSays = helpersSays
@@ -4627,7 +4556,7 @@ public enum CoreView {
       case slug = "slug"
       case name = "name"
       case mark = "mark"
-      case desk = "desk"
+      case team = "team"
       case folder = "folder"
       case helpers = "helpers"
       case helpersSays = "helpers_says"
@@ -4641,7 +4570,7 @@ public enum CoreView {
       self.slug = try c.decode(String.self, forKey: .slug)
       self.name = try c.decode(Text.self, forKey: .name)
       self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
-      self.desk = try c.decode(Text.self, forKey: .desk)
+      self.team = try c.decode(Text.self, forKey: .team)
       self.folder = try c.decodeIfPresent(String.self, forKey: .folder) ?? ""
       self.helpers = try c.decodeIfPresent(UInt32.self, forKey: .helpers) ?? 0
       self.helpersSays = try c.decodeIfPresent(Text.self, forKey: .helpersSays)
@@ -4655,7 +4584,7 @@ public enum CoreView {
       try c.encode(slug, forKey: .slug)
       try c.encode(name, forKey: .name)
       try c.encode(mark, forKey: .mark)
-      try c.encode(desk, forKey: .desk)
+      try c.encode(team, forKey: .team)
       if !folder.isEmpty { try c.encode(folder, forKey: .folder) }
       try c.encode(helpers, forKey: .helpers)
       try c.encodeIfPresent(helpersSays, forKey: .helpersSays)
@@ -5130,9 +5059,9 @@ public enum CoreView {
     }
   }
 
-  /// A desk's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt.
+  /// A team's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt.
   public struct ThumbView: Codable, Hashable, Sendable {
-    public var deskId: String
+    public var teamId: String
     /// `desk/<32 hex>`.
     public var boardId: String
     /// "loading" while it is read on this device, else as `BoardView.state`.
@@ -5141,8 +5070,8 @@ public enum CoreView {
     public var count: UInt64
     public var shapes: [BoardShape]
 
-    public init(deskId: String = "", boardId: String = "", state: String = "", count: UInt64 = 0, shapes: [BoardShape] = []) {
-      self.deskId = deskId
+    public init(teamId: String = "", boardId: String = "", state: String = "", count: UInt64 = 0, shapes: [BoardShape] = []) {
+      self.teamId = teamId
       self.boardId = boardId
       self.state = state
       self.count = count
@@ -5150,7 +5079,7 @@ public enum CoreView {
     }
 
     enum CodingKeys: String, CodingKey {
-      case deskId = "desk_id"
+      case teamId = "team_id"
       case boardId = "board_id"
       case state = "state"
       case count = "count"
@@ -5159,7 +5088,7 @@ public enum CoreView {
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
-      self.deskId = try c.decode(String.self, forKey: .deskId)
+      self.teamId = try c.decode(String.self, forKey: .teamId)
       self.boardId = try c.decode(String.self, forKey: .boardId)
       self.state = try c.decode(String.self, forKey: .state)
       self.count = try c.decodeIfPresent(UInt64.self, forKey: .count) ?? 0
@@ -5168,7 +5097,7 @@ public enum CoreView {
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
-      try c.encode(deskId, forKey: .deskId)
+      try c.encode(teamId, forKey: .teamId)
       try c.encode(boardId, forKey: .boardId)
       try c.encode(state, forKey: .state)
       try c.encode(count, forKey: .count)

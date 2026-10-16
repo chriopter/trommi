@@ -69,16 +69,16 @@ fn a_decision_that_arrives_stands_on_the_desk_and_on_its_sessions_page() {
     // the session's page and the card's page are made while they are in view, and taken away after
     let session = sim.view.sidebar.sessions[0].id.clone();
     let card = sim.view.desk.rows[0].id.clone();
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: session.clone() }, visible: true, desk: None, board: None } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: session.clone() }, visible: true, team: None, board: None } });
     let page = sim.view.sessions.get(&session).expect("the session in view has its unit");
     assert_eq!(page.talk.iter().map(|r| (r.kind.as_str(), r.text.as_str())).collect::<Vec<_>>(), [("agent", "hello"), ("ask", "")]);
     assert_eq!((page.open, page.talk[1].row.as_ref().map(|r| r.title.as_str())), (1, Some("Ship it?")));
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Card { card_id: card.clone() }, visible: true, desk: None, board: None } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Card { card_id: card.clone() }, visible: true, team: None, board: None } });
     assert!(sim.view.sessions.is_empty());
     let page = sim.view.cards.get(&card).expect("the card in view has its unit");
     assert_eq!((page.title.as_str(), page.nr.en.as_str(), page.answer.mode.as_str(), page.place.as_ref().map(|p| (p.at, p.of))), ("Ship it?", "Nr. 1", "options", Some((1, 1))));
     // the page Off your mind, with its search: made while in view
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Off { query: "nothing like this".into() }, visible: true, desk: None, board: None } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Off { query: "nothing like this".into() }, visible: true, team: None, board: None } });
     assert!(sim.view.cards.is_empty());
     assert_eq!(sim.view.off.as_ref().and_then(|o| o.none.as_ref()).map(|t| t.en.as_str()), Some("Nothing here has these words."));
     sim.send(Event::Focus { focus: Focus::default() });
@@ -121,8 +121,8 @@ fn the_desks_rows_do_not_move_while_history_is_read() {
     assert_eq!((sim.view.phase, &sim.view.desk.stack), (Phase::Live, &first));
     // (the rows themselves never travelled again while the pages were read: at most the head changed, once, when the
     //  reading ended)
-    let desks = rendered(&sim, from).iter().filter(|p| **p == "desk").count();
-    assert!(desks <= 1, "the Desk was sent {desks} times while history was read");
+    let teams = rendered(&sim, from).iter().filter(|p| **p == "desk").count();
+    assert!(teams <= 1, "the Desk was sent {teams} times while history was read");
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn the_chat_list_dots_what_was_said_since_the_chat_was_last_in_view_and_keeps_it
     world.agent_says("hello there");
     let mut sim = world.sim();
     sim.send(start());
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, desk: None, board: None } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, team: None, board: None } });
     let row = sim.view.sidebar.sessions[0].clone();
     assert_eq!(row.last.as_ref().map(|l| l.text.as_str()), Some("hello there"));
     assert!(!row.unread, "the first look reads everything said before it");
@@ -141,20 +141,20 @@ fn the_chat_list_dots_what_was_said_since_the_chat_was_last_in_view_and_keeps_it
     let row = sim.view.sidebar.sessions[0].clone();
     assert_eq!((row.last.as_ref().map(|l| l.text.as_str()), row.unread), (Some("news"), true));
     // the chat in view: read
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: row.id.clone() }, visible: true, desk: None, board: None } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: row.id.clone() }, visible: true, team: None, board: None } });
     assert!(!sim.view.sidebar.sessions[0].unread);
     // a chat in view that is not shown (a window behind others) reads nothing
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: row.id.clone() }, visible: false, desk: None, board: None } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: row.id.clone() }, visible: false, team: None, board: None } });
     world.agent_says("later");
     assert!(world.stream(&mut sim));
     assert!(sim.view.sidebar.sessions[0].unread);
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, desk: None, board: None } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, team: None, board: None } });
     // kept across a start
     sim.restart();
     sim.send(start());
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, desk: None, board: None } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, team: None, board: None } });
     assert!(sim.view.sidebar.sessions[0].unread, "still unread after a start");
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: row.id.clone() }, visible: true, desk: None, board: None } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Session { session_id: row.id.clone() }, visible: true, team: None, board: None } });
     sim.restart();
     sim.send(start());
     assert!(!sim.view.sidebar.sessions[0].unread, "read stays read after a start");

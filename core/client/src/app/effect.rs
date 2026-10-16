@@ -120,7 +120,7 @@ pub struct Notice {
     pub urgent: bool,
 }
 
-/// The board as a widget or a Live Activity shows it, on every desk.
+/// The board as a widget or a Live Activity shows it, on every team.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WidgetSnapshot {
     /// Live Activity policy: unknown until the push level is read; false when off or signed out.
@@ -128,9 +128,9 @@ pub struct WidgetSnapshot {
     pub live_activity: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub room: Option<String>,
-    /// The native share sheet's recipients, already in desk order.
+    /// The native share sheet's recipients, already in team order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub desks: Vec<ShareDesk>,
+    pub teams: Vec<ShareTeam>,
     /// How many cards and requests wait for the person: open, no info, not with its agent, not put off, not of an
     /// archived session, read on this device.
     pub waiting: u32,
@@ -209,4 +209,4 @@ pub enum LogLevel {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ShareDesk { pub id: String, pub name: String, pub crown: Option<crate::views::NoteToView> }
+pub struct ShareTeam { pub id: String, pub name: String, pub crown: Option<crate::views::NoteToView> }

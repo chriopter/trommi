@@ -124,7 +124,7 @@
     "en": "Welcome back."
   },
   "goals": {
-    "desk_id": "platform",
+    "team_id": "platform",
     "lines": [
       "Subscriptions live with the web launch",
       "us-east serving reads by October 31",

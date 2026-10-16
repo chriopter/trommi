@@ -592,7 +592,7 @@ a.focus-stage-step { display: grid; place-items: center; }
 .t-opt-links ul { margin: var(--s-1) 0 0; padding-left: 1.1em; }
 
 #session .pane-who:hover .crown-toggle[aria-pressed="false"], #session .pane-who .crown-toggle:focus-visible { opacity: .5; }
-.topbar #brand-doors button.menu-desk-add:is(:hover, :focus-visible) { color: var(--fg); }
+.topbar #brand-doors button.menu-team-add:is(:hover, :focus-visible) { color: var(--fg); }
 
 /* (a video in the gallery: the player as large as the place lets it be) */
 

@@ -17,12 +17,12 @@
 //! - **Snapshots**: after [`SNAP_EVERY`] items and [`SNAP_IDLE_MS`] without one, with nothing of this device in
 //!   flight for the board and every item read: the frontier is declared (`POST /v1/boards/{board}/frontier`), the
 //!   gzip'd file uploaded encrypted, the register written, and once the hub took the register the frontier is bound
-//!   to it. [`Scribble::snapshot_now`] writes one at once (a desk's delete: the empty board).
+//!   to it. [`Scribble::snapshot_now`] writes one at once (a team's delete: the empty board).
 
 pub mod gzip;
 
 use crate::app::io::{HttpRequest, IoId};
-use crate::desk_delete::BoardKnown;
+use crate::team_delete::BoardKnown;
 use crate::engine::{Ctx, Engine};
 use crate::hub::{Answer, Codec, Expect, Failure, Route, Site};
 use crate::model::Model;
@@ -75,17 +75,18 @@ pub fn board_of(id: &str) -> Option<BoardId> {
     BoardId::from_slice(&unhex(hex)?).ok()
 }
 
-/// The board of a desk (10.1): a desk id of 32 hex is its board's id; "all" is the board of All desks; any other
-/// name (`main`, a room without desks) is folded into 16 bytes, its UTF-8 XORed by position and the length XORed
+/// The board of a team (10.1): a team id of 32 hex is its board's id; "all" is the board the view of every team at
+/// once had (spec 10.1 `ALL_DESKS`); any other
+/// name (`main`, a room without teams) is folded into 16 bytes, its UTF-8 XORed by position and the length XORed
 /// onto the last byte, so every client finds the same board.
-pub fn desk_board(desk: &str) -> String {
-    if desk == crate::views::board::ALL_DESKS {
+pub fn team_board(team: &str) -> String {
+    if team == "all" {
         return format!("desk/{}", hex(BoardId::ALL_DESKS.as_bytes()));
     }
-    if desk.len() == 32 && desk.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
-        return format!("desk/{desk}");
+    if team.len() == 32 && team.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return format!("desk/{team}");
     }
-    let name = if desk.is_empty() { "main" } else { desk };
+    let name = if team.is_empty() { "main" } else { team };
     let mut out = [0u8; 16];
     for (i, b) in name.bytes().enumerate() {
         out[i % 16] ^= b;
@@ -94,9 +95,9 @@ pub fn desk_board(desk: &str) -> String {
     format!("desk/{}", hex(&out))
 }
 
-/// The board a focus names: a board id as it is, or the board of a desk.
+/// The board a focus names: a board id as it is, or the board of a team.
 pub fn board_in_view(text: &str) -> Option<BoardId> {
-    board_of(text).or_else(|| board_of(&desk_board(text)))
+    board_of(text).or_else(|| board_of(&team_board(text)))
 }
 
 /// The model's id of a shape: `<sender hex>/<number>/<index>`.
@@ -442,7 +443,7 @@ impl Scribble {
         }
     }
 
-    /// A board to read though it is not in view (a desk's delete).
+    /// A board to read though it is not in view (a team's delete).
     pub fn read(&mut self, board: BoardId) {
         self.pads.entry(board).or_insert_with(|| Pad::new(board));
     }
@@ -616,12 +617,12 @@ impl Scribble {
     }
 
     /// Writes a snapshot of `board` as soon as nothing of it is in flight, however few items it has: deleting a
-    /// desk writes the snapshot of its empty board (`desk_delete::Step::WriteSnapshot`).
+    /// team writes the snapshot of its empty board (`team_delete::Step::WriteSnapshot`).
     pub fn snapshot_now(&mut self, board: BoardId) {
         self.pads.entry(board).or_insert_with(|| Pad::new(board)).force = true;
     }
 
-    /// What this device knows of a board, for a desk's delete; none until it was read.
+    /// What this device knows of a board, for a team's delete; none until it was read.
     pub fn known(&self, board: &BoardId) -> Option<BoardKnown> {
         let pad = self.pads.get(board).filter(|p| p.step == Step::Ready)?;
         Some(BoardKnown {
@@ -632,7 +633,7 @@ impl Scribble {
         })
     }
 
-    /// The shapes on a board that is read, by their model ids (an erase of them all: a desk's delete).
+    /// The shapes on a board that is read, by their model ids (an erase of them all: a team's delete).
     pub fn shape_ids(&self, board: &BoardId) -> Vec<String> {
         self.pads.get(board).map(|p| p.shapes.keys().map(shape_key).collect()).unwrap_or_default()
     }

@@ -11,7 +11,7 @@ One Rust app core runs the web, iPhone, Mac, Linux and connector; the platform s
 - 💬 **Chat** with every agent session, the terminal mirrored
 - 🃏 **Decision cards**: the agent asks, you tap an answer
 - ✏️ **Scribble Board**: draw, write, stick notes, send them to an agent
-- 🗂 **Desks** to sort your agents, with their helpers under them
+- 🗂 **Teams** to sort your agents, with their helpers under them; one dropdown switches between them
 - 🔒 **End-to-end encrypted**: the server never holds a key or reads content
 
 <img src=".github/readme/gallery-light.png" width="880" alt="The iPhone app: the Desk, a decision card with pictures, a chat with an agent, the Scribble Board">
@@ -126,7 +126,7 @@ flowchart TB
     phone["iPhone"]
     browser["Browser"]
   end
-  room(["Room group<br/>Desks, Notes, Scribble Boards"])
+  room(["Room group<br/>Teams, Notes, Scribble Boards"])
   sessA(["Session group: one agent<br/>Chat, cards, Artifacts"])
   helper(["Helper session<br/>the same, for a subagent"])
   connA["Connector<br/>(agent device)"]
@@ -141,11 +141,11 @@ flowchart TB
 ```
 
 - **Room group:** all of your devices (at most 1000) and nothing else. It protects what belongs to you, not to one
-  agent: Desks, Goals, Notes, Scribble Boards.
+  agent: Teams, Goals, Notes, Scribble Boards.
 - **Session group:** one per agent session: your devices and that agent's connector. One agent never reads
   another's session, and no agent reads the room group.
 - **Helper session:** a subagent's own group, opened by its agent's connector, with your devices in it.
-- Which Desk an agent sits on is only a value inside the room group: moving it changes no key.
+- Which team an agent sits on is only a value inside the room group: moving it changes no key.
 - **Removing** a device or agent takes it out of every group at once, and the hub ends its access.
 
 </details>

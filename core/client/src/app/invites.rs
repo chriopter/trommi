@@ -5,7 +5,7 @@
 //! `invite_request`, or a look every few seconds) it is accepted and its Reveal published, and the six emoji show
 //! (`step: "compare_emoji"`). `ConfirmEmoji` adds the newcomer by a Commit (the engine takes the invite's further
 //! steps, also after a restart) or burns the invite at the hub. Once the newcomer is in, an agent's new session gets
-//! the name and desk the invite was made with, and the step is `none` again.
+//! the name and team the invite was made with, and the step is `none` again.
 //!
 //! The link holds the invite's secret: it is in the view only (whose `Debug` leaves it out), never in a log or a
 //! stored entry of the App.
@@ -57,7 +57,7 @@ pub(super) struct Inviting {
     /// The link, kept for a vouched one until it is written for the asking agent.
     link: Option<String>,
     label: String,
-    desk: Option<String>,
+    team: Option<String>,
     expires_at: u64,
     stage: Stage,
     next_look: u64,
@@ -110,8 +110,8 @@ impl App {
             AccountAction::InviteDevice => {
                 self.invite_open(now_ms, Role::Human, String::new(), None, None, out);
             }
-            AccountAction::InviteAgent { label, desk } => {
-                self.invite_open(now_ms, Role::Agent, label.clone(), desk.clone(), None, out);
+            AccountAction::InviteAgent { label, team } => {
+                self.invite_open(now_ms, Role::Agent, label.clone(), team.clone(), None, out);
             }
             AccountAction::ApproveComputer { label } => {
                 if self.invite_open(now_ms, Role::Agent, label.clone(), None, None, out) {
@@ -132,7 +132,7 @@ impl App {
         true
     }
 
-    pub(super) fn invite_open(&mut self, now_ms: u64, role: Role, label: String, desk: Option<String>, vouch: Option<Vouch>, out: &mut Vec<Effect>) -> bool {
+    pub(super) fn invite_open(&mut self, now_ms: u64, role: Role, label: String, team: Option<String>, vouch: Option<Vouch>, out: &mut Vec<Effect>) -> bool {
         let shown = vouch.is_none();
         if self.demo {
             // A made-up invite for /screens; no protocol state, usable secret, hub or storage is created.
@@ -140,7 +140,7 @@ impl App {
             let link = "https://app.trommi.com/#demo-invite".to_string();
             self.invites.open.clear();
             self.invites.joined = None;
-            self.invites.open.insert(invite, Inviting { role, computer:false, vouch:None, link:None, label, desk,
+            self.invites.open.insert(invite, Inviting { role, computer:false, vouch:None, link:None, label, team,
                 expires_at:now_ms + role.invite_life_ms(), stage:Stage::Open,
                 next_look:u64::MAX, asked:None });
             let (prompt, command) = connect_words(&link, false);
@@ -182,7 +182,7 @@ impl App {
         }
         let link = String::from_utf8(opened.link.expose().to_vec()).unwrap_or_default();
         let offer = opened.signed_offer;
-        self.invites.open.insert(invite, Inviting { role, computer: false, vouch, link: (!shown).then(|| link.clone()), label, desk, expires_at: opened.expires_at, stage: Stage::Publishing, next_look: now_ms + LOOK_MS, asked: None });
+        self.invites.open.insert(invite, Inviting { role, computer: false, vouch, link: (!shown).then(|| link.clone()), label, team, expires_at: opened.expires_at, stage: Stage::Publishing, next_look: now_ms + LOOK_MS, asked: None });
         let asked = self.invite_send(
             now_ms,
             out,
@@ -408,7 +408,7 @@ impl App {
             }
             let device = hex(newcomer.as_bytes());
             let session = self.board.model.sessions.iter().find(|(_, s)| s.agent_device_id.as_deref() == Some(device.as_str()) && s.parent_session_id.is_none()).map(|(k, _)| k.clone());
-            let needs_session = self.invites.open.get(&invite).is_some_and(|i| i.role == Role::Agent && (i.computer || !i.label.is_empty() || i.desk.is_some() || i.vouch.is_some()));
+            let needs_session = self.invites.open.get(&invite).is_some_and(|i| i.role == Role::Agent && (i.computer || !i.label.is_empty() || i.team.is_some() || i.vouch.is_some()));
             // Keep the human's approval until the authenticated main session is available to bind it to.
             if inside && needs_session && session.is_none() { continue }
             let Some(i) = self.invites.open.remove(&invite) else { continue };
@@ -422,8 +422,8 @@ impl App {
                     if !i.label.is_empty() {
                         place.insert("name".into(), json!(i.label));
                     }
-                    if let Some(desk) = &i.desk {
-                        place.insert("desk".into(), json!(desk));
+                    if let Some(team) = &i.team {
+                        place.insert("desk".into(), json!(team));
                     }
                     if let Some(v) = &i.vouch {
                         let mut vouched = json!({ "by": v.session_id, "by_name": v.by_name, "account": v.account, "account_label": v.account_label });

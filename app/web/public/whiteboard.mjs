@@ -5,8 +5,8 @@
 //
 // It draws the board the core has in view (vm.board, BoardView: shapes in board units, others' strokes still drawn,
 // this device's items not back yet) and sends what the person does: Action::BoardItem (strokes, erase, send_away,
-// move), Action::StrokePiece (a stroke while it is drawn), t.attach (a picture's bytes). On "All desks" every desk
-// stands at the left as a small card (whiteboardDesks); a click opens that desk's board. The pad runs on the page
+// move), Action::StrokePiece (a stroke while it is drawn), t.attach (a picture's bytes). The board is the team's
+// in view. The pad runs on the page
 // itself (mountPad, controller "whiteboard"); linkBoard ties its element records to the view model.
 import { Controller, controller, html, isTyping, letterKeysOn, markArt, raw, sk, sayError, whoOf } from './ui.mjs'
 
@@ -106,17 +106,8 @@ function sampleStroke(pts, f, { tool = 'pen', width = 4, step = 1, from = 0, to 
 }
 
 // ---- the page ----
-/** The desk the board belongs to, as the sidebar has it ("all" on All desks): the pad is mounted again when it changes. */
-const deskInView = vm => (vm.sidebar?.all?.selected ? 'all' : vm.sidebar?.desks?.find(d => d.selected)?.id ?? 'all')
-
-/** The boards beside the one in view. On "All desks": a card per desk. On a desk: the quiet way back to All desks.
- *  A room with one desk has one board and nothing here. */
-function whiteboardDesks(vm) {
-  const desks = vm.sidebar?.desks ?? []
-  if (!vm.sidebar?.all) return html`<nav id="whiteboard-desks" hidden></nav>`
-  if (!vm.sidebar.all.selected) return html`<nav class="board-desks is-desk" id="whiteboard-desks" aria-label="Scribble Boards"><a class="board-back" data-nav href="/scribble-board?desk=all" data-tip="All desks">${sk('back')}<span>All desks</span></a><b class="board-here">${sk('desk')}<span>${vm.sidebar.place?.en ?? ''}</span></b></nav>`
-  return html`<nav class="board-desks" id="whiteboard-desks" aria-label="The desks' Scribble Boards" data-controller="thumbs">${desks.map(d => html`<a class="board-card" id="board-card-${d.id}" data-nav href="/scribble-board?desk=${d.id}" aria-label="${d.name.en}: open its Scribble Board"><canvas class="board-card-thumb" width="264" height="156" aria-hidden="true" data-thumb="${d.id}"></canvas><span class="board-card-name">${sk('desk')}<b>${d.name.en}</b><small class="board-card-n" data-thumb-n="${d.id}"></small></span></a>`)}</nav>`
-}
+/** The team the board belongs to, as the sidebar has it: the pad is mounted again when it changes. */
+const teamInView = vm => vm.sidebar?.team ?? ''
 
 /** The sessions for the pad's "Send to…" (read by the controller), and when the board last changed: the controller
  *  draws the board again when this element is replaced (a new render, a picture's bytes came). */
@@ -128,8 +119,8 @@ function whiteboardSessions(vm) {
 
 /** The Scribble Board's page. It is a part of its own in the frame (app.mjs bodyParts, key "pad"): the Desk keeps the
  *  same markup under its sheet once the corner was touched, so a turn of the page mounts nothing anew. */
-export const whiteboardMain = vm => raw(`<main id="whiteboard" aria-label="Scribble Board" data-controller="whiteboard" data-whiteboard-canvas-value="${deskInView(vm)}">
-${whiteboardSessions(vm)}${whiteboardDesks(vm)}
+export const whiteboardMain = vm => raw(`<main id="whiteboard" aria-label="Scribble Board" data-controller="whiteboard" data-whiteboard-canvas-value="${teamInView(vm)}">
+${whiteboardSessions(vm)}
 <div class="pad" id="pad" data-tool="pen" data-place data-owns-keys>
   <canvas class="pad-canvas" id="canvas" role="img" aria-label="Scribble Board: an endless surface for notes, drawings and pictures"></canvas>
 
@@ -280,20 +271,20 @@ export function register(t) {
 }
 
 // ---- controller "thumbs" ----
-// The desks' boards small (vm.thumbs: the core reads each desk's board while such a page is in view): every
-// canvas[data-thumb=<desk id>] in it painted with its shapes (paintThumb), and [data-thumb-n] says how many there are.
+// The teams' boards small (vm.thumbs: the core reads each team's board while such a page is in view): every
+// canvas[data-thumb=<team id>] in it painted with its shapes (paintThumb), and [data-thumb-n] says how many there are.
 // Painted again on every render of the core in which a board changed.
 controller('thumbs', class extends Controller {
   connect() {
     this.paint = () => {
       const vm = (T?.vm ?? globalThis.window?.trommi?.vm)?.()
-      const list = new Map((vm?.thumbs ?? []).map(x => [x.desk_id, x]))
+      const list = new Map((vm?.thumbs ?? []).map(x => [x.team_id, x]))
       for (const cv of this.element.querySelectorAll('canvas[data-thumb]')) {
         const th = list.get(cv.dataset.thumb)
         if (!th) continue
         const key = `${th.state}:${th.count}:${th.shapes?.at(-1)?.id ?? ''}:${document.documentElement.dataset.theme ?? ''}`
         if (cv.dataset.painted !== key) { paintThumb(cv, th.shapes ?? []); cv.dataset.painted = key }
-        for (const n of this.element.querySelectorAll(`[data-thumb-n="${CSS.escape(th.desk_id)}"]`)) n.textContent = th.state === 'loading' ? '' : th.count ? String(th.count) : 'empty'
+        for (const n of this.element.querySelectorAll(`[data-thumb-n="${CSS.escape(th.team_id)}"]`)) n.textContent = th.state === 'loading' ? '' : th.count ? String(th.count) : 'empty'
       }
     }
     this.paint()

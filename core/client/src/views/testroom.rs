@@ -13,7 +13,7 @@ pub struct Room {
     pub sessions: Vec<Value>,
     pub cards: Vec<Value>,
     pub permissions: Vec<Value>,
-    pub desks: Value,
+    pub teams: Value,
     pub settings: serde_json::Map<String, Value>,
     pub crown: Value,
     pub snoozes: Value,
@@ -39,8 +39,8 @@ impl Room {
         }));
         self.sessions.last_mut().unwrap()
     }
-    pub fn on_desk(&mut self, name: &str, desk: &str) {
-        self.settings.insert(dev(name), json!({ "desk": desk }));
+    pub fn on_team(&mut self, name: &str, team: &str) {
+        self.settings.insert(dev(name), json!({ "desk": team }));
     }
     pub fn card(&mut self, id: &str, of: &str, kind: &str, urgency: &str) -> &mut Value {
         let n = 100 + self.cards.len() as u64;
@@ -80,7 +80,7 @@ impl Room {
         let fixture = json!({
             "made_at": now, "room": { "my_device_id": "me" }, "members": self.members, "sessions": self.sessions, "cards": self.cards,
             "permissions": self.permissions, "timelines": self.timelines, "notes": self.notes, "published": self.published,
-            "human": { "desks": self.desks, "session_settings": self.settings, "crown": self.crown, "snoozes": self.snoozes, "stars": self.stars },
+            "human": { "desks": self.teams, "session_settings": self.settings, "crown": self.crown, "snoozes": self.snoozes, "stars": self.stars },
         });
         demo::model_of(&fixture, now).unwrap()
     }

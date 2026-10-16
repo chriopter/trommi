@@ -225,7 +225,7 @@ final class NativeScreensTests: XCTestCase {
     app.buttons["session-more"].tap()
     XCTAssertTrue(app.buttons["Rename…"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Change Icon…"].exists)
-    XCTAssertTrue(app.buttons["Move to Desk…"].exists)
+    XCTAssertTrue(app.buttons["Move to Team…"].exists)
     capture("session-menu")
     app.buttons["Rename…"].tap()
     // (an alert's text field does not carry its SwiftUI identifier: it is the alert's one field)

@@ -18,7 +18,6 @@
               "waiting": 0
             },
             "notes": {
-              "far": false,
               "notes": [],
               "says": {
                 "en": "",
@@ -35,8 +34,6 @@
             },
             "sidebar": {
               "badge": 0,
-              "desk": "",
-              "desks": [],
               "knocking": 0,
               "place": {
                 "en": "",
@@ -44,6 +41,8 @@
               },
               "sessions": [],
               "stopped": 0,
+              "team": "",
+              "teams": [],
               "unheard": 0,
               "waiting": 0,
               "working": 0
@@ -80,26 +79,26 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
-            "desk": "main",
-            "desks": [
+            "knocking": 0,
+            "place": {
+              "en": "Personal",
+              "key": "team.personal"
+            },
+            "sessions": [],
+            "stopped": 0,
+            "team": "main",
+            "teams": [
               {
                 "id": "main",
                 "knocks": false,
                 "name": {
                   "en": "Personal",
-                  "key": "desk.personal"
+                  "key": "team.personal"
                 },
                 "selected": true,
                 "waiting": 0
               }
             ],
-            "knocking": 0,
-            "place": {
-              "en": "Personal",
-              "key": "desk.personal"
-            },
-            "sessions": [],
-            "stopped": 0,
             "unheard": 0,
             "waiting": 0,
             "working": 0
@@ -127,7 +126,6 @@
         {
           "part": "notes",
           "view": {
-            "far": false,
             "no_crown": {
               "en": "Give a session the crown to send",
               "key": "note.no_crown"
@@ -171,23 +169,10 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
-            "desk": "main",
-            "desks": [
-              {
-                "id": "main",
-                "knocks": false,
-                "name": {
-                  "en": "Personal",
-                  "key": "desk.personal"
-                },
-                "selected": true,
-                "waiting": 0
-              }
-            ],
             "knocking": 0,
             "place": {
               "en": "Personal",
-              "key": "desk.personal"
+              "key": "team.personal"
             },
             "sessions": [
               {
@@ -218,7 +203,6 @@
                 },
                 "crowned": false,
                 "depth": 0,
-                "desk_id": "main",
                 "group": ":off",
                 "hushed": false,
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
@@ -233,6 +217,7 @@
                 "online": false,
                 "open": 0,
                 "slug": "00000002eeee",
+                "team_id": "main",
                 "tucked": false,
                 "unfolded": false,
                 "unheard": 0,
@@ -241,6 +226,19 @@
               }
             ],
             "stopped": 0,
+            "team": "main",
+            "teams": [
+              {
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "selected": true,
+                "waiting": 0
+              }
+            ],
             "unheard": 0,
             "waiting": 0,
             "working": 0
@@ -255,10 +253,10 @@
               "key": "desk.empty.reading"
             },
             "goals": {
-              "desk_id": "main",
               "foldable": false,
               "folded": false,
-              "lines": []
+              "lines": [],
+              "team_id": "main"
             },
             "hello": {
               "en": "Catching up…",
@@ -311,13 +309,6 @@
                 "seen_ms": 0,
                 "sessions": [
                   {
-                    "desk": {
-                      "args": {
-                        "desk": "Personal"
-                      },
-                      "en": "Personal desk",
-                      "key": "agents.desk"
-                    },
                     "helpers": 0,
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                     "mark": "00000002eeee",
@@ -330,6 +321,13 @@
                     "state": {
                       "en": "away",
                       "key": "agents.away"
+                    },
+                    "team": {
+                      "args": {
+                        "team": "Personal"
+                      },
+                      "en": "Personal team",
+                      "key": "agents.team"
                     }
                   }
                 ],
@@ -420,23 +418,10 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
-            "desk": "main",
-            "desks": [
-              {
-                "id": "main",
-                "knocks": false,
-                "name": {
-                  "en": "Personal",
-                  "key": "desk.personal"
-                },
-                "selected": true,
-                "waiting": 0
-              }
-            ],
             "knocking": 0,
             "place": {
               "en": "Personal",
-              "key": "desk.personal"
+              "key": "team.personal"
             },
             "sessions": [
               {
@@ -467,7 +452,6 @@
                 },
                 "crowned": false,
                 "depth": 0,
-                "desk_id": "main",
                 "group": ":off",
                 "hushed": false,
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
@@ -482,6 +466,7 @@
                 "online": false,
                 "open": 0,
                 "slug": "00000002eeee",
+                "team_id": "main",
                 "tucked": false,
                 "unfolded": false,
                 "unheard": 0,
@@ -490,6 +475,19 @@
               }
             ],
             "stopped": 0,
+            "team": "main",
+            "teams": [
+              {
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "selected": true,
+                "waiting": 0
+              }
+            ],
             "unheard": 0,
             "waiting": 0,
             "working": 0
@@ -504,10 +502,10 @@
               "key": "desk.empty"
             },
             "goals": {
-              "desk_id": "main",
               "foldable": false,
               "folded": false,
-              "lines": []
+              "lines": [],
+              "team_id": "main"
             },
             "hello": {
               "en": "All quiet.",
@@ -560,13 +558,6 @@
                 "seen_ms": 0,
                 "sessions": [
                   {
-                    "desk": {
-                      "args": {
-                        "desk": "Personal"
-                      },
-                      "en": "Personal desk",
-                      "key": "agents.desk"
-                    },
                     "helpers": 0,
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                     "mark": "00000002eeee",
@@ -579,6 +570,13 @@
                     "state": {
                       "en": "away",
                       "key": "agents.away"
+                    },
+                    "team": {
+                      "args": {
+                        "team": "Personal"
+                      },
+                      "en": "Personal team",
+                      "key": "agents.team"
                     }
                   }
                 ],
@@ -696,23 +694,10 @@
           "part": "sidebar",
           "view": {
             "badge": 1,
-            "desk": "main",
-            "desks": [
-              {
-                "id": "main",
-                "knocks": false,
-                "name": {
-                  "en": "Personal",
-                  "key": "desk.personal"
-                },
-                "selected": true,
-                "waiting": 1
-              }
-            ],
             "knocking": 0,
             "place": {
               "en": "Personal",
-              "key": "desk.personal"
+              "key": "team.personal"
             },
             "sessions": [
               {
@@ -743,7 +728,6 @@
                 },
                 "crowned": false,
                 "depth": 0,
-                "desk_id": "main",
                 "group": ":off",
                 "hushed": false,
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
@@ -776,6 +760,7 @@
                   "key": "badge.offline_open"
                 },
                 "slug": "00000002eeee",
+                "team_id": "main",
                 "tucked": false,
                 "unfolded": false,
                 "unheard": 0,
@@ -784,6 +769,19 @@
               }
             ],
             "stopped": 0,
+            "team": "main",
+            "teams": [
+              {
+                "id": "main",
+                "knocks": false,
+                "name": {
+                  "en": "Personal",
+                  "key": "team.personal"
+                },
+                "selected": true,
+                "waiting": 1
+              }
+            ],
             "unheard": 0,
             "waiting": 1,
             "working": 0
@@ -846,10 +844,10 @@
               }
             },
             "goals": {
-              "desk_id": "main",
               "foldable": false,
               "folded": false,
-              "lines": []
+              "lines": [],
+              "team_id": "main"
             },
             "hello": {
               "en": "Welcome back.",
@@ -979,13 +977,6 @@
                 "seen_ms": 1791900300010,
                 "sessions": [
                   {
-                    "desk": {
-                      "args": {
-                        "desk": "Personal"
-                      },
-                      "en": "Personal desk",
-                      "key": "agents.desk"
-                    },
                     "helpers": 0,
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                     "mark": "00000002eeee",
@@ -998,6 +989,13 @@
                     "state": {
                       "en": "away",
                       "key": "agents.away"
+                    },
+                    "team": {
+                      "args": {
+                        "team": "Personal"
+                      },
+                      "en": "Personal team",
+                      "key": "agents.team"
                     }
                   }
                 ],
@@ -1143,10 +1141,10 @@
         }
       },
       "goals": {
-        "desk_id": "main",
         "foldable": false,
         "folded": false,
-        "lines": []
+        "lines": [],
+        "team_id": "main"
       },
       "hello": {
         "en": "Welcome back.",
@@ -1236,7 +1234,6 @@
       "waiting": 1
     },
     "notes": {
-      "far": false,
       "no_crown": {
         "en": "Give a session the crown to send",
         "key": "note.no_crown"
@@ -1288,13 +1285,6 @@
           "seen_ms": 1791900300010,
           "sessions": [
             {
-              "desk": {
-                "args": {
-                  "desk": "Personal"
-                },
-                "en": "Personal desk",
-                "key": "agents.desk"
-              },
               "helpers": 0,
               "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
               "mark": "00000002eeee",
@@ -1307,6 +1297,13 @@
               "state": {
                 "en": "away",
                 "key": "agents.away"
+              },
+              "team": {
+                "args": {
+                  "team": "Personal"
+                },
+                "en": "Personal team",
+                "key": "agents.team"
               }
             }
           ],
@@ -1389,23 +1386,10 @@
     },
     "sidebar": {
       "badge": 1,
-      "desk": "main",
-      "desks": [
-        {
-          "id": "main",
-          "knocks": false,
-          "name": {
-            "en": "Personal",
-            "key": "desk.personal"
-          },
-          "selected": true,
-          "waiting": 1
-        }
-      ],
       "knocking": 0,
       "place": {
         "en": "Personal",
-        "key": "desk.personal"
+        "key": "team.personal"
       },
       "sessions": [
         {
@@ -1436,7 +1420,6 @@
           },
           "crowned": false,
           "depth": 0,
-          "desk_id": "main",
           "group": ":off",
           "hushed": false,
           "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
@@ -1469,6 +1452,7 @@
             "key": "badge.offline_open"
           },
           "slug": "00000002eeee",
+          "team_id": "main",
           "tucked": false,
           "unfolded": false,
           "unheard": 0,
@@ -1477,6 +1461,19 @@
         }
       ],
       "stopped": 0,
+      "team": "main",
+      "teams": [
+        {
+          "id": "main",
+          "knocks": false,
+          "name": {
+            "en": "Personal",
+            "key": "team.personal"
+          },
+          "selected": true,
+          "waiting": 1
+        }
+      ],
       "unheard": 0,
       "waiting": 1,
       "working": 0

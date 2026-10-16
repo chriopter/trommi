@@ -58,8 +58,8 @@
     {"id":"desk--note-from-the-phone-bar","screen":"Desk","state":"Note from the phone bar","web":{"path":"/","state":"phone-note","mock":"1"}},
     {"id":"desk--keys-sheet","screen":"Desk","state":"Keys sheet","web":{"path":"/","state":"keys","mock":"1"}},
     {"id":"desk--corner-note-open","screen":"Desk","state":"Corner note open","web":{"path":"/","state":"note","mock":"1"}},
-    {"id":"desk--fernly-desk","screen":"Desk","state":"Fernly desk","web":{"path":"/desk/main","state":null,"mock":"1"}},
-    {"id":"desk--platform-desk","screen":"Desk","state":"Platform desk","web":{"path":"/desk/platform","state":null,"mock":"1"}},
+    {"id":"desk--fernly-team","screen":"Desk","state":"Fernly team","web":{"path":"/team/main","state":null,"mock":"1"}},
+    {"id":"desk--platform-team","screen":"Desk","state":"Platform team","web":{"path":"/team/platform","state":null,"mock":"1"}},
     {"id":"chat","screen":"Chat","state":"As it is","web":{"path":"/chat/54ddca7af4029f0526984da1e346d833","state":null,"mock":"1"}},
     {"id":"chat--a-helper","screen":"Chat","state":"A helper","web":{"path":"/chat/afe6ff94d965b37dccfee8d7d194f2f5","state":null,"mock":"1"}},
     {"id":"chat--infra-codex","screen":"Chat","state":"infra (Codex)","web":{"path":"/chat/5ef619647e0e8185fef0e3be40ff4809","state":null,"mock":"1"}},
@@ -95,7 +95,7 @@
     {"id":"off-the-desk","screen":"Off the desk","state":"As it is","web":{"path":"/stacks/off","state":null,"mock":"1"}},
     {"id":"scribble-board","screen":"Scribble Board","state":"As it is","web":{"path":"/scribble-board","state":null,"mock":"1"}},
     {"id":"scribble-board--its-keys","screen":"Scribble Board","state":"Its keys","web":{"path":"/scribble-board","state":"board-help","mock":"1"}},
-    {"id":"scribble-board--platform","screen":"Scribble Board","state":"Platform","web":{"path":"/scribble-board?desk=platform","state":null,"mock":"1"}},
+    {"id":"scribble-board--platform","screen":"Scribble Board","state":"Platform","web":{"path":"/scribble-board?team=platform","state":null,"mock":"1"}},
     {"id":"log-out","screen":"Log out","state":"As it is","web":{"path":"/logout","state":null,"mock":"1"}}
   ]
 }

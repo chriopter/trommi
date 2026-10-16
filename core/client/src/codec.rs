@@ -289,7 +289,7 @@ fn wire_id_str(text: &str, n: usize) -> Option<String> {
 fn wire_id(v: &Value, n: usize) -> Option<String> {
     v.as_str().and_then(|t| wire_id_str(t, n))
 }
-/// The same, keeping what is not such an id as it stands (a desk called `main`, a value a newer client wrote).
+/// The same, keeping what is not such an id as it stands (a team called `main`, a value a newer client wrote).
 fn soft_hex(v: &Value, n: usize) -> Value {
     hex_id(v, n).map_or_else(|| v.clone(), Value::String)
 }

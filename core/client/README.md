@@ -42,7 +42,7 @@ agent-mode lease/command/removal rules.
 | `src/cache/` | Revision-bound model records and load/save plans over the shell's disposable key/value space |
 | `src/app/past.rs` | History windows, verified historical versions, transient-failure retry and lazy reads |
 | `src/files.rs`, `src/scribble/` | File lifecycle and encryption requests; board items, packed strokes and snapshots |
-| `src/account/`, `src/machines.rs`, `src/selfjoin.rs`, `src/seats.rs`, `src/desk_delete.rs` | Account authority, computer approval and hash-bound activation, session founding and resumable desk deletion |
+| `src/account/`, `src/machines.rs`, `src/selfjoin.rs`, `src/seats.rs`, `src/team_delete.rs` | Account authority, computer approval and hash-bound activation, session founding and resumable team deletion |
 | `src/status.rs`, `src/sessions.rs`, `src/off_mind.rs` | Shared status, session and card-placement rules used by views |
 
 Code sign-in starts from the room state authenticated by the recovery code when it is current. It joins the
@@ -65,7 +65,7 @@ the typed events directly. There is no serialization of private protocol state t
 | Event | Meaning |
 | --- | --- |
 | `Start` | Configures and opens the slot, or the in-memory demo |
-| `Focus` | Screen, desk, visibility and optional board in view |
+| `Focus` | Screen, team, visibility and optional board in view |
 | `Action` | A tap/editor result; account steps are `Action::Account` |
 | `Http`, `Stream`, `Store`, `Secret`, `Platform` | Result of the effect with the same I/O id |
 | `Wake`, `Net`, `Foreground`, `Background`, `Zone` | Clock/network/lifecycle/zone changes |
@@ -82,7 +82,7 @@ the typed events directly. There is no serialization of private protocol state t
 | `Secret`, `Platform` | Private platform secret storage, push registration or another declared capability |
 | `FileReady`, `FileGone`, `SaveFile`, `OpenUrl` | Drawing bytes, their removal, export and external navigation |
 | `Notify` | Display the core's already selected notification and words |
-| `Snapshot` | Draw widget/Live Activity counts and ordered waiting cards; publish the core's ordered share desks |
+| `Snapshot` | Draw widget/Live Activity counts and ordered waiting cards; publish the core's ordered share teams |
 | `NotifyContext` | Replace the notification extension's read-only context/key copy, or clear both |
 | `ShareInbox` | Finish or release a native sealed-inbox claim after the preceding durable write |
 | `ForgetShared` | Erase the native shared inbox/key after account deletion or verified signed removal |
@@ -158,7 +158,7 @@ storage failures must clear the previous copy. The notification extension's deli
 and authority are documented in Security.
 
 `Snapshot` is sent only when it changes. It includes waiting/working counts, urgency, ordered cards (at most 20),
-room, ordered share desks/crowns and `live_activity` policy. Unknown policy waits for the core's push-level read;
+room, ordered share teams/crowns and `live_activity` policy. Unknown policy waits for the core's push-level read;
 false ends the activity. `PushToken` kind `apns_live_activity` uses the core's room/device tag, registration bound
 and duplicate suppression without replacing ordinary APNs registration.
 

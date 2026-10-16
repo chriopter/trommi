@@ -288,7 +288,7 @@ pub struct Conn {
     mirror: mirror::Mirror,
     trail: Mutex<trail::Trail>,
     trail_timer: AtomicBool,
-    /// The desk goals this process last told its agent (line.rs goals_block; "" for none).
+    /// The team goals this process last told its agent (line.rs goals_block; "" for none).
     goals_told: Mutex<Option<String>>,
     missed: Mutex<Vec<Missed>>,
     deaf_told: AtomicBool,
@@ -1443,8 +1443,8 @@ impl Conn {
         }
     }
 
-    /// `out` with the goals of the desk this session is on, when they are new to this agent or changed since it was
-    /// told (README "Desk goals for the agent"): they ride on a tool result, as the update hint does.
+    /// `out` with the goals of the team this session is on, when they are new to this agent or changed since it was
+    /// told (README "Team goals for the agent"): they ride on a tool result, as the update hint does.
     async fn with_goals(&self, out: String) -> String {
         let Some(c) = self.member.client() else {
             return out;

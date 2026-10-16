@@ -408,7 +408,7 @@ struct StarShape: Shape {
   }
 }
 
-/** A session's mark: its drawing in its colour, the crown when it is the desk's crowned session. */
+/** A session's mark: its drawing in its colour, the crown when it is the team's crowned session. */
 struct AgentMark: View {
   let mark: String
   var size: CGFloat = 26

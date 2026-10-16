@@ -1,5 +1,5 @@
-//! The board as the views read it, worked out once per render from the board model: the sessions with their desk
-//! and crown, the desks, the desk in view, the open questions and where they wait, the answers a session has not
+//! The board as the views read it, worked out once per render from the board model: the sessions with their team
+//! and crown, the teams, the team in view, the open questions and where they wait, the answers a session has not
 //! picked up. Every screen's unit is made from this, so that the sidebar, the Desk, a session and a card never
 //! disagree. The rules are the web app's `boardModel` of before (app/web/public/app.mjs).
 //!
@@ -10,26 +10,21 @@
 use super::words::earliest;
 use crate::model::types::{Card, PermissionRequest};
 use crate::model::Model;
-use crate::sessions::{desks_in_order, session_list, SessionRow};
+use crate::sessions::{teams_in_order, session_list, SessionRow};
 use serde_json::Value;
 use std::cell::{Cell, OnceCell};
 use std::collections::HashMap;
 
-/// The desk id that stands for every desk at once. Nothing is stored for it: it is this device's choice.
-pub const ALL_DESKS: &str = "all";
-/// The desk a room without desks shows in its menu.
-pub const DEFAULT_DESK: &str = "main";
+/// The team a room without teams shows in its menu.
+pub const DEFAULT_TEAM: &str = "main";
 /// An answer its session has not picked up for this long is worth a word.
 pub const UNHEARD_MS: u64 = 2 * 60_000;
 
 /// What this device alone chooses and knows: none of it is the room's.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Lens {
-    /// The desk in view: a desk's id, [`ALL_DESKS`], or none (none chosen: every desk at once where there are two
-    /// or more, else the one).
-    pub desk: Option<String>,
-    /// The single desk chosen last: on All desks the note and the Scribble Board belong to it.
-    pub home_desk: Option<String>,
+    /// The team in view: a team's id, or none (none chosen, or one that is gone: the first team).
+    pub team: Option<String>,
     /// Minutes east of UTC (`Config.utc_offset_min`): a time of day in a sentence is the person's.
     pub utc_offset_min: i32,
     /// The room is still being read on this device (a sign-in, the past read again).
@@ -53,9 +48,9 @@ pub struct Lens {
     pub off: Option<String>,
     /// The gallery of Artifacts is in view.
     pub artifacts: bool,
-    /// A page shows every desk's board small (Settings, the boards of All desks): they are read, `ViewModel.thumbs`.
+    /// A page shows every team's board small (Settings, the boards of All teams): they are read, `ViewModel.thumbs`.
     pub thumbs: bool,
-    /// The desks whose goals are folded to their first line on this device (web localStorage
+    /// The teams whose goals are folded to their first line on this device (web localStorage
     /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
     pub goals_folded: Vec<String>,
     /// The main sessions whose helpers this device shows unfolded (`Action::FoldHelpers`; iOS keeps them in
@@ -122,13 +117,13 @@ impl Lens {
     }
 }
 
-/// A desk of the room.
+/// A team of the room.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DeskFacts {
     pub id: String,
     pub name: String,
     pub goals: String,
-    /// The desk's own crown, when its register names one (`Some(Null)`: nobody on this desk).
+    /// The team's own crown, when its register names one (`Some(Null)`: nobody on this team).
     pub crown: Option<Value>,
 }
 
@@ -136,12 +131,12 @@ pub struct DeskFacts {
 #[derive(Clone, Debug)]
 pub struct Agent {
     pub row: SessionRow,
-    /// The desk it stands on: its own when that desk is there, else the first; none in a room without desks.
-    pub desk: Option<String>,
-    /// The crowned session of its desk (one per desk, never one for all).
+    /// The team it stands on: its own when that team is there, else the first; none in a room without teams.
+    pub team: Option<String>,
+    /// The crowned session of its team (one per team, never one for all).
     pub crowned: bool,
-    /// It stands on the desk in view (archived or not).
-    pub on_desk: bool,
+    /// It stands on the team in view (archived or not).
+    pub on_team: bool,
     /// Its device says platform "codex".
     pub codex: bool,
     /// Its connector said a last word before its stream closed.
@@ -170,12 +165,10 @@ pub struct Board<'a> {
     pub by_key: HashMap<String, usize>,
     /// By the board's id of a session (`SessionRow::id`).
     pub by_id: HashMap<String, usize>,
-    /// The desks in the menu's order; empty in a room without desks.
-    pub desks: Vec<DeskFacts>,
-    /// The desk in view: an id of `desks`, [`ALL_DESKS`], or none in a room without desks.
-    pub desk: Option<String>,
-    /// Every desk at once.
-    pub all: bool,
+    /// The teams in the menu's order; empty in a room without teams.
+    pub teams: Vec<DeskFacts>,
+    /// The team in view: an id of `teams`, or none in a room without teams.
+    pub team: Option<String>,
     /// The open questions of the whole board, in the stack's order, the approval requests last.
     pub all_fresh: Vec<Fresh>,
     /// How many of his answers each session has not picked up for [`UNHEARD_MS`], by index of `agents`.
@@ -209,7 +202,7 @@ fn request_is_read(p: &PermissionRequest) -> bool {
 
 impl<'a> Board<'a> {
     pub fn new(model: &'a Model, lens: &'a Lens, now: u64) -> Self {
-        let desks: Vec<DeskFacts> = desks_in_order(model)
+        let teams: Vec<DeskFacts> = teams_in_order(model)
             .into_iter()
             .map(|(id, name)| {
                 let v = model.human.get(&format!("desk/{id}")).map(|r| &r.value);
@@ -221,25 +214,21 @@ impl<'a> Board<'a> {
                 }
             })
             .collect();
-        let has = |id: &str| desks.iter().any(|d| d.id == id);
-        // (none chosen yet, as on a fresh sign-in: every desk at once, as the web opened before)
-        let all = desks.len() > 1 && matches!(lens.desk.as_deref(), None | Some(ALL_DESKS));
-        let desk: Option<String> = if all {
-            Some(ALL_DESKS.into())
-        } else {
-            desks.first().map(|first| match lens.desk.as_deref() {
-                Some(d) if has(d) => d.to_string(),
-                _ => first.id.clone(),
-            })
-        };
+        let has = |id: &str| teams.iter().any(|d| d.id == id);
+        // (one team at a time: the one chosen, else the first; none chosen yet, as on a fresh sign-in, or one that
+        //  is gone: the first)
+        let team: Option<String> = teams.first().map(|first| match lens.team.as_deref() {
+            Some(d) if has(d) => d.to_string(),
+            _ => first.id.clone(),
+        });
         let rows = session_list(model, lens.reading);
         let agents: Vec<Agent> = rows
             .into_iter()
             .map(|row| {
-                let own = desks.first().map(|first| if has(&row.desk) { row.desk.clone() } else { first.id.clone() });
-                // The crown: a desk's own (its register `desk/<id>`, `crown`) decides on that desk; a desk without
+                let own = teams.first().map(|first| if has(&row.team) { row.team.clone() } else { first.id.clone() });
+                // The crown: a team's own (its register `desk/<id>`, `crown`) decides on that team; a team without
                 // one keeps the room's single crown, if that session stands on it.
-                let crowned = match own.as_ref().and_then(|d| desks.iter().find(|x| &x.id == d)).and_then(|d| d.crown.as_ref()) {
+                let crowned = match own.as_ref().and_then(|d| teams.iter().find(|x| &x.id == d)).and_then(|d| d.crown.as_ref()) {
                     None => row.starred,
                     Some(c) => match c.get("session_id").and_then(Value::as_str).filter(|s| !s.is_empty()) {
                         Some(s) => row.session_id.as_deref() == Some(s),
@@ -251,14 +240,14 @@ impl<'a> Board<'a> {
                 };
                 let session = model.sessions.get(&row.key);
                 Agent {
-                    on_desk: desks.is_empty() || all || own == desk,
+                    on_team: teams.is_empty() || own == team,
                     codex: row
                         .agent_device_id
                         .as_deref()
                         .and_then(|d| model.members.get(d))
                         .is_some_and(|d| d.platform.as_str() == Some("codex")),
                     said_goodbye: session.and_then(|s| s.link.as_ref()).is_some_and(|l| l.exit.is_some()),
-                    desk: own,
+                    team: own,
                     crowned,
                     row,
                 }
@@ -299,9 +288,8 @@ impl<'a> Board<'a> {
             agents,
             by_key,
             by_id,
-            desks,
-            desk,
-            all,
+            teams,
+            team,
             all_fresh,
             unheard: HashMap::new(),
             wake: Cell::new(None),
@@ -312,20 +300,20 @@ impl<'a> Board<'a> {
         board
     }
 
-    /// Whether what belongs to this session shows on the desk in view. A session the list does not show counts as
-    /// standing on the first desk.
+    /// Whether what belongs to this session shows on the team in view. A session the list does not show counts as
+    /// standing on the first team.
     pub fn in_view(&self, agent: Option<usize>) -> bool {
         match agent {
-            Some(i) => self.agents[i].on_desk,
-            None => self.desks.is_empty() || self.all || self.desk.as_deref() == self.desks.first().map(|d| d.id.as_str()),
+            Some(i) => self.agents[i].on_team,
+            None => self.teams.is_empty() || self.team.as_deref() == self.teams.first().map(|d| d.id.as_str()),
         }
     }
 
-    /// The desk a card of this session counts on, in a room with desks.
-    pub fn desk_of(&self, agent: Option<usize>) -> Option<&str> {
+    /// The team a card of this session counts on, in a room with teams.
+    pub fn team_of(&self, agent: Option<usize>) -> Option<&str> {
         match agent {
-            Some(i) => self.agents[i].desk.as_deref(),
-            None => self.desks.first().map(|d| d.id.as_str()),
+            Some(i) => self.agents[i].team.as_deref(),
+            None => self.teams.first().map(|d| d.id.as_str()),
         }
     }
 
@@ -370,7 +358,7 @@ impl<'a> Board<'a> {
         r.online || r.link.as_ref().is_some_and(|l| l.state == "cut")
     }
 
-    /// The open questions of the desk in view.
+    /// The open questions of the team in view.
     pub fn fresh(&self) -> impl Iterator<Item = &Fresh> {
         self.all_fresh.iter().filter(|f| self.in_view(f.agent))
     }
@@ -465,7 +453,7 @@ pub struct Heard {
 pub const GOALS_LINES: usize = 20;
 pub const GOALS_LINE_MAX: usize = 200;
 
-/// A desk's goals as they are kept: at most [`GOALS_LINES`] lines of at most [`GOALS_LINE_MAX`] characters (UTF-16
+/// A team's goals as they are kept: at most [`GOALS_LINES`] lines of at most [`GOALS_LINE_MAX`] characters (UTF-16
 /// units, never half a character), no blank lines at either end, no trailing spaces.
 pub fn clean_goals(text: &str) -> String {
     let unified = text.replace("\r\n", "\n").replace('\r', "\n");
@@ -514,7 +502,7 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     }
     view.notes = super::notes::notes(&b);
     // (what the account read keeps: the e-mail is the account's, W3)
-    // (what the App adds beside the model: the account read, the room, the desks' deletes)
+    // (what the App adds beside the model: the account read, the room, the teams' deletes)
     let mut kept = std::mem::take(&mut view.settings);
     view.settings = super::settings::settings(&b);
     view.settings.account = kept.account.take();
@@ -522,7 +510,7 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     view.settings.data = kept.data.take();
     view.settings.room = kept.room.take();
     view.settings.hub = kept.hub.take();
-    view.settings.desk_counts = std::mem::take(&mut kept.desk_counts);
+    view.settings.team_counts = std::mem::take(&mut kept.team_counts);
     view.settings.deleting = std::mem::take(&mut kept.deleting);
     view.settings.push = kept.push.take();
     // The pages in view: one session, one card. A page that is left is taken away.

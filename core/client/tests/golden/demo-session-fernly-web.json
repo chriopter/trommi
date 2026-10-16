@@ -434,8 +434,7 @@
           "path": [
             "Fernly",
             "Fernly Website"
-          ],
-          "desk": "Fernly"
+          ]
         },
         "run": 0,
         "tiles": {
@@ -558,8 +557,7 @@
           "path": [
             "Fernly",
             "Fernly Website"
-          ],
-          "desk": "Fernly"
+          ]
         },
         "run": 0,
         "tiles": {
@@ -819,7 +817,7 @@
   "has_more": false,
   "slug": "fernly-web",
   "mark": "draw:leaf",
-  "desk_id": "main",
+  "team_id": "main",
   "main": true,
   "crowned": true,
   "online": true,
@@ -868,8 +866,7 @@
         "path": [
           "Fernly",
           "Fernly Website"
-        ],
-        "desk": "Fernly"
+        ]
       },
       "run": 0,
       "tiles": {
@@ -947,8 +944,7 @@
         "path": [
           "Fernly",
           "Fernly Website"
-        ],
-        "desk": "Fernly"
+        ]
       },
       "run": 0,
       "tiles": {

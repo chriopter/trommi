@@ -140,7 +140,7 @@ impl CatchUp {
 
     /// The Desk the hub answered. A delta (`since` was asked: `delta_closed` names what left) is laid over the list
     /// held: what it names as open is added or replaced, what it names as closed leaves.
-    pub fn on_desk(&mut self, listing: Listing, delta_closed: Option<&[String]>) {
+    pub fn on_team(&mut self, listing: Listing, delta_closed: Option<&[String]>) {
         self.objects_asked = false;
         if listing.truncated {
             // a list cut short decides nothing; the log brings the rest
@@ -226,7 +226,7 @@ mod tests {
         let board = Board::new();
         let mut plan = CatchUp::new(0, HubCan::default(), None);
         assert_eq!(plan.next(&board), Step::ReadDesk { since: None });
-        plan.on_desk(
+        plan.on_team(
             Listing {
                 at: 500,
                 truncated: false,
@@ -268,7 +268,7 @@ mod tests {
         let board = Board::new();
         let mut plan = CatchUp::new(0, HubCan::default(), None);
         plan.next(&board);
-        plan.on_desk(
+        plan.on_team(
             Listing {
                 at: 10,
                 truncated: false,
@@ -316,7 +316,7 @@ mod tests {
         };
         let mut plan = CatchUp::new(500, HubCan { desk_delta: true }, Some(before));
         assert_eq!(plan.next(&board), Step::ReadDesk { since: Some(500) });
-        plan.on_desk(
+        plan.on_team(
             Listing {
                 at: 700,
                 truncated: false,

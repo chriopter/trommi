@@ -367,23 +367,23 @@ impl ClientModel {
             Ok(())
         })
     }
-    /// Deleting a desk (core/client/src/desk_delete.rs): the desks a delete was begun on, JSON list of ids. An app finishes
-    /// each on its start with `desk_delete_plan`.
-    pub fn desks_deleting(&self) -> Result<String, CoreError> {
-        self.with(|m, _| Ok(serde_json::to_string(&m.desks_deleting()).unwrap_or_default()))
+    /// Deleting a team (core/client/src/team_delete.rs): the teams a delete was begun on, JSON list of ids. An app finishes
+    /// each on its start with `team_delete_plan`.
+    pub fn teams_deleting(&self) -> Result<String, CoreError> {
+        self.with(|m, _| Ok(serde_json::to_string(&m.teams_deleting()).unwrap_or_default()))
     }
-    /// What a desk holds, counted, for the confirm: JSON `Counts`. `board`: JSON `{shapes, files, notes, snapshot_empty}`
-    /// of the desk's board as read, or "" while it is not.
-    pub fn desk_contents(&self, desk_id: String, board: String) -> Result<String, CoreError> {
-        let b: Option<trommi_client_core::desk_delete::BoardKnown> =
+    /// What a team holds, counted, for the confirm: JSON `Counts`. `board`: JSON `{shapes, files, notes, snapshot_empty}`
+    /// of the team's board as read, or "" while it is not.
+    pub fn team_contents(&self, team_id: String, board: String) -> Result<String, CoreError> {
+        let b: Option<trommi_client_core::team_delete::BoardKnown> =
             if board.is_empty() { None } else { Some(serde_json::from_str(&board).map_err(json_err)?) };
-        self.with(|m, _| Ok(serde_json::to_string(&m.desk_contents(&desk_id, b.as_ref())).unwrap_or_default()))
+        self.with(|m, _| Ok(serde_json::to_string(&m.team_contents(&team_id, b.as_ref())).unwrap_or_default()))
     }
-    /// The next step of deleting a desk: JSON `{step, …, done, total, left}`. `known`: JSON `{board?, files_gone}`;
+    /// The next step of deleting a team: JSON `{step, …, done, total, left}`. `known`: JSON `{board?, files_gone}`;
     /// `by`: this device (hex). The app does the step and asks again until `step` is `done` (or `refused`).
-    pub fn desk_delete_plan(&self, desk_id: String, known: String, by: String, now_ms: u64) -> Result<String, CoreError> {
-        let k: trommi_client_core::desk_delete::Known = serde_json::from_str(&known).map_err(json_err)?;
-        self.with(|m, _| Ok(serde_json::to_string(&m.desk_delete_plan(&desk_id, &k, &by, now_ms)).unwrap_or_default()))
+    pub fn team_delete_plan(&self, team_id: String, known: String, by: String, now_ms: u64) -> Result<String, CoreError> {
+        let k: trommi_client_core::team_delete::Known = serde_json::from_str(&known).map_err(json_err)?;
+        self.with(|m, _| Ok(serde_json::to_string(&m.team_delete_plan(&team_id, &k, &by, now_ms)).unwrap_or_default()))
     }
     /// Self-join (core/client/src/selfjoin.rs): the agents' asks to act on, JSON `[{session_id, nonce, ask, refused}]`.
     /// `answered`: the nonces this device answered; `pending`: the accounts of its vouched links not through yet.
@@ -793,8 +793,8 @@ impl ClientModel {
     }
 
     /// The open question to offer after `card_id` (decided just now, or still open): the next in the Desk's order
-    /// (core/client/src/desk.rs `walk_order`) among the cards of the sessions `within` (by session key: the desk in view;
-    /// none: every desk), else the first that waits; none when nothing else waits.
+    /// (core/client/src/desk.rs `walk_order`) among the cards of the sessions `within` (by session key: the team in view;
+    /// none: every team), else the first that waits; none when nothing else waits.
     pub fn next_open_after(&self, card_id: String, within: Option<Vec<String>>) -> Result<Option<String>, CoreError> {
         self.with(|m, _| Ok(m.next_open_after(&card_id, within.as_deref())))
     }

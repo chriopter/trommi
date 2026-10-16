@@ -1,4 +1,4 @@
-//! Settings: the list's rows with what each says (Agents, Desks, Devices), and the person's devices.
+//! Settings: the list's rows with what each says (Agents, Teams, Devices), and the person's devices.
 //!
 //! The rules are the web's of before (`auth.mjs` `homeMain`, `devicesMain`, `lists`, `devState`, `devName`, `fp`,
 //! `devIcon`, `unfinished`; `ui.mjs` `agentsOf`, `programOf`) and the iPhone's (`SettingsScreen.swift` `SettingsHome`,
@@ -168,14 +168,14 @@ pub fn agents_page(b: &Board) -> Vec<AgentView> {
                 .map(|&i| {
                     let a = &b.agents[i];
                     let helpers = list.iter().filter(|x| b.agents[**x].row.parent.as_deref() == Some(a.row.id.as_str())).count();
-                    let desk = b.desks.iter().find(|d| Some(&d.id) == a.desk.as_ref()).map(|d| d.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Personal".into());
+                    let team = b.teams.iter().find(|d| Some(&d.id) == a.team.as_ref()).map(|d| d.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Personal".into());
                     let h = helpers.to_string();
                     AgentSessionView {
                         id: a.row.key.clone(),
                         slug: a.row.id.clone(),
                         name: say("session.name", a.row.name.as_str(), &[]),
                         mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
-                        desk: say("agents.desk", format!("{desk} desk"), &[("desk", &desk)]),
+                        team: say("agents.team", format!("{team} team"), &[("team", &team)]),
                         folder: member_of(i).map(|d| text(&d.folder)).unwrap_or_default(),
                         helpers: helpers as u32,
                         helpers_says: (helpers > 0).then(|| say("agents.helpers", format!("+{}", plural(helpers, "helper", "helpers")), &[("n", &h)])),
@@ -343,13 +343,13 @@ pub fn settings(b: &Board) -> SettingsView {
         login: None,
         room: None,
         hub: None,
-        desk_counts: Vec::new(),
+        team_counts: Vec::new(),
         deleting: Vec::new(),
         push: None,
         agent_list,
         agents_lead,
         agents,
-        desks: (!b.desks.is_empty()).then(|| counted("settings.desks", b.desks.len(), "desk", "desks")),
+        teams: (!b.teams.is_empty()).then(|| counted("settings.teams", b.teams.len(), "team", "teams")),
         devices_says: (!devices.is_empty()).then(|| counted("settings.devices", devices.len(), "device", "devices")),
         remove_unfinished: (!stuck.is_empty()).then(|| {
             if stuck.len() == 1 {
@@ -426,7 +426,7 @@ mod tests {
         assert_eq!(v.devices_says.unwrap().en, "3 devices");
         // two sessions of one program on one computer: one agent
         assert_eq!(v.agents.unwrap().en, "1 agent · 2 sessions");
-        assert!(v.desks.is_none());
+        assert!(v.teams.is_none());
     }
 
     #[test]
@@ -455,8 +455,8 @@ mod tests {
         assert_eq!(v.agents_lead.unwrap().en, "2 agents on 2 computers · 4 sessions");
         let g = &v.agent_list[0];
         let rows: Vec<(&str, &str, &str, Option<&str>, &str)> =
-            g.sessions.iter().map(|s| (s.slug.as_str(), s.desk.en.as_str(), s.folder.as_str(), s.helpers_says.as_ref().map(|t| t.en.as_str()), s.state.en.as_str())).collect();
-        assert_eq!(rows, [(g.sessions[0].slug.as_str(), "Personal desk", "~/git/x", Some("+1 helper"), "connected"), (g.sessions[1].slug.as_str(), "Personal desk", "", None, "away")]);
+            g.sessions.iter().map(|s| (s.slug.as_str(), s.team.en.as_str(), s.folder.as_str(), s.helpers_says.as_ref().map(|t| t.en.as_str()), s.state.en.as_str())).collect();
+        assert_eq!(rows, [(g.sessions[0].slug.as_str(), "Personal team", "~/git/x", Some("+1 helper"), "connected"), (g.sessions[1].slug.as_str(), "Personal team", "", None, "away")]);
         assert_eq!(g.remove.as_ref().unwrap().en, "Claude Code on MacBook and its 3 sessions can read nothing new after this. The others get a new key; the history stays.");
         let u = g.usage.clone().unwrap();
         assert_eq!((u.plan.as_str(), u.email.as_str()), ("Claude Max", "x@y.z"));

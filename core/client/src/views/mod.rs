@@ -14,11 +14,11 @@
 //!
 //! W4 fills the screen types; their fields here are the contract's first cut.
 //!
-//! **Who makes it.** [`board::Board`] reads the board model once per render (the session list, the desks, what
+//! **Who makes it.** [`board::Board`] reads the board model once per render (the session list, the teams, what
 //! waits where), and each screen's module makes its unit from it: [`sidebar`], [`desk`], [`session`] and [`card`] (the pages in view;
 //! its conversation's rows come from [`talk`]), [`notes`] and [`settings`]. The rules are the web app's of
 //! before (`app/web/public/app.mjs` `boardModel`), now here and nowhere else; [`words`] holds every sentence.
-//! What this device alone chooses (the desk in view, the zone) comes in as a [`Lens`].
+//! What this device alone chooses (the team in view, the zone) comes in as a [`Lens`].
 
 pub mod board;
 pub mod card;
@@ -86,11 +86,11 @@ pub struct Focus {
     /// The window (or app) is in front and visible.
     #[serde(default = "yes")]
     pub visible: bool,
-    /// The desk in view: a desk's id, "all" for every desk at once, none when none was chosen (every desk at once where there are two or more).
+    /// The team in view: a team's id; none when none was chosen, or one that is gone: the first team.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub desk: Option<String>,
-    /// The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a desk's id or "all" for that
-    /// desk's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
+    pub team: Option<String>,
+    /// The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a team's id or "all" for that
+    /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
 }
@@ -125,7 +125,7 @@ pub enum Screen {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         kind: String,
     },
-    /// Settings: its list (`page` ""), or one of its pages ("agents", "desks", "devices", "account", "theme",
+    /// Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
     /// "data", "security").
     Settings {
         #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -169,8 +169,8 @@ pub struct ViewModel {
     /// filter lets through); none else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gallery: Option<GalleryView>,
-    /// Every desk's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
-    /// desks); none else.
+    /// Every team's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
+    /// teams); none else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thumbs: Option<Vec<ThumbView>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -240,7 +240,7 @@ pub enum ViewPart {
     Gallery {
         view: Option<GalleryView>,
     },
-    /// The desks' boards small, whole; none when no page shows them.
+    /// The teams' boards small, whole; none when no page shows them.
     Thumbs {
         view: Option<Vec<ThumbView>>,
     },
@@ -280,48 +280,45 @@ impl<T: Clone> Rows<T> {
     }
 }
 
-/// The sidebar (the phone: the menu's desks, the list of chats, the tab pill's numbers): the desks, and one row per
-/// session of the desk in view, in the order they are drawn.
+/// The sidebar (the phone: the menu's teams, the list of chats, the tab pill's numbers): the teams, and one row per
+/// session of the team in view, in the order they are drawn.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SidebarView {
-    /// The desks, in the menu's order. A room without desks has one: "Personal".
-    pub desks: Vec<DeskTab>,
-    /// The sessions of the desk in view, one row each, in drawing order: a main, then its helpers.
+    /// The teams, in the menu's order. A room without teams has one: "Personal".
+    pub teams: Vec<TeamTab>,
+    /// The sessions of the team in view, one row each, in drawing order: a main, then its helpers.
     pub sessions: Vec<SessionRowView>,
-    /// The number on the app icon and the tab: the open questions of the desk in view (no infos, nothing that is
+    /// The number on the app icon and the tab: the open questions of the team in view (no infos, nothing that is
     /// with its agent). Never drawn red.
     pub badge: u32,
-    /// The desk in view: its id, or "all".
+    /// The team in view: its id.
     #[serde(default)]
-    pub desk: String,
-    /// "All Desks", the row above the desks: there with two desks or more.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub all: Option<DeskTab>,
-    /// Where the person is, for the head: the desk's name, or "All desks".
+    pub team: String,
+    /// Where the person is, for the head and the team switch: the team's name.
     #[serde(default)]
     pub place: Text,
-    /// The open questions of the desk in view (its lamp is lit while there are some).
+    /// The open questions of the team in view (its lamp is lit while there are some).
     #[serde(default)]
     pub waiting: u32,
     /// How many of them knock.
     #[serde(default)]
     pub knocking: u32,
-    /// How many rows of the desk in view are stopped (the red hand).
+    /// How many rows of the team in view are stopped (the red hand).
     #[serde(default)]
     pub stopped: u32,
     /// How many of them are at work.
     #[serde(default)]
     pub working: u32,
-    /// How many of his answers the sessions of the desk in view have not picked up.
+    /// How many of his answers the sessions of the team in view have not picked up.
     #[serde(default)]
     pub unheard: u32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DeskTab {
+pub struct TeamTab {
     pub id: String,
     pub name: Text,
-    /// The open questions of the desk's sessions.
+    /// The open questions of the team's sessions.
     pub waiting: u32,
     pub selected: bool,
     /// One of them knocks.
@@ -350,9 +347,9 @@ pub struct SessionRowView {
     /// What draws it: the icon the person or the agent chose ("draw:leaf"), else its slug.
     #[serde(default)]
     pub mark: String,
-    /// The desk it stands on.
+    /// The team it stands on.
     #[serde(default)]
-    pub desk_id: String,
+    pub team_id: String,
     #[serde(default)]
     pub online: bool,
     /// Connected and at work (a status line of it shows "working").
@@ -361,7 +358,7 @@ pub struct SessionRowView {
     /// A main session: one that says so, or one with helpers.
     #[serde(default)]
     pub main: bool,
-    /// The crowned session of its desk (the one a note goes to).
+    /// The crowned session of its team (the one a note goes to).
     #[serde(default)]
     pub crowned: bool,
     /// Its main's id, for a helper drawn under it.
@@ -388,11 +385,7 @@ pub struct SessionRowView {
     /// Not connected, and none of its helpers is: it stands under "Disconnected".
     #[serde(default)]
     pub away: bool,
-    /// The line drawn above this row: "Disconnected" over the first row that is away, a desk's name over its first
-    /// row on All desks.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub heading: Option<HeadingView>,
-    /// The part of the list a main row may be dragged within (its desk, connected or not); "" for a helper.
+    /// The part of the list a main row may be dragged within (its team, connected or not); "" for a helper.
     #[serde(default)]
     pub group: String,
     /// What its badge says to a screen reader ("Working, 2 questions open"); none without a badge.
@@ -480,19 +473,6 @@ pub struct CapView {
     pub line: Option<Text>,
 }
 
-/// A line above a row of the sidebar.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HeadingView {
-    /// "away" ("Disconnected") or "desk" (a desk's name, on All desks).
-    pub kind: String,
-    pub text: Text,
-    /// For "desk": the desk, and its open questions.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub desk_id: Option<String>,
-    #[serde(default)]
-    pub waiting: u32,
-}
-
 /// A session's link in words: whether it hears the person, and what to do when it does not.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkWords {
@@ -521,12 +501,12 @@ pub struct FixView {
     pub code: String,
 }
 
-/// The Desk of the desk in view: its head, and the stack of what waits for the person as rows.
+/// The Desk of the team in view: its head, and the stack of what waits for the person as rows.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeskView {
     /// Card and request ids, in the Desk's order: the ids of `rows`.
     pub stack: Vec<String>,
-    /// Off your mind, of the desk in view (`off.rs`, from the core's `off_mind`): the cards with their agents,
+    /// Off your mind, of the team in view (`off.rs`, from the core's `off_mind`): the cards with their agents,
     /// starred ones too, the one that moved last first (the complete list's top part).
     pub off_your_mind: Vec<String>,
     /// The put-off cards, the last put off first.
@@ -548,7 +528,7 @@ pub struct DeskView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<Text>,
     /// "invite" (no session stands here yet: invite the first agent), "reading" (none yet, and the room is still
-    /// being read), "desk".
+    /// being read), "team".
     #[serde(default)]
     pub mode: String,
     /// The one big line at the top; none for "invite".
@@ -557,7 +537,7 @@ pub struct DeskView {
     /// How far the reading of the room's past is ("Reading your history: 12,400 of 27,000"), while it is read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reading: Option<Text>,
-    /// The desk's goals; none on All desks.
+    /// The team's goals; none on All teams.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goals: Option<GoalsView>,
     /// What waits, in the Desk's order: the questions and what is only to read.
@@ -669,7 +649,7 @@ pub struct OffHintView {
     /// "2 put off · 14 done".
     pub says: Text,
     pub put_off: u32,
-    /// Every closed card of the desk in view, counted (not only the ones named).
+    /// Every closed card of the team in view, counted (not only the ones named).
     pub closed: u32,
 }
 
@@ -695,7 +675,7 @@ pub struct OffRowView {
     pub says: Text,
 }
 
-/// The page Off your mind: every card off the Desk of the desk in view. What runs as live cards, the one that moved
+/// The page Off your mind: every card off the Desk of the team in view. What runs as live cards, the one that moved
 /// last first; then what is put off, the last put off first; then what is closed, the newest first. Each card in its
 /// place by time, none lifted. Kept to the search's words.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -756,10 +736,10 @@ pub struct OffWorkView {
     pub says: Text,
 }
 
-/// A desk's goals: a note of the person's, at most twenty lines.
+/// A team's goals: a note of the person's, at most twenty lines.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoalsView {
-    pub desk_id: String,
+    pub team_id: String,
     /// The lines; empty when there are none (the shell shows its faint "Goals…").
     pub lines: Vec<String>,
     /// Two lines or more: one toggle folds them to the first line. Whether they are folded is this device's.
@@ -841,12 +821,9 @@ pub struct FromView {
     pub name: String,
     /// What draws the session (`SessionRowView::mark`).
     pub mark: String,
-    /// Where it stands, for the line above a card's title ("Desk › Main › Helper"): its desk while there are two
+    /// Where it stands, for the line above a card's title ("Team › Main › Helper"): its team while there are two
     /// or more, its main for a helper, itself.
     pub path: Vec<String>,
-    /// Its desk's name, on All desks only: the small chip before the row's words.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub desk: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -933,14 +910,14 @@ pub struct SessionView {
     #[serde(default)]
     pub mark: String,
     #[serde(default)]
-    pub desk_id: String,
+    pub team_id: String,
     #[serde(default)]
     pub main: bool,
     #[serde(default)]
     pub crowned: bool,
     #[serde(default)]
     pub online: bool,
-    /// Where it stands: its desk (while there are two or more), its main (for a helper), itself.
+    /// Where it stands: its team (while there are two or more), its main (for a helper), itself.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<String>,
     /// The model it runs on, as the heading says it ("Opus 5.5"); "" when it named none.
@@ -1250,7 +1227,7 @@ pub struct CardView {
     /// Where it stands: "catching" (settled elsewhere, its outcome on the way), "open", "decided", "shredded", "done".
     #[serde(default)]
     pub status: String,
-    /// Who it comes from, above its title: "Desk › Main › Helper" (`FromView::path`).
+    /// Who it comes from, above its title: "Team › Main › Helper" (`FromView::path`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<FromView>,
     /// "Knock! Blocking", while it is open and knocks.
@@ -1326,7 +1303,7 @@ pub struct CardView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub earlier: Option<MoreView>,
     /// Once it is settled (not open, not catching up): the way on that the page offers right after the person
-    /// answered here (the shell shows it then): the next open question of the desk in view, or that there is none.
+    /// answered here (the shell shows it then): the next open question of the team in view, or that there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<AfterView>,
 }
@@ -1531,7 +1508,7 @@ pub struct OptionLinkView {
     pub short: String,
 }
 
-/// The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`).
+/// The person's notes (the room's, the same on every team) and the one in the corner (`notes.rs`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NotesView {
     /// The ids of the notes that show, the last written first (the ids of `rows`). A sent note held for the toast's
@@ -1552,12 +1529,6 @@ pub struct NotesView {
     /// The crowned session it goes to; none when no session wears the crown here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<NoteToView>,
-    /// All desks, and it goes to another desk's crown than the desk chosen last: the send names it.
-    #[serde(default)]
-    pub far: bool,
-    /// All desks with two crowned desks or more: the person picks one (each desk's crown, in the desks' order).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub choose: Vec<NoteToView>,
     /// What the send says ("Send to Fernly").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub send_says: Option<Text>,
@@ -1599,10 +1570,10 @@ pub struct NoteToView {
     /// What draws it (`SessionRowView::mark`).
     pub mark: String,
     #[serde(default)]
-    pub desk_id: String,
-    /// Its desk's name ("Personal" for one without), for the choice on All desks.
+    pub team_id: String,
+    /// Its team's name ("Personal" for one without).
     #[serde(default)]
-    pub desk: String,
+    pub team: String,
 }
 
 /// Settings: what the list's rows say, and the person's devices (`settings.rs`). What only this device knows (the
@@ -1635,9 +1606,9 @@ pub struct SettingsView {
     /// The line under the page's title: "2 agents on 1 computer · 5 sessions"; none without an agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agents_lead: Option<Text>,
-    /// The row Desks: "3 desks"; none in a room without desks.
+    /// The row Teams: "3 teams"; none in a room without teams.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub desks: Option<Text>,
+    pub teams: Option<Text>,
     /// The row Devices: "2 devices".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub devices_says: Option<Text>,
@@ -1649,12 +1620,12 @@ pub struct SettingsView {
     pub room: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hub: Option<String>,
-    /// What each desk holds, for the confirm of its delete (its board counted once read on this device).
+    /// What each team holds, for the confirm of its delete (its board counted once read on this device).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub desk_counts: Vec<DeskCountsView>,
-    /// The desks being deleted, with how far.
+    pub team_counts: Vec<TeamCountsView>,
+    /// The teams being deleted, with how far.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub deleting: Vec<DeskDeleteView>,
+    pub deleting: Vec<TeamDeleteView>,
     /// Push on this device, where the platform has push.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push: Option<PushView>,
@@ -1678,10 +1649,10 @@ pub struct DataRow {
     pub value: Text,
 }
 
-/// What a desk holds: what its delete takes away.
+/// What a team holds: what its delete takes away.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DeskCountsView {
-    pub desk_id: String,
+pub struct TeamCountsView {
+    pub team_id: String,
     pub sessions: u64,
     pub helpers: u64,
     pub archived: u64,
@@ -1730,10 +1701,10 @@ pub struct PushView {
     pub busy: bool,
 }
 
-/// A desk's delete in progress: units done of the total.
+/// A team's delete in progress: units done of the total.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DeskDeleteView {
-    pub desk_id: String,
+pub struct TeamDeleteView {
+    pub team_id: String,
     pub done: u64,
     pub total: u64,
 }
@@ -1809,8 +1780,8 @@ pub struct AgentSessionView {
     /// What draws it (`SessionRowView::mark`).
     #[serde(default)]
     pub mark: String,
-    /// "Work desk".
-    pub desk: Text,
+    /// "Work team".
+    pub team: Text,
     /// Its folder on the computer; "" when unknown.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub folder: String,
@@ -2030,10 +2001,10 @@ pub struct InviteView {
     pub newcomer: String,
 }
 
-/// A desk's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt.
+/// A team's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThumbView {
-    pub desk_id: String,
+    pub team_id: String,
     /// `desk/<32 hex>`.
     pub board_id: String,
     /// "loading" while it is read on this device, else as `BoardView.state`.
