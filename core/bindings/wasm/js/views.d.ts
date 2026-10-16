@@ -654,7 +654,10 @@ export interface SessionView {
   compose: Text
   /** "<name> is working": his word was the last, a short while ago. */
   answering?: Text
-  /** Its questions that wait for the person (its infos too), and the way to the first of them. */
+  /** Its questions that wait for the person (decisions and approvals, never a card to read), as their Desk rows,
+   *  in the order they came: what its page "Questions" lists as open. */
+  waiting?: DeskRowView[]
+  /** How many of them (`waiting`), and the way to the first of them. */
   open: number
   /** "3 open". */
   open_word?: Text
@@ -1393,6 +1396,10 @@ export interface AccountView {
   /** A word on the start screen about how this device came to be signed out: "Logged out." after the person's
    *  own sign-out, or that another device removed it. Gone with the next step. */
   notice?: Text
+  /** A sign-in that was cut off before all its sessions were joined (the app was closed or reloaded meanwhile):
+   *  the device is in the room and the app runs on, and these words ask for the way in again (`SignIn`, its
+   *  passkey or its kit), which finishes the joins. None otherwise. */
+  resume?: Text
 }
 
 export interface EmojiView {

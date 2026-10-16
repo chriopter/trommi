@@ -849,20 +849,176 @@
     "key": "compose",
     "en": "Message to the agent"
   },
-  "open": 3,
+  "waiting": [
+    {
+      "id": "637adcc6eae4b4ac30b47509a3071884",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Send a weekly summary e-mail on Sundays?",
+      "words": "Which plants did well, which are due next week. People asked for it in the beta.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791466200000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "desk": "Fernly"
+      },
+      "run": 0,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "no",
+            "label": "No",
+            "thumb": "no",
+            "thumbs": true,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": true,
+            "tip": {
+              "key": "tile.settles",
+              "en": "Settles it"
+            },
+            "says": {
+              "key": "tile.says.settles",
+              "args": {
+                "label": "No"
+              },
+              "en": "No (settles it)"
+            }
+          },
+          {
+            "key": "yes",
+            "label": "Yes",
+            "thumb": "yes",
+            "thumbs": true,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Yes"
+              },
+              "en": "Yes"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "95a7444523d097bff745b891bc2166cf",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Launch on Monday at 09:00, or on Tuesday?",
+      "words": "Everything for Monday is green except the Safari test. Tuesday gives one more day for the App Store review.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791464400000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "desk": "Fernly"
+      },
+      "run": 0,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "tuesday",
+            "label": "Tuesday 09:00",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Tuesday 09:00"
+              },
+              "en": "Tuesday 09:00"
+            }
+          },
+          {
+            "key": "monday",
+            "label": "Monday 09:00",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Monday 09:00"
+              },
+              "en": "Monday 09:00"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    }
+  ],
+  "open": 2,
   "open_word": {
     "key": "session.open",
     "args": {
-      "n": "3"
+      "n": "2"
     },
-    "en": "3 open"
+    "en": "2 open"
   },
   "open_says": {
     "key": "session.open.some",
     "args": {
-      "n": "3"
+      "n": "2"
     },
-    "en": "3 open questions: go to the first one"
+    "en": "2 open questions: go to the first one"
   },
   "first_open": "v875200a",
   "usage": {
