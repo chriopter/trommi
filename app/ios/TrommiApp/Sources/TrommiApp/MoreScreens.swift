@@ -1,42 +1,377 @@
+// MoreScreens.swift: the pages off the Desk, drawn as the app looked before the shared app core: Off your mind (the
+// big heading with the pen's line, the cards with their agents in a drawn border, the put-off and closed ones as small
+// quiet rows with their marks), the note (a full page of yellow paper: the words, the files, one row of paperclip ·
+// bin · "To: …" · the envelope), Settings (one list on paper, its groups as iOS Settings draws them) and the
+// Artifacts. Every word that depends on the state comes from the core's view model.
 import SwiftUI
 import TrommiClient
 import UniformTypeIdentifiers
+
+/** When something moved, short ("5 min ago"): the time the core hands over, written by the shell. */
+func offAgo(_ ms: UInt64) -> String {
+  let f = RelativeDateTimeFormatter(); f.unitsStyle = .short; f.locale = Locale(identifier: "en_GB")
+  return f.localizedString(for: Date(timeIntervalSince1970: Double(ms) / 1000), relativeTo: Date())
+}
+
+/** A page's big heading in the display face, its last word underlined with the pen (as the Desk's greeting). */
+struct PageHeading: View {
+  let text: String
+  var body: some View { Greeting(text: text, size: 34).padding(.top, 10).padding(.bottom, 8) }
+}
+
+/** A search line on paper (the page has no navigation bar to carry the system's search field). */
+struct PaperSearch: View {
+  @Binding var text: String
+  var prompt = "Search the list"
+  var body: some View {
+    HStack(spacing: 8) {
+      Sketch("search", color: Ink.muted).frame(width: 18, height: 18)
+      TextField(prompt, text: $text).textInputAutocapitalization(.never).autocorrectionDisabled().font(Face.text(16))
+      if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Ink.faint) }.buttonStyle(.plain).accessibilityLabel("Clear") }
+    }
+    .padding(.horizontal, 12).frame(minHeight: 42)
+    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.sunken))
+  }
+}
+
+// ---- Off your mind ---------------------------------------------------------------------------------------------
 
 struct OffScreen: View {
   @EnvironmentObject var shell: AppShell
   @State private var query = ""
   var body: some View {
     let off = shell.view.off ?? CoreView.OffListView()
-    List {
-      ForEach(off.works, id: \.id) { row in Button(row.title) { shell.focus(.card(cardId: row.id)) } }
-      ForEach(off.rest, id: \.id) { row in Button { shell.focus(.card(cardId: row.id)) } label: { VStack(alignment: .leading) { Text(row.title); Text(row.says.en).font(Face.text(12)).foregroundStyle(Ink.muted) } } }
-      if let none = off.none { Text(none.en) }
-      if let more = off.more { Button(more.says.en) { shell.act(["do": "show_more", "of": ["list": "off", "query": query]]) } }
-      if let older = off.older { Button(older.en) { shell.act(["do": "show_more", "of": ["list": "off", "query": query]]) } }
-    }.navigationTitle("Off your mind").searchable(text: $query).onChange(of: query) { _, text in shell.focus(.off(query: text)) }
+    ScrollView {
+      LazyVStack(alignment: .leading, spacing: 6) {
+        PageHeading(text: "Off your mind")
+        PaperSearch(text: $query).padding(.bottom, 8)
+        ForEach(off.works, id: \.id) { row in work(row) }
+        if !off.rest.isEmpty {
+          VStack(spacing: 4) { ForEach(off.rest, id: \.id) { row in rest(row) } }.padding(.top, 4)
+        }
+        if let none = off.none { Text(none.en).font(Face.text(15)).foregroundStyle(Ink.muted).padding(.vertical, 20) }
+        if let more = off.more { Button(more.says.en) { shell.act(["do": "show_more", "of": ["list": "off", "query": query]]) }.buttonStyle(ObLink()).frame(maxWidth: .infinity) }
+        if let older = off.older { Button(older.en) { shell.act(["do": "show_more", "of": ["list": "off", "query": query]]) }.buttonStyle(ObLink()).frame(maxWidth: .infinity) }
+        if off.loading { ProgressView().frame(maxWidth: .infinity).padding(.vertical, 12) }
+      }
+      .padding(.horizontal, 16).padding(.bottom, 120)
+      .frame(maxWidth: 760).frame(maxWidth: .infinity)
+    }
+    .background(Ink.bg)
+    .scrollDismissesKeyboard(.interactively)
+    .pushedPills(center: { EmptyView() }, trailing: { EmptyView() })
+    .onChange(of: query) { _, text in shell.focus(.off(query: text)) }
+  }
+  /** A card with its agent: who is on it, the title, its status line, how long. */
+  private func work(_ row: CoreView.OffWorkView) -> some View {
+    Button { shell.focus(.card(cardId: row.id)) } label: {
+      HStack(alignment: .center, spacing: 10) {
+        AgentMark(from: row.from, size: 28)
+        VStack(alignment: .leading, spacing: 2) {
+          HStack(spacing: 4) {
+            if row.starred { StarMark().frame(width: 14, height: 14).accessibilityHidden(true) }
+            Text(row.title).font(Face.text(15, .semibold)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.leading)
+          }
+          (Text(row.from.name).font(Face.text(12, .semibold)).foregroundColor(Ink.fg) + Text(" · \(row.label.en)").font(Face.text(12)).foregroundColor(Ink.muted)).lineLimit(1)
+        }
+        Spacer(minLength: 6)
+        if row.atMs > 0 { Text(offAgo(row.atMs)).font(Face.text(11)).foregroundStyle(Ink.faint).frame(maxHeight: .infinity, alignment: .top) }
+      }
+      .padding(.horizontal, 14).padding(.vertical, 11)
+      .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Ink.surface))
+      .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Ink.fg.opacity(0.55), lineWidth: 1.5))
+      .contentShape(RoundedRectangle(cornerRadius: 13))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(row.says.en)
+  }
+  /** A put-off or closed card, small and quiet: its mark, the title, when. */
+  private func rest(_ row: CoreView.OffRowView) -> some View {
+    Button { shell.focus(.card(cardId: row.id)) } label: {
+      HStack(spacing: 8) {
+        OffMark(mark: row.mark).frame(width: 13, height: 13).accessibilityHidden(true)
+        if row.starred { StarMark().frame(width: 13, height: 13).accessibilityHidden(true) }
+        Text(row.title.isEmpty ? "(no title)" : row.title).font(Face.text(13, .medium)).foregroundStyle(Ink.muted)
+          .strikethrough(row.mark == "shred", color: Ink.faint)
+          .lineLimit(1).truncationMode(.tail)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        if let until = row.until { Text(until.en).font(Face.text(11)).foregroundStyle(Ink.faint) }
+        else if row.atMs > 0 { Text(offAgo(row.atMs)).font(Face.text(11)).foregroundStyle(Ink.faint) }
+      }
+      .padding(.horizontal, 12).frame(minHeight: 36)
+      .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.surface))
+      .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Ink.lineStrong, lineWidth: 1))
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(row.title), \(row.says.en)")
   }
 }
+/** The mark of a card off the Desk: put off the three Z, shredded the shredder, withdrawn the return arrow, else the tick. */
+struct OffMark: View {
+  let mark: String
+  var body: some View {
+    switch mark {
+    case "snooze": Sketch("snooze", color: Ink.stampLater)
+    case "shred", "withdraw": Sketch(mark, color: Ink.faint)
+    default: Sketch("tick", color: Ink.accent)
+    }
+  }
+}
+
+// ---- the note ----------------------------------------------------------------------------------------------------
+
+/**
+ * The note: a full page of yellow paper over the list he came from (the shell lays it there, the tab pill stays).
+ * From the top: the words, the files, and one row: paperclip and bin at the left, "To: …" and the envelope at the
+ * right. The words are the corner's note (the core's); older notes of other devices stand below as small slips.
+ */
 struct NotesScreen: View {
   @EnvironmentObject var shell: AppShell
   @State private var text = ""
   @State private var attachments: [String] = []
+  @State private var loadedId: String?
+  @State private var importing = false
+  @FocusState private var focused: Bool
+  private var notes: CoreView.NotesView { shell.view.notes }
+  private var corner: CoreView.NoteView? { notes.corner.flatMap { id in notes.rows.first { $0.id == id } } }
   var body: some View {
-    ScrollView { VStack(alignment: .leading, spacing: 20) {
-      Text("Note").font(Face.display(36))
-      TextEditor(text: $text).font(Face.text(20)).frame(minHeight: 180).padding().scrollContentBackground(.hidden).background(Ink.noteYellow, in: PenBox()).foregroundStyle(Ink.noteInk)
-      AttachmentPicker(ids: $attachments)
-      Button("Keep in Note") { shell.act(["do": "write_note_files", "text": text, "attachments": attachments]); text = ""; attachments = [] }.buttonStyle(.borderedProminent)
-      ForEach(shell.view.notes.rows, id: \.id) { note in
-        VStack(alignment: .leading, spacing: 12) {
-          Markdown(text: note.text); FileRows(ids: note.files.map(\.fileId))
-          if let says = shell.view.notes.sendSays { Button(says.en) { shell.act(["do": "send_note", "note_id": note.id]) } }
-          ForEach(shell.view.notes.choose, id: \.sessionId) { to in Button(to.name) { shell.act(["do": "send_note", "note_id": note.id, "to": to.sessionId]) } }
-          Button("Delete", role: .destructive) { shell.act(["do": "delete_note", "note_id": note.id]) }
-        }.padding(20).background(Ink.noteYellow, in: PenBox()).foregroundStyle(Ink.noteInk)
+    let empty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
+    ScrollView {
+      VStack(alignment: .leading, spacing: 10) {
+        TextField("", text: $text, prompt: Text("Write a note…").foregroundStyle(Ink.noteInk.opacity(0.45)), axis: .vertical)
+          .font(Face.text(18)).foregroundStyle(Ink.noteInk).lineSpacing(4)
+          .lineLimit(15...)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .focused($focused)
+          .padding(.top, 8)
+          .accessibilityIdentifier("note-text")
+        if !attachments.isEmpty {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+              ForEach(attachments, id: \.self) { id in
+                ZStack(alignment: .topTrailing) {
+                  NoteThumb(id: id)
+                  Button { attachments.removeAll { $0 == id } } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Ink.noteInk) }
+                    .buttonStyle(.plain).offset(x: 6, y: -6).accessibilityLabel("Remove")
+                }
+              }
+            }.padding(.top, 6).padding(.trailing, 8)
+          }
+        }
+        HStack(spacing: 6) {
+          Button { importing = true } label: { Image(systemName: "paperclip").font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44) }
+            .buttonStyle(.plain).accessibilityLabel("Attach")
+          Button { bin() } label: { Image(systemName: "trash").font(.system(size: 17)).frame(width: 44, height: 44) }
+            .buttonStyle(.plain).accessibilityLabel("Delete Note").disabled(corner == nil && empty)
+          Button { keep() } label: { Image(systemName: "checkmark.circle").font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44) }
+            .buttonStyle(.plain).disabled(empty).opacity(empty ? 0.5 : 1)
+            .accessibilityLabel("Keep in Note")
+          Spacer(minLength: 4)
+          recipient.fixedSize()
+          send.disabled(empty || (notes.to == nil && notes.choose.isEmpty)).opacity(empty || (notes.to == nil && notes.choose.isEmpty) ? 0.5 : 1)
+        }
+        .foregroundStyle(Ink.noteInk)
+        if let none = notes.noCrown { Text(none.en).font(Face.text(13)).foregroundStyle(Ink.noteInk.opacity(0.7)) }
+        // the notes besides the corner's (written on other devices): small slips
+        ForEach(notes.rows.filter { $0.id != notes.corner }, id: \.id) { note in
+          VStack(alignment: .leading, spacing: 8) {
+            Text(note.text).font(Face.text(15)).foregroundStyle(Ink.noteInk).lineLimit(4)
+            HStack(spacing: 14) {
+              if let says = notes.sendSays { Button(says.en) { shell.act(["do": "send_note", "note_id": note.id]) }.font(Face.text(14, .semibold)) }
+              Spacer()
+              Button { shell.act(["do": "delete_note", "note_id": note.id]) } label: { Image(systemName: "trash") }.accessibilityLabel("Delete Note")
+            }.buttonStyle(.plain).foregroundStyle(Ink.noteInk)
+          }
+          .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+          .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.35)))
+        }
       }
-    }.padding(24).frame(maxWidth: 780).frame(maxWidth: .infinity) }
+      .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 100)
+      .frame(maxWidth: 760).frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .scrollDismissesKeyboard(.interactively)
+    .scrollContentBackground(.hidden)
+    .background(Ink.noteYellow.ignoresSafeArea())
+    .onAppear { load() }
+    .onChange(of: notes.corner) { _, _ in if text.isEmpty && attachments.isEmpty { load() } }
+    .onDisappear { focused = false; hideKeyboard() }
+    .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+      if case .success(let urls) = result { for url in urls { if let id = shell.attach(url) { attachments.append(id) } } }
+    }
+  }
+  private func load() {
+    guard let c = corner, loadedId != c.id else { return }
+    loadedId = c.id; text = c.text; attachments = c.files.map(\.fileId)
+  }
+  private func written() -> [String: Any] {
+    var action: [String: Any] = ["do": "write_note_files", "text": text, "attachments": attachments]
+    if let id = notes.corner { action["note_id"] = id }
+    return action
+  }
+  private func keep() { shell.act(written()); focused = false; hideKeyboard() }
+  private func bin() {
+    if let id = notes.corner { shell.act(["do": "delete_note", "note_id": id]) }
+    text = ""; attachments = []; loadedId = nil; focused = false; hideKeyboard()
+  }
+  private func sendTo(_ to: String?) {
+    shell.act(written())
+    if let id = notes.corner {
+      var action: [String: Any] = ["do": "send_note", "note_id": id]
+      if let to { action["to"] = to }
+      shell.act(action)
+      text = ""; attachments = []; loadedId = nil
+    }
+    focused = false; hideKeyboard()
+  }
+  /** "To: …": the crowned session the note goes to, or the choice of a desk's crown on All desks. */
+  @ViewBuilder private var recipient: some View {
+    let label = HStack(spacing: 4) {
+      Text("To:").foregroundStyle(Ink.noteInk.opacity(0.7))
+      Text(notes.to?.name ?? "No Session").fontWeight(.semibold).foregroundStyle(Ink.noteInk).lineLimit(1).truncationMode(.middle)
+      if !notes.choose.isEmpty { Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Ink.noteInk.opacity(0.7)) }
+    }
+    .font(Face.text(15)).padding(.horizontal, 14).frame(minHeight: 40)
+    .glass(Capsule(), interactive: true).contentShape(Capsule())
+    if notes.choose.isEmpty { label.accessibilityLabel("Recipient: \(notes.to?.name ?? "none")") }
+    else {
+      Menu { ForEach(notes.choose, id: \.sessionId) { to in Button("\(to.desk) · \(to.name)") { sendTo(to.sessionId) } } } label: { label }
+        .accessibilityLabel("Recipient: \(notes.to?.name ?? "none")")
+    }
+  }
+  @ViewBuilder private var send: some View {
+    if notes.choose.isEmpty {
+      Button { sendTo(nil) } label: { NoteEnvelope().frame(width: 58, height: 44).contentShape(Rectangle()) }
+        .buttonStyle(.plain).accessibilityLabel(notes.sendSays?.en ?? "Send")
+    } else {
+      Menu { ForEach(notes.choose, id: \.sessionId) { to in Button("\(to.desk) · \(to.name)") { sendTo(to.sessionId) } } } label: { NoteEnvelope().frame(width: 58, height: 44) }
+        .accessibilityLabel(notes.sendSays?.en ?? "Send")
+    }
   }
 }
+
+/** A file on the note: a picture as a small square, any other file by its name. */
+struct NoteThumb: View {
+  @EnvironmentObject var shell: AppShell
+  let id: String
+  var body: some View {
+    let file = shell.view.files[id]
+    Group {
+      if file?.mediaType.hasPrefix("image/") == true, let data = shell.files[id], let image = UIImage(data: data) {
+        Image(uiImage: image).resizable().scaledToFill().frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 8))
+          .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Ink.noteInk.opacity(0.4), lineWidth: 1))
+      } else {
+        VStack(spacing: 4) {
+          Sketch("clip", color: Ink.noteInk).frame(width: 18, height: 18)
+          Text(file?.name ?? "File").font(Face.text(11)).foregroundStyle(Ink.noteInk).lineLimit(2).multilineTextAlignment(.center)
+          if let percent = file?.percent { ProgressView(value: Double(percent), total: 100).tint(Ink.noteInk).padding(.horizontal, 8) }
+        }
+        .frame(width: 72, height: 72).background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.5)))
+      }
+    }
+    .task(id: id) { if file?.mediaType.hasPrefix("image/") == true && shell.files[id] == nil { shell.act(["do": "open_file", "attachment_id": id, "save": false]) } }
+  }
+}
+
+/** The note's send control: an envelope drawn with the board's pen on cream paper, the crown its seal on the flap. */
+struct NoteEnvelope: View {
+  var body: some View {
+    ZStack(alignment: .topLeading) {
+      Canvas { ctx, size in
+        let k = min(size.width / 58, size.height / 44)
+        let t = CGAffineTransform(a: k, b: 0, c: 0, d: k, tx: (size.width - 58 * k) / 2 + k, ty: (size.height - 44 * k) / 2 + 2 * k)
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: y) }
+        var paper = Path()
+        paper.move(to: pt(3, 7.4)); paper.addLine(to: pt(52.6, 6.6)); paper.addLine(to: pt(53, 36.4)); paper.addLine(to: pt(3.4, 37)); paper.closeSubpath()
+        var edge = Path()
+        edge.move(to: pt(3, 7.4))
+        edge.addQuadCurve(to: pt(52.6, 6.6), control: pt(28, 6.4))
+        edge.addQuadCurve(to: pt(53, 36.4), control: pt(53.4, 22))
+        edge.addQuadCurve(to: pt(3.4, 37), control: pt(28, 37.4))
+        edge.addQuadCurve(to: pt(3, 7.4), control: pt(2.6, 22))
+        var flap = Path()
+        flap.move(to: pt(3.4, 8))
+        flap.addQuadCurve(to: pt(27.6, 24.2), control: pt(16, 18.6))
+        flap.addQuadCurve(to: pt(52.4, 7.4), control: pt(40, 18))
+        let ink = Color(hex: 0x1d1a12)
+        ctx.fill(paper.applying(t), with: .color(Color(hex: 0xfdf2c4)))
+        ctx.stroke(edge.applying(t), with: .color(ink), style: StrokeStyle(lineWidth: 1.6 * k, lineCap: .round, lineJoin: .round))
+        ctx.stroke(flap.applying(t), with: .color(ink), style: StrokeStyle(lineWidth: 1.5 * k, lineCap: .round, lineJoin: .round))
+      }
+      GeometryReader { g in
+        let k = min(g.size.width / 58, g.size.height / 44)
+        PenMark("crown", color: Color(hex: 0x1d1a12)).frame(width: 26 * k, height: 19 * k)
+          .rotationEffect(.degrees(-6))
+          .offset(x: (g.size.width - 58 * k) / 2 + 15 * k, y: (g.size.height - 44 * k) / 2 + 16 * k)
+      }
+    }
+    .rotationEffect(.degrees(-4))
+    .accessibilityHidden(true)
+  }
+}
+
+// ---- Settings ------------------------------------------------------------------------------------------------------
+
+/** A group of rows as iOS Settings draws it: a caption, a sheet of paper with hairlines, a note under it. */
+struct SetGroup<Content: View>: View {
+  var header: String? = nil
+  var footer: String? = nil
+  @ViewBuilder var content: Content
+  var body: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      if let h = header { Text(h.uppercased()).font(Face.text(12, .semibold)).kerning(0.9).foregroundStyle(Ink.muted).padding(.horizontal, 16) }
+      VStack(spacing: 0) { content }
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.line))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+      if let f = footer { Text(f).font(Face.text(13)).foregroundStyle(Ink.muted).padding(.horizontal, 16).fixedSize(horizontal: false, vertical: true) }
+    }
+  }
+}
+/** The hairline between two rows, from under the icon to the edge. */
+struct SetRule: View {
+  var inset: CGFloat = 56
+  var body: some View { Rectangle().fill(Ink.line).frame(height: 1).padding(.leading, inset) }
+}
+/** One row: a drawn icon, the title, a detail on the right, a chevron or a tick. */
+struct SetRow<Icon: View>: View {
+  let title: String
+  var detail: String? = nil
+  var tint: Color = Ink.fg
+  var chevron = false
+  var ticked = false
+  @ViewBuilder var icon: Icon
+  var body: some View {
+    HStack(spacing: 14) {
+      icon.frame(width: 26, height: 26)
+      Text(title).font(Face.text(17, .medium)).foregroundStyle(tint).lineLimit(1)
+      Spacer(minLength: 8)
+      if let d = detail { Text(d).font(Face.text(15)).foregroundStyle(Ink.muted).lineLimit(1) }
+      if chevron { Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.faint) }
+      if ticked { Sketch("tick", color: Ink.accent).frame(width: 20, height: 20) }
+    }
+    .padding(.horizontal, 16).frame(minHeight: 52)
+    .contentShape(Rectangle())
+  }
+}
+/** A field inside a group: one outlined line on the paper. */
+private struct SetField: View {
+  let title: String
+  @Binding var text: String
+  var secure = false
+  var body: some View {
+    Group { if secure { SecureField(title, text: $text) } else { TextField(title, text: $text).textInputAutocapitalization(.never).autocorrectionDisabled() } }
+      .font(Face.text(16)).padding(.horizontal, 12).frame(minHeight: 44)
+      .background(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.lineStrong))
+      .padding(.horizontal, 16).padding(.vertical, 6)
+  }
+}
+/** A device's drawing by the core's icon name. */
+private struct DeviceIcon: View {
+  let icon: String
+  var body: some View { if icon == "phone" { PenMark("draw:phone", color: Ink.fg) } else { Sketch(icon.isEmpty ? "laptop" : icon) } }
+}
+
 struct SettingsScreen: View {
   @EnvironmentObject var shell: AppShell
   @AppStorage("trommi-theme") private var theme = "system"
@@ -45,72 +380,291 @@ struct SettingsScreen: View {
   @State private var nextPassword = ""
   @State private var accountEmail = ""
   @State private var kitWords = ""
+  @State private var leaving = false
+  @State private var deleting = false
+  @State private var removing: CoreView.AgentView?
   var body: some View {
-    Form {
-      if let problem = shell.view.account.problem { Text(problem.en).foregroundStyle(Ink.deny) }
-      if shell.view.account.step == "working" { ProgressView() }
-      Section("Account") { if let email = shell.view.settings.account { Text(email) }; Button("Pair a device") { shell.account(["step": "invite_device"]) }; Button("Approve a computer") { shell.account(["step": "approve_computer", "label": ""]) }; AccountInvite() }
-      Section("Account security") {
-        SecureField("Current password", text: $currentPassword)
-        SecureField("New password", text: $nextPassword)
-        Button("Change password") { shell.account(["step": "set_password", "unlock": ["by": "password", "password": currentPassword], "next": nextPassword]); currentPassword = ""; nextPassword = "" }
-        Button("New Emergency Kit") { shell.account(["step": "new_kit", "unlock": ["by": "password", "password": currentPassword]]); currentPassword = "" }
-        Button("Replace recovery code") { shell.account(["step": "replace_recovery_code", "unlock": ["by": "password", "password": currentPassword]]); currentPassword = "" }
-        TextField("E-mail", text: $accountEmail)
-        SecureField("Emergency Kit words", text: $kitWords)
-        Button("Set e-mail") { shell.account(["step": "set_email", "email": accountEmail, "words": kitWords]); kitWords = "" }
-        Button("Delete account", role: .destructive) { shell.account(["step": "delete_account", "password": currentPassword]); currentPassword = "" }
-      }
-      Section("Data") {
-        Button("Read hub data") { shell.account(["step": "read_usage"]) }
-        if let data = shell.view.settings.data {
-          if let says = data.says { Text(says.en) }
-          ForEach(data.rows, id: \.id) { row in HStack { Text(row.label.en); Spacer(); Text(row.value.en) } }
+    let s = shell.view.settings
+    ScrollView {
+      VStack(alignment: .leading, spacing: 26) {
+        PageHeading(text: "Settings")
+        if let problem = shell.view.account.problem { Text(problem.en).font(Face.text(15)).foregroundStyle(Ink.urgCritical) }
+        if shell.view.account.step == "working" { ProgressView().frame(maxWidth: .infinity) }
+        invites
+        SetGroup(header: "Account") {
+          SetRow(title: s.account ?? s.login?.email ?? "Account", detail: nil) { Sketch(s.account == nil ? "key" : "letter") }
+          if let login = s.login {
+            SetRule()
+            Text("Account ID \(login.account)").font(Face.mono(12)).foregroundStyle(Ink.muted).textSelection(.enabled)
+              .padding(.horizontal, 16).padding(.vertical, 10).frame(maxWidth: .infinity, alignment: .leading)
+          }
         }
-      }
-      Section("Devices") {
-        ForEach(shell.view.settings.devices, id: \.id) { device in
-          VStack(alignment: .leading) { Text(device.name); Text(device.says.en).font(Face.text(12)); Text(device.fingerprint).font(Face.mono(11)).textSelection(.enabled); if let seen = device.seen { Text(seen.en).font(Face.text(12)) } }
-          Button("Remove", role: .destructive) { shell.account(["step": "remove_devices", "device_ids": [device.id]]) }
+        SetGroup(header: "Ways In", footer: "Changing how your account opens asks for your current password again: being logged in here is not enough.") {
+          SetField(title: "Current password", text: $currentPassword, secure: true)
+          SetField(title: "New password", text: $nextPassword, secure: true)
+          SetRule(inset: 16)
+          way("Change password", "lock") { shell.account(["step": "set_password", "unlock": ["by": "password", "password": currentPassword], "next": nextPassword]); currentPassword = ""; nextPassword = "" }
+          SetRule()
+          way("New Emergency Kit", "page") { shell.account(["step": "new_kit", "unlock": ["by": "password", "password": currentPassword]]); currentPassword = "" }
+          SetRule()
+          way("Replace recovery code", "key") { shell.account(["step": "replace_recovery_code", "unlock": ["by": "password", "password": currentPassword]]); currentPassword = "" }
         }
-      }
-      Section("Notifications") {
-        Picker("Notifications", selection: Binding(get: { shell.view.settings.push?.level ?? "off" }, set: { shell.act(["do": "push", "level": $0]) })) { Text("Off").tag("off"); Text("All").tag("all"); Text("Only knocking").tag("knocking") }
-      }
-      Section("Agents") {
-        ForEach(shell.view.settings.agentList, id: \.key) { agent in
-          DisclosureGroup(agent.name.en) { Text(agent.state.en); Text(agent.count.en); if let usage = agent.usage { UsageDrawing(usage: usage) }; ForEach(agent.sessions, id: \.id) { session in Button(session.name.en) { shell.focus(.session(sessionId: session.id)) } }; if let remove = agent.remove { Button(remove.en, role: .destructive) { shell.account(["step": "remove_devices", "device_ids": agent.devices]) } } }
+        SetGroup(header: "E-mail", footer: "With the twelve words of your Emergency Kit.") {
+          SetField(title: "E-mail", text: $accountEmail)
+          SetField(title: "Emergency Kit words", text: $kitWords, secure: true)
+          way("Set e-mail", "letter") { shell.account(["step": "set_email", "email": accountEmail, "words": kitWords]); kitWords = "" }
         }
+        devices(s)
+        SetGroup(header: "Push on This Device") {
+          pushRow("all", "Everything", "bell"); SetRule()
+          pushRow("knocking", "Only Knocking", "knock"); SetRule()
+          pushRow("off", "Off", "snooze")
+        }
+        agents(s)
+        desks
+        SetGroup(header: "Theme") {
+          themeRow("system", "System", "sun"); SetRule()
+          themeRow("light", "Light", "sun"); SetRule()
+          themeRow("dark", "Dark", "moon")
+        }
+        SetGroup(header: "Data", footer: s.data?.says?.en) {
+          Button { shell.account(["step": "read_usage"]) } label: { SetRow(title: "Read hub data", chevron: true) { Image(systemName: "chart.bar").font(.system(size: 19)).foregroundStyle(Ink.fg) } }.buttonStyle(.plain)
+          ForEach(s.data?.rows ?? [], id: \.id) { row in SetRule(); SetRow(title: row.label.en, detail: row.value.en) { EmptyView() } }
+        }
+        SetGroup(footer: "This device forgets the room and its keys. Your other devices and your agents carry on.") {
+          Button { leaving = true } label: { SetRow(title: "Sign out…", tint: Ink.urgCritical) { Sketch("logout", color: Ink.urgCritical) } }.buttonStyle(.plain)
+        }
+        SetGroup(footer: "Deletes your account and everything Trommi keeps for it. Your current password above confirms it. This cannot be undone.") {
+          Button { deleting = true } label: { SetRow(title: "Delete account…", tint: Ink.urgCritical) { Sketch("bin", color: Ink.urgCritical) } }.buttonStyle(.plain)
+        }
+        VStack(spacing: 4) {
+          if let room = s.room { Text("room \(room) · key epoch \(s.keyEpoch)").font(Face.mono(12)).foregroundStyle(Ink.faint).textSelection(.enabled) }
+          if let hub = s.hub { Text(hub).font(Face.mono(12)).foregroundStyle(Ink.faint) }
+        }.frame(maxWidth: .infinity).multilineTextAlignment(.center)
       }
-      Section("Desks") {
-        ForEach(shell.view.sidebar.desks, id: \.id) { desk in HStack { Text(desk.name.en); Spacer(); Button("Open") { shell.focus(.desk, desk: desk.id) }; Button("Delete", role: .destructive) { shell.act(["do": "remove_desk", "desk_id": desk.id]) } } }
-        TextField("New desk", text: $deskName); Button("Add desk") { shell.act(["do": "add_desk", "name": deskName]); deskName = "" }
-      }
-      Section("Appearance") { Picker("Theme", selection: $theme) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") } }
-      Section("Room") { if let room = shell.view.settings.room { Text(room).font(Face.mono(12)).textSelection(.enabled) }; if let hub = shell.view.settings.hub { Text(hub).font(Face.text(14)) } }
-      Section { Button("Sign out", role: .destructive) { shell.account(["step": "sign_out"]) } }
-    }.navigationTitle("Settings")
+      .padding(.horizontal, 16).padding(.bottom, 90)
+      .frame(maxWidth: 680).frame(maxWidth: .infinity)
+    }
+    .background(Ink.bg.ignoresSafeArea())
+    .scrollDismissesKeyboard(.interactively)
+    .pushedPills(center: { EmptyView() }, trailing: { EmptyView() })
+    .confirmationDialog("Sign Out of This Device?", isPresented: $leaving, titleVisibility: .visible) {
+      Button("Sign out", role: .destructive) { shell.account(["step": "sign_out"]) }
+    } message: { Text("This device signs in again with e-mail and password or by scanning the code of a signed-in device.") }
+    .confirmationDialog("Delete Your Account?", isPresented: $deleting, titleVisibility: .visible) {
+      Button("Delete account", role: .destructive) { shell.account(["step": "delete_account", "password": currentPassword]); currentPassword = "" }
+    } message: { Text("Your account and everything Trommi keeps for it on the hub are deleted. This cannot be undone.") }
+    .confirmationDialog(removing?.name.en ?? "", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
+      Button("Remove from This Account", role: .destructive) { if let agent = removing { shell.account(["step": "remove_devices", "device_ids": agent.devices]) }; removing = nil }
+    } message: { Text(removing?.remove?.en ?? "") }
   }
+
+  /** The invitations as two equal tiles, then what an invite in progress shows (AccountInvite). */
+  private var invites: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      tile("Pair a device", "A phone or another computer scans the code. Made when you ask, works once.", "draw:phone") { shell.account(["step": "invite_device"]) }
+      tile("Approve a computer", "Claude Code or Codex on one of your computers joins with one command.", "sketch:terminal") { shell.account(["step": "approve_computer", "label": ""]) }
+      Text("Nobody is added before you confirm.").font(Face.text(13)).foregroundStyle(Ink.muted).padding(.horizontal, 16)
+      VStack(alignment: .leading, spacing: 12) { AccountInvite() }
+    }
+  }
+  private func tile(_ title: String, _ line: String, _ mark: String, _ go: @escaping () -> Void) -> some View {
+    Button(action: go) {
+      HStack(spacing: 14) {
+        PenMark(mark, color: Ink.fg).frame(width: 30, height: 30).frame(width: 56, height: 56)
+          .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.sunken))
+          .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.fg, lineWidth: 1.5))
+        VStack(alignment: .leading, spacing: 4) {
+          Text(title).font(Face.text(17, .semibold)).foregroundStyle(Ink.fg)
+          Text(line).font(Face.text(14)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.leading)
+        }
+        Spacer(minLength: 0)
+      }
+      .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+      .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
+      .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.line))
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(title)
+  }
+  private func way(_ title: String, _ icon: String, _ go: @escaping () -> Void) -> some View {
+    Button(action: go) { SetRow(title: title, tint: Ink.accent) { Sketch(icon, color: Ink.accent) } }.buttonStyle(.plain)
+  }
+  private func pushRow(_ level: String, _ title: String, _ icon: String) -> some View {
+    Button { shell.act(["do": "push", "level": level]) } label: { SetRow(title: title, ticked: (shell.view.settings.push?.level ?? "off") == level) { Sketch(icon) } }
+      .buttonStyle(.plain).accessibilityAddTraits((shell.view.settings.push?.level ?? "off") == level ? .isSelected : [])
+  }
+  private func themeRow(_ key: String, _ title: String, _ icon: String) -> some View {
+    Button { theme = key } label: { SetRow(title: title, ticked: theme == key) { Sketch(icon) } }
+      .buttonStyle(.plain).accessibilityAddTraits(theme == key ? .isSelected : [])
+  }
+
+  /** The person's devices: each its drawing, its name, its fingerprint, whether it is here. */
+  private func devices(_ s: CoreView.SettingsView) -> some View {
+    SetGroup(header: "Devices", footer: "The fingerprint comes from the device's own key: it must look the same on every device.") {
+      ForEach(Array(s.devices.enumerated()), id: \.element.id) { i, device in
+        if i > 0 { SetRule() }
+        HStack(spacing: 14) {
+          DeviceIcon(icon: device.icon).frame(width: 26, height: 26)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(device.name).font(Face.text(17, .medium)).foregroundStyle(device.active ? Ink.fg : Ink.muted).lineLimit(1)
+            Text(device.fingerprint).font(Face.mono(12)).foregroundStyle(Ink.muted).lineLimit(1).textSelection(.enabled)
+            if let seen = device.seen { Text(seen.en).font(Face.text(12)).foregroundStyle(Ink.muted) }
+          }
+          Spacer(minLength: 8)
+          if device.active { Circle().fill(device.online ? Ink.stDone : Ink.lineStrong).frame(width: 8, height: 8) }
+          Text(device.says.en).font(Face.text(15)).foregroundStyle(Ink.muted).lineLimit(1)
+          if !device.thisDevice {
+            Menu { Button("Remove", role: .destructive) { shell.account(["step": "remove_devices", "device_ids": [device.id]]) } } label: {
+              Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(Ink.fg).frame(width: 36, height: 36)
+            }.accessibilityLabel("More for \(device.name)")
+          }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 60)
+      }
+      if let remove = s.removeUnfinished {
+        SetRule()
+        Button { shell.account(["step": "remove_devices", "device_ids": s.unfinished]) } label: { SetRow(title: remove.en, tint: Ink.urgCritical) { Sketch("logout", color: Ink.urgCritical) } }.buttonStyle(.plain)
+      }
+      ForEach(s.removed, id: \.id) { device in
+        SetRule()
+        SetRow(title: device.name, detail: device.says.en, tint: Ink.muted) { Sketch("archive", color: Ink.muted) }
+      }
+    }
+  }
+
+  /** Each agent as a group, its main sessions under it as the branches of a tree. */
+  @ViewBuilder private func agents(_ s: CoreView.SettingsView) -> some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text("AGENTS").font(Face.text(12, .semibold)).kerning(0.9).foregroundStyle(Ink.muted).padding(.horizontal, 16)
+      if let lead = s.agentsLead { Text(lead.en).font(Face.text(15)).foregroundStyle(Ink.muted).padding(.horizontal, 16) }
+      ForEach(s.agentList, id: \.key) { agent in
+        SetGroup {
+          HStack(spacing: 12) {
+            Sketch("terminal").frame(width: 24, height: 24).frame(width: 40, height: 40)
+              .background(RoundedRectangle(cornerRadius: 10).fill(Ink.surface)).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.fg, lineWidth: 1.5))
+            VStack(alignment: .leading, spacing: 3) {
+              Text(agent.name.en).font(Face.display(17, .bold)).foregroundStyle(Ink.fg).lineLimit(1)
+              HStack(spacing: 5) {
+                Circle().fill(agent.online ? Ink.stDone : Ink.lineStrong).frame(width: 7, height: 7)
+                Text("\(agent.state.en) · \(agent.count.en)").font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1)
+              }
+            }
+            Spacer(minLength: 0)
+            if agent.remove != nil {
+              Menu { Button("Remove from This Account…", role: .destructive) { removing = agent } } label: {
+                Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Ink.fg).frame(width: 40, height: 40)
+              }.accessibilityLabel("More for \(agent.name.en)")
+            }
+          }
+          .padding(.horizontal, 14).padding(.vertical, 12).background(Ink.sunken)
+          if let usage = agent.usage { UsageDrawing(usage: usage).padding(16).frame(maxWidth: .infinity, alignment: .leading); SetRule(inset: 16) }
+          ForEach(Array(agent.sessions.enumerated()), id: \.element.id) { i, session in
+            Button { shell.focus(.session(sessionId: session.id)) } label: { branch(session, last: i == agent.sessions.count - 1) }.buttonStyle(.plain)
+          }
+        }
+      }
+      if s.agentList.isEmpty {
+        SetGroup { Text("No agent yet.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(16).frame(maxWidth: .infinity, alignment: .leading) }
+      }
+    }
+  }
+  private func branch(_ b: CoreView.AgentSessionView, last: Bool) -> some View {
+    HStack(spacing: 12) {
+      ZStack(alignment: .topLeading) {
+        Rectangle().fill(Ink.lineStrong).frame(width: 1.4).frame(maxHeight: last ? 30 : .infinity, alignment: .top)
+        Rectangle().fill(Ink.lineStrong).frame(width: 12, height: 1.4).offset(y: 29)
+      }.frame(width: 14, alignment: .leading).frame(maxHeight: .infinity, alignment: .top)
+      AgentMark(mark: b.mark, size: 24, hue: Pen.hueFor(id: b.slug.isEmpty ? b.id : b.slug, mark: b.mark)).frame(width: 24, height: 24)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(b.name.en).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+        Text(b.folder.isEmpty ? b.desk.en : "\(b.desk.en) · \(b.folder)").font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1).truncationMode(.tail)
+      }
+      Spacer(minLength: 4)
+      if let helpers = b.helpersSays { Text(helpers.en).font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).padding(.horizontal, 7).padding(.vertical, 3).overlay(Capsule().strokeBorder(Ink.lineStrong)) }
+      Circle().fill(b.online ? Ink.stDone : Ink.lineStrong).frame(width: 8, height: 8).accessibilityLabel(b.state.en)
+      Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.faint)
+    }
+    .padding(.leading, 34).padding(.trailing, 16).frame(height: 60).contentShape(Rectangle())
+  }
+
+  /** The desks: each opens its Desk; its "⋯" deletes it; a new one by name. */
+  private var desks: some View {
+    SetGroup(header: "Desks") {
+      ForEach(Array(shell.view.sidebar.desks.enumerated()), id: \.element.id) { i, desk in
+        if i > 0 { SetRule() }
+        HStack(spacing: 0) {
+          Button { shell.focus(.desk, desk: desk.id) } label: { SetRow(title: desk.name.en, detail: desk.waiting > 0 ? "\(desk.waiting)" : nil, chevron: true) { Sketch("desk") } }.buttonStyle(.plain)
+          Menu { Button("Delete Desk", role: .destructive) { shell.act(["do": "remove_desk", "desk_id": desk.id]) } } label: {
+            Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(Ink.fg).frame(width: 40, height: 44)
+          }.padding(.trailing, 6).accessibilityLabel("More for \(desk.name.en)")
+        }
+      }
+      SetRule()
+      HStack(spacing: 10) {
+        PenMark("ui:PLUS", color: Ink.accent).frame(width: 22, height: 22)
+        TextField("Name of the new desk", text: $deskName).font(Face.text(16)).onSubmit(addDesk)
+        Button("Add desk", action: addDesk).font(Face.text(15, .semibold)).foregroundStyle(Ink.accent).buttonStyle(.plain)
+      }.padding(.horizontal, 16).frame(minHeight: 52)
+    }
+  }
+  private func addDesk() { shell.act(["do": "add_desk", "name": deskName]); deskName = "" }
 }
+
+// ---- Artifacts -----------------------------------------------------------------------------------------------------
+
 struct ArtifactsScreen: View {
   @EnvironmentObject var shell: AppShell
-  var body: some View { ScrollView { LazyVStack(alignment: .leading, spacing: 20) {
-    ForEach(shell.view.artifacts ?? [], id: \.id) { artifact in VStack(alignment: .leading, spacing: 10) { Text(artifact.title).font(Face.display(25)); FileRows(ids: artifact.files) }.padding(20).background(Ink.surface2, in: PenBox()) }
-  }.padding(24) }.navigationTitle("Artifacts") }
-}
-struct Toasts: View {
-  @EnvironmentObject var shell: AppShell
   var body: some View {
-    VStack(spacing: 8) { ForEach(shell.view.toasts, id: \.id) { toast in
-      HStack { VStack(alignment: .leading) { Text(toast.text.en).font(Face.text(15, .medium)); if let line = toast.line { Text(line.en).font(Face.text(12)) } }; Spacer()
-        if let action = toast.action { Button(toast.label?.en ?? "Undo") { if let data = try? JSONEncoder().encode(action), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { shell.act(json) } } }
-        if let go = toast.go { Button(go.label.en) { shell.focus(go.screen) } }
-        Button { shell.act(["do": "dismiss", "toast_id": toast.id]) } label: { Image(systemName: "xmark") }
-      }.padding(14).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
-      .task(id: toast.id) { try? await Task.sleep(nanoseconds: (toast.ms ?? 6000) * 1_000_000); if !Task.isCancelled { shell.act(["do": "dismiss", "toast_id": toast.id]) } }
-    } }
+    ScrollView {
+      LazyVStack(alignment: .leading, spacing: 14) {
+        PageHeading(text: "Artifacts")
+        if (shell.view.artifacts ?? []).isEmpty {
+          Text("Nothing yet: what the agents publish shows here.").font(Face.text(15)).foregroundStyle(Ink.muted)
+        }
+        ForEach(shell.view.artifacts ?? [], id: \.id) { artifact in ArtifactCard(artifact: artifact) }
+      }
+      .padding(.horizontal, 16).padding(.bottom, 40)
+      .frame(maxWidth: 760).frame(maxWidth: .infinity)
+    }
+    .background(Ink.bg)
+    .pushedPills(center: { EmptyView() }, trailing: { EmptyView() })
   }
 }
+/** One published thing: its kind's drawing, the kind, the title, who sent it, its files. */
+struct ArtifactCard: View {
+  @EnvironmentObject var shell: AppShell
+  let artifact: CoreView.ArtifactView
+  var body: some View {
+    let glyph = ["page": "html", "html": "html", "image": "image", "picture": "image", "video": "video", "audio": "audio"][artifact.kind] ?? "file"
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 12) {
+        PenMark("glyph:\(glyph)", color: Ink.fg).frame(width: 30, height: 30).frame(width: 64, height: 48)
+          .background(RoundedRectangle(cornerRadius: 8).fill(Ink.sunken))
+        VStack(alignment: .leading, spacing: 2) {
+          if !artifact.kind.isEmpty { Text(artifact.kind.uppercased()).font(Face.text(10, .bold)).kerning(1).foregroundStyle(Ink.faint) }
+          Text(artifact.title).font(Face.text(15, .semibold)).foregroundStyle(Ink.fg).lineLimit(2)
+          if !artifact.session.isEmpty { Text(artifact.session).font(Face.text(13)).foregroundStyle(Ink.muted).lineLimit(1) }
+        }
+        Spacer(minLength: 0)
+      }
+      ForEach(artifact.files, id: \.self) { id in
+        if let file = shell.view.files[id] {
+          Button { shell.act(["do": "open_file", "attachment_id": id, "save": true]) } label: {
+            HStack(spacing: 8) { Sketch("clip", color: Ink.accent).frame(width: 16, height: 16); Text(file.name).font(Face.text(14, .medium)).foregroundStyle(Ink.accent).lineLimit(1) }
+              .frame(minHeight: 32).contentShape(Rectangle())
+          }.buttonStyle(.plain)
+        }
+      }
+    }
+    .padding(8)
+    .background(RoundedRectangle(cornerRadius: 12).fill(Ink.surface)).overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Ink.lineStrong))
+  }
+}
+
+// ---- a file to save --------------------------------------------------------------------------------------------------
+
 struct SaveDocument: FileDocument {
   static var readableContentTypes: [UTType] { [.data] }
   var data: Data
@@ -121,5 +675,13 @@ struct SaveDocument: FileDocument {
 struct SaveSheet: View {
   let file: SavedFile
   @State private var exporting = false
-  var body: some View { VStack(spacing: 20) { Text(file.name).font(Face.display(24)); Button("Save file") { exporting = true } }.padding(32).fileExporter(isPresented: $exporting, document: SaveDocument(file.data), contentType: .data, defaultFilename: file.name) { _ in } }
+  var body: some View {
+    VStack(spacing: 20) {
+      Sketch("page").frame(width: 48, height: 48)
+      Text(file.name).font(Face.display(24, .heavy)).foregroundStyle(Ink.fg).multilineTextAlignment(.center)
+      Button("Save file") { exporting = true }.buttonStyle(ObGo())
+    }
+    .padding(32).frame(maxWidth: 440)
+    .fileExporter(isPresented: $exporting, document: SaveDocument(file.data), contentType: .data, defaultFilename: file.name) { _ in }
+  }
 }
