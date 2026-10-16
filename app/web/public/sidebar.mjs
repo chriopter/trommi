@@ -284,9 +284,9 @@ function teamHead(st, base) {
   const name = st.name.en, n = (st.sessions ?? []).length, edges = st.edges ?? []
   const cls = ['team-head', st.selected && 'is-in-view', st.folded && 'is-folded', st.knocks && 'is-knock', !n && 'is-empty'].filter(Boolean).join(' ')
   return html`<div class="${cls}" id="team-${st.id}" data-team="${st.id}" style="--n:${edges.length}">
-<a class="team-go" data-nav draggable="false" href="${base}/?team=${encodeURIComponent(st.id)}" data-team-go="${st.id}" title="${st.says.en}" aria-label="${name}: ${st.says.en}"${st.selected ? raw(' aria-current="true"') : ''}><span class="team-lamp">${deskMark(st.waiting > 0)}</span><strong>${name}</strong>${st.waiting ? html`<i class="team-n" aria-hidden="true">${st.waiting}</i>` : ''}</a>
+<a class="team-go" data-nav draggable="false" href="${base}/?team=${encodeURIComponent(st.id)}" data-team-go="${st.id}" title="${name}" aria-label="${name}: ${st.says.en}"${st.selected ? raw(' aria-current="true"') : ''}><span class="team-lamp">${deskMark(st.waiting > 0)}</span><strong>${name}</strong>${st.waiting ? html`<i class="team-n" aria-hidden="true">${st.waiting}</i>` : ''}</a>
 ${n ? html`<button type="button" class="team-fold" data-team-fold="${st.id}" aria-expanded="${String(!st.folded)}" aria-label="${st.folded ? `Show the agents of ${name}` : `Fold ${name}`}" title="${st.folded ? 'Show agents' : 'Fold'}">${FOLD_SWITCH}</button>` : ''}
-${st.folded ? html`<span class="team-edges" data-team-fold="${st.id}" title="${st.says.en}" aria-hidden="true">${edges.map((e, i) => { const q = edgeQuirk(e.id); return html`<i style="--i:${i};--hue:${whoOf(e).hue};--tilt:${q.tilt}deg;--dx:${q.dx}px">${raw(q.svg)}</i>` })}</span>` : ''}
+${st.folded ? html`<span class="team-edges" data-team-fold="${st.id}" title="Show agents" aria-hidden="true">${edges.map((e, i) => { const q = edgeQuirk(e.id); return html`<i style="--i:${i};--hue:${whoOf(e).hue};--tilt:${q.tilt}deg;--dx:${q.dx}px">${raw(q.svg)}</i>` })}</span>` : ''}
 </div>`
 }
 
