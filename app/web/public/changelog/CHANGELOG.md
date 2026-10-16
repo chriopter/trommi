@@ -22,6 +22,10 @@ sessions reliably, and web tabs release pictures and pages when you leave their 
 Starred cards, drafts and desk settings stay put while a device catches up. Session history and Done counts return
 reliably, and new desks and notes offer Undo. Invites show who is joining and their progress until Done.
 
+## 16 October 2026
+
+Desks are now called Teams, and the desktop sidebar shows all your Teams as stacks. Helpers live inside their agent's session, and the iPhone chat list and chat header are as calm as a messenger's. Reloading keeps you signed in, and Codex agents stay on the board.
+
 ## 13 October 2026
 
 Signing in takes under a second, and every helper keeps its name and cards afterwards. Running work lies as a stack
