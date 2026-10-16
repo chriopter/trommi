@@ -93,10 +93,14 @@ pub struct Focus {
     /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
-    /// The wide sidebar is inside the team in view (its chats), not at every team as a stack (`SidebarView.level`).
+    /// The Desk in view is home, every team's (the bell at the top), not the team in view's (a team's head).
     /// This device's: the shell keeps it.
     #[serde(default)]
-    pub in_team: bool,
+    pub desk_all: bool,
+    /// The teams unfolded in the wide sidebar, their chats under their stack (`TeamStackView.open`). This device's:
+    /// the shell keeps them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub open_teams: Vec<String>,
 }
 
 fn yes() -> bool {
@@ -316,23 +320,25 @@ pub struct SidebarView {
     /// How many of his answers the sessions of the team in view have not picked up.
     #[serde(default)]
     pub unheard: u32,
-    /// Every team as a stack of its sessions' card edges, in the menu's order: the wide sidebar's first level. A
-    /// click on one goes into it (the team in view, `level` "team"). The phone draws `sessions` instead.
+    /// Every team as a stack, in the menu's order (the wide sidebar): folded, its head over a fan of its sessions'
+    /// card edges; open, its chats under it. The phone draws `sessions` instead.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stacks: Vec<TeamStackView>,
-    /// What the wide sidebar shows: "teams" (every team as a stack) or "team" (inside the team in view: its chats,
-    /// `sessions`, and the way back). This device's choice (`Focus.in_team`); "teams" until made.
+    /// The Desk in view is every team's (home, `Focus.desk_all`): no team's head is marked.
     #[serde(default)]
-    pub level: String,
+    pub desk_all: bool,
 }
 
-/// A team in the wide sidebar's first level: its head over a fan of its sessions' card edges.
+/// A team in the wide sidebar: its head (a click opens its Desk) over its sessions, folded to a stack or open.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamStackView {
     pub id: String,
     pub name: Text,
-    /// The team in view (its Desk is the Desk).
+    /// The team in view and its Desk is the Desk (not on home, `desk_all`).
     pub selected: bool,
+    /// Open on this device (`Focus.open_teams`): its chats stand under its head; folded, they lie as its stack.
+    #[serde(default)]
+    pub open: bool,
     /// The open questions of the team's sessions.
     pub waiting: u32,
     /// One of them knocks.
@@ -344,12 +350,19 @@ pub struct TeamStackView {
     /// number, not by an edge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edges: Vec<StackEdgeView>,
+    /// Its picture, as a group's: up to three of its sessions' own marks, overlapping, the crowned one first, then in
+    /// the rows' order; none for a team without sessions (a quiet placeholder).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub faces: Vec<StackEdgeView>,
+    /// Its sessions, one row each, in drawing order (connected first); drawn while open.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sessions: Vec<SessionRowView>,
 }
 
 /// So many sessions have a card edge of their own in a folded team's stack.
 pub const STACK_EDGES: usize = 6;
 
-/// A session's card edge in a folded team's stack.
+/// A session in a team's stack: its card edge, or its face in the team's picture.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StackEdgeView {
     /// The session's key (its row's id).

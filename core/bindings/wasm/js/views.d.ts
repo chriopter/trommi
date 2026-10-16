@@ -21,9 +21,12 @@ export interface Focus {
   /** The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a team's id or "all" for that
    *  team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`. */
   board?: string
-  /** The wide sidebar is inside the team in view (its chats), not at every team as a stack (`SidebarView.level`).
+  /** The Desk in view is home, every team's (the bell at the top), not the team in view's (a team's head).
    *  This device's: the shell keeps it. */
-  in_team: boolean
+  desk_all: boolean
+  /** The teams unfolded in the wide sidebar, their chats under their stack (`TeamStackView.open`). This device's:
+   *  the shell keeps them. */
+  open_teams?: string[]
 }
 
 export type Screen =
@@ -139,20 +142,21 @@ export interface SidebarView {
   working: number
   /** How many of his answers the sessions of the team in view have not picked up. */
   unheard: number
-  /** Every team as a stack of its sessions' card edges, in the menu's order: the wide sidebar's first level. A
-   *  click on one goes into it (the team in view, `level` "team"). The phone draws `sessions` instead. */
+  /** Every team as a stack, in the menu's order (the wide sidebar): folded, its head over a fan of its sessions'
+   *  card edges; open, its chats under it. The phone draws `sessions` instead. */
   stacks?: TeamStackView[]
-  /** What the wide sidebar shows: "teams" (every team as a stack) or "team" (inside the team in view: its chats,
-   *  `sessions`, and the way back). This device's choice (`Focus.in_team`); "teams" until made. */
-  level: string
+  /** The Desk in view is every team's (home, `Focus.desk_all`): no team's head is marked. */
+  desk_all: boolean
 }
 
-/** A team in the wide sidebar's first level: its head over a fan of its sessions' card edges. */
+/** A team in the wide sidebar: its head (a click opens its Desk) over its sessions, folded to a stack or open. */
 export interface TeamStackView {
   id: string
   name: Text
-  /** The team in view (its Desk is the Desk). */
+  /** The team in view and its Desk is the Desk (not on home, `desk_all`). */
   selected: boolean
+  /** Open on this device (`Focus.open_teams`): its chats stand under its head; folded, they lie as its stack. */
+  open: boolean
   /** The open questions of the team's sessions. */
   waiting: number
   /** One of them knocks. */
@@ -162,9 +166,14 @@ export interface TeamStackView {
   /** A card edge per session (at most [`STACK_EDGES`]), in the rows' order. What knocks is said by the head's
    *  number, not by an edge. */
   edges?: StackEdgeView[]
+  /** Its picture, as a group's: up to three of its sessions' own marks, overlapping, the crowned one first, then in
+   *  the rows' order; none for a team without sessions (a quiet placeholder). */
+  faces?: StackEdgeView[]
+  /** Its sessions, one row each, in drawing order (connected first); drawn while open. */
+  sessions?: SessionRowView[]
 }
 
-/** A session's card edge in a folded team's stack. */
+/** A session in a team's stack: its card edge, or its face in the team's picture. */
 export interface StackEdgeView {
   /** The session's key (its row's id). */
   id: string

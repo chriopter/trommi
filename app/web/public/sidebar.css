@@ -225,7 +225,7 @@ button.agent-badge:active { scale: .95; }
   [data-rail="folded"] .agent-row > .agent-badge { position: absolute; right: 2px; top: -4px; margin: 0; width: 24px; height: 24px; scale: .85; }
   [data-rail="folded"] .agent-row > .agent-badge[data-state="open"] { display: none; }
   
-  [data-rail="folded"] #agents > :not(.agent-row, .team-head, .team-inside) { display: none; }
+  [data-rail="folded"] #agents > :not(.agent-row, .team-head) { display: none; }
   [data-rail="folded"] #agents > .agent-invite { display: flex; justify-content: center; padding: 0; }
   [data-rail="folded"] .agent-invite-go { flex: none; width: 60px; justify-content: center; padding: var(--s-2) 0; }
   [data-rail="folded"] .agent-invite-label { display: none; }
@@ -1035,21 +1035,20 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
   [data-keyboard] body[data-t-view="card"] .phone-bar { visibility: hidden; }
 }
 
-/* ---- The calm sidebar (a wide screen; sidebar.mjs sidebarRows, the core's SidebarView.level and TeamStackView) ----
-   At its top the bell (home: the Desk and the first level) and Search and + at the right; no team switch. First level:
-   every team as a stack, its head over a fan of its sessions' card edges; a click goes in. Inside a team: "‹ Teams",
-   its name, its Desk and Scribble Board, and its chats as calm rows (drawing, name, one grey line of what was said
-   last, one small sign). At the foot a round account mark and Settings, which opens the menu upward. A phone keeps
-   its pill, its drawer and its rows as before. */
-.side-top, .team-head, .team-inside, .team-place-row, .team-chats-h, .agent-teaser, .agent-signal, .open-me, .open-word-wide { display: none; }
+/* ---- The calm sidebar (a wide screen; sidebar.mjs sidebarRows, teamStack, the core's TeamStackView) ----
+   At its top the bell: home, every team's Desk; Search and + at the right. Then every team as a stack: its
+   head card (a click opens its Desk) over its chats, folded as a fan of card edges, open as calm rows held by a pen
+   bracket (the old helpers' stack). At the foot the round account mark and a small chevron open the menu upward. A
+   phone keeps its pill, its drawer and its rows as before. */
+.side-top, .team-head, .team-bracket, .agent-teaser, .agent-signal, .open-me { display: none; }
 @media (min-width: 861px) {
-  /* the top: home, Search, + */
+  /* the top: home (bell and Desk), Search, + */
   html body .topbar .deskpill > :is(.desk-go, .team-switch-open), .topbar .rail-tag { display: none !important; }
   html body .topbar .deskpill { flex: none; width: 0; min-width: 0; padding: 0; margin: 0; }
   .topbar .side-top { flex: 1; min-width: 0; display: flex; align-items: center; height: 56px; padding: 0 var(--s-2) 0 var(--s-2); }
-  .side-home { display: grid; place-items: center; width: 40px; height: 40px; margin-left: -6px; border-radius: 12px; color: var(--fg); }
-  .side-home:hover, .side-home:focus-visible { background: var(--sunken); }
-  .side-home .brand-mark { display: block !important; width: 28px; height: 28px; }
+  .side-home { display: grid; place-items: center; width: 40px; height: 40px; margin-left: -4px; border-radius: 12px; color: var(--fg); text-decoration: none; }
+  .side-home:hover, .side-home:focus-visible, .side-home[aria-current] { background: var(--sunken); }
+  .side-home .brand-mark { display: block !important; width: 26px; height: 26px; }
   .side-tools { display: flex; gap: 6px; margin-left: auto; }
   .side-tool-form { display: contents; }
   .side-tool { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: var(--sunken); color: var(--muted); cursor: pointer; }
@@ -1059,54 +1058,58 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
   html[data-rail="folded"] .side-home { margin: 0; }
   html[data-rail="folded"] .side-tools { display: none; }
 
-  /* the foot: the account mark and Settings; the menu opens upward over the sidebar */
-  html body .topbar .brand-open { display: flex !important; }
+  /* the foot: the account mark and a chevron; the menu opens upward over the sidebar */
+  html body .topbar .brand-open { display: flex !important; width: auto !important; gap: 6px !important; padding: 0 8px 0 4px !important; }
   .topbar .brand-open > .open-mark, .topbar .brand-open > .open-word { display: none !important; }
-  .topbar .brand-open .open-me { display: grid; place-items: center; flex: none; width: 34px; height: 34px; margin-left: -6px; border-radius: 50%; background: var(--sunken); box-shadow: 0 0 0 1px var(--line-strong); color: var(--muted); }
+  .topbar .brand-open .open-me { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--sunken); box-shadow: 0 0 0 1px var(--line-strong); color: var(--muted); }
   .topbar .brand-open .open-me svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
-  .topbar .brand-open .open-word-wide { display: block; font: 600 15px/1.3 var(--font); }
+  .topbar .brand-open .brand-fold { margin-left: 0 !important; color: var(--muted); }
   .side-foot .side-theme { display: none !important; }
-  html[data-rail="folded"] .topbar .brand-open .open-word-wide { display: none; }
-  html[data-rail="folded"] .topbar .brand-open .open-me { margin: 0; }
-  .topbar #brand-doors .menu-team-rows { display: none; }
-  html body .topbar #brand-doors { top: auto !important; bottom: 64px !important; left: 8px !important; width: calc(var(--side, 272px) - 16px) !important; z-index: calc(var(--z-menu) + 1); }
+  html[data-rail="folded"] .topbar .brand-open .brand-fold { display: none; }
+  /* the menu: Settings, What's new, Demo, Log out; then one row of push, theme and help; one frame, one line */
+  .topbar #brand-doors .menu-team-rows, .topbar #brand-doors #team-add, .topbar #brand-doors .menu-team-form, .topbar #brand-doors .menu-team-error, html body .topbar #brand-doors .menu-places { display: none !important; }
+  html body .topbar #brand-doors .menu-teams { display: contents; border: 0; }
+  html body .topbar #brand-doors { display: flex; flex-direction: column; gap: 2px; top: auto !important; bottom: 64px !important; left: 8px !important; width: calc(var(--side, 272px) - 16px) !important; padding: 6px !important; z-index: calc(var(--z-menu) + 1); }
+  html body .topbar #brand-doors[hidden] { display: none; }
+  html body .topbar #brand-doors > :is(.menu-settings, .menu-news-row, .menu-demo-row, .menu-logout-row) { border: 0 !important; box-shadow: none !important; margin: 0 !important; font: 500 var(--t-md)/1.2 var(--font) !important; min-height: 40px; }
+  html body .topbar #brand-doors > .menu-settings { order: 1; }
+  html body .topbar #brand-doors > .menu-news-row { order: 2; }
+  html body .topbar #brand-doors > .menu-demo-row { order: 3; }
+  html body .topbar #brand-doors > .menu-logout-row { order: 4; }
+  html body .topbar #brand-doors > .menu-icons { order: 5; margin-top: 4px !important; padding-top: 6px !important; border-top: 1px solid var(--line) !important; box-shadow: none !important; }
+  html body .topbar #brand-doors > .menu-push-note { order: 6; }
+  html body .topbar #brand-doors hr { display: none; }
   html[data-rail="folded"] body .topbar #brand-doors { left: calc(var(--side) + 4px) !important; bottom: 8px !important; width: 256px !important; }
   html body .topbar #brand-doors #theme-toggle { display: grid !important; }
-  html body .topbar #brand-doors .menu-places { display: grid; order: 0; margin: 0 0 4px; padding: 0 0 4px; border-top: 0; border-bottom: 1px solid var(--line); }
-  html body .topbar #brand-doors .menu-places a { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 var(--s-3); border-radius: 10px; color: var(--fg); text-decoration: none; font: 500 var(--t-md)/1 var(--font); }
-  html body .topbar #brand-doors .menu-places a:hover { background: var(--sunken); }
 
-  /* the first level: no chats, the teams as stacks */
-  #agents:has(> .side-level[data-level="teams"]) > :is(.agent-row, .join-row, .agent-invite) { display: none; }
-  #agents .team-head { position: relative; display: block; margin: 0 0 calc(var(--n) * 5px + 18px); color: var(--fg); text-decoration: none; }
-  #agents .team-go { position: relative; z-index: 1; display: flex; align-items: center; gap: var(--s-3); min-height: 48px; padding: 4px var(--s-3); border-radius: var(--r-md); background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong); }
-  #agents .team-head:hover .team-go { background: color-mix(in srgb, var(--surface) 60%, var(--sunken)); }
+  /* every team as a stack: the head card, the fan under it, and its chats when open */
+  #agents .team-head { position: relative; display: block; margin: 0 0 calc(var(--n) * 5px + 18px); }
+  #agents .team-head[data-fold="open"] { margin-bottom: 4px; }
+  #agents .team-go { position: relative; z-index: 1; display: flex; align-items: center; gap: var(--s-3); min-height: 48px; padding: 4px var(--s-3); border-radius: var(--r-md); background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong); color: var(--fg); text-decoration: none; }
+  #agents .team-go:hover { background: color-mix(in srgb, var(--surface) 60%, var(--sunken)); }
+  #agents .team-head.is-in-view .team-go { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fg) 55%, var(--line-strong)); }
   #agents .team-head.is-empty { margin-bottom: var(--s-3); }
   #agents .team-go strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 1.08rem/1.15 var(--display); letter-spacing: -.01em; }
   #agents .team-lamp { flex: none; display: grid; }
   #agents .team-lamp > .sketch { width: 28px; height: 28px; overflow: visible; stroke-width: 1.6; }
   #agents .team-n { flex: none; margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--sunken); color: var(--fg); font: 700 12px/20px var(--font); font-style: normal; font-variant-numeric: tabular-nums; text-align: center; }
-  #agents .team-head.is-knock .team-n, #agents .team-n.is-knock { background: var(--urg-critical); color: #fff; }
-  #agents .team-edges { position: absolute; z-index: 0; left: 0; right: 0; top: calc(100% - 4px); height: calc(var(--n) * 5px + 4px); }
-  #agents .team-edges i { position: absolute; top: calc(var(--i) * 5px - 6px); left: calc(4px + var(--i) * 3px); right: calc(4px + var(--i) * 3px); height: 14px; z-index: calc(20 - var(--i)); transform-origin: 16% 0; translate: var(--dx, 0px) 0; rotate: var(--tilt, 0deg); transition: translate 190ms cubic-bezier(.3, 1.8, .5, 1), rotate 190ms cubic-bezier(.3, 1.8, .5, 1); transition-delay: calc(var(--i) * 9ms); }
-  #agents .team-head:hover .team-edges i { translate: calc(var(--dx, 0px) + var(--i) * 1.4px) 1px; rotate: calc(var(--tilt, 0deg) * 2.2); }
+  #agents .team-head.is-knock .team-n { background: var(--urg-critical); color: #fff; }
+  #agents .team-edges { position: absolute; z-index: 0; left: 0; right: 0; top: calc(100% - 4px); height: calc(var(--n) * 5px + 6px); padding: 0; border: 0; background: none; cursor: pointer; }
+  #agents .team-edges[hidden] { display: none; }
+  #agents .team-edges::after { content: ""; position: absolute; inset: 0 0 -8px; }
+  #agents .team-edges i { position: absolute; top: calc(var(--i) * 5px - 6px); left: calc(4px + var(--i) * 3px); right: calc(4px + var(--i) * 3px); height: 14px; z-index: calc(20 - var(--i)); transform-origin: 16% 0; translate: calc(var(--dx, 0px) + var(--lean, 0) * var(--i) * 2px) calc(var(--lean-abs, 0) * var(--i) * 1px); rotate: calc(var(--tilt, 0deg) + var(--lean, 0) * var(--i) * .6deg); transition: translate 190ms cubic-bezier(.3, 1.8, .5, 1), rotate 190ms cubic-bezier(.3, 1.8, .5, 1); transition-delay: calc(var(--i) * 9ms); }
   #agents .team-edges svg { display: block; width: 100%; height: 100%; overflow: visible; }
   #agents .team-edges path { fill: var(--tone-edge); stroke: var(--tone-pen); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   #agents .team-edges .e-n { display: none; }
   :root[data-theme="dark"] #agents .team-edges path { fill: color-mix(in srgb, var(--tone-pen) 12%, var(--surface)); stroke: color-mix(in srgb, var(--tone-pen) 45%, var(--surface)); }
-
-  /* inside a team: the way back, its name, its places, its chats */
-  #agents .team-inside { display: block; margin: 0 0 var(--s-2); }
-  #agents .team-out { display: inline-flex; align-items: center; gap: 2px; height: 30px; margin-left: -6px; padding: 0 10px 0 2px; border: 0; border-radius: 15px; background: none; color: var(--muted); font: 600 13px/1 var(--font); cursor: pointer; }
-  #agents .team-out:hover, #agents .team-out:focus-visible { background: var(--sunken); color: var(--fg); }
-  #agents .team-out .sketch { width: 18px; height: 18px; stroke-width: 2; }
-  #agents .team-title { margin: 4px 0 0; padding: 0 var(--s-1); font: 800 1.4rem/1.15 var(--display); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #agents .team-place-row { display: flex; align-items: center; gap: var(--s-3); min-height: 40px; padding: 0 var(--s-3); border-radius: var(--r-md); color: var(--fg); text-decoration: none; }
-  #agents .team-place-row:hover { background: var(--sunken); }
-  #agents .team-place-row[aria-current] { background: var(--sunken); }
-  #agents .team-place-row > .sketch, #agents .team-place-row .team-lamp > .sketch { width: 24px; height: 24px; stroke-width: 1.7; }
-  #agents .team-place-row b { font-weight: 600; }
-  #agents .team-chats-h { display: block; margin: var(--s-4) 0 var(--s-1); padding: 0 var(--s-3); color: var(--faint); font: 600 12px/1 var(--font); letter-spacing: .04em; text-transform: uppercase; }
+  /* open: the chats under the head, a little in, held by the bracket */
+  #agents .team-bracket { display: block; position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; fill: none; stroke: var(--line-strong); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #agents .team-bracket[hidden] { display: none; }
+  #agents .team-bracket .team-bracket-hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+  #agents .agent-row.in-folded-team { display: none; }
+  #agents .agent-row[data-team-of] { margin-left: 22px; animation: team-fan 220ms cubic-bezier(.3, 1.4, .5, 1) both; }
+  #agents .agent-row.is-last[data-team-of] { margin-bottom: var(--s-4); }
+  @keyframes team-fan { from { opacity: 0; translate: 0 -10px; } }
 
   /* a calm chat row: drawing, name, one grey line, one small sign */
   #agents .agent-row .agent-helpers, #agents .agent-row .link-cap, #agents .agent-row > .agent-badge { display: none !important; }
@@ -1116,8 +1119,8 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
   #agents .agent-teaser { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 400 13px/1.35 var(--font); }
   #agents .agent-signal { display: block; flex: none; width: 9px; height: 9px; margin-left: var(--s-2); border-radius: 50%; background: var(--accent); }
   #agents .agent-signal[data-signal="stopped"], #agents .agent-signal[data-signal="waiting"] { background: var(--urg-critical); }
-  #agents .agent-signal[data-signal="unread"] { background: var(--accent); }
-  html[data-rail="folded"] #agents :is(.team-inside, .team-place-row, .team-chats-h, .agent-teaser) { display: none; }
+  html[data-rail="folded"] #agents .agent-teaser { display: none; }
+  html[data-rail="folded"] #agents .agent-row[data-team-of] { margin-left: 0; }
   html[data-rail="folded"] #agents .team-head { margin-bottom: calc(var(--n) * 5px + 12px); }
   html[data-rail="folded"] #agents .team-go { justify-content: center; padding: 0; }
   html[data-rail="folded"] #agents .team-go strong { display: none; }
@@ -1125,6 +1128,7 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
   html[data-rail="folded"] #agents .team-edges .e-w { display: none; }
   html[data-rail="folded"] #agents .team-edges .e-n { display: inline; }
 }
+@media (max-width: 860px) { #agents .agent-row.of-other-team { display: none; } }
 @media (min-width: 861px) and (prefers-reduced-motion: reduce) { #agents .team-edges i { transition: none; } }
 @media (min-width: 861px) { #agents .team-head.is-in-view .team-go { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fg) 55%, var(--line-strong)); } }
 
@@ -1143,4 +1147,32 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
 @media (min-width: 861px) {
   :root[data-rail="folded"] { --foot: 60px; }
   html[data-rail="folded"] .topbar .brand-open { bottom: 8px !important; }
+}
+
+/* ---- the + at the sidebar's top: Add agent, Add team, Scribble (a wide screen); no lasting "Approve Computer…" row ---- */
+.side-add-menu[hidden] { display: none !important; }
+@media (min-width: 861px) {
+  #agents > .agent-invite { display: none !important; }
+  .side-add { position: relative; display: grid; }
+  .side-add-menu { position: absolute; z-index: var(--z-menu); top: calc(100% + 6px); right: 0; width: 200px; display: grid; gap: 2px; padding: 6px; border-radius: 14px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong), 0 12px 28px -10px rgb(20 30 25 / .28); }
+  .side-add-menu form[action] { display: contents; }
+  .side-add-menu :is(button, a) { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 0 var(--s-3); border: 0; border-radius: 10px; background: none; color: var(--fg); font: 500 var(--t-md)/1.2 var(--font); text-align: left; text-decoration: none; cursor: pointer; }
+  .side-add-menu :is(button, a):hover, .side-add-menu :is(button, a):focus-visible { background: var(--sunken); }
+  .side-add-menu .sketch { width: 20px; height: 20px; flex: none; }
+  .side-add-form input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--bg); color: var(--fg); font: inherit; }
+}
+
+/* ---- a team's picture: up to three of its agents' marks overlapping, like a group's; empty: a dashed ring ---- */
+@media (min-width: 861px) {
+  #agents .team-faces { position: relative; flex: none; width: 34px; height: 34px; }
+  #agents .team-faces .agent-avatar { position: absolute; width: 22px !important; height: 22px !important; padding: 1px; border-radius: 50%; background: var(--surface); box-shadow: 0 0 0 1.5px var(--surface); }
+  #agents .team-faces[data-n="1"] .agent-avatar { inset: 0; width: 34px !important; height: 34px !important; box-shadow: none; }
+  #agents .team-faces[data-n="2"] .agent-avatar:nth-child(1) { left: 0; top: 2px; }
+  #agents .team-faces[data-n="2"] .agent-avatar:nth-child(2) { right: 0; bottom: 2px; }
+  #agents .team-faces[data-n="3"] .agent-avatar:nth-child(1) { left: 6px; top: -2px; z-index: 1; }
+  #agents .team-faces[data-n="3"] .agent-avatar:nth-child(2) { left: -2px; bottom: -2px; }
+  #agents .team-faces[data-n="3"] .agent-avatar:nth-child(3) { right: -2px; bottom: -2px; }
+  #agents .team-faces[data-n="0"] { border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--line-strong); }
+  /* the top follows the sidebar's width: Search and + stay at its right edge */
+  html:not([data-rail="folded"]) body .topbar { width: calc(var(--side) - 16px) !important; }
 }
