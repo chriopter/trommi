@@ -4,8 +4,8 @@
 //! noticing ("hot swap"), with no /mcp → Reconnect:
 //!
 //! 1. The child sees a new binary at its path (`server.rs`, which also downloads releases) and asks for the swap
-//!    with the private notification [`SWAP`]. Only a binary of the same launcher ABI ([`ABI`]) is swapped in;
-//!    for another one the child files today's card (reconnect by hand).
+//!    with the private notification [`SWAP`]. Only a binary of the same launcher ABI ([`ABI`]) and compiled
+//!    MCP contract is swapped in; otherwise the child asks the agent to announce a real client restart.
 //! 2. Draining: the client's new messages are held back in order; the requests the old child is answering are
 //!    awaited (each gets exactly one answer, from the child that took it). If they take longer than
 //!    [`DRAIN_MS`], the swap is called off, the held messages go to the old child and it is tried again later.
@@ -27,15 +27,14 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::mpsc;
 
 /// What a launcher and its child agree on: these names, the environment below, the order of a swap.
-// Computer approval changes connect's schema and initialization instructions. Existing clients must
-// reinitialize once instead of retaining the old required-link tool contract after a hot swap.
 pub const ABI: u32 = 2;
 /// Child → launcher: a new binary stands at the path; swap it in.
 pub const SWAP: &str = "trommi/launch/swap";
 /// Launcher → child: hand over and exit.
 pub const STOP: &str = "trommi/launch/stop";
 /// The environment a child is started with: the launcher's ABI, and the pid of the process that started the
-/// launcher (Claude Code), which the child counts as its parent.
+/// launcher (Claude Code), which the child counts as its parent. The ABI value includes the compiled
+/// MCP contract fingerprint, since clients retain their initial tools and instructions.
 pub const ENV_ABI: &str = "TROMMI_LAUNCH_ABI";
 pub const ENV_PARENT: &str = "TROMMI_PARENT_PID";
 /// How long the old child's open requests are awaited before a swap is called off.
@@ -51,9 +50,19 @@ pub fn launched() -> bool {
     std::env::var(ENV_ABI).is_ok_and(|abi| !abi.is_empty())
 }
 
-/// Whether the launcher this child runs under can swap in the binary at `path`: that binary's ABI is this one's.
+/// The launch protocol and MCP definitions the client must have initialized together.
+pub fn compatibility() -> &'static str {
+    static CONTRACT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CONTRACT.get_or_init(|| format!("{ABI}:{}", crate::prompt::contract_fingerprint()))
+}
+
+/// Whether the launcher and candidate have this child's protocol, tools and instructions.
 pub fn swappable(path: &std::path::Path) -> bool {
-    if std::env::var(ENV_ABI).ok().as_deref() != Some(ABI.to_string().as_str()) {
+    swappable_under(path, std::env::var(ENV_ABI).ok().as_deref())
+}
+
+fn swappable_under(path: &std::path::Path, inherited: Option<&str>) -> bool {
+    if inherited != Some(compatibility()) {
         return false;
     }
     std::process::Command::new(path)
@@ -63,7 +72,7 @@ pub fn swappable(path: &std::path::Path) -> bool {
         .output()
         .ok()
         .filter(|out| out.status.success())
-        .is_some_and(|out| String::from_utf8_lossy(&out.stdout).trim() == ABI.to_string())
+        .is_some_and(|out| String::from_utf8_lossy(&out.stdout).trim() == compatibility())
 }
 
 enum Event {
@@ -114,7 +123,7 @@ fn spawn(
 ) -> std::io::Result<Kid> {
     let mut process = Command::new(program)
         .arg("serve")
-        .env(ENV_ABI, ABI.to_string())
+        .env(ENV_ABI, compatibility())
         .env(ENV_PARENT, parent.to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -422,5 +431,56 @@ pub async fn main_launcher() -> i32 {
             _ = hup.recv() => launcher.signalled(Signal::HUP).await,
             _ = ticks.tick() => launcher.tick().await,
         }
+    }
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
+    struct Probe(PathBuf);
+    impl Probe {
+        fn new() -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("trommi-contract-{}", crate::util::random_hex(16)));
+            std::fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+            Self(dir)
+        }
+        fn write(&self, contract: &str, code: u8) -> PathBuf {
+            let path = self.0.join("connector");
+            std::fs::write(&path, format!("#!/bin/sh\n[ \"$1\" = launch-abi ] || exit 2\nprintf '%s\\n' '{contract}'\nexit {code}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            path
+        }
+    }
+    impl Drop for Probe {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn swaps_require_the_launcher_child_and_candidate_to_share_a_contract() {
+        let probe = Probe::new();
+        let current = compatibility();
+        let path = probe.write(current, 0);
+        assert!(swappable_under(&path, Some(current)));
+        assert!(!swappable_under(&path, None));
+        assert!(
+            !swappable_under(&path, Some("2")),
+            "legacy launchers must initialize again"
+        );
+        assert!(!swappable_under(&path, Some("2:stale-client")));
+        for candidate in ["2", "2:changed-tools-or-instructions", "1:old-protocol", ""] {
+            let path = probe.write(candidate, 0);
+            assert!(!swappable_under(&path, Some(current)), "{candidate}");
+        }
+        let path = probe.write(current, 1);
+        assert!(
+            !swappable_under(&path, Some(current)),
+            "a failed probe cannot authorize a swap"
+        );
+        assert!(!swappable_under(&probe.0.join("missing"), Some(current)));
     }
 }

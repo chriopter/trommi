@@ -31,7 +31,7 @@ fn main() {
             trommi_connector::server::main_server().await;
             0
         } else if args == ["launch-abi"] {
-            println!("{}", trommi_connector::launch::ABI);
+            println!("{}", trommi_connector::launch::compatibility());
             0
         } else {
             trommi_connector::cli::run(&args).await

@@ -243,9 +243,12 @@ connector here learns it from the Commit, wipes the slot and says that it is ret
 
 ## Updates and releases
 
-Updates with the same MCP contract apply without a restart or reconnect. The computer-approval release
-changes `connect` and its instructions: existing clients need one real restart to load that contract, which the
-old connector announces with its update card. `codex resume` keeps the conversation. What Claude Code starts is a small launcher (`src/launch.rs`); it
+Updates with the same MCP contract apply without a restart or reconnect. The connector fingerprints its compiled
+tools, schemas and instruction variants, including the descriptions and drawing choices. When they change, it
+asks the agent to tell the human to restart the client so that both tools and instructions are loaded again.
+Formatting-only changes do not require a restart. Clients with the older numeric launcher ABI need one restart
+to start checking this fingerprint too. `codex resume` keeps the conversation.
+What Claude Code starts is a small launcher (`src/launch.rs`); it
 owns the session's stdin and stdout and runs the connector as its child (`serve`). The installed connector looks for
 a newer signed release every hour (`TROMMI_UPDATE_CHECK_MS`), and at once when the hub refuses it as too old, and
 puts it in place as `update` does. When a new binary stands at the connector's path and is not refused, the child
@@ -256,9 +259,11 @@ child, gives it the session's `initialize` and `notifications/initialized` again
 client `notifications/tools/list_changed`; the new child signs in and opens the stream. Open requests that take
 longer than a minute call the swap off; it is tried again 30 s later. `reload_connector` asks for the same swap.
 
-The launcher almost never changes. When a new binary needs another launcher (its `launch-abi` differs), or the
-session runs without one, the update is announced once as before (`kind="update"`, restart required: /mcp →
-Reconnect), and `reload_connector` answers with that restart line.
+The launcher almost never changes. Its `launch-abi` probe reports the launcher protocol plus the MCP contract
+fingerprint. When either differs, or the session runs without a launcher, the update is announced once
+(`kind="update"`, `restart_required="1"`), attached to tool results too, and `reload_connector` gives the same
+host-specific restart instruction: /mcp → Reconnect in Claude Code, quit and resume in Codex. A
+`tools/list_changed` notification alone cannot refresh a client's cached initialization instructions.
 
 Releases are built and signed in CI: the releases `connector-v<N>` of `chriopter/trommi` (the connector's own series;
 before 13 October 2026 `v<N>`, a release of every part) hold the four binaries, `manifest.json` and `manifest.json.sig` (`release/manifest.sh`, `release/sign.sh`: Ed25519 over

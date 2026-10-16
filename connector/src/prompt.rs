@@ -8,6 +8,20 @@ use std::sync::OnceLock;
 pub const PROMPT_MD: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/prompt.md"));
 pub const TOOLS_JSON: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tools.json"));
 
+/// The compiled MCP contract, across all host and mirror variants. Runtime connection status and
+/// release versions are deliberately absent: neither changes the tools or initialization instructions.
+pub fn contract_fingerprint() -> String {
+    fingerprint(PROMPT_MD, tools_text())
+}
+
+fn fingerprint(md: &str, tools: &str) -> String {
+    let sections: std::collections::BTreeMap<_, _> = parse_prompt(md).into_iter().collect();
+    let tools: Value = serde_json::from_str(tools).expect("tools.json");
+    let mut contract = serde_json::json!({ "instructions": sections, "tools": tools });
+    contract.sort_all_objects();
+    crate::util::hex(&crate::util::sha256(contract.to_string().as_bytes()))
+}
+
 /// prompt.md as { '# Heading' | '## tool': text }: a section's lines and paragraphs read as one paragraph.
 pub fn parse_prompt(md: &str) -> HashMap<String, String> {
     let h = Regex::new(r"^(##?) +(.+?)\s*$").unwrap();
@@ -220,7 +234,11 @@ fn connect_tool(note: Option<&str>) -> String {
     let Ok(mut v) = serde_json::from_str::<Value>(&tool) else {
         return tool;
     };
-    let said = format!("{}. {}", note.trim_end_matches('.'), v["description"].as_str().unwrap_or(""));
+    let said = format!(
+        "{}. {}",
+        note.trim_end_matches('.'),
+        v["description"].as_str().unwrap_or("")
+    );
     v["description"] = Value::String(said);
     v.to_string()
 }
@@ -250,4 +268,44 @@ pub fn session_tools() -> Vec<String> {
 }
 pub fn examples() -> &'static Value {
     &tools_doc()["examples"]
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+
+    #[test]
+    fn cached_tools_and_instructions_require_a_new_contract() {
+        let original = contract_fingerprint();
+        assert_eq!(original.len(), 64);
+        let mut tools: Value = serde_json::from_str(tools_text()).unwrap();
+        tools["connect"]["inputSchema"]["required"] = serde_json::json!(["link"]);
+        assert_ne!(original, fingerprint(PROMPT_MD, &tools.to_string()));
+        for heading in [
+            "# Instructions",
+            "# In Codex",
+            "# In Claude Code",
+            "# With the terminal mirror",
+            "# Without the terminal mirror",
+            "## connect",
+        ] {
+            assert!(PROMPT_MD.contains(heading));
+            let changed = PROMPT_MD.replace(heading, &format!("{heading}\nChanged contract."));
+            assert_ne!(original, fingerprint(&changed, tools_text()), "{heading}");
+        }
+    }
+
+    #[test]
+    fn formatting_and_object_order_do_not_require_a_restart() {
+        assert_eq!(
+            fingerprint(
+                "# A\nOne two.\n# B\nThree.\n",
+                r#"{"b":{"d":2,"c":1},"a":0}"#
+            ),
+            fingerprint(
+                "# B\r\n Three.\r\n# A\r\nOne   two.\r\n",
+                r#"{ "a":0, "b": { "c":1, "d":2 } }"#
+            )
+        );
+    }
 }
