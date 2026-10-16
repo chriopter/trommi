@@ -53,8 +53,32 @@ try {
   assert.equal(held, 1)
   await reopened.close(); await ghost.close()
   const demo = await browser.tab(); await prepare(demo.session)
+  await demo.session.send('Page.addScriptToEvaluateOnNewDocument', { source:`(() => {
+    const Native = IntersectionObserver
+    globalThis.deskRefs = []
+    globalThis.IntersectionObserver = class extends Native {
+      observe(el) { if (el.matches('.inbox-row[data-later]')) deskRefs.push(new WeakRef(el)); super.observe(el) }
+    }
+  })()` })
   await demo.session.send('Page.navigate', { url: APP + '/?mock=1' })
   await until(demo.session, `!!document.querySelector('#desk-list .inbox-fan img[src^="blob:"]') && document.querySelector('#desk-list .inbox-fan img').naturalWidth > 0`, 'first Desk thumbnails load before visiting a card')
+  const rowRefs = await ev(demo.session, `deskRefs.length`)
+  assert.ok(rowRefs > 20, 'the actual Desk must have observed offscreen placeholders')
+  await ev(demo.session, `window.trommi.router.visit('/card/'+window.trommi.vm().desk.rows[0].id).then(()=>true)`)
+  await sleep(500)
+  await demo.session.send('HeapProfiler.collectGarbage')
+  const retainedRows = await ev(demo.session, `deskRefs.filter(r=>{const n=r.deref();return n && !n.isConnected}).length`)
+  console.log(`Desk observer memory: ${retainedRows} detached placeholders retained out of ${rowRefs} observations`)
+  assert.equal(retainedRows, 0, 'leaving the actual Desk must release its offscreen observed nodes')
+  const changedRows = await ev(demo.session, `(() => {
+    const router = window.trommi.router
+    const opts = main => ({ title:'List replacement fixture', view:'settings', sidebar:false, main })
+    router.paint('/fixture', opts('<main><div id="changing-list"><div id="row-a">old</div></div></main>'))
+    const old = document.getElementById('row-a')
+    router.paint('/fixture', opts('<main><div id="changing-list"><section id="row-a">new</section><div id="row-b">second</div></div></main>'), { morph:true })
+    return { ids:[...document.getElementById('changing-list').children].map(n=>n.id), tag:document.getElementById('row-a').tagName, oldConnected:old.isConnected }
+  })()`)
+  assert.deepEqual(changedRows, { ids:['row-a','row-b'], tag:'SECTION', oldConnected:false }, 'replacing the first keyed row while the list grows must keep a valid insertion cursor')
   await demo.close()
   assert.deepEqual(exceptions, [], 'no startup or ownership exceptions')
   console.log('ownership: reload twice, close/reopen, live-owner check, styled busy page, working takeover and stranded-lock recovery passed')

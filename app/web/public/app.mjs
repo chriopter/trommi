@@ -541,6 +541,8 @@ function createRouter({ board, onPage = () => {}, beforeVisit = () => {} }) {
       pairs.delete(n.id)
       let el = n
       if (p) { if (morphNode(p.live, p.was, n)) el = p.live.isConnected ? p.live : n; else { p.live.replaceWith(n) } }
+      // Replacing the row at the cursor detaches the old node; advance using its replacement.
+      if (p && at === p.live && el !== p.live) at = el
       if (el !== at) live.insertBefore(el, at)
       at = el.nextSibling
     }

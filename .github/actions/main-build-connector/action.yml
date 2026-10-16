@@ -14,12 +14,6 @@ runs:
   - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
     with:
       node-version-file: .node-version
-    env:
-      VERSION: ${{ inputs.version }}
-      ZIG_VERSION: 0.14.1
-      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
-      ZIGBUILD_VERSION: 0.23.4
-      ALL_PARTS: ${{ inputs.parts }}
   - name: Pinned cross compilers
     shell: bash
     run: |
@@ -31,24 +25,30 @@ runs:
       mkdir -p "$RUNNER_TEMP/zig"
       tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components 1
       echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
-      cargo install cargo-zigbuild --version "$ZIGBUILD_VERSION" --locked
     env:
-      VERSION: ${{ inputs.version }}
       ZIG_VERSION: 0.14.1
       ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+  - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    id: zigbuild
+    with:
+      path: ~/.cargo/bin/cargo-zigbuild
+      key: cargo-zigbuild-${{ runner.os }}-${{ runner.arch }}-0.23.4-${{ hashFiles('rust-toolchain.toml') }}
+  - name: Pinned cargo-zigbuild
+    shell: bash
+    run: |
+      set -eu
+      if [ "$CACHE_HIT" != true ]; then
+        cargo install cargo-zigbuild --version "$ZIGBUILD_VERSION" --locked
+      fi
+      test "$(cargo-zigbuild --version)" = "cargo-zigbuild $ZIGBUILD_VERSION"
+    env:
+      CACHE_HIT: ${{ steps.zigbuild.outputs.cache-hit }}
       ZIGBUILD_VERSION: 0.23.4
-      ALL_PARTS: ${{ inputs.parts }}
   - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
     with:
       prefix-key: v2-rust
       key: main-connector-all-targets
       save-if: ${{ github.ref == 'refs/heads/main' }}
-    env:
-      VERSION: ${{ inputs.version }}
-      ZIG_VERSION: 0.14.1
-      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
-      ZIGBUILD_VERSION: 0.23.4
-      ALL_PARTS: ${{ inputs.parts }}
   - name: Build all four targets
     run: |
       set -eu
@@ -61,10 +61,6 @@ runs:
     shell: bash
     env:
       VERSION: ${{ inputs.version }}
-      ZIG_VERSION: 0.14.1
-      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
-      ZIGBUILD_VERSION: 0.23.4
-      ALL_PARTS: ${{ inputs.parts }}
   - name: Put the release together
     run: |
       set -eu
@@ -88,19 +84,10 @@ runs:
     shell: bash
     env:
       VERSION: ${{ inputs.version }}
-      ZIG_VERSION: 0.14.1
-      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
-      ZIGBUILD_VERSION: 0.23.4
       ALL_PARTS: ${{ inputs.parts }}
   - name: Try the built connector
     run: out/trommi-connector-x86_64-unknown-linux-musl --version
     shell: bash
-    env:
-      VERSION: ${{ inputs.version }}
-      ZIG_VERSION: 0.14.1
-      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
-      ZIGBUILD_VERSION: 0.23.4
-      ALL_PARTS: ${{ inputs.parts }}
   - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
     with:
       overwrite: true
@@ -108,9 +95,3 @@ runs:
       path: out/
       if-no-files-found: error
       retention-days: 30
-    env:
-      VERSION: ${{ inputs.version }}
-      ZIG_VERSION: 0.14.1
-      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
-      ZIGBUILD_VERSION: 0.23.4
-      ALL_PARTS: ${{ inputs.parts }}

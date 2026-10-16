@@ -531,6 +531,18 @@ nightly ──────────────── nightly.yml: the giant 
                          the connector under load, RustSec, TestFlight's crashes
 ```
 
+The connector's main build caches only the pinned `cargo-zigbuild` executable, keyed by OS, architecture,
+version and Rust toolchain. Both restored and newly installed tools must report the pinned version. The Zig
+archive still has its SHA-256 checked; every target is still built and checked, and release signing and delivery
+keep their existing gates. On the measured previous delivery, installing cargo-zigbuild cost 32 seconds of a
+51-second compiler-setup step; the cache's actual saving is checked on subsequent main deliveries.
+
+The hub shares one read scope for full and brief Desks and settled objects. Group membership and archive
+filters are unchanged; membership tests use a sorted lookup set, and unfiltered reads do not load the archive
+list. Five samples on a private synthetic 4,038-group SQLite fixture gave brief-Desk medians of
+39.92 → 2.76 ms unfiltered and 39.76 → 21.18 ms for active sessions, with byte-identical replies. These are
+same-profile debug-build route-function measurements, not production HTTP latency or throughput.
+
 <details>
 <summary><b>Repository layout</b> · core, hub, apps, connector</summary>
 
