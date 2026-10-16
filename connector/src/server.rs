@@ -963,6 +963,24 @@ impl Conn {
             )
             .await;
         }
+        // a Codex session in the room: the connector Codex starts next for it learns its thread from this note
+        // (slots::codex_return), so the agent does not drop off the board until its next Trommi call
+        if crate::host::is_codex()
+            && self.member.phase() == "ready"
+            && !["lease-lost", "state-rolled-back"].contains(&reason)
+        {
+            if let Some(thread) = crate::host::thread() {
+                let launcher =
+                    (swap && crate::launch::launched()).then(std::os::unix::process::parent_id);
+                crate::slots::codex_leave_mark(
+                    &self.cfg.keys_dir,
+                    &self.cfg.base,
+                    &thread,
+                    launcher,
+                    now_ms(),
+                );
+            }
+        }
         if let Some(here) = self.here.lock().unwrap().clone() {
             check_out(&here, &self.cfg.base);
             if !swap && self.watch_on && claude && loss_matters(&who, now_ms(), self.idle_ms) {
@@ -1903,7 +1921,30 @@ impl mcp::Server for Conn {
         }
         tokio::spawn(async move {
             // Codex names its thread with its first tool call, and nothing of it before: until then this process
-            // does not know whose key in this folder is its own, so it takes none and joins nothing.
+            // does not know whose key in this folder is its own, so it takes none and joins nothing. Unless the
+            // connector before it under the same launcher (a hot swap) noted its thread: then that thread is this
+            // one's. A connector of this folder that ended a moment ago (Codex restarted its app server): its
+            // thread is woken, and its next call names its connector, which then takes its key.
+            let mut wake_thread = None;
+            if crate::host::is_codex() && self.cfg.owner().is_empty() {
+                let launcher = crate::launch::launched().then(std::os::unix::process::parent_id);
+                match crate::slots::codex_return(
+                    &self.cfg.keys_dir,
+                    &self.cfg.base,
+                    launcher,
+                    now_ms(),
+                    env_ms("TROMMI_CODEX_RETURN_MS", 600_000),
+                ) {
+                    Some(crate::slots::CodexReturn::Take(thread)) => {
+                        if crate::host::note_call_meta(&json!({ "threadId": thread })) {
+                            member::set_thread_owner(&thread);
+                            eprintln!("[trommi] Codex thread {thread}: taken over from the connector before this one");
+                        }
+                    }
+                    Some(crate::slots::CodexReturn::Wake(thread)) => wake_thread = Some(thread),
+                    None => {}
+                }
+            }
             let codex_unnamed = crate::host::is_codex() && self.cfg.owner().is_empty();
             let mut now = !codex_unnamed;
             let mut why = if codex_unnamed {
@@ -1958,6 +1999,14 @@ impl mcp::Server for Conn {
                     me.tick().await;
                 }
             });
+            if let Some(thread) = wake_thread.filter(|_| !crate::host::wake_off()) {
+                eprintln!(
+                    "[trommi] Codex thread {thread} lost its connector a moment ago: waking it"
+                );
+                tokio::spawn(async move {
+                    crate::host::wake_thread(&thread, "[Trommi] Codex started this session's Trommi connector anew: call the trommi inbox tool now, so this session is back on the board.").await;
+                });
+            }
             if !now {
                 eprintln!("[trommi] asleep ({why}): this process takes the Trommi key when its session is used (a Trommi tool call, a hook)");
                 return;

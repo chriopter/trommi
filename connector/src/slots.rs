@@ -408,6 +408,98 @@ pub fn leave_mark(dir: &Path, base: &str, who: &Value, at: u64, why: &str, by: u
         &Value::Object(m).to_string(),
     );
 }
+// ---- a Codex thread across connectors ----------------------------------------------------------------------------
+
+/// Codex names the thread a connector serves only in a tool call. A connector that replaces the one of a running
+/// Codex session (a hot swap under the same launcher, or Codex restarting its app server, which starts its MCP
+/// servers anew) would not know it until the agent calls again, and the agent would be off the board meanwhile.
+/// So a leaving Codex connector that was in the room notes its thread here, in `<keys>/<base>.codex.<hash>`:
+/// with its launcher (pid and start) when it hands over to a swapped-in connector of that launcher.
+fn codex_mark_file(dir: &Path, base: &str, thread: &str) -> PathBuf {
+    dir.join(format!(
+        "{base}.codex.{}",
+        &hex(&sha256(thread.as_bytes()))[..16]
+    ))
+}
+pub fn codex_leave_mark(dir: &Path, base: &str, thread: &str, launcher: Option<u32>, at: u64) {
+    let mut m = json!({ "thread": thread, "at": at });
+    if let Some(l) = launcher {
+        m["launcher_pid"] = json!(l);
+        m["launcher_start"] = json!(start_of(l));
+    }
+    let file = codex_mark_file(dir, base, thread);
+    let tmp = dir.join(format!(".{base}.codex.{}", pid()));
+    if write_private(&tmp, &m.to_string()).is_ok() && fs::rename(&tmp, &file).is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+}
+/// What a Codex connector that does not know its thread yet does with the notes of the connectors before it.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CodexReturn {
+    /// The connector before this one under the same launcher served this thread: it is this connector's.
+    Take(String),
+    /// A connector of this folder that served this thread ended a moment ago: wake the thread, whose next call
+    /// names its own connector (whichever process that is).
+    Wake(String),
+}
+/// Looks at the notes in `dir` for `base`. `launcher` is this connector's launcher (`None` without one); a note
+/// older than `fresh_ms` is dropped; each note is used once.
+pub fn codex_return(
+    dir: &Path,
+    base: &str,
+    launcher: Option<u32>,
+    now: u64,
+    fresh_ms: u64,
+) -> Option<CodexReturn> {
+    let head = format!("{base}.codex.");
+    let mut notes = vec![];
+    for e in fs::read_dir(dir).ok()?.filter_map(|e| e.ok()) {
+        let f = e.file_name().to_string_lossy().to_string();
+        if !f.starts_with(&head) {
+            continue;
+        }
+        let file = dir.join(&f);
+        let Some(n) = read_json(&file) else {
+            let _ = fs::remove_file(&file);
+            continue;
+        };
+        let at = n["at"].as_u64().unwrap_or(0);
+        let Some(thread) = n["thread"].as_str().map(String::from) else {
+            let _ = fs::remove_file(&file);
+            continue;
+        };
+        if now.saturating_sub(at) > fresh_ms {
+            let _ = fs::remove_file(&file);
+            continue;
+        }
+        notes.push((file, thread, n));
+    }
+    // a hand-over under this launcher first: it names this connector's thread for certain
+    if let Some(l) = launcher {
+        let start = start_of(l);
+        for (file, thread, n) in &notes {
+            if n["launcher_pid"].as_u64() == Some(l as u64)
+                && n["launcher_start"].as_str() == Some(start.as_str())
+                && fs::remove_file(file).is_ok()
+            {
+                return Some(CodexReturn::Take(thread.clone()));
+            }
+        }
+    }
+    for (file, thread, n) in notes {
+        // a hand-over under another launcher that still runs: its own new connector takes it
+        if let Some(l) = n["launcher_pid"].as_u64() {
+            let l = l as u32;
+            if alive(l) && n["launcher_start"].as_str() == Some(start_of(l).as_str()) {
+                continue;
+            }
+        }
+        if fs::remove_file(&file).is_ok() {
+            return Some(CodexReturn::Wake(thread));
+        }
+    }
+    None
+}
 pub struct Watch {
     pub cut: Vec<Value>,
     pub pending: Vec<Value>,
