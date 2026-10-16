@@ -1443,6 +1443,12 @@ public enum CoreView {
 
   /// The section Off your mind under the Desk: a short hinted list that opens the complete list (`Screen::Off`).
   public struct OffHintView: Codable, Hashable, Sendable {
+    /// The cards being worked on, the one that moved last first (at most three): on the iPhone they stand here, at
+    /// the head of the section, instead of a docked stack over the Desk. A starred card is not among them (it lies
+    /// in the starred stack).
+    public var running: [DockRowView]
+    /// "2 more running": how many run beyond those shown, leading to the complete list; none while all are shown.
+    public var runningMore: Text?
     /// The first rows, put off first, then the closed ones, the newest first (at most three; the shell fades them).
     public var rows: [OffRowView]
     /// "2 put off · 14 done".
@@ -1451,7 +1457,9 @@ public enum CoreView {
     /// Every closed card of the team in view, counted (not only the ones named).
     public var closed: UInt32
 
-    public init(rows: [OffRowView] = [], says: Text = Text(), putOff: UInt32 = 0, closed: UInt32 = 0) {
+    public init(running: [DockRowView] = [], runningMore: Text? = nil, rows: [OffRowView] = [], says: Text = Text(), putOff: UInt32 = 0, closed: UInt32 = 0) {
+      self.running = running
+      self.runningMore = runningMore
       self.rows = rows
       self.says = says
       self.putOff = putOff
@@ -1459,6 +1467,8 @@ public enum CoreView {
     }
 
     enum CodingKeys: String, CodingKey {
+      case running = "running"
+      case runningMore = "running_more"
       case rows = "rows"
       case says = "says"
       case putOff = "put_off"
@@ -1467,6 +1477,8 @@ public enum CoreView {
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.running = try c.decodeIfPresent([DockRowView].self, forKey: .running) ?? []
+      self.runningMore = try c.decodeIfPresent(Text.self, forKey: .runningMore)
       self.rows = try c.decode([OffRowView].self, forKey: .rows)
       self.says = try c.decode(Text.self, forKey: .says)
       self.putOff = try c.decode(UInt32.self, forKey: .putOff)
@@ -1475,6 +1487,8 @@ public enum CoreView {
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
+      if !running.isEmpty { try c.encode(running, forKey: .running) }
+      try c.encodeIfPresent(runningMore, forKey: .runningMore)
       try c.encode(rows, forKey: .rows)
       try c.encode(says, forKey: .says)
       try c.encode(putOff, forKey: .putOff)
