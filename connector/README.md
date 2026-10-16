@@ -106,7 +106,12 @@ connector; `src/host.rs`) differs from Claude Code in four ways, and the connect
   `CODEX_HOME` as `setup codex` registered it, else the Codex process's own, since Codex passes few variables to
   its MCP servers). That starts a turn in an idle session, or the next one after a
   running turn; the agent reads the event with `inbox`. So a Codex session hears at once (its lease reports
-  `hears: true`), also after a restart (`codex resume`) or a swapped-in connector, before its first call. A
+  `hears: true`), also after a restart (`codex resume`, or Codex starting its app server anew) or a swapped-in
+  connector, before its first call: a Codex connector in the room that leaves notes its thread
+  (`<keys>/<base>.codex.<hash>`, with its launcher when it hands over in a swap). The connector swapped in under
+  the same launcher takes that thread and key at once; a connector of the folder that starts within
+  `TROMMI_CODEX_RETURN_MS` (10 minutes) of another's end wakes that thread once, and the thread's next call
+  names its own connector, which takes its key. A
   woken turn that never called `inbox` does not leave the session deaf: the next event wakes it again once
   `TROMMI_CODEX_REWAKE_MS` (3 minutes) passed since the last wake.
 - It never asks for the tool list again: an unconnected session lists every tool with `connect`.
@@ -207,8 +212,8 @@ room and every folder's slots (`member::own_slots`): the room of that key is its
 keys or its note `.trommi/room` say; keys of one session in two rooms are refused by name; when the session joins
 a room by a new link, its keys in other rooms are left there marked `left:<owner>`. It never takes a key without an
 owner record, nor one of a process without an id: which session that was cannot be known. Codex names its thread
-only with its first tool call, so a Codex connector takes no key and asks for nothing before that call, and keeps
-the first thread for good. A key `join` made in a terminal belongs to nobody until the first session that uses it
+only with its first tool call, so a Codex connector takes no key and asks for nothing before that call (unless
+the connector before it under the same launcher named the thread, see above), and keeps the first thread for good. A key `join` made in a terminal belongs to nobody until the first session that uses it
 adopts it. A connector only takes its own session's key or one nobody owns; another session's key it never takes, also not
 while it is free, an idle holder hands its key over only to a connector of its own session, and `say` goes through
 a running connector only for its own session. So a second session in the same folder never writes into the

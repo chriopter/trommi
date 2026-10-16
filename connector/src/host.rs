@@ -132,13 +132,22 @@ pub fn can_wake() -> bool {
 /// Wakes the Codex session: queues `text` as a message for its thread. Returns whether Codex took it.
 pub async fn wake(text: &str) -> bool {
     let Some(thread) = thread() else { return false };
+    wake_thread(&thread, text).await
+}
+
+/// Queues `text` for the Codex thread `thread` (one this connector does not serve yet: the thread the connector
+/// before it in this folder served, whose next call names it and brings it back on the board).
+pub async fn wake_thread(thread: &str, text: &str) -> bool {
+    if !valid_thread(thread) {
+        return false;
+    }
     let mut cmd = tokio::process::Command::new(codex_program());
     // (Codex starts MCP servers with few of its variables: the queue must go to the home of the Codex that runs
     // this session, not to ~/.codex)
     if let Some(home) = codex_home() {
         cmd.env("CODEX_HOME", home);
     }
-    cmd.args(["queue", "--thread", &thread, "--message", text])
+    cmd.args(["queue", "--thread", thread, "--message", text])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
