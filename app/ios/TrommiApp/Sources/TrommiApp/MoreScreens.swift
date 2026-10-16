@@ -172,7 +172,7 @@ struct NotesScreen: View {
             .buttonStyle(.plain).accessibilityLabel("Delete Note").disabled(corner == nil && empty)
           Spacer(minLength: 4)
           recipient
-          send.disabled(empty || (notes.to == nil && notes.choose.isEmpty)).opacity(empty || (notes.to == nil && notes.choose.isEmpty) ? 0.5 : 1)
+          send.disabled(empty || notes.to == nil).opacity(empty || notes.to == nil ? 0.5 : 1)
         }
         .foregroundStyle(Ink.noteInk)
         if let none = notes.noCrown { Text(none.en).font(Face.text(13)).foregroundStyle(Ink.noteInk.opacity(0.7)) }
@@ -239,29 +239,19 @@ struct NotesScreen: View {
     pause?.cancel()
     focused = false; hideKeyboard()
   }
-  /** "To: …": the crowned session the note goes to, or the choice of a desk's crown on All desks. */
-  @ViewBuilder private var recipient: some View {
-    let label = HStack(spacing: 4) {
+  /** "To: …": the crowned session of the team in view, the one the note goes to. */
+  private var recipient: some View {
+    HStack(spacing: 4) {
       Text("To:").foregroundStyle(Ink.noteInk.opacity(0.7))
       Text(notes.to?.name ?? "No Session").fontWeight(.semibold).foregroundStyle(Ink.noteInk).lineLimit(1).truncationMode(.middle)
-      if !notes.choose.isEmpty { Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Ink.noteInk.opacity(0.7)) }
     }
     .lineLimit(1).font(Face.text(15)).padding(.horizontal, 14).frame(minHeight: 40)
     .glass(Capsule(), interactive: true).contentShape(Capsule())
-    if notes.choose.isEmpty { label.accessibilityLabel("Recipient: \(notes.to?.name ?? "none")") }
-    else {
-      Menu { ForEach(notes.choose, id: \.sessionId) { to in Button("\(to.desk) · \(to.name)") { sendTo(to.sessionId) } } } label: { label }
-        .accessibilityLabel("Recipient: \(notes.to?.name ?? "none")")
-    }
+    .accessibilityLabel("Recipient: \(notes.to?.name ?? "none")")
   }
-  @ViewBuilder private var send: some View {
-    if notes.choose.isEmpty {
-      Button { sendTo(nil) } label: { NoteEnvelope().frame(width: 58, height: 44).contentShape(Rectangle()) }
-        .buttonStyle(.plain).accessibilityLabel(notes.sendSays?.en ?? "Send")
-    } else {
-      Menu { ForEach(notes.choose, id: \.sessionId) { to in Button("\(to.desk) · \(to.name)") { sendTo(to.sessionId) } } } label: { NoteEnvelope().frame(width: 58, height: 44) }
-        .accessibilityLabel(notes.sendSays?.en ?? "Send")
-    }
+  private var send: some View {
+    Button { sendTo(nil) } label: { NoteEnvelope().frame(width: 58, height: 44).contentShape(Rectangle()) }
+      .buttonStyle(.plain).accessibilityLabel(notes.sendSays?.en ?? "Send")
   }
 }
 
@@ -389,14 +379,14 @@ private struct DeviceIcon: View {
 
 /**
  * Settings as the iPhone drew it before: a list (the invitations as two tiles, then a row per page with what it holds
- * on the right) and a page of its own for Agents, Desks, Devices, Account, Theme, Data and Security
+ * on the right) and a page of its own for Agents, Teams, Devices, Account, Theme, Data and Security
  * (`Screen.settings(page:)`). What each row and page says is the core's; which page is open is the stack's.
  */
 struct SettingsScreen: View {
   @EnvironmentObject var shell: AppShell
   let page: String
   @AppStorage("trommi-theme") private var theme = "system"
-  @State private var deskName = ""
+  @State private var teamName = ""
   @State private var currentPassword = ""
   @State private var nextPassword = ""
   @State private var accountEmail = ""
@@ -408,14 +398,14 @@ struct SettingsScreen: View {
   static func page(of part: String?) -> String {
     switch part {
     case "sessions": return "agents"
-    case "agents", "desks", "devices", "account", "theme", "data", "security": return part ?? ""
+    case "agents", "teams", "devices", "account", "theme", "data", "security": return part ?? ""
     default: return ""
     }
   }
   private var title: String {
     switch page {
     case "agents": "Agents"
-    case "desks": "Desks"
+    case "teams": "Teams"
     case "devices": "Devices"
     case "account": "Account"
     case "theme": "Theme"
@@ -433,7 +423,7 @@ struct SettingsScreen: View {
         if shell.view.account.step == "working" { ProgressView().frame(maxWidth: .infinity) }
         switch page {
         case "agents": agents(s)
-        case "desks": desks
+        case "teams": teams
         case "devices": devices(s); pushGroup
         case "account": account(s)
         case "theme": themeGroup
@@ -471,7 +461,7 @@ struct SettingsScreen: View {
     SetGroup {
       link("agents", "Agents", detail: s.agents?.en) { Sketch("terminal") }
       SetRule()
-      link("desks", "Desks", detail: s.desks?.en) { Sketch("desk") }
+      link("teams", "Teams", detail: s.teams?.en) { Sketch("desk") }
       SetRule()
       link("devices", "Devices", detail: s.devicesSays?.en) { PenMark("draw:phone", color: Ink.fg) }
       SetRule()
@@ -683,7 +673,7 @@ struct SettingsScreen: View {
       AgentMark(mark: b.mark, size: 24, hue: Pen.hueFor(id: b.slug.isEmpty ? b.id : b.slug, mark: b.mark)).frame(width: 24, height: 24)
       VStack(alignment: .leading, spacing: 2) {
         Text(b.name.en).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
-        Text(b.folder.isEmpty ? b.desk.en : "\(b.desk.en) · \(b.folder)").font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1).truncationMode(.tail)
+        Text(b.folder.isEmpty ? b.team.en : "\(b.team.en) · \(b.folder)").font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1).truncationMode(.tail)
       }
       Spacer(minLength: 4)
       if let helpers = b.helpersSays { Text(helpers.en).font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).padding(.horizontal, 7).padding(.vertical, 3).overlay(Capsule().strokeBorder(Ink.lineStrong)) }
@@ -693,27 +683,27 @@ struct SettingsScreen: View {
     .padding(.leading, 34).padding(.trailing, 16).frame(height: 60).contentShape(Rectangle())
   }
 
-  /** The desks: each opens its Desk; its "⋯" deletes it; a new one by name. */
-  private var desks: some View {
-    SetGroup(header: "Desks") {
-      ForEach(Array(shell.view.sidebar.desks.enumerated()), id: \.element.id) { i, desk in
+  /** The teams: each opens its Desk; its "⋯" deletes it; a new one by name. */
+  private var teams: some View {
+    SetGroup(header: "Teams") {
+      ForEach(Array(shell.view.sidebar.teams.enumerated()), id: \.element.id) { i, team in
         if i > 0 { SetRule() }
         HStack(spacing: 0) {
-          Button { shell.focus(.desk, desk: desk.id) } label: { SetRow(title: desk.name.en, detail: desk.waiting > 0 ? "\(desk.waiting)" : nil, chevron: true) { Sketch("desk") } }.buttonStyle(.plain)
-          Menu { Button("Delete Desk", role: .destructive) { shell.act(["do": "remove_desk", "desk_id": desk.id]) } } label: {
+          Button { shell.focus(.desk, team: team.id) } label: { SetRow(title: team.name.en, detail: team.waiting > 0 ? "\(team.waiting)" : nil, chevron: true) { Sketch("desk") } }.buttonStyle(.plain)
+          Menu { Button("Delete Team", role: .destructive) { shell.act(["do": "remove_team", "team_id": team.id]) } } label: {
             Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(Ink.fg).frame(width: 40, height: 44)
-          }.padding(.trailing, 6).accessibilityLabel("More for \(desk.name.en)")
+          }.padding(.trailing, 6).accessibilityLabel("More for \(team.name.en)")
         }
       }
       SetRule()
       HStack(spacing: 10) {
         PenMark("ui:PLUS", color: Ink.accent).frame(width: 22, height: 22)
-        TextField("Name of the new desk", text: $deskName).font(Face.text(16)).onSubmit(addDesk)
-        Button("Add desk", action: addDesk).font(Face.text(15, .semibold)).foregroundStyle(Ink.accent).buttonStyle(.plain)
+        TextField("Name of the new team", text: $teamName).font(Face.text(16)).onSubmit(addTeam)
+        Button("Add team", action: addTeam).font(Face.text(15, .semibold)).foregroundStyle(Ink.accent).buttonStyle(.plain)
       }.padding(.horizontal, 16).frame(minHeight: 52)
     }
   }
-  private func addDesk() { shell.act(["do": "add_desk", "name": deskName]); deskName = "" }
+  private func addTeam() { shell.act(["do": "add_team", "name": teamName]); teamName = "" }
 }
 
 // ---- Artifacts -----------------------------------------------------------------------------------------------------

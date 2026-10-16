@@ -98,7 +98,9 @@ The generated `CoreView.ViewModel` supplies the Desk, cards, sessions, Notes, Of
 and Scribble Board. Swift uses the core's order, labels, action modes, status lines, history and attachment ids.
 Editors keep only unsent UI input. Pen paths, hit testing, image drawing and theme preferences remain native;
 stroke encoding is `Action::DrawStroke` in Rust. Goals are edited through `SetGoal` and folded through
-`FoldGoals`; the folded desks are a local UI preference. A main's helpers fold the same way (`FoldHelpers`, kept as
+`FoldGoals`; the teams whose goals are folded are a local UI preference. The team in view is the core's
+(`sidebar.team`); the shell only remembers the last team chosen on this device (`trommi-team` in UserDefaults) and
+sends it as `Focus.team` after a start, and the core falls back to the first team when it is gone. A main's helpers fold the same way (`FoldHelpers`, kept as
 `trommi-stacks-open`). The Desk's duck for all and Blitz draw `desk.duck` (sent back as `Batch` "sweep") and
 `desk.blitz`; the Chat list draws each row's `last` (teaser and time) and `unread` (read marks the core keeps in its
 cache); Settings has a page per `Screen.settings(page:)`; the Artifacts filter is `Screen.artifacts(kind:)` with
@@ -141,7 +143,7 @@ UI clipping are native; card eligibility and priority are the core's.
 ## Share Extension
 
 `TrommiShare.appex` links only `ShareInbox`, with no device state or sync engine. It seals the selected text,
-links and files into the App Group inbox. Its recipient snapshot contains only ordered desks and their crowned
+links and files into the App Group inbox. Its recipient snapshot contains only ordered teams and their crowned
 sessions. The app reads and claims inbox items, then sends `ImportShare` to Rust. The core checks the account,
 selects the recipient or fallback Note, uploads attachments and deduplicates an import across restarts. The
 inbox is acknowledged only after the core's durable write; unreadable payloads stay for another try. Signing out
@@ -158,7 +160,8 @@ Mac-only automatic window/menu capture hook is not implemented by the new shell.
 
 The compact iPhone frame keeps Chat · Desk · Note in its glass pill. Chat draws the core's ordered session
 rows; cards, conversations and settings push onto the native navigation stack, so Back and swipe-back return
-to the list. The desk picker opens a lazy native sheet, including on a large account.
+to the list. The place pill (iPhone) and the top of the sidebar (iPad, Mac) switch the team in view: a menu of
+the core's `sidebar.teams`, each with its open questions; there is no view of every team at once.
 
 The views draw the look the app had before the shared core (sign-in, Desk, card, Chat, note, settings, the glass
 bar): `Chrome.swift` holds the shared parts (the top pills, tiles, the start screens' buttons and fields). Which

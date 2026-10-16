@@ -2,7 +2,7 @@
    comes from here; component files never use literal colours. */
 :root {
   /* layers of the page (z-index), low to high: in-page popovers, the corner note, menus, side panels, the toast, the demo
-     band, sheets, the phone drawer's veil and drawer, a card in full screen with its buttons and tools, the desk switch,
+     band, sheets, the phone drawer's veil and drawer, a card in full screen with its buttons and tools, the team switch,
      modal views, the update line, the row menu. Values within one component (0–9) stay plain numbers. */
   --z-pop: 20; --z-corner: 30; --z-menu: 40; --z-panel: 60; --z-toast: 80; --z-band: 85; --z-sheet: 90; --z-sheet-up: 91; --z-veil: 94; --z-drawer: 95; --z-full: 96; --z-full-ui: 97; --z-tools: 98; --z-switch: 99; --z-modal: 1000; --z-update: 2700; --z-rowmenu: 2800;
   /* surfaces */
@@ -46,7 +46,7 @@
   --tone-pen-l: .47;   --tone-pen-c: .085;
   --tone-turn: 10;
 
-  /* the crown of a desk's crowned session: gold, the pen it is drawn with, the wash inside it, the three stones */
+  /* the crown of a team's crowned session: gold, the pen it is drawn with, the wash inside it, the three stones */
   --gold-pen: #a8820f;
 
   /* the inks of the stamps on the stacks (desk.css): stamp blue, violet, green */
@@ -186,7 +186,7 @@ html:where([data-ui]), :where([data-ui]) body { margin: 0; overflow: hidden; ove
 :root[data-theme="dark"] { --note-yellow: #d9c35f; }
 :where(a, button, summary, input, select, textarea, [tabindex], label):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 /* Where there is no keyboard (a finger), no key hints anywhere: the small key caps beside words, the note's send keys */
-@media (pointer: coarse) { :is(button, a, summary, label, .corner-note-foot, .tc-ask-row, .says, .menu-desk) kbd, .corner-note-keys { display: none !important; } }
+@media (pointer: coarse) { :is(button, a, summary, label, .corner-note-foot, .tc-ask-row, .says, .menu-team) kbd, .corner-note-keys { display: none !important; } }
 ::selection { background: var(--accent-soft); color: var(--fg); }
 .offscreen { position: fixed; left: -200vw; top: 0; opacity: 0; }
 
@@ -690,7 +690,7 @@ body[data-t-view="card"] .curl-grab { width: 44px; height: 44px; }
   :is(.ob-link, .ob-foot a, .ob-chip, .ob-paste > summary, #room-home, .phone-back, .set-back, .art-act, .corner-note-clip, .corner-note-bin, .tc-thumb) { position: relative; }
   :is(.ob-link, .ob-foot a, .ob-eye, .ob-chip, .ob-paste > summary, #room-home, .phone-back, .set-back, .art-act, .corner-note-clip, .corner-note-bin, .tc-thumb)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); translate: -50% -50%; }
   /* (a field under 16px makes iOS Safari zoom the page when it takes the keyboard, and leave it zoomed) */
-  html body :is(.tc-chat .tc-field, .end-search input, .menu-desk-field, .pm-desk-form input, .corner-note-field, form.composer textarea) { font-size: max(16px, 1rem); }
+  html body :is(.tc-chat .tc-field, .end-search input, .menu-team-field, .pm-team-form input, .corner-note-field, form.composer textarea) { font-size: max(16px, 1rem); }
   .phone-pill::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: max(100%, 44px); translate: 0 -50%; }
 }
 

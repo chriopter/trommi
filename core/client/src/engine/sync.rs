@@ -952,7 +952,7 @@ impl Engine {
             Asked::Chain { group, sender, before, .. } => self.on_chain(ctx, group, sender, before, answer, unauthorised),
             Asked::Told(_) => {}
             Asked::Mend { mend, .. } => self.on_mend(ctx, mend, answer, unauthorised),
-            Asked::Desk(_) => self.on_desk(ctx, answer, unauthorised),
+            Asked::Desk(_) => self.on_team(ctx, answer, unauthorised),
             Asked::KeyPackagesHeld(_) => self.on_key_packages_held(ctx, answer, unauthorised),
             Asked::First { route, object, after, .. } => self.on_first(ctx, route, object, after, answer, unauthorised),
             Asked::Joins { entries, .. } => self.on_joins_posted(ctx, entries, answer, unauthorised),
@@ -2123,7 +2123,7 @@ impl Engine {
         }
     }
 
-    fn on_desk(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, unauthorised: bool) {
+    fn on_team(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, unauthorised: bool) {
         self.desk.asked = None;
         let desk = match answer {
             Ok(Answer::Desk(desk)) => desk,

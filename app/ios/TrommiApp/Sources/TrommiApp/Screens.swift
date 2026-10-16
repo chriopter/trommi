@@ -1,7 +1,7 @@
 // Screens.swift: the frame around every board screen and the Desk, as the app drew them before the shared app core:
 // on the iPhone the glass pill at the bottom (Chat · Desk · Note as drawings, Note as a full yellow page over the
 // list), the place pill (the menu) at the top left; on the iPad and the Mac the sessions as a sidebar column beside
-// the stack. The Desk: one big greeting with its last word underlined by the pen, the desk's goals, the open questions
+// the stack. The Desk: one big greeting with its last word underlined by the pen, the team's goals, the open questions
 // as calm cards with their answer tiles, Off your mind under them, the two docked stacks. What is said, in what order
 // and what shows is the core's view model; this file only draws it.
 import SwiftUI
@@ -210,24 +210,21 @@ struct NativeTabPill: View {
 }
 
 /**
- * The place pill at the top left of the iPhone's pages: the desk's drawing and name with a small chevron. It is the
- * menu: the desks, Scribble and Artifacts, notifications, Settings, the demo.
+ * The place pill at the top left of the iPhone's pages: the team's drawing and name with a small chevron. It is the
+ * menu: the switch of the team in view (each team with its open questions), Scribble and Artifacts, notifications,
+ * Settings, the demo.
  */
 struct PlacePill: View {
   @EnvironmentObject var shell: AppShell
-  @State private var askDesk = false
-  @State private var deskName = ""
   var body: some View {
     let side = shell.view.sidebar
     Menu {
       if shell.isDemo { Section("Demo") { Button { shell.leaveDemo() } label: { Label("Leave Demo", systemImage: "rectangle.portrait.and.arrow.right") } } }
-      Section("Desks") {
-        if let all = side.all { deskItem(all) }
-        ForEach(side.desks, id: \.id) { deskItem($0) }
-        Button { deskName = ""; askDesk = true } label: { Label("New Desk…", systemImage: "plus") }
+      Section("Teams") {
+        ForEach(side.teams, id: \.id) { teamItem($0) }
       }
       Section {
-        Button { go(.scribble(boardId: side.desk)) } label: { Label("Scribble", systemImage: "scribble.variable") }
+        Button { go(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
         Button { go(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
         Button { go(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
       }
@@ -255,16 +252,12 @@ struct PlacePill: View {
     }
     .accessibilityLabel("\(side.place.en), Menu")
     .accessibilityIdentifier("place-pill")
-    .alert("New Desk", isPresented: $askDesk) {
-      TextField("Name", text: $deskName)
-      Button("Cancel", role: .cancel) {}
-      Button("Create") { let n = deskName.trimmingCharacters(in: .whitespaces); if !n.isEmpty { shell.act(["do": "add_desk", "name": n]) } }
-    }
   }
-  private func deskItem(_ desk: CoreView.DeskTab) -> some View {
-    Button { shell.closeNote(); shell.tab = .desk; shell.focus(.desk, desk: desk.id) } label: {
-      Label { Text(desk.waiting > 0 ? "\(desk.name.en) · \(desk.waiting)" : desk.name.en) } icon: { if desk.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: desk.waiting > 0) } }
+  private func teamItem(_ team: CoreView.TeamTab) -> some View {
+    Button { shell.closeNote(); shell.tab = .desk; shell.focus(.desk, team: team.id) } label: {
+      Label { Text(team.waiting > 0 ? "\(team.name.en) · \(team.waiting)" : team.name.en) } icon: { if team.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: team.waiting > 0) } }
     }
+    .accessibilityLabel(team.waiting > 0 ? "\(team.name.en), \(team.waiting) waiting" : team.name.en)
   }
   private func go(_ screen: CoreView.Screen) { shell.closeNote(); shell.focus(screen) }
 }
@@ -273,18 +266,20 @@ struct PlacePill: View {
 
 struct Sidebar: View {
   @EnvironmentObject var shell: AppShell
-  @State private var switching = false
   @AppStorage("trommi-theme") private var theme = "system"
   var body: some View {
     let side = shell.view.sidebar
     VStack(spacing: 0) {
-      Button { withAnimation(.snappy) { switching.toggle() } } label: {
+      // The top: only the switch of the team in view, a menu of the teams, each with its open questions.
+      Menu {
+        ForEach(side.teams, id: \.id) { teamItem($0) }
+      } label: {
         HStack(spacing: 12) {
           PenMark("sketch:desk", color: Ink.fg).frame(width: 34, height: 34)
             .overlay(alignment: .topLeading) { if side.waiting > 0 { Circle().fill(Ink.yellow).frame(width: 8, height: 8).offset(x: 4, y: 2) } }
           Text(side.place.en).font(Face.display(26, .heavy)).foregroundStyle(Ink.fg).lineLimit(1).minimumScaleFactor(0.6)
           Spacer(minLength: 4)
-          PenMark("sketch:unfold", color: Ink.muted).frame(width: 18, height: 18).rotationEffect(.degrees(switching ? 180 : 0))
+          PenMark("sketch:unfold", color: Ink.muted).frame(width: 18, height: 18)
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(PenBox(r: 14).stroke(Ink.fg, lineWidth: 2))
@@ -292,21 +287,12 @@ struct Sidebar: View {
       }
       .buttonStyle(.plain)
       .padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 6)
-      .accessibilityLabel("Desk: \(side.place.en). Choose the desk")
+      .menuIndicator(.hidden)
+      .accessibilityLabel("Team: \(side.place.en). Choose the team")
+      .accessibilityIdentifier("team-switch")
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 2) {
-          if switching {
-            if let all = side.all { deskItem(all) }
-            ForEach(side.desks, id: \.id) { deskItem($0) }
-            DashedRule().frame(height: 1).padding(.horizontal, 14).padding(.vertical, 8)
-          }
           ForEach(side.sessions.filter { !$0.tucked }, id: \.id) { row in
-            if let heading = row.heading {
-              HStack(spacing: 10) {
-                Text(heading.text.en.uppercased()).font(Face.text(12, .semibold)).kerning(1.2).foregroundStyle(Ink.muted).fixedSize()
-                DashedRule().frame(height: 1)
-              }.padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 4)
-            }
             SessionRow(row: row).padding(.leading, CGFloat(row.depth) * 18)
           }
           Button { shell.focus(.settings(page: "")); shell.account(["step": "read_account"]) } label: {
@@ -318,7 +304,7 @@ struct Sidebar: View {
       Divider().overlay(Ink.line)
       Menu {
         Button { shell.focus(.settings(page: "")); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "key") }
-        Button { shell.focus(.scribble(boardId: side.desk)) } label: { Label("Scribble", systemImage: "scribble.variable") }
+        Button { shell.focus(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
         Button { shell.focus(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
         Button { shell.focus(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
         Button { shell.focus(.notes) } label: { Label("Note", systemImage: "note.text") }
@@ -337,16 +323,11 @@ struct Sidebar: View {
     }
     .background(Ink.bg)
   }
-  private func deskItem(_ desk: CoreView.DeskTab) -> some View {
-    Button { shell.focus(.desk, desk: desk.id); withAnimation(.snappy) { switching = false } } label: {
-      HStack(spacing: 10) {
-        PenMark("sketch:desk", color: desk.selected ? Ink.fg : Ink.muted).frame(width: 22, height: 22)
-        Text(desk.name.en).font(Face.text(16, desk.selected ? .semibold : .regular)).foregroundStyle(desk.selected ? Ink.fg : Ink.muted)
-        if desk.waiting > 0 { Circle().fill(Ink.urgHigh).frame(width: 7, height: 7) }
-        Spacer()
-        if desk.selected { PenMark("sketch:tick", color: Ink.accent).frame(width: 18, height: 18) }
-      }.padding(.horizontal, 18).padding(.vertical, 9).contentShape(Rectangle())
-    }.buttonStyle(.plain)
+  private func teamItem(_ team: CoreView.TeamTab) -> some View {
+    Button { shell.focus(.desk, team: team.id) } label: {
+      Label { Text(team.waiting > 0 ? "\(team.name.en) · \(team.waiting)" : team.name.en) } icon: { if team.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: team.waiting > 0) } }
+    }
+    .accessibilityLabel(team.waiting > 0 ? "\(team.name.en), \(team.waiting) waiting" : team.name.en)
   }
 }
 
@@ -409,7 +390,7 @@ struct DeskScreen: View {
         else if let hello = desk.hello {
           VStack(alignment: .leading, spacing: 0) {
             Greeting(text: hello.en)
-            if let goals = desk.goals { GoalsDrawing(goals: goals).id(goals.deskId) }
+            if let goals = desk.goals { GoalsDrawing(goals: goals).id(goals.teamId) }
           }.padding(.top, 18).padding(.bottom, 6)
         }
         if let reading = desk.reading { Text(reading.en).font(Face.text(14)).foregroundStyle(Ink.muted).accessibilityIdentifier("reading-history") }
@@ -436,7 +417,7 @@ struct DeskScreen: View {
   }
 }
 
-/** The Desk's top: the floating place pill on the iPhone; on the iPad and the Mac the desk's name in the bar. */
+/** The Desk's top: the floating place pill on the iPhone; on the iPad and the Mac the team's name in the bar. */
 struct DeskTop: ViewModifier {
   @EnvironmentObject var shell: AppShell
   let regular: Bool
@@ -783,7 +764,7 @@ struct DeskDock: View {
   }
 }
 
-/** The desk's goals under the greeting: a quiet line or a few; a tap writes in place; one toggle folds them. */
+/** The team's goals under the greeting: a quiet line or a few; a tap writes in place; one toggle folds them. */
 struct GoalsDrawing: View {
   @EnvironmentObject var shell: AppShell
   let goals: CoreView.GoalsView
@@ -802,7 +783,7 @@ struct GoalsDrawing: View {
           .background(PenBox(r: 8).fill(Ink.sunken))
           .overlay(PenBox(r: 8).stroke(Ink.lineStrong, lineWidth: 1.5))
           .padding(.horizontal, -5)
-          .accessibilityLabel("This desk’s goals")
+          .accessibilityLabel("This team’s goals")
           .onChange(of: focused) { _, on in if !on { done() } }
           .onDisappear { done() }
       } else {
@@ -815,9 +796,9 @@ struct GoalsDrawing: View {
               .padding(.vertical, 8).contentShape(Rectangle())
           }
           .buttonStyle(.plain)
-          .accessibilityLabel(goals.lines.isEmpty ? "This desk’s goals: none yet" : "This desk’s goals: \(shown)")
+          .accessibilityLabel(goals.lines.isEmpty ? "This team’s goals: none yet" : "This team’s goals: \(shown)")
           if let toggle = goals.toggle {
-            Button { withAnimation(.easeOut(duration: 0.18)) { shell.act(["do": "fold_goals", "desk_id": goals.deskId, "folded": !goals.folded]) } } label: {
+            Button { withAnimation(.easeOut(duration: 0.18)) { shell.act(["do": "fold_goals", "team_id": goals.teamId, "folded": !goals.folded]) } } label: {
               Image(systemName: "chevron.down").font(.system(size: 13, weight: .semibold))
                 .rotationEffect(.degrees(goals.folded ? -90 : 0))
                 .foregroundStyle(goals.folded ? Ink.muted : Ink.faint)
@@ -834,7 +815,7 @@ struct GoalsDrawing: View {
   private func done() {
     guard let d = draft else { return }
     draft = nil; focused = false
-    if d != goals.lines.joined(separator: "\n") { shell.act(["do": "set_goal", "desk_id": goals.deskId, "text": d]) }
+    if d != goals.lines.joined(separator: "\n") { shell.act(["do": "set_goal", "team_id": goals.teamId, "text": d]) }
   }
 }
 

@@ -115,19 +115,19 @@ const talk = (s, vm, t) => s.talk.map(r => html`${r.day ? html`<div class="day" 
 // ---- the heading ----
 const DOTS = raw('<svg class="t-head-dots" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.4 11.1Q5.9 9.9 7.2 11.3Q7.9 13.2 6.2 14Q4.3 14.2 3.9 12.6Q3.8 11.7 4.4 11.1Z"/><path d="M10.7 10.9Q12.4 10 13.5 11.4Q14 13.3 12.3 14Q10.5 14 10.1 12.4Q10.1 11.5 10.7 10.9Z"/><path d="M17 11.2Q18.5 10 19.8 11.2Q20.5 13 18.9 13.9Q17 14.2 16.5 12.7Q16.4 11.8 17 11.2Z"/></svg>')
 const forms = (s, base) => `${base}/sessions/${encodeURIComponent(s.id)}`
-/** The session's More menu: Files, Move to Desk… and Copy Invite Link (not for a helper: it goes with its main), Archive (while it is away; "Back from the Archive"
+/** The session's More menu: Files, Move to Team… and Copy Invite Link (not for a helper: it goes with its main), Archive (while it is away; "Back from the Archive"
  *  once in it), Delete…. */
 function sessionMore(s, vm, base) {
   const name = s.name.en, n = s.files?.length ?? 0
   const files = n ? html`<a role="menuitem" class="desk-move-files" href="${sessionPath(s, base)}/files" data-action="files#toggle" aria-controls="files-drawer-${s.id}" title="Files">${ico('clip')}<span>Files</span><b>${n}</b></a><hr class="desk-move-rule">` : ''
-  const others = (vm.sidebar?.desks ?? []).length < 2 ? [] : vm.sidebar.desks.filter(d => d.id !== s.desk_id)
-  const move = d => html`<form method="post" action="${forms(s, base)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="moved" value="1"><input type="hidden" name="leave" value="1"><button type="submit" role="menuitem" name="desk" value="${d.id}">${sk('desk')}<span>${d.name.en || 'Personal'}</span></button></form>`
+  const others = (vm.sidebar?.teams ?? []).length < 2 ? [] : vm.sidebar.teams.filter(d => d.id !== s.team_id)
+  const move = d => html`<form method="post" action="${forms(s, base)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="moved" value="1"><input type="hidden" name="leave" value="1"><button type="submit" role="menuitem" name="team" value="${d.id}">${sk('desk')}<span>${d.name.en || 'Personal'}</span></button></form>`
   const archive = s.online && !s.archived ? '' : html`<form method="post" action="${forms(s, base)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="archived" value="${s.archived ? '0' : '1'}"><button type="submit" role="menuitem">${sk('archive')}<span>${s.archived ? 'Back from the Archive' : 'Archive'}</span></button></form>`
   const del = html`<details class="desk-move-sub desk-move-delete"><summary role="menuitem">${sk('bin')}<span>Delete…</span></summary>
 <form class="session-delete-ask" method="post" action="${forms(s, base)}/delete"><input type="hidden" name="stay" value="1"><p><b>Delete ${name}?</b> Its connector is removed from the room and the session moves to the archive with its helpers. Open questions are shredded.</p>
 <div class="desk-duck-ways"><button type="submit" class="session-delete-yes">${sk('bin')}<span>Delete</span></button><button type="button" class="desk-duck-no" data-pop-close>Cancel</button></div></form></details>`
   return html`<details class="t-pick t-pick-desk"><summary class="t-head-desk t-head-more" title="More" aria-label="${name}: more">${DOTS}</summary>
-<div class="desk-move t-pop" role="menu" aria-label="More for ${name}">${files}${s.parent ? '' : html`${others.length ? html`<details class="desk-move-sub"><summary role="menuitem">${sk('desk')}<span>Move to Desk…</span></summary>${others.map(move)}</details>` : ''}
+<div class="desk-move t-pop" role="menu" aria-label="More for ${name}">${files}${s.parent ? '' : html`${others.length ? html`<details class="desk-move-sub"><summary role="menuitem">${sk('desk')}<span>Move to Team…</span></summary>${others.map(move)}</details>` : ''}
 <form method="post" action="/pair" data-turbo-frame="_top"><input type="hidden" name="role" value="agent"><input type="hidden" name="continue" value="${s.id}"><button type="submit" role="menuitem">${sk('key')}<span>Copy Invite Link</span></button></form><hr class="desk-move-rule">`}${archive}${del}</div></details>`
 }
 /** The session's drawing and name (the mark opens the drawings, the crown crowns, the name renames: ui.mjs), its dot,

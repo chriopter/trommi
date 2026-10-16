@@ -101,7 +101,7 @@ fn a_note_keeps_its_attached_file_and_a_native_pen_stroke_round_trips() {
     assert_eq!(sim.view.notes.rows[0].files.len(), 1);
     let file = sim.view.notes.rows[0].files[0].file_id.clone();
     assert_eq!(sim.view.files[&file].name, "plan.png");
-    let board = trommi_client_core::scribble::desk_board("all");
+    let board = trommi_client_core::scribble::team_board("all");
     sim.send(Event::Focus { focus: trommi_client_core::views::Focus { screen: trommi_client_core::views::Screen::Scribble { board_id: board.clone() }, ..Default::default() } });
     act(&mut sim, Action::DrawStroke { board_id: board, local_id: "native-pen".into(), points: vec![serde_json::json!([1.5,2.5,0,0.5]), serde_json::json!([3.5,4.5,5,1])], tool: "pen".into(), color: "ink".into(), width: 3 });
     let view = sim.view.board.as_ref().expect("a board");

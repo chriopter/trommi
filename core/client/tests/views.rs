@@ -39,10 +39,10 @@ fn golden(name: &str, view: &impl Serialize) {
     }
 }
 
-/// The lens of the demo's first screen: the first desk, in Berlin's summer time.
-fn lens(desk: Option<&str>) -> Lens {
+/// The lens of the demo's first screen: the first team, in Berlin's summer time.
+fn lens(team: Option<&str>) -> Lens {
     Lens {
-        desk: desk.map(String::from),
+        team: team.map(String::from),
         utc_offset_min: 120,
         ..Default::default()
     }
@@ -51,8 +51,8 @@ fn lens(desk: Option<&str>) -> Lens {
 #[test]
 fn the_demo_rooms_sidebar() {
     let (m, now) = demo_room();
-    for (file, desk) in [("demo-sidebar.json", None), ("demo-sidebar-platform.json", Some("platform")), ("demo-sidebar-all.json", Some("all"))] {
-        let lens = lens(desk);
+    for (file, team) in [("demo-sidebar.json", None), ("demo-sidebar-platform.json", Some("platform"))] {
+        let lens = lens(team);
         let b = Board::new(&m, &lens, now);
         golden(file, &sidebar::sidebar(&b));
     }
@@ -61,14 +61,14 @@ fn the_demo_rooms_sidebar() {
 #[test]
 fn the_demo_rooms_desk() {
     let (m, now) = demo_room();
-    for (file, desk) in [("demo-desk.json", None), ("demo-desk-platform.json", Some("platform")), ("demo-desk-all.json", Some("all"))] {
-        let lens = lens(desk);
+    for (file, team) in [("demo-desk.json", None), ("demo-desk-platform.json", Some("platform"))] {
+        let lens = lens(team);
         let b = Board::new(&m, &lens, now);
         golden(file, &desk::desk(&b));
     }
 }
 
-/// A session's page: the main with the longest conversation, and one of the other desk.
+/// A session's page: the main with the longest conversation, and one of the other team.
 #[test]
 fn the_demo_rooms_sessions() {
     let (m, now) = demo_room();
@@ -94,14 +94,11 @@ fn the_demo_rooms_cards() {
 }
 
 /// The notes (the corner's note and whom it goes to) and Settings (its rows' words, the person's devices), on the
-/// first desk and on All desks.
+/// first team and on All teams.
 #[test]
 fn the_demo_rooms_notes_and_settings() {
     let (m, now) = demo_room();
-    for (file, desk) in [("demo-notes.json", None), ("demo-notes-all.json", Some("all"))] {
-        let lens = lens(desk);
-        golden(file, &notes::notes(&Board::new(&m, &lens, now)));
-    }
+    golden("demo-notes.json", &notes::notes(&Board::new(&m, &lens(None), now)));
     let lens = lens(None);
     golden("demo-settings.json", &settings::settings(&Board::new(&m, &lens, now)));
 }
@@ -227,8 +224,8 @@ fn edit(v: &mut trommi_client_core::views::ViewModel, pool: &[trommi_client_core
 fn diff_then_apply_is_the_next_model() {
     use trommi_client_core::views::ViewModel;
     let (m, now) = demo_room();
-    // (real units to draw from: the demo room's sidebar and Desk on each desk)
-    let pool: Vec<ViewModel> = [None, Some("platform"), Some("all")]
+    // (real units to draw from: the demo room's sidebar and Desk on each team)
+    let pool: Vec<ViewModel> = [None, Some("platform")]
         .into_iter()
         .map(|d| {
             let lens = lens(d);
@@ -368,7 +365,7 @@ fn render_cost_on_a_large_room() {
         let t = std::time::Instant::now();
         let _ = notes::notes(&b);
         let _ = settings::settings(&b);
-        println!("render_cost: board {t_board:?}, sidebar {t_side:?}, off_mind {t_off:?}, desk {t_desk:?}, notes+settings {:?}", t.elapsed());
+        println!("render_cost: board {t_board:?}, sidebar {t_side:?}, off_mind {t_off:?}, team {t_desk:?}, notes+settings {:?}", t.elapsed());
     }
     let mut view = ViewModel::default();
     let desk_only = median(&Lens { utc_offset_min: 120, ..Default::default() }, &mut view);

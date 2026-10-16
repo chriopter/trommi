@@ -1,6 +1,6 @@
-/* Settings · Desks (desks.mjs): a card per desk with its board small and its counts, the bin, the confirm held to
+/* Settings · Teams (teams.mjs): a card per team with its board small and its counts, the bin, the confirm held to
    delete, and how far a delete is. The page's frame is auth.css "Settings". */
-/* cards: a card per desk, its board small on top */
+/* cards: a card per team, its board small on top */
 .dk-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--s-4); margin-bottom: var(--s-5); }
 .dk-card { display: grid; border: 1.5px solid color-mix(in srgb, var(--fg) 70%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); overflow: hidden; }
 .dk-thumb { display: block; width: 100%; height: auto; aspect-ratio: 520 / 200; border-bottom: 1.2px dashed color-mix(in srgb, var(--fg) 26%, transparent); background: var(--surface); }

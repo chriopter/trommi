@@ -67,7 +67,7 @@ try {
   for (let n = 0; ; n++) { try { if ((await fetch(`${hub.url}/healthz`)).ok) break } catch {} if (n > 300) throw Error('the hub is not up'); await sleep(100) }
   await new Promise((resolve, reject) => { server.stdout.on('data', d => { if (String(d).includes('http://')) resolve() }); server.once('exit', c => reject(Error(`server exited ${c}`))) })
 
-  // A new account with a password, its Emergency Kit kept, its Desk; and a desk (a room register from before the
+  // A new account with a password, its Emergency Kit kept, its Desk; and a team (a room register from before the
   // second device joins).
   let d = await device()
   await d.open(`${APP}/create?way=password&hub=${encodeURIComponent(hub.url)}`)
@@ -78,8 +78,8 @@ try {
   await d.until(`!!document.querySelector('#kit-done:not([disabled])')`, 'the kit counted as kept')
   await d.ev(`document.querySelector('#kit-done').click(), true`)
   await d.until(`location.pathname === '/' && !!document.querySelector('#inbox') && window.trommi.vm().phase === 'live'`, 'the Desk, live')
-  await d.ev(`window.trommi.act({ do: 'add_desk', name: 'Work' }), true`)
-  await d.until(`JSON.stringify(window.trommi.vm().sidebar ?? {}).includes('Work')`, 'the desk written')
+  await d.ev(`window.trommi.act({ do: 'add_team', name: 'Work' }), true`)
+  await d.until(`JSON.stringify(window.trommi.vm().sidebar ?? {}).includes('Work')`, 'the team written')
   await sleep(1500)
   for (const to of ['/settings/account', '/chat/eb86630b214a', '/', '/settings/account']) await d.lands(to)
   await d.p.send('Page.reload', { ignoreCache: true }); await sleep(200)

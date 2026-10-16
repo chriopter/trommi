@@ -96,7 +96,7 @@ private final class NativeObserver {
   func send(_ value: [String: Any]) async { await core?.send(NativePacket(value)) }
   func act(_ value: [String: Any]) async { await send(["type": "action", "action": value]) }
   func account(_ value: [String: Any]) async { await act(["do": "account", "action": value]) }
-  func focus(_ screen: [String: Any]) async { await send(["type": "focus", "focus": ["screen": screen, "visible": true, "desk": "all"]]) }
+  func focus(_ screen: [String: Any]) async { await send(["type": "focus", "focus": ["screen": screen, "visible": true]]) }
   func wait(_ label: String, timeout: Double = 180_000, _ predicate: (CoreView.ViewModel) -> Bool) async throws {
     let until = now() + timeout
     while !predicate(await state.model()) {

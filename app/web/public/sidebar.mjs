@@ -92,12 +92,11 @@ export function cornerNote(vm, base) {
     ...[...pending].map(([id, p]) => noteFile({ id, name: p.name, picture: Boolean(p.preview), src: p.preview, up: vm.files?.[id] ?? { state: 'uploading' } })),
   ]
   const to = n.to ?? null, who = to?.name || 'Main Session'
-  const chooser = n.choose?.length ? html`<div class="note-to-pick" role="menu" aria-label="Send to" hidden>${n.choose.map(x => html`<button type="button" role="menuitem" class="note-to-row" data-action="corner-note#sendTo" data-to="${x.session_id}">${raw(sketchSvg('desk'))}<span><b>${x.desk}</b><small>${x.name}</small></span></button>`)}</div>` : ''
   const written = Boolean(n.written)
   return html`<section class="corner-note-box" id="corner-note-box" aria-label="Your note" data-controller="corner-note" data-corner-note-id-value="${note?.id ?? ''}" data-corner-note-text-value="${note?.text ?? ''}" data-corner-note-written-value="${String(written)}">
 <button type="button" class="corner-note-head" data-action="corner-note#open" data-tip="${written ? 'Note (N)' : 'New note (N)'}" aria-label="${n.says?.en ?? 'New note'}" aria-expanded="false">${NOTE_ICON}</button>
 <div class="corner-note-body" hidden data-action="paste->corner-note#paste dragover->corner-note#over dragleave->corner-note#out drop->corner-note#drop keydown->corner-note#key">${to ? html`<span class="corner-note-to">${avatar(whoOf(to), { crown: false })}<b>${who}</b></span>` : ''}<textarea class="corner-note-field" rows="2" aria-label="Your note" aria-keyshortcuts="${SEND_KEYS}" data-action="input->corner-note#typed"></textarea><div class="corner-note-files">${files}</div>
-<footer class="corner-note-foot"><button type="button" class="corner-note-clip" data-action="corner-note#pick" title="Attach" aria-label="Attach a picture or a file">${CLIP}</button><button type="button" class="corner-note-bin" data-action="corner-note#bin" title="Throw away" aria-label="Throw the note away">${BIN}</button><span class="corner-note-park" data-tip="To the board" aria-hidden="true">${raw(sketchSvg('go'))}<b>onto the board</b></span><i></i>${to ? html`<span class="corner-note-sending">${chooser}<button type="button" class="note-send corner-note-send" data-action="corner-note#send" data-to="${to.session_id}" data-name="${who}" aria-label="${n.send_says?.en ?? `Send to ${who}`}" aria-keyshortcuts="${SEND_KEYS}">${raw(crownSvg())}</button><kbd class="corner-note-keys" aria-hidden="true">${SEND_WORD}</kbd></span>` : html`<a class="corner-note-nocrown" data-nav href="${base}/settings/sessions">${n.no_crown?.en ?? 'Give a session the crown to send'}</a>`}</footer></div>
+<footer class="corner-note-foot"><button type="button" class="corner-note-clip" data-action="corner-note#pick" title="Attach" aria-label="Attach a picture or a file">${CLIP}</button><button type="button" class="corner-note-bin" data-action="corner-note#bin" title="Throw away" aria-label="Throw the note away">${BIN}</button><span class="corner-note-park" data-tip="To the board" aria-hidden="true">${raw(sketchSvg('go'))}<b>onto the board</b></span><i></i>${to ? html`<span class="corner-note-sending"><button type="button" class="note-send corner-note-send" data-action="corner-note#send" data-to="${to.session_id}" data-name="${who}" aria-label="${n.send_says?.en ?? `Send to ${who}`}" aria-keyshortcuts="${SEND_KEYS}">${raw(crownSvg())}</button><kbd class="corner-note-keys" aria-hidden="true">${SEND_WORD}</kbd></span>` : html`<a class="corner-note-nocrown" data-nav href="${base}/settings/sessions">${n.no_crown?.en ?? 'Give a session the crown to send'}</a>`}</footer></div>
 </section>`
 }
 /** The notes' routes (notes.mjs), from the corner note's controller. */
@@ -134,7 +133,7 @@ controller('corner-note', class extends Controller {
     const ghostAt = e => { drag.ghost.style.left = `${e.clientX}px`; drag.ghost.style.top = `${e.clientY}px` }
     const down = e => {
       if (e.button > 0 || document.body.dataset.tView !== 'whiteboard' || !(this.field.value.trim() || this.pictures().length)) return
-      if (e.currentTarget === body && e.target.closest('textarea, button, input, a, .note-to-pick')) return
+      if (e.currentTarget === body && e.target.closest('textarea, button, input, a')) return
       if (e.currentTarget === body) e.preventDefault()   // (no words are selected along the way)
       drag = { x: e.clientX, y: e.clientY, id: e.pointerId, ghost: null }
       e.currentTarget.setPointerCapture(e.pointerId)
@@ -238,19 +237,10 @@ controller('corner-note', class extends Controller {
   over(e) { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); this.element.classList.add('is-drop') } }
   out() { this.element.classList.remove('is-drop') }
   drop(e) { this.out(); if (e.dataTransfer?.files?.length) { e.preventDefault(); this.attach(e.dataTransfer.files) } }
-  sendTo(e) { e.stopPropagation(); const to = e.currentTarget.dataset.to; try { localStorage.setItem('trommi-note-to', to) } catch {} ; this.element.querySelector('.note-to-pick').hidden = true; this.send(null, to) }
-  async send(e, to = null) {
+  async send() {
     const text = this.field.value
     if (!text.trim() && !this.files().length) return this.field.focus()
-    const pick = this.element.querySelector('.note-to-pick')
-    if (pick && !to) {
-      // (on All desks: the crowns to choose from, the last one marked; Enter or a second press sends to it)
-      let last = null; try { last = localStorage.getItem('trommi-note-to') } catch {}
-      const rows = [...pick.querySelectorAll('.note-to-row')], marked = rows.find(r => r.dataset.to === last) ?? rows[0]
-      if (pick.hidden) { pick.hidden = false; for (const r of rows) r.classList.toggle('is-last', r === marked); marked?.focus(); return }
-      to = marked?.dataset.to
-    }
-    to ??= this.element.querySelector('.corner-note-send')?.dataset.to || null
+    const to = this.element.querySelector('.corner-note-send')?.dataset.to || null
     if (!this.idValue) this.save(); else if (text !== this.textValue || pending.size) await this.save()
     const id = await this.made()
     if (!id) return
@@ -280,36 +270,13 @@ export function joinRow(ask) {
   return html`<div class="agent-row join-row" id="join-${ask.nonce}" data-state="${state}" title="${ask.says.en}"><span class="agent-entry"><span class="join-mark" aria-hidden="true">${PLUS}</span><span class="agent-text"><strong>${name}</strong><small class="join-line">${line}</small>${ask.vouched_by ? html`<small class="join-by">vouched by ${ask.vouched_by}</small>` : ''}</span></span>${ask.joining ? '' : html`<span class="join-acts" role="group" aria-label="${`Allow new ${ask.kind || 'agent'} session ${name}?`}">${button('yes', 'Allow', 'join-allow')}${button('no', 'Deny', 'join-deny')}</span>`}</div>`
 }
 
-/** The rows of #agents (vm.sidebar.sessions, in the core's order): the sessions, each heading the core puts above a
- *  row (a desk's name on All desks, "Disconnected"), the self-join asks and New Agent… before the disconnected ones. */
+/** The rows of #agents (vm.sidebar.sessions, in the core's order: the sessions of the team in view), then the
+ *  self-join asks and New Agent…. */
 export function sidebarRows(vm, base) {
   const rows = vm?.sidebar?.sessions ?? []
   const byId = new Map(rows.map(r => [r.id, r]))
   const invite = html`${(vm?.account?.asks ?? []).map(joinRow)}${inviteAgentButton()}`
-  let invited = false
-  const drawn = rows.map(r => {
-    const h = r.heading
-    const above = h?.kind === 'away' ? html`${invited ? '' : (invited = true, invite)}<h2 class="caps agent-heading agent-heading-away" id="agent-heading-away">${h.text.en}</h2>`
-      : h?.kind === 'desk' ? deskDivider(base, h) : ''
-    return html`${above}${row(r, base, byId)}`
-  })
-  return html`${drawn}${invited ? '' : invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
-}
-// ---- All desks as a filter ----
-// The head says only where the user is: "All desks" or the desk's name, big, beside the desk drawing, a small chevron
-// after it (no counts, no row of names). A press opens a quiet list: All desks, each desk (its lamp lit and a
-// small orange dot while something waits there), New desk. The folded rail's tag opens the same list. On All the
-// sidebar shows every session, a hand-drawn divider over each desk's; a desk shows only its own.
-function deskSwitchList(vm, base) {
-  const s = vm.sidebar
-  const item = (href, name, on, waits, all = false) => html`<a role="menuitemradio" class="desk-switch-item${all ? ' is-all' : ''}" data-nav draggable="false" href="${href}" aria-checked="${String(on)}">${all ? ALL_MARK : deskMark(waits)}<b>${name}</b>${waits ? raw('<i class="desk-switch-dot" aria-label="something waits"></i>') : ''}</a>`
-  return html`<span class="desk-switch-list" id="desk-switch-list">${item(`${base}/?desk=all`, s.all?.name.en ?? 'All Desks', s.desk === 'all', false, true)}${s.desks.map(d => item(`${base}/?desk=${d.id}`, d.name.en, d.selected, d.waiting > 0))}<button type="button" role="menuitem" class="desk-switch-add desk-word-add">${PLUS}<span>New Desk…</span></button></span>`
-}
-const RULE = raw('<svg class="desk-rule" viewBox="0 0 200 6" preserveAspectRatio="none" aria-hidden="true"><path d="M1 3.4 Q40 2.2 90 3.1 T199 2.6"/></svg>')
-/** On All: the divider over one desk's sessions (HeadingView "desk"): its drawing, its name (a press shows that desk
- *  alone), a pen rule, the count. */
-function deskDivider(base, h) {
-  return html`<div class="agent-row desk-divider" id="agent-desk-${h.desk_id}"><a class="desk-divider-name" data-nav draggable="false" href="${base}/?desk=${h.desk_id}" title="Show ${h.text.en} alone">${raw(sketchSvg('desk', 'desk-divider-mark'))}<span>${h.text.en}</span></a>${RULE}${h.waiting ? html`<b class="desk-divider-n">${h.waiting}</b>` : ''}</div>`
+  return html`${rows.map(r => row(r, base, byId))}${invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
 }
 
 /** The Desk box's drawing: the desk with its lamp lit while something waits on it (the open questions of the desk in
@@ -504,18 +471,18 @@ controller('order', class extends Controller {
 // ---- menu ----
 // The Trommi menu (what opens from the row at the sidebar's foot; on a phone the sidebar is a drawer;
 // the menu itself has no search field), and the sheet a long press on a Desk row brings up on a phone. app.css and sidebar.css style the
-// menu; the controller "menu" adds the arrows and a new desk, the Desk's row menu (desk.mjs) the long press. Opening and closing the
+// menu; the controller "menu" adds the arrows and a new team, the Desk's row menu (desk.mjs) the long press. Opening and closing the
 // menu and the theme: ui.mjs.
 
-/** Makes a desk (AddDesk) and gives it once the core drew it: its id is the one the core's toast "Desk added" names
- *  (its Undo is RemoveDesk of it); null after a while. */
-async function addDesk(name) {
-  const had = new Set(T.vm().sidebar.desks.map(d => d.id))
-  T.act({ do: 'add_desk', name })
+/** Makes a team (AddTeam) and gives it once the core drew it: its id is the one the core's toast "Team added" names
+ *  (its Undo is RemoveTeam of it); null after a while. */
+async function addTeam(name) {
+  const had = new Set(T.vm().sidebar.teams.map(d => d.id))
+  T.act({ do: 'add_team', name })
   for (let i = 0; i < 60; i++) {
     await new Promise(r => setTimeout(r, 50))
-    const vm = T.vm(), id = (vm.toasts ?? []).map(x => x.action).find(a => a?.do === 'remove_desk' && !had.has(a.desk_id))?.desk_id
-    const made = id && vm.sidebar.desks.find(d => d.id === id)
+    const vm = T.vm(), id = (vm.toasts ?? []).map(x => x.action).find(a => a?.do === 'remove_team' && !had.has(a.team_id))?.team_id
+    const made = id && vm.sidebar.teams.find(d => d.id === id)
     if (made) return made
   }
   return null
@@ -530,22 +497,17 @@ const newsSeen = () => { const latest = newsLatestDay(); if (latest == null) ret
 globalThis.document?.addEventListener('trommi:news', () => { const dot = document.getElementById('menu-news-dot'); if (dot) dot.hidden = newsSeen() })
 /** Whether this tab shows the demo room (app.mjs: ?mock=1, remembered for the tab; ?mock=0 ends it). */
 const inDemo = () => { try { return Boolean(globalThis.sessionStorage?.getItem('trommi-mock')) } catch { return false } }
-// Small drawings of the menu's own, in the pen's line: the plus of "New desk", and the light of the desk lamp.
-const NEW_DESK = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true" style="rotate:3deg"><path d="M12.2 5.2Q11.8 12 12 18.8"/><path d="M5.3 12.3Q12 11.7 18.7 12.1"/></svg>')
+// Small drawings of the menu's own, in the pen's line: the plus of "New team", and the light of the desk lamp.
+const NEW_TEAM = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true" style="rotate:3deg"><path d="M12.2 5.2Q11.8 12 12 18.8"/><path d="M5.3 12.3Q12 11.7 18.7 12.1"/></svg>')
 // The lamp switched on, drawn under the desk's lines: the shade glowing, a soft cone of light down onto the top, three short rays.
 const LIGHT = '<g class="lamp-light"><path class="lamp-glow" d="M14.9 2.4Q11.7 3.7 10.7 4.7Q9.6 5.7 9 6.6Q8.5 7.4 9 7.6Q9.5 7.9 12.4 7Q15.2 6.1 15.6 6.1Q15.9 6.1 15.8 4.7Q15.7 3.4 14.9 2.4Z"/><path class="lamp-cone" d="M9.2 7.9Q12.4 7.1 15.6 6.3L17.3 11.9Q12 12.1 6.4 12.2Z"/><path d="M7.6 9Q5.9 10.1 4.3 11.2"/><path d="M7.1 7.2Q5.3 7.3 3.5 7.5"/><path d="M7.9 5Q6.4 4.2 4.9 3.5"/></g>'
-/** The desk drawing of the menu's desk rows and the Desk box: its lamp lit while something waits on that desk. */
+/** The desk drawing of the menu's team rows and the Desk box: its lamp lit while something waits on that team. */
 const deskMark = lit => raw(lit ? sketchSvg('desk', 'menu-lamp is-lit').replace(/(<svg[^>]*>)/, `$1${LIGHT}`) : sketchSvg('desk', 'menu-lamp'))
-/** All Desks' own drawing: two desks, one behind the other (the parent row of the desk lists). */
-const ALL_MARK = raw(sketchSvg('desks', 'menu-lamp menu-all-mark'))
-
-/** The desk rows of the menu (vm.sidebar.desks): the desk in view checked (the marked row); a desk's lamp is lit while
- *  something waits on it. */
-function menuDeskRows(vm, base) {
-  const { desks, all } = vm.sidebar
-  // (a row: the link to the desk, and beside it the pencil that renames it: menu#rename puts a field in the name's place)
-  const allRow = all ? html`<span class="menu-desk-row is-all" data-desk="all"><a role="menuitemradio" class="menu-desk is-all" data-nav draggable="false" href="${base}/?desk=all" data-desk="all" aria-checked="${String(all.selected)}">${ALL_MARK}<b>${all.name.en}</b>${all.waiting ? html`<i class="menu-n">${all.waiting}</i>` : ''}</a></span>` : ''
-  return html`<span class="menu-desk-rows${all ? ' has-all' : ''}" id="menu-desk-rows">${allRow}${desks.map(d => html`<span class="menu-desk-row" data-desk="${d.id}"><a role="menuitemradio" class="menu-desk" data-nav draggable="false" href="${base}/?desk=${d.id}" data-desk="${d.id}" aria-checked="${String(d.selected)}">${deskMark(d.waiting > 0)}<b>${d.name.en}</b>${d.waiting ? html`<i class="menu-n">${d.waiting}</i>` : ''}</a><button type="button" class="menu-desk-pen" data-action="click->menu#rename" data-menu-id-param="${d.id}" title="Rename ${d.name.en}" aria-label="Rename the desk ${d.name.en}">${sk('pen')}</button></span>`)}</span>`
+/** The team rows of the menu (vm.sidebar.teams): the team in view checked (the marked row), what waits on each as its
+ *  small number; a team's lamp is lit while something waits on it. */
+function menuTeamRows(vm, base) {
+  // (a row: the link to the team, and beside it the pencil that renames it: menu#rename puts a field in the name's place)
+  return html`<span class="menu-team-rows" id="menu-team-rows">${vm.sidebar.teams.map(d => html`<span class="menu-team-row" data-team="${d.id}"><a role="menuitemradio" class="menu-team" data-nav draggable="false" href="${base}/?team=${d.id}" data-team="${d.id}" aria-checked="${String(d.selected)}">${deskMark(d.waiting > 0)}<b>${d.name.en}</b>${d.waiting ? html`<i class="menu-n">${d.waiting}</i>` : ''}</a><button type="button" class="menu-team-pen" data-action="click->menu#rename" data-menu-id-param="${d.id}" title="Rename ${d.name.en}" aria-label="Rename the team ${d.name.en}">${sk('pen')}</button></span>`)}</span>`
 }
 
 const NOTE_EMPTY = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M5.4 4.6Q12 4.2 18.8 4.7Q19.3 10 19.1 14.6L14.4 19.4Q9.8 19.7 5.2 19.3Q4.8 12 5.4 4.6Z"/><path d="M19.1 14.6Q15.6 14.3 14.6 15Q14.3 17 14.4 19.4"/></svg>'), NOTE_WRITTEN = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M5.4 4.6Q12 4.2 18.8 4.7Q19.3 10 19.1 14.6L14.4 19.4Q9.8 19.7 5.2 19.3Q4.8 12 5.4 4.6Z"/><path d="M19.1 14.6Q15.6 14.3 14.6 15Q14.3 17 14.4 19.4"/><path d="M8 8.6Q12 8.2 15.8 8.5"/><path d="M8 11.7Q11.6 11.4 15.6 11.6"/><path d="M8 14.8Q10 14.6 11.8 14.8"/></svg>')
@@ -571,18 +533,18 @@ const PUSH_WORDS = { all: 'Yes', knocking: 'Only knocking', off: 'No' }
 // A gear in the pen's line (Settings).
 const GEAR = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M12 3.2L13.4 5.6L16.1 4.9L16.8 7.6L19.4 8.4L18.6 11.1L20.6 13L18.5 14.8L19.1 17.5L16.4 18.1L15.4 20.7L12.9 19.6L10.6 21.1L9.3 18.6L6.5 18.8L6.4 16L4 14.6L5.5 12.2L4.4 9.6L7 8.6L7.4 5.8L10.2 6.1Z"/><path d="M12.1 9.3Q14.7 9.6 14.8 12Q14.6 14.6 12 14.7Q9.4 14.5 9.3 12Q9.5 9.4 12.1 9.3Z"/></svg>')
 /** The Trommi menu (#brand-doors): the wide screen's (from the sidebar's foot) and the phone's (from the pill), one
- *  component: the desks (each with its drawing and what waits, New Desk…), Settings, and one row of small buttons for
+ *  component: the teams (each with its drawing and what waits, New Team…), Settings, and one row of small buttons for
  *  this device: Push (Off → All → Only knocking), Theme (Light → Dark → System), Keyboard Shortcuts, Demo, What's new
  *  (news.mjs, a dot while its newest day is unseen here), and Log out
  *  (/logout, the same page that asks first as Settings · Account's Log Out). A phone also has its places here
  *  (Scribble, Artifacts). */
 function menuDoors(vm, base) {
   const push = vm.settings?.push ?? null, level = push?.level ?? 'off'
-  return html`<nav class="sidedoors" id="brand-doors" role="menu" aria-label="Desks and settings" data-controller="menu" data-menu-desk-value="${base}/" data-action="keydown->menu#walk click->menu#chosen" data-owns-keys hidden>
-<div class="menu-desks" id="menu-desks">${menuDeskRows(vm, base)}
-<button type="button" role="menuitem" class="menu-desk-add is-plus" id="desk-add" data-action="click->menu#newDesk" aria-label="New Desk…" title="New Desk…">${NEW_DESK}</button>
-<form class="menu-desk-form" id="desk-new" data-menu-target="deskForm" data-action="submit->menu#makeDesk" hidden><input class="menu-desk-field" data-menu-target="deskName" data-action="keydown->menu#deskKey" maxlength="40" placeholder="Name of the new desk" aria-label="Name of the new desk" autocomplete="off"><button type="submit">Add</button></form>
-<p class="menu-desk-error" data-menu-target="deskError" role="alert"></p></div>
+  return html`<nav class="sidedoors" id="brand-doors" role="menu" aria-label="Teams and settings" data-controller="menu" data-menu-team-value="${base}/" data-action="keydown->menu#walk click->menu#chosen" data-owns-keys hidden>
+<div class="menu-teams" id="menu-teams">${menuTeamRows(vm, base)}
+<button type="button" role="menuitem" class="menu-team-add is-plus" id="team-add" data-action="click->menu#newTeam" aria-label="New Team…" title="New Team…">${NEW_TEAM}</button>
+<form class="menu-team-form" id="team-new" data-menu-target="teamForm" data-action="submit->menu#makeTeam" hidden><input class="menu-team-field" data-menu-target="teamName" data-action="keydown->menu#teamKey" maxlength="40" placeholder="Name of the new team" aria-label="Name of the new team" autocomplete="off"><button type="submit">Add</button></form>
+<p class="menu-team-error" data-menu-target="teamError" role="alert"></p></div>
 <a role="menuitem" class="menu-settings" href="${base}/settings" data-nav draggable="false" id="menu-settings">${GEAR}<span>Settings</span></a>
 <button role="menuitemcheckbox" type="button" id="demo-toggle" class="menu-demo-row demo-toggle" aria-checked="${String(inDemo())}" title="${inDemo() ? 'Leave demo' : 'Demo'}">${sk('play')}<span>Demo</span><i class="demo-switch" aria-hidden="true"><b></b></i></button>
 <a role="menuitem" class="menu-news-row" href="${base}/whats-new" data-nav draggable="false" id="menu-news">${sk('spark')}<span>What's new</span><i class="menu-news-dot" id="menu-news-dot" title="New"${newsSeen() ? raw(' hidden') : ''}></i></a>
@@ -605,43 +567,38 @@ function menuDoors(vm, base) {
 // on a wide window this is its one place; a phone has no foot and keeps the switch in the Trommi menu).
 export const SIDE_FOOT = raw(`<div class="side-foot"><button type="button" class="side-theme" aria-label="Theme: Light, Dark or System (T)" title="Theme (T)">${sketchSvg('moon', 'ico-moon')}${sketchSvg('sun', 'ico-sun')}<i class="ico-auto" aria-hidden="true">A</i></button><button type="button" class="rail-fold" data-controller="rail" data-action="click->rail#toggle pointerover@document->rail#tip focusin@document->rail#tip focusout@document->rail#untip turbo:before-cache@document->rail#untip" title="Fold ( [ )" aria-label="Fold the sidebar to a rail ( [ )" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.3 4.4Q4.8 11.6 5.4 19.7"/><path d="M15.1 6.1Q12.2 9.2 9.1 12.1Q12.1 14.7 14.8 18"/></svg></button></div>`)
 
-/** The desk switcher: opened by the chevron beside the desk's
- *  name at the top of the sidebar, and by the folded rail's tag; All desks first, the desks set in under it, the one in
- *  view marked. One component for both. Kept current by the live stream (#desk-switch-list). */
-const deskSwitch = (vm, base) => html`<nav class="desk-switch" id="desk-switch" role="menu" aria-label="Desks" hidden>${deskSwitchList(vm, base)}</nav>`
-/** The desk's name on the rail's tag: two short lines at most, whole words (a word too long is cut by its line). */
+/** The team's name on the rail's tag: two short lines at most, whole words (a word too long is cut by its line). */
 function tagLines(name) {
   const words = String(name).trim().split(/\s+/), lines = []
   while (words.length && lines.length < 2) { let line = words.shift(); while (words.length && (line + ' ' + words[0]).length <= 6) line += ` ${words.shift()}`; lines.push(line) }
   if (words.length) lines[1] += '…'
   return lines
 }
-/** How big the desk's name may stand in the Desk box: s (as "Desk"), m (a little smaller), l (two smaller lines). */
+/** How big the team's name may stand in the Desk box: s (as "Desk"), m (a little smaller), l (two smaller lines). */
 const nameSize = name => { const n = [...String(name)].length; return n <= 6 ? 's' : n <= 11 ? 'm' : 'l' }
-/** The head's words: the place's name (vm.sidebar.place: the desk's name, or "All desks") and the chevron that opens
- *  the desk list (always there, so New desk is reachable with one desk too). */
+/** The head's words: the place's name (vm.sidebar.place: the team's name) and the chevron that opens the team
+ *  switch, the Trommi menu with the teams at its top (always there, so New team is reachable with one team too). */
 const placeName = vm => vm?.sidebar?.place?.en || 'Personal'
 /** A session by its key or its slug: its sidebar row, else its page (SessionView). */
 const sessionOf = (vm, id) => (id == null ? null : vm.sidebar.sessions.find(r => r.id === id || r.slug === id) ?? Object.values(vm.sessions ?? {}).find(s => s.id === id || s.slug === id) ?? null)
-/** The pill's words (the menu's button on a wide screen): the session in view with its drawing, else the desk's drawing
- *  and the place's name. */
+/** The pill's words (the menu's button on a wide screen): the session in view with its drawing, else the desk drawing
+ *  and the team's name. */
 const pillPlace = (vm, s = null) => (s ? html`<span class="pill-place" id="pill-place">${avatar(whoOf(s), { crown: false })}<b>${s.name.en}</b></span>` : html`<span class="pill-place" id="pill-place"><span class="desk-lamp">${deskLamp(vm)}</span><b>${placeName(vm)}</b></span>`)
-const deskPlace = vm => html`<span class="desk-place" id="desk-place"><span class="desk-name" data-size="${nameSize(placeName(vm))}">${placeName(vm)}</span></span>`
-const deskChevron = html`<button type="button" class="desk-switch-open" aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" title="Desks and settings" aria-label="Desks and settings">${sk('unfold')}</button>`
-/** The top of the sidebar: the Desk box, the Trommi menu's button and the menu, the desk switcher, the rail's tag.
+const teamPlace = vm => html`<span class="team-place" id="team-place"><span class="team-name" data-size="${nameSize(placeName(vm))}">${placeName(vm)}</span></span>`
+const teamChevron = html`<button type="button" class="team-switch-open" aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" title="Teams and settings" aria-label="Switch team, settings">${sk('unfold')}</button>`
+/** The top of the sidebar: the Desk box, the Trommi menu's button and the menu (the team switch), the rail's tag.
  *  isDesk: the Desk is the page; session: the session in view (its key or slug). */
 export function topbar(vm, base, isDesk, session = null) {
   const s = sessionOf(vm, session), place = placeName(vm)
   return html`<header class="topbar"><div class="brand">
-<h1 class="deskpill"><a href="${base}/" data-nav draggable="false" class="desk-go" id="desk-go" title="${place}"${isDesk ? raw(' aria-current=""') : ''}><span class="desk-lamp" id="desk-lamp">${deskLamp(vm)}</span>${BELL}${deskPlace(vm)}</a>${deskChevron}
-<button type="button" class="brand-open" id="brand-menu"${s ? html` data-session="${s.id}"` : ''} aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" aria-label="Where you are: ${place}. Menu: desks, sessions, places, settings" title="Menu (Ctrl K)">${raw(String(BELL).replace('class="brand-mark"', 'class="brand-mark open-mark"'))}<b class="open-word">Trommi</b>${pillPlace(vm, s)}<span class="conn open-conn" id="conn" data-state="connecting" role="status"><i aria-hidden="true"></i><span id="conn-text" class="tc-sr">Connecting</span></span><span class="brand-fold">${sk('unfold')}</span></button>${inDemo() ? html`<a class="pill-demo" href="${base}/screens?mock=1" target="_blank" rel="noopener" title="Demo">Demo · All screens</a>` : ''}</h1>
+<h1 class="deskpill"><a href="${base}/" data-nav draggable="false" class="desk-go" id="desk-go" title="${place}"${isDesk ? raw(' aria-current=""') : ''}><span class="desk-lamp" id="desk-lamp">${deskLamp(vm)}</span>${BELL}${teamPlace(vm)}</a>${teamChevron}
+<button type="button" class="brand-open" id="brand-menu"${s ? html` data-session="${s.id}"` : ''} aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" aria-label="Where you are: ${place}. Menu: teams, places, settings" title="Menu (Ctrl K)">${raw(String(BELL).replace('class="brand-mark"', 'class="brand-mark open-mark"'))}<b class="open-word">Trommi</b>${pillPlace(vm, s)}<span class="conn open-conn" id="conn" data-state="connecting" role="status"><i aria-hidden="true"></i><span id="conn-text" class="tc-sr">Connecting</span></span><span class="brand-fold">${sk('unfold')}</span></button>${inDemo() ? html`<a class="pill-demo" href="${base}/screens?mock=1" target="_blank" rel="noopener" title="Demo">Demo · All screens</a>` : ''}</h1>
 ${menuDoors(vm, base)}
-${deskSwitch(vm, base)}
-<button type="button" class="rail-tag" aria-haspopup="menu" aria-controls="brand-doors" title="Switch desk" aria-label="Desk ${place}: switch desks"><span class="rail-tag-string" aria-hidden="true"></span><span class="rail-tag-paper"><b>${tagLines(place).map(l => html`<span>${l}</span>`)}</b></span></button>
+<button type="button" class="rail-tag" aria-haspopup="menu" aria-controls="brand-doors" title="Switch team" aria-label="Team ${place}: switch teams"><span class="rail-tag-string" aria-hidden="true"></span><span class="rail-tag-paper"><b>${tagLines(place).map(l => html`<span>${l}</span>`)}</b></span></button>
 </div></header>`
 }
 
-// The phone's menu: the pill opens it, a choice or a tap beside closes it; New Desk… makes a desk (AddDesk, as the
+// The phone's menu: the pill opens it, a choice or a tap beside closes it; New Team… makes a team (AddTeam, as the
 // wide screen's menu); All Sessions… the whole list as a sheet from below.
 controller('phone-menu', class extends Controller {
   connect() {
@@ -657,26 +614,26 @@ controller('phone-menu', class extends Controller {
   disconnect() { this.pill?.removeEventListener('click', this.onPill); document.removeEventListener('click', this.beside, true); document.removeEventListener('keydown', this.keys) }
   toggle() { if (this.element.hidden) this.open(); else this.close() }
   open() { this.element.hidden = false; this.pill?.setAttribute('aria-expanded', 'true'); requestAnimationFrame(() => this.element.classList.add('is-open')) }
-  close() { this.element.classList.remove('is-open'); this.pill?.setAttribute('aria-expanded', 'false'); this.element.hidden = true; const f = this.element.querySelector('.pm-desk-form'); if (f) f.hidden = true }
-  newDesk() { const f = this.element.querySelector('.pm-desk-form'); f.hidden = false; f.querySelector('input').focus() }
-  async makeDesk(e) {
+  close() { this.element.classList.remove('is-open'); this.pill?.setAttribute('aria-expanded', 'false'); this.element.hidden = true; const f = this.element.querySelector('.pm-team-form'); if (f) f.hidden = true }
+  newTeam() { const f = this.element.querySelector('.pm-team-form'); f.hidden = false; f.querySelector('input').focus() }
+  async makeTeam(e) {
     e.preventDefault()
     const f = e.currentTarget, name = f.querySelector('input').value.trim(), err = f.querySelector('.pm-error')
     if (!name) return
-    const made = await addDesk(name)
-    if (!made) { err.textContent = 'Not made: the desk did not come.'; return }
+    const made = await addTeam(name)
+    if (!made) { err.textContent = 'Not made: the team did not come.'; return }
     this.close()
-    window.trommi?.router?.visit(`/?desk=${encodeURIComponent(made.id)}`)
+    window.trommi?.router?.visit(`/?team=${encodeURIComponent(made.id)}`)
   }
 })
-// After a desk picked in the menu the page is drawn anew: the menu opens again where it was.
+// After a team picked in the menu the page is drawn anew: the menu opens again where it was.
 if (typeof document !== 'undefined') document.addEventListener('turbo:load', () => {
   let keep = null
   try { keep = sessionStorage.getItem('trommi-menu-keep'); sessionStorage.removeItem('trommi-menu-keep') } catch {}
   if (!keep) return
-  requestAnimationFrame(() => { const doors = document.getElementById('brand-doors'); if (!doors) return; doors.hidden = false; for (const b of document.querySelectorAll('#brand-menu, .desk-switch-open, #desk-pill')) if (b.offsetParent || b.id === 'brand-menu') b.setAttribute('aria-expanded', 'true') })
+  requestAnimationFrame(() => { const doors = document.getElementById('brand-doors'); if (!doors) return; doors.hidden = false; for (const b of document.querySelectorAll('#brand-menu, .team-switch-open, #desk-pill')) if (b.offsetParent || b.id === 'brand-menu') b.setAttribute('aria-expanded', 'true') })
 })
-// The phone's desk pill opens the Trommi menu (#brand-doors), the same as the sidebar's foot.
+// The phone's pill opens the Trommi menu (#brand-doors), the same as the sidebar's foot.
 if (typeof document !== 'undefined') document.addEventListener('click', e => {
   const pill = e.target instanceof Element ? e.target.closest('#desk-pill') : null
   if (!pill) return
@@ -712,35 +669,35 @@ if (typeof document !== 'undefined') {
 // ---- a phone's top line and the drawer (sidebar.css "A phone") ----
 // A phone has no room for the sidebar beside the page: the same sidebar (the Desk box, the sessions, the foot with the
 // Trommi menu) is a drawer that slides in from the left over the page. The slim line at the top holds its handle (three
-// pen lines; a red dot while a session is stopped or a card knocks) and the name of the place in view: the desk, or
+// pen lines; a red dot while a session is stopped or a card knocks) and the name of the place in view: the team, or
 // the session with its drawing. Wide screens show neither.
 const PLACES = { off: 'Off your mind', agents: 'Settings', room: 'Settings', artifacts: 'Artifacts', whiteboard: 'Scribble Board' }
-/** In a chat (a phone): its title, the drawing and the name with ▾, opens the sessions of its desk to switch to. */
+/** In a chat (a phone): its title, the drawing and the name with ▾, opens the sessions of its team to switch to. */
 function chatSwitch(vm, base, s) {
-  const mates = vm.sidebar.sessions.filter(r => r.desk_id === s.desk_id)
-  const desk = vm.sidebar.desks.find(d => d.id === s.desk_id)
+  const mates = vm.sidebar.sessions.filter(r => r.team_id === s.team_id)
+  const team = vm.sidebar.teams.find(d => d.id === s.team_id)
   return html`<button type="button" class="phone-pill chat-title" id="phone-pill" aria-haspopup="menu" aria-controls="phone-menu" aria-expanded="false" aria-label="${s.name.en}: switch to another agent">${avatar(whoOf(s), { crown: false })}<b>${s.name.en}</b>${sk('unfold')}</button>
-<div class="phone-menu" id="phone-menu" role="menu" aria-label="Agents of this desk" data-controller="phone-menu" hidden><p class="pm-h">${desk?.name.en ?? 'This desk'}</p>${mates.map(a => html`<a role="menuitem" class="pm-row" data-nav draggable="false" href="${base}/chat/${encodeURIComponent(a.slug)}"${a.id === s.id ? raw(' aria-current="true"') : ''}>${avatar(whoOf(a), { crown: false })}<b>${a.name.en}</b>${a.open ? html`<i class="pm-n">${a.open}</i>` : ''}${a.id === s.id ? html`<span class="pm-check">${sk('tick')}</span>` : ''}</a>`)}</div>`
+<div class="phone-menu" id="phone-menu" role="menu" aria-label="Agents of this team" data-controller="phone-menu" hidden><p class="pm-h">${team?.name.en ?? 'This team'}</p>${mates.map(a => html`<a role="menuitem" class="pm-row" data-nav draggable="false" href="${base}/chat/${encodeURIComponent(a.slug)}"${a.id === s.id ? raw(' aria-current="true"') : ''}>${avatar(whoOf(a), { crown: false })}<b>${a.name.en}</b>${a.open ? html`<i class="pm-n">${a.open}</i>` : ''}${a.id === s.id ? html`<span class="pm-check">${sk('tick')}</span>` : ''}</a>`)}</div>`
 }
 
 // The chats (a phone's Chat tab): the last chat opened (the crowned session's at first).
 const CHAT_KEY = 'trommi-last-chat'
 export function chatOpened(slug) { try { localStorage.setItem(CHAT_KEY, slug) } catch {} }
 const lastChat = vm => { let id = null; try { id = localStorage.getItem(CHAT_KEY) } catch {} ; return sessionOf(vm, id)?.slug ?? vm.sidebar.sessions.find(r => r.crowned)?.slug ?? vm.sidebar.sessions[0]?.slug ?? null }
-/** The page of chats: the sessions of the desk in view, as the sidebar has them. */
+/** The page of chats: the sessions of the team in view, as the sidebar has them. */
 export function chatsMain(vm, base) {
   return html`<main id="chats" class="chats-page" aria-label="Chats"><h1 class="chats-h">Chats</h1><ul class="chats-list">${vm.sidebar.sessions.map(a => html`<li id="chat-${a.id}"><a class="chats-row" data-nav draggable="false" href="${base}/chat/${encodeURIComponent(a.slug)}">${avatar(whoOf(a), { crown: false })}<span class="chats-words"><b>${a.name.en}</b><small>${a.cap?.word.en ?? ''}</small></span><span class="chats-side">${a.open ? html`<i class="pm-n">${a.open}</i>` : ''}</span></a></li>`)}</ul></main>`
 }
 
 /** The phone's top line: in a chat, back to the chats and its title (current: the session, its key or slug);
- *  elsewhere the pill with the desk's drawing and name (the Trommi menu), and the place's name. */
+ *  elsewhere the pill with the desk drawing and the team's name (the Trommi menu), and the place's name. */
 export function phoneBar(vm, base, { view = '', current = null, title = '' } = {}) {
   const waits = vm.sidebar.stopped + vm.sidebar.knocking > 0
   const s = view === 'session' ? sessionOf(vm, current) : null
   if (s) return html`<div class="phone-bar is-chat" id="phone-bar"><a class="phone-back" data-nav draggable="false" href="${base}/chats" aria-label="Chats">${raw('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.8 5.6Q11 9 7.6 12.1Q11 15.4 14.9 18.6"/></svg>')}</a>${chatSwitch(vm, base, s)}</div>`
   const place = ['desk', 'card', 'picture', 'chats'].includes(view) ? ''
     : html`<span class="phone-place"><b>${PLACES[view] ?? String(title).replace(/^\(\d+\) /, '').replace(/ · Trommi$/, '')}</b></span>`
-  return html`<div class="phone-bar" id="phone-bar"><button type="button" class="phone-pill" id="desk-pill" data-opens="brand-doors" aria-haspopup="menu" aria-controls="brand-doors" aria-expanded="false" aria-label="${placeName(vm)}: desks and places" title="Desks and places"${waits ? raw(' data-waits') : ''}><span class="desk-lamp" id="phone-lamp">${deskMark(false)}</span><b>${placeName(vm)}</b>${sk('unfold')}</button>${place}</div>`
+  return html`<div class="phone-bar" id="phone-bar"><button type="button" class="phone-pill" id="desk-pill" data-opens="brand-doors" aria-haspopup="menu" aria-controls="brand-doors" aria-expanded="false" aria-label="${placeName(vm)}: teams and places" title="Teams and places"${waits ? raw(' data-waits') : ''}><span class="desk-lamp" id="phone-lamp">${deskMark(false)}</span><b>${placeName(vm)}</b>${sk('unfold')}</button>${place}</div>`
 }
 export const DRAWER_VEIL = raw('<div class="drawer-veil" id="drawer-veil" aria-hidden="true"></div>')
 
@@ -768,7 +725,7 @@ function drawer() {
     if (t.closest('#drawer-open')) return set(!isOpen())
     if (!isOpen()) return
     if (t.closest('#drawer-veil')) return set(false)
-    // a place chosen in the drawer: a session, the Desk, a desk or a page of the menu (not the fold switches, not the menu's own button)
+    // a place chosen in the drawer: a session, the Desk, a team or a page of the menu (not the fold switches, not the menu's own button)
     if (t.closest('#agents a[href], #desk-go, #brand-doors a[href], #sidebar-invite')) set(false, { focus: false })
   })
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen() && $('#brand-doors')?.hidden !== false) { e.stopPropagation(); set(false) } }, true)
@@ -810,8 +767,8 @@ function drawer() {
 
 // ---- controller "menu" ----
 // The Trommi menu (sidebar.mjs renders it; ui.mjs opens and closes it and switches the theme).
-// Here: the arrows through the entries, a new desk, and "#jump" in the address, which opens it (the menu has no
-// search field; Ctrl K opens the menu with the keyboard on the desk in view).
+// Here: the arrows through the entries, a new team, and "#jump" in the address, which opens it (the menu has no
+// search field; Ctrl K opens the menu with the keyboard on the team in view).
 
 /** Go to a page the way a click on a link does (Turbo for the pages rendered here, a whole load for the others). */
 function go(path) {
@@ -824,11 +781,11 @@ function go(path) {
 }
 
 export const MenuController = class extends Controller {
-  static targets = ['deskForm', 'deskName', 'deskError']
-  static values = { desk: String }
+  static targets = ['teamForm', 'teamName', 'teamError']
+  static values = { team: String }
 
   connect() {
-    // Opened (its button, Ctrl+K, G then J): the menu takes the keyboard; the first arrow goes to the desk in view.
+    // Opened (its button, Ctrl+K, G then J): the menu takes the keyboard; the first arrow goes to the team in view.
     // Closed, the keyboard is back on the button, unless it has gone to something else on the page.
     this.element.tabIndex = -1
     this.watch = new MutationObserver(() => {
@@ -837,15 +794,15 @@ export const MenuController = class extends Controller {
       else if (!at || at === document.body || this.element.contains(at)) this.opener?.focus({ preventScroll: true })
     })
     this.watch.observe(this.element, { attributes: true, attributeFilter: ['hidden'] })
-    // A refresh of the page (the live stream's "refresh" morphs it) must not shut the menu or the new desk's line under the hand.
+    // A refresh of the page (the live stream's "refresh" morphs it) must not shut the menu or the new team's line under the hand.
     this.keep = e => {
       const t = e.target, name = e.detail?.attributeName
-      if ((t === this.element && name === 'hidden') || (t.id === 'brand-menu' && name === 'aria-expanded') || (t.id === 'desk-new' && name === 'hidden')) e.preventDefault()
+      if ((t === this.element && name === 'hidden') || (t.id === 'brand-menu' && name === 'aria-expanded') || (t.id === 'team-new' && name === 'hidden')) e.preventDefault()
     }
     document.addEventListener('turbo:before-morph-attribute', this.keep)
     this.grab = this.grab.bind(this)
     this.element.addEventListener('pointerdown', this.grab)
-    // (a row that was dragged is not also a click: the menu stays open and the desk is not switched)
+    // (a row that was dragged is not also a click: the menu stays open and the team is not switched)
     this.noClick = e => { if (this.dragged) { e.preventDefault(); e.stopImmediatePropagation(); this.dragged = false } }
     this.element.addEventListener('click', this.noClick, true)
     this.away = e => { if (!this.element.hidden && e.target instanceof Element && !e.target.closest('.brand')) this.close() }
@@ -862,17 +819,17 @@ export const MenuController = class extends Controller {
     document.removeEventListener('turbo:before-morph-attribute', this.keep)
     clearTimeout(this.timer)
   }
-  // ---- the desks' order: a row is picked up and dragged up or down (a mouse: as soon as it moves; a finger: held a
-  // moment first, so a swipe still scrolls). The others make room; let go, the order goes to the core (OrderDesks:
-  // each desk's register holds its place, on every device) and the number keys 1…9 follow it (0 is All desks). ----
+  // ---- the teams' order: a row is picked up and dragged up or down (a mouse: as soon as it moves; a finger: held a
+  // moment first, so a swipe still scrolls). The others make room; let go, the order goes to the core (OrderTeams:
+  // each team's register holds its place, on every device) and the number keys 1…9 follow it. ----
   grab(event) {
-    const row = event.target.closest?.('.menu-desk-row')
-    if (!row || event.button > 0 || row.classList.contains('is-renaming') || event.target.closest('.menu-desk-pen, input')) return
-    const list = row.parentElement, rows = () => [...list.querySelectorAll(':scope > .menu-desk-row')]
+    const row = event.target.closest?.('.menu-team-row')
+    if (!row || event.button > 0 || row.classList.contains('is-renaming') || event.target.closest('.menu-team-pen, input')) return
+    const list = row.parentElement, rows = () => [...list.querySelectorAll(':scope > .menu-team-row')]
     if (rows().length < 2) return
     const y0 = event.clientY, x0 = event.clientX, touch = event.pointerType !== 'mouse', id = event.pointerId
     let live = false, timer = 0, grabAt = null
-    const kids = rows(), start = kids.map(r => r.dataset.desk).join()
+    const kids = rows(), start = kids.map(r => r.dataset.team).join()
     const lift = () => {
       live = true
       try { row.setPointerCapture(id) } catch {}
@@ -906,11 +863,11 @@ export const MenuController = class extends Controller {
       row.classList.remove('is-dragging'); list.classList.remove('is-sorting')
       row.animate?.([{ translate: row.style.translate || '0 0' }, { translate: '0 0' }], { duration: 160, easing: 'cubic-bezier(.3, 1.4, .5, 1)' })
       row.style.translate = ''
-      const order = rows().map(r => r.dataset.desk)
+      const order = rows().map(r => r.dataset.team)
       // (the rows stand as they were painted again: the core's render draws the new order)
       for (const r of kids) list.append(r)
       if (cancel || e.type === 'pointercancel' || order.join() === start) return
-      T?.act({ do: 'order_desks', desk_ids: order.filter(d => d !== 'all') })
+      T?.act({ do: 'order_teams', team_ids: order })
     }
     addEventListener('pointermove', move, { passive: false }); addEventListener('pointerup', end); addEventListener('pointercancel', end)
   }
@@ -922,8 +879,8 @@ export const MenuController = class extends Controller {
     delete this.element.dataset.from
   }
 
-  /** Where the keyboard starts: the desk in view (its lamp on), else the first entry. */
-  home() { return this.element.querySelector('.menu-desk[aria-checked="true"]') ?? this.items[0] }
+  /** Where the keyboard starts: the team in view (its lamp on), else the first entry. */
+  home() { return this.element.querySelector('.menu-team[aria-checked="true"]') ?? this.items[0] }
   // The arrows walk the entries, round at both ends.
   walk(event) {
     const all = this.items, at = all.indexOf(document.activeElement)
@@ -936,55 +893,55 @@ export const MenuController = class extends Controller {
 
   // ---- entries ----
   // A choice closes the menu; a switch (theme, push) leaves it open.
-  // ("New desk" opens its line and leaves the menu open.)
-  // (Push and Theme and picking a desk keep the menu open, the board behind changes live; what goes to another page
+  // ("New team" opens its line and leaves the menu open.)
+  // (Push and Theme and picking a team keep the menu open, the board behind changes live; what goes to another page
   // closes it; Esc and a click beside it close it too)
   chosen(event) {
     const t = event.target
-    if (t.closest('#push-toggle, #theme-toggle, #desk-add, .menu-desk-pen, .menu-desk-form')) return
-    // (only a desk picked in the open menu keeps it open: the number keys 0…9 click the same entry in the closed
+    if (t.closest('#push-toggle, #theme-toggle, #team-add, .menu-team-pen, .menu-team-form')) return
+    // (only a team picked in the open menu keeps it open: the number keys 1…9 click the same entry in the closed
     // menu, and that switch must leave it shut, or the menu comes up and takes the next key)
-    if (t.closest('.menu-desk[data-desk]')) { if (!this.element.hidden) try { sessionStorage.setItem('trommi-menu-keep', '1') } catch {} return }
+    if (t.closest('.menu-team[data-team]')) { if (!this.element.hidden) try { sessionStorage.setItem('trommi-menu-keep', '1') } catch {} return }
     if (t.closest('[role="menuitem"]:not([data-menu-body-param]), [role="menuitemradio"], [role="option"]')) this.close()
   }
 
-  // ---- a new desk: "+" opens a line for its name; Enter makes it (AddDesk) and goes there ----
-  newDesk() {
-    this.deskFormTarget.hidden = !this.deskFormTarget.hidden
-    this.deskErrorTarget.textContent = ''
-    if (!this.deskFormTarget.hidden) this.deskNameTarget.focus()
+  // ---- a new team: "+" opens a line for its name; Enter makes it (AddTeam) and goes there ----
+  newTeam() {
+    this.teamFormTarget.hidden = !this.teamFormTarget.hidden
+    this.teamErrorTarget.textContent = ''
+    if (!this.teamFormTarget.hidden) this.teamNameTarget.focus()
   }
-  deskKey(event) {
+  teamKey(event) {
     event.stopPropagation()   // the arrows and keys of the menu are not this line's
-    if (event.key === 'Escape') { event.preventDefault(); this.deskNameTarget.value = ''; this.deskFormTarget.hidden = true; this.deskErrorTarget.textContent = ''; this.element.querySelector('#desk-add')?.focus() }
+    if (event.key === 'Escape') { event.preventDefault(); this.teamNameTarget.value = ''; this.teamFormTarget.hidden = true; this.teamErrorTarget.textContent = ''; this.element.querySelector('#team-add')?.focus() }
   }
-  async makeDesk(event) {
+  async makeTeam(event) {
     event.preventDefault()
-    const name = this.deskNameTarget.value.trim()
-    if (!name) return this.deskNameTarget.focus()
-    const made = await addDesk(name)
-    if (!made) { this.deskErrorTarget.textContent = 'Not made: the desk did not come.'; return }
-    this.deskNameTarget.value = ''
-    this.deskFormTarget.hidden = true
+    const name = this.teamNameTarget.value.trim()
+    if (!name) return this.teamNameTarget.focus()
+    const made = await addTeam(name)
+    if (!made) { this.teamErrorTarget.textContent = 'Not made: the team did not come.'; return }
+    this.teamNameTarget.value = ''
+    this.teamFormTarget.hidden = true
     this.close()
-    go(`${this.deskValue}?desk=${encodeURIComponent(made.id)}`)
+    go(`${this.teamValue}?team=${encodeURIComponent(made.id)}`)
   }
-  // ---- rename a desk: the pencil puts a field where the name is; Enter saves (RenameDesk), Escape leaves it ----
+  // ---- rename a team: the pencil puts a field where the name is; Enter saves (RenameTeam), Escape leaves it ----
   rename({ params: { id } }) {
-    const row = this.element.querySelector(`.menu-desk-row[data-desk="${CSS.escape(id)}"]`), was = row?.querySelector('b')?.textContent ?? ''
-    if (!row || row.querySelector('.menu-desk-rename')) return
-    const form = el('form', 'menu-desk-rename'), field = Object.assign(el('input', 'menu-desk-field'), { maxLength: 40, autocomplete: 'off', enterKeyHint: 'done', ariaLabel: `New name of the desk ${was}` })
+    const row = this.element.querySelector(`.menu-team-row[data-team="${CSS.escape(id)}"]`), was = row?.querySelector('b')?.textContent ?? ''
+    if (!row || row.querySelector('.menu-team-rename')) return
+    const form = el('form', 'menu-team-rename'), field = Object.assign(el('input', 'menu-team-field'), { maxLength: 40, autocomplete: 'off', enterKeyHint: 'done', ariaLabel: `New name of the team ${was}` })
     field.value = was
     form.append(field)
     row.classList.add('is-renaming'); row.append(form)
     const done = () => { form.remove(); row.classList.remove('is-renaming') }
-    field.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); done(); row.querySelector('.menu-desk-pen')?.focus() } })
+    field.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); done(); row.querySelector('.menu-team-pen')?.focus() } })
     field.addEventListener('blur', () => setTimeout(() => { if (form.isConnected && !form.contains(document.activeElement)) done() }, 0))
     form.addEventListener('submit', e => {
       e.preventDefault()
       const name = field.value.trim().slice(0, 40)
       done()
-      if (name && name !== was) T?.act({ do: 'rename_desk', desk_id: id, name })
+      if (name && name !== was) T?.act({ do: 'rename_team', team_id: id, name })
     })
     field.focus(); field.select()
   }
@@ -1092,17 +1049,13 @@ export function register(t) {
   document.addEventListener('click', e => {
     const t = e.target instanceof Element ? e.target : null
     if (!t) return
-    // the desk switcher: the chevron beside the desk's name and the rail's tag (with one desk the tag opens the menu)
-    if (t.closest('.desk-word-add')) { shut(); const sw0 = $('#desk-switch'); if (sw0) sw0.hidden = true; $('#brand-menu')?.click(); requestAnimationFrame(() => $('#desk-add')?.click()); return }
-    // (the whole Trommi menu opens from the desk head's chevron, and from the folded rail's tag)
-    if (t.closest('.desk-switch-open, .rail-tag') && !t.closest('#desk-pill')) { const doors = $('#brand-doors'), b = $('#brand-menu'); if (doors && b) { doors.dataset.from = 'head'; doors.hidden = !doors.hidden; b.setAttribute('aria-expanded', String(!doors.hidden)); for (const o of document.querySelectorAll('.desk-switch-open, .rail-tag')) o.setAttribute('aria-expanded', String(!doors.hidden)) } return }
-    const sw = $('#desk-switch'), opener = t.closest('.desk-switch-open, .rail-tag')
-    if (sw && opener) { const open = sw.hidden; sw.hidden = !open; for (const b of document.querySelectorAll('.desk-switch-open, .rail-tag')) b.setAttribute('aria-expanded', String(open)); shut(); return }
-    if (sw && !sw.hidden && (!t.closest('#desk-switch') || t.closest('a[href]'))) { sw.hidden = true; for (const b of document.querySelectorAll('.desk-switch-open, .rail-tag')) b.setAttribute('aria-expanded', 'false') }
-    const menu = t.closest('#brand-menu, .rail-tag') && $('#brand-menu'), doors = $('#brand-doors')   // (with one desk the rail's tag opens the menu, at its desks)
+    // the team switch: the whole Trommi menu (the teams at its top) opens from the chevron beside the team's name,
+    // and from the folded rail's tag
+    if (t.closest('.team-switch-open, .rail-tag') && !t.closest('#desk-pill')) { const doors = $('#brand-doors'), b = $('#brand-menu'); if (doors && b) { doors.dataset.from = 'head'; doors.hidden = !doors.hidden; b.setAttribute('aria-expanded', String(!doors.hidden)); for (const o of document.querySelectorAll('.team-switch-open, .rail-tag')) o.setAttribute('aria-expanded', String(!doors.hidden)) } return }
+    const menu = t.closest('#brand-menu, .rail-tag') && $('#brand-menu'), doors = $('#brand-doors')
     if (menu && doors) { delete doors.dataset.from; doors.hidden = !doors.hidden; menu.setAttribute('aria-expanded', String(!doors.hidden)); return }
     if (doors && !doors.hidden && !t.closest('#brand-doors')) shut()
-    // the demo: a switch, never a desk; off takes the tab back to its own room for sure (app.mjs ?mock=0)
+    // the demo: a switch, never a team; off takes the tab back to its own room for sure (app.mjs ?mock=0)
     if (t.closest('#demo-toggle')) { location.assign(inDemo() ? '/?mock=0' : '/?mock=1'); return }
     if (t.closest('#theme-toggle, .side-theme')) setThemeMode(nextThemeMode())   // Light → Dark → System (the sidebar's foot on a wide window, the menu on a phone)
   })
@@ -1115,7 +1068,7 @@ export function register(t) {
     head?.click()
     requestAnimationFrame(() => tab.setAttribute('aria-expanded', String($('#corner-note-box .corner-note-head')?.getAttribute('aria-expanded') === 'true')))
   })
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { shut(); const sw = $('#desk-switch'); if (sw && !sw.hidden) { sw.hidden = true; $('.desk-switch-open')?.focus() } } })
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') shut() })
   drawer()
   // The rail is a wide screen's: a narrow window has the drawer, whole (the head's data-rail is taken off there).
   const narrow = matchMedia('(max-width: 860px)')

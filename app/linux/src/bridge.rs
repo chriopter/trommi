@@ -16,6 +16,7 @@ pub mod qobject {
         #[qproperty(QString, files_json)]
         #[qproperty(QString, error)]
         #[qproperty(QString, theme_mode)]
+        #[qproperty(QString, team)]
         #[qproperty(QString, open_request)]
         #[qproperty(QString, shot_path)]
         #[qproperty(i32, shot_after_ms)]
@@ -34,6 +35,9 @@ pub mod qobject {
         /// Light or dark, kept for the next start (the web's rule: light unless the person picks dark).
         #[qinvokable]
         fn set_theme(self: Pin<&mut Trommi>, mode: &QString);
+        /// The team the person chose in the sidebar, kept on this device for the next start (sent as `Focus.team`).
+        #[qinvokable]
+        fn choose_team(self: Pin<&mut Trommi>, id: &QString);
         /// A picture of the window was written to `shot_path` (QML): ends a scene run.
         #[qinvokable]
         fn shot_taken(self: Pin<&mut Trommi>);
@@ -54,6 +58,7 @@ pub struct TrommiRust {
     files_json: QString,
     error: QString,
     theme_mode: QString,
+    team: QString,
     open_request: QString,
     shot_path: QString,
     shot_after_ms: i32,
@@ -74,6 +79,7 @@ impl Default for TrommiRust {
                     .unwrap_or_default()
                     .trim(),
             ),
+            team: QString::from(std::fs::read_to_string(crate::shell::base_dir().join("team")).unwrap_or_default().trim()),
             open_request: QString::default(),
             shot_path: QString::from(env("TROMMI_LINUX_SHOT").as_str()),
             shot_after_ms: env("TROMMI_LINUX_SHOT_AFTER_MS").parse().unwrap_or(1500),
@@ -202,6 +208,15 @@ impl qobject::Trommi {
             let _ = std::fs::write(base.join("theme"), mode);
         }
         self.as_mut().set_theme_mode(QString::from(mode));
+    }
+
+    fn choose_team(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        let base = crate::shell::base_dir();
+        if std::fs::DirBuilder::new().recursive(true).create(&base).is_ok() {
+            let _ = std::fs::write(base.join("team"), &id);
+        }
+        self.as_mut().set_team(QString::from(id.as_str()));
     }
 
     fn shot_taken(self: Pin<&mut Self>) {

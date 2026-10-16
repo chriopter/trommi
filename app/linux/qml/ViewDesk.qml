@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import "pen.mjs" as Pen
 
 // The Desk, drawn from the app core's view model alone (ViewModel.desk): the big line the core says, Blitz with the
-// core's words, the desk's goals, the sessions that are cut off, and what waits as rows in the order given. The
+// core's words, the team's goals, the sessions that are cut off, and what waits as rows in the order given. The
 // only state of this file's own is whether the goals are folded.
 Item {
     id: root
@@ -107,7 +107,7 @@ Item {
                 text: root.desk.reading ? root.desk.reading.en : ""
                 color: theme.muted; font.pixelSize: 14
             }
-            // the desk's goals: every line, or the first while folded
+            // the team's goals: every line, or the first while folded
             Column {
                 visible: !!root.goals && root.goals.lines.length > 0
                 anchors.horizontalCenter: parent.horizontalCenter

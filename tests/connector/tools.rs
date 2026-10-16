@@ -248,13 +248,13 @@ async fn the_tools_write_to_the_board_and_answers_come_back() {
     let mut told = String::new();
     for _ in 0..600 {
         told = mcp.ok("reply", json!({ "text": "On it." })).await;
-        if told.contains("Desk goals") {
+        if told.contains("Team goals") {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     assert!(
-        told.contains("Desk goals") && told.contains("Ship v2") && told.contains("No regressions"),
+        told.contains("Team goals") && told.contains("Ship v2") && told.contains("No regressions"),
         "{told}"
     );
 

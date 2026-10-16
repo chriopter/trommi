@@ -49,11 +49,16 @@ enum NativeTab: Equatable { case chat, desk }
       await session?.send(NativePacket(["type": "start", "config": config]))
       if !preview {
         for id in UserDefaults.standard.stringArray(forKey: "trommi-goals-folded") ?? [] {
-          await session?.send(NativePacket(["type": "action", "action": ["do": "fold_goals", "desk_id": id, "folded": true]]))
+          await session?.send(NativePacket(["type": "action", "action": ["do": "fold_goals", "team_id": id, "folded": true]]))
         }
         for id in UserDefaults.standard.stringArray(forKey: Self.stacksOpen) ?? [] {
           await session?.send(NativePacket(["type": "action", "action": ["do": "fold_helpers", "session_id": id, "open": true]]))
         }
+      }
+      // (the team chosen last on this device; launched in the back by a push, the Desk is not in view)
+      if !preview, let team = Self.lastTeam, let data = try? JSONEncoder().encode(CoreView.Focus(screen: .desk, visible: Self.launchedInFront, team: team)),
+         let focus = try? JSONSerialization.jsonObject(with: data) {
+        await session?.send(NativePacket(["type": "focus", "focus": focus]))
       }
       for event in inboxEvents { await session?.send(event) }; inboxEvents = []
       if preview { NativeDemo.route(NativeDemo.screen ?? "desk", shell: self) } else { NativeServices.shared.attach(self) }
@@ -78,10 +83,20 @@ enum NativeTab: Equatable { case chat, desk }
     let before = tail
     tail = Task { await before?.value; await session.send(event) }
   }
+  /** The team last chosen on this device (sent as `Focus.team` at the start; the core falls back when it is gone). */
+  static let teamKey = "trommi-team"
+  static var lastTeam: String? { UserDefaults.standard.string(forKey: teamKey) }
+  private static var launchedInFront: Bool {
+    #if canImport(UIKit)
+    UIApplication.shared.applicationState != .background
+    #else
+    true
+    #endif
+  }
   /** The mains whose helpers are unfolded on this device (the core's `FoldHelpers`, sent again at the start). */
   static let stacksOpen = "trommi-stacks-open"
   func act(_ action: [String: Any], blobs: [Data] = []) {
-    if !isDemo, action["do"] as? String == "fold_goals", let id = action["desk_id"] as? String {
+    if !isDemo, action["do"] as? String == "fold_goals", let id = action["team_id"] as? String {
       var folded = UserDefaults.standard.stringArray(forKey: "trommi-goals-folded") ?? []
       folded.removeAll { $0 == id }; if action["folded"] as? Bool == true { folded.append(id) }
       UserDefaults.standard.set(folded, forKey: "trommi-goals-folded")
@@ -94,17 +109,19 @@ enum NativeTab: Equatable { case chat, desk }
     send(["type": "action", "action": action], blobs: blobs)
   }
   func account(_ action: [String: Any]) { act(["do": "account", "action": action]) }
-  func focus(_ screen: CoreView.Screen, desk: String? = nil) {
-    if screen == .notes { path = []; noteOpen = true; show(screen, desk: desk); return }
+  func focus(_ screen: CoreView.Screen, team: String? = nil) {
+    if screen == .notes { path = []; noteOpen = true; show(screen, team: team); return }
     noteOpen = false
     if screen == .desk { path = []; tab = .desk }
     else if path.last != screen { path.append(screen) }
-    show(screen, desk: desk)
+    show(screen, team: team)
   }
   func closeNote() { guard noteOpen else { return }; noteOpen = false; show(path.last ?? .desk) }
-  func show(_ screen: CoreView.Screen, desk: String? = nil) {
+  func show(_ screen: CoreView.Screen, team: String? = nil) {
     self.screen = screen
-    let focus = CoreView.Focus(screen: screen, visible: true, desk: desk ?? view.sidebar.desk)
+    if let team, !isDemo { UserDefaults.standard.set(team, forKey: Self.teamKey) }
+    let inView = view.sidebar.team.isEmpty ? (isDemo ? nil : Self.lastTeam) : view.sidebar.team
+    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView)
     if let data = try? JSONEncoder().encode(focus), let json = try? JSONSerialization.jsonObject(with: data) { send(["type": "focus", "focus": json]) }
   }
   func scene(_ active: Bool) { send(["type": active ? "foreground" : "background"]); if !isDemo { NativeServices.shared.foreground(active) } }

@@ -73,7 +73,7 @@ fn an_open_invite_is_dropped_and_burned() {
     let world = World::new();
     let mut sim = world.sim();
     sim.send(start());
-    account(&mut sim, AccountAction::InviteAgent { label: "Fernly".into(), desk: None });
+    account(&mut sim, AccountAction::InviteAgent { label: "Fernly".into(), team: None });
     let shown = sim.view.account.invite.clone().expect("the invite in view");
     assert_eq!((shown.role.as_str(), shown.state.as_str()), ("agent", "open"));
     sim.advance(100);

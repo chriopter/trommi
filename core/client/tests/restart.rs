@@ -74,7 +74,7 @@ fn picture(sim: &Sim) -> Vec<String> {
         words(&v, &mut out);
         out.join(" ")
     };
-    let mut desk: Vec<String> = m.stack.iter().map(|id| format!("desk {}", m.cards.get(id).map_or("?".into(), |c| said(serde_json::to_value(c).unwrap_or_default())))).collect();
+    let mut desk: Vec<String> = m.stack.iter().map(|id| format!("team {}", m.cards.get(id).map_or("?".into(), |c| said(serde_json::to_value(c).unwrap_or_default())))).collect();
     let mut rest: Vec<String> = Vec::new();
     rest.extend(m.cards.values().map(|c| format!("card {}", said(serde_json::to_value(c).unwrap_or_default()))));
     rest.extend(m.sessions.values().map(|s| format!("session archived={} stale={} agents={}", s.group_archived, s.stale, s.agent_device_ids.len())));

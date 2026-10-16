@@ -1,7 +1,7 @@
 // tips.browser.mjs: every hover hint of the demo is one to three words (the owner, 13 October 2026: "maximal ein bis
 // drei Wörter, zum Beispiel einfach der Name der Karte"). Every state of demo/data/screens.json is opened in headless
 // Chromium at a desktop's size, and every `title` and `data-tip` on the page is read (app.mjs "tips" shows both, in
-// one look). A name the room holds (a card's title, a session's, a desk's, a file's) counts as one word, whatever its
+// one look). A name the room holds (a card's title, a session's, a team's, a file's) counts as one word, whatever its
 // length: the hint "Landing Page" or a long card title is fine; "Unfold trommi's 12 subs: Connector, Mac, …" is not.
 // An aria-label may say more: it is read, not shown.
 //   node tests/web/views/tips.browser.mjs      (needs Chromium; serves the app from its sources itself)
@@ -32,7 +32,7 @@ const PROBE = `(() => {
   for (const c of Object.values(v.cards ?? {})) { add(c.title); for (const o of c.options ?? []) add(o.label); for (const p of c.pictures ?? []) add(p.name) }
   for (const x of [...(v.desk?.starred?.rows ?? []), ...(v.desk?.running?.rows ?? []), ...(v.off?.works ?? []), ...(v.off?.rest ?? []), ...(v.desk?.off?.rows ?? [])]) add(x.title)
   for (const x of v.sidebar?.sessions ?? []) add(x.name?.en)
-  for (const d of v.sidebar?.desks ?? []) add(d.name?.en)
+  for (const d of v.sidebar?.teams ?? []) add(d.name?.en)
   for (const a of v.artifacts ?? []) { add(a.title); add(a.session) }
   for (const f of Object.values(v.files ?? {})) add(f.name)
   for (const s of Object.values(v.sessions ?? {})) { add(s.name?.en); for (const q of s.questions ?? []) add(q.title); for (const r of s.talk ?? []) add(r.card?.title) }

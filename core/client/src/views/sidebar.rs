@@ -1,23 +1,23 @@
-//! The sidebar: the desks, and the sessions of the desk in view as rows, in the order they are drawn. A shell draws
+//! The sidebar: the teams, and the sessions of the team in view as rows, in the order they are drawn. A shell draws
 //! the rows one after the other and decides nothing: which sessions show, under which main, connected or away,
 //! what waits, who is stopped and why, the small line under a name.
 //!
 //! The rules are the web's of before (`app.mjs` `boardModel` units, `sidebar.mjs` `sidebarParts` and `desksOf`,
 //! `ui.mjs` `badge` and `linkCap`):
-//! - a row per session that is not archived and stands on the desk in view;
+//! - a row per session that is not archived and stands on the team in view;
 //! - a helper lies under its main when that main has a row here and is no helper itself, one level deep; else it
 //!   has a row of its own;
 //! - a row is "away" when neither it nor one of its helpers is connected: the connected rows first, then the rest,
-//!   with no line between them (the web's All desks of before); on All desks desk by desk, each under its name;
+//!   with no line between them (the web's All teams of before); on All teams team by team, each under its name;
 //! - a row's open questions are those of its session on the Desk now; a main drawn folded shows its helpers'
 //!   with its own ([`FoldView`]);
 //! - a helper has no link of its own (its main's says it for both); what a helper's session has not picked up is
 //!   told once, on its main.
 
-use super::board::{key_of, Board, ALL_DESKS, DEFAULT_DESK};
+use super::board::{key_of, Board, DEFAULT_TEAM};
 use super::links::plain;
 use super::words::{badge_words, hand_words, link_words, local, next_midnight, say, unheard_words, LinkSubject};
-use super::{CapView, DeskTab, FoldView, HandView, HeadingView, LastSaidView, LinkWords, SessionRowView, SidebarView, Text};
+use super::{CapView, TeamTab, FoldView, HandView, LastSaidView, LinkWords, SessionRowView, SidebarView, Text};
 use crate::model::Model;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -183,18 +183,18 @@ pub fn hand_of(b: &Board, agent: usize) -> Option<HandView> {
     Some(hand)
 }
 
-fn desk_name(name: &str) -> Text {
+fn team_name(name: &str) -> Text {
     if name.trim().is_empty() || name == "Personal" {
-        say("desk.personal", "Personal", &[])
+        say("team.personal", "Personal", &[])
     } else {
-        say("desk.name", name, &[])
+        say("team.name", name, &[])
     }
 }
 
-/// The units of the desk in view: one per session that is not archived and stands on it, in the list's order.
+/// The units of the team in view: one per session that is not archived and stands on it, in the list's order.
 pub(super) fn units_of(b: &Board) -> Vec<Unit> {
     // ---- the units: one per session that stands here ----
-    let here: Vec<usize> = (0..b.agents.len()).filter(|i| !b.agents[*i].row.archived && b.agents[*i].on_desk).collect();
+    let here: Vec<usize> = (0..b.agents.len()).filter(|i| !b.agents[*i].row.archived && b.agents[*i].on_team).collect();
     let fresh_of = |i: usize| b.fresh().filter(move |f| f.agent == Some(i));
     let mut units: Vec<Unit> = here
         .iter()
@@ -239,82 +239,52 @@ pub(super) fn units_of(b: &Board) -> Vec<Unit> {
 pub fn sidebar(b: &Board) -> SidebarView {
     let units = units_of(b);
 
-    // ---- the desks ----
-    let desks: Vec<(String, String)> = if b.desks.is_empty() {
-        vec![(DEFAULT_DESK.to_string(), "Personal".to_string())]
+    // ---- the teams ----
+    let teams: Vec<(String, String)> = if b.teams.is_empty() {
+        vec![(DEFAULT_TEAM.to_string(), "Personal".to_string())]
     } else {
-        b.desks.iter().map(|d| (d.id.clone(), d.name.clone())).collect()
+        b.teams.iter().map(|d| (d.id.clone(), d.name.clone())).collect()
     };
-    let first = desks[0].0.clone();
-    let waits_on = |desk: &str| {
-        let mine = b.all_fresh.iter().filter(|f| b.desk_of(f.agent).unwrap_or(first.as_str()) == desk);
+    let first = teams[0].0.clone();
+    let waits_on = |team: &str| {
+        let mine = b.all_fresh.iter().filter(|f| b.team_of(f.agent).unwrap_or(first.as_str()) == team);
         (mine.clone().count() as u32, mine.clone().any(|f| f.knocks))
     };
-    let in_view = b.desk.clone().unwrap_or_else(|| first.clone());
-    let tabs: Vec<DeskTab> = desks
+    let in_view = b.team.clone().unwrap_or_else(|| first.clone());
+    let tabs: Vec<TeamTab> = teams
         .iter()
         .map(|(id, name)| {
             let (waiting, knocks) = waits_on(id);
-            DeskTab {
+            TeamTab {
                 id: id.clone(),
-                name: desk_name(name),
+                name: team_name(name),
                 waiting,
-                selected: !b.all && *id == in_view,
+                selected: *id == in_view,
                 knocks,
             }
         })
         .collect();
-    // The tab's number: the open questions of the desk in view, never red (the owner, 13 October 2026, card
-    // c628976b: "Nur der Desk im Blick"; the web counted every desk and showed red on a knock). What waits on the
-    // other desks stands in the menu, desk by desk.
+    // The tab's number: the open questions of the team in view, never red (the owner, 13 October 2026, card
+    // c628976b: "Nur der Desk im Blick"; the web counted every team and showed red on a knock). What waits on the
+    // other teams stands in the menu, team by team.
     let badge = b.fresh().count() as u32;
-    let everywhere = b.all_fresh.len() as u32;
-    let knocks = b.all_fresh.iter().any(|f| f.knocks);
-    let all = (desks.len() > 1).then(|| DeskTab {
-        id: ALL_DESKS.into(),
-        name: say("desk.all", "All Desks", &[]),
-        waiting: everywhere,
-        selected: b.all,
-        knocks,
-    });
-    let place = if b.all {
-        say("desk.all_place", "All desks", &[])
-    } else {
-        desk_name(desks.iter().find(|(id, _)| *id == in_view).map(|(_, n)| n.as_str()).unwrap_or(""))
-    };
+    let place = team_name(teams.iter().find(|(id, _)| *id == in_view).map(|(_, n)| n.as_str()).unwrap_or(""));
 
     // ---- the rows, in drawing order ----
     let live = |u: &Unit| u.online || u.subs.iter().any(|s| units[*s].online);
     let top: Vec<usize> = (0..units.len()).filter(|u| units[*u].parent.is_none()).collect();
-    // (the parts: on All desks one per desk, under its name; else the desk in view, with no line above it)
-    let parts: Vec<(Option<&DeskTab>, Vec<usize>)> = if b.all {
-        tabs.iter()
-            .map(|t| (Some(t), top.iter().copied().filter(|u| b.agents[units[*u].agent].desk.as_deref() == Some(t.id.as_str())).collect::<Vec<_>>()))
-            .filter(|(_, mine)| !mine.is_empty())
-            .collect()
-    } else {
-        vec![(None, top.clone())]
-    };
     let asked = asked_last(b);
     let mut rows: Vec<SessionRowView> = Vec::new();
-    for (desk, mine) in parts {
-        let on: Vec<usize> = mine.iter().copied().filter(|u| live(&units[*u])).collect();
-        let off: Vec<usize> = mine.iter().copied().filter(|u| !live(&units[*u])).collect();
-        let mut heading = desk.map(|t| HeadingView {
-            kind: "desk".into(),
-            text: t.name.clone(),
-            desk_id: Some(t.id.clone()),
-            waiting: t.waiting,
-        });
-        // (one rule on a desk and on All desks, as the web's All desks drew it: the connected rows first, then those
-        //  that are away, with no line between them; a row that is away says so itself, greyed, with its cap)
-        for (away, list) in [(false, on), (true, off)] {
-            for u in list {
-                let group = format!("{}:{}", b.agents[units[u].agent].desk.as_deref().unwrap_or(""), if away { "off" } else { "on" });
-                rows.push(row(b, &units, u, away, group, heading.take(), &asked));
-                for s in units[u].subs.clone() {
-                    rows.push(row(b, &units, s, away, String::new(), None, &asked));
-                }
+    let on: Vec<usize> = top.iter().copied().filter(|u| live(&units[*u])).collect();
+    let off: Vec<usize> = top.iter().copied().filter(|u| !live(&units[*u])).collect();
+    // (the connected rows first, then those that are away, with no line between them; a row that is away says so
+    //  itself, greyed, with its cap)
+    for (away, list) in [(false, on), (true, off)] {
+        for u in list {
+            let group = format!("{}:{}", b.agents[units[u].agent].team.as_deref().unwrap_or(""), if away { "off" } else { "on" });
+            rows.push(row(b, &units, u, away, group, &asked));
+            for s in units[u].subs.clone() {
+                rows.push(row(b, &units, s, away, String::new(), &asked));
             }
         }
     }
@@ -324,11 +294,10 @@ pub fn sidebar(b: &Board) -> SidebarView {
         b.wake_at(Some(next_midnight(b.now, b.lens.utc_offset_min)));
     }
     SidebarView {
-        desks: tabs,
+        teams: tabs,
         sessions: rows,
         badge,
-        desk: in_view,
-        all,
+        team: in_view,
         place,
         waiting: b.fresh().count() as u32,
         knocking: b.fresh().filter(|f| f.knocks).count() as u32,
@@ -338,7 +307,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
     }
 }
 
-fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, heading: Option<HeadingView>, asked: &HashMap<usize, (u64, String)>) -> SessionRowView {
+fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, asked: &HashMap<usize, (u64, String)>) -> SessionRowView {
     let unit = &units[u];
     let a = &b.agents[unit.agent];
     let key = |x: usize| b.agents[units[x].agent].row.key.clone();
@@ -403,7 +372,7 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, heading: 
         depth: u32::from(unit.parent.is_some()),
         slug: a.row.id.clone(),
         mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
-        desk_id: a.desk.clone().unwrap_or_else(|| DEFAULT_DESK.into()),
+        team_id: a.team.clone().unwrap_or_else(|| DEFAULT_TEAM.into()),
         online: unit.online,
         working: unit.working,
         main: a.row.main || !unit.subs.is_empty(),
@@ -417,7 +386,6 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, heading: 
         cap,
         hushed: main.and_then(|m| m.link.as_ref()).is_some_and(|l| matches!(l.state.as_str(), "asleep" | "cut" | "gone")),
         away,
-        heading,
         group,
         folded,
         unfolded,
@@ -434,15 +402,15 @@ mod tests {
     use crate::views::Lens;
     use serde_json::{json, Value};
 
-    fn view_at(r: &Room, desk: Option<&str>, now: u64) -> (SidebarView, Option<u64>) {
+    fn view_at(r: &Room, team: Option<&str>, now: u64) -> (SidebarView, Option<u64>) {
         let m = r.model(now);
-        let lens = Lens { desk: desk.map(String::from), ..Default::default() };
+        let lens = Lens { team: team.map(String::from), ..Default::default() };
         let b = Board::new(&m, &lens, now);
         let v = sidebar(&b);
         (v, b.wake())
     }
-    fn view(r: &Room, desk: Option<&str>) -> SidebarView {
-        view_at(r, desk, NOW).0
+    fn view(r: &Room, team: Option<&str>) -> SidebarView {
+        view_at(r, team, NOW).0
     }
 
     fn slugs(v: &SidebarView) -> Vec<String> {
@@ -451,7 +419,7 @@ mod tests {
     fn row<'v>(v: &'v SidebarView, slug: &str) -> &'v SessionRowView {
         v.sessions.iter().find(|r| r.slug == slug).unwrap_or_else(|| panic!("no row {slug}"))
     }
-    fn two_desks() -> Value {
+    fn two_teams() -> Value {
         json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } })
     }
 
@@ -485,8 +453,6 @@ mod tests {
         r.session("e-off", None, false);
         let v = view(&r, None);
         assert_eq!(slugs(&v), ["b-on", "c-off", "  d-help", "a-off", "e-off"]);
-        // (no line over the rows that are away: one rule on a desk and on All desks)
-        assert!(v.sessions.iter().all(|x| x.heading.is_none()));
         assert_eq!(v.sessions.iter().map(|x| x.away).collect::<Vec<_>>(), [false, false, false, true, true]);
         assert_eq!(row(&v, "a-off").group, ":off");
         // (gone since 13:27, said under its name)
@@ -496,52 +462,48 @@ mod tests {
     }
 
     #[test]
-    fn all_desks_shows_desk_by_desk_under_each_desks_name() {
-        let mut r = Room { desks: two_desks(), ..Default::default() };
-        r.desks["empty"] = json!({ "name": "Empty", "created_at": 3 });
+    fn one_team_at_a_time_and_the_switch_counts_what_waits_on_each() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        r.teams["empty"] = json!({ "name": "Empty", "created_at": 3 });
         r.session("a-work", None, false);
         r.session("b-lab", None, true);
         r.session("c-work", None, true);
         r.session("d-lab", None, false);
-        r.on_desk("b-lab", "lab");
-        r.on_desk("d-lab", "lab");
-        // (a desk that is gone counts as the first)
-        r.on_desk("c-work", "nowhere");
+        r.on_team("b-lab", "lab");
+        r.on_team("d-lab", "lab");
+        // (a team that is gone counts as the first)
+        r.on_team("c-work", "nowhere");
         r.card("q1", "d-lab", "decision", "normal");
-        let v = view(&r, Some("all"));
-        assert_eq!(slugs(&v), ["c-work", "a-work", "b-lab", "d-lab"]);
-        let heads: Vec<_> = v.sessions.iter().map(|x| x.heading.as_ref().map(|h| (h.kind.as_str(), h.text.en.as_str(), h.desk_id.as_deref(), h.waiting))).collect();
-        assert_eq!(heads, [Some(("desk", "Work", Some("main"), 0)), None, Some(("desk", "Lab", Some("lab"), 1)), None]);
-        assert_eq!((v.desk.as_str(), v.place.en.as_str()), ("all", "All desks"));
-        assert_eq!(v.all.as_ref().map(|a| (a.selected, a.waiting, a.name.en.as_str())), Some((true, 1, "All Desks")));
-        assert!(v.desks.iter().all(|d| !d.selected));
+        let v = view(&r, Some("lab"));
+        assert_eq!(slugs(&v), ["b-lab", "d-lab"]);
+        assert_eq!((v.team.as_str(), v.place.en.as_str(), v.badge), ("lab", "Lab", 1));
         assert_eq!(row(&v, "d-lab").group, "lab:off");
 
-        // one desk in view: only its sessions; the tab counts this desk alone, the menu says what waits on the other
+        // one team in view: only its sessions; the tab counts this team alone, the menu says what waits on the other
         let v = view(&r, Some("main"));
         assert_eq!(slugs(&v), ["c-work", "a-work"]);
         assert_eq!((v.badge, v.waiting, v.place.en.as_str()), (0, 0, "Work"));
         assert_eq!(view(&r, Some("lab")).badge, 1);
-        assert_eq!(view(&r, Some("all")).badge, 1);
-        assert_eq!(v.desks.iter().map(|d| (d.id.as_str(), d.waiting, d.selected)).collect::<Vec<_>>(), [("main", 0, true), ("lab", 1, false), ("empty", 0, false)]);
-        // a desk that is not there: the first
-        assert_eq!(view(&r, Some("nowhere")).desk, "main");
-        // none chosen yet (a fresh sign-in): every desk at once, as the web opened
-        assert_eq!(view(&r, None).desk, "all");
+        // ("all" is no team any more: the first)
+        assert_eq!(view(&r, Some("all")).team, "main");
+        assert_eq!(v.teams.iter().map(|d| (d.id.as_str(), d.waiting, d.selected)).collect::<Vec<_>>(), [("main", 0, true), ("lab", 1, false), ("empty", 0, false)]);
+        // a team that is not there: the first
+        assert_eq!(view(&r, Some("nowhere")).team, "main");
+        // none chosen yet (a fresh sign-in): the first
+        assert_eq!(view(&r, None).team, "main");
     }
 
     #[test]
-    fn a_room_without_desks_has_one_personal() {
+    fn a_room_without_teams_has_one_personal() {
         let mut r = Room::default();
         r.session("a", None, true);
         let v = view(&r, Some("all"));
-        assert_eq!(v.desks.iter().map(|d| (d.id.as_str(), d.name.en.as_str(), d.name.key.as_str(), d.selected)).collect::<Vec<_>>(), [("main", "Personal", "desk.personal", true)]);
-        assert_eq!((v.all.is_none(), v.desk.as_str(), v.place.en.as_str()), (true, "main", "Personal"));
+        assert_eq!(v.teams.iter().map(|d| (d.id.as_str(), d.name.en.as_str(), d.name.key.as_str(), d.selected)).collect::<Vec<_>>(), [("main", "Personal", "team.personal", true)]);
+        assert_eq!((v.team.as_str(), v.place.en.as_str()), ("main", "Personal"));
         assert_eq!(slugs(&v), ["a"]);
-        // (All desks needs two)
-        let one = Room { desks: json!({ "main": { "name": "Solo" } }), ..Default::default() };
+        let one = Room { teams: json!({ "main": { "name": "Solo" } }), ..Default::default() };
         let v = view(&one, Some("all"));
-        assert_eq!((v.all.is_none(), v.desk.as_str(), v.place.en.as_str()), (true, "main", "Solo"));
+        assert_eq!((v.team.as_str(), v.place.en.as_str()), ("main", "Solo"));
     }
 
     #[test]
@@ -594,31 +556,33 @@ mod tests {
     }
 
     #[test]
-    fn one_crown_per_desk() {
-        let mut r = Room { desks: two_desks(), ..Default::default() };
-        for (name, desk) in [("a-work", "main"), ("b-work", "main"), ("c-lab", "lab"), ("d-lab", "lab")] {
+    fn one_crown_per_team() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        for (name, team) in [("a-work", "main"), ("b-work", "main"), ("c-lab", "lab"), ("d-lab", "lab")] {
             r.session(name, None, true);
-            r.on_desk(name, desk);
+            r.on_team(name, team);
         }
-        let crowned = |r: &Room| -> Vec<String> { view(r, Some("all")).sessions.iter().filter(|x| x.crowned).map(|x| x.slug.clone()).collect() };
-        // the room's single crown shows on the desk its session stands on
+        let crowned = |r: &Room| -> Vec<String> {
+            ["main", "lab"].iter().flat_map(|t| view(r, Some(t)).sessions.into_iter().filter(|x| x.crowned).map(|x| x.slug)).collect()
+        };
+        // the room's single crown shows on the team its session stands on
         r.crown = json!({ "agent_device_id": dev("a-work") });
         assert_eq!(crowned(&r), ["a-work"]);
-        // a desk's own crown decides on that desk
-        r.desks["lab"]["crown"] = json!({ "agent_device_id": dev("d-lab") });
+        // a team's own crown decides on that team
+        r.teams["lab"]["crown"] = json!({ "agent_device_id": dev("d-lab") });
         assert_eq!(crowned(&r), ["a-work", "d-lab"]);
-        r.desks["main"]["crown"] = json!({ "session_id": dev("b-work") });
+        r.teams["main"]["crown"] = json!({ "session_id": dev("b-work") });
         assert_eq!(crowned(&r), ["b-work", "d-lab"]);
-        // a desk whose crown was taken away has none, whatever the room's says
-        r.desks["main"]["crown"] = Value::Null;
-        r.desks["lab"] = json!({ "name": "Lab", "created_at": 2 });
+        // a team whose crown was taken away has none, whatever the room's says
+        r.teams["main"]["crown"] = Value::Null;
+        r.teams["lab"] = json!({ "name": "Lab", "created_at": 2 });
         r.crown = json!({ "agent_device_id": dev("c-lab") });
         assert_eq!(crowned(&r), ["c-lab"]);
     }
 
     #[test]
-    fn a_desks_crown_by_device_is_its_main_never_a_helper() {
-        let mut r = Room { desks: json!({ "main": { "name": "Work", "crown": { "agent_device_id": dev("b-help") } } }), ..Default::default() };
+    fn a_teams_crown_by_device_is_its_main_never_a_helper() {
+        let mut r = Room { teams: json!({ "main": { "name": "Work", "crown": { "agent_device_id": dev("b-help") } } }), ..Default::default() };
         r.session("a", None, true);
         r.session("b-help", Some("a"), true);
         assert!(view(&r, None).sessions.iter().all(|x| !x.crowned));

@@ -14,7 +14,7 @@ function board() {
   const gets = [], posts = [], sent = []
   let vm = BASE
   const t = {
-    vm: () => vm, act: a => sent.push(a), account: a => sent.push({ do: 'account', action: a }), desk: () => null, toast: x => JSON.stringify(x),
+    vm: () => vm, act: a => sent.push(a), account: a => sent.push({ do: 'account', action: a }), team: () => null, toast: x => JSON.stringify(x),
     get: (p, h) => gets.push([p, h]), post: (p, h) => posts.push([p, h]),
     page: (q, res, o) => Object.assign(res, { kind: 'page', main: String(o.main), sidebar: o.sidebar }), redirect: (res, to) => Object.assign(res, { kind: 'redirect', to }),
     done: res => { res.kind = 'none' }, sendStream: (q, res, body) => Object.assign(res, { kind: 'stream', body }),

@@ -824,7 +824,7 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 /* how far the reading of the room's past is (desk.mjs readingCount): one quiet line under the greeting */
 .desk-reading { grid-column: 1; margin: 0; font: 400 var(--t-sm) var(--font); color: var(--muted); font-variant-numeric: tabular-nums; }
 .desk-tools { grid-column: 2; grid-row: 1; flex: none; display: flex; align-items: center; gap: 10px; padding-bottom: 2px; }
-/* the desk's goals (desk.mjs deskGoals): a quiet checklist under the greeting, in the text face; empty only a faint
+/* the team's goals (desk.mjs deskGoals): a quiet checklist under the greeting, in the text face; empty only a faint
    "Goals…"; the first five lines, more behind "+N more" (.is-open: all of them); a click writes in place, the field
    the same size and face as the words, at most twelve rows high (less on a low screen), then it scrolls */
 .desk-goals { grid-column: 1; min-width: 0; margin-top: 4px; display: grid; grid-template-columns: minmax(0, max-content) auto; justify-content: start; align-items: start; column-gap: 2px; }
@@ -947,9 +947,6 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
   html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer.is-others > b { font-size: 1.05rem; }
 }
 
-/* ---- All desks: each row says its desk, quietly, at the start of its line under the title ---- */
-.inbox-row .row-desk { font-weight: 600; color: var(--fg); opacity: .7; }
-.inbox-row .row-desk::after { content: " · "; font-weight: 400; }
 
 /* ---- One bracket for a run:
    a run of two or more cards from one session is held by a pen bracket in the session's colour at the far left, outside

@@ -16,10 +16,10 @@ export interface Focus {
   screen: Screen
   /** The window (or app) is in front and visible. */
   visible: boolean
-  /** The desk in view: a desk's id, "all" for every desk at once, none when none was chosen (every desk at once where there are two or more). */
-  desk?: string
-  /** The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a desk's id or "all" for that
-   *  desk's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`. */
+  /** The team in view: a team's id; none when none was chosen, or one that is gone: the first team. */
+  team?: string
+  /** The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a team's id or "all" for that
+   *  team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`. */
   board?: string
 }
 
@@ -34,7 +34,7 @@ export type Screen =
   /** The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
    *  videos and files, "pages" the pages. */
   | { screen: 'artifacts'; kind?: string }
-  /** Settings: its list (`page` ""), or one of its pages ("agents", "desks", "devices", "account", "theme",
+  /** Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
    *  "data", "security"). */
   | { screen: 'settings'; page?: string }
 
@@ -65,8 +65,8 @@ export interface ViewModel {
   /** The gallery's filter and its words, while `Screen::Artifacts` is in view (`artifacts` then holds what the
    *  filter lets through); none else. */
   gallery?: GalleryView
-  /** Every desk's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
-   *  desks); none else. */
+  /** Every team's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
+   *  teams); none else. */
   thumbs?: ThumbView[]
   toasts?: Toast[]
 }
@@ -97,7 +97,7 @@ export type ViewPart =
   | { part: 'artifacts'; view: ArtifactView[] | null }
   /** The gallery's filter and words, whole; none when it is left. */
   | { part: 'gallery'; view: GalleryView | null }
-  /** The desks' boards small, whole; none when no page shows them. */
+  /** The teams' boards small, whole; none when no page shows them. */
   | { part: 'thumbs'; view: ThumbView[] | null }
   | { part: 'toasts'; toasts: Toast[] }
 
@@ -112,38 +112,36 @@ export type Rows<T> =
   | { rows: 'whole'; items: T[] }
   | { rows: 'edits'; edits: RowEdit<T>[] }
 
-/** The sidebar (the phone: the menu's desks, the list of chats, the tab pill's numbers): the desks, and one row per
- *  session of the desk in view, in the order they are drawn. */
+/** The sidebar (the phone: the menu's teams, the list of chats, the tab pill's numbers): the teams, and one row per
+ *  session of the team in view, in the order they are drawn. */
 export interface SidebarView {
-  /** The desks, in the menu's order. A room without desks has one: "Personal". */
-  desks: DeskTab[]
-  /** The sessions of the desk in view, one row each, in drawing order: a main, then its helpers. */
+  /** The teams, in the menu's order. A room without teams has one: "Personal". */
+  teams: TeamTab[]
+  /** The sessions of the team in view, one row each, in drawing order: a main, then its helpers. */
   sessions: SessionRowView[]
-  /** The number on the app icon and the tab: the open questions of the desk in view (no infos, nothing that is
+  /** The number on the app icon and the tab: the open questions of the team in view (no infos, nothing that is
    *  with its agent). Never drawn red. */
   badge: number
-  /** The desk in view: its id, or "all". */
-  desk: string
-  /** "All Desks", the row above the desks: there with two desks or more. */
-  all?: DeskTab
-  /** Where the person is, for the head: the desk's name, or "All desks". */
+  /** The team in view: its id. */
+  team: string
+  /** Where the person is, for the head and the team switch: the team's name. */
   place: Text
-  /** The open questions of the desk in view (its lamp is lit while there are some). */
+  /** The open questions of the team in view (its lamp is lit while there are some). */
   waiting: number
   /** How many of them knock. */
   knocking: number
-  /** How many rows of the desk in view are stopped (the red hand). */
+  /** How many rows of the team in view are stopped (the red hand). */
   stopped: number
   /** How many of them are at work. */
   working: number
-  /** How many of his answers the sessions of the desk in view have not picked up. */
+  /** How many of his answers the sessions of the team in view have not picked up. */
   unheard: number
 }
 
-export interface DeskTab {
+export interface TeamTab {
   id: string
   name: Text
-  /** The open questions of the desk's sessions. */
+  /** The open questions of the team's sessions. */
   waiting: number
   selected: boolean
   /** One of them knocks. */
@@ -168,14 +166,14 @@ export interface SessionRowView {
   slug: string
   /** What draws it: the icon the person or the agent chose ("draw:leaf"), else its slug. */
   mark: string
-  /** The desk it stands on. */
-  desk_id: string
+  /** The team it stands on. */
+  team_id: string
   online: boolean
   /** Connected and at work (a status line of it shows "working"). */
   working: boolean
   /** A main session: one that says so, or one with helpers. */
   main: boolean
-  /** The crowned session of its desk (the one a note goes to). */
+  /** The crowned session of its team (the one a note goes to). */
   crowned: boolean
   /** Its main's id, for a helper drawn under it. */
   parent?: string
@@ -193,10 +191,7 @@ export interface SessionRowView {
   hushed: boolean
   /** Not connected, and none of its helpers is: it stands under "Disconnected". */
   away: boolean
-  /** The line drawn above this row: "Disconnected" over the first row that is away, a desk's name over its first
-   *  row on All desks. */
-  heading?: HeadingView
-  /** The part of the list a main row may be dragged within (its desk, connected or not); "" for a helper. */
+  /** The part of the list a main row may be dragged within (its team, connected or not); "" for a helper. */
   group: string
   /** What its badge says to a screen reader ("Working, 2 questions open"); none without a badge. */
   says?: Text
@@ -264,16 +259,6 @@ export interface CapView {
   line?: Text
 }
 
-/** A line above a row of the sidebar. */
-export interface HeadingView {
-  /** "away" ("Disconnected") or "desk" (a desk's name, on All desks). */
-  kind: string
-  text: Text
-  /** For "desk": the desk, and its open questions. */
-  desk_id?: string
-  waiting: number
-}
-
 /** A session's link in words: whether it hears the person, and what to do when it does not. */
 export interface LinkWords {
   /** "live", "oncall", "asleep", "cut", "gone". */
@@ -296,11 +281,11 @@ export interface FixView {
   code: string
 }
 
-/** The Desk of the desk in view: its head, and the stack of what waits for the person as rows. */
+/** The Desk of the team in view: its head, and the stack of what waits for the person as rows. */
 export interface DeskView {
   /** Card and request ids, in the Desk's order: the ids of `rows`. */
   stack: string[]
-  /** Off your mind, of the desk in view (`off.rs`, from the core's `off_mind`): the cards with their agents,
+  /** Off your mind, of the team in view (`off.rs`, from the core's `off_mind`): the cards with their agents,
    *  starred ones too, the one that moved last first (the complete list's top part). */
   off_your_mind: string[]
   /** The put-off cards, the last put off first. */
@@ -318,13 +303,13 @@ export interface DeskView {
   /** What stands in the list's place when nothing is open at all ("Questions land here."). */
   empty?: Text
   /** "invite" (no session stands here yet: invite the first agent), "reading" (none yet, and the room is still
-   *  being read), "desk". */
+   *  being read), "team". */
   mode: string
   /** The one big line at the top; none for "invite". */
   hello?: Text
   /** How far the reading of the room's past is ("Reading your history: 12,400 of 27,000"), while it is read. */
   reading?: Text
-  /** The desk's goals; none on All desks. */
+  /** The team's goals; none on All teams. */
   goals?: GoalsView
   /** What waits, in the Desk's order: the questions and what is only to read. */
   rows?: DeskRowView[]
@@ -417,7 +402,7 @@ export interface OffHintView {
   /** "2 put off · 14 done". */
   says: Text
   put_off: number
-  /** Every closed card of the desk in view, counted (not only the ones named). */
+  /** Every closed card of the team in view, counted (not only the ones named). */
   closed: number
 }
 
@@ -439,7 +424,7 @@ export interface OffRowView {
   says: Text
 }
 
-/** The page Off your mind: every card off the Desk of the desk in view. What runs as live cards, the one that moved
+/** The page Off your mind: every card off the Desk of the team in view. What runs as live cards, the one that moved
  *  last first; then what is put off, the last put off first; then what is closed, the newest first. Each card in its
  *  place by time, none lifted. Kept to the search's words. */
 export interface OffListView {
@@ -488,9 +473,9 @@ export interface OffWorkView {
   says: Text
 }
 
-/** A desk's goals: a note of the person's, at most twenty lines. */
+/** A team's goals: a note of the person's, at most twenty lines. */
 export interface GoalsView {
-  desk_id: string
+  team_id: string
   /** The lines; empty when there are none (the shell shows its faint "Goals…"). */
   lines: string[]
   /** Two lines or more: one toggle folds them to the first line. Whether they are folded is this device's. */
@@ -555,11 +540,9 @@ export interface FromView {
   name: string
   /** What draws the session (`SessionRowView::mark`). */
   mark: string
-  /** Where it stands, for the line above a card's title ("Desk › Main › Helper"): its desk while there are two
+  /** Where it stands, for the line above a card's title ("Team › Main › Helper"): its team while there are two
    *  or more, its main for a helper, itself. */
   path: string[]
-  /** Its desk's name, on All desks only: the small chip before the row's words. */
-  desk?: string
 }
 
 export interface MediaView {
@@ -632,11 +615,11 @@ export interface SessionView {
   slug: string
   /** What draws it (`SessionRowView::mark`). */
   mark: string
-  desk_id: string
+  team_id: string
   main: boolean
   crowned: boolean
   online: boolean
-  /** Where it stands: its desk (while there are two or more), its main (for a helper), itself. */
+  /** Where it stands: its team (while there are two or more), its main (for a helper), itself. */
   path?: string[]
   /** The model it runs on, as the heading says it ("Opus 5.5"); "" when it named none. */
   model_label: string
@@ -868,7 +851,7 @@ export interface CardView {
   nr: Text
   /** Where it stands: "catching" (settled elsewhere, its outcome on the way), "open", "decided", "shredded", "done". */
   status: string
-  /** Who it comes from, above its title: "Desk › Main › Helper" (`FromView::path`). */
+  /** Who it comes from, above its title: "Team › Main › Helper" (`FromView::path`). */
   from?: FromView
   /** "Knock! Blocking", while it is open and knocks. */
   knock?: Text
@@ -920,7 +903,7 @@ export interface CardView {
    *  (`Lens::comments_window`, `MoreOf::Comments`); none when it shows everything there is. */
   earlier?: MoreView
   /** Once it is settled (not open, not catching up): the way on that the page offers right after the person
-   *  answered here (the shell shows it then): the next open question of the desk in view, or that there is none. */
+   *  answered here (the shell shows it then): the next open question of the team in view, or that there is none. */
   after?: AfterView
 }
 
@@ -1079,7 +1062,7 @@ export interface OptionLinkView {
   short: string
 }
 
-/** The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`). */
+/** The person's notes (the room's, the same on every team) and the one in the corner (`notes.rs`). */
 export interface NotesView {
   /** The ids of the notes that show, the last written first (the ids of `rows`). A sent note held for the toast's
    *  Undo shows nowhere. */
@@ -1094,10 +1077,6 @@ export interface NotesView {
   says: Text
   /** The crowned session it goes to; none when no session wears the crown here. */
   to?: NoteToView
-  /** All desks, and it goes to another desk's crown than the desk chosen last: the send names it. */
-  far: boolean
-  /** All desks with two crowned desks or more: the person picks one (each desk's crown, in the desks' order). */
-  choose?: NoteToView[]
   /** What the send says ("Send to Fernly"). */
   send_says?: Text
   /** In the send's place without a crown: "Give a session the crown to send" (opens Settings · Agents). */
@@ -1131,9 +1110,9 @@ export interface NoteToView {
   name: string
   /** What draws it (`SessionRowView::mark`). */
   mark: string
-  desk_id: string
-  /** Its desk's name ("Personal" for one without), for the choice on All desks. */
-  desk: string
+  team_id: string
+  /** Its team's name ("Personal" for one without). */
+  team: string
 }
 
 /** Settings: what the list's rows say, and the person's devices (`settings.rs`). What only this device knows (the
@@ -1158,8 +1137,8 @@ export interface SettingsView {
   agent_list?: AgentView[]
   /** The line under the page's title: "2 agents on 1 computer · 5 sessions"; none without an agent. */
   agents_lead?: Text
-  /** The row Desks: "3 desks"; none in a room without desks. */
-  desks?: Text
+  /** The row Teams: "3 teams"; none in a room without teams. */
+  teams?: Text
   /** The row Devices: "2 devices". */
   devices_says?: Text
   /** The room's key epoch (the version line at the list's foot). */
@@ -1167,10 +1146,10 @@ export interface SettingsView {
   /** The room's id (hex) and its hub, for the page that proves the room. */
   room?: string
   hub?: string
-  /** What each desk holds, for the confirm of its delete (its board counted once read on this device). */
-  desk_counts?: DeskCountsView[]
-  /** The desks being deleted, with how far. */
-  deleting?: DeskDeleteView[]
+  /** What each team holds, for the confirm of its delete (its board counted once read on this device). */
+  team_counts?: TeamCountsView[]
+  /** The teams being deleted, with how far. */
+  deleting?: TeamDeleteView[]
   /** Push on this device, where the platform has push. */
   push?: PushView
   /** The account's ways in, once read (`AccountAction::ReadAccount`). */
@@ -1190,9 +1169,9 @@ export interface DataRow {
   value: Text
 }
 
-/** What a desk holds: what its delete takes away. */
-export interface DeskCountsView {
-  desk_id: string
+/** What a team holds: what its delete takes away. */
+export interface TeamCountsView {
+  team_id: string
   sessions: number
   helpers: number
   archived: number
@@ -1231,9 +1210,9 @@ export interface PushView {
   busy: boolean
 }
 
-/** A desk's delete in progress: units done of the total. */
-export interface DeskDeleteView {
-  desk_id: string
+/** A team's delete in progress: units done of the total. */
+export interface TeamDeleteView {
+  team_id: string
   done: number
   total: number
 }
@@ -1294,8 +1273,8 @@ export interface AgentSessionView {
   name: Text
   /** What draws it (`SessionRowView::mark`). */
   mark: string
-  /** "Work desk". */
-  desk: Text
+  /** "Work team". */
+  team: Text
   /** Its folder on the computer; "" when unknown. */
   folder?: string
   helpers: number
@@ -1442,9 +1421,9 @@ export interface InviteView {
   newcomer?: string
 }
 
-/** A desk's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt. */
+/** A team's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt. */
 export interface ThumbView {
-  desk_id: string
+  team_id: string
   /** `desk/<32 hex>`. */
   board_id: string
   /** "loading" while it is read on this device, else as `BoardView.state`. */

@@ -1,7 +1,7 @@
 // ShareInbox: the encrypted inbox the Share Extension (TrommiApp/Sources/TrommiShare) and the app share through their App
 // Group container. The extension never holds a room, a device key or the board: it reads a small sealed snapshot of the
-// desks and their crowned sessions (written by the app on each change of the board), and writes what was shared as
-// sealed files plus one sealed manifest per share. The app keeps them in the note, or sends them to the chosen desk's
+// teams and their crowned sessions (written by the app on each change of the board), and writes what was shared as
+// sealed files plus one sealed manifest per share. The app keeps them in the note, or sends them to the chosen team's
 // crowned session through the room's normal encrypted path, on its next start to the front, and at once while it runs
 // (a Darwin notification).
 //
@@ -16,7 +16,7 @@ import Crypto
 public enum ShareAction: String, Codable, Sendable {
   /** Into the note (the default): nothing is sent. */
   case note
-  /** To a desk's crowned session, as a message. */
+  /** To a team's crowned session, as a message. */
   case send
 }
 
@@ -47,15 +47,15 @@ public struct ShareRequest: Codable, Equatable, Identifiable, Sendable {
   /** The session (board id) for .send. */
   public var to: String?
   public var toName: String?
-  /** The desk whose crown it goes to (.send). */
-  public var desk: String?
+  /** The team whose crown it goes to (.send). */
+  public var team: String?
   /** The room of the snapshot the session was picked from. */
   public var room: String?
   public var text: String
   public var items: [ShareItem]
   public init(id: String = ShareInbox.newId(), created: UInt64 = ShareInbox.nowMs(), action: ShareAction, to: String? = nil, toName: String? = nil,
-              desk: String? = nil, room: String? = nil, text: String = "", items: [ShareItem] = []) {
-    self.id = id; self.created = created; self.action = action; self.to = to; self.toName = toName; self.desk = desk; self.room = room; self.text = text; self.items = items
+              team: String? = nil, room: String? = nil, text: String = "", items: [ShareItem] = []) {
+    self.id = id; self.created = created; self.action = action; self.to = to; self.toName = toName; self.team = team; self.room = room; self.text = text; self.items = items
   }
   /** The words of the share for a note or a message: the typed text, then every link and text item, one per line. */
   public var words: String {
@@ -64,42 +64,42 @@ public struct ShareRequest: Codable, Equatable, Identifiable, Sendable {
 }
 
 /**
- * What the extension may show: each desk with its crowned session (the note's recipients), by name, with their
+ * What the extension may show: each team with its crowned session (the note's recipients), by name, with their
  * drawings as small template pictures the app rendered. No keys, no cards, no messages, no other sessions.
  */
 public struct ShareSnapshot: Codable, Equatable, Sendable {
-  /** A desk's crowned session: who gets the note on that desk. */
+  /** A team's crowned session: who gets the note on that team. */
   public struct Crown: Codable, Equatable, Sendable {
     public var id: String; public var name: String; public var hue: Int
     /** The session's drawing, a PNG (alpha only matters: shown as a template in its hue). */
     public var mark: Data?
     public init(id: String, name: String, hue: Int = 162, mark: Data? = nil) { self.id = id; self.name = name; self.hue = hue; self.mark = mark }
   }
-  public struct Desk: Codable, Equatable, Sendable, Identifiable {
+  public struct Team: Codable, Equatable, Sendable, Identifiable {
     public var id: String; public var name: String
     public var crown: Crown?
     public init(id: String, name: String, crown: Crown?) { self.id = id; self.name = name; self.crown = crown }
   }
-  public var v: Int = 2
+  public var v: Int = 3
   public var room: String
   public var written: UInt64
-  /** Desks in their order. */
-  public var desks: [Desk]
-  /** The desk drawing (the web's sketch:desk), a PNG shown as a template. */
-  public var deskMark: Data?
-  /** The desk whose crown the app's note went to last. */
-  public var lastDesk: String?
-  public init(room: String, written: UInt64 = ShareInbox.nowMs(), desks: [Desk], deskMark: Data? = nil, lastDesk: String? = nil) {
-    self.room = room; self.written = written; self.desks = desks; self.deskMark = deskMark; self.lastDesk = lastDesk
+  /** Teams in their order. */
+  public var teams: [Team]
+  /** The team drawing (the web's sketch:desk), a PNG shown as a template. */
+  public var teamMark: Data?
+  /** The team whose crown the app's note went to last. */
+  public var lastTeam: String?
+  public init(room: String, written: UInt64 = ShareInbox.nowMs(), teams: [Team], teamMark: Data? = nil, lastTeam: String? = nil) {
+    self.room = room; self.written = written; self.teams = teams; self.teamMark = teamMark; self.lastTeam = lastTeam
   }
 
-  /** The desks that have a crowned session: the choices of the "To" chip, in the desks' order. */
-  public var crowned: [Desk] { desks.filter { $0.crown != nil } }
+  /** The teams that have a crowned session: the choices of the "To" chip, in the teams' order. */
+  public var crowned: [Team] { teams.filter { $0.crown != nil } }
 
-  /** The desk to preselect: the one picked last in the share sheet, else the app's last, else the first crowned. */
-  public func preselect(last: String?) -> Desk? {
+  /** The team to preselect: the one picked last in the share sheet, else the app's last, else the first crowned. */
+  public func preselect(last: String?) -> Team? {
     let c = crowned
-    return c.first { $0.id == last } ?? c.first { $0.id == lastDesk } ?? c.first
+    return c.first { $0.id == last } ?? c.first { $0.id == lastTeam } ?? c.first
   }
 }
 

@@ -425,9 +425,9 @@ export class ClientModel extends FileObject {
   seatFounded(agent) { return this[CALL]('seat_founded', [agent]) }
   seatFailed(agent, nowMs) { return this[CALL]('seat_failed', [agent, nowMs]) }
   setSeatGrace(ms) { return this[CALL]('set_seat_grace', [ms]) }
-  desksDeleting() { return this[CALL]('desks_deleting', []) }
-  deskContents(deskId, board) { return this[CALL]('desk_contents', [deskId, board]) }
-  deskDeletePlan(deskId, known, by, nowMs) { return this[CALL]('desk_delete_plan', [deskId, known, by, nowMs]) }
+  teamsDeleting() { return this[CALL]('teams_deleting', []) }
+  teamContents(teamId, board) { return this[CALL]('team_contents', [teamId, board]) }
+  teamDeletePlan(teamId, known, by, nowMs) { return this[CALL]('team_delete_plan', [teamId, known, by, nowMs]) }
   selfJoinAsks(answered, pending) { return this[CALL]('self_join_asks', [answered, pending]) }
   selfJoinVerdict(sessionId, nonce, requestHash) { return this[CALL]('self_join_verdict', [sessionId, nonce, requestHash]) }
   selfJoinRetire() { return this[CALL]('self_join_retire', []) }

@@ -41,7 +41,7 @@ final class ShareInboxTests: XCTestCase {
     let f = try inbox.addPayload(Data([1, 2, 3]), request: r.id, index: 0, name: "a.bin")
     r.items = [ShareItem(kind: .file, file: f, name: "a.bin", type: "application/octet-stream", size: 3)]
     try inbox.commit(r)
-    try inbox.writeSnapshot(ShareSnapshot(room: "r", desks: []))
+    try inbox.writeSnapshot(ShareSnapshot(room: "r", teams: []))
     inbox.wipe()
     XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("Trommi Share").path))
     XCTAssertTrue(inbox.pending().isEmpty)
@@ -52,11 +52,11 @@ final class ShareInboxTests: XCTestCase {
     let key = SymmetricKey(size: .bits256)
     let inbox = ShareInbox(container: dir, key: key)
     let secret = "a very secret sentence"
-    var r = ShareRequest(action: .send, to: "abc", toName: "Claude", desk: "d", text: secret)
+    var r = ShareRequest(action: .send, to: "abc", toName: "Claude", team: "d", text: secret)
     let f = try inbox.addPayload(Data(secret.utf8), request: r.id, index: 0, name: "notes.txt")
     r.items = [ShareItem(kind: .file, file: f, name: "notes.txt", type: "text/plain")]
     try inbox.commit(r)
-    try inbox.writeSnapshot(ShareSnapshot(room: "r", desks: [.init(id: "d", name: "Desk", crown: .init(id: "abc", name: secret))]))
+    try inbox.writeSnapshot(ShareSnapshot(room: "r", teams: [.init(id: "d", name: "Team", crown: .init(id: "abc", name: secret))]))
     let e = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)!
     var files = 0
     for case let u as URL in e where !u.hasDirectoryPath {
@@ -118,24 +118,24 @@ final class ShareInboxTests: XCTestCase {
 
   func testSnapshotCrowns() throws {
     let mark = Data([0x89, 0x50, 0x4e, 0x47])
-    let s = ShareSnapshot(room: "r", desks: [.init(id: "main", name: "Main", crown: .init(id: "b", name: "B", hue: 40, mark: mark)),
+    let s = ShareSnapshot(room: "r", teams: [.init(id: "main", name: "Main", crown: .init(id: "b", name: "B", hue: 40, mark: mark)),
                                              .init(id: "w", name: "Work", crown: nil),
                                              .init(id: "x", name: "Ops", crown: .init(id: "c", name: "C"))],
-                          deskMark: mark, lastDesk: "x")
+                          teamMark: mark, lastTeam: "x")
     let inbox = ShareInbox(container: dir, key: SymmetricKey(size: .bits256))
     try inbox.writeSnapshot(s)
     let got = try XCTUnwrap(inbox.readSnapshot())
     XCTAssertEqual(got, s)
-    XCTAssertEqual(got.crowned.map { $0.id }, ["main", "x"], "a desk without a crown is no choice")
-    XCTAssertEqual(got.preselect(last: nil)?.id, "x", "the app's last desk")
+    XCTAssertEqual(got.crowned.map { $0.id }, ["main", "x"], "a team without a crown is no choice")
+    XCTAssertEqual(got.preselect(last: nil)?.id, "x", "the app's last team")
     XCTAssertEqual(got.preselect(last: "main")?.id, "main", "the one picked last in the sheet wins")
-    XCTAssertEqual(got.preselect(last: "w")?.id, "x", "a desk without a crown is skipped")
-    XCTAssertNil(ShareSnapshot(room: "r", desks: [.init(id: "w", name: "Work", crown: nil)]).preselect(last: nil))
+    XCTAssertEqual(got.preselect(last: "w")?.id, "x", "a team without a crown is skipped")
+    XCTAssertNil(ShareSnapshot(room: "r", teams: [.init(id: "w", name: "Work", crown: nil)]).preselect(last: nil))
   }
 
   func testWaiting() throws {
     let inbox = ShareInbox(container: dir, key: SymmetricKey(size: .bits256))
-    let r = ShareRequest(action: .send, to: "b", desk: "main")
+    let r = ShareRequest(action: .send, to: "b", team: "main")
     XCTAssertFalse(inbox.isWaiting(r.id))
     try inbox.commit(r)
     XCTAssertTrue(inbox.isWaiting(r.id))

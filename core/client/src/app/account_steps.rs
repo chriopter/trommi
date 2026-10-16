@@ -25,8 +25,8 @@ pub(super) enum Step {
     Quiet,
     /// A request of push (`app::push`).
     Push(super::push::Ask, Expect),
-    /// A file of a desk being deleted (`app::desks`).
-    DeskFile { desk: String, file: String, expect: Expect },
+    /// A file of a team being deleted (`app::teams`).
+    TeamFile { team: String, file: String, expect: Expect },
 }
 
 #[derive(Default)]
@@ -239,13 +239,13 @@ impl App {
                 let answer = answer(&expect);
                 self.push_answered(now_ms, ask, answer, out);
             }
-            Step::DeskFile { desk, file, expect } => {
+            Step::TeamFile { team, file, expect } => {
                 let gone = match answer(&expect) {
                     Ok(_) => true,
                     Err(Failure::Refused { code: Some(code), .. }) => code == "not-found",
                     Err(_) => false,
                 };
-                self.desk_file_gone(&desk, file, gone);
+                self.team_file_gone(&team, file, gone);
             }
             Step::Change(ask, expect) => {
                 let answer = answer(&expect);

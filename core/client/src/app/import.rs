@@ -21,7 +21,7 @@ impl App {
         let room = crate::engine::feed::hex(engine.room().as_bytes());
         for id in self.imports.keys().cloned().collect::<Vec<_>>() {
             let Some(mut import) = self.imports.remove(&id) else { continue };
-            let Action::ImportShare { room: from, desk, to, send, text, files, .. } = &import.action else { continue };
+            let Action::ImportShare { room: from, team, to, send, text, files, .. } = &import.action else { continue };
             // A share made for a different account must never upload or send anything here.
             if from.as_ref().is_some_and(|r| r != &room) {
                 out.push(Effect::ShareInbox { id, consumed: true });
@@ -47,9 +47,9 @@ impl App {
                 continue;
             }
             let recipient = if *send {
-                let lens = Lens { desk: desk.clone(), ..Default::default() };
+                let lens = Lens { team: team.clone(), ..Default::default() };
                 let board = Board::new(&self.board.model, &lens, now);
-                let crown = crate::views::notes::crown_on(&board, desk.as_deref().filter(|d| !d.is_empty()));
+                let crown = crate::views::notes::crown_on(&board, team.as_deref().filter(|d| !d.is_empty()));
                 crown.map(|a| a.row.key.clone()).or_else(|| to.as_ref().filter(|to| board.agents.iter().any(|a| &a.row.key == *to && !a.row.archived && !a.row.removed)).cloned())
             } else { None };
             let mut accepted = false;

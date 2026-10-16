@@ -59,7 +59,7 @@ enum NativeDemo {
     switch parts.first {
     case "card" where parts.count > 1: shell.focus(.card(cardId: parts[1]))
     case "chat" where parts.count > 1: shell.focus(.session(sessionId: parts[1]))
-    case "scribble-board": shell.focus(.scribble(boardId: shell.view.sidebar.desk))
+    case "scribble-board": shell.focus(.scribble(boardId: shell.view.sidebar.team))
     case "settings": shell.focus(.settings(page: SettingsScreen.page(of: parts.dropFirst().first)))
     case "stacks": shell.focus(.off(query: ""))
     case "artifacts": shell.focus(.artifacts(kind: URLComponents(string: path)?.queryItems?.first { $0.name == "kind" }?.value ?? ""))

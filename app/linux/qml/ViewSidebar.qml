@@ -3,8 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "pen.mjs" as Pen
 
-// The sidebar, drawn from the app core's view model alone (ViewModel.sidebar, core/client/src/views): where the
-// person is, then one row per session in the order given, each with the line above it that the core names, its
+// The sidebar, drawn from the app core's view model alone (ViewModel.sidebar, core/client/src/views): the team in
+// view with a dropdown of the teams, then one row per session of that team in the order given, each with its
 // drawing, its name, the small line under it, and its badge. Nothing here is counted, ordered or worded: the only
 // state of this file's own is which mains the person unfolded.
 Rectangle {
@@ -15,6 +15,8 @@ Rectangle {
     signal theme_toggled()
     /** Another page: an `Event::Focus` screen (the Desk, a session). */
     signal go(var screen)
+    /** A team chosen in the dropdown (`TeamTab.id`): the window sends it as `Focus.team`. */
+    signal team_chosen(string id)
     color: theme.bg
 
     /** The mains the person unfolded here (their helpers show as rows of their own). */
@@ -37,23 +39,83 @@ Rectangle {
         return s + '</svg>'
     }
 
-    // ---- where the person is ----
+    // ---- the team in view: its name, and a dropdown of the teams, each with what waits there ----
     RowLayout {
         id: head
         anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 18; rightMargin: 24; topMargin: 15 }
         height: 40
         spacing: 12
-        PenMark { Layout.preferredWidth: 34; Layout.preferredHeight: 34; svg: Pen.sketchSvg("desk"); ink: theme.fg; lineWidth: 1.7 }
-        Label {
-            text: root.sidebar.place ? root.sidebar.place.en : ""
-            font.family: theme.display; font.pixelSize: 23; font.weight: Font.ExtraBold; font.letterSpacing: -0.4
-            color: theme.fg
-            elide: Text.ElideRight
-            Layout.fillWidth: true
+        // the drawing opens the Desk
+        PenMark {
+            Layout.preferredWidth: 34; Layout.preferredHeight: 34; svg: Pen.sketchSvg("desk"); ink: theme.fg; lineWidth: 1.7
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.go({ screen: "desk" }) }
         }
-        PenMark { Layout.preferredWidth: 14; Layout.preferredHeight: 14; svg: Pen.sketchSvg("unfold"); ink: theme.muted; lineWidth: 2 }
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Accessible.role: Accessible.ComboBox
+            Accessible.name: face.text
+            RowLayout {
+                anchors.fill: parent
+                spacing: 8
+                Label {
+                    id: face
+                    text: root.sidebar.place ? root.sidebar.place.en : ""
+                    font.family: theme.display; font.pixelSize: 23; font.weight: Font.ExtraBold; font.letterSpacing: -0.4
+                    color: theme.fg
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                PenMark { Layout.preferredWidth: 14; Layout.preferredHeight: 14; svg: Pen.sketchSvg("unfold"); ink: theme.muted; lineWidth: 2 }
+            }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: teams.open() }
+        }
     }
-    MouseArea { anchors.fill: head; cursorShape: Qt.PointingHandCursor; onClicked: root.go({ screen: "desk" }) }
+    Popup {
+        id: teams
+        x: head.x
+        y: head.y + head.height + 4
+        width: head.width
+        padding: 6
+        background: Rectangle { color: theme.surface; radius: 12; border.width: 1; border.color: theme.lineStrong }
+        contentItem: Column {
+            spacing: 2
+            Repeater {
+                model: root.sidebar.teams || []
+                delegate: Rectangle {
+                    id: entry
+                    required property var modelData
+                    width: teams.availableWidth
+                    height: 36
+                    radius: 8
+                    color: modelData.selected || hover.hovered ? theme.sunken : "transparent"
+                    HoverHandler { id: hover }
+                    RowLayout {
+                        anchors { fill: parent; leftMargin: 10; rightMargin: 10 }
+                        spacing: 8
+                        Label {
+                            text: entry.modelData.name ? entry.modelData.name.en : ""
+                            color: theme.fg; font.pixelSize: 15
+                            font.weight: entry.modelData.selected ? Font.Bold : Font.Normal
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                        Label {
+                            visible: entry.modelData.waiting > 0
+                            text: entry.modelData.waiting
+                            color: entry.modelData.knocks ? theme.urgHigh : theme.muted
+                            font.pixelSize: 12; font.weight: Font.Bold
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { teams.close(); root.team_chosen(entry.modelData.id) }
+                    }
+                }
+            }
+        }
+    }
 
     ListView {
         id: list
@@ -73,31 +135,6 @@ Rectangle {
             readonly property real hue: root.hueOf(s)
             readonly property var edges: isFolded ? (s.subs || []).slice(0, 6) : []
             width: list.width - 2
-
-            // the line above the row: "Disconnected", or a desk's name with what waits there
-            Item {
-                visible: !!slot.s.heading
-                width: parent.width
-                height: visible ? (slot.index === 0 ? 32 : 52) : 0
-                RowLayout {
-                    anchors { left: parent.left; right: parent.right; bottom: parent.bottom; leftMargin: 6; rightMargin: 6; bottomMargin: 14 }
-                    spacing: 6
-                    PenMark {
-                        visible: !!slot.s.heading && slot.s.heading.kind === "desk"
-                        Layout.preferredWidth: 18; Layout.preferredHeight: 18; svg: Pen.sketchSvg("desk"); ink: theme.muted; lineWidth: 1.7
-                    }
-                    Label { text: slot.s.heading ? slot.s.heading.text.en : ""; color: theme.muted; font.pixelSize: 13; font.weight: Font.DemiBold }
-                    PenMark {
-                        Layout.fillWidth: true; Layout.preferredHeight: 6; Layout.leftMargin: 4; Layout.rightMargin: 4
-                        svg: '<svg viewBox="0 0 200 6"><path d="M1 3.4 Q40 2.2 90 3.1 T199 2.6"/></svg>'; ink: theme.lineStrong; lineWidth: 1.6; turned: false
-                    }
-                    Label {
-                        visible: !!slot.s.heading && slot.s.heading.waiting > 0
-                        text: slot.s.heading ? slot.s.heading.waiting : ""
-                        color: theme.urgHigh; font.pixelSize: 12; font.weight: Font.Bold
-                    }
-                }
-            }
 
             Item {
                 id: card

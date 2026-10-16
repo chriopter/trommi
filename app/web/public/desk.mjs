@@ -12,16 +12,16 @@ function deskHead(d, base) {
   return html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="${d.waiting}"><h2 class="desk-hello">${words.join(' ')} <em>${last}</em></h2>${d.reading ? html`<p class="desk-reading" role="status">${d.reading.en}</p>` : ''}${deskGoals(d.goals)}${d.blitz ? html`<div class="desk-tools" id="desk-tools">${duckAll(d, base)}${nextPlease(d, base)}</div>` : ''}</header>`
 }
 
-/** The desk's goals (GoalsView): a checklist of his own under the greeting; a click on the words writes in place
+/** The team's goals (GoalsView): a checklist of his own under the greeting; a click on the words writes in place
  *  (controller "goals": Action::SetGoal). One toggle folds them to the first line (Action::FoldGoals: GoalsView.folded);
- *  folded is this device's: the desks are kept in localStorage and sent to the core again at the start. None on All desks. */
+ *  folded is this device's: the teams are kept in localStorage and sent to the core again at the start. */
 const GOALS_LINES = 20, GOALS_LINE_MAX = 200
 const GOALS_FOLDED = 'trommi-goals-folded'
 const goalsFolded = () => { try { const v = JSON.parse(localStorage.getItem(GOALS_FOLDED) ?? '[]'); return Array.isArray(v) ? v.map(String) : [] } catch { return [] } }
 function deskGoals(g) {
   if (!g) return ''
   const folded = g.foldable && g.folded
-  return html`<div class="desk-goals${folded ? ' is-folded' : ''}" id="desk-goals" data-controller="goals" data-goals-desk-value="${g.desk_id}" data-goals-text-value="${g.lines.join('\n')}" data-goals-show-value="${g.show_all?.en ?? ''}" data-goals-fold-value="${g.folded ? '' : g.toggle?.en ?? ''}">${goalsWords(g, folded)}</div>`
+  return html`<div class="desk-goals${folded ? ' is-folded' : ''}" id="desk-goals" data-controller="goals" data-goals-team-value="${g.team_id}" data-goals-text-value="${g.lines.join('\n')}" data-goals-show-value="${g.show_all?.en ?? ''}" data-goals-fold-value="${g.folded ? '' : g.toggle?.en ?? ''}">${goalsWords(g, folded)}</div>`
 }
 /** A line that starts with an emoji or a tick box: the sign in a column of its own, so the words of such lines start
  *  under each other and a long line wraps under its words. */
@@ -76,8 +76,9 @@ ${way('snooze', 'snooze', WORDS.later)}${way('revise', 'reverse', WORDS.revise)}
 
 // ---- the rows ----
 // Rows beyond the first WINDOW stand empty (same id, knock mark) and are filled when they come near the viewport
-// (startDeskWindow below); a row once filled stays filled, also when the page is drawn again.
-const WINDOW = 16
+// (startDeskWindow below); a row once filled stays filled, also when the page is drawn again. A browser test may set a
+// smaller window (`globalThis.TROMMI_DESK_WINDOW`) to get placeholders from one team of the demo room.
+const WINDOW = globalThis.TROMMI_DESK_WINDOW ?? 16
 const filled = new Set()
 const emptyRow = r => raw(`<article class="inbox-row" id="row-${r.id}" data-later data-id="${r.id}"${r.sign === 'knock' || r.sign === 'block' ? ' data-knock' : ''}></article>`)
 /** A run of rows of one session (DeskRowView.run on its first row: how many), as one section with an id of its own. */
@@ -174,33 +175,33 @@ controller('oym-dock', class extends Controller {
 
 
 // ---- controller "goals" ----
-// The goals under the greeting. One toggle: folded, the first line; open, all of them; kept per desk on this device.
+// The goals under the greeting. One toggle: folded, the first line; open, all of them; kept per team on this device.
 // Written in place: a click turns the words into a field of up to GOALS_LINES lines that grows with them (Enter a new
 // line, none past the last; Ctrl/⌘+Enter or a click beside keeps; Esc leaves it as it was). Leaving the field always
 // keeps: the blur event, and, because a document without focus sends none, also a press outside it, the page being
 // hidden or left, and a look at document.activeElement while the field is open. Kept: Action::SetGoal (POST /desk);
 // the core cleans the lines and its echo draws them.
 controller('goals', class extends Controller {
-  static values = { desk: String, text: String, show: String, fold: String }
+  static values = { team: String, text: String, show: String, fold: String }
   connect() {
     this.away = e => { if (this.field && e.target !== this.field) this.done(true) }
     this.left = () => { if (this.field && (document.visibilityState === 'hidden' || document.activeElement !== this.field)) this.done(true) }
   }
   disconnect() { if (this.field) this.done(true) }
-  /** The chevron: the goals fold to their first line and open again, per desk on this device. */
+  /** The chevron: the goals fold to their first line and open again, per team on this device. */
   toggle() {
     const folded = !this.element.classList.contains('is-folded')
     this.element.classList.toggle('is-folded', folded)
     const t = this.element.querySelector('.desk-goals-toggle')
     if (t) { t.setAttribute('aria-expanded', String(!folded)); t.setAttribute('aria-label', folded ? this.showValue : this.foldValue); t.title = folded ? 'Show all' : 'Fold' }
-    try { localStorage.setItem(GOALS_FOLDED, JSON.stringify([...goalsFolded().filter(d => d !== this.deskValue), ...(folded ? [this.deskValue] : [])].slice(-50))) } catch {}
-    deskAct?.({ do: 'fold_goals', desk_id: this.deskValue, folded })
+    try { localStorage.setItem(GOALS_FOLDED, JSON.stringify([...goalsFolded().filter(d => d !== this.teamValue), ...(folded ? [this.teamValue] : [])].slice(-50))) } catch {}
+    deskAct?.({ do: 'fold_goals', team_id: this.teamValue, folded })
   }
   edit() {
     if (this.field) return
     const f = this.field = document.createElement('textarea')
-    Object.assign(f, { className: 'desk-goals-field', value: this.textValue, rows: 1, maxLength: GOALS_LINES * (GOALS_LINE_MAX + 1), placeholder: `Goals for this desk: one a line, up to ${GOALS_LINES}`, spellcheck: true })
-    f.setAttribute('aria-label', `This desk’s goals, up to ${GOALS_LINES} lines`)
+    Object.assign(f, { className: 'desk-goals-field', value: this.textValue, rows: 1, maxLength: GOALS_LINES * (GOALS_LINE_MAX + 1), placeholder: `Goals for this team: one a line, up to ${GOALS_LINES}`, spellcheck: true })
+    f.setAttribute('aria-label', `This team’s goals, up to ${GOALS_LINES} lines`)
     this.was = this.textValue; this.element.classList.add('is-writing'); this.element.append(f); this.fit()
     f.addEventListener('input', () => this.fit())
     f.addEventListener('keydown', e => this.key(e))
@@ -231,7 +232,7 @@ controller('goals', class extends Controller {
     document.removeEventListener('visibilitychange', this.left)
     window.removeEventListener('pagehide', this.left)
     f.remove(); this.element.classList.remove('is-writing')
-    if (keep && f.value !== this.was) fetch('/desk', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: this.deskValue, goals: f.value }) }).catch(err => console.warn('desk goals', err))
+    if (keep && f.value !== this.was) fetch('/desk', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: this.teamValue, goals: f.value }) }).catch(err => console.warn('desk goals', err))
   }
 })
 
@@ -577,8 +578,8 @@ const SAID = { later: WORDS.later, duck: 'Left to the agents', shred: 'Shredded'
 export function register(t) {
   deskVm = t.vm
   deskAct = t.act
-  // (the desks whose goals are folded on this device: the core holds them for its run)
-  for (const desk_id of goalsFolded()) t.act({ do: 'fold_goals', desk_id, folded: true })
+  // (the teams whose goals are folded on this device: the core holds them for its run)
+  for (const team_id of goalsFolded()) t.act({ do: 'fold_goals', team_id, folded: true })
   const desk = () => t.vm().desk
   const place = () => t.vm().sidebar?.place?.en ?? 'Desk'
   t.get(/^\/$/, ({ req, res }) => {
@@ -612,11 +613,11 @@ export function register(t) {
     t.sendStream(req, res, t.toast({ head: way === 'sweep' && !used.has('duck') ? SAID.read : SAID[way], line: n === 1 ? rows.get(done[0])?.title ?? '1 card' : `${n} cards`, undo: BACK[way] ? { action: `${t.BASE}/cards/batch`, fields: { way: BACK[way], ids: done.join(',') } } : null }))
   })
 
-  // The goals written in place (controller "goals": fetch POST /desk, JSON { id, goals }). (The menu's desks act
+  // The goals written in place (controller "goals": fetch POST /desk, JSON { id, goals }). (The menu's teams act
   // themselves: sidebar.mjs.)
   t.post(/^\/desk$/, ({ res, json }) => {
     if (!json?.id || typeof json.goals !== 'string') return t.json(res, { error: 'nothing to do' }, 400)
-    t.act({ do: 'set_goal', desk_id: String(json.id), text: json.goals })
+    t.act({ do: 'set_goal', team_id: String(json.id), text: json.goals })
     t.json(res, { ok: true })
   })
 

@@ -369,7 +369,7 @@
   "has_more": false,
   "slug": "payments-service",
   "mark": "draw:lock",
-  "desk_id": "platform",
+  "team_id": "platform",
   "main": true,
   "crowned": true,
   "online": true,

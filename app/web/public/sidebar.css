@@ -101,7 +101,7 @@ html[data-rail="folded"] .join-acts { flex-direction: column; align-items: cente
 .agent-avatar { --hue: 162; flex: none; position: relative; width: 34px; height: 34px; padding: 1px; display: grid; place-items: center; border-radius: 11px; color: var(--tone-pen); }
 .agent-avatar .doodle { stroke-width: 2; }
 .agent-avatar.is-offline { filter: grayscale(1); opacity: .6; }
-/* The crowned session of a desk: a sketched crown, crooked on the corner of its mark: a gold wash,
+/* The crowned session of a team: a sketched crown, crooked on the corner of its mark: a gold wash,
    one wobbly pen line, a red stone on each point (ui.mjs crownSvg). In the joint mark of a group it sits on that
    session's scribble. */
 .crown-mark { position: absolute; left: -24%; top: -34%; width: 68%; height: auto; rotate: -15deg; overflow: visible; fill: none; stroke: none; pointer-events: none; }
@@ -215,7 +215,7 @@ button.agent-badge:active { scale: .95; }
   [data-rail="folded"] .topbar { width: 60px; height: 64px; }
   [data-rail="folded"] .topbar .desk-go { flex-direction: column; justify-content: center; gap: 5px; padding: 0; border-radius: 14px; }
   [data-rail="folded"] .topbar .desk-go > .sketch { margin: 0; width: 26px; height: 26px; }
-  [data-rail="folded"] .topbar .desk-name { display: none; }
+  [data-rail="folded"] .topbar .team-name { display: none; }
   [data-rail="folded"] #agents { padding-inline: 6px; }
   [data-rail="folded"] #agents::before { height: 80px !important; margin-inline: -6px; }
   [data-rail="folded"] .agent-row { justify-content: center; }
@@ -248,24 +248,22 @@ button.agent-badge:active { scale: .95; }
   html body .topbar .desk-go > .sketch { display: block; }
   .agent-entry { border-radius: 14px; }
   .agent-row > .agent-badge { margin-right: var(--s-2); }
-/* The menu: its desk rows and the line that makes a new desk. */
+/* The menu: its team rows and the line that makes a new team. */
 .topbar .sidedoors { width: 244px; min-width: 0; gap: 0; padding: 6px; border-radius: 14px; }
-.menu-desks { display: grid; gap: 1px; padding-bottom: var(--s-1); }
-.topbar .sidedoors .menu-desk { min-height: 32px; padding: 0 var(--s-2); font-size: var(--t-sm); }
-.menu-desk b { font-weight: 600; }
-.menu-desk[aria-checked="true"]::after { content: "✓"; margin-left: var(--s-2); color: var(--accent); font-weight: 700; }
-.menu-desk b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.topbar .sidedoors .menu-desk kbd { margin-left: 10px; white-space: nowrap; }
-.menu-desk-form { display: flex; gap: 6px; padding: 3px var(--s-1) 5px; }
-.menu-desk-field { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--fg); font: 500 var(--t-sm)/1 var(--font); }
-.topbar .sidedoors .menu-desk-form button { flex: none; width: auto; min-height: 36px; padding: 0 var(--s-3); border-radius: 8px; background: var(--fg); color: var(--bg); font: 600 var(--t-sm)/1 var(--font); }
-.menu-desk-error { margin: 0; padding: 2px 10px var(--s-1); color: var(--urg-critical); font: 500 var(--t-xs)/1.3 var(--font); }
-.menu-desk-error:empty { display: none; }
+.menu-teams { display: grid; gap: 1px; padding-bottom: var(--s-1); }
+.topbar .sidedoors .menu-team { min-height: 32px; padding: 0 var(--s-2); font-size: var(--t-sm); }
+.menu-team b { font-weight: 600; }
+.menu-team[aria-checked="true"]::after { content: "✓"; margin-left: var(--s-2); color: var(--accent); font-weight: 700; }
+.menu-team b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar .sidedoors .menu-team kbd { margin-left: 10px; white-space: nowrap; }
+.menu-team-form { display: flex; gap: 6px; padding: 3px var(--s-1) 5px; }
+.menu-team-field { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--fg); font: 500 var(--t-sm)/1 var(--font); }
+.topbar .sidedoors .menu-team-form button { flex: none; width: auto; min-height: 36px; padding: 0 var(--s-3); border-radius: 8px; background: var(--fg); color: var(--bg); font: 600 var(--t-sm)/1 var(--font); }
+.menu-team-error { margin: 0; padding: 2px 10px var(--s-1); color: var(--urg-critical); font: 500 var(--t-xs)/1.3 var(--font); }
+.menu-team-error:empty { display: none; }
 .brand-open[data-other-knock] { position: relative; }
 .brand-open[data-other-knock]::before { content: ""; position: absolute; right: 5px; top: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--urg-high); box-shadow: 0 0 0 2px var(--surface); }
-[data-desks] .desk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-[data-desks] .topbar .brand h1 { font-size: 1.32rem; letter-spacing: -.01em; }
-@media (max-width: 860px) { .topbar .sidedoors .menu-desk kbd { display: none; }
+@media (max-width: 860px) { .topbar .sidedoors .menu-team kbd { display: none; }
 }
 
 /* ---- the floating Desk: the way to the Desk and what waits there; the caret beside it opens the menu ---- */
@@ -276,7 +274,7 @@ button.agent-badge:active { scale: .95; }
 .topbar .sidedoors .sketch { width: 17px; height: 17px; }
 
 @media (pointer: coarse), (max-width: 860px) {
-  .topbar .sidedoors .menu-desk { min-height: 44px; }
+  .topbar .sidedoors .menu-team { min-height: 44px; }
   
 }
 
@@ -285,11 +283,11 @@ button.agent-badge:active { scale: .95; }
 .topbar #brand-doors :is(a, button):not(.menu-foot *) { width: 100%; min-height: 36px; gap: 10px; padding: 0 var(--s-3); border-radius: 9px; font: 500 var(--t-sm)/1 var(--font); justify-content: flex-start; }
 
 .topbar #brand-doors .sketch { flex: none; width: 18px; height: 18px; stroke-width: 1.8; color: var(--muted); }
-.menu-desks { padding: 6px 0 0; }
-.menu-desks { margin-top: 6px; padding: 6px 0 0; border-top: 1px solid var(--line); }
-.menu-desks { border-top: 0; margin-top: 2px; }
+.menu-teams { padding: 6px 0 0; }
+.menu-teams { margin-top: 6px; padding: 6px 0 0; border-top: 1px solid var(--line); }
+.menu-teams { border-top: 0; margin-top: 2px; }
 
-.menu-desk:only-child::after { content: none; }
+.menu-team:only-child::after { content: none; }
 
 #theme-toggle::after { content: "Light"; }
 :root[data-theme-mode="dark"] #theme-toggle::after { content: "Dark"; }
@@ -301,23 +299,23 @@ button.agent-badge:active { scale: .95; }
   .topbar #brand-doors :is(a, button):not(.menu-foot *) { min-height: 44px; width: 100%; }
 }
 
-/* The Trommi menu, on every screen: a long desk name is cut with an ellipsis inside the menu (it would make the field
+/* The Trommi menu, on every screen: a long team name is cut with an ellipsis inside the menu (it would make the field
    and every line wider than the menu, past its right edge). */
-.topbar #brand-doors, .menu-desks { grid-template-columns: minmax(0, 1fr); }
-.topbar #brand-doors > *, .topbar .sidedoors .menu-desk { min-width: 0; max-width: 100%; }
+.topbar #brand-doors, .menu-teams { grid-template-columns: minmax(0, 1fr); }
+.topbar #brand-doors > *, .topbar .sidedoors .menu-team { min-width: 0; max-width: 100%; }
 
 /* ---- The Desk box (sidebar.mjs topbar): the desk drawing, its lamp lit while
-   something waits on this desk (deskLamp, kept current by the live stream), the desk's own name in the big type (the way
+   something waits on this team (deskLamp, kept current by the live stream), the team's own name in the big type (the way
    to the Desk; a longer name steps down, a long one takes two lines), and at the far right a caret that opens the Trommi
-   menu at its desk list, under the box. No count, no hand beside it. ---- */
+   menu at its team list, under the box. No count, no hand beside it. ---- */
 .desk-lamp { flex: none; display: grid; }
 .desk-lamp > .sketch { display: block; overflow: visible; }
 html body .topbar .deskpill .desk-go > .sketch { display: none; }
-.topbar .deskpill .desk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar .deskpill .team-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .topbar .deskpill > .desk-go { flex: 1; min-width: 0; padding: 0 var(--s-2) 0 0; }
   .topbar .desk-go .desk-lamp > .sketch { width: 28px; height: 28px; margin: 0 13px 0 15px; stroke-width: 1.6; }
-  .topbar .desk-name[data-size="m"] { font-size: 1.45rem; }
-  .topbar .desk-name[data-size="l"] { font-size: .98rem; line-height: 1.05; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; letter-spacing: -.02em; }
+  .topbar .team-name[data-size="m"] { font-size: 1.45rem; }
+  .topbar .team-name[data-size="l"] { font-size: .98rem; line-height: 1.05; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; letter-spacing: -.02em; }
   /* the rail: the drawing alone, the way to the Desk */
   [data-rail="folded"] .topbar .desk-go .desk-lamp > .sketch { margin: 0; width: 26px; height: 26px; }
 
@@ -330,7 +328,7 @@ html body .topbar .deskpill .desk-go > .sketch { display: none; }
 .agent-row.is-main .agent-text strong { font-weight: 700; }
 
 /* Main agents and their subs in the sidebar: a stack and a bracket.
-   One crown per desk: only the session the human gave it to wears it; a main without it keeps its
+   One crown per team: only the session the human gave it to wears it; a main without it keeps its
    stack and bracket. Folded, its subs lie as coloured card edges behind its row; unfolded, they stand
    indented under it, held by a bracket drawn in the main's colour. The rows stay flat children of #agents
    (.agent-row.is-main, then its .agent-row.is-sub), so the rail, a phone's drawer and the keys treat them as rows
@@ -339,7 +337,7 @@ html body .topbar .deskpill .desk-go > .sketch { display: none; }
 /* (It sits on the drawing like the crown of a single session, #agents .agent-avatar .crown-mark above: over its middle, its base on the drawing's top.) */
 .crown-fold { position: absolute; z-index: 3; left: 13px; top: -7px; width: 32px; height: 26px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; cursor: pointer; transition: scale var(--d-fast); }
 .crown-fold .crown-mark { position: static; width: 23px; rotate: -15deg; }
-/* A main without the crown (one crown per desk): its switch is for the keyboard only. Nothing is
+/* A main without the crown (one crown per team): its switch is for the keyboard only. Nothing is
    drawn and the pointer goes through to the entry; the stack and the bracket fold by the pointer. */
 .crown-fold.is-plain { pointer-events: none; opacity: 0; }
 
@@ -418,7 +416,7 @@ body[data-keys="g"] .agent-row[data-unit]:nth-of-type(-n+10)::before {
 }
 .agent-row[hidden] { display: none !important; }
 a.agent-badge { text-decoration: none; }
-.topbar .sidedoors a.menu-desk { text-decoration: none; }
+.topbar .sidedoors a.menu-team { text-decoration: none; }
 .status-mark .agent-ring { position: static; color: inherit; }
 
 /* The crown switch in a session's heading (ui.mjs crownControl; placed by session.css). */
@@ -428,18 +426,18 @@ a.agent-badge { text-decoration: none; }
   background: var(--surface); border: 1.5px solid color-mix(in srgb, var(--fg) 70%, transparent); border-radius: 12px;
   box-shadow: 0 10px 28px -16px rgb(20 30 25 / .45);
 }
-.topbar #brand-doors .menu-desks { border-top-style: dashed; }
+.topbar #brand-doors .menu-teams { border-top-style: dashed; }
 
 /* The bracket round an unfolded main's subs is drawn inside the main's row (sidebar.mjs folds). */
 .agent-row.is-main[data-fold] { position: relative; }
 
 .deskpill { position: relative; }
-.topbar #brand-doors button.menu-desk-add { width: 30px; min-height: 30px; padding: 0; justify-content: center; border-radius: 8px; color: var(--muted); }
-.topbar #brand-doors button.menu-desk-add svg { width: 18px; height: 18px; }
-.topbar #brand-doors .menu-desk-form[hidden] { display: none; }
-.topbar #brand-doors .menu-desk-form { display: flex; gap: 6px; padding: 3px var(--s-1) 5px; }
-.topbar #brand-doors .menu-desk-form .menu-desk-field { flex: 1; min-width: 0; width: auto; }
-.topbar #brand-doors .menu-desk-form button { flex: none; width: auto; min-height: 36px; padding: 0 14px; justify-content: center; border-radius: 8px; background: var(--fg); color: var(--bg); }
+.topbar #brand-doors button.menu-team-add { width: 30px; min-height: 30px; padding: 0; justify-content: center; border-radius: 8px; color: var(--muted); }
+.topbar #brand-doors button.menu-team-add svg { width: 18px; height: 18px; }
+.topbar #brand-doors .menu-team-form[hidden] { display: none; }
+.topbar #brand-doors .menu-team-form { display: flex; gap: 6px; padding: 3px var(--s-1) 5px; }
+.topbar #brand-doors .menu-team-form .menu-team-field { flex: 1; min-width: 0; width: auto; }
+.topbar #brand-doors .menu-team-form button { flex: none; width: auto; min-height: 36px; padding: 0 14px; justify-content: center; border-radius: 8px; background: var(--fg); color: var(--bg); }
 /* The menu's button: a lost connection is a small warning dot on it, nothing else. */
 .brand-open .open-conn { display: none; }
 .brand-open .open-conn[data-state="offline"] { display: inline-block; width: 8px; height: 8px; margin: 0 2px 0 var(--s-1); padding: 0; border: 0; border-radius: 50%; background: var(--urg-critical); }
@@ -449,40 +447,40 @@ a.agent-badge { text-decoration: none; }
 
 .push-note { margin: 2px var(--s-3) 6px; font: 400 var(--t-xs, 12px)/1.4 var(--font, inherit); color: var(--muted, #777); max-width: 34ch; }
 .push-note:empty { display: none; }
-/* The Trommi menu (sidebar.mjs): the desks without a heading, each with the desk drawing, its lamp on (a warm cone and
-   three rays) while something waits on that desk; the desk in view is the marked row. */
-.topbar #brand-doors .menu-desks { margin-top: 0; padding-top: 0; }
-.topbar #brand-doors .menu-desk[aria-checked]::after { content: none; }
-.topbar #brand-doors .menu-desk { gap: 10px; }
-.topbar #brand-doors .menu-desk .sketch.menu-lamp { width: 24px; height: 24px; stroke-width: 1.7; color: var(--muted); overflow: visible; }
-.topbar #brand-doors .menu-desk .sketch.menu-lamp.is-lit { color: var(--fg); }
-.topbar #brand-doors .menu-desk[aria-checked="true"] { background: var(--sunken); }
-.topbar #brand-doors .menu-desk[aria-checked="true"] b { font-weight: 700; }
-.topbar #brand-doors .menu-desk-rows { display: contents; }
-/* the lamp's light: the menu's rows and the Desk box's drawing, a desk row on All desks */
-:is(.topbar, .desk-divider) { --lamp: #e2a21b; } :root[data-theme="dark"] :is(.topbar, .desk-divider) { --lamp: #f2bd4a; }
+/* The Trommi menu (sidebar.mjs): the teams without a heading, each with the desk drawing, its lamp on (a warm cone and
+   three rays) while something waits on that team; the team in view is the marked row. */
+.topbar #brand-doors .menu-teams { margin-top: 0; padding-top: 0; }
+.topbar #brand-doors .menu-team[aria-checked]::after { content: none; }
+.topbar #brand-doors .menu-team { gap: 10px; }
+.topbar #brand-doors .menu-team .sketch.menu-lamp { width: 24px; height: 24px; stroke-width: 1.7; color: var(--muted); overflow: visible; }
+.topbar #brand-doors .menu-team .sketch.menu-lamp.is-lit { color: var(--fg); }
+.topbar #brand-doors .menu-team[aria-checked="true"] { background: var(--sunken); }
+.topbar #brand-doors .menu-team[aria-checked="true"] b { font-weight: 700; }
+.topbar #brand-doors .menu-team-rows { display: contents; }
+/* the lamp's light: the menu's rows and the Desk box's drawing */
+.topbar { --lamp: #e2a21b; } :root[data-theme="dark"] .topbar { --lamp: #f2bd4a; }
 .menu-lamp .lamp-light { stroke: var(--lamp); stroke-width: 2; stroke-linecap: round; fill: none; }
 .menu-lamp .lamp-light :is(.lamp-glow, .lamp-cone) { fill: var(--lamp); stroke: none; }
 .menu-lamp .lamp-glow { fill-opacity: .85; }
 .menu-lamp .lamp-cone { fill-opacity: .42; }
-.topbar #brand-doors button.menu-desk-add { width: 100%; min-height: 30px; padding: 0 var(--s-3) 0 15px; gap: 13px; justify-content: flex-start; color: var(--muted); font: 500 var(--t-xs)/1 var(--font); }
-.topbar #brand-doors button.menu-desk-add svg { width: 15px; height: 15px; }
+.topbar #brand-doors button.menu-team-add { width: 100%; min-height: 30px; padding: 0 var(--s-3) 0 15px; gap: 13px; justify-content: flex-start; color: var(--muted); font: 500 var(--t-xs)/1 var(--font); }
+.topbar #brand-doors button.menu-team-add svg { width: 15px; height: 15px; }
 
 .topbar #brand-doors:focus { outline: 0; }
 
-@media (max-width: 860px) { .topbar #brand-doors button.menu-desk-add { min-height: 40px; }
+@media (max-width: 860px) { .topbar #brand-doors button.menu-team-add { min-height: 40px; }
 }
   .topbar { height: 48px; top: 8px; left: 8px; width: 256px; border-radius: 0; background: var(--bg); box-shadow: 0 1px 0 var(--line); }
   #agents::before { height: 64px; }
   .topbar .deskpill { height: 100%; gap: 2px; padding-right: var(--s-1); }
   .topbar .deskpill > .desk-go { padding: 0 6px 0 0; border-radius: 8px; }
   .topbar .desk-go .desk-lamp > .sketch { width: 26px; height: 26px; margin: 0 var(--s-3) 0 10px; }
-  .topbar .deskpill .desk-name, .topbar .desk-name[data-size="m"], .topbar .desk-name[data-size="l"] { font: 700 var(--t-md)/1.2 var(--font); letter-spacing: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: none; -webkit-line-clamp: unset; }
+  .topbar .deskpill .team-name, .topbar .team-name[data-size="m"], .topbar .team-name[data-size="l"] { font: 700 var(--t-md)/1.2 var(--font); letter-spacing: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: none; -webkit-line-clamp: unset; }
   [data-rail="folded"] .topbar { width: 60px; height: 48px; }
-/* the Desk row says the desk's own name; switching desks is in the Trommi menu */
+/* the Desk row says the team's own name; switching teams is in the Trommi menu */
 .topbar .deskpill > .desk-go { padding-right: var(--s-3); }
 /* the folded rail: the desk's drawing alone, centred like the sessions' drawings; its name in the tooltip */
-  html[data-rail="folded"] .topbar .deskpill .desk-name { display: none !important; }
+  html[data-rail="folded"] .topbar .deskpill .team-name { display: none !important; }
   html[data-rail="folded"] .topbar { width: 60px; box-shadow: none !important; }
   html[data-rail="folded"] .topbar .deskpill { justify-content: center; padding: 0; }
   html[data-rail="folded"] .topbar .deskpill > .desk-go { flex: none; width: 60px; padding: 0; justify-content: center; align-items: center; }
@@ -591,27 +589,27 @@ body[data-t-view="whiteboard"] .corner-note-box.is-open .corner-note-park { disp
   html[data-rail="folded"] #agents .agent-row .agent-avatar { width: 30px; height: 30px; }
   html[data-rail="folded"] #agents .agent-row.is-main[data-fold="shut"] { margin-bottom: calc(var(--n) * 2px + 12px); }
 
-/* ---- The Desk row is the heading of the whole sidebar: the desk's drawing large, its name in the display face;
+/* ---- The Desk row is the heading of the whole sidebar: the desk drawing large, the team's name in the display face;
    no line under it, room instead. Not a raised card. ---- */
   html body .topbar { height: 56px; box-shadow: none !important; }
   html:not([data-rail="folded"]) .topbar .desk-go .desk-lamp > .sketch { width: 38px; height: 38px; margin: 0 var(--s-3) 0 var(--s-2); stroke-width: 1.5; }
-  html:not([data-rail="folded"]) .topbar .deskpill .desk-name, html:not([data-rail="folded"]) .topbar .desk-name[data-size="m"] { font: 800 1.5rem/1.1 var(--display); letter-spacing: -.02em; }
-  html:not([data-rail="folded"]) .topbar .desk-name[data-size="l"] { font: 800 1.12rem/1.08 var(--display); letter-spacing: -.02em; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  html:not([data-rail="folded"]) .topbar .deskpill .team-name, html:not([data-rail="folded"]) .topbar .team-name[data-size="m"] { font: 800 1.5rem/1.1 var(--display); letter-spacing: -.02em; }
+  html:not([data-rail="folded"]) .topbar .team-name[data-size="l"] { font: 800 1.12rem/1.08 var(--display); letter-spacing: -.02em; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   html[data-rail="folded"] .topbar .desk-go .desk-lamp > .sketch { width: 34px; height: 34px; }
 
-/* ---- A desk's row in the menu: the link, and at its right end the pencil that renames it (shown when the row is
+/* ---- A team's row in the menu: the link, and at its right end the pencil that renames it (shown when the row is
    under the pointer or holds the keyboard, always where there is no hover); renaming, a field stands in the row. ---- */
-.topbar #brand-doors .menu-desk-row { position: relative; display: block; }
-.topbar #brand-doors .menu-desk kbd { margin-left: auto; }
-.topbar #brand-doors button.menu-desk-pen { position: absolute; right: 40px; top: 50%; translate: 0 -50%; width: 30px; min-height: 30px; height: 30px; padding: 0; justify-content: center; border-radius: 8px; color: var(--muted); opacity: 0; }
-.topbar #brand-doors button.menu-desk-pen .sketch { width: 16px; height: 16px; }
-.topbar #brand-doors .menu-desk-row:is(:hover, :focus-within) button.menu-desk-pen { opacity: 1; }
-.topbar #brand-doors button.menu-desk-pen:hover { background: color-mix(in srgb, var(--fg) 9%, transparent); color: var(--fg); }
-@media (hover: none) { .topbar #brand-doors button.menu-desk-pen { opacity: 1; right: 4px; width: 40px; height: 34px; min-height: 34px; } .topbar #brand-doors .menu-desk kbd { display: none; } .topbar #brand-doors .menu-desk-rename { right: 46px; } .topbar #brand-doors .menu-desk-row .menu-desk { padding-right: 46px; } }
-.topbar #brand-doors .menu-desk-row.is-renaming > :is(.menu-desk b, .menu-desk-pen) { visibility: hidden; }
-.topbar #brand-doors .menu-desk-row.is-renaming .menu-desk b { visibility: hidden; }
-.topbar #brand-doors .menu-desk-rename { position: absolute; left: 42px; right: 40px; top: 50%; translate: 0 -50%; margin: 0; display: flex; }
-.topbar #brand-doors .menu-desk-rename .menu-desk-field { flex: 1; min-width: 0; height: 30px; padding: 0 var(--s-2); border: 0; border-radius: 6px; background: var(--surface); box-shadow: 0 0 0 1.5px var(--fg); color: var(--fg); font: 700 var(--t-sm)/1 var(--font); }
+.topbar #brand-doors .menu-team-row { position: relative; display: block; }
+.topbar #brand-doors .menu-team kbd { margin-left: auto; }
+.topbar #brand-doors button.menu-team-pen { position: absolute; right: 40px; top: 50%; translate: 0 -50%; width: 30px; min-height: 30px; height: 30px; padding: 0; justify-content: center; border-radius: 8px; color: var(--muted); opacity: 0; }
+.topbar #brand-doors button.menu-team-pen .sketch { width: 16px; height: 16px; }
+.topbar #brand-doors .menu-team-row:is(:hover, :focus-within) button.menu-team-pen { opacity: 1; }
+.topbar #brand-doors button.menu-team-pen:hover { background: color-mix(in srgb, var(--fg) 9%, transparent); color: var(--fg); }
+@media (hover: none) { .topbar #brand-doors button.menu-team-pen { opacity: 1; right: 4px; width: 40px; height: 34px; min-height: 34px; } .topbar #brand-doors .menu-team kbd { display: none; } .topbar #brand-doors .menu-team-rename { right: 46px; } .topbar #brand-doors .menu-team-row .menu-team { padding-right: 46px; } }
+.topbar #brand-doors .menu-team-row.is-renaming > :is(.menu-team b, .menu-team-pen) { visibility: hidden; }
+.topbar #brand-doors .menu-team-row.is-renaming .menu-team b { visibility: hidden; }
+.topbar #brand-doors .menu-team-rename { position: absolute; left: 42px; right: 40px; top: 50%; translate: 0 -50%; margin: 0; display: flex; }
+.topbar #brand-doors .menu-team-rename .menu-team-field { flex: 1; min-width: 0; height: 30px; padding: 0 var(--s-2); border: 0; border-radius: 6px; background: var(--surface); box-shadow: 0 0 0 1.5px var(--fg); color: var(--fg); font: 700 var(--t-sm)/1 var(--font); }
 
 /* ---- The sidebar's type and its counts. The type: names 17, "New agent" 16, the heading 13; a row 50 high (a sub 44),
    its drawing 38 (31), the crown 25; the sidebar 272 wide (app.css --side). A phone's drawer is the same sidebar. The rail keeps its sizes.
@@ -651,7 +649,7 @@ body[data-t-view="whiteboard"] .corner-note-box.is-open .corner-note-park { disp
   .brand-open > .open-word { display: block; font: 700 17px/1.3 var(--display); letter-spacing: 0; }
   .topbar .brand-open .brand-fold { order: 1; margin-left: auto; rotate: 180deg; }
   .topbar .brand-open[aria-expanded="true"] .brand-fold { rotate: 0deg; }
-  /* the dots: a knock on another desk at the bell's corner; the connection (grey while connecting, red when lost)
+  /* the dots: a knock on another team at the bell's corner; the connection (grey while connecting, red when lost)
      after the word, its words for a screen reader only */
   .topbar .brand-open[data-other-knock]::before { left: 46px; right: auto; top: 6px; box-shadow: 0 0 0 2px var(--bg); }
   .topbar .brand-open .open-conn[data-state="offline"] { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); background: none; }
@@ -712,13 +710,13 @@ body[data-t-view="whiteboard"] .corner-note-box.is-open .corner-note-park { disp
 }
 @media (max-width: 860px) and (prefers-reduced-motion: reduce) { :root { --drawer-in: 1ms linear; } }
 
-/* ---- the desks' order, dragged (menu#grab): the row picked up lies a little turned on a sheet of paper with a
+/* ---- the teams' order, dragged (menu#grab): the row picked up lies a little turned on a sheet of paper with a
    shadow, the pen's outline round it; where it will land the others have made room ---- */
-.topbar #brand-doors .menu-desk-row { touch-action: pan-y; -webkit-user-select: none; user-select: none; }
-.topbar #brand-doors .menu-desk-rows.is-sorting .menu-desk-row { cursor: grabbing; }
-.topbar #brand-doors .menu-desk-rows.is-sorting .menu-desk-row:not(.is-dragging) { transition: none; }
-.topbar #brand-doors .menu-desk-row.is-dragging { z-index: 5; border-radius: 10px; background: var(--surface); box-shadow: 0 0 0 1.5px var(--fg), 0 12px 22px -10px rgb(20 30 25 / .45); rotate: -1.2deg; touch-action: none; }
-.topbar #brand-doors .menu-desk-row.is-dragging button.menu-desk-pen { opacity: 0; }
+.topbar #brand-doors .menu-team-row { touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+.topbar #brand-doors .menu-team-rows.is-sorting .menu-team-row { cursor: grabbing; }
+.topbar #brand-doors .menu-team-rows.is-sorting .menu-team-row:not(.is-dragging) { transition: none; }
+.topbar #brand-doors .menu-team-row.is-dragging { z-index: 5; border-radius: 10px; background: var(--surface); box-shadow: 0 0 0 1.5px var(--fg), 0 12px 22px -10px rgb(20 30 25 / .45); rotate: -1.2deg; touch-action: none; }
+.topbar #brand-doors .menu-team-row.is-dragging button.menu-team-pen { opacity: 0; }
 
 /* ---- The rail with many helpers: folded, the sidebar lists the mains alone. A main's helpers
    are not drawn one by one: they lie as its stack under its drawing (folded or not), with their number small beside it;
@@ -734,9 +732,9 @@ body[data-t-view="whiteboard"] .corner-note-box.is-open .corner-note-park { disp
   html[data-rail="folded"] .rail-subs:hover, html[data-rail="folded"] .rail-subs:focus-visible { color: var(--fg); }
 }
 
-/* ---- The desk's name on the folded rail: a small paper tag hangs on a string from the desk
+/* ---- The team's name on the folded rail: a small paper tag hangs on a string from the desk
    drawing, of the Later tag's family (white paper, ink outline, a hole, a little turned), the name on it in two short
-   lines at most (then an ellipsis; the whole name is the tooltip). A click opens the Trommi menu at its desks. Only
+   lines at most (then an ellipsis; the whole name is the tooltip). A click opens the Trommi menu at its teams. Only
    folded; the open sidebar says the name itself. ---- */
 .rail-tag { display: none; }
 @media (min-width: 861px) {
@@ -753,52 +751,19 @@ body[data-t-view="whiteboard"] .corner-note-box.is-open .corner-note-park { disp
 }
 @media (prefers-reduced-motion: reduce) { .rail-tag-paper { transition: none; } }
 
-/* ---- All desks: in the menu the overall desk stands first and the desks under it, set in as its
-   children; in the sidebar every desk is a quiet heading (its drawing and name) over its mains. ---- */
-.topbar #brand-doors .menu-desk-rows.has-all .menu-desk-row:not(.is-all) .menu-desk { padding-left: 30px; }
-.topbar #brand-doors .menu-desk-rows.has-all .menu-desk-row:not(.is-all) .menu-desk .sketch.menu-lamp { width: 20px; height: 20px; }
-/* (All Desks is the parent row: bold, its own drawing; the desks hang under it from a thin pen line) */
-.topbar #brand-doors .menu-desk.is-all b, .desk-switch-item.is-all b { font-weight: 800; }
-.topbar #brand-doors .menu-desk-rows.has-all .menu-desk:not(.is-all):not([aria-checked="true"]) b { font-weight: 500; }
-.topbar #brand-doors .menu-desk.is-all .sketch.menu-all-mark, .desk-switch-item.is-all .sketch.menu-all-mark { color: var(--fg); }
-.topbar #brand-doors .menu-desk-rows.has-all .menu-desk-row:not(.is-all)::before, .desk-switch-list .desk-switch-item:not(.is-all)::before { content: ""; position: absolute; left: 20px; top: 0; bottom: 0; border-left: 1.4px solid var(--line-strong); pointer-events: none; }
-.desk-switch-list .desk-switch-item { position: relative; }
-.desk-switch-list .desk-switch-item.is-all ~ .desk-switch-item { padding-left: 34px; }
-
-/* ---- The desk switcher (sidebar.mjs deskSwitch): a small chevron beside the desk's name at the sidebar's top opens a
-   dropdown under the Desk box, All desks first, the desks set in under it, the one in view marked; the folded rail's
-   tag opens the same one beside the rail; a phone's drawer, under its Desk box. ---- */
-.desk-switch-open { flex: none; display: grid; place-items: center; width: 30px; height: 30px; margin-right: var(--s-1); padding: 0; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
-.desk-switch-open .sketch { width: 16px; height: 16px; stroke-width: 2.2; transition: rotate var(--d-fast); }
-.desk-switch-open:hover, .desk-switch-open[aria-expanded="true"] { background: var(--sunken); color: var(--fg); }
-.desk-switch-open[aria-expanded="true"] .sketch { rotate: 180deg; }
-.desk-switch { position: fixed; z-index: var(--z-switch); left: 8px; top: 66px; width: calc(var(--side, 272px) - 16px); box-sizing: border-box; padding: 6px; border: 1.5px solid color-mix(in srgb, var(--fg) 70%, transparent); border-radius: 12px; background: var(--surface); box-shadow: 0 10px 28px -16px rgb(20 30 25 / .45); animation: pop var(--d-fast) var(--ease-out) both; }
-.desk-switch-list { display: grid; gap: 1px; text-align: left; }
-html body .desk-switch .desk-switch-item, html body .desk-switch .desk-switch-item b { justify-content: flex-start; text-align: left; letter-spacing: 0; }
-.desk-switch-item { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 9px; color: var(--fg); font: 500 var(--t-sm)/1.2 var(--font); text-decoration: none; }
-.desk-switch-item b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.desk-switch-item i { font: 600 var(--t-xs)/1 var(--font); font-style: normal; color: var(--muted); }
-.desk-switch-item .sketch.menu-lamp { flex: none; width: 22px; height: 22px; stroke-width: 1.7; color: var(--muted); overflow: visible; }
-.desk-switch-item:not(.is-all) .sketch.menu-lamp { width: 19px; height: 19px; }
-.desk-switch-item .sketch.menu-lamp.is-lit { color: var(--fg); }
-.desk-switch-item:hover, .desk-switch-item:focus-visible { background: var(--sunken); }
-.desk-switch-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
-.desk-switch-item[aria-checked="true"] { background: var(--sunken); }
-.desk-switch-item[aria-checked="true"] b { font-weight: 800; }
-.desk-switch .menu-lamp .lamp-light { stroke: var(--lamp, #e2a21b); }
-html[data-rail="folded"] .desk-switch-open { display: none; }
-@media (min-width: 861px) { html[data-rail="folded"] .desk-switch { left: calc(var(--side) + 4px); top: 8px; width: 240px; } }
-@media (max-width: 860px) {
-  .desk-switch { left: calc(var(--dx) + max(8px, env(safe-area-inset-left, 0px))); top: calc(68px + env(safe-area-inset-top, 0px)); width: calc(var(--drawer-w) - 16px); }
-  .desk-switch-item { min-height: 44px; }
-  :root:not([data-drawer="open"]) .desk-switch { display: none; }
-}
+/* ---- the team switch: the small chevron beside the team's name at the sidebar's top opens the Trommi menu, its
+   teams first (sidebar.mjs menuTeamRows), each with what waits on it; the folded rail's tag opens the same ---- */
+.team-switch-open { flex: none; display: grid; place-items: center; width: 30px; height: 30px; margin-right: var(--s-1); padding: 0; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
+.team-switch-open .sketch { width: 16px; height: 16px; stroke-width: 2.2; transition: rotate var(--d-fast); }
+.team-switch-open:hover, .team-switch-open[aria-expanded="true"] { background: var(--sunken); color: var(--fg); }
+.team-switch-open[aria-expanded="true"] .sketch { rotate: 180deg; }
+html[data-rail="folded"] .team-switch-open { display: none; }
 
 /* ---- The crown sits centred over its drawing: every crown
    that rests on a session's drawing moves a few px to the left (it leans, so its box centre is right of its look). ---- */
 :is(#agents, .pane-who, .inbox-row) .crown-mark { translate: -2.5px 0; }
 
-/* ---- The demo is a switch in the Trommi menu, never a desk; while it is on a small band at the top says so, with the
+/* ---- The demo is a switch in the Trommi menu, never a team; while it is on a small band at the top says so, with the
    way out ---- */
 .topbar #brand-doors .menu-demo { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
 .topbar #brand-doors button.demo-toggle { display: flex; align-items: center; gap: 10px; }
@@ -839,36 +804,13 @@ html[data-rail="folded"] .demo-band { left: calc(var(--side) + 14px); bottom: 14
 .corner-note-file.is-pic.is-failed { padding: 3px 3px 22px; }
 @media (prefers-reduced-motion: reduce) { .note-up svg { animation-duration: 3s; } }
 
-/* ---- All desks as a filter (sidebar.mjs deskDivider): on All a hand-drawn divider over each desk's sessions ---- */
-.desk-divider { display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 8px; margin: var(--s-4) 0 6px; padding: 0 6px; }
-.desk-divider-name { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font: 600 var(--t-sm)/1.2 var(--font); text-decoration: none; }
-.desk-divider-name:hover { color: var(--fg); }
-.desk-divider-mark { width: 18px; height: 18px; flex: none; stroke-width: 1.7; }
-.desk-rule { width: 100%; height: 6px; overflow: visible; fill: none; stroke: var(--line-strong); stroke-width: 1.6; stroke-linecap: round; }
-.desk-rule path { vector-effect: non-scaling-stroke; }
-.desk-divider-n { color: var(--urg-high); font: 700 var(--t-xs)/1 var(--font); }
-/* the folded rail: a divider is a tiny rule with the desk's name */
-html[data-rail="folded"] .desk-divider { grid-template-columns: 1fr; justify-items: center; margin: 10px 0 4px; padding: 0; }
-html[data-rail="folded"] .desk-divider-name { flex-direction: column-reverse; gap: 2px; font-size: 9px; max-width: 60px; text-align: center; }
-html[data-rail="folded"] .desk-divider-name span { max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-html[data-rail="folded"] .desk-divider-mark { display: none; }
-html[data-rail="folded"] .desk-divider .desk-rule { order: -1; width: 40px; }
-html[data-rail="folded"] .desk-divider-n { display: none; }
-
-/* ---- the sidebar's head: the place, big, beside the desk drawing, a small chevron; its
-   list (#desk-switch): All desks, the desks (lamp lit and a small orange dot where something waits), New desk ---- */
-.desk-switch-dot { width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: var(--urg-high); }
-.desk-switch-add { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; margin-top: 4px; padding: 0 10px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; color: var(--muted); font: 500 var(--t-sm)/1 var(--font); cursor: pointer; }
-.desk-switch-add:hover { color: var(--fg); }
-.desk-switch-add svg { width: 16px; height: 16px; }
-#agents > .desk-divider:first-child, .agent-invite + .desk-divider { margin-top: var(--s-2); }
 /* (the head lies plain on the sidebar's paper: no box around it) */
 @media (min-width: 861px) { :root:not([data-rail="folded"]) .topbar { background: transparent; box-shadow: none; } }
 @media (max-width: 860px) { html body .topbar { background: transparent; box-shadow: none; } }
 /* (the place's name stands whenever the sidebar is open: no other rule may take it away) */
-.desk-place { display: contents; }
-html:not([data-rail="folded"]) .topbar .deskpill .desk-name { display: block; min-width: 2ch; }
-html[data-rail="folded"] .topbar .desk-switch-open { display: none; }
+.team-place { display: contents; }
+html:not([data-rail="folded"]) .topbar .deskpill .team-name { display: block; min-width: 2ch; }
+html[data-rail="folded"] .topbar .team-switch-open { display: none; }
 
 /* ==== The pill and the tab bar: a phone's (a wide screen keeps its sidebar); hidden unless a rule below shows them ==== */
 .menu-h { margin: 10px 10px 4px; font: 700 var(--t-xs)/1 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
@@ -894,7 +836,7 @@ html[data-rail="folded"] .topbar .desk-switch-open { display: none; }
   html[data-rail="folded"] body .demo-band { display: block; }
 }
 
-/* ==== A phone: one pill at the top left (the desk's drawing and name, ▾) opens the Trommi menu;
+/* ==== A phone: one pill at the top left (the desk drawing and the team's name, ▾) opens the Trommi menu;
    a small glass capsule at the foot: Chat · Desk · Note, monochrome; it stands back on a session's and a card's page and while the keyboard is up. ==== */
 .phone-pill, .phone-menu { display: none; }
 @media (max-width: 860px) {
@@ -925,10 +867,10 @@ html[data-rail="folded"] .topbar .desk-switch-open { display: none; }
   .pm-n { font: 700 var(--t-xs)/1 var(--font); font-style: normal; color: var(--muted); }
   .pm-row.is-settings { margin-bottom: 4px; }
   .pm-add { color: var(--muted); }
-  .pm-desk-form { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px 8px; }
-  .pm-desk-form[hidden] { display: none; }
-  .pm-desk-form input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); font: inherit; }
-  .pm-desk-form button { height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--fg); color: var(--bg); font: 700 var(--t-sm)/1 var(--font); }
+  .pm-team-form { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px 8px; }
+  .pm-team-form[hidden] { display: none; }
+  .pm-team-form input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); font: inherit; }
+  .pm-team-form button { height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--fg); color: var(--bg); font: 700 var(--t-sm)/1 var(--font); }
   .pm-error:empty { display: none; }
   .pm-error { width: 100%; margin: 0; color: var(--urg-critical); font-size: var(--t-sm); }
   .pm-places { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
@@ -996,10 +938,10 @@ html[data-rail="folded"] .topbar .desk-switch-open { display: none; }
   body[data-t-view="session"] #session .pane-who :is(.t-head-mark, .t-head-name) { display: none; }
 }
 
-/* ==== The Trommi menu, compact: the desks with their counts, Settings, one row of small
+/* ==== The Trommi menu, compact: the teams with their counts, Settings, one row of small
    buttons for this device (Push, Theme, Keyboard Shortcuts, Demo). The phone's pill opens the same menu. ==== */
 .topbar #brand-doors .menu-n { margin-left: auto; padding-left: 8px; font: 700 var(--t-xs)/1 var(--font); font-style: normal; color: var(--muted); }
-.topbar #brand-doors .menu-desk-row .menu-desk { min-width: 0; }
+.topbar #brand-doors .menu-team-row .menu-team { min-width: 0; }
 .topbar #brand-doors .menu-settings { display: flex; align-items: center; gap: 10px; margin-top: 4px; padding-top: 2px; border-top: 1px solid var(--line); border-radius: 0 0 9px 9px; }
 .topbar #brand-doors .menu-places { display: none; }
 .topbar #brand-doors .menu-icons { display: flex; justify-content: space-between; gap: 4px; margin-top: 4px; padding: 6px 2px 2px; border-top: 1px solid var(--line); }
@@ -1018,13 +960,13 @@ html body .topbar #brand-doors .menu-ico:is([aria-checked="true"]) { color: var(
   html body .topbar #brand-doors[hidden] { display: none; }
   html body .topbar #brand-doors .menu-places { display: grid; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
   html body .topbar #brand-doors .menu-places a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 var(--s-3); border-radius: 10px; color: var(--fg); text-decoration: none; font: 500 var(--t-md)/1 var(--font); }
-  html body .topbar #brand-doors .menu-desk-pen { display: none; }
+  html body .topbar #brand-doors .menu-team-pen { display: none; }
 }
 html body .topbar #brand-doors #theme-toggle.menu-ico::after { content: none; }
 html body .topbar #brand-doors .menu-icons .menu-ico { justify-content: center; justify-items: center; }
 @media (max-width: 860px) {
   html body .topbar #brand-doors:not([hidden]) { display: flex; flex-direction: column; }
-  html body .topbar #brand-doors .menu-desks { order: 1; }
+  html body .topbar #brand-doors .menu-teams { order: 1; }
   html body .topbar #brand-doors .menu-places { order: 2; }
   html body .topbar #brand-doors .menu-settings { order: 3; border-top: 1px solid var(--line); border-radius: 0 0 9px 9px; margin-top: 4px; }
   html body .topbar #brand-doors .menu-icons { order: 4; }
@@ -1068,19 +1010,11 @@ html body .topbar #brand-doors .menu-icons .menu-ico { justify-content: center; 
   .side-foot { background: none; border-right: 1px solid var(--line); }
   html body .topbar #brand-doors { top: 66px; bottom: auto; left: 8px; width: 256px; max-height: calc(100dvh - 80px); overflow-y: auto; }
   html[data-rail="folded"] body .topbar #brand-doors { top: 8px; left: calc(var(--side) + 4px); }
-  .topbar .desk-switch-open[aria-expanded="true"] .sketch { rotate: 180deg; }
+  .topbar .team-switch-open[aria-expanded="true"] .sketch { rotate: 180deg; }
 }
 
-/* the crowns to send to, on All desks: a small glass list over the send button */
+/* the send button's place in the corner note */
 .corner-note-sending { position: relative; }
-.note-to-pick { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 5; display: grid; gap: 2px; min-width: 220px; padding: 6px; border: 1px solid color-mix(in srgb, var(--fg) 16%, transparent); border-radius: 16px; background: color-mix(in srgb, var(--surface) 84%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); box-shadow: 0 18px 40px -20px rgb(20 30 25 / .55); transform-origin: right bottom; animation: pm-grow 200ms cubic-bezier(.2, .9, .3, 1.15) both; }
-.note-to-pick[hidden] { display: none; }
-.note-to-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 10px; border: 0; border-radius: 11px; background: none; color: var(--fg); text-align: left; }
-.note-to-row .sketch { width: 22px; height: 22px; flex: none; }
-.note-to-row span { display: grid; }
-.note-to-row b { font: 700 var(--t-sm)/1.2 var(--font); }
-.note-to-row small { color: var(--muted); font-size: var(--t-xs); }
-.note-to-row.is-last, .note-to-row:hover, .note-to-row:focus-visible { background: color-mix(in srgb, var(--fg) 8%, transparent); outline: none; }
 .tab-note-ico { display: grid; place-items: center; }
 /* a phone's chat: the composer folded into a round glass pen at the foot's right, beside the capsule */
 .compose-fab { display: none; }
@@ -1129,29 +1063,24 @@ html body .topbar #brand-doors .menu-logout-row { display: flex; align-items: ce
 #push-toggle[data-level="all"] { color: var(--fg) !important; }
 html body .topbar #brand-doors .menu-theme-row .ico-auto { padding: 0; margin: 0; width: auto; } html body .topbar #brand-doors .menu-theme-row .ico-auto::after, html body .topbar #brand-doors .menu-theme-row .ico-auto::before { content: none !important; }
 
-/* ---- the menu's desks, calm: no indent, no lines; All Desks bold, the desks regular,
-   the one in view highlighted; counts at the right; New Desk… a small + at the right end of All Desks ---- */
-html body .topbar #brand-doors .menu-desk-rows.has-all .menu-desk-row:not(.is-all)::before { display: none !important; }
-html body .topbar #brand-doors .menu-desk-rows.has-all .menu-desk-row:not(.is-all) .menu-desk { padding-left: var(--s-2) !important; }
-html body .topbar #brand-doors .menu-desk-rows.has-all .menu-desk-row:not(.is-all) .menu-desk .sketch.menu-lamp { width: 20px; height: 20px; }
-html body .topbar #brand-doors .menu-desk:not(.is-all) b { font-weight: 500 !important; }
-html body .topbar #brand-doors .menu-desk[aria-checked="true"] { background: var(--sunken); }
-html body .topbar #brand-doors .menu-desk[aria-checked="true"] b { font-weight: 700 !important; }
-html body .topbar #brand-doors .menu-desks { position: relative; }
-html body .topbar #brand-doors .menu-desk-row.is-all .menu-desk { padding-right: 44px; }
-html body .topbar #brand-doors .menu-desk-add.is-plus { position: absolute; z-index: 2; right: 4px; top: 4px; width: 32px !important; min-height: 32px !important; height: 32px; padding: 0 !important; justify-content: center; border-radius: 8px; color: var(--muted); }
-html body .topbar #brand-doors .menu-desk-add.is-plus:hover { background: var(--surface); color: var(--fg); }
-html body .topbar #brand-doors .menu-desk-add.is-plus svg { width: 18px; height: 18px; margin: 0; }
-html body .topbar #brand-doors .menu-desks:not(:has(.is-all)) .menu-desk-add.is-plus { top: 4px; }
-/* one desk (no All Desks row): the + stands at the right end of that desk's own row, so its count, its rename pen
-   (always shown without hover) and the rename field keep clear of it */
-html body .topbar #brand-doors .menu-desks:not(:has(.is-all)) .menu-desk-row:first-child .menu-desk { padding-right: 44px; }
+/* ---- the menu's teams, calm: no indent, no lines; the teams regular, the one in view highlighted; counts at the
+   right; New Team… a small + at the right end of the first team's row ---- */
+html body .topbar #brand-doors .menu-team b { font-weight: 500 !important; }
+html body .topbar #brand-doors .menu-team[aria-checked="true"] { background: var(--sunken); }
+html body .topbar #brand-doors .menu-team[aria-checked="true"] b { font-weight: 700 !important; }
+html body .topbar #brand-doors .menu-teams { position: relative; }
+html body .topbar #brand-doors .menu-team-add.is-plus { position: absolute; z-index: 2; right: 4px; top: 4px; width: 32px !important; min-height: 32px !important; height: 32px; padding: 0 !important; justify-content: center; border-radius: 8px; color: var(--muted); }
+html body .topbar #brand-doors .menu-team-add.is-plus:hover { background: var(--surface); color: var(--fg); }
+html body .topbar #brand-doors .menu-team-add.is-plus svg { width: 18px; height: 18px; margin: 0; }
+/* (the + stands at the right end of the first team's row, so its count, its rename pen (always shown without
+   hover) and the rename field keep clear of it) */
+html body .topbar #brand-doors .menu-team-row:first-child .menu-team { padding-right: 44px; }
 @media (hover: none) {
-  html body .topbar #brand-doors .menu-desks:not(:has(.is-all)) .menu-desk-row:first-child button.menu-desk-pen { right: 46px; }
-  html body .topbar #brand-doors .menu-desks:not(:has(.is-all)) .menu-desk-row:first-child .menu-desk { padding-right: 90px; }
-  html body .topbar #brand-doors .menu-desks:not(:has(.is-all)) .menu-desk-row:first-child .menu-desk-rename { right: 88px; }
+  html body .topbar #brand-doors .menu-team-row:first-child button.menu-team-pen { right: 46px; }
+  html body .topbar #brand-doors .menu-team-row:first-child .menu-team { padding-right: 90px; }
+  html body .topbar #brand-doors .menu-team-row:first-child .menu-team-rename { right: 88px; }
 }
-@media (max-width: 860px) { html body .topbar #brand-doors .menu-desk-add.is-plus { width: 40px !important; height: 40px; top: 5px; } html body .topbar #brand-doors .menu-desk.is-all b { font-weight: 800 !important; } }
+@media (max-width: 860px) { html body .topbar #brand-doors .menu-team-add.is-plus { width: 40px !important; height: 40px; top: 5px; } }
 
 /* ---- the sessions' order (sidebar.mjs, controller "order") ----
    The row being carried leaves its place open: an empty slot outlined in pencil, where it lands when let go. A

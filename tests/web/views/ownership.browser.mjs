@@ -56,6 +56,8 @@ try {
   await demo.session.send('Page.addScriptToEvaluateOnNewDocument', { source:`(() => {
     const Native = IntersectionObserver
     globalThis.deskRefs = []
+    // (one team of the demo room is about as long as the Desk's window: draw only the first four rows at once)
+    globalThis.TROMMI_DESK_WINDOW = 4
     globalThis.IntersectionObserver = class extends Native {
       observe(el) { if (el.matches('.inbox-row[data-later]')) deskRefs.push(new WeakRef(el)); super.observe(el) }
     }
@@ -63,7 +65,7 @@ try {
   await demo.session.send('Page.navigate', { url: APP + '/?mock=1' })
   await until(demo.session, `!!document.querySelector('#desk-list .inbox-fan img[src^="blob:"]') && document.querySelector('#desk-list .inbox-fan img').naturalWidth > 0`, 'first Desk thumbnails load before visiting a card')
   const rowRefs = await ev(demo.session, `deskRefs.length`)
-  assert.ok(rowRefs > 20, 'the actual Desk must have observed offscreen placeholders')
+  assert.ok(rowRefs > 8, 'the actual Desk must have observed offscreen placeholders')
   await ev(demo.session, `window.trommi.router.visit('/card/'+window.trommi.vm().desk.rows[0].id).then(()=>true)`)
   await sleep(500)
   await demo.session.send('HeapProfiler.collectGarbage')

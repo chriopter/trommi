@@ -143,7 +143,7 @@ fn a_board_is_read_drawn_on_snapshotted_and_read_again() {
     assert!(!now.iter().any(|s| s.live), "the finished stroke replaced its pieces");
     assert_eq!(now.len(), 3);
 
-    // a snapshot now (a desk's delete asks for one at once): declared, uploaded, the register written, bound
+    // a snapshot now (a team's delete asks for one at once): declared, uploaded, the register written, bound
     let fx = sim.app.board_work(sim.now_ms, BOARD, true);
     sim.run(fx);
     {
@@ -204,22 +204,22 @@ fn a_desk_is_deleted_with_its_sessions_cards_and_board() {
     world.stream(&mut sim);
     let card = sim.view.desk.rows[0].id.clone();
     let session = sim.view.sidebar.sessions[0].id.clone();
-    sim.send(Event::Action { action: Action::AddDesk { name: "Work".into() } });
+    sim.send(Event::Action { action: Action::AddTeam { name: "Work".into() } });
     world.stream(&mut sim);
     let human = |sim: &Sim, k: &str| sim.app.board().model.human.get(k).map(|r| r.value.clone()).unwrap_or(Value::Null);
     let work = sim.app.board().model.human.keys().filter_map(|k| k.strip_prefix("desk/")).find(|d| *d != "main").unwrap().to_string();
-    sim.send(Event::Action { action: Action::MoveSession { session_id: session.clone(), desk_id: work.clone() } });
+    sim.send(Event::Action { action: Action::MoveSession { session_id: session.clone(), team_id: work.clone() } });
     world.stream(&mut sim);
-    // a stroke on the desk's board
-    let board = scribble::desk_board(&work);
+    // a stroke on the team's board
+    let board = scribble::team_board(&work);
     sim.send(Event::Focus { focus: Focus { board: Some(board.clone()), ..Default::default() } });
     sim.send(Event::Action { action: Action::BoardItem { board_id: board.clone(), local_id: "s1".into(), content: json!({ "content_type": "strokes", "strokes": [stroke(&[(0, 0), (4, 4)])] }) } });
     world.stream(&mut sim);
     sim.send(Event::Focus { focus: Focus::default() });
-    let counts = sim.view.settings.desk_counts.iter().find(|c| c.desk_id == work).cloned().expect("the desk counted");
+    let counts = sim.view.settings.team_counts.iter().find(|c| c.team_id == work).cloned().expect("the team counted");
     assert_eq!((counts.sessions, counts.open_cards), (1, 1));
 
-    sim.send(Event::Action { action: Action::RemoveDesk { desk_id: work.clone() } });
+    sim.send(Event::Action { action: Action::RemoveTeam { team_id: work.clone() } });
     for _ in 0..60 {
         if human(&sim, &format!("desk/{work}")).is_null() {
             break;
@@ -239,9 +239,9 @@ fn settings_show_every_desks_board_small() {
     let world = World::new();
     let mut sim = world.sim();
     sim.send(start());
-    sim.send(Event::Action { action: Action::AddDesk { name: "Work".into() } });
+    sim.send(Event::Action { action: Action::AddTeam { name: "Work".into() } });
     world.stream(&mut sim);
-    let main = scribble::desk_board("main");
+    let main = scribble::team_board("main");
     sim.send(Event::Action { action: Action::BoardItem { board_id: main.clone(), local_id: "s1".into(), content: json!({ "content_type": "strokes", "strokes": [stroke(&[(0, 0), (8, 8)])] }) } });
     world.stream(&mut sim);
     assert_eq!(sim.view.thumbs, None, "no page shows them");
@@ -252,10 +252,10 @@ fn settings_show_every_desks_board_small() {
     }
     let thumbs = sim.view.thumbs.clone().expect("the boards small");
     assert_eq!(thumbs.len(), 2, "{thumbs:?}");
-    assert_eq!((thumbs[0].desk_id.as_str(), thumbs[0].board_id.as_str(), thumbs[0].state.as_str(), thumbs[0].count), ("main", main.as_str(), "ready", 1));
+    assert_eq!((thumbs[0].team_id.as_str(), thumbs[0].board_id.as_str(), thumbs[0].state.as_str(), thumbs[0].count), ("main", main.as_str(), "ready", 1));
     assert!(thumbs[0].shapes[0].t.is_empty() && thumbs[0].shapes[0].f.is_empty(), "no times, no force");
     assert_eq!((thumbs[1].state.as_str(), thumbs[1].count), ("ready", 0));
-    assert_eq!(sim.view.settings.desk_counts.iter().find(|c| c.desk_id == "main").and_then(|c| c.board), Some(1), "counted once read");
+    assert_eq!(sim.view.settings.team_counts.iter().find(|c| c.team_id == "main").and_then(|c| c.board), Some(1), "counted once read");
     look(&mut sim, None);
     assert_eq!(sim.view.thumbs, None, "left");
 }

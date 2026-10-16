@@ -27,7 +27,7 @@ const PROOF_PATH = /^\/settings\/proof$/
 const LAZY = {
   auth: { load: () => import('./auth.mjs'), paths: /^\/(?:settings(?:\/(?:devices|account|theme|keys|kit|password|security))?|devices\/|pair|logout|join|login|start|create|forgot|scan|kit|new-way)(?:\/|$)/ },
   agents: { load: () => import('./agents.mjs'), paths: /^\/(?:settings\/(?:sessions|agents)$|sessions\/)/ },
-  desks: { load: () => import('./desks.mjs'), paths: /^\/settings\/desks(?:\/|$)/ },
+  teams: { load: () => import('./teams.mjs'), paths: /^\/settings\/teams(?:\/|$)/ },
   card: { load: () => import('./card.mjs'), paths: /^(?:\/chat\/[^/]+)?\/card\/|^\/cards\/[0-9a-f]+\// },
   session: { load: () => import('./session.mjs'), paths: /^\/chat\// },
   media: { load: () => import('./media.mjs'), paths: /^\/artifacts(?:\/|$)/ },
@@ -36,7 +36,7 @@ const LAZY = {
   news: { load: () => import('./news.mjs'), paths: /^\/whats-new$/ },
 }
 const loaded = {}   // name -> the view's module, once loaded
-/** Another view's module, for a view that draws with its parts (desks.mjs: the Scribble Board's canvas and thumbnail). */
+/** Another view's module, for a view that draws with its parts (teams.mjs: the Scribble Board's canvas and thumbnail). */
 export const viewModule = name => view(name)
 /** A lazy view's module (loaded once; registered on the board, when there is one, as it arrives). */
 function view(name) {
@@ -114,9 +114,11 @@ export const stream = (action, target, content = '') => html`<turbo-stream actio
 
 const read = (k, f = null) => { try { return localStorage.getItem(k) ?? f } catch { return f } }
 const write = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v) } catch {} }
-/** The desk in view on this browser: a desk's id, 'all', or null (the first desk). */
-const DESK_KEY = 'trommi-desk'
-let deskInView = read(DESK_KEY)
+/** The team in view on this browser (kept per device, sent as Focus.team): a team's id, or null (the core's first). */
+const TEAM_KEY = 'trommi-team'
+let teamInView = read(TEAM_KEY)
+/** The Scribble Board of the team in view: the one chosen here, else the one the core shows. */
+const teamBoard = () => teamInView ?? core.vm()?.sidebar?.team ?? ''
 
 function createBoard({ views }) {
   useFiles(core.fileUrl)
@@ -143,9 +145,9 @@ function createBoard({ views }) {
     fileUrl: core.fileUrl,
     attach: core.attach,
     saveFile: core.saveFile,
-    /** The desk in view: its id, 'all', or null for the first. */
-    desk: () => deskInView,
-    setDesk(d) { deskInView = d; write(DESK_KEY, d); if (d && d !== ALL_DESKS) write('trommi-desk-last', d); sendFocus() },
+    /** The team in view: its id, or null for the core's first. */
+    team: () => teamInView,
+    setTeam(d) { teamInView = d || null; write(TEAM_KEY, teamInView); sendFocus() },
     toast: opts => stream('prepend', 'says-host', toast(opts)),
     get(pattern, handler) { gets.push({ pattern, handler }) },
     post(pattern, handler) { posts.push({ pattern, handler }) },
@@ -189,12 +191,11 @@ function createBoard({ views }) {
 }
 
 // ---- focus: what the person looks at, for the core ----
-const ALL_DESKS = 'all'
 let screenInView = { screen: 'desk' }
 let boardInView = null
-/** The core hears what is in view: the page's screen, the desk, the Scribble Board beside it, whether the window is seen. */
+/** The core hears what is in view: the page's screen, the team, the Scribble Board beside it, whether the window is seen. */
 function sendFocus() {
-  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(deskInView ? { desk: deskInView } : {}), ...(boardInView ? { board: boardInView } : {}) })
+  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}) })
 }
 /** The core's Screen for an address (before the page is drawn: its unit is then in the model). */
 export function screenOf(pathname, search = '') {
@@ -203,7 +204,7 @@ export function screenOf(pathname, search = '') {
   if ((m = /^\/chat\/([^/]+)/.exec(pathname))) return { screen: 'session', session_id: decodeURIComponent(m[1]) }
   if (pathname === '/stacks/off') return { screen: 'off', query: new URLSearchParams(search).get('q') ?? '' }
   if (/^\/artifacts(?:\/|$)/.test(pathname)) return { screen: 'artifacts' }
-  if (pathname === '/scribble-board') return { screen: 'scribble', board_id: deskInView ?? read('trommi-desk-last') ?? ALL_DESKS }
+  if (pathname === '/scribble-board') return { screen: 'scribble', board_id: teamBoard() }
   if (/^\/(?:settings|devices|pair|sessions)(?:\/|$)/.test(pathname)) return { screen: 'settings' }
   return { screen: 'desk' }
 }
@@ -250,8 +251,8 @@ export function keepMenu() {
   const doors = document.getElementById('brand-doors')
   if (!doors || doors.hidden) return () => {}
   const from = doors.dataset.from ?? null
-  // (and the line for a new desk's name, open, with what is typed in it and the focus in it)
-  const form = document.getElementById('desk-new'), field = form?.querySelector('.menu-desk-field')
+  // (and the line for a new team's name, open, with what is typed in it and the focus in it)
+  const form = document.getElementById('team-new'), field = form?.querySelector('.menu-team-field')
   const typing = form && !form.hidden ? { value: field?.value ?? '', focused: document.activeElement === field, at: field?.selectionStart ?? null } : null
   return () => {
     const now = document.getElementById('brand-doors')
@@ -259,8 +260,8 @@ export function keepMenu() {
     if (!now || now === doors || !now.hidden) return
     now.hidden = false
     if (from) now.dataset.from = from
-    for (const b of document.querySelectorAll('#brand-menu, .desk-switch-open, .rail-tag')) b.setAttribute('aria-expanded', 'true')
-    const again = document.getElementById('desk-new'), line = again?.querySelector('.menu-desk-field')
+    for (const b of document.querySelectorAll('#brand-menu, .team-switch-open, .rail-tag')) b.setAttribute('aria-expanded', 'true')
+    const again = document.getElementById('team-new'), line = again?.querySelector('.menu-team-field')
     if (typing && again && line) {
       again.hidden = false
       line.value = typing.value
@@ -410,7 +411,7 @@ function bodyParts({ view, vm, base = '', main, sidebar = true, current = null, 
   if (view === 'whiteboard') parts.push({ key: 'pad', html: String(main) })
   else parts.push({ key: 'main', html: String(main) })
   if (FRONT.has(view) && padKept && model && loaded.whiteboard) parts.push({ key: 'pad', html: String(loaded.whiteboard.whiteboardMain(model)) })
-  const board = (FRONT.has(view) && padKept) || view === 'whiteboard' ? deskInView ?? read('trommi-desk-last') ?? ALL_DESKS : null
+  const board = (FRONT.has(view) && padKept) || view === 'whiteboard' ? teamBoard() : null
   if (board !== boardInView) { boardInView = board; queueMicrotask(sendFocus) }
   if (FRONT.has(view) || view === 'whiteboard') parts.push({ key: 'curl', html: String(curlHTML(FRONT.has(view) ? 'desk' : 'pad', FRONT.has(view) ? `${base}/scribble-board` : `${base}${padFrom}`)) })
   if (demo) parts.push({ key: 'demo', html: '<span class="demo-band">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>' })
@@ -470,7 +471,7 @@ function createRouter({ board, onPage = () => {}, beforeVisit = () => {} }) {
         // The same drawing: the mounted pad stays; only its list of sessions and the boards beside it are brought up to date.
         const t = document.createElement('template')
         t.innerHTML = html
-        for (const id of ['whiteboard-sessions', 'whiteboard-desks']) { const fresh = t.content.getElementById(id); if (fresh) document.getElementById(id)?.replaceWith(fresh) }
+        for (const id of ['whiteboard-sessions']) { const fresh = t.content.getElementById(id); if (fresh) document.getElementById(id)?.replaceWith(fresh) }
         part.html = html
       }
       if (part && (key === 'says' || part.html === html)) {
@@ -874,7 +875,7 @@ function syncToasts(vm) {
     setTimeout(() => core.act({ do: 'dismiss', toast_id: id }), ms + 1000)
   }
 }
-/** The app's own routes: a toast's action, the desk switch. */
+/** The app's own routes: a toast's action, the team switch. */
 const appView = { register(t) {
   t.post(/^\/toast\/(.+)$/, ({ res, match }) => {
     const id = decodeURIComponent(match[1]), x = core.vm().toasts?.find(y => y.id === id)
@@ -882,10 +883,10 @@ const appView = { register(t) {
     t.act({ do: 'dismiss', toast_id: id })
     t.done(res)
   })
-  // The menu's "switch desk" (/?desk=<id>) and /desk/<id>: the desk is this browser's; the address is the Desk's again.
-  t.get(/^\/$/, ({ res, url }) => { const d = url.searchParams.get('desk'); if (d == null) return false; t.setDesk(d); t.redirect(res, '/') })
-  t.get(/^\/desk\/([\w-]+)$/, ({ res, match }) => { t.setDesk(match[1]); t.redirect(res, '/') })
-  t.get(/^\/scribble-board$/, ({ res, url }) => { const d = url.searchParams.get('desk'); if (d == null) return false; t.setDesk(d); t.redirect(res, '/scribble-board') })
+  // The menu's "switch team" (/?team=<id>) and /team/<id>: the team is this browser's; the address is the Desk's again.
+  t.get(/^\/$/, ({ res, url }) => { const d = url.searchParams.get('team'); if (d == null) return false; t.setTeam(d); t.redirect(res, '/') })
+  t.get(/^\/team\/([\w-]+)$/, ({ res, match }) => { t.setTeam(match[1]); t.redirect(res, '/') })
+  t.get(/^\/scribble-board$/, ({ res, url }) => { const d = url.searchParams.get('team'); if (d == null) return false; t.setTeam(d); t.redirect(res, '/scribble-board') })
 } }
 
 // ---- the line on the connection ----

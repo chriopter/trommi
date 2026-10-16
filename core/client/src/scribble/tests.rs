@@ -20,10 +20,10 @@ fn id(sender: [u8; 32], seq: u64, index: u32) -> String {
 
 #[test]
 fn every_client_finds_the_same_board() {
-    assert_eq!(desk_board("main"), "desk/6d61696e000000000000000000000004");
-    assert_eq!(desk_board(""), "desk/6d61696e000000000000000000000004");
-    assert_eq!(desk_board("all"), "desk/616c6c2d6465736b7300000000000009");
-    assert_eq!(desk_board("00112233445566778899aabbccddeeff"), "desk/00112233445566778899aabbccddeeff");
+    assert_eq!(team_board("main"), "desk/6d61696e000000000000000000000004");
+    assert_eq!(team_board(""), "desk/6d61696e000000000000000000000004");
+    assert_eq!(team_board("all"), "desk/616c6c2d6465736b7300000000000009");
+    assert_eq!(team_board("00112233445566778899aabbccddeeff"), "desk/00112233445566778899aabbccddeeff");
     assert_eq!(board_of("desk/00112233445566778899aabbccddeeff").map(|b| b.as_bytes()[15]), Some(0xff));
     assert!(board_of("desk/0011").is_none() && board_of("desk/00112233445566778899AABBCCDDEEFF").is_none() && board_of("main").is_none());
     assert_eq!(board_in_view("main").map(|b| hex(b.as_bytes())), Some("6d61696e000000000000000000000004".into()));

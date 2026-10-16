@@ -14,15 +14,15 @@ it is [`spec/v1.md`](../../spec/v1.md); why it leaves the standard in five place
 [`spec/v1-deviations.md`](../../spec/v1-deviations.md). The web app in `app/web` speaks it through the shared Rust core
 (`core/`, as WebAssembly).
 
-**Content: what a person or an agent has.** Sorting is not encryption: which Desk an Agent is on, the order, the
+**Content: what a person or an agent has.** Sorting is not encryption: which Team an Agent is on, the order, the
 crown and which Helper hangs under which Agent are register values; moving changes no key and moves no data.
 
 ```
 Room                                          everything of one account (an account has a list of rooms; one for now)
-├── Desk                                      a register (name, order, crown, Goals)               room group
-│   ├── Goals                                 in the Desk's register; copied into each Agent's session for the agent
-│   └── Scribble Board (one per Desk,         items: stroke, text, sticky, voice note, picture,    room group
-│       one for "All desks")                  move, erase, send away; snapshot = a file
+├── Team                                      a register (name, order, crown, Goals)               room group
+│   ├── Goals                                 in the Team's register; copied into each Agent's session for the agent
+│   └── Scribble Board (one per Team,         items: stroke, text, sticky, voice note, picture,    room group
+│       one for "all")                        move, erase, send away; snapshot = a file
 │       └── piece of a stroke in progress     relayed live, never stored (an MLS message)
 ├── Note                                      versions; sending it makes a Chat message             room group
 ├── per-card markers                          Later (snooze), duck, drafts, read marks: registers   room group
@@ -46,8 +46,8 @@ Account (e-mail; password or passkey)         the hub checks the login; no key h
 
 Device                                        one Ed25519 signature key = its id; KeyPackages at the hub
 
-Room group (MLS)                              all of the person's devices. Not a Desk.
-└── content key, per epoch                    MLS exporter; protects Desks, Goals, Scribble Boards, Notes, markers
+Room group (MLS)                              all of the person's devices. Not a Team.
+└── content key, per epoch                    MLS exporter; protects Teams, Goals, Scribble Boards, Notes, markers
 
 Session group (MLS), one per Agent/Helper     the person's devices + that session's agent device(s)
 └── content key, per epoch                    MLS exporter; protects Chat, cards, permission requests, Artifacts,

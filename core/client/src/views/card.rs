@@ -442,12 +442,12 @@ fn thread(c: &Card, mut talk: Vec<TalkRow>) -> Vec<TalkRow> {
 }
 
 /// The way on once a card is settled: the next open question in the Desk's order after the place it had (the core's
-/// walk, `next_open_after`, kept to the desk in view), else the first that waits (the web's `nextOpen`).
+/// walk, `next_open_after`, kept to the team in view), else the first that waits (the web's `nextOpen`).
 fn after_of(b: &Board, v: &CardView, walk: &[String]) -> Option<AfterView> {
     if v.status == "open" || v.status == "catching" || v.status.is_empty() {
         return None;
     }
-    let here: Vec<String> = b.agents.iter().filter(|a| a.on_desk).map(|a| a.row.key.clone()).collect();
+    let here: Vec<String> = b.agents.iter().filter(|a| a.on_team).map(|a| a.row.key.clone()).collect();
     let next = b
         .model
         .next_open_after(&v.id, Some(&here))
@@ -1069,7 +1069,7 @@ mod tests {
         assert_eq!(view(&r, "q").lead.iter().map(|l| l.kind.as_str()).collect::<Vec<_>>(), ["with"]);
     }
 
-    /// Settled, a card's page offers the next open question of the desk in view, else says none is left.
+    /// Settled, a card's page offers the next open question of the team in view, else says none is left.
     #[test]
     fn after_an_answer_the_next_question() {
         let mut r = Room::default();
@@ -1142,7 +1142,7 @@ mod tests {
 
     #[test]
     fn the_lead_says_who_asks_its_number_and_its_place() {
-        let mut r = Room { desks: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } }), ..Default::default() };
+        let mut r = Room { teams: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } }), ..Default::default() };
         r.session("a", None, true);
         r.session("b", Some("a"), true);
         r.card("q1", "a", "decision", "normal");
