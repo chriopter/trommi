@@ -88,6 +88,8 @@ enum Pending {
     FoundLoad,
     /// The cache space read to wipe it (a sign-out).
     Wipe,
+    /// Names of private cache entries to erase, after public notices are validated.
+    WipeKeys,
     /// The durable deletion of the slot: failure must remain visible after its engine was forgotten.
     ForgetWrite,
     /// The device state read for a join by an invite link (`AccountAction::Join`).
@@ -852,6 +854,9 @@ impl App {
                         self.departure_entries(&entries, now_ms);
                         self.wipe_cache(entries.into_iter().map(|e| e.key).collect(), &mut out);
                     }
+                }
+                Some(Pending::WipeKeys) => {
+                    if let IoResult::Ok(StoreAnswer::Keys { keys }) = result { self.wipe_cache(keys, &mut out); }
                 }
                 Some(Pending::LinkLoad) => match result {
                     IoResult::Ok(StoreAnswer::Device { revision, entries }) => self.link_loaded(now_ms, revision, entries, &mut out),

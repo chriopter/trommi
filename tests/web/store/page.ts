@@ -398,6 +398,10 @@ const tests: [string, () => Promise<void>][] = [
     // a value that cannot be stored: nothing of that setMany is written
     same((await refused(() => c.setMany([['a/9', 9], ['a/8', () => {}]]), 'a function as a value')).code, 'storage-failed', 'uncloneable')
     same([(await c.range('a/')).map(([k]) => k), await second.get('a/9')], [['a/2', 'a/4'], undefined], 'nothing of it')
+    const originalGetAll = IDBObjectStore.prototype.getAll
+    IDBObjectStore.prototype.getAll = function () { throw new Error('a names-only lookup must not read values') }
+    try { same(await c.keys('a/'), ['a/2', 'a/4'], 'names without loading cached values') }
+    finally { IDBObjectStore.prototype.getAll = originalGetAll }
     await c.set('a/5', 5, { durable: true })
     same(await second.get('a/5'), 5, 'a durable set')
     await c.setMany([['public-departure/a', new Uint8Array([1, 2, 3])], ['a/5', undefined]], { durable: true })

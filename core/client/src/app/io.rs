@@ -188,6 +188,8 @@ pub enum StoreOp {
     Scan {
         prefix: String,
     },
+    /// Names only, in key order, without loading or copying cached values.
+    Keys { prefix: String },
     /// Deletions first, then puts.
     Put {
         #[serde(default)]
@@ -240,6 +242,8 @@ pub enum StoreAnswer {
     Values { values: Vec<Option<Bytes>> },
     /// For `Scan`.
     Entries { entries: Vec<Entry> },
+    /// For `Keys`: names only; no cache values cross the binding.
+    Keys { keys: Vec<String> },
     /// For `Put` and `DeviceApply`.
     Done,
     /// For `DeviceLoad`: everything, and its revision (0 for an empty store).

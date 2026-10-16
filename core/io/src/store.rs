@@ -119,6 +119,9 @@ impl Stores {
                     .collect();
                 Ok(StoreAnswer::Entries { entries })
             }
+            StoreOp::Keys { prefix } => Ok(StoreAnswer::Keys {
+                keys:self.journal.keys(&journal_key(&prefix)).into_iter().filter_map(|key| String::from_utf8(key.get(2..)?.to_vec()).ok()).collect(),
+            }),
             StoreOp::Put { put, delete } | StoreOp::PutDurable { put, delete } => self.journal_put(put, delete),
             StoreOp::DeviceLoad => self.device_load(),
             StoreOp::DeviceApply { expected_revision, put, delete } => self.device_apply(expected_revision, put, delete),

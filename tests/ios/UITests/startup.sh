@@ -16,32 +16,9 @@ trap cleanup EXIT
 xcrun simctl boot "$sim"
 xcrun simctl bootstatus "$sim" -b > "$evidence/boot.log"
 xcrun simctl install "$sim" "$app_path"
+script_dir=$(cd "$(dirname "$0")" && pwd)
 for iteration in 1 2 3; do
   folder=$(xcrun simctl get_app_container "$sim" com.trommi.ios data)
-  report="$folder/Documents/native-desk-startup.json"
-  python3 - "$report" <<'PY'
-from pathlib import Path
-import sys
-Path(sys.argv[1]).unlink(missing_ok=True)
-PY
-  started=$(python3 -c 'import time; print(time.monotonic())')
-  SIMCTL_CHILD_TROMMI_SCREEN=desk SIMCTL_CHILD_TROMMI_FIXTURE="$fixture_path" SIMCTL_CHILD_TROMMI_SPEED_TRACE=1 \
-    xcrun simctl launch --terminate-running-process "$sim" com.trommi.ios > "$evidence/launch-$iteration.log"
-  python3 - "$report" "$evidence/startup-$iteration.json" "$expected_rows" "${DESK_BUDGET_MS:-2000}" "$started" <<'PY'
-import json, sys, time
-from pathlib import Path
-report, output = map(Path, sys.argv[1:3])
-deadline = time.monotonic() + 15
-while not report.exists() and time.monotonic() < deadline:
-    time.sleep(.05)
-text = report.read_text()
-value = json.loads(text)
-value['launch_to_desk_ms'] = (time.monotonic() - float(sys.argv[5])) * 1000
-text = json.dumps(value, sort_keys=True)
-output.write_text(text)
-assert value['rows'] == int(sys.argv[3]), value
-assert 0 < value['desk_ms'] <= value['launch_to_desk_ms'] < float(sys.argv[4]), value
-print(text)
-PY
-  xcrun simctl terminate "$sim" com.trommi.ios
+  python3 "$script_dir/startup_report.py" "$sim" "$fixture_path" "$folder/Documents/native-desk-startup.json" \
+    "$evidence/startup-$iteration.json" "$evidence/launch-$iteration.log" "$expected_rows" "${DESK_BUDGET_MS:-2000}"
 done

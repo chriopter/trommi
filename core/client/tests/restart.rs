@@ -412,3 +412,81 @@ fn a_line_without_its_key_is_read_back_once_the_keys_come_also_across_a_restart(
     }
     assert!(kills > 10, "the kills fell inside the run: {kills}");
 }
+
+#[test]
+fn opening_a_late_joined_session_reads_its_older_lines() {
+    let (mut world, store, id) = keyless_scene();
+    let mut sim = world.sim_of(&store);
+    sim.send(start());
+    let session_id = world.founder.group(&world.group).unwrap().session.unwrap().session_id.to_string();
+    sim.send(trommi_client_core::app::Event::Focus { focus: trommi_client_core::views::Focus {
+        screen: trommi_client_core::views::Screen::Session { session_id }, ..Default::default()
+    } });
+    for _ in 0..30 {
+        news(&world, &mut sim, &id);
+        hand_over(&mut world, &id);
+        sim.advance(5_000);
+    }
+    assert!(lines(&sim).iter().any(|line| line == "before the newcomer"), "{:?}; {:?}; {:?}", lines(&sim), end(&world, &sim), sim.app.alerts());
+    assert!(lines(&sim).iter().any(|line| line == "after it"));
+    assert_eq!(end(&world, &sim).owes, (0,0,0,0));
+}
+
+#[test]
+fn a_late_sessions_missing_history_recovers_after_network_failure_and_restart() {
+    use trommi_client_core::app::{Event, IoError, IoErrorKind};
+    use trommi_client_core::views::{Focus, Screen};
+    let (mut world, store, id) = keyless_scene();
+    let mut sim = world.sim_of(&store);
+    sim.send(start());
+    let failed = std::rc::Rc::new(std::cell::Cell::new(0));
+    let intercepted = failed.clone();
+    world.hub.borrow_mut().fault = Some(Box::new(move |_, request| {
+        request.url.contains("epoch=0").then(|| { intercepted.set(intercepted.get() + 1); Err(IoError::new(IoErrorKind::Offline)) })
+    }));
+    let session_id = world.founder.group(&world.group).unwrap().session.unwrap().session_id.to_string();
+    let focus = || Event::Focus { focus:Focus { screen:Screen::Session { session_id:session_id.clone() }, ..Default::default() } };
+    sim.send(focus());
+    for _ in 0..30 { news(&world, &mut sim, &id); sim.advance(5_000); }
+    assert!(failed.get() > 0, "the history read really failed before connectivity returned");
+    assert!(!lines(&sim).iter().any(|line| line == "before the newcomer"));
+    world.hub.borrow_mut().fault = None;
+    for _ in 0..30 {
+        news(&world, &mut sim, &id);
+        hand_over(&mut world, &id);
+        sim.advance(5_000);
+    }
+    assert!(lines(&sim).iter().any(|line| line == "before the newcomer"));
+    sim.restart();
+    sim.send(start());
+    sim.send(focus());
+    for _ in 0..3 { news(&world, &mut sim, &id); sim.advance(5_000); }
+    assert!(lines(&sim).iter().any(|line| line == "before the newcomer"));
+    assert!(lines(&sim).iter().any(|line| line == "after it"));
+    assert_eq!(end(&world, &sim).owes, (0,0,0,0));
+}
+
+#[test]
+fn a_hub_cannot_supply_another_groups_history_for_a_late_sessions_older_lines() {
+    use trommi_client_core::app::{Event, HttpResponse};
+    use trommi_client_core::views::{Focus, Screen};
+    let (mut world, store, id) = keyless_scene();
+    let mut sim = world.sim_of(&store);
+    sim.send(start());
+    let wrong = world.hub.borrow().group_infos[&(GroupId::room(world.room.room_id()), 0)].clone();
+    let route = format!("/groups/{}/info?epoch=0", trommi_core::ids::base64url_encode(world.group.as_bytes()));
+    let body = serde_json::to_vec(&serde_json::json!({"epoch":0,"group_info":trommi_core::ids::base64url_encode(&wrong)})).unwrap();
+    let served = std::rc::Rc::new(std::cell::Cell::new(0));
+    let intercepted = served.clone();
+    world.hub.borrow_mut().fault = Some(Box::new(move |_, request| {
+        request.url.contains(&route).then(|| { intercepted.set(intercepted.get() + 1); Ok(HttpResponse { status:200, headers:vec![trommi_client_core::app::Header { name:"Content-Type".into(), value:"application/json".into() }], body:body.clone().into() }) })
+    }));
+    let session_id = world.founder.group(&world.group).unwrap().session.unwrap().session_id.to_string();
+    sim.send(Event::Focus { focus:Focus { screen:Screen::Session { session_id }, ..Default::default() } });
+    for _ in 0..30 { news(&world, &mut sim, &id); hand_over(&mut world, &id); sim.advance(5_000); }
+    assert!(!lines(&sim).iter().any(|line| line == "before the newcomer"));
+    assert!(!sim.app.engine().unwrap().device().group(&world.group).unwrap().past_learned);
+    assert!(served.get() > 0, "the hostile founding was actually served");
+    let logs:Vec<_> = sim.log.iter().filter_map(|e| match e { trommi_client_core::app::Effect::Log { text,.. } => Some(text), _ => None }).collect();
+    assert!(sim.app.alerts().iter().any(|alert| matches!(alert, trommi_client_core::engine::Alert::BadGroup { group,.. } if *group == world.group)), "{:?}; {logs:?}", sim.app.alerts());
+}

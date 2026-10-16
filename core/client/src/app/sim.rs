@@ -263,6 +263,9 @@ impl Sim {
                     })
                     .collect(),
             }),
+            StoreOp::Keys { prefix } => IoResult::Ok(StoreAnswer::Keys {
+                keys:self.cache.range(prefix.clone()..).take_while(|(key,_)| key.starts_with(&prefix)).map(|(key,_)| key.clone()).collect(),
+            }),
             StoreOp::Put { put, delete } | StoreOp::PutDurable { put, delete } => {
                 for k in delete {
                     self.cache.remove(&k);

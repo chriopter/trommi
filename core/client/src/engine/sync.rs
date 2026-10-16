@@ -2084,6 +2084,10 @@ impl Engine {
         let void = Self::void_code(item);
         match self.device.receive_envelope(&item.envelope, item.change, false, void.as_ref(), ctx.now) {
             Ok(received) => {
+                if received.code == Some(Error::GroupBehind) && self.device.group(&received.header.group).is_ok() {
+                    // A held session's older page needs the same verified backward walk as its room.
+                    self.need_past(received.header.group);
+                }
                 if received.header.group.is_room()
                     && matches!(received.code, Some(Error::NoKey | Error::GroupBehind | Error::RoomBehind)) {
                     self.need_anchored_past();
