@@ -16,6 +16,43 @@ final class NativeScreensTests: XCTestCase {
     let shot = XCTAttachment(screenshot: app.screenshot())
     shot.name = name; shot.lifetime = .keepAlways; add(shot)
   }
+  /** A sign-in whose app is closed right after the Desk shows (its sessions not yet joined): the app opens on the
+   *  Desk again, says the sign-in was cut off and offers Log in; logging in finishes it and the line goes. Opt-in, as
+   *  the test below: a private account file and an isolated hub. */
+  func testACutOffSignInOpensOnTheDeskAndAsksToLogInAgain() throws {
+    guard let path = ProcessInfo.processInfo.environment["TROMMI_SIGNIN_ACCOUNT_FILE"],
+          !path.isEmpty, !path.hasPrefix("$(") else { throw XCTSkip("Set TROMMI_SIGNIN_ACCOUNT_FILE for the isolated real-account gate.") }
+    let account = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as? [String: String])
+    app = XCUIApplication()
+    app.launchEnvironment["TROMMI_TEST_HUB"] = "http://127.0.0.1:18874"
+    app.launch()
+    let login = app.buttons["way-login"]
+    XCTAssertTrue(login.waitForExistence(timeout: 20), app.debugDescription)
+    login.tap()
+    let email = app.textFields["account-email"]
+    XCTAssertTrue(email.waitForExistence(timeout: 10))
+    email.tap(); email.typeText(try XCTUnwrap(account["email"]))
+    let password = app.secureTextFields["account-password"]
+    password.tap(); password.typeText(try XCTUnwrap(account["password"]))
+    app.buttons["account-submit"].tap()
+    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 90))
+    app.terminate(); app.launch()
+    let resume = app.buttons["resume-login"]
+    XCTAssertTrue(row.waitForExistence(timeout: 30), "a cut-off sign-in opens on the Desk, it does not sign out. " + app.debugDescription)
+    XCTAssertTrue(resume.waitForExistence(timeout: 60), "the cut-off sign-in is said, with Log in. " + app.debugDescription)
+    capture("resume-line")
+    resume.tap()
+    let again = app.textFields["account-email"]
+    XCTAssertTrue(again.waitForExistence(timeout: 10))
+    again.tap(); again.typeText(try XCTUnwrap(account["email"]))
+    let secret = app.secureTextFields["account-password"]
+    secret.tap(); secret.typeText(try XCTUnwrap(account["password"]))
+    app.buttons["account-submit"].tap()
+    XCTAssertTrue(resume.waitForNonExistence(timeout: 90), "logging in finishes the sign-in and the line goes. " + app.debugDescription)
+    XCTAssertTrue(row.waitForExistence(timeout: 10))
+    capture("resume-done")
+  }
   func testFreshAccountSignInRendersDesk() throws {
     guard let path = ProcessInfo.processInfo.environment["TROMMI_SIGNIN_ACCOUNT_FILE"],
           !path.isEmpty, !path.hasPrefix("$(") else { throw XCTSkip("Set TROMMI_SIGNIN_ACCOUNT_FILE for the isolated real-account gate.") }

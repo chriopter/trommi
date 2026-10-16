@@ -29,7 +29,7 @@ struct RootView: View {
           Sidebar().navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360).toolbar(.hidden, for: .navigationBar)
         } detail: { stack(DeskScreen()) }
         .sheet(isPresented: noteBinding) { NavigationStack { NotesScreen() }.presentationDetents([.large]) }
-        .overlay(alignment: .top) { CoreLine() }
+        .overlay(alignment: .top) { TopLines() }
       } else {
         // iPhone: Chat · Desk · Note in one glass pill at the bottom. The bar shows on the two lists only: a pushed
         // screen has its own controls at the bottom. Both pages stay alive, so each keeps its scroll position.
@@ -40,7 +40,7 @@ struct RootView: View {
         .overlay { if shell.noteOpen { NotePage() .transition(.move(edge: .bottom)) } }
         .animation(.snappy, value: shell.noteOpen)
         .safeAreaBar(edge: .bottom, spacing: 0) { if shell.path.isEmpty { NativeTabPill() } })
-        .overlay(alignment: .top) { CoreLine() }
+        .overlay(alignment: .top) { TopLines() }
       }
     }
     .overlay { ToastHost() }
@@ -75,19 +75,34 @@ struct RootView: View {
   }
 }
 
-/** The core's line over the board (`ViewModel.status`): while it opens, what it does; offline or stopped, that what
- *  shows is what this device last had. Nothing while the core says nothing. */
-struct CoreLine: View {
+/** The lines over the board, under the top row: the core's line (`ViewModel.status`: while it opens, what it does;
+ *  offline or stopped, that what shows is what this device last had) and a sign-in that was cut off
+ *  (`AccountView.resume`), with the way to log in again. Nothing while the core says nothing. */
+struct TopLines: View {
   @EnvironmentObject var shell: AppShell
+  @State private var loggingIn = false
   var body: some View {
-    if let line = shell.view.status {
-      Text(line.en).font(Face.text(13, .medium)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.center)
-        .padding(.horizontal, 14).padding(.vertical, 7).glass(Capsule())
-        .padding(.horizontal, 16).padding(.top, 58)
-        .allowsHitTesting(false)
-        .accessibilityIdentifier("core-status")
-        .transition(.opacity)
+    VStack(spacing: 8) {
+      if let line = shell.view.status {
+        Text(line.en).font(Face.text(13, .medium)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.center)
+          .padding(.horizontal, 14).padding(.vertical, 7).glass(Capsule())
+          .allowsHitTesting(false)
+          .accessibilityIdentifier("core-status")
+      }
+      if let resume = shell.view.account.resume {
+        HStack(spacing: 10) {
+          Text(resume.en).font(Face.text(14, .medium)).foregroundStyle(Ink.fg).fixedSize(horizontal: false, vertical: true)
+          Button("Log in") { loggingIn = true }.font(Face.text(14, .bold)).foregroundStyle(Ink.accent).buttonStyle(.plain)
+            .accessibilityIdentifier("resume-login")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9).glass(Capsule())
+        .accessibilityElement(children: .contain).accessibilityIdentifier("resume-line")
+      }
     }
+    .padding(.horizontal, 16).padding(.top, 58)
+    .sheet(isPresented: $loggingIn) { AccountScreen(form: .login) }
+    // (the core takes the line away once the way in was given: the sheet goes with it)
+    .onChange(of: shell.view.account.resume == nil) { _, gone in if gone { loggingIn = false } }
   }
 }
 
