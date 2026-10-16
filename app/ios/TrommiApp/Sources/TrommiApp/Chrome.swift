@@ -49,20 +49,6 @@ extension View {
       .toolbar(removing: .title)
       #endif
   }
-  /** A chat's top row: its own pill at the left (back and the title in one), its buttons at the right. The top edge
-   *  is a hard one, so the talk does not show through behind the title. The swipe from the left edge still goes back. */
-  func sessionBar<L: View, T: View>(@ViewBuilder leading: () -> L, @ViewBuilder trailing: () -> T) -> some View {
-    self.toolbar(.hidden, for: .navigationBar)
-      .safeAreaBar(edge: .top, spacing: 0) {
-        HStack(spacing: 10) { leading(); Spacer(minLength: 0); trailing() }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 6)
-      }
-      .scrollEdgeEffectStyle(.hard, for: .top)
-      .scrollEdgeEffectStyle(.soft, for: .bottom)
-      .background { PopGesture().frame(width: 0, height: 0).accessibilityHidden(true) }
-      #if os(macOS)
-      .toolbar(removing: .title)
-      #endif
-  }
   /** A round glass button of the top row (44 pt, as the place pill is tall). */
   func pillCircle() -> some View {
     self.frame(width: 44, height: 44).glass(Circle(), interactive: true).contentShape(Circle())
@@ -75,19 +61,6 @@ struct BackPill: View {
   var body: some View {
     Button { if !shell.path.isEmpty { shell.path.removeLast() } } label: {
       Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold)).foregroundStyle(Ink.fg).pillCircle()
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel("Back")
-    .accessibilityIdentifier("back")
-  }
-}
-
-/** Back as a bare arrow, for a pill that holds more than it (a chat's title). */
-struct BackArrow: View {
-  @EnvironmentObject var shell: AppShell
-  var body: some View {
-    Button { if !shell.path.isEmpty { shell.path.removeLast() } } label: {
-      Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(Ink.fg).frame(width: 40, height: 44).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityLabel("Back")
