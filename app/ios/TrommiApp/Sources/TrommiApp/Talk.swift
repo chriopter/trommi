@@ -621,22 +621,20 @@ struct TalkCodeChip: View {
 
 // ---- the composer ----------------------------------------------------------------------------------------------------
 
-/** The field at the bottom of a chat and a card: a round glass "+" for files, a growing glass field, the round Send. */
+/** The field at the bottom of a chat and a card: a round glass "+" for photos and files, a growing glass field, the round Send. */
 struct TalkComposer: View {
   @EnvironmentObject var shell: AppShell
   let placeholder: String
   @Binding var text: String
   @Binding var attachments: [String]
   let send: () -> Void
-  @State private var importing = false
   @State private var keyboard = false
   private var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty }
   var body: some View {
     HStack(alignment: .bottom, spacing: 11) {
-      Button { importing = true } label: {
+      AttachMenu(ids: $attachments) {
         Image(systemName: "plus").font(.system(size: 19, weight: .semibold)).foregroundStyle(Ink.fg).frame(width: 40, height: 40).glass(Circle(), interactive: true)
       }
-      .buttonStyle(.plain).accessibilityLabel("Attach")
       VStack(alignment: .leading, spacing: 0) {
         if !attachments.isEmpty {
           ScrollView(.horizontal, showsIndicators: false) {
@@ -673,9 +671,6 @@ struct TalkComposer: View {
     .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in withAnimation(.easeOut(duration: 0.25)) { keyboard = true } }
     .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in withAnimation(.easeOut(duration: 0.25)) { keyboard = false } }
     #endif
-    .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-      if case .success(let urls) = result { for url in urls { if let id = shell.attach(url) { attachments.append(id) } } }
-    }
   }
 }
 

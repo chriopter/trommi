@@ -128,8 +128,12 @@ enum NativeTab: Equatable { case chat, desk }
   @discardableResult func attach(_ url: URL) -> String? {
     let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
     guard let data = try? Data(contentsOf: url) else { return nil }
+    return attach(data, name: url.lastPathComponent, mediaType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream")
+  }
+  /** Bytes picked elsewhere (a photo, the camera) to attach: the core's local id, shown in `view.files` as it uploads. */
+  func attach(_ data: Data, name: String, mediaType: String) -> String {
     let id = UUID().uuidString
-    act(["do": "attach", "local_id": id, "name": url.lastPathComponent, "media_type": UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream", "bytes": 0], blobs: [data])
+    act(["do": "attach", "local_id": id, "name": name, "media_type": mediaType, "bytes": 0], blobs: [data])
     return id
   }
   private func effect(_ packet: NativePacket) async {
