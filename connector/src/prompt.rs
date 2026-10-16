@@ -114,7 +114,7 @@ pub fn monitor_note() -> String {
         .replacen("<inbox>", inbox_tool_name(), 1)
 }
 
-/// tools.json with the list of drawings (connector/drawings.json) put where it says {drawings}.
+/// tools.json with the list of drawings (the app core's faces) put where it says {drawings}.
 fn tools_text() -> &'static str {
     static T: OnceLock<String> = OnceLock::new();
     T.get_or_init(|| TOOLS_JSON.replace("{drawings}", &crate::drawings::listing()))

@@ -171,7 +171,7 @@ pub fn agents_page(b: &Board) -> Vec<AgentView> {
                         id: a.row.key.clone(),
                         slug: a.row.id.clone(),
                         name: say("session.name", a.row.name.as_str(), &[]),
-                        mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
+                        mark: a.row.mark(),
                         team: say("agents.team", format!("{team} team"), &[("team", &team)]),
                         folder: member_of(i).map(|d| text(&d.folder)).unwrap_or_default(),
                         helpers: helpers as u32,

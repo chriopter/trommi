@@ -496,7 +496,7 @@
         "from": {
           "session_id": "9ace71aadae23ea1f467d62b83b1d604",
           "name": "Payments",
-          "mark": "draw:lock",
+          "mark": "draw:pebble",
           "path": [
             "Platform",
             "Payments"
@@ -609,7 +609,7 @@
         "from": {
           "session_id": "9ace71aadae23ea1f467d62b83b1d604",
           "name": "Payments",
-          "mark": "draw:lock",
+          "mark": "draw:pebble",
           "path": [
             "Platform",
             "Payments"
@@ -701,7 +701,7 @@
         "from": {
           "session_id": "9ace71aadae23ea1f467d62b83b1d604",
           "name": "Payments",
-          "mark": "draw:lock",
+          "mark": "draw:pebble",
           "path": [
             "Platform",
             "Payments"
@@ -1093,7 +1093,7 @@
   ],
   "has_more": false,
   "slug": "payments-service",
-  "mark": "draw:lock",
+  "mark": "draw:pebble",
   "team_id": "platform",
   "main": true,
   "crowned": true,
@@ -1139,7 +1139,7 @@
       "from": {
         "session_id": "9ace71aadae23ea1f467d62b83b1d604",
         "name": "Payments",
-        "mark": "draw:lock",
+        "mark": "draw:pebble",
         "path": [
           "Platform",
           "Payments"
@@ -1220,7 +1220,7 @@
       "from": {
         "session_id": "9ace71aadae23ea1f467d62b83b1d604",
         "name": "Payments",
-        "mark": "draw:lock",
+        "mark": "draw:pebble",
         "path": [
           "Platform",
           "Payments"
@@ -1266,7 +1266,7 @@
       "from": {
         "session_id": "9ace71aadae23ea1f467d62b83b1d604",
         "name": "Payments",
-        "mark": "draw:lock",
+        "mark": "draw:pebble",
         "path": [
           "Platform",
           "Payments"

@@ -47,7 +47,7 @@
         "from": {
           "session_id": "5ef619647e0e8185fef0e3be40ff4809",
           "name": "Infrastructure",
-          "mark": "draw:mountain",
+          "mark": "draw:peak",
           "path": [
             "Platform",
             "Infrastructure"
@@ -85,7 +85,7 @@
         "from": {
           "session_id": "5ef619647e0e8185fef0e3be40ff4809",
           "name": "Infrastructure",
-          "mark": "draw:mountain",
+          "mark": "draw:peak",
           "path": [
             "Platform",
             "Infrastructure"
@@ -204,7 +204,7 @@
       "from": {
         "session_id": "5ef619647e0e8185fef0e3be40ff4809",
         "name": "Infrastructure",
-        "mark": "draw:mountain",
+        "mark": "draw:peak",
         "path": [
           "Platform",
           "Infrastructure"
@@ -291,7 +291,7 @@
       "from": {
         "session_id": "9ace71aadae23ea1f467d62b83b1d604",
         "name": "Payments",
-        "mark": "draw:lock",
+        "mark": "draw:pebble",
         "path": [
           "Platform",
           "Payments"
@@ -329,7 +329,7 @@
       "from": {
         "session_id": "5ef619647e0e8185fef0e3be40ff4809",
         "name": "Infrastructure",
-        "mark": "draw:mountain",
+        "mark": "draw:peak",
         "path": [
           "Platform",
           "Infrastructure"
@@ -380,7 +380,7 @@
       "from": {
         "session_id": "5ef619647e0e8185fef0e3be40ff4809",
         "name": "Infrastructure",
-        "mark": "draw:mountain",
+        "mark": "draw:peak",
         "path": [
           "Platform",
           "Infrastructure"
@@ -435,7 +435,7 @@
       "from": {
         "session_id": "eeb9fe76ad84d2405625d15419ce6083",
         "name": "Docs",
-        "mark": "draw:book",
+        "mark": "draw:bean",
         "path": [
           "Platform",
           "Docs"
@@ -520,7 +520,7 @@
       "from": {
         "session_id": "9ace71aadae23ea1f467d62b83b1d604",
         "name": "Payments",
-        "mark": "draw:lock",
+        "mark": "draw:pebble",
         "path": [
           "Platform",
           "Payments"
@@ -601,7 +601,7 @@
       "from": {
         "session_id": "9ace71aadae23ea1f467d62b83b1d604",
         "name": "Payments",
-        "mark": "draw:lock",
+        "mark": "draw:pebble",
         "path": [
           "Platform",
           "Payments"
@@ -647,7 +647,7 @@
       "from": {
         "session_id": "5ef619647e0e8185fef0e3be40ff4809",
         "name": "Infrastructure",
-        "mark": "draw:mountain",
+        "mark": "draw:peak",
         "path": [
           "Platform",
           "Infrastructure"
@@ -732,7 +732,7 @@
       "from": {
         "session_id": "eeb9fe76ad84d2405625d15419ce6083",
         "name": "Docs",
-        "mark": "draw:book",
+        "mark": "draw:bean",
         "path": [
           "Platform",
           "Docs"
@@ -832,7 +832,7 @@
       "from": {
         "session_id": "f14180d4caac441522269c631a745866",
         "name": "Data Pipeline",
-        "mark": "draw:database",
+        "mark": "draw:pill",
         "path": [
           "Platform",
           "Data Pipeline"
@@ -908,7 +908,7 @@
       "from": {
         "session_id": "f14180d4caac441522269c631a745866",
         "name": "Data Pipeline",
-        "mark": "draw:database",
+        "mark": "draw:pill",
         "path": [
           "Platform",
           "Data Pipeline"
@@ -1002,7 +1002,7 @@
       "from": {
         "session_id": "9ace71aadae23ea1f467d62b83b1d604",
         "name": "Payments",
-        "mark": "draw:lock",
+        "mark": "draw:pebble",
         "path": [
           "Platform",
           "Payments"
@@ -1100,7 +1100,7 @@
       "from": {
         "session_id": "5ef619647e0e8185fef0e3be40ff4809",
         "name": "Infrastructure",
-        "mark": "draw:mountain",
+        "mark": "draw:peak",
         "path": [
           "Platform",
           "Infrastructure"

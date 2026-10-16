@@ -230,7 +230,7 @@
                 "knocks": false,
                 "link": "gone",
                 "main": true,
-                "mark": "00000002eeee",
+                "mark": "draw:(face)",
                 "name": {
                   "en": "Loading …",
                   "key": "session.name"
@@ -250,13 +250,13 @@
                 "edges": [
                   {
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000002eeee"
+                    "mark": "draw:(face)"
                   }
                 ],
                 "faces": [
                   {
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000002eeee"
+                    "mark": "draw:(face)"
                   }
                 ],
                 "id": "main",
@@ -307,7 +307,7 @@
                     "knocks": false,
                     "link": "gone",
                     "main": true,
-                    "mark": "00000002eeee",
+                    "mark": "draw:(face)",
                     "name": {
                       "en": "Loading …",
                       "key": "session.name"
@@ -411,7 +411,7 @@
                   {
                     "helpers": 0,
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000002eeee",
+                    "mark": "draw:(face)",
                     "name": {
                       "en": "Loading …",
                       "key": "session.name"
@@ -557,7 +557,7 @@
                 "knocks": false,
                 "link": "gone",
                 "main": true,
-                "mark": "00000002eeee",
+                "mark": "draw:(face)",
                 "name": {
                   "en": "00000002eeee",
                   "key": "session.name"
@@ -577,13 +577,13 @@
                 "edges": [
                   {
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000002eeee"
+                    "mark": "draw:(face)"
                   }
                 ],
                 "faces": [
                   {
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000002eeee"
+                    "mark": "draw:(face)"
                   }
                 ],
                 "id": "main",
@@ -634,7 +634,7 @@
                     "knocks": false,
                     "link": "gone",
                     "main": true,
-                    "mark": "00000002eeee",
+                    "mark": "draw:(face)",
                     "name": {
                       "en": "00000002eeee",
                       "key": "session.name"
@@ -738,7 +738,7 @@
                   {
                     "helpers": 0,
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000002eeee",
+                    "mark": "draw:(face)",
                     "name": {
                       "en": "00000002eeee",
                       "key": "session.name"
@@ -922,7 +922,7 @@
                 },
                 "link": "gone",
                 "main": true,
-                "mark": "00000002eeee",
+                "mark": "draw:(face)",
                 "name": {
                   "en": "00000002eeee",
                   "key": "session.name"
@@ -949,13 +949,13 @@
                 "edges": [
                   {
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000002eeee"
+                    "mark": "draw:(face)"
                   }
                 ],
                 "faces": [
                   {
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000002eeee"
+                    "mark": "draw:(face)"
                   }
                 ],
                 "id": "main",
@@ -1018,7 +1018,7 @@
                     },
                     "link": "gone",
                     "main": true,
-                    "mark": "00000002eeee",
+                    "mark": "draw:(face)",
                     "name": {
                       "en": "00000002eeee",
                       "key": "session.name"
@@ -1135,7 +1135,7 @@
               {
                 "created_ms": 1791900300010,
                 "from": {
-                  "mark": "00000002eeee",
+                  "mark": "draw:(face)",
                   "name": "00000002eeee",
                   "path": [
                     "00000002eeee"
@@ -1254,7 +1254,7 @@
                   {
                     "helpers": 0,
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000002eeee",
+                    "mark": "draw:(face)",
                     "name": {
                       "en": "00000002eeee",
                       "key": "session.name"
@@ -1432,7 +1432,7 @@
         {
           "created_ms": 1791900300010,
           "from": {
-            "mark": "00000002eeee",
+            "mark": "draw:(face)",
             "name": "00000002eeee",
             "path": [
               "00000002eeee"
@@ -1562,7 +1562,7 @@
             {
               "helpers": 0,
               "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-              "mark": "00000002eeee",
+              "mark": "draw:(face)",
               "name": {
                 "en": "00000002eeee",
                 "key": "session.name"
@@ -1711,7 +1711,7 @@
           },
           "link": "gone",
           "main": true,
-          "mark": "00000002eeee",
+          "mark": "draw:(face)",
           "name": {
             "en": "00000002eeee",
             "key": "session.name"
@@ -1738,13 +1738,13 @@
           "edges": [
             {
               "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-              "mark": "00000002eeee"
+              "mark": "draw:(face)"
             }
           ],
           "faces": [
             {
               "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-              "mark": "00000002eeee"
+              "mark": "draw:(face)"
             }
           ],
           "id": "main",
@@ -1807,7 +1807,7 @@
               },
               "link": "gone",
               "main": true,
-              "mark": "00000002eeee",
+              "mark": "draw:(face)",
               "name": {
                 "en": "00000002eeee",
                 "key": "session.name"
