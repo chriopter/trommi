@@ -1,5 +1,5 @@
 // The Desk: every open question as a row, in the app core's order (vm.desk, views.d.ts DeskView), and at its foot
-// Off your mind and the two docked stacks; the page /stacks/off (vm.off). The markup is the one app.css and desk.css
+// Off your mind (the starred and running cards at its head, then the hint); the page /stacks/off (vm.off). The markup is the one app.css and desk.css
 // style. A row never unfolds: its text is a link to the card's own page, its tiles are forms that answer with one tap
 // (the card's routes, card.mjs). Nothing here decides what stands where: the core does; the page draws and acts.
 import { flipOut } from './app.mjs'
@@ -89,7 +89,7 @@ function deskList(d, base) {
   return html`${linkSlip(d.slip ?? [], base)}${out.map(x => (x.first.from ? run(x.first, x.rows, x.rows.length) : x.rows))}
 ${d.empty ? html`<div class="inbox-empty${d.mode === 'reading' ? ' is-reading' : ''}" id="desk-empty"${d.mode === 'reading' ? raw(' role="status"') : ''}>${sk('desk')}<p>${d.empty.en}</p></div>` : ''}
 <section id="desk-ip" class="tail" hidden></section>
-${offHint(d.off, base)}<div class="inbox-stacks stack-tabs is-straight is-two" id="desk-stacks">${artifactsPile(base)}</div>`
+${offHint(d.off, d.starred, base)}<div class="inbox-stacks stack-tabs is-straight is-two" id="desk-stacks">${artifactsPile(base)}</div>`
 }
 
 /** "Artifacts N" at the foot of the Desk: what the agents published (vm.artifacts, the newest first), the last four
@@ -108,39 +108,39 @@ function artifactsPile(base) {
 <div class="df-row">${all.slice(0, 4).map(a => html`<a class="df-card" id="art-${a.id}" data-nav href="${base}/artifacts/${encodeURIComponent(a.id)}" title="${a.title}"><span class="df-thumb">${thumb(a)}</span><span class="df-title">${a.title}</span></a>`)}</div></section>`
 }
 
-/** The Desk's <main>, and beside it its layer: the docked stacks, the selection bar, the knock strips (fixed things
+/** The Desk's <main>, and beside it its layer: the selection bar, the knock strips (fixed things
  *  inside <main> would keep it from being a layout boundary). */
 const deskMain = (d, base) => html`<main id="inbox" aria-label="Desk" data-controller="desk">
 ${deskHead(d, base)}
 <div class="inbox-news-at"><button class="inbox-news" type="button" data-desk-target="news" data-action="desk#toNew" hidden></button></div>
 <div class="inbox-groups" id="desk-list" data-desk-target="list">${deskList(d, base)}</div>
 </main>
-<div class="desk-layer" id="desk-layer">${deskDock(d, base)}<form class="sel-bar" id="sel-bar" method="post" action="${base}/cards/batch" hidden aria-label="Selected cards"><input type="hidden" name="stay" value="1"><input type="hidden" name="ids" value=""><span class="sel-n"></span>${sideWays({ many: true, between: html`<button type="submit" name="way" value="read" class="sel-read" hidden>${sk('tick')}<span>Read</span></button>` })}<button type="button" class="sel-clear" title="Clear (Esc)" aria-label="Clear the selection"><svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M6.8 7.2 Q12 12.4 17.4 17.6"/><path d="M17.2 6.8 Q12.2 12 6.6 17.4"/></svg></button></form>
+<div class="desk-layer" id="desk-layer"><form class="sel-bar" id="sel-bar" method="post" action="${base}/cards/batch" hidden aria-label="Selected cards"><input type="hidden" name="stay" value="1"><input type="hidden" name="ids" value=""><span class="sel-n"></span>${sideWays({ many: true, between: html`<button type="submit" name="way" value="read" class="sel-read" hidden>${sk('tick')}<span>Read</span></button>` })}<button type="button" class="sel-clear" title="Clear (Esc)" aria-label="Clear the selection"><svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M6.8 7.2 Q12 12.4 17.4 17.6"/><path d="M17.2 6.8 Q12.2 12 6.6 17.4"/></svg></button></form>
 <div class="inbox-edge is-up"><button class="inbox-edge-knock" type="button" id="knock-up" data-dir="up" hidden>↑ ${sk('knock')}<span></span></button></div>
 <div class="inbox-edge is-down"><button class="inbox-edge-knock" type="button" id="knock-down" data-dir="down" hidden>↓ ${sk('knock')}<span></span></button></div>
 </div>`
 
-// ---- the foot of the Desk: Off your mind (the owner's pick of 13 October 2026, "zwei Stapel wie HEY") ----
-// Two stacks are docked at the bottom of the Desk (DockView starred and running): at rest a small tab each, its sign,
-// word and count; a tap fans it upward, the running one leads on to the complete list. Under the rows the section Off
-// your mind (OffHintView): its first rows, fading, and how many; its heading opens /stacks/off.
+// ---- the foot of the Desk: Off your mind (the owner's word of 17 October 2026: no floating stacks, all of it on the
+// Desk, one design with the phone) ----
+// One calm section in the Desk's scroll (OffHintView): at its head the starred cards (DockView starred) and the cards
+// being worked on (OffHintView.running, "2 more running"), each with its agent's drawing (in its turning ring while it
+// runs), the title and "agent · status line"; under them the first put-off and closed rows, fading, and how many. Its
+// heading opens /stacks/off.
 const cardPath = (id, base) => `${base}/card/${encodeURIComponent(id)}`
 /** A section's heading: a pen rule with its small label; with href the label is the link to the whole page. */
 const divider = (label, { href = '' } = {}) => html`<div class="end-divider"><svg viewBox="0 0 300 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 4.6 Q60 2.6 120 4.2 T238 3.6 T298 4.4"/></svg>${href ? html`<a class="end-head" data-nav href="${href}" aria-label="All ${label}"><span class="end-head-words">${label}</span>${sk('go')}</a>` : html`<span aria-hidden="true">${label}</span>`}</div>`
 /** The mark of a card off the Desk (OffRowView.mark: snooze, shred, withdraw, tick). */
 const placeMark = mark => sk(mark)
-export function offHint(o, base) {
-  if (!o) return html`<section id="desk-end" class="endlist" hidden></section>`
+/** A starred or running card at the head of Off your mind (DockRowView): the agent's drawing, in its turning ring while
+ *  it runs; the title; "agent · status line". */
+const headRow = (r, base, star) => { const who = whoOf(r.from); return html`<a class="oym-run" id="oym-${r.id}" data-nav href="${cardPath(r.id, base)}" style="--hue:${who.hue}"${r.running ? raw(' data-running') : ''} aria-label="${r.title}, ${r.line.en}"><span class="oym-run-mark">${avatar(who, { crown: false, working: r.running })}${r.running ? raw(ringSvg({ drop: true })) : ''}</span><span class="oym-run-words"><b>${star ? starMark() : ''}${r.title}</b><small>${r.line.en}</small></span></a>` }
+export function offHint(o, starred, base) {
+  const stars = starred?.rows ?? [], running = o?.running ?? []
+  if (!o && !stars.length) return html`<section id="desk-end" class="endlist" hidden></section>`
   return html`<section id="desk-end" class="endlist oym-hint" aria-label="Off your mind">
 ${divider('Off your mind', { href: `${base}/stacks/off` })}
-<a class="oym-hint-list" data-nav href="${base}/stacks/off">${o.rows.map(r => html`<span class="oym-hint-row" data-g="${r.place}">${placeMark(r.mark)}<b>${r.title}</b></span>`)}<span class="oym-hint-more">${o.says.en}</span></a>
+${stars.length ? html`<div class="oym-runs" id="oym-starred" aria-label="${starred.says.en}">${stars.map(r => headRow(r, base, true))}</div>` : ''}${running.length ? html`<div class="oym-runs" id="oym-running" aria-label="Running">${running.map(r => headRow(r, base, false))}${o.running_more ? html`<a class="oym-run-more" data-nav href="${base}/stacks/off">${o.running_more.en}</a>` : ''}</div>` : ''}${o && (o.rows.length || o.put_off || o.closed) ? html`<a class="oym-hint-list" data-nav href="${base}/stacks/off">${o.rows.map(r => html`<span class="oym-hint-row" data-g="${r.place}">${placeMark(r.mark)}<b>${r.title}</b></span>`)}<span class="oym-hint-more">${o.says.en}</span></a>` : ''}
 </section>`
-}
-/** The two docked stacks (#desk-dock); hidden while there is neither. */
-export function deskDock(d, base) {
-  const mini = r => { const who = whoOf(r.from); return html`<a class="dock-card" data-nav href="${cardPath(r.id, base)}" style="--hue:${who.hue}">${avatar(who, { crown: false, working: r.running })}<span><b>${r.title}</b><small>${r.line.en}</small></span></a>` }
-  const stack = (s, icon, word) => !s ? '' : html`<details class="dock-stack" name="desk-dock" data-k="${s.key}" data-action="toggle->oym-dock#toggled"><summary class="dock-tab" aria-label="${s.says.en}: show them">${icon}<b>${word}</b><em>${s.count}</em></summary><div class="dock-fan">${s.rows.map(mini)}${s.all ? html`<a class="dock-all" data-nav href="${base}/stacks/off">${s.all.en}${sk('go')}</a>` : ''}</div></details>`
-  return html`<div class="oym-dock" id="desk-dock" data-controller="oym-dock"${d.starred || d.running ? '' : raw(' hidden')}>${stack(d.starred, sk('star'), 'Starred')}${stack(d.running, raw(ringSvg({ drop: true })), 'Running')}</div>`
 }
 
 // ---- the page /stacks/off: the complete list (OffListView) ----
@@ -157,22 +157,6 @@ ${o?.works?.length ? html`<div class="pile-cards" id="off-works">${o.works.map(w
 ${o?.more ? html`<form class="end-more" method="post" action="${base}/stacks/off/more"><input type="hidden" name="q" value="${q}"><button type="submit" class="end-more-go">${o.more.says.en}</button></form>` : ''}${o?.loading ? html`<p class="end-none" role="status">Loading…</p>` : ''}
 </section></div></main>`
 }
-
-// The dock: one stack open at a time (details of one name); the one he opened stays open when the live piece is drawn
-// anew; a press outside or Escape lays it together.
-let dockOpen = ''
-controller('oym-dock', class extends Controller {
-  connect() {
-    const d = dockOpen && this.element.querySelector(`.dock-stack[data-k="${dockOpen}"]`)
-    if (d) d.open = true
-    this.out = e => { if (e.type === 'keydown' ? e.key === 'Escape' : !this.element.contains(e.target)) this.close() }
-    document.addEventListener('pointerdown', this.out); document.addEventListener('keydown', this.out)
-  }
-  disconnect() { document.removeEventListener('pointerdown', this.out); document.removeEventListener('keydown', this.out) }
-  toggled(e) { const d = e.currentTarget; if (d.open) dockOpen = d.dataset.k; else if (dockOpen === d.dataset.k) dockOpen = '' }
-  close() { for (const d of this.element.querySelectorAll('.dock-stack[open]')) d.open = false; dockOpen = '' }
-})
-
 
 // ---- controller "goals" ----
 // The goals under the greeting. One toggle: folded, the first line; open, all of them; kept per team on this device.
