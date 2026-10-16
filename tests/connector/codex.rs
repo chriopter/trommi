@@ -370,6 +370,21 @@ async fn a_codex_session_connects_files_cards_and_is_woken_by_the_board() {
     mcp.ok("reply", json!({ "text": "Gehört." })).await;
     human.sync().await;
     assert!(human.findings.is_empty(), "{:?}", human.findings);
+
+    // Codex receives no channel events and caches its first tool list. A changed contract must tell
+    // the agent through a normal tool result to restart Codex and reload both definitions and words.
+    std::fs::write(&new_file, b"#!/bin/sh\nif [ \"$1\" = launch-abi ]; then echo '2:changed-contract'; exit 0; fi\nexit 99\n").unwrap();
+    std::fs::set_permissions(&new_file, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::rename(&new_file, &program).unwrap();
+    let notice = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            let said = mcp.ok("inbox", json!({})).await;
+            if said.contains("reload its tools and instructions") { break said; }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }).await.expect("Codex sees the stale-contract notice in its tool result");
+    assert!(notice.contains("Tell the human") && notice.contains("Quit Codex"), "{notice}");
+    assert!(!notice.contains("/mcp"), "{notice}");
     mcp.close().await;
 }
 

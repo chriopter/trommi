@@ -224,5 +224,34 @@ async fn the_launcher_swaps_in_a_new_connector_mid_session() {
         vec![new],
         "no second swap, no lease fight"
     );
+
+    // A changed contract must reach the agent as a restart notice instead of silently keeping stale
+    // initialization instructions. This isolated probe would fail immediately if launched as a server.
+    std::fs::write(&new_file, b"#!/bin/sh\nif [ \"$1\" = launch-abi ]; then echo '2:changed-contract'; exit 0; fi\nexit 99\n").unwrap();
+    std::fs::set_permissions(
+        &new_file,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    std::fs::rename(&new_file, &program).unwrap();
+    let update = mcp.event("update").await;
+    assert_eq!(update["meta"]["restart_required"], "1", "{update}");
+    assert!(
+        update["content"]
+            .as_str()
+            .unwrap()
+            .contains("reload its tools and instructions"),
+        "{update}"
+    );
+    let (said, failed) = mcp.call("reload_connector", json!({})).await;
+    assert!(
+        !failed && said.contains("reload its tools and instructions"),
+        "{said}"
+    );
+    assert_eq!(
+        children_of(launcher),
+        vec![new],
+        "the old compatible server keeps running"
+    );
     mcp.close().await;
 }
