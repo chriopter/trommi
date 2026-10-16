@@ -47,6 +47,14 @@
               "unheard": 0,
               "waiting": 0,
               "working": 0
+            },
+            "status": {
+              "args": {
+                "step": "1",
+                "steps": "4"
+              },
+              "en": "Unlocking this device",
+              "key": "start.device"
             }
           },
           "part": "whole"
@@ -59,7 +67,14 @@
         {
           "part": "phase",
           "phase": "opening",
-          "status": null
+          "status": {
+            "args": {
+              "step": "2",
+              "steps": "4"
+            },
+            "en": "Loading your Desk",
+            "key": "start.desk"
+          }
         },
         {
           "part": "sidebar",
@@ -140,6 +155,18 @@
     {
       "base": 2,
       "parts": [
+        {
+          "part": "phase",
+          "phase": "opening",
+          "status": {
+            "args": {
+              "step": "3",
+              "steps": "4"
+            },
+            "en": "Catching up",
+            "key": "start.catching_up"
+          }
+        },
         {
           "part": "sidebar",
           "view": {
@@ -634,13 +661,30 @@
       "parts": [
         {
           "part": "phase",
+          "phase": "opening",
+          "status": {
+            "args": {
+              "step": "4",
+              "steps": "4"
+            },
+            "en": "Almost there",
+            "key": "start.almost"
+          }
+        }
+      ]
+    },
+    {
+      "base": 5,
+      "parts": [
+        {
+          "part": "phase",
           "phase": "live",
           "status": null
         }
       ]
     },
     {
-      "base": 5,
+      "base": 6,
       "parts": [
         {
           "part": "sidebar",
@@ -857,7 +901,7 @@
       ]
     },
     {
-      "base": 6,
+      "base": 7,
       "parts": [
         {
           "part": "sidebar",
@@ -934,7 +978,7 @@
       ]
     },
     {
-      "base": 7,
+      "base": 8,
       "parts": [
         {
           "part": "sidebar",
@@ -1011,7 +1055,7 @@
       ]
     },
     {
-      "base": 8,
+      "base": 9,
       "parts": [
         {
           "part": "sidebar",
@@ -1088,7 +1132,7 @@
       ]
     },
     {
-      "base": 9,
+      "base": 10,
       "parts": [
         {
           "part": "sidebar",
@@ -1165,7 +1209,7 @@
       ]
     },
     {
-      "base": 10,
+      "base": 11,
       "parts": [
         {
           "part": "sidebar",
@@ -1242,7 +1286,7 @@
       ]
     },
     {
-      "base": 11,
+      "base": 12,
       "parts": [
         {
           "part": "sidebar",
@@ -1319,7 +1363,7 @@
       ]
     },
     {
-      "base": 12,
+      "base": 13,
       "parts": [
         {
           "part": "sidebar",
@@ -1396,7 +1440,7 @@
       ]
     },
     {
-      "base": 13,
+      "base": 14,
       "parts": [
         {
           "part": "sidebar",
@@ -1473,7 +1517,7 @@
       ]
     },
     {
-      "base": 14,
+      "base": 15,
       "parts": [
         {
           "part": "sidebar",
@@ -1598,7 +1642,7 @@
       "written": false
     },
     "phase": "live",
-    "rev": 15,
+    "rev": 16,
     "settings": {
       "account": null,
       "agent_list": [

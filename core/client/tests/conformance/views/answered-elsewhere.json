@@ -47,6 +47,14 @@
               "unheard": 0,
               "waiting": 0,
               "working": 0
+            },
+            "status": {
+              "args": {
+                "step": "1",
+                "steps": "4"
+              },
+              "en": "Unlocking this device",
+              "key": "start.device"
             }
           },
           "part": "whole"
@@ -59,7 +67,14 @@
         {
           "part": "phase",
           "phase": "opening",
-          "status": null
+          "status": {
+            "args": {
+              "step": "2",
+              "steps": "4"
+            },
+            "en": "Loading your Desk",
+            "key": "start.desk"
+          }
         },
         {
           "part": "sidebar",
@@ -140,6 +155,18 @@
     {
       "base": 2,
       "parts": [
+        {
+          "part": "phase",
+          "phase": "opening",
+          "status": {
+            "args": {
+              "step": "3",
+              "steps": "4"
+            },
+            "en": "Catching up",
+            "key": "start.catching_up"
+          }
+        },
         {
           "part": "sidebar",
           "view": {
@@ -719,6 +746,18 @@
     {
       "base": 4,
       "parts": [
+        {
+          "part": "phase",
+          "phase": "opening",
+          "status": {
+            "args": {
+              "step": "4",
+              "steps": "4"
+            },
+            "en": "Almost there",
+            "key": "start.almost"
+          }
+        },
         {
           "part": "settings",
           "view": {
