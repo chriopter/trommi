@@ -137,9 +137,32 @@ impl App {
     }
 
     /// Signs out: the token ends at the hub, and everything this slot stored goes.
-    fn sign_out(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
+    pub(super) fn sign_out(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
         if self.engine.is_none() {
+            self.logout_requested = true;
+            self.signing_in = None; self.founding = None; self.linking = None; self.room_join_wait = None;
+            for pending in self.pending.values_mut() {
+                match pending {
+                    Pending::JoinLoad | Pending::FoundLoad | Pending::LinkLoad => *pending = Pending::DeviceLoad,
+                    Pending::DeviceLoad | Pending::RoomKey | Pending::RoomKeyWrite | Pending::ForgetWrite => {},
+                    p if p.is_departure() => {},
+                    other => *other = Pending::Dropped,
+                }
+            }
+            if !self.pending.values().any(|p| matches!(p, Pending::DeviceLoad | Pending::RoomKey)) {
+                let id = self.io(Pending::DeviceLoad);
+                out.push(Effect::Store { id, op:StoreOp::DeviceLoad });
+            }
+            self.next_view.phase = Phase::Starting;
+            self.next_view.account = AccountView { step:"working".into(), ..Default::default() };
             return;
+        }
+        self.logout_requested = false;
+        let departure = self.engine.as_ref().and_then(|e| e.departure_request().ok());
+        if let Some(request) = departure {
+            // Public signed intent survives revocation of the bearer below. The receiving human app,
+            // not the hub, checks it and commits the actual MLS removal.
+            self.departure_enqueue(&request, now_ms, out);
         }
         self.step_send(now_ms, out, |site| Codec.request(site, &Route::SignOut), |_| Step::SignOut);
         self.forget_local_device(now_ms, out);
@@ -153,11 +176,14 @@ impl App {
         self.outside_signed_out(&mut privacy);
         for id in self.next_view.files.keys() { privacy.push(Effect::FileGone { file_id: id.clone() }); }
         let before = out.len();
+        let had_engine = self.engine.is_some();
         let wiped = self.with_engine(now_ms, out, |engine, ctx| engine.wipe(ctx));
-        if wiped != Some(true) { out.push(log(LogLevel::Warn, "the stored device could not be erased")); }
+        if had_engine && wiped != Some(true) { out.push(log(LogLevel::Warn, "the stored device could not be erased")); }
         let writes: Vec<_> = out[before..].iter().filter_map(|e| match e { Effect::Store { id, op: StoreOp::DeviceApply { .. } } => Some(*id), _ => None }).collect();
         let mut old: Vec<_> = self.pending.keys().copied().collect();
         if let Some(engine) = self.engine.as_mut() { old.extend(engine.forget()); }
+        let departures = std::mem::take(&mut self.departures);
+        let public_pending: Vec<_> = self.pending.iter().filter(|(_, p)| p.is_departure()).map(|(id,p)| (*id,p.clone())).collect();
         let config = self.config.take();
         let view = std::mem::take(&mut self.view);
         let rendered = self.rendered_once;
@@ -165,8 +191,10 @@ impl App {
         // In-flight account steps and plaintext file buffers must not survive into another account.
         *self = App::new();
         self.config = config; self.view = view; self.rendered_once = rendered; self.next_id = next;
+        self.departures = departures;
         for id in old { self.pending.insert(id, Pending::Dropped); }
         for id in writes { self.pending.insert(id, Pending::ForgetWrite); }
+        self.pending.extend(public_pending);
         self.next_view.phase = Phase::SignedOut;
         self.next_view.account = AccountView { step: "sign_in".into(), ..Default::default() };
         out.splice(0..0, privacy);
@@ -177,6 +205,7 @@ impl App {
 
     /// The keys the cache space holds, all to go.
     pub(super) fn wipe_cache(&mut self, keys: Vec<String>, out: &mut Vec<Effect>) {
+        let keys: Vec<String> = keys.into_iter().filter(|key| !self.departures.keeps(key)).collect();
         if keys.is_empty() {
             return;
         }

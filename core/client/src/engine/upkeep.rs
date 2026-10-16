@@ -79,6 +79,9 @@ pub enum Job {
 pub(super) struct Tending {
     /// A look is wanted.
     pub(super) want: bool,
+    /// Signature-checked self-retirement requests. Unknown keys wait for an in-flight own join;
+    /// only the verified room history can make one a human removal target.
+    pub(super) departures: BTreeSet<DeviceId>,
     /// What the look in hand still has to do, in order.
     jobs: VecDeque<Job>,
     /// A look is in hand: made, and not yet through.
@@ -225,6 +228,19 @@ impl Engine {
             Ok(groups) => groups,
             Err(e) => return self.local(ctx, &e),
         };
+        if !self.tending.departures.is_empty() {
+            let room = GroupId::room(self.room());
+            if groups.iter().find(|g| g.group == room).is_some_and(|g| g.pending) { return; }
+            if let Some(history) = self.device.room_history() {
+                self.tending.departures.retain(|d| !history.knows(d) || history.newest().is_human(d));
+            }
+            let leaving: Vec<DeviceId> = self.tending.departures.iter().filter(|d| **d != me && humans.contains(d)).copied().collect();
+            if !leaving.is_empty() {
+                let cuts = leaving.iter().map(|d| self.device.cut_of(&room, d)).collect::<Result<Vec<_>, _>>();
+                if let Err(e) = cuts.and_then(|cuts| self.device.remove_human_devices(&cuts, ctx.now)) { self.failed(ctx, &e); }
+                return;
+            }
+        }
         if std::mem::take(&mut self.tending.leaves) && !self.renew_leaves(ctx, &groups) {
             // (the room group first: the sessions with the look its Commit's return wants)
             self.tending.leaves = true;

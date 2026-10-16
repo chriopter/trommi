@@ -243,6 +243,7 @@ impl Board {
                     working: p.working,
                     last_call_at: p.last_call_at,
                     offline_since: None,
+                    last_seen_ms: p.last_seen_ms,
                 };
                 m.apply_presence_event(&event, c, now);
             }

@@ -52,7 +52,7 @@ export interface Cache {
   /** `durable`: resolved only once it is on disk (a strict transaction), for a record something else relies on. */
   set(key: string, value: unknown, opts?: { durable?: boolean }): Promise<void>
   /** `undefined` deletes; one transaction: all of the entries or none. */
-  setMany(entries: [key: string, value: unknown | undefined][]): Promise<void>
+  setMany(entries: [key: string, value: unknown | undefined][], options?: { durable?: boolean }): Promise<void>
   /** The records whose key starts with `prefix`, in key order; `after` and `before` are exclusive bounds. */
   range(prefix: string, opts?: { after?: string; before?: string; limit?: number; reverse?: boolean }): Promise<[string, unknown][]>
   delete(key: string): Promise<void>
@@ -204,7 +204,7 @@ export async function openCache(name: string): Promise<Cache> {
     async get(key) { return requested(store('readonly').get(key)) },
     set(key, value, { durable = false } = {}) { return written(s => { s.put(value, key) }, durable) },
     delete(key) { return written(s => { s.delete(key) }) },
-    setMany(entries) { return written(s => { for (const [key, value] of entries) { if (value === undefined) s.delete(key); else s.put(value, key) } }) },
+    setMany(entries, { durable = false } = {}) { return written(s => { for (const [key, value] of entries) { if (value === undefined) s.delete(key); else s.put(value, key) } }, durable) },
     async range(prefix, { after, before, limit, reverse = false } = {}) {
       const range = IDBKeyRange.bound(after ?? prefix, before ?? prefix + '￿', after !== undefined, before !== undefined)
       const s = store('readonly')

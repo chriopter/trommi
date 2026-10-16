@@ -15,6 +15,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Sizes are padded: stored messages, MLS messages and new files are rounded up to fixed buckets (a file to 4 KiB at
   least, and above that at most about 12 % larger), so a size tells little of the content. Files from before
   11 October 2026 keep their exact size.
+- The hub records when a device last signed in or opened or closed its stream (persistent times coalesced to a minute).
+  Settings → Devices shows offline contact times. These are hub activity hints, never evidence for membership or removal.
 - Settings → Data shows you what the hub keeps of your account: counts and sizes only, to your own devices only.
 - Your password never leaves your device; the hub keeps only a slow hash of a key derived from it.
 - Each wrong password makes that guesser wait longer (up to 15 minutes); no account is ever locked.
@@ -39,6 +41,12 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   its admitted sessions and helpers too; a session taken over by another device does not inherit its approval
   or removal relationship. Missing registers or the hub's online/device list never prove a computer's removal:
   automatic cleanup requires verified room membership. Existing ordinary agents gain no computer authority.
+- Signing out erases the device key, private cache and extension keys immediately. A public self-retirement
+  notice, signed by that exact device for that room, stays durably queued without any bearer or content key
+  until the hub acknowledges it. The next online human app checks the signature and verified human membership
+  and commits the normal removal; the hub cannot forge that authority. Offline logout retries after a restart.
+  The hub briefly holds bounded requests for an own join still in flight, so cancelling an unfinished sign-in
+  does not leave an unremovable unnamed key. Activity times and missing profiles never authorize cleanup.
 - A removed device loses access at once.
 - A device deletes its data only after checking the signed removal itself, never on the hub's word alone.
 - A new device starts from the hub's list of what is open and reads what is new. Older entries are fetched when
@@ -47,7 +55,7 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - A room holds at most 1000 devices.
 - Files are encrypted on the device. Push notifications carry no content.
 - The web app keeps pictures it showed in the browser still encrypted, as the hub stores them (at most 96 MB);
-  signing out deletes them with the rest of the browser's data.
+  signing out deletes them with the rest of the account's private browser data.
 - What push reveals: Apple and the browser's push service learn that something happened for a device, when, and how
   often. Every push looks the same to them: one text ("Something new."), the same clear headers (Web Push: urgency
   normal and a topic that is random per subscription and names no room; on the iPhone a sealed part of one length).

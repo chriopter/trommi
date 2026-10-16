@@ -178,6 +178,8 @@ pub enum Route<'a> {
     RejectCommit { group: &'a GroupId, n: u64 },
     /// `DELETE /v1/token`: ends the token the site carries, at once; the hub cuts the device's streams.
     SignOut,
+    /// Public, device-signed request for a human's own room leaf to be retired by another human.
+    Depart { room: &'a RoomId, device: &'a DeviceId, signature: &'a [u8] },
     /// `GET /v1/desk[?active=1|?archived=1]`: the open objects with their current version, every writer's
     /// newest value per register, the counts per group.
     Desk { only: DeskOnly },
@@ -1160,6 +1162,7 @@ pub enum StreamEvent {
         invite: InviteId,
     },
     Presence(Presence),
+    Departure { device: DeviceId, signature: [u8; 64] },
     /// The end of the list of who is here that a human device's new stream is told first.
     Here,
     Archived {
@@ -1181,6 +1184,8 @@ pub struct Presence {
     pub hears: Option<bool>,
     pub working: Option<bool>,
     pub last_call_at: Option<u64>,
+    /// Hub activity metadata, never membership evidence.
+    pub last_seen_ms: Option<u64>,
 }
 
 /// `Debug` that names the type and what orders it, never the bytes it holds (content, a Welcome, a KeyPackage).
@@ -1249,6 +1254,7 @@ impl std::fmt::Debug for StreamEvent {
             StreamEvent::Here => f.write_str("Here"),
             StreamEvent::Archived { .. } => f.write_str("Archived"),
             StreamEvent::FileEvicted { .. } => f.write_str("FileEvicted"),
+            StreamEvent::Departure { .. } => f.write_str("Departure"),
         }
     }
 }

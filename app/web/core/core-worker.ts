@@ -70,7 +70,7 @@ async function cacheSpace(name: string): Promise<CacheSpace> {
   return {
     get: keys => Promise.all(keys.map(k => c.get(k).then(bytes))),
     scan: async prefix => (await c.range(prefix)).flatMap(([key, value]) => { const v = bytes(value); return v ? [{ key, value: v }] : [] }),
-    put: (put, remove) => c.setMany([...remove.map((k): [string, undefined] => [k, undefined]), ...put.map((e): [string, Uint8Array] => [e.key, e.value])]),
+    put: (put, remove, durable = false) => c.setMany([...remove.map((k): [string, undefined] => [k, undefined]), ...put.map((e): [string, Uint8Array] => [e.key, e.value])], { durable }),
   }
 }
 

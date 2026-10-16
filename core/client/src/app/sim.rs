@@ -263,7 +263,7 @@ impl Sim {
                     })
                     .collect(),
             }),
-            StoreOp::Put { put, delete } => {
+            StoreOp::Put { put, delete } | StoreOp::PutDurable { put, delete } => {
                 for k in delete {
                     self.cache.remove(&k);
                 }

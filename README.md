@@ -20,6 +20,11 @@ One Rust app core runs the web, iPhone, Mac, Linux and connector; the platform s
 
 **[→ Open Trommi](https://app.trommi.com)** · **[▶ See how it works](https://trommi.com/#demo)** (a four-minute video)
 
+Settings → Devices shows when an offline device last contacted the hub. Signing out erases that device's
+private state and durably queues only its signed public retirement notice. An online human app verifies the
+notice and removes the exact device through the encrypted room's normal membership change. Offline logout
+retries after a restart; contact times and missing profiles never authorize removal.
+
 ## Install
 
 1. **The app:** [app.trommi.com](https://app.trommi.com) in any browser. On an iPhone: the public beta on

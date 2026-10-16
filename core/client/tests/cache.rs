@@ -293,7 +293,7 @@ fn a_store_that_does_not_answer_the_read_leaves_the_cache_unwritten() {
     // (by hand: a new App whose cache read fails)
     let mut app = trommi_client_core::app::App::new();
     let effects = app.handle(sim.now_ms, start());
-    let load = effects.iter().find_map(|e| if let Effect::Store { id, .. } = e { Some(*id) } else { None }).unwrap();
+    let load = effects.iter().find_map(|e| if let Effect::Store { id, op: trommi_client_core::app::io::StoreOp::DeviceLoad } = e { Some(*id) } else { None }).unwrap();
     let effects = app.handle(sim.now_ms, Event::Store { id: load, result: trommi_client_core::app::io::IoResult::Ok(trommi_client_core::app::io::StoreAnswer::Device { revision: sim.device.0, entries: sim.device.1.iter().map(|(k, v)| trommi_client_core::app::io::DeviceEntry { key: k.clone().into(), value: v.clone().into() }).collect() }) });
     let mut later = Vec::new();
     // (every read the App asks for fails, the engine's own as well; the wanted ones come in rounds)

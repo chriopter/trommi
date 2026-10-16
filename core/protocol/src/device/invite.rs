@@ -1132,4 +1132,12 @@ impl<S: Storage> Device<S> {
             .ok_or(Error::NoRoom)?;
         hub_auth::sign(&self.key, room, hub, challenge)
     }
+
+    /// A public, irrevocable request to retire this key, for explicit logout or an abandoned own join.
+    /// The receiver must verify that this exact key is a human member before committing its removal.
+    pub fn sign_departure_for(&self, room: &RoomId) -> Result<Vec<u8>, Error> {
+        self.owner()?;
+        if self.room().is_some_and(|known| known != *room) { return Err(Error::WrongRoom); }
+        hub_auth::sign_departure(&self.key, room)
+    }
 }

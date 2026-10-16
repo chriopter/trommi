@@ -357,3 +357,22 @@ fn sixty_four_cache_puts_are_one_durable_journal_record() {
     assert_eq!(scan(&mut stores, "c1/aa/card/").len(), 64);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_durable_public_notice_survives_private_device_erasure_and_its_ack_survives_reopen() {
+    let dir = folder("public-departure");
+    let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
+    ok(apply(&mut stores, 0, vec![entry(b"key", b"private signing key")], vec![]));
+    ok(stores.run(StoreOp::PutDurable { put:vec![Entry { key:"public-departure/room.device".into(), value:b"public signed notice".as_slice().into() }], delete:vec![] }));
+    ok(apply(&mut stores, 1, vec![], vec![b"key"]));
+    drop(stores);
+    let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
+    assert!(device(&mut stores).1.is_empty());
+    assert_eq!(get(&mut stores, &["public-departure/room.device"]), vec![Some(b"public signed notice".to_vec())]);
+    ok(stores.run(StoreOp::PutDurable { put:vec![], delete:vec!["public-departure/room.device".into()] }));
+    drop(stores);
+    let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
+    assert!(scan(&mut stores, "public-departure/").is_empty());
+    drop(stores);
+    let _ = std::fs::remove_dir_all(&dir);
+}

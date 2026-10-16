@@ -495,7 +495,7 @@ ${step(joined ? 'done' : dead ? 'dead' : ask ? 'ask' : open ? '' : 'wait', last)
   // The agents are Settings · Agents (agents.mjs). ----
   const devIcon = d => (d.icon === 'terminal' ? sk('terminal') : d.icon === 'phone' ? art('phone') : sk('laptop'))
   const onlineDot = on => html`<i class="set-dot" data-online="${on ? 'yes' : 'no'}"></i>`
-  const devLine = d => html`<span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${d.name}</b><small class="room-fp" title="Key fingerprint">${d.fingerprint}</small></span><span class="set-detail">${d.active ? onlineDot(d.online) : ''}${d.says.en}</span>`
+  const devLine = d => html`<span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${d.name}</b><small class="room-fp" title="Key fingerprint">${d.fingerprint}</small>${d.seen ? html`<small>${d.seen.en}</small>` : ''}</span><span class="set-detail">${d.active ? onlineDot(d.online) : ''}${d.says.en}</span>`
   // (.room-device: one per device listed, as the end-to-end runs count them)
   const member = d => (d.active
     ? html`<a class="set-row set-row-two room-device" id="device-${d.id}" href="/settings/devices/${d.id}" data-nav>${devLine(d)}${SET_CHEVRON}</a>`

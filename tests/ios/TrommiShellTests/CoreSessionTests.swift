@@ -67,6 +67,20 @@ final class CoreSessionTests: XCTestCase {
     let scan = try store.run(NativePacket(["op": "scan", "prefix": ""]))
     XCTAssertEqual(Set((scan.json["entries"] as? [[String: Any]] ?? []).compactMap { $0["key"] as? String }), Set(keys))
   }
+  func testDurableCacheWritesAndDeletesSurviveReopening() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-durable-cache-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let key = "public-departure/" + String(repeating: "a", count: 87)
+    let value = Data("public signed retirement".utf8)
+    var store = try ShellStore(directory: directory)
+    _ = try store.run(NativePacket(["op": "put_durable", "put": [["key": key, "value": 0]]], blobs: [value]))
+    store.close(); store = try ShellStore(directory: directory)
+    XCTAssertEqual(try store.run(NativePacket(["op": "get", "keys": [key]])).blobs, [value])
+    _ = try store.run(NativePacket(["op": "put_durable", "delete": [key]]))
+    store.close(); store = try ShellStore(directory: directory)
+    XCTAssertTrue(try store.run(NativePacket(["op": "scan", "prefix": "public-departure/"])).blobs.isEmpty)
+    store.close()
+  }
   func testTheDeviceSpaceIsDurableAndTheCacheIsEncrypted() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trommi-shell-store-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }

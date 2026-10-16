@@ -24,13 +24,15 @@ fn an_empty_device_starts_signed_out() {
     assert!(
         matches!(&sim.log[0], Effect::Render { delta } if matches!(delta.parts[0], ViewPart::Whole { .. }))
     );
-    assert!(matches!(
-        &sim.log[1],
-        Effect::Store {
-            op: StoreOp::DeviceLoad,
-            ..
-        }
-    ));
+    assert!(sim.log.iter().skip(1).any(|effect| matches!(
+        effect,
+        Effect::Store { op: StoreOp::DeviceLoad, .. }
+    )));
+    assert!(sim.log.iter().skip(1).any(|effect| matches!(
+        effect,
+        Effect::Store { op: StoreOp::Scan { prefix }, .. }
+            if prefix == "public-departure/"
+    )));
     // (an empty slot needs no hub: nothing more is read)
     assert!(!sim.log.iter().any(|e| matches!(e, Effect::Store { op: StoreOp::Get { .. }, .. })));
 }

@@ -30,6 +30,7 @@
       "device_id": "5e5c199cbf26ef2038765bf094beea7134501402b2629fdf9171b3c9b6ca67f0",
       "device_role": "human",
       "device_name": "Phone",
+      "last_seen_ms": 1791466200000,
       "is_active": true,
       "added_entry_number": 1,
       "removed_entry_number": null,

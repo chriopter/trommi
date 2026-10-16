@@ -70,3 +70,9 @@ pub(crate) fn token(body: &Json) -> Read<Answer> {
 pub(crate) fn sign_out_request(site: &Site<'_>) -> Read<HttpRequest> {
     Ok(begin(site, "DELETE", "/v1/token", true, CAP_WRITE)?.done())
 }
+
+pub(crate) fn depart_request(site: &Site<'_>, room: &RoomId, device: &trommi_core::ids::DeviceId, signature: &[u8]) -> Read<HttpRequest> {
+    if signature.len() != 64 { return bad("a departure: a 64-byte device signature"); }
+    let path = format!("/v1/rooms/{}/departures", b64(room.as_bytes()));
+    Ok(begin(site, "POST", &path, false, CAP_WRITE)?.json(&json!({"device":b64(device.as_bytes()),"signature":b64(signature)})).done())
+}

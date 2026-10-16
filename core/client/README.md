@@ -115,7 +115,7 @@ migration leaves the prior state intact; missing components and mixed whole/spli
 The cache space is separate: string keys and bytes, with get/scan/put/delete. Keys start with
 `c1/<room>/`; `src/cache/layout.rs` names the model/meta/window/draft records. Values describe checked model data;
 file cache bytes retain their encrypted hub representation. Metadata binds a model to the device identity and
-revision. Losing the cache costs a catch-up; it never loses the outbox. Physical storage, encryption at rest,
+revision. Losing disposable model cache costs a catch-up; it never loses the protocol outbox. Physical storage, encryption at rest,
 locking and filesystem-safe key encoding belong to the executor.
 
 On the web, device batches append one packed, still-encrypted IndexedDB delta with their revision in one
@@ -126,7 +126,17 @@ On Linux, device and cache use separate namespaces in the same `core/io` journal
 multi-key cache put/delete commits as one synced record. Old per-key cache files migrate once, with a durable
 marker in the same commit, before removal; a failed write makes further cache reads fail until reopen.
 
-Sign-out drops plaintext model/file/account buffers, ends the token and wipes the slot/cache. A human device is
+The public logout outbox is the exception to disposable cache data. `public-departure/<room>.<device>` holds
+only a strict, signature-checked hub/room/device/signature record, at most 2048 bytes, with no bearer or content
+key. `StoreOp::PutDurable` syncs both values and their names before answering: a strict IndexedDB transaction,
+a journal commit, or a native atomic write followed by file and directory sync. New notices are persisted before
+private key erasure even when older deliveries occupy the transport. Pending notices are never dropped for an
+arbitrary queue length; at most eight delivery operations run together. They share the core's hub backoff and
+retry after restart without opening a device, and are deleted durably only after a checked hub acknowledgement.
+A current or later human app verifies the exact signature and actual human membership, waits for anchored room
+history, and makes the ordinary room Cut/removal Commit. Missing names and activity hints never authorize removal.
+
+Sign-out drops plaintext model/file/account buffers, ends the token and wipes the slot and private cache. A human device is
 erased for removal only after the protocol checked its signed removal. A hub claim alone leaves state intact.
 Extension key clearing precedes erasure writes so a full disk cannot leave a stale key copy; failed erasure remains
 visible. `ForgetShared` is reserved for verified removal/account deletion, so launching an empty slot cannot erase
@@ -196,3 +206,5 @@ was showing. This covers both listed values and values already read through a se
 not keep a value the protocol replay discarded. A device-name register records its source group in the cached
 room record, so a session Cut cannot clear a name learned from the room. Cache layout revision 2 rebuilds older
 model snapshots that lack this provenance; the device's durable protocol state is untouched.
+
+The Devices view formats the hub's last-contact hints in the person's timezone. Presence can hold a bounded report until a signed group names its device; activity never creates membership or authorizes removal.
