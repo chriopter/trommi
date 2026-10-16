@@ -1156,12 +1156,12 @@ export class ClientModel {
   /** This device's founding for the agent failed: when to try again (ms). */
   seatFailed(agent: string, nowMs: number): number
   setSeatGrace(ms: number): void
-  /** Deleting a desk (core/client/src/desk_delete.rs): the desks a delete was begun on, JSON list of ids. */
-  desksDeleting(): string
-  /** What a desk holds, counted (JSON `Counts`); `board` JSON `{shapes, files, notes, snapshot_empty}` or "". */
-  deskContents(deskId: string, board: string): string
-  /** The next step of deleting a desk, JSON `{step, …, done, total, left}`; `known` JSON `{board?, files_gone}`. */
-  deskDeletePlan(deskId: string, known: string, by: string, nowMs: number): string
+  /** Deleting a team (core/client/src/team_delete.rs): the teams a delete was begun on, JSON list of ids. */
+  teamsDeleting(): string
+  /** What a team holds, counted (JSON `Counts`); `board` JSON `{shapes, files, notes, snapshot_empty}` or "". */
+  teamContents(teamId: string, board: string): string
+  /** The next step of deleting a team, JSON `{step, …, done, total, left}`; `known` JSON `{board?, files_gone}`. */
+  teamDeletePlan(teamId: string, known: string, by: string, nowMs: number): string
   /** Self-join (core/client/src/selfjoin.rs): the asks to act on, JSON `[{session_id, nonce, ask, refused}]`. */
   selfJoinAsks(answered: string, pending: string): string
   /** Whether a vouched Request is let in; null while the ask names no hash. */

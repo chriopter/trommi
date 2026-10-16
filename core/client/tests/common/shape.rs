@@ -81,7 +81,7 @@ fn family(method: &str, path: &str) -> Option<&'static [&'static str]> {
         ("GET", ["v1", "rooms", _, "challenge"]) => &["challenge-"],
         ("POST", ["v1", "rooms", _, "tokens"]) => &["token-"],
         ("GET", ["v1", "changes"]) => &["changes-"],
-        ("GET", ["v1", "desk"]) => &["desk", "desk-archived"],
+        ("GET", ["v1", "desk"]) => &["desk", "team-archived"],
         ("GET", ["v1", "cards", _]) => &["object-card"],
         ("GET", ["v1", "welcomes"]) => &["welcomes"],
         ("GET", ["v1", "groups", _, "log"]) => &["group-log"],

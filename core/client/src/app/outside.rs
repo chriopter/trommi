@@ -1,7 +1,7 @@
 //! What the app shows outside its window, decided here so a shell only carries it out (iOS `LiveActivities.swift`
 //! `candidates()`/`busy()` and `NotifyBridge.swift` did it before):
 //!
-//! - [`Effect::Snapshot`] (where `Config.can.snapshots`): what waits on every desk and how many sessions work, for
+//! - [`Effect::Snapshot`] (where `Config.can.snapshots`): what waits on every team and how many sessions work, for
 //!   widgets and the Live Activity. Sent when it changed, at most once per answer, never before the room was read
 //!   up to its end once (the engine's `caught_up`); the demo room sends it too. A sign-out sends an empty one.
 //! - [`Effect::Notify`] (where `Config.can.notify`): a card or request that newly starts waiting while the app is
@@ -99,12 +99,12 @@ pub(crate) fn snapshot_of(model: &crate::model::Model, now: u64) -> WidgetSnapsh
     cards.sort_by(|a, b| rank(b).cmp(&rank(a)).then(a.created_ms.cmp(&b.created_ms)).then_with(|| a.id.cmp(&b.id)));
     let waiting = cards.len() as u32;
     let working = b.agents.iter().filter(|a| a.row.online && a.row.working && !a.row.archived && !a.row.removed).count() as u32;
-    let desks = if b.desks.is_empty() {
-        vec![super::effect::ShareDesk { id: String::new(), name: "Personal".into(), crown: crate::views::notes::crown_on(&b, None).map(|a| crate::views::notes::to_of(a, &b)) }]
+    let teams = if b.teams.is_empty() {
+        vec![super::effect::ShareTeam { id: String::new(), name: "Personal".into(), crown: crate::views::notes::crown_on(&b, None).map(|a| crate::views::notes::to_of(a, &b)) }]
     } else {
-        b.desks.iter().map(|desk| super::effect::ShareDesk { id: desk.id.clone(), name: desk.name.clone(), crown: crate::views::notes::crown_on(&b, Some(&desk.id)).map(|a| crate::views::notes::to_of(a, &b)) }).collect()
+        b.teams.iter().map(|team| super::effect::ShareTeam { id: team.id.clone(), name: team.name.clone(), crown: crate::views::notes::crown_on(&b, Some(&team.id)).map(|a| crate::views::notes::to_of(a, &b)) }).collect()
     };
-    WidgetSnapshot { waiting, working, urgent, cards, desks, room: None, live_activity: None }
+    WidgetSnapshot { waiting, working, urgent, cards, teams, room: None, live_activity: None }
 }
 
 impl App {

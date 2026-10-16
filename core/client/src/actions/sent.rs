@@ -53,7 +53,7 @@ pub struct NoteBusy {
 /// The bookkeeping of the actions in flight.
 #[derive(Debug, Default)]
 pub struct Sent {
-    /// Seeds the ids this device makes (a desk's): `Config.seed`, random in a shipped app.
+    /// Seeds the ids this device makes (a team's): `Config.seed`, random in a shipped app.
     pub seed: u64,
     next_local: u64,
     next_toast: u64,
@@ -69,7 +69,7 @@ pub struct Sent {
 }
 
 impl Sent {
-    /// A new id of 16 bytes as hex (a desk's), from the seed, the clock and a count: never the same twice in an App,
+    /// A new id of 16 bytes as hex (a team's), from the seed, the clock and a count: never the same twice in an App,
     /// and two devices' ids differ by their seeds.
     pub fn new_id(&mut self, now: u64) -> String {
         self.next_local += 1;

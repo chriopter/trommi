@@ -103,12 +103,12 @@
             "en": "Fernly Website"
           },
           "mark": "draw:leaf",
-          "desk": {
-            "key": "agents.desk",
+          "team": {
+            "key": "agents.team",
             "args": {
-              "desk": "Fernly"
+              "team": "Fernly"
             },
-            "en": "Fernly desk"
+            "en": "Fernly team"
           },
           "folder": "~/code/fernly-web",
           "helpers": 6,
@@ -133,12 +133,12 @@
             "en": "Fernly App"
           },
           "mark": "draw:phone",
-          "desk": {
-            "key": "agents.desk",
+          "team": {
+            "key": "agents.team",
             "args": {
-              "desk": "Fernly"
+              "team": "Fernly"
             },
-            "en": "Fernly desk"
+            "en": "Fernly team"
           },
           "folder": "~/code/fernly-ios",
           "helpers": 4,
@@ -238,12 +238,12 @@
             "en": "Payments"
           },
           "mark": "draw:lock",
-          "desk": {
-            "key": "agents.desk",
+          "team": {
+            "key": "agents.team",
             "args": {
-              "desk": "Platform"
+              "team": "Platform"
             },
-            "en": "Platform desk"
+            "en": "Platform team"
           },
           "folder": "~/code/payments-service",
           "helpers": 5,
@@ -268,12 +268,12 @@
             "en": "Docs"
           },
           "mark": "draw:book",
-          "desk": {
-            "key": "agents.desk",
+          "team": {
+            "key": "agents.team",
             "args": {
-              "desk": "Platform"
+              "team": "Platform"
             },
-            "en": "Platform desk"
+            "en": "Platform team"
           },
           "folder": "~/code/docs-site",
           "helpers": 2,
@@ -370,12 +370,12 @@
             "en": "Infrastructure"
           },
           "mark": "draw:mountain",
-          "desk": {
-            "key": "agents.desk",
+          "team": {
+            "key": "agents.team",
             "args": {
-              "desk": "Platform"
+              "team": "Platform"
             },
-            "en": "Platform desk"
+            "en": "Platform team"
           },
           "folder": "~/code/infra",
           "helpers": 7,
@@ -479,12 +479,12 @@
             "en": "Design System"
           },
           "mark": "draw:diamond",
-          "desk": {
-            "key": "agents.desk",
+          "team": {
+            "key": "agents.team",
             "args": {
-              "desk": "Fernly"
+              "team": "Fernly"
             },
-            "en": "Fernly desk"
+            "en": "Fernly team"
           },
           "folder": "~/code/design-system",
           "helpers": 3,
@@ -576,12 +576,12 @@
             "en": "Data Pipeline"
           },
           "mark": "draw:database",
-          "desk": {
-            "key": "agents.desk",
+          "team": {
+            "key": "agents.team",
             "args": {
-              "desk": "Platform"
+              "team": "Platform"
             },
-            "en": "Platform desk"
+            "en": "Platform team"
           },
           "folder": "~/code/data-pipeline",
           "helpers": 3,
@@ -655,12 +655,12 @@
     },
     "en": "5 agents on 3 computers · 37 sessions"
   },
-  "desks": {
-    "key": "settings.desks",
+  "teams": {
+    "key": "settings.teams",
     "args": {
       "n": "2"
     },
-    "en": "2 desks"
+    "en": "2 teams"
   },
   "devices_says": {
     "key": "settings.devices",

@@ -1,6 +1,6 @@
-//! Off your mind, of the desk in view: the two stacks docked at the Desk's foot, the short hinted list under the Desk,
+//! Off your mind, of the team in view: the two stacks docked at the Desk's foot, the short hinted list under the Desk,
 //! and the page with every card off the Desk. Which card lies where, in what order, and how many are closed is the
-//! core's `off_mind` (crate::off_mind); here it is kept to the desk in view and said.
+//! core's `off_mind` (crate::off_mind); here it is kept to the team in view and said.
 //!
 //! The rules are the web's of before (`desk.mjs` `offMind`, `deskDock`, `offHint`, `endList`, `restRow`; iOS
 //! `DeskDock`, `OffHint`, `OffList`):
@@ -33,11 +33,11 @@ pub fn of_board(b: &Board) -> OffMind {
     off
 }
 
-/// A card of this device whose session stands on the desk in view, with its session.
+/// A card of this device whose session stands on the team in view, with its session.
 fn here<'b>(b: &'b Board, id: &str) -> Option<(&'b Card, usize)> {
     let c = b.model.cards.get(id)?;
     let agent = b.by_key.get(key_of(&c.session_id, &c.agent_device_id)).copied()?;
-    b.agents[agent].on_desk.then_some((c, agent))
+    b.agents[agent].on_team.then_some((c, agent))
 }
 
 fn starred(b: &Board, id: &str) -> bool {
@@ -144,7 +144,7 @@ pub fn fill_desk(b: &Board, off: &OffMind, desk: &mut DeskView) {
     desk.done = recent.iter().map(|(c, _, _)| c.object_id.clone()).collect();
 
     // ---- the hint ----
-    let closed: u64 = b.agents.iter().filter(|a| a.on_desk).filter_map(|a| off.closed.get(&a.row.key)).sum();
+    let closed: u64 = b.agents.iter().filter(|a| a.on_team).filter_map(|a| off.closed.get(&a.row.key)).sum();
     let put_off = desk.later.len();
     desk.off = (put_off > 0 || closed > 0).then(|| {
         let rows = desk
@@ -184,12 +184,12 @@ pub fn off_list(b: &Board, off: &OffMind, query: &str) -> OffListView {
         })
         .filter(|w| has(&format!("{} {} {}", w.title, w.from.name, w.label.en)))
         .collect();
-    // (every closed card of the desk in view, not only the window the patch names: done and thrown away merged)
+    // (every closed card of the team in view, not only the window the patch names: done and thrown away merged)
     let mut closed: Vec<(u64, &Card, &'static str)> = Vec::new();
     for c in b.model.cards.values() {
         let Some(agent) = b.by_key.get(key_of(&c.session_id, &c.agent_device_id)).copied() else { continue };
         let a = &b.agents[agent];
-        if !a.on_desk || a.row.archived {
+        if !a.on_team || a.row.archived {
             continue;
         }
         let heard = b.model.sessions.get(&a.row.key).and_then(|s| s.heard_up_to);
@@ -252,13 +252,13 @@ mod tests {
     }
 
     /// A room with every place: two running, one starred and running, one starred on the Desk, put off, done,
-    /// shredded, withdrawn; and a card of the other desk.
+    /// shredded, withdrawn; and a card of the other team.
     fn room() -> Room {
-        let mut r = Room { desks: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } }), ..Default::default() };
+        let mut r = Room { teams: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } }), ..Default::default() };
         r.session("a", None, true);
         r.session("b", None, true);
         r.session("c-lab", None, true);
-        r.on_desk("c-lab", "lab");
+        r.on_team("c-lab", "lab");
         r.card("run-old", "a", "decision", "normal")["in_revision"] = json!({ "by": "me", "envelope_number": 500 });
         r.cards.last_mut().unwrap()["updated_at"] = json!(NOW - 30 * MIN);
         r.card("run-new", "b", "decision", "normal")["in_revision"] = json!({ "by": "me", "envelope_number": 501 });
@@ -281,19 +281,19 @@ mod tests {
 
     #[test]
     fn the_two_stacks_of_the_desk_in_view_a_starred_card_in_one_only() {
-        let main = Lens { desk: Some("main".into()), ..Default::default() };
+        let main = Lens { team: Some("main".into()), ..Default::default() };
         let (d, _) = render(&room(), &main);
         let star = d.starred.as_ref().unwrap();
         assert_eq!((star.key.as_str(), star.count, star.says.en.as_str()), ("star", 2, "2 starred"));
         assert_eq!(ids(&star.rows, |r| &r.id), ["run-star", "on-desk-star"], "the last starred on top");
         assert_eq!((star.rows[0].line.en.as_str(), star.rows[0].running, star.rows[1].line.en.as_str()), ("a · running", true, "a"));
         let run = d.running.as_ref().unwrap();
-        assert_eq!(ids(&run.rows, |r| &r.id), ["run-new", "run-old"], "the one that moved last on top, no starred card, no other desk's");
+        assert_eq!(ids(&run.rows, |r| &r.id), ["run-new", "run-old"], "the one that moved last on top, no starred card, no other team's");
         assert_eq!((run.count, run.says.en.as_str(), run.rows[0].line.en.as_str()), (2, "2 running", "b · on it"));
         assert_eq!(run.all.as_ref().map(|t| t.en.as_str()), Some("All running and done"));
         assert_eq!(d.off_your_mind, ["run-new", "run-star", "run-old"], "the complete list holds the starred one in its place by time");
-        // the other desk: its own running card only
-        let (d, _) = render(&room(), &Lens { desk: Some("lab".into()), ..Default::default() });
+        // the other team: its own running card only
+        let (d, _) = render(&room(), &Lens { team: Some("lab".into()), ..Default::default() });
         assert!(d.starred.is_none() && d.off.is_none());
         assert_eq!(ids(&d.running.unwrap().rows, |r| &r.id), ["lab-run"]);
     }
@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn the_complete_list_and_its_search() {
-        let lens = |q: &str| Lens { off: Some(q.into()), desk: Some("main".into()), ..Default::default() };
+        let lens = |q: &str| Lens { off: Some(q.into()), team: Some("main".into()), ..Default::default() };
         let (_, l) = render(&room(), &lens(""));
         let l = l.unwrap();
         assert_eq!(ids(&l.works, |w| &w.id), ["run-new", "run-star", "run-old"]);

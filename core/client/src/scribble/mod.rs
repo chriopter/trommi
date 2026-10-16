@@ -5,24 +5,24 @@
 //! `loadBoard` and `writeSnapshot` of before.
 //!
 //! - **Reading**: when a board comes into view (`Focus.board`, `Screen::Scribble`) and the room is live, the
-//!   register `scribble_snapshot/desk/<board>` names the newest snapshot. Its file is fetched, decrypted, unpacked
+//!   register `scribble_snapshot/team/<board>` names the newest snapshot. Its file is fetched, decrypted, unpacked
 //!   (`gzip`) and loaded (`Board::from_snapshot`, with the register's frontier); then the board's items are read in
 //!   pages (`GET /v1/boards/{board}`) from `items_after_change()` on, each item read by the engine out of the hub's
 //!   order as a Desk's version is. A snapshot that does not load is dropped and the board read from its first item.
 //!   What arrives meanwhile (live items, the pages) is held and applied in the hub's order once the last page came.
 //! - **Live**: a board item the engine reports is applied at once to every board that is read; a stroke piece grows
 //!   the stroke shown under `live:<sender>/<stroke>` until its finished form arrives (or nothing came for a while).
-//! - **Own items**: `Action::BoardItem` echoes into the model's timeline `scribble:desk/<board>` (`actions::run`);
+//! - **Own items**: `Action::BoardItem` echoes into the model's timeline `scribble:team/<board>` (`actions::run`);
 //!   the view lays those echoes over the board until the hub's copy is applied, and a refusal takes them back.
 //! - **Snapshots**: after [`SNAP_EVERY`] items and [`SNAP_IDLE_MS`] without one, with nothing of this device in
 //!   flight for the board and every item read: the frontier is declared (`POST /v1/boards/{board}/frontier`), the
 //!   gzip'd file uploaded encrypted, the register written, and once the hub took the register the frontier is bound
-//!   to it. [`Scribble::snapshot_now`] writes one at once (a desk's delete: the empty board).
+//!   to it. [`Scribble::snapshot_now`] writes one at once (a team's delete: the empty board).
 
 pub mod gzip;
 
 use crate::app::io::{HttpRequest, IoId};
-use crate::desk_delete::BoardKnown;
+use crate::team_delete::BoardKnown;
 use crate::engine::{Ctx, Engine};
 use crate::hub::{Answer, Codec, Expect, Failure, Route, Site};
 use crate::model::Model;
@@ -66,7 +66,7 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
     (0..text.len()).step_by(2).map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok()).collect()
 }
 
-/// The board a model id names: `desk/<32 hex>`.
+/// The board a model id names: `team/<32 hex>`.
 pub fn board_of(id: &str) -> Option<BoardId> {
     let hex = id.strip_prefix("desk/")?;
     if hex.len() != 32 || hex.bytes().any(|b| b.is_ascii_uppercase()) {
@@ -75,17 +75,18 @@ pub fn board_of(id: &str) -> Option<BoardId> {
     BoardId::from_slice(&unhex(hex)?).ok()
 }
 
-/// The board of a desk (10.1): a desk id of 32 hex is its board's id; "all" is the board of All desks; any other
-/// name (`main`, a room without desks) is folded into 16 bytes, its UTF-8 XORed by position and the length XORed
+/// The board of a team (10.1): a team id of 32 hex is its board's id; "all" is the board the view of every team at
+/// once had (spec 10.1 `ALL_DESKS`); any other
+/// name (`main`, a room without teams) is folded into 16 bytes, its UTF-8 XORed by position and the length XORed
 /// onto the last byte, so every client finds the same board.
-pub fn desk_board(desk: &str) -> String {
-    if desk == crate::views::board::ALL_DESKS {
+pub fn team_board(team: &str) -> String {
+    if team == "all" {
         return format!("desk/{}", hex(BoardId::ALL_DESKS.as_bytes()));
     }
-    if desk.len() == 32 && desk.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
-        return format!("desk/{desk}");
+    if team.len() == 32 && team.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return format!("desk/{team}");
     }
-    let name = if desk.is_empty() { "main" } else { desk };
+    let name = if team.is_empty() { "main" } else { team };
     let mut out = [0u8; 16];
     for (i, b) in name.bytes().enumerate() {
         out[i % 16] ^= b;
@@ -94,9 +95,9 @@ pub fn desk_board(desk: &str) -> String {
     format!("desk/{}", hex(&out))
 }
 
-/// The board a focus names: a board id as it is, or the board of a desk.
+/// The board a focus names: a board id as it is, or the board of a team.
 pub fn board_in_view(text: &str) -> Option<BoardId> {
-    board_of(text).or_else(|| board_of(&desk_board(text)))
+    board_of(text).or_else(|| board_of(&team_board(text)))
 }
 
 /// The model's id of a shape: `<sender hex>/<number>/<index>`.
@@ -442,7 +443,7 @@ impl Scribble {
         }
     }
 
-    /// A board to read though it is not in view (a desk's delete).
+    /// A board to read though it is not in view (a team's delete).
     pub fn read(&mut self, board: BoardId) {
         self.pads.entry(board).or_insert_with(|| Pad::new(board));
     }
@@ -616,12 +617,12 @@ impl Scribble {
     }
 
     /// Writes a snapshot of `board` as soon as nothing of it is in flight, however few items it has: deleting a
-    /// desk writes the snapshot of its empty board (`desk_delete::Step::WriteSnapshot`).
+    /// team writes the snapshot of its empty board (`team_delete::Step::WriteSnapshot`).
     pub fn snapshot_now(&mut self, board: BoardId) {
         self.pads.entry(board).or_insert_with(|| Pad::new(board)).force = true;
     }
 
-    /// What this device knows of a board, for a desk's delete; none until it was read.
+    /// What this device knows of a board, for a team's delete; none until it was read.
     pub fn known(&self, board: &BoardId) -> Option<BoardKnown> {
         let pad = self.pads.get(board).filter(|p| p.step == Step::Ready)?;
         Some(BoardKnown {
@@ -632,7 +633,7 @@ impl Scribble {
         })
     }
 
-    /// The shapes on a board that is read, by their model ids (an erase of them all: a desk's delete).
+    /// The shapes on a board that is read, by their model ids (an erase of them all: a team's delete).
     pub fn shape_ids(&self, board: &BoardId) -> Vec<String> {
         self.pads.get(board).map(|p| p.shapes.keys().map(shape_key).collect()).unwrap_or_default()
     }
@@ -937,7 +938,7 @@ fn lay(shapes: &mut Vec<BoardShape>, refs: &mut BTreeMap<String, Map<String, Val
 }
 
 /// A board that lives in the model alone (the demo room: no hub, no snapshot): every item of its timeline
-/// `scribble:desk/<board>` in the order they were sent, ready to draw, and the references of its pictures.
+/// `scribble:team/<board>` in the order they were sent, ready to draw, and the references of its pictures.
 pub fn model_board(model: &Model, board: &BoardId) -> (BoardView, BTreeMap<String, Map<String, Value>>) {
     let id = format!("desk/{}", hex(board.as_bytes()));
     let mut shapes = Vec::new();

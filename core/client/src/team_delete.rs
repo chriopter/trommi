@@ -1,23 +1,23 @@
-//! Deleting a desk: one rule for every app, so that a delete begun on one device finishes on any other.
+//! Deleting a team: one rule for every app, so that a delete begun on one device finishes on any other.
 //!
-//! A desk holds the sessions that stand on it (their cards, Chats and Artifacts) and its Scribble Board. Deleting it
+//! A team holds the sessions that stand on it (their cards, Chats and Artifacts) and its Scribble Board. Deleting it
 //! takes all of that away, with steps the protocol already has, one after the other:
 //!
-//! 1. `Mark`: the desk's register gets `deleting: { at, by, total }`. From then on every human device knows the desk
-//!    is going (`desks_deleting`) and finishes the delete on its next start, whichever device began it.
+//! 1. `Mark`: the team's register gets `deleting: { at, by, total }`. From then on every human device knows the team
+//!    is going (`teams_deleting`) and finishes the delete on its next start, whichever device began it.
 //! 2. `Shred`: every open card of its sessions is shredded (an answer, as Shred on the Desk).
-//! 3. `RemoveDevices`: the agent devices that carried only sessions of this desk leave the room (spec 5.2.8; their
-//!    connector wipes its keys once it verified the removal, 13.5). A device with a live session on another desk
+//! 3. `RemoveDevices`: the agent devices that carried only sessions of this team leave the room (spec 5.2.8; their
+//!    connector wipes its keys once it verified the removal, 13.5). A device with a live session on another team
 //!    stays, and so does every person's device; a helper device leaves with its archived helper session.
 //! 4. `Archive`: its sessions, helpers too, go to the archive (the register `session/<key>` and the hub's
 //!    `POST /v1/groups/{group}/archive`, spec 5.2.10). (After the devices: an archived session leaves this
 //!    device's list, and with it the knowledge of whose it was.)
-//! 5. `LoadBoard`, `EraseBoard`: the desk's board is read, then every shape on it is erased (spec 10.5 `erase`).
-//! 6. `DeleteFiles`: every file the desk's cards, answers, Chats in memory, Artifacts and board pictures name is
+//! 5. `LoadBoard`, `EraseBoard`: the team's board is read, then every shape on it is erased (spec 10.5 `erase`).
+//! 6. `DeleteFiles`: every file the team's cards, answers, Chats in memory, Artifacts and board pictures name is
 //!    deleted at the hub at once (`DELETE /v1/files/{file}`, a human device may delete any file; an answer
 //!    `not-found` counts as done).
 //! 7. `WriteSnapshot`: a snapshot of the empty board, so the hub prunes the board's items (10.9).
-//! 8. `RemoveDesk`: the desk's register is taken away (`desk/<id>` null).
+//! 8. `RemoveTeam`: the team's register is taken away (`team/<id>` null).
 //!
 //! The hub drops the sealed copies itself: a settled object's bodies and an archived group's messages after 30 days
 //! (spec 9.4.1, 14.3), the board's items once a snapshot covers them (9.4.3).
@@ -31,17 +31,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// What the app knows of the desk's board and of its own deletes, at one look.
+/// What the app knows of the team's board and of its own deletes, at one look.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct Known {
-    /// The desk's board as read on this device; none while it is not read yet.
+    /// The team's board as read on this device; none while it is not read yet.
     pub board: Option<BoardKnown>,
     /// Files this device deleted at the hub (hex), or that the hub answered `not-found` for.
     pub files_gone: BTreeSet<String>,
 }
 
-/// The desk's board as the app read it.
+/// The team's board as the app read it.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct BoardKnown {
@@ -55,7 +55,7 @@ pub struct BoardKnown {
     pub snapshot_empty: bool,
 }
 
-/// What a desk holds, counted (the confirm names these, and the delete's progress counts them down).
+/// What a team holds, counted (the confirm names these, and the delete's progress counts them down).
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Counts {
@@ -82,7 +82,7 @@ pub struct Counts {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "step", rename_all = "snake_case")]
 pub enum Step {
-    /// Write this value to the human register `register` (the desk's, with `deleting`).
+    /// Write this value to the human register `register` (the team's, with `deleting`).
     Mark { register: String, value: Value },
     /// Shred these open cards (object ids, hex).
     Shred { object_ids: Vec<String> },
@@ -90,19 +90,19 @@ pub enum Step {
     Archive { sessions: Vec<ArchiveOne> },
     /// Remove these devices from the room (hex).
     RemoveDevices { device_ids: Vec<String> },
-    /// Read the desk's board, then ask again with `Known::board`.
-    LoadBoard { desk_id: String },
-    /// Erase these shapes on the desk's board.
+    /// Read the team's board, then ask again with `Known::board`.
+    LoadBoard { team_id: String },
+    /// Erase these shapes on the team's board.
     EraseBoard { shape_ids: Vec<String> },
     /// Delete these files at the hub (hex); `not-found` is done too.
     DeleteFiles { file_ids: Vec<String> },
     /// Write a snapshot of the (now empty) board.
-    WriteSnapshot { desk_id: String },
-    /// Take the desk's register away (write null).
-    RemoveDesk { register: String },
-    /// Nothing left: the desk is gone.
+    WriteSnapshot { team_id: String },
+    /// Take the team's register away (write null).
+    RemoveTeam { register: String },
+    /// Nothing left: the team is gone.
     Done,
-    /// The desk cannot be deleted: `no-desk` (no such desk), `last-desk` (every account keeps one).
+    /// The team cannot be deleted: `no-team` (no such team), `last-team` (every account keeps one).
     Refused { code: String },
 }
 
@@ -125,13 +125,13 @@ pub struct Plan {
     pub left: Counts,
 }
 
-/// The register of a desk.
-pub fn register_of(desk_id: &str) -> String {
-    format!("desk/{desk_id}")
+/// The register of a team.
+pub fn register_of(team_id: &str) -> String {
+    format!("desk/{team_id}")
 }
 
-/// The desks that are there now (a register with a value), with their values.
-fn desks_of(m: &Model) -> BTreeMap<String, &Value> {
+/// The teams that are there now (a register with a value), with their values.
+fn teams_of(m: &Model) -> BTreeMap<String, &Value> {
     m.human
         .iter()
         .filter_map(|(k, r)| k.strip_prefix("desk/").map(|id| (id.to_string(), &r.value)))
@@ -161,40 +161,40 @@ fn is_hex32(s: &str) -> bool {
 }
 
 impl Model {
-    /// The desks a delete was begun on (their ids): an app finishes each on its start (`desk_delete_plan`).
-    pub fn desks_deleting(&self) -> Vec<String> {
-        desks_of(self)
+    /// The teams a delete was begun on (their ids): an app finishes each on its start (`team_delete_plan`).
+    pub fn teams_deleting(&self) -> Vec<String> {
+        teams_of(self)
             .into_iter()
             .filter(|(_, v)| v.get("deleting").is_some_and(Value::is_object))
             .map(|(id, _)| id)
             .collect()
     }
 
-    /// What desk `desk_id` holds, counted (for the confirm). `board`: the desk's board as read, if it is.
-    pub fn desk_contents(&self, desk_id: &str, board: Option<&BoardKnown>) -> Counts {
+    /// What team `team_id` holds, counted (for the confirm). `board`: the team's board as read, if it is.
+    pub fn team_contents(&self, team_id: &str, board: Option<&BoardKnown>) -> Counts {
         let rows = session_list(self, false);
-        let (counts, _, _) = self.desk_left(desk_id, &rows, board, &BTreeSet::new());
+        let (counts, _, _) = self.team_left(team_id, &rows, board, &BTreeSet::new());
         counts
     }
 
-    /// The next step of deleting desk `desk_id`, by `by` (this device, hex) at `now`.
-    pub fn desk_delete_plan(&self, desk_id: &str, known: &Known, by: &str, now: u64) -> Plan {
-        let desks = desks_of(self);
-        let register = register_of(desk_id);
+    /// The next step of deleting team `team_id`, by `by` (this device, hex) at `now`.
+    pub fn team_delete_plan(&self, team_id: &str, known: &Known, by: &str, now: u64) -> Plan {
+        let teams = teams_of(self);
+        let register = register_of(team_id);
         let rows = session_list(self, false);
-        let (left, units, work) = self.desk_left(desk_id, &rows, known.board.as_ref(), &known.files_gone);
+        let (left, units, work) = self.team_left(team_id, &rows, known.board.as_ref(), &known.files_gone);
         let plan = |step: Step, total: u64| Plan {
             step,
             done: total.saturating_sub(units),
             total,
             left: left.clone(),
         };
-        let Some(value) = desks.get(desk_id) else {
-            // (gone: done, by this device or another; a desk that never was cannot be begun)
+        let Some(value) = teams.get(team_id) else {
+            // (gone: done, by this device or another; a team that never was cannot be begun)
             let step = if self.human.contains_key(&register) {
                 Step::Done
             } else {
-                Step::Refused { code: "no-desk".into() }
+                Step::Refused { code: "no-team".into() }
             };
             return Plan {
                 step,
@@ -204,10 +204,10 @@ impl Model {
             };
         };
         let marked = value.get("deleting").and_then(Value::as_object);
-        if marked.is_none() && desks.len() <= 1 {
+        if marked.is_none() && teams.len() <= 1 {
             return plan(
                 Step::Refused {
-                    code: "last-desk".into(),
+                    code: "last-team".into(),
                 },
                 units,
             );
@@ -230,7 +230,7 @@ impl Model {
             Step::Archive { sessions: work.archive }
         } else if known.board.is_none() {
             Step::LoadBoard {
-                desk_id: desk_id.to_string(),
+                team_id: team_id.to_string(),
             }
         } else if known.board.as_ref().is_some_and(|b| !b.shapes.is_empty()) {
             Step::EraseBoard {
@@ -240,25 +240,25 @@ impl Model {
             Step::DeleteFiles { file_ids: work.files }
         } else if !known.board.as_ref().is_some_and(|b| b.snapshot_empty) {
             Step::WriteSnapshot {
-                desk_id: desk_id.to_string(),
+                team_id: team_id.to_string(),
             }
         } else {
-            Step::RemoveDesk { register }
+            Step::RemoveTeam { register }
         };
         plan(step, total)
     }
 
-    /// What is left on the desk: the counts, the units of work left (for the progress) and the work itself.
-    fn desk_left(
+    /// What is left on the team: the counts, the units of work left (for the progress) and the work itself.
+    fn team_left(
         &self,
-        desk_id: &str,
+        team_id: &str,
         rows: &[SessionRow],
         board: Option<&BoardKnown>,
         gone: &BTreeSet<String>,
     ) -> (Counts, u64, Work) {
         let here: Vec<&SessionRow> = rows
             .iter()
-            .filter(|r| r.desk == desk_id && !r.removed && !r.own)
+            .filter(|r| r.team == team_id && !r.removed && !r.own)
             .collect();
         let keys: BTreeSet<&str> = here.iter().map(|r| r.key.as_str()).collect();
         let sids: BTreeSet<&str> = here.iter().filter_map(|r| r.session_id.as_deref()).collect();
@@ -267,7 +267,7 @@ impl Model {
             .filter(|r| r.main)
             .filter_map(|r| r.agent_device_id.as_deref())
             .collect();
-        let of_desk = |sid: Option<&str>, dev: &str| match sid {
+        let of_team = |sid: Option<&str>, dev: &str| match sid {
             Some(s) if !s.is_empty() => sids.contains(s) || keys.contains(s),
             _ => mains.contains(dev) || keys.contains(dev),
         };
@@ -282,7 +282,7 @@ impl Model {
             }
         }
         // (a session whose agent already left the room is archived too: the archive is the person's word on it)
-        for r in rows.iter().filter(|r| r.desk == desk_id && !r.own && !r.archived) {
+        for r in rows.iter().filter(|r| r.team == team_id && !r.own && !r.archived) {
             let group = r
                 .session_id
                 .as_deref()
@@ -297,7 +297,7 @@ impl Model {
         for card in self
             .cards
             .values()
-            .filter(|k| of_desk(k.session_id.as_deref(), &k.agent_device_id))
+            .filter(|k| of_team(k.session_id.as_deref(), &k.agent_device_id))
         {
             if card.object_state == "open" {
                 c.open_cards += 1;
@@ -324,7 +324,7 @@ impl Model {
         for p in self
             .published
             .values()
-            .filter(|p| of_desk(p.session_id.as_deref(), &p.agent_device_id))
+            .filter(|p| of_team(p.session_id.as_deref(), &p.agent_device_id))
         {
             c.artifacts += 1;
             files_in(&p.attachments, &mut files);
@@ -338,17 +338,17 @@ impl Model {
                 }
             }
         }
-        // (an agent device leaves only when nothing live of it stands on another desk; never a person's device)
+        // (an agent device leaves only when nothing live of it stands on another team; never a person's device)
         let elsewhere: BTreeSet<&str> = rows
             .iter()
-            .filter(|r| r.desk != desk_id && !r.archived && !r.removed)
+            .filter(|r| r.team != team_id && !r.archived && !r.removed)
             .filter_map(|r| r.agent_device_id.as_deref())
             .collect();
-        // (every session that ever stood on the desk counts here, an archived or closed one too: its agent may still
+        // (every session that ever stood on the team counts here, an archived or closed one too: its agent may still
         // be in the room)
         let devices: BTreeSet<String> = rows
             .iter()
-            .filter(|r| r.desk == desk_id && !r.own)
+            .filter(|r| r.team == team_id && !r.own)
             .filter_map(|r| r.agent_device_id.as_deref())
             .filter(|d| !elsewhere.contains(d))
             .filter(|d| {
@@ -368,8 +368,8 @@ impl Model {
         }
         w.files = files.into_iter().filter(|f| !gone.contains(f)).collect();
         c.files = w.files.len() as u64;
-        c.goals = desks_of(self)
-            .get(desk_id)
+        c.goals = teams_of(self)
+            .get(team_id)
             .and_then(|v| v.get("goals"))
             .and_then(Value::as_str)
             .map_or(0, |g| g.lines().filter(|l| !l.trim().is_empty()).count() as u64);
@@ -378,7 +378,7 @@ impl Model {
         let units = (w.shred.len() + w.archive.len() + w.devices.len() + w.files.len()) as u64
             + board.map_or(0, |b| b.shapes.len() as u64)
             + u64::from(!board.is_some_and(|b| b.snapshot_empty))
-            + u64::from(desks_of(self).contains_key(desk_id));
+            + u64::from(teams_of(self).contains_key(team_id));
         (c, units, w)
     }
 }
@@ -419,7 +419,7 @@ mod tests {
             },
         );
     }
-    fn session(m: &mut Model, sid: &str, dev: &str, parent: Option<&str>, desk: &str) {
+    fn session(m: &mut Model, sid: &str, dev: &str, parent: Option<&str>, team: &str) {
         let s = m.session_of(sid);
         s.group_id = Some(format!("g{sid}"));
         s.agent_device_id = Some(dev.into());
@@ -434,7 +434,7 @@ mod tests {
         }
         s.profile = Some(p);
         if parent.is_none() {
-            set(m, &format!("session/{sid}"), json!({ "desk": desk }));
+            set(m, &format!("session/{sid}"), json!({ "desk": team }));
         }
     }
     fn set(m: &mut Model, key: &str, value: Value) {
@@ -460,7 +460,7 @@ mod tests {
         m.cards.insert(id.into(), c);
     }
 
-    /// Two desks: "main" with S2 (on A2), "lab" with S1 (on A1) and its helper S3 (on A3), two cards, an Artifact.
+    /// Two teams: "main" with S2 (on A2), "lab" with S1 (on A1) and its helper S3 (on A3), two cards, an Artifact.
     fn room() -> Model {
         let mut m = Model::new();
         member(&mut m, ME, "human");
@@ -509,14 +509,14 @@ mod tests {
     #[test]
     fn counts_what_stands_on_the_desk() {
         let m = room();
-        let c = m.desk_contents("lab", Some(&board(4, false)));
+        let c = m.team_contents("lab", Some(&board(4, false)));
         assert_eq!((c.sessions, c.helpers, c.archived), (1, 1, 0));
         assert_eq!((c.open_cards, c.done_cards, c.artifacts), (1, 1, 1));
         assert_eq!(
             (c.agents, c.board, c.pictures, c.files, c.goals),
             (2, Some(4), Some(1), 3, 2)
         );
-        let main = m.desk_contents("main", None);
+        let main = m.team_contents("main", None);
         assert_eq!(
             (main.sessions, main.open_cards, main.agents, main.board),
             (1, 1, 1, None)
@@ -527,14 +527,14 @@ mod tests {
     fn the_last_desk_and_a_desk_that_is_none_are_refused() {
         let mut m = room();
         assert_eq!(
-            m.desk_delete_plan("nope", &Known::default(), ME, 5).step,
-            Step::Refused { code: "no-desk".into() }
+            m.team_delete_plan("nope", &Known::default(), ME, 5).step,
+            Step::Refused { code: "no-team".into() }
         );
         m.human.remove("desk/lab");
         assert_eq!(
-            m.desk_delete_plan("main", &Known::default(), ME, 5).step,
+            m.team_delete_plan("main", &Known::default(), ME, 5).step,
             Step::Refused {
-                code: "last-desk".into()
+                code: "last-team".into()
             }
         );
     }
@@ -543,12 +543,12 @@ mod tests {
     fn a_delete_goes_step_by_step_and_counts_down() {
         let mut m = room();
         let mut k = Known::default();
-        let p = m.desk_delete_plan("lab", &k, ME, 5);
+        let p = m.team_delete_plan("lab", &k, ME, 5);
         let total = p.total;
         assert_eq!(p.done, 0);
         mark(&mut m, &p);
-        assert_eq!(m.desks_deleting(), vec!["lab".to_string()]);
-        let p = m.desk_delete_plan("lab", &k, ME, 6);
+        assert_eq!(m.teams_deleting(), vec!["lab".to_string()]);
+        let p = m.team_delete_plan("lab", &k, ME, 6);
         assert_eq!(
             p.step,
             Step::Shred {
@@ -556,7 +556,7 @@ mod tests {
             }
         );
         m.cards.get_mut("c1").unwrap().object_state = "closed".into();
-        let p = m.desk_delete_plan("lab", &k, ME, 7);
+        let p = m.team_delete_plan("lab", &k, ME, 7);
         assert_eq!(
             p.step,
             Step::RemoveDevices {
@@ -567,7 +567,7 @@ mod tests {
         for a in [A1, A3] {
             m.members.get_mut(a).unwrap().is_active = false;
         }
-        let p = m.desk_delete_plan("lab", &k, ME, 8);
+        let p = m.team_delete_plan("lab", &k, ME, 8);
         let Step::Archive { sessions } = &p.step else {
             panic!("{p:?}")
         };
@@ -580,12 +580,12 @@ mod tests {
             );
         }
         assert_eq!(
-            m.desk_delete_plan("lab", &k, ME, 9).step,
-            Step::LoadBoard { desk_id: "lab".into() }
+            m.team_delete_plan("lab", &k, ME, 9).step,
+            Step::LoadBoard { team_id: "lab".into() }
         );
         k.board = Some(board(3, false));
         assert_eq!(
-            m.desk_delete_plan("lab", &k, ME, 9).step,
+            m.team_delete_plan("lab", &k, ME, 9).step,
             Step::EraseBoard {
                 shape_ids: vec!["s/0".into(), "s/1".into(), "s/2".into()]
             }
@@ -595,7 +595,7 @@ mod tests {
             files: vec![F3.into()],
             ..board(0, false)
         });
-        let p = m.desk_delete_plan("lab", &k, ME, 10);
+        let p = m.team_delete_plan("lab", &k, ME, 10);
         assert_eq!(
             p.step,
             Step::DeleteFiles {
@@ -604,24 +604,24 @@ mod tests {
         );
         k.files_gone = [F1, F2, F3].map(String::from).into();
         assert_eq!(
-            m.desk_delete_plan("lab", &k, ME, 11).step,
-            Step::WriteSnapshot { desk_id: "lab".into() }
+            m.team_delete_plan("lab", &k, ME, 11).step,
+            Step::WriteSnapshot { team_id: "lab".into() }
         );
         k.board = Some(board(0, true));
-        let p = m.desk_delete_plan("lab", &k, ME, 12);
+        let p = m.team_delete_plan("lab", &k, ME, 12);
         assert_eq!(
             p.step,
-            Step::RemoveDesk {
+            Step::RemoveTeam {
                 register: "desk/lab".into()
             }
         );
         assert_eq!((p.done, p.total), (total - 1, total));
         set(&mut m, "desk/lab", Value::Null);
-        let p = m.desk_delete_plan("lab", &k, ME, 13);
+        let p = m.team_delete_plan("lab", &k, ME, 13);
         assert_eq!((p.step, p.done), (Step::Done, p.total));
-        assert!(m.desks_deleting().is_empty());
-        // the other desk kept everything
-        let main = m.desk_contents("main", None);
+        assert!(m.teams_deleting().is_empty());
+        // the other team kept everything
+        let main = m.team_contents("main", None);
         assert_eq!((main.sessions, main.open_cards, main.agents), (1, 1, 1));
         assert!(m.members[A2].is_active);
     }
@@ -631,11 +631,11 @@ mod tests {
     #[test]
     fn a_broken_delete_goes_on_on_any_device() {
         let mut m = room();
-        let p = m.desk_delete_plan("lab", &Known::default(), "other-device", 5);
+        let p = m.team_delete_plan("lab", &Known::default(), "other-device", 5);
         mark(&mut m, &p);
         m.cards.get_mut("c1").unwrap().object_state = "closed".into();
-        assert_eq!(m.desks_deleting(), vec!["lab".to_string()]);
-        let p = m.desk_delete_plan("lab", &Known::default(), ME, 50);
+        assert_eq!(m.teams_deleting(), vec!["lab".to_string()]);
+        let p = m.team_delete_plan("lab", &Known::default(), ME, 50);
         assert!(matches!(p.step, Step::RemoveDevices { .. }), "{p:?}");
         // the total is the one the mark kept
         let Some(t) = m.human["desk/lab"].value["deleting"]["total"].as_u64() else {
@@ -649,9 +649,9 @@ mod tests {
         let mut m = room();
         // A2 also runs a helper of S1 on "lab": it keeps its main session on "main", so it is not removed
         session(&mut m, "54545454545454545454545454545454", A2, Some(S1), "lab");
-        let c = m.desk_contents("lab", None);
+        let c = m.team_contents("lab", None);
         assert_eq!((c.helpers, c.agents), (2, 2));
-        let p = m.desk_delete_plan("lab", &Known::default(), ME, 1);
+        let p = m.team_delete_plan("lab", &Known::default(), ME, 1);
         mark(&mut m, &p);
         m.cards.get_mut("c1").unwrap().object_state = "closed".into();
         for s in [S1, S3, "54545454545454545454545454545454"] {
@@ -661,7 +661,7 @@ mod tests {
                 json!({ "desk": "lab", "archived": true }),
             );
         }
-        let p = m.desk_delete_plan("lab", &Known::default(), ME, 2);
+        let p = m.team_delete_plan("lab", &Known::default(), ME, 2);
         assert_eq!(
             p.step,
             Step::RemoveDevices {
@@ -678,18 +678,18 @@ mod tests {
             board: Some(board(0, true)),
             ..Default::default()
         };
-        let p = m.desk_delete_plan("empty", &k, ME, 1);
+        let p = m.team_delete_plan("empty", &k, ME, 1);
         mark(&mut m, &p);
         assert_eq!(
-            m.desk_delete_plan("empty", &k, ME, 2).step,
-            Step::RemoveDesk {
+            m.team_delete_plan("empty", &k, ME, 2).step,
+            Step::RemoveTeam {
                 register: "desk/empty".into()
             }
         );
         assert_eq!(
-            m.desk_delete_plan("empty", &Known::default(), ME, 2).step,
+            m.team_delete_plan("empty", &Known::default(), ME, 2).step,
             Step::LoadBoard {
-                desk_id: "empty".into()
+                team_id: "empty".into()
             }
         );
     }

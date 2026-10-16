@@ -3,13 +3,13 @@
 //!
 //! The rules are the web's of before (`desk.mjs` `deskHead`, `deskList`, `runs`; `ui.mjs` `deskRow`, `tiles`):
 //! - the rows are the walk: the Desk's stack less what is with its agent, and the open approval requests, of the
-//!   desk in view, in the core's order (`Model::desk_order`); what the order does not name yet stands last;
+//!   team in view, in the core's order (`Model::desk_order`); what the order does not name yet stands last;
 //! - a card not read on this device yet and a card of a newer Trommi stand as something to read, with nothing to
 //!   answer;
 //! - a row offers its answers itself when they are two (a yes and a no as thumbs, two named ways as tiles), or
 //!   when its agent advises exactly one way; else one tile opens the card.
 
-use super::board::{is_loading, key_of, reads_as_info, Board, DEFAULT_DESK};
+use super::board::{is_loading, key_of, reads_as_info, Board, DEFAULT_TEAM};
 use super::sidebar::units_of;
 use super::links::plain;
 use super::words::{say, GREETINGS, CALM};
@@ -30,7 +30,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
     let agent_of = |session: &Option<String>, device: &str| b.by_key.get(key_of(session, device)).copied();
 
     // ---- the rows ----
-    // What waits on the desk in view: the stack's cards that are not with their agent, and the open requests.
+    // What waits on the team in view: the stack's cards that are not with their agent, and the open requests.
     let mut waiting: Vec<&str> = m
         .stack
         .iter()
@@ -124,17 +124,17 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         };
         ("desk", Some(hello))
     };
-    let goals = (!b.all && !units.is_empty()).then(|| {
-        let desk = b.desk.clone().unwrap_or_else(|| DEFAULT_DESK.into());
-        let text = b.desks.iter().find(|d| d.id == desk).map(|d| d.goals.as_str()).unwrap_or("");
+    let goals = (!units.is_empty()).then(|| {
+        let team = b.team.clone().unwrap_or_else(|| DEFAULT_TEAM.into());
+        let text = b.teams.iter().find(|d| d.id == team).map(|d| d.goals.as_str()).unwrap_or("");
         let lines: Vec<String> = if text.is_empty() { Vec::new() } else { text.split('\n').map(String::from).collect() };
         let n = lines.len().to_string();
         let foldable = lines.len() > 1;
-        let folded = foldable && b.lens.goals_folded.contains(&desk);
+        let folded = foldable && b.lens.goals_folded.contains(&team);
         let show_all = foldable.then(|| say("desk.goals.show_all", format!("Show all {n} goals"), &[("n", &n)]));
         GoalsView {
             toggle: if folded { show_all.clone() } else { foldable.then(|| say("desk.goals.fold", "Show the first goal only", &[])) },
-            desk_id: desk,
+            team_id: team,
             foldable,
             show_all,
             folded,
@@ -247,7 +247,6 @@ pub(super) fn from_of(b: &Board, agent: Option<usize>) -> Option<FromView> {
         name: a.row.name.clone(),
         mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
         path: a.row.path.clone(),
-        desk: (b.all).then(|| b.desks.iter().find(|d| Some(&d.id) == a.desk.as_ref()).map(|d| d.name.clone()).unwrap_or_else(|| "Personal".into())),
     })
 }
 
@@ -596,8 +595,8 @@ mod tests {
         let m = r.model(NOW);
         desk(&Board::new(&m, lens, NOW))
     }
-    fn view(r: &Room, desk: Option<&str>) -> DeskView {
-        view_with(r, &Lens { desk: desk.map(String::from), ..Default::default() })
+    fn view(r: &Room, team: Option<&str>) -> DeskView {
+        view_with(r, &Lens { team: team.map(String::from), ..Default::default() })
     }
     fn opt(key: &str, label: &str) -> Opt {
         Opt { key: key.into(), label: label.into(), ..Default::default() }
@@ -688,10 +687,10 @@ mod tests {
 
     #[test]
     fn the_rows_are_the_walk_of_the_desk_in_view() {
-        let mut r = Room { desks: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } }), ..Default::default() };
+        let mut r = Room { teams: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } }), ..Default::default() };
         r.session("a", None, true);
         r.session("b-lab", None, true);
-        r.on_desk("b-lab", "lab");
+        r.on_team("b-lab", "lab");
         r.card("q-old", "a", "decision", "normal")["first_envelope_number"] = json!(1);
         r.card("q-new", "a", "decision", "normal");
         r.card("q-read", "a", "info", "normal");
@@ -705,13 +704,11 @@ mod tests {
         assert_eq!(v.rows.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), v.stack);
         assert_eq!((v.waiting, en(&v.blitz)), (4, "Blitz: 5 open cards"));
         assert_eq!(v.rows.iter().map(|x| x.run).collect::<Vec<_>>(), [5, 0, 0, 0, 0]);
-        assert!(v.rows.iter().all(|x| x.from.as_ref().is_some_and(|f| f.desk.is_none() && f.path == ["Work", "a"])));
-        // All desks: the other desk's question too, each row with its desk's name; a run ends where the sender changes
-        let v = view(&r, Some("all"));
-        assert_eq!(v.stack, ["q-block", "p1", "q-lab", "q-read", "q-old", "q-new"]);
-        assert_eq!(v.rows.iter().map(|x| (x.run, x.from.as_ref().unwrap().desk.as_deref().unwrap())).collect::<Vec<_>>(), [(2, "Work"), (0, "Work"), (1, "Lab"), (3, "Work"), (0, "Work"), (0, "Work")]);
-        assert!(v.goals.is_none(), "no goals on All desks");
+        assert!(v.rows.iter().all(|x| x.from.as_ref().is_some_and(|f| f.path == ["Work", "a"])));
+        // one team at a time: the other team's question stands on its own team only ("all" is no team: the first)
         assert_eq!(view(&r, Some("lab")).stack, ["q-lab"]);
+        assert_eq!(view(&r, Some("all")).stack, v.stack);
+        assert_eq!(view(&r, None).stack, v.stack);
     }
 
     #[test]
@@ -853,24 +850,24 @@ mod tests {
 
     #[test]
     fn the_goals_fold_with_two_lines_or_more() {
-        let mut r = Room { desks: json!({ "main": { "name": "Work", "goals": "  \nShip it   \r\nTest it\n\n" } }), ..Default::default() };
+        let mut r = Room { teams: json!({ "main": { "name": "Work", "goals": "  \nShip it   \r\nTest it\n\n" } }), ..Default::default() };
         r.session("a", None, true);
         let g = view(&r, None).goals.unwrap();
-        assert_eq!((g.desk_id.as_str(), g.lines.clone(), g.foldable, en(&g.show_all)), ("main", vec!["Ship it".to_string(), "Test it".into()], true, "Show all 2 goals"));
+        assert_eq!((g.team_id.as_str(), g.lines.clone(), g.foldable, en(&g.show_all)), ("main", vec!["Ship it".to_string(), "Test it".into()], true, "Show all 2 goals"));
         assert_eq!((g.folded, en(&g.toggle)), (false, "Show the first goal only"));
         // folded on this device: the toggle shows them all again
         let lens = Lens { goals_folded: vec!["main".into()], ..Default::default() };
         let g = view_with(&r, &lens).goals.unwrap();
         assert_eq!((g.folded, en(&g.toggle)), (true, "Show all 2 goals"));
-        r.desks = json!({ "main": { "name": "Work", "goals": "One goal" } });
+        r.teams = json!({ "main": { "name": "Work", "goals": "One goal" } });
         let g = view_with(&r, &lens).goals.unwrap();
         assert_eq!((g.lines.len(), g.foldable, g.show_all, g.folded, g.toggle), (1, false, None, false, None));
-        r.desks = json!({ "main": { "name": "Work" } });
+        r.teams = json!({ "main": { "name": "Work" } });
         assert_eq!(view(&r, None).goals.unwrap().lines.len(), 0);
-        // (a room without desks keeps its goals on the first desk it will have)
+        // (a room without teams keeps its goals on the first team it will have)
         let mut r = Room::default();
         r.session("a", None, true);
-        assert_eq!(view(&r, None).goals.unwrap().desk_id, "main");
+        assert_eq!(view(&r, None).goals.unwrap().team_id, "main");
     }
 
     #[test]

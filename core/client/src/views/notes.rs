@@ -5,10 +5,10 @@
 //! - a note shows while it is open, not removed, not held (a sent note waits a moment for the toast's Undo: every page
 //!   hides it), and not a new one still under its local id (the page that made it gets it by its object id);
 //! - the last written first; the corner shows the first of them, else an empty one;
-//! - it goes to the crowned session of the desk in view; on All desks to the crown of the single desk chosen last,
-//!   else the first desk's crown that there is, and with two crowned desks or more the person picks one.
+//! - it goes to the crowned session of the team in view; on All teams to the crown of the single team chosen last,
+//!   else the first team's crown that there is, and with two crowned teams or more the person picks one.
 //!
-//! Notes are the room's, not a desk's: every desk shows the same ones.
+//! Notes are the room's, not a team's: every team shows the same ones.
 
 use super::board::{Agent, Board};
 use super::words::say;
@@ -59,20 +59,20 @@ fn note_of(n: &Note) -> NoteView {
 
 pub(crate) fn to_of(a: &Agent, b: &Board) -> NoteToView {
     let name = a.row.name.trim();
-    let desk = a.desk.as_deref().and_then(|d| b.desks.iter().find(|x| x.id == d));
+    let team = a.team.as_deref().and_then(|d| b.teams.iter().find(|x| x.id == d));
     NoteToView {
         session_id: a.row.key.clone(),
-        // (never an empty word: a session without a name yet is the desk's Main Session)
+        // (never an empty word: a session without a name yet is the team's Main Session)
         name: if name.is_empty() { "Main Session".into() } else { name.to_string() },
         mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
-        desk_id: a.desk.clone().unwrap_or_default(),
-        desk: desk.map(|d| if d.name.is_empty() { "Personal".to_string() } else { d.name.clone() }).unwrap_or_default(),
+        team_id: a.team.clone().unwrap_or_default(),
+        team: team.map(|d| if d.name.is_empty() { "Personal".to_string() } else { d.name.clone() }).unwrap_or_default(),
     }
 }
 
-/// The crowned session a desk's note goes to (none without a crown on it).
-pub(crate) fn crown_on<'b>(b: &'b Board, desk: Option<&str>) -> Option<&'b Agent> {
-    b.agents.iter().find(|a| a.crowned && !a.row.archived && !a.row.removed && (desk.is_none() || a.desk.as_deref() == desk))
+/// The crowned session a team's note goes to (none without a crown on it).
+pub(crate) fn crown_on<'b>(b: &'b Board, team: Option<&str>) -> Option<&'b Agent> {
+    b.agents.iter().find(|a| a.crowned && !a.row.archived && !a.row.removed && (team.is_none() || a.team.as_deref() == team))
 }
 
 pub fn notes(b: &Board) -> NotesView {
@@ -85,19 +85,8 @@ pub fn notes(b: &Board) -> NotesView {
     let rows: Vec<NoteView> = shown.into_iter().map(note_of).collect();
 
     // Whom it goes to.
-    let (to, choose, far) = if b.all {
-        let crowns: Vec<&Agent> = b.desks.iter().filter_map(|d| crown_on(b, Some(&d.id))).collect();
-        let home = b.lens.home_desk.as_deref().filter(|h| b.desks.iter().any(|d| d.id == *h));
-        let own = home.and_then(|h| crown_on(b, Some(h)));
-        let to = own.or(crowns.first().copied());
-        // (All desks, and the desk chosen last has no crown: the note still goes to another desk's crowned session)
-        let far = to.is_some() && own.is_none() && crowns.len() == 1;
-        let choose = if crowns.len() > 1 { crowns.iter().map(|a| to_of(a, b)).collect() } else { Vec::new() };
-        (to, choose, far)
-    } else {
-        let desk = if b.desks.is_empty() { None } else { b.desk.as_deref() };
-        (crown_on(b, desk).filter(|a| a.on_desk), Vec::new(), false)
-    };
+    let team = if b.teams.is_empty() { None } else { b.team.as_deref() };
+    let to = crown_on(b, team).filter(|a| a.on_team);
     let to = to.map(|a| to_of(a, b));
     let first = rows.first();
     let written = first.is_some_and(|n| !n.text.trim().is_empty() || !n.files.is_empty());
@@ -109,8 +98,6 @@ pub fn notes(b: &Board) -> NotesView {
         send_says: to.as_ref().map(|t| say("note.send_to", format!("Send to {}", t.name), &[("name", &t.name)])),
         no_crown: to.is_none().then(|| say("note.no_crown", "Give a session the crown to send", &[])),
         to,
-        far,
-        choose,
         rows,
     }
 }
@@ -129,8 +116,8 @@ mod tests {
     fn note(id: &str, text: &str, updated: u64) -> Value {
         json!({ "object_id": id, "text": text, "object_state": "open", "created_at": NOW - 60 * MIN, "updated_at": updated, "envelope_number": 1 })
     }
-    fn lens(desk: Option<&str>) -> Lens {
-        Lens { desk: desk.map(String::from), ..Default::default() }
+    fn lens(team: Option<&str>) -> Lens {
+        Lens { team: team.map(String::from), ..Default::default() }
     }
 
     #[test]
@@ -167,30 +154,23 @@ mod tests {
 
     #[test]
     fn it_goes_to_the_crown_of_the_desk_in_view() {
-        let mut r = Room { desks: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "", "created_at": 2 } }), ..Default::default() };
+        let mut r = Room { teams: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "", "created_at": 2 } }), ..Default::default() };
         r.session("a", None, true);
         r.session("b", None, true);
-        r.on_desk("b", "lab");
+        r.on_team("b", "lab");
         let v = view(&r, &lens(None));
         assert!(v.to.is_none());
         assert_eq!(v.no_crown.unwrap().en, "Give a session the crown to send");
-        r.desks["main"]["crown"] = json!({ "agent_device_id": dev("a") });
+        r.teams["main"]["crown"] = json!({ "agent_device_id": dev("a") });
         let v = view(&r, &lens(None));
         assert_eq!(v.to.as_ref().unwrap().name, "a");
         assert_eq!(v.send_says.unwrap().en, "Send to a");
-        // the other desk has no crown
+        // the other team has no crown
         assert!(view(&r, &lens(Some("lab"))).to.is_none());
-        // All desks: one crowned desk, not the one chosen last: it goes there, named
-        let all = Lens { desk: Some("all".into()), home_desk: Some("lab".into()), ..Default::default() };
-        let v = view(&r, &all);
-        assert_eq!(v.to.as_ref().map(|t| t.name.as_str()), Some("a"));
-        assert!(v.far);
-        assert!(v.choose.is_empty());
-        // two crowned desks: the person picks; the one chosen last is the default
-        r.desks["lab"]["crown"] = json!({ "agent_device_id": dev("b") });
-        let v = view(&r, &all);
-        assert_eq!(v.to.as_ref().map(|t| t.name.as_str()), Some("b"));
-        assert!(!v.far);
-        assert_eq!(v.choose.iter().map(|t| (t.desk.as_str(), t.name.as_str())).collect::<Vec<_>>(), [("Work", "a"), ("Personal", "b")]);
+        // one team at a time: "all" is no team, the first one's crown
+        assert_eq!(view(&r, &lens(Some("all"))).to.as_ref().map(|t| t.name.as_str()), Some("a"));
+        r.teams["lab"]["crown"] = json!({ "agent_device_id": dev("b") });
+        let v = view(&r, &lens(Some("lab")));
+        assert_eq!(v.to.as_ref().map(|t| (t.team.as_str(), t.name.as_str())), Some(("Personal", "b")));
     }
 }

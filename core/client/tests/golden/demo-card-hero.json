@@ -51,22 +51,21 @@
       "Fernly",
       "Fernly Website",
       "Landing Page"
-    ],
-    "desk": "Fernly"
+    ]
   },
   "asked_ms": 1791460800000,
   "place": {
-    "at": 21,
-    "of": 29,
+    "at": 10,
+    "of": 16,
     "says": {
       "key": "card.place",
       "args": {
-        "at": "21",
-        "of": "29"
+        "at": "10",
+        "of": "16"
       },
-      "en": "21 of 29"
+      "en": "10 of 16"
     },
-    "prev": "43a72b8f7d9de1aac4aeeae1367076c0",
+    "prev": "daa202f98097523fa1f1fe18068f8322",
     "next": "29e26860adecd0578df14c491915b27a"
   },
   "notes": [

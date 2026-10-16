@@ -47,8 +47,8 @@ impl App {
             machine: crate::machines::granted_device(&self.board.model, &ask.session_id).map(String::from),
         };
         let label: String = ask.name.chars().take(120).collect();
-        let desk = settings.get("desk").and_then(Value::as_str).map(String::from);
-        if !self.invite_open(now_ms, trommi_core::invite::Role::Agent, label, desk, Some(vouch), out) {
+        let team = settings.get("desk").and_then(Value::as_str).map(String::from);
+        if !self.invite_open(now_ms, trommi_core::invite::Role::Agent, label, team, Some(vouch), out) {
             self.answer_ask(now_ms, &ask.session_id, nonce, json!({ "refused": "busy" }), out);
         }
         true

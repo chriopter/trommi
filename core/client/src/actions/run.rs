@@ -21,26 +21,26 @@ use trommi_core::Error;
 pub const SNOOZE_HOUR: u64 = 7;
 
 const DAY_MS: u64 = 86_400_000;
-/// A name of a desk or a session: at most so many characters.
+/// A name of a team or a session: at most so many characters.
 pub const NAME_MAX: usize = 40;
 /// A note sent to a session waits so long for the toast's Undo before it goes.
 pub const NOTE_HOLD_MS: u64 = 3_000;
-/// A desk's goals: at most so many lines of at most `GOAL_LINE_MAX` characters, no blank lines.
+/// A team's goals: at most so many lines of at most `GOAL_LINE_MAX` characters, no blank lines.
 pub const GOAL_LINES: usize = 20;
 pub const GOAL_LINE_MAX: usize = 200;
-/// Every account's first desk: the same id and value from every device, so two that write it at once write one.
-pub const FIRST_DESK_ID: &str = "main";
+/// Every account's first team: the same id and value from every device, so two that write it at once write one.
+pub const FIRST_TEAM_ID: &str = "main";
 
-fn first_desk() -> Value {
+fn first_team() -> Value {
     json!({ "name": "Personal", "created_at": 0 })
 }
 
-fn desk_name(name: &str) -> String {
+fn team_name(name: &str) -> String {
     let name: String = name.trim().chars().take(NAME_MAX).collect();
     if name.is_empty() { "Personal".into() } else { name }
 }
 
-/// A desk's goals as they are kept (web `cleanGoals`, iOS `deskRegister`).
+/// A team's goals as they are kept (web `cleanGoals`, iOS `deskRegister`).
 pub fn clean_goals(text: &str) -> String {
     text.lines()
         .map(|l| l.trim().chars().take(GOAL_LINE_MAX).collect::<String>())
@@ -229,50 +229,50 @@ impl Doing<'_> {
                 self.edit_session(action, session_id, "name", json!(name))
             }
             Action::ArchiveSession { session_id, on } => self.edit_session(action, session_id, "archived", json!(on)),
-            Action::MoveSession { session_id, desk_id } => {
-                if !self.desks().contains(desk_id) {
-                    return Err(not_done("action.no_desk", "That desk is no longer there."));
+            Action::MoveSession { session_id, team_id } => {
+                if !self.teams().contains(team_id) {
+                    return Err(not_done("action.no_team", "That team is no longer there."));
                 }
-                self.edit_session(action, session_id, "desk", json!(desk_id))
+                self.edit_session(action, session_id, "desk", json!(team_id))
             }
-            Action::AddDesk { name } => {
+            Action::AddTeam { name } => {
                 let mut values = Vec::new();
-                // every account has its first desk, the same value from every device
-                if self.desks().is_empty() {
-                    values.push((format!("desk/{FIRST_DESK_ID}"), first_desk()));
+                // every account has its first team, the same value from every device
+                if self.teams().is_empty() {
+                    values.push((format!("desk/{FIRST_TEAM_ID}"), first_team()));
                 }
                 let id = self.sent.new_id(self.now);
-                let named = desk_name(name);
+                let named = team_name(name);
                 values.push((format!("desk/{id}"), json!({ "name": named, "created_at": self.now })));
                 self.registers(action, &values)?;
-                // (the toast names the new desk's id: its Undo takes the desk away again, and the shell goes to it)
-                let text = Text::new("desk.added", "Desk added");
-                self.sent.undo_toast(self.toasts, text, Some(Text::new("desk.added.name", &named)), Action::RemoveDesk { desk_id: id });
+                // (the toast names the new team's id: its Undo takes the team away again, and the shell goes to it)
+                let text = Text::new("team.added", "Team added");
+                self.sent.undo_toast(self.toasts, text, Some(Text::new("team.added.name", &named)), Action::RemoveTeam { team_id: id });
                 Ok(())
             }
-            Action::RenameDesk { desk_id, name } => {
-                let mut desk = self.desk(desk_id)?;
-                desk.insert("name".into(), json!(desk_name(name)));
-                self.registers(action, &[(format!("desk/{desk_id}"), Value::Object(desk))])
+            Action::RenameTeam { team_id, name } => {
+                let mut team = self.team(team_id)?;
+                team.insert("name".into(), json!(team_name(name)));
+                self.registers(action, &[(format!("desk/{team_id}"), Value::Object(team))])
             }
             Action::RoomRegister { key, value } if key.starts_with("desk/") || key == "kit" => self.registers(action, &[(key.clone(), value.clone())]),
-            // a field of the desk's register like its name; with no desk yet the first one is made for them
-            Action::SetGoal { desk_id, text } => {
-                let live = self.desks();
-                let (id, mut desk) = if live.contains(desk_id) {
-                    (desk_id.clone(), self.desk(desk_id)?)
+            // a field of the team's register like its name; with no team yet the first one is made for them
+            Action::SetGoal { team_id, text } => {
+                let live = self.teams();
+                let (id, mut team) = if live.contains(team_id) {
+                    (team_id.clone(), self.team(team_id)?)
                 } else if live.is_empty() {
-                    (FIRST_DESK_ID.to_string(), first_desk().as_object().cloned().unwrap_or_default())
+                    (FIRST_TEAM_ID.to_string(), first_team().as_object().cloned().unwrap_or_default())
                 } else {
-                    return Err(not_done("action.no_desk", "That desk is no longer there."));
+                    return Err(not_done("action.no_team", "That team is no longer there."));
                 };
                 let goals = clean_goals(text);
                 if goals.is_empty() {
-                    desk.remove("goals");
+                    team.remove("goals");
                 } else {
-                    desk.insert("goals".into(), json!(goals));
+                    team.insert("goals".into(), json!(goals));
                 }
-                self.registers(action, &[(format!("desk/{id}"), Value::Object(desk))])
+                self.registers(action, &[(format!("desk/{id}"), Value::Object(team))])
             }
             Action::SessionIcon { session_id, icon } => {
                 let icon: Option<String> = icon.as_deref().map(str::trim).filter(|i| !i.is_empty()).map(|i| i.chars().take(NAME_MAX).collect());
@@ -290,17 +290,17 @@ impl Doing<'_> {
             }
             Action::PlaceSession { session_id, before, after } => self.place_session(action, session_id, before.as_deref(), after.as_deref()),
             Action::CrownSession { session_id, on } => self.crown_session(action, session_id, *on),
-            Action::OrderDesks { desk_ids } => {
-                let live = self.desks();
-                let ids: Vec<&String> = desk_ids.iter().filter(|d| live.contains(*d)).collect();
+            Action::OrderTeams { team_ids } => {
+                let live = self.teams();
+                let ids: Vec<&String> = team_ids.iter().filter(|d| live.contains(*d)).collect();
                 if ids.is_empty() {
-                    return Err(not_done("action.no_desk", "That desk is no longer there."));
+                    return Err(not_done("action.no_team", "That team is no longer there."));
                 }
                 let mut values = Vec::new();
                 for (i, d) in ids.into_iter().enumerate() {
-                    let mut desk = self.desk(d)?;
-                    desk.insert("order".into(), json!(i));
-                    values.push((format!("desk/{d}"), Value::Object(desk)));
+                    let mut team = self.team(d)?;
+                    team.insert("order".into(), json!(i));
+                    values.push((format!("desk/{d}"), Value::Object(team)));
                 }
                 self.registers(action, &values)
             }
@@ -460,8 +460,8 @@ impl Doing<'_> {
         self.seal_note(action, note_id, &own, closed, &local_id)
     }
 
-    /// Each live main session on a desk carries that desk's goals for its agent (9.3.4, web `syncGoals`): its
-    /// group's register `goals` = `{desk_id, desk_name, goals}`, or none when the desk has none. Written where it
+    /// Each live main session on a team carries that team's goals for its agent (9.3.4, web `syncGoals`): its
+    /// group's register `goals` = `{team_id, team_name, goals}`, or none when the team has none. Written where it
     /// differs from what the group holds and was not written already; no echo, no toast (the person did not act).
     pub fn sync_goals(&mut self) {
         let mut writes = Vec::new();
@@ -471,12 +471,12 @@ impl Doing<'_> {
             if !s.is_active || s.stale || s.parent_session_id.is_some() || s.group_id.is_none() || archived {
                 continue;
             }
-            let desk_id = settings.as_ref().and_then(|v| v.get("desk")).and_then(Value::as_str).map(str::to_string);
-            let desk = desk_id.as_ref().and_then(|d| self.model.human.get(&format!("desk/{d}"))).map(|r| r.value.clone()).unwrap_or(Value::Null);
-            let goals = clean_goals(desk.get("goals").and_then(Value::as_str).unwrap_or(""));
-            let wanted = match desk_id {
+            let team_id = settings.as_ref().and_then(|v| v.get("desk")).and_then(Value::as_str).map(str::to_string);
+            let team = team_id.as_ref().and_then(|d| self.model.human.get(&format!("desk/{d}"))).map(|r| r.value.clone()).unwrap_or(Value::Null);
+            let goals = clean_goals(team.get("goals").and_then(Value::as_str).unwrap_or(""));
+            let wanted = match team_id {
                 Some(d) if !goals.is_empty() => {
-                    json!({ "desk_id": d, "desk_name": desk.get("name").and_then(Value::as_str).unwrap_or(""), "goals": goals })
+                    json!({ "desk_id": d, "desk_name": team.get("name").and_then(Value::as_str).unwrap_or(""), "goals": goals })
                 }
                 _ => Value::Null,
             };
@@ -758,7 +758,7 @@ impl Doing<'_> {
         self.seal_echoed(action, &local_id, &draft, to.as_ref(), &files)
     }
 
-    /// A session's settings (its register `session/<id>`: name, icon, desk, archived), one field changed and every
+    /// A session's settings (its register `session/<id>`: name, icon, team, archived), one field changed and every
     /// other kept.
     /// A new place in the session list (the web's `orderWrites`): every session whose place changes, or that had
     /// none, gets its number.
@@ -799,18 +799,18 @@ impl Doing<'_> {
         self.registers(action, &values)
     }
 
-    /// The crown of the session's desk (in the desk's register), or of the room where it has no desk.
+    /// The crown of the session's team (in the team's register), or of the room where it has no team.
     fn crown_session(&mut self, action: &Action, session_id: &str, on: bool) -> Result<(), NotDone> {
         let Some(s) = self.model.sessions.get(session_id) else {
             return Err(not_done("action.not_found", "That session is no longer there."));
         };
         let crown = if on { json!({ "session_id": session_id, "agent_device_id": s.agent_device_id }) } else { Value::Null };
-        let desk = self.settings_of(session_id).get("desk").and_then(Value::as_str).map(str::to_string);
-        let live = self.desks();
-        let desk = desk.filter(|d| live.contains(d)).or_else(|| live.first().cloned());
-        match desk {
+        let team = self.settings_of(session_id).get("desk").and_then(Value::as_str).map(str::to_string);
+        let live = self.teams();
+        let team = team.filter(|d| live.contains(d)).or_else(|| live.first().cloned());
+        match team {
             Some(d) => {
-                let mut value = self.desk(&d)?;
+                let mut value = self.team(&d)?;
                 value.insert("crown".into(), crown);
                 self.registers(action, &[(format!("desk/{d}"), Value::Object(value))])
             }
@@ -864,8 +864,8 @@ impl Doing<'_> {
         (self.seal)(&draft, None, &[]).is_ok()
     }
 
-    /// The desks that are there, by id.
-    fn desks(&self) -> Vec<String> {
+    /// The teams that are there, by id.
+    fn teams(&self) -> Vec<String> {
         self.model
             .human
             .iter()
@@ -874,12 +874,12 @@ impl Doing<'_> {
             .collect()
     }
 
-    fn desk(&self, desk_id: &str) -> Result<Map<String, Value>, NotDone> {
+    fn team(&self, team_id: &str) -> Result<Map<String, Value>, NotDone> {
         self.model
             .human
-            .get(&format!("desk/{desk_id}"))
+            .get(&format!("desk/{team_id}"))
             .and_then(|r| r.value.as_object().cloned())
-            .ok_or_else(|| not_done("action.no_desk", "That desk is no longer there."))
+            .ok_or_else(|| not_done("action.no_team", "That team is no longer there."))
     }
 
     /// Seals a draft that shows no echo (a take back, a verdict: the hub's copy shows them).
@@ -1010,7 +1010,7 @@ mod tests {
         assert_eq!(clean_goals("  one \r\n\n two\n"), "one\ntwo");
         assert_eq!(clean_goals(&"x\n".repeat(30)).lines().count(), GOAL_LINES);
         assert_eq!(clean_goals(&"y".repeat(300)).len(), GOAL_LINE_MAX);
-        assert_eq!((desk_name("   "), desk_name(&"d".repeat(50)).len()), ("Personal".to_string(), NAME_MAX));
+        assert_eq!((team_name("   "), team_name(&"d".repeat(50)).len()), ("Personal".to_string(), NAME_MAX));
     }
 
     #[test]

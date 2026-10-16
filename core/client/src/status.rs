@@ -193,7 +193,7 @@ pub fn link_state(
 pub struct Context<'a> {
     pub model: &'a Model,
     /// The cards on the Desk now, by session.
-    pub on_desk: HashMap<&'a str, Vec<&'a str>>,
+    pub on_team: HashMap<&'a str, Vec<&'a str>>,
     /// The open permission requests on the Desk, by session.
     pub asking: BTreeSet<&'a str>,
     /// When the agent process behind each agent device last said anything, in any of its sessions.
@@ -205,11 +205,11 @@ pub struct Context<'a> {
 
 impl<'a> Context<'a> {
     pub fn new(m: &'a Model, now: u64) -> Self {
-        let mut on_desk: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut on_team: HashMap<&str, Vec<&str>> = HashMap::new();
         for id in &m.stack {
             if let Some(c) = m.cards.get(id) {
                 if let Some(s) = c.session_id.as_deref() {
-                    on_desk.entry(s).or_default().push(id.as_str());
+                    on_team.entry(s).or_default().push(id.as_str());
                 }
             }
         }
@@ -230,7 +230,7 @@ impl<'a> Context<'a> {
         }
         Context {
             model: m,
-            on_desk,
+            on_team,
             asking,
             device_active,
             now,
@@ -334,7 +334,7 @@ pub fn status_of(
         } else {
             let sid = s.session_id.as_str();
             let waiting: Vec<&str> = ctx
-                .on_desk
+                .on_team
                 .get(sid)
                 .into_iter()
                 .flatten()

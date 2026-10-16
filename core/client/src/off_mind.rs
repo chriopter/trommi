@@ -3,7 +3,7 @@
 //! on a tap; under them the section is a short hinted list of what is put off and closed.
 //!
 //! One rule for every app, decided here and handed over in the patch (`off_mind`); the apps keep only the cards of
-//! the desk in view and draw:
+//! the team in view and draw:
 //!
 //! - **the starred stack**: his starred cards (the register `star/<card>`, `{ at }`) that this device holds, the
 //!   last starred first, then by id. A star taken away (`null`) is none. Each says whether it is being worked on.
@@ -14,7 +14,7 @@
 //! - **a card has one home.** A starred card lies in the starred stack only, also while it is being worked on: the
 //!   running stack leaves it out, so its count is exactly what its fan shows.
 //! - **the rest**: the put-off cards, the last put off first; how many closed cards (done, withdrawn, shredded) each
-//!   session has, so an app adds up the sessions of its desk; and the [`RECENT`] cards closed last, for the hint.
+//!   session has, so an app adds up the sessions of its team; and the [`RECENT`] cards closed last, for the hint.
 //!
 //! A card of an archived session, or of a session the list does not show, is in none of these (its star stays).
 //! `wake`: when a running card stops running by the clock alone.
@@ -26,7 +26,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-/// How many of the cards closed last the patch names (an app shows the first few of its desk).
+/// How many of the cards closed last the patch names (an app shows the first few of its team).
 pub const RECENT: usize = 120;
 
 /// A starred card.

@@ -26,7 +26,7 @@ mod invites;
 mod account_steps;
 mod departures;
 mod account_change;
-mod desks;
+mod teams;
 mod outside;
 mod past;
 pub mod push;
@@ -172,7 +172,7 @@ pub struct App {
     /// The account's steps in flight (`app::account_steps`).
     steps: account_steps::Steps,
     changes: account_change::Changes,
-    desks: desks::DeskDeletes,
+    teams: teams::TeamDeletes,
     push: push::Push,
     /// Widgets, local notifications, the notification extension (`app::outside`).
     outside: outside::Outside,
@@ -197,7 +197,7 @@ pub struct App {
     opening: Option<(u64, Vec<DeviceEntry>)>,
     /// The board model, fed from the engine's reports.
     board: engine::feed::Board,
-    /// What this device alone chooses: the desk and the pages in view, the zone (`Event::Focus`, `Event::Zone`).
+    /// What this device alone chooses: the team and the pages in view, the zone (`Event::Focus`, `Event::Zone`).
     lens: Lens,
     /// The board's units are to be made again: the model, the lens or the clock moved.
     stale_views: bool,
@@ -215,7 +215,7 @@ pub struct App {
     sent: Sent,
     /// The room's cache: read before the engine starts, written behind the board (`cache::keeper`).
     cache: Option<crate::cache::Keeper>,
-    /// The model moved: the sessions' goals are compared with their desks' once live (`Doing::sync_goals`).
+    /// The model moved: the sessions' goals are compared with their teams' once live (`Doing::sync_goals`).
     goals_check: bool,
     /// The Scribble Boards read on this device (`crate::scribble`).
     scribble: crate::scribble::Scribble,
@@ -263,7 +263,7 @@ impl App {
             invites: invites::Invites::default(),
             steps: account_steps::Steps::default(),
             changes: account_change::Changes::default(),
-            desks: desks::DeskDeletes::default(),
+            teams: teams::TeamDeletes::default(),
             push: push::Push::default(),
             outside: outside::Outside::default(),
             demo: false,
@@ -1030,22 +1030,17 @@ impl App {
                     _ => focus.board.as_deref(),
                 };
                 self.scribble.focus(board.and_then(crate::scribble::board_in_view));
-                // (the single desk chosen last keeps the note and the Scribble Board on All desks)
-                if let Some(desk) = focus.desk.as_deref().filter(|d| *d != crate::views::board::ALL_DESKS) {
-                    self.lens.home_desk = Some(desk.to_string());
-                }
-                // (every desk's board small: Settings, and the boards of All desks)
-                let all = focus.desk.as_deref() == Some(crate::views::board::ALL_DESKS);
-                self.lens.thumbs = matches!(focus.screen, Screen::Settings { .. }) || (all && board.is_some());
+                // (every team's board small: Settings)
+                self.lens.thumbs = matches!(focus.screen, Screen::Settings { .. });
                 self.scribble.thumbs = self.lens.thumbs;
                 if self.lens.thumbs && !self.demo {
-                    for (desk, _) in crate::sessions::desks_in_order(&self.board.model) {
-                        if let Some(b) = crate::scribble::board_of(&crate::scribble::desk_board(&desk)) {
+                    for (team, _) in crate::sessions::teams_in_order(&self.board.model) {
+                        if let Some(b) = crate::scribble::board_of(&crate::scribble::team_board(&team)) {
                             self.scribble.read(b);
                         }
                     }
                 }
-                self.lens.desk = focus.desk;
+                self.lens.team = focus.team;
                 // (the gallery, and the Desk's foot shows its newest)
                 self.lens.artifacts = matches!(focus.screen, Screen::Artifacts { .. } | Screen::Desk);
                 self.lens.gallery = match &focus.screen {
@@ -1123,7 +1118,7 @@ impl App {
 
     /// The person did something: the actions of `actions::run`, the toasts, a retry.
     fn action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
-        // a note sent without a session goes where the corner's note says it goes (the crown of the desk in view)
+        // a note sent without a session goes where the corner's note says it goes (the crown of the team in view)
         let action = match action {
             Action::SendNote { note_id, to: None } => Action::SendNote { note_id, to: self.next_view.notes.to.as_ref().map(|t| t.session_id.clone()) },
             other => other,
@@ -1156,10 +1151,10 @@ impl App {
                 }
                 return;
             }
-            Action::FoldGoals { desk_id, folded } => {
-                self.lens.goals_folded.retain(|d| d != desk_id);
+            Action::FoldGoals { team_id, folded } => {
+                self.lens.goals_folded.retain(|d| d != team_id);
                 if *folded {
-                    self.lens.goals_folded.push(desk_id.clone());
+                    self.lens.goals_folded.push(team_id.clone());
                 }
                 self.stale_views = true;
                 return;
@@ -1219,8 +1214,8 @@ impl App {
         if let Action::DeleteSession { session_id } = &action {
             return self.delete_session(now_ms, session_id, out);
         }
-        if let Action::RemoveDesk { desk_id } = &action {
-            return self.delete_desk(now_ms, desk_id, out);
+        if let Action::RemoveTeam { team_id } = &action {
+            return self.delete_team(now_ms, team_id, out);
         }
         if let Action::Push { level } = &action {
             return self.push_action(now_ms, *level, out);
@@ -1311,16 +1306,16 @@ impl App {
         self.outside(now_ms, out);
     }
 
-    /// Every desk's board small while a page shows them (`Lens::thumbs`): each is read on this device (the demo's
+    /// Every team's board small while a page shows them (`Lens::thumbs`): each is read on this device (the demo's
     /// are in the model).
     fn thumbs(&mut self) -> Option<Vec<crate::views::ThumbView>> {
         if !self.lens.thumbs {
             return None;
         }
-        let desks = crate::sessions::desks_in_order(&self.board.model);
-        let mut out = Vec::with_capacity(desks.len());
-        for (desk, _) in desks {
-            let id = crate::scribble::desk_board(&desk);
+        let teams = crate::sessions::teams_in_order(&self.board.model);
+        let mut out = Vec::with_capacity(teams.len());
+        for (team, _) in teams {
+            let id = crate::scribble::team_board(&team);
             let Some(board) = crate::scribble::board_of(&id) else { continue };
             let (state, shapes) = if self.demo {
                 ("ready", crate::scribble::thumb_shapes(crate::scribble::model_board(&self.board.model, &board).0.shapes))
@@ -1328,7 +1323,7 @@ impl App {
                 self.scribble.read(board);
                 self.scribble.thumb(&self.board.model, &board).unwrap_or(("loading", Vec::new()))
             };
-            out.push(crate::views::ThumbView { desk_id: desk, board_id: id, state: state.into(), count: shapes.len() as u64, shapes });
+            out.push(crate::views::ThumbView { team_id: team, board_id: id, state: state.into(), count: shapes.len() as u64, shapes });
         }
         Some(out)
     }
@@ -1506,7 +1501,7 @@ impl App {
         true
     }
 
-    /// Erases these shapes on a board (`desk/<32 hex>`; a desk's delete, `desk_delete::Step::EraseBoard`): erase
+    /// Erases these shapes on a board (`desk/<32 hex>`; a team's delete, `team_delete::Step::EraseBoard`): erase
     /// items of at most `scribble::ERASE_CHUNK` shapes each, shown at once as any `BoardItem`.
     pub fn erase_board(&mut self, now_ms: u64, board_id: &str, shape_ids: &[String]) -> Vec<Effect> {
         let mut out = Vec::new();
@@ -1519,9 +1514,9 @@ impl App {
         out
     }
 
-    /// Reads a board that is not in view (a desk's delete, `desk_delete::Step::LoadBoard`) and, with `snapshot`,
+    /// Reads a board that is not in view (a team's delete, `team_delete::Step::LoadBoard`) and, with `snapshot`,
     /// writes its snapshot as soon as nothing of it is in flight however few items it has
-    /// (`desk_delete::Step::WriteSnapshot`: the empty board).
+    /// (`team_delete::Step::WriteSnapshot`: the empty board).
     pub fn board_work(&mut self, now_ms: u64, board_id: &str, snapshot: bool) -> Vec<Effect> {
         let mut out = Vec::new();
         if let Some(board) = crate::scribble::board_in_view(board_id) {
@@ -1535,9 +1530,9 @@ impl App {
         out
     }
 
-    /// What this device knows of a board once it was read (`desk_delete::Known::board`): its shapes, the files of
+    /// What this device knows of a board once it was read (`team_delete::Known::board`): its shapes, the files of
     /// its pictures, whether its newest snapshot is of the empty board.
-    pub fn board_known(&self, board_id: &str) -> Option<crate::desk_delete::BoardKnown> {
+    pub fn board_known(&self, board_id: &str) -> Option<crate::team_delete::BoardKnown> {
         self.scribble.known(&crate::scribble::board_in_view(board_id)?)
     }
 
@@ -2049,9 +2044,9 @@ impl App {
             self.deliver_notes(now_ms, out);
             self.drive_imports(now_ms, out);
         }
-        // a desk's delete: its next step once the last one shows
-        if fed || !self.desks.running.is_empty() {
-            self.drive_desk_deletes(now_ms, out);
+        // a team's delete: its next step once the last one shows
+        if fed || !self.teams.running.is_empty() {
+            self.drive_team_deletes(now_ms, out);
         }
         // The board's units: made again when the model, the lens or the clock moved (every unit whole; a unit that
         // did not change is not sent, `ViewModel::diff`).
@@ -2069,8 +2064,8 @@ impl App {
                 self.next_view.settings.room = Some(engine::feed::hex(engine.room().as_bytes()));
                 self.next_view.settings.hub = Some(engine.hub().to_string());
             }
-            self.next_view.settings.desk_counts = self.desk_counts();
-            self.show_desk_deletes();
+            self.next_view.settings.team_counts = self.team_counts();
+            self.show_team_deletes();
             self.view_wake = wake;
             self.files.shown(shown, &mut self.next_view.files);
         }
@@ -2078,7 +2073,7 @@ impl App {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [self.past.wake(), engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.desks.wake(now_ms), self.notes_wake().map(|at| at.max(now_ms + 1)), self.departures.wake()].into_iter().flatten().min();
+        let wake = [self.past.wake(), engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.teams.wake(now_ms), self.notes_wake().map(|at| at.max(now_ms + 1)), self.departures.wake()].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });
@@ -2140,7 +2135,7 @@ fn link_problem(code: &str) -> crate::views::Text {
     }
 }
 
-/// Whether an action writes a register of the room group (stars, snoozes, drafts, sessions' settings, desks).
+/// Whether an action writes a register of the room group (stars, snoozes, drafts, sessions' settings, teams).
 fn writes_room_registers(action: &Action) -> bool {
     matches!(
         action,
@@ -2151,16 +2146,16 @@ fn writes_room_registers(action: &Action) -> bool {
             | Action::RenameSession { .. }
             | Action::ArchiveSession { .. }
             | Action::MoveSession { .. }
-            | Action::AddDesk { .. }
-            | Action::RenameDesk { .. }
-            | Action::RemoveDesk { .. }
+            | Action::AddTeam { .. }
+            | Action::RenameTeam { .. }
+            | Action::RemoveTeam { .. }
             | Action::SetGoal { .. }
             | Action::SessionIcon { .. }
             | Action::SessionGroup { .. }
             | Action::SessionParent { .. }
             | Action::PlaceSession { .. }
             | Action::CrownSession { .. }
-            | Action::OrderDesks { .. }
+            | Action::OrderTeams { .. }
             | Action::RenameDevice { .. }
             | Action::DeleteSession { .. }
     )

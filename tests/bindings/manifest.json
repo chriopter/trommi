@@ -1056,14 +1056,14 @@
         ],
         "returns": "void"
       },
-      "desksDeleting": {
+      "teamsDeleting": {
         "arguments": [],
         "returns": "text"
       },
-      "deskContents": {
+      "teamContents": {
         "arguments": [
           {
-            "name": "deskId",
+            "name": "teamId",
             "type": "text"
           },
           {
@@ -1073,10 +1073,10 @@
         ],
         "returns": "text"
       },
-      "deskDeletePlan": {
+      "teamDeletePlan": {
         "arguments": [
           {
-            "name": "deskId",
+            "name": "teamId",
             "type": "text"
           },
           {

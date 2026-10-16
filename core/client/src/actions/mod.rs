@@ -130,7 +130,7 @@ pub enum Action {
         marks: Option<Vec<serde_json::Value>>,
     },
 
-    // ---- sessions and desks ----
+    // ---- sessions and teams ----
     RenameSession {
         session_id: String,
         name: String,
@@ -141,7 +141,7 @@ pub enum Action {
     },
     MoveSession {
         session_id: String,
-        desk_id: String,
+        team_id: String,
     },
     /// A session's mark (an icon's name); none takes it off.
     SessionIcon {
@@ -169,7 +169,7 @@ pub enum Action {
         #[serde(default)]
         after: Option<String>,
     },
-    /// The crown of the session's desk (one per desk): the session the person's notes go to.
+    /// The crown of the session's team (one per team): the session the person's notes go to.
     CrownSession {
         session_id: String,
         on: bool,
@@ -179,29 +179,29 @@ pub enum Action {
     DeleteSession {
         session_id: String,
     },
-    AddDesk {
+    AddTeam {
         name: String,
     },
-    RenameDesk {
-        desk_id: String,
+    RenameTeam {
+        team_id: String,
         name: String,
     },
-    RemoveDesk {
-        desk_id: String,
+    RemoveTeam {
+        team_id: String,
     },
-    /// A room register the App writes on its own: a step of a desk's deletion (`app::desks`), the kit's flag
+    /// A room register the App writes on its own: a step of a team's deletion (`app::teams`), the kit's flag
     /// (`app::kit`). Not the shell's to send.
     #[serde(skip)]
     RoomRegister {
         key: String,
         value: serde_json::Value,
     },
-    /// Every desk's place, in one write: the desks in this order.
-    OrderDesks {
-        desk_ids: Vec<String>,
+    /// Every team's place, in one write: the teams in this order.
+    OrderTeams {
+        team_ids: Vec<String>,
     },
     SetGoal {
-        desk_id: String,
+        team_id: String,
         text: String,
     },
     /// A main session's helpers unfolded under it (`open`) or folded into its row (`SessionRowView.unfolded`). This
@@ -210,10 +210,10 @@ pub enum Action {
         session_id: String,
         open: bool,
     },
-    /// A desk's goals folded to their first line, or open again (`GoalsView.folded`). This device's alone: the shell
-    /// keeps the folded desks and sends them again after a start.
+    /// A team's goals folded to their first line, or open again (`GoalsView.folded`). This device's alone: the shell
+    /// keeps the folded teams and sends them again after a start.
     FoldGoals {
-        desk_id: String,
+        team_id: String,
         folded: bool,
     },
 
@@ -222,7 +222,7 @@ pub enum Action {
     ImportShare {
         id: String,
         #[serde(default)] room: Option<String>,
-        #[serde(default)] desk: Option<String>,
+        #[serde(default)] team: Option<String>,
         #[serde(default)] to: Option<String>,
         #[serde(default)] send: bool,
         text: String,

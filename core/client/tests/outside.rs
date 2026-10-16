@@ -103,7 +103,7 @@ fn a_notice_only_for_a_card_that_newly_waits_while_the_app_is_in_the_back() {
     sim.send(Event::Push { payload: vec![1].into() });
     let rung = notices(&sim, from);
     assert_eq!(rung.len(), 1, "{rung:?}");
-    let card = sim.view.desk.rows.iter().find(|r| r.title == "Came while away").expect("on the desk").id.clone();
+    let card = sim.view.desk.rows.iter().find(|r| r.title == "Came while away").expect("on the team").id.clone();
     assert_eq!((rung[0].id.as_str(), rung[0].body.en.as_str(), rung[0].target.as_deref(), rung[0].urgent), (card.as_str(), "Came while away", Some(card.as_str()), false));
     assert!(!rung[0].title.en.is_empty(), "the session's name");
 
@@ -227,7 +227,7 @@ fn native_share_imports_wait_for_uploads_and_never_cross_accounts() {
     use trommi_client_core::app::Bytes;
     let world = World::new();
     let mut sim = world.sim(); sim.send(common::start());
-    let action = |id: &str, room| Action::ImportShare { id: id.into(), room, desk: None, to: None, send: false, text: "From another app".into(), files: vec![SharedFile { name: "note.txt".into(), media_type: "text/plain".into(), bytes: Bytes(b"private file".to_vec()) }] };
+    let action = |id: &str, room| Action::ImportShare { id: id.into(), room, team: None, to: None, send: false, text: "From another app".into(), files: vec![SharedFile { name: "note.txt".into(), media_type: "text/plain".into(), bytes: Bytes(b"private file".to_vec()) }] };
     let wrong = "ab".repeat(16);
     let from = sim.log.len();
     sim.send(Event::Action { action: action(&wrong, Some("00".repeat(32))) });

@@ -32,7 +32,7 @@ pub mod board;
 pub mod cache;
 pub mod codec;
 pub mod desk;
-pub mod desk_delete;
+pub mod team_delete;
 pub mod engine;
 pub mod files;
 pub mod hub;

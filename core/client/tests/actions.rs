@@ -273,40 +273,40 @@ fn desks_are_made_renamed_given_goals_and_the_last_one_stays() {
     let mut world = World::new();
     let mut sim = world.sim();
     with_card(&mut world, &mut sim);
-    let desks = |sim: &Sim| sim.app.board().model.human.iter().filter(|(k, r)| k.starts_with("desk/") && !r.value.is_null()).map(|(k, r)| (k.clone(), r.value.clone())).collect::<Vec<_>>();
-    act(&mut sim, Action::AddDesk { name: "  Work  ".into() });
-    let made = desks(&sim);
-    assert_eq!(made.len(), 2, "the first desk and the new one: {made:?}");
+    let teams = |sim: &Sim| sim.app.board().model.human.iter().filter(|(k, r)| k.starts_with("desk/") && !r.value.is_null()).map(|(k, r)| (k.clone(), r.value.clone())).collect::<Vec<_>>();
+    act(&mut sim, Action::AddTeam { name: "  Work  ".into() });
+    let made = teams(&sim);
+    assert_eq!(made.len(), 2, "the first team and the new one: {made:?}");
     assert_eq!(made.iter().find(|(k, _)| k == "desk/main").map(|d| d.1.clone()), Some(json!({ "name": "Personal", "created_at": 0 })));
     let (work, _) = made.iter().find(|(k, _)| k != "desk/main").cloned().unwrap();
     let work = work.trim_start_matches("desk/").to_string();
     assert_eq!(work.len(), 32);
     world.stream(&mut sim);
-    act(&mut sim, Action::RenameDesk { desk_id: work.clone(), name: "Job".into() });
-    act(&mut sim, Action::SetGoal { desk_id: work.clone(), text: "ship\n\n  launch \n".into() });
-    let v = desks(&sim).into_iter().find(|(k, _)| k.ends_with(&work)).unwrap().1;
+    act(&mut sim, Action::RenameTeam { team_id: work.clone(), name: "Job".into() });
+    act(&mut sim, Action::SetGoal { team_id: work.clone(), text: "ship\n\n  launch \n".into() });
+    let v = teams(&sim).into_iter().find(|(k, _)| k.ends_with(&work)).unwrap().1;
     assert_eq!((v["name"].clone(), v["goals"].clone()), (json!("Job"), json!("ship\nlaunch")));
     let session = sim.view.sidebar.sessions[0].id.clone();
-    act(&mut sim, Action::MoveSession { session_id: session.clone(), desk_id: work.clone() });
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: work.clone() });
     act(&mut sim, Action::RenameSession { session_id: session.clone(), name: "Builder".into() });
     let s = human(&sim, &format!("session/{session}")).unwrap().0;
     assert_eq!((s["desk"].clone(), s["name"].clone()), (json!(work.clone()), json!("Builder")));
     world.stream(&mut sim);
     // the delete runs in steps (mark, board read, empty snapshot, register gone), each once the last shows
-    act(&mut sim, Action::RemoveDesk { desk_id: "main".into() });
-    assert!(!sim.view.settings.deleting.is_empty() || desks(&sim).len() == 1);
+    act(&mut sim, Action::RemoveTeam { team_id: "main".into() });
+    assert!(!sim.view.settings.deleting.is_empty() || teams(&sim).len() == 1);
     for _ in 0..40 {
-        if desks(&sim).len() == 1 {
+        if teams(&sim).len() == 1 {
             break;
         }
         world.stream(&mut sim);
         sim.advance(5_000);
     }
-    assert_eq!(desks(&sim).len(), 1, "{:?} {:?}", sim.view.settings.deleting, sim.view.toasts);
+    assert_eq!(teams(&sim).len(), 1, "{:?} {:?}", sim.view.settings.deleting, sim.view.toasts);
     assert!(sim.view.settings.deleting.is_empty());
-    act(&mut sim, Action::RemoveDesk { desk_id: work.clone() });
-    assert_eq!(sim.view.toasts.last().map(|t| t.text.key.as_str()), Some("action.last_desk"));
-    assert_eq!(desks(&sim).len(), 1);
+    act(&mut sim, Action::RemoveTeam { team_id: work.clone() });
+    assert_eq!(sim.view.toasts.last().map(|t| t.text.key.as_str()), Some("action.last_team"));
+    assert_eq!(teams(&sim).len(), 1);
 }
 
 #[test]
@@ -513,10 +513,10 @@ fn a_sessions_group_carries_its_desks_goals_and_is_written_once() {
     with_card(&mut world, &mut sim);
     let session = sim.view.sidebar.sessions[0].id.clone();
     let held = |sim: &Sim| sim.app.board().model.sessions[&session].registers.get("goals").map(|r| r.value.clone()).unwrap_or_default();
-    act(&mut sim, Action::SetGoal { desk_id: "main".into(), text: "ship it\nwrite the docs".into() });
+    act(&mut sim, Action::SetGoal { team_id: "main".into(), text: "ship it\nwrite the docs".into() });
     world.stream(&mut sim);
-    assert!(held(&sim).is_null(), "the session is on no desk yet");
-    act(&mut sim, Action::MoveSession { session_id: session.clone(), desk_id: "main".into() });
+    assert!(held(&sim).is_null(), "the session is on no team yet");
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: "main".into() });
     world.stream(&mut sim);
     assert_eq!(held(&sim), json!({ "desk_id": "main", "desk_name": "Personal", "goals": "ship it\nwrite the docs" }));
     // nothing changed: nothing more is written
@@ -525,7 +525,7 @@ fn a_sessions_group_carries_its_desks_goals_and_is_written_once() {
     world.stream(&mut sim);
     assert_eq!(envelope_posts(&world), posts);
     // the goals cleared: the session's copy goes
-    act(&mut sim, Action::SetGoal { desk_id: "main".into(), text: "  ".into() });
+    act(&mut sim, Action::SetGoal { team_id: "main".into(), text: "  ".into() });
     world.stream(&mut sim);
     assert!(held(&sim).is_null());
     assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
@@ -589,14 +589,14 @@ fn sessions_get_marks_groups_places_and_the_crown_and_desks_their_order() {
     assert_eq!(human(&sim, &key).unwrap().0["group"], json!(null));
     world.stream(&mut sim);
     act(&mut sim, Action::CrownSession { session_id: session.clone(), on: true });
-    // (a room without desks keeps its one crown)
+    // (a room without teams keeps its one crown)
     let crown = human(&sim, "crown").map(|v| v.0).unwrap_or_default();
     assert_eq!(crown["session_id"], json!(session), "{crown}");
-    act(&mut sim, Action::AddDesk { name: "Work".into() });
+    act(&mut sim, Action::AddTeam { name: "Work".into() });
     world.stream(&mut sim);
     let ids: Vec<String> = sim.app.board().model.human.keys().filter_map(|k| k.strip_prefix("desk/").map(String::from)).collect();
     let reversed: Vec<String> = ids.iter().rev().cloned().collect();
-    act(&mut sim, Action::OrderDesks { desk_ids: reversed.clone() });
+    act(&mut sim, Action::OrderTeams { team_ids: reversed.clone() });
     for (i, d) in reversed.iter().enumerate() {
         assert_eq!(human(&sim, &format!("desk/{d}")).unwrap().0["order"], json!(i));
     }
@@ -610,7 +610,7 @@ fn sessions_get_marks_groups_places_and_the_crown_and_desks_their_order() {
     let items: Vec<serde_json::Value> = sim.app.board().model.timelines[&format!("chat:card/{card}")].items.values().cloned().map(serde_json::Value::Object).collect();
     assert!(items.iter().any(|i| i["content"]["hand_back"] == json!(true) && i["content"]["marks"].as_array().is_some_and(|m| m.len() == 1)), "{items:?}");
     assert!(items.iter().any(|i| i["content"]["present_card"] == json!(true)), "{items:?}");
-    assert!(sim.view.toasts.iter().all(|t| !t.alert && t.text.key == "desk.added"), "only \"Desk added\" with its Undo: {:?}", sim.view.toasts);
+    assert!(sim.view.toasts.iter().all(|t| !t.alert && t.text.key == "team.added"), "only \"Team added\" with its Undo: {:?}", sim.view.toasts);
 }
 
 #[test]

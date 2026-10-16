@@ -39,7 +39,7 @@ fn key_of<'a>(session: &'a Option<String>, agent: &'a str) -> &'a str {
 impl Model {
     /// The walk, in the Desk's order: the Desk's stack (open, not held, not put off, not of an archived session) less
     /// what is with its agent (handed back, What??), and the pending permission requests. `within`: only the cards of
-    /// these sessions (the desk in view, by session key); None: every desk.
+    /// these sessions (the team in view, by session key); None: every team.
     fn walk_cards(&self, within: Option<&[String]>) -> Vec<WalkCard> {
         let mine = |key: &str| within.is_none_or(|w| w.iter().any(|k| k == key));
         let mut out: Vec<WalkCard> = self
@@ -60,13 +60,13 @@ impl Model {
         out
     }
 
-    /// The walk of every desk, by id.
+    /// The walk of every team, by id.
     pub fn walk(&self, within: Option<&[String]>) -> Vec<String> {
         self.walk_cards(within).into_iter().map(|c| c.object_id).collect()
     }
 
     /// The open question to offer after `card` (just decided, or still open): the next in the Desk's order among the
-    /// cards of `within` (None: every desk), else the first that waits; None when nothing else waits.
+    /// cards of `within` (None: every team), else the first that waits; None when nothing else waits.
     pub fn next_open_after(&self, card: &str, within: Option<&[String]>) -> Option<String> {
         let me = self
             .cards
@@ -149,7 +149,7 @@ mod tests {
         // the last one decided: the walk goes round to the first
         m.stack.retain(|id| id != "x");
         assert_eq!(m.next_open_after("x", None).as_deref(), Some("a"));
-        // on a desk: only its sessions' cards (x is of s2)
+        // on a team: only its sessions' cards (x is of s2)
         let s1 = vec!["s1".to_string()];
         m.stack.push("x".into());
         assert_eq!(m.next_open_after("c", Some(&s1)).as_deref(), Some("a"));

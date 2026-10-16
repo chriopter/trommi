@@ -19,7 +19,7 @@
 //!   under the session that took its place (and go with it to the archive while their agent is away), the crown
 //!   moves there too, and their open cards stay on the Desk ([`archived_sessions`] leaves them out);
 //! - the parent: the person's choice, else the session's own claim (a helper an agent opened counts only under a
-//!   session of that agent); a helper stands on its main's desk;
+//!   session of that agent); a helper stands on its main's team;
 //! - the order: the person's places (`position`), else the order of the session ids.
 use crate::model::types::Session;
 use crate::model::Model;
@@ -59,7 +59,7 @@ pub struct SessionRow {
     pub removed: bool,
     pub position: f64,
     pub placed: bool,
-    pub desk: String,
+    pub team: String,
     pub starred: bool,
     pub main: bool,
     /// A session of a person's own device (never deleted from the board).
@@ -83,7 +83,7 @@ pub struct SessionRow {
     pub recheck_at: Option<u64>,
     /// What each of its status lines shows now, by line id (status.rs `line_state`).
     pub lines: BTreeMap<String, String>,
-    /// Where it stands, as a card's page names its sender: its desk (when there are two or more), its main session
+    /// Where it stands, as a card's page names its sender: its team (when there are two or more), its main session
     /// (for a helper), itself. `session_path`.
     pub path: Vec<String>,
     /// The model it runs on as its heading says it (`model_label`: "Opus 5.5", "GPT-6.1"); empty when it named none.
@@ -277,9 +277,9 @@ pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
     out
 }
 
-/// The desks that are there (a register `desk/<id>` with a value), in the menu's order: the place he dragged each to
-/// (`order`), else the first desk ("main") first, then by age. Each with its name ("Personal" when it has none).
-pub fn desks_in_order(m: &Model) -> Vec<(String, String)> {
+/// The teams that are there (a register `team/<id>` with a value), in the menu's order: the place he dragged each to
+/// (`order`), else the first team ("main") first, then by age. Each with its name ("Personal" when it has none).
+pub fn teams_in_order(m: &Model) -> Vec<(String, String)> {
     let mut d: Vec<(String, Option<f64>, u64, String)> = m
         .human
         .iter()
@@ -301,15 +301,15 @@ pub fn desks_in_order(m: &Model) -> Vec<(String, String)> {
     d.into_iter().map(|(id, _, _, name)| (id, name)).collect()
 }
 
-/// Each row's path (`SessionRow::path`): its desk's name while there are two desks or more (a desk that is gone counts
+/// Each row's path (`SessionRow::path`): its team's name while there are two teams or more (a team that is gone counts
 /// as the first), its main session's name for a helper, its own name.
 fn session_paths(m: &Model, out: &mut [SessionRow]) {
-    let desks = desks_in_order(m);
+    let teams = teams_in_order(m);
     let names: HashMap<String, String> = out.iter().map(|a| (a.id.clone(), a.name.clone())).collect();
     for a in out.iter_mut() {
         let mut p = Vec::new();
-        if desks.len() > 1 {
-            let d = desks.iter().find(|(id, _)| *id == a.desk).or(desks.first());
+        if teams.len() > 1 {
+            let d = teams.iter().find(|(id, _)| *id == a.team).or(teams.first());
             if let Some((_, n)) = d {
                 p.push(n.clone());
             }
@@ -454,7 +454,7 @@ fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>) {
             removed: !s.is_active && !s.group_archived,
             position: position.unwrap_or(i as f64),
             placed: position.is_some(),
-            desk: text(set.get("desk")).unwrap_or("").to_string(),
+            team: text(set.get("desk")).unwrap_or("").to_string(),
             model_label: model_label(text(p.get("model")).unwrap_or("")),
             starred: crown.as_deref() == Some(key.as_str())
                 || (crown.is_some() && crown == s.agent_device_id),
@@ -501,24 +501,24 @@ fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>) {
             a.archived = true;
         }
     }
-    // A helper stands on its main's desk; a session without a desk on the first one ("main").
-    let desks: HashMap<String, String> = out
+    // A helper stands on its main's team; a session without a team on the first one ("main").
+    let teams: HashMap<String, String> = out
         .iter()
         .map(|a| {
             (
                 a.id.clone(),
-                if a.desk.is_empty() {
+                if a.team.is_empty() {
                     "main".to_string()
                 } else {
-                    a.desk.clone()
+                    a.team.clone()
                 },
             )
         })
         .collect();
     for a in out.iter_mut() {
-        match a.parent.as_ref().and_then(|p| desks.get(p)) {
-            Some(d) => a.desk = d.clone(),
-            None if a.desk.is_empty() => a.desk = "main".into(),
+        match a.parent.as_ref().and_then(|p| teams.get(p)) {
+            Some(d) => a.team = d.clone(),
+            None if a.team.is_empty() => a.team = "main".into(),
             None => {}
         }
     }
@@ -672,7 +672,7 @@ mod tests {
         s.open_card_ids = (0..open).map(|i| format!("c{i}")).collect();
     }
 
-    /// The path a card's page shows: desk (two or more desks), main session (a helper), the session itself.
+    /// The path a card's page shows: team (two or more teams), main session (a helper), the session itself.
     #[test]
     fn the_path_names_the_desk_the_main_session_and_itself() {
         let mut m = Model::new();
@@ -681,11 +681,11 @@ mod tests {
         session(&mut m, S0, "d0", true, None, 0);
         session(&mut m, S1, "d1", true, Some(S0), 0);
         let row = |m: &Model, k: &str| session_list(m, false).into_iter().find(|r| r.key == k).unwrap();
-        // one desk: no desk in the path
+        // one team: no team in the path
         m.human.insert("desk/main".into(), HumanRegister { value: json!({ "name": "Work" }), ..Default::default() });
         assert_eq!(row(&m, S0).path, vec![row(&m, S0).name.clone()]);
         assert_eq!(row(&m, S1).path, vec![row(&m, S0).name.clone(), row(&m, S1).name.clone()]);
-        // two desks: the desk's name first; a session on no desk that is there stands on the first
+        // two teams: the team's name first; a session on no team that is there stands on the first
         m.human.insert("desk/lab".into(), HumanRegister { value: json!({ "name": "Lab", "created_at": 5 }), ..Default::default() });
         m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "desk": "lab", "name": "Core" }), ..Default::default() });
         assert_eq!(row(&m, S0).path, vec!["Lab".to_string(), "Core".to_string()]);
