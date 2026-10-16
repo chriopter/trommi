@@ -51,7 +51,9 @@ content. Live sessions require earlier room states: the engine verifies that bac
 against its held origin before checking their history or recovering old room keys. New membership actions also
 wait for that verification. Old room settings on the first Desk also trigger it. A first Desk with neither old
 room values nor live sessions leaves old room Commits unread, including after restart. Recovery and old recovery
-links retain the complete-history check. Recovery-code keys stay in memory only; an interrupted sign-in asks for
+links retain the complete-history check. Opening older messages in a held session also requests its missing verified epochs, in room/main/helper order,
+then reads back the envelopes and requests missing content keys through the existing handover flow. A failed
+network read retries; an unverified history never becomes readable content. Recovery-code keys stay in memory only; an interrupted sign-in asks for
 the code again on the same device when its old keys or unfinished session joins still need it.
 
 ## Events and effects
