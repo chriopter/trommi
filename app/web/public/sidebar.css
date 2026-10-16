@@ -225,7 +225,7 @@ button.agent-badge:active { scale: .95; }
   [data-rail="folded"] .agent-row > .agent-badge { position: absolute; right: 2px; top: -4px; margin: 0; width: 24px; height: 24px; scale: .85; }
   [data-rail="folded"] .agent-row > .agent-badge[data-state="open"] { display: none; }
   
-  [data-rail="folded"] #agents > :not(.agent-row) { display: none; }
+  [data-rail="folded"] #agents > :not(.agent-row, .team-head) { display: none; }
   [data-rail="folded"] #agents > .agent-invite { display: flex; justify-content: center; padding: 0; }
   [data-rail="folded"] .agent-invite-go { flex: none; width: 60px; justify-content: center; padding: var(--s-2) 0; }
   [data-rail="folded"] .agent-invite-label { display: none; }
@@ -1037,3 +1037,65 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
   /* a card with the keyboard up: the screen is short, and the desk pill lay over the card's strip of pictures */
   [data-keyboard] body[data-t-view="card"] .phone-bar { visibility: hidden; }
 }
+
+/* ---- Every team as a stack (a wide screen; sidebar.mjs teamHead, the core's TeamStackView) ----
+   No team switch at the top: the head names Trommi, and each team stands in the sidebar as its head (desk drawing,
+   name, what waits) with its sessions under it: their rows when open, a fan of card edges when folded. The rows stay
+   flat children of #agents. A phone keeps the switch and draws the rows of the team in view alone. */
+.topbar .desk-go .wide-word { display: none; }
+.team-head { display: none; }
+@media (min-width: 861px) {
+  html .topbar .desk-go .desk-lamp { display: none; }
+  html:not([data-rail="folded"]) .topbar .desk-go .brand-mark { display: block; width: 30px; height: 30px; margin: 0 var(--s-3) 0 var(--s-3); }
+  html:not([data-rail="folded"]) .topbar .desk-go .wide-word { display: block; font: 800 1.5rem/1.1 var(--display); letter-spacing: -.02em; }
+  html .topbar .team-place { display: none; }
+  html[data-rail="folded"] .topbar .desk-go .brand-mark { display: block; width: 28px; height: 28px; }
+  .topbar .rail-tag { display: none !important; }
+  /* (the teams are in the sidebar; the menu keeps New Team…, and Settings · Teams renames and orders them) */
+  .topbar #brand-doors .menu-team-rows { display: none; }
+
+  #agents .team-head { position: relative; display: flex; align-items: center; margin: var(--s-4) 0 2px; }
+  #agents .team-head:first-child { margin-top: 0; }
+  #agents .team-go { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-3); min-height: 44px; padding: 4px var(--s-2) 4px var(--s-2); border-radius: var(--r-md); color: var(--fg); text-decoration: none; }
+  #agents .team-go:hover { background: var(--sunken); }
+  #agents .team-go strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 1.12rem/1.15 var(--display); letter-spacing: -.01em; }
+  #agents .team-head:not(.is-in-view) .team-go strong { color: var(--muted); }
+  #agents .team-lamp { flex: none; display: grid; }
+  #agents .team-lamp > .sketch { width: 30px; height: 30px; overflow: visible; stroke-width: 1.6; }
+  #agents .team-n { flex: none; margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--sunken); color: var(--fg); font: 700 12px/20px var(--font); font-style: normal; font-variant-numeric: tabular-nums; text-align: center; }
+  #agents .team-head.is-knock .team-n { background: var(--urg-critical); color: #fff; }
+  #agents .team-fold { flex: none; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
+  #agents .team-fold:hover, #agents .team-fold:focus-visible { background: var(--sunken); color: var(--fg); }
+  #agents .team-fold .sketch { width: 16px; height: 16px; stroke-width: 2.2; transition: rotate var(--d-fast); rotate: 180deg; }
+  #agents .team-head.is-folded .team-fold .sketch { rotate: 0deg; }
+  #agents .agent-row.in-folded-team { display: none; }
+
+  /* folded: the sessions as card edges under the head, each in its session's colour, a little crooked (ui.mjs edgeQuirk) */
+  /* folded: the head is the top card of the stack */
+  #agents .team-head.is-folded { margin-bottom: calc(var(--n) * 5px + 14px); }
+  #agents .team-head.is-folded .team-go { position: relative; z-index: 1; background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong); }
+  #agents .team-head.is-folded .team-go:hover { background: color-mix(in srgb, var(--surface) 60%, var(--sunken)); }
+  #agents .team-head.is-folded .team-fold { margin-left: 4px; }
+  #agents .team-edges { position: absolute; z-index: 0; left: 0; right: 34px; top: calc(100% - 4px); height: calc(var(--n) * 5px + 4px); cursor: pointer; }
+  #agents .team-edges::after { content: ""; position: absolute; inset: -4px 0 -6px; }
+  #agents .team-edges { --tk: 1; }
+  #agents .team-edges i { position: absolute; top: calc(var(--i) * 5px - 6px); left: calc(4px + var(--i) * 3px); right: calc(4px + var(--i) * 3px); height: 14px; z-index: calc(20 - var(--i)); transform-origin: 16% 0; translate: var(--dx, 0px) 0; rotate: calc(var(--tilt, 0deg) * var(--tk)); transition: translate 190ms cubic-bezier(.3, 1.8, .5, 1), rotate 190ms cubic-bezier(.3, 1.8, .5, 1); transition-delay: calc(var(--i) * 9ms); }
+  #agents .team-edges:hover i { translate: calc(var(--dx, 0px) + var(--i) * 1.4px) 1px; rotate: calc(var(--tilt, 0deg) * 2.2); }
+  #agents .team-edges svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  #agents .team-edges path { fill: var(--tone-edge); stroke: var(--tone-pen); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  #agents .team-edges .e-n { display: none; }
+  :root[data-theme="dark"] #agents .team-edges path { fill: color-mix(in srgb, var(--tone-pen) 12%, var(--surface)); stroke: color-mix(in srgb, var(--tone-pen) 45%, var(--surface)); }
+
+  /* the rail: a team is its desk drawing with its number; its open rows under it, its folded stack narrow */
+  html[data-rail="folded"] #agents .team-head { justify-content: center; margin: var(--s-2) 0 4px; }
+  html[data-rail="folded"] #agents .team-head.is-folded { margin-bottom: calc(var(--n) * 5px + 12px); }
+  html[data-rail="folded"] #agents .team-go { flex: none; position: relative; justify-content: center; width: 48px; min-height: 44px; padding: 0; }
+  html[data-rail="folded"] #agents .team-go strong, html[data-rail="folded"] #agents .team-fold { display: none; }
+  html[data-rail="folded"] #agents .team-n { position: absolute; right: -2px; top: 0; min-width: 18px; height: 18px; padding: 0 4px; font-size: 11px; line-height: 18px; }
+  html[data-rail="folded"] #agents .team-edges { left: 2px; right: 2px; --tk: 2.4; }
+  html[data-rail="folded"] #agents .team-edges .e-w { display: none; }
+  html[data-rail="folded"] #agents .team-edges .e-n { display: inline; }
+}
+@media (min-width: 861px) and (prefers-reduced-motion: reduce) { #agents .team-edges i { transition: none; } }
+/* a phone: the rows of the team in view alone, under the switch at the top */
+@media (max-width: 860px) { #agents .agent-row.of-other-team { display: none; } }

@@ -516,8 +516,11 @@ public enum CoreView {
     public var working: UInt32
     /// How many of his answers the sessions of the team in view have not picked up.
     public var unheard: UInt32
+    /// Every team as a stack, in the menu's order (the wide sidebar: all teams at once). Folded, a team shows its
+    /// head with its sessions as card edges under it; open, its sessions' rows. The phone draws `sessions` instead.
+    public var stacks: [TeamStackView]
 
-    public init(teams: [TeamTab] = [], sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0) {
+    public init(teams: [TeamTab] = [], sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = []) {
       self.teams = teams
       self.sessions = sessions
       self.badge = badge
@@ -528,6 +531,7 @@ public enum CoreView {
       self.stopped = stopped
       self.working = working
       self.unheard = unheard
+      self.stacks = stacks
     }
 
     enum CodingKeys: String, CodingKey {
@@ -541,6 +545,7 @@ public enum CoreView {
       case stopped = "stopped"
       case working = "working"
       case unheard = "unheard"
+      case stacks = "stacks"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -555,6 +560,7 @@ public enum CoreView {
       self.stopped = try c.decodeIfPresent(UInt32.self, forKey: .stopped) ?? 0
       self.working = try c.decodeIfPresent(UInt32.self, forKey: .working) ?? 0
       self.unheard = try c.decodeIfPresent(UInt32.self, forKey: .unheard) ?? 0
+      self.stacks = try c.decodeIfPresent([TeamStackView].self, forKey: .stacks) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -569,6 +575,109 @@ public enum CoreView {
       try c.encode(stopped, forKey: .stopped)
       try c.encode(working, forKey: .working)
       try c.encode(unheard, forKey: .unheard)
+      if !stacks.isEmpty { try c.encode(stacks, forKey: .stacks) }
+    }
+  }
+
+  /// A team in the wide sidebar: its head, and its sessions as a folded stack or as rows.
+  public struct TeamStackView: Codable, Hashable, Sendable {
+    public var id: String
+    public var name: Text
+    /// The team in view (its Desk is the Desk).
+    public var selected: Bool
+    /// Folded on this device (`Action::FoldTeam`; unless chosen there: every team but the one in view). A team
+    /// without sessions is never folded.
+    public var folded: Bool
+    /// The open questions of the team's sessions.
+    public var waiting: UInt32
+    /// One of them knocks.
+    public var knocks: Bool
+    /// What the head says to a screen reader and as its hint: "3 agents, 2 questions open".
+    public var says: Text
+    /// Folded: a card edge per session (at most [`STACK_EDGES`]), in the rows' order. What knocks is said by the
+    /// head's number, not by an edge.
+    public var edges: [StackEdgeView]
+    /// Its sessions, one row each, in drawing order (connected first): also while folded, for the rail and the keys.
+    public var sessions: [SessionRowView]
+
+    public init(id: String = "", name: Text = Text(), selected: Bool = false, folded: Bool = false, waiting: UInt32 = 0, knocks: Bool = false, says: Text = Text(), edges: [StackEdgeView] = [], sessions: [SessionRowView] = []) {
+      self.id = id
+      self.name = name
+      self.selected = selected
+      self.folded = folded
+      self.waiting = waiting
+      self.knocks = knocks
+      self.says = says
+      self.edges = edges
+      self.sessions = sessions
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case name = "name"
+      case selected = "selected"
+      case folded = "folded"
+      case waiting = "waiting"
+      case knocks = "knocks"
+      case says = "says"
+      case edges = "edges"
+      case sessions = "sessions"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.name = try c.decode(Text.self, forKey: .name)
+      self.selected = try c.decode(Bool.self, forKey: .selected)
+      self.folded = try c.decode(Bool.self, forKey: .folded)
+      self.waiting = try c.decode(UInt32.self, forKey: .waiting)
+      self.knocks = try c.decodeIfPresent(Bool.self, forKey: .knocks) ?? false
+      self.says = try c.decode(Text.self, forKey: .says)
+      self.edges = try c.decodeIfPresent([StackEdgeView].self, forKey: .edges) ?? []
+      self.sessions = try c.decodeIfPresent([SessionRowView].self, forKey: .sessions) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(name, forKey: .name)
+      try c.encode(selected, forKey: .selected)
+      try c.encode(folded, forKey: .folded)
+      try c.encode(waiting, forKey: .waiting)
+      try c.encode(knocks, forKey: .knocks)
+      try c.encode(says, forKey: .says)
+      if !edges.isEmpty { try c.encode(edges, forKey: .edges) }
+      if !sessions.isEmpty { try c.encode(sessions, forKey: .sessions) }
+    }
+  }
+
+  /// A session's card edge in a folded team's stack.
+  public struct StackEdgeView: Codable, Hashable, Sendable {
+    /// The session's key (its row's id).
+    public var id: String
+    /// What draws it (its row's mark): the edge takes its colour.
+    public var mark: String
+
+    public init(id: String = "", mark: String = "") {
+      self.id = id
+      self.mark = mark
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case mark = "mark"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.mark = try c.decode(String.self, forKey: .mark)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(mark, forKey: .mark)
     }
   }
 
