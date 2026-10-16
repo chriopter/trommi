@@ -228,7 +228,8 @@ function screenOpts(name, vm, url) {
   const av = vm.account ?? {}, step = stepOf(vm), q = url.searchParams
   const pk = passkeysOn()
   const sentHere = local.sent?.path === url.pathname && step === 'working'
-  const problem = FAMILY[name]?.includes(step) ? av.problem?.en ?? '' : ''
+  // (a sign-in cut off before its sessions were joined: the log in finishes it, and says why it is asked for)
+  const problem = (FAMILY[name]?.includes(step) ? av.problem?.en ?? '' : '') || (name === 'login' ? av.resume?.en ?? '' : '')
   const login = vm.settings?.login
   return {
     pk, pkOff: !pk, way: q.get('way') ?? ((name === 'create' || name === 'newway') && pk ? 'passkey' : 'password'),
@@ -265,7 +266,7 @@ export function register(t) {
       return t.redirect(res, '/join')
     }
     if (hash.startsWith('#k1.')) { history.replaceState(history.state, '', location.pathname + location.search); return t.redirect(res, '/forgot?way=passkey') }
-    const flowing = signedOut(m) || !['none', 'invite'].includes(step)
+    const flowing = signedOut(m) || !['none', 'invite'].includes(step) || (name === 'login' && Boolean(m.account?.resume))
     if (!flowing) {
       // (signed in: the words of a recovery wait for the new way in; a screen this page led through leads to the Desk)
       if (name === 'newway' && local.words) return t.page(req, res, { title: 'New way in · Trommi', view: 'account', sidebar: false, main: screenMain('newway', screenOpts('newway', m, url)) })

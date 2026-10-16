@@ -8,7 +8,10 @@
 //!   name left while no stream was open, and is offline as of the `here`; a device never seen online keeps its state;
 //! - **an event without `hears` says nothing of the link**: the report held stands while the device is online (a stream
 //!   opened or closed); with `hears`, the report is the event's (`attached`: true, its `working`, `last_call_at`);
-//! - **offline since** the hub's `offline_since` when the event names one, else the moment the event came;
+//! - **offline since** the hub's `offline_since` when the event names one, else the device's last contact the hub
+//!   recorded (`last_seen_ms`: its sign-in, its stream opened or closed; the opening list names it for every device
+//!   that is not here), else the moment the event came. Never later than now: a fresh sign-in does not make an agent
+//!   that left hours ago "gone since" the sign-in;
 //! - **lost** (the hub saw the agent's stream break without a word): an alert for the person.
 use crate::model::change::Change;
 use crate::model::groups::DeviceReport;
@@ -95,7 +98,7 @@ impl Model {
         let report = DeviceReport {
             device_id: id.clone(),
             is_online: e.online,
-            offline_since: if e.online { None } else { Some(e.offline_since.unwrap_or(now)) },
+            offline_since: if e.online { None } else { Some(e.offline_since.or(e.last_seen_ms).filter(|t| *t > 0).map_or(now, |t| t.min(now))) },
             last_seen_ms: e.last_seen_ms,
             link,
         };
@@ -183,6 +186,33 @@ mod tests {
         m.apply_presence_event(&ev(D0, false, None), &mut c, 30);
         assert_eq!(m.members[D0].offline_since, Some(30), "offline as of the event");
         assert_eq!(m.members[D0].link, None::<Link>);
+    }
+
+    /// A device that is not here is offline since its last contact the hub names (the opening list's
+    /// `last_seen_ms`), not since this device heard of it: a new sign-in does not move when an agent left.
+    #[test]
+    fn offline_since_is_the_last_contact_not_the_moment_it_was_heard() {
+        let mut m = room();
+        let mut c = Change::new();
+        m.stream_opened();
+        let mut gone = ev(D0, false, None);
+        gone.last_seen_ms = Some(1_000);
+        m.apply_presence_event(&gone, &mut c, 90_000);
+        assert_eq!(m.members[D0].offline_since, Some(1_000));
+        // (heard again at a later sign-in: the same moment)
+        m.apply_presence_event(&gone, &mut c, 150_000);
+        assert_eq!(m.members[D0].offline_since, Some(1_000));
+        // (the hub's own offline_since first; a contact in the future is now at the latest; none: as of the event)
+        gone.offline_since = Some(900);
+        m.apply_presence_event(&gone, &mut c, 150_000);
+        assert_eq!(m.members[D0].offline_since, Some(900));
+        gone.offline_since = None;
+        gone.last_seen_ms = Some(200_000);
+        m.apply_presence_event(&gone, &mut c, 150_000);
+        assert_eq!(m.members[D0].offline_since, Some(150_000));
+        gone.last_seen_ms = None;
+        m.apply_presence_event(&gone, &mut c, 160_000);
+        assert_eq!(m.members[D0].offline_since, Some(160_000));
     }
 
     /// The opening list is whole: a device it did not name left while no stream was open; one never online stays.

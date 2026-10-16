@@ -2222,7 +2222,10 @@ public enum CoreView {
     public var compose: Text
     /// "<name> is working": his word was the last, a short while ago.
     public var answering: Text?
-    /// Its questions that wait for the person (its infos too), and the way to the first of them.
+    /// Its questions that wait for the person (decisions and approvals, never a card to read), as their Desk rows,
+    /// in the order they came: what its page "Questions" lists as open.
+    public var waiting: [DeskRowView]
+    /// How many of them (`waiting`), and the way to the first of them.
     public var open: UInt32
     /// "3 open".
     public var openWord: Text?
@@ -2240,7 +2243,7 @@ public enum CoreView {
     /// In the Archive: the More menu offers "Back from the Archive" (`ArchiveSession` with `on: false`).
     public var archived: Bool
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", deskId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, parent: String? = nil, archived: Bool = false) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", deskId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, parent: String? = nil, archived: Bool = false) {
       self.id = id
       self.name = name
       self.link = link
@@ -2266,6 +2269,7 @@ public enum CoreView {
       self.note = note
       self.compose = compose
       self.answering = answering
+      self.waiting = waiting
       self.open = open
       self.openWord = openWord
       self.openSays = openSays
@@ -2302,6 +2306,7 @@ public enum CoreView {
       case note = "note"
       case compose = "compose"
       case answering = "answering"
+      case waiting = "waiting"
       case open = "open"
       case openWord = "open_word"
       case openSays = "open_says"
@@ -2339,6 +2344,7 @@ public enum CoreView {
       self.note = try c.decodeIfPresent(LinkNoteView.self, forKey: .note)
       self.compose = try c.decodeIfPresent(Text.self, forKey: .compose) ?? Text()
       self.answering = try c.decodeIfPresent(Text.self, forKey: .answering)
+      self.waiting = try c.decodeIfPresent([DeskRowView].self, forKey: .waiting) ?? []
       self.open = try c.decodeIfPresent(UInt32.self, forKey: .open) ?? 0
       self.openWord = try c.decodeIfPresent(Text.self, forKey: .openWord)
       self.openSays = try c.decodeIfPresent(Text.self, forKey: .openSays)
@@ -2376,6 +2382,7 @@ public enum CoreView {
       try c.encodeIfPresent(note, forKey: .note)
       try c.encode(compose, forKey: .compose)
       try c.encodeIfPresent(answering, forKey: .answering)
+      if !waiting.isEmpty { try c.encode(waiting, forKey: .waiting) }
       try c.encode(open, forKey: .open)
       try c.encodeIfPresent(openWord, forKey: .openWord)
       try c.encodeIfPresent(openSays, forKey: .openSays)
@@ -4881,8 +4888,12 @@ public enum CoreView {
     /// A word on the start screen about how this device came to be signed out: "Logged out." after the person's
     /// own sign-out, or that another device removed it. Gone with the next step.
     public var notice: Text?
+    /// A sign-in that was cut off before all its sessions were joined (the app was closed or reloaded meanwhile):
+    /// the device is in the room and the app runs on, and these words ask for the way in again (`SignIn`, its
+    /// passkey or its kit), which finishes the joins. None otherwise.
+    public var resume: Text?
 
-    public init(step: String = "", inviteId: String? = nil, link: String? = nil, connectPrompt: String? = nil, connectCommand: String? = nil, emoji: [EmojiView] = [], kit: [String] = [], asks: [AskView] = [], problem: Text? = nil, invite: InviteView? = nil, kitDue: Bool = false, kitEmail: String? = nil, kitAccount: String? = nil, kitAddress: String? = nil, notice: Text? = nil) {
+    public init(step: String = "", inviteId: String? = nil, link: String? = nil, connectPrompt: String? = nil, connectCommand: String? = nil, emoji: [EmojiView] = [], kit: [String] = [], asks: [AskView] = [], problem: Text? = nil, invite: InviteView? = nil, kitDue: Bool = false, kitEmail: String? = nil, kitAccount: String? = nil, kitAddress: String? = nil, notice: Text? = nil, resume: Text? = nil) {
       self.step = step
       self.inviteId = inviteId
       self.link = link
@@ -4898,6 +4909,7 @@ public enum CoreView {
       self.kitAccount = kitAccount
       self.kitAddress = kitAddress
       self.notice = notice
+      self.resume = resume
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4916,6 +4928,7 @@ public enum CoreView {
       case kitAccount = "kit_account"
       case kitAddress = "kit_address"
       case notice = "notice"
+      case resume = "resume"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4935,6 +4948,7 @@ public enum CoreView {
       self.kitAccount = try c.decodeIfPresent(String.self, forKey: .kitAccount)
       self.kitAddress = try c.decodeIfPresent(String.self, forKey: .kitAddress)
       self.notice = try c.decodeIfPresent(Text.self, forKey: .notice)
+      self.resume = try c.decodeIfPresent(Text.self, forKey: .resume)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4954,6 +4968,7 @@ public enum CoreView {
       try c.encodeIfPresent(kitAccount, forKey: .kitAccount)
       try c.encodeIfPresent(kitAddress, forKey: .kitAddress)
       try c.encodeIfPresent(notice, forKey: .notice)
+      try c.encodeIfPresent(resume, forKey: .resume)
     }
   }
 

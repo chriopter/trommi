@@ -166,15 +166,19 @@ fn a_password_signin_resumes_unfinished_sessions_on_its_existing_room_leaf() {
     sim.restart();
     sim.hold = false;
     sim.send(start());
-    assert_eq!(sim.view.phase, Phase::SignedOut);
-    assert_eq!(sim.view.account.problem.as_ref().unwrap().key, "account.interrupted");
+    // (the restart, a reload of the page, does not sign the device out: it opens its room, and asks on the side)
+    assert_ne!(sim.view.phase, Phase::SignedOut);
+    assert!(matches!(sim.view.account.step.as_str(), "" | "none"), "no account step: {}", sim.view.account.step);
+    assert_eq!(sim.view.account.resume.as_ref().map(|t| t.key.as_str()), Some("account.interrupted"));
     act(&mut sim, AccountAction::SignIn { email: EMAIL.into(), password: Secret("wrong password".into()), hub: None });
-    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert_ne!(sim.view.phase, Phase::SignedOut);
     assert_eq!(sim.app.engine().unwrap().device().id(), id);
     assert!(sim.view.account.problem.is_some());
+    assert!(sim.view.account.resume.is_some(), "still asked for");
     act(&mut sim, AccountAction::SignIn { email: EMAIL.into(), password: Secret(PASSWORD.into()), hub: None });
     settle(&world, &mut sim);
     assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(sim.view.account.resume, None);
     assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
     assert!(sim.app.engine().unwrap().device().group(&world.group).is_ok());
     assert_eq!(sim.app.engine().unwrap().device().id(), id);

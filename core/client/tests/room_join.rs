@@ -419,14 +419,16 @@ fn a_restart_after_the_room_join_asks_for_the_code_and_resumes_without_another_d
     sim.hold = false;
     sim.send(start());
     for _ in 0..5 { serve_all(&world, &mut sim); }
-    assert_eq!(sim.view.phase, Phase::SignedOut);
-    assert_eq!(sim.view.account.step, "sign_in");
-    assert_eq!(sim.view.account.problem.as_ref().unwrap().key, "account.interrupted");
+    // (the device is in the room: it opens, and the code is asked for on the side, never by signing it out)
+    assert_ne!(sim.view.phase, Phase::SignedOut);
+    assert!(matches!(sim.view.account.step.as_str(), "" | "none"), "no account step: {}", sim.view.account.step);
+    assert_eq!(sim.view.account.resume.as_ref().unwrap().key, "account.interrupted");
     // It remains resumable after another process stop; no recovery code was stored.
     sim.restart();
     sim.send(start());
     for _ in 0..5 { serve_all(&world, &mut sim); }
-    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert_ne!(sim.view.phase, Phase::SignedOut);
+    assert!(sim.view.account.resume.is_some());
     join(&world, &mut sim, RecoveryKeys::from_code(Secret::new([0xC1; 32])).unwrap());
     assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Failed(RoomJoinError::WrongCode)));
     assert_eq!(sim.app.engine().unwrap().device().id(), device, "a wrong retry never erases the room leaf");
@@ -475,8 +477,8 @@ fn a_restart_before_the_first_desk_can_resume_old_room_keys_without_live_session
     sim.hold = false;
     sim.send(start());
     for _ in 0..10 { serve_all(&world, &mut sim); }
-    assert_eq!(sim.view.phase, Phase::SignedOut);
-    assert_eq!(sim.view.account.problem.as_ref().unwrap().key, "account.interrupted");
+    assert_ne!(sim.view.phase, Phase::SignedOut);
+    assert_eq!(sim.view.account.resume.as_ref().unwrap().key, "account.interrupted");
     join(&world, &mut sim, code_keys());
     settle(&world, &mut sim);
     assert_eq!(sim.view.phase, Phase::Live);
