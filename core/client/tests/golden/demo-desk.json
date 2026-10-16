@@ -100,6 +100,56 @@
     }
   },
   "off": {
+    "running": [
+      {
+        "id": "d86df7a1fc5ebcd07e11d5e7693160eb",
+        "title": "Rename the colour “clay” to “due” in the tokens?",
+        "from": {
+          "session_id": "e52ac023c086b1da68e774acc6be0a36",
+          "name": "Design Tokens",
+          "mark": "draw:drop",
+          "path": [
+            "Fernly",
+            "Design System",
+            "Design Tokens"
+          ]
+        },
+        "line": {
+          "key": "dock.line.label",
+          "args": {
+            "label": "Names",
+            "name": "Design Tokens"
+          },
+          "en": "Design Tokens · Names"
+        },
+        "running": true,
+        "at_ms": 1791469200000
+      },
+      {
+        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        "title": "Social card for the launch: photo or illustration?",
+        "from": {
+          "session_id": "425412ed2b37ef1052c0a8ecc47949f1",
+          "name": "Search & Social",
+          "mark": "draw:eye",
+          "path": [
+            "Fernly",
+            "Fernly Website",
+            "Search & Social"
+          ]
+        },
+        "line": {
+          "key": "dock.line.label",
+          "args": {
+            "label": "Social card",
+            "name": "Search & Social"
+          },
+          "en": "Search & Social · Social card"
+        },
+        "running": true,
+        "at_ms": 1791468000000
+      }
+    ],
     "rows": [
       {
         "id": "97e50f22901b42df1695b8b83fe0b69f",

@@ -215,11 +215,15 @@ final class NativeScreensTests: XCTestCase {
   func testSessionQuestionsOnlyAndItsMenu() {
     launch("chat")
     XCTAssertTrue(app.staticTexts["talk-message"].firstMatch.waitForExistence(timeout: 15))
-    app.buttons["session-mode-questions"].tap()
+    // (the chip shows only while questions wait, with how many)
+    let chip = app.buttons["session-mode-questions"]
+    XCTAssertTrue(chip.waitForExistence(timeout: 5), app.debugDescription)
+    let count = chip.label.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }.first ?? 0
+    XCTAssertGreaterThan(count, 0, chip.label)
+    chip.tap()
     XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "session-question-")).firstMatch.waitForExistence(timeout: 5), "every question it asked. " + app.debugDescription)
-    // (what waits is listed as the Desk's cards, as many as the switch counts)
-    let count = app.buttons["session-mode-questions"].label.split(separator: " ").compactMap { Int($0) }.first ?? 0
-    XCTAssertGreaterThan(count, 0, app.buttons["session-mode-questions"].label)
+    XCTAssertTrue(app.buttons["session-mode-all"].exists, "the chip leads back to all messages")
+    // (what waits is listed as the Desk's cards, as many as the chip counted)
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).count, count, "the open questions listed are the ones counted. " + app.debugDescription)
     capture("session-questions")
     app.buttons["session-more"].tap()

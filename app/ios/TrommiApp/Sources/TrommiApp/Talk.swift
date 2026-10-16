@@ -37,11 +37,9 @@ struct TalkWho { var mark: String; var name: String; var hue: Int }
 // ---- the Chat list ---------------------------------------------------------------------------------------------------
 
 /**
- * The Chat page's list, calm as Messages' and WhatsApp's: one row per session, its drawing in a round tinted field
- * (the crown and a green dot while it works as small badges), its name and when it said something last, under it two
- * lines of what was said last (`row.last`), and at the right only what needs him: the raised hand, how many questions
- * wait, a dot for words not seen yet (`row.unread`). A main's helpers lie folded in its row (their drawings and "+N"
- * at the end of the teaser); a tap there unfolds them under it (`FoldHelpers`, kept on this device).
+ * The Chat page's list, calm as Messages': one flat row per session (`ChatRow`), the team switch at the top (the
+ * place pill). A main's helpers lie folded in its row as "+N"; a tap there unfolds them under it (`FoldHelpers`,
+ * kept on this device).
  */
 struct ChatsScreen: View {
   @EnvironmentObject var shell: AppShell
@@ -50,7 +48,7 @@ struct ChatsScreen: View {
     let byId = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     List {
       ForEach(rows.filter { !$0.tucked }, id: \.id) { row in
-        ChatRow(row: row, byId: byId, mainHue: row.parent.flatMap { byId[$0] }.map { Pen.hueFor(id: $0.slug.isEmpty ? $0.id : $0.slug, mark: $0.mark) })
+        ChatRow(row: row, mainHue: row.parent.flatMap { byId[$0] }.map { Pen.hueFor(id: $0.slug.isEmpty ? $0.id : $0.slug, mark: $0.mark) })
       }
     }
     .listStyle(.plain)
@@ -64,67 +62,66 @@ struct ChatsScreen: View {
   }
 }
 
-/** One session of the Chat list; an unfolded helper (depth 1) is a compact row on its main's quiet tone. */
+/** One session of the Chat list, flat and on one line each: its drawing in a round tinted field (a green dot while
+ *  it works), the crown small before its name, its helpers as a small "+N" chip (a tap unfolds them under it), when
+ *  it said something last at the right; under it one line of what was said last, and beside that only what needs him:
+ *  the raised hand, how many questions wait, or a dot for words not seen yet. An unfolded helper (depth 1) is a
+ *  smaller row on its main's quiet tone. */
 struct ChatRow: View {
   @EnvironmentObject var shell: AppShell
-  @Environment(\.dynamicTypeSize) private var type
   let row: CoreView.SessionRowView
-  let byId: [String: CoreView.SessionRowView]
   var mainHue: Int? = nil
   var body: some View {
     let small = row.depth > 0
-    let side: CGFloat = small ? 36 : 50
+    let side: CGFloat = small ? 34 : 44
     let hue = Pen.hueFor(id: row.slug.isEmpty ? row.id : row.slug, mark: row.mark)
     // (folded, the row speaks for its helpers too)
     let fold = row.unfolded ? nil : row.folded
     let working = fold?.working ?? row.working
-    let open = fold?.open ?? row.open
-    let stopped = (fold?.hand ?? row.hand) != nil
-    let unread = row.unread || (fold?.unread ?? false)
     let teaser = row.last?.text ?? row.cap?.word.en ?? ""
-    HStack(spacing: 12) {
-      Button { shell.focus(.session(sessionId: row.id)) } label: {
-        HStack(spacing: 12) {
-          AgentMark(mark: row.mark, size: side * 0.58, hue: hue)
-            .frame(width: side, height: side)
-            .background(Circle().fill(Tone.color(hue: hue, .wash)))
-            .opacity(row.online ? 1 : 0.6)
-            .overlay(alignment: .topLeading) { if row.crowned { PenMark("crown").frame(width: side * 0.4, height: side * 0.29).rotationEffect(.degrees(-14)).offset(x: -3, y: -4) } }
-            .overlay(alignment: .bottomTrailing) { if working { Circle().fill(Ink.stDone).frame(width: 11, height: 11).overlay(Circle().stroke(Ink.bg, lineWidth: 2)).offset(x: -1, y: -1) } }
-            .accessibilityHidden(true)
-          VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-              Text(row.name.en).font(Face.text(small ? 16 : 17, .semibold)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
-              Spacer(minLength: 4)
-              if let when = row.last?.when.en { Text(when).font(Face.text(13, relativeTo: .footnote)).foregroundStyle(Ink.faint).lineLimit(1).layoutPriority(1) }
+    // The whole row opens the chat (a button under it); only the helpers' chip on top takes its own tap.
+    ZStack {
+      Button { shell.focus(.session(sessionId: row.id)) } label: { Rectangle().fill(Color.clear).contentShape(Rectangle()) }
+        .buttonStyle(.plain)
+        .accessibilityLabel([row.name.en, working ? "working" : row.online ? "" : "not connected", teaser, row.last?.when.en ?? ""].filter { !$0.isEmpty }.joined(separator: ". "))
+        .accessibilityIdentifier("chat-session-" + row.id)
+      HStack(alignment: .center, spacing: 12) {
+        AgentMark(mark: row.mark, size: side * 0.6, hue: hue)
+          .frame(width: side, height: side)
+          .background(Circle().fill(Tone.color(hue: hue, .wash)))
+          .opacity(row.online ? 1 : 0.6)
+          .overlay(alignment: .bottomTrailing) { if working { Circle().fill(Ink.stDone).frame(width: 10, height: 10).overlay(Circle().stroke(Ink.bg, lineWidth: 2)) } }
+          .allowsHitTesting(false)
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 3) {
+          HStack(alignment: .center, spacing: 6) {
+            if row.crowned { PenMark("crown").frame(width: 15, height: 11).allowsHitTesting(false).accessibilityHidden(true) }
+            Text(row.name.en).font(Face.text(small ? 15 : 17, .semibold)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
+              .allowsHitTesting(false).accessibilityHidden(true)
+            if let f = row.folded { helpers(f) }
+            Spacer(minLength: 6)
+            if let when = row.last?.when.en {
+              Text(when).font(Face.text(13, relativeTo: .footnote)).foregroundStyle(Ink.faint).lineLimit(1).fixedSize()
+                .allowsHitTesting(false).accessibilityHidden(true)
             }
-            Text(teaser.isEmpty ? " " : teaser).font(Face.text(15, relativeTo: .subheadline))
+          }
+          HStack(alignment: .center, spacing: 8) {
+            Text(teaser.isEmpty ? " " : teaser).font(Face.text(small ? 14 : 15, relativeTo: .subheadline))
               .foregroundStyle(row.last == nil && (row.cap?.kind == "unheard" || row.cap?.kind == "cut") ? Ink.urgHigh : Ink.muted)
-              .lineLimit(small || type > .xxLarge ? 1 : 2).multilineTextAlignment(.leading)
+              .lineLimit(1)
               .frame(maxWidth: .infinity, alignment: .leading)
+              .allowsHitTesting(false)
               .accessibilityIdentifier("chat-teaser-" + row.id)
+            badge(fold).allowsHitTesting(false)
           }
         }
-        .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel([row.name.en, working ? "working" : row.online ? "" : "not connected", teaser, row.last?.when.en ?? ""].filter { !$0.isEmpty }.joined(separator: ". "))
-      .accessibilityIdentifier("chat-session-" + row.id)
-      if let f = row.folded { helpers(f) }
-      if stopped { PenMark("hand", color: Ink.surface, blocked: true).frame(width: 26, height: 26).accessibilityLabel(row.says?.en ?? "Stopped") }
-      else if open > 0 {
-        Text("\(open)").font(Face.text(13, .bold, relativeTo: .footnote)).foregroundStyle(Ink.bg).monospacedDigit()
-          .padding(.horizontal, 6).frame(minWidth: 22, minHeight: 22).background(Capsule().fill(Ink.fg))
-          .accessibilityLabel((fold?.says ?? row.says)?.en ?? "\(open)")
-      } else if unread {
-        Circle().fill(Ink.accent).frame(width: 10, height: 10).accessibilityLabel("New message").accessibilityIdentifier("chat-unread-" + row.id)
-      }
+      .padding(.vertical, small ? 8 : 11)
+      .padding(.horizontal, small ? 10 : 0)
     }
-    .padding(.horizontal, small ? 8 : 0)
-    .frame(minHeight: small ? 52 : 76)
     .background { if small { RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Tone.color(hue: mainHue ?? hue, .wash).opacity(0.55)) } }
     .opacity(row.hushed ? 0.6 : 1)
-    .listRowInsets(EdgeInsets(top: 2, leading: small ? 12 : 20, bottom: 2, trailing: small ? 12 : 20))
+    .listRowInsets(EdgeInsets(top: small ? 2 : 0, leading: small ? 12 : 20, bottom: small ? 2 : 0, trailing: small ? 12 : 20))
     .listRowBackground(Color.clear)
     .listRowSeparatorTint(Ink.line)
     .listRowSeparator(small || row.unfolded ? .hidden : .visible, edges: .bottom)
@@ -132,28 +129,34 @@ struct ChatRow: View {
     .alignmentGuide(.listRowSeparatorLeading) { _ in side + 12 }
   }
 
-  /** A main's helpers at the end of its row: four small drawings at most (a stopped one marked), "+N", a chevron;
-   *  a tap unfolds them under the row, a second folds them. */
+  /** What needs him, at the end of the teaser's line: the raised hand, how many questions wait, or a dot. */
+  @ViewBuilder private func badge(_ fold: CoreView.FoldView?) -> some View {
+    let open = fold?.open ?? row.open
+    if (fold?.hand ?? row.hand) != nil { PenMark("hand", color: Ink.surface, blocked: true).frame(width: 22, height: 22).accessibilityLabel(row.says?.en ?? "Stopped") }
+    else if open > 0 {
+      Text("\(open)").font(Face.text(12, .bold, relativeTo: .footnote)).foregroundStyle(Ink.bg).monospacedDigit()
+        .padding(.horizontal, 6).frame(minWidth: 20, minHeight: 20).background(Capsule().fill(Ink.fg))
+        .accessibilityLabel((fold?.says ?? row.says)?.en ?? "\(open)")
+    } else if row.unread || (fold?.unread ?? false) {
+      Circle().fill(Ink.accent).frame(width: 10, height: 10).accessibilityLabel("New message").accessibilityIdentifier("chat-unread-" + row.id)
+    }
+  }
+
+  /** A main's helpers beside its name: "+N" as a small chip (a stopped one makes it red); a tap unfolds them under
+   *  the row, a second folds them. */
   private func helpers(_ f: CoreView.FoldView) -> some View {
     Button { withAnimation(.snappy) { shell.act(["do": "fold_helpers", "session_id": row.id, "open": !row.unfolded]) } } label: {
       HStack(spacing: 3) {
-        HStack(spacing: -6) {
-          ForEach(Array(f.lie.enumerated()), id: \.element) { i, id in
-            if let h = byId[id] {
-              AgentMark(mark: h.mark, size: 15, hue: Pen.hueFor(id: h.slug.isEmpty ? h.id : h.slug, mark: h.mark))
-                .opacity(h.online ? 0.9 : 0.5)
-                .padding(1.5).background(Circle().fill(Ink.bg))
-                .overlay(alignment: .topTrailing) { if f.stopped.contains(id) { Circle().fill(Ink.urgCritical).frame(width: 6, height: 6).overlay(Circle().stroke(Ink.bg, lineWidth: 1)) } }
-                .zIndex(Double(4 - i))
-            }
-          }
-        }
-        if f.more > 0 { Text("+\(f.more)").font(Face.text(12, .medium, relativeTo: .caption)).foregroundStyle(Ink.muted).lineLimit(1).fixedSize() }
-        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Ink.faint).rotationEffect(.degrees(row.unfolded ? 180 : 0))
+        Text("+\(f.lie.count + Int(f.more))").font(Face.text(12, .semibold, relativeTo: .caption)).monospacedDigit()
+        Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).rotationEffect(.degrees(row.unfolded ? 180 : 0))
       }
-      .frame(minHeight: 44).contentShape(Rectangle())
+      .foregroundStyle(f.stopped.isEmpty ? Ink.muted : Ink.urgCritical)
+      .padding(.horizontal, 7).frame(height: 20)
+      .background(Capsule().fill(Ink.sunken))
+      .frame(minWidth: 44, minHeight: 32).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .fixedSize()
     .accessibilityLabel(f.helpers.en)
     .accessibilityHint(row.unfolded ? "Folds them" : "Unfolds them")
     .accessibilityIdentifier("chat-helpers-" + row.id)
@@ -714,7 +717,7 @@ struct SessionScreen: View {
       }
       .defaultScrollAnchor(onlyQuestions ? .top : .bottom)
       .safeAreaInset(edge: .top, spacing: 0) {
-        SessionModeSwitch(onlyQuestions: $onlyQuestions, count: page.open).padding(.horizontal, 16).padding(.bottom, 6)
+        if page.open > 0 || onlyQuestions { QuestionsChip(onlyQuestions: $onlyQuestions, count: page.open).padding(.bottom, 4) }
       }
       .scrollDismissesKeyboard(.interactively)
       .onChange(of: page.talk.count) { _, _ in withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo("bottom", anchor: .bottom) } }
@@ -727,9 +730,7 @@ struct SessionScreen: View {
           }
         }
       }
-      .pushedPills(extraTrailing: page.usage == nil ? 0 : 36) { header } trailing: {
-        HStack(spacing: 6) {
-          if let usage = page.usage { UsageMark(usage: usage) }
+      .sessionBar { header } trailing: {
           Menu {
             Toggle(isOn: $onlyQuestions) { Label(page.open > 0 ? "Questions Only (\(page.open))" : "Questions Only", systemImage: "questionmark.circle") }
             Button { newName = page.name.en; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
@@ -741,10 +742,15 @@ struct SessionScreen: View {
               Menu { ForEach(others, id: \.id) { team in Button(team.name.en) { shell.act(["do": "move_session", "session_id": page.id, "team_id": team.id]) } } } label: { Label("Move to Team…", systemImage: "rectangle.stack") }
             }
             Button(role: .destructive) { shell.act(["do": "archive_session", "session_id": page.id, "on": true]) } label: { Label("Archive", systemImage: "archivebox") }
+            // (what it runs on and how much of its plan is used: in the menu, not in the top row)
+            if !page.modelLabel.isEmpty || !(page.usage?.meters.isEmpty ?? true) {
+              Section(page.modelLabel) {
+                ForEach(page.usage?.meters ?? [], id: \.key) { m in Label("\(m.long): \(m.used) %", systemImage: m.hot ? "gauge.with.dots.needle.100percent" : "gauge.with.dots.needle.33percent") }
+              }
+            }
           } label: { Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(Ink.fg).pillCircle() }
           .accessibilityLabel("More")
           .accessibilityIdentifier("session-more")
-        }
       }
     }
     .background(Ink.bg.ignoresSafeArea())
@@ -755,9 +761,12 @@ struct SessionScreen: View {
     }
     .sheet(isPresented: $drawing) { DrawingPicker(page: page) { mark in shell.act(["do": "session_icon", "session_id": page.id, "icon": mark]); drawing = false } }
   }
-  /** The title: the session's drawing and name ▾, a glass menu of the team's sessions to switch to. */
+  /** Back and the title in one glass pill at the left: the arrow goes back, the session's drawing and name open a
+   *  menu of the team's sessions to switch to; a dot says connected (green), stopped (red) or not connected. */
   private var header: some View {
-    Menu {
+    HStack(spacing: 0) {
+      BackArrow()
+      Menu {
       ForEach(shell.view.sidebar.sessions, id: \.id) { s in
         Button {
           if shell.path.isEmpty { shell.path = [.session(sessionId: s.id)] } else { shell.path[shell.path.count - 1] = .session(sessionId: s.id) }
@@ -765,51 +774,47 @@ struct SessionScreen: View {
           Label { Text(s.name.en) } icon: { if s.id == page.id { Image(systemName: "checkmark") } else if s.crowned { Image(systemName: "crown") } }
         }
       }
-    } label: {
-      HStack(spacing: 7) {
-        AgentMark(mark: page.mark, size: 22, crowned: page.crowned, hue: hue)
-        Text(page.name.en).font(Face.display(17, .bold)).foregroundStyle(Ink.fg).lineLimit(1).minimumScaleFactor(0.85).truncationMode(.middle)
-        if !page.modelLabel.isEmpty { Text(page.modelLabel).font(Face.text(13, .medium)).foregroundStyle(Ink.muted).lineLimit(1).layoutPriority(-1) }
-        if page.blocked { Circle().fill(Ink.urgCritical).frame(width: 7, height: 7) }
-        else if !page.dot.on { Circle().strokeBorder(Ink.faint, lineWidth: 1.5).frame(width: 7, height: 7) }
-        Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.muted)
+      } label: {
+        HStack(spacing: 7) {
+          AgentMark(mark: page.mark, size: 22, crowned: page.crowned, hue: hue)
+          Text(page.name.en).font(Face.display(17, .bold)).foregroundStyle(Ink.fg).lineLimit(1).minimumScaleFactor(0.85).truncationMode(.middle)
+          if page.blocked { Circle().fill(Ink.urgCritical).frame(width: 7, height: 7) }
+          else if page.dot.on { Circle().fill(Ink.stDone).frame(width: 7, height: 7) }
+          else { Circle().strokeBorder(Ink.faint, lineWidth: 1.5).frame(width: 7, height: 7) }
+        }
+        .padding(.trailing, 16).frame(height: 44)
+        .contentShape(Rectangle())
       }
-      .padding(.horizontal, 14).frame(height: 44)
-      .glass(Capsule(), interactive: true)
-      .contentShape(Capsule())
+      .buttonStyle(.plain)
+      .accessibilityLabel("\(page.name.en)\(page.modelLabel.isEmpty ? "" : ", \(page.modelLabel)"), \(page.dot.says.en): switch chat")
+      .accessibilityHint(page.quiet?.en ?? "")
     }
-    .accessibilityLabel("\(page.name.en)\(page.modelLabel.isEmpty ? "" : ", \(page.modelLabel)"), \(page.dot.says.en): switch chat")
-    .accessibilityHint(page.quiet?.en ?? "")
+    .padding(.leading, 4)
+    .glass(Capsule(), interactive: true)
   }
 }
 
-/** The quiet two-way switch "All | Questions n" under the top row (the web's session-seg); the number is the
- *  questions waiting for him. */
-struct SessionModeSwitch: View {
+/** Under the top row, only while questions wait (or while they are shown): a small chip with how many; a tap shows
+ *  only the questions (the web's /chat/<id>/questions), a second tap all messages again. */
+struct QuestionsChip: View {
   @Binding var onlyQuestions: Bool
   let count: UInt32
   var body: some View {
-    HStack(spacing: 2) {
-      side("All", on: !onlyQuestions, id: "session-mode-all") { onlyQuestions = false }
-      side("Questions", on: onlyQuestions, count: count, id: "session-mode-questions") { onlyQuestions = true }
-    }
-    .padding(3)
-    .glass(Capsule())
-    .frame(maxWidth: 340)
-  }
-  private func side(_ word: String, on: Bool, count: UInt32 = 0, id: String, _ go: @escaping () -> Void) -> some View {
-    Button { withAnimation(.snappy) { go() } } label: {
+    Button { withAnimation(.snappy) { onlyQuestions.toggle() } } label: {
       HStack(spacing: 6) {
-        Text(word).font(Face.text(15, on ? .semibold : .regular)).foregroundStyle(on ? Ink.fg : Ink.muted)
-        if count > 0 { Text("\(count)").font(Face.text(12, .bold)).foregroundStyle(Ink.bg).monospacedDigit().padding(.horizontal, 6).frame(minHeight: 18).background(Capsule().fill(Ink.urgHigh)) }
+        if !onlyQuestions && count > 0 {
+          Text("\(count)").font(Face.text(11, .bold)).foregroundStyle(Ink.bg).monospacedDigit()
+            .padding(.horizontal, 5).frame(minWidth: 17, minHeight: 17).background(Capsule().fill(Ink.urgHigh))
+        }
+        Text(onlyQuestions ? "All messages" : "Questions").font(Face.text(13, .semibold)).foregroundStyle(Ink.fg)
       }
-      .frame(maxWidth: .infinity, minHeight: 34)
-      .background { if on { Capsule().fill(Ink.surface).shadow(color: .black.opacity(0.08), radius: 2, y: 1) } }
-      .contentShape(Capsule())
+      .padding(.horizontal, 11).frame(height: 30)
+      .glass(Capsule(), interactive: true)
+      .frame(minHeight: 44).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityAddTraits(on ? .isSelected : [])
-    .accessibilityIdentifier(id)
+    .frame(maxWidth: .infinity)
+    .accessibilityIdentifier(onlyQuestions ? "session-mode-all" : "session-mode-questions")
   }
 }
 

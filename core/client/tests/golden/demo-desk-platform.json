@@ -70,6 +70,31 @@
     }
   },
   "off": {
+    "running": [
+      {
+        "id": "f35bf13aea8cdbfd193cfddc38f543fb",
+        "title": "Promote the replica in a failover drill on Friday?",
+        "from": {
+          "session_id": "1f4ee7520853d151015e6105ba5a9794",
+          "name": "Database Replica",
+          "mark": "draw:database",
+          "path": [
+            "Platform",
+            "Infrastructure",
+            "Database Replica"
+          ]
+        },
+        "line": {
+          "key": "dock.line.on_it",
+          "args": {
+            "name": "Database Replica"
+          },
+          "en": "Database Replica · on it"
+        },
+        "running": true,
+        "at_ms": 1791460200000
+      }
+    ],
     "rows": [
       {
         "id": "8547d0c56048b3ffa6fba14aafcf43a1",

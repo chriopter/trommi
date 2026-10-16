@@ -168,36 +168,6 @@ struct UsageBar: View {
     }.frame(height: height)
   }
 }
-private struct MeterRing: View {
-  let meter: CoreView.MeterView
-  let width: CGFloat
-  var body: some View {
-    ZStack {
-      Circle().stroke(Ink.fg.opacity(0.12), lineWidth: width)
-      Circle().trim(from: 0, to: CGFloat(min(meter.used, 100)) / 100)
-        .stroke(meter.hot ? Ink.urgHigh : Ink.accent, style: StrokeStyle(lineWidth: width, lineCap: .round))
-        .rotationEffect(.degrees(-90))
-    }
-  }
-}
-/** Beside a session's More button: two rings, one inside the other (the week outside, the 5-hour window inside). */
-struct UsageMark: View {
-  let usage: CoreView.UsageView
-  var size: CGFloat = 30
-  var body: some View {
-    let five = usage.meters.first { $0.key == "five_hour" }, week = usage.meters.first { $0.key == "weekly" }
-    let w = size * 0.115
-    if !usage.meters.isEmpty {
-      ZStack {
-        if let week { MeterRing(meter: week, width: w).padding(w / 2) }
-        if let five { MeterRing(meter: five, width: w).padding(week == nil ? w / 2 : w * 2.05) }
-      }
-      .frame(width: size, height: size)
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel(usage.meters.map { "\($0.long): \($0.used) percent used" }.joined(separator: ", "))
-    }
-  }
-}
 /** An agent's account, fuller: the plan as a small tag and the e-mail, one row per window, the facts. */
 struct UsageDrawing: View {
   let usage: CoreView.UsageView
