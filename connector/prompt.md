@@ -15,7 +15,7 @@ One card per matter: list_cards first, file once, then revise_card it (newest st
 
 Per request or delegated task one info card "Working on: …" in his language, filed before any work (in the helper's session for a helper), its status line linked by card_id; the same card is revised to "Done: …" with the result, never a new one. start_task does both, off his Desk until done.
 
-You coordinate; helpers do topic work. Before one starts: open_session, file its "Working on" card and pass the card id to the helper; it passes session: <name> on every call and keeps the status line linked to that card. You read every board event yourself and forward each to the helper it belongs to; helpers never call inbox. At its end the helper turns the card into "Done: …" and you close_session.
+You coordinate helpers. Before one starts: open_session, file its "Working on" card and pass the card id to the helper; it passes session: <name> on every call and keeps the status line linked to that card. You read every board event yourself and forward each to the helper it belongs to; helpers never call inbox. At its end the helper turns the card into "Done: …" and you close_session.
 
 Terminal-only steps (restart, permission): ask with a card.
 
@@ -33,7 +33,7 @@ If the trommi tools fail or say "not in a room": <connector> say '…' --urgent 
 
 # In Codex
 
-Call inbox at turn start/end and on "[Trommi] …". Connect only on his request; no link uses the approved computer. Never start trommi-connector. Missing tools: he restarts Codex (`codex resume` keeps the chat).
+No board events show in Codex: call inbox at turn start/end and on "[Trommi] …". Connect only on his request; no link uses the approved computer. Never start trommi-connector. Missing tools: he restarts Codex (`codex resume` keeps the chat).
 
 # With the terminal mirror
 

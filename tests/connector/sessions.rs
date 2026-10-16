@@ -1059,6 +1059,13 @@ async fn approved_computer_activates_only_explicit_sessions_without_a_running_vo
     second.mcp().ready().await;
     second.speaks(&mut m).await;
     second.close().await;
+    m.a.remove_agent(computer).await;
+    let mut revoked = Session::new(&m, "revoked", Client::Claude, "three", "cfg");
+    revoked.start(&m).await;
+    let (said, failed) = revoked.mcp().call("connect", json!({})).await;
+    assert!(failed, "a removed computer cannot activate another session: {said}");
+    assert!(said.contains("computer") || said.contains("removed") || said.contains("room"), "{said}");
+    revoked.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -796,7 +796,7 @@ async fn a_codex_session_activates_on_the_approved_computer_across_program_accou
     assert!(
         ask["account_label"]
             .as_str()
-            .is_some_and(|l| l.starts_with("codex")),
+            .is_some_and(|l| l.eq_ignore_ascii_case("codex")),
         "{ask}"
     );
     b.ready().await;

@@ -243,7 +243,9 @@ connector here learns it from the Commit, wipes the slot and says that it is ret
 
 ## Updates and releases
 
-Updates apply without a restart or reconnect. What Claude Code starts is a small launcher (`src/launch.rs`); it
+Updates with the same MCP contract apply without a restart or reconnect. The computer-approval release
+changes `connect` and its instructions: existing clients need one real restart to load that contract, which the
+old connector announces with its update card. `codex resume` keeps the conversation. What Claude Code starts is a small launcher (`src/launch.rs`); it
 owns the session's stdin and stdout and runs the connector as its child (`serve`). The installed connector looks for
 a newer signed release every hour (`TROMMI_UPDATE_CHECK_MS`), and at once when the hub refuses it as too old, and
 puts it in place as `update` does. When a new binary stands at the connector's path and is not refused, the child

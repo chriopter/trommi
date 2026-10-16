@@ -1226,6 +1226,16 @@ impl Human {
             .group
     }
 
+    /// Publish a real signed room removal, without trusting the hub's online/device list.
+    pub async fn remove_agent(&mut self, device: DeviceId) {
+        self.sync().await;
+        self.v(move |v| {
+            v.device.remove_agents(&[device], now_ms()).expect("the human removes the agent");
+            v.commit().expect("stored");
+        }).await;
+        self.post_all().await.expect("the removal is taken");
+    }
+
     /// Takes a main session over for the device that was admitted for it (5.3): the old agent device left
     /// `agents` with the enrolment; its leaf is replaced, and the history is handed over.
     pub async fn take_over(&mut self, _group: &GroupId, _old: DeviceId, _new: &Admitted) {

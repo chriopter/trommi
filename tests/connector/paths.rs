@@ -102,7 +102,7 @@ async fn the_update_and_usage_hints_name_commands_that_exist() {
         .expect("connect runs");
     let told = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{told}");
-    assert!(told.contains("trommi-connector connect '<invite link>'"), "{told}");
+    assert!(told.contains("computer-required") && told.contains("Approve a computer") && told.contains("connect"), "{told}");
 }
 
 /// The update card is filed in the human's language: no German words are put into the agent's mouth.

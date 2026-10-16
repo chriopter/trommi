@@ -1082,7 +1082,11 @@ impl Conn {
             }
         }
         let error = me.error.as_ref().map(|e| format!(" ({e})")).unwrap_or_default();
-        format!("Not on the board{error}: activate with /trommi:connect (in Codex, ask to connect to Trommi).")
+        if crate::host::is_codex() {
+            format!("Not on the board{error}: on the human's request, call the connect tool without a link to activate this session on its approved computer.")
+        } else {
+            format!("Not on the board{error}: activate with /trommi:connect.")
+        }
     }
     /// connect on a session that is on the board: with a link of another account's room, it says so and what to
     /// do with that link (which stays unused); else that it is connected already.

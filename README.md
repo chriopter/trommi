@@ -42,8 +42,9 @@ One Rust app core runs the web, iPhone, Mac, Linux and connector; the platform s
    app; tap "They match". Later sessions stay off the board until you run `/trommi:connect` without a link
    (or ask Codex to connect). An online Trommi app answers; no other agent session needs to be running.
 
-Updates come by themselves: a running connector installs a new signed release and swaps it in, no restart and no
-/mcp → Reconnect. By hand: `trommi-connector update`.
+Updates come by themselves: a running connector installs a new signed release and swaps compatible builds in.
+The computer-approval release changes the MCP tool contract and needs one client restart; the update card says so
+(`codex resume` keeps the conversation). By hand: `trommi-connector update`.
 
 ## How it works
 

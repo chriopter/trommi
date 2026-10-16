@@ -61,7 +61,7 @@ struct AccountInvite: View {
     if let prompt = shell.view.account.connectPrompt { Text(prompt).font(Face.mono(13)).textSelection(.enabled); ShareLink(item: prompt) }
     else if let link = shell.view.account.link { Text(link).font(Face.mono(13)).textSelection(.enabled); ShareLink(item: link) }
     if !shell.view.account.emoji.isEmpty { Text(shell.view.account.emoji.map(\.emoji).joined(separator: " ")).font(.largeTitle) }
-    if let id = shell.view.account.inviteId { HStack { Button("They match") { shell.account(["step": "confirm_emoji", "invite_id": id, "matches": true]) }; Button("Cancel") { shell.account(["step": "drop_invite"]) } } }
+    if let id = shell.view.account.inviteId { HStack { Button("They match") { shell.account(["step": "confirm_emoji", "invite_id": id, "matches": true]) }; Button("Cancel") { shell.account(["step": "drop_invite", "invite_id": id]) } } }
     ForEach(shell.view.account.asks, id: \.nonce) { ask in
       VStack(alignment: .leading, spacing: 12) {
         Text(ask.name).font(Face.display(22))

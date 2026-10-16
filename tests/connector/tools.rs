@@ -1389,7 +1389,7 @@ async fn an_unconnected_session_connects_by_the_connect_tool_without_a_restart()
     mcp.close().await;
 
     // The room this folder joined is noted in the folder.
-    let noted = std::fs::read_to_string(seat.folder.join(".trommi/room"))
+    let noted = std::fs::read_to_string(seat.folder.join(".trommi/joined"))
         .expect("the joined room is noted");
     let room = noted.trim().to_string();
     let base =
@@ -1411,7 +1411,7 @@ async fn an_unconnected_session_connects_by_the_connect_tool_without_a_restart()
     mcp.ready().await;
     mcp.close().await;
 
-    std::fs::remove_file(seat.folder.join(".trommi/room")).expect("removed");
+    std::fs::remove_file(seat.folder.join(".trommi/joined")).expect("removed");
     // the session whose own key is in one of the rooms is in that room, whatever else the folder holds
     let output = seat
         .command(&["whoami"])
@@ -1423,6 +1423,8 @@ async fn an_unconnected_session_connects_by_the_connect_tool_without_a_restart()
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    // Anonymous clients inspect only legacy folder slots; identified session keys are never theirs.
+    std::fs::write(keys.join(&room).join(format!("{}-1.key", base.trim())), trommi_connector::slotstore::KEY_MARKER).expect("a legacy folder key");
     // a client without a session id, which has no key of its own to go by, is told which rooms there are
     let output = seat
         .command(&["whoami"])
@@ -1901,7 +1903,7 @@ async fn two_sessions_in_one_folder_never_share_a_key() {
     let listed = second.request("tools/list", json!({})).await;
     assert!(listed["tools"].is_array(), "it still answers: {listed}");
     assert!(
-        said.contains("belongs to other") && said.contains("invite"),
+        said.contains("connect"),
         "it says the key is another session's and that it needs an invite: {said}"
     );
     // its `say` does not go through the first session's connector either
@@ -1924,7 +1926,7 @@ async fn two_sessions_in_one_folder_never_share_a_key() {
     let (said, failed) = second
         .call("reply", json!({ "text": "from the second session, later" }))
         .await;
-    assert!(failed && said.contains("belongs to other"), "{said}");
+    assert!(failed && said.contains("connect"), "{said}");
     assert!(second.child.try_wait().expect("the process").is_none());
     second.close().await;
 

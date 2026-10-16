@@ -36,7 +36,7 @@ pub fn room_for(cfg: &Cfg) -> Result<String> {
         return if has_key(cfg, &room) {
             Ok(room)
         } else {
-            Err(Fault::new("computer-required", "Approve this computer for the board chosen by this folder before activating a session"))
+            Err(Fault::new("computer-required", "The human chooses Approve a computer in Trommi for this folder's board and gives you its command; then call connect. Nothing joined the board"))
         };
     }
     let mut rooms: Vec<String> = std::fs::read_dir(&cfg.keys_dir)
