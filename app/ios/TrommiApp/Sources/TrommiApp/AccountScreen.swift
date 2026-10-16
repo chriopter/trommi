@@ -92,7 +92,7 @@ extension ObPassword where Side == EmptyView {
 
 struct AccountScreen: View {
   @EnvironmentObject var shell: AppShell
-  @State private var form = AccountForm.start
+  @State private var form: AccountForm
   @State private var email = ""
   @State private var password = ""
   @State private var words = ""
@@ -100,8 +100,10 @@ struct AccountScreen: View {
   @State private var shown = false
   @State private var camera = true
   private var account: CoreView.AccountView { shell.view.account }
+  init(form: AccountForm = .start) { _form = State(initialValue: form) }
   private var busy: Bool { account.step == "working" || shell.view.phase == .starting }
-  private var problem: String? { account.problem?.en }
+  /** The core's word on this step; on Log in also why it is asked for again (a sign-in cut off: `resume`). */
+  private var problem: String? { account.problem?.en ?? (form == .login ? account.resume?.en : nil) }
   var body: some View {
     Group {
       if account.step == "compare_emoji" { emoji }
