@@ -10,7 +10,7 @@ trommi-connector serve               the MCP server itself, as the launcher's ch
 trommi-connector connect             explicitly activate this session on the approved computer
 trommi-connector connect --computer <link> approve this computer once, then activate this session
 trommi-connector connect <link>      join just one session by a human invite (also: join)
-trommi-connector say "<text>" [--session <name>] [--urgent]
+trommi-connector say "<text>" [--helper <name>] [--urgent]
 trommi-connector permission|notice|denied|resolved    the plugin's hooks (JSON on stdin)
 trommi-connector prompt|stop         the terminal mirror's hooks (UserPromptSubmit, Stop)
 trommi-connector trail               the work trail's hooks (PreToolUse, PostToolUse, …)
@@ -147,25 +147,28 @@ to `TROMMI_SOAK_LOG` and fails on an offline stretch longer than `TROMMI_SOAK_MA
 
 ## Helpers and their events
 
-The coordinator (the agent that opened the child sessions) reads every board event itself and forwards each to the
-helper it belongs to; helpers never call `inbox`. Before a helper starts, the coordinator files its "Working on"
-card in the helper's session (`start_task` with `session`) and hands it the card id; the helper revises that card to
-"Done: …" at its end.
+A helper (a subagent of the agent) has no session of its own: it writes through its agent's connector into its
+agent's session, and what it writes carries its name. The tools that write take `helper: "<name>"` (one line, at
+most 40 characters): `reply`, `create_decision`, `create_info`, `start_task`, `merge_cards`, `set_status`,
+`clear_status`, `list_cards` (its cards alone) and `publish_asset`. The name goes into the card's, the status line's
+or the message's body as `helper` (spec/v1.md 9.1); the board shows the helpers inside their agent's session, a
+helper's card with a "Helper <name>" chip. A helper's status line ids are its own (stored as `helper.<8 hex of the
+name's SHA-256>.<id>`): two helpers may both keep a line "work", apart from the agent's own.
 
-Optional, for clients that let helpers read their own events: a helper calls `inbox` with `session: "<name>"`: it gets that
-session's events alone, and the call claims the session. While the claim holds, the session's events wait for that
-helper only: plain `inbox`, the monitor line and channel events skip them, so the coordinator forwards nothing. A
-"Done: …" (or Fertig, Erledigt, Resolved, Gelöst) card the helper files there gives the coordinator one short line
-(`kind="helper"`). The claim ends with `close_session`, or after 10 minutes without an `inbox(session)` call
-(`TROMMI_CLAIM_MS`); events still waiting then go to the coordinator with a line "Design: helper gone, N events
-waiting". Claims live in the connector's memory only: after a restart every waiting event is the coordinator's.
+The coordinator (the agent the helpers run in) reads every board event itself and forwards each to the helper it
+belongs to; helpers never call `inbox`. An event about a helper's card (an answer, a hand-back, What??, a comment)
+carries `helper="<name>"` in its meta, so the coordinator routes it by name or by card id. Before a helper starts,
+the coordinator files its "Working on" card with `start_task` and `helper`, and hands it the card id; the helper
+revises that card to "Done: …" at its end. A tool call that names a helper gets no board events with its result,
+and `inbox` with a helper says there are none for it: every event stays the coordinator's.
 
-A subagent keeps the tool list it was started with: a helper started before a connector update that brought new
-tools or parameters (`notifications/tools/list_changed` reaches the coordinator, not a running subagent) still has
-the old ones, e.g. an `inbox` without `session`. Its plain `inbox` reads the coordinator's events, never a claimed
-session's, so nothing is lost twice; but restart such helpers (end them and start new ones) to give them the new
-tools. `inbox` takes parameters it does not know without an error, so a newer helper never fails on an older
-connector.
+Before 16 October 2026 a helper had a session group of its own (spec/v1.md 5.2.3), opened with `open_session`.
+For agents that still hold the tools they were started with: `session: "<name>"` means `helper: "<name>"`,
+`open_session` and `close_session` answer what changed and do nothing, `say --session` is `say --helper`. The
+helper sessions of before stay readable; their events carry `helper` with the session's name, an answer to one of
+their cards goes into that session as before, and the connector archives each (5.2.10) once nothing of it waits
+(no open question, no answer it has not closed): at its start and whenever one of their cards is closed or
+withdrawn. Events that waited when a connector was swapped are the coordinator's, as every event is.
 
 ## Status lines follow their questions
 
@@ -194,7 +197,7 @@ as a quiet info, with a push) and every line linked to it turns `done` with that
 | `src/store.rs` | the state on disk: one directory per slot (0700), a lock, a snapshot and a log of checksummed records; one record per step |
 | `src/vault.rs`, `src/keeper.rs` | the core's `Device` over that journal, on a thread of its own; the device does groups, stored content, joining and sign-in itself |
 | `src/driver.rs` | the shared `core/client` engine in agent mode, its shared board model and cache; runs effects through `core/io` over the slot's journal, hands commands and lifecycle reports to the MCP server |
-| `src/agent.rs` | what an agent writes: Chat, cards, registers, permission requests, Artifacts and files, helper sessions, the work trail |
+| `src/agent.rs` | what an agent writes: Chat, cards, registers, permission requests, Artifacts and files, the work trail; archiving a helper session of before |
 | `src/join.rs` | joining by link with the six emoji |
 | `src/bridge.rs`, `src/html.rs` | every tool, and a human's command as a channel event |
 | `src/server.rs`, `src/mcp.rs`, `src/member.rs`, `src/slots.rs`, `src/slotstore.rs`, `src/door.rs` | the MCP server, this process as a member, key slots per folder, the sockets hooks reach it through |

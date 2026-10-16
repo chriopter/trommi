@@ -639,6 +639,7 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 .row-meta-mark { flex: none; width: 15px; height: 15px; color: var(--tone-pen); opacity: .8; }
 .row-meta-mark svg { width: 100%; height: 100%; }
 .row-meta-who { overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: color-mix(in srgb, var(--tone-pen) 70%, var(--muted)); }
+.row-meta-helper { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta-dot { color: var(--faint); }
 .inbox-groups .inbox-row .inbox-body { display: block !important; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; -webkit-line-clamp: unset; color: var(--muted); font: 400 var(--t-sm)/1.35 var(--font); }
 .inbox-groups .inbox-row .inbox-body .inbox-body-about { color: inherit; }
@@ -950,8 +951,8 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 
 /* ---- One bracket for a run:
    a run of two or more cards from one session is held by a pen bracket in the session's colour at the far left, outside
-   the rows, from the first card to the last; of one family with the sidebar's bracket round a main's helpers
-   (sidebar.mjs folds): the pen's weight, a slightly uneven line, a small hook towards the rows at each end. One
+   the rows, from the first card to the last: the pen's weight, a slightly uneven line, a small hook towards the rows
+   at each end. One
    pseudo-element, its mask in three layers: the two hooks keep their size, the line between them stretches (only in
    its length: its weight and its small bends to the side stay). ---- */
 .inbox-groups .inbox-group[data-run="many"] { position: relative;

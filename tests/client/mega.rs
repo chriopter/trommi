@@ -3,7 +3,7 @@
 //!
 //! In the room, per seed:
 //! - the stand-in human device (tests/connector/common) founds it and keeps the recovery code;
-//! - agents: the connector's own client, in process, each in a main session (one also opens a helper session);
+//! - agents: the connector's own client, in process, each in a main session (some cards of one come from a helper);
 //! - the web app: the app core in the web's executor (tests/client/mega/web-observer.mjs), twice;
 //! - the iOS app's engine with the real core (MegaObserverTests.swift, its test runner on Linux), twice.
 //!
@@ -248,6 +248,7 @@ struct Agent {
     _events: tokio::task::JoinHandle<()>,
     _dir: TempDir,
     session: String,
+    /// The name of the helper some of its cards come from (they stand in its session, named).
     helper: Option<String>,
 }
 
@@ -418,21 +419,18 @@ impl World {
         let done = match roll {
             0..=17 => {
                 let info = self.rng.chance(0.2);
-                let session = if self.rng.chance(0.25) {
-                    self.agents[a]
-                        .helper
-                        .clone()
-                        .or(Some(self.agents[a].session.clone()))
-                } else {
-                    Some(self.agents[a].session.clone())
-                };
+                let session = Some(self.agents[a].session.clone());
+                let helper = if self.rng.chance(0.25) { self.agents[a].helper.clone() } else { None };
                 let urgency = ["low", "normal", "high", "critical"][self.rng.below(4)];
-                let card = if info {
+                let mut card = if info {
                     json!({ "card_type": "info", "title": format!("c{n} info"), "body": format!("info {n}"), "urgency": urgency })
                 } else {
                     json!({ "card_type": "decision", "title": format!("c{n} decide"), "body": format!("decide {n}"), "urgency": urgency,
                             "options": [{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }, { "key": "c", "label": "C" }], "allows_multiple": false })
                 };
+                if let Some(h) = helper {
+                    card["helper"] = json!(h);
+                }
                 match self.agents[a].client.send_card(fields(card), session).await {
                     Ok(id) => format!(
                         "agent{a} asks {id} ({})",
@@ -540,12 +538,7 @@ impl World {
                 None => "nothing to snooze".into(),
             },
             73..=78 => {
-                let target = if self.rng.chance(0.3) {
-                    self.agents[a].helper.clone()
-                } else {
-                    None
-                }
-                .unwrap_or_else(|| self.agents[a].session.clone());
+                let target = self.agents[a].session.clone();
                 let name = format!("S{a} named at {n}");
                 let r = self.agents[a]
                     .client
@@ -1055,14 +1048,8 @@ async fn run_seed(seed: u64, trees: &[(String, PathBuf)], out: &Path, report: &m
             helper: None,
         });
     }
-    // a helper session of the first agent
-    if let Ok(h) = agents[0]
-        .client
-        .open_child_session(fields(json!({ "agent_name": "helper of S0" })))
-        .await
-    {
-        agents[0].helper = Some(h);
-    }
+    // a helper of the first agent
+    agents[0].helper = Some("helper of S0".into());
 
     let mut world = World {
         rng: Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1),
@@ -1311,8 +1298,8 @@ async fn speed_of_every_client() {
     .await;
     let code_hex = trommi_connector::util::hex(&code.lock().unwrap().clone().unwrap());
     let room_hex = trommi_connector::util::hex(human.room.as_bytes());
-    // MEGA_SPEED_AGENTS agents (each its main session and a helper session: many groups, many Commits in the
-    // history, as a real account has), the cards spread over their sessions
+    // MEGA_SPEED_AGENTS agents (each its main session: many groups, many Commits in the history, as a real account
+    // has), the cards spread over their sessions
     let agents_n: usize = env("MEGA_SPEED_AGENTS")
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
@@ -1332,15 +1319,7 @@ async fn speed_of_every_client() {
                 Some(session.clone()),
             )
             .await;
-        let mut sessions = vec![session];
-        if agents_n > 1 {
-            if let Ok(h) = client
-                .open_child_session(fields(json!({ "agent_name": format!("helper of S{i}") })))
-                .await
-            {
-                sessions.push(h);
-            }
-        }
+        let sessions = vec![session];
         agents.push((client, drain, dir, sessions));
     }
     eprintln!("SPEED {agents_n} agents in");
@@ -1602,162 +1581,4 @@ async fn speed_of_every_client() {
     eprintln!("SPEED RESULTS\n{text}");
     agent.stop().await;
     drop(hub);
-}
-
-// ---- helper names after a fresh sign-in ----------------------------------------------------------------------------
-
-/// The names of an agent's helper sessions on a device that signs in fresh, with the code, long after the helpers
-/// were opened (the person's report of 2026-10-13: after a new login on the web every helper showed its folder's name
-/// instead of its own, CI, Mac, Web …). The helpers write cards and status lines after their founding, and a first web
-/// device and the iPhones (when built) are in before the second web device signs in. Each device must show every
-/// helper under the name it was opened with, at once and after a sync.
-///
-/// ```text
-/// tests/client/mega/prepare.sh .     # (core/bindings/wasm/build.sh is enough with MEGA_IOS=0)
-/// cargo test -p trommi-tests --test client_mega helper_names -- --ignored --nocapture
-/// ```
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore]
-async fn helper_names_after_a_fresh_signin() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let helpers_n: usize = num_env("MEGA_HELPERS", 12);
-    let out = std::env::temp_dir().join("trommi-mega-helper-names");
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
-    let hub = start_hub().await;
-    let code: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
-    let keep = code.clone();
-    let mut human = Human::found_with(&hub.url, move |room, c| {
-        *keep.lock().unwrap() = Some(c.expose().to_vec());
-        Some(account_body(room, c))
-    })
-    .await;
-    let code_hex = trommi_connector::util::hex(&code.lock().unwrap().clone().expect("the code"));
-    let room_hex = trommi_connector::util::hex(human.room.as_bytes());
-    let (client, _drain, _dir, admitted) = join_agent(&mut human).await;
-    let group = human.found_session(&admitted).await;
-    let main = trommi_connector::util::hex(group.session_id().unwrap().as_bytes());
-    let c = client.clone();
-    common::eventually("the agent is in its session", || async {
-        c.lock().session_id().is_some()
-    })
-    .await;
-    client
-        .set_status(
-            fields(json!({ "profile": { "agent_name": "trommi", "task": "lead" } })),
-            Some(main.clone()),
-        )
-        .await
-        .expect("the main session's profile");
-    let mut want: BTreeMap<String, String> = BTreeMap::new();
-    want.insert(main.clone(), "trommi".into());
-    for i in 0..helpers_n {
-        let name = format!("Helper{i}");
-        let sid = client
-            .open_child_session(fields(json!({ "agent_name": name, "task": "work" })))
-            .await
-            .expect("a helper session");
-        // what a helper does after its founding: a status line, a card
-        let _ = client
-            .set_status(
-                fields(
-                    json!({ format!("status_line/{i}"): { "label": "work", "state": "working" } }),
-                ),
-                Some(sid.clone()),
-            )
-            .await;
-        want.insert(sid, name);
-    }
-    human.sync().await;
-    let _ = client.settle(60_000).await;
-
-    let shown_names = |list: &Value| -> BTreeMap<String, String> {
-        list.as_array()
-            .cloned()
-            .unwrap_or_default()
-            .iter()
-            .map(|e| {
-                (
-                    e["session"].as_str().unwrap_or("").to_string(),
-                    e["name"].as_str().unwrap_or("").to_string(),
-                )
-            })
-            .collect()
-    };
-    let mut observers = vec![Observer::spawn("web", "first", &root, &out, 1)];
-    let ios = root
-        .join("tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiShellTests-test-runner")
-        .exists()
-        && env("MEGA_IOS").as_deref() != Some("0");
-    if ios {
-        observers.push(Observer::spawn("ios", "phone", &root, &out, 1));
-    }
-    observers.push(Observer::spawn("web", "second", &root, &out, 1));
-    let mut failures = Vec::new();
-    for o in observers.iter_mut() {
-        // the later devices' requests are slow: the devices that are in add them to the helper sessions (5.2.7)
-        // before their own joins with the code reach them
-        if o.name.ends_with("@second") || o.name.ends_with("@phone") {
-            let delay: u64 = num_env("MEGA_SLOW_MS", 400) as u64;
-            let _ = o
-                .call(json!({ "op": "faults", "delay_ms": delay, "seed": 1 }))
-                .await;
-        }
-        o.call(json!({ "op": "signin", "hub": hub.url, "room_id": room_hex, "code": code_hex, "email": MEGA_EMAIL, "password": MEGA_PASSWORD, "stream": true }))
-            .await
-            .unwrap_or_else(|e| panic!("{} signs in: {e}", o.name));
-        o.signed_in = true;
-        // the helpers go on working while the device is in
-        for (n, sid) in want.keys().filter(|s| **s != main).enumerate().take(3) {
-            let _ = client
-                .set_status(
-                    fields(
-                        json!({ format!("status_line/{n}"): { "label": "work", "state": "done" } }),
-                    ),
-                    Some(sid.clone()),
-                )
-                .await;
-        }
-    }
-    for o in observers.iter_mut() {
-        let _ = o.call(json!({ "op": "sync" })).await;
-        // (the web: its sidebar's own list; the iPhone observer: each session's agent name)
-        let got = if o.platform == "web" {
-            shown_names(&o.call(json!({ "op": "shown" })).await.expect("shown"))
-        } else {
-            let snap = o.call(json!({ "op": "snapshot" })).await.expect("snapshot");
-            snap["sessions"]
-                .as_object()
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(k, v)| (k, v["agent_name"].as_str().unwrap_or("").to_string()))
-                .collect()
-        };
-        for (sid, name) in &want {
-            match got.get(sid) {
-                Some(n) if n == name => {}
-                other => failures.push(format!(
-                    "{}: {} shows as {:?}, want {name:?}",
-                    o.name,
-                    &sid[..8],
-                    other
-                )),
-            }
-        }
-    }
-    for o in observers.iter_mut() {
-        let _ = o.call(json!({ "op": "quit" })).await;
-    }
-    client.stop().await;
-    drop(hub);
-    assert!(
-        failures.is_empty(),
-        "helper names lost:\n{}",
-        failures.join("\n")
-    );
-}
-
-fn num_env(name: &str, default: usize) -> usize {
-    env(name).and_then(|s| s.parse().ok()).unwrap_or(default)
 }

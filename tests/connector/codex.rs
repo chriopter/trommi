@@ -125,7 +125,7 @@ async fn a_codex_session_connects_files_cards_and_is_woken_by_the_board() {
         "reply",
         "create_decision",
         "revise_card",
-        "open_session",
+        "start_task",
     ] {
         assert!(names.iter().any(|n| n == wanted), "{wanted} in {names:?}");
     }
@@ -259,21 +259,14 @@ async fn a_codex_session_connects_files_cards_and_is_woken_by_the_board() {
         .await;
     assert!(revised.contains("version 2"), "{revised}");
 
-    // A helper session.
-    mcp.ok("open_session", json!({ "name": "Docs", "task": "docs" }))
-        .await;
+    // A helper, in this session.
     mcp.ok(
         "set_status",
-        json!({ "session": "Docs", "id": "docs", "label": "Docs", "state": "working" }),
+        json!({ "helper": "Docs", "id": "docs", "label": "Docs", "state": "working" }),
     )
     .await;
-    mcp.ok("reply", json!({ "session": "Docs", "text": "Ready." }))
+    mcp.ok("reply", json!({ "helper": "Docs", "text": "Ready." }))
         .await;
-    mcp.ok(
-        "close_session",
-        json!({ "name": "Docs", "summary": "done" }),
-    )
-    .await;
 
     // Long words, not ASCII, come through whole.
     let long = "Grüße aus Köln – ÄÖÜäöüß€✓🥁 ".repeat(400);

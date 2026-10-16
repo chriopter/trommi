@@ -153,15 +153,12 @@ export interface SessionRowView {
   /** The session's key in the model (`Screen::Session`, the actions' `session_id`, `ViewModel.sessions`). */
   id: string
   name: Text
-  /** "live", "oncall", "asleep", "cut", "gone" (core/client/src/status.rs); "" for a helper under its main (it
-   *  runs inside its main's process: the main's link says it for both). */
+  /** "live", "oncall", "asleep", "cut", "gone" (core/client/src/status.rs). */
   link: string
   /** The red hand. */
   blocked: boolean
-  /** How many of his answers it has not picked up for two minutes; a main counts its helpers' too. */
+  /** How many of his answers it has not picked up for two minutes. */
   unheard: number
-  /** 0 for a row of its own, 1 for a helper under its main. */
-  depth: number
   /** Its short id on the board: its address (`/chat/<slug>`). */
   slug: string
   /** What draws it: the icon the person or the agent chose ("draw:leaf"), else its slug. */
@@ -171,14 +168,12 @@ export interface SessionRowView {
   online: boolean
   /** Connected and at work (a status line of it shows "working"). */
   working: boolean
-  /** A main session: one that says so, or one with helpers. */
+  /** A main session: one that says so. */
   main: boolean
   /** The crowned session of its team (the one a note goes to). */
   crowned: boolean
-  /** Its main's id, for a helper drawn under it. */
-  parent?: string
-  /** Its helpers' ids, in drawing order. */
-  subs?: string[]
+  /** Its helpers (its agent's subagents), small under its name: "3 helpers" with a dot each; none without. */
+  helpers?: HelperDotsView
   /** Its open questions: what waits for the person on the Desk (no infos, nothing that is with its agent). */
   open: number
   /** One of them knocks. */
@@ -187,20 +182,12 @@ export interface SessionRowView {
   hand?: HandView
   /** The small line under its name: its link when it does not hear at once, else the answers it has not picked up. */
   cap?: CapView
-  /** A helper whose main is not listening, cut off or gone: drawn hushed. */
-  hushed: boolean
-  /** Not connected, and none of its helpers is: it stands under "Disconnected". */
+  /** Not connected: it stands under "Disconnected". */
   away: boolean
-  /** The part of the list a main row may be dragged within (its team, connected or not); "" for a helper. */
+  /** The part of the list a row may be dragged within (its team, connected or not). */
   group: string
   /** What its badge says to a screen reader ("Working, 2 questions open"); none without a badge. */
   says?: Text
-  /** A main with helpers, drawn folded: what the row then shows for all of them together. */
-  folded?: FoldView
-  /** A main whose helpers this device shows unfolded under it (`Action::FoldHelpers`); folded is the rest state. */
-  unfolded: boolean
-  /** A helper whose main is folded on this device: it is drawn in its main's row, not as a row of its own. */
-  tucked: boolean
   /** What was said last in its conversation (his words with "You: "), or the question it put to him last: the
    *  Chat list's teaser; none while this device holds nothing said there. */
   last?: LastSaidView
@@ -217,26 +204,29 @@ export interface LastSaidView {
   when: Text
 }
 
-/** A main and its helpers as one folded row. */
-export interface FoldView {
-  open: number
-  knocks: boolean
-  /** One of them is connected. */
-  online: boolean
-  working: boolean
-  /** The first of them that is stopped. */
-  hand?: HandView
-  says?: Text
-  /** The helpers that are stopped: their edges show it while the row is folded. */
-  stopped?: string[]
-  /** The helpers drawn small at the end of the folded row: four at most, the stopped ones first. */
-  lie?: string[]
-  /** How many helpers more there are than `lie` draws ("+3"). */
-  more: number
+/** A session's helpers in its sidebar row: how many, and a dot each. */
+export interface HelperDotsView {
   /** "1 helper", "3 helpers". */
-  helpers: Text
-  /** One of the helpers has words this device has not shown yet. */
-  unread: boolean
+  says: Text
+  /** One dot per helper, in order: filled while that helper works. */
+  working: boolean[]
+}
+
+/** A session's helpers on its page: a short list, name and state, no way into a chat of their own. */
+export interface HelperListView {
+  /** "3 helpers". */
+  head: Text
+  /** "1 working · their cards come with this session". */
+  sub: Text
+  rows: HelperRowView[]
+}
+
+/** One helper of a session's page. */
+export interface HelperRowView {
+  name: string
+  working: boolean
+  /** "Working · 1 open question", "1 open question", "Done". */
+  says: Text
 }
 
 /** Why a session is stopped: the red hand. */
@@ -546,9 +536,11 @@ export interface FromView {
   name: string
   /** What draws the session (`SessionRowView::mark`). */
   mark: string
-  /** Where it stands, for the line above a card's title ("Team › Main › Helper"): its team while there are two
-   *  or more, its main for a helper, itself. */
+  /** Where it stands, for the line above a card's title ("Team › Session"): its team while there are two or
+   *  more, itself. */
   path: string[]
+  /** The helper (its agent's subagent) it comes from, for a chip beside the path: "Helper Icons". */
+  helper?: Text
 }
 
 export interface MediaView {
@@ -625,7 +617,7 @@ export interface SessionView {
   main: boolean
   crowned: boolean
   online: boolean
-  /** Where it stands: its team (while there are two or more), its main (for a helper), itself. */
+  /** Where it stands: its team (while there are two or more), itself. */
   path?: string[]
   /** The model it runs on, as the heading says it ("Opus 5.5"); "" when it named none. */
   model_label: string
@@ -656,11 +648,11 @@ export interface SessionView {
   first_open?: string
   /** An empty conversation: the card of the agent that joined, and three ways to start. */
   empty?: EmptyTalkView
-  /** Its agent's account and how much of it is used (the heading's rings: the week and the 5-hour window); a
-   *  helper without one of its own shows its main's. None without a plan or an e-mail. */
+  /** Its agent's account and how much of it is used (the heading's rings: the week and the 5-hour window). None
+   *  without a plan or an e-mail. */
   usage?: UsageView
-  /** The main session it is a helper of (its key); none for a main. */
-  parent?: string
+  /** Its helpers (its agent's subagents), above the status lines; none without. */
+  helpers?: HelperListView
   /** In the Archive: the More menu offers "Back from the Archive" (`ArchiveSession` with `on: false`). */
   archived: boolean
 }
@@ -741,6 +733,8 @@ export interface TalkRow {
   answers?: string
   /** On a card's page, his What?? that has no answer yet: "Waiting for the explanation." */
   waits?: Text
+  /** The helper (its agent's subagent) that wrote it, beside the agent's name; none for the agent's own words. */
+  helper?: string
 }
 
 /** A card as a row of a conversation names it. */
@@ -816,6 +810,8 @@ export interface WorkLineView {
 export interface StatusLineView {
   id: string
   label: string
+  /** The helper (its agent's subagent) whose line it is, drawn before its label; none for the agent's own. */
+  helper?: string
   detail: string
   /** "working", "decision", "later", "done" (for ten minutes), "stale" (greyed and still, for a day). */
   state: string

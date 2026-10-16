@@ -282,12 +282,6 @@ impl Doing<'_> {
                 let group: Option<String> = group.as_deref().map(str::trim).filter(|g| !g.is_empty()).map(|g| g.chars().take(40).collect());
                 self.edit_session(action, session_id, "group", json!(group))
             }
-            Action::SessionParent { session_id, parent } => {
-                if parent.as_deref().is_some_and(|p| p == session_id || !self.model.sessions.contains_key(p)) {
-                    return Err(not_done("action.not_found", "That session is no longer there."));
-                }
-                self.edit_session(action, session_id, "parent", json!(parent))
-            }
             Action::PlaceSession { session_id, before, after } => self.place_session(action, session_id, before.as_deref(), after.as_deref()),
             Action::CrownSession { session_id, on } => self.crown_session(action, session_id, *on),
             Action::OrderTeams { team_ids } => {
@@ -786,7 +780,7 @@ impl Doing<'_> {
         let moves: Vec<(String, usize)> = order
             .iter()
             .enumerate()
-            .filter(|(i, r)| r.position != *i as f64 || (!r.placed && r.parent.is_none() && !r.archived))
+            .filter(|(i, r)| r.position != *i as f64 || (!r.placed && !r.archived))
             .map(|(i, r)| (r.key.clone(), i))
             .collect();
         let mut values = Vec::new();

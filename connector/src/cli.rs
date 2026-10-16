@@ -124,15 +124,16 @@ fn not_in_room(phase: &str) -> String {
 #[allow(unused_assignments)] // (as sayCli: a door's error is kept until the own try replaces it)
 pub async fn say(argv: &[String]) -> Result<String> {
     let mut urgent = false;
-    let mut session: Option<String> = None;
+    let mut helper: Option<String> = None;
     let mut words = vec![];
     let mut i = 0;
     while i < argv.len() {
         match argv[i].as_str() {
             "--urgent" => urgent = true,
-            "--session" => {
+            // (`--session` is what it was called before helpers lived in their agent's session)
+            "--helper" | "--session" => {
                 i += 1;
-                session = argv.get(i).cloned();
+                helper = argv.get(i).cloned();
             }
             w => words.push(w.to_string()),
         }
@@ -141,7 +142,7 @@ pub async fn say(argv: &[String]) -> Result<String> {
     let text = crate::util::js_trim(&words.join(" ")).to_string();
     if text.is_empty() {
         return Err(Fault::plain(
-            "usage: trommi-connector say \"<text>\" [--session <name>] [--urgent]",
+            "usage: trommi-connector say \"<text>\" [--helper <name>] [--urgent]",
         ));
     }
     let mut cfg = connector_config(None, true);
@@ -155,7 +156,7 @@ pub async fn say(argv: &[String]) -> Result<String> {
     let until = now_ms() + env_ms("TROMMI_SAY_MS", 30_000).max(1);
     // (the owner: a running connector of another agent session in this folder refuses, so that these words never
     // go into that session's chat)
-    let request = json!({ "op": "say", "text": text, "session": session, "urgent": urgent, "owner": cfg.owner() });
+    let request = json!({ "op": "say", "text": text, "helper": helper, "urgent": urgent, "owner": cfg.owner() });
     let mut last: Option<Fault>;
     loop {
         let mut silent = vec![];
@@ -632,7 +633,7 @@ pub async fn run(argv: &[String]) -> i32 {
             0
         }
         other => {
-            eprintln!("[trommi] unknown command {other}; use connect <link>, say \"<text>\" [--session <name>] [--urgent], whoami, setup claude|codex, remove claude|codex, update [--check] or --version, or no argument for the MCP server");
+            eprintln!("[trommi] unknown command {other}; use connect <link>, say \"<text>\" [--helper <name>] [--urgent], whoami, setup claude|codex, remove claude|codex, update [--check] or --version, or no argument for the MCP server");
             1
         }
     }

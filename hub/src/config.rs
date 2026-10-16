@@ -72,7 +72,9 @@ pub struct Config {
     pub max_rooms: u64,
     pub humans: usize,
     pub agents: usize,
-    pub helpers_per_main: usize,
+    /// Founds helper sessions as before 16 October 2026 (spec/v1.md 5.2.5): only a hub for the tests of the
+    /// helper sessions it still serves (`HUB_HELPER_SESSIONS=1`); off, it refuses them.
+    pub helper_sessions: bool,
     pub key_packages: usize,
     pub key_package_days: u64,
     pub open_invites: usize,
@@ -283,7 +285,7 @@ impl Config {
             max_rooms: number(env, "HUB_MAX_ROOMS", 1000),
             humans: number(env, "HUB_LIMIT_HUMANS", 1000),
             agents: number(env, "HUB_LIMIT_AGENTS", 256),
-            helpers_per_main: number(env, "HUB_LIMIT_HELPERS_PER_MAIN", 100),
+            helper_sessions: env.get("HUB_HELPER_SESSIONS").is_some_and(|v| v == "1"),
             key_packages: number(env, "HUB_LIMIT_KEY_PACKAGES", 100),
             key_package_days: 90,
             open_invites: number(env, "HUB_LIMIT_OPEN_INVITES", 16),

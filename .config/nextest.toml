@@ -20,7 +20,7 @@ failure-output = "immediate-final"
 # 2-3 minutes each at full size (nightly.yml, TROMMI_TESTS_FULL=1); seconds otherwise
 filter = """
 test(=a_device_catches_up_across_twenty_groups_in_the_hubs_order_only)
-| test(=helper_sessions_up_to_the_limit_then_close_one_to_open_another)
+| test(=a_hundred_helpers_live_in_one_session)
 | test(=a_room_of_a_thousand_human_devices)
 """
 priority = 100
@@ -71,8 +71,7 @@ not (
   | test(=after_a_sleep_past_the_lease_the_session_is_back_by_itself)
   | test(=after_a_takeover_the_first_connector_says_that_it_stopped)
   | test(=after_five_thousand_stroke_pieces_in_an_epoch_the_sender_updates)
-  | test(=agent_devices_and_helper_sessions_at_their_exact_values)
-  | test(=a_helper_claims_its_session_and_reads_its_own_events)
+  | test(=agent_devices_at_their_exact_values)
   | test(=a_helper_commit_is_judged_against_the_main_sessions_agent_leaf_at_its_place)
   | test(=a_helper_sessions_past_keeps_its_opener_when_the_main_session_is_archived)
   | test(=a_hostile_hub_serves_no_past_of_its_own)
@@ -115,7 +114,6 @@ not (
   | test(=a_walk_in_slices_closes_a_session_only_by_its_own_history)
   | test(=a_welcome_into_a_room_with_too_many_devices)
   | test(=claude_codes_plan_and_windows_reach_the_board_in_the_profile)
-  | test(=closed_helper_sessions_are_archived_and_free_their_place)
   | test(=codex_is_told_how_it_hears_the_board_and_never_to_script_the_connector)
   | test(=codexs_account_comes_from_its_app_server)
   | test(=codex_with_trusted_hooks_mirrors_its_turns_and_answers_under_the_card)
@@ -124,8 +122,8 @@ not (
   | test(=every_order_of_arrival_gives_the_same_board)
   | test(=failed_logins_slow_their_source_down_and_lock_nobody_out)
   | test(=folders_whose_names_slug_alike_do_not_share_keys)
-  | test(=helper_sessions_and_assets)
-  | test(=helper_sessions_up_to_the_limit_then_close_one_to_open_another)
+  | test(=helpers_write_into_their_agents_session_and_assets)
+  | test(=a_hundred_helpers_live_in_one_session)
   | test(=limits_hold_on_both_sides_and_the_largest_body_fits_its_message)
   | test(=malformed_input_is_refused_and_never_panics)
   | test(=many_envelopes_and_the_main_queries_stay_fast)

@@ -45,8 +45,8 @@ fn starred(b: &Board, id: &str) -> bool {
     b.model.human.get(&format!("star/{id}")).is_some_and(|r| !r.value.is_null() && r.value != Value::Bool(false))
 }
 
-fn from(b: &Board, agent: usize) -> FromView {
-    from_of(b, Some(agent)).unwrap_or_default()
+fn from(b: &Board, agent: usize, c: &Card) -> FromView {
+    from_of(b, Some(agent), Some(c)).unwrap_or_default()
 }
 
 /// "Tue 07:00" in the person's zone (en-GB, as the web writes it).
@@ -81,7 +81,7 @@ pub fn rest_row(b: &Board, c: &Card, place: &str, at: u64) -> OffRowView {
 }
 
 fn dock_row(b: &Board, r: &Running, c: &Card, agent: usize) -> DockRowView {
-    let from = from(b, agent);
+    let from = from(b, agent, c);
     let name = from.name.clone();
     let line = if r.label.is_empty() {
         say("dock.line.on_it", format!("{name} · on it"), &[("name", &name)])
@@ -104,7 +104,7 @@ pub fn fill_desk(b: &Board, off: &OffMind, desk: &mut DeskView) {
         .iter()
         .filter_map(|s| here(b, &s.object_id).map(|(c, a)| (s, c, a)))
         .map(|(s, c, agent)| {
-            let from = from(b, agent);
+            let from = from(b, agent, c);
             let name = from.name.clone();
             let line = if s.running {
                 say("dock.line.starred_running", format!("{name} · running"), &[("name", &name)])
@@ -181,7 +181,7 @@ pub fn off_list(b: &Board, off: &OffMind, query: &str) -> OffListView {
         .iter()
         .filter_map(|r| here(b, &r.object_id).map(|(c, a)| (r, c, a)))
         .map(|(r, c, agent)| {
-            let from = from(b, agent);
+            let from = from(b, agent, c);
             let title = shown_title(c);
             let label = if r.label.is_empty() { say("off.work.on_it", "on it", &[]) } else { say("off.work.label", r.label.as_str(), &[("label", &r.label)]) };
             let says = say("off.work.says", format!("{title}, {} is on it", from.name), &[("title", &title), ("name", &from.name)]);

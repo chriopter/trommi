@@ -292,9 +292,7 @@ struct Sidebar: View {
       .accessibilityIdentifier("team-switch")
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 2) {
-          ForEach(side.sessions.filter { !$0.tucked }, id: \.id) { row in
-            SessionRow(row: row).padding(.leading, CGFloat(row.depth) * 18)
-          }
+          ForEach(side.sessions, id: \.id) { row in SessionRow(row: row) }
           Button { shell.focus(.settings(page: "")); shell.account(["step": "read_account"]) } label: {
             HStack(spacing: 12) { PenMark("ui:PLUS").frame(width: 22, height: 22).padding(.leading, 6); Text("New Agent…").font(Face.text(16, .medium)) }
               .foregroundStyle(side.sessions.isEmpty ? Ink.accent : Ink.muted).padding(.vertical, 10).padding(.horizontal, 12)
@@ -331,47 +329,42 @@ struct Sidebar: View {
   }
 }
 
-/** One session in the sidebar: its mark, its name, how it hears, what waits; a main's helpers fold under it. */
+/** One session in the sidebar: its mark, its name, how it hears, its helpers as dots, what waits. */
 struct SessionRow: View {
   @EnvironmentObject var shell: AppShell
   let row: CoreView.SessionRowView
   var body: some View {
     let current = shell.path.last == .session(sessionId: row.id)
-    // (folded, the row speaks for its helpers too)
-    let fold = row.unfolded ? nil : row.folded
-    HStack(spacing: 0) {
-      Button { shell.focus(.session(sessionId: row.id)) } label: {
-        HStack(spacing: 12) {
-          AgentMark(row: row, size: 30).opacity(row.online ? 1 : 0.6)
-          VStack(alignment: .leading, spacing: 1) {
-            Text(row.name.en).font(Face.text(17, .medium)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
-            if let cap = row.cap {
-              Text(cap.word.en).font(Face.text(13)).foregroundStyle(cap.kind == "unheard" ? Ink.urgHigh : Ink.muted).lineLimit(1)
-            }
+    Button { shell.focus(.session(sessionId: row.id)) } label: {
+      HStack(spacing: 12) {
+        AgentMark(row: row, size: 30).opacity(row.online ? 1 : 0.6)
+        VStack(alignment: .leading, spacing: 1) {
+          Text(row.name.en).font(Face.text(17, .medium)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
+          if let cap = row.cap {
+            Text(cap.word.en).font(Face.text(13)).foregroundStyle(cap.kind == "unheard" ? Ink.urgHigh : Ink.muted).lineLimit(1)
           }
-          Spacer(minLength: 4)
-          if (fold?.working ?? row.working) && fold?.hand == nil && !row.blocked && (fold?.open ?? row.open) == 0 { WorkingRing(working: true).frame(width: 18, height: 18) }
-          SessionBadge(open: fold?.open ?? row.open, stopped: fold?.hand != nil || row.blocked, says: (fold?.says ?? row.says)?.en)
-          if row.unread || (fold?.unread ?? false), (fold?.open ?? row.open) == 0 { Circle().fill(Ink.accent).frame(width: 8, height: 8).accessibilityLabel("New message") }
+          // its helpers (its agent's subagents): a dot each, filled while that helper works, and "3 helpers"
+          if let h = row.helpers {
+            HStack(spacing: 3) {
+              ForEach(Array(h.working.enumerated()), id: \.offset) { _, on in
+                Circle().fill(on ? Ink.accent : Color.clear).overlay(Circle().stroke(on ? Color.clear : Ink.faint, lineWidth: 1.2)).frame(width: 6, height: 6)
+              }
+              Text(h.says.en).font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1).padding(.leading, 2)
+            }
+            .accessibilityElement(children: .ignore).accessibilityLabel(h.says.en)
+          }
         }
-        .padding(.leading, 14).padding(.trailing, row.folded == nil ? 14 : 4).padding(.vertical, 8)
-        .contentShape(Rectangle())
+        Spacer(minLength: 4)
+        if row.working && !row.blocked && row.open == 0 { WorkingRing(working: true).frame(width: 18, height: 18) }
+        SessionBadge(open: row.open, stopped: row.blocked, says: row.says?.en)
+        if row.unread, row.open == 0 { Circle().fill(Ink.accent).frame(width: 8, height: 8).accessibilityLabel("New message") }
       }
-      .buttonStyle(.plain)
-      .accessibilityIdentifier("sidebar-session-" + row.id)
-      if let f = row.folded {
-        Button { withAnimation(.snappy) { shell.act(["do": "fold_helpers", "session_id": row.id, "open": !row.unfolded]) } } label: {
-          HStack(spacing: 2) {
-            Text("\(f.lie.count + Int(f.more))").font(Face.text(12, .semibold)).foregroundStyle(Ink.muted)
-            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Ink.faint).rotationEffect(.degrees(row.unfolded ? 180 : 0))
-          }.frame(minWidth: 36, minHeight: 36).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).padding(.trailing, 6)
-        .accessibilityLabel(f.helpers.en).accessibilityHint(row.unfolded ? "Folds them" : "Unfolds them")
-      }
+      .padding(.horizontal, 14).padding(.vertical, 8)
+      .contentShape(Rectangle())
     }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("sidebar-session-" + row.id)
     .background(RoundedRectangle(cornerRadius: 12).fill(current ? Ink.accentSoft : .clear))
-    .opacity(row.hushed ? 0.6 : 1)
     .padding(.horizontal, 6)
   }
 }

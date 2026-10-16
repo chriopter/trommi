@@ -1159,14 +1159,6 @@ impl App {
                 self.stale_views = true;
                 return;
             }
-            Action::FoldHelpers { session_id, open } => {
-                self.lens.unfolded.retain(|s| s != session_id);
-                if *open {
-                    self.lens.unfolded.push(session_id.clone());
-                }
-                self.stale_views = true;
-                return;
-            }
             Action::Batch { way, card_ids } => {
                 return self.batch(now_ms, way, card_ids, out);
             }
@@ -1368,11 +1360,12 @@ impl App {
             .min()
     }
 
-    /// Deletes a session (the web's `deletionOf`): its open cards and those of its helpers are shredded, they are
-    /// archived, and the agent devices that carry no other session (not archived, or connected) leave the room.
+    /// Deletes a session (the web's `deletionOf`): its open cards and those of its helper sessions of before are
+    /// shredded, they are archived, and the agent devices that carry no other session (not archived, or connected)
+    /// leave the room.
     fn delete_session(&mut self, now_ms: u64, session_id: &str, out: &mut Vec<Effect>) {
         let model = &self.board.model;
-        let rows = crate::sessions::session_list(model, true);
+        let (rows, legacy) = crate::sessions::session_list_and_helpers(model, true);
         let Some(main) = rows.iter().find(|r| r.key == session_id) else {
             let text = crate::views::Text::new("action.not_found", "That session is no longer there.");
             self.sent.toast(&mut self.next_view.toasts, text, None);
@@ -1380,11 +1373,7 @@ impl App {
         };
         let device_of = |key: &str| model.sessions.get(key).and_then(|s| s.agent_device_id.clone());
         let mut all = vec![main.key.clone()];
-        for r in &rows {
-            if r.key != main.key && r.parent_key.as_deref() == Some(&main.key) && (r.parent.is_some() || device_of(&r.key) == device_of(&main.key)) {
-                all.push(r.key.clone());
-            }
-        }
+        all.extend(legacy.into_iter().filter(|h| h.main == main.key).map(|h| h.key));
         let me = model.my_device_id.clone();
         let humans: Vec<String> = self.engine.as_ref().map(|e| e.roles().0.iter().map(|d| crate::engine::feed::hex(d.as_bytes())).collect()).unwrap_or_default();
         let stays = |dev: &str| rows.iter().any(|r| !all.contains(&r.key) && (!r.archived || r.online) && device_of(&r.key).as_deref() == Some(dev));
@@ -2152,7 +2141,6 @@ fn writes_room_registers(action: &Action) -> bool {
             | Action::SetGoal { .. }
             | Action::SessionIcon { .. }
             | Action::SessionGroup { .. }
-            | Action::SessionParent { .. }
             | Action::PlaceSession { .. }
             | Action::CrownSession { .. }
             | Action::OrderTeams { .. }

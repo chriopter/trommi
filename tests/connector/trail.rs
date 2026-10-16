@@ -123,16 +123,11 @@ fn the_hooks_read_claude_codes_inputs_at_the_level_steps() {
             && !has(&r, "SECRET"),
         "another tool's arguments never"
     );
-    // the board's own tools are no steps; a helper's session name is read from them
-    let r = line(
-        &pre(
-            "t10",
-            "mcp__plugin_trommi_trommi__reply",
-            json!({ "text": "SECRET", "session": "Design" }),
-        ),
-        Level::Steps,
-    );
-    assert!(r["board"] == json!(true) && r["session"] == json!("Design") && !has(&r, "SECRET"));
+    // the board's own tools are no steps; the helper they are for is read from them (`session` as older tools say)
+    for args in [json!({ "text": "SECRET", "helper": "Design" }), json!({ "text": "SECRET", "session": "Design" })] {
+        let r = line(&pre("t10", "mcp__plugin_trommi_trommi__reply", args), Level::Steps);
+        assert!(r["board"] == json!(true) && r["helper"] == json!("Design") && !has(&r, "SECRET"));
+    }
     // results: the state and the time, nothing of the output
     let post = json!({ "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": { "command": "ls", "description": "List" }, "tool_use_id": "toolu_01", "tool_response": { "stdout": "SECRET-OUT", "stderr": "", "interrupted": false }, "duration_ms": 6, "agent_id": "ad4d", "agent_type": "Explore" });
     let r = line(&post, Level::Steps);
@@ -364,10 +359,7 @@ fn folded_turns(envs: &[Envelope]) -> Vec<(Option<String>, Value)> {
         let at = match out.iter().position(|(_, t)| t["turn"] == w["turn"]) {
             Some(i) => i,
             None => {
-                out.push((
-                    e.target.clone(),
-                    json!({ "turn": w["turn"], "items": [], "seq": 0 }),
-                ));
+                out.push((None, json!({ "turn": w["turn"], "items": [], "seq": 0 })));
                 out.len() - 1
             }
         };
@@ -447,9 +439,8 @@ fn a_turn_is_one_trail_in_few_envelopes() {
             sent[0].work["state"].as_str(),
             sent[0].work["started_at"].as_u64(),
             sent[0].work["seq"].as_u64(),
-            sent[0].target.clone()
         ),
-        (Some("running"), Some(1_000), Some(1), None)
+        (Some("running"), Some(1_000), Some(1))
     );
     // many steps between two flushes are one envelope
     t.event(
@@ -806,8 +797,10 @@ fn a_commands_exit_code_is_read_from_claude_codes_error() {
     );
 }
 
+/// A helper is one line in its caller's turn: its steps are counted there, and the name a board call gives it
+/// (`helper`) names the line. It never has a trail of its own.
 #[test]
-fn helpers_are_a_line_in_their_callers_trail_or_a_trail_of_their_own() {
+fn helpers_are_a_line_in_their_callers_trail() {
     let mut t = Trail::default();
     t.prompt("", 1_000);
     t.event(&ev(json!({ "ev": "pre", "id": "s1", "tool": "Agent", "title": "Count files", "subject": "Explore" })), 1_100);
@@ -816,7 +809,6 @@ fn helpers_are_a_line_in_their_callers_trail_or_a_trail_of_their_own() {
         1_110,
     );
     t.event(&ev(json!({ "ev": "agent_start", "agent": "a1", "agent_type": "Explore", "title": "Count files" })), 1_120);
-    // a helper without a board session: counted
     for i in 0..3 {
         t.event(
             &ev(json!({ "ev": "pre", "id": format!("h{i}"), "tool": "Bash", "agent": "a1" })),
@@ -828,13 +820,13 @@ fn helpers_are_a_line_in_their_callers_trail_or_a_trail_of_their_own() {
         );
     }
     t.event(&ev(json!({ "ev": "say", "msg": "x", "text": "a helper's words", "final": true, "agent": "a1" })), 1_300);
-    // a second helper names its board session: its steps are that session's trail
+    // a second helper names itself on a board call: its line takes the name
     t.event(&ev(json!({ "ev": "agent_start", "agent": "a2", "agent_type": "general-purpose", "title": "Design the page" })), 1_400);
     t.event(
         &ev(json!({ "ev": "pre", "id": "d0", "tool": "Read", "subject": "x.css", "agent": "a2" })),
         1_410,
     );
-    t.event(&ev(json!({ "ev": "pre", "id": "d1", "tool": "plugin_trommi_trommi: set_status", "board": true, "session": "Design", "agent": "a2" })), 1_420);
+    t.event(&ev(json!({ "ev": "pre", "id": "d1", "tool": "plugin_trommi_trommi: set_status", "board": true, "helper": "Design", "agent": "a2" })), 1_420);
     t.event(
         &ev(json!({ "ev": "pre", "id": "d2", "tool": "Edit", "subject": "x.css", "agent": "a2" })),
         1_430,
@@ -850,37 +842,18 @@ fn helpers_are_a_line_in_their_callers_trail_or_a_trail_of_their_own() {
     t.event(&ev(json!({ "ev": "agent_stop", "agent": "a2" })), 9_500);
     sent.extend(t.flush());
     let turns = folded_turns(&sent);
-    assert_eq!(turns.len(), 2);
-    let (main, child) = (&turns[0], &turns[1]);
-    assert_eq!(
-        (main.0.clone(), main.1["state"].as_str()),
-        (None, Some("done"))
-    );
-    assert_eq!(
-        brief(&main.1),
-        [
-            "step Agent ok",
-            "helper Explore ok",
-            "helper general-purpose ok"
-        ]
-    );
+    assert_eq!(turns.len(), 1, "one turn: a helper has no trail of its own");
+    let main = &turns[0].1;
+    assert_eq!(main["state"].as_str(), Some("done"));
+    assert_eq!(brief(main), ["step Agent ok", "helper Explore ok", "helper Design ok"]);
     assert_eq!(
         (
-            main.1["items"][1]["steps"].as_u64(),
-            main.1["items"][1]["ms"].as_u64(),
-            main.1["items"][2]["steps"].as_u64()
+            main["items"][1]["steps"].as_u64(),
+            main["items"][1]["ms"].as_u64(),
+            main["items"][2]["steps"].as_u64()
         ),
-        (Some(3), Some(7_880), Some(1))
+        (Some(3), Some(7_880), Some(2))
     );
-    assert_eq!(
-        (
-            child.0.as_deref(),
-            child.1["state"].as_str(),
-            child.1["ended_at"].as_u64()
-        ),
-        (Some("Design"), Some("done"), Some(9_500))
-    );
-    assert_eq!(brief(&child.1), ["step Edit ok"]);
     assert!(!sent
         .iter()
         .any(|e| e.work.to_string().contains("helper's words")
@@ -1257,7 +1230,6 @@ fn a_turns_hooks_make_one_trail_between_the_prompt_and_the_answer_without_comman
         work.len(),
         hooks.len()
     );
-    assert!(work.iter().all(|e| e.target.is_none()));
     let turns = folded_turns(&work);
     assert_eq!(turns.len(), 1, "one turn");
     let turn = &turns[0].1;

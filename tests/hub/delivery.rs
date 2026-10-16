@@ -667,9 +667,30 @@ fn a_main_session_is_founded_in_one_request_with_every_human_device_and_its_agen
     w.ada.merge(&group2);
 }
 
+/// A hub that founds helper sessions as before 16 October 2026 (`HUB_HELPER_SESSIONS=1`), for the tests of the
+/// helper sessions it still serves.
+fn legacy_world() -> World {
+    World::on(TestHub::start_with(&[("HUB_HELPER_SESSIONS", "1")]))
+}
+
+/// 5.2.5: helpers write into their agent's session since 16 October 2026; the hub founds no helper session, not
+/// even the opener's own under its own main session with every human device.
+#[test]
+fn the_hub_founds_no_helper_session() {
+    let mut w = World::new();
+    let mut agent = w.enrol_agent();
+    let (session, _main) = w.found_main(&mut [], Some(&mut agent));
+    let humans = [w.ada.id()];
+    let (_group, reply, _) = w.found_helper(&mut agent, &session, &humans, &[]);
+    reply.refused(403, "forbidden");
+    let list = groups(&w, &w.ada);
+    assert_eq!(list.len(), 2, "the room group and the main session: {list:?}");
+    assert!(!list.iter().any(|g| g["kind"] == "helper"), "{list:?}");
+}
+
 #[test]
 fn an_agent_founds_nothing_but_a_helper_session_under_its_own_main_session() {
-    let mut w = World::new();
+    let mut w = legacy_world();
     let mut agent = w.enrol_agent();
     let mut other_agent = w.enrol_agent();
     let (session, main) = w.found_main(&mut [], Some(&mut agent));
@@ -1420,7 +1441,7 @@ fn removing_a_human_device_ends_its_access_at_once_and_leaves_its_sessions_stale
 
 #[test]
 fn a_takeover_replaces_the_agent_device_and_freezes_its_helper_sessions_until_done() {
-    let mut w = World::new();
+    let mut w = legacy_world();
     let mut old = w.enrol_agent();
     let (session, main) = w.found_main(&mut [], Some(&mut old));
     let link = |agent: &mut Dev, hub: &TestHub| {
@@ -2038,7 +2059,7 @@ fn an_archived_session_takes_nothing_more_and_a_reject_reaches_the_human_devices
 /// device does not, and the leaves hear of it.
 #[test]
 fn an_opener_archives_its_own_helper_session_and_no_other() {
-    let mut w = World::new();
+    let mut w = legacy_world();
     let mut agent = w.enrol_agent();
     let (session, _main) = w.found_main(&mut [], Some(&mut agent));
     let mut other = w.enrol_agent();
@@ -2084,7 +2105,7 @@ fn an_opener_archives_its_own_helper_session_and_no_other() {
 
 #[test]
 fn what_the_second_review_found_stays_refused() {
-    let mut w = World::new();
+    let mut w = legacy_world();
     let mut bea = w.add_human();
     let room = w.room;
     // a main session founded without its agent device

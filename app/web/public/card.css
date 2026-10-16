@@ -34,15 +34,6 @@ button.agent-badge:hover, button.agent-badge:focus-visible { scale: 1.08; }
   .rail-fold:hover, .rail-fold:focus-visible { color: var(--fg); background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong); }
 }
 
-.crown-fold.is-plain:focus-visible { opacity: 1; outline: 2px solid var(--focus-ring); outline-offset: -4px; }
-.crown-fold:hover, .crown-fold:focus-visible { scale: 1.15; }
-/* the pointer on the stack, or on the crown (the keys too): the edges fan out a little, like cards being thumbed. Transforms only:
-   nothing below moves; the lowest edge comes down some 9px, into the air above the next row.
-   They lean to the side the mouse is on (controller "lean", sidebar.mjs, sets --lean -1 … 1 on the row, --lean-abs its size): over
-   the middle straight down, at the right tilted right, at the left the mirror. Without it (the keys) they lean right. */
-@media (hover: hover) {
-  .crown-edges:hover i, .agent-row:has(> .crown-fold:is(:hover, :focus-visible)) > .crown-edges i { transform-origin: calc(50% - 34% * var(--lean, 1)) 0; translate: calc(var(--dx, 0px) * var(--lean-abs, 1) + var(--p) * 6 * var(--fx) * var(--lean, 1)) calc(1px + var(--p) * 6 * (var(--fy) + (1 - var(--lean-abs, 1)) * 1.6px)); rotate: calc(var(--tilt, 0deg) * var(--tk) * 2.2 * var(--lean-abs, 1) + var(--p) * 6 * var(--fr) * var(--lean, 1)); }
-}
 .says-back:focus-visible { outline: 3px solid var(--bg); outline-offset: 2px; }
 
 .inbox-row:hover .inbox-when > .cardclip-copy, .inbox-row:focus-within .inbox-when > .cardclip-copy, .inbox-row.is-current .inbox-when > .cardclip-copy, .inbox-when > .cardclip-copy.is-done { opacity: 1; }
@@ -973,3 +964,6 @@ body:has(.tc-page.is-full) :is(.corner-note-box, .curl, #phone-bar, #agents, .to
 .tc-fromline b { color: var(--fg); font-weight: 700; }
 .tc-fromline:hover b { text-decoration: underline; }
 .tc-fromline:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 6px; }
+/* a helper's card: the helper (its agent's subagent) in a chip under the line it comes from (FromView.helper) */
+.tc-helper { display: flex; align-items: center; gap: 6px; width: fit-content; margin: 6px 0 -2px; padding: 3px 10px 3px 8px; border-radius: 999px; background: var(--sunken); color: var(--fg); font: 600 12px/1.3 var(--font); }
+.tc-helper::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }

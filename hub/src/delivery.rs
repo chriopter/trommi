@@ -376,6 +376,14 @@ pub fn found_session(x: &Ctx, auth: &Auth, f: &Founding, fx: &mut Effects) -> Re
         }
         (GroupKind::Main, None)
     } else {
+        // 5.2.5: helpers write into their main session since 16 October 2026; the helper sessions of before are
+        // still served, but no new one is founded (a hub for the tests of those sessions founds them as before)
+        if !x.cfg.helper_sessions {
+            return Err(refuse(
+                "forbidden",
+                "a helper session is founded no more: helpers write into their agent's session (spec/v1.md 5.2.5)",
+            ));
+        }
         let parent_id = [&session.room_id[..], &session.parent[..]].concat();
         let parent = store::group(x.c, &auth.room, &parent_id)
             .map_err(|_| bad("the parent is no session of this room"))?;
@@ -386,17 +394,6 @@ pub fn found_session(x: &Ctx, auth: &Auth, f: &Founding, fx: &mut Effects) -> Re
             || store::agent_leaf(x.c, &view, &parent_id)? != Some(signer)
         {
             return Err(bad("the opener founds a helper session"));
-        }
-        let live: i64 =
-            x.c.prepare_cached(
-                "SELECT count(*) FROM groups WHERE room_id = ?1 AND parent = ?2 AND live = 1",
-            )?
-            .query_row(params![&auth.room[..], &session.parent[..]], |r| r.get(0))?;
-        if live as usize >= x.cfg.helpers_per_main {
-            return Err(refuse(
-                "too-many",
-                "a main session holds its number of live helper sessions",
-            ));
         }
         (GroupKind::Helper, Some(session.parent))
     };

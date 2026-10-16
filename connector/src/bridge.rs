@@ -574,6 +574,13 @@ fn question_fields(
 }
 
 /// The content of an info card.
+/// A card's fields with its helper's name (README "Helpers and their events"); none for the agent's own card.
+fn tag(fields: &mut Map<String, Value>, spot: &Spot) {
+    if let Some(h) = &spot.helper {
+        fields.insert("helper".into(), json!(h));
+    }
+}
+
 fn info_fields(args: &Map<String, Value>, names: &[String]) -> Result<Map<String, Value>> {
     for key in ["options", "multiple", "recommended"] {
         if present(args.get(key)) {
@@ -836,13 +843,46 @@ pub struct Bridge {
     cache_dir: PathBuf,
     pub state: Mutex<Map<String, Value>>,
     save: SaveState,
-    opening: tokio::sync::Mutex<()>,
     /// Held while a session's profile is read, changed and written again (introduce, the account: put_account).
     profile: tokio::sync::Mutex<()>,
     asking: Mutex<HashSet<String>>,
     dropped: Mutex<HashSet<String>>,
     /// Per turn of the trail: the next step number and the items already sent.
     trail_sent: Mutex<HashMap<String, (u32, HashSet<String>)>>,
+}
+
+/// Where something of this agent is written: its session (none: this agent's own; a helper session of before for
+/// its cards there) and the helper it is for (none: the agent itself).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Spot {
+    pub sid: Option<String>,
+    pub helper: Option<String>,
+}
+
+/// A status line's register id: the id the tool was given, for a helper in a space of its own
+/// (`helper.<8 hex of SHA-256 of its name in lower case>.<id>`), so that two helpers' lines of the same id stay apart
+/// as they did in their own sessions before, and none meets one of the agent's own.
+pub fn line_key(helper: Option<&str>, id: &str) -> String {
+    match helper {
+        Some(h) => {
+            let digest = crate::util::sha256(h.to_lowercase().as_bytes());
+            format!("helper.{}.{id}", crate::util::hex(&digest[..4]))
+        }
+        None => id.to_string(),
+    }
+}
+
+/// The id a tool was given for a status line (`line_key` undone).
+fn line_shown(l: &model::StatusLine) -> String {
+    match l.helper.as_deref() {
+        Some(h) => l.id.strip_prefix(&line_key(Some(h), "")).unwrap_or(&l.id).to_string(),
+        None => l.id.clone(),
+    }
+}
+
+/// Whether a status line is the helper's (`helper`: none for the agent's own lines).
+fn line_of(l: &model::StatusLine, helper: Option<&str>) -> bool {
+    l.helper.as_deref().map(str::to_lowercase) == helper.map(str::to_lowercase)
 }
 
 impl Bridge {
@@ -854,7 +894,7 @@ impl Bridge {
         save: SaveState,
     ) -> Arc<Bridge> {
         let mut state = state;
-        for k in ["permissions", "shares", "children"] {
+        for k in ["permissions", "shares"] {
             if !state.get(k).is_some_and(|v| v.is_object()) {
                 state.insert(k.into(), json!({}));
             }
@@ -865,7 +905,6 @@ impl Bridge {
             cache_dir,
             state: Mutex::new(state),
             save,
-            opening: tokio::sync::Mutex::new(()),
             profile: tokio::sync::Mutex::new(()),
             asking: Mutex::new(HashSet::new()),
             dropped: Mutex::new(HashSet::new()),
@@ -880,194 +919,82 @@ impl Bridge {
         self.client.me_hex()
     }
 
-    // ---- child sessions ----------------------------------------------------------------------------------------
-    async fn find_child(&self, name: &str) -> Option<String> {
-        let key = name.to_lowercase();
-        let known = self.state.lock().unwrap()["children"]
-            .get(&key)
-            .and_then(|c| c["session_id"].as_str().map(String::from));
-        let c = self.client.lock();
-        let ids = c.session_ids();
-        if let Some(k) = known.filter(|k| ids.contains(k)) {
-            return Some(k);
+    // ---- helpers (this agent's subagents) -------------------------------------------------------------------------
+    /// The helper a tool call names: `helper`, or `session` as the tools called it before helpers lived in their
+    /// agent's session (README "Helpers and their events"); none for the agent's own words.
+    fn helper_arg(args: &Map<String, Value>) -> Result<Option<String>> {
+        let given = ["helper", "session"].into_iter().find(|k| present(args.get(*k)));
+        let Some(key) = given else { return Ok(None) };
+        let name = trim(&s(args.get(key)));
+        if name.is_empty() {
+            return Ok(None);
         }
-        for sid in c.child_session_ids() {
-            let an = c
-                .model()
-                .sessions
-                .get(&sid)
-                .and_then(|s| s.profile.as_ref())
-                .and_then(|p| p.get("agent_name"))
-                .map(|v| {
-                    if v.is_null() {
-                        String::new()
-                    } else {
-                        js_str(v)
-                    }
-                })
-                .unwrap_or_default();
-            if an.to_lowercase() != key {
-                continue;
-            }
-            drop(c);
-            self.state.lock().unwrap()["children"]
-                .as_object_mut()
-                .unwrap()
-                .insert(key, json!({ "session_id": sid, "name": name }));
-            self.save_state();
-            return Some(sid);
-        }
-        None
+        trommi_client_core::helpers::name_of(Some(&json!(name)))
+            .map(Some)
+            .ok_or_else(|| err("helper is a helper's short name, one line of at most 40 characters"))
     }
-    /// The child session one of this agent's cards is in, by name (None: the agent's own session or no such card).
-    pub async fn card_session_name(&self, card_id: Option<&Value>) -> Option<String> {
+    /// Where a tool call writes: this agent's session, for the helper it names.
+    fn spot_of(args: &Map<String, Value>) -> Result<Spot> {
+        Ok(Spot { sid: None, helper: Self::helper_arg(args)? })
+    }
+    /// Where a card of this agent stands: its session (a helper session of before, or this agent's), its helper.
+    async fn spot_of_card(&self, card: &Card) -> Spot {
+        let sid = self.line_session(card.session_id.as_deref()).await;
+        let helper = trommi_client_core::helpers::name_of(Some(&card.field("helper")));
+        let helper = match (&helper, &sid) {
+            (None, Some(sid)) => self.child_name(Some(sid)).await,
+            _ => helper,
+        };
+        Spot { sid, helper }
+    }
+    /// The helper a card of this agent comes from (README "Helpers and their events"): its `helper`, else the name
+    /// of the helper session of before it was filed in.
+    pub async fn card_helper(&self, card_id: Option<&Value>) -> Option<String> {
         let card = self.find_card(card_id).await.ok()?;
-        self.child_name(card.session_id.as_deref()).await
+        self.spot_of_card(&card).await.helper
     }
+    /// The name of a helper session of before (spec/v1.md 5.2.3) by its session id: what its profile calls it; none
+    /// for this agent's own session.
     async fn child_name(&self, sid: Option<&str>) -> Option<String> {
         let sid = sid?;
         let c = self.client.lock();
         if Some(sid.to_string()) == c.session_id() {
             return None;
         }
-        let hit = self.state.lock().unwrap()["children"]
-            .as_object()
-            .unwrap()
-            .values()
-            .find(|x| x["session_id"].as_str() == Some(sid))
-            .and_then(|x| x["name"].as_str().map(String::from));
-        hit.or_else(|| {
-            c.model()
-                .sessions
-                .get(sid)
-                .and_then(|s| s.profile.as_ref())
-                .and_then(|p| p.get("agent_name"))
-                .filter(|v| !v.is_null())
-                .map(js_str)
-        })
-        .or_else(|| Some(sid.chars().take(12).collect()))
+        c.model()
+            .sessions
+            .get(sid)
+            .and_then(|s| s.profile.as_ref())
+            .and_then(|p| p.get("agent_name"))
+            .filter(|v| !v.is_null())
+            .map(js_str)
+            .or_else(|| Some(sid.chars().take(12).collect()))
     }
-    /// The session a tool call writes into: None for the main session, else the named child (opened on first use).
-    async fn session_of(
-        &self,
-        args: &Map<String, Value>,
-        profile: Map<String, Value>,
-    ) -> Result<Option<String>> {
-        let name = if present(args.get("session")) {
-            trim(&s(args.get("session")))
-        } else {
-            String::new()
-        };
-        if name.is_empty() {
-            return Ok(None);
+    /// The helper sessions of before this agent opened are read on but never written to again: each is archived
+    /// (5.2.10) once nothing of it waits, neither an open question nor an answer this agent has not closed yet.
+    /// Called after catching up and whenever one of their cards is done.
+    pub async fn retire_children(&self) {
+        // (only from the hub's whole order: a card not read yet must not let its group be archived under it)
+        if !self.client.is_online() || self.client.settle(10_000).await.is_err() || !self.client.is_online() {
+            return;
         }
-        if utf16_len(&name) > 40 || name.contains('\n') || name.contains('\r') {
-            return Err(err(
-                "session is a helper's short name, at most 40 characters",
-            ));
+        let children: Vec<String> = self.client.lock().child_session_ids();
+        if children.is_empty() {
+            return;
         }
-        let _g = self.opening.lock().await;
-        if let Some(found) = self.find_child(&name).await {
-            self.reopen(&found).await?;
-            return Ok(Some(found));
-        }
-        self.sweep_closed_children().await;
-        let key = name.to_lowercase();
-        let model = self
-            .my_session(None)
-            .await
-            .and_then(|s| s.profile)
-            .and_then(|p| p.get("model").cloned())
-            .filter(truthy);
-        let mut p = Map::new();
-        p.insert("agent_name".into(), json!(name));
-        if let Some(m) = model {
-            p.insert("model".into(), m);
-        }
-        for (k, v) in profile {
-            p.insert(k, v);
-        }
-        let sid = self.client.open_child_session(p).await.map_err(|e| {
-            if e.code == "too-many" {
-                err("this agent has as many live helper sessions as it may (100): close_session one whose helper is done (it is archived and frees its place), then open this one again")
-            } else {
-                e
+        let cards = self.my_cards().await;
+        for sid in children {
+            let waits = cards.iter().any(|c| {
+                c.session_id.as_deref() == Some(sid.as_str()) && matches!(c.object_state.as_str(), "open" | "answered")
+            });
+            if waits {
+                continue;
             }
-        })?;
-        self.state.lock().unwrap()["children"]
-            .as_object_mut()
-            .unwrap()
-            .insert(key, json!({ "session_id": sid, "name": name }));
-        self.save_state();
-        eprintln!("[trommi] child session \"{name}\" opened: {sid}");
-        Ok(Some(sid))
-    }
-    /// Ends a closed child (close_session) on the hub: its answered cards are closed with it, and with no open
-    /// question left its group is archived (5.2.10), so that it no longer counts among the main session's live
-    /// helper sessions (5.2.5). An open question keeps it live: the human can still answer it. Returns the
-    /// answered cards closed, the open questions left, and whether it was archived.
-    async fn retire(&self, sid: &str) -> Result<(usize, usize, bool)> {
-        let left: Vec<Card> = self
-            .my_cards()
-            .await
-            .into_iter()
-            .filter(|c| c.session_id.as_deref() == Some(sid) && c.object_state == "answered")
-            .collect();
-        for c in &left {
-            self.client.close(&c.object_id, SESSION_ENDED).await?;
-        }
-        let open = self
-            .my_cards()
-            .await
-            .iter()
-            .filter(|c| c.session_id.as_deref() == Some(sid) && c.object_state == "open")
-            .count();
-        if open > 0 {
-            return Ok((left.len(), open, false));
-        }
-        self.client.archive_child_session(sid).await?;
-        Ok((left.len(), 0, true))
-    }
-    /// Archives every closed child whose open questions were answered since (see [`Self::retire`]), before a
-    /// new one is founded: what the board no longer shows as active no longer counts against the limit.
-    async fn sweep_closed_children(&self) {
-        let closed: Vec<String> = {
-            let c = self.client.lock();
-            c.child_session_ids()
-                .into_iter()
-                .filter(|sid| {
-                    c.model()
-                        .sessions
-                        .get(sid)
-                        .and_then(|s| s.profile.as_ref())
-                        .and_then(|p| p.get("closed_at"))
-                        .is_some_and(truthy)
-                })
-                .collect()
-        };
-        for sid in closed {
-            if let Err(e) = self.retire(&sid).await {
-                eprintln!(
-                    "[trommi] closed child session {sid} not archived: {}",
-                    e.message
-                );
+            match self.client.archive_child_session(&sid).await {
+                Ok(()) => eprintln!("[trommi] helper session of before {sid} archived"),
+                Err(e) => eprintln!("[trommi] helper session of before {sid} not archived: {}", e.message),
             }
         }
-    }
-    /// A closed child (close_session) that is written to again is open again.
-    async fn reopen(&self, sid: &str) -> Result<()> {
-        let p = self.my_session(Some(sid)).await.and_then(|s| s.profile);
-        let Some(mut p) = p else {
-            return Ok(());
-        };
-        if !p.get("closed_at").is_some_and(truthy) {
-            return Ok(());
-        }
-        p.remove("closed_at");
-        let mut v = Map::new();
-        v.insert("profile".into(), Value::Object(p));
-        self.client.set_status(v, Some(sid.into())).await?;
-        Ok(())
     }
     /// Writes the account and usage of the program this agent runs in (`usage.rs`) into its main session's profile,
     /// as `account`, when it is not what stands there. Returns whether it wrote.
@@ -1422,14 +1349,10 @@ impl Bridge {
     }
 
     /// A block of a turn's trail (`trail.rs`) as the work trail of protocol v1 (spec/v1.md 7.3): one MLS message
-    /// per step, numbered from 1 within the turn, in this agent's session group or in the group of the child
-    /// session `target` (one that exists; never opened here). An item is sent when it is first seen, and once
-    /// more when it ended badly; a step that simply finished is not sent again.
-    pub async fn work(&self, target: Option<&str>, work: &Value) -> Result<()> {
-        let sid = match target {
-            Some(name) => self.find_child(name).await,
-            None => None,
-        };
+    /// per step, numbered from 1 within the turn, in this agent's session group (its helpers' steps are counted on
+    /// their lines there). An item is sent when it is first seen, and once more when it ended badly; a step that
+    /// simply finished is not sent again.
+    pub async fn work(&self, work: &Value) -> Result<()> {
         let turn_name = s(work.get("turn"));
         let digest = crate::util::sha256(turn_name.as_bytes());
         let mut turn = [0u8; 16];
@@ -1460,7 +1383,7 @@ impl Bridge {
                 number
             };
             self.client
-                .work_step(sid.as_deref(), turn, number, &step.0)
+                .work_step(None, turn, number, &step.0)
                 .await?;
         }
         Ok(())
@@ -1489,13 +1412,12 @@ impl Bridge {
                     && (args.get("present") == Some(&Value::Bool(true))
                         || (turn.as_ref().unwrap().by == "explain"
                             && args.get("present") != Some(&Value::Bool(false))));
-                let sid = if card.is_some() {
-                    None
-                } else {
-                    self.session_of(args, Map::new()).await?
-                };
+                let helper = Self::helper_arg(args)?;
                 let mut f = Map::new();
                 f.insert("text".into(), json!(text));
+                if let Some(h) = &helper {
+                    f.insert("helper".into(), json!(h));
+                }
                 if !html.is_empty() {
                     f.insert("html".into(), json!(html));
                 }
@@ -1513,7 +1435,7 @@ impl Bridge {
                     f.insert("present_card".into(), json!(true));
                 }
                 self.client
-                    .send_message(f, card.as_ref().map(|c| c.object_id.clone()), sid)
+                    .send_message(f, card.as_ref().map(|c| c.object_id.clone()), None)
                     .await?;
                 let tail = match (&turn, present_) {
                     (Some(_), false) => format!("; card {} stays with you (in revision): put it before the human again with revise_card, or with reply and present: true, when your work on it is done", card.as_ref().unwrap().object_id),
@@ -1525,14 +1447,15 @@ impl Bridge {
             "create_decision" => {
                 let mut fields =
                     question_fields(args, &names_of(args.get("attachments"))?, Advice::Absent)?;
-                let sid = self.session_of(args, Map::new()).await?;
+                let spot = Self::spot_of(args)?;
+                tag(&mut fields, &spot);
                 fields.insert(
                     "attachments".into(),
                     Value::Array(self.upload_all(args.get("attachments")).await?),
                 );
-                let id = self.client.send_card(fields, sid.clone()).await?;
+                let id = self.client.send_card(fields, None).await?;
                 self.caught_up().await?;
-                self.link_question(sid, &id, &s(args.get("title"))).await;
+                self.link_question(&spot, &id, &s(args.get("title"))).await;
                 Ok(format!(
                     "card {id} created, {}; {}{}",
                     self.place_of(&id).await,
@@ -1542,12 +1465,12 @@ impl Bridge {
             }
             "create_info" => {
                 let mut fields = info_fields(args, &names_of(args.get("attachments"))?)?;
-                let sid = self.session_of(args, Map::new()).await?;
+                tag(&mut fields, &Self::spot_of(args)?);
                 fields.insert(
                     "attachments".into(),
                     Value::Array(self.upload_all(args.get("attachments")).await?),
                 );
-                let id = self.client.send_card(fields, sid).await?;
+                let id = self.client.send_card(fields, None).await?;
                 Ok(format!("info {id} put on the board; when the human has read and closed it, info_read arrives, which needs no answer{}", stripped_hint()))
             }
             "start_task" => {
@@ -1586,13 +1509,13 @@ impl Bridge {
                 fields.insert("attachments".into(), json!([]));
                 // (off his Desk until it is done: Off your mind shows it as being worked on, spec 9.1.3)
                 fields.insert("working".into(), json!(true));
-                let sid = self.session_of(args, Map::new()).await?;
-                let card = self.client.send_card(fields, sid.clone()).await?;
-                let sid = self.line_session(sid.as_deref()).await;
+                let spot = Self::spot_of(args)?;
+                tag(&mut fields, &spot);
+                let card = self.client.send_card(fields, None).await?;
                 let label = brief(&strip_working(&what), 40);
                 self.put_line(
-                    sid,
-                    &line_id,
+                    &spot,
+                    &line_key(spot.helper.as_deref(), &line_id),
                     Some((json!(label), "working", json!(detail), json!(card))),
                 )
                 .await?;
@@ -1649,18 +1572,29 @@ impl Bridge {
                 }
                 let mut fields =
                     question_fields(&a2, &names_of(args.get("attachments"))?, Advice::Absent)?;
-                let sid = self.session_of(args, Map::new()).await?;
+                // (the helper named, else the one all the replaced cards came from)
+                let mut spot = Self::spot_of(args)?;
+                if spot.helper.is_none() {
+                    let mut theirs = Vec::new();
+                    for c in &old {
+                        theirs.push(self.spot_of_card(c).await.helper.map(|h| h.to_lowercase()));
+                    }
+                    if theirs.windows(2).all(|w| w[0] == w[1]) {
+                        spot.helper = self.spot_of_card(&old[0]).await.helper;
+                    }
+                }
+                tag(&mut fields, &spot);
                 fields.insert(
                     "attachments".into(),
                     Value::Array(self.upload_all(args.get("attachments")).await?),
                 );
                 let old_ids: Vec<String> = old.iter().map(|c| c.object_id.clone()).collect();
-                let id = self.client.merge(&old_ids, fields, sid.clone()).await?;
+                let id = self.client.merge(&old_ids, fields, None).await?;
                 for c in &old {
-                    self.retire_lines(c.session_id.clone(), &c.object_id, Some(&id))
-                        .await;
+                    let at = self.spot_of_card(c).await;
+                    self.retire_lines(&at, &c.object_id, Some(&id)).await;
                 }
-                self.link_question(sid, &id, &s(args.get("title"))).await;
+                self.link_question(&spot, &id, &s(args.get("title"))).await;
                 Ok(format!("card {id} created, replacing {}; answers to the replaced cards will no longer arrive, {}{}", old_ids.join(", "), choice_arrives(), stripped_hint()))
             }
             "set_urgency" => {
@@ -1701,8 +1635,11 @@ impl Bridge {
                 self.client
                     .withdraw(&card.object_id, &trim(&s(args.get("reason"))))
                     .await?;
-                self.retire_lines(card.session_id.clone(), &card.object_id, None)
-                    .await;
+                let at = self.spot_of_card(&card).await;
+                self.retire_lines(&at, &card.object_id, None).await;
+                if at.sid.is_some() {
+                    self.retire_children().await;
+                }
                 Ok("withdrawn".into())
             }
             "close_card" => {
@@ -1713,8 +1650,11 @@ impl Bridge {
                 self.client
                     .close(&card.object_id, &s(args.get("summary")))
                     .await?;
-                self.retire_lines(card.session_id.clone(), &card.object_id, None)
-                    .await;
+                let at = self.spot_of_card(&card).await;
+                self.retire_lines(&at, &card.object_id, None).await;
+                if at.sid.is_some() {
+                    self.retire_children().await;
+                }
                 Ok("closed".into())
             }
             "set_status" => {
@@ -1732,11 +1672,12 @@ impl Bridge {
                             .unwrap_or_else(|| "undefined".into())
                     )));
                 }
-                let sid = self.session_of(args, Map::new()).await?;
+                let spot = Self::spot_of(args)?;
+                let key = line_key(spot.helper.as_deref(), &id);
                 let before = self
-                    .my_session(sid.as_deref())
+                    .my_session(None)
                     .await
-                    .and_then(|x| x.status_lines.into_iter().find(|l| l.id == id));
+                    .and_then(|x| x.status_lines.into_iter().find(|l| l.id == key));
                 if before.is_none() && !args.get("label").is_some_and(truthy) {
                     return Err(err(format!(
                         "label is required for the new status line \"{id}\""
@@ -1790,7 +1731,7 @@ impl Bridge {
                     if (state == "decision" && kept.is_none())
                         || (state == "working" && says && task.is_none())
                     {
-                        if let Some(q) = self.open_questions(sid.as_deref()).await.first() {
+                        if let Some(q) = self.open_questions(&spot).await.first() {
                             card = Some(q.clone());
                             state = "decision";
                             linked = format!(" (linked to card {}, it turns working again when the human answers)", q.object_id);
@@ -1815,16 +1756,20 @@ impl Bridge {
                         .unwrap_or(Value::Null)
                 };
                 let mut v = Map::new();
-                v.insert(format!("status_line/{id}"), json!({ "label": label, "state": state, "detail": detail, "object_id": object_id }));
+                let mut line = json!({ "label": label, "state": state, "detail": detail, "object_id": object_id });
+                if let Some(h) = &spot.helper {
+                    line["helper"] = json!(h);
+                }
+                v.insert(format!("status_line/{key}"), line);
                 // (the agent's own line for a question replaces the one the connector made for it)
                 if let Some(q) = object_id.as_str() {
                     for l in self
-                        .my_session(sid.as_deref())
+                        .my_session(None)
                         .await
                         .map(|x| x.status_lines)
                         .unwrap_or_default()
                     {
-                        if l.id != id
+                        if l.id != key
                             && l.id.starts_with(AUTO_LINE)
                             && l.object_id.as_str() == Some(q)
                         {
@@ -1832,27 +1777,28 @@ impl Bridge {
                         }
                     }
                 }
-                self.client.set_status(v, sid).await?;
+                self.client.set_status(v, None).await?;
                 Ok(format!("status \"{id}\" is {state}{linked}"))
             }
             "clear_status" => {
-                let sid = self.session_of(args, Map::new()).await?;
+                let spot = Self::spot_of(args)?;
                 let lines = self
-                    .my_session(sid.as_deref())
+                    .my_session(None)
                     .await
                     .map(|x| x.status_lines)
                     .unwrap_or_default();
+                // (without an id: every line of the helper named, or of the agent itself)
                 let gone: Vec<String> = if args.get("id").is_some_and(truthy) {
-                    vec![js_str(&args["id"])]
+                    vec![line_key(spot.helper.as_deref(), &js_str(&args["id"]))]
                 } else {
-                    lines.iter().map(|l| l.id.clone()).collect()
+                    lines.iter().filter(|l| line_of(l, spot.helper.as_deref())).map(|l| l.id.clone()).collect()
                 };
                 if !gone.is_empty() {
                     let v: Map<String, Value> = gone
                         .iter()
                         .map(|id| (format!("status_line/{id}"), Value::Null))
                         .collect();
-                    self.client.set_status(v, sid).await?;
+                    self.client.set_status(v, None).await?;
                 }
                 Ok("cleared".into())
             }
@@ -1860,10 +1806,13 @@ impl Bridge {
                 if !args.get("model").is_some_and(truthy) {
                     return Err(err("model is required"));
                 }
-                let sid = self.session_of(args, Map::new()).await?;
+                // (a helper has no profile of its own: it shows inside this session by its name)
+                if let Some(h) = Self::helper_arg(args)? {
+                    return Ok(format!("noted; helper \"{h}\" shows inside your session by its name and needs no introduction of its own"));
+                }
                 let _held = self.profile.lock().await;
                 let was = self
-                    .my_session(sid.as_deref())
+                    .my_session(None)
                     .await
                     .and_then(|x| x.profile)
                                         .unwrap_or_default();
@@ -1883,189 +1832,36 @@ impl Bridge {
                 if present(args.get("icon")) {
                     let mark = crate::drawings::mark_of(&js_str(&args["icon"])).map_err(err)?;
                     p.insert("icon".into(), json!(mark));
-                } else if !p.get("icon").is_some_and(truthy) {
-                    // no symbol yet: one that fits the session's name, if any does
-                    if let Some(mark) = present(args.get("session"))
-                        .then(|| crate::drawings::default_for(&s(args.get("session"))))
-                        .flatten()
-                    {
-                        p.insert("icon".into(), json!(mark));
-                    }
-                }
-                if args.contains_key("parent") {
-                    p.insert(
-                        "parent_session".into(),
-                        if args["parent"].is_null() || !truthy(&args["parent"]) {
-                            Value::Null
-                        } else {
-                            json!(js_str(&args["parent"]))
-                        },
-                    );
-                }
-                if args.contains_key("main") {
-                    p.insert("is_main".into(), json!(args["main"] == Value::Bool(true)));
                 }
                 let mut v = Map::new();
                 v.insert("profile".into(), Value::Object(p));
-                self.client.set_status(v, sid).await?;
+                self.client.set_status(v, None).await?;
                 Ok("noted".into())
             }
             "list_cards" => {
-                let filter: Option<Option<String>> = if !present(args.get("session"))
-                    || args.get("session").and_then(|v| v.as_str()) == Some("")
-                {
-                    None
-                } else {
-                    Some(self.find_child(&trim(&s(args.get("session")))).await)
-                };
-                if let Some(None) = filter {
-                    return Err(err(format!(
-                        "no child session \"{}\"; open_session opens one",
-                        s(args.get("session"))
-                    )));
-                }
-                let mine = self.my_cards().await;
+                // (with a helper: that helper's cards alone, a helper session of before's too)
+                let filter = Self::helper_arg(args)?.map(|h| h.to_lowercase());
                 let mut out = vec![];
-                for c in mine
-                    .iter()
-                    .filter(|c| filter.is_none() || c.session_id == filter.clone().flatten())
-                {
+                for c in self.my_cards().await.iter() {
+                    let helper = self.spot_of_card(c).await.helper;
+                    if filter.is_some() && helper.as_deref().map(str::to_lowercase) != filter {
+                        continue;
+                    }
                     let mut line = self.card_line(c).await;
-                    if let Some(child) = self.child_name(c.session_id.as_deref()).await {
-                        line.insert("session".into(), json!(child));
+                    if let Some(h) = helper {
+                        line.insert("helper".into(), json!(h));
                     }
                     out.push(Value::Object(line));
                 }
                 Ok(serde_json::to_string_pretty(&Value::Array(out)).unwrap())
             }
+            // (before helpers lived in their agent's session: an agent still calling these, with tools it was
+            //  started with, is told what changed instead of failing)
             "open_session" => {
                 let name = trim(&s(args.get("name")));
-                if name.is_empty() {
-                    return Err(err(
-                        "name is required: the helper's short name, e.g. \"Design\"",
-                    ));
-                }
-                let mut profile = Map::new();
-                for k in ["task", "model"] {
-                    if present(args.get(k)) {
-                        profile.insert(k.into(), json!(js_str(&args[k])));
-                    }
-                }
-                if present(args.get("icon")) {
-                    let mark = crate::drawings::mark_of(&js_str(&args["icon"])).map_err(err)?;
-                    profile.insert("icon".into(), json!(mark));
-                }
-                let existed = self.find_child(&name).await;
-                if existed.is_none() && !profile.contains_key("icon") {
-                    if let Some(mark) = crate::drawings::default_for(&name) {
-                        profile.insert("icon".into(), json!(mark));
-                    }
-                }
-                let was_closed = match &existed {
-                    Some(x) => self
-                        .my_session(Some(x))
-                        .await
-                        .and_then(|s| s.profile)
-                        .and_then(|p| p.get("closed_at").cloned())
-                        .is_some_and(|v| truthy(&v)),
-                    None => false,
-                };
-                let sid = match &existed {
-                    Some(x) => x.clone(),
-                    None => {
-                        let mut a = Map::new();
-                        a.insert("session".into(), json!(name));
-                        self.session_of(&a, profile.clone()).await?.unwrap()
-                    }
-                };
-                if let Some(e) = &existed {
-                    self.reopen(e).await?;
-                    if !profile.is_empty() {
-                        let mut p = self
-                            .my_session(Some(&sid))
-                            .await
-                            .and_then(|x| x.profile)
-                                                        .unwrap_or_default();
-                        for (k, v) in profile {
-                            p.insert(k, v);
-                        }
-                        let mut v = Map::new();
-                        v.insert("profile".into(), Value::Object(p));
-                        self.client.set_status(v, Some(sid.clone())).await?;
-                    }
-                }
-                Ok(format!("{}: \"{name}\" ({sid}), under your session on the board. Pass session: \"{name}\" to reply, create_decision, create_info, merge_cards, set_status, clear_status, introduce, list_cards and publish_asset to write into it; the human's messages and answers there arrive with meta session=\"{name}\".", if existed.is_none() { "child session opened" } else if was_closed { "child session reopened" } else { "child session already open" }))
+                Ok(format!("helpers no longer get a session of their own: they write into yours. Pass helper: \"{name}\" (or session: \"{name}\", which means the same) on reply, create_decision, create_info, start_task, merge_cards, set_status, clear_status, list_cards and publish_asset; their cards show in your session with the helper's name, and answers arrive with meta helper=\"{name}\"."))
             }
-            "close_session" => {
-                let name = trim(&s(args
-                    .get("name")
-                    .filter(|v| !v.is_null())
-                    .or(args.get("session"))));
-                if name.is_empty() {
-                    return Err(err(
-                        "name is required: the helper's short name, as given to open_session",
-                    ));
-                }
-                let Some(sid) = self.find_child(&name).await else {
-                    return Err(err(format!(
-                        "no child session \"{name}\"; open_session opens one"
-                    )));
-                };
-                if args
-                    .get("summary")
-                    .is_some_and(|v| !v.is_null() && !trim(&js_str(v)).is_empty())
-                {
-                    let mut f = Map::new();
-                    f.insert(
-                        "text".into(),
-                        json!(clean_fences(&js_str(&args["summary"]), "summary")?),
-                    );
-                    f.insert("attachments".into(), json!([]));
-                    self.client.send_message(f, None, Some(sid.clone())).await?;
-                }
-                let sess = self.my_session(Some(&sid)).await;
-                let lines = sess
-                    .as_ref()
-                    .map(|x| x.status_lines.clone())
-                    .unwrap_or_default();
-                if !lines.is_empty() {
-                    let v: Map<String, Value> = lines
-                        .iter()
-                        .map(|l| (format!("status_line/{}", l.id), Value::Null))
-                        .collect();
-                    self.client.set_status(v, Some(sid.clone())).await?;
-                }
-                let mut p = sess
-                    .and_then(|x| x.profile)
-                                        .unwrap_or_default();
-                p.insert("closed_at".into(), json!(now_ms()));
-                let mut v = Map::new();
-                v.insert("profile".into(), Value::Object(p));
-                self.client.set_status(v, Some(sid.clone())).await?;
-                let (l, open, archived) = self.retire(&sid).await?;
-                if archived {
-                    self.state.lock().unwrap()["children"]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove(&name.to_lowercase());
-                    self.save_state();
-                }
-                let answered = if l > 0 {
-                    format!(
-                        "; {l} answered card{} of it {} closed with it",
-                        if l == 1 { "" } else { "s" },
-                        if l == 1 { "was" } else { "were" }
-                    )
-                } else {
-                    String::new()
-                };
-                Ok(if archived {
-                    format!("child session \"{name}\" closed and archived: off the board's active list, still readable in its archive, no longer counted among your live helper sessions{answered}. open_session(\"{name}\") opens a new one.")
-                } else {
-                    format!("child session \"{name}\" closed{answered}; {open} open question{} of it stay{} on the human's stack, so the session stays live (and counted) until {} answered; it is archived at the next open_session after that. Writing to it again opens it again.",
-                        if open == 1 { "" } else { "s" }, if open == 1 { "s" } else { "" }, if open == 1 { "it is" } else { "they are" })
-                })
-            }
+            "close_session" => Ok("nothing to close: helpers no longer have a session of their own; their cards stay in yours".into()),
             "publish_asset" => {
                 if !present(args.get("path")) && !present(args.get("content")) {
                     return Err(err("give path or content"));
@@ -2127,14 +1923,14 @@ impl Bridge {
                 } else {
                     None
                 };
-                let sid = self.session_of(args, Map::new()).await?;
+                let helper = Self::helper_arg(args)?;
                 let id = self
                     .client
                     .publish(
                         json!([asset]),
                         json!(title),
                         note.clone().map(|n| json!(n)),
-                        sid.clone(),
+                        None,
                     )
                     .await?;
                 let mut f = Map::new();
@@ -2145,7 +1941,10 @@ impl Bridge {
                 f.insert("text".into(), json!(text.join("\n\n")));
                 f.insert("attachments".into(), json!([asset]));
                 f.insert("artifact_object_id".into(), json!(id));
-                self.client.send_message(f, None, sid).await?;
+                if let Some(h) = &helper {
+                    f.insert("helper".into(), json!(h));
+                }
+                self.client.send_message(f, None, None).await?;
                 Ok(format!("published as {id}: \"{title}\" is shown in your conversation on the board, end-to-end encrypted; members open it in the Trommi app. For someone outside the board: share_asset."))
             }
             "list_assets" => {
@@ -2546,8 +2345,8 @@ impl Bridge {
         }
         self.client.revise(&card.object_id, fields, urgency).await?;
         let finished = if info && done_title(&title) {
-            self.finish_lines(card.session_id.clone(), &card.object_id, &title)
-                .await
+            let at = self.spot_of_card(&card).await;
+            self.finish_lines(&at, &card.object_id, &title).await
         } else {
             String::new()
         };
@@ -2653,14 +2452,12 @@ impl Bridge {
             .map(|k| k.title())
             .or_else(|| cmd.object_id.clone())
             .unwrap_or_default();
-        let child = self
-            .child_name(
-                cmd.session_id
-                    .clone()
-                    .or_else(|| card.as_ref().and_then(|k| k.session_id.clone()))
-                    .as_deref(),
-            )
-            .await;
+        // (whose it is: the helper of the card it is about, or the helper session of before it came in; the
+        //  coordinator forwards it to that helper, README "Helpers and their events")
+        let helper = match &card {
+            Some(k) => self.spot_of_card(k).await.helper,
+            None => self.child_name(cmd.session_id.as_deref()).await,
+        };
         let mut flags = Map::new();
         if cmd.late {
             flags.insert("late".into(), json!("1"));
@@ -2668,8 +2465,8 @@ impl Bridge {
         if cmd.history {
             flags.insert("history".into(), json!("1"));
         }
-        if let Some(ch) = &child {
-            flags.insert("session".into(), json!(ch));
+        if let Some(h) = &helper {
+            flags.insert("helper".into(), json!(h));
         }
         let main_sid = self.client.lock().session_id();
         let about = About {
@@ -2878,13 +2675,9 @@ impl Bridge {
                                 .unwrap_or_else(|| key.clone())
                         })
                         .collect();
-                    self.settle_lines(
-                        k.session_id.clone(),
-                        &k.object_id,
-                        Some(labels.join(", ")),
-                        cmd.settled,
-                    )
-                    .await;
+                    let at = self.spot_of_card(&k).await;
+                    self.settle_lines(&at, &k.object_id, Some(labels.join(", ")), cmd.settled)
+                        .await;
                 }
                 if cmd.command == "trust" || c.get("trusted").is_some_and(truthy) {
                     let advised = k.recommended_list();
@@ -3045,8 +2838,8 @@ impl Bridge {
             }
             "shred" => {
                 if let Some(k) = card.as_ref().filter(|_| is_mine && !cmd.history) {
-                    self.settle_lines(k.session_id.clone(), &k.object_id, None, false)
-                        .await;
+                    let at = self.spot_of_card(k).await;
+                    self.settle_lines(&at, &k.object_id, None, false).await;
                 }
                 let (paths, image, _) = self.download(c.get("attachments")).await;
                 let marks = list_arg(c.get("marks"), "marks").unwrap_or_default();
@@ -3089,8 +2882,8 @@ impl Bridge {
                     .as_ref()
                     .filter(|k| is_mine && !cmd.history && k.card_type() == "decision")
                 {
-                    self.link_question(k.session_id.clone(), &k.object_id, &k.title())
-                        .await;
+                    let at = self.spot_of_card(k).await;
+                    self.link_question(&at, &k.object_id, &k.title()).await;
                 }
                 let previous: Vec<String> = cmd.previous_choices.clone();
                 let multiple = card
@@ -3554,27 +3347,29 @@ impl Bridge {
             .map(String::from)
     }
 
-    /// This agent's open decision cards in a session (None: the main session), newest first.
-    async fn open_questions(&self, sid: Option<&str>) -> Vec<Card> {
+    /// This agent's open decision cards in a session (None: the main session) of one helper (none: the agent's
+    /// own), newest first.
+    async fn open_questions(&self, spot: &Spot) -> Vec<Card> {
         let main = self.client.lock().session_id();
-        let want = sid.map(String::from).or(main.clone());
-        let mut v: Vec<Card> = self
-            .my_cards()
-            .await
-            .into_iter()
-            .filter(|k| {
-                k.object_state == "open"
-                    && k.card_type() == "decision"
-                    && k.session_id.clone().or(main.clone()) == want
-            })
-            .collect();
+        let want = spot.sid.clone().or(main.clone());
+        let mut v = Vec::new();
+        for k in self.my_cards().await {
+            if k.object_state == "open"
+                && k.card_type() == "decision"
+                && k.session_id.clone().or(main.clone()) == want
+                && self.spot_of_card(&k).await.helper.map(|h| h.to_lowercase()) == spot.helper.as_deref().map(str::to_lowercase)
+            {
+                v.push(k);
+            }
+        }
         v.reverse();
         v
     }
 
+    /// Writes a status line in the spot's session, for its helper (`line`: none takes it away).
     async fn put_line(
         &self,
-        sid: Option<String>,
+        spot: &Spot,
         id: &str,
         line: Option<(Value, &str, Value, Value)>,
     ) -> Result<()> {
@@ -3582,24 +3377,36 @@ impl Bridge {
         v.insert(
             format!("status_line/{id}"),
             match line {
-                Some((label, state, detail, object_id)) => json!({ "label": label, "state": state, "detail": detail, "object_id": object_id }),
+                Some((label, state, detail, object_id)) => {
+                    let mut l = json!({ "label": label, "state": state, "detail": detail, "object_id": object_id });
+                    if let Some(h) = &spot.helper {
+                        l["helper"] = json!(h);
+                    }
+                    l
+                }
                 None => Value::Null,
             },
         );
-        self.client.set_status(v, sid).await.map(|_| ())
+        self.client.set_status(v, spot.sid.clone()).await.map(|_| ())
     }
 
-    /// A question was filed: its session's status line now waits on it (decision, with the card), so that the
-    /// human sees it and the line follows the answer. A line that already names the card stays; else the line
-    /// that says it waits on the human, else the session's one working line, else a line of its own. A line linked
-    /// to an open info card (a task's "Working on" card) is never taken.
-    async fn link_question(&self, sid: Option<String>, card: &str, title: &str) {
-        let sid = self.line_session(sid.as_deref()).await;
-        let lines = self
-            .my_session(sid.as_deref())
-            .await
-            .map(|s| s.status_lines)
-            .unwrap_or_default();
+    /// The status lines of a spot's session.
+    async fn lines_at(&self, spot: &Spot) -> Vec<model::StatusLine> {
+        self.my_session(spot.sid.as_deref()).await.map(|s| s.status_lines).unwrap_or_default()
+    }
+
+    /// The spot a line stands at: its session, its own helper.
+    fn spot_of_line(spot: &Spot, l: &model::StatusLine) -> Spot {
+        Spot { sid: spot.sid.clone(), helper: l.helper.clone() }
+    }
+
+    /// A question was filed: its helper's status line now waits on it (decision, with the card), so that the
+    /// human sees it and the line follows the answer. A line that already names the card stays; else the helper's
+    /// line that says it waits on the human, else its one working line, else a line of its own. A line linked
+    /// to an open info card (a task's "Working on" card) is never taken. The agent's own lines and those of each
+    /// helper are apart.
+    async fn link_question(&self, spot: &Spot, card: &str, title: &str) {
+        let lines = self.lines_at(spot).await;
         let naming: Vec<&model::StatusLine> = lines
             .iter()
             .filter(|l| l.object_id.as_str() == Some(card))
@@ -3618,7 +3425,7 @@ impl Bridge {
                 };
                 if let Err(e) = self
                     .put_line(
-                        sid.clone(),
+                        &Self::spot_of_line(spot, l),
                         &l.id,
                         Some((l.label.clone(), "decision", json!(detail), json!(card))),
                     )
@@ -3634,7 +3441,8 @@ impl Bridge {
         let working: Vec<&model::StatusLine> = lines
             .iter()
             .filter(|l| {
-                l.state.as_str() == Some("working")
+                line_of(l, spot.helper.as_deref())
+                    && l.state.as_str() == Some("working")
                     && !l.object_id.as_str().is_some_and(|o| infos.contains(o))
             })
             .collect();
@@ -3650,7 +3458,7 @@ impl Bridge {
         let done = match target {
             Some(l) => {
                 self.put_line(
-                    sid,
+                    spot,
                     &l.id,
                     Some((
                         l.label.clone(),
@@ -3664,7 +3472,7 @@ impl Bridge {
             None => {
                 let id = format!("{AUTO_LINE}{}", card.chars().take(8).collect::<String>());
                 self.put_line(
-                    sid,
+                    spot,
                     &id,
                     Some((json!(brief(title, 48)), "decision", json!(""), json!(card))),
                 )
@@ -3680,21 +3488,10 @@ impl Bridge {
     /// line of its session that waits on it goes back to working and says so; a line that says it waits on the
     /// human while no question of the session is open any more says the same. Lines the connector made itself
     /// for a card that was put away go.
-    async fn settle_lines(
-        &self,
-        sid: Option<String>,
-        card: &str,
-        labels: Option<String>,
-        settled: bool,
-    ) {
-        let sid = self.line_session(sid.as_deref()).await;
-        let lines = self
-            .my_session(sid.as_deref())
-            .await
-            .map(|s| s.status_lines)
-            .unwrap_or_default();
+    async fn settle_lines(&self, spot: &Spot, card: &str, labels: Option<String>, settled: bool) {
+        let lines = self.lines_at(spot).await;
         let still_open = self
-            .open_questions(sid.as_deref())
+            .open_questions(spot)
             .await
             .into_iter()
             .any(|k| k.object_id != card);
@@ -3706,6 +3503,7 @@ impl Bridge {
             let names = l.object_id.as_str() == Some(card);
             let waited = names && l.state.as_str() == Some("decision");
             let stale = l.state.as_str() == Some("working")
+                && line_of(l, spot.helper.as_deref())
                 && !still_open
                 && (names || l.object_id.is_null())
                 && waits_on_human(&line_words(l));
@@ -3713,13 +3511,14 @@ impl Bridge {
                 continue;
             }
             let auto = l.id.starts_with(AUTO_LINE);
+            let at = Self::spot_of_line(spot, l);
             let out = if labels.is_none() && auto {
-                self.put_line(sid.clone(), &l.id, None).await
+                self.put_line(&at, &l.id, None).await
             } else {
                 // (a final option left nothing to do: the connector's own line for it is done)
                 let state = if settled && auto { "done" } else { "working" };
                 self.put_line(
-                    sid.clone(),
+                    &at,
                     &l.id,
                     Some((l.label.clone(), state, json!(detail), json!(card))),
                 )
@@ -3733,13 +3532,8 @@ impl Bridge {
 
     /// An info card was revised to "Done: …": every line of its session linked to it turns done, saying the title.
     /// Returns what to tell the agent.
-    async fn finish_lines(&self, sid: Option<String>, card: &str, title: &str) -> String {
-        let sid = self.line_session(sid.as_deref()).await;
-        let lines = self
-            .my_session(sid.as_deref())
-            .await
-            .map(|s| s.status_lines)
-            .unwrap_or_default();
+    async fn finish_lines(&self, spot: &Spot, card: &str, title: &str) -> String {
+        let lines = self.lines_at(spot).await;
         let mut done = vec![];
         for l in lines
             .iter()
@@ -3747,7 +3541,7 @@ impl Bridge {
         {
             match self
                 .put_line(
-                    sid.clone(),
+                    &Self::spot_of_line(spot, l),
                     &l.id,
                     Some((
                         l.label.clone(),
@@ -3758,7 +3552,7 @@ impl Bridge {
                 )
                 .await
             {
-                Ok(()) => done.push(format!("\"{}\"", l.id)),
+                Ok(()) => done.push(format!("\"{}\"", line_shown(l))),
                 Err(e) => eprintln!("[trommi] status line {} not done: {e}", l.id),
             }
         }
@@ -3781,27 +3575,23 @@ impl Bridge {
 
     /// The agent closed, withdrew or merged a card: the lines the connector made for it go, and a line that still
     /// waits on it is moved to `to` (a merged card's replacement) or back to working.
-    async fn retire_lines(&self, sid: Option<String>, card: &str, to: Option<&str>) {
-        let sid = self.line_session(sid.as_deref()).await;
-        let lines = self
-            .my_session(sid.as_deref())
-            .await
-            .map(|s| s.status_lines)
-            .unwrap_or_default();
+    async fn retire_lines(&self, spot: &Spot, card: &str, to: Option<&str>) {
+        let lines = self.lines_at(spot).await;
         for l in lines.iter().filter(|l| l.object_id.as_str() == Some(card)) {
+            let at = Self::spot_of_line(spot, l);
             let out = match to {
                 Some(new) if l.state.as_str() == Some("decision") => {
                     self.put_line(
-                        sid.clone(),
+                        &at,
                         &l.id,
                         Some((l.label.clone(), "decision", l.detail.clone(), json!(new))),
                     )
                     .await
                 }
-                _ if l.id.starts_with(AUTO_LINE) => self.put_line(sid.clone(), &l.id, None).await,
+                _ if l.id.starts_with(AUTO_LINE) => self.put_line(&at, &l.id, None).await,
                 _ if l.state.as_str() == Some("decision") => {
                     self.put_line(
-                        sid.clone(),
+                        &at,
                         &l.id,
                         Some((l.label.clone(), "working", l.detail.clone(), Value::Null)),
                     )

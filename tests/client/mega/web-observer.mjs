@@ -256,14 +256,14 @@ async function snapshot(given) {
   }
   shell.send(DESK)
   const sessions = {}
-  for (const r of view.sidebar?.sessions ?? []) sessions[r.id] = { agent_name: r.name?.en ?? null, parent: r.parent ?? null }
+  for (const r of view.sidebar?.sessions ?? []) sessions[r.id] = { agent_name: r.name?.en ?? null, parent: null }
   return {
     desk: [...(view.desk?.stack ?? [])], permissions_open: (view.desk?.rows ?? []).filter(r => r.kind === 'request').map(r => r.id),
     cards, permissions: perms, sessions, snoozed: [...(view.desk?.later ?? [])].sort(), snooze_values,
     debug: { phase: view.phase, status: view.status?.en ?? null, toasts: (view.toasts ?? []).map(t => t.text?.en ?? '') },
   }
 }
-const shown = () => (view.sidebar?.sessions ?? []).map(r => ({ session: r.id, name: r.name?.en ?? null, online: !!r.online, agent: null, parent: r.parent ?? null }))
+const shown = () => (view.sidebar?.sessions ?? []).map(r => ({ session: r.id, name: r.name?.en ?? null, online: !!r.online, agent: null, parent: null }))
 const myDevice = () => (view.settings?.devices ?? []).find(d => d.this_device)?.id ?? null
 
 /** What the person would see now, for a trace: the Desk, Off your mind, the sessions, the agents online. */

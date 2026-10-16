@@ -240,13 +240,15 @@ fn grouped(n: u64) -> String {
     out
 }
 
-pub(super) fn from_of(b: &Board, agent: Option<usize>) -> Option<FromView> {
+/// Who a card or a request comes from: its session, and for a card of a helper that helper ("Helper Icons").
+pub(super) fn from_of(b: &Board, agent: Option<usize>, card: Option<&Card>) -> Option<FromView> {
     let a = &b.agents[agent?];
     Some(FromView {
         session_id: a.row.key.clone(),
         name: a.row.name.clone(),
         mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
         path: a.row.path.clone(),
+        helper: card.and_then(|c| b.helper_of(c)).map(|h| say("from.helper", format!("Helper {h}"), &[("name", &h)])),
     })
 }
 
@@ -362,7 +364,7 @@ pub(super) fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView
         sign_says,
         starred,
         created_ms: c.created_at,
-        from: from_of(b, agent),
+        from: from_of(b, agent, Some(c)),
         run: 0,
         media_says,
         media: media.into_iter().take(3).collect(),
@@ -373,7 +375,7 @@ pub(super) fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView
 }
 
 pub(super) fn request_row(b: &Board, p: &PermissionRequest, agent: Option<usize>) -> DeskRowView {
-    let from = from_of(b, agent);
+    let from = from_of(b, agent, None);
     // (not read here yet: what it asks to run is unknown, so it is not offered to allow; it waits quietly)
     if !(p.content_state.is_empty() || p.content_state == "ok") {
         return DeskRowView {

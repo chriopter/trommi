@@ -621,15 +621,12 @@ public enum CoreView {
     /// The session's key in the model (`Screen::Session`, the actions' `session_id`, `ViewModel.sessions`).
     public var id: String
     public var name: Text
-    /// "live", "oncall", "asleep", "cut", "gone" (core/client/src/status.rs); "" for a helper under its main (it
-    /// runs inside its main's process: the main's link says it for both).
+    /// "live", "oncall", "asleep", "cut", "gone" (core/client/src/status.rs).
     public var link: String
     /// The red hand.
     public var blocked: Bool
-    /// How many of his answers it has not picked up for two minutes; a main counts its helpers' too.
+    /// How many of his answers it has not picked up for two minutes.
     public var unheard: UInt32
-    /// 0 for a row of its own, 1 for a helper under its main.
-    public var depth: UInt32
     /// Its short id on the board: its address (`/chat/<slug>`).
     public var slug: String
     /// What draws it: the icon the person or the agent chose ("draw:leaf"), else its slug.
@@ -639,14 +636,12 @@ public enum CoreView {
     public var online: Bool
     /// Connected and at work (a status line of it shows "working").
     public var working: Bool
-    /// A main session: one that says so, or one with helpers.
+    /// A main session: one that says so.
     public var main: Bool
     /// The crowned session of its team (the one a note goes to).
     public var crowned: Bool
-    /// Its main's id, for a helper drawn under it.
-    public var parent: String?
-    /// Its helpers' ids, in drawing order.
-    public var subs: [String]
+    /// Its helpers (its agent's subagents), small under its name: "3 helpers" with a dot each; none without.
+    public var helpers: HelperDotsView?
     /// Its open questions: what waits for the person on the Desk (no infos, nothing that is with its agent).
     public var open: UInt32
     /// One of them knocks.
@@ -655,33 +650,24 @@ public enum CoreView {
     public var hand: HandView?
     /// The small line under its name: its link when it does not hear at once, else the answers it has not picked up.
     public var cap: CapView?
-    /// A helper whose main is not listening, cut off or gone: drawn hushed.
-    public var hushed: Bool
-    /// Not connected, and none of its helpers is: it stands under "Disconnected".
+    /// Not connected: it stands under "Disconnected".
     public var away: Bool
-    /// The part of the list a main row may be dragged within (its team, connected or not); "" for a helper.
+    /// The part of the list a row may be dragged within (its team, connected or not).
     public var group: String
     /// What its badge says to a screen reader ("Working, 2 questions open"); none without a badge.
     public var says: Text?
-    /// A main with helpers, drawn folded: what the row then shows for all of them together.
-    public var folded: FoldView?
-    /// A main whose helpers this device shows unfolded under it (`Action::FoldHelpers`); folded is the rest state.
-    public var unfolded: Bool
-    /// A helper whose main is folded on this device: it is drawn in its main's row, not as a row of its own.
-    public var tucked: Bool
     /// What was said last in its conversation (his words with "You: "), or the question it put to him last: the
     /// Chat list's teaser; none while this device holds nothing said there.
     public var last: LastSaidView?
     /// Its agent said something this device has not shown yet (the chat was not open since): the Chat list's dot.
     public var unread: Bool
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, unheard: UInt32 = 0, depth: UInt32 = 0, slug: String = "", mark: String = "", teamId: String = "", online: Bool = false, working: Bool = false, main: Bool = false, crowned: Bool = false, parent: String? = nil, subs: [String] = [], open: UInt32 = 0, knocks: Bool = false, hand: HandView? = nil, cap: CapView? = nil, hushed: Bool = false, away: Bool = false, group: String = "", says: Text? = nil, folded: FoldView? = nil, unfolded: Bool = false, tucked: Bool = false, last: LastSaidView? = nil, unread: Bool = false) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, unheard: UInt32 = 0, slug: String = "", mark: String = "", teamId: String = "", online: Bool = false, working: Bool = false, main: Bool = false, crowned: Bool = false, helpers: HelperDotsView? = nil, open: UInt32 = 0, knocks: Bool = false, hand: HandView? = nil, cap: CapView? = nil, away: Bool = false, group: String = "", says: Text? = nil, last: LastSaidView? = nil, unread: Bool = false) {
       self.id = id
       self.name = name
       self.link = link
       self.blocked = blocked
       self.unheard = unheard
-      self.depth = depth
       self.slug = slug
       self.mark = mark
       self.teamId = teamId
@@ -689,19 +675,14 @@ public enum CoreView {
       self.working = working
       self.main = main
       self.crowned = crowned
-      self.parent = parent
-      self.subs = subs
+      self.helpers = helpers
       self.open = open
       self.knocks = knocks
       self.hand = hand
       self.cap = cap
-      self.hushed = hushed
       self.away = away
       self.group = group
       self.says = says
-      self.folded = folded
-      self.unfolded = unfolded
-      self.tucked = tucked
       self.last = last
       self.unread = unread
     }
@@ -712,7 +693,6 @@ public enum CoreView {
       case link = "link"
       case blocked = "blocked"
       case unheard = "unheard"
-      case depth = "depth"
       case slug = "slug"
       case mark = "mark"
       case teamId = "team_id"
@@ -720,19 +700,14 @@ public enum CoreView {
       case working = "working"
       case main = "main"
       case crowned = "crowned"
-      case parent = "parent"
-      case subs = "subs"
+      case helpers = "helpers"
       case open = "open"
       case knocks = "knocks"
       case hand = "hand"
       case cap = "cap"
-      case hushed = "hushed"
       case away = "away"
       case group = "group"
       case says = "says"
-      case folded = "folded"
-      case unfolded = "unfolded"
-      case tucked = "tucked"
       case last = "last"
       case unread = "unread"
     }
@@ -744,7 +719,6 @@ public enum CoreView {
       self.link = try c.decode(String.self, forKey: .link)
       self.blocked = try c.decode(Bool.self, forKey: .blocked)
       self.unheard = try c.decode(UInt32.self, forKey: .unheard)
-      self.depth = try c.decode(UInt32.self, forKey: .depth)
       self.slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
       self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
       self.teamId = try c.decodeIfPresent(String.self, forKey: .teamId) ?? ""
@@ -752,19 +726,14 @@ public enum CoreView {
       self.working = try c.decodeIfPresent(Bool.self, forKey: .working) ?? false
       self.main = try c.decodeIfPresent(Bool.self, forKey: .main) ?? false
       self.crowned = try c.decodeIfPresent(Bool.self, forKey: .crowned) ?? false
-      self.parent = try c.decodeIfPresent(String.self, forKey: .parent)
-      self.subs = try c.decodeIfPresent([String].self, forKey: .subs) ?? []
+      self.helpers = try c.decodeIfPresent(HelperDotsView.self, forKey: .helpers)
       self.open = try c.decodeIfPresent(UInt32.self, forKey: .open) ?? 0
       self.knocks = try c.decodeIfPresent(Bool.self, forKey: .knocks) ?? false
       self.hand = try c.decodeIfPresent(HandView.self, forKey: .hand)
       self.cap = try c.decodeIfPresent(CapView.self, forKey: .cap)
-      self.hushed = try c.decodeIfPresent(Bool.self, forKey: .hushed) ?? false
       self.away = try c.decodeIfPresent(Bool.self, forKey: .away) ?? false
       self.group = try c.decodeIfPresent(String.self, forKey: .group) ?? ""
       self.says = try c.decodeIfPresent(Text.self, forKey: .says)
-      self.folded = try c.decodeIfPresent(FoldView.self, forKey: .folded)
-      self.unfolded = try c.decodeIfPresent(Bool.self, forKey: .unfolded) ?? false
-      self.tucked = try c.decodeIfPresent(Bool.self, forKey: .tucked) ?? false
       self.last = try c.decodeIfPresent(LastSaidView.self, forKey: .last)
       self.unread = try c.decodeIfPresent(Bool.self, forKey: .unread) ?? false
     }
@@ -776,7 +745,6 @@ public enum CoreView {
       try c.encode(link, forKey: .link)
       try c.encode(blocked, forKey: .blocked)
       try c.encode(unheard, forKey: .unheard)
-      try c.encode(depth, forKey: .depth)
       try c.encode(slug, forKey: .slug)
       try c.encode(mark, forKey: .mark)
       try c.encode(teamId, forKey: .teamId)
@@ -784,19 +752,14 @@ public enum CoreView {
       try c.encode(working, forKey: .working)
       try c.encode(main, forKey: .main)
       try c.encode(crowned, forKey: .crowned)
-      try c.encodeIfPresent(parent, forKey: .parent)
-      if !subs.isEmpty { try c.encode(subs, forKey: .subs) }
+      try c.encodeIfPresent(helpers, forKey: .helpers)
       try c.encode(open, forKey: .open)
       try c.encode(knocks, forKey: .knocks)
       try c.encodeIfPresent(hand, forKey: .hand)
       try c.encodeIfPresent(cap, forKey: .cap)
-      try c.encode(hushed, forKey: .hushed)
       try c.encode(away, forKey: .away)
       try c.encode(group, forKey: .group)
       try c.encodeIfPresent(says, forKey: .says)
-      try c.encodeIfPresent(folded, forKey: .folded)
-      try c.encode(unfolded, forKey: .unfolded)
-      try c.encode(tucked, forKey: .tucked)
       try c.encodeIfPresent(last, forKey: .last)
       try c.encode(unread, forKey: .unread)
     }
@@ -837,83 +800,102 @@ public enum CoreView {
     }
   }
 
-  /// A main and its helpers as one folded row.
-  public struct FoldView: Codable, Hashable, Sendable {
-    public var open: UInt32
-    public var knocks: Bool
-    /// One of them is connected.
-    public var online: Bool
-    public var working: Bool
-    /// The first of them that is stopped.
-    public var hand: HandView?
-    public var says: Text?
-    /// The helpers that are stopped: their edges show it while the row is folded.
-    public var stopped: [String]
-    /// The helpers drawn small at the end of the folded row: four at most, the stopped ones first.
-    public var lie: [String]
-    /// How many helpers more there are than `lie` draws ("+3").
-    public var more: UInt32
+  /// A session's helpers in its sidebar row: how many, and a dot each.
+  public struct HelperDotsView: Codable, Hashable, Sendable {
     /// "1 helper", "3 helpers".
-    public var helpers: Text
-    /// One of the helpers has words this device has not shown yet.
-    public var unread: Bool
+    public var says: Text
+    /// One dot per helper, in order: filled while that helper works.
+    public var working: [Bool]
 
-    public init(open: UInt32 = 0, knocks: Bool = false, online: Bool = false, working: Bool = false, hand: HandView? = nil, says: Text? = nil, stopped: [String] = [], lie: [String] = [], more: UInt32 = 0, helpers: Text = Text(), unread: Bool = false) {
-      self.open = open
-      self.knocks = knocks
-      self.online = online
-      self.working = working
-      self.hand = hand
+    public init(says: Text = Text(), working: [Bool] = []) {
       self.says = says
-      self.stopped = stopped
-      self.lie = lie
-      self.more = more
-      self.helpers = helpers
-      self.unread = unread
+      self.working = working
     }
 
     enum CodingKeys: String, CodingKey {
-      case open = "open"
-      case knocks = "knocks"
-      case online = "online"
-      case working = "working"
-      case hand = "hand"
       case says = "says"
-      case stopped = "stopped"
-      case lie = "lie"
-      case more = "more"
-      case helpers = "helpers"
-      case unread = "unread"
+      case working = "working"
     }
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
-      self.open = try c.decode(UInt32.self, forKey: .open)
-      self.knocks = try c.decode(Bool.self, forKey: .knocks)
-      self.online = try c.decode(Bool.self, forKey: .online)
-      self.working = try c.decode(Bool.self, forKey: .working)
-      self.hand = try c.decodeIfPresent(HandView.self, forKey: .hand)
-      self.says = try c.decodeIfPresent(Text.self, forKey: .says)
-      self.stopped = try c.decodeIfPresent([String].self, forKey: .stopped) ?? []
-      self.lie = try c.decodeIfPresent([String].self, forKey: .lie) ?? []
-      self.more = try c.decodeIfPresent(UInt32.self, forKey: .more) ?? 0
-      self.helpers = try c.decodeIfPresent(Text.self, forKey: .helpers) ?? Text()
-      self.unread = try c.decodeIfPresent(Bool.self, forKey: .unread) ?? false
+      self.says = try c.decode(Text.self, forKey: .says)
+      self.working = try c.decode([Bool].self, forKey: .working)
     }
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
-      try c.encode(open, forKey: .open)
-      try c.encode(knocks, forKey: .knocks)
-      try c.encode(online, forKey: .online)
+      try c.encode(says, forKey: .says)
       try c.encode(working, forKey: .working)
-      try c.encodeIfPresent(hand, forKey: .hand)
-      try c.encodeIfPresent(says, forKey: .says)
-      if !stopped.isEmpty { try c.encode(stopped, forKey: .stopped) }
-      if !lie.isEmpty { try c.encode(lie, forKey: .lie) }
-      try c.encode(more, forKey: .more)
-      try c.encode(helpers, forKey: .helpers)
-      try c.encode(unread, forKey: .unread)
+    }
+  }
+
+  /// A session's helpers on its page: a short list, name and state, no way into a chat of their own.
+  public struct HelperListView: Codable, Hashable, Sendable {
+    /// "3 helpers".
+    public var head: Text
+    /// "1 working · their cards come with this session".
+    public var sub: Text
+    public var rows: [HelperRowView]
+
+    public init(head: Text = Text(), sub: Text = Text(), rows: [HelperRowView] = []) {
+      self.head = head
+      self.sub = sub
+      self.rows = rows
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case head = "head"
+      case sub = "sub"
+      case rows = "rows"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.head = try c.decode(Text.self, forKey: .head)
+      self.sub = try c.decode(Text.self, forKey: .sub)
+      self.rows = try c.decode([HelperRowView].self, forKey: .rows)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(head, forKey: .head)
+      try c.encode(sub, forKey: .sub)
+      try c.encode(rows, forKey: .rows)
+    }
+  }
+
+  /// One helper of a session's page.
+  public struct HelperRowView: Codable, Hashable, Sendable {
+    public var name: String
+    public var working: Bool
+    /// "Working · 1 open question", "1 open question", "Done".
+    public var says: Text
+
+    public init(name: String = "", working: Bool = false, says: Text = Text()) {
+      self.name = name
+      self.working = working
+      self.says = says
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case name = "name"
+      case working = "working"
+      case says = "says"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.name = try c.decode(String.self, forKey: .name)
+      self.working = try c.decode(Bool.self, forKey: .working)
+      self.says = try c.decode(Text.self, forKey: .says)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(name, forKey: .name)
+      try c.encode(working, forKey: .working)
+      try c.encode(says, forKey: .says)
     }
   }
 
@@ -1940,15 +1922,18 @@ public enum CoreView {
     public var name: String
     /// What draws the session (`SessionRowView::mark`).
     public var mark: String
-    /// Where it stands, for the line above a card's title ("Team › Main › Helper"): its team while there are two
-    /// or more, its main for a helper, itself.
+    /// Where it stands, for the line above a card's title ("Team › Session"): its team while there are two or
+    /// more, itself.
     public var path: [String]
+    /// The helper (its agent's subagent) it comes from, for a chip beside the path: "Helper Icons".
+    public var helper: Text?
 
-    public init(sessionId: String = "", name: String = "", mark: String = "", path: [String] = []) {
+    public init(sessionId: String = "", name: String = "", mark: String = "", path: [String] = [], helper: Text? = nil) {
       self.sessionId = sessionId
       self.name = name
       self.mark = mark
       self.path = path
+      self.helper = helper
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1956,6 +1941,7 @@ public enum CoreView {
       case name = "name"
       case mark = "mark"
       case path = "path"
+      case helper = "helper"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1964,6 +1950,7 @@ public enum CoreView {
       self.name = try c.decode(String.self, forKey: .name)
       self.mark = try c.decode(String.self, forKey: .mark)
       self.path = try c.decode([String].self, forKey: .path)
+      self.helper = try c.decodeIfPresent(Text.self, forKey: .helper)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -1972,6 +1959,7 @@ public enum CoreView {
       try c.encode(name, forKey: .name)
       try c.encode(mark, forKey: .mark)
       try c.encode(path, forKey: .path)
+      try c.encodeIfPresent(helper, forKey: .helper)
     }
   }
 
@@ -2159,7 +2147,7 @@ public enum CoreView {
     public var main: Bool
     public var crowned: Bool
     public var online: Bool
-    /// Where it stands: its team (while there are two or more), its main (for a helper), itself.
+    /// Where it stands: its team (while there are two or more), itself.
     public var path: [String]
     /// The model it runs on, as the heading says it ("Opus 5.5"); "" when it named none.
     public var modelLabel: String
@@ -2190,15 +2178,15 @@ public enum CoreView {
     public var firstOpen: String?
     /// An empty conversation: the card of the agent that joined, and three ways to start.
     public var empty: EmptyTalkView?
-    /// Its agent's account and how much of it is used (the heading's rings: the week and the 5-hour window); a
-    /// helper without one of its own shows its main's. None without a plan or an e-mail.
+    /// Its agent's account and how much of it is used (the heading's rings: the week and the 5-hour window). None
+    /// without a plan or an e-mail.
     public var usage: UsageView?
-    /// The main session it is a helper of (its key); none for a main.
-    public var parent: String?
+    /// Its helpers (its agent's subagents), above the status lines; none without.
+    public var helpers: HelperListView?
     /// In the Archive: the More menu offers "Back from the Archive" (`ArchiveSession` with `on: false`).
     public var archived: Bool
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, parent: String? = nil, archived: Bool = false) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false) {
       self.id = id
       self.name = name
       self.link = link
@@ -2231,7 +2219,7 @@ public enum CoreView {
       self.firstOpen = firstOpen
       self.empty = empty
       self.usage = usage
-      self.parent = parent
+      self.helpers = helpers
       self.archived = archived
     }
 
@@ -2268,7 +2256,7 @@ public enum CoreView {
       case firstOpen = "first_open"
       case empty = "empty"
       case usage = "usage"
-      case parent = "parent"
+      case helpers = "helpers"
       case archived = "archived"
     }
 
@@ -2306,7 +2294,7 @@ public enum CoreView {
       self.firstOpen = try c.decodeIfPresent(String.self, forKey: .firstOpen)
       self.empty = try c.decodeIfPresent(EmptyTalkView.self, forKey: .empty)
       self.usage = try c.decodeIfPresent(UsageView.self, forKey: .usage)
-      self.parent = try c.decodeIfPresent(String.self, forKey: .parent)
+      self.helpers = try c.decodeIfPresent(HelperListView.self, forKey: .helpers)
       self.archived = try c.decodeIfPresent(Bool.self, forKey: .archived) ?? false
     }
 
@@ -2344,7 +2332,7 @@ public enum CoreView {
       try c.encodeIfPresent(firstOpen, forKey: .firstOpen)
       try c.encodeIfPresent(empty, forKey: .empty)
       try c.encodeIfPresent(usage, forKey: .usage)
-      try c.encodeIfPresent(parent, forKey: .parent)
+      try c.encodeIfPresent(helpers, forKey: .helpers)
       try c.encode(archived, forKey: .archived)
     }
   }
@@ -2511,8 +2499,10 @@ public enum CoreView {
     public var answers: String?
     /// On a card's page, his What?? that has no answer yet: "Waiting for the explanation."
     public var waits: Text?
+    /// The helper (its agent's subagent) that wrote it, beside the agent's name; none for the agent's own words.
+    public var helper: String?
 
-    public init(id: String = "", fromMe: Bool = false, text: String = "", timeMs: UInt64 = 0, heard: Bool = false, pending: Bool = false, files: [String] = [], kind: String = "", number: UInt64 = 0, day: Text? = nil, cont: Bool = false, terminal: Bool = false, card: CardRefView? = nil, event: EventView? = nil, deed: EventView? = nil, row: DeskRowView? = nil, work: WorkView? = nil, published: String? = nil, details: String = "", html: String = "", chips: [CardRefView] = [], scribble: Bool = false, writtenMs: UInt64? = nil, answers: String? = nil, waits: Text? = nil) {
+    public init(id: String = "", fromMe: Bool = false, text: String = "", timeMs: UInt64 = 0, heard: Bool = false, pending: Bool = false, files: [String] = [], kind: String = "", number: UInt64 = 0, day: Text? = nil, cont: Bool = false, terminal: Bool = false, card: CardRefView? = nil, event: EventView? = nil, deed: EventView? = nil, row: DeskRowView? = nil, work: WorkView? = nil, published: String? = nil, details: String = "", html: String = "", chips: [CardRefView] = [], scribble: Bool = false, writtenMs: UInt64? = nil, answers: String? = nil, waits: Text? = nil, helper: String? = nil) {
       self.id = id
       self.fromMe = fromMe
       self.text = text
@@ -2538,6 +2528,7 @@ public enum CoreView {
       self.writtenMs = writtenMs
       self.answers = answers
       self.waits = waits
+      self.helper = helper
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2566,6 +2557,7 @@ public enum CoreView {
       case writtenMs = "written_ms"
       case answers = "answers"
       case waits = "waits"
+      case helper = "helper"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2595,6 +2587,7 @@ public enum CoreView {
       self.writtenMs = try c.decodeIfPresent(UInt64.self, forKey: .writtenMs)
       self.answers = try c.decodeIfPresent(String.self, forKey: .answers)
       self.waits = try c.decodeIfPresent(Text.self, forKey: .waits)
+      self.helper = try c.decodeIfPresent(String.self, forKey: .helper)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2624,6 +2617,7 @@ public enum CoreView {
       try c.encodeIfPresent(writtenMs, forKey: .writtenMs)
       try c.encodeIfPresent(answers, forKey: .answers)
       try c.encodeIfPresent(waits, forKey: .waits)
+      try c.encodeIfPresent(helper, forKey: .helper)
     }
   }
 
@@ -2876,6 +2870,8 @@ public enum CoreView {
   public struct StatusLineView: Codable, Hashable, Sendable {
     public var id: String
     public var label: String
+    /// The helper (its agent's subagent) whose line it is, drawn before its label; none for the agent's own.
+    public var helper: String?
     public var detail: String
     /// "working", "decision", "later", "done" (for ten minutes), "stale" (greyed and still, for a day).
     public var state: String
@@ -2886,9 +2882,10 @@ public enum CoreView {
     /// The card it stands for: the one it names, else the card with its session whose line it is.
     public var card: CardRefView?
 
-    public init(id: String = "", label: String = "", detail: String = "", state: String = "", says: Text = Text(), updatedMs: UInt64 = 0, card: CardRefView? = nil) {
+    public init(id: String = "", label: String = "", helper: String? = nil, detail: String = "", state: String = "", says: Text = Text(), updatedMs: UInt64 = 0, card: CardRefView? = nil) {
       self.id = id
       self.label = label
+      self.helper = helper
       self.detail = detail
       self.state = state
       self.says = says
@@ -2899,6 +2896,7 @@ public enum CoreView {
     enum CodingKeys: String, CodingKey {
       case id = "id"
       case label = "label"
+      case helper = "helper"
       case detail = "detail"
       case state = "state"
       case says = "says"
@@ -2910,6 +2908,7 @@ public enum CoreView {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.id = try c.decode(String.self, forKey: .id)
       self.label = try c.decode(String.self, forKey: .label)
+      self.helper = try c.decodeIfPresent(String.self, forKey: .helper)
       self.detail = try c.decode(String.self, forKey: .detail)
       self.state = try c.decode(String.self, forKey: .state)
       self.says = try c.decodeIfPresent(Text.self, forKey: .says) ?? Text()
@@ -2921,6 +2920,7 @@ public enum CoreView {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(id, forKey: .id)
       try c.encode(label, forKey: .label)
+      try c.encodeIfPresent(helper, forKey: .helper)
       try c.encode(detail, forKey: .detail)
       try c.encode(state, forKey: .state)
       try c.encode(says, forKey: .says)

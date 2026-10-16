@@ -329,7 +329,9 @@ pub fn hook_request(input: &Value, ancestors: &[u32], level: Level) -> Option<Va
         put("tool", json!(tool_label(tool)));
         if is_board_tool(tool) {
             put("board", json!(true));
-            put("session", json!(one_line(str_of(args, "session"), 40)));
+            // (the helper a board call is for: `helper`, or `session` as older tools name it)
+            let helper = [str_of(args, "helper"), str_of(args, "session")].into_iter().find(|h| !h.trim().is_empty()).unwrap_or("");
+            put("helper", json!(one_line(helper, 40)));
         } else {
             put(
                 "title",
@@ -460,8 +462,6 @@ pub fn hook_request(input: &Value, ancestors: &[u32], level: Level) -> Option<Va
 /// One turn's trail as the connector holds it: its head, its items, and what of them is not sent yet.
 pub struct Turn {
     id: String,
-    /// A child session's name, or None for the session's own chat.
-    target: Option<String>,
     /// Claude Code's `prompt_id`: every hook of one turn carries the same one (empty when a hook has none).
     prompt: String,
     started: u64,
@@ -541,26 +541,23 @@ fn obj(v: Value) -> Map<String, Value> {
     v.as_object().cloned().unwrap_or_default()
 }
 struct Helper {
-    /// The board session this helper named on a board tool call (`session:`): its steps are that session's trail.
-    session: Option<String>,
     /// The turn its line stands in.
     turn: String,
 }
 
-/// One envelope of a trail: the chat it goes into (a child session's name, or None) and the message's `work`.
+/// One envelope of a trail: the message's `work`, for the session's chat.
 pub struct Envelope {
-    pub target: Option<String>,
     pub work: Value,
 }
 
-/// The trails of this Claude Code process: the open turn of the session, the open turn of each child session a
-/// helper works for, and a few closed ones (a helper in the background ends after its turn).
+/// The trails of this Claude Code process: the open turn of the session and a few closed ones (a helper in the
+/// background ends after its turn). A helper's steps are counted on its line in its caller's turn; the name a
+/// board call gives it (`helper`) names that line.
 #[derive(Default)]
 pub struct Trail {
     /// The turns held, oldest first: the open ones and at most TURNS_KEPT in all once the closed ones left.
     pub turns: Vec<Turn>,
     main: Option<String>,
-    children: HashMap<String, String>,
     helpers: HashMap<String, Helper>,
     says: HashMap<String, String>,
     /// The prompt no step followed yet: its `prompt_id` and when it came (the turn's start).
@@ -575,11 +572,10 @@ impl Trail {
     fn turn(&mut self, id: &str) -> Option<&mut Turn> {
         self.turns.iter_mut().find(|t| t.id == id)
     }
-    fn new_turn(&mut self, target: Option<String>, prompt: &str, started: u64) -> String {
+    fn new_turn(&mut self, prompt: &str, started: u64) -> String {
         let id = crate::util::random_hex(8);
         self.turns.push(Turn {
             id: id.clone(),
-            target,
             prompt: prompt.to_string(),
             started,
             closed: false,
@@ -635,7 +631,7 @@ impl Trail {
             .turns
             .iter_mut()
             .rev()
-            .find(|t| t.target.is_none() && !prompt.is_empty() && t.prompt == prompt)
+            .find(|t| !prompt.is_empty() && t.prompt == prompt)
         {
             t.reopen();
             let id = t.id.clone();
@@ -647,7 +643,7 @@ impl Trail {
             .take()
             .filter(|(p, _)| !Self::other(p, prompt))
             .map_or(now, |(_, at)| at);
-        let id = self.new_turn(None, prompt, started);
+        let id = self.new_turn(prompt, started);
         self.main = Some(id.clone());
         id
     }
@@ -661,24 +657,11 @@ impl Trail {
             .turns
             .iter()
             .rev()
-            .find(|t| t.target.is_none() && !prompt.is_empty() && t.prompt == prompt)
+            .find(|t| !prompt.is_empty() && t.prompt == prompt)
         {
             return t.id.clone();
         }
         self.main_turn(prompt, now)
-    }
-    fn child_turn(&mut self, name: &str, now: u64) -> String {
-        if let Some(id) = self
-            .children
-            .get(name)
-            .cloned()
-            .filter(|id| self.turns.iter().any(|t| &t.id == id && t.open()))
-        {
-            return id;
-        }
-        let id = self.new_turn(Some(name.to_string()), "", now);
-        self.children.insert(name.to_string(), id.clone());
-        id
     }
     /// A prompt was submitted (the human's, or one Claude Code submits by itself), with its `prompt_id`. Returns
     /// whether it came into the turn that is running: Claude Code takes what is typed while a turn runs into that
@@ -779,7 +762,7 @@ impl Trail {
             "pre" | "post" | "fail" => {
                 let id = str_of(req, "id").to_string();
                 let board = req.get("board") == Some(&Value::Bool(true));
-                let named = str_of(req, "session").to_string();
+                let named = str_of(req, "helper").to_string();
                 let turn_id = if agent.is_empty() {
                     // (a step's end belongs where the step stands, also in a turn that is over: its hook runs async)
                     if ev == "pre" {
@@ -788,45 +771,30 @@ impl Trail {
                         self.turns
                             .iter()
                             .rev()
-                            .find(|t| t.target.is_none() && t.index.contains_key(&id))
+                            .find(|t| t.index.contains_key(&id))
                             .map(|t| t.id.clone())
                     }
                 } else {
                     if !self.helpers.contains_key(&agent) {
                         let turn = self.helper_home(&prompt, now);
-                        self.helpers.insert(
-                            agent.clone(),
-                            Helper {
-                                session: None,
-                                turn,
-                            },
-                        );
+                        self.helpers.insert(agent.clone(), Helper { turn });
                     }
-                    if board && !named.is_empty() {
-                        self.helpers.get_mut(&agent).unwrap().session = Some(named);
-                    }
-                    match self.helpers[&agent].session.clone() {
-                        Some(name) => Some(self.child_turn(&name, now)),
-                        None => {
-                            // a helper without a board session: its steps are counted on its line in its caller's turn
-                            if ev == "pre" && !board {
-                                let (turn, key) =
-                                    (self.helpers[&agent].turn.clone(), format!("agent:{agent}"));
-                                if let Some(t) = self.turn(&turn) {
-                                    if let Some(i) = t.index.get(&key).copied() {
-                                        let steps = t.items[i]
-                                            .get("steps")
-                                            .and_then(|v| v.as_u64())
-                                            .unwrap_or(0)
-                                            + 1;
-                                        t.items[i].insert("steps".into(), json!(steps));
-                                        t.dirty.insert(i);
-                                    }
-                                }
+                    // a helper's steps are counted on its line in its caller's turn; a board call names it
+                    let (turn, key) = (self.helpers[&agent].turn.clone(), format!("agent:{agent}"));
+                    if let Some(t) = self.turn(&turn) {
+                        if let Some(i) = t.index.get(&key).copied() {
+                            if board && !named.is_empty() && t.items[i].get("tool").and_then(|v| v.as_str()) != Some(named.as_str()) {
+                                t.items[i].insert("tool".into(), json!(named));
+                                t.dirty.insert(i);
                             }
-                            None
+                            if ev == "pre" && !board {
+                                let steps = t.items[i].get("steps").and_then(|v| v.as_u64()).unwrap_or(0) + 1;
+                                t.items[i].insert("steps".into(), json!(steps));
+                                t.dirty.insert(i);
+                            }
                         }
                     }
+                    None
                 };
                 let Some(turn_id) = turn_id else { return };
                 let t = self.turn(&turn_id).unwrap();
@@ -879,7 +847,7 @@ impl Trail {
                         it.insert("exit".into(), c.clone());
                     }
                     t.dirty.insert(i);
-                    if interrupted && t.target.is_none() && t.open() {
+                    if interrupted && t.open() {
                         t.say(&mut n, now);
                         t.close("interrupted", Some(now));
                         if self.main.as_deref() == Some(turn_id.as_str()) {
@@ -907,13 +875,7 @@ impl Trail {
                 let t = self.turn(&turn).unwrap();
                 t.say(&mut n, now);
                 t.add(&key, item);
-                self.helpers.insert(
-                    agent,
-                    Helper {
-                        session: None,
-                        turn,
-                    },
-                );
+                self.helpers.insert(agent, Helper { turn });
             }
             "agent_stop" => {
                 if let Some(h) = self.helpers.remove(&agent) {
@@ -934,27 +896,11 @@ impl Trail {
                             t.dirty.insert(i);
                         }
                     }
-                    if let Some(name) = h.session {
-                        if let Some(id) = self.children.remove(&name) {
-                            if let Some(t) = self.turn(&id) {
-                                t.close("done", Some(now));
-                            }
-                        }
-                    }
                 }
             }
             "end" | "error" => {
                 let state = if ev == "end" { "interrupted" } else { "failed" };
-                let open: Vec<String> = self
-                    .main
-                    .take()
-                    .into_iter()
-                    .chain(if ev == "end" {
-                        self.children.drain().map(|(_, id)| id).collect::<Vec<_>>()
-                    } else {
-                        vec![]
-                    })
-                    .collect();
+                let open: Vec<String> = self.main.take().into_iter().collect();
                 for id in open {
                     if let Some(t) = self.turn(&id) {
                         t.say(&mut n, now);
@@ -1006,10 +952,7 @@ impl Trail {
                 if t.more > 0 {
                     w.insert("more".into(), json!(t.more));
                 }
-                out.push(Envelope {
-                    target: t.target.clone(),
-                    work: Value::Object(w),
-                });
+                out.push(Envelope { work: Value::Object(w) });
             }
         }
         // closed turns leave, oldest first, but one a helper still works in stays

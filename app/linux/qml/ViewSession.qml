@@ -105,6 +105,34 @@ Item {
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.line }
         }
 
+        // ---- its helpers (its agent's subagents): name and state, a dot while one works --------------------------
+        Column {
+            Layout.fillWidth: true
+            visible: !!root.session.helpers
+            topPadding: 8
+            Label {
+                x: 40
+                text: root.session.helpers ? root.session.helpers.head.en + "  ·  " + root.session.helpers.sub.en : ""
+                color: theme.muted; font.pixelSize: 12; font.weight: Font.DemiBold
+            }
+            Repeater {
+                model: root.session.helpers ? root.session.helpers.rows : []
+                delegate: RowLayout {
+                    required property var modelData
+                    x: 40
+                    width: root.width - 80
+                    spacing: 10
+                    Rectangle {
+                        width: 8; height: 8; radius: 4
+                        color: modelData.working ? theme.accent : "transparent"
+                        border.width: modelData.working ? 0 : 1.5; border.color: theme.faint
+                    }
+                    Label { text: modelData.name; color: theme.fg; font.pixelSize: 13; font.weight: Font.DemiBold }
+                    Label { text: modelData.says.en; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideRight }
+                }
+            }
+        }
+
         // ---- the status lines of its running work ----------------------------------------------------------------
         Column {
             Layout.fillWidth: true
@@ -117,6 +145,7 @@ Item {
                     x: 40
                     width: root.width - 80
                     spacing: 10
+                    Label { visible: !!modelData.helper; text: modelData.helper || ""; color: theme.muted; font.pixelSize: 12 }
                     Label { text: modelData.label; color: theme.fg; font.pixelSize: 13; font.weight: Font.DemiBold }
                     Label { text: modelData.detail; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideRight }
                     Label { text: modelData.says.en; color: theme.faint; font.pixelSize: 12 }

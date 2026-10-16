@@ -1,6 +1,6 @@
 //! The connector end to end against the real hub (branch `v2-hub`, as a child process): joining by link with
-//! the six-emoji check, every kind of write an agent makes, a human's commands through the gate, helper
-//! sessions, a restart that keeps the membership, a takeover, and catching up after being away.
+//! the six-emoji check, every kind of write an agent makes, a human's commands through the gate, a restart that
+//! keeps the membership, a takeover, and catching up after being away.
 mod common;
 
 use common::{eventually, Admitted, HubProc, Human, TempDir};
@@ -394,109 +394,6 @@ async fn what_was_written_while_the_hub_was_away_is_sent_once_it_is_back() {
         ["written offline"],
         "sent once, with the number it was signed under"
     );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_opener_admits_a_helper_device_and_lets_it_back_in_after_it_lost_its_state() {
-    let (_hub, mut human, agent, _group) = room().await;
-    let session = agent
-        .client
-        .open_child_session(fields(json!({ "agent_name": "Design" })))
-        .await
-        .expect("the agent founds the helper session itself");
-    let helper_device = |name: &str| {
-        let dir = TempDir::new(name);
-        let journal = Journal::open(dir.path()).expect("a journal");
-        let mut vault = trommi_connector::vault::Vault::create(journal).expect("a device");
-        let package = vault
-            .device
-            .key_package(trommi_connector::util::now_ms())
-            .expect("a KeyPackage");
-        vault.commit().expect("stored");
-        (dir, vault.me(), package)
-    };
-    let (_dir_a, first, package) = helper_device("helper-a");
-    agent
-        .client
-        .admit_helper(&session, first, package)
-        .await
-        .expect("the helper device is added");
-    // It lost its state: it comes back as a new device with a new key (4.3, 5.3.5).
-    let (_dir_b, second, package) = helper_device("helper-b");
-    agent
-        .client
-        .readmit_helper(&session, first, second, package)
-        .await
-        .expect("the opener replaces the lost device");
-
-    human.sync().await;
-    assert!(human.findings.is_empty(), "{:?}", human.findings);
-    let helper_group = human
-        .groups()
-        .await
-        .into_iter()
-        .find(|g| g.session.is_some_and(|s| !s.parent.is_zero()))
-        .expect("the human device is in the helper session");
-    assert!(helper_group.leaves.contains(&second));
-    assert!(!helper_group.leaves.contains(&first));
-    assert!(helper_group.disallowed.is_empty());
-    // The session still takes the opener's writes.
-    agent
-        .client
-        .send_message(
-            fields(json!({ "text": "after the re-admission" })),
-            None,
-            Some(session),
-        )
-        .await
-        .expect("sent");
-    human.sync().await;
-    assert!(human.findings.is_empty(), "{:?}", human.findings);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_child_session_opens_while_a_human_device_has_no_key_package_at_the_hub() {
-    let (_hub, mut human, agent, _group) = room().await;
-    // A second human device is let in and never comes online: the hub holds no KeyPackage of it (5.2.5).
-    let phone = human.add_human().await.id();
-    // The agent founds the helper session with the human device that has one, once it knows the room's new state.
-    let mut session = None;
-    for _ in 0..100 {
-        let _ = agent.client.settle(5_000).await;
-        match agent
-            .client
-            .open_child_session(fields(json!({ "agent_name": "Design" })))
-            .await
-        {
-            Ok(id) => {
-                session = Some(id);
-                break;
-            }
-            Err(fault) => {
-                assert_ne!(fault.code, "not-found", "{fault:?}");
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
-        }
-    }
-    let session = session.expect("the helper session is founded without the phone");
-    human.sync().await;
-    assert!(human.findings.is_empty(), "{:?}", human.findings);
-    let helper_group = human
-        .groups()
-        .await
-        .into_iter()
-        .find(|g| g.session.is_some_and(|s| !s.parent.is_zero()))
-        .expect("the human device is in the helper session");
-    assert!(helper_group.leaves.contains(&human.id()));
-    assert!(!helper_group.leaves.contains(&phone));
-    // The session takes the opener's writes.
-    agent
-        .client
-        .send_message(fields(json!({ "text": "in the helper session" })), None, Some(session))
-        .await
-        .expect("sent");
-    human.sync().await;
-    assert!(human.findings.is_empty(), "{:?}", human.findings);
 }
 
 #[tokio::test(flavor = "multi_thread")]

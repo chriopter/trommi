@@ -196,7 +196,7 @@ instead); files come network first, the cache only offline. On the dev server (`
   All · Media · Pages, compact tiles in a soft frame with Open and, on a page, Share as small icons; 25 tiles made at once,
   the rest as they come near).
 - **Note:** one drawn yellow note at the window's bottom-right; it unfolds there to write, takes attachments, sends to the crown of the team in view; a square sheet on a wide window (`sidebar.mjs` `cornerNote`).
-- **Sidebar:** the Desk box (the team in view; its chevron opens the Trommi menu, the teams at its top with what waits on each), the sessions of that team (a main with its helpers on a pen bracket, tallies, the red hand), "New agent" and
+- **Sidebar:** the Desk box (the team in view; its chevron opens the Trommi menu, the teams at its top with what waits on each), the sessions of that team (each with its helpers as dots under its name, tallies, the red hand), "New agent" and
   the Trommi menu at its foot. One sidebar, two presentations (`sidebar.css` "A phone"): beside the page on a wide
   screen (foldable to a rail), a drawer up to 860px that a finger from the left edge slides in over the dimmed page (a
   tap beside it, a push back, Esc or a choice closes it). A phone's top line is the pill (the desk's drawing and name;
@@ -265,7 +265,7 @@ The app says **account**, never "room" (inside, the core founds and joins a room
 
 ### IndexedDB
 
-The core owns what it stores: the device's state in the database `trommi` (the binding's `IdbStore`: packed journal deltas and checkpoint pages, revision checked in each strict transaction, values wrapped at rest, `trommi:wrap` holds the key; one owner by Web Lock) and its cache in `trommi:app:cache` (string keys, bytes; safe to lose). The app keeps only per-browser conveniences in localStorage: theme (`trommi-theme`), rail (`trommi-rail`), open crowns (`trommi-crowns-open`), the team in view (`trommi-team`, sent to the core as `Focus.team`); the developer switches below are sessionStorage only. The mock room keeps nothing.
+The core owns what it stores: the device's state in the database `trommi` (the binding's `IdbStore`: packed journal deltas and checkpoint pages, revision checked in each strict transaction, values wrapped at rest, `trommi:wrap` holds the key; one owner by Web Lock) and its cache in `trommi:app:cache` (string keys, bytes; safe to lose). The app keeps only per-browser conveniences in localStorage: theme (`trommi-theme`), rail (`trommi-rail`), the team in view (`trommi-team`, sent to the core as `Focus.team`); the developer switches below are sessionStorage only. The mock room keeps nothing.
 
 ### Render strategy (performance)
 

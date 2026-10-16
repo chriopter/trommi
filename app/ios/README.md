@@ -100,8 +100,8 @@ Editors keep only unsent UI input. Pen paths, hit testing, image drawing and the
 stroke encoding is `Action::DrawStroke` in Rust. Goals are edited through `SetGoal` and folded through
 `FoldGoals`; the teams whose goals are folded are a local UI preference. The team in view is the core's
 (`sidebar.team`); the shell only remembers the last team chosen on this device (`trommi-team` in UserDefaults) and
-sends it as `Focus.team` after a start, and the core falls back to the first team when it is gone. A main's helpers fold the same way (`FoldHelpers`, kept as
-`trommi-stacks-open`). The Desk's duck for all and Blitz draw `desk.duck` (sent back as `Batch` "sweep") and
+sends it as `Focus.team` after a start, and the core falls back to the first team when it is gone. A session's
+helpers are a line of dots under its name (`helpers`). The Desk's duck for all and Blitz draw `desk.duck` (sent back as `Batch` "sweep") and
 `desk.blitz`; the Chat list draws each row's `last` (teaser and time) and `unread` (read marks the core keeps in its
 cache); Settings has a page per `Screen.settings(page:)`; the Artifacts filter is `Screen.artifacts(kind:)` with
 the words of `view.gallery`; the note saves itself with `KeepNote` a moment after typing and when it is left; the

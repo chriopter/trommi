@@ -11,7 +11,7 @@ One Rust app core runs the web, iPhone, Mac, Linux and connector; the platform s
 - 💬 **Chat** with every agent session, the terminal mirrored
 - 🃏 **Decision cards**: the agent asks, you tap an answer
 - ✏️ **Scribble Board**: draw, write, stick notes, send them to an agent
-- 🗂 **Teams** to sort your agents, with their helpers under them; one dropdown switches between them
+- 🗂 **Teams** to sort your agents, one dropdown switches between them; an agent's helpers show inside its session
 - 🔒 **End-to-end encrypted**: the server never holds a key or reads content
 
 <img src=".github/readme/gallery-light.png" width="880" alt="The iPhone app: the Desk, a decision card with pictures, a chat with an agent, the Scribble Board">
@@ -128,15 +128,12 @@ flowchart TB
   end
   room(["Room group<br/>Teams, Notes, Scribble Boards"])
   sessA(["Session group: one agent<br/>Chat, cards, Artifacts"])
-  helper(["Helper session<br/>the same, for a subagent"])
   connA["Connector<br/>(agent device)"]
-  sub["Subagent<br/>(helper device)"]
+  sub["Subagents<br/>(its helpers)"]
   yours --> room
   yours --> sessA
-  yours --> helper
   connA --> sessA
-  connA -->|opens it| helper
-  sub --> helper
+  sub -->|"write through it, named"| connA
   connA -.->|"follows, holds no key"| room
 ```
 
@@ -144,7 +141,10 @@ flowchart TB
   agent: Teams, Goals, Notes, Scribble Boards.
 - **Session group:** one per agent session: your devices and that agent's connector. One agent never reads
   another's session, and no agent reads the room group.
-- **Helper session:** a subagent's own group, opened by its agent's connector, with your devices in it.
+- **Helpers:** an agent's subagents have no group or key of their own. They write through their agent's connector
+  into its session group, each card, status line and message with the helper's name; the apps show them inside that
+  session. (Until 16 October 2026 a helper got a session group of its own; those still open are read until their
+  agent archives them, and the hub founds no new one.)
 - Which team an agent sits on is only a value inside the room group: moving it changes no key.
 - **Removing** a device or agent takes it out of every group at once, and the hub ends its access.
 
@@ -592,7 +592,7 @@ core/bindings/swift/build.sh                           # the core for Swift
 (cd tests/ios && swift test)
 ```
 
-The three scale tests (a room of 1000 human devices, a catch-up across twenty groups, 100 helper sessions) run
+The three scale tests (a room of 1000 human devices, a catch-up across twenty groups, 100 helpers in one session) run
 small by default and at full size with `TROMMI_TESTS_FULL=1`, as CI does every night (`.github/workflows/nightly.yml`;
 a failing night opens an issue labelled nightly-failed).
 

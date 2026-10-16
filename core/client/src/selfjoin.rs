@@ -45,7 +45,7 @@ pub fn known_name(m: &Model, ask: &Value) -> Option<String> {
     };
     crate::sessions::session_list(m, false)
         .into_iter()
-        .filter(|r| r.parent.is_none() && r.agent_device_id.as_deref().is_some_and(same))
+        .filter(|r| r.agent_device_id.as_deref().is_some_and(same))
         .max_by_key(|r| (!r.archived, r.last_activity_at))
         .map(|r| r.name)
         .filter(|n| !n.is_empty())

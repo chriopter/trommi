@@ -122,11 +122,7 @@ pub fn monitor_line(params: &Value) -> Option<String> {
         return None;
     }
     let kind = meta.get("kind").and_then(|k| k.as_str()).unwrap_or("");
-    let session = crate::server::clean_name(
-        meta.get("session")
-            .or_else(|| meta.get("helper"))
-            .unwrap_or(&none),
-    );
+    let session = crate::server::clean_name(meta.get("helper").or_else(|| meta.get("session")).unwrap_or(&none));
     let head = format!(
         "{HEAD}{}{}",
         if session.is_empty() {
@@ -140,11 +136,6 @@ pub fn monitor_line(params: &Value) -> Option<String> {
             ""
         }
     );
-    if kind == "helper" {
-        // the connector's own words about a child session a helper reads itself
-        let note = meta.get("note").and_then(|v| v.as_str()).unwrap_or("");
-        return Some(format!("{head}{}{TAIL}", cut(&clean(note), TEXT_MAX).0));
-    }
     let Some(echo) = params.get("echo").filter(|e| e.is_object()) else {
         return (kind == "chat").then(|| format!("{head}A notice of the connector waits{TAIL}"));
     };

@@ -35,6 +35,7 @@ pub mod desk;
 pub mod team_delete;
 pub mod engine;
 pub mod files;
+pub mod helpers;
 pub mod hub;
 pub mod machines;
 pub mod model;

@@ -1,29 +1,23 @@
 //! The sidebar: the teams, and the sessions of the team in view as rows, in the order they are drawn. A shell draws
-//! the rows one after the other and decides nothing: which sessions show, under which main, connected or away,
-//! what waits, who is stopped and why, the small line under a name.
+//! the rows one after the other and decides nothing: which sessions show, connected or away, what waits, who is
+//! stopped and why, the small line under a name.
 //!
 //! The rules are the web's of before (`app.mjs` `boardModel` units, `sidebar.mjs` `sidebarParts` and `desksOf`,
 //! `ui.mjs` `badge` and `linkCap`):
 //! - a row per session that is not archived and stands on the team in view;
-//! - a helper lies under its main when that main has a row here and is no helper itself, one level deep; else it
-//!   has a row of its own;
-//! - a row is "away" when neither it nor one of its helpers is connected: the connected rows first, then the rest,
-//!   with no line between them (the web's All teams of before); on All teams team by team, each under its name;
-//! - a row's open questions are those of its session on the Desk now; a main drawn folded shows its helpers'
-//!   with its own ([`FoldView`]);
-//! - a helper has no link of its own (its main's says it for both); what a helper's session has not picked up is
-//!   told once, on its main.
+//! - a row is "away" when it is not connected: the connected rows first, then the rest, with no line between them;
+//! - a row's open questions are those of its session on the Desk now (its helpers' too: they write into it);
+//! - a session's helpers (its agent's subagents, `helpers.rs`) have no row: its row says how many there are, with
+//!   a dot each that is filled while that helper works ([`HelperDotsView`]).
 
 use super::board::{key_of, Board, DEFAULT_TEAM};
 use super::links::plain;
 use super::words::{badge_words, hand_words, link_words, local, next_midnight, say, unheard_words, LinkSubject};
-use super::{CapView, TeamTab, FoldView, HandView, LastSaidView, LinkWords, SessionRowView, SidebarView, Text};
+use super::{CapView, HandView, HelperDotsView, LastSaidView, LinkWords, SessionRowView, SidebarView, TeamTab, Text};
 use crate::model::Model;
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// So many helpers are drawn small at the end of a folded main's row; the rest are counted ("+3").
-pub const LIE_MAX: usize = 4;
 /// The Chat list's teaser is cut to so many characters.
 pub const TEASER_MAX: usize = 200;
 
@@ -144,8 +138,6 @@ fn unread(b: &Board, agent: usize) -> bool {
 pub(super) struct Unit {
     /// Index into `Board::agents`.
     pub agent: usize,
-    pub parent: Option<usize>,
-    pub subs: Vec<usize>,
     pub open: u32,
     pub knocks: bool,
     pub online: bool,
@@ -196,43 +188,22 @@ pub(super) fn units_of(b: &Board) -> Vec<Unit> {
     // ---- the units: one per session that stands here ----
     let here: Vec<usize> = (0..b.agents.len()).filter(|i| !b.agents[*i].row.archived && b.agents[*i].on_team).collect();
     let fresh_of = |i: usize| b.fresh().filter(move |f| f.agent == Some(i));
-    let mut units: Vec<Unit> = here
+    let units: Vec<Unit> = here
         .iter()
         .map(|&i| {
             let a = &b.agents[i];
             Unit {
                 agent: i,
-                parent: None,
-                subs: Vec::new(),
                 open: fresh_of(i).count() as u32,
                 knocks: fresh_of(i).any(|f| f.knocks),
                 online: a.row.online,
                 working: a.row.online && a.row.working,
                 hand: hand_of(b, i),
-                link: None,
+                link: link_of(b, i),
                 unheard: b.unheard.get(&i).copied().unwrap_or(0),
             }
         })
         .collect();
-    let unit_of = |units: &[Unit], id: &str| units.iter().position(|u| b.agents[u.agent].row.id == id);
-    for u in 0..units.len() {
-        let Some(main) = b.agents[units[u].agent].row.parent.as_deref().and_then(|p| unit_of(&units, p)) else { continue };
-        if main != u && b.agents[units[main].agent].row.parent.is_none() {
-            units[u].parent = Some(main);
-            units[main].subs.push(u);
-        }
-    }
-    // Each row's link, and what it has not picked up. A helper runs inside its main's process: it never listens on
-    // its own, and what it has not picked up is told once, on its main.
-    for u in units.iter_mut().filter(|u| u.parent.is_none()) {
-        u.link = link_of(b, u.agent);
-    }
-    for u in 0..units.len() {
-        let subs = units[u].subs.clone();
-        for s in subs {
-            units[u].unheard += std::mem::take(&mut units[s].unheard);
-        }
-    }
     units
 }
 
@@ -271,21 +242,16 @@ pub fn sidebar(b: &Board) -> SidebarView {
     let place = team_name(teams.iter().find(|(id, _)| *id == in_view).map(|(_, n)| n.as_str()).unwrap_or(""));
 
     // ---- the rows, in drawing order ----
-    let live = |u: &Unit| u.online || u.subs.iter().any(|s| units[*s].online);
-    let top: Vec<usize> = (0..units.len()).filter(|u| units[*u].parent.is_none()).collect();
     let asked = asked_last(b);
     let mut rows: Vec<SessionRowView> = Vec::new();
-    let on: Vec<usize> = top.iter().copied().filter(|u| live(&units[*u])).collect();
-    let off: Vec<usize> = top.iter().copied().filter(|u| !live(&units[*u])).collect();
+    let on: Vec<usize> = (0..units.len()).filter(|u| units[*u].online).collect();
+    let off: Vec<usize> = (0..units.len()).filter(|u| !units[*u].online).collect();
     // (the connected rows first, then those that are away, with no line between them; a row that is away says so
     //  itself, greyed, with its cap)
     for (away, list) in [(false, on), (true, off)] {
         for u in list {
             let group = format!("{}:{}", b.agents[units[u].agent].team.as_deref().unwrap_or(""), if away { "off" } else { "on" });
             rows.push(row(b, &units, u, away, group, &asked));
-            for s in units[u].subs.clone() {
-                rows.push(row(b, &units, s, away, String::new(), &asked));
-            }
         }
     }
 
@@ -310,8 +276,6 @@ pub fn sidebar(b: &Board) -> SidebarView {
 fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, asked: &HashMap<usize, (u64, String)>) -> SessionRowView {
     let unit = &units[u];
     let a = &b.agents[unit.agent];
-    let key = |x: usize| b.agents[units[x].agent].row.key.clone();
-    let main = unit.parent.map(|p| &units[p]);
     // The small line: a link that does not hear at once says so; else the answers that wait.
     let cap = match unit.link.as_ref().filter(|l| l.state != "live") {
         Some(l) => l.word.clone().zip(l.short.clone()).map(|(word, short)| CapView {
@@ -334,62 +298,34 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, asked: &H
     let says = |hand: Option<&HandView>, open: u32, online: bool, working: bool| {
         (open > 0 || hand.is_some()).then(|| badge_words(hand, open, online, working))
     };
-    let folded = (!unit.subs.is_empty()).then(|| {
-        let all: Vec<&Unit> = std::iter::once(unit).chain(unit.subs.iter().map(|s| &units[*s])).collect();
-        let open = all.iter().map(|x| x.open).sum();
-        let online = all.iter().any(|x| x.online);
-        let working = all.iter().any(|x| x.working);
-        // (the first of them that is stopped, in the list's order)
-        let mut order = all.clone();
-        order.sort_by_key(|x| x.agent);
-        let hand = order.iter().find_map(|x| x.hand.clone());
-        // (the helpers drawn small at the row's end: the stopped ones first, then in the list's order)
-        let mut lie: Vec<usize> = unit.subs.iter().copied().filter(|s| units[*s].hand.is_some()).collect();
-        lie.extend(unit.subs.iter().copied().filter(|s| units[*s].hand.is_none()));
-        let n = unit.subs.len();
-        let ns = n.to_string();
-        FoldView {
-            says: says(hand.as_ref(), open, online, working),
-            open,
-            knocks: all.iter().any(|x| x.knocks),
-            online,
-            working,
-            hand,
-            stopped: unit.subs.iter().filter(|s| units[**s].hand.is_some()).map(|s| key(*s)).collect(),
-            more: n.saturating_sub(LIE_MAX) as u32,
-            lie: lie.into_iter().take(LIE_MAX).map(key).collect(),
-            helpers: if n == 1 { say("session.helpers.one", "1 helper", &[("n", "1")]) } else { say("session.helpers", format!("{n} helpers"), &[("n", &ns)]) },
-            unread: unit.subs.iter().any(|s| unread(b, units[*s].agent)),
-        }
+    let helpers = b.helpers(unit.agent);
+    let n = helpers.len();
+    let ns = n.to_string();
+    let helpers = (n > 0).then(|| HelperDotsView {
+        says: if n == 1 { say("session.helpers.one", "1 helper", &[("n", "1")]) } else { say("session.helpers", format!("{n} helpers"), &[("n", &ns)]) },
+        working: helpers.iter().map(|h| h.working && unit.online).collect(),
     });
-    let unfolded = !unit.subs.is_empty() && b.lens.unfolded.contains(&a.row.key);
     SessionRowView {
         id: a.row.key.clone(),
         name: say("session.name", a.row.name.as_str(), &[]),
         link: unit.link.as_ref().map(|l| l.state.clone()).unwrap_or_default(),
         blocked: unit.hand.is_some(),
         unheard: unit.unheard,
-        depth: u32::from(unit.parent.is_some()),
         slug: a.row.id.clone(),
         mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
         team_id: a.team.clone().unwrap_or_else(|| DEFAULT_TEAM.into()),
         online: unit.online,
         working: unit.working,
-        main: a.row.main || !unit.subs.is_empty(),
+        main: a.row.main,
         crowned: a.crowned,
-        parent: unit.parent.map(key),
-        subs: unit.subs.iter().map(|s| key(*s)).collect(),
+        helpers,
         open: unit.open,
         knocks: unit.knocks,
         says: says(unit.hand.as_ref(), unit.open, unit.online, unit.working),
         hand: unit.hand.clone(),
         cap,
-        hushed: main.and_then(|m| m.link.as_ref()).is_some_and(|l| matches!(l.state.as_str(), "asleep" | "cut" | "gone")),
         away,
         group,
-        folded,
-        unfolded,
-        tucked: main.is_some_and(|m| !b.lens.unfolded.contains(&b.agents[m.agent].row.key)),
         last: last_said(b, unit.agent, asked.get(&unit.agent)),
         unread: unread(b, unit.agent),
     }
@@ -414,7 +350,7 @@ mod tests {
     }
 
     fn slugs(v: &SidebarView) -> Vec<String> {
-        v.sessions.iter().map(|r| format!("{}{}", "  ".repeat(r.depth as usize), r.slug)).collect()
+        v.sessions.iter().map(|r| r.slug.clone()).collect()
     }
     fn row<'v>(v: &'v SidebarView, slug: &str) -> &'v SessionRowView {
         v.sessions.iter().find(|r| r.slug == slug).unwrap_or_else(|| panic!("no row {slug}"))
@@ -423,23 +359,30 @@ mod tests {
         json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } })
     }
 
+    /// Helpers have no row: the agent's row says how many, a dot each, filled while that helper works. A helper
+    /// session of before has no row either; its open question counts on its main.
     #[test]
-    fn a_helper_lies_under_its_main_one_level_deep() {
+    fn helpers_are_dots_on_their_agents_row() {
         let mut r = Room::default();
-        r.session("a-main", None, true);
-        r.session("b-help", Some("a-main"), true);
-        // (a helper's helper has a row of its own: one level only)
-        r.session("c-deep", Some("b-help"), true);
-        // (a helper whose main is not in the list has a row of its own, with its own link)
-        r.session("d-lost", Some("nobody"), true);
+        r.session("a", None, true)["status_lines"] = json!([
+            { "id": "l1", "label": "Tokens", "state": "working", "helper": "Tokens", "updated_at": NOW - MIN },
+            { "id": "l2", "label": "Own", "state": "working", "updated_at": NOW - MIN },
+        ]);
+        r.card("q1", "a", "decision", "normal")["helper"] = json!("Icons");
+        r.session("b-old", Some("a"), true);
+        r.card("q2", "b-old", "decision", "high");
+        r.session("c", None, true);
         let v = view(&r, None);
-        assert_eq!(slugs(&v), ["a-main", "  b-help", "c-deep", "d-lost"]);
-        let (main, help) = (row(&v, "a-main"), row(&v, "b-help"));
-        assert_eq!(main.subs, std::slice::from_ref(&help.id));
-        assert_eq!(help.parent.as_ref(), Some(&main.id));
-        assert_eq!((main.link.as_str(), help.link.as_str(), row(&v, "d-lost").link.as_str()), ("live", "", "live"));
-        assert!(main.main && main.folded.is_some() && !help.main && help.folded.is_none());
-        assert_eq!((main.group.as_str(), help.group.as_str()), (":on", ""));
+        assert_eq!(slugs(&v), ["a", "c"]);
+        let a = row(&v, "a");
+        let h = a.helpers.as_ref().unwrap();
+        // (in the order they first showed: the two cards ten minutes ago, the line a minute ago)
+        assert_eq!((h.says.en.as_str(), h.working.clone()), ("3 helpers", vec![false, false, true]));
+        assert_eq!((a.open, a.knocks), (2, true), "the helpers' questions are the session's");
+        assert!(row(&v, "c").helpers.is_none());
+        // (a disconnected agent's helpers work no more)
+        r.sessions[0]["is_online"] = json!(false);
+        assert_eq!(row(&view(&r, None), "a").helpers.as_ref().unwrap().working, [false, false, false]);
     }
 
     #[test]
@@ -447,13 +390,10 @@ mod tests {
         let mut r = Room::default();
         r.session("a-off", None, false);
         r.session("b-on", None, true);
-        // (a main that is gone with a helper that is connected is not away)
-        r.session("c-off", None, false);
-        r.session("d-help", Some("c-off"), true);
         r.session("e-off", None, false);
         let v = view(&r, None);
-        assert_eq!(slugs(&v), ["b-on", "c-off", "  d-help", "a-off", "e-off"]);
-        assert_eq!(v.sessions.iter().map(|x| x.away).collect::<Vec<_>>(), [false, false, false, true, true]);
+        assert_eq!(slugs(&v), ["b-on", "a-off", "e-off"]);
+        assert_eq!(v.sessions.iter().map(|x| x.away).collect::<Vec<_>>(), [false, true, true]);
         assert_eq!(row(&v, "a-off").group, ":off");
         // (gone since 13:27, said under its name)
         let cap = row(&v, "a-off").cap.as_ref().unwrap();
@@ -547,12 +487,12 @@ mod tests {
     fn an_archived_sessions_questions_count_nowhere() {
         let mut r = Room::default();
         r.session("a", None, true);
-        r.session("b-old", None, true);
-        r.settings.insert(dev("b-old"), json!({ "archived": true, "parent": "a" }));
+        r.session("b-old", None, false);
+        r.settings.insert(dev("b-old"), json!({ "archived": true }));
         r.card("q1", "b-old", "decision", "high");
         let v = view(&r, None);
         assert_eq!(slugs(&v), ["a"]);
-        assert_eq!((v.badge, v.knocking, row(&v, "a").folded.is_none()), (0, 0, true));
+        assert_eq!((v.badge, v.knocking), (0, 0));
     }
 
     #[test]
@@ -581,18 +521,9 @@ mod tests {
     }
 
     #[test]
-    fn a_teams_crown_by_device_is_its_main_never_a_helper() {
-        let mut r = Room { teams: json!({ "main": { "name": "Work", "crown": { "agent_device_id": dev("b-help") } } }), ..Default::default() };
-        r.session("a", None, true);
-        r.session("b-help", Some("a"), true);
-        assert!(view(&r, None).sessions.iter().all(|x| !x.crowned));
-    }
-
-    #[test]
-    fn an_answer_not_picked_up_for_two_minutes_waits_on_the_main() {
+    fn an_answer_not_picked_up_for_two_minutes_waits_on_the_session() {
         let mut r = Room::default();
         r.session("a", None, true)["heard_up_to"] = json!(40);
-        r.session("b-help", Some("a"), true)["heard_up_to"] = json!(40);
         r.answered("heard", "a", NOW - 30 * MIN, 30);
         r.answered("fresh", "a", NOW - MIN, 50);
         let (v, wake) = view_at(&r, None, NOW);
@@ -605,18 +536,18 @@ mod tests {
         // (nothing turns late any more; the teasers' times change at midnight)
         assert_eq!((v.unheard, wake), (1, Some(next_midnight(NOW + MIN, 0))));
 
-        // (a helper's is told once, on its main: the helper's row stays calm)
-        r.answered("helper", "b-help", NOW - 5 * MIN, 60);
+        // (a helper's answer is its session's: it was filed there)
+        r.answered("helper", "a", NOW - 5 * MIN, 60);
+        r.cards.last_mut().unwrap()["helper"] = json!("Icons");
         // (a hand back its session has not picked up counts too: since its card went back)
-        r.card("back", "b-help", "decision", "normal")["in_revision"] = json!({ "by": "me", "envelope_number": 70 });
+        r.card("back", "a", "decision", "normal")["in_revision"] = json!({ "by": "me", "envelope_number": 70 });
         let v = view_at(&r, None, NOW + MIN).0;
-        assert_eq!((row(&v, "a").unheard, row(&v, "b-help").unheard, v.unheard), (3, 0, 3));
+        assert_eq!((row(&v, "a").unheard, v.unheard), (3, 3));
         assert_eq!(row(&v, "a").cap.as_ref().map(|c| (c.word.en.as_str(), c.short.en.as_str())), Some(("3 answers wait", "3 not heard")));
-        assert_eq!(row(&v, "b-help").cap, None);
 
         // (a session whose connector writes no receipts: nothing is known, nothing is said)
         r.sessions[0]["heard_up_to"] = Value::Null;
-        assert_eq!(row(&view_at(&r, None, NOW + MIN).0, "a").unheard, 2);
+        assert_eq!(row(&view_at(&r, None, NOW + MIN).0, "a").unheard, 0);
     }
 
     #[test]
@@ -625,7 +556,6 @@ mod tests {
         let s = r.session("a", None, true);
         s["heard_up_to"] = json!(40);
         s["link"] = json!({ "hears": "oncall", "attached": true, "last_call_at": NOW - 46 * MIN });
-        r.session("b-help", Some("a"), true);
         r.answered("late", "a", NOW - 30 * MIN, 50);
         let (v, wake) = view_at(&r, None, NOW);
         let a = row(&v, "a");
@@ -633,31 +563,6 @@ mod tests {
         assert_eq!((a.link.as_str(), cap.kind.as_str(), cap.word.en.as_str(), a.unheard), ("asleep", "asleep", "not listening · 46 min", 1));
         assert_eq!(cap.line.map(|l| l.en), Some("a is not listening: it hears you only on its next step, and its last one was 46 min ago.".into()));
         assert_eq!(wake, Some(NOW + 30_000), "the minutes count on");
-        // (its helper cannot be reached either: drawn hushed)
-        assert!(row(&v, "b-help").hushed && !a.hushed);
-    }
-
-    #[test]
-    fn a_folded_main_shows_its_helpers_with_its_own() {
-        let mut r = Room::default();
-        r.session("a", None, false);
-        r.session("b-help", Some("a"), true)["status_lines"] = json!([{ "id": "l", "label": "L", "state": "working", "updated_at": NOW - MIN }]);
-        r.session("c-help", Some("a"), true);
-        r.card("q1", "a", "decision", "normal");
-        r.card("q2", "b-help", "decision", "normal");
-        r.card("q3", "c-help", "decision", "critical");
-        let v = view(&r, None);
-        let (a, c) = (row(&v, "a"), row(&v, "c-help"));
-        assert_eq!((a.open, a.knocks, a.online, a.working, a.blocked), (1, false, false, false, false));
-        assert_eq!(a.says.as_ref().map(|t| t.en.as_str()), Some("Disconnected, 1 question open"));
-        let f = a.folded.as_ref().unwrap();
-        assert_eq!((f.open, f.knocks, f.online, f.working), (3, true, true, true));
-        assert_eq!(f.hand.as_ref().map(|h| h.why.as_str()), Some("blocking"));
-        assert_eq!(f.says.as_ref().map(|t| t.en.as_str()), Some("Stopped: Waiting for you: a blocking question, 3 questions open"));
-        assert_eq!(f.stopped, std::slice::from_ref(&c.id));
-        assert_eq!((c.blocked, c.says.as_ref().map(|t| t.en.as_str())), (true, Some("Stopped: Waiting for you: a blocking question, 1 question open")));
-        assert!(row(&v, "b-help").working);
-        assert_eq!((v.stopped, v.working, a.away), (1, 1, false));
     }
 
     #[test]
@@ -707,19 +612,19 @@ mod tests {
     fn a_dot_marks_words_this_device_has_not_shown() {
         let mut r = Room::default();
         r.session("a", None, true);
-        r.session("b-help", Some("a"), true);
+        r.session("b", None, true);
         r.say("a", None, 10, "a", 5 * MIN, json!({ "text": "one" }));
-        r.say("b-help", None, 20, "b-help", 4 * MIN, json!({ "text": "two" }));
+        r.say("b", None, 20, "b", 4 * MIN, json!({ "text": "two", "helper": "Icons" }));
         let m = r.model(NOW);
         let at = |seen: Option<Vec<(&str, u64)>>| {
             let lens = Lens { seen: seen.map(|l| l.into_iter().map(|(k, n)| (dev(k), n)).collect()), ..Default::default() };
             let v = sidebar(&Board::new(&m, &lens, NOW));
-            (row(&v, "a").unread, row(&v, "b-help").unread, row(&v, "a").folded.as_ref().unwrap().unread)
+            (row(&v, "a").unread, row(&v, "b").unread)
         };
-        assert_eq!(at(None), (false, false, false), "nothing counts as unread before the marks are read");
-        assert_eq!(at(Some(vec![])), (true, true, true));
-        assert_eq!(at(Some(vec![("a", 10)])), (false, true, true));
-        assert_eq!(at(Some(vec![("a", 10), ("b-help", 20)])), (false, false, false));
+        assert_eq!(at(None), (false, false), "nothing counts as unread before the marks are read");
+        assert_eq!(at(Some(vec![])), (true, true));
+        assert_eq!(at(Some(vec![("a", 10)])), (false, true));
+        assert_eq!(at(Some(vec![("a", 10), ("b", 20)])), (false, false));
         // (his own words are never unread)
         let mut r2 = Room::default();
         r2.session("a", None, true);
@@ -727,26 +632,5 @@ mod tests {
         let m2 = r2.model(NOW);
         let lens = Lens { seen: Some(Default::default()), ..Default::default() };
         assert!(!row(&sidebar(&Board::new(&m2, &lens, NOW)), "a").unread);
-    }
-
-    #[test]
-    fn a_folded_main_draws_four_helpers_the_stopped_first_and_counts_the_rest() {
-        let mut r = Room::default();
-        r.session("a", None, true);
-        for h in ["h1", "h2", "h3", "h4", "h5", "h6"] {
-            r.session(h, Some("a"), true);
-        }
-        r.card("q", "h5", "decision", "critical");
-        let m = r.model(NOW);
-        let v = sidebar(&Board::new(&m, &Lens::default(), NOW));
-        let f = row(&v, "a").folded.clone().unwrap();
-        assert_eq!(f.lie, [dev("h5"), dev("h1"), dev("h2"), dev("h3")]);
-        assert_eq!((f.more, f.helpers.en.as_str()), (2, "6 helpers"));
-        assert!(!row(&v, "a").unfolded && row(&v, "h1").tucked, "folded at rest");
-        // unfolded on this device: the helpers are rows of their own
-        let lens = Lens { unfolded: vec![dev("a")], ..Default::default() };
-        let v = sidebar(&Board::new(&m, &lens, NOW));
-        assert!(row(&v, "a").unfolded && !row(&v, "h1").tucked);
-        assert!(!row(&v, "a").tucked, "a main is never tucked");
     }
 }

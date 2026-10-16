@@ -155,12 +155,6 @@ pub enum Action {
         #[serde(default)]
         group: Option<String>,
     },
-    /// The session a helper is shown under; none makes it a main session again.
-    SessionParent {
-        session_id: String,
-        #[serde(default)]
-        parent: Option<String>,
-    },
     /// A new place in the list: directly before or after another session (neither: last).
     PlaceSession {
         session_id: String,
@@ -203,12 +197,6 @@ pub enum Action {
     SetGoal {
         team_id: String,
         text: String,
-    },
-    /// A main session's helpers unfolded under it (`open`) or folded into its row (`SessionRowView.unfolded`). This
-    /// device's alone: the shell keeps the unfolded mains and sends them again after a start.
-    FoldHelpers {
-        session_id: String,
-        open: bool,
     },
     /// A team's goals folded to their first line, or open again (`GoalsView.folded`). This device's alone: the shell
     /// keeps the folded teams and sends them again after a start.

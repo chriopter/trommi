@@ -202,9 +202,7 @@
                   }
                 },
                 "crowned": false,
-                "depth": 0,
                 "group": ":off",
-                "hushed": false,
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
                 "link": "gone",
@@ -218,8 +216,6 @@
                 "open": 0,
                 "slug": "00000002eeee",
                 "team_id": "main",
-                "tucked": false,
-                "unfolded": false,
                 "unheard": 0,
                 "unread": false,
                 "working": false
@@ -451,9 +447,7 @@
                   }
                 },
                 "crowned": false,
-                "depth": 0,
                 "group": ":off",
-                "hushed": false,
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
                 "last": {
@@ -485,8 +479,6 @@
                 },
                 "slug": "00000002eeee",
                 "team_id": "main",
-                "tucked": false,
-                "unfolded": false,
                 "unheard": 0,
                 "unread": false,
                 "working": false
@@ -1010,9 +1002,7 @@
                   }
                 },
                 "crowned": false,
-                "depth": 0,
                 "group": ":off",
-                "hushed": false,
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
                 "last": {
@@ -1037,8 +1027,6 @@
                 "open": 0,
                 "slug": "00000002eeee",
                 "team_id": "main",
-                "tucked": false,
-                "unfolded": false,
                 "unheard": 0,
                 "unread": false,
                 "working": false
@@ -1499,9 +1487,7 @@
             }
           },
           "crowned": false,
-          "depth": 0,
           "group": ":off",
-          "hushed": false,
           "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
           "knocks": false,
           "last": {
@@ -1526,8 +1512,6 @@
           "open": 0,
           "slug": "00000002eeee",
           "team_id": "main",
-          "tucked": false,
-          "unfolded": false,
           "unheard": 0,
           "unread": false,
           "working": false

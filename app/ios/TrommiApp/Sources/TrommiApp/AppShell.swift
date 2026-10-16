@@ -51,9 +51,6 @@ enum NativeTab: Equatable { case chat, desk }
         for id in UserDefaults.standard.stringArray(forKey: "trommi-goals-folded") ?? [] {
           await session?.send(NativePacket(["type": "action", "action": ["do": "fold_goals", "team_id": id, "folded": true]]))
         }
-        for id in UserDefaults.standard.stringArray(forKey: Self.stacksOpen) ?? [] {
-          await session?.send(NativePacket(["type": "action", "action": ["do": "fold_helpers", "session_id": id, "open": true]]))
-        }
       }
       // (the team chosen last on this device; launched in the back by a push, the Desk is not in view)
       if !preview, let team = Self.lastTeam, let data = try? JSONEncoder().encode(CoreView.Focus(screen: .desk, visible: Self.launchedInFront, team: team)),
@@ -93,18 +90,11 @@ enum NativeTab: Equatable { case chat, desk }
     true
     #endif
   }
-  /** The mains whose helpers are unfolded on this device (the core's `FoldHelpers`, sent again at the start). */
-  static let stacksOpen = "trommi-stacks-open"
   func act(_ action: [String: Any], blobs: [Data] = []) {
     if !isDemo, action["do"] as? String == "fold_goals", let id = action["team_id"] as? String {
       var folded = UserDefaults.standard.stringArray(forKey: "trommi-goals-folded") ?? []
       folded.removeAll { $0 == id }; if action["folded"] as? Bool == true { folded.append(id) }
       UserDefaults.standard.set(folded, forKey: "trommi-goals-folded")
-    }
-    if !isDemo, action["do"] as? String == "fold_helpers", let id = action["session_id"] as? String {
-      var open = UserDefaults.standard.stringArray(forKey: Self.stacksOpen) ?? []
-      open.removeAll { $0 == id }; if action["open"] as? Bool == true { open.append(id) }
-      UserDefaults.standard.set(open, forKey: Self.stacksOpen)
     }
     send(["type": "action", "action": action], blobs: blobs)
   }

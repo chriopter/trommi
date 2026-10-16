@@ -31,7 +31,6 @@
       "link": "live",
       "blocked": false,
       "unheard": 0,
-      "depth": 0,
       "slug": "fernly-web",
       "mark": "draw:leaf",
       "team_id": "main",
@@ -39,274 +38,34 @@
       "working": true,
       "main": true,
       "crowned": true,
-      "subs": [
-        "afe6ff94d965b37dccfee8d7d194f2f5",
-        "90a9167150c8487641fba3ecb3b48c67",
-        "7918819a346eb1a53310de7a32ca7467",
-        "5e635ce617a0aef933976af9fab2540a",
-        "6c26f924651b046908ab4e0f57c52876",
-        "425412ed2b37ef1052c0a8ecc47949f1"
-      ],
-      "open": 2,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "main:on",
-      "says": {
-        "key": "badge.working_open",
-        "args": {
-          "n": "2"
-        },
-        "en": "Working, 2 questions open"
-      },
-      "folded": {
-        "open": 8,
-        "knocks": false,
-        "online": true,
-        "working": true,
+      "helpers": {
         "says": {
-          "key": "badge.working_open",
-          "args": {
-            "n": "8"
-          },
-          "en": "Working, 8 questions open"
-        },
-        "lie": [
-          "afe6ff94d965b37dccfee8d7d194f2f5",
-          "90a9167150c8487641fba3ecb3b48c67",
-          "7918819a346eb1a53310de7a32ca7467",
-          "5e635ce617a0aef933976af9fab2540a"
-        ],
-        "more": 2,
-        "helpers": {
           "key": "session.helpers",
           "args": {
             "n": "6"
           },
           "en": "6 helpers"
         },
-        "unread": false
+        "working": [
+          false,
+          false,
+          false,
+          false,
+          true,
+          true
+        ]
       },
-      "unfolded": false,
-      "tucked": false,
-      "last": {
-        "text": "Only the Safari test, and it is a test problem, not a checkout problem. Monday or Tuesday is on your Desk, with the reasons.",
-        "at_ms": 1791468720000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "16:12"
-          },
-          "en": "16:12"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "afe6ff94d965b37dccfee8d7d194f2f5",
-      "name": {
-        "key": "session.name",
-        "en": "Landing Page"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "landing-page",
-      "mark": "draw:brush",
-      "team_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d833",
-      "open": 1,
+      "open": 8,
       "knocks": false,
-      "hushed": false,
       "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "1"
-        },
-        "en": "1 question open"
-      },
-      "unfolded": false,
-      "tucked": true,
-      "last": {
-        "text": "Done, 10% smaller from 1280 px. Both versions on your Desk again.",
-        "at_ms": 1791468240000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "16:04"
-          },
-          "en": "16:04"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "90a9167150c8487641fba3ecb3b48c67",
-      "name": {
-        "key": "session.name",
-        "en": "Copywriting"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "copy",
-      "mark": "draw:pen",
-      "team_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d833",
-      "open": 2,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "2"
-        },
-        "en": "2 questions open"
-      },
-      "unfolded": false,
-      "tucked": true,
-      "last": {
-        "text": "One more: the button on step 1. Both versions are on your Desk, each with its picture.",
-        "at_ms": 1791467820000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "15:57"
-          },
-          "en": "15:57"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "7918819a346eb1a53310de7a32ca7467",
-      "name": {
-        "key": "session.name",
-        "en": "Onboarding"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "onboarding",
-      "mark": "draw:kite",
-      "team_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d833",
-      "open": 2,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "2"
-        },
-        "en": "2 questions open"
-      },
-      "unfolded": false,
-      "tucked": true,
-      "last": {
-        "text": "When we ask for notifications is the last open point. On your Desk.",
-        "at_ms": 1791466680000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "15:38"
-          },
-          "en": "15:38"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "5e635ce617a0aef933976af9fab2540a",
-      "name": {
-        "key": "session.name",
-        "en": "Page Speed"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "web-perf",
-      "mark": "draw:bolt",
-      "team_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d833",
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "unfolded": false,
-      "tucked": true,
-      "last": {
-        "text": "Then I stop here. Next would be the fonts (42 kB), after the launch.",
-        "at_ms": 1791465900000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "15:25"
-          },
-          "en": "15:25"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "6c26f924651b046908ab4e0f57c52876",
-      "name": {
-        "key": "session.name",
-        "en": "Testing"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "e2e-tests",
-      "mark": "draw:flask",
-      "team_id": "main",
-      "online": true,
-      "working": true,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d833",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
+      "group": "main:on",
       "says": {
         "key": "badge.working_open",
         "args": {
-          "n": "1"
+          "n": "8"
         },
-        "en": "Working, 1 question open"
+        "en": "Working, 8 questions open"
       },
-      "unfolded": false,
-      "tucked": true,
       "last": {
         "text": "41 of 44 green; the Safari checkout test fails 2 of 12 runs, always on the iframe. Question on your Desk.",
         "at_ms": 1791469440000,
@@ -321,44 +80,6 @@
       "unread": false
     },
     {
-      "id": "425412ed2b37ef1052c0a8ecc47949f1",
-      "name": {
-        "key": "session.name",
-        "en": "Search & Social"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "seo",
-      "mark": "draw:eye",
-      "team_id": "main",
-      "online": false,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d833",
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "unfolded": false,
-      "tucked": true,
-      "last": {
-        "text": "Reworking it as you said: the app on a phone, drawn plants behind.",
-        "at_ms": 1791468420000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "16:07"
-          },
-          "en": "16:07"
-        }
-      },
-      "unread": false
-    },
-    {
       "id": "4abc388943bda4956b58dc2d5eb3e7e1",
       "name": {
         "key": "session.name",
@@ -367,7 +88,6 @@
       "link": "live",
       "blocked": false,
       "unheard": 0,
-      "depth": 0,
       "slug": "fernly-ios",
       "mark": "draw:phone",
       "team_id": "main",
@@ -375,137 +95,32 @@
       "working": true,
       "main": true,
       "crowned": false,
-      "subs": [
-        "0a85b9f6c5537929ef7b048ddb973516",
-        "46d829ea328da3f7b5d0a9b97a644fbe",
-        "8b7221422f2856f685ea49f997e8d0f9",
-        "eed5d0d1720b7655676b19dd7b2411f6"
-      ],
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "main:on",
-      "says": {
-        "key": "badge.working_open",
-        "args": {
-          "n": "1"
-        },
-        "en": "Working, 1 question open"
-      },
-      "folded": {
-        "open": 3,
-        "knocks": false,
-        "online": true,
-        "working": true,
+      "helpers": {
         "says": {
-          "key": "badge.working_open",
-          "args": {
-            "n": "3"
-          },
-          "en": "Working, 3 questions open"
-        },
-        "lie": [
-          "0a85b9f6c5537929ef7b048ddb973516",
-          "46d829ea328da3f7b5d0a9b97a644fbe",
-          "8b7221422f2856f685ea49f997e8d0f9",
-          "eed5d0d1720b7655676b19dd7b2411f6"
-        ],
-        "more": 0,
-        "helpers": {
           "key": "session.helpers",
           "args": {
             "n": "4"
           },
           "en": "4 helpers"
         },
-        "unread": false
+        "working": [
+          false,
+          false,
+          true,
+          true
+        ]
       },
-      "unfolded": false,
-      "tucked": false,
-      "last": {
-        "text": "App Store text is ready; the release notes are a page in Artifacts.",
-        "at_ms": 1791469080000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "16:18"
-          },
-          "en": "16:18"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "0a85b9f6c5537929ef7b048ddb973516",
-      "name": {
-        "key": "session.name",
-        "en": "Widgets"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "widgets",
-      "mark": "draw:grid",
-      "team_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
-      "open": 1,
+      "open": 3,
       "knocks": false,
-      "hushed": false,
       "away": false,
-      "group": "",
+      "group": "main:on",
       "says": {
-        "key": "badge.open",
+        "key": "badge.working_open",
         "args": {
-          "n": "1"
+          "n": "3"
         },
-        "en": "1 question open"
+        "en": "Working, 3 questions open"
       },
-      "unfolded": false,
-      "tucked": true,
-      "last": {
-        "text": "Yes, with an App Intent on iOS 17 and later. 96% of the testers are on 17+.",
-        "at_ms": 1791466260000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "15:31"
-          },
-          "en": "15:31"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "46d829ea328da3f7b5d0a9b97a644fbe",
-      "name": {
-        "key": "session.name",
-        "en": "Push Reminders"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "push-reminders",
-      "mark": "draw:bell",
-      "team_id": "main",
-      "online": true,
-      "working": true,
-      "main": false,
-      "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "unfolded": false,
-      "tucked": true,
       "last": {
         "text": "Testing time-zone changes for the daily time.",
         "at_ms": 1791469260000,
@@ -520,89 +135,6 @@
       "unread": false
     },
     {
-      "id": "8b7221422f2856f685ea49f997e8d0f9",
-      "name": {
-        "key": "session.name",
-        "en": "App Store"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "app-store",
-      "mark": "draw:star",
-      "team_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "1"
-        },
-        "en": "1 question open"
-      },
-      "unfolded": false,
-      "tucked": true,
-      "last": {
-        "text": "Which go first is on your Desk.",
-        "at_ms": 1791465000000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "15:10"
-          },
-          "en": "15:10"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "eed5d0d1720b7655676b19dd7b2411f6",
-      "name": {
-        "key": "session.name",
-        "en": "Crash Fixes"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "crash-triage",
-      "mark": "draw:bug",
-      "team_id": "main",
-      "online": true,
-      "working": true,
-      "main": false,
-      "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "unfolded": false,
-      "tucked": true,
-      "last": {
-        "text": "419 has the widget fix. PlantPhotoCache is next; it needs a device with little storage to reproduce.",
-        "at_ms": 1791468900000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "16:15"
-          },
-          "en": "16:15"
-        }
-      },
-      "unread": false
-    },
-    {
       "id": "9aa575fae2c64ece4ae4ab1b783673da",
       "name": {
         "key": "session.name",
@@ -611,98 +143,38 @@
       "link": "live",
       "blocked": false,
       "unheard": 0,
-      "depth": 0,
       "slug": "design-system",
       "mark": "draw:diamond",
       "team_id": "main",
       "online": true,
-      "working": false,
+      "working": true,
       "main": true,
       "crowned": false,
-      "subs": [
-        "e52ac023c086b1da68e774acc6be0a36",
-        "20d05b9d755bf0bdd5cc19e26e313c1b",
-        "8c33dad27819e29bb85644eb3f0cf7f3"
-      ],
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "main:on",
-      "folded": {
-        "open": 3,
-        "knocks": true,
-        "online": true,
-        "working": true,
+      "helpers": {
         "says": {
-          "key": "badge.working_open",
-          "args": {
-            "n": "3"
-          },
-          "en": "Working, 3 questions open"
-        },
-        "lie": [
-          "e52ac023c086b1da68e774acc6be0a36",
-          "20d05b9d755bf0bdd5cc19e26e313c1b",
-          "8c33dad27819e29bb85644eb3f0cf7f3"
-        ],
-        "more": 0,
-        "helpers": {
           "key": "session.helpers",
           "args": {
             "n": "3"
           },
           "en": "3 helpers"
         },
-        "unread": false
+        "working": [
+          true,
+          false,
+          false
+        ]
       },
-      "unfolded": false,
-      "tucked": false,
-      "last": {
-        "text": "The tab bar icons in three styles are on your Desk; the whole set follows the pick.",
-        "at_ms": 1791467100000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "15:45"
-          },
-          "en": "15:45"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "e52ac023c086b1da68e774acc6be0a36",
-      "name": {
-        "key": "session.name",
-        "en": "Design Tokens"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "tokens",
-      "mark": "draw:drop",
-      "team_id": "main",
-      "online": true,
-      "working": true,
-      "main": false,
-      "crowned": false,
-      "parent": "9aa575fae2c64ece4ae4ab1b783673da",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
+      "open": 3,
+      "knocks": true,
       "away": false,
-      "group": "",
+      "group": "main:on",
       "says": {
         "key": "badge.working_open",
         "args": {
-          "n": "1"
+          "n": "3"
         },
-        "en": "Working, 1 question open"
+        "en": "Working, 3 questions open"
       },
-      "unfolded": false,
-      "tucked": true,
       "last": {
         "text": "Explained on the card.",
         "at_ms": 1791469260000,
@@ -712,96 +184,6 @@
             "time": "16:21"
           },
           "en": "16:21"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "20d05b9d755bf0bdd5cc19e26e313c1b",
-      "name": {
-        "key": "session.name",
-        "en": "Icons"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "icons",
-      "mark": "draw:flower",
-      "team_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "9aa575fae2c64ece4ae4ab1b783673da",
-      "open": 1,
-      "knocks": true,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "1"
-        },
-        "en": "1 question open"
-      },
-      "unfolded": false,
-      "tucked": true,
-      "last": {
-        "text": "Tab bar in three styles on your Desk.",
-        "at_ms": 1791467100000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "15:45"
-          },
-          "en": "15:45"
-        }
-      },
-      "unread": false
-    },
-    {
-      "id": "8c33dad27819e29bb85644eb3f0cf7f3",
-      "name": {
-        "key": "session.name",
-        "en": "Dark Mode"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "dark-mode",
-      "mark": "draw:moon",
-      "team_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "9aa575fae2c64ece4ae4ab1b783673da",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "1"
-        },
-        "en": "1 question open"
-      },
-      "unfolded": false,
-      "tucked": true,
-      "last": {
-        "text": "Dark mode: keep the plant photos at full colour?",
-        "at_ms": 1791463680000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "14:48"
-          },
-          "en": "14:48"
         }
       },
       "unread": false
@@ -816,6 +198,6 @@
   "waiting": 14,
   "knocking": 1,
   "stopped": 0,
-  "working": 6,
+  "working": 3,
   "unheard": 0
 }

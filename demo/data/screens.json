@@ -61,7 +61,7 @@
     {"id":"desk--fernly-team","screen":"Desk","state":"Fernly team","web":{"path":"/team/main","state":null,"mock":"1"}},
     {"id":"desk--platform-team","screen":"Desk","state":"Platform team","web":{"path":"/team/platform","state":null,"mock":"1"}},
     {"id":"chat","screen":"Chat","state":"As it is","web":{"path":"/chat/54ddca7af4029f0526984da1e346d833","state":null,"mock":"1"}},
-    {"id":"chat--a-helper","screen":"Chat","state":"A helper","web":{"path":"/chat/afe6ff94d965b37dccfee8d7d194f2f5","state":null,"mock":"1"}},
+    {"id":"chat--with-helpers","screen":"Chat","state":"With helpers","web":{"path":"/chat/9aa575fae2c64ece4ae4ab1b783673da","state":null,"mock":"1"}},
     {"id":"chat--infra-codex","screen":"Chat","state":"infra (Codex)","web":{"path":"/chat/5ef619647e0e8185fef0e3be40ff4809","state":null,"mock":"1"}},
     {"id":"chat--payments-service","screen":"Chat","state":"payments-service","web":{"path":"/chat/9ace71aadae23ea1f467d62b83b1d604","state":null,"mock":"1"}},
     {"id":"card","screen":"Card","state":"As it is","web":{"path":"/card/a38afef6dbdd056db8042980f2b83336","state":null,"mock":"1"}},

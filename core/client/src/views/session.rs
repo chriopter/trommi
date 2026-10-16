@@ -15,14 +15,16 @@
 //! - its open questions are the decisions and approvals that wait for him (`waiting`, its count `open`): a card to
 //!   read is not one;
 //! - above the field: why the session does not hear (cut off, gone, not listening) with the step in its terminal,
-//!   or that his last message was not picked up for two minutes.
+//!   or that his last message was not picked up for two minutes;
+//! - its helpers (its agent's subagents, `helpers.rs`) stand in a short list above the status lines: name and state,
+//!   no way into a chat of their own; a status line of a helper names it (`StatusLineView::helper`).
 
 use super::board::{key_of, reads_as_info, Board, Lens, TALK_PAGE, UNHEARD_MS};
 use super::desk::{card_row, request_row, shown_title};
 use super::sidebar::{hand_of, link_of};
 use super::talk::{card_ref, choices_of, event_label_by, events_of, in_order, items_of, Entry, Side, UNSENT};
 use super::words::{local, next_midnight, quiet_words, say};
-use super::{CardRefView, DotView, EmptyTalkView, EventView, FixView, LinkNoteView, LinkWords, MoreView, SessionView, StatusLineView, TalkRow, Text};
+use super::{CardRefView, DotView, EmptyTalkView, EventView, FixView, HelperListView, HelperRowView, LinkNoteView, LinkWords, MoreView, SessionView, StatusLineView, TalkRow, Text};
 use crate::model::types::Card;
 use crate::off_mind::went_at;
 use crate::status::card_place;
@@ -172,6 +174,18 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
     if let Some(t) = chat {
         items_of(b, t, None, heard_up_to, &mut entries);
     }
+    // (a helper session of before: its Chat stands in its main's, its words under the helper's name)
+    for (key, name) in b.legacy.iter().filter(|(k, _)| b.by_key.get(*k) == Some(&idx)) {
+        if let Some(t) = m.timelines.get(&format!("chat:session/{key}")) {
+            let from = entries.len();
+            items_of(b, t, None, heard_up_to, &mut entries);
+            for e in &mut entries[from..] {
+                if !e.row.from_me {
+                    e.row.helper = Some(name.clone());
+                }
+            }
+        }
+    }
     in_order(&mut entries);
     // An approval it waits for stands at the end of the conversation, as its Desk row (it has no thread of its own).
     let asks: Vec<&str> = b.all_fresh.iter().filter(|f| f.permission && f.agent == Some(idx)).map(|f| f.id.as_str()).collect();
@@ -220,22 +234,23 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
 
     let has_more = chat.is_some_and(|t| t.has_more);
     let day_of = |ts: u64| local(ts, zone).days;
-    // (what the runs need of the row before: its side, typed in the terminal or not, its time)
-    let mut prev: Option<(Side, bool, u64)> = None;
+    // (what the runs need of the row before: its side, typed in the terminal or not, its time, its helper)
+    let mut prev: Option<(Side, bool, u64, Option<String>)> = None;
     let mut talk: Vec<TalkRow> = Vec::with_capacity(entries.len());
     let last_said = entries.iter().rfind(|e| e.side != Side::Event).map(|e| (e.side, e.row.time_ms));
     let mine = entries.iter().rfind(|e| e.side == Side::User && !e.row.terminal && e.seq != UNSENT).map(|e| (e.seq, e.row.time_ms));
     for e in entries {
         let Entry { side, card_id, mut row, .. } = e;
         let ts = row.time_ms;
-        let run = prev.is_some_and(|(p_side, p_terminal, p_ts)| {
-            p_side == side && (side != Side::User || p_terminal == row.terminal) && day_of(p_ts) == day_of(ts) && (side == Side::Event || ts.saturating_sub(p_ts) < GROUP_GAP_MS)
+        // (a helper's words start a run of their own: its name stands in the head)
+        let run = prev.as_ref().is_some_and(|(p_side, p_terminal, p_ts, p_helper)| {
+            *p_side == side && (side != Side::User || *p_terminal == row.terminal) && *p_helper == row.helper && day_of(*p_ts) == day_of(ts) && (side == Side::Event || ts.saturating_sub(*p_ts) < GROUP_GAP_MS)
         });
-        row.day = match prev {
+        row.day = match &prev {
             None => (!has_more).then(|| day_label(ts, now, zone)),
-            Some((_, _, p_ts)) => (day_of(p_ts) != day_of(ts)).then(|| day_label(ts, now, zone)),
+            Some((_, _, p_ts, _)) => (day_of(*p_ts) != day_of(ts)).then(|| day_label(ts, now, zone)),
         };
-        prev = Some((side, row.terminal, ts));
+        prev = Some((side, row.terminal, ts, row.helper.clone()));
         let asked = side == Side::Event && row.event.as_ref().is_some_and(|ev| ev.kind == "asked");
         if asked {
             let id = card_id.as_deref().unwrap_or("");
@@ -387,6 +402,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
             };
             Some(StatusLineView {
                 id: t.id.clone(),
+                helper: t.helper.clone(),
                 label: t.label.as_str().unwrap_or("").to_string(),
                 detail: t.detail.as_str().unwrap_or("").to_string(),
                 state: state.into(),
@@ -400,12 +416,10 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
     let open = waiting.len() as u32;
     let n = open.to_string();
     let account_of = |key: &str| m.sessions.get(key).and_then(|s| s.profile.as_ref()).and_then(|p| p.get("account")).filter(|v| v.is_object());
-    let usage = account_of(&a.row.key)
-        .or_else(|| a.row.parent_key.as_deref().and_then(account_of))
-        .and_then(|acc| super::settings::usage_of(acc, now));
+    let usage = account_of(&a.row.key).and_then(|acc| super::settings::usage_of(acc, now));
     Some(SessionView {
         usage,
-        parent: a.row.parent_key.clone(),
+        helpers: helper_list(b, idx),
         archived: a.row.archived,
         questions: Vec::new(),
         files: Vec::new(),
@@ -453,6 +467,42 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
                 say("session.open.some", format!("{n} open questions: go to the first one"), &[("n", &n)])
             }
         }),
+    })
+}
+
+/// A session's helpers on its page: "3 helpers", "1 working · their cards come with this session", a row each.
+fn helper_list(b: &Board, idx: usize) -> Option<HelperListView> {
+    let list = b.helpers(idx);
+    if list.is_empty() {
+        return None;
+    }
+    let online = b.agents[idx].row.online;
+    let n = list.len().to_string();
+    let working = list.iter().filter(|h| h.working && online).count();
+    let w = working.to_string();
+    let rows = list
+        .iter()
+        .map(|h| {
+            let works = h.working && online;
+            let q = h.waiting.to_string();
+            let open = match h.waiting {
+                0 => None,
+                1 => Some("1 open question".to_string()),
+                k => Some(format!("{k} open questions")),
+            };
+            let says = match (works, open) {
+                (true, Some(o)) => say("helper.working.open", format!("Working · {o}"), &[("n", &q)]),
+                (true, None) => say("helper.working", "Working", &[]),
+                (false, Some(o)) => say("helper.open", o, &[("n", &q)]),
+                (false, None) => say("helper.idle", "Not working", &[]),
+            };
+            HelperRowView { name: h.name.clone(), working: works, says }
+        })
+        .collect();
+    Some(HelperListView {
+        head: if list.len() == 1 { say("session.helpers.one", "1 helper", &[("n", "1")]) } else { say("session.helpers", format!("{n} helpers"), &[("n", &n)]) },
+        sub: say("helpers.sub", format!("{w} working · their cards come with this session"), &[("n", &w)]),
+        rows,
     })
 }
 
@@ -752,20 +802,45 @@ mod tests {
     }
 
     #[test]
-    fn the_heading_has_the_accounts_rings_the_main_and_the_archive() {
+    fn the_heading_has_the_accounts_rings_and_the_archive() {
         let mut r = Room::default();
         r.session("a", None, true)["profile"]["account"] = json!({ "plan": "max", "email": "a@b.c", "five_hour": { "used": 42, "resets_at": NOW + 60 * MIN }, "weekly": { "used": 85.4 } });
-        r.session("h", Some("a"), false);
-        r.settings.insert(dev("h"), json!({ "archived": true }));
+        r.session("b", None, false);
+        r.settings.insert(dev("b"), json!({ "archived": true }));
         let main = view(&r, "a");
         let usage = main.usage.clone().expect("its account");
         assert_eq!(usage.plan, "Claude Max");
         assert_eq!(usage.meters.iter().map(|m| (m.key.as_str(), m.used, m.hot)).collect::<Vec<_>>(), [("five_hour", 42, false), ("weekly", 85, true)]);
-        assert_eq!((main.parent.as_deref(), main.archived), (None, false));
-        // a helper: its main's account, its main named, archived
-        let helper = view(&r, "h");
-        assert_eq!(helper.usage, main.usage);
-        assert_eq!((helper.parent.as_deref(), helper.archived), (Some(main.id.as_str()), true));
+        assert!(!main.archived);
+        assert!(view(&r, "b").archived);
+    }
+
+    /// Its helpers stand in a short list: name and state; a helper's status line names it, its words carry its name;
+    /// a helper session of before is one of them, its Chat in its main's.
+    #[test]
+    fn the_helpers_stand_in_the_session() {
+        let mut r = Room::default();
+        r.session("a", None, true)["status_lines"] = json!([
+            { "id": "l1", "label": "Tab bar icons", "state": "working", "helper": "Icons", "updated_at": NOW - MIN },
+            { "id": "l2", "label": "Own work", "state": "working", "updated_at": NOW - MIN },
+        ]);
+        r.card("q1", "a", "decision", "normal")["helper"] = json!("Icons");
+        r.say("a", None, 41, "a", 3 * MIN, json!({ "text": "Tabs drawn.", "helper": "Icons" }));
+        r.session("old", Some("a"), false);
+        r.card("q2", "old", "decision", "normal");
+        r.say("old", None, 42, "old", 2 * MIN, json!({ "text": "From before." }));
+        let v = view(&r, "a");
+        let h = v.helpers.clone().expect("its helpers");
+        assert_eq!((h.head.en.as_str(), h.sub.en.as_str()), ("2 helpers", "1 working · their cards come with this session"));
+        let rows: Vec<(&str, bool, &str)> = h.rows.iter().map(|x| (x.name.as_str(), x.working, x.says.en.as_str())).collect();
+        assert!(rows.contains(&("Icons", true, "Working · 1 open question")), "{rows:?}");
+        assert!(rows.contains(&("old", false, "1 open question")), "{rows:?}");
+        let labels: Vec<(Option<&str>, &str)> = v.status_lines.iter().map(|l| (l.helper.as_deref(), l.label.as_str())).collect();
+        assert_eq!(labels, [(Some("Icons"), "Tab bar icons"), (None, "Own work")]);
+        let said: Vec<(&str, Option<&str>)> = v.talk.iter().filter(|t| t.kind == "agent").map(|t| (t.text.as_str(), t.helper.as_deref())).collect();
+        assert_eq!(said, [("Tabs drawn.", Some("Icons")), ("From before.", Some("old"))]);
+        assert_eq!(v.waiting.len(), 2, "the helpers' questions are the session's");
+        assert_eq!(view(&r, "old").id, v.id, "no page of its own: its main's");
     }
 
     #[test]

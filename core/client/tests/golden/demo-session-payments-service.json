@@ -150,6 +150,145 @@
       "scribble": false
     },
     {
+      "id": "e337000",
+      "from_me": false,
+      "text": "Retries: day 1, day 3, day 7. On your Desk.",
+      "time_ms": 1790929200000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 337000,
+      "day": {
+        "key": "day.date",
+        "args": {
+          "day": "2",
+          "month": "October",
+          "weekday": "Friday"
+        },
+        "en": "Friday 2 October"
+      },
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Webhooks"
+    },
+    {
+      "id": "v337600a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1790929800000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 337600,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "246ebea0994ccda03d8cc8bbf724b2ff",
+        "number": 2,
+        "title": "Retry failed renewals three times over seven days?"
+      },
+      "event": {
+        "kind": "done",
+        "label": {
+          "key": "event.done_by",
+          "args": {
+            "name": "Payments"
+          },
+          "en": "Payments closed it"
+        },
+        "about": "Retry failed renewals three times over seven days?",
+        "text": "Done: smart retries on since day 15. Failed renewals 4.1% → 1.3%.",
+        "echo": false,
+        "asked": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "v337600.5d",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1790931600000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 337600,
+      "cont": true,
+      "terminal": false,
+      "card": {
+        "id": "246ebea0994ccda03d8cc8bbf724b2ff",
+        "number": 2,
+        "title": "Retry failed renewals three times over seven days?"
+      },
+      "event": {
+        "kind": "done",
+        "label": {
+          "key": "event.done_by",
+          "args": {
+            "name": "Payments"
+          },
+          "en": "Payments closed it"
+        },
+        "about": "Retry failed renewals three times over seven days?",
+        "text": "Done: smart retries on since day 15. Failed renewals 4.1% → 1.3%.",
+        "echo": true,
+        "asked": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "v338200d",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1790930400000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 338200,
+      "cont": true,
+      "terminal": false,
+      "card": {
+        "id": "246ebea0994ccda03d8cc8bbf724b2ff",
+        "number": 2,
+        "title": "Retry failed renewals three times over seven days?"
+      },
+      "event": {
+        "kind": "decided",
+        "label": {
+          "key": "event.you_chose",
+          "en": "You chose"
+        },
+        "about": "Retry failed renewals three times over seven days?",
+        "text": "Yes",
+        "echo": true,
+        "asked": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "e704800",
+      "from_me": false,
+      "text": "The webhook route keeps the raw body now, tested through the real middleware.",
+      "time_ms": 1791297000000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 704800,
+      "day": {
+        "key": "day.date",
+        "args": {
+          "day": "6",
+          "month": "October",
+          "weekday": "Tuesday"
+        },
+        "en": "Tuesday 6 October"
+      },
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Webhooks"
+    },
+    {
       "id": "e823300",
       "from_me": false,
       "text": "Smart retries for two weeks now: failed renewals 4.1% → 1.3%.",
@@ -229,6 +368,20 @@
       "scribble": false
     },
     {
+      "id": "e859604",
+      "from_me": false,
+      "text": "Invoices are PDFs with a number per country series.",
+      "time_ms": 1791451800000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 859604,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Invoices"
+    },
+    {
       "id": "e865601",
       "from_me": true,
       "text": "Checkout must be ready for the web launch on Monday.",
@@ -253,6 +406,467 @@
       "cont": false,
       "terminal": false,
       "scribble": false
+    },
+    {
+      "id": "e870100",
+      "from_me": false,
+      "text": "400 rps with p95 176 ms. Info card on your Desk.",
+      "time_ms": 1791462300000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 870100,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Load Testing"
+    },
+    {
+      "id": "v870401i",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791458400000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 870401,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "6deb90374cb873045fe03e39c3ab0348",
+        "number": 25,
+        "title": "Load test: checkout holds 400 requests a second"
+      },
+      "event": {
+        "kind": "info",
+        "label": {
+          "key": "event.info_by",
+          "args": {
+            "name": "Payments"
+          },
+          "en": "Payments wrote"
+        },
+        "text": "Load test: checkout holds 400 requests a second",
+        "echo": false,
+        "asked": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "e872201",
+      "from_me": false,
+      "text": "VAT rates for all 27 EU countries come from Stripe Tax now.",
+      "time_ms": 1791464400000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 872201,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Tax & VAT"
+    },
+    {
+      "id": "v873100a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791466560000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 873100,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "a2706545530be0dce3b13417c2728966",
+        "number": 29,
+        "title": "Show prices with VAT included everywhere?"
+      },
+      "row": {
+        "id": "a2706545530be0dce3b13417c2728966",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Show prices with VAT included everywhere?",
+        "words": "Required in the EU. In the US prices are usually shown without tax.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791466560000,
+        "from": {
+          "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+          "name": "Payments",
+          "mark": "draw:lock",
+          "path": [
+            "Platform",
+            "Payments"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Tax & VAT"
+            },
+            "en": "Helper Tax & VAT"
+          }
+        },
+        "run": 0,
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "eu-only",
+              "label": "Only in the EU",
+              "thumb": "no",
+              "thumbs": false,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Only in the EU"
+                },
+                "en": "Only in the EU"
+              }
+            },
+            {
+              "key": "everywhere",
+              "label": "Included everywhere",
+              "thumb": "yes",
+              "thumbs": false,
+              "lead": true,
+              "advised": true,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "tip": {
+                "key": "tile.recommended",
+                "en": "Recommended"
+              },
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Included everywhere"
+                },
+                "en": "Included everywhere"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "e873102",
+      "from_me": false,
+      "text": "One question left: VAT included everywhere?",
+      "time_ms": 1791465300000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 873102,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Tax & VAT"
+    },
+    {
+      "id": "v874120a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791466920000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 874120,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "cf5922f1d3baa4cf7dd0d9b573716bfb",
+        "number": 33,
+        "title": "Which invoice details can people change themselves?"
+      },
+      "row": {
+        "id": "cf5922f1d3baa4cf7dd0d9b573716bfb",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Which invoice details can people change themselves?",
+        "words": "Tick everything they may change in Settings. The rest goes through support.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791466920000,
+        "from": {
+          "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+          "name": "Payments",
+          "mark": "draw:lock",
+          "path": [
+            "Platform",
+            "Payments"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Invoices"
+            },
+            "en": "Helper Invoices"
+          }
+        },
+        "run": 0,
+        "tiles": {
+          "kind": "choose",
+          "others": 0,
+          "says": {
+            "key": "tile.choose.several",
+            "args": {
+              "n": "4"
+            },
+            "en": "Choose: 4 options, several"
+          }
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "e874122",
+      "from_me": false,
+      "text": "What people may change themselves is on your Desk.",
+      "time_ms": 1791466320000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 874122,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Invoices"
+    },
+    {
+      "id": "e876281",
+      "from_me": false,
+      "text": "Sheet and page both done, test cards pass.",
+      "time_ms": 1791468480000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876281,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Checkout"
+    },
+    {
+      "id": "v876401a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791463320000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 876401,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "992640bed603743781e3241f6a2de105",
+        "number": 45,
+        "title": "Checkout: a sheet over the app, or its own page?"
+      },
+      "row": {
+        "id": "992640bed603743781e3241f6a2de105",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Checkout: a sheet over the app, or its own page?",
+        "words": "Both are built with Stripe Elements. The sheet keeps people where they were.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791463320000,
+        "from": {
+          "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+          "name": "Payments",
+          "mark": "draw:lock",
+          "path": [
+            "Platform",
+            "Payments"
+          ],
+          "helper": {
+            "key": "from.helper",
+            "args": {
+              "name": "Checkout"
+            },
+            "en": "Helper Checkout"
+          }
+        },
+        "run": 0,
+        "media": [
+          {
+            "file_id": "4d062f8ab1e0e84eef827262aa82a3bd",
+            "kind": "image"
+          },
+          {
+            "file_id": "2b2a46347d88b1572eb48367c50a40a6",
+            "kind": "image"
+          }
+        ],
+        "media_says": {
+          "key": "row.media",
+          "args": {
+            "n": "2"
+          },
+          "en": "Look at 2 pictures and videos"
+        },
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "page",
+              "label": "Its own page",
+              "thumb": "no",
+              "thumbs": false,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Its own page"
+                },
+                "en": "Its own page"
+              }
+            },
+            {
+              "key": "sheet",
+              "label": "Sheet over the app",
+              "thumb": "yes",
+              "thumbs": false,
+              "lead": true,
+              "advised": true,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "tip": {
+                "key": "tile.recommended",
+                "en": "Recommended"
+              },
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Sheet over the app"
+                },
+                "en": "Sheet over the app"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876461",
+      "from_me": false,
+      "text": "Both pass the test cards (3-D Secure, declined, insufficient funds). Apple Pay shows in both.",
+      "time_ms": 1791468660000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876461,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "992640bed603743781e3241f6a2de105",
+        "number": 45,
+        "title": "Checkout: a sheet over the app, or its own page?"
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876700",
+      "from_me": true,
+      "text": "And on a small phone? The sheet looks tall.",
+      "time_ms": 1791468900000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 876700,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "992640bed603743781e3241f6a2de105",
+        "number": 45,
+        "title": "Checkout: a sheet over the app, or its own page?"
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876702",
+      "from_me": true,
+      "text": "Which one do you prefer?",
+      "time_ms": 1791468900000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 876702,
+      "cont": true,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e876760",
+      "from_me": false,
+      "text": "On a 375-point screen it scrolls by 40 points; the pay button stays pinned at the bottom.",
+      "time_ms": 1791468960000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876760,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "992640bed603743781e3241f6a2de105",
+        "number": 45,
+        "title": "Checkout: a sheet over the app, or its own page?"
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876762",
+      "from_me": false,
+      "text": "The sheet: people come from the plant list and go back to it.",
+      "time_ms": 1791468960000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876762,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Checkout"
     },
     {
       "id": "e877362",
@@ -316,6 +930,20 @@
         ]
       },
       "scribble": false
+    },
+    {
+      "id": "e877420",
+      "from_me": false,
+      "text": "Next run: 400 users for 10 minutes. It waits for your OK.",
+      "time_ms": 1791469620000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 877420,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "helper": "Load Testing"
     }
   ],
   "status_lines": [
@@ -345,13 +973,101 @@
         "en": "working"
       },
       "updated_ms": 1791469620000
+    },
+    {
+      "id": "checkout-variant",
+      "label": "Sheet or page",
+      "helper": "Checkout",
+      "detail": "Both built, on your Desk",
+      "state": "decision",
+      "says": {
+        "key": "line.decision",
+        "en": "waits on you"
+      },
+      "updated_ms": 1791468600000,
+      "card": {
+        "id": "992640bed603743781e3241f6a2de105",
+        "number": 45,
+        "title": "Checkout: a sheet over the app, or its own page?"
+      }
+    },
+    {
+      "id": "invoices-edit",
+      "label": "Editable fields",
+      "helper": "Invoices",
+      "detail": "Which ones?",
+      "state": "decision",
+      "says": {
+        "key": "line.decision",
+        "en": "waits on you"
+      },
+      "updated_ms": 1791466320000,
+      "card": {
+        "id": "cf5922f1d3baa4cf7dd0d9b573716bfb",
+        "number": 33,
+        "title": "Which invoice details can people change themselves?"
+      }
+    },
+    {
+      "id": "tax-prices",
+      "label": "Prices",
+      "helper": "Tax & VAT",
+      "detail": "VAT included everywhere?",
+      "state": "decision",
+      "says": {
+        "key": "line.decision",
+        "en": "waits on you"
+      },
+      "updated_ms": 1791465300000,
+      "card": {
+        "id": "a2706545530be0dce3b13417c2728966",
+        "number": 29,
+        "title": "Show prices with VAT included everywhere?"
+      }
+    },
+    {
+      "id": "load-test-k6",
+      "label": "k6 run",
+      "helper": "Load Testing",
+      "detail": "Asks to run 400 users for 10 min",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469620000
     }
   ],
   "questions": [
     {
+      "id": "992640bed603743781e3241f6a2de105",
+      "number": 45,
+      "title": "Checkout: a sheet over the app, or its own page?"
+    },
+    {
+      "id": "cf5922f1d3baa4cf7dd0d9b573716bfb",
+      "number": 33,
+      "title": "Which invoice details can people change themselves?"
+    },
+    {
+      "id": "a2706545530be0dce3b13417c2728966",
+      "number": 29,
+      "title": "Show prices with VAT included everywhere?"
+    },
+    {
+      "id": "6deb90374cb873045fe03e39c3ab0348",
+      "number": 25,
+      "title": "Load test: checkout holds 400 requests a second"
+    },
+    {
       "id": "a7043d48862eac8c164c419182dbd0c7",
       "number": 17,
       "title": "Smart retries: failed renewals down from 4.1% to 1.3%"
+    },
+    {
+      "id": "246ebea0994ccda03d8cc8bbf724b2ff",
+      "number": 2,
+      "title": "Retry failed renewals three times over seven days?"
     },
     {
       "id": "ec2f5263fac9174007a1f17b148b8314",
@@ -360,6 +1076,8 @@
     }
   ],
   "files": [
+    "4d062f8ab1e0e84eef827262aa82a3bd",
+    "2b2a46347d88b1572eb48367c50a40a6",
     "548d053a3254d62f0c0c6a861bca4ca3",
     "9db1442ecce0db9de717f78025f11622",
     "e8b85d437cf6d2790a969bd273f02f95",
@@ -399,7 +1117,249 @@
     "key": "compose",
     "en": "Message to the agent"
   },
-  "open": 0,
+  "waiting": [
+    {
+      "id": "a2706545530be0dce3b13417c2728966",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Show prices with VAT included everywhere?",
+      "words": "Required in the EU. In the US prices are usually shown without tax.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791466560000,
+      "from": {
+        "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+        "name": "Payments",
+        "mark": "draw:lock",
+        "path": [
+          "Platform",
+          "Payments"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Tax & VAT"
+          },
+          "en": "Helper Tax & VAT"
+        }
+      },
+      "run": 0,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "eu-only",
+            "label": "Only in the EU",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Only in the EU"
+              },
+              "en": "Only in the EU"
+            }
+          },
+          {
+            "key": "everywhere",
+            "label": "Included everywhere",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Included everywhere"
+              },
+              "en": "Included everywhere"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "cf5922f1d3baa4cf7dd0d9b573716bfb",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Which invoice details can people change themselves?",
+      "words": "Tick everything they may change in Settings. The rest goes through support.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791466920000,
+      "from": {
+        "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+        "name": "Payments",
+        "mark": "draw:lock",
+        "path": [
+          "Platform",
+          "Payments"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Invoices"
+          },
+          "en": "Helper Invoices"
+        }
+      },
+      "run": 0,
+      "tiles": {
+        "kind": "choose",
+        "others": 0,
+        "says": {
+          "key": "tile.choose.several",
+          "args": {
+            "n": "4"
+          },
+          "en": "Choose: 4 options, several"
+        }
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "992640bed603743781e3241f6a2de105",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Checkout: a sheet over the app, or its own page?",
+      "words": "Both are built with Stripe Elements. The sheet keeps people where they were.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791463320000,
+      "from": {
+        "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+        "name": "Payments",
+        "mark": "draw:lock",
+        "path": [
+          "Platform",
+          "Payments"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Checkout"
+          },
+          "en": "Helper Checkout"
+        }
+      },
+      "run": 0,
+      "media": [
+        {
+          "file_id": "4d062f8ab1e0e84eef827262aa82a3bd",
+          "kind": "image"
+        },
+        {
+          "file_id": "2b2a46347d88b1572eb48367c50a40a6",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "page",
+            "label": "Its own page",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Its own page"
+              },
+              "en": "Its own page"
+            }
+          },
+          {
+            "key": "sheet",
+            "label": "Sheet over the app",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Sheet over the app"
+              },
+              "en": "Sheet over the app"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    }
+  ],
+  "open": 3,
+  "open_word": {
+    "key": "session.open",
+    "args": {
+      "n": "3"
+    },
+    "en": "3 open"
+  },
+  "open_says": {
+    "key": "session.open.some",
+    "args": {
+      "n": "3"
+    },
+    "en": "3 open questions: go to the first one"
+  },
+  "first_open": "v873100a",
   "usage": {
     "plan": "Claude Max",
     "email": "ada@example.org",
@@ -419,6 +1379,65 @@
         "used": 36,
         "hot": false,
         "reset_ms": 1791741000000
+      }
+    ]
+  },
+  "helpers": {
+    "head": {
+      "key": "session.helpers",
+      "args": {
+        "n": "4"
+      },
+      "en": "4 helpers"
+    },
+    "sub": {
+      "key": "helpers.sub",
+      "args": {
+        "n": "1"
+      },
+      "en": "1 working · their cards come with this session"
+    },
+    "rows": [
+      {
+        "name": "Load Testing",
+        "working": true,
+        "says": {
+          "key": "helper.working",
+          "en": "Working"
+        }
+      },
+      {
+        "name": "Checkout",
+        "working": false,
+        "says": {
+          "key": "helper.open",
+          "args": {
+            "n": "1"
+          },
+          "en": "1 open question"
+        }
+      },
+      {
+        "name": "Tax & VAT",
+        "working": false,
+        "says": {
+          "key": "helper.open",
+          "args": {
+            "n": "1"
+          },
+          "en": "1 open question"
+        }
+      },
+      {
+        "name": "Invoices",
+        "working": false,
+        "says": {
+          "key": "helper.open",
+          "args": {
+            "n": "1"
+          },
+          "en": "1 open question"
+        }
       }
     ]
   },
