@@ -96,3 +96,243 @@ fn invalid_hub_counts_never_become_data_rows() {
     assert!(data.rows.is_empty());
     assert_eq!(data.says.as_ref().unwrap().key, "data.failed");
 }
+
+fn deliver_to(world: &World, sim: &mut trommi_client_core::app::sim::Sim, device: trommi_core::ids::DeviceId) {
+    let bytes = world.hub.borrow_mut().stream_news(&device);
+    if let Some(bytes) = bytes {
+        sim.stream(trommi_client_core::app::io::StreamItem::Chunk { bytes: bytes.into() });
+    }
+    sim.advance(1_000);
+}
+
+#[test]
+fn logout_retires_an_unfinished_device_through_another_humans_verified_commit() {
+    let mut world = World::new();
+    let (store, leaving, _) = world.newcomer();
+    let mut keeper = world.sim();
+    keeper.send(start());
+    let id: String = leaving.as_bytes().iter().map(|b| format!("{b:02x}")).collect();
+    assert!(keeper.view.settings.devices.iter().any(|d| d.id == id && d.state == "unfinished"));
+    world.hub.borrow_mut().fault = Some(Box::new(|_, request| {
+        (request.method == "POST" && request.url.ends_with("/v1/envelopes")).then(|| Ok(trommi_client_core::app::io::HttpResponse { status:503, headers:vec![], body:Vec::new().into() }))
+    }));
+    let mut unfinished = world.sim_of(&store);
+    unfinished.send(start());
+    assert!(unfinished.app.engine().is_some());
+    unfinished.send(Event::Action { action: Action::Account { action: AccountAction::SignOut } });
+    assert_eq!(unfinished.view.phase, Phase::SignedOut);
+    assert!(unfinished.device.1.is_empty() && unfinished.cache.is_empty());
+    assert!(world.hub.borrow().departures.contains_key(&leaving), "signed departure is emitted despite the unsent profile and local wipe");
+    world.hub.borrow_mut().fault = None;
+    for _ in 0..20 {
+        deliver_to(&world, &mut keeper, world.me);
+        if !keeper.app.engine().unwrap().roles().0.contains(&leaving) { break; }
+    }
+    assert!(!keeper.app.engine().unwrap().roles().0.contains(&leaving), "{:?}", world.hub.borrow().refused);
+    assert!(!keeper.view.settings.devices.iter().any(|d| d.id == id), "logout must not leave an away or unfinished active device");
+    assert!(keeper.view.settings.removed.iter().any(|d| d.id == id));
+}
+
+#[test]
+fn a_queued_logout_is_replayed_to_the_next_human_app() {
+    let mut world = World::new();
+    let mut leaving = world.sim();
+    leaving.send(start());
+    leaving.send(Event::Action { action: Action::Account { action: AccountAction::SignOut } });
+    assert!(world.hub.borrow().departures.contains_key(&world.me));
+    // No other app was running. A later password/code join starts its stream and sees the signed intent.
+    let (store, new_device, _) = world.newcomer();
+    let mut next = world.sim_of(&store);
+    next.send(start());
+    for _ in 0..20 {
+        deliver_to(&world, &mut next, new_device);
+        if !next.app.engine().unwrap().roles().0.contains(&world.me) { break; }
+    }
+    assert!(!next.app.engine().unwrap().roles().0.contains(&world.me), "{:?}", world.hub.borrow().refused);
+    assert!(next.app.engine().unwrap().roles().0.contains(&new_device));
+}
+
+#[test]
+fn cancelling_an_unfinished_sign_in_can_retire_its_key_without_a_bearer() {
+    let mut world = World::new();
+    let (store, leaving, _) = world.newcomer();
+    let mut keeper = world.sim();
+    keeper.send(start());
+    world.hub.borrow_mut().fault = Some(Box::new(|_, request| {
+        request.url.ends_with("/challenge").then(|| Ok(trommi_client_core::app::io::HttpResponse { status:503, headers:vec![], body:Vec::new().into() }))
+    }));
+    let mut interrupted = world.sim_of(&store);
+    interrupted.send(start());
+    assert_ne!(interrupted.view.phase, Phase::Live);
+    assert!(interrupted.app.engine().is_some());
+    interrupted.send(Event::Action { action: Action::Account { action: AccountAction::SignOut } });
+    assert_eq!(interrupted.view.phase, Phase::SignedOut);
+    assert!(world.hub.borrow().departures.contains_key(&leaving), "retirement must not wait for the token whose sign-in failed");
+    world.hub.borrow_mut().fault = None;
+    for _ in 0..20 {
+        deliver_to(&world, &mut keeper, world.me);
+        if !keeper.app.engine().unwrap().roles().0.contains(&leaving) { break; }
+    }
+    assert!(!keeper.app.engine().unwrap().roles().0.contains(&leaving));
+}
+
+#[test]
+fn a_hostile_hub_cannot_retire_humans_with_forged_or_agent_departures() {
+    use trommi_core::ids::base64url_encode as b64;
+    let mut world = World::new();
+    let (_, other, _) = world.newcomer();
+    let mut keeper = world.sim();
+    keeper.send(start());
+    let before = keeper.app.engine().unwrap().roles();
+    let proof = world.agent.sign_departure_for(&world.room.room_id()).unwrap();
+    for (device, signature) in [(other, vec![0;64]), (world.agent.id(), proof)] {
+        let data = serde_json::json!({"device":device.to_base64url(),"signature":b64(&signature)});
+        let bytes = format!("event: departure\ndata: {data}\n\n").into_bytes();
+        assert!(keeper.stream(trommi_client_core::app::io::StreamItem::Chunk { bytes:bytes.into() }));
+        for _ in 0..3 { deliver_to(&world, &mut keeper, world.me); }
+    }
+    assert_eq!(keeper.app.engine().unwrap().roles(), before);
+}
+
+#[test]
+fn offline_logout_keeps_only_its_public_notice_and_retries_after_restart_without_keys() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    world.hub.borrow_mut().fault = Some(Box::new(|_, request| {
+        request.url.ends_with("/departures").then(|| Err(trommi_client_core::app::io::IoError::new(trommi_client_core::app::io::IoErrorKind::Offline)))
+    }));
+    sim.send(Event::Action { action: Action::Account { action: AccountAction::SignOut } });
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert!(sim.device.1.is_empty());
+    assert_eq!(sim.cache.len(), 1, "all private account cache is wiped; just one public notice waits");
+    let (key, bytes) = sim.cache.iter().next().unwrap();
+    assert!(key.starts_with("public-departure/"));
+    let notice: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+    let fields: Vec<_> = notice.as_object().unwrap().keys().map(String::as_str).collect();
+    assert_eq!(fields, ["device","hub","room","signature"], "no bearer, recovery code or content key is retained");
+    assert_eq!(notice["device"], world.me.to_base64url());
+    sim.restart();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert!(sim.app.engine().is_none());
+    assert_eq!(sim.cache.len(), 1);
+    world.hub.borrow_mut().fault = None;
+    sim.send(Event::Net { online:true });
+    assert!(world.hub.borrow().departures.contains_key(&world.me));
+    assert!(sim.device.1.is_empty() && sim.cache.is_empty());
+    assert!(sim.app.engine().is_none());
+}
+
+#[test]
+fn a_crash_after_the_public_notice_was_synced_finishes_local_key_erasure_on_restart() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    let before_wipe = sim.device.clone();
+    world.hub.borrow_mut().fault = Some(Box::new(|_, request| {
+        request.url.ends_with("/departures").then(|| Err(trommi_client_core::app::io::IoError::new(trommi_client_core::app::io::IoErrorKind::Offline)))
+    }));
+    sim.send(Event::Action { action: Action::Account { action: AccountAction::SignOut } });
+    assert_eq!(sim.cache.len(), 1);
+    // Replay the durable boundary: the public notice is on disk, but the process died before the
+    // following DeviceApply erased its old state. No new private state may be opened for the person.
+    sim.device = before_wipe;
+    sim.restart();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert!(sim.device.1.is_empty() && sim.app.engine().is_none());
+    assert_eq!(sim.cache.len(), 1);
+}
+
+#[test]
+fn logout_during_the_initial_device_load_retires_and_erases_that_device_once_loaded() {
+    let world = World::new();
+    let mut sim = world.sim();
+    let effects = sim.app.handle(common::now(), start());
+    let (loads, other): (Vec<_>,Vec<_>) = effects.into_iter().partition(|e| matches!(e, trommi_client_core::app::Effect::Store { op:trommi_client_core::app::io::StoreOp::DeviceLoad, .. }));
+    assert_eq!(loads.len(), 1);
+    sim.run(other);
+    assert!(sim.app.engine().is_none());
+    sim.send(Event::Action { action:Action::Account { action:AccountAction::SignOut } });
+    sim.run(loads);
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert!(sim.device.1.is_empty() && sim.app.engine().is_none());
+    assert!(world.hub.borrow().departures.contains_key(&world.me));
+}
+
+#[test]
+fn durable_departures_bound_in_flight_requests_and_keep_new_logout_writes_ahead_of_erasure() {
+    use trommi_client_core::app::{App, Effect, StoreAnswer, StoreOp, Entry, IoResult};
+    let world = World::new();
+    let room = world.room.room_id();
+    let mut entries = Vec::new();
+    for _ in 0..12 {
+        let (device, _) = common::new_peer();
+        let signature = device.sign_departure_for(&room).unwrap();
+        let key = format!("public-departure/{}.{}", room.to_base64url(), device.id().to_base64url());
+        let value = serde_json::to_vec(&serde_json::json!({"hub":"https://hub.example", "room":room.to_base64url(), "device":device.id().to_base64url(), "signature":signature})).unwrap().into();
+        entries.push(Entry { key, value });
+    }
+    let mut app = App::new();
+    let effects = app.handle(common::now(), start());
+    let scan = effects.iter().find_map(|e| match e { Effect::Store { id, op:StoreOp::Scan { prefix } } if prefix == "public-departure/" => Some(*id), _ => None }).unwrap();
+    let load = effects.iter().find_map(|e| match e { Effect::Store { id, op:StoreOp::DeviceLoad } => Some(*id), _ => None }).unwrap();
+    let effects = app.handle(common::now(), Event::Store { id:scan, result:IoResult::Ok(StoreAnswer::Entries { entries }) });
+    let requests: Vec<_> = effects.iter().filter_map(|e| match e { Effect::Http { id, .. } => Some(*id), _ => None }).collect();
+    assert_eq!(requests.len(), 8, "only eight durable notices are in flight");
+    let wake = app.handle(common::now(), Event::Wake);
+    assert!(!wake.iter().any(|e| matches!(e, Effect::Http { .. })), "waiting notices do not bypass the limit");
+    let stored = world.sim().device;
+    app.handle(common::now(), Event::Store { id:load, result:IoResult::Ok(StoreAnswer::Device {
+        revision:stored.0, entries:stored.1.into_iter().map(|(key,value)| trommi_client_core::app::DeviceEntry { key:key.into(), value:value.into() }).collect(),
+    }) });
+    assert!(app.engine().is_some());
+    let logout = app.handle(common::now(), Event::Action { action:Action::Account { action:AccountAction::SignOut } });
+    let save = logout.iter().position(|e| matches!(e, Effect::Store { op:StoreOp::PutDurable { put, .. }, .. } if !put.is_empty())).unwrap();
+    let erase = logout.iter().rposition(|e| matches!(e, Effect::Store { op:StoreOp::DeviceApply { delete, .. }, .. } if !delete.is_empty())).unwrap();
+    assert!(save < erase, "the signed public notice is written before private key erasure");
+}
+
+#[test]
+fn a_departure_before_its_own_join_waits_for_verified_human_membership() {
+    use trommi_core::ids::base64url_encode as b64;
+    let mut world = World::new();
+    let mut keeper = world.sim();
+    keeper.send(start());
+    let before = keeper.app.engine().unwrap().roles();
+    let (mut joiner, _) = common::new_peer();
+    let id = joiner.id();
+    let signature = joiner.sign_departure_for(&world.room.room_id()).unwrap();
+    let data = serde_json::json!({"device":id.to_base64url(),"signature":b64(&signature)});
+    keeper.stream(trommi_client_core::app::io::StreamItem::Chunk { bytes:format!("event: departure\ndata: {data}\n\n").into_bytes().into() });
+    assert_eq!(keeper.app.engine().unwrap().roles(), before, "a signed unknown key never invents membership");
+    common::sync(&world.hub.borrow(), &mut world.founder);
+    common::invite(&mut world.founder, &mut joiner, trommi_core::invite::Role::Human);
+    assert!(common::post_all(&mut world.hub.borrow_mut(), &mut world.founder).is_empty());
+    let hex: String = id.as_bytes().iter().map(|b| format!("{b:02x}")).collect();
+    for _ in 0..20 {
+        deliver_to(&world, &mut keeper, world.me);
+        if keeper.view.settings.removed.iter().any(|row| row.id == hex) { break; }
+    }
+    assert!(!keeper.app.engine().unwrap().roles().0.contains(&id));
+    assert!(keeper.view.settings.removed.iter().any(|row| row.id == hex), "the held proof retires the device only after its actual human join verifies");
+}
+
+#[test]
+fn a_public_queue_prefix_cannot_hide_private_or_forged_cache_from_logout_erasure() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.cache.insert("public-departure/private".into(), b"private cached content".to_vec());
+    sim.cache.insert(format!("public-departure/{}.{}", world.room.room_id().to_base64url(), world.agent.id().to_base64url()), br#"{"hub":"https://hub.example","room":"invalid","device":"invalid","signature":[],"token":"must not survive"}"#.to_vec());
+    sim.send(start());
+    world.hub.borrow_mut().fault = Some(Box::new(|_, request| {
+        request.url.ends_with("/departures").then(|| Err(trommi_client_core::app::IoError::new(trommi_client_core::app::IoErrorKind::Offline)))
+    }));
+    sim.send(Event::Action { action:Action::Account { action:AccountAction::SignOut } });
+    assert_eq!(sim.cache.len(), 1);
+    assert!(!sim.cache.contains_key("public-departure/private"));
+    let notice: serde_json::Value = serde_json::from_slice(sim.cache.values().next().unwrap()).unwrap();
+    assert_eq!(notice["device"], world.me.to_base64url());
+    assert!(notice.get("token").is_none());
+}

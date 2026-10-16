@@ -119,7 +119,7 @@ impl Stores {
                     .collect();
                 Ok(StoreAnswer::Entries { entries })
             }
-            StoreOp::Put { put, delete } => self.journal_put(put, delete),
+            StoreOp::Put { put, delete } | StoreOp::PutDurable { put, delete } => self.journal_put(put, delete),
             StoreOp::DeviceLoad => self.device_load(),
             StoreOp::DeviceApply { expected_revision, put, delete } => self.device_apply(expected_revision, put, delete),
         }

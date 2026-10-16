@@ -309,6 +309,7 @@ impl StreamReader {
                 | "welcome"
                 | "request"
                 | "presence"
+                | "departure"
                 | "here"
                 | "file_evicted"
         ) {
@@ -355,6 +356,10 @@ impl StreamReader {
                 }
             }
             "request" => StreamEvent::Wish(wish_row(o)?),
+            "departure" => StreamEvent::Departure {
+                device: o.need("device").id(DeviceId::from_slice, "departure: device")?,
+                signature: o.need("signature").fixed("departure: 64-byte signature")?,
+            },
             "presence" if matches!(o.need("archived"), Json::Bool(true)) => StreamEvent::Archived {
                 group: o.need("group_id").group("presence: group_id")?,
             },

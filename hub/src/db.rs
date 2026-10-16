@@ -56,6 +56,14 @@ CREATE TABLE IF NOT EXISTS device_seen (
   PRIMARY KEY (room_id, device),
   FOREIGN KEY (room_id, device) REFERENCES devices(room_id, device) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
+-- Public self-retirement signatures. Unknown keys wait briefly for a concurrently accepted own join.
+CREATE TABLE IF NOT EXISTS device_departures (
+  room_id BLOB NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
+  device BLOB NOT NULL CHECK (length(device) = 32),
+  signature BLOB NOT NULL CHECK (length(signature) = 64),
+  at INTEGER NOT NULL,
+  PRIMARY KEY (room_id, device)
+) STRICT, WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS welcome_bytes (
   group_id       BLOB NOT NULL,
   epoch          INTEGER NOT NULL,

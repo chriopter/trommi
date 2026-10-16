@@ -666,6 +666,15 @@ impl Engine {
     pub fn room(&self) -> RoomId {
         self.room
     }
+    /// Public self-retirement intent, even while an interrupted sign-in has no bearer yet. The App
+    /// sends the already signed bytes before forgetting its key; no token or content key is retained.
+    pub fn departure_request(&self) -> Result<crate::app::io::HttpRequest, Error> {
+        let signature = self.device.sign_departure_for(&self.room)?;
+        let device = self.device.id();
+        let site = Site { url:&self.hub, token:None, client:&self.client, lease:None };
+        crate::hub::Codec.request(&site, &Route::Depart { room:&self.room, device:&device, signature:&signature })
+            .map(|(request, _)| request).map_err(|_| Error::BadFormat)
+    }
     pub fn position(&self) -> u64 {
         self.position
     }
@@ -1047,6 +1056,13 @@ impl Engine {
             StreamEvent::Presence(p) => {
                 self.tending.presence(&p);
                 self.report(Report::Presence(p))
+            }
+            StreamEvent::Departure { device, signature } => {
+                if device != self.device.id() && trommi_core::hub_auth::verify_departure(&self.room(), &device, &signature).is_ok()
+                    && (self.tending.departures.len() < 2000 || self.tending.departures.contains(&device)) {
+                    self.tending.departures.insert(device);
+                    self.tending.want = true;
+                }
             }
             StreamEvent::Here => self.report(Report::Here),
             StreamEvent::Relay { group, sender, message, .. } => self.on_relay(ctx, group, sender, &message),

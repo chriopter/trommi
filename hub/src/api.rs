@@ -583,6 +583,18 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             // a challenge is handed out for any room id: whether a room exists is not told here
             Ok(json!({ "challenge": b64(&app.sessions.challenge(&room, t)) }))
         }
+        ("POST", ["rooms", room, "departures"]) => {
+            open_limit()?;
+            let room = id::<32>(room)?;
+            let device: [u8;32] = rq.bytes("device")?.try_into().map_err(|_| refuse("bad-format", "device: 32 bytes"))?;
+            let signature = rq.bytes("signature")?;
+            app.write(|x, fx| {
+                if crate::devices::depart(x.c, x.obs, &room, &device, &signature, x.now)? {
+                    fx.events.push(store::Event { room, audience: store::Audience { humans:true, others:vec![], except:Some(device) }, name:"departure", change:None, data:json!({"device":b64(&device),"signature":b64(&signature)}) });
+                }
+                Ok(json!({}))
+            })
+        }
         // signing out: the token ends at once, and the device's streams with it
         ("DELETE", ["token"]) => {
             let auth = read_auth()?;

@@ -199,6 +199,7 @@ impl Codec {
                 (groups::reject_request(site, group, n)?, Kind::RejectCommit)
             }
             Route::SignOut => (signin::sign_out_request(site)?, Kind::Empty),
+            Route::Depart { room, device, signature } => (signin::depart_request(site, room, device, signature)?, Kind::Empty),
             Route::Desk { only } => (desk::whole_request(site, only)?, Kind::Desk),
             Route::Settled {
                 kind,

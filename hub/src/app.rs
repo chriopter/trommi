@@ -918,6 +918,9 @@ impl App {
             if auth.who != Who::Human {
                 return Ok::<_, Refused>(());
             }
+            for data in crate::devices::departures(c, &auth.room, now)? {
+                if data["device"] != b64(&auth.device) { stream.send_now(crate::live::sse("departure", None, &data)); }
+            }
             for data in crate::devices::snapshot(c, &auth.room, &auth.device, &self.live.online_devices(&auth.room), now)? {
                 stream.send_now(crate::live::sse("presence", None, &data));
             }

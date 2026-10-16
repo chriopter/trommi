@@ -31,7 +31,15 @@
       },
       "fingerprint": "5e5c 199c bf26 ef20",
       "icon": "phone",
-      "added_ms": 1789137000000
+      "added_ms": 1789137000000,
+      "last_seen_ms": 1791466200000,
+      "seen": {
+        "key": "device.last_seen",
+        "args": {
+          "when": "2026-10-08 15:30"
+        },
+        "en": "last seen 2026-10-08 15:30"
+      }
     },
     {
       "id": "bab7d20137fb7093183f65076f6c0ba36a1f1d3ff7defdf7f429c7e45e2ed266",
