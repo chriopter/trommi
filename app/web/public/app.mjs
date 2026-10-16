@@ -895,7 +895,43 @@ function conn(vm) {
   const [state, words] = PHASE_WORDS[vm.phase] ?? ['connecting', 'Connecting']
   if (el) el.dataset.state = state
   if (text) text.textContent = vm.status?.en ?? words
+  startLine(vm)
 }
+
+// ---- the start ----
+// While the core starts and opens the room it says its step (ViewModel.status, core/client/src/app/start.rs: the
+// words, and args step of steps, done of total). The start screen (index.html #trommi-opening) shows the words and how
+// far along it is; once the Desk is drawn, one thin line at the window's top goes on until the room is open.
+/** How far along the start is, 0 to 1, from the core's line; null when the line is not the start's. */
+function startShare(status) {
+  const a = status?.args, step = Number(a?.step), steps = Number(a?.steps)
+  if (!(step > 0 && steps > 0)) return null
+  const part = Number(a.total) > 0 ? Math.min(1, Number(a.done) / Number(a.total)) : 0.5
+  return Math.min(1, (step - 1 + part) / steps)
+}
+function startLine(vm) {
+  const share = startShare(vm.status)
+  const step = document.getElementById('opening-step'), bar = document.getElementById('opening-bar')
+  if (step) {
+    if (vm.status?.en && step.textContent !== vm.status.en) step.textContent = vm.status.en
+    if (share != null && bar) { bar.parentElement.classList.add('is-known'); bar.style.width = `${Math.round(share * 100)}%` }
+    return
+  }
+  let line = document.getElementById('start-line')
+  if (share == null) { line?.remove(); return }
+  if (!line) {
+    line = Object.assign(document.createElement('div'), { id: 'start-line', className: 'start-line' })
+    line.setAttribute('role', 'progressbar')
+    line.append(document.createElement('i'))
+    document.body.append(line)
+  }
+  line.setAttribute('aria-label', vm.status.en)
+  line.title = vm.status.en
+  line.firstChild.style.width = `${Math.round(share * 100)}%`
+}
+/** The start screen stands until the core has something of the room to draw: past its start, and the board this
+ *  device kept read back (the core's line past `start.desk`). */
+const startDone = vm => Boolean(vm.phase) && vm.phase !== 'starting' && vm.status?.key !== 'start.desk'
 
 // ---- one tab ----
 // One tab holds this browser's device (the core's worker owns its state). Another tab says so and offers to take it
@@ -903,7 +939,10 @@ function conn(vm) {
 function elsewhere(head, line) {
   document.title = 'Trommi'
   document.body.replaceChildren()
-  document.body.insertAdjacentHTML('beforeend', String(html`<main id="room" class="room room-elsewhere" aria-label="${head}"><div class="room-card"><div class="room-head"><span class="room-bell">${BELL}</span><span class="room-brand">Trommi</span></div><h1 class="room-title">${head}</h1><p class="room-lead">${line}</p><button type="button" class="room-go" id="use-here">Use it here</button></div></main>`))
+  // (the start screen's frame: the Desk's outline, the words in its place, the last word underlined by the pen)
+  const words = head.split(' '), last = words.pop()
+  const rows = raw('<li><i></i><b></b><b></b></li>'.repeat(3))
+  document.body.insertAdjacentHTML('beforeend', String(html`<main id="trommi-elsewhere" class="opening room-elsewhere" aria-label="${head}"><div class="op-side" aria-hidden="true"><div class="op-brand">${BELL}<b>Trommi</b></div><i class="op-pile"></i><i class="op-pile"></i><i class="op-pile"></i></div><div class="op-main"><div class="op-col room-card"><div class="op-pill" aria-hidden="true">${BELL}<b>Trommi</b></div><h1 class="room-title">${words.join(' ')} <em>${last}</em></h1><p class="room-lead">${line}</p><button type="button" class="room-go" id="use-here">Use it here</button><ol class="op-rows" aria-hidden="true">${rows}</ol></div></div></main>`))
   document.getElementById('use-here').addEventListener('click', () => { sessionStorage.setItem('trommi-take-device', '1'); location.reload() }, { once: true })
 }
 
@@ -931,26 +970,27 @@ async function start({ take = false } = {}) {
   const repaint = () => { frame ||= requestAnimationFrame(() => { frame = 0; if (stopped) return; if (painted) router.refresh(); conn(core.vm()) }) }
   core.on('render', vm => { syncToasts(vm); repaint() })
   core.on('file', repaint)
-  core.on('busy', () => { stopped = true; cancelAnimationFrame(frame); elsewhere('Trommi is open in another tab', 'One tab holds this device at a time. Use it here, and the other tab steps back.'); fontsAfterPaint() })
-  core.on('taken', () => { stopped = true; cancelAnimationFrame(frame); elsewhere('Trommi moved to another tab', 'Another tab took this device over. Use it here to take it back.'); fontsAfterPaint() })
+  core.on('busy', () => { stopped = true; cancelAnimationFrame(frame); elsewhere('Trommi is open in another tab', 'One tab holds this device at a time. Use it here, and the other tab steps back.') })
+  core.on('taken', () => { stopped = true; cancelAnimationFrame(frame); elsewhere('Trommi moved to another tab', 'Another tab took this device over. Use it here to take it back.') })
   core.on('failed', err => { stopped = true; cancelAnimationFrame(frame); console.error('core', err); notice('Trommi could not start here.', String(err?.message ?? err), false, 'failed') })
   let fixture = null
   if (demo) fixture = await fetch('/demo/fixture.json').then(r => r.json()).catch(() => null)
   screenInView = screenOf(location.pathname, location.search)
   await core.startCore(configOf(fixture), { take })
   sendFocus()
-  // A cold worker can take longer than three seconds. Never draw an incomplete model.
-  const ready = vm => vm.phase && vm.phase !== 'starting'
-  if (!ready(core.vm()) && !stopped) await new Promise(done => {
+  // A cold worker on a slow line can take long. Never draw an incomplete model; the start screen shows the core's
+  // steps meanwhile. After 30 s a quiet note offers a reload, and the start goes on.
+  if (!startDone(core.vm()) && !stopped) await new Promise(done => {
     let timer
     const stops = []
     const finish = () => { clearTimeout(timer); for (const stop of stops) stop(); done() }
-    stops.push(core.on('render', vm => { if (ready(vm)) finish() }))
+    stops.push(core.on('render', vm => { if (startDone(vm)) finish() }))
     for (const event of ['busy', 'taken', 'failed']) stops.push(core.on(event, finish))
-    timer = setTimeout(() => { stopped = true; notice('Trommi could not start here.', '', false, 'failed'); finish() }, 30_000)
-    if (ready(core.vm()) || stopped) finish()
+    timer = setTimeout(() => notice('Trommi is taking long to start.', '', false, 'slow'), 30_000)
+    if (startDone(core.vm()) || stopped) finish()
   })
   if (stopped) return
+  document.querySelector('.room-notice[data-why="slow"]')?.remove()
   window.trommi.firstRenderMs = performance.now() - T0
   document.getElementById('trommi-opening')?.remove()
   await router.visit(location.pathname + location.search + location.hash, { action: 'replace' })
@@ -958,7 +998,6 @@ async function start({ take = false } = {}) {
   window.trommi.firstPaintMs = performance.now() - T0
   window.trommi.readyAt = performance.now()
   document.documentElement.dataset.ready = ''
-  fontsAfterPaint()
   // The other views, once the page is idle: the next navigation (a card, a session, the board) finds them in memory.
   const idle = globalThis.requestIdleCallback ?? (f => setTimeout(f, 300))
   idle(() => { for (const name of Object.keys(LAZY)) view(name).catch(err => console.warn('view', name, err)) }, { timeout: 3000 })
@@ -966,29 +1005,12 @@ async function start({ take = false } = {}) {
   return router
 }
 
-// ---- fonts ----
-// The web fonts come after the first paint (a cold start on a slow line spends its bandwidth on the app first): the page
-// paints in the metric-matched fallbacks of fonts/fallback.css, then fonts/fonts.css is added (its fonts swap in,
-// font-display: swap; the service worker keeps them for later starts). At the latest FONTS_MS after boot.
-const FONTS_MS = 3000
-let fontsLoaded = false
-function loadFonts() {
-  if (fontsLoaded) return
-  fontsLoaded = true
-  const link = document.createElement('link')
-  link.rel = 'stylesheet'
-  link.href = '/fonts/fonts.css'
-  document.head.append(link)
-}
-const fontsAfterPaint = () => requestAnimationFrame(() => setTimeout(loadFonts, 0))
-
 /** The page starts here (index.html loads this module; importing it elsewhere, as tests in Node do, does nothing). */
 async function boot() {
   T0 = performance.now()
   // An address of before (/s/…, /a/…; paths.mjs): the address bar shows its new form from the start.
   const moved = movedPath(location.pathname)
   if (moved) history.replaceState(history.state, '', `${moved}${location.search}${location.hash}`)
-  setTimeout(loadFonts, FONTS_MS)
   // The service worker: the app shell offline, push (public/sw.js). Not on the dev server (dev/serve.mjs, the
   // preview: html[data-build="dev"]): there a worker installed before is taken away.
   if (document.documentElement.dataset.build === 'dev') navigator.serviceWorker?.getRegistrations().then(list => list.forEach(r => r.unregister())).catch(() => {})
@@ -1008,7 +1030,7 @@ async function boot() {
   if (SHARE_PAGE.test(location.pathname)) { await core.startCore(configOf(null), { slot: '' }); document.getElementById('trommi-opening')?.remove(); return (await view('media')).showShare({ act: core.act, on: core.on, fileUrl: core.fileUrl }) }
   // (the demo's account screens, /screens: ?mock=1&onboard=<state> draws one of them; no account, nothing sent)
   const onboard = demo && params.get('onboard')
-  if (onboard) { document.getElementById('trommi-opening')?.remove(); fontsAfterPaint(); return (await view('auth')).demoScreen(onboard) }
+  if (onboard) { document.getElementById('trommi-opening')?.remove(); return (await view('auth')).demoScreen(onboard) }
   keepStorage()
   const take = sessionStorage.getItem('trommi-take-device') === '1'
   sessionStorage.removeItem('trommi-take-device')
