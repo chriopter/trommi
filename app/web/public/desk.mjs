@@ -76,8 +76,9 @@ ${way('snooze', 'snooze', WORDS.later)}${way('revise', 'reverse', WORDS.revise)}
 
 // ---- the rows ----
 // Rows beyond the first WINDOW stand empty (same id, knock mark) and are filled when they come near the viewport
-// (startDeskWindow below); a row once filled stays filled, also when the page is drawn again.
-const WINDOW = 16
+// (startDeskWindow below); a row once filled stays filled, also when the page is drawn again. A browser test may set a
+// smaller window (`globalThis.TROMMI_DESK_WINDOW`) to get placeholders from one team of the demo room.
+const WINDOW = globalThis.TROMMI_DESK_WINDOW ?? 16
 const filled = new Set()
 const emptyRow = r => raw(`<article class="inbox-row" id="row-${r.id}" data-later data-id="${r.id}"${r.sign === 'knock' || r.sign === 'block' ? ' data-knock' : ''}></article>`)
 /** A run of rows of one session (DeskRowView.run on its first row: how many), as one section with an id of its own. */
