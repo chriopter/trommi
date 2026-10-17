@@ -227,6 +227,10 @@ name = "hub_files_push"
 path = "hub/files_push.rs"
 
 [[test]]
+name = "hub_stt"
+path = "hub/stt.rs"
+
+[[test]]
 name = "hub_time"
 path = "hub/time.rs"
 

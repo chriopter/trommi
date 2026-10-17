@@ -25,6 +25,7 @@ pub mod io;
 mod invites;
 mod account_steps;
 mod departures;
+pub mod dictation;
 mod account_change;
 mod teams;
 mod outside;
@@ -174,6 +175,7 @@ pub struct App {
     changes: account_change::Changes,
     teams: teams::TeamDeletes,
     push: push::Push,
+    dictation: dictation::Dictating,
     /// Widgets, local notifications, the notification extension (`app::outside`).
     outside: outside::Outside,
     /// The demo room runs (`Config.demo`): no hub, no store.
@@ -266,6 +268,7 @@ impl App {
             changes: account_change::Changes::default(),
             teams: teams::TeamDeletes::default(),
             push: push::Push::default(),
+            dictation: Default::default(),
             outside: outside::Outside::default(),
             demo: false,
             notes_went: Default::default(),
@@ -994,6 +997,7 @@ impl App {
             }
             Event::Platform { id, result } if self.changes.owns_platform(id) => self.change_platform(now_ms, id, result, &mut out),
             Event::Platform { id, result } if self.push.owns_platform(id) => self.push_platform_answered(now_ms, id, result, &mut out),
+            Event::Platform { id, result } if self.dictation.owns(id) => self.dictation_platform(now_ms, id, result, &mut out),
             Event::Secret { id, result } if self.outside.key_read == Some(id) => {
                 self.outside_key(match result {
                     IoResult::Ok(value) => value.map(|v| v.0),
@@ -1107,6 +1111,7 @@ impl App {
             }
         }
         }
+        self.dictation_tick(now_ms, &mut out);
         self.resume_departure(now_ms, &mut out);
         self.drive_departures(now_ms, &mut out);
         if self.demo {
@@ -1127,6 +1132,9 @@ impl App {
 
     /// The person did something: the actions of `actions::run`, the toasts, a retry.
     fn action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
+        if let Action::Dictate { step } = action {
+            return self.dictate_action(now_ms, step, out);
+        }
         // a note sent without a session goes where the corner's note says it goes (the crown of the team in view)
         let action = match action {
             Action::SendNote { note_id, to: None } => Action::SendNote { note_id, to: self.next_view.notes.to.as_ref().map(|t| t.session_id.clone()) },
@@ -1786,6 +1794,7 @@ impl App {
         let mut invite_news = Vec::new();
         let mut invite_answers = Vec::new();
         let mut step_answers = Vec::new();
+        let mut dictation_answers = Vec::new();
         let mut replaced: Option<Option<&'static str>> = None;
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
@@ -1870,6 +1879,7 @@ impl App {
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
                 Report::Answer(answered) if self.invites.owns(answered.id) => invite_answers.push(*answered),
                 Report::Answer(answered) if self.steps.asked.contains_key(&answered.id) => step_answers.push(*answered),
+                Report::Answer(answered) if self.dictation.owns(answered.id) => dictation_answers.push(*answered),
                 Report::Answer(answered) if self.scribble.owns(answered.id) => {
                     let mut ctx = engine::Ctx { now: now_ms, next_id: &mut self.next_id, out };
                     self.scribble.answered(answered.id, &answered.result, engine, &mut ctx);
@@ -2017,6 +2027,9 @@ impl App {
         for answered in step_answers {
             self.step_answered(now_ms, answered.id, &answered.result, out);
         }
+        for answered in dictation_answers {
+            self.dictation_answered(now_ms, answered.id, &answered.result, out);
+        }
         if let Some(refused) = replaced {
             self.change_replaced(now_ms, refused, out);
         }
@@ -2077,7 +2090,7 @@ impl App {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [self.past.wake(), engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.teams.wake(now_ms), self.notes_wake().map(|at| at.max(now_ms + 1)), self.departures.wake()].into_iter().flatten().min();
+        let wake = [self.past.wake(), engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.teams.wake(now_ms), self.notes_wake().map(|at| at.max(now_ms + 1)), self.departures.wake(), self.dictation.machine.wake()].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });
@@ -2103,6 +2116,7 @@ impl App {
             .then(|| crate::views::Text::new("account.interrupted", "Signing in was cut off. Sign in again to finish it."));
         self.account_extras();
         self.start_status();
+        self.show_dictation();
         let delta = if !self.rendered_once {
             self.rendered_once = true;
             let mut whole = self.next_view.clone();

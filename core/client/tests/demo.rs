@@ -131,3 +131,35 @@ fn demo_computer_approval_shows_the_real_permission_and_command_without_io() {
     assert!(sim.view.account.connect_command.as_deref().unwrap().contains("--computer"));
     assert!(sim.log.iter().all(|e| !matches!(e, Effect::Http { .. } | Effect::Store { .. } | Effect::OpenStream { .. })));
 }
+
+/// Sealed dictation in the demo room: the microphone records nothing and the demo's words land, once.
+#[test]
+fn the_demo_dictates_without_a_microphone() {
+    use trommi_client_core::app::dictation::{DictateStep, DEMO_TEXT};
+    let f = fixture();
+    let made = f["made_at"].as_u64().unwrap();
+    let mut sim = Sim::new(made);
+    sim.send(Event::Start { config: Config { platform: "test".into(), version: "0".into(), seed: 7, demo: Some(f), ..Default::default() } });
+    assert_eq!(sim.view.dictation.state, "idle");
+    sim.send(Event::Action { action: Action::Dictate { step: DictateStep::Start { session: "s1".into() } } });
+    assert_eq!(sim.view.dictation.state, "recording");
+    assert!(sim.view.dictation.since_ms >= made);
+    assert!(sim.view.dictation.hint.is_some());
+    sim.send(Event::Action { action: Action::Dictate { step: DictateStep::Stop } });
+    let text = sim.view.dictation.text.clone().expect("the words");
+    assert_eq!((sim.view.dictation.state.as_str(), text.text.as_str()), ("done", DEMO_TEXT));
+    sim.send(Event::Action { action: Action::Dictate { step: DictateStep::Taken { id: text.id } } });
+    assert_eq!(sim.view.dictation.state, "idle");
+    assert!(sim.log.iter().all(|e| !matches!(e, Effect::Http { .. } | Effect::Platform { .. })), "no I/O");
+}
+
+/// Without a microphone and without a room the dictation is off: the shell keeps its send button.
+#[test]
+fn dictation_is_off_without_the_ability() {
+    let mut sim = Sim::new(1_000);
+    sim.send(Event::Start { config: Config { platform: "test".into(), version: "0".into(), seed: 7, ..Default::default() } });
+    assert_eq!(sim.view.dictation.state, "off");
+    sim.send(Event::Action { action: Action::Dictate { step: trommi_client_core::app::dictation::DictateStep::Start { session: "s1".into() } } });
+    assert_eq!(sim.view.dictation.state, "off");
+    assert!(sim.log.iter().all(|e| !matches!(e, Effect::Platform { .. })));
+}

@@ -237,9 +237,11 @@ public enum CoreView {
     public var thumbs: [ThumbView]?
     /// The page Knowledge of the team in view, while it is in view (`Screen::Knowledge`); none else.
     public var knowledge: KnowledgeView?
+    /// Sealed dictation (spec/v1.md 18, `crate::dictation`): the microphone of the chat field and its words.
+    public var dictation: DictationView
     public var toasts: [Toast]
 
-    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, artifacts: [ArtifactView]? = nil, gallery: GalleryView? = nil, thumbs: [ThumbView]? = nil, knowledge: KnowledgeView? = nil, toasts: [Toast] = []) {
+    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, artifacts: [ArtifactView]? = nil, gallery: GalleryView? = nil, thumbs: [ThumbView]? = nil, knowledge: KnowledgeView? = nil, dictation: DictationView = DictationView(), toasts: [Toast] = []) {
       self.rev = rev
       self.phase = phase
       self.status = status
@@ -257,6 +259,7 @@ public enum CoreView {
       self.gallery = gallery
       self.thumbs = thumbs
       self.knowledge = knowledge
+      self.dictation = dictation
       self.toasts = toasts
     }
 
@@ -278,6 +281,7 @@ public enum CoreView {
       case gallery = "gallery"
       case thumbs = "thumbs"
       case knowledge = "knowledge"
+      case dictation = "dictation"
       case toasts = "toasts"
     }
 
@@ -300,6 +304,7 @@ public enum CoreView {
       self.gallery = try c.decodeIfPresent(GalleryView.self, forKey: .gallery)
       self.thumbs = try c.decodeIfPresent([ThumbView].self, forKey: .thumbs)
       self.knowledge = try c.decodeIfPresent(KnowledgeView.self, forKey: .knowledge)
+      self.dictation = try c.decode(DictationView.self, forKey: .dictation)
       self.toasts = try c.decodeIfPresent([Toast].self, forKey: .toasts) ?? []
     }
 
@@ -322,6 +327,7 @@ public enum CoreView {
       try c.encodeIfPresent(gallery, forKey: .gallery)
       try c.encodeIfPresent(thumbs, forKey: .thumbs)
       try c.encodeIfPresent(knowledge, forKey: .knowledge)
+      try c.encode(dictation, forKey: .dictation)
       if !toasts.isEmpty { try c.encode(toasts, forKey: .toasts) }
     }
   }
@@ -378,6 +384,8 @@ public enum CoreView {
     case thumbs(view: [ThumbView]?)
     /// The page Knowledge, whole; none when it is left.
     case knowledge(view: KnowledgeView?)
+    /// Sealed dictation, whole.
+    case dictation(view: DictationView)
     case toasts(toasts: [Toast])
 
     enum CodingKeys: String, CodingKey {
@@ -409,6 +417,7 @@ public enum CoreView {
       case "gallery": self = .gallery(view: try c.decodeIfPresent(GalleryView.self, forKey: .view))
       case "thumbs": self = .thumbs(view: try c.decodeIfPresent([ThumbView].self, forKey: .view))
       case "knowledge": self = .knowledge(view: try c.decodeIfPresent(KnowledgeView.self, forKey: .view))
+      case "dictation": self = .dictation(view: try c.decode(DictationView.self, forKey: .view))
       case "toasts": self = .toasts(toasts: try c.decode([Toast].self, forKey: .toasts))
       case let other: throw DecodingError.dataCorruptedError(forKey: .part, in: c, debugDescription: "ViewPart: no variant \(other)")
       }
@@ -468,6 +477,9 @@ public enum CoreView {
         try c.encode(view, forKey: .view)
       case .knowledge(let view):
         try c.encode("knowledge", forKey: .part)
+        try c.encode(view, forKey: .view)
+      case .dictation(let view):
+        try c.encode("dictation", forKey: .part)
         try c.encode(view, forKey: .view)
       case .toasts(let toasts):
         try c.encode("toasts", forKey: .part)
@@ -2057,6 +2069,97 @@ public enum CoreView {
       try c.encode(label, forKey: .label)
       try c.encode(count, forKey: .count)
       try c.encode(says, forKey: .says)
+    }
+  }
+
+  /// Sealed dictation (spec/v1.md 18): what the chat field's microphone shows. While the field is empty its send
+  /// button is the microphone (`idle`); a tap starts (`starting`), `recording` runs from `since_ms` (stopped by the
+  /// core at `max_ms`), `working` while the recording is sealed and transcribed, `done` with the words to put in the
+  /// field (once per `text.id`: the shell answers `Action::Dictate { step: taken }`), `failed` with `problem`.
+  /// `off` (or empty): no microphone here: the send button stays.
+  public struct DictationView: Codable, Hashable, Sendable {
+    /// `off`, `idle`, `starting`, `recording`, `working`, `done`, `failed`.
+    public var state: String
+    /// The chat field the dictation belongs to (as `DictateStep::Start` named it); empty while idle. Another field
+    /// shows itself idle, and the words go only into this one.
+    public var session: String
+    /// When the recording began (the shell's clock), for the running time; 0 else.
+    public var sinceMs: UInt64
+    /// The longest recording.
+    public var maxMs: UInt64
+    public var problem: Text?
+    public var text: DictatedText?
+    /// While recording: that only the verified enclave hears it.
+    public var hint: Text?
+
+    public init(state: String = "", session: String = "", sinceMs: UInt64 = 0, maxMs: UInt64 = 0, problem: Text? = nil, text: DictatedText? = nil, hint: Text? = nil) {
+      self.state = state
+      self.session = session
+      self.sinceMs = sinceMs
+      self.maxMs = maxMs
+      self.problem = problem
+      self.text = text
+      self.hint = hint
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case state = "state"
+      case session = "session"
+      case sinceMs = "since_ms"
+      case maxMs = "max_ms"
+      case problem = "problem"
+      case text = "text"
+      case hint = "hint"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.state = try c.decode(String.self, forKey: .state)
+      self.session = try c.decodeIfPresent(String.self, forKey: .session) ?? ""
+      self.sinceMs = try c.decodeIfPresent(UInt64.self, forKey: .sinceMs) ?? 0
+      self.maxMs = try c.decodeIfPresent(UInt64.self, forKey: .maxMs) ?? 0
+      self.problem = try c.decodeIfPresent(Text.self, forKey: .problem)
+      self.text = try c.decodeIfPresent(DictatedText.self, forKey: .text)
+      self.hint = try c.decodeIfPresent(Text.self, forKey: .hint)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(state, forKey: .state)
+      try c.encode(session, forKey: .session)
+      try c.encode(sinceMs, forKey: .sinceMs)
+      try c.encode(maxMs, forKey: .maxMs)
+      try c.encodeIfPresent(problem, forKey: .problem)
+      try c.encodeIfPresent(text, forKey: .text)
+      try c.encodeIfPresent(hint, forKey: .hint)
+    }
+  }
+
+  /// Words a dictation brought, to go into the chat field once.
+  public struct DictatedText: Codable, Hashable, Sendable {
+    public var id: String
+    public var text: String
+
+    public init(id: String = "", text: String = "") {
+      self.id = id
+      self.text = text
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case text = "text"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.text = try c.decode(String.self, forKey: .text)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(text, forKey: .text)
     }
   }
 

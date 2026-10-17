@@ -1,8 +1,10 @@
 // platform.mjs: what only the page can do for the app core (core/client/src/app/io.rs PlatformOp): passkeys
-// (WebAuthn with the prf extension) and Web Push (the service worker's push manager). The core asks; this answers
+// (WebAuthn with the prf extension), Web Push (the service worker's push manager) and dictation's microphone and
+// attestation check (dictate.mjs). The core asks; this answers
 // with bytes (by index in `blobs`, as the contract carries them), or `{ answer: 'refused' }` when the person said no
 // or the browser cannot. Nothing here decides anything: which passkey, which hub, what the prf output opens is the
 // core's.
+import { dictateOp } from './dictate.mjs'
 
 /** The bytes of what WebAuthn hands back, copied: an ArrayBuffer or a view (also one of another realm: a password
  *  manager's extension answering for the browser), or base64url text some of them give instead. */
@@ -106,6 +108,8 @@ async function pushUnregister() {
 
 /** Answers one platform op of the core. */
 export function platform(op, blobs) {
+  const dictated = dictateOp(op, blobs)
+  if (dictated) return dictated
   switch (op.op) {
     case 'passkey_get': return navigator.credentials?.get ? passkeyGet(op, blobs) : REFUSED
     case 'passkey_create': return navigator.credentials?.create ? passkeyCreate(op, blobs) : REFUSED

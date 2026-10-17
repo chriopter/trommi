@@ -175,6 +175,8 @@ impl App {
     pub(super) fn forget_local_device(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
         let mut privacy = Vec::new();
         self.outside_signed_out(&mut privacy);
+        // (a recording running or asked for ends with the account: the microphone off, nothing of it kept)
+        self.dictation_signed_out(now_ms, &mut privacy);
         for id in self.next_view.files.keys() { privacy.push(Effect::FileGone { file_id: id.clone() }); }
         let before = out.len();
         let had_engine = self.engine.is_some();

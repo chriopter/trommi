@@ -86,6 +86,8 @@ enum Kind {
     PasskeyAdded,
     PushState,
     Removed,
+    SttBundle,
+    SttSealed,
 }
 
 /// The hub's routes without I/O. Stateless: everything a call needs is in its arguments.
@@ -385,6 +387,8 @@ impl Codec {
                 push::live_activity_request(site, activity)?,
                 Kind::Said("registered"),
             ),
+            Route::SttAttestation => (super::stt::attestation_request(site)?, Kind::SttBundle),
+            Route::Stt { sealed } => (super::stt::sealed_request(site, sealed)?, Kind::SttSealed),
         };
         Ok((request, Expect(kind)))
     }
@@ -466,6 +470,8 @@ impl Codec {
             Kind::PasskeyAdded => account::passkey_added(&answer(response, CAP_WRITE)?)?,
             Kind::PushState => push::state(&answer(response, CAP_SMALL)?)?,
             Kind::Removed => push::removed(&answer(response, CAP_WRITE)?)?,
+            Kind::SttBundle => super::stt::bundle(response)?,
+            Kind::SttSealed => super::stt::transcript(response)?,
         })
     }
 

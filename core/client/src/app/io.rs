@@ -290,6 +290,16 @@ pub enum PlatformOp {
         server_key: Option<Bytes>,
     },
     PushUnregister,
+    /// Sealed dictation (spec/v1.md 18): ask for the microphone and record; answer `Recording` once it is live
+    /// (`Refused` when not allowed). It stops by itself at `max_ms`, keeping what it has for `RecordStop`.
+    RecordStart { max_ms: u64 },
+    /// End the recording: answer `Recorded` (16 kHz mono 16-bit WAV, the platform converts), or `Refused`.
+    RecordStop,
+    /// End the recording and drop it: `Done`.
+    RecordCancel,
+    /// Check Tinfoil's attestation `bundle` (as the hub passed it on) with the platform's verifier, pinned to
+    /// `repo`: `Attested` with the enclave's HPKE key and host, or `NotAttested`. Nothing is sent before this.
+    Attest { bundle: Bytes, repo: String },
 }
 
 /// What a platform service answered.
@@ -317,6 +327,17 @@ pub enum PlatformAnswer {
         kind: String,
         token: Bytes,
     },
+    /// The microphone is live.
+    Recording,
+    /// A recording, ended: WAV bytes (never logged) and how long it ran.
+    Recorded { audio: Bytes, ms: u64 },
+    /// The attestation checked out: the enclave's X25519 HPKE public key (32 bytes) and its host.
+    Attested { hpke_key: Bytes, domain: String },
+    /// The attestation did not check out (`reason` for a log only).
+    NotAttested {
+        #[serde(default)]
+        reason: String,
+    },
     /// The person said no, or the platform cannot.
     Refused,
     Done,
@@ -328,6 +349,10 @@ impl std::fmt::Debug for PlatformAnswer {
             PlatformAnswer::PasskeyCreated { .. } => f.write_str("PasskeyCreated(<redacted>)"),
             PlatformAnswer::PasskeyAsserted { .. } => f.write_str("PasskeyAsserted(<redacted>)"),
             PlatformAnswer::Push { kind, .. } => write!(f, "Push({kind}, <redacted>)"),
+            PlatformAnswer::Recording => f.write_str("Recording"),
+            PlatformAnswer::Recorded { audio, ms } => write!(f, "Recorded({} bytes, {ms} ms)", audio.0.len()),
+            PlatformAnswer::Attested { domain, .. } => write!(f, "Attested({domain})"),
+            PlatformAnswer::NotAttested { reason } => write!(f, "NotAttested({reason})"),
             PlatformAnswer::Refused => f.write_str("Refused"),
             PlatformAnswer::Done => f.write_str("Done"),
         }
