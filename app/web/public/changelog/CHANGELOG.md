@@ -12,6 +12,12 @@ notes, pick the two to four things people will notice most. A day may have at mo
 (`?mock=1`, never real data), webp, at most 150 KB. The days before the releases had notes are in history.json
 (frozen).
 
+## 17 October 2026
+
+Teams keep shared knowledge, and dictation is sealed on the web and iPhone. The iPhone and the web got calmer: one
+Desk across all teams, plain chats, new bars and calmer cards. Agents draw their faces while they work, and card
+pictures open full screen.
+
 ## 16 October 2026
 
 Desks are now called Teams, and the desktop sidebar shows all your Teams as stacks. Helpers live inside their agent's session, and the iPhone chat list and chat header are as calm as a messenger's. Reloading keeps you signed in, and Codex agents stay on the board.
