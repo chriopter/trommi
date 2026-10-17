@@ -672,21 +672,30 @@ struct TalkComposer: View {
             let since = Double(shell.view.dictation.sinceMs) / 1000
             let sec = max(0, Int(tl.date.timeIntervalSince1970 - since))
             Text(String(format: "%d:%02d", sec / 60, sec % 60)).font(Face.text(16)).monospacedDigit()
-            HStack(spacing: 2) {
-              ForEach(Array(bars(tl.date).enumerated()), id: \.offset) { _, v in Capsule().fill(Ink.muted).frame(width: 3, height: 3 + 17 * v) }
-            }.frame(maxWidth: .infinity, alignment: .leading).clipped()
+            // (drawn into whatever width is left, the newest at the right: the bars never widen the row)
+            let levels = bars(tl.date)
+            Canvas { context, size in
+              let step: CGFloat = 5, fits = max(0, Int(size.width / step))
+              for (i, v) in levels.suffix(fits).enumerated() {
+                let h = 3 + 17 * CGFloat(v)
+                context.fill(Path(roundedRect: CGRect(x: CGFloat(i) * step, y: (size.height - h) / 2, width: 3, height: h), cornerRadius: 1.5), with: .color(Ink.muted))
+              }
+            }
+            .frame(minWidth: 0, maxWidth: .infinity).frame(height: 22)
+            .accessibilityHidden(true)
           }
         }
+        .frame(minWidth: 0, maxWidth: .infinity)
       }
-      Label("Sealed", systemImage: "lock").font(Face.text(12)).foregroundStyle(Ink.faint).labelStyle(.titleAndIcon)
+      Image(systemName: "lock").font(.system(size: 12)).foregroundStyle(Ink.faint)
         .accessibilityLabel(shell.view.dictation.hint?.en ?? "Sealed")
       Button { dictate(["step": "stop"]) } label: {
         RoundedRectangle(cornerRadius: 3).fill(Color.white).frame(width: 12, height: 12)
           .frame(width: 32, height: 32).background(Circle().fill(Ink.urgCritical)).opacity(dictation == "working" ? 0.5 : 1)
           .frame(width: 40, height: 40).contentShape(Rectangle())
-      }.buttonStyle(.plain).disabled(dictation == "working").accessibilityLabel("Stop and write it")
+      }.buttonStyle(.plain).disabled(dictation == "working").accessibilityLabel("Stop and write it").accessibilityIdentifier("composer-dictate-stop")
     }
-    .padding(.leading, 6).frame(minHeight: 40)
+    .padding(.leading, 6).frame(minWidth: 0, maxWidth: .infinity, minHeight: 40)
   }
   private func bars(_ now: Date) -> [Double] {
     DispatchQueue.main.async {
@@ -719,6 +728,7 @@ struct TalkComposer: View {
         if dictation == "recording" || dictation == "working" { recordingRow } else {
         HStack(alignment: .bottom, spacing: 4) {
           TextField(placeholder, text: $text, axis: .vertical)
+            .accessibilityIdentifier("composer-field")
             .font(Face.text(17)).lineLimit(1...7)
             .padding(.leading, 16).padding(.vertical, 9)
           if dictation != "off" && !canSend {
@@ -727,14 +737,14 @@ struct TalkComposer: View {
                 .foregroundStyle(Ink.accentFg).frame(width: 32, height: 32).background(Circle().fill(Ink.accent)).opacity(dictation == "starting" ? 0.6 : 1)
                 .frame(width: 40, height: 40).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).accessibilityLabel("Dictate (sealed)")
+            .buttonStyle(.plain).accessibilityLabel("Dictate (sealed)").accessibilityIdentifier("composer-dictate")
           } else {
           Button(action: send) {
             Image(systemName: "arrow.up").font(.system(size: 16, weight: .bold))
               .foregroundStyle(Ink.accentFg).frame(width: 32, height: 32).background(Circle().fill(canSend ? Ink.accent : Ink.faint))
               .frame(width: 40, height: 40).contentShape(Rectangle())
           }
-          .buttonStyle(.plain).disabled(!canSend).accessibilityLabel("Send")
+          .buttonStyle(.plain).disabled(!canSend).accessibilityLabel("Send").accessibilityIdentifier("composer-send")
           }
         }
         }
