@@ -38,13 +38,7 @@
    say who asks a second time. */
 .inbox-text.has-sender { position: relative; padding-left: 36px; }
 .inbox-who.inbox-from-mark { position: absolute; left: 0; top: 3px; width: 26px; height: 26px; color: var(--tone-pen); }
-.inbox-revising-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; min-height: 36px; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-.inbox-revising-open .agent-ring { position: static; flex: none; width: 15px; height: 15px; color: var(--accent); }
-.inbox-revising-open .ring-loop { opacity: .38; stroke-width: 2.2; }
-.inbox-revising-open .ring-drop path { stroke-width: 3.2; }
-.inbox-revising-open strong { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .inbox-revising-open .ring-loop { opacity: 1; stroke-dasharray: 91 9; }
-}
+
 /* In the dark the quiet tile (No, Deny) is nearly the card's own ground: an edge makes it a button. */
 :root[data-theme="dark"] .inbox-answer:not(.is-lead):not(:hover):not(.is-picked):not(.is-hinted) { box-shadow: inset 0 0 0 1px var(--card-line); }
 
@@ -285,23 +279,12 @@ body:has(.inbox-edge.is-up > :not([hidden])) .inbox-news { translate: 0 26px; }
 }
 
 /* A finger needs 44px: the one-line pile heads and the menu's entries. */
-@media (pointer: coarse), (max-width: 860px) {
-  .inbox-revising-open { min-height: 44px; }
-}
 
 /* ---- a question leaves: one calm motion that shows where it goes ---- */
 /* In a list the row that left stays for a moment as a ghost in its old place: an answered one
    slides off to the side, one that was put off (Later, asked to explain) sinks towards the
    "Later" group at the end. The rows below move up once it is on its way (desk.mjs). */
 .inbox-groups { position: relative; }
-
-.inbox-done { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); min-height: 60px; padding: var(--s-2) var(--s-3) var(--s-2) 14px; border-radius: 6px; background: var(--surface-2); box-shadow: 0 0 0 1px var(--line); scroll-margin: 72px 0 28px; }
-.inbox-done:focus { outline: none; }
-
-@container rows (max-width: 520px) {
-  .inbox-done { grid-template-columns: 26px minmax(0, 1fr); }
-
-}
 
 /* What went wrong with an answer on a row: on the row's lower edge, in full, never cut by the text's fixed lines. */
 .inbox-row-error { position: absolute; z-index: 2; left: 76px; bottom: 6px; max-width: calc(100% - 96px); padding: 3px 9px; border-radius: 6px; background: var(--surface); box-shadow: 0 0 0 1px color-mix(in srgb, var(--deny) 40%, var(--surface)); font-weight: 600; line-height: 1.3; }
@@ -379,63 +362,42 @@ dialog.rowmenu::backdrop { background: transparent; }
 .rowmenu-in button svg { flex: none; width: 22px; height: 22px; color: var(--ink); }
 .rowmenu-in button.is-shred, .rowmenu-in button.is-shred svg { color: var(--deny); }
 .rowmenu-in hr { width: auto; margin: 6px var(--s-2); border: 0; border-top: 1px solid var(--line); }/* The foot of a list of questions (.inbox-stacks). */
-.inbox-groups > .inbox-stacks { --gap: 22px; --bin: 46px; --w: min(124px, calc((100cqi - var(--inset, 0px) - 3 * var(--gap) - var(--bin)) / 3)); --shade: rgb(20 30 25 / .14); grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, var(--w)) var(--bin); grid-template-rows: auto auto; column-gap: var(--gap); justify-content: start; min-width: 0; margin-top: var(--s-8); }
+
 /* a phone: three stacks of 124px, the basket and the gaps are wider than the list, so the stacks share what is there
    (--w above) and the basket stays small, instead of pushing the Desk sideways; the stamps are set smaller with them */
-@container rows (max-width: 430px) {
-  .inbox-groups > .inbox-stacks { --gap: 10px; --bin: 38px; }
-}
-
-
-.inbox-stacks .inbox-revising-open .sketch { flex: none; width: 17px; height: 17px; color: var(--muted); }
-.inbox-stacks .inbox-done[data-later] .inbox-revising-open .sketch { color: var(--gold-pen); }
-.inbox-stacks .inbox-revising-open .agent-ring { margin-left: -3px; }
 
 /* a narrow list (the phone, a slim pane): the lines without the grey text */
-@container rows (max-width: 600px) {
-  .inbox-stacks .inbox-revising-open strong { flex: 1 1 auto; }
-}
+
 /* On the Desk of a wide screen the cards stand right of a narrow column with the session's drawing
    (.inbox-gutter above): the stacks stand under the cards, their paper's edge on the cards' left edge, and the fan
    is as wide as the cards. */
-@media (min-width: 861px) {
-  :is(#inbox, #session) .inbox-groups > .inbox-stacks { --inset: 46px; padding-left: var(--inset); }
-}
 
 /* ---- The foot as small tabs (.stack-tabs) ----
    One line of tabs under the cards (two rows on a phone); the open place's list stands below all tabs, as wide as
    the cards. The sections give up their box (display: contents) so that tabs and the open list share one row of
    flex items: the tabs first, the list after them (order). */
-.inbox-groups > .inbox-stacks.stack-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: var(--s-6); }
-
-
-:is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { padding-left: var(--inset, 0px); }
-
-@container rows (max-width: 430px) { .inbox-groups > .inbox-stacks.stack-tabs { gap: var(--s-2); }
-}
 
 /* The foot stands clear of the page's end. */
-.inbox-groups > .inbox-stacks.stack-tabs { align-items: flex-start; column-gap: var(--s-6); row-gap: var(--s-3); margin-bottom: 56px; }
 
 /* ---- the row the keyboard is on ---- */
 /* Unmistakable, in ink: a thick frame, a scribbled arrow in the margin, and on each of its
    controls the key that presses it. The other rows stay as they are. */
 .inbox-row { scroll-margin: 72px 0 28px; }
 .inbox-row:focus { outline: none; }
-.inbox-row.is-current, .inbox-done.is-current { outline: 3px solid var(--fg); outline-offset: 3px; z-index: 1; }
-.inbox-row.is-current::before, .inbox-done.is-current::before {
+.inbox-row.is-current { outline: 3px solid var(--fg); outline-offset: 3px; z-index: 1; }
+.inbox-row.is-current::before {
   content: ""; position: absolute; right: calc(100% + 14px); top: 50px; width: 46px; height: 46px; background: var(--fg); pointer-events: none;
   -webkit-mask: var(--keys-arrow) center / contain no-repeat; mask: var(--keys-arrow) center / contain no-repeat;
   animation: keys-point 320ms cubic-bezier(.25, 1.4, .5, 1);
 }
 /* No margin to point from: a narrow window, or a list inside a session's column. */
 /* An answered row is slim: the arrow stands at its middle. */
-.inbox-done.is-current::before { top: 7px; }
-@media (max-width: 1180px) { .inbox-row.is-current::before, .inbox-done.is-current::before { display: none; }
+
+@media (max-width: 1180px) { .inbox-row.is-current::before { display: none; }
 }
 
 /* A key cap: paper, a line, a little weight below. */
-.keys-sheet kbd, .keys-pending kbd, .inbox-row.is-current [data-cap]::after, .inbox-done.is-current [data-cap]::after {
+.keys-sheet kbd,.keys-pending kbd,.inbox-row.is-current [data-cap]::after {
   display: inline-block; min-width: 24px; padding: 5px 7px; border-radius: 6px; background: var(--surface); color: var(--fg);
   box-shadow: 0 0 0 1px var(--line-strong), 0 2px 0 var(--line-strong);
   font: 500 .74rem/1 var(--mono); letter-spacing: 0; text-align: center; text-transform: none; white-space: nowrap;
@@ -443,10 +405,10 @@ dialog.rowmenu::backdrop { background: transparent; }
 /* On the marked row every control wears its key, so the next move needs no legend. */
 .inbox-row.is-current .inbox-answer { position: relative; }
 .inbox-row.is-current [data-cap]::after { content: attr(data-cap); position: absolute; top: 7px; right: 7px; rotate: 3deg; }
-.inbox-done.is-current [data-cap]::after { content: attr(data-cap); margin-left: var(--s-2); min-width: 20px; padding: 3px 5px; box-shadow: 0 0 0 1px var(--line-strong); }
+
 .inbox-row.is-current .inbox-later[data-cap]::after { position: static; margin-left: 7px; rotate: 0deg; min-width: 20px; padding: 3px 5px; box-shadow: 0 0 0 1px var(--line-strong); }
 /* A finger has no keys. */
-@media (pointer: coarse) { .inbox-row.is-current [data-cap]::after, .inbox-done.is-current [data-cap]::after { content: none; }
+@media (pointer: coarse) { .inbox-row.is-current [data-cap]::after { content: none; }
 }
 
 @media (prefers-reduced-motion: reduce) { .inbox-row.is-current::before, .keys-pending { animation: none; }
@@ -505,14 +467,8 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 }
 
 /* The place of the cards with the agents (desk.mjs withAgents), hidden. */
-#desk-ip[hidden] { display: none; }
+
 /* ---- The foot of the Desk as one piece: equal columns on the card column's edges. A phone: one column. ---- */
-:is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: var(--s-5) 28px; margin-top: var(--s-6); }
-
-
-@container rows (max-width: 600px) {
-  :is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { grid-template-columns: minmax(0, 1fr); }
-}
 
 /* ---- A lower decision row, the pictures as a small fan beside the title ---- */
 @media (min-width: 861px) {
@@ -623,8 +579,8 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 /* ---- Who asked: no drawings beside the cards (the session's drawing is in the row); the cards take that width ---- */
 :is(#inbox, #session) .inbox-groups .inbox-group[data-sender] > .inbox-row > .inbox-gutter { display: none !important; }
 @media (min-width: 861px) {
-  :is(#inbox, #session) .inbox-groups > .inbox-group, :is(#inbox, #session) .inbox-groups > .tail, :is(#inbox, #session) .inbox-groups > .inbox-stacks { padding-left: 0; }
-  :is(#inbox, #session) .inbox-groups > .inbox-stacks { --inset: 0px; }
+  :is(#inbox, #session) .inbox-groups > .inbox-group { padding-left: 0; }
+
 }
 .inbox-groups .inbox-row .inbox-byline .inbox-from { display: none !important; }
 @media (max-width: 860px) { .inbox-groups .inbox-row .inbox-content > .inbox-byline:not(:has(.inbox-whenever)) { display: none !important; } }
@@ -714,13 +670,8 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 @media (max-width: 860px) { .inbox-groups .inbox-row .row-mark { width: 18px; height: 18px; } .inbox-groups .inbox-row .row-mark > .crown-mark { width: 14px; top: -7px; } }
 
 /* ---- The foot of the Desk as desk objects in equal columns, centred, their feet on one line ---- */
-:is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; justify-items: center; gap: var(--s-4) 28px; margin-top: var(--s-8); }
-
 
 /* a phone: the three in one row, smaller */
-@container rows (max-width: 600px) {
-  :is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: var(--s-3) 10px; }
-}
 
 /* ---- Select by the session's drawing (desk.mjs selectWays): a soft ring on hover, an empty round box, a filled round
    tick when chosen; the chosen row a quiet tint; the bar at the bottom while any is chosen. ---- */
@@ -761,8 +712,6 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 @media (max-width: 860px) { .sel-bar { gap: 0; padding: var(--s-1) var(--s-1) var(--s-1) 10px; } .sel-n { margin-right: 2px; font-size: var(--t-xs); } .sel-bar button { gap: var(--s-1); padding: 0 6px; } .sel-bar .sketch { width: 16px; height: 16px; } .sel-bar .sel-clear { width: 30px; } }
 
 /* ---- The notes' block at the Desk's foot ---- */
-#inbox .inbox-stacks.stack-tabs > [data-stack="notes"] { display: block; position: relative; }
-
 
 /* the answers take one fixed width (one tile or two, set at the right), so the text stands the same in every row */
 @media (min-width: 861px) {
@@ -805,16 +754,9 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 :root.is-choosing .curl { opacity: 0; pointer-events: none; }
 
 /* ---- The foot's objects on one line: the same box for each, the words under them on one baseline ---- */
-:is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { align-items: start !important; }
-#inbox .inbox-stacks.stack-tabs > * { margin: 0 !important; align-self: start; }
-
-:is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 
 /* ---- The Desk's foot as a pair: two objects close together in the middle, the same height, their labels on one
    line. ---- */
-:is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { grid-template-columns: minmax(0, 1fr) max-content max-content minmax(0, 1fr) !important; column-gap: 44px; justify-items: center; }
-
-@container rows (max-width: 600px) { :is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { column-gap: 22px; } }
 
 /* ---- The Desk's top (desk.mjs deskHead): where one arrives. A greeting in the display face, its last word underlined
    with the pen; the tools for what waits at the right, on the list's right edge. Air above and below: the list starts clearly under it.
@@ -897,13 +839,6 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 
 /* ---- The stack's tail (desk.mjs withAgents, #desk-ip): the place of the cards that are out with an agent, under the
    last card of the stack. ---- */
-:is(#inbox, #session) .inbox-groups > .tail { grid-column: 1 / -1; display: grid; gap: var(--s-2); min-width: 0; margin: -6px 0 var(--s-8); padding: 0; }
-.tail[hidden] { display: none !important; }
-
-
-@media (max-width: 860px) {
-  :is(#inbox, #session) .inbox-groups > .tail { margin-top: -2px; gap: 6px; }
-}
 
 /* ---- a final option's sign on an answer tile of a row: the small pen tick in the tile's corner (ui.mjs finalSign) ---- */
 .inbox-answer { position: relative; }
@@ -948,7 +883,6 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
   html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer.is-others > b { font-size: 1.05rem; }
 }
 
-
 /* ---- One bracket for a run:
    a run of two or more cards from one session is held by a pen bracket in the session's colour at the far left, outside
    the rows, from the first card to the last: the pen's weight, a slightly uneven line, a small hook towards the rows
@@ -971,9 +905,8 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 /* ---- More air: 48px between the big greeting and the first row (a phone 30px), and a wider gap between the piles
    at the Desk's foot, the pair still centred ---- */
 #inbox .desk-top { margin-bottom: 48px; }
-:is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { column-gap: 57px; }
+
 @media (max-width: 860px) { #inbox .desk-top { margin-bottom: 30px; } }
-@container rows (max-width: 600px) { :is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { column-gap: 29px; } }
 
 /* ---- Later in every row: the same small drawn zZ tag as under a card, at the top right of a
    row's text, on the Desk and in a conversation; no box around it; under the pointer it turns a little ---- */
@@ -992,65 +925,31 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 
 /* ---- the Desk's foot: the section Off your mind (desk.mjs offHint) under a pen rule with its label, and the page
    /stacks/off (endList) ---- */
-.endlist { display: grid; gap: 2px; margin: var(--s-6) 0 0; }
-.endlist[hidden] { display: none; }
 
 /* (the foot holds one pile, Artifacts, centred; on its own page /stacks/off the list of everything stands above it) */
-:is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs.is-two { grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr) !important; }
-#inbox .inbox-stacks.stack-tabs.is-two > #desk-artifacts { grid-column: 2; grid-row: 1; }
 
 /* ---- one list: the cards with the agents and the end list are one slim list, under a pen rule with its label in a
    hand (.end-divider). ---- */
-:is(#inbox, #session) .inbox-groups > .tail { gap: 0; margin: var(--s-6) 0 0; border-top: 1px solid var(--line); }
 
-.end-divider { display: none; position: relative; align-items: center; gap: var(--s-2); height: 30px; margin: 6px 0 0; color: var(--muted); }
-.end-divider > svg { position: absolute; left: 0; right: 0; top: 50%; width: 100%; height: 8px; translate: 0 -50%; fill: none; stroke: var(--line-strong); stroke-width: 1.6; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.end-divider > svg path { vector-effect: non-scaling-stroke; }
-.end-divider > :is(span, .end-head) { position: relative; margin-left: var(--s-4); padding: 0 8px; background: var(--bg); font: 600 1rem/1 var(--display); rotate: -2deg; letter-spacing: .01em; }
 /* (a heading that is the link to its whole page: Artifacts) */
-.end-divider > .end-head { padding-block: 6px; color: inherit; text-decoration: none; border-radius: var(--r-sm); }
-.end-divider > .end-head .off-count { margin-left: 4px; font: 500 var(--t-sm)/1 var(--font); font-variant-numeric: tabular-nums; opacity: .8; }
+
 /* (a heading that opens its whole page: underlined, an arrow after it, so it reads as a link at rest) */
-.end-divider > .end-head { display: inline-flex; align-items: center; gap: 4px; }
-.end-divider > .end-head .end-head-words { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 4px; text-decoration-color: var(--accent); }
-.end-divider > .end-head .sketch { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; color: var(--accent); translate: 0 1px; transition: translate 120ms; }
-.end-divider > .end-head:is(:hover, :focus-visible) { color: var(--fg); }
-.end-divider > .end-head:is(:hover, :focus-visible) .sketch { translate: 3px 1px; }
-#desk-ip:not([hidden]) + .endlist { margin-top: 0; }
-#desk-ip:not([hidden]) + .endlist .end-divider { display: flex; }
-@media (max-width: 860px) {
-  :is(#inbox, #session) .inbox-groups > .tail { margin-top: var(--s-5); gap: 0; }
-}
 
 /* ---- a calm Desk: the open questions stand alone; what is off his mind begins well below them, under a pen rule with
    a small label. ---- */
-:is(#inbox, #session) .inbox-groups > .tail, :is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .endlist { margin-top: clamp(56px, 22vh, 180px); border-top: 0; }
 
-#desk-ip[hidden] + .endlist .end-divider { display: flex; }
-@media (max-width: 860px) {
-  :is(#inbox, #session) .inbox-groups > .tail, :is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .endlist { margin-top: max(72px, 40vh); }
-}
-
-#desk-ip:not([hidden]) + .endlist .end-divider { display: none !important; }
-#desk-ip:not([hidden]) + .endlist { margin-top: 0; }
 /* the page /stacks/off */
 .off-page .desk-hello { display: flex; align-items: baseline; gap: var(--s-3); }
 .off-back { color: var(--muted); text-decoration: none; font: 400 1.4rem/1 var(--font); }
 .off-back:hover { color: var(--fg); }
-.endlist.is-full { margin-top: var(--s-4); }
-:is(#inbox) .inbox-groups > .tail:has(+ .endlist.is-full) { margin-top: var(--s-4); }
+
 .end-search { margin: 0 0 var(--s-3); }
 .end-search input { width: min(420px, 100%); min-height: 40px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--fg); font: 400 var(--t-sm)/1.2 var(--font); }
 .end-none { color: var(--muted); }
 
-:is(#inbox, #session) .inbox-groups > .tail:has(+ .endlist:not([hidden])) { margin-bottom: 0; }
-.off-page :is(.end-divider) { display: none !important; }
-.off-page .inbox-groups > .tail { margin-top: 0 !important; border-top: 1px solid var(--line); }
 .off-page .end-search { margin: var(--s-2) 0 var(--s-4); }
 .off-page .desk-top { flex-wrap: wrap; row-gap: var(--s-3); }
 .off-page .desk-top .end-search { flex: 1 0 100%; margin: 0; }
-.off-page .endlist { margin-top: 0 !important; }
-.off-page .inbox-groups > .tail { margin-bottom: 0 !important; }
 
 /* ---- a Desk row is its title and its answer tiles: no session name, no
    line under the title, no drawing, no tag; a wide screen shows the tag while the pointer rests. The row never grows:
@@ -1066,23 +965,6 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 @media (max-width: 860px) { #inbox .inbox-row .inbox-when { display: none !important; } }
 @media (max-width: 860px) { #inbox .inbox-row .row-mark { display: none; } }
 @media (max-width: 860px) { html body #inbox .inbox-row .inbox-text .inbox-body, html body #inbox .inbox-row .inbox-body-text { display: none !important; } html body #inbox .inbox-row .inbox-text.has-sender { padding-left: 0 !important; } }
-
-/* ---- the Desk's foot: the last four artifacts in a row; a phone two by two ---- */
-#desk-stacks:has(> .df-cards) { display: block; }
-.df-cards { margin-top: var(--s-6); text-align: left; }
-.df-cards .end-divider { display: flex; margin-bottom: 8px; }
-.df-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.df-card { display: grid; gap: 6px; min-width: 0; color: var(--fg); text-decoration: none; }
-.df-thumb { position: relative; display: block; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 10px; box-shadow: 0 0 0 1px var(--line-strong); background: var(--sunken); }
-.df-thumb img, .df-thumb video { width: 100%; height: 100%; object-fit: cover; object-position: top left; display: block; }
-.df-thumb > * { width: 100%; height: 100%; }
-.df-page { display: grid; align-content: start; gap: 5px; padding: 10px; box-sizing: border-box; background: #fffdf6 center/cover; }
-.df-page b { font: 700 11px/1.2 var(--font); color: #222; }
-.df-page i { height: 3px; border-radius: 2px; background: #ddd8c8; }
-.df-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--t-sm)/1.3 var(--font); }
-.df-card:hover .df-title { text-decoration: underline; }
-@media (max-width: 860px) { .df-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-html body #desk-stacks:has(> .df-cards) { display: block !important; width: auto !important; padding: 0 !important; } html body #desk-stacks > .df-cards { width: 100%; max-width: none; box-sizing: border-box; } html body #desk-stacks .df-row { width: 100%; } html body #desk-stacks .df-card { width: auto; }
 
 /* ---- the Desk's <main> is a layout boundary (its size comes from the frame): a change in the list lays out only the
    list, not the sidebar and the rest of the page (README "The huge room") ---- */
@@ -1125,71 +1007,55 @@ body > main#inbox { contain: strict; }
   :root:is([data-shift], [data-shift-swap]) .inbox-actions :is(.inbox-answer, .inbox-answer *) { transition: none !important; animation: none !important; }
 }
 
-/* ---- the page Off your mind (desk.mjs endList): what runs as live cards, one under the other; what is put off,
-   done or thrown away as small quiet rows under them ---- */
-.oym { gap: var(--s-3); text-align: left; }
-.oym :is(.oym-card, .pile-rest) { text-align: left; }
-.oym .oym-card-words, .oym .oym-card-words > * { text-align: left; justify-self: start; }
-.oym-card { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: 12px 14px; border: 1.5px solid color-mix(in srgb, var(--fg) 55%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); color: var(--fg); text-decoration: none; box-shadow: 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent); }
-@media (any-hover: hover) { .oym-card:hover { border-color: var(--fg); } }
-.oym-card .agent-avatar { width: 30px; height: 30px; }
-.oym-card-words { display: grid; gap: 3px; min-width: 0; }
-.oym-card-words b { font: 600 var(--t-md)/1.3 var(--font); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.oym-card-words small { color: var(--muted); font-size: var(--t-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.oym-who { color: var(--fg); font-weight: 600; }
-.oym-ago { align-self: start; color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
-.pile-cards { display: grid; gap: 6px; }
-.pile-rests { display: grid; gap: 4px; margin-top: 4px; }
-.pile-rest { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--muted); font: 400 var(--t-xs)/1.3 var(--font); text-decoration: none; text-align: left; }
-.pile-rest b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--muted); }
-.pile-rest:hover b { color: var(--fg); }
-.pile-rest .ago { color: var(--faint); white-space: nowrap; }
-.pile-rest-mark { display: grid; place-items: center; color: var(--accent); }
-.pile-rest-mark .sketch { width: 13px; height: 13px; stroke-width: 2.2; }
-.pile-rest[data-g="later"] .pile-rest-mark { color: var(--stamp-ink-later); }
-.pile-rest[data-g="trash"] .pile-rest-mark { color: var(--faint); }
-.pile-rest[data-shredded] b { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent); }
 
-/* ---- the Desk's foot (desk.mjs offHint; since 17 October 2026 no docked stacks: starred and running stand at the head of the section) ----
-   The section Off your mind: a short hinted list, its rows fading, beside Artifacts on a wide window. */
-.oym-hint { gap: 0; text-align: left; }
-.oym-hint-list { display: grid; gap: 3px; justify-items: start; padding: 0 4px 2px; color: var(--muted); text-decoration: none; text-align: left; font: 400 var(--t-xs)/1.3 var(--font); }
-.oym-hint-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); align-items: center; gap: 8px; width: 100%; }
-.oym-hint-row .sketch { width: 12px; height: 12px; stroke-width: 2.2; color: var(--accent); }
-.oym-hint-row[data-g="later"] .sketch { color: var(--stamp-ink-later); }
-.oym-hint-row[data-g="trash"] .sketch { color: var(--faint); }
-.oym-hint-row b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.oym-hint-row:nth-child(2) { opacity: .7; }
-.oym-hint-row:nth-child(3) { opacity: .4; }
-.oym-hint-more { margin-top: 3px; color: var(--fg); font-weight: 600; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
-@media (any-hover: hover) { .oym-hint-list:hover b { color: var(--fg); } }
-.oym-hint-list:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 8px; }
-/* (the two sections stand level: the same space above each, whatever lies before them, and the same space between a
-   heading and what stands under it; tests/web/views/foot-level.browser.mjs) */
-:is(#inbox, #session) .inbox-groups > #desk-ip + .oym-hint:not([hidden]) { margin-top: 56px; }
-:is(#inbox, #session) .inbox-groups > .oym-hint .end-divider { display: flex !important; margin-bottom: 8px; }
-@container rows (min-width: 700px) {
-  .inbox-groups > .oym-hint:not([hidden]) { grid-column: 1 / 3; align-self: start; }
-  .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks { grid-column: 3 / -1; align-self: start; }
-  :is(#inbox, #session) .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks.stack-tabs { margin-top: 56px; }
-}
-/* The cards at the head of the section, starred and running, one calm row each (as the iPhone's OffHint): the
-   agent's drawing in its turning ring while it runs, the title, "agent · status line". In the Desk's scroll, never
-   over it. */
-.oym-runs { display: grid; gap: 2px; margin: 0 0 10px; }
-.oym-run { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 44px; padding: 2px 4px; border-radius: 10px; color: var(--fg); text-decoration: none; text-align: left; }
-.oym-run-mark { position: relative; display: grid; place-items: center; width: 28px; height: 28px; }
-.oym-run-mark .agent-avatar { width: 20px; height: 20px; }
-.oym-run:not([data-running]) .oym-run-mark .agent-avatar { width: 24px; height: 24px; }
-.oym-run-mark .agent-ring { color: var(--accent); }
-.oym-run-words { display: grid; gap: 1px; min-width: 0; }
-.oym-run-words b { display: block; font: 600 var(--t-sm)/1.3 var(--font); }
-.oym-run-words b, .oym-run-words small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.oym-run-words small { color: var(--muted); font-size: var(--t-xs); }
-.oym-run-more { justify-self: start; min-height: 32px; display: inline-flex; align-items: center; margin-left: 42px; color: var(--muted); font: 600 var(--t-xs)/1 var(--font); text-decoration: none; }
-@media (any-hover: hover) { .oym-run:hover { background: var(--sunken); } .oym-run-more:hover { color: var(--fg); } }
-.oym-run:focus-visible, .oym-run-more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-@media (max-width: 860px) {
-  :is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .oym-hint { margin-top: 40px; }
-  :is(#inbox, #session) .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks.stack-tabs { margin-top: 20px; }
-}
+/* ---- under the questions: one quiet line, as on the iPhone (desk.mjs offLine): Off your mind and the artifacts,
+   counted, each a link to its page ---- */
+.desk-chev { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.inbox-groups > .desk-end { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 24px; margin: var(--s-6) 0 72px; }
+.inbox-groups > .desk-end[hidden] { display: none; }
+.desk-end a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border-radius: 999px; color: var(--muted); font: 500 var(--t-md)/1 var(--font); text-decoration: none; }
+@media (any-hover: hover) { .desk-end a:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); color: var(--fg); } }
+.desk-end a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+@media (max-width: 860px) { .inbox-groups > .desk-end { margin: var(--s-5) 0 48px; } }
+
+/* ---- the note line under the goals (desk.mjs noteLine), the Scribble Board beside it ---- */
+#inbox .desk-top > .desk-note { grid-column: 1 / -1; }
+.desk-note { display: flex; gap: 12px; margin-top: var(--s-5); }
+.desk-note-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 14px 6px 12px; box-sizing: border-box; border-radius: 14px; background: color-mix(in srgb, var(--fg) 4%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 10%, transparent); cursor: text; }
+.desk-note-field:focus-within { box-shadow: 0 0 0 2px var(--focus-ring); }
+.desk-note-field .agent-avatar { flex: none; width: 26px; height: 26px; }
+.desk-note-field > .sketch { flex: none; width: 22px; height: 22px; color: var(--muted); }
+.desk-note-field textarea { flex: 1; min-width: 0; max-height: 40vh; padding: 6px 0; border: 0; background: none; color: var(--fg); font: 500 var(--t-md)/1.4 var(--font); resize: none; outline: none; overflow-y: auto; }
+.desk-note-field textarea::placeholder { color: var(--muted); }
+.desk-note-field kbd { flex: none; color: var(--faint); font: 500 var(--t-sm)/1 var(--font); }
+.desk-scribble { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 16px; box-sizing: border-box; border-radius: 14px; color: var(--fg); font: 500 var(--t-md)/1 var(--font); text-decoration: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 10%, transparent); }
+.desk-scribble .sketch { width: 20px; height: 20px; }
+.desk-scribble .desk-chev { color: var(--muted); }
+@media (any-hover: hover) { .desk-scribble:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); } }
+@media (max-width: 860px) { .desk-scribble span { display: none; } .desk-scribble { padding: 0 14px; } .desk-scribble .desk-chev { display: none; } }
+/* (on a wide window the line is the Desk's note: the corner's sticky steps aside there) */
+@media (min-width: 861px) { body[data-t-view="desk"] .corner-note-box { display: none; } }
+
+/* ---- the page /stacks/off (desk.mjs offMain): its groups, one line per card ---- */
+.off-groups { grid-column: 1 / -1; display: grid; gap: var(--s-8); margin-top: var(--s-4); text-align: left; }
+.off-group { display: grid; }
+.off-group h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px; padding: 0 6px; font: 600 var(--t-md)/1.2 var(--font); color: var(--fg); }
+.off-group h3 b { font-weight: 500; color: var(--faint); font-variant-numeric: tabular-nums; }
+.off-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; min-height: 44px; padding: 4px 6px; border-radius: 10px; color: var(--fg); text-decoration: none; text-align: left; }
+.off-row + .off-row { box-shadow: 0 -1px 0 color-mix(in srgb, var(--fg) 7%, transparent); }
+@media (any-hover: hover) { .off-row:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); box-shadow: none; } }
+.off-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.off-row b { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 var(--t-md)/1.3 var(--font); }
+.off-row small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 280px; color: var(--muted); font: 500 var(--t-sm)/1.2 var(--font); }
+.off-row small i { font-style: normal; color: var(--faint); }
+.off-row .off-ago { min-width: 64px; color: var(--faint); font-size: var(--t-sm); text-align: right; white-space: nowrap; }
+.off-mark { position: relative; display: grid; place-items: center; width: 30px; height: 30px; }
+.off-mark .agent-avatar { width: 24px; height: 24px; }
+.off-mark .agent-ring { position: absolute; inset: -2px; width: 34px; height: 34px; color: var(--accent); }
+.off-mark > .sketch { width: 15px; height: 15px; stroke-width: 2.2; color: var(--accent); }
+.off-row[data-g="later"] .off-mark > .sketch { color: var(--stamp-ink-later); }
+.off-row[data-g="trash"] .off-mark > .sketch { color: var(--faint); }
+.off-row.is-rest b { color: var(--muted); font-weight: 450; }
+.off-row[data-shredded] b { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent); }
+@media (max-width: 860px) { .off-row small { display: none; } .off-groups { gap: var(--s-6); } }
+@media (max-width: 860px) { #inbox .desk-top > .desk-note { display: none; } }

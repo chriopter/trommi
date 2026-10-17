@@ -568,6 +568,7 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     view.desk = super::desk::desk_with(&b, &off);
     view.off = lens.off.as_deref().map(|q| super::off::off_list(&b, &off, q));
     view.artifacts = lens.artifacts.then(|| super::session::artifacts(&b));
+    view.desk.artifacts_line = super::desk::artifacts_line(view.artifacts.as_deref().unwrap_or_default());
     view.gallery = None;
     // (the gallery filters what it lists; the Desk's foot keeps every one)
     if let Some(kind) = lens.gallery.as_deref() {
