@@ -1651,14 +1651,20 @@ public enum CoreView {
     public var putOff: UInt32
     /// Every closed card of the team in view, counted (not only the ones named).
     public var closed: UInt32
+    /// All of it in one quiet line under the questions (the iPhone's calm Desk): "2 running · 1 put off · 14 done".
+    public var line: Text
+    /// Where a tap on the hint or its line goes: the complete list.
+    public var opens: Screen
 
-    public init(running: [DockRowView] = [], runningMore: Text? = nil, rows: [OffRowView] = [], says: Text = Text(), putOff: UInt32 = 0, closed: UInt32 = 0) {
+    public init(running: [DockRowView] = [], runningMore: Text? = nil, rows: [OffRowView] = [], says: Text = Text(), putOff: UInt32 = 0, closed: UInt32 = 0, line: Text = Text(), opens: Screen = .desk) {
       self.running = running
       self.runningMore = runningMore
       self.rows = rows
       self.says = says
       self.putOff = putOff
       self.closed = closed
+      self.line = line
+      self.opens = opens
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1668,6 +1674,8 @@ public enum CoreView {
       case says = "says"
       case putOff = "put_off"
       case closed = "closed"
+      case line = "line"
+      case opens = "opens"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1678,6 +1686,8 @@ public enum CoreView {
       self.says = try c.decode(Text.self, forKey: .says)
       self.putOff = try c.decode(UInt32.self, forKey: .putOff)
       self.closed = try c.decode(UInt32.self, forKey: .closed)
+      self.line = try c.decodeIfPresent(Text.self, forKey: .line) ?? Text()
+      self.opens = try c.decodeIfPresent(Screen.self, forKey: .opens) ?? .desk
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -1688,6 +1698,8 @@ public enum CoreView {
       try c.encode(says, forKey: .says)
       try c.encode(putOff, forKey: .putOff)
       try c.encode(closed, forKey: .closed)
+      try c.encode(line, forKey: .line)
+      try c.encode(opens, forKey: .opens)
     }
   }
 

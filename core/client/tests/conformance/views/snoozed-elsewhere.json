@@ -1423,6 +1423,19 @@
             "mode": "desk",
             "off": {
               "closed": 0,
+              "line": {
+                "args": {
+                  "done": "0",
+                  "put_off": "1",
+                  "running": "0"
+                },
+                "en": "1 put off",
+                "key": "off.hint.line.010"
+              },
+              "opens": {
+                "query": "",
+                "screen": "off"
+              },
               "put_off": 1,
               "rows": [
                 {
@@ -1489,6 +1502,19 @@
       "mode": "desk",
       "off": {
         "closed": 0,
+        "line": {
+          "args": {
+            "done": "0",
+            "put_off": "1",
+            "running": "0"
+          },
+          "en": "1 put off",
+          "key": "off.hint.line.010"
+        },
+        "opens": {
+          "query": "",
+          "screen": "off"
+        },
         "put_off": 1,
         "rows": [
           {
