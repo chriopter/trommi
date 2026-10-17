@@ -43,7 +43,7 @@ function page(k, addOpen) {
   const here = path(k.query, k.filter), w = k.words
   const filters = k.filters.map(f => html`<a data-nav href="${path(k.query, f.key)}"${f.on ? raw(' aria-current="true"') : ''}>${f.label.en} <span class="kn-count">${f.count}</span></a>`)
   return html`<main id="knowledge" class="kn-page" aria-label="${k.title.en} · ${k.team.en}"><div class="kn-column" data-controller="knowledge" data-knowledge-add-value="${addOpen ? '1' : ''}">
-<header class="kn-head page-head"><h2>${k.title.en} <span class="kn-total" aria-label="${k.summary.en}">(${k.count})</span></h2><p>${k.lead.en}</p></header>
+<header class="kn-head page-head"><p class="kn-team">${sk('desk')}<span>${k.team.en}</span></p><h2>${k.title.en} <span class="kn-total" aria-label="${k.summary.en}">(${k.count})</span></h2><p>${k.lead.en}</p></header>
 <div class="kn-tools"><form class="kn-search" method="get" action="/knowledge" role="search" data-knowledge-target="search"><label>${sk('search')}<span class="offscreen">${k.search.en}</span><input type="search" name="q" value="${k.query}" placeholder="${k.search.en}" autocomplete="off" data-action="input->knowledge#find"${k.query ? raw(' autofocus') : ''}></label>${k.filter ? html`<input type="hidden" name="filter" value="${k.filter}">` : ''}</form>
 <nav class="art-kinds kn-filter" aria-label="Filter">${filters}</nav>
 <button type="button" class="kn-add" data-action="knowledge#add"${k.full ? raw(' disabled') : ''}><span aria-hidden="true">+</span> ${w.add.en}</button></div>
