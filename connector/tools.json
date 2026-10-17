@@ -1457,7 +1457,7 @@
     "introduce": {
       "model": "Claude Opus 5.5",
       "task": "Prepare migration and deploy",
-      "icon": "database"
+      "icon": "pill"
     },
     "list_cards": {},
     "publish_asset": {

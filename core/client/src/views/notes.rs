@@ -64,7 +64,7 @@ pub(crate) fn to_of(a: &Agent, b: &Board) -> NoteToView {
         session_id: a.row.key.clone(),
         // (never an empty word: a session without a name yet is the team's Main Session)
         name: if name.is_empty() { "Main Session".into() } else { name.to_string() },
-        mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
+        mark: a.row.mark(),
         team_id: a.team.clone().unwrap_or_default(),
         team: team.map(|d| if d.name.is_empty() { "Personal".to_string() } else { d.name.clone() }).unwrap_or_default(),
     }

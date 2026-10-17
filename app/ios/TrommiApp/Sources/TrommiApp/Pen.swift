@@ -1,7 +1,7 @@
 // Pen.swift: the pen of the web app (app/web/public/ui.mjs "pen"), the part that depends on a seed: a session's
 // scribble from its id, and the colours of the marks. The same seed gives the same strokes as on the web, byte for byte
-// in the path data. Named drawings, sketches and the other fixed marks come pre-drawn (TrommiApp Resources/pen.json,
-// written by dev/ios-pen.mjs from the same code).
+// in the path data. The faces, sketches and the other fixed marks come pre-drawn (TrommiApp Resources/pen.json; its
+// faces are written by app/ios/dev/pen.mjs from the same code).
 import Foundation
 
 public enum Pen {
@@ -33,11 +33,12 @@ public enum Pen {
     return d
   }
 
-  public static let kinds = ["burst", "spiral", "blob", "flower", "waves", "knot", "bolt", "hatch"]
-  /** The 52 names a session's drawing can have, in the picker's order (the hue turns with the place). */
-  public static let drawings = kinds + ["star", "zigzag", "eight", "arrow", "leaf", "eye", "key", "anchor", "kite", "comb", "ladder", "heart", "moon", "cloud", "drop", "flag", "house", "tree",
-                                        "fish", "bird", "cup", "bell", "cross", "triangle", "square", "diamond", "grid", "mountain", "umbrella", "crown", "flame", "boat", "browser", "terminal",
-                                        "database", "phone", "brush", "flask", "lock", "book", "rocket", "mic", "bug", "branch"]
+  /** The eight scribble kinds, for a mark that names no face. */
+  static let kinds = ["burst", "spiral", "blob", "flower", "waves", "knot", "bolt", "hatch"]
+  /** The 24 faces a session can wear, in the picker's order (the hue turns with the place): the app core's
+      (core/client/src/faces.rs); a connector test keeps the lists equal. */
+  public static let drawings = ["blob", "cloud", "flower", "drop", "bean", "star", "ghost", "egg", "bell", "pebble", "heart", "mushroom",
+                                "leaf", "box", "peak", "sun", "peanut", "onion", "cat", "jelly", "acorn", "gem", "curl", "pill"]
 
   /** The eight scribble kinds, as path data in a 32 box. */
   static func doodle(_ k: Int, _ r: () -> Double) -> [String] {
@@ -87,14 +88,10 @@ public enum Pen {
   /** A session's scribble for a seed (its id): path data in a 32 box and the tilt in degrees. Named marks come from pen.json. */
   public static func scribble(seed: String) -> (paths: [String], rotate: Double) {
     let r = seeded(seed)
-    if let name = drawingName(seed), let k = kinds.firstIndex(of: name) {
-      let ds = doodle(k, r)
-      return (ds, ((r() - 0.5) * 16).rounded())
-    }
     let ds = doodle(Int(floor(r() * Double(kinds.count))), r)
     return (ds, ((r() - 0.5) * 16).rounded())
   }
-  /** "draw:rocket" -> "rocket", or nil for a seeded scribble. */
+  /** "draw:cloud" -> "cloud", or nil for a seeded scribble. */
   public static func drawingName(_ mark: String) -> String? {
     guard mark.hasPrefix("draw:") else { return nil }
     let n = String(mark.dropFirst(5))

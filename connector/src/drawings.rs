@@ -1,58 +1,27 @@
-//! The drawings a session can wear as its symbol, from connector/drawings.json: the one list the agent's tool
-//! descriptions and the check of a given icon come from. The apps hold the same
-//! names in the same order (app/web/public/ui.mjs, app/ios/.../Pen.swift); a test keeps the three equal.
-use serde_json::Value;
-use std::sync::OnceLock;
+//! The faces a session can wear as its symbol: the app core's list (`trommi_client_core::faces`), the one list the
+//! agent's tool descriptions and the check of a given icon come from. The apps hold the same names in the same order
+//! (app/web/public/ui.mjs `FACES`, app/ios/.../Pen.swift `drawings`); a test keeps them equal.
+use trommi_client_core::faces::{face_of, FACES};
 
-pub const DRAWINGS_JSON: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/drawings.json"));
-
-pub struct Drawing {
-    pub name: String,
-    pub meaning: String,
-    pub topics: Vec<String>,
-}
-
-pub fn all() -> &'static [Drawing] {
-    static D: OnceLock<Vec<Drawing>> = OnceLock::new();
-    D.get_or_init(|| {
-        let v: Value = serde_json::from_str(DRAWINGS_JSON).expect("drawings.json");
-        let text = |x: &Value, k: &str| x[k].as_str().unwrap_or("").to_string();
-        v.as_array()
-            .expect("drawings.json is a list")
-            .iter()
-            .map(|x| Drawing {
-                name: text(x, "name"),
-                meaning: text(x, "meaning"),
-                topics: x["topics"]
-                    .as_array()
-                    .map(|t| t.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-                    .unwrap_or_default(),
-            })
-            .collect()
-    })
-}
-
-/// "burst (spark), spiral (loop), …": the names with a word each, for the tools' `icon` description.
+/// "blob (general), cloud (web), …": the names with a word each, for the tools' `icon` description.
 pub fn listing() -> String {
-    all()
+    FACES
         .iter()
-        .map(|d| format!("{} ({})", d.name, d.meaning))
+        .map(|f| format!("{} ({})", f.name, f.meaning))
         .collect::<Vec<_>>()
         .join(", ")
 }
 
-/// The mark the board stores for a drawing name: "draw:rocket". Accepts "rocket", "Rocket" and "draw:rocket".
-/// An unknown name is an error that lists the valid ones.
+/// The mark the board stores for a face: "draw:cloud". Accepts "cloud", "Cloud" and "draw:cloud", and a symbol of
+/// before ("rocket" -> "draw:drop"). An unknown name is an error that lists the valid ones.
 pub fn mark_of(given: &str) -> Result<String, String> {
-    let g = given.trim().to_lowercase();
-    let bare = g.strip_prefix("draw:").unwrap_or(&g).trim().to_string();
-    if all().iter().any(|d| d.name == bare) {
-        return Ok(format!("draw:{bare}"));
+    match face_of(given) {
+        Some(face) => Ok(format!("draw:{face}")),
+        None => Err(format!(
+            "no face named \"{given}\". Pass one of these names (no prefix needed): {}",
+            listing()
+        )),
     }
-    Err(format!(
-        "no drawing named \"{given}\". Pass one of these names (no prefix needed): {}",
-        listing()
-    ))
 }
 
 #[cfg(test)]
@@ -60,51 +29,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn names_are_unique_and_topics_do_not_collide() {
-        let mut seen = std::collections::HashSet::new();
-        for d in all() {
-            assert!(seen.insert(d.name.clone()), "{} twice", d.name);
-            assert!(!d.meaning.is_empty() && !d.meaning.contains(' '), "{}: one word", d.name);
-        }
-        let mut topics = std::collections::HashMap::new();
-        for d in all() {
-            for t in &d.topics {
-                if let Some(o) = topics.insert(t.clone(), d.name.clone()) {
-                    panic!("topic {t} for both {o} and {}", d.name);
-                }
-            }
-        }
-        assert_eq!(all().len(), 52);
-    }
-
-    #[test]
     fn a_given_name_gets_its_prefix_and_an_unknown_one_lists_the_valid() {
-        assert_eq!(mark_of("rocket").unwrap(), "draw:rocket");
-        assert_eq!(mark_of(" Draw:Rocket ").unwrap(), "draw:rocket");
+        assert_eq!(mark_of("cloud").unwrap(), "draw:cloud");
+        assert_eq!(mark_of(" Draw:Cloud ").unwrap(), "draw:cloud");
+        assert_eq!(mark_of("rocket").unwrap(), "draw:drop");
         let e = mark_of("spaceship").unwrap_err();
-        assert!(e.contains("spaceship") && e.contains("rocket (release)") && e.contains("burst (spark)"), "{e}");
+        assert!(e.contains("spaceship") && e.contains("drop (release)") && e.contains("blob (general)"), "{e}");
     }
 
-    /// The web and the iOS app hold the same drawings, in the same order, as drawings.json.
+    /// The web and the iOS app hold the same faces, in the same order, as the app core.
     #[test]
     fn web_and_ios_hold_the_same_list() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let want: Vec<String> = all().iter().map(|d| d.name.clone()).collect();
+        let want: Vec<String> = FACES.iter().map(|f| f.name.to_string()).collect();
 
         let ui = std::fs::read_to_string(root.join("app/web/public/ui.mjs")).unwrap();
-        let kinds = ui.split("const KINDS = [").nth(1).unwrap().split(']').next().unwrap();
-        let mut web: Vec<String> = kinds.split(',').filter_map(|s| s.split('\'').nth(1).map(String::from)).collect();
-        let named = ui.split("const NAMED = {").nth(1).unwrap().split("\nconst KINDS").next().unwrap();
-        web.extend(named.lines().filter(|l| l.starts_with("  ") && !l.starts_with("   ") && !l.trim_start().starts_with("//"))
-            .filter_map(|l| l.trim().split(':').next().map(String::from)));
+        let faces = ui.split("const FACES = {").nth(1).unwrap().split("\n}").next().unwrap();
+        let web: Vec<String> = faces.lines().filter(|l| l.starts_with("  ") && !l.starts_with("   ") && !l.trim_start().starts_with("//"))
+            .filter_map(|l| l.trim().split(':').next().map(String::from)).collect();
         assert_eq!(web, want, "app/web/public/ui.mjs");
 
         let pen = std::fs::read_to_string(root.join("app/ios/TrommiApp/Sources/TrommiApp/Pen.swift")).unwrap();
-        let kinds_swift = pen.split("static let kinds").nth(1).unwrap().split(']').next().unwrap().to_string();
-        let drawings = pen.split("static let drawings = kinds + [").nth(1).unwrap().split(']').next().unwrap().to_string();
-        let quoted = |s: &str| -> Vec<String> { s.split('"').skip(1).step_by(2).map(String::from).collect() };
-        let mut ios = quoted(&kinds_swift);
-        ios.extend(quoted(&drawings));
+        let drawings = pen.split("static let drawings = [").nth(1).unwrap().split(']').next().unwrap().to_string();
+        let ios: Vec<String> = drawings.split('"').skip(1).step_by(2).map(String::from).collect();
         assert_eq!(ios, want, "Pen.swift");
+
+        let public: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(root.join("app/web/public/drawings.json")).unwrap()).unwrap();
+        let public: Vec<String> = public.as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
+        assert_eq!(public, want, "app/web/public/drawings.json");
     }
 }

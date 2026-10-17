@@ -19,6 +19,7 @@ the share sheet. There is no second Swift account, sync or board implementation.
 | `TrommiClient/Sources/ShareInbox/` | Share Extension's encrypted local inbox, intake and App Group access |
 | `TrommiClient/Sources/PushNotify/` | Read-only notification/widget payloads, private key-copy storage and extension I/O |
 | `TrommiClient/Sources/NotifyCoreLive/` | The notification/widget extension's narrow calls into the Rust binding |
+| `dev/pen.mjs` | Writes the faces of `Resources/pen.json` from the web's pen (`app/web/public/ui.mjs`); `--check` in CI |
 | `TrommiApp/AppStore/` | XcodeGen project, entitlements, metadata, screenshots and shipping tools |
 | `../../core/bindings/swift/` | UniFFI facade, generated Swift types/fold, static libraries and a proof app |
 | `../../tests/ios/` | Native executor/store/transport tests, isolated extension tests and opt-in core observers |

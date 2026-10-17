@@ -391,7 +391,7 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, asked: &H
         blocked: unit.hand.is_some(),
         unheard: unit.unheard,
         slug: a.row.id.clone(),
-        mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
+        mark: a.row.mark(),
         team_id: a.team.clone().unwrap_or_else(|| DEFAULT_TEAM.into()),
         online: unit.online,
         working: unit.working,
@@ -676,14 +676,15 @@ mod tests {
     }
 
     #[test]
-    fn a_row_names_its_mark_and_its_address() {
+    fn a_row_names_its_face_and_its_address() {
         let mut r = Room::default();
         r.session("a", None, true)["profile"]["icon"] = json!("draw:leaf");
         r.session("b", None, true);
         r.settings.insert(dev("b"), json!({ "name": "Renamed", "icon": "draw:key" }));
         r.session("c", None, true);
         let v = view(&r, None);
-        assert_eq!(v.sessions.iter().map(|x| (x.slug.as_str(), x.name.en.as_str(), x.mark.as_str())).collect::<Vec<_>>(), [("a", "a", "draw:leaf"), ("b", "Renamed", "draw:key"), ("c", "c", "c")]);
+        assert_eq!(v.sessions.iter().map(|x| (x.slug.as_str(), x.name.en.as_str(), x.mark.as_str())).collect::<Vec<_>>(), [("a", "a", "draw:leaf"), ("b", "Renamed", "draw:acorn"), ("c", "c", row(&v, "c").mark.as_str())]);
+        assert!(crate::faces::face_of(&row(&v, "c").mark).is_some(), "a session without an icon wears a face too");
         assert_eq!(row(&v, "a").id, dev("a"));
     }
 

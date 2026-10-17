@@ -398,7 +398,8 @@ pub struct SessionRowView {
     /// Its short id on the board: its address (`/chat/<slug>`).
     #[serde(default)]
     pub slug: String,
-    /// What draws it: the icon the person or the agent chose ("draw:leaf"), else its slug.
+    /// What draws it: always a face, "draw:<face>" (`faces::mark`: the icon the person or the agent chose, else the face
+    /// its name fits, else the one its id picks).
     #[serde(default)]
     pub mark: String,
     /// The team it stands on.

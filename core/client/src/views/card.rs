@@ -141,7 +141,7 @@ fn work_of(b: &Board, c: &Card, agent: usize, heard_up_to: Option<u64>) -> Optio
     };
     Some(CardWorkView {
         session_id: a.row.key.clone(),
-        mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
+        mark: a.row.mark(),
         says: say("card.work", format!("{name} is working on it"), &[("name", name)]),
         words,
         at_ms: line.map(|t| t.updated_at).filter(|t| *t > 0).unwrap_or_else(|| went_at(b.model, c)),

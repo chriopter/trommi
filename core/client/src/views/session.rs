@@ -451,7 +451,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         has_more,
         earlier: None,
         slug: a.row.id.clone(),
-        mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
+        mark: a.row.mark(),
         team_id: a.team.clone().unwrap_or_default(),
         main: a.row.main,
         crowned: a.crowned,

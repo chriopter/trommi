@@ -102,7 +102,7 @@
             "key": "session.name",
             "en": "Payments"
           },
-          "mark": "draw:lock",
+          "mark": "draw:pebble",
           "team": {
             "key": "agents.team",
             "args": {
@@ -132,7 +132,7 @@
             "key": "session.name",
             "en": "Docs"
           },
-          "mark": "draw:book",
+          "mark": "draw:bean",
           "team": {
             "key": "agents.team",
             "args": {
@@ -257,7 +257,7 @@
             "key": "session.name",
             "en": "Fernly App"
           },
-          "mark": "draw:phone",
+          "mark": "draw:ghost",
           "team": {
             "key": "agents.team",
             "args": {
@@ -352,7 +352,7 @@
             "key": "session.name",
             "en": "Design System"
           },
-          "mark": "draw:diamond",
+          "mark": "draw:gem",
           "team": {
             "key": "agents.team",
             "args": {
@@ -446,7 +446,7 @@
             "key": "session.name",
             "en": "Infrastructure"
           },
-          "mark": "draw:mountain",
+          "mark": "draw:peak",
           "team": {
             "key": "agents.team",
             "args": {
@@ -548,7 +548,7 @@
             "key": "session.name",
             "en": "Data Pipeline"
           },
-          "mark": "draw:database",
+          "mark": "draw:pill",
           "team": {
             "key": "agents.team",
             "args": {

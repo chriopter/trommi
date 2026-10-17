@@ -36,12 +36,14 @@ fn world() -> World {
 /// `0000000n` then `e`s; a short form of one (a run of 8 or more that begins it: a session's short id) as the same
 /// beginning of its stand-in.
 fn stable_ids(text: &str) -> String {
-    // (a device's key fingerprint comes from its random key: written as one stand-in)
+    // (a device's key fingerprint comes from its random key, and a session without an icon wears the face its random
+    // id picks (faces.rs): each written as one stand-in)
     let text = &(text
         .lines()
-        .map(|l| match l.find("\"fingerprint\": \"") {
-            Some(at) => format!("{}\"fingerprint\": \"(fingerprint)\"{}", &l[..at], if l.ends_with(',') { "," } else { "" }),
-            None => l.to_string(),
+        .map(|l| match (l.find("\"fingerprint\": \""), l.find("\"mark\": \"draw:")) {
+            (Some(at), _) => format!("{}\"fingerprint\": \"(fingerprint)\"{}", &l[..at], if l.ends_with(',') { "," } else { "" }),
+            (None, Some(at)) => format!("{}\"mark\": \"draw:(face)\"{}", &l[..at], if l.ends_with(',') { "," } else { "" }),
+            _ => l.to_string(),
         })
         .collect::<Vec<_>>()
         .join("\n")
