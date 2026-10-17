@@ -514,7 +514,7 @@ struct CardScreen: View {
         if let earlier = card.earlier {
           Button(earlier.says.en) { shell.act(["do": "show_more", "of": ["list": "comments", "card": card.id]]) }.font(Face.text(14, .semibold)).foregroundStyle(Ink.accent)
         }
-        ForEach(card.talk, id: \.id) { row in TalkRow(row: row, who: who, inCard: true) }
+        ForEach(Array(card.talk.enumerated()), id: \.element.id) { i, row in TalkRow(row: row, who: who, inCard: true, last: i + 1 == card.talk.count || !card.talk[i + 1].cont) }
         ForEach(card.versions, id: \.n) { v in RevisionRow(version: v) }
       }
     }
@@ -748,8 +748,9 @@ struct SessionScreen: View {
             }.buttonStyle(.plain)
           }
           if let empty = page.empty { EmptyChat(page: page, empty: empty, hue: hue) }
-          ForEach(page.talk, id: \.id) { row in
-            TalkRow(row: row, who: TalkWho(mark: page.mark, name: page.name.en, hue: hue))
+          ForEach(Array(page.talk.enumerated()), id: \.element.id) { i, row in
+            // (a run of the agent's bubbles ends where the next row does not go on from it: its time stands there)
+            TalkRow(row: row, who: TalkWho(mark: page.mark, name: page.name.en, hue: hue), last: i + 1 == page.talk.count || !page.talk[i + 1].cont)
               .padding(.top, row.cont ? 2 : 10)
               .id(row.id)
           }
@@ -998,17 +999,38 @@ struct SessionStatus: View {
   let page: CoreView.SessionView
   let hue: Int
   @State private var shown: String? = nil
+  @State private var more = false
+  /** One calm line (as the web's): the drawing, "… is working" with its dots while it answers, the status line its
+   *  agent set last (the core's first) and the core's "+N" for the rest, which a tap opens under the line. A tap on a
+   *  line opens its whole text and the way to its card. */
   var body: some View {
     if page.answering != nil || !page.statusLines.isEmpty || page.helpers != nil {
       VStack(alignment: .leading, spacing: 8) {
         if let helpers = page.helpers { HelperList(list: helpers) }
-        if let answering = page.answering {
-          HStack(spacing: 8) { AgentMark(mark: page.mark, size: 16, hue: hue); Text(answering.en).font(Face.text(14)).foregroundStyle(Ink.muted); TypingDots() }
+        HStack(spacing: 8) {
+          AgentMark(mark: page.mark, size: 16, hue: hue)
+          if let answering = page.answering {
+            Text(answering.en).font(Face.text(14)).foregroundStyle(Ink.muted).lineLimit(1).layoutPriority(1)
+            TypingDots()
+            if page.statusLines.first != nil { Text("·").font(Face.text(14)).foregroundStyle(Ink.faint) }
+          }
+          if let first = page.statusLines.first { chip(first) }
+          if let plus = page.statusMore {
+            Button { withAnimation(.easeOut(duration: 0.18)) { more.toggle() } } label: {
+              Text(plus.en).font(Face.text(13, .semibold)).monospacedDigit().foregroundStyle(Ink.muted)
+                .padding(.horizontal, 9).frame(height: 30).background(Capsule().fill(Ink.sunken.opacity(more ? 1 : 0.6)))
+                .frame(minHeight: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(page.statusLines.count - 1) more")
+            .accessibilityIdentifier("status-more")
+          }
+          Spacer(minLength: 0)
         }
-        if !page.statusLines.isEmpty {
-          FlowChips(spacing: 6) { ForEach(page.statusLines, id: \.id) { line in chip(line) } }
-          if let id = shown, let line = page.statusLines.first(where: { $0.id == id }) { opened(line) }
+        if more, page.statusLines.count > 1 {
+          FlowChips(spacing: 6) { ForEach(page.statusLines.dropFirst(), id: \.id) { line in chip(line) } }
         }
+        if let id = shown, let line = page.statusLines.first(where: { $0.id == id }) { opened(line) }
       }.padding(.vertical, 12)
     }
   }
@@ -1095,6 +1117,8 @@ struct TalkRow: View {
   var who: TalkWho? = nil
   /** On a card's own page: a line about the card does not open it again. */
   var inCard = false
+  /** The last of a run of the agent's words: its time stands under it. */
+  var last = true
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       if let day = row.day { DayLine(text: day.en) }
@@ -1182,41 +1206,58 @@ struct TalkRow: View {
       }
     }
   }
-  /** The agent's words: its drawing, name and time over a run's first row, then its light markdown, files and details. */
+  /** The agent's words as a grey bubble on the left (as the web's): its drawing beside the first of a run, its name
+   *  above it, the time under the last; an Artifact as its own card. */
   private var agent: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      if !row.cont {
-        HStack(spacing: 6) {
-          if let who { AgentMark(mark: who.mark, size: 18, hue: who.hue); Text(who.name).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted) }
-          if let helper = row.helper { Text(helper).font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).padding(.horizontal, 7).padding(.vertical, 1).background(Capsule().fill(Ink.sunken)) }
-          Text(talkClock(row.timeMs)).font(Face.text(11)).foregroundStyle(Ink.faint)
-          if row.terminal { Text(">_").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(Ink.faint) }
+    HStack(alignment: .top, spacing: 8) {
+      Group {
+        if !row.cont, let who {
+          AgentMark(mark: who.mark, size: 18, hue: who.hue).frame(width: 30, height: 30)
+            .background(Circle().fill(Tone.color(hue: who.hue, .wash)))
+        } else { Color.clear }
+      }
+      .frame(width: 30, height: row.cont ? 1 : 30)
+      .padding(.top, row.cont ? 0 : 20)
+      .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 4) {
+        if !row.cont {
+          HStack(spacing: 6) {
+            if let who { Text(who.name).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted) }
+            if let helper = row.helper { Text(helper).font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).padding(.horizontal, 7).padding(.vertical, 1).background(Capsule().fill(Ink.sunken)) }
+            if row.terminal { Text(">_").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(Ink.faint) }
+          }
+          .padding(.leading, 4)
         }
-      }
-      about
-      if row.kind == "artifact" {
-        HStack(spacing: 10) {
-          Sketch("page", color: Ink.accent).frame(width: 22, height: 22)
-          Text(row.text).font(Face.text(15, .semibold)).foregroundStyle(Ink.fg).lineLimit(2).accessibilityIdentifier("talk-message")
-          Spacer(minLength: 0)
+        about
+        if row.kind == "artifact" {
+          HStack(spacing: 10) {
+            Sketch("page", color: Ink.accent).frame(width: 22, height: 22)
+            Text(row.text).font(Face.text(15, .semibold)).foregroundStyle(Ink.fg).lineLimit(2).accessibilityIdentifier("talk-message")
+            Spacer(minLength: 0)
+          }
+          .padding(12).frame(maxWidth: 420, alignment: .leading)
+          .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.surface))
+          .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.lineStrong))
+        } else if !row.text.isEmpty || !row.html.isEmpty || !row.files.isEmpty || !row.details.isEmpty {
+          VStack(alignment: .leading, spacing: 8) {
+            if !row.text.isEmpty { Markdown(text: row.text).accessibilityIdentifier("talk-message") }
+            if !row.html.isEmpty { InlineHTML(html: row.html).frame(minHeight: 200).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)) }
+            FileRows(ids: row.files)
+            if !row.details.isEmpty {
+              DisclosureGroup { Markdown(text: row.details, size: 15, color: Ink.muted).padding(.top, 4) } label: { Text("Details").font(Face.text(14, .semibold)).foregroundStyle(Ink.muted) }.tint(Ink.muted)
+            }
+          }
+          .padding(.horizontal, 14).padding(.vertical, 10)
+          .background(UnevenRoundedRectangle(topLeadingRadius: row.cont ? 18 : 6, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous).fill(Ink.sunken))
+          .contextMenu { if !row.text.isEmpty { Button { copyText(row.text) } label: { Label("Copy", systemImage: "doc.on.doc") } } }
         }
-        .padding(12).frame(maxWidth: 420, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.surface))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.lineStrong))
-      } else if !row.text.isEmpty {
-        Markdown(text: row.text).accessibilityIdentifier("talk-message")
+        chips
+        if let waits = row.waits { Text(waits.en).font(Face.text(13)).italic().foregroundStyle(Ink.faint) }
+        if last { Text(talkClock(row.timeMs)).font(Face.text(11)).foregroundStyle(Ink.faint).padding(.leading, 4) }
       }
-      if !row.html.isEmpty { InlineHTML(html: row.html).frame(minHeight: 200).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)) }
-      FileRows(ids: row.files)
-      chips
-      if !row.details.isEmpty {
-        DisclosureGroup { Markdown(text: row.details, size: 15, color: Ink.muted).padding(.top, 4) } label: { Text("Details").font(Face.text(14, .semibold)).foregroundStyle(Ink.muted) }.tint(Ink.muted)
-      }
-      if let waits = row.waits { Text(waits.en).font(Face.text(13)).italic().foregroundStyle(Ink.faint) }
+      Spacer(minLength: 28)
     }
-    .padding(.trailing, 24)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .contextMenu { if !row.text.isEmpty { Button { copyText(row.text) } label: { Label("Copy", systemImage: "doc.on.doc") } } }
   }
 }
 
