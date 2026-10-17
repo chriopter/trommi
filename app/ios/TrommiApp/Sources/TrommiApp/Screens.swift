@@ -33,9 +33,11 @@ struct RootView: View {
       } else {
         // iPhone: the system's tab bar, Desk · Chats · Search; it shrinks while a list scrolls down. The note lies
         // over everything as a yellow page.
+        #if os(iOS)
         PhoneTabs()
         .overlay { if shell.noteOpen { NotePage().transition(.move(edge: .bottom)) } }
         .animation(.snappy, value: shell.noteOpen)
+        #endif
         .overlay(alignment: .top) { TopLines() }
       }
     }
@@ -78,6 +80,7 @@ struct CorePage: View {
   }
 }
 
+#if os(iOS)
 /**
  * The iPhone's frame: the system's tab bar with Desk (its number is the core's `sidebar.badge`), Chats (every team's
  * chats in one list) and Search (the same list under the words searched for; the core filters). Each tab keeps its
@@ -115,6 +118,7 @@ struct PhoneTabs: View {
     }
   }
 }
+#endif
 
 /** The lines over the board, under the top row: the core's line (`ViewModel.status`: while it opens, what it does;
  *  offline or stopped, that what shows is what this device last had) and a sign-in that was cut off
