@@ -1043,6 +1043,7 @@ impl App {
                 self.lens.team = focus.team;
                 self.lens.desk_all = focus.desk_all;
                 self.lens.open_teams = focus.open_teams;
+                self.lens.chats_query = focus.chats_query.map(|q| q.trim().to_string()).filter(|q| !q.is_empty());
                 // (the gallery, and the Desk's foot shows its newest)
                 self.lens.artifacts = matches!(focus.screen, Screen::Artifacts { .. } | Screen::Desk);
                 self.lens.gallery = match &focus.screen {

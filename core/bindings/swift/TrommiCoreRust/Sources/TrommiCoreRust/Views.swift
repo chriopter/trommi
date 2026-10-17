@@ -71,14 +71,18 @@ public enum CoreView {
     /// The teams unfolded in the wide sidebar, their chats under their stack (`TeamStackView.open`). This device's:
     /// the shell keeps them.
     public var openTeams: [String]
+    /// The words searched for among every team's chats (the phone's Search tab, `SidebarView.found`); none or empty:
+    /// no search.
+    public var chatsQuery: String?
 
-    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, deskAll: Bool = false, openTeams: [String] = []) {
+    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, deskAll: Bool = false, openTeams: [String] = [], chatsQuery: String? = nil) {
       self.screen = screen
       self.visible = visible
       self.team = team
       self.board = board
       self.deskAll = deskAll
       self.openTeams = openTeams
+      self.chatsQuery = chatsQuery
     }
 
     enum CodingKeys: String, CodingKey {
@@ -88,6 +92,7 @@ public enum CoreView {
       case board = "board"
       case deskAll = "desk_all"
       case openTeams = "open_teams"
+      case chatsQuery = "chats_query"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -98,6 +103,7 @@ public enum CoreView {
       self.board = try c.decodeIfPresent(String.self, forKey: .board)
       self.deskAll = try c.decodeIfPresent(Bool.self, forKey: .deskAll) ?? false
       self.openTeams = try c.decodeIfPresent([String].self, forKey: .openTeams) ?? []
+      self.chatsQuery = try c.decodeIfPresent(String.self, forKey: .chatsQuery)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -108,6 +114,7 @@ public enum CoreView {
       try c.encodeIfPresent(board, forKey: .board)
       try c.encode(deskAll, forKey: .deskAll)
       if !openTeams.isEmpty { try c.encode(openTeams, forKey: .openTeams) }
+      try c.encodeIfPresent(chatsQuery, forKey: .chatsQuery)
     }
   }
 
@@ -535,8 +542,13 @@ public enum CoreView {
     public var stacks: [TeamStackView]
     /// The Desk in view is every team's (home, `Focus.desk_all`): no team's head is marked.
     public var deskAll: Bool
+    /// Under a search (`Focus.chats_query`): every team with a chat whose name or teaser has the words, with those
+    /// chats, in the menu's order.
+    public var found: [ChatGroupView]
+    /// Under a search that finds no chat: so it says.
+    public var foundNone: Text?
 
-    public init(teams: [TeamTab] = [], sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], deskAll: Bool = false) {
+    public init(teams: [TeamTab] = [], sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], deskAll: Bool = false, found: [ChatGroupView] = [], foundNone: Text? = nil) {
       self.teams = teams
       self.sessions = sessions
       self.badge = badge
@@ -549,6 +561,8 @@ public enum CoreView {
       self.unheard = unheard
       self.stacks = stacks
       self.deskAll = deskAll
+      self.found = found
+      self.foundNone = foundNone
     }
 
     enum CodingKeys: String, CodingKey {
@@ -564,6 +578,8 @@ public enum CoreView {
       case unheard = "unheard"
       case stacks = "stacks"
       case deskAll = "desk_all"
+      case found = "found"
+      case foundNone = "found_none"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -580,6 +596,8 @@ public enum CoreView {
       self.unheard = try c.decodeIfPresent(UInt32.self, forKey: .unheard) ?? 0
       self.stacks = try c.decodeIfPresent([TeamStackView].self, forKey: .stacks) ?? []
       self.deskAll = try c.decodeIfPresent(Bool.self, forKey: .deskAll) ?? false
+      self.found = try c.decodeIfPresent([ChatGroupView].self, forKey: .found) ?? []
+      self.foundNone = try c.decodeIfPresent(Text.self, forKey: .foundNone)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -596,6 +614,42 @@ public enum CoreView {
       try c.encode(unheard, forKey: .unheard)
       if !stacks.isEmpty { try c.encode(stacks, forKey: .stacks) }
       try c.encode(deskAll, forKey: .deskAll)
+      if !found.isEmpty { try c.encode(found, forKey: .found) }
+      try c.encodeIfPresent(foundNone, forKey: .foundNone)
+    }
+  }
+
+  /// A team in the search's list of chats: its name as a plain section title over the chats found.
+  public struct ChatGroupView: Codable, Hashable, Sendable {
+    public var id: String
+    public var name: Text
+    /// Its chats that have the words, one row each, in drawing order.
+    public var rows: [SessionRowView]
+
+    public init(id: String = "", name: Text = Text(), rows: [SessionRowView] = []) {
+      self.id = id
+      self.name = name
+      self.rows = rows
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case name = "name"
+      case rows = "rows"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.name = try c.decode(Text.self, forKey: .name)
+      self.rows = try c.decode([SessionRowView].self, forKey: .rows)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(name, forKey: .name)
+      try c.encode(rows, forKey: .rows)
     }
   }
 
