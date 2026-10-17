@@ -204,5 +204,38 @@
       "width": 2560,
       "height": 1160
     }
-  ]
+  ],
+  "words": {
+    "recommended": {
+      "key": "card.recommended",
+      "en": "Recommended"
+    },
+    "got_it": {
+      "key": "card.got_it",
+      "en": "Got it"
+    },
+    "duck": {
+      "key": "card.duck",
+      "en": "Duck it"
+    },
+    "what": {
+      "key": "card.what",
+      "en": "What??"
+    },
+    "rework": {
+      "key": "card.rework",
+      "en": "Rework"
+    },
+    "undo": {
+      "key": "card.undo",
+      "en": "Undo"
+    },
+    "talk": {
+      "key": "card.talk.fold",
+      "args": {
+        "n": "3"
+      },
+      "en": "Talk · 3"
+    }
+  }
 }
