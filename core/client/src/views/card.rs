@@ -296,9 +296,12 @@ pub fn pictures_of(attachments: &[Value], sections: &[Value], options: &[super::
             let title = s(a, "title");
             let key = keys.get(&i).cloned();
             let shared: Vec<String> = section_pics.iter().filter(|(at, _)| *at == i).map(|(_, k)| k.clone()).collect();
+            let title = if title != name { title } else { String::new() };
+            let label = key.as_ref().and_then(|k| options.iter().find(|o| &o.key == k)).map(|o| o.label.clone()).filter(|l| !l.is_empty());
             PictureView {
                 file_id: s(a, "attachment_id"),
-                title: if title != name { title } else { String::new() },
+                caption: if !title.is_empty() { title.clone() } else { label.unwrap_or_else(|| name.clone()) },
+                title,
                 name,
                 width: a.get("width").and_then(Value::as_u64).filter(|w| *w > 0),
                 height: a.get("height").and_then(Value::as_u64).filter(|h| *h > 0),
@@ -982,6 +985,22 @@ mod tests {
         let sections = [json!({ "key": "centered", "picture": 1 }), json!({ "key": "split", "picture": 1 })];
         let p = pictures_of(&atts, &sections, &two);
         assert_eq!((p[0].key.as_deref(), p[0].keys.clone()), (Some("centered"), vec!["centered".to_string(), "split".into()]));
+    }
+
+    /// The viewer's line under a picture: its caption, else its option's label, else its file name.
+    #[test]
+    fn pictures_say_their_caption() {
+        let opt = |k: &str, l: &str| crate::views::desk::Opt { key: k.into(), label: l.into(), ..Default::default() };
+        let two = [opt("centered", "Centered"), opt("split", "Split view")];
+        let atts = [
+            json!({ "attachment_id": "a", "file_name": "hero-split.png", "media_type": "image/png", "title": "1 · Folded" }),
+            json!({ "attachment_id": "b", "file_name": "hero-centered.png", "media_type": "image/png" }),
+            json!({ "attachment_id": "c", "file_name": "today.png", "media_type": "image/png", "title": "today.png" }),
+        ];
+        let p = pictures_of(&atts, &[], &two);
+        let says = p.iter().map(|x| x.caption.as_str()).collect::<Vec<_>>();
+        assert_eq!(says, ["1 · Folded", "Centered", "today.png"]);
+        assert_eq!(p[2].title, "");
     }
 
     /// The comments grouped as the page draws them: "Version 2, as you asked" after a hand-back, the agent's words

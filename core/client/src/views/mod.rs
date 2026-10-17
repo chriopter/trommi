@@ -1568,6 +1568,10 @@ pub struct PictureView {
     /// Its caption, when it says more than its name.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub title: String,
+    /// The line under it in the full-screen viewer: its caption, else the label of the option it shows, else its
+    /// name.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub caption: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
