@@ -126,9 +126,33 @@ final class NativeScreensTests: XCTestCase {
     let title = app.staticTexts["card-title"]
     XCTAssertTrue(title.waitForExistence(timeout: 15))
     XCTAssertFalse(title.label.isEmpty)
-    let picture = app.images["native-picture"].firstMatch
+    let picture = app.buttons["card-picture"].firstMatch
     XCTAssertTrue(picture.waitForExistence(timeout: 10))
     capture("card--two-pictures")
+  }
+  /** A card's picture opens over the whole screen: swipe to the next, double-tap to zoom, the X closes. */
+  func testCardPicturesOpenFullScreenAndSwipe() {
+    launch("card--two-pictures")
+    let picture = app.buttons["card-picture"].firstMatch
+    XCTAssertTrue(picture.waitForExistence(timeout: 15))
+    XCTAssertGreaterThan(picture.frame.width, app.windows.firstMatch.frame.width * 0.8, "a card's picture stands at the page's width")
+    picture.tap()
+    let page = app.descendants(matching: .any)["picture-viewer-page"]
+    XCTAssertTrue(page.waitForExistence(timeout: 10), app.debugDescription)
+    XCTAssertEqual(page.label, "Picture 1 of 2")
+    let caption = app.staticTexts["picture-viewer-caption"]
+    XCTAssertTrue(caption.exists)
+    let first = caption.label
+    capture("picture-viewer")
+    app.swipeLeft()
+    XCTAssertTrue(page.waitForLabel("Picture 2 of 2"), app.debugDescription)
+    XCTAssertNotEqual(caption.label, first)
+    let image = app.scrollViews.firstMatch
+    image.doubleTap()
+    capture("picture-viewer-zoomed")
+    app.buttons["picture-viewer-close"].tap()
+    XCTAssertTrue(picture.waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["picture-viewer-close"].exists)
   }
   func testChatContainsAnActualMessage() {
     launch("chat")
@@ -397,4 +421,12 @@ final class NativeScreensTests: XCTestCase {
     }
   }
 
+}
+
+private extension XCUIElement {
+  /** Waits until the element's label reads `label`. */
+  func waitForLabel(_ label: String, timeout: TimeInterval = 5) -> Bool {
+    let done = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: self)
+    return XCTWaiter.wait(for: [done], timeout: timeout) == .completed
+  }
 }

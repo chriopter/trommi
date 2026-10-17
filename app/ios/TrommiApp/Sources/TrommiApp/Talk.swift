@@ -206,6 +206,13 @@ struct CardScreen: View {
   @State private var attachments: [String] = []
   /** Answered on this page just now: the page then offers the way on (`card.after`). */
   @State private var answeredHere = false
+  /** The pictures open over the whole screen. */
+  @State private var showing: PictureShow?
+  @Namespace private var zoom
+  private func ratioOf(_ p: CoreView.PictureView) -> CGFloat? {
+    guard let w = p.width, let h = p.height, w > 0, h > 0 else { return nil }
+    return CGFloat(w) / CGFloat(h)
+  }
   private var urgency: String { cardUrgency(card.urgency) }
   private var who: TalkWho? { card.from.map { TalkWho(mark: $0.mark, name: $0.name, hue: Pen.hueFor(id: $0.sessionId, mark: $0.mark)) } }
   var body: some View {
@@ -213,10 +220,11 @@ struct CardScreen: View {
       VStack(alignment: .leading, spacing: 18) {
         lead
         if !card.pictures.isEmpty {
-          VStack(spacing: 10) {
-            ForEach(card.pictures, id: \.fileId) { picture in
-              NativePicture(id: picture.fileId).frame(maxWidth: .infinity, maxHeight: 360)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+          VStack(spacing: 12) {
+            ForEach(Array(card.pictures.enumerated()), id: \.offset) { i, picture in
+              CardPicture(fileId: picture.fileId, ratio: ratioOf(picture), zoom: zoom) {
+                showing = PictureShow(shots: card.pictures.map { Shot(fileId: $0.fileId, caption: $0.caption) }, start: i)
+              }
             }
           }
         }
@@ -232,6 +240,7 @@ struct CardScreen: View {
     }
     .scrollDismissesKeyboard(.interactively)
     .background(Ink.bg.ignoresSafeArea())
+    .pictureViewer($showing, zoom: zoom)
     .bottomBar {
       if card.kind != "request" {
         TalkComposer(placeholder: card.ask.en, text: $note, attachments: $attachments) {
@@ -1496,12 +1505,27 @@ struct NativePicture: View {
 struct FileRows: View {
   @EnvironmentObject var shell: AppShell
   let ids: [String]
+  /** Its pictures open over the whole screen. */
+  @State private var showing: PictureShow?
+  @Namespace private var zoom
+  private var shots: [Shot] {
+    ids.compactMap { id in shell.view.files[id].flatMap { $0.mediaType.hasPrefix("image/") ? Shot(fileId: id, caption: $0.name) : nil } }
+  }
   var body: some View {
     ForEach(ids, id: \.self) { id in
       if let file = shell.view.files[id] {
         if file.mediaType.hasPrefix("image/") {
-          NativePicture(id: id).frame(maxWidth: 280, maxHeight: 280).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .onTapGesture { shell.act(["do": "open_file", "attachment_id": id, "save": true]) }
+          Button {
+            let all = shots
+            showing = PictureShow(shots: all, start: all.firstIndex { $0.fileId == id } ?? 0)
+          } label: {
+            NativePicture(id: id).frame(maxWidth: 280, maxHeight: 280).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+          }
+          .buttonStyle(.plain)
+          .contextMenu { SavePictureButton(id: id) }
+          .zoomSource(id: id, in: zoom)
+          // (one cover for all of them, on the first)
+          .pictureViewer($showing, zoom: zoom, on: id == shots.first?.fileId)
         } else {
           Button { shell.act(["do": "open_file", "attachment_id": id, "save": true]) } label: {
             HStack(spacing: 10) {
