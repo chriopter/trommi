@@ -221,7 +221,8 @@ fn duck_all(rows: &[DeskRowView]) -> Option<super::DuckAllView> {
         (false, true, false) => say("desk.duck.tip.read", format!("I don’t give a duck: close all {n} cards to read"), args),
         _ => say("desk.duck.tip.all", format!("I don’t give a duck: for all {n} open cards"), args),
     };
-    Some(super::DuckAllView { card_ids, tip, what, ask, yes, no: say("desk.duck.no", "Cancel", &[]) })
+    let short = say("desk.duck.short", "IDGAD", &[]);
+    Some(super::DuckAllView { card_ids, tip, short, what, ask, yes, no: say("desk.duck.no", "Cancel", &[]) })
 }
 
 /// What the agents published, counted for the Desk's quiet line ("14 artifacts", "1 artifact"); none without any.
@@ -914,6 +915,7 @@ mod tests {
         assert_eq!(d.card_ids, ["q1"], "a request is never ducked");
         assert_eq!((d.ask.en.as_str(), d.yes.en.as_str(), d.tip.en.as_str(), d.what.en.as_str(), d.no.en.as_str()),
             ("Duck it?", "Yes, duck it", "I don’t give a duck: for the one open decision", "1 decision goes to the agents", "Cancel"));
+        assert_eq!((d.short.en.as_str(), d.short.key.as_str()), ("IDGAD", "desk.duck.short"), "the short name, the question follows");
         r.card("i1", "a", "info", "normal");
         r.card("i2", "a", "info", "normal");
         let c = r.card("q-loading", "a", "decision", "normal");

@@ -468,4 +468,14 @@ struct WorkingRing: View {
     return img
   }
   static func desk(waiting: Bool) -> Image { of("sketch:desk", dot: waiting) }
+  /** The duck in its own colours (yellow, its glasses), not tinted like the other marks. */
+  static let duck: Image = {
+    let r = ImageRenderer(content: PenMark("sketch:duck", color: .black, duck: true).frame(width: 26, height: 22).padding(1))
+    r.scale = 3
+    #if canImport(UIKit)
+    return r.uiImage.map { Image(uiImage: $0.withRenderingMode(.alwaysOriginal)) } ?? Image(systemName: "square")
+    #else
+    return Image(systemName: "square")
+    #endif
+  }()
 }
