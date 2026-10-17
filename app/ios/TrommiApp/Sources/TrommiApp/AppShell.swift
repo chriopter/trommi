@@ -56,7 +56,8 @@ enum NativeTab: Hashable { case chat, desk, search }
         }
       }
       // (the team chosen last on this device; launched in the back by a push, the Desk is not in view)
-      if !preview, let team = Self.lastTeam, let data = try? JSONEncoder().encode(CoreView.Focus(screen: .desk, visible: Self.launchedInFront, team: team, openTeams: Self.storedOpenTeams ?? [])),
+      deskAll = preview ? true : Self.storedDeskAll
+      if !preview, let data = try? JSONEncoder().encode(CoreView.Focus(screen: .desk, visible: Self.launchedInFront, team: Self.lastTeam, deskAll: deskAll, openTeams: Self.storedOpenTeams ?? [])),
          let focus = try? JSONSerialization.jsonObject(with: data) {
         await session?.send(NativePacket(["type": "focus", "focus": focus]))
       }
@@ -102,6 +103,16 @@ enum NativeTab: Hashable { case chat, desk, search }
     let before = tail
     tail = Task { await before?.value; await session.send(event) }
   }
+  /** Home: the Desk of every team (sent as `Focus.desk_all`), kept on this device; until he picks a team, home. */
+  static let deskAllKey = "trommi-desk-all"
+  static var storedDeskAll: Bool { UserDefaults.standard.object(forKey: deskAllKey) as? Bool ?? true }
+  private(set) var deskAll = true
+  /** Home was chosen (the menu's "All teams"): the Desk of every team. */
+  func home() {
+    deskAll = true
+    if !isDemo { UserDefaults.standard.set(true, forKey: Self.deskAllKey) }
+    focus(.desk)
+  }
   /** The team last chosen on this device (sent as `Focus.team` at the start; the core falls back when it is gone). */
   static let teamKey = "trommi-team"
   static var lastTeam: String? { UserDefaults.standard.string(forKey: teamKey) }
@@ -133,10 +144,11 @@ enum NativeTab: Hashable { case chat, desk, search }
   func closeNote() { guard noteOpen else { return }; noteOpen = false; show(path.last ?? .desk) }
   func show(_ screen: CoreView.Screen, team: String? = nil) {
     self.screen = screen
-    if let team, !isDemo { UserDefaults.standard.set(team, forKey: Self.teamKey) }
+    // (a team chosen: its Desk, no longer home)
+    if let team { deskAll = false; if !isDemo { UserDefaults.standard.set(team, forKey: Self.teamKey); UserDefaults.standard.set(false, forKey: Self.deskAllKey) } }
     let inView = view.sidebar.team.isEmpty ? (isDemo ? nil : Self.lastTeam) : view.sidebar.team
     let query = chatsQuery.trimmingCharacters(in: .whitespaces)
-    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query)
+    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, deskAll: deskAll, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query)
     if let data = try? JSONEncoder().encode(focus), let json = try? JSONSerialization.jsonObject(with: data) { send(["type": "focus", "focus": json]) }
   }
   func scene(_ active: Bool) { send(["type": active ? "foreground" : "background"]); if !isDemo { NativeServices.shared.foreground(active) } }
