@@ -2763,6 +2763,9 @@ public enum CoreView {
     public var statusLines: [StatusLineView]
     /// "+N": how many lines stand behind the first; none with one line or none.
     public var statusMore: Text?
+    /// The calm chat (`Focus.calm`): the agent at work, drawn at the chat's end as its face drawing itself; a tap
+    /// opens the details (the step it is at, its lines, the turn's trail). None while it does not work.
+    public var working: WorkingView?
     /// Every card of the session, the newest first (its page "Questions").
     public var questions: [CardRefView]
     /// Every file of the session's cards, answers, Chats and Artifacts (ids of `ViewModel.files`), the newest
@@ -2824,7 +2827,7 @@ public enum CoreView {
     /// "helpers" and "files" where it has some.
     public var tabs: [PanelTabView]
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
       self.id = id
       self.name = name
       self.link = link
@@ -2832,6 +2835,7 @@ public enum CoreView {
       self.talk = talk
       self.statusLines = statusLines
       self.statusMore = statusMore
+      self.working = working
       self.questions = questions
       self.files = files
       self.hasMore = hasMore
@@ -2871,6 +2875,7 @@ public enum CoreView {
       case talk = "talk"
       case statusLines = "status_lines"
       case statusMore = "status_more"
+      case working = "working"
       case questions = "questions"
       case files = "files"
       case hasMore = "has_more"
@@ -2911,6 +2916,7 @@ public enum CoreView {
       self.talk = try c.decode([TalkRow].self, forKey: .talk)
       self.statusLines = try c.decode([StatusLineView].self, forKey: .statusLines)
       self.statusMore = try c.decodeIfPresent(Text.self, forKey: .statusMore)
+      self.working = try c.decodeIfPresent(WorkingView.self, forKey: .working)
       self.questions = try c.decodeIfPresent([CardRefView].self, forKey: .questions) ?? []
       self.files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
       self.hasMore = try c.decode(Bool.self, forKey: .hasMore)
@@ -2951,6 +2957,7 @@ public enum CoreView {
       try c.encode(talk, forKey: .talk)
       try c.encode(statusLines, forKey: .statusLines)
       try c.encodeIfPresent(statusMore, forKey: .statusMore)
+      try c.encodeIfPresent(working, forKey: .working)
       if !questions.isEmpty { try c.encode(questions, forKey: .questions) }
       if !files.isEmpty { try c.encode(files, forKey: .files) }
       try c.encode(hasMore, forKey: .hasMore)
@@ -3459,6 +3466,48 @@ public enum CoreView {
       try c.encode(asked, forKey: .asked)
       if !said.isEmpty { try c.encode(said, forKey: .said) }
       if !files.isEmpty { try c.encode(files, forKey: .files) }
+    }
+  }
+
+  /// The agent at work in the calm chat (`SessionView.working`).
+  public struct WorkingView: Codable, Hashable, Sendable {
+    /// "trommi is working": what a screen reader says for the face.
+    public var says: Text
+    /// The details' head, live: "Working · Bash · run the tests", or "Working" between steps. No counts, no time.
+    public var head: Text
+    /// The step it is at ("Bash · run the tests"); "" between steps.
+    public var now: String
+    /// The trail of the turn it works on (the details list it; the talk does not).
+    public var trail: WorkView?
+
+    public init(says: Text = Text(), head: Text = Text(), now: String = "", trail: WorkView? = nil) {
+      self.says = says
+      self.head = head
+      self.now = now
+      self.trail = trail
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case says = "says"
+      case head = "head"
+      case now = "now"
+      case trail = "trail"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.says = try c.decode(Text.self, forKey: .says)
+      self.head = try c.decode(Text.self, forKey: .head)
+      self.now = try c.decodeIfPresent(String.self, forKey: .now) ?? ""
+      self.trail = try c.decodeIfPresent(WorkView.self, forKey: .trail)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(says, forKey: .says)
+      try c.encode(head, forKey: .head)
+      if !now.isEmpty { try c.encode(now, forKey: .now) }
+      try c.encodeIfPresent(trail, forKey: .trail)
     }
   }
 

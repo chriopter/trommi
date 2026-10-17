@@ -171,9 +171,11 @@ with its open questions.
 
 An iPhone sends `Focus.calm` (the web too), and a chat is then calm, as Grok's: the core folds a run of card events into one row of
 chips (`TalkRow.kind` "events", `events`, a tap opens the card), leaves the helper list out (their status lines name
-them) and says the rest of the working lines as "and N more"; the app draws only bubbles (no face, name or time beside
-them: the title pill has the face), that working line small right above the field, and a solid top row. Faces stand
-bare, without a disc, in the chat and the Chats list.
+them), and leaves out the turn's trail and the chip of a card a status line names; the app draws only bubbles (no face,
+name or time beside them: the title pill has the face) and a solid top row. While the agent works (`SessionView.working`:
+his word of the last ten minutes, a trail that still runs, a working line) its face alone draws itself with the pen
+where its answer will come (`DrawingFace`); a tap opens the details: "Working · <step>", its lines, the trail. Faces
+stand bare, without a disc, in the chat and the Chats list.
 
 The views draw the look the app had before the shared core (sign-in, Desk, card, Chat, note, settings, the glass
 bar): `Chrome.swift` holds the shared parts (the top pills, tiles, the start screens' buttons and fields). Which

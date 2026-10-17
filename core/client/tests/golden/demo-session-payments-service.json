@@ -886,15 +886,6 @@
           "key": "work.running",
           "en": "Working"
         },
-        "sum": {
-          "key": "work.sum",
-          "args": {
-            "failed": "0",
-            "helpers": "0",
-            "steps": "2"
-          },
-          "en": "2 steps"
-        },
         "now": "Bash · k6 run --vus 400 --duration 10m checkout.js",
         "lines": [
           {

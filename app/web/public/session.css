@@ -907,3 +907,18 @@ a.files-where:hover span { text-decoration: underline; }
   .panel-acts { position: static; display: grid; gap: 2px; padding: var(--s-2) 0 0; border-top: 1px solid var(--line); box-shadow: none; background: none; }
 }
 @media (min-width: 1280px) { #session[data-panel-open] { padding-right: 360px; } }
+
+/* ---- the agent at work: only its face, drawing itself (SessionView.working) ------------------------------------- */
+.working-face { margin-top: var(--s-6); align-self: flex-start; }
+.working-face > summary { list-style: none; display: inline-grid; place-items: center; width: 40px; height: 40px; margin-left: -3px; border-radius: 12px; cursor: pointer; }
+.working-face > summary::-webkit-details-marker { display: none; }
+.working-face > summary:hover { background: var(--sunken); }
+.working-face .agent-avatar { width: 32px; height: 32px; background: none; box-shadow: none; }
+.working-face .mark-trace { display: none; }
+.working-face .is-drawing .mark-live path:not(.pair-crown *) { stroke-dasharray: 100 100; stroke-dashoffset: 100; stroke-width: inherit; animation: face-draw 3600ms ease-in-out infinite; }
+@keyframes face-draw { 0% { stroke-dashoffset: 100; opacity: 1; } 60% { stroke-dashoffset: 0; opacity: 1; } 86% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .working-face .is-drawing .mark-live path:not(.pair-crown *) { animation: none; stroke-dashoffset: 0; } }
+.working-details { margin-top: var(--s-2); padding: var(--s-3) var(--s-4); max-width: 34rem; max-height: 50vh; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-md); }
+.working-head { margin: 0; font-weight: 600; }
+.working-details .session-status { margin: var(--s-2) 0 0; }
+.working-details .msg-work { margin-top: var(--s-3); }

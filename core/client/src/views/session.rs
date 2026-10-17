@@ -24,7 +24,7 @@ use super::desk::{card_row, request_row, shown_title};
 use super::sidebar::{hand_of, link_of};
 use super::talk::{card_ref, choices_of, event_label_by, events_of, in_order, items_of, Entry, Side, UNSENT};
 use super::words::{local, next_midnight, quiet_words, say};
-use super::{CardRefView, DotView, EmptyTalkView, EventChipView, EventView, FixView, HelperListView, HelperRowView, LinkNoteView, LinkWords, MoreView, PanelTabView, SessionView, StatusLineView, TalkRow, Text};
+use super::{CardRefView, DotView, EmptyTalkView, EventChipView, EventView, FixView, HelperListView, HelperRowView, LinkNoteView, LinkWords, MoreView, PanelTabView, SessionView, StatusLineView, TalkRow, Text, WorkingView};
 use crate::model::types::Card;
 use crate::off_mind::went_at;
 use crate::status::card_place;
@@ -154,12 +154,28 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
     Some(v)
 }
 
-/// The calm chat (`Focus.calm`: the iPhone, the web): only the words and what waits. A run of card events becomes one row of chips (`kind` "events";
+/// The calm chat (`Focus.calm`: the iPhone, the web): only the words and what waits; the agent at work is `working`
+/// (its face), its trail and the cards its lines stand for are not in the talk. A run of card events becomes one row of chips (`kind` "events";
 /// an echo of what the asked line already says is left out), the helper list stays off the page (their status lines
 /// name them), and the rest of the working lines is "and N more".
 fn calm(v: &mut SessionView) {
+    // The agent at work: only its face at the chat's end; its turn's trail goes into the details, not the talk.
+    let trail = v.talk.iter().rfind(|r| r.kind == "work").and_then(|r| r.work.clone()).filter(|w| w.state == "running");
+    let works = v.answering.is_some() || v.status_lines.iter().any(|l| l.state == "working");
+    v.working = works.then(|| WorkingView {
+        says: v.answering.clone().unwrap_or_else(|| say("session.answering", format!("{} is working", v.name.en), &[("name", v.name.en.as_str())])),
+        head: match trail.as_ref().map(|w| w.now.as_str()).filter(|n| !n.is_empty()) {
+            Some(n) => say("working.head", format!("Working · {n}"), &[("now", n)]),
+            None => say("work.running", "Working", &[]),
+        },
+        now: trail.as_ref().map(|w| w.now.clone()).unwrap_or_default(),
+        trail,
+    });
     let mut talk: Vec<TalkRow> = Vec::with_capacity(v.talk.len());
     for row in std::mem::take(&mut v.talk) {
+        if row.kind == "work" {
+            continue;
+        }
         if row.kind != "event" {
             talk.push(row);
             continue;
@@ -283,6 +299,8 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
     let mut prev: Option<(Side, bool, u64, Option<String>)> = None;
     let mut talk: Vec<TalkRow> = Vec::with_capacity(entries.len());
     let last_said = entries.iter().rfind(|e| e.side != Side::Event).map(|e| (e.side, e.row.time_ms));
+    // (its turn still runs: the newest of the talk is a trail that has not ended; the connector streams it)
+    let trail_runs = entries.iter().rfind(|e| e.side != Side::Event).is_some_and(|e| e.side == Side::Work && e.row.work.as_ref().is_some_and(|w| w.state == "running"));
     let mine = entries.iter().rfind(|e| e.side == Side::User && !e.row.terminal && e.seq != UNSENT).map(|e| (e.seq, e.row.time_ms));
     for e in entries {
         let Entry { side, card_id, mut row, .. } = e;
@@ -399,6 +417,8 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
     let gone = link_state == "gone";
     let answering = match last_said {
         _ if gone || link_state == "cut" => None,
+        // (a turn that runs: working as long as its trail runs and the session is connected, however long it takes)
+        Some((Side::Work, _)) if trail_runs && a.row.online => Some(say("session.answering", format!("{name} is working"), &[("name", name)])),
         Some((Side::User, ts)) if now.saturating_sub(ts) < WORKING_WINDOW_MS => {
             b.wake_at(Some(ts + WORKING_WINDOW_MS));
             Some(say("session.answering", format!("{name} is working"), &[("name", name)]))
@@ -463,6 +483,11 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
     let behind = status_lines.len().saturating_sub(1).to_string();
     let status_more = (status_lines.len() > 1).then(|| say("session.status_more", format!("+{behind}"), &[("n", behind.as_str())]));
 
+    // (the calm chat: a card a status line that shows names is said by that line, in the details: no chip of it)
+    if b.lens.calm {
+        let named: HashSet<String> = lines.iter().filter(|t| status_lines.iter().any(|l| l.id == t.id)).filter_map(names_card).collect();
+        talk.retain(|r| !(r.kind == "event" && r.card.as_ref().is_some_and(|c| named.contains(&c.id))));
+    }
     let open = waiting.len() as u32;
     let n = open.to_string();
     let account_of = |key: &str| m.sessions.get(key).and_then(|s| s.profile.as_ref()).and_then(|p| p.get("account")).filter(|v| v.is_object());
@@ -493,6 +518,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         talk,
         status_lines,
         status_more,
+        working: None,
         has_more,
         earlier: None,
         slug: a.row.id.clone(),
@@ -1059,8 +1085,57 @@ mod tests {
         // (the block stands behind what he typed while the turn ran, with all its steps)
         assert_eq!(kinds(&v), [("e20", "user"), ("e22", "user"), ("e23", "work")]);
         let w = v.talk[2].work.as_ref().unwrap();
-        assert_eq!((w.head.en.as_str(), en(&w.sum), w.now.as_str(), w.lines.len()), ("Working", "3 steps", "", 3));
+        assert_eq!((w.head.en.as_str(), en(&w.sum), w.now.as_str(), w.lines.len()), ("Working", "", "", 3), "running: no counts, it is live");
         assert_eq!(v.talk[2].time_ms, NOW - 7 * MIN);
+    }
+
+    /// While its turn runs the session is working, however long the turn takes and after its first step (the trail
+    /// streams); a turn that ended, or a session that is no longer connected, works no more.
+    #[test]
+    fn a_running_trail_keeps_it_working() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let step = |seq: u64, state: &str, item: &str| json!({ "terminal": "work", "work": { "turn": "t1", "seq": seq, "state": state, "started_at": NOW - 40 * MIN, "items": [{ "id": "1", "kind": "step", "tool": "Bash", "title": "run the tests", "state": item }] } });
+        r.say("a", None, 20, "me", 40 * MIN, msg("Run the tests."));
+        r.say("a", None, 21, "a", 39 * MIN, step(1, "running", "running"));
+        let v = view(&r, "a");
+        assert_eq!(en(&v.answering), "a is working", "the first step came and half an hour went by: still working");
+        let m = r.model(NOW);
+        let calm = Lens { calm: true, ..Default::default() };
+        let c = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+        let w = c.working.clone().expect("the face at the chat's end");
+        assert_eq!((w.says.en.as_str(), w.head.en.as_str(), w.now.as_str()), ("a is working", "Working · Bash · run the tests", "Bash · run the tests"));
+        assert_eq!(w.trail.as_ref().map(|t| (t.state.as_str(), t.lines.len())), Some(("running", 1)), "the details hold the trail");
+        assert!(c.talk.iter().all(|t| t.kind != "work"), "the calm talk holds no trail");
+        // (ended: no longer working, no face)
+        r.say("a", None, 22, "a", 2 * MIN, step(2, "done", "ok"));
+        let v = view(&r, "a");
+        assert_eq!(v.answering, None);
+        let m = r.model(NOW);
+        assert_eq!(session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap().working, None);
+        // (running, but the session is no longer connected: not working)
+        let mut r = Room::default();
+        r.session("b", None, false);
+        r.say("b", None, 20, "me", 40 * MIN, msg("Run the tests."));
+        r.say("b", None, 21, "b", 39 * MIN, step(1, "running", "running"));
+        assert_eq!(view(&r, "b").answering, None);
+    }
+
+    /// A card a working line stands for has no chip in the calm talk: the line says it, in the details.
+    #[test]
+    fn the_calm_talk_leaves_out_the_chip_of_a_lined_card() {
+        let mut r = Room::default();
+        r.session("a", None, true)["status_lines"] = json!([{ "id": "l1", "label": "Duck symbol", "state": "working", "object_id": "task", "updated_at": NOW - MIN }]);
+        let history = |n: u64, title: &str| json!([{ "object_version": 1, "envelope_number": n, "sent_at": NOW - 3 * MIN, "object_state": "open", "content": { "title": title } }]);
+        r.card("task", "a", "info", "normal")["versions"] = history(101, "task");
+        r.card("other", "a", "info", "normal")["versions"] = history(102, "other");
+        r.say("a", None, 99, "me", 4 * MIN, msg("Make the duck."));
+        let m = r.model(NOW);
+        let calm = Lens { calm: true, ..Default::default() };
+        let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+        let chips: Vec<&str> = v.talk.iter().flat_map(|t| t.events.iter().map(|c| c.text.as_str())).collect();
+        assert_eq!(chips, ["other"]);
+        assert!(v.working.is_some(), "a working line: the face");
     }
 
     #[test]
