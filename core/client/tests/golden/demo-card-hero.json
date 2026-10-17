@@ -250,5 +250,70 @@
       },
       "en": "Talk · 4"
     }
-  }
+  },
+  "menu": [
+    {
+      "key": "prev",
+      "label": {
+        "key": "card.menu.prev",
+        "en": "Previous question"
+      },
+      "keys": "Shift ↑",
+      "now_only": true
+    },
+    {
+      "key": "next",
+      "label": {
+        "key": "card.menu.next",
+        "en": "Next question"
+      },
+      "keys": "Shift ↓",
+      "now_only": true
+    },
+    {
+      "key": "draw",
+      "label": {
+        "key": "card.menu.draw",
+        "en": "Draw on the card"
+      },
+      "keys": "",
+      "now_only": true
+    },
+    {
+      "key": "focus",
+      "label": {
+        "key": "card.menu.focus",
+        "en": "Focus"
+      },
+      "keys": "",
+      "now_only": false
+    },
+    {
+      "key": "chat",
+      "label": {
+        "key": "card.menu.chat",
+        "en": "Open the conversation"
+      },
+      "keys": "",
+      "now_only": false
+    },
+    {
+      "key": "copy",
+      "label": {
+        "key": "card.menu.copy",
+        "en": "Copy"
+      },
+      "keys": "",
+      "now_only": false
+    },
+    {
+      "key": "shred",
+      "label": {
+        "key": "card.menu.shred",
+        "en": "Shred"
+      },
+      "keys": "",
+      "now_only": true
+    }
+  ]
 }
