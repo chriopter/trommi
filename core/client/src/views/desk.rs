@@ -667,6 +667,46 @@ pub fn tiles(options: &[Opt], advised: &[String], multiple: bool, request: bool)
 
 #[cfg(test)]
 mod tests {
+    /// The tiles as the shells get them, for rooms like a real one: nothing at all, a team where nothing runs and nothing
+    /// is published, and many teams. Every tile always carries its list (`items`, also empty): a Desk without it did
+    /// not load on the web (17 October 2026).
+    #[test]
+    fn the_tiles_of_a_quiet_room_an_empty_team_and_many_teams() {
+        let shown = |r: &Room, team: Option<&str>| {
+            let m = r.model(NOW);
+            let mut vm = crate::views::ViewModel::default();
+            crate::views::render(&m, &Lens { artifacts: true, team: team.map(String::from), ..Default::default() }, NOW, &mut vm);
+            serde_json::to_value(&vm.desk).unwrap()["tiles"].as_array().cloned().unwrap_or_default()
+        };
+        let keys = |t: &[serde_json::Value]| t.iter().map(|t| t["key"].as_str().unwrap_or("").to_string()).collect::<Vec<_>>();
+        let whole = |t: &[serde_json::Value]| t.iter().all(|t| t["items"].is_array() && t["title"]["en"].is_string() && t["line"]["en"].is_string());
+        // nothing at all: the Desk invites the first agent, no tiles
+        assert!(shown(&Room::default(), None).is_empty());
+        // an empty team beside one with an agent: it invites its first agent too, no tiles
+        let mut r = Room { teams: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } }), ..Default::default() };
+        r.session("a", None, true);
+        assert!(shown(&r, Some("lab")).is_empty());
+        // an agent's team where nothing has happened yet: its tiles, whole, saying there is nothing yet
+        let t = shown(&r, Some("main"));
+        assert!(keys(&t).starts_with(&["work".into(), "artifacts".into(), "board".into()]), "{t:?}");
+        assert!(whole(&t), "{t:?}");
+        assert_eq!(t[0]["line"]["en"], "Nothing yet");
+        assert_eq!(t[0]["items"], json!([]));
+        // many teams: each team in view has its tiles, whole
+        let mut r = Room::default();
+        let teams: serde_json::Map<String, serde_json::Value> = (0..12).map(|i| (format!("t{i}"), json!({ "name": format!("Team {i}"), "created_at": i + 1 }))).collect();
+        r.teams = serde_json::Value::Object(teams);
+        for i in 0..12 {
+            let name = format!("s{i}");
+            r.session(&name, None, i % 2 == 0);
+            r.on_team(&name, &format!("t{i}"));
+        }
+        for i in [0, 5, 11] {
+            let t = shown(&r, Some(&format!("t{i}")));
+            assert!(whole(&t) && t.len() >= 3, "team t{i}: {t:?}");
+        }
+    }
+
     #[test]
     fn three_tiles_under_the_questions() {
         use super::{board_tile, desk_tiles as tiles};
