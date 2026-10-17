@@ -420,7 +420,8 @@ struct DeskScreen: View {
             Text(empty.en).font(Face.text(15)).foregroundStyle(Ink.muted).multilineTextAlignment(.center)
           }.frame(maxWidth: .infinity).padding(.vertical, 28)
         }
-        if calm { if let off = desk.off { OffLine(off: off).padding(.top, 8) } }
+        if calm, !desk.tiles.isEmpty { DeskTiles(tiles: desk.tiles).padding(.top, 8) }
+        else if calm { if let off = desk.off { OffLine(off: off).padding(.top, 8) } }
         else if desk.off != nil || desk.starred != nil { OffHint(off: desk.off, starred: desk.starred) }
       }
       .padding(.horizontal, 16).padding(.bottom, 120)
@@ -789,6 +790,64 @@ struct OffHint: View {
     .accessibilityIdentifier((star ? "off-starred-" : "off-running-") + r.id)
   }
 }
+/**
+ * The iPhone Desk's tiles under the questions (`desk.tiles`, the core's: order, words, what each opens, which share a
+ * row on a phone): Liquid Glass, SF Symbols, black. A tile that holds nothing yet is quiet, its line only.
+ */
+struct DeskTiles: View {
+  @EnvironmentObject var shell: AppShell
+  let tiles: [CoreView.DeskTileView]
+  var body: some View {
+    let rows = Dictionary(grouping: tiles, by: \.phoneRow).sorted { $0.key < $1.key }
+    VStack(spacing: 12) {
+      ForEach(rows, id: \.key) { row in
+        HStack(alignment: .top, spacing: 12) { ForEach(row.value, id: \.key) { DeskTile(tile: $0) } }
+      }
+    }
+  }
+}
+struct DeskTile: View {
+  @EnvironmentObject var shell: AppShell
+  let tile: CoreView.DeskTileView
+  private static let symbols = ["work": "tray.full", "artifacts": "photo.on.rectangle", "board": "scribble.variable", "knowledge": "book.closed"]
+  var body: some View {
+    Button { shell.focus(tile.opens) } label: {
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 8) {
+          Image(systemName: Self.symbols[tile.key] ?? "square").font(.body)
+          Text(tile.title.en).font(.subheadline.weight(.semibold)).lineLimit(1)
+          Spacer(minLength: 0)
+          Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+        }.foregroundStyle(.primary)
+        Text(tile.line.en).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+        if !tile.empty {
+          ForEach(Array(lines.prefix(3).enumerated()), id: \.offset) { _, line in
+            HStack(spacing: 6) {
+              if tile.key == "work" { Circle().fill(Color.primary.opacity(0.6)).frame(width: 5, height: 5) }
+              Text(line).font(.footnote).foregroundStyle(.primary).lineLimit(1)
+            }
+          }
+        }
+      }
+      .padding(14).frame(maxWidth: .infinity, alignment: .topLeading)
+      .glass(RoundedRectangle(cornerRadius: 22, style: .continuous), interactive: true)
+      .opacity(tile.empty ? 0.7 : 1)
+    }
+    .buttonStyle(.plain)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("desk-tile-" + tile.key)
+  }
+  /** What it shows small: the running cards' and the newest artifacts' titles by their ids (one that is gone is left
+   *  out), the Knowledge entries' names. */
+  private var lines: [String] {
+    switch tile.key {
+    case "work": return tile.items.compactMap { id in shell.view.desk.off?.running.first { $0.id == id }?.title }
+    case "artifacts": return tile.items.compactMap { id in shell.view.artifacts?.first { $0.id == id }?.title }
+    default: return tile.names
+    }
+  }
+}
+
 /** The iPhone's calm Desk ends in one quiet row: what runs, is put off and is done (`off.line`), opening the list. */
 struct OffLine: View {
   @EnvironmentObject var shell: AppShell

@@ -242,6 +242,7 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
         names: Vec::new(),
         size: "wide".into(),
         empty: desk.off.is_none(),
+        phone_row: 0,
     };
     let n = all.len();
     let artifacts = super::DeskTileView {
@@ -259,6 +260,7 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
         names: Vec::new(),
         size: "narrow".into(),
         empty: n == 0,
+        phone_row: 0,
     };
     let board = super::DeskTileView {
         key: "board".into(),
@@ -271,6 +273,7 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
         names: Vec::new(),
         size: if desk.knowledge.is_some() { "wide" } else { "full" }.into(),
         empty: false,
+        phone_row: 0,
     };
     let knowledge = desk.knowledge.as_ref().map(|k| {
         let n = k.count;
@@ -289,9 +292,29 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
             names: k.first.clone(),
             size: "narrow".into(),
             empty: n == 0,
+            phone_row: 0,
         }
     });
-    [Some(work), Some(artifacts), Some(board), knowledge].into_iter().flatten().collect()
+    let mut tiles: Vec<super::DeskTileView> = [Some(work), Some(artifacts), Some(board), knowledge].into_iter().flatten().collect();
+    phone_rows(&mut tiles);
+    tiles
+}
+
+/// The phone's rows (`DeskTileView.phone_row`): a narrow tile waits for the next narrow one to share its row; any other
+/// tile takes the next row of its own.
+fn phone_rows(tiles: &mut [super::DeskTileView]) {
+    let (mut next, mut open) = (0u32, None::<u32>);
+    for t in tiles.iter_mut() {
+        if t.size == "narrow" {
+            if let Some(row) = open.take() {
+                t.phone_row = row;
+                continue;
+            }
+            open = Some(next);
+        }
+        t.phone_row = next;
+        next += 1;
+    }
 }
 
 /// The board tile once the team's board is read small (`ViewModel.thumbs`): how many elements it holds.
@@ -758,6 +781,26 @@ mod tests {
         let mut d2 = DeskView { tiles: tiles(&quiet, &[], Some("main")), ..Default::default() };
         board_tile(&mut d2, Some(&[ThumbView { team_id: "main".into(), state: "ready".into(), count: 0, ..Default::default() }]));
         assert!(d2.tiles[2].empty, "an empty board is quiet too");
+    }
+
+    /// The phone's two columns: Artifacts and Knowledge share a row; on All teams (no Knowledge) Artifacts stands
+    /// alone; an idle or empty team keeps the same rows, quiet.
+    #[test]
+    fn the_phone_pairs_the_narrow_tiles() {
+        use super::desk_tiles as tiles;
+        use crate::views::{DeskView, KnowledgeChipView};
+        fn rows(t: &[crate::views::DeskTileView]) -> Vec<(&str, u32)> {
+            t.iter().map(|t| (t.key.as_str(), t.phone_row)).collect()
+        }
+        let team = DeskView { knowledge: Some(KnowledgeChipView { team_id: "main".into(), count: 3, ..Default::default() }), ..Default::default() };
+        assert_eq!(rows(&tiles(&team, &[], Some("main"))), [("work", 0), ("artifacts", 1), ("board", 2), ("knowledge", 1)]);
+        // All teams: no Knowledge, the board takes the whole width, Artifacts its own row
+        assert_eq!(rows(&tiles(&DeskView::default(), &[], None)), [("work", 0), ("artifacts", 1), ("board", 2)]);
+        // an idle team (nothing runs, nothing published, no entries): the same rows, every tile quiet but the board
+        let idle = DeskView { knowledge: Some(KnowledgeChipView { team_id: "main".into(), ..Default::default() }), ..Default::default() };
+        let t = tiles(&idle, &[], Some("main"));
+        assert_eq!(rows(&t), [("work", 0), ("artifacts", 1), ("board", 2), ("knowledge", 1)]);
+        assert!(t.iter().all(|t| t.items.is_empty() && (t.key == "board" || t.empty)), "{t:?}");
     }
 
     use super::*;
