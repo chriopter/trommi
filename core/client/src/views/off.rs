@@ -16,7 +16,7 @@
 use super::board::{key_of, Board, Lens, OFF_PAGE};
 use super::desk::{from_of, shown_title};
 use super::words::{local, say};
-use super::{DeskView, DockRowView, DockView, FromView, MoreView, OffHintView, OffListView, OffRowView, OffWorkView, Text};
+use super::{DeskView, DockRowView, DockView, FromView, MoreView, OffHintView, OffListView, OffRowView, OffWorkView, Screen, Text};
 use crate::model::types::Card;
 use crate::off_mind::{closed_at, off_mind, OffMind, Running};
 use crate::status::card_place;
@@ -150,6 +150,7 @@ pub fn fill_desk(b: &Board, off: &OffMind, desk: &mut DeskView) {
     let running: Vec<DockRowView> = desk.running.as_ref().map(|d| d.rows.iter().take(HINT_ROWS).cloned().collect()).unwrap_or_default();
     let more = desk.running.as_ref().map_or(0, |d| d.rows.len().saturating_sub(running.len()));
     let running_more = (more > 0).then(|| count_says("off.hint.running_more", more, "more running"));
+    let running_all = desk.running.as_ref().map_or(0, |d| d.rows.len());
     desk.off = (put_off > 0 || closed > 0 || !running.is_empty()).then(|| {
         let rows = desk
             .later
@@ -165,8 +166,20 @@ pub fn fill_desk(b: &Board, off: &OffMind, desk: &mut DeskView) {
             (false, true) => say("off.hint.done", format!("{d} done"), &[("done", &d)]),
             (false, false) => say("off.hint.none", "Nothing done yet", &[]),
         };
-        OffHintView { running, running_more, rows, says, put_off: put_off as u32, closed: closed as u32 }
+        let line = hint_line(running_all, put_off, closed);
+        OffHintView { running, running_more, rows, says, put_off: put_off as u32, closed: closed as u32, line, opens: Screen::Off { query: String::new() } }
     });
+}
+
+/// The hint in one line: what runs, what is put off, what is done, each only when there is some ("2 running · 14 done").
+fn hint_line(running: usize, put_off: usize, closed: u64) -> Text {
+    let (r, p, d) = (running.to_string(), put_off.to_string(), closed.to_string());
+    let parts: Vec<String> = [(running > 0, format!("{r} running")), (put_off > 0, format!("{p} put off")), (closed > 0, format!("{d} done"))]
+        .into_iter()
+        .filter_map(|(on, part)| on.then_some(part))
+        .collect();
+    let key = format!("off.hint.line.{}{}{}", u8::from(running > 0), u8::from(put_off > 0), u8::from(closed > 0));
+    say(&key, parts.join(" \u{b7} "), &[("running", &r), ("put_off", &p), ("done", &d)])
 }
 
 /// The page Off your mind for the search's words `query`.
@@ -305,6 +318,7 @@ mod tests {
         let h = d.off.unwrap();
         assert_eq!(ids(&h.running, |r| &r.id), ["lab-run"]);
         assert_eq!((h.running_more, h.says.en.as_str(), h.rows.len()), (None, "Nothing done yet", 0));
+        assert_eq!((h.line.en.as_str(), h.line.key.as_str()), ("1 running", "off.hint.line.100"));
     }
 
     #[test]
@@ -316,6 +330,8 @@ mod tests {
         assert_eq!((h.says.en.as_str(), h.put_off, h.closed), ("2 put off · 2 done", 2, 2));
         assert_eq!(ids(&h.running, |r| &r.id), ["run-new", "run-old"], "the running stack's cards head the hint, no starred one");
         assert!(h.running_more.is_none(), "all of them shown");
+        assert_eq!(h.line.en, "2 running \u{b7} 2 put off \u{b7} 2 done", "the calm Desk's one line");
+        assert_eq!(h.opens, Screen::Off { query: String::new() }, "it opens the complete list");
         assert_eq!(h.rows.iter().map(|r| (r.id.as_str(), r.mark.as_str(), r.says.en.as_str())).collect::<Vec<_>>(), [("later-2", "snooze", "Later"), ("later-1", "snooze", "Later"), ("shredded", "shred", "Shredded")]);
         // (put off until the next morning, in the person's zone: NOW is Tue 13 Oct 2026 14:05 UTC)
         let (d, _) = render(&room(), &Lens { utc_offset_min: 120, ..Default::default() });
