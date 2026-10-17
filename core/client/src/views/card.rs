@@ -855,10 +855,21 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         earlier: None,
         words: Default::default(),
         menu: Vec::new(),
+        paper: String::new(),
         id,
     };
     v.menu = menu_of(&v);
+    v.paper = paper_of(&v).into();
     Some(v)
+}
+
+/// The paper's tint: pale while the card's session works on it, full otherwise.
+pub(crate) fn paper_of(v: &CardView) -> &'static str {
+    if v.work.is_some() || matches!(v.answer.mode.as_str(), "working" | "revising") {
+        "pale"
+    } else {
+        "full"
+    }
 }
 
 /// The card's ⋯ menu, from what the page shows of it: the questions before and after it while it has a place,
@@ -956,6 +967,7 @@ fn request(b: &Board, p: &PermissionRequest, number: u32, nr: Text, walk: &[Stri
         ..Default::default()
     };
     v.menu = menu_of(&v);
+    v.paper = paper_of(&v).into();
     v
 }
 
@@ -1078,6 +1090,24 @@ mod tests {
         let keys = menu(&v);
         assert!(!keys.contains(&"draw") && !keys.contains(&"shred"), "{keys:?}");
         assert!(keys.contains(&"copy"), "{keys:?}");
+    }
+
+    /// The paper: full for a question that waits or is settled, pale while its session works on it.
+    #[test]
+    fn the_paper_is_pale_while_the_card_is_worked_on() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.card("q", "a", "decision", "normal");
+        r.answered("d", "a", NOW - MIN, 500);
+        r.card("w", "a", "info", "normal")["working"] = json!(true);
+        r.sessions[0]["status_lines"] = json!([{ "id": "w", "label": "Working", "state": "working", "detail": "on it", "object_id": "w", "updated_at": NOW - MIN }]);
+        assert_eq!(view(&r, "q").paper, "full");
+        assert_eq!(view(&r, "d").paper, "full");
+        let w = view(&r, "w");
+        assert!(w.work.is_some(), "the strip above the title");
+        assert_eq!(w.paper, "pale");
+        // (written always; a missing one reads as empty)
+        assert_eq!(serde_json::to_value(CardView::default()).unwrap().get("paper"), Some(&json!("")));
     }
 
     /// The menu is always written, an empty one too: a shell never finds the field missing.

@@ -196,7 +196,7 @@ ${decision ? html`<div class="tc-or"><i>or</i><button class="tc-opt tc-whatever"
 // pen's circle, the duck, the tick (read), the shredder, Later's tag, the sheet with a tick (closed). Every child of
 // the feed has an id, so a new comment is added where it belongs and nothing else is drawn anew.
 export function cardThread(card, vm, base = '') {
-  const from = card.from, who = from ? whoOf(from) : null, name = from?.name ?? ''
+  const from = card.from, who = from ? whoOf(from) : null
   const pics = files => (files ?? []).filter(id => fileOf(vm, id).media_type.startsWith('image/'))
   const vids = files => (files ?? []).filter(id => fileOf(vm, id).media_type.startsWith('video/'))
   const rest = files => (files ?? []).filter(id => !/^(image|video)\//.test(fileOf(vm, id).media_type))
@@ -213,11 +213,10 @@ export function cardThread(card, vm, base = '') {
   const sheet = (inner, cls = '') => html`<span class="tc-sheet ${cls}">${inner}</span>`
   const read = html`<span class="tc-read">${sk('tick')}</span>`
   const tiles = (labels, back = false) => html`<span class="tc-picked-row">${labels.map(l => html`<span class="tc-picked"><b>${l}</b>${back ? '' : RING}</span>`)}</span>`
-  const mark = who ? html`<span class="tc-c-who" style="--hue:${who.hue}" aria-hidden="true">${raw(doodleSvg(who.mark))}</span>` : html`<span class="tc-c-who" aria-hidden="true"></span>`
-  const you = html`<span class="tc-c-who is-you" aria-hidden="true">${sk('pen')}</span>`
-  const head = (title, ts, by = name) => html`<header class="msg-head"><span class="msg-name">${by}</span>${title ? html`<b class="tc-said">${title}</b>` : ''}${ts ? agoSpan(ts, 'msg-time') : ''}</header>`
-  const agentMsg = (r, cont = false) => html`<article class="msg msg-agent tc-c${cont ? ' cont' : ''}" id="msg-${r.id}">${cont ? '' : mark}<div class="tc-c-in">${cont ? '' : head('', r.time_ms)}${rich(r.text, { extra: r.html ?? '', hand: false })}${along(r.files)}${r.details ? html`<details class="msg-details"><summary>Details</summary>${rich(r.details, { hand: false })}</details>` : ''}</div></article>`
-  const userMsg = r => html`<article class="msg msg-user tc-c" id="msg-${r.id}">${you}<div class="tc-c-in">${head('', r.time_ms, 'You')}${r.text ? html`<div class="bubble"><p>${r.text}</p></div>` : ''}${along(r.files)}</div></article>`
+  // (the talk as the chat draws it: calm bubbles, no faces and no names; the session's left, his right)
+  const foot = ts => (ts ? html`<span class="msg-foot">${agoSpan(ts, 'msg-time')}</span>` : '')
+  const agentMsg = (r, cont = false) => html`<article class="msg msg-agent tc-c${cont ? ' cont' : ''}" id="msg-${r.id}"><div class="tc-c-in"><div class="bubble bubble-agent">${rich(r.text, { extra: r.html ?? '', hand: false })}${along(r.files)}${r.details ? html`<details class="msg-details"><summary>Details</summary>${rich(r.details, { hand: false })}</details>` : ''}</div>${cont ? '' : foot(r.time_ms)}</div></article>`
+  const userMsg = r => html`<article class="msg msg-user tc-c" id="msg-${r.id}"><div class="tc-c-in">${r.text ? html`<div class="bubble"><p>${r.text}</p></div>` : ''}${along(r.files)}${foot(r.time_ms)}</div></article>`
   // The version before a revision, readable in place (title, text, options, pictures), and to open as it was.
   const before = n => {
     const v = card.versions?.find(x => x.n === n)
@@ -245,7 +244,7 @@ export function cardThread(card, vm, base = '') {
   }
   // ---- what the card does not hold ----
   const lead = (card.lead ?? []).map((l, i) => {
-    if (l.kind === 'whole' || l.kind === 'with') return html`<article class="msg msg-agent tc-c tc-whole" id="card-whole-${card.id}">${mark}<div class="tc-c-in">${head(l.label.en)}${rich(l.text ?? '', { extra: l.html ?? '', hand: false })}</div></article>`
+    if (l.kind === 'whole' || l.kind === 'with') return html`<article class="msg msg-agent tc-c tc-whole" id="card-whole-${card.id}"><div class="tc-c-in"><div class="bubble bubble-agent"><b class="tc-said">${l.label.en}</b>${rich(l.text ?? '', { extra: l.html ?? '', hand: false })}</div></div></article>`
     if (l.kind === 'links') return html`<div class="tc-did t-opt-links" id="card-links-${card.id}"><span>${l.label.en}</span><ul>${(l.links ?? []).map(x => html`<li><b>${x.label}</b> <a href="${x.url}" target="_blank" rel="noopener noreferrer">${x.short}</a></li>`)}</ul></div>`
     if (l.kind === 'later') return deed(`card-later-${card.id}`, LATER_TAG, l.label.en, l.at_ms, { cls: 'is-later' })
     return did(l.label.en, 0, `card-lead-${i}-${card.id}`)
@@ -355,10 +354,10 @@ ${answering ? more('is-shred', 'bin', WORDS.shred, WORDS.shred, 'shred') : ''}
   const kept = drafting ? { note: card.draft ?? '', keys: card.multiple ? card.options.filter(o => o.chosen).map(o => o.key) : [], notes: Object.fromEntries(card.options.filter(o => o.note).map(o => [o.key, o.note])) } : { note: card.draft ?? '' }
   const after = decided && !old && card.state !== 'open' ? { self, home, focus } : null
   return html`<main id="cardpage" class="tc-page${large ? ' is-full' : focus ? ' is-focus' : ''}" aria-label="Question ${card.number}" data-id="${card.id}"${focus ? raw(' data-focus') : ''} data-controller="card" data-card-draft-value="${drafting ? act(card, 'draft') : ''}" data-card-kept-value="${JSON.stringify(kept)}" data-card-pictures-value="${JSON.stringify(picturesOf(media.pictures, vm, here))}" data-action="pointerdown->card#besideStart click->card#beside turbo:frame-load->card#framed circles:drawn->card#link turbo:submit-start->card#sent turbo:submit-end->card#done dragover->card#over drop->card#drop">
-<div class="tc-pad"${tone != null ? html` style="--hue:${tone}"` : ''}>${corner('tl')}${corner('tr')}${corner('bl')}${corner('br')}${bar}<div class="tc-frame">
+<div class="tc-pad"${tone != null ? html` style="--hue:${tone}"` : ''}>${bar}<div class="tc-frame">
 ${large ? rails() : ''}
-<article class="tc-card" id="card-${card.id}" style="--hue:162" data-id="${card.id}" data-kind="${card.kind}" data-urgency="${URGENCY[card.urgency] ?? 'normal'}" aria-labelledby="card-title-${card.id}"${shown ? raw(' data-pictures') : ''}${card.state === 'open' && mode !== 'revising' ? '' : raw(' data-settled')}>
-<div class="tc-left">${cardLead(card, self, old, tools)}
+<article class="tc-card" id="card-${card.id}" style="--hue:${tone ?? 162}" data-paper="${card.paper === 'pale' ? 'pale' : 'full'}" data-id="${card.id}" data-kind="${card.kind}" data-urgency="${URGENCY[card.urgency] ?? 'normal'}" aria-labelledby="card-title-${card.id}"${shown ? raw(' data-pictures') : ''}${card.state === 'open' && mode !== 'revising' ? '' : raw(' data-settled')}>
+${corner('tl')}${corner('tr')}${corner('bl')}${corner('br')}<div class="tc-left">${cardLead(card, self, old, tools)}
 ${cardMedia(card.id, media, vm, here, shownPic, query)}
 ${old ? '' : optionsSaid(card)}
 </div>
@@ -373,7 +372,6 @@ ${laterTag('tc-later')}
 <form class="tc-chat" id="${form}" aria-label="Write to the agent" method="post" action="${act(card, 'message')}" enctype="multipart/form-data" data-card-target="form">
 <input type="hidden" name="page" value="1">${walk ? raw('<input type="hidden" name="walk" value="1">') : ''}${keep}${from ? html`<input type="hidden" name="back" value="${home}">` : ''}
 ${canDraw ? html`<input type="hidden" name="marks" value="[]" data-card-target="marks">` : ''}
-<span class="tc-c-who is-you" aria-hidden="true">${sk('pen')}</span>
 <div class="tc-ask"><div class="tc-chips" data-card-target="chips" hidden></div>
 ${plusMenu(canDraw)}<textarea class="tc-field" id="card-field-${card.id}" data-card-target="field" data-action="input->card#typed keydown->card#keys paste->card#paste" name="note" rows="1" placeholder="${card.ask.en}" autocomplete="off" enterkeyhint="send" aria-label="Write to the agent about this question. Send adds it to the talk; an answer takes it along as a note."></textarea>
 <div class="tc-ask-row"><span class="tc-saved" role="status" data-card-target="saved" hidden></span>${sendButton(answering && (card.kind === 'decision' || card.kind === 'info'))}</div></div>

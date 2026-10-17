@@ -47,19 +47,24 @@ test('an open decision: its options post /decide, the duck, What?? and the rever
   for (const m of card.menu) assert.match(main, new RegExp(`<span>${m.label.en}</span>|class="cardclip-copy"`), `${m.key} in the ⋯`)
   assert.match(main, new RegExp(`class="tc-more-item is-next" role="menuitem" data-nav href="/card/${card.place.next}"`))
   assert.doesNotMatch(main, /class="tc-rail tc-back"|tc-fromline|tc-helper|class="tc-meta"|class="final-sign"/, 'no X, no from line, no helper chip, no meta line, no tick on the tiles')
+  assert.match(main, new RegExp(`<article class="tc-card" id="card-${card.id}" style="--hue:\\d+" data-paper="full"`), 'the question is the paper, full while it waits')
+  assert.match(main, /<article class="tc-card"[^>]*>\s*<svg class="tc-corner tl"/, 'the taped corners are the paper\'s')
+  assert.doesNotMatch(main, /class="tc-c-who|class="msg-head"|class="msg-name"/, 'the talk has no faces and no names')
+  assert.match(main, /<div class="bubble bubble-agent">/, 'the session\'s words in the chat\'s bubble')
   const feed = /<section class="tc-feed"[^>]*>([\s\S]*?)<\/section>\s*<form class="tc-chat"/.exec(main)[1]
   assert.ok([...feed.matchAll(/^<(?:article|div|section|p|form)\b([^>]*)>/gm)].every(m => / id="/.test(m[1])), 'every row of the comments has an id (the morph keeps them)')
   assert.doesNotMatch(main, /undefined|\[object |NaN/)
 })
 
 test('a card without a menu, an empty one or a working one: the page still stands', async () => {
-  for (const change of [c => { delete c.menu }, c => { c.menu = [] }, c => { c.menu = null }, c => { c.answer = { mode: 'working', label: { en: 'Being worked on' } } }]) {
+  for (const change of [c => { delete c.menu }, c => { c.menu = [] }, c => { c.menu = null }, c => { c.answer = { mode: 'working', label: { en: 'Being worked on' } } }, c => { delete c.paper; delete c.talk; delete c.lead }, c => { c.talk = []; c.lead = null; c.paper = 'pale' }]) {
     const vm = vmOf(43), card = cardOf(vm)
     change(card)
     const main = await board(vm).get('/card/43')
     assert.match(main, /class="tc-title"/)
     assert.match(main, /class="tc-back tc-sr"/, 'Esc still has its way back')
     assert.doesNotMatch(main, /undefined|\[object |NaN|Being worked on/)
+    assert.match(main, /data-paper="(full|pale)"/)
   }
 })
 
@@ -76,6 +81,8 @@ test('handed back: In revision, and Take back posts /takeback', async () => {
   const vm = vmOf(41), card = cardOf(vm), main = await board(vm).get('/card/41')
   assert.equal(card.answer.mode, 'revising')
   assert.match(main, new RegExp(`formaction="/cards/${card.id}/takeback"`))
+  assert.equal(card.paper, 'pale')
+  assert.match(main, /data-paper="pale"/, 'back with its session: the paler paper')
 })
 
 test('the forms become the core\'s actions; a Desk row gets a toast with Undo, the card\'s page goes on', async () => {
