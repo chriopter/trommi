@@ -392,7 +392,8 @@ export interface DeskView {
   duck?: DuckAllView
   /** The sessions that are cut off, above the questions: one line each, with the step in its terminal. */
   slip?: SlipView[]
-  /** Beside Off your mind's one line: what the agents published, counted ("14 artifacts"); opens the gallery. */
+  /** Beside Off your mind's one line under the questions: what the agents published, counted ("14 artifacts");
+   *  it opens the gallery (`Screen::Artifacts`). None while there is none, or while the Desk is not in view. */
   artifacts_line?: Text
 }
 
@@ -403,6 +404,8 @@ export interface DuckAllView {
   card_ids: string[]
   /** The button's name: "I don’t give a duck: for all 3 open cards". */
   tip: Text
+  /** Its short name where its question follows at once (the iPhone's ⋯ menu): "IDGAD". */
+  short: Text
   /** How many of which, for a screen reader: "2 decisions go to the agents, 1 card to read is closed". */
   what: Text
   /** The one question it asks: "Duck all 3?"; only cards to read: "Close all 2 as read?". */
@@ -526,19 +529,20 @@ export interface OffListView {
   older?: Text
   /** A page of older cards is being fetched: the shell shows its quiet "Loading …" line at the end. */
   loading: boolean
-  /** The list in its groups (Running, Put off, Done), only those with rows; each names its rows, counted whole. */
+  /** The list in its groups, in this order and only those with rows: "Running" (`works`), "Put off" and "Done"
+   *  (both from `rest`). Each names its rows; its count is every row of it the search keeps, not only the window. */
   groups?: OffGroupView[]
 }
 
 /** One group of the complete list Off your mind. */
 export interface OffGroupView {
   /** "running", "later" or "done". */
-  key: 'running' | 'later' | 'done'
+  key: string
   /** Its heading: "Running", "Put off", "Done". */
   says: Text
-  /** How many cards are in it (the search's words kept). */
+  /** How many cards are in it (the search's words kept), shown beside the heading. */
   count: number
-  /** The ids of its rows as shown: of `works` for "running", of `rest` for the others. */
+  /** The ids of its rows as shown, in order: of `works` for "running", of `rest` for the others. */
   ids: string[]
 }
 

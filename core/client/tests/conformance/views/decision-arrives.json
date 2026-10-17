@@ -1178,6 +1178,10 @@
                 "en": "Cancel",
                 "key": "desk.duck.no"
               },
+              "short": {
+                "en": "IDGAD",
+                "key": "desk.duck.short"
+              },
               "tip": {
                 "args": {
                   "decisions": "1",
@@ -1489,6 +1493,10 @@
         "no": {
           "en": "Cancel",
           "key": "desk.duck.no"
+        },
+        "short": {
+          "en": "IDGAD",
+          "key": "desk.duck.short"
         },
         "tip": {
           "args": {
