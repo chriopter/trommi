@@ -36,6 +36,7 @@ pub mod rules;
 pub mod server;
 pub mod session;
 pub mod store;
+pub mod stt;
 pub mod throttle;
 pub mod util;
 pub mod webauthn;

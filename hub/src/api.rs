@@ -224,7 +224,7 @@ pub async fn handle(app: Arc<App>, req: Request<Incoming>, conn: Conn) -> Answer
         h.insert("vary", "Origin".parse().expect("static"));
         h.insert(
             "access-control-expose-headers",
-            "content-range, content-length, retry-after"
+            "content-range, content-length, retry-after, ehbp-response-nonce"
                 .parse()
                 .expect("static"),
         );
@@ -267,7 +267,7 @@ async fn respond(app: Arc<App>, req: Request<Incoming>, conn: Conn) -> Answer {
         return Response::builder()
             .status(204)
             .header("access-control-allow-methods", "GET, POST, PUT, DELETE")
-            .header("access-control-allow-headers", "authorization, content-type, trommi-client, trommi-lease, x-share-secret, x-found-token, trommi-ticket, range, last-event-id")
+            .header("access-control-allow-headers", "authorization, content-type, trommi-client, trommi-lease, x-share-secret, x-found-token, trommi-ticket, range, last-event-id, ehbp-encapsulated-key, x-tinfoil-enclave-url, x-tinfoil-model")
             .header("access-control-max-age", "86400")
             .body(Body::empty())
             .expect("a valid response");
@@ -338,6 +338,12 @@ async fn respond(app: Arc<App>, req: Request<Incoming>, conn: Conn) -> Answer {
             )
             .await,
         ),
+        (&Method::GET, ["stt", "attestation"]) => {
+            Some(crate::stt::attestation(&app, bearer.as_deref()).await)
+        }
+        (&Method::POST, ["stt"]) => {
+            Some(crate::stt::relay(&app, bearer.as_deref(), &parts.headers, &mut body).await)
+        }
         (&Method::GET, ["shares", share]) => Some(
             shared(
                 &app,

@@ -3054,6 +3054,9 @@ dependencies = [
 name = "trommi-client-core"
 version = "0.0.0"
 dependencies = [
+ "hpke-rs",
+ "hpke-rs-crypto",
+ "hpke-rs-rust-crypto",
  "serde",
  "serde_json",
  "trommi-core",

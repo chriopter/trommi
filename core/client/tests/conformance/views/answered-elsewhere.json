@@ -17,6 +17,12 @@
               "stack": [],
               "waiting": 0
             },
+            "dictation": {
+              "max_ms": 300000,
+              "session": "",
+              "since_ms": 0,
+              "state": "off"
+            },
             "notes": {
               "line": {
                 "en": "",
@@ -1746,6 +1752,12 @@
       "off_your_mind": [],
       "stack": [],
       "waiting": 0
+    },
+    "dictation": {
+      "max_ms": 300000,
+      "session": "",
+      "since_ms": 0,
+      "state": "off"
     },
     "notes": {
       "line": {

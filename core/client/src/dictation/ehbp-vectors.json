@@ -1,0 +1,17 @@
+{
+ "about": "EHBP (Encrypted HTTP Body Protocol, docs.tinfoil.sh/resources/ehbp) made by the reference JavaScript client `ehbp` 0.3: a request sealed to `public_key` (open it with `private_key`), and a response sealed under the keys derived from `exported_secret`, `request_enc` and `nonce`. spec/v1.md 18.",
+ "request": {
+  "private_key": "d95328bc6dec6e038a289c3f3741fdeb5743dc328bbb8b191cec782a1bb98d40",
+  "public_key": "4a2a8bd0c1568f357f0d250ac3bc0c5f23cf094315841a32999e9c38d0474500",
+  "enc": "a8f604195549699436e8bca327de4a467982ab90f304638bf9cf694af7427e17",
+  "body": "0000005fac44ddc85a80f733c6dcca446071a11072854154227390411fb0194ca896c5746fd75f0a7e2fb9058484eccdc827bfdebef05602bf7f0502d2496b3cadc5476907841b5b491a68b363356804e6a5d3c9668f374c093c154fcc643b5b3fb072",
+  "plain": "2d2d620d0a436f6e74656e742d446973706f736974696f6e3a20666f726d2d646174613b206e616d653d226d6f64656c220d0a0d0a766f787472616c2d736d616c6c2d3234620d0a2d2d622d2d0d0a"
+ },
+ "response": {
+  "exported_secret": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  "request_enc": "c8c7c6c5c4c3c2c1c0bfbebdbcbbbab9b8b7b6b5b4b3b2b1b0afaeadacabaaa9",
+  "nonce": "00070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9",
+  "body": "0000001f9251ec2e09520b079ac741ea71dced71d9f203c6312ea347dd6ca3505a6eef000000161edf95253a329ddc74d04057340f267d1c72d9fcd346",
+  "plain": "{\"text\":\"Hallo Welt\"}"
+ }
+}

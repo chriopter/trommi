@@ -102,6 +102,19 @@ pub struct Config {
     pub apns_team_id: Option<String>,
     pub apns_topics: Vec<String>,
     pub apns_hosts: HashMap<String, String>,
+
+    /// Sealed dictation (`stt.rs`): the Tinfoil API key (`HUB_TINFOIL_API_KEY`); without it dictation is off.
+    pub stt_key: Option<Redacted>,
+    /// where Tinfoil's attestation bundle is read (`HUB_STT_ATTESTATION_URL`)
+    pub stt_attestation_url: String,
+    /// enclave origins allowed besides `https://*.tinfoil.sh`: a test's stand-in (`HUB_STT_EXTRA_ORIGINS`)
+    pub stt_extra_origins: Vec<String>,
+    /// dictations of one account a day (`HUB_LIMIT_STT_PER_DAY`), beside ten a minute
+    pub stt_per_day: usize,
+    /// dictations at the enclave at once, over all accounts (`HUB_LIMIT_STT_AT_ONCE`)
+    pub stt_at_once: usize,
+    /// the most bytes of one sealed recording (`HUB_LIMIT_STT`): five minutes of 16 kHz mono WAV and the form
+    pub stt_limit: usize,
 }
 
 fn number<T: std::str::FromStr>(env: &HashMap<String, String>, name: &str, default: T) -> T {
@@ -328,6 +341,23 @@ impl Config {
             apns_team_id: optional("APPLE_TEAM_ID"),
             apns_topics: list(env, "APPLE_APNS_TOPIC"),
             apns_hosts,
+
+            stt_key: optional("HUB_TINFOIL_API_KEY").filter(|_| !dry_run).map(Redacted),
+            stt_attestation_url: text("HUB_STT_ATTESTATION_URL", "https://atc.tinfoil.sh/attestation"),
+            stt_extra_origins: list(env, "HUB_STT_EXTRA_ORIGINS"),
+            stt_per_day: number(env, "HUB_LIMIT_STT_PER_DAY", 200),
+            stt_at_once: number(env, "HUB_LIMIT_STT_AT_ONCE", 8),
+            stt_limit: number(env, "HUB_LIMIT_STT", 12 << 20),
         }
+    }
+}
+
+/// A secret setting: its `Debug` never shows the value.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Redacted(pub String);
+
+impl std::fmt::Debug for Redacted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<redacted>")
     }
 }

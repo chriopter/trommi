@@ -84,6 +84,8 @@ fn slot(hub: &TestHub, key: std::rc::Rc<Authenticator>) -> Sim {
             IoResult::Ok(PlatformAnswer::Push { kind: "web_push".into(), token: Bytes(sub.to_string().into_bytes()) })
         }
         PlatformOp::PushUnregister => IoResult::Ok(PlatformAnswer::Done),
+        // (no dictation here)
+        PlatformOp::RecordStart { .. } | PlatformOp::RecordStop | PlatformOp::RecordCancel | PlatformOp::Attest { .. } => IoResult::Ok(PlatformAnswer::Refused),
     }));
     let can = trommi_client_core::app::Abilities { push: "web_push".into(), passkeys: true, ..Default::default() };
     sim.send(Event::Start { config: Config { platform: "test".into(), version: "0".into(), hub: hub.url.clone(), seed: 7, can, ..Default::default() } });

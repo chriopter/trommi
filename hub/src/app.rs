@@ -50,6 +50,8 @@ pub struct App {
     pub transport: Arc<dyn Transport>,
     pub vapid: Vapid,
     pub apns: Option<Apns>,
+    /// sealed dictation's relay; none without a Tinfoil key
+    pub stt: Option<crate::stt::Stt>,
     pub ticket_key: [u8; 32],
     pub closing: AtomicBool,
     pub in_flight: AtomicUsize,
@@ -151,6 +153,16 @@ impl App {
             logins: Window::new(cfg.logins_per_ip_10min, 600_000),
         };
         crate::log::set_quiet(cfg.quiet);
+        let stt = match &cfg.stt_key {
+            Some(key) => Some(crate::stt::Stt::new(
+                key.0.clone(),
+                cfg.stt_attestation_url.clone(),
+                cfg.stt_extra_origins.clone(),
+                cfg.stt_per_day,
+                cfg.stt_at_once,
+            )?),
+            None => None,
+        };
         let cfg_heavy = (cfg.heavy_workers, cfg.heavy_waiting);
         Ok(Arc::new(App {
             accounts: Accounts::new(origins, cfg.passkeys),
@@ -164,6 +176,7 @@ impl App {
             transport,
             vapid,
             apns,
+            stt,
             ticket_key,
             closing: AtomicBool::new(false),
             expiry_told: Mutex::new(HashMap::new()),
@@ -1047,6 +1060,9 @@ impl App {
         self.limits.pushes.sweep(now);
         self.limits.foundings.sweep(now);
         self.limits.logins.sweep(now);
+        if let Some(stt) = &self.stt {
+            stt.sweep(now);
+        }
         let _ = self.db.write(|c| crate::throttle::sweep(c, now));
         if files > 0 || parts > 0 || rooms_gone > 0 {
             crate::log::info(

@@ -329,6 +329,10 @@ pub enum Action {
     RenameDevice {
         name: String,
     },
+    /// Sealed dictation (spec/v1.md 18): the chat field's microphone.
+    Dictate {
+        step: crate::app::dictation::DictateStep,
+    },
     /// Push on this device: off, every card, or only what knocks.
     Push {
         level: crate::app::push::PushChoice,

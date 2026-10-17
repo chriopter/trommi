@@ -922,3 +922,35 @@ a.files-where:hover span { text-decoration: underline; }
 .working-head { margin: 0; font-weight: 600; }
 .working-details .session-status { margin: var(--s-2) 0 0; }
 .working-details .msg-work { margin-top: var(--s-3); }
+
+/* ---- sealed dictation (vm.dictation; option 2 "mic instead of send", picked 17 October 2026) ----
+   While the field is empty (no words, no files) the send button is the microphone. Recording: the words' place
+   shows a red dot, the running time, the level and "Sealed"; a bin on the left throws it away; the square ends it.
+   Writing: the same row says so, the square waits. */
+#session .composer > :is(.dict-cancel, .dict-rec) { display: none; }
+#session .composer > .dict-go { order: 3; width: 38px; height: 38px; display: none; place-items: center; border: 0; border-radius: var(--r-md); background: var(--accent); color: var(--accent-fg); cursor: pointer; }
+#session .composer > .dict-go .sketch { width: 21px; height: 21px; stroke-width: 1.8; }
+#session .composer.dict:not([data-typed]):not([data-files]) > .dict-go { display: grid; }
+#session .composer.dict:not([data-typed]):not([data-files]) > .send { display: none; }
+#session .composer.dict-starting > .dict-go { opacity: .6; }
+#session .composer:is(.dict-recording, .dict-working) > textarea { display: none; }
+#session .composer:is(.dict-recording, .dict-working) > .composer-clip { visibility: hidden; }
+#session .composer:is(.dict-recording, .dict-working) > .send { display: none; }
+#session .composer:is(.dict-recording, .dict-working) > .dict-go { display: grid; background: var(--urg-critical); color: #fff; }
+#session .composer.dict-working > .dict-go { opacity: .5; cursor: progress; }
+#session .composer:is(.dict-recording, .dict-working) > .dict-cancel { display: grid; order: 0; width: 38px; height: 38px; }
+#session .composer > .dict-cancel .sketch { width: 20px; height: 20px; stroke-width: 1.8; }
+#session .composer:is(.dict-recording, .dict-working) > .dict-rec { order: 1; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; height: 38px; font-size: var(--t-md); color: var(--fg); }
+.dict-rec .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--urg-critical); flex: none; animation: dict-pulse 1.4s var(--ease-in-out) infinite; }
+@keyframes dict-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .dict-rec .dot { animation: none; } }
+.dict-rec .time { font-variant-numeric: tabular-nums; }
+.dict-rec .bars { display: flex; align-items: center; gap: 2px; height: 22px; flex: 1 1 auto; min-width: 40px; overflow: hidden; }
+.dict-rec .bars i { width: 3px; border-radius: 2px; background: var(--muted); flex: none; }
+.dict-rec .dict-writing { display: none; color: var(--muted); flex: 1 1 auto; }
+.dict-working > .dict-rec :is(.time, .bars) { display: none; }
+.dict-working > .dict-rec .dict-writing { display: inline; }
+.dict-rec .sealed { margin-left: auto; color: var(--faint); font-size: var(--t-sm); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.dict-rec .sealed > span[aria-hidden] { display: inline-flex; align-items: center; gap: 4px; }
+.dict-rec .sealed .sketch { width: 14px; height: 14px; stroke-width: 2; }
+@media (max-width: 860px) { #session .composer > :is(.dict-go, .dict-cancel) { width: 44px; height: 44px; } .dict-rec .sealed { display: none; } }

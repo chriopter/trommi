@@ -69,6 +69,8 @@ public/
   news.mjs             What's new: /whats-new.json (whats-new.mjs, the worker's: the releases' notes), from the menu
   core.mjs             the page's side of the app core (its worker: core/core-worker.ts): the view model, actions, focus, files
   platform.mjs         what only the page can do for the core: passkeys (WebAuthn, prf), Web Push
+  dictate.mjs          sealed dictation's part of that: the microphone (MediaRecorder, then 16 kHz WAV) and Tinfoil's
+                       attestation check (core/tinfoil-verifier.mjs, loaded on the first dictation)
   paths.mjs            the addresses of before (/s/…, /a/…) and their new form; shared by app.mjs and worker.js
   demo/                the demo room's code (demo.mjs, screens.css); its data is the repository's demo/data/, which
                        the build copies here as fixture.json and files/ (not in git)

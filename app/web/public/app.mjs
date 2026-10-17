@@ -14,9 +14,11 @@ import { movedPath } from './paths.mjs'
 import { rowSheet } from './desk.mjs'
 import * as core from './core.mjs'
 import { passkeysOn, pushable } from './platform.mjs'
+import { canDictate } from './dictate.mjs'
 /** For the views (a view imports only app.mjs and ui.mjs). */
 export { passkeysOn, pushObstacle } from './platform.mjs'
-export { on as onCore } from './core.mjs'
+export { on as onCore, act as actCore } from './core.mjs'
+export { dictateLevel } from './dictate.mjs'
 
 // The views a cold start needs (the Desk, its frame, the notes) come with this module; every other view is loaded
 // when an address of it is first asked for (LAZY: the addresses it answers), and all of them once the page is idle,
@@ -994,7 +996,7 @@ let T0 = 0, demo = null
 const configOf = fixture => ({
   platform: 'web', version: APP_VERSION, hub: hubUrl(), seed: Math.floor(Math.random() * 2 ** 52),
   utc_offset_min: -new Date().getTimezoneOffset(), locale: navigator.language ?? 'en',
-  can: { notify: false, secrets: false, snapshots: false, passkeys: passkeysOn(), push: pushable() ? 'web_push' : '' },
+  can: { notify: false, secrets: false, snapshots: false, passkeys: passkeysOn(), push: pushable() ? 'web_push' : '', dictate: canDictate() },
   ...(fixture ? { demo: fixture } : {}),
 })
 

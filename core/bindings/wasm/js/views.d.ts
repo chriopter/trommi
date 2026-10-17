@@ -85,6 +85,8 @@ export interface ViewModel {
   thumbs?: ThumbView[]
   /** The page Knowledge of the team in view, while it is in view (`Screen::Knowledge`); none else. */
   knowledge?: KnowledgeView
+  /** Sealed dictation (spec/v1.md 18, `crate::dictation`): the microphone of the chat field and its words. */
+  dictation: DictationView
   toasts?: Toast[]
 }
 
@@ -118,6 +120,8 @@ export type ViewPart =
   | { part: 'thumbs'; view: ThumbView[] | null }
   /** The page Knowledge, whole; none when it is left. */
   | { part: 'knowledge'; view: KnowledgeView | null }
+  /** Sealed dictation, whole. */
+  | { part: 'dictation'; view: DictationView }
   | { part: 'toasts'; toasts: Toast[] }
 
 /** Edits of a long list, by position: at `at`, `gone` rows leave and `rows` come (the Desk's stack ops today). */
@@ -582,6 +586,33 @@ export interface KnowledgeChipView {
   count: number
   /** The chip in a sentence ("Team knowledge: 12 entries"), for a screen reader and a tooltip. */
   says: Text
+}
+
+/** Sealed dictation (spec/v1.md 18): what the chat field's microphone shows. While the field is empty its send
+ *  button is the microphone (`idle`); a tap starts (`starting`), `recording` runs from `since_ms` (stopped by the
+ *  core at `max_ms`), `working` while the recording is sealed and transcribed, `done` with the words to put in the
+ *  field (once per `text.id`: the shell answers `Action::Dictate { step: taken }`), `failed` with `problem`.
+ *  `off` (or empty): no microphone here: the send button stays. */
+export interface DictationView {
+  /** `off`, `idle`, `starting`, `recording`, `working`, `done`, `failed`. */
+  state: string
+  /** The chat field the dictation belongs to (as `DictateStep::Start` named it); empty while idle. Another field
+   *  shows itself idle, and the words go only into this one. */
+  session: string
+  /** When the recording began (the shell's clock), for the running time; 0 else. */
+  since_ms: number
+  /** The longest recording. */
+  max_ms: number
+  problem?: Text
+  text?: DictatedText
+  /** While recording: that only the verified enclave hears it. */
+  hint?: Text
+}
+
+/** Words a dictation brought, to go into the chat field once. */
+export interface DictatedText {
+  id: string
+  text: string
 }
 
 /** The page Knowledge of a team (`Screen::Knowledge`, core/client/src/views/knowledge.rs): its entries, pinned first
