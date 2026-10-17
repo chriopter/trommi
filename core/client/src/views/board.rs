@@ -58,6 +58,8 @@ pub struct Lens {
     pub desk_all: bool,
     /// The teams unfolded in the wide sidebar (`Focus.open_teams`).
     pub open_teams: Vec<String>,
+    /// The words searched for among every team's chats (`Focus.chats_query`), trimmed; none when empty.
+    pub chats_query: Option<String>,
     /// What this device has shown of each session's words: the newest envelope number of its agent's words when
     /// its chat was last in view, by session key (the cache's `seen`). None until it is read: nothing counts as
     /// unread meanwhile.

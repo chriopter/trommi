@@ -12,7 +12,7 @@ use trommi_client_core::app::{Effect, Event};
 use trommi_client_core::views::{Focus, MoreOf, Phase, Screen};
 
 fn focus(screen: Screen) -> Event {
-    Event::Focus { focus: Focus { screen, visible: true, team: None, board: None, desk_all: false, open_teams: Vec::new() } }
+    Event::Focus { focus: Focus { screen, visible: true, team: None, board: None, desk_all: false, open_teams: Vec::new(), chats_query: None } }
 }
 
 /// The App's device as it stands, its model without the past: the stored device read the room up to the hub's

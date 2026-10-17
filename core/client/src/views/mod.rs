@@ -101,6 +101,10 @@ pub struct Focus {
     /// the shell keeps them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub open_teams: Vec<String>,
+    /// The words searched for among every team's chats (the phone's Search tab, `SidebarView.found`); none or empty:
+    /// no search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chats_query: Option<String>,
 }
 
 fn yes() -> bool {
@@ -327,6 +331,22 @@ pub struct SidebarView {
     /// The Desk in view is every team's (home, `Focus.desk_all`): no team's head is marked.
     #[serde(default)]
     pub desk_all: bool,
+    /// Under a search (`Focus.chats_query`): every team with a chat whose name or teaser has the words, with those
+    /// chats, in the menu's order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub found: Vec<ChatGroupView>,
+    /// Under a search that finds no chat: so it says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub found_none: Option<Text>,
+}
+
+/// A team in the search's list of chats: its name as a plain section title over the chats found.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatGroupView {
+    pub id: String,
+    pub name: Text,
+    /// Its chats that have the words, one row each, in drawing order.
+    pub rows: Vec<SessionRowView>,
 }
 
 /// A team in the wide sidebar: its head (a click opens its Desk) over its sessions, folded to a stack or open.

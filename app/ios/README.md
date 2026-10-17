@@ -159,10 +159,15 @@ views draw it. `TrommiApp/AppStore/shots.sh` uses this on an iPhone/iPad simulat
 and marketing framing live beside it. UI-specific states need review when native layouts change. The former
 Mac-only automatic window/menu capture hook is not implemented by the new shell.
 
-The compact iPhone frame keeps Chat · Desk · Note in its glass pill. Chat draws the core's ordered session
-rows; cards, conversations and settings push onto the native navigation stack, so Back and swipe-back return
-to the list. The place pill (iPhone) and the top of the sidebar (iPad, Mac) switch the team in view: a menu of
-the core's `sidebar.teams`, each with its open questions; there is no view of every team at once.
+The compact iPhone frame is the system's tab bar (Liquid Glass, smaller while a list scrolls down): Desk · Chats ·
+Search. Desk's bell carries its own dot while questions wait (never a red count). Chats is every team's chats in one
+list (`sidebar.stacks`, as the wide sidebar's), each team's name a quiet section title; a tap on it folds the team to a
+row of its faces (`Focus.open_teams`, kept on the device; every team open until one is folded). Search filters that
+list in the core (`Focus.chats_query`, `sidebar.found`). Cards, conversations and settings push onto the tab's
+navigation stack (the bar hides there), so Back and swipe-back return to the list. The note opens from the Desk's top
+row. Starred and running cards stand at the head of Off your mind on the Desk, as on the web. The place pill (iPhone
+Desk) and the top of the sidebar (iPad, Mac) switch the team of the Desk: a menu of the core's `sidebar.teams`, each
+with its open questions.
 
 The views draw the look the app had before the shared core (sign-in, Desk, card, Chat, note, settings, the glass
 bar): `Chrome.swift` holds the shared parts (the top pills, tiles, the start screens' buttons and fields). Which

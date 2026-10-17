@@ -37,23 +37,108 @@ struct TalkWho { var mark: String; var name: String; var hue: Int }
 // ---- the Chat list ---------------------------------------------------------------------------------------------------
 
 /**
- * The Chat page's list, calm as Messages': one flat row per session (`ChatRow`), the team switch at the top (the
- * place pill). A session's helpers are dots in its row (`helpers`).
+ * The iPhone's Chats: every team's chats in one list, calm as Messages', each team's name only a small section
+ * title over its rows (`sidebar.stacks`, as the wide sidebar's, in the core's order). A tap on the title folds the
+ * team to its stack: its faces in one small row and what it holds (`Focus.open_teams`, kept by the shell). In the
+ * Search tab, while words are typed, the chats the core found under their teams (`sidebar.found`).
  */
 struct ChatsScreen: View {
   @EnvironmentObject var shell: AppShell
+  var searching = false
   var body: some View {
+    let side = shell.view.sidebar
+    let query = !shell.chatsQuery.trimmingCharacters(in: .whitespaces).isEmpty
     List {
-      ForEach(shell.view.sidebar.sessions, id: \.id) { row in ChatRow(row: row) }
+      if searching && query {
+        ForEach(side.found, id: \.id) { group in
+          Section { ForEach(group.rows, id: \.id) { row in ChatRow(row: row) } } header: { TeamTitle(name: group.name.en, open: nil) }
+            .listSectionSeparator(.hidden)
+        }
+        if let none = side.foundNone {
+          Text(none.en).font(Face.text(15)).foregroundStyle(Ink.muted).frame(maxWidth: .infinity).padding(.vertical, 40)
+            .listRowBackground(Color.clear).listRowSeparator(.hidden)
+            .accessibilityIdentifier("chats-none")
+        }
+      } else {
+        ForEach(side.stacks, id: \.id) { stack in
+          Section {
+            if stack.open { ForEach(stack.sessions, id: \.id) { row in ChatRow(row: row) } }
+            else if !stack.sessions.isEmpty { FoldedChats(stack: stack) }
+          } header: {
+            Button { withAnimation(.snappy) { shell.fold(team: stack.id) } } label: { TeamTitle(name: stack.name.en, open: stack.sessions.isEmpty ? nil : stack.open) }
+              .buttonStyle(.plain)
+              .disabled(stack.sessions.isEmpty)
+              .accessibilityLabel("\(stack.name.en), \(stack.says.en)")
+              .accessibilityValue(stack.open ? "Open" : "Folded")
+              .accessibilityIdentifier("chat-team-" + stack.id)
+          }
+          .listSectionSeparator(.hidden)
+        }
+      }
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
     .environment(\.defaultMinListRowHeight, 1)
-    .contentMargins(.bottom, 100, for: .scrollContent)
     .background(Ink.bg)
-    .topPills(leading: { PlacePill(round: true) }, trailing: { EmptyView() })
+    .modifier(ChatsTop(searching: searching))
     .refreshable { shell.act(["do": "retry"]) }
-    .accessibilityIdentifier("chat-list")
+    .accessibilityIdentifier(searching ? "chat-search" : "chat-list")
+  }
+}
+
+/** A team's name as a plain, quiet section title; with a small chevron where it folds. */
+struct TeamTitle: View {
+  let name: String
+  let open: Bool?
+  var body: some View {
+    HStack(spacing: 5) {
+      Text(name).font(Face.text(14, .semibold)).foregroundStyle(Ink.muted)
+      if let open {
+        Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)).foregroundStyle(Ink.faint)
+          .rotationEffect(.degrees(open ? 0 : -90))
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.top, 10).padding(.bottom, 2).contentShape(Rectangle())
+  }
+}
+
+/** A folded team in the Chats list: its faces overlapping in one small row (`faces`), what it holds (`says`), and one
+ *  dot while a question of it waits. A tap opens it again. */
+struct FoldedChats: View {
+  @EnvironmentObject var shell: AppShell
+  let stack: CoreView.TeamStackView
+  var body: some View {
+    Button { withAnimation(.snappy) { shell.fold(team: stack.id) } } label: {
+      HStack(spacing: 10) {
+        HStack(spacing: -10) {
+          ForEach(stack.faces, id: \.id) { face in
+            let row = stack.sessions.first { $0.id == face.id }
+            let hue = Pen.hueFor(id: (row?.slug).flatMap { $0.isEmpty ? nil : $0 } ?? face.id, mark: face.mark)
+            AgentMark(mark: face.mark, size: 18, hue: hue).frame(width: 34, height: 34)
+              .background(Circle().fill(Tone.color(hue: hue, .wash))).overlay(Circle().stroke(Ink.bg, lineWidth: 2))
+          }
+        }
+        Text(stack.says.en).font(Face.text(14)).foregroundStyle(Ink.muted).lineLimit(1)
+        Spacer(minLength: 0)
+        if stack.waiting > 0 { Circle().fill(Ink.accent).frame(width: 10, height: 10) }
+      }
+      .padding(.vertical, 6).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .listRowInsets(EdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 20))
+    .listRowBackground(Color.clear).listRowSeparator(.hidden)
+    .accessibilityLabel("\(stack.name.en): \(stack.says.en), folded")
+    .accessibilityIdentifier("chat-folded-" + stack.id)
+  }
+}
+
+/** The Chats tab has no bar at the top; the Search tab has the system's, for its title and field. */
+private struct ChatsTop: ViewModifier {
+  let searching: Bool
+  func body(content: Content) -> some View {
+    if searching { content.navigationTitle("Search") }
+    else { content.toolbar(.hidden, for: .navigationBar).scrollEdgeEffectStyle(.soft, for: [.top, .bottom]) }
   }
 }
 
@@ -114,7 +199,7 @@ struct ChatRow: View {
   /** One dot at the end of the teaser's line, as a messenger's unread one: words not seen yet, or a question or a
    *  raised hand that waits for him. */
   @ViewBuilder private func badge() -> some View {
-    if row.unread || row.open > 0 || row.hand != nil {
+    if !row.signal.isEmpty {
       Circle().fill(Ink.accent).frame(width: 10, height: 10)
         .accessibilityLabel(row.says?.en ?? "New message")
         .accessibilityIdentifier("chat-unread-" + row.id)
@@ -724,8 +809,10 @@ struct SessionScreen: View {
    *  session's drawing, with a tiny dot on its corner (connected green, stopped red, else a ring), and its name; a
    *  tap opens a menu of the team's sessions to switch to. */
   private var header: some View {
-    Menu {
-      ForEach(shell.view.sidebar.sessions, id: \.id) { s in
+    // (the chats of its own team: the group of the iPhone's list it stands in; else the team in view's)
+    let mates = shell.view.sidebar.stacks.first { $0.sessions.contains { $0.id == page.id } }?.sessions ?? shell.view.sidebar.sessions
+    return Menu {
+      ForEach(mates, id: \.id) { s in
         Button {
           if shell.path.isEmpty { shell.path = [.session(sessionId: s.id)] } else { shell.path[shell.path.count - 1] = .session(sessionId: s.id) }
         } label: {

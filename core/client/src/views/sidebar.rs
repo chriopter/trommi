@@ -13,7 +13,7 @@
 use super::board::{key_of, Board, DEFAULT_TEAM};
 use super::links::plain;
 use super::words::{badge_words, hand_words, link_words, local, next_midnight, say, unheard_words, LinkSubject};
-use super::{CapView, HandView, HelperDotsView, LastSaidView, LinkWords, SessionRowView, SidebarView, StackEdgeView, TeamStackView, TeamTab, Text, STACK_EDGES};
+use super::{CapView, ChatGroupView, HandView, HelperDotsView, LastSaidView, LinkWords, SessionRowView, SidebarView, StackEdgeView, TeamStackView, TeamTab, Text, STACK_EDGES};
 use crate::model::Model;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -290,11 +290,24 @@ pub fn sidebar(b: &Board) -> SidebarView {
         })
         .collect();
 
+    // ---- the search among every team's chats (the phone's Search tab) ----
+    let found: Vec<ChatGroupView> = match &b.lens.chats_query {
+        Some(q) => stacks
+            .iter()
+            .map(|s| ChatGroupView { id: s.id.clone(), name: s.name.clone(), rows: s.sessions.iter().filter(|r| matches(r, q)).cloned().collect() })
+            .filter(|g| !g.rows.is_empty())
+            .collect(),
+        None => Vec::new(),
+    };
+    let found_none = b.lens.chats_query.as_ref().filter(|_| found.is_empty()).map(|q| say("chats.none.found", format!("No chat matches \u{201c}{q}\u{201d}."), &[("query", q)]));
+
     // (a teaser's "14:05" turns into "Yesterday" at midnight)
-    if rows.iter().any(|r| r.last.is_some()) {
+    if stacks.iter().flat_map(|s| s.sessions.iter()).chain(rows.iter()).any(|r| r.last.is_some()) {
         b.wake_at(Some(next_midnight(b.now, b.lens.utc_offset_min)));
     }
     SidebarView {
+        found,
+        found_none,
         stacks,
         desk_all: b.lens.desk_all,
         teams: tabs,
@@ -323,6 +336,12 @@ fn rows_of(b: &Board, units: &[Unit], asked: &HashMap<usize, (u64, String)>) -> 
         }
     }
     rows
+}
+
+/// A chat the search's words find: they stand in its name or in its teaser, whatever the case.
+fn matches(r: &SessionRowView, query: &str) -> bool {
+    let q = query.to_lowercase();
+    r.name.en.to_lowercase().contains(&q) || r.last.as_ref().is_some_and(|l| l.text.to_lowercase().contains(&q))
 }
 
 /// The one quiet sign of a calm chat row: stopped before a waiting question before new words.
@@ -541,6 +560,30 @@ mod tests {
         assert!(!v.stacks[2].open && v.stacks[2].faces.is_empty(), "an empty team never opens and has no faces");
         assert_eq!(v.stacks[1].faces.len(), 2);
         assert_eq!((v.desk_all, v.place.en.as_str()), (true, "All teams"));
+    }
+
+    /// The phone's Search: every team's chats whose name or teaser has the words, under their team's title; a
+    /// search that finds none says so; no search, no list.
+    #[test]
+    fn a_search_finds_chats_across_the_teams() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        r.session("a-work", None, true);
+        r.session("b-lab", None, true);
+        r.session("d-lab", None, false);
+        r.on_team("b-lab", "lab");
+        r.on_team("d-lab", "lab");
+        let m = r.model(NOW);
+        let mut lens = Lens { team: Some("main".into()), ..Default::default() };
+        let v = sidebar(&Board::new(&m, &lens, NOW));
+        assert!(v.found.is_empty() && v.found_none.is_none(), "no search, no list");
+        lens.chats_query = Some("LAB".into());
+        let v = sidebar(&Board::new(&m, &lens, NOW));
+        let found = v.found.iter().map(|g| (g.name.en.as_str(), g.rows.iter().map(|r| r.slug.as_str()).collect::<Vec<_>>())).collect::<Vec<_>>();
+        assert_eq!(found, [("Lab", vec!["b-lab", "d-lab"])]);
+        lens.chats_query = Some("zebra".into());
+        let v = sidebar(&Board::new(&m, &lens, NOW));
+        assert!(v.found.is_empty());
+        assert_eq!(v.found_none.map(|t| t.en), Some("No chat matches \u{201c}zebra\u{201d}.".to_string()));
     }
 
     #[test]

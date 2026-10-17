@@ -31,15 +31,11 @@ struct RootView: View {
         .sheet(isPresented: noteBinding) { NavigationStack { NotesScreen() }.presentationDetents([.large]) }
         .overlay(alignment: .top) { TopLines() }
       } else {
-        // iPhone: Chat · Desk · Note in one glass pill at the bottom. The bar shows on the two lists only: a pushed
-        // screen has its own controls at the bottom. Both pages stay alive, so each keeps its scroll position.
-        stack(ZStack {
-          DeskScreen().opacity(shell.tab == .desk ? 1 : 0).allowsHitTesting(shell.tab == .desk).accessibilityHidden(shell.tab != .desk)
-          ChatsScreen().opacity(shell.tab == .chat ? 1 : 0).allowsHitTesting(shell.tab == .chat).accessibilityHidden(shell.tab != .chat)
-        }
-        .overlay { if shell.noteOpen { NotePage() .transition(.move(edge: .bottom)) } }
+        // iPhone: the system's tab bar, Desk · Chats · Search; it shrinks while a list scrolls down. The note lies
+        // over everything as a yellow page.
+        PhoneTabs()
+        .overlay { if shell.noteOpen { NotePage().transition(.move(edge: .bottom)) } }
         .animation(.snappy, value: shell.noteOpen)
-        .safeAreaBar(edge: .bottom, spacing: 0) { if shell.path.isEmpty { NativeTabPill() } })
         .overlay(alignment: .top) { TopLines() }
       }
     }
@@ -61,7 +57,14 @@ struct RootView: View {
       if shell.screen != screen { shell.show(screen) }
     }
   }
-  @ViewBuilder func page(_ screen: CoreView.Screen) -> some View {
+  @ViewBuilder func page(_ screen: CoreView.Screen) -> some View { CorePage(screen: screen) }
+}
+
+/** A screen of the core's pushed onto a navigation stack. */
+struct CorePage: View {
+  @EnvironmentObject var shell: AppShell
+  let screen: CoreView.Screen
+  var body: some View {
     switch screen {
     case .desk: DeskScreen()
     case .card(let id): if let card = shell.view.cards[id] { CardScreen(card: card).id(id) } else { Loading() }
@@ -71,6 +74,44 @@ struct RootView: View {
     case .settings(let page): SettingsScreen(page: page)
     case .artifacts: ArtifactsScreen()
     case .scribble: ScribbleScreen()
+    }
+  }
+}
+
+/**
+ * The iPhone's frame: the system's tab bar with Desk (its number is the core's `sidebar.badge`), Chats (every team's
+ * chats in one list) and Search (the same list under the words searched for; the core filters). Each tab keeps its
+ * own navigation stack; only the tab in front follows `shell.path`, and a pushed screen hides the bar (it has its own
+ * controls at the bottom).
+ */
+struct PhoneTabs: View {
+  @EnvironmentObject var shell: AppShell
+  var body: some View {
+    TabView(selection: Binding(get: { shell.tab }, set: { shell.pick($0) })) {
+      // (what waits: the bell's own badge in the bar's ink, never a red count; the number stands on the Desk)
+      Tab("Desk", systemImage: shell.view.sidebar.badge > 0 ? "bell.badge.fill" : "bell.fill", value: NativeTab.desk) { stack(.desk) { DeskScreen() } }
+      Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: NativeTab.chat) { stack(.chat) { ChatsScreen() } }
+      Tab(value: NativeTab.search, role: .search) {
+        stack(.search) {
+          // (the system's search field, always shown under the title; the core filters the chats by its words)
+          ChatsScreen(searching: true)
+            .searchable(text: $shell.chatsQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search chats")
+            .onChange(of: shell.chatsQuery) { _, _ in shell.show(shell.screen) }
+        }
+      }
+    }
+    .tabBarMinimizeBehavior(.onScrollDown)
+    .onChange(of: shell.path) { _, path in
+      let screen = path.last ?? (shell.noteOpen ? .notes : .desk)
+      if shell.screen != screen { shell.show(screen) }
+    }
+  }
+  private func stack<Root: View>(_ tab: NativeTab, @ViewBuilder _ root: () -> Root) -> some View {
+    NavigationStack(path: Binding(get: { shell.tab == tab ? shell.path : [] }, set: { if shell.tab == tab { shell.path = $0 } })) {
+      root().toolbarBackground(.hidden, for: .navigationBar)
+        .navigationDestination(for: CoreView.Screen.self) { screen in
+          CorePage(screen: screen).toolbarBackground(.hidden, for: .navigationBar).toolbar(.hidden, for: .tabBar)
+        }
     }
   }
 }
@@ -132,80 +173,14 @@ struct NotePage: View {
         .gesture(DragGesture().onChanged { drag = max(0, $0.translation.height) }.onEnded { v in
           withAnimation(.snappy) { if v.translation.height > 80 || v.predictedEndTranslation.height > 200 { hideKeyboard(); shell.closeNote() }; drag = 0 }
         })
-        .accessibilityLabel("Close the note").accessibilityAddTraits(.isButton)
+        .onTapGesture { hideKeyboard(); shell.closeNote() }
+        .accessibilityLabel("Close the note").accessibilityAddTraits(.isButton).accessibilityIdentifier("note-close")
         .accessibilityAction { shell.closeNote() }
       NotesScreen()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .background(Ink.noteYellow.ignoresSafeArea())
     .offset(y: drag)
-  }
-}
-
-/**
- * The iPhone's bar: Chat · Desk · Note in one clear glass pill. The page he is on: full ink on a raised lens; the
- * others a little muted. The Desk's number is the core's (sidebar.badge).
- */
-struct NativeTabPill: View {
-  @EnvironmentObject var shell: AppShell
-  private let wide: CGFloat = 84
-  private var lit: Int { shell.noteOpen ? 2 : shell.tab == .chat ? 0 : 1 }
-  var body: some View {
-    let waiting = shell.view.sidebar.badge
-    HStack(spacing: 8) {
-      if shell.isDemo {
-        Button { shell.leaveDemo() } label: {
-          HStack(spacing: 6) {
-            Image(systemName: "rectangle.portrait.and.arrow.right").font(.system(size: 15, weight: .bold))
-            Text("Leave demo").font(Face.text(14, .bold)).lineLimit(1).fixedSize()
-          }
-          .foregroundStyle(Color(hex: 0x2d2406))
-          .padding(.horizontal, 13).frame(height: 58)
-          .background(Capsule().fill(Ink.yellow))
-          .overlay(Capsule().strokeBorder(Color(hex: 0x2d2406), lineWidth: 1.6))
-          .contentShape(Capsule())
-        }
-        .buttonStyle(.plain).accessibilityLabel("Leave Demo")
-      }
-      HStack(spacing: 0) {
-        item(0, "sketch:bubble", 39, 24, "Chat", id: "tab-chat") { shell.closeNote(); shell.path = []; shell.tab = .chat; shell.show(.desk) }
-        item(1, "sketch:desk", 34, 24, waiting > 0 ? "Desk, \(waiting) waiting" : "Desk", id: "tab-desk", badge: waiting) { shell.closeNote(); shell.path = []; shell.tab = .desk; shell.show(.desk) }
-        item(2, "sidebar:NOTE_ICON", 36, 52, "Note", id: "tab-note") { if shell.noteOpen { shell.closeNote() } else { shell.focus(.notes) } }
-      }
-      .background(alignment: .leading) {
-        Capsule().fill(Ink.tabLens).shadow(color: .black.opacity(0.18), radius: 7, y: 2)
-          .overlay(Capsule().strokeBorder(Ink.fg.opacity(0.08), lineWidth: 0.5))
-          .frame(width: itemWide, height: 50)
-          .offset(x: CGFloat(lit) * itemWide)
-          .allowsHitTesting(false)
-      }
-      .padding(4)
-      .glass(Capsule())
-      .accessibilityElement(children: .contain).accessibilityAddTraits(.isTabBar)
-    }
-    .bottomChrome()
-    .animation(.snappy, value: lit)
-    .padding(.top, 6).padding(.bottom, bottomSink(23))
-  }
-  private var itemWide: CGFloat { shell.isDemo ? 66 : wide }
-  private func item(_ i: Int, _ key: String, _ side: CGFloat, _ box: CGFloat, _ label: String, id: String, badge: UInt32 = 0, tap: @escaping () -> Void) -> some View {
-    let sel = lit == i
-    return Button(action: tap) {
-      Group {
-        if i == 2 { NoteGlyph(color: Ink.fg.opacity(sel ? 1 : 0.6), width: 2.4 * box / side, written: false) }
-        else { PenMark(key, color: Ink.fg.opacity(sel ? 1 : 0.6), width: 2.4 * box / side) }
-      }
-      .frame(width: side, height: side)
-      .frame(width: itemWide, height: 50)
-      .overlay {
-        if badge > 0 {
-          Text("\(badge)").font(Face.text(11, .bold)).foregroundStyle(Ink.bg).padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18).background(Capsule().fill(Ink.fg)).offset(x: 18, y: -13)
-        }
-      }
-      .contentShape(Capsule())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(label).accessibilityIdentifier(id).accessibilityAddTraits(sel ? .isSelected : [])
   }
 }
 
@@ -263,7 +238,7 @@ struct PlacePill: View {
     .accessibilityIdentifier("place-pill")
   }
   private func teamItem(_ team: CoreView.TeamTab) -> some View {
-    Button { shell.closeNote(); shell.tab = .desk; shell.focus(.desk, team: team.id) } label: {
+    Button { shell.pick(.desk); shell.focus(.desk, team: team.id) } label: {
       Label { Text(team.waiting > 0 ? "\(team.name.en) · \(team.waiting)" : team.name.en) } icon: { if team.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: team.waiting > 0) } }
     }
     .accessibilityLabel(team.waiting > 0 ? "\(team.name.en), \(team.waiting) waiting" : team.name.en)
@@ -404,9 +379,9 @@ struct DeskScreen: View {
             Text(empty.en).font(Face.text(15)).foregroundStyle(Ink.muted).multilineTextAlignment(.center)
           }.frame(maxWidth: .infinity).padding(.vertical, 28)
         }
-        if let off = desk.off { OffHint(off: off) }
+        if desk.off != nil || desk.starred != nil { OffHint(off: desk.off, starred: desk.starred) }
       }
-      .padding(.horizontal, 16).padding(.bottom, 120 + (desk.starred != nil ? 54 : 0))
+      .padding(.horizontal, 16).padding(.bottom, 120)
       .frame(maxWidth: 760).frame(maxWidth: .infinity)
     }
     .accessibilityIdentifier("desk-content")
@@ -414,7 +389,6 @@ struct DeskScreen: View {
     .onAppear { speedReport = NativeDemo.ready(rows: desk.rows.count) }
     .refreshable { shell.act(["do": "retry"]) }
     .background(Ink.bg)
-    .overlay(alignment: .bottom) { DeskDock(starred: desk.starred).padding(.bottom, hSize == .regular ? 20 : 84) }
     .modifier(DeskTop(regular: hSize == .regular))
   }
 }
@@ -435,7 +409,13 @@ struct DeskTop: ViewModifier {
         ToolbarItem(placement: .primaryAction) { DeskWays() }
       }
     } else {
-      content.topPills { PlacePill() } trailing: { DeskWays() }
+      content.topPills { PlacePill() } trailing: {
+        HStack(spacing: 10) {
+          DeskWays()
+          Button { shell.focus(.notes) } label: { NoteGlyph(color: Ink.fg, width: 2.2, written: false).frame(width: 22, height: 22).pillCircle() }
+            .buttonStyle(.plain).accessibilityLabel("Note").accessibilityIdentifier("note-open")
+        }
+      }
     }
     #endif
   }
@@ -666,13 +646,24 @@ struct CardWays: View {
  *  whole list. */
 struct OffHint: View {
   @EnvironmentObject var shell: AppShell
-  let off: CoreView.OffHintView
+  let off: CoreView.OffHintView?
+  /** His starred cards: at the head of Off your mind, above the running ones (one design with the web's Desk). */
+  var starred: CoreView.DockView? = nil
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       EndDivider(title: "Off your mind", more: { shell.focus(.off(query: "")) }).padding(.bottom, 4)
-      if !off.running.isEmpty {
+      if let starred, !starred.rows.isEmpty {
         VStack(alignment: .leading, spacing: 2) {
-          ForEach(off.running, id: \.id) { r in running(r) }
+          ForEach(starred.rows, id: \.id) { r in headRow(r, star: true) }
+        }
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(starred.says.en)
+        .accessibilityIdentifier("off-starred")
+      }
+      if let off, !off.running.isEmpty {
+        VStack(alignment: .leading, spacing: 2) {
+          ForEach(off.running, id: \.id) { r in headRow(r, star: false) }
           if let more = off.runningMore {
             Button { shell.focus(.off(query: "")) } label: {
               Text(more.en).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted).frame(minHeight: 32).contentShape(Rectangle())
@@ -683,6 +674,7 @@ struct OffHint: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("off-running")
       }
+      if let off, !off.rows.isEmpty || off.putOff > 0 || off.closed > 0 {
       Button { shell.focus(.off(query: "")) } label: {
         VStack(alignment: .leading, spacing: 4) {
           ForEach(Array(off.rows.enumerated()), id: \.element.id) { i, r in
@@ -697,17 +689,22 @@ struct OffHint: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Off your mind: \(off.says.en)")
+      }
     }.padding(.top, 8)
   }
-  /** A card its agent works on: the agent's drawing in its turning ring, the title, who and what (its status line). */
-  private func running(_ r: CoreView.DockRowView) -> some View {
+  /** A starred card or one its agent works on: the agent's drawing (in its turning ring while it runs), the title
+   *  (a star before a starred one's), who and what (its status line). */
+  private func headRow(_ r: CoreView.DockRowView, star: Bool) -> some View {
     Button { shell.focus(.card(cardId: r.id)) } label: {
       HStack(spacing: 10) {
         AgentMark(from: r.from, size: 18)
           .frame(width: 26, height: 26)
-          .overlay { WorkingRing(working: true, color: Ink.accent).frame(width: 28, height: 28) }
+          .overlay { if r.running { WorkingRing(working: true, color: Ink.accent).frame(width: 28, height: 28) } }
         VStack(alignment: .leading, spacing: 1) {
-          Text(r.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+          HStack(spacing: 5) {
+            if star { StarMark().frame(width: 13, height: 13) }
+            Text(r.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+          }
           Text(r.line.en).font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1)
         }
         Spacer(minLength: 0)
@@ -716,85 +713,9 @@ struct OffHint: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel("\(r.title), \(r.line.en)")
-    .accessibilityIdentifier("off-running-" + r.id)
+    .accessibilityIdentifier((star ? "off-starred-" : "off-running-") + r.id)
   }
 }
-/** The dock at the bottom of the Desk: his starred cards as a small tab; a tap fans them upward. Which card lies
- *  where is the core's (`desk.starred`). The cards still running stand in Off your mind (`OffHint`), not here: a
- *  stack over the Desk was too much in the middle of the room. */
-struct DeskDock: View {
-  @EnvironmentObject var shell: AppShell
-  let starred: CoreView.DockView?
-  @State private var open: String? = nil
-  var body: some View {
-    if let starred {
-      VStack(alignment: .leading, spacing: 4) {
-        if open == "star" { fan(starred) }
-        tab(starred, word: "Starred")
-      }
-      .padding(.horizontal, 8)
-      .frame(maxWidth: 640)
-    }
-  }
-  private func tab(_ dock: CoreView.DockView, word: String) -> some View {
-    let on = open == dock.key
-    return Button { withAnimation(.easeOut(duration: 0.2)) { open = on ? nil : dock.key } } label: {
-      HStack(spacing: 8) {
-        StarMark().frame(width: 15, height: 15)
-        Text(word).font(Face.text(13, .semibold)).foregroundStyle(Ink.fg)
-        Text("\(dock.count)").font(Face.text(11, .bold)).monospacedDigit().foregroundStyle(Ink.bg)
-          .padding(.horizontal, 6).padding(.vertical, 3).frame(minWidth: 18).background(Capsule().fill(Ink.fg))
-      }
-      .padding(.horizontal, 14).frame(height: 36)
-      .background(Capsule().fill(on ? Ink.sunken : Ink.surface))
-      .overlay(Capsule().strokeBorder(Ink.lineStrong, lineWidth: 1))
-      .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
-      .frame(minHeight: 44).contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(dock.says.en)
-  }
-  private func fan(_ dock: CoreView.DockView) -> some View {
-    VStack(alignment: .leading, spacing: 7) {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 7) {
-          ForEach(Array(dock.rows.enumerated()), id: \.element.id) { i, r in
-            Button { open = nil; shell.focus(.card(cardId: r.id)) } label: { mini(r).frame(width: 300) }
-              .buttonStyle(.plain)
-              .rotationEffect(.degrees(i % 2 == 0 ? -1.4 : 1.1)).offset(x: i % 2 == 0 ? 0 : 5)
-              .shadow(color: .black.opacity(0.16), radius: 7, y: 4)
-              .accessibilityLabel(r.title)
-          }
-        }.padding(.horizontal, 10).padding(.vertical, 8)
-      }
-      .frame(maxHeight: 420).fixedSize(horizontal: true, vertical: true)
-      if let all = dock.all {
-        Button { open = nil; shell.focus(.off(query: "")) } label: {
-          HStack(spacing: 5) { Text(all.en).font(Face.text(14, .semibold)); Image(systemName: "arrow.right").font(.system(size: 12, weight: .semibold)) }
-            .foregroundStyle(Ink.fg).padding(.horizontal, 14).frame(minHeight: 36)
-            .background(Capsule().fill(Ink.surface)).overlay(Capsule().strokeBorder(Ink.fg, lineWidth: 1.5))
-            .frame(minHeight: 44).contentShape(Rectangle())
-        }.buttonStyle(.plain).padding(.leading, 10)
-      }
-    }
-    .transition(.move(edge: .bottom).combined(with: .opacity))
-  }
-  private func mini(_ r: CoreView.DockRowView) -> some View {
-    HStack(spacing: 10) {
-      AgentMark(from: r.from, size: 24)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(r.title).font(Face.text(13, .semibold)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.leading)
-        Text(r.line.en).font(Face.text(11)).foregroundStyle(Ink.muted).lineLimit(1)
-      }
-      Spacer(minLength: 0)
-    }
-    .padding(.horizontal, 14).padding(.vertical, 10)
-    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.surface))
-    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.lineStrong, lineWidth: 1))
-    .contentShape(RoundedRectangle(cornerRadius: 12))
-  }
-}
-
 /** The team's goals under the greeting: a quiet line or a few; a tap writes in place; one toggle folds them. */
 struct GoalsDrawing: View {
   @EnvironmentObject var shell: AppShell
