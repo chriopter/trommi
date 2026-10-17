@@ -10,7 +10,7 @@
 //!   "nonce", 12)`. The body is chunks as above; chunk `i` is AES-256-GCM under `key` with the nonce `base` XOR
 //!   `i` (big-endian, in its last 8 bytes) and no AAD. An empty chunk is skipped; a cut chunk fails.
 //!
-//! Checked against the reference JavaScript client in `spec/vectors/ehbp.json`.
+//! Checked against the reference JavaScript client in `core/client/src/dictation/ehbp-vectors.json`.
 
 use hpke_rs::{Hpke, HpkePublicKey, Mode};
 use hpke_rs_crypto::types::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
@@ -159,7 +159,7 @@ mod tests {
     }
 
     fn vectors() -> serde_json::Value {
-        serde_json::from_str(include_str!("../../../../spec/vectors/ehbp.json")).unwrap()
+        serde_json::from_str(include_str!("ehbp-vectors.json")).unwrap()
     }
 
     /// The reference client's sealed request opens with the enclave's private key here: the same suite, info and
