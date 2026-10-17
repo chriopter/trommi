@@ -654,3 +654,17 @@ body > main.opening { grid-column: 1 / -1; grid-row: 1 / -1; display: grid; grid
 .start-line { position: fixed; inset: 0 0 auto 0; height: 2px; z-index: var(--z-band); pointer-events: none; }
 .start-line > i { display: block; height: 100%; width: 0; background: var(--accent); opacity: .8; transition: width var(--d-slow) var(--ease-out); }
 @media (prefers-reduced-motion: reduce) { .start-line > i { transition: none; } }
+/* Dictation on this device: a switch at the row's end, the enclave's state as a dot and the core's line */
+.set-page .set-row.set-switch { grid-template-columns: 30px auto minmax(0, 1fr) 44px; position: relative; }
+.set-switch > input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.set-knob { justify-self: end; width: 40px; height: 24px; border-radius: 12px; background: var(--line-strong); position: relative; transition: background .15s; }
+.set-knob::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--bg, #fff); transition: transform .15s; }
+.set-switch > input:checked ~ .set-knob { background: var(--accent); }
+.set-switch > input:checked ~ .set-knob::after { transform: translateX(16px); }
+.set-switch > input:focus-visible ~ .set-knob { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.set-dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--faint); vertical-align: 1px; }
+.set-dot.is-connected { background: #2e9d5b; }
+.set-dot.is-checking { background: var(--muted); animation: dict-pulse 1.4s ease-in-out infinite; }
+.set-dot.is-failed { background: var(--urg-critical); }
+@keyframes dict-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .set-dot.is-checking { animation: none; } }

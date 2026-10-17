@@ -629,6 +629,14 @@ export interface DictationView {
   text?: DictatedText
   /** While recording: that only the verified enclave hears it. */
   hint?: Text
+  /** Settings: whether this device can dictate at all (a microphone and the verifier, and a room). */
+  available: boolean
+  /** Settings: the person's switch on this device (on unless switched off). */
+  on: boolean
+  /** Settings: the dot beside the row: `connected` (green), `checking`, `failed` (red), `off` or `unknown` (grey). */
+  status_kind: string
+  /** Settings: the row's sentence ("Connected · sealed"). */
+  status?: Text
 }
 
 /** Words a dictation brought, to go into the chat field once. */

@@ -74,6 +74,9 @@ const INVITE_REQUESTS_MAX: usize = 64;
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Pending {
     DeviceLoad,
+    /// Whether dictation is on here, read from the cache space; written when switched.
+    DictationRead,
+    DictationWrite,
     DepartureLoad,
     DepartureSave(String),
     DepartureHttp(String, crate::hub::Expect),
@@ -937,6 +940,8 @@ impl App {
                 // (a cache entry that stays is only a cache entry: the hub no longer serves the file)
                 Some(Pending::CacheDelete) => {}
                 Some(Pending::SeenRead) => self.seen_read(&result),
+                Some(Pending::DictationRead) => self.dictation_read(&result),
+                Some(Pending::DictationWrite) => {}
                 Some(Pending::SeenWrite) => self.seen_written(id, &result, &mut out),
                 Some(Pending::DepartureLoad | Pending::DepartureSave(_) | Pending::DepartureHttp(_, _) | Pending::DepartureDelete(_)) => {}
                 None if self.cache.is_some() && self.cached(now_ms, id, &result, &mut out) => {}
@@ -1039,6 +1044,9 @@ impl App {
                 let desk = matches!(focus.screen, Screen::Desk) && !focus.desk_all;
                 self.lens.thumbs = matches!(focus.screen, Screen::Settings { .. }) || desk;
                 self.lens.thumbs_desk = desk;
+                if matches!(focus.screen, Screen::Settings { .. }) {
+                    self.dictation_check(now_ms, &mut out);
+                }
                 self.scribble.thumbs = self.lens.thumbs;
                 if self.lens.thumbs && !self.demo {
                     let only = desk.then(|| self.team_in_view(focus.team.as_deref())).flatten();
@@ -1683,6 +1691,7 @@ impl App {
                 self.cache = Some(crate::cache::Keeper::open(&room, &device, revision, &mut self.next_id, out));
                 if !again {
                     self.seen_open(&room, out);
+                    self.dictation_open(&room, out);
                 }
                 self.engine = Some(engine);
                 self.next_view.phase = Phase::Opening;

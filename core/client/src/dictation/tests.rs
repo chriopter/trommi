@@ -46,7 +46,7 @@ fn sends(out: &[Do]) -> Vec<&crate::hub::stt::SttSealed> {
 }
 
 fn state(d: &Dictation) -> String {
-    d.view(true).state
+    d.view(true, 0).state
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn a_dictation_from_tap_to_words() {
     assert_eq!(d.start(1_000, "s1"), vec![Do::Record { max_ms: MAX_MS }, Do::FetchBundle]);
     assert_eq!(state(&d), "starting");
     d.recording(1_100);
-    let v = d.view(true);
+    let v = d.view(true, 0);
     assert_eq!((v.state.as_str(), v.since_ms), ("recording", 1_100));
     assert!(v.hint.is_some());
     // the bundle is checked while the person speaks
@@ -80,7 +80,7 @@ fn a_dictation_from_tap_to_words() {
     assert!(form.contains("name=\"language\"\r\n\r\nde"));
     assert!(form.contains("RIFF"));
     assert!(d.sent(answer).is_empty());
-    let v = d.view(true);
+    let v = d.view(true, 0);
     assert_eq!(v.state, "done");
     let text = v.text.unwrap();
     assert_eq!(text.text, "Hallo Welt.");
@@ -109,7 +109,7 @@ fn a_failed_attestation_sends_nothing() {
             out.extend(d.attested(4_000, None));
         }
         assert!(sends(&out).is_empty());
-        let v = d.view(true);
+        let v = d.view(true, 0);
         assert_eq!(v.state, "failed");
         assert_eq!(v.problem.unwrap().key, "dictate.not_verified");
         // and the next dictation checks again
@@ -127,7 +127,7 @@ fn a_failed_attestation_sends_nothing() {
     out.extend(d.stop());
     out.extend(d.recorded(wav(), 3_000));
     assert!(sends(&out).is_empty());
-    assert_eq!(d.view(true).problem.unwrap().key, "dictate.not_verified");
+    assert_eq!(d.view(true, 0).problem.unwrap().key, "dictate.not_verified");
     // no bundle (offline): nothing sent either
     let mut d = Dictation::default();
     d.start(0, "s1");
@@ -136,7 +136,7 @@ fn a_failed_attestation_sends_nothing() {
     out.extend(d.stop());
     out.extend(d.recorded(wav(), 3_000));
     assert!(sends(&out).is_empty());
-    assert_eq!(d.view(true).problem.unwrap().key, "dictate.offline");
+    assert_eq!(d.view(true, 0).problem.unwrap().key, "dictate.offline");
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn the_fallback_model_once_then_failed() {
     assert_eq!(second.model, "whisper-large-v3-turbo");
     assert_ne!(first.encapsulated_key, second.encapsulated_key, "sealed anew");
     assert!(d.sent(Sent::Upstream).is_empty());
-    assert_eq!(d.view(true).problem.unwrap().key, "dictate.failed");
+    assert_eq!(d.view(true, 0).problem.unwrap().key, "dictate.failed");
 }
 
 #[test]
@@ -172,15 +172,15 @@ fn answers_that_do_not_open_or_hold_no_words() {
         d
     };
     let d = run(&|s| enclave.answer(s, r#"{"text":"   "}"#).1);
-    assert_eq!(d.view(true).problem.unwrap().key, "dictate.nothing_heard");
+    assert_eq!(d.view(true, 0).problem.unwrap().key, "dictate.nothing_heard");
     let mut d = run(&|_| Sent::Answered { nonce: "00".repeat(32), body: vec![0, 0, 0, 2, 1, 2] });
-    assert_eq!(d.view(true).problem.unwrap().key, "dictate.failed");
+    assert_eq!(d.view(true, 0).problem.unwrap().key, "dictate.failed");
     // (the enclave is checked again)
     assert!(d.start(10, "s1").contains(&Do::FetchBundle));
     let d = run(&|_| Sent::TooMany);
-    assert_eq!(d.view(true).problem.unwrap().key, "dictate.too_many");
+    assert_eq!(d.view(true, 0).problem.unwrap().key, "dictate.too_many");
     let d = run(&|_| Sent::Off);
-    assert_eq!(d.view(true).problem.unwrap().key, "dictate.off");
+    assert_eq!(d.view(true, 0).problem.unwrap().key, "dictate.off");
 }
 
 #[test]
@@ -188,21 +188,21 @@ fn short_long_refused_cancelled_and_the_clock() {
     let mut d = Dictation::default();
     d.start(0, "s1");
     d.mic_refused();
-    assert_eq!(d.view(true).problem.unwrap().key, "dictate.no_mic");
+    assert_eq!(d.view(true, 0).problem.unwrap().key, "dictate.no_mic");
 
     let mut d = Dictation::default();
     d.start(0, "s1");
     d.recording(0);
     d.stop();
     assert!(d.recorded(wav(), 200).is_empty());
-    assert_eq!(d.view(true).problem.unwrap().key, "dictate.too_short");
+    assert_eq!(d.view(true, 0).problem.unwrap().key, "dictate.too_short");
 
     let mut d = Dictation::default();
     d.start(0, "s1");
     d.recording(0);
     d.stop();
     assert!(d.recorded(vec![0; MAX_AUDIO + 1], 200_000).is_empty());
-    assert_eq!(d.view(true).problem.unwrap().key, "dictate.too_long");
+    assert_eq!(d.view(true, 0).problem.unwrap().key, "dictate.too_long");
 
     let mut d = Dictation::default();
     d.start(0, "s1");
@@ -219,7 +219,7 @@ fn short_long_refused_cancelled_and_the_clock() {
     d.start(0, "s1");
     assert!(d.start(1, "s1").is_empty());
     // without the ability: off
-    assert_eq!(d.view(false).state, "off");
+    assert_eq!(d.view(false, 0).state, "off");
 }
 
 #[test]
@@ -244,8 +244,44 @@ fn a_late_recording_does_not_enter_a_new_one() {
     d.start(10, "s2");
     d.recording(11);
     assert!(d.recorded(wav(), 4_000).is_empty(), "a recording while the new one runs is a late one");
-    assert_eq!(d.view(true).state, "recording");
-    assert_eq!(d.view(true).session, "s2");
+    assert_eq!(d.view(true, 0).state, "recording");
+    assert_eq!(d.view(true, 0).session, "s2");
     d.cancel();
-    assert_eq!(d.view(true).session, "", "idle belongs to no chat");
+    assert_eq!(d.view(true, 0).session, "", "idle belongs to no chat");
+}
+
+/// Settings: switched off nothing starts; the check shows the enclave's state; on again it is checked.
+#[test]
+fn the_switch_and_the_status() {
+    let enclave = Enclave::new();
+    let mut d = Dictation::default();
+    assert_eq!(d.view(true, 0).status_kind, "unknown");
+    assert_eq!(d.view(false, 0).status.unwrap().key, "dictate.status.unavailable");
+    assert_eq!(d.check(0), vec![Do::FetchBundle]);
+    assert_eq!(d.view(true, 0).status_kind, "checking");
+    assert!(d.check(1).is_empty(), "one check at a time");
+    d.bundle(b"{}".to_vec());
+    d.attested(5, Some(enclave.attested()));
+    let v = d.view(true, 10);
+    assert_eq!((v.status_kind.as_str(), v.status.unwrap().en.as_str()), ("connected", "Connected · sealed"));
+    assert_eq!(d.view(true, 5 + ATTESTED_FOR_MS).status_kind, "unknown", "checked too long ago");
+    // off: no microphone, no check, a running dictation ends
+    d.start(20, "s1");
+    assert_eq!(d.set_on(false), vec![Do::Drop]);
+    let v = d.view(true, 30);
+    assert_eq!((v.state.as_str(), v.on, v.status_kind.as_str()), ("off", false, "off"));
+    assert!(d.start(40, "s1").is_empty());
+    assert!(d.check(ATTESTED_FOR_MS * 2).is_empty());
+    d.set_on(true);
+    assert_eq!(d.view(true, 50).state, "idle");
+    // a failed check shows red
+    let mut d = Dictation::default();
+    d.check(0);
+    d.bundle(b"{}".to_vec());
+    d.attested(1, None);
+    assert_eq!(d.view(true, 2).status_kind, "failed");
+    let mut d = Dictation::default();
+    d.check(0);
+    d.bundle_failed(Problem::Off);
+    assert_eq!(d.view(true, 2).status.unwrap().key, "dictate.status.hub_off");
 }

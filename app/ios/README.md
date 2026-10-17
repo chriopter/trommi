@@ -14,11 +14,13 @@ the share sheet. There is no second Swift account, sync or board implementation.
 | `TrommiApp/Sources/TrommiApp/NativeServices.swift` | APNs, local notifications, extension context and encrypted read-ahead pages |
 | `TrommiApp/Sources/TrommiApp/NativeLive.swift` | ActivityKit I/O and drawing the core's ordered waiting cards and counts |
 | `TrommiApp/Sources/TrommiApp/NativeShare.swift` | The App Group's sealed inbox and recipient snapshot; imports go to the core |
+| `TrommiApp/Sources/TrommiApp/NativeDictation.swift` | Sealed dictation's platform part: the microphone (16 kHz WAV) and Tinfoil's verifier in a hidden web view |
 | `TrommiApp/Sources/TrommiApp/NativeDemo.swift` | Bundle I/O and demo navigation; AppCore runs the fixture without a device store |
 | `TrommiClient/Sources/TrommiShell/` | Product/module `TrommiClient`: the serialized native executor and platform storage |
 | `TrommiClient/Sources/ShareInbox/` | Share Extension's encrypted local inbox, intake and App Group access |
 | `TrommiClient/Sources/PushNotify/` | Read-only notification/widget payloads, private key-copy storage and extension I/O |
 | `TrommiClient/Sources/NotifyCoreLive/` | The notification/widget extension's narrow calls into the Rust binding |
+| `dev/verifier.mjs` | Writes `Resources/tinfoil-verifier.js` from the web's vendored verifier; `--check` in CI |
 | `dev/pen.mjs` | Writes the faces of `Resources/pen.json` from the web's pen (`app/web/public/ui.mjs`); `--check` in CI |
 | `TrommiApp/AppStore/` | XcodeGen project, entitlements, metadata, screenshots and shipping tools |
 | `../../core/bindings/swift/` | UniFFI facade, generated Swift types/fold, static libraries and a proof app |

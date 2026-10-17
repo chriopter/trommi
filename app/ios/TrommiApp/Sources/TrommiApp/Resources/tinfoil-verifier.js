@@ -1,0 +1,5128 @@
+// Written by app/ios/dev/verifier.mjs from app/web/core/tinfoil-verifier.mjs (Tinfoil's verifier, Apache-2.0 and MIT:
+// app/web/THIRD-PARTY.md) and app/web/core/webkit-gunzip.mjs. Do not edit.
+var TinfoilVerifier = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // <stdin>
+  var stdin_exports = {};
+  __export(stdin_exports, {
+    Verifier: () => ki
+  });
+
+  // app/web/core/webkit-gunzip.mjs
+  function fixDecompression() {
+    const DS = globalThis.DecompressionStream;
+    if (!DS || DS.trommiWrapped) return;
+    class Wrapped {
+      constructor(format) {
+        const ds2 = new DS(format), writer = ds2.writable.getWriter();
+        const copy = (c) => new Uint8Array(ArrayBuffer.isView(c) ? c.buffer.slice(c.byteOffset, c.byteOffset + c.byteLength) : c);
+        this.writable = new WritableStream({ write: (c) => writer.write(copy(c)), close: () => writer.close(), abort: (r) => writer.abort(r) });
+        this.readable = ds2.readable;
+      }
+    }
+    Wrapped.trommiWrapped = true;
+    globalThis.DecompressionStream = Wrapped;
+  }
+
+  // app/web/core/tinfoil-verifier.mjs
+  var Dc = Object.defineProperty;
+  var T = (e2, t, r) => () => {
+    if (r) throw r[0];
+    try {
+      return e2 && (t = e2(e2 = 0)), t;
+    } catch (n) {
+      throw r = [n], n;
+    }
+  };
+  var xn = (e2, t) => {
+    for (var r in t) Dc(e2, r, { get: t[r], enumerable: true });
+  };
+  var ut;
+  var ee;
+  var Nr = T(() => {
+    ut = class extends Error {
+    }, ee = class extends Error {
+    };
+  });
+  var pe;
+  var Li;
+  var An;
+  var Zi = T(() => {
+    Nr();
+    pe = { BOOLEAN: 1, INTEGER: 2, BIT_STRING: 3, OCTET_STRING: 4, OBJECT_IDENTIFIER: 6, SEQUENCE: 16, SET: 17, PRINTABLE_STRING: 19, UTC_TIME: 23, GENERALIZED_TIME: 24 }, Li = { UNIVERSAL: 0, APPLICATION: 1, CONTEXT_SPECIFIC: 2, PRIVATE: 3 }, An = class {
+      constructor(t) {
+        if (this.number = t & 31, this.constructed = (t & 32) === 32, this.class = t >> 6, this.number === 31) throw new ut("long form tags not supported");
+        if (this.class === Li.UNIVERSAL && this.number === 0) throw new ut("unsupported tag 0x00");
+      }
+      isUniversal() {
+        return this.class === Li.UNIVERSAL;
+      }
+      isContextSpecific(t) {
+        let r = this.class === Li.CONTEXT_SPECIFIC;
+        return t !== void 0 ? r && this.number === t : r;
+      }
+      isBoolean() {
+        return this.isUniversal() && this.number === pe.BOOLEAN;
+      }
+      isInteger() {
+        return this.isUniversal() && this.number === pe.INTEGER;
+      }
+      isBitString() {
+        return this.isUniversal() && this.number === pe.BIT_STRING;
+      }
+      isOctetString() {
+        return this.isUniversal() && this.number === pe.OCTET_STRING;
+      }
+      isOID() {
+        return this.isUniversal() && this.number === pe.OBJECT_IDENTIFIER;
+      }
+      isUTCTime() {
+        return this.isUniversal() && this.number === pe.UTC_TIME;
+      }
+      isGeneralizedTime() {
+        return this.isUniversal() && this.number === pe.GENERALIZED_TIME;
+      }
+      toDER() {
+        return this.number | (this.constructed ? 32 : 0) | this.class << 6;
+      }
+    };
+  });
+  function io(e2) {
+    let t = e2.getUint8();
+    if ((t & 128) === 0) return t;
+    let r = t & 127;
+    if (r > 6) throw new ut("length exceeds 6 byte limit");
+    let n = 0;
+    for (let i = 0; i < r; i++) {
+      let s = e2.getUint8();
+      if (i === 0 && s === 0) throw new ut("non-minimal length encoding");
+      n = n * 256 + s;
+    }
+    if (r === 1 && n < 128) throw new ut("non-minimal length encoding");
+    if (n === 0) throw new ut("indefinite length encoding not supported");
+    return n;
+  }
+  function so(e2) {
+    if (e2 < 128) return new Uint8Array([e2]);
+    let t = BigInt(e2), r = [];
+    for (; t > 0n; ) r.unshift(Number(t & 255n)), t = t >> 8n;
+    return new Uint8Array([128 | r.length, ...r]);
+  }
+  var Yi = T(() => {
+    Nr();
+  });
+  function O(e2) {
+    let t = atob(e2), r = t.length, n = new Uint8Array(r);
+    for (let i = 0; i < r; i++) n[i] = t.charCodeAt(i);
+    return n;
+  }
+  function vn(e2) {
+    let t = e2.replace(/-/g, "+").replace(/_/g, "/");
+    for (; t.length % 4 !== 0; ) t += "=";
+    return O(t);
+  }
+  function De(e2) {
+    let t = "";
+    for (let r = 0; r < e2.length; r++) t += String.fromCharCode(e2[r]);
+    return btoa(t);
+  }
+  function Tt(e2) {
+    if (e2.length % 2 !== 0) throw new Error("Hex string must have an even length");
+    let t = e2.length / 2, r = new Uint8Array(t);
+    for (let n = 0; n < t; n++) r[n] = parseInt(e2.slice(n * 2, n * 2 + 2), 16);
+    return r;
+  }
+  function Mt(e2) {
+    let t = "";
+    for (let r = 0; r < e2.length; r++) {
+      let n = e2[r].toString(16);
+      n.length === 1 && (n = "0" + n), t += n;
+    }
+    return t;
+  }
+  function we(e2) {
+    return new TextEncoder().encode(e2);
+  }
+  function rt(e2) {
+    return new TextDecoder("utf-8").decode(e2);
+  }
+  function oo(e2, t) {
+    t === void 0 && (t = 0);
+    let r = Mt(e2.slice(t, t + 8));
+    return BigInt(`0x${r}`);
+  }
+  function Tn(e2) {
+    return rt(O(e2));
+  }
+  function _(e2, t) {
+    if (e2.byteLength !== t.byteLength) return false;
+    let r = 0;
+    for (let n = 0; n < e2.byteLength; n++) r |= e2[n] ^ t[n];
+    return r === 0;
+  }
+  var Cr = T(() => {
+  });
+  function ao(e2) {
+    let t = e2.length;
+    if (t === 0 || t > 1 && (e2[0] === 0 && e2[1] < 128 || e2[0] === 255 && e2[1] >= 128)) throw new Error("non-minimal integer encoding");
+    let r = BigInt(e2[0] > 127 ? e2[0] - 256 : e2[0]);
+    for (let n = 1; n < t; ++n) r = r * 256n + BigInt(e2[n]);
+    return r;
+  }
+  function Hc(e2) {
+    return rt(e2);
+  }
+  function Gi(e2, t) {
+    let r = Hc(e2), n = t ? jc.exec(r) : kc.exec(r);
+    if (!n) throw new Error("invalid time");
+    if (t) {
+      let i = Number(n[1]);
+      i += i >= 50 ? 1900 : 2e3, n[1] = i.toString();
+    }
+    return /* @__PURE__ */ new Date(`${n[1]}-${n[2]}-${n[3]}T${n[4]}:${n[5]}:${n[6]}Z`);
+  }
+  function co(e2) {
+    let t = 0, r = e2.length, n = e2[t++], i = Math.floor(n / 40), s = n % 40, o = `${i}.${s}`, c = 0;
+    for (; t < r; ++t) n = e2[t], c = (c << 7) + (n & 127), (n & 128) === 0 && (o += `.${c}`, c = 0);
+    return o;
+  }
+  function fo(e2) {
+    if (e2.length !== 1 || e2[0] !== 0 && e2[0] !== 255) throw new Error("invalid boolean encoding");
+    return e2[0] === 255;
+  }
+  function lo(e2) {
+    let t = e2[0], r = 1, n = e2.length, i = [];
+    for (let s = r; s < n; ++s) {
+      let o = e2[s], c = s === n - 1 ? t : 0;
+      for (let a = 7; a >= c; --a) i.push(o >> a & 1);
+    }
+    return i;
+  }
+  var jc;
+  var kc;
+  var Ki = T(() => {
+    Cr();
+    jc = /^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\.\d{3})?Z$/, kc = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\.\d{3})?Z$/;
+  });
+  var Wi;
+  var Et;
+  var Fi = T(() => {
+    Wi = class extends Error {
+    }, Et = class e2 {
+      constructor(t) {
+        this.start = 0, this.view = t ?? new Uint8Array(0);
+      }
+      get buffer() {
+        return this.view.subarray(0, this.start);
+      }
+      get length() {
+        return this.view.byteLength;
+      }
+      get position() {
+        return this.start;
+      }
+      seek(t) {
+        this.start = t;
+      }
+      slice(t, r) {
+        let n = t + r;
+        if (n > this.length) throw new Wi("request past end of buffer");
+        return this.view.subarray(t, n);
+      }
+      appendChar(t) {
+        this.ensureCapacity(1), this.view[this.start] = t, this.start += 1;
+      }
+      appendUint16(t) {
+        this.ensureCapacity(2);
+        let r = new Uint16Array([t]), n = new Uint8Array(r.buffer);
+        this.view[this.start] = n[1], this.view[this.start + 1] = n[0], this.start += 2;
+      }
+      appendUint24(t) {
+        this.ensureCapacity(3);
+        let r = new Uint32Array([t]), n = new Uint8Array(r.buffer);
+        this.view[this.start] = n[2], this.view[this.start + 1] = n[1], this.view[this.start + 2] = n[0], this.start += 3;
+      }
+      appendView(t) {
+        this.ensureCapacity(t.length), this.view.set(t, this.start), this.start += t.length;
+      }
+      getBlock(t) {
+        if (t <= 0) return new Uint8Array(0);
+        if (this.start + t > this.view.length) throw new Error("request past end of buffer");
+        let r = this.view.subarray(this.start, this.start + t);
+        return this.start += t, r;
+      }
+      getUint8() {
+        return this.getBlock(1)[0];
+      }
+      getUint16() {
+        let t = this.getBlock(2);
+        return t[0] << 8 | t[1];
+      }
+      ensureCapacity(t) {
+        if (this.start + t > this.view.byteLength) {
+          let r = e2.BLOCK_SIZE + (t > e2.BLOCK_SIZE ? t : 0);
+          this.realloc(this.view.byteLength + r);
+        }
+      }
+      realloc(t) {
+        let r = new Uint8Array(t);
+        r.set(this.view), this.view = r;
+      }
+    };
+    Et.BLOCK_SIZE = 1024;
+  });
+  function ho(e2, t) {
+    if (t > Lc) throw new ut("nesting too deep");
+    let r = new An(e2.getUint8()), n = io(e2), i = e2.slice(e2.position, n), s = e2.position, o = [];
+    if (r.constructed) o = uo(e2, n, t + 1);
+    else if (r.isOctetString()) try {
+      o = uo(e2, n, t + 1);
+    } catch {
+    }
+    return o.length === 0 && e2.seek(s + n), new ht(r, i, o);
+  }
+  function uo(e2, t, r) {
+    let n = e2.position + t;
+    if (n > e2.length) throw new ut("invalid length");
+    let i = [];
+    for (; e2.position < n; ) i.push(ho(e2, r));
+    if (e2.position !== n) throw new ut("invalid length");
+    return i;
+  }
+  var ht;
+  var Lc;
+  var zi = T(() => {
+    Fi();
+    Nr();
+    Yi();
+    Ki();
+    Zi();
+    ht = class {
+      constructor(t, r, n) {
+        this.tag = t, this.value = r, this.subs = n;
+      }
+      static parseBuffer(t) {
+        let r = new Et(t), n = ho(r, 0);
+        if (r.position !== t.length) throw new ut("trailing bytes after ASN.1 object");
+        return n;
+      }
+      toDER() {
+        let t = new Et();
+        if (this.subs.length > 0) for (let i of this.subs) t.appendView(i.toDER());
+        else t.appendView(this.value);
+        let r = t.buffer, n = new Et();
+        return n.appendChar(this.tag.toDER()), n.appendView(so(r.length)), n.appendView(r), n.buffer;
+      }
+      toBoolean() {
+        if (!this.tag.isBoolean()) throw new ee("not a boolean");
+        return fo(this.value);
+      }
+      toInteger() {
+        if (!this.tag.isInteger()) throw new ee("not an integer");
+        return ao(this.value);
+      }
+      toOID() {
+        if (!this.tag.isOID()) throw new ee("not an OID");
+        return co(this.value);
+      }
+      toDate() {
+        switch (true) {
+          case this.tag.isUTCTime():
+            return Gi(this.value, true);
+          case this.tag.isGeneralizedTime():
+            return Gi(this.value, false);
+          default:
+            throw new ee("not a date");
+        }
+      }
+      toBitString() {
+        if (!this.tag.isBitString()) throw new ee("not a bit string");
+        return lo(this.value);
+      }
+    }, Lc = 32;
+  });
+  function Bn(e2) {
+    let t = "";
+    return e2.split(`
+`).forEach((r) => {
+      r.match(Zc) || r.match(Yc) || (t += r);
+    }), O(t);
+  }
+  var Zc;
+  var Yc;
+  var Pi = T(() => {
+    Cr();
+    Zc = /-----BEGIN (.*)-----/, Yc = /-----END (.*)-----/;
+  });
+  function go(e2) {
+    return '"' + e2.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+  }
+  function ye(e2) {
+    let t = [];
+    if (typeof e2 == "string") t.push(go(e2));
+    else if (typeof e2 == "boolean") t.push(JSON.stringify(e2));
+    else if (Number.isInteger(e2)) t.push(JSON.stringify(e2));
+    else if (e2 === null) t.push(JSON.stringify(e2));
+    else if (Array.isArray(e2)) {
+      t.push("[");
+      let r = true;
+      e2.forEach((n) => {
+        r || t.push(","), r = false, t.push(ye(n));
+      }), t.push("]");
+    } else if (typeof e2 == "object") {
+      t.push("{");
+      let r = true;
+      Object.keys(e2).sort().forEach((n) => {
+        r || t.push(","), r = false, t.push(go(n)), t.push(":"), t.push(ye(e2[n]));
+      }), t.push("}");
+    } else throw new TypeError("cannot encode " + e2);
+    return t.join("");
+  }
+  var mo = T(() => {
+  });
+  var po = T(() => {
+    zi();
+  });
+  var nt;
+  var It;
+  var j;
+  var re;
+  var Rr;
+  var Xi = T(() => {
+    (function(e2) {
+      e2.Ecdsa = "ECDSA", e2.Ed25519 = "Ed25519", e2.RSA = "RSA";
+    })(nt || (nt = {}));
+    (function(e2) {
+      e2.P256 = "P-256", e2.P384 = "P-384", e2.P521 = "P-521";
+    })(It || (It = {}));
+    (function(e2) {
+      e2.SHA256 = "SHA-256", e2.SHA384 = "SHA-384", e2.SHA512 = "SHA-512";
+    })(j || (j = {}));
+    (function(e2) {
+      e2.PKCS1v15 = "RSASSA-PKCS1-v1_5", e2.PSS = "RSA-PSS";
+    })(re || (re = {}));
+    (function(e2) {
+      e2.PKCS1 = "PKCS1", e2.RSAPKCS1 = "RSAPKCS1";
+    })(Rr || (Rr = {}));
+  });
+  var Ee;
+  var wo = T(() => {
+    Ee = typeof globalThis == "object" && "crypto" in globalThis ? globalThis.crypto : void 0;
+  });
+  function kt(e2) {
+    return e2 instanceof Uint8Array || ArrayBuffer.isView(e2) && e2.constructor.name === "Uint8Array";
+  }
+  function Dr(e2) {
+    if (!Number.isSafeInteger(e2) || e2 < 0) throw new Error("positive integer expected, got " + e2);
+  }
+  function xt(e2, ...t) {
+    if (!kt(e2)) throw new Error("Uint8Array expected");
+    if (t.length > 0 && !t.includes(e2.length)) throw new Error("Uint8Array expected of length " + t + ", got length=" + e2.length);
+  }
+  function Nn(e2) {
+    if (typeof e2 != "function" || typeof e2.create != "function") throw new Error("Hash should be wrapped by utils.createHasher");
+    Dr(e2.outputLen), Dr(e2.blockLen);
+  }
+  function Me(e2, t = true) {
+    if (e2.destroyed) throw new Error("Hash instance has been destroyed");
+    if (t && e2.finished) throw new Error("Hash#digest() has already been called");
+  }
+  function Eo(e2, t) {
+    xt(e2);
+    let r = t.outputLen;
+    if (e2.length < r) throw new Error("digestInto() expects output buffer of length at least " + r);
+  }
+  function Ht(...e2) {
+    for (let t = 0; t < e2.length; t++) e2[t].fill(0);
+  }
+  function Cn(e2) {
+    return new DataView(e2.buffer, e2.byteOffset, e2.byteLength);
+  }
+  function Ct(e2, t) {
+    return e2 << 32 - t | e2 >>> t;
+  }
+  function Bt(e2) {
+    if (xt(e2), Io) return e2.toHex();
+    let t = "";
+    for (let r = 0; r < e2.length; r++) t += Gc[e2[r]];
+    return t;
+  }
+  function yo(e2) {
+    if (e2 >= jt._0 && e2 <= jt._9) return e2 - jt._0;
+    if (e2 >= jt.A && e2 <= jt.F) return e2 - (jt.A - 10);
+    if (e2 >= jt.a && e2 <= jt.f) return e2 - (jt.a - 10);
+  }
+  function Ie(e2) {
+    if (typeof e2 != "string") throw new Error("hex string expected, got " + typeof e2);
+    if (Io) return Uint8Array.fromHex(e2);
+    let t = e2.length, r = t / 2;
+    if (t % 2) throw new Error("hex string expected, got unpadded hex of length " + t);
+    let n = new Uint8Array(r);
+    for (let i = 0, s = 0; i < r; i++, s += 2) {
+      let o = yo(e2.charCodeAt(s)), c = yo(e2.charCodeAt(s + 1));
+      if (o === void 0 || c === void 0) {
+        let a = e2[s] + e2[s + 1];
+        throw new Error('hex string expected, got non-hex character "' + a + '" at index ' + s);
+      }
+      n[i] = o * 16 + c;
+    }
+    return n;
+  }
+  function Qi(e2) {
+    if (typeof e2 != "string") throw new Error("string expected");
+    return new Uint8Array(new TextEncoder().encode(e2));
+  }
+  function Or(e2) {
+    return typeof e2 == "string" && (e2 = Qi(e2)), xt(e2), e2;
+  }
+  function dt(...e2) {
+    let t = 0;
+    for (let n = 0; n < e2.length; n++) {
+      let i = e2[n];
+      xt(i), t += i.length;
+    }
+    let r = new Uint8Array(t);
+    for (let n = 0, i = 0; n < e2.length; n++) {
+      let s = e2[n];
+      r.set(s, i), i += s.length;
+    }
+    return r;
+  }
+  function Rn(e2) {
+    let t = (n) => e2().update(Or(n)).digest(), r = e2();
+    return t.outputLen = r.outputLen, t.blockLen = r.blockLen, t.create = () => e2(), t;
+  }
+  function Ue(e2 = 32) {
+    if (Ee && typeof Ee.getRandomValues == "function") return Ee.getRandomValues(new Uint8Array(e2));
+    if (Ee && typeof Ee.randomBytes == "function") return Uint8Array.from(Ee.randomBytes(e2));
+    throw new Error("crypto.getRandomValues must be defined");
+  }
+  var Io;
+  var Gc;
+  var jt;
+  var Oe;
+  var ne = T(() => {
+    wo();
+    Io = typeof Uint8Array.from([]).toHex == "function" && typeof Uint8Array.fromHex == "function", Gc = Array.from({ length: 256 }, (e2, t) => t.toString(16).padStart(2, "0"));
+    jt = { _0: 48, _9: 57, A: 65, F: 70, a: 97, f: 102 };
+    Oe = class {
+    };
+  });
+  function Kc(e2, t, r, n) {
+    if (typeof e2.setBigUint64 == "function") return e2.setBigUint64(t, r, n);
+    let i = BigInt(32), s = BigInt(4294967295), o = Number(r >> i & s), c = Number(r & s), a = n ? 4 : 0, f = n ? 0 : 4;
+    e2.setUint32(t + a, o, n), e2.setUint32(t + f, c, n);
+  }
+  function xo(e2, t, r) {
+    return e2 & t ^ ~e2 & r;
+  }
+  function bo(e2, t, r) {
+    return e2 & t ^ e2 & r ^ t & r;
+  }
+  var Mr;
+  var Lt;
+  var ot;
+  var at;
+  var So = T(() => {
+    ne();
+    Mr = class extends Oe {
+      constructor(t, r, n, i) {
+        super(), this.finished = false, this.length = 0, this.pos = 0, this.destroyed = false, this.blockLen = t, this.outputLen = r, this.padOffset = n, this.isLE = i, this.buffer = new Uint8Array(t), this.view = Cn(this.buffer);
+      }
+      update(t) {
+        Me(this), t = Or(t), xt(t);
+        let { view: r, buffer: n, blockLen: i } = this, s = t.length;
+        for (let o = 0; o < s; ) {
+          let c = Math.min(i - this.pos, s - o);
+          if (c === i) {
+            let a = Cn(t);
+            for (; i <= s - o; o += i) this.process(a, o);
+            continue;
+          }
+          n.set(t.subarray(o, o + c), this.pos), this.pos += c, o += c, this.pos === i && (this.process(r, 0), this.pos = 0);
+        }
+        return this.length += t.length, this.roundClean(), this;
+      }
+      digestInto(t) {
+        Me(this), Eo(t, this), this.finished = true;
+        let { buffer: r, view: n, blockLen: i, isLE: s } = this, { pos: o } = this;
+        r[o++] = 128, Ht(this.buffer.subarray(o)), this.padOffset > i - o && (this.process(n, 0), o = 0);
+        for (let g = o; g < i; g++) r[g] = 0;
+        Kc(n, i - 8, BigInt(this.length * 8), s), this.process(n, 0);
+        let c = Cn(t), a = this.outputLen;
+        if (a % 4) throw new Error("_sha2: outputLen should be aligned to 32bit");
+        let f = a / 4, d = this.get();
+        if (f > d.length) throw new Error("_sha2: outputLen bigger than state");
+        for (let g = 0; g < f; g++) c.setUint32(4 * g, d[g], s);
+      }
+      digest() {
+        let { buffer: t, outputLen: r } = this;
+        this.digestInto(t);
+        let n = t.slice(0, r);
+        return this.destroy(), n;
+      }
+      _cloneInto(t) {
+        t || (t = new this.constructor()), t.set(...this.get());
+        let { blockLen: r, buffer: n, length: i, finished: s, destroyed: o, pos: c } = this;
+        return t.destroyed = o, t.finished = s, t.length = i, t.pos = c, i % r && t.buffer.set(n), t;
+      }
+      clone() {
+        return this._cloneInto();
+      }
+    }, Lt = Uint32Array.from([1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225]), ot = Uint32Array.from([3418070365, 3238371032, 1654270250, 914150663, 2438529370, 812702999, 355462360, 4144912697, 1731405415, 4290775857, 2394180231, 1750603025, 3675008525, 1694076839, 1203062813, 3204075428]), at = Uint32Array.from([1779033703, 4089235720, 3144134277, 2227873595, 1013904242, 4271175723, 2773480762, 1595750129, 1359893119, 2917565137, 2600822924, 725511199, 528734635, 4215389547, 1541459225, 327033209]);
+  });
+  function Wc(e2, t = false) {
+    return t ? { h: Number(e2 & Dn), l: Number(e2 >> Ao & Dn) } : { h: Number(e2 >> Ao & Dn) | 0, l: Number(e2 & Dn) | 0 };
+  }
+  function vo(e2, t = false) {
+    let r = e2.length, n = new Uint32Array(r), i = new Uint32Array(r);
+    for (let s = 0; s < r; s++) {
+      let { h: o, l: c } = Wc(e2[s], t);
+      [n[s], i[s]] = [o, c];
+    }
+    return [n, i];
+  }
+  function Ut(e2, t, r, n) {
+    let i = (t >>> 0) + (n >>> 0);
+    return { h: e2 + r + (i / 2 ** 32 | 0) | 0, l: i | 0 };
+  }
+  var Dn;
+  var Ao;
+  var $i;
+  var Ji;
+  var xe;
+  var be;
+  var Ur;
+  var _r;
+  var To;
+  var Bo;
+  var No;
+  var Co;
+  var Ro;
+  var Do;
+  var Oo = T(() => {
+    Dn = BigInt(4294967295), Ao = BigInt(32);
+    $i = (e2, t, r) => e2 >>> r, Ji = (e2, t, r) => e2 << 32 - r | t >>> r, xe = (e2, t, r) => e2 >>> r | t << 32 - r, be = (e2, t, r) => e2 << 32 - r | t >>> r, Ur = (e2, t, r) => e2 << 64 - r | t >>> r - 32, _r = (e2, t, r) => e2 >>> r - 32 | t << 64 - r;
+    To = (e2, t, r) => (e2 >>> 0) + (t >>> 0) + (r >>> 0), Bo = (e2, t, r, n) => t + r + n + (e2 / 2 ** 32 | 0) | 0, No = (e2, t, r, n) => (e2 >>> 0) + (t >>> 0) + (r >>> 0) + (n >>> 0), Co = (e2, t, r, n, i) => t + r + n + i + (e2 / 2 ** 32 | 0) | 0, Ro = (e2, t, r, n, i) => (e2 >>> 0) + (t >>> 0) + (r >>> 0) + (n >>> 0) + (i >>> 0), Do = (e2, t, r, n, i, s) => t + r + n + i + s + (e2 / 2 ** 32 | 0) | 0;
+  });
+  var zc;
+  var ie;
+  var qi;
+  var Mo;
+  var Pc;
+  var Xc;
+  var se;
+  var oe;
+  var On;
+  var ts;
+  var Uo;
+  var Mn;
+  var _o;
+  var es = T(() => {
+    So();
+    Oo();
+    ne();
+    zc = Uint32Array.from([1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221, 3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580, 3835390401, 4022224774, 264347078, 604807628, 770255983, 1249150122, 1555081692, 1996064986, 2554220882, 2821834349, 2952996808, 3210313671, 3336571891, 3584528711, 113926993, 338241895, 666307205, 773529912, 1294757372, 1396182291, 1695183700, 1986661051, 2177026350, 2456956037, 2730485921, 2820302411, 3259730800, 3345764771, 3516065817, 3600352804, 4094571909, 275423344, 430227734, 506948616, 659060556, 883997877, 958139571, 1322822218, 1537002063, 1747873779, 1955562222, 2024104815, 2227730452, 2361852424, 2428436474, 2756734187, 3204031479, 3329325298]), ie = new Uint32Array(64), qi = class extends Mr {
+      constructor(t = 32) {
+        super(64, t, 8, false), this.A = Lt[0] | 0, this.B = Lt[1] | 0, this.C = Lt[2] | 0, this.D = Lt[3] | 0, this.E = Lt[4] | 0, this.F = Lt[5] | 0, this.G = Lt[6] | 0, this.H = Lt[7] | 0;
+      }
+      get() {
+        let { A: t, B: r, C: n, D: i, E: s, F: o, G: c, H: a } = this;
+        return [t, r, n, i, s, o, c, a];
+      }
+      set(t, r, n, i, s, o, c, a) {
+        this.A = t | 0, this.B = r | 0, this.C = n | 0, this.D = i | 0, this.E = s | 0, this.F = o | 0, this.G = c | 0, this.H = a | 0;
+      }
+      process(t, r) {
+        for (let g = 0; g < 16; g++, r += 4) ie[g] = t.getUint32(r, false);
+        for (let g = 16; g < 64; g++) {
+          let l = ie[g - 15], h = ie[g - 2], y = Ct(l, 7) ^ Ct(l, 18) ^ l >>> 3, b = Ct(h, 17) ^ Ct(h, 19) ^ h >>> 10;
+          ie[g] = b + ie[g - 7] + y + ie[g - 16] | 0;
+        }
+        let { A: n, B: i, C: s, D: o, E: c, F: a, G: f, H: d } = this;
+        for (let g = 0; g < 64; g++) {
+          let l = Ct(c, 6) ^ Ct(c, 11) ^ Ct(c, 25), h = d + l + xo(c, a, f) + zc[g] + ie[g] | 0, b = (Ct(n, 2) ^ Ct(n, 13) ^ Ct(n, 22)) + bo(n, i, s) | 0;
+          d = f, f = a, a = c, c = o + h | 0, o = s, s = i, i = n, n = h + b | 0;
+        }
+        n = n + this.A | 0, i = i + this.B | 0, s = s + this.C | 0, o = o + this.D | 0, c = c + this.E | 0, a = a + this.F | 0, f = f + this.G | 0, d = d + this.H | 0, this.set(n, i, s, o, c, a, f, d);
+      }
+      roundClean() {
+        Ht(ie);
+      }
+      destroy() {
+        this.set(0, 0, 0, 0, 0, 0, 0, 0), Ht(this.buffer);
+      }
+    }, Mo = vo(["0x428a2f98d728ae22", "0x7137449123ef65cd", "0xb5c0fbcfec4d3b2f", "0xe9b5dba58189dbbc", "0x3956c25bf348b538", "0x59f111f1b605d019", "0x923f82a4af194f9b", "0xab1c5ed5da6d8118", "0xd807aa98a3030242", "0x12835b0145706fbe", "0x243185be4ee4b28c", "0x550c7dc3d5ffb4e2", "0x72be5d74f27b896f", "0x80deb1fe3b1696b1", "0x9bdc06a725c71235", "0xc19bf174cf692694", "0xe49b69c19ef14ad2", "0xefbe4786384f25e3", "0x0fc19dc68b8cd5b5", "0x240ca1cc77ac9c65", "0x2de92c6f592b0275", "0x4a7484aa6ea6e483", "0x5cb0a9dcbd41fbd4", "0x76f988da831153b5", "0x983e5152ee66dfab", "0xa831c66d2db43210", "0xb00327c898fb213f", "0xbf597fc7beef0ee4", "0xc6e00bf33da88fc2", "0xd5a79147930aa725", "0x06ca6351e003826f", "0x142929670a0e6e70", "0x27b70a8546d22ffc", "0x2e1b21385c26c926", "0x4d2c6dfc5ac42aed", "0x53380d139d95b3df", "0x650a73548baf63de", "0x766a0abb3c77b2a8", "0x81c2c92e47edaee6", "0x92722c851482353b", "0xa2bfe8a14cf10364", "0xa81a664bbc423001", "0xc24b8b70d0f89791", "0xc76c51a30654be30", "0xd192e819d6ef5218", "0xd69906245565a910", "0xf40e35855771202a", "0x106aa07032bbd1b8", "0x19a4c116b8d2d0c8", "0x1e376c085141ab53", "0x2748774cdf8eeb99", "0x34b0bcb5e19b48a8", "0x391c0cb3c5c95a63", "0x4ed8aa4ae3418acb", "0x5b9cca4f7763e373", "0x682e6ff3d6b2b8a3", "0x748f82ee5defb2fc", "0x78a5636f43172f60", "0x84c87814a1f0ab72", "0x8cc702081a6439ec", "0x90befffa23631e28", "0xa4506cebde82bde9", "0xbef9a3f7b2c67915", "0xc67178f2e372532b", "0xca273eceea26619c", "0xd186b8c721c0c207", "0xeada7dd6cde0eb1e", "0xf57d4f7fee6ed178", "0x06f067aa72176fba", "0x0a637dc5a2c898a6", "0x113f9804bef90dae", "0x1b710b35131c471b", "0x28db77f523047d84", "0x32caab7b40c72493", "0x3c9ebe0a15c9bebc", "0x431d67c49c100d4c", "0x4cc5d4becb3e42b6", "0x597f299cfc657e2a", "0x5fcb6fab3ad6faec", "0x6c44198c4a475817"].map((e2) => BigInt(e2))), Pc = Mo[0], Xc = Mo[1], se = new Uint32Array(80), oe = new Uint32Array(80), On = class extends Mr {
+      constructor(t = 64) {
+        super(128, t, 16, false), this.Ah = at[0] | 0, this.Al = at[1] | 0, this.Bh = at[2] | 0, this.Bl = at[3] | 0, this.Ch = at[4] | 0, this.Cl = at[5] | 0, this.Dh = at[6] | 0, this.Dl = at[7] | 0, this.Eh = at[8] | 0, this.El = at[9] | 0, this.Fh = at[10] | 0, this.Fl = at[11] | 0, this.Gh = at[12] | 0, this.Gl = at[13] | 0, this.Hh = at[14] | 0, this.Hl = at[15] | 0;
+      }
+      get() {
+        let { Ah: t, Al: r, Bh: n, Bl: i, Ch: s, Cl: o, Dh: c, Dl: a, Eh: f, El: d, Fh: g, Fl: l, Gh: h, Gl: y, Hh: b, Hl: A } = this;
+        return [t, r, n, i, s, o, c, a, f, d, g, l, h, y, b, A];
+      }
+      set(t, r, n, i, s, o, c, a, f, d, g, l, h, y, b, A) {
+        this.Ah = t | 0, this.Al = r | 0, this.Bh = n | 0, this.Bl = i | 0, this.Ch = s | 0, this.Cl = o | 0, this.Dh = c | 0, this.Dl = a | 0, this.Eh = f | 0, this.El = d | 0, this.Fh = g | 0, this.Fl = l | 0, this.Gh = h | 0, this.Gl = y | 0, this.Hh = b | 0, this.Hl = A | 0;
+      }
+      process(t, r) {
+        for (let x = 0; x < 16; x++, r += 4) se[x] = t.getUint32(r), oe[x] = t.getUint32(r += 4);
+        for (let x = 16; x < 80; x++) {
+          let k = se[x - 15] | 0, Z = oe[x - 15] | 0, W = xe(k, Z, 1) ^ xe(k, Z, 8) ^ $i(k, Z, 7), P = be(k, Z, 1) ^ be(k, Z, 8) ^ Ji(k, Z, 7), Y = se[x - 2] | 0, E = oe[x - 2] | 0, R = xe(Y, E, 19) ^ Ur(Y, E, 61) ^ $i(Y, E, 6), V = be(Y, E, 19) ^ _r(Y, E, 61) ^ Ji(Y, E, 6), D = No(P, V, oe[x - 7], oe[x - 16]), w = Co(D, W, R, se[x - 7], se[x - 16]);
+          se[x] = w | 0, oe[x] = D | 0;
+        }
+        let { Ah: n, Al: i, Bh: s, Bl: o, Ch: c, Cl: a, Dh: f, Dl: d, Eh: g, El: l, Fh: h, Fl: y, Gh: b, Gl: A, Hh: I, Hl: B } = this;
+        for (let x = 0; x < 80; x++) {
+          let k = xe(g, l, 14) ^ xe(g, l, 18) ^ Ur(g, l, 41), Z = be(g, l, 14) ^ be(g, l, 18) ^ _r(g, l, 41), W = g & h ^ ~g & b, P = l & y ^ ~l & A, Y = Ro(B, Z, P, Xc[x], oe[x]), E = Do(Y, I, k, W, Pc[x], se[x]), R = Y | 0, V = xe(n, i, 28) ^ Ur(n, i, 34) ^ Ur(n, i, 39), D = be(n, i, 28) ^ _r(n, i, 34) ^ _r(n, i, 39), w = n & s ^ n & c ^ s & c, m = i & o ^ i & a ^ o & a;
+          I = b | 0, B = A | 0, b = h | 0, A = y | 0, h = g | 0, y = l | 0, { h: g, l } = Ut(f | 0, d | 0, E | 0, R | 0), f = c | 0, d = a | 0, c = s | 0, a = o | 0, s = n | 0, o = i | 0;
+          let p = To(R, D, m);
+          n = Bo(p, E, V, w), i = p | 0;
+        }
+        ({ h: n, l: i } = Ut(this.Ah | 0, this.Al | 0, n | 0, i | 0)), { h: s, l: o } = Ut(this.Bh | 0, this.Bl | 0, s | 0, o | 0), { h: c, l: a } = Ut(this.Ch | 0, this.Cl | 0, c | 0, a | 0), { h: f, l: d } = Ut(this.Dh | 0, this.Dl | 0, f | 0, d | 0), { h: g, l } = Ut(this.Eh | 0, this.El | 0, g | 0, l | 0), { h, l: y } = Ut(this.Fh | 0, this.Fl | 0, h | 0, y | 0), { h: b, l: A } = Ut(this.Gh | 0, this.Gl | 0, b | 0, A | 0), { h: I, l: B } = Ut(this.Hh | 0, this.Hl | 0, I | 0, B | 0), this.set(n, i, s, o, c, a, f, d, g, l, h, y, b, A, I, B);
+      }
+      roundClean() {
+        Ht(se, oe);
+      }
+      destroy() {
+        Ht(this.buffer), this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+      }
+    }, ts = class extends On {
+      constructor() {
+        super(48), this.Ah = ot[0] | 0, this.Al = ot[1] | 0, this.Bh = ot[2] | 0, this.Bl = ot[3] | 0, this.Ch = ot[4] | 0, this.Cl = ot[5] | 0, this.Dh = ot[6] | 0, this.Dl = ot[7] | 0, this.Eh = ot[8] | 0, this.El = ot[9] | 0, this.Fh = ot[10] | 0, this.Fl = ot[11] | 0, this.Gh = ot[12] | 0, this.Gl = ot[13] | 0, this.Hh = ot[14] | 0, this.Hl = ot[15] | 0;
+      }
+    }, Uo = Rn(() => new qi()), Mn = Rn(() => new On()), _o = Rn(() => new ts());
+  });
+  var Un;
+  var rs;
+  var Vo = T(() => {
+    ne();
+    Un = class extends Oe {
+      constructor(t, r) {
+        super(), this.finished = false, this.destroyed = false, Nn(t);
+        let n = Or(r);
+        if (this.iHash = t.create(), typeof this.iHash.update != "function") throw new Error("Expected instance of class which extends utils.Hash");
+        this.blockLen = this.iHash.blockLen, this.outputLen = this.iHash.outputLen;
+        let i = this.blockLen, s = new Uint8Array(i);
+        s.set(n.length > i ? t.create().update(n).digest() : n);
+        for (let o = 0; o < s.length; o++) s[o] ^= 54;
+        this.iHash.update(s), this.oHash = t.create();
+        for (let o = 0; o < s.length; o++) s[o] ^= 106;
+        this.oHash.update(s), Ht(s);
+      }
+      update(t) {
+        return Me(this), this.iHash.update(t), this;
+      }
+      digestInto(t) {
+        Me(this), xt(t, this.outputLen), this.finished = true, this.iHash.digestInto(t), this.oHash.update(t), this.oHash.digestInto(t), this.destroy();
+      }
+      digest() {
+        let t = new Uint8Array(this.oHash.outputLen);
+        return this.digestInto(t), t;
+      }
+      _cloneInto(t) {
+        t || (t = Object.create(Object.getPrototypeOf(this), {}));
+        let { oHash: r, iHash: n, finished: i, destroyed: s, blockLen: o, outputLen: c } = this;
+        return t = t, t.finished = i, t.destroyed = s, t.blockLen = o, t.outputLen = c, t.oHash = r._cloneInto(t.oHash), t.iHash = n._cloneInto(t.iHash), t;
+      }
+      clone() {
+        return this._cloneInto();
+      }
+      destroy() {
+        this.destroyed = true, this.oHash.destroy(), this.iHash.destroy();
+      }
+    }, rs = (e2, t, r) => new Un(e2, t).update(r).digest();
+    rs.create = (e2, t) => new Un(e2, t);
+  });
+  function Zt(e2, t = "") {
+    if (typeof e2 != "boolean") {
+      let r = t && `"${t}"`;
+      throw new Error(r + "expected boolean, got type=" + typeof e2);
+    }
+    return e2;
+  }
+  function vt(e2, t, r = "") {
+    let n = kt(e2), i = e2?.length, s = t !== void 0;
+    if (!n || s && i !== t) {
+      let o = r && `"${r}" `, c = s ? ` of length ${t}` : "", a = n ? `length=${i}` : `type=${typeof e2}`;
+      throw new Error(o + "expected Uint8Array" + c + ", got " + a);
+    }
+    return e2;
+  }
+  function Vr(e2) {
+    let t = e2.toString(16);
+    return t.length & 1 ? "0" + t : t;
+  }
+  function jo(e2) {
+    if (typeof e2 != "string") throw new Error("hex string expected, got " + typeof e2);
+    return e2 === "" ? ss : BigInt("0x" + e2);
+  }
+  function _e(e2) {
+    return jo(Bt(e2));
+  }
+  function Yt(e2) {
+    return xt(e2), jo(Bt(Uint8Array.from(e2).reverse()));
+  }
+  function _n(e2, t) {
+    return Ie(e2.toString(16).padStart(t * 2, "0"));
+  }
+  function os(e2, t) {
+    return _n(e2, t).reverse();
+  }
+  function K(e2, t, r) {
+    let n;
+    if (typeof t == "string") try {
+      n = Ie(t);
+    } catch (s) {
+      throw new Error(e2 + " must be hex string or Uint8Array, cause: " + s);
+    }
+    else if (kt(t)) n = Uint8Array.from(t);
+    else throw new Error(e2 + " must be hex string or Uint8Array");
+    let i = n.length;
+    if (typeof r == "number" && i !== r) throw new Error(e2 + " of length " + r + " expected, got " + i);
+    return n;
+  }
+  function ko(e2, t) {
+    if (e2.length !== t.length) return false;
+    let r = 0;
+    for (let n = 0; n < e2.length; n++) r |= e2[n] ^ t[n];
+    return r === 0;
+  }
+  function as(e2) {
+    return Uint8Array.from(e2);
+  }
+  function Ho(e2, t, r) {
+    return ns(e2) && ns(t) && ns(r) && t <= e2 && e2 < r;
+  }
+  function jr(e2, t, r, n) {
+    if (!Ho(t, r, n)) throw new Error("expected valid " + e2 + ": " + r + " <= n < " + n + ", got " + t);
+  }
+  function Vn(e2) {
+    let t;
+    for (t = 0; e2 > ss; e2 >>= is, t += 1) ;
+    return t;
+  }
+  function Lo(e2, t, r) {
+    if (typeof e2 != "number" || e2 < 2) throw new Error("hashLen must be a number");
+    if (typeof t != "number" || t < 2) throw new Error("qByteLen must be a number");
+    if (typeof r != "function") throw new Error("hmacFn must be a function");
+    let n = (h) => new Uint8Array(h), i = (h) => Uint8Array.of(h), s = n(e2), o = n(e2), c = 0, a = () => {
+      s.fill(1), o.fill(0), c = 0;
+    }, f = (...h) => r(o, s, ...h), d = (h = n(0)) => {
+      o = f(i(0), h), s = f(), h.length !== 0 && (o = f(i(1), h), s = f());
+    }, g = () => {
+      if (c++ >= 1e3) throw new Error("drbg: tried 1000 values");
+      let h = 0, y = [];
+      for (; h < t; ) {
+        s = f();
+        let b = s.slice();
+        y.push(b), h += s.length;
+      }
+      return dt(...y);
+    };
+    return (h, y) => {
+      a(), d(h);
+      let b;
+      for (; !(b = y(g())); ) d();
+      return a(), b;
+    };
+  }
+  function ce(e2, t, r = {}) {
+    if (!e2 || typeof e2 != "object") throw new Error("expected valid options object");
+    function n(i, s, o) {
+      let c = e2[i];
+      if (o && c === void 0) return;
+      let a = typeof c;
+      if (a !== s || c === null) throw new Error(`param "${i}" is invalid: expected ${s}, got ${a}`);
+    }
+    Object.entries(t).forEach(([i, s]) => n(i, s, false)), Object.entries(r).forEach(([i, s]) => n(i, s, true));
+  }
+  function Ve(e2) {
+    let t = /* @__PURE__ */ new WeakMap();
+    return (r, ...n) => {
+      let i = t.get(r);
+      if (i !== void 0) return i;
+      let s = e2(r, ...n);
+      return t.set(r, s), s;
+    };
+  }
+  var ss;
+  var is;
+  var ns;
+  var ae;
+  var cs;
+  var je = T(() => {
+    ne();
+    ne();
+    ss = BigInt(0), is = BigInt(1);
+    ns = (e2) => typeof e2 == "bigint" && ss <= e2;
+    ae = (e2) => (is << BigInt(e2)) - is;
+    cs = () => {
+      throw new Error("not implemented");
+    };
+  });
+  function q(e2, t) {
+    let r = e2 % t;
+    return r >= gt ? r : t + r;
+  }
+  function Rt(e2, t, r) {
+    let n = e2;
+    for (; t-- > gt; ) n *= n, n %= r;
+    return n;
+  }
+  function Zo(e2, t) {
+    if (e2 === gt) throw new Error("invert: expected non-zero number");
+    if (t <= gt) throw new Error("invert: expected positive modulus, got " + t);
+    let r = q(e2, t), n = t, i = gt, s = it, o = it, c = gt;
+    for (; r !== gt; ) {
+      let f = n / r, d = n % r, g = i - o * f, l = s - c * f;
+      n = r, r = d, i = o, s = c, o = g, c = l;
+    }
+    if (n !== it) throw new Error("invert: does not exist");
+    return q(i, t);
+  }
+  function fs(e2, t, r) {
+    if (!e2.eql(e2.sqr(t), r)) throw new Error("Cannot find square root");
+  }
+  function Po(e2, t) {
+    let r = (e2.ORDER + it) / Ko, n = e2.pow(t, r);
+    return fs(e2, n, t), n;
+  }
+  function Jc(e2, t) {
+    let r = (e2.ORDER - Wo) / Fo, n = e2.mul(t, Se), i = e2.pow(n, r), s = e2.mul(t, i), o = e2.mul(e2.mul(s, Se), i), c = e2.mul(s, e2.sub(o, e2.ONE));
+    return fs(e2, c, t), c;
+  }
+  function qc(e2) {
+    let t = mt(e2), r = Xo(e2), n = r(t, t.neg(t.ONE)), i = r(t, n), s = r(t, t.neg(n)), o = (e2 + Qc) / zo;
+    return (c, a) => {
+      let f = c.pow(a, o), d = c.mul(f, n), g = c.mul(f, i), l = c.mul(f, s), h = c.eql(c.sqr(d), a), y = c.eql(c.sqr(g), a);
+      f = c.cmov(f, d, h), d = c.cmov(l, g, y);
+      let b = c.eql(c.sqr(d), a), A = c.cmov(f, d, b);
+      return fs(c, A, a), A;
+    };
+  }
+  function Xo(e2) {
+    if (e2 < Go) throw new Error("sqrt is not defined for small field");
+    let t = e2 - it, r = 0;
+    for (; t % Se === gt; ) t /= Se, r++;
+    let n = Se, i = mt(e2);
+    for (; Yo(i, n) === 1; ) if (n++ > 1e3) throw new Error("Cannot find square root: probably non-prime P");
+    if (r === 1) return Po;
+    let s = i.pow(n, t), o = (t + it) / Se;
+    return function(a, f) {
+      if (a.is0(f)) return f;
+      if (Yo(a, f) !== 1) throw new Error("Cannot find square root");
+      let d = r, g = a.mul(a.ONE, s), l = a.pow(f, t), h = a.pow(f, o);
+      for (; !a.eql(l, a.ONE); ) {
+        if (a.is0(l)) return a.ZERO;
+        let y = 1, b = a.sqr(l);
+        for (; !a.eql(b, a.ONE); ) if (y++, b = a.sqr(b), y === d) throw new Error("Cannot find square root");
+        let A = it << BigInt(d - y - 1), I = a.pow(g, A);
+        d = y, g = a.sqr(I), l = a.mul(l, g), h = a.mul(h, I);
+      }
+      return h;
+    };
+  }
+  function tf(e2) {
+    return e2 % Ko === Go ? Po : e2 % Fo === Wo ? Jc : e2 % zo === $c ? qc(e2) : Xo(e2);
+  }
+  function ls(e2) {
+    let t = { ORDER: "bigint", MASK: "bigint", BYTES: "number", BITS: "number" }, r = ef.reduce((n, i) => (n[i] = "function", n), t);
+    return ce(e2, r), e2;
+  }
+  function rf(e2, t, r) {
+    if (r < gt) throw new Error("invalid exponent, negatives unsupported");
+    if (r === gt) return e2.ONE;
+    if (r === it) return t;
+    let n = e2.ONE, i = t;
+    for (; r > gt; ) r & it && (n = e2.mul(n, i)), i = e2.sqr(i), r >>= it;
+    return n;
+  }
+  function kr(e2, t, r = false) {
+    let n = new Array(t.length).fill(r ? e2.ZERO : void 0), i = t.reduce((o, c, a) => e2.is0(c) ? o : (n[a] = o, e2.mul(o, c)), e2.ONE), s = e2.inv(i);
+    return t.reduceRight((o, c, a) => e2.is0(c) ? o : (n[a] = e2.mul(o, n[a]), e2.mul(o, c)), s), n;
+  }
+  function Yo(e2, t) {
+    let r = (e2.ORDER - it) / Se, n = e2.pow(t, r), i = e2.eql(n, e2.ONE), s = e2.eql(n, e2.ZERO), o = e2.eql(n, e2.neg(e2.ONE));
+    if (!i && !s && !o) throw new Error("invalid Legendre symbol result");
+    return i ? 1 : s ? 0 : -1;
+  }
+  function jn(e2, t) {
+    t !== void 0 && Dr(t);
+    let r = t !== void 0 ? t : e2.toString(2).length, n = Math.ceil(r / 8);
+    return { nBitLength: r, nByteLength: n };
+  }
+  function mt(e2, t, r = false, n = {}) {
+    if (e2 <= gt) throw new Error("invalid field: expected ORDER > 0, got " + e2);
+    let i, s, o = false, c;
+    if (typeof t == "object" && t != null) {
+      if (n.sqrt || r) throw new Error("cannot specify opts in two arguments");
+      let l = t;
+      l.BITS && (i = l.BITS), l.sqrt && (s = l.sqrt), typeof l.isLE == "boolean" && (r = l.isLE), typeof l.modFromBytes == "boolean" && (o = l.modFromBytes), c = l.allowedLengths;
+    } else typeof t == "number" && (i = t), n.sqrt && (s = n.sqrt);
+    let { nBitLength: a, nByteLength: f } = jn(e2, i);
+    if (f > 2048) throw new Error("invalid field: expected ORDER of <= 2048 bytes");
+    let d, g = Object.freeze({ ORDER: e2, isLE: r, BITS: a, BYTES: f, MASK: ae(a), ZERO: gt, ONE: it, allowedLengths: c, create: (l) => q(l, e2), isValid: (l) => {
+      if (typeof l != "bigint") throw new Error("invalid field element: expected bigint, got " + typeof l);
+      return gt <= l && l < e2;
+    }, is0: (l) => l === gt, isValidNot0: (l) => !g.is0(l) && g.isValid(l), isOdd: (l) => (l & it) === it, neg: (l) => q(-l, e2), eql: (l, h) => l === h, sqr: (l) => q(l * l, e2), add: (l, h) => q(l + h, e2), sub: (l, h) => q(l - h, e2), mul: (l, h) => q(l * h, e2), pow: (l, h) => rf(g, l, h), div: (l, h) => q(l * Zo(h, e2), e2), sqrN: (l) => l * l, addN: (l, h) => l + h, subN: (l, h) => l - h, mulN: (l, h) => l * h, inv: (l) => Zo(l, e2), sqrt: s || ((l) => (d || (d = tf(e2)), d(g, l))), toBytes: (l) => r ? os(l, f) : _n(l, f), fromBytes: (l, h = true) => {
+      if (c) {
+        if (!c.includes(l.length) || l.length > f) throw new Error("Field.fromBytes: expected " + c + " bytes, got " + l.length);
+        let b = new Uint8Array(f);
+        b.set(l, r ? 0 : b.length - l.length), l = b;
+      }
+      if (l.length !== f) throw new Error("Field.fromBytes: expected " + f + " bytes, got " + l.length);
+      let y = r ? Yt(l) : _e(l);
+      if (o && (y = q(y, e2)), !h && !g.isValid(y)) throw new Error("invalid field element: outside of range 0..ORDER");
+      return y;
+    }, invertBatch: (l) => kr(g, l), cmov: (l, h, y) => y ? h : l });
+    return Object.freeze(g);
+  }
+  function Qo(e2) {
+    if (typeof e2 != "bigint") throw new Error("field order must be bigint");
+    let t = e2.toString(2).length;
+    return Math.ceil(t / 8);
+  }
+  function us(e2) {
+    let t = Qo(e2);
+    return t + Math.ceil(t / 2);
+  }
+  function $o(e2, t, r = false) {
+    let n = e2.length, i = Qo(t), s = us(t);
+    if (n < 16 || n < s || n > 1024) throw new Error("expected " + s + "-1024 bytes of input, got " + n);
+    let o = r ? Yt(e2) : _e(e2), c = q(o, t - it) + it;
+    return r ? os(c, i) : _n(c, i);
+  }
+  var gt;
+  var it;
+  var Se;
+  var Go;
+  var Ko;
+  var Wo;
+  var Qc;
+  var Fo;
+  var $c;
+  var zo;
+  var Gt;
+  var ef;
+  var ke = T(() => {
+    je();
+    gt = BigInt(0), it = BigInt(1), Se = BigInt(2), Go = BigInt(3), Ko = BigInt(4), Wo = BigInt(5), Qc = BigInt(7), Fo = BigInt(8), $c = BigInt(9), zo = BigInt(16);
+    Gt = (e2, t) => (q(e2, t) & it) === it, ef = ["create", "isValid", "is0", "neg", "inv", "sqrt", "sqr", "eql", "add", "sub", "mul", "pow", "div", "addN", "subN", "mulN", "sqrN"];
+  });
+  function Hr(e2, t) {
+    let r = t.negate();
+    return e2 ? r : t;
+  }
+  function Kt(e2, t) {
+    let r = kr(e2.Fp, t.map((n) => n.Z));
+    return t.map((n, i) => e2.fromAffine(n.toAffine(r[i])));
+  }
+  function ea(e2, t) {
+    if (!Number.isSafeInteger(e2) || e2 <= 0 || e2 > t) throw new Error("invalid window size, expected [1.." + t + "], got W=" + e2);
+  }
+  function hs(e2, t) {
+    ea(e2, t);
+    let r = Math.ceil(t / e2) + 1, n = 2 ** (e2 - 1), i = 2 ** e2, s = ae(e2), o = BigInt(e2);
+    return { windows: r, windowSize: n, mask: s, maxNumber: i, shiftBy: o };
+  }
+  function Jo(e2, t, r) {
+    let { windowSize: n, mask: i, maxNumber: s, shiftBy: o } = r, c = Number(e2 & i), a = e2 >> o;
+    c > n && (c -= s, a += Ae);
+    let f = t * n, d = f + Math.abs(c) - 1, g = c === 0, l = c < 0, h = t % 2 !== 0;
+    return { nextN: a, offset: d, isZero: g, isNeg: l, isNegF: h, offsetF: f };
+  }
+  function nf(e2, t) {
+    if (!Array.isArray(e2)) throw new Error("array expected");
+    e2.forEach((r, n) => {
+      if (!(r instanceof t)) throw new Error("invalid point at index " + n);
+    });
+  }
+  function sf(e2, t) {
+    if (!Array.isArray(e2)) throw new Error("array of scalars expected");
+    e2.forEach((r, n) => {
+      if (!t.isValid(r)) throw new Error("invalid scalar at index " + n);
+    });
+  }
+  function gs(e2) {
+    return ra.get(e2) || 1;
+  }
+  function qo(e2) {
+    if (e2 !== He) throw new Error("invalid wNAF");
+  }
+  function na(e2, t, r, n) {
+    let i = t, s = e2.ZERO, o = e2.ZERO;
+    for (; r > He || n > He; ) r & Ae && (s = s.add(i)), n & Ae && (o = o.add(i)), i = i.double(), r >>= Ae, n >>= Ae;
+    return { p1: s, p2: o };
+  }
+  function Ze(e2, t, r, n) {
+    nf(r, e2), sf(n, t);
+    let i = r.length, s = n.length;
+    if (i !== s) throw new Error("arrays of points and scalars must have equal length");
+    let o = e2.ZERO, c = Vn(BigInt(i)), a = 1;
+    c > 12 ? a = c - 3 : c > 4 ? a = c - 2 : c > 0 && (a = 2);
+    let f = ae(a), d = new Array(Number(f) + 1).fill(o), g = Math.floor((t.BITS - 1) / a) * a, l = o;
+    for (let h = g; h >= 0; h -= a) {
+      d.fill(o);
+      for (let b = 0; b < s; b++) {
+        let A = n[b], I = Number(A >> BigInt(h) & f);
+        d[I] = d[I].add(r[b]);
+      }
+      let y = o;
+      for (let b = d.length - 1, A = o; b > 0; b--) A = A.add(d[b]), y = y.add(A);
+      if (l = l.add(y), h !== 0) for (let b = 0; b < a; b++) l = l.double();
+    }
+    return l;
+  }
+  function ta(e2, t, r) {
+    if (t) {
+      if (t.ORDER !== e2) throw new Error("Field.ORDER must match order: Fp == p, Fn == n");
+      return ls(t), t;
+    } else return mt(e2, { isLE: r });
+  }
+  function kn(e2, t, r = {}, n) {
+    if (n === void 0 && (n = e2 === "edwards"), !t || typeof t != "object") throw new Error(`expected valid ${e2} CURVE object`);
+    for (let a of ["p", "n", "h"]) {
+      let f = t[a];
+      if (!(typeof f == "bigint" && f > He)) throw new Error(`CURVE.${a} must be positive bigint`);
+    }
+    let i = ta(t.p, r.Fp, n), s = ta(t.n, r.Fn, n), c = ["Gx", "Gy", "a", e2 === "weierstrass" ? "b" : "d"];
+    for (let a of c) if (!i.isValid(t[a])) throw new Error(`CURVE.${a} must be valid field element of CURVE.Fp`);
+    return t = Object.freeze(Object.assign({}, t)), { CURVE: t, Fp: i, Fn: s };
+  }
+  var He;
+  var Ae;
+  var ds;
+  var ra;
+  var Le;
+  var Hn = T(() => {
+    je();
+    ke();
+    He = BigInt(0), Ae = BigInt(1);
+    ds = /* @__PURE__ */ new WeakMap(), ra = /* @__PURE__ */ new WeakMap();
+    Le = class {
+      constructor(t, r) {
+        this.BASE = t.BASE, this.ZERO = t.ZERO, this.Fn = t.Fn, this.bits = r;
+      }
+      _unsafeLadder(t, r, n = this.ZERO) {
+        let i = t;
+        for (; r > He; ) r & Ae && (n = n.add(i)), i = i.double(), r >>= Ae;
+        return n;
+      }
+      precomputeWindow(t, r) {
+        let { windows: n, windowSize: i } = hs(r, this.bits), s = [], o = t, c = o;
+        for (let a = 0; a < n; a++) {
+          c = o, s.push(c);
+          for (let f = 1; f < i; f++) c = c.add(o), s.push(c);
+          o = c.double();
+        }
+        return s;
+      }
+      wNAF(t, r, n) {
+        if (!this.Fn.isValid(n)) throw new Error("invalid scalar");
+        let i = this.ZERO, s = this.BASE, o = hs(t, this.bits);
+        for (let c = 0; c < o.windows; c++) {
+          let { nextN: a, offset: f, isZero: d, isNeg: g, isNegF: l, offsetF: h } = Jo(n, c, o);
+          n = a, d ? s = s.add(Hr(l, r[h])) : i = i.add(Hr(g, r[f]));
+        }
+        return qo(n), { p: i, f: s };
+      }
+      wNAFUnsafe(t, r, n, i = this.ZERO) {
+        let s = hs(t, this.bits);
+        for (let o = 0; o < s.windows && n !== He; o++) {
+          let { nextN: c, offset: a, isZero: f, isNeg: d } = Jo(n, o, s);
+          if (n = c, !f) {
+            let g = r[a];
+            i = i.add(d ? g.negate() : g);
+          }
+        }
+        return qo(n), i;
+      }
+      getPrecomputes(t, r, n) {
+        let i = ds.get(r);
+        return i || (i = this.precomputeWindow(r, t), t !== 1 && (typeof n == "function" && (i = n(i)), ds.set(r, i))), i;
+      }
+      cached(t, r, n) {
+        let i = gs(t);
+        return this.wNAF(i, this.getPrecomputes(i, t, n), r);
+      }
+      unsafe(t, r, n, i) {
+        let s = gs(t);
+        return s === 1 ? this._unsafeLadder(t, r, i) : this.wNAFUnsafe(s, this.getPrecomputes(s, t, n), r, i);
+      }
+      createCache(t, r) {
+        ea(r, this.bits), ra.set(t, r), ds.delete(t);
+      }
+      hasCache(t) {
+        return gs(t) !== 1;
+      }
+    };
+  });
+  function of(e2, t, r) {
+    let [[n, i], [s, o]] = t, c = ia(o * e2, r), a = ia(-i * e2, r), f = e2 - c * n - a * s, d = -c * i - a * o, g = f < Ft, l = d < Ft;
+    g && (f = -f), l && (d = -d);
+    let h = ae(Math.ceil(Vn(r) / 2)) + Ge;
+    if (f < Ft || f >= h || d < Ft || d >= h) throw new Error("splitScalar (endomorphism): failed, k=" + e2);
+    return { k1neg: g, k1: f, k2neg: l, k2: d };
+  }
+  function ps(e2) {
+    if (!["compact", "recovered", "der"].includes(e2)) throw new Error('Signature format must be "compact", "recovered", or "der"');
+    return e2;
+  }
+  function ms(e2, t) {
+    let r = {};
+    for (let n of Object.keys(t)) r[n] = e2[n] === void 0 ? t[n] : e2[n];
+    return Zt(r.lowS, "lowS"), Zt(r.prehash, "prehash"), r.format !== void 0 && ps(r.format), r;
+  }
+  function Ye(e2, t) {
+    let { BYTES: r } = e2, n;
+    if (typeof t == "bigint") n = t;
+    else {
+      let i = K("private key", t);
+      try {
+        n = e2.fromBytes(i);
+      } catch {
+        throw new Error(`invalid private key: expected ui8a of size ${r}, got ${typeof t}`);
+      }
+    }
+    if (!e2.isValidNot0(n)) throw new Error("invalid private key: out of range [1..N-1]");
+    return n;
+  }
+  function cf(e2, t = {}) {
+    let r = kn("weierstrass", e2, t), { Fp: n, Fn: i } = r, s = r.CURVE, { h: o, n: c } = s;
+    ce(t, {}, { allowInfinityPoint: "boolean", clearCofactor: "function", isTorsionFree: "function", fromBytes: "function", toBytes: "function", endo: "object", wrapPrivateKey: "boolean" });
+    let { endo: a } = t;
+    if (a && (!n.is0(s.a) || typeof a.beta != "bigint" || !Array.isArray(a.basises))) throw new Error('invalid endo: expected "beta": bigint and "basises": array');
+    let f = aa(n, i);
+    function d() {
+      if (!n.isOdd) throw new Error("compression is not supported: Field does not have .isOdd()");
+    }
+    function g(D, w, m) {
+      let { x: p, y: S } = w.toAffine(), v = n.toBytes(p);
+      if (Zt(m, "isCompressed"), m) {
+        d();
+        let M = !n.isOdd(S);
+        return dt(oa(M), v);
+      } else return dt(Uint8Array.of(4), v, n.toBytes(S));
+    }
+    function l(D) {
+      vt(D, void 0, "Point");
+      let { publicKey: w, publicKeyUncompressed: m } = f, p = D.length, S = D[0], v = D.subarray(1);
+      if (p === w && (S === 2 || S === 3)) {
+        let M = n.fromBytes(v);
+        if (!n.isValid(M)) throw new Error("bad point: is not on curve, wrong x");
+        let N = b(M), C;
+        try {
+          C = n.sqrt(N);
+        } catch (Q) {
+          let F = Q instanceof Error ? ": " + Q.message : "";
+          throw new Error("bad point: is not on curve, sqrt error" + F);
+        }
+        d();
+        let U = n.isOdd(C);
+        return (S & 1) === 1 !== U && (C = n.neg(C)), { x: M, y: C };
+      } else if (p === m && S === 4) {
+        let M = n.BYTES, N = n.fromBytes(v.subarray(0, M)), C = n.fromBytes(v.subarray(M, M * 2));
+        if (!A(N, C)) throw new Error("bad point: is not on curve");
+        return { x: N, y: C };
+      } else throw new Error(`bad point: got length ${p}, expected compressed=${w} or uncompressed=${m}`);
+    }
+    let h = t.toBytes || g, y = t.fromBytes || l;
+    function b(D) {
+      let w = n.sqr(D), m = n.mul(w, D);
+      return n.add(n.add(m, n.mul(D, s.a)), s.b);
+    }
+    function A(D, w) {
+      let m = n.sqr(w), p = b(D);
+      return n.eql(m, p);
+    }
+    if (!A(s.Gx, s.Gy)) throw new Error("bad curve params: generator point");
+    let I = n.mul(n.pow(s.a, Ln), af), B = n.mul(n.sqr(s.b), BigInt(27));
+    if (n.is0(n.add(I, B))) throw new Error("bad curve params: a or b");
+    function x(D, w, m = false) {
+      if (!n.isValid(w) || m && n.is0(w)) throw new Error(`bad point coordinate ${D}`);
+      return w;
+    }
+    function k(D) {
+      if (!(D instanceof E)) throw new Error("ProjectivePoint expected");
+    }
+    function Z(D) {
+      if (!a || !a.basises) throw new Error("no endo");
+      return of(D, a.basises, i.ORDER);
+    }
+    let W = Ve((D, w) => {
+      let { X: m, Y: p, Z: S } = D;
+      if (n.eql(S, n.ONE)) return { x: m, y: p };
+      let v = D.is0();
+      w == null && (w = v ? n.ONE : n.inv(S));
+      let M = n.mul(m, w), N = n.mul(p, w), C = n.mul(S, w);
+      if (v) return { x: n.ZERO, y: n.ZERO };
+      if (!n.eql(C, n.ONE)) throw new Error("invZ was invalid");
+      return { x: M, y: N };
+    }), P = Ve((D) => {
+      if (D.is0()) {
+        if (t.allowInfinityPoint && !n.is0(D.Y)) return;
+        throw new Error("bad point: ZERO");
+      }
+      let { x: w, y: m } = D.toAffine();
+      if (!n.isValid(w) || !n.isValid(m)) throw new Error("bad point: x or y not field elements");
+      if (!A(w, m)) throw new Error("bad point: equation left != right");
+      if (!D.isTorsionFree()) throw new Error("bad point: not in prime-order subgroup");
+      return true;
+    });
+    function Y(D, w, m, p, S) {
+      return m = new E(n.mul(m.X, D), m.Y, m.Z), w = Hr(p, w), m = Hr(S, m), w.add(m);
+    }
+    class E {
+      constructor(w, m, p) {
+        this.X = x("x", w), this.Y = x("y", m, true), this.Z = x("z", p), Object.freeze(this);
+      }
+      static CURVE() {
+        return s;
+      }
+      static fromAffine(w) {
+        let { x: m, y: p } = w || {};
+        if (!w || !n.isValid(m) || !n.isValid(p)) throw new Error("invalid affine point");
+        if (w instanceof E) throw new Error("projective point not allowed");
+        return n.is0(m) && n.is0(p) ? E.ZERO : new E(m, p, n.ONE);
+      }
+      static fromBytes(w) {
+        let m = E.fromAffine(y(vt(w, void 0, "point")));
+        return m.assertValidity(), m;
+      }
+      static fromHex(w) {
+        return E.fromBytes(K("pointHex", w));
+      }
+      get x() {
+        return this.toAffine().x;
+      }
+      get y() {
+        return this.toAffine().y;
+      }
+      precompute(w = 8, m = true) {
+        return V.createCache(this, w), m || this.multiply(Ln), this;
+      }
+      assertValidity() {
+        P(this);
+      }
+      hasEvenY() {
+        let { y: w } = this.toAffine();
+        if (!n.isOdd) throw new Error("Field doesn't support isOdd");
+        return !n.isOdd(w);
+      }
+      equals(w) {
+        k(w);
+        let { X: m, Y: p, Z: S } = this, { X: v, Y: M, Z: N } = w, C = n.eql(n.mul(m, N), n.mul(v, S)), U = n.eql(n.mul(p, N), n.mul(M, S));
+        return C && U;
+      }
+      negate() {
+        return new E(this.X, n.neg(this.Y), this.Z);
+      }
+      double() {
+        let { a: w, b: m } = s, p = n.mul(m, Ln), { X: S, Y: v, Z: M } = this, N = n.ZERO, C = n.ZERO, U = n.ZERO, H = n.mul(S, S), Q = n.mul(v, v), F = n.mul(M, M), G = n.mul(S, v);
+        return G = n.add(G, G), U = n.mul(S, M), U = n.add(U, U), N = n.mul(w, U), C = n.mul(p, F), C = n.add(N, C), N = n.sub(Q, C), C = n.add(Q, C), C = n.mul(N, C), N = n.mul(G, N), U = n.mul(p, U), F = n.mul(w, F), G = n.sub(H, F), G = n.mul(w, G), G = n.add(G, U), U = n.add(H, H), H = n.add(U, H), H = n.add(H, F), H = n.mul(H, G), C = n.add(C, H), F = n.mul(v, M), F = n.add(F, F), H = n.mul(F, G), N = n.sub(N, H), U = n.mul(F, Q), U = n.add(U, U), U = n.add(U, U), new E(N, C, U);
+      }
+      add(w) {
+        k(w);
+        let { X: m, Y: p, Z: S } = this, { X: v, Y: M, Z: N } = w, C = n.ZERO, U = n.ZERO, H = n.ZERO, Q = s.a, F = n.mul(s.b, Ln), G = n.mul(m, v), $ = n.mul(p, M), et = n.mul(S, N), wt = n.add(m, p), J = n.add(v, M);
+        wt = n.mul(wt, J), J = n.add(G, $), wt = n.sub(wt, J), J = n.add(m, S);
+        let lt = n.add(v, N);
+        return J = n.mul(J, lt), lt = n.add(G, et), J = n.sub(J, lt), lt = n.add(p, S), C = n.add(M, N), lt = n.mul(lt, C), C = n.add($, et), lt = n.sub(lt, C), H = n.mul(Q, J), C = n.mul(F, et), H = n.add(C, H), C = n.sub($, H), H = n.add($, H), U = n.mul(C, H), $ = n.add(G, G), $ = n.add($, G), et = n.mul(Q, et), J = n.mul(F, J), $ = n.add($, et), et = n.sub(G, et), et = n.mul(Q, et), J = n.add(J, et), G = n.mul($, J), U = n.add(U, G), G = n.mul(lt, J), C = n.mul(wt, C), C = n.sub(C, G), G = n.mul(wt, $), H = n.mul(lt, H), H = n.add(H, G), new E(C, U, H);
+      }
+      subtract(w) {
+        return this.add(w.negate());
+      }
+      is0() {
+        return this.equals(E.ZERO);
+      }
+      multiply(w) {
+        let { endo: m } = t;
+        if (!i.isValidNot0(w)) throw new Error("invalid scalar: out of range");
+        let p, S, v = (M) => V.cached(this, M, (N) => Kt(E, N));
+        if (m) {
+          let { k1neg: M, k1: N, k2neg: C, k2: U } = Z(w), { p: H, f: Q } = v(N), { p: F, f: G } = v(U);
+          S = Q.add(G), p = Y(m.beta, H, F, M, C);
+        } else {
+          let { p: M, f: N } = v(w);
+          p = M, S = N;
+        }
+        return Kt(E, [p, S])[0];
+      }
+      multiplyUnsafe(w) {
+        let { endo: m } = t, p = this;
+        if (!i.isValid(w)) throw new Error("invalid scalar: out of range");
+        if (w === Ft || p.is0()) return E.ZERO;
+        if (w === Ge) return p;
+        if (V.hasCache(this)) return this.multiply(w);
+        if (m) {
+          let { k1neg: S, k1: v, k2neg: M, k2: N } = Z(w), { p1: C, p2: U } = na(E, p, v, N);
+          return Y(m.beta, C, U, S, M);
+        } else return V.unsafe(p, w);
+      }
+      multiplyAndAddUnsafe(w, m, p) {
+        let S = this.multiplyUnsafe(m).add(w.multiplyUnsafe(p));
+        return S.is0() ? void 0 : S;
+      }
+      toAffine(w) {
+        return W(this, w);
+      }
+      isTorsionFree() {
+        let { isTorsionFree: w } = t;
+        return o === Ge ? true : w ? w(E, this) : V.unsafe(this, c).is0();
+      }
+      clearCofactor() {
+        let { clearCofactor: w } = t;
+        return o === Ge ? this : w ? w(E, this) : this.multiplyUnsafe(o);
+      }
+      isSmallOrder() {
+        return this.multiplyUnsafe(o).is0();
+      }
+      toBytes(w = true) {
+        return Zt(w, "isCompressed"), this.assertValidity(), h(E, this, w);
+      }
+      toHex(w = true) {
+        return Bt(this.toBytes(w));
+      }
+      toString() {
+        return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
+      }
+      get px() {
+        return this.X;
+      }
+      get py() {
+        return this.X;
+      }
+      get pz() {
+        return this.Z;
+      }
+      toRawBytes(w = true) {
+        return this.toBytes(w);
+      }
+      _setWindowSize(w) {
+        this.precompute(w);
+      }
+      static normalizeZ(w) {
+        return Kt(E, w);
+      }
+      static msm(w, m) {
+        return Ze(E, i, w, m);
+      }
+      static fromPrivateKey(w) {
+        return E.BASE.multiply(Ye(i, w));
+      }
+    }
+    E.BASE = new E(s.Gx, s.Gy, n.ONE), E.ZERO = new E(n.ZERO, n.ONE, n.ZERO), E.Fp = n, E.Fn = i;
+    let R = i.BITS, V = new Le(E, t.endo ? Math.ceil(R / 2) : R);
+    return E.BASE.precompute(8), E;
+  }
+  function oa(e2) {
+    return Uint8Array.of(e2 ? 2 : 3);
+  }
+  function aa(e2, t) {
+    return { secretKey: t.BYTES, publicKey: 1 + e2.BYTES, publicKeyUncompressed: 1 + 2 * e2.BYTES, publicKeyHasPrefix: true, signature: 2 * t.BYTES };
+  }
+  function ff(e2, t = {}) {
+    let { Fn: r } = e2, n = t.randomBytes || Ue, i = Object.assign(aa(e2.Fp, r), { seed: us(r.ORDER) });
+    function s(h) {
+      try {
+        return !!Ye(r, h);
+      } catch {
+        return false;
+      }
+    }
+    function o(h, y) {
+      let { publicKey: b, publicKeyUncompressed: A } = i;
+      try {
+        let I = h.length;
+        return y === true && I !== b || y === false && I !== A ? false : !!e2.fromBytes(h);
+      } catch {
+        return false;
+      }
+    }
+    function c(h = n(i.seed)) {
+      return $o(vt(h, i.seed, "seed"), r.ORDER);
+    }
+    function a(h, y = true) {
+      return e2.BASE.multiply(Ye(r, h)).toBytes(y);
+    }
+    function f(h) {
+      let y = c(h);
+      return { secretKey: y, publicKey: a(y) };
+    }
+    function d(h) {
+      if (typeof h == "bigint") return false;
+      if (h instanceof e2) return true;
+      let { secretKey: y, publicKey: b, publicKeyUncompressed: A } = i;
+      if (r.allowedLengths || y === b) return;
+      let I = K("key", h).length;
+      return I === b || I === A;
+    }
+    function g(h, y, b = true) {
+      if (d(h) === true) throw new Error("first arg must be private key");
+      if (d(y) === false) throw new Error("second arg must be public key");
+      let A = Ye(r, h);
+      return e2.fromHex(y).multiply(A).toBytes(b);
+    }
+    return Object.freeze({ getPublicKey: a, getSharedSecret: g, keygen: f, Point: e2, utils: { isValidSecretKey: s, isValidPublicKey: o, randomSecretKey: c, isValidPrivateKey: s, randomPrivateKey: c, normPrivateKeyToScalar: (h) => Ye(r, h), precompute(h = 8, y = e2.BASE) {
+      return y.precompute(h, false);
+    } }, lengths: i });
+  }
+  function lf(e2, t, r = {}) {
+    Nn(t), ce(r, {}, { hmac: "function", lowS: "boolean", randomBytes: "function", bits2int: "function", bits2int_modN: "function" });
+    let n = r.randomBytes || Ue, i = r.hmac || ((m, ...p) => rs(t, m, dt(...p))), { Fp: s, Fn: o } = e2, { ORDER: c, BITS: a } = o, { keygen: f, getPublicKey: d, getSharedSecret: g, utils: l, lengths: h } = ff(e2, r), y = { prehash: false, lowS: typeof r.lowS == "boolean" ? r.lowS : false, format: void 0, extraEntropy: false }, b = "compact";
+    function A(m) {
+      let p = c >> Ge;
+      return m > p;
+    }
+    function I(m, p) {
+      if (!o.isValidNot0(p)) throw new Error(`invalid signature ${m}: out of range 1..Point.Fn.ORDER`);
+      return p;
+    }
+    function B(m, p) {
+      ps(p);
+      let S = h.signature, v = p === "compact" ? S : p === "recovered" ? S + 1 : void 0;
+      return vt(m, v, `${p} signature`);
+    }
+    class x {
+      constructor(p, S, v) {
+        this.r = I("r", p), this.s = I("s", S), v != null && (this.recovery = v), Object.freeze(this);
+      }
+      static fromBytes(p, S = b) {
+        B(p, S);
+        let v;
+        if (S === "der") {
+          let { r: U, s: H } = Wt.toSig(vt(p));
+          return new x(U, H);
+        }
+        S === "recovered" && (v = p[0], S = "compact", p = p.subarray(1));
+        let M = o.BYTES, N = p.subarray(0, M), C = p.subarray(M, M * 2);
+        return new x(o.fromBytes(N), o.fromBytes(C), v);
+      }
+      static fromHex(p, S) {
+        return this.fromBytes(Ie(p), S);
+      }
+      addRecoveryBit(p) {
+        return new x(this.r, this.s, p);
+      }
+      recoverPublicKey(p) {
+        let S = s.ORDER, { r: v, s: M, recovery: N } = this;
+        if (N == null || ![0, 1, 2, 3].includes(N)) throw new Error("recovery id invalid");
+        if (c * sa < S && N > 1) throw new Error("recovery id is ambiguous for h>1 curve");
+        let U = N === 2 || N === 3 ? v + c : v;
+        if (!s.isValid(U)) throw new Error("recovery id 2 or 3 invalid");
+        let H = s.toBytes(U), Q = e2.fromBytes(dt(oa((N & 1) === 0), H)), F = o.inv(U), G = Z(K("msgHash", p)), $ = o.create(-G * F), et = o.create(M * F), wt = e2.BASE.multiplyUnsafe($).add(Q.multiplyUnsafe(et));
+        if (wt.is0()) throw new Error("point at infinify");
+        return wt.assertValidity(), wt;
+      }
+      hasHighS() {
+        return A(this.s);
+      }
+      toBytes(p = b) {
+        if (ps(p), p === "der") return Ie(Wt.hexFromSig(this));
+        let S = o.toBytes(this.r), v = o.toBytes(this.s);
+        if (p === "recovered") {
+          if (this.recovery == null) throw new Error("recovery bit must be present");
+          return dt(Uint8Array.of(this.recovery), S, v);
+        }
+        return dt(S, v);
+      }
+      toHex(p) {
+        return Bt(this.toBytes(p));
+      }
+      assertValidity() {
+      }
+      static fromCompact(p) {
+        return x.fromBytes(K("sig", p), "compact");
+      }
+      static fromDER(p) {
+        return x.fromBytes(K("sig", p), "der");
+      }
+      normalizeS() {
+        return this.hasHighS() ? new x(this.r, o.neg(this.s), this.recovery) : this;
+      }
+      toDERRawBytes() {
+        return this.toBytes("der");
+      }
+      toDERHex() {
+        return Bt(this.toBytes("der"));
+      }
+      toCompactRawBytes() {
+        return this.toBytes("compact");
+      }
+      toCompactHex() {
+        return Bt(this.toBytes("compact"));
+      }
+    }
+    let k = r.bits2int || function(p) {
+      if (p.length > 8192) throw new Error("input is too large");
+      let S = _e(p), v = p.length * 8 - a;
+      return v > 0 ? S >> BigInt(v) : S;
+    }, Z = r.bits2int_modN || function(p) {
+      return o.create(k(p));
+    }, W = ae(a);
+    function P(m) {
+      return jr("num < 2^" + a, m, Ft, W), o.toBytes(m);
+    }
+    function Y(m, p) {
+      return vt(m, void 0, "message"), p ? vt(t(m), void 0, "prehashed message") : m;
+    }
+    function E(m, p, S) {
+      if (["recovered", "canonical"].some(($) => $ in S)) throw new Error("sign() legacy options not supported");
+      let { lowS: v, prehash: M, extraEntropy: N } = ms(S, y);
+      m = Y(m, M);
+      let C = Z(m), U = Ye(o, p), H = [P(U), P(C)];
+      if (N != null && N !== false) {
+        let $ = N === true ? n(h.secretKey) : N;
+        H.push(K("extraEntropy", $));
+      }
+      let Q = dt(...H), F = C;
+      function G($) {
+        let et = k($);
+        if (!o.isValidNot0(et)) return;
+        let wt = o.inv(et), J = e2.BASE.multiply(et).toAffine(), lt = o.create(J.x);
+        if (lt === Ft) return;
+        let In = o.create(wt * o.create(F + lt * U));
+        if (In === Ft) return;
+        let zs = (J.x === lt ? 0 : 2) | Number(J.y & Ge), Ps = In;
+        return v && A(In) && (Ps = o.neg(In), zs ^= 1), new x(lt, Ps, zs);
+      }
+      return { seed: Q, k2sig: G };
+    }
+    function R(m, p, S = {}) {
+      m = K("message", m);
+      let { seed: v, k2sig: M } = E(m, p, S);
+      return Lo(t.outputLen, o.BYTES, i)(v, M);
+    }
+    function V(m) {
+      let p, S = typeof m == "string" || kt(m), v = !S && m !== null && typeof m == "object" && typeof m.r == "bigint" && typeof m.s == "bigint";
+      if (!S && !v) throw new Error("invalid signature, expected Uint8Array, hex string or Signature instance");
+      if (v) p = new x(m.r, m.s);
+      else if (S) {
+        try {
+          p = x.fromBytes(K("sig", m), "der");
+        } catch (M) {
+          if (!(M instanceof Wt.Err)) throw M;
+        }
+        if (!p) try {
+          p = x.fromBytes(K("sig", m), "compact");
+        } catch {
+          return false;
+        }
+      }
+      return p || false;
+    }
+    function D(m, p, S, v = {}) {
+      let { lowS: M, prehash: N, format: C } = ms(v, y);
+      if (S = K("publicKey", S), p = Y(K("message", p), N), "strict" in v) throw new Error("options.strict was renamed to lowS");
+      let U = C === void 0 ? V(m) : x.fromBytes(K("sig", m), C);
+      if (U === false) return false;
+      try {
+        let H = e2.fromBytes(S);
+        if (M && U.hasHighS()) return false;
+        let { r: Q, s: F } = U, G = Z(p), $ = o.inv(F), et = o.create(G * $), wt = o.create(Q * $), J = e2.BASE.multiplyUnsafe(et).add(H.multiplyUnsafe(wt));
+        return J.is0() ? false : o.create(J.x) === Q;
+      } catch {
+        return false;
+      }
+    }
+    function w(m, p, S = {}) {
+      let { prehash: v } = ms(S, y);
+      return p = Y(p, v), x.fromBytes(m, "recovered").recoverPublicKey(p).toBytes();
+    }
+    return Object.freeze({ keygen: f, getPublicKey: d, getSharedSecret: g, utils: l, lengths: h, Point: e2, sign: R, verify: D, recoverPublicKey: w, Signature: x, hash: t });
+  }
+  function uf(e2) {
+    let t = { a: e2.a, b: e2.b, p: e2.Fp.ORDER, n: e2.n, h: e2.h, Gx: e2.Gx, Gy: e2.Gy }, r = e2.Fp, n = e2.allowedPrivateKeyLengths ? Array.from(new Set(e2.allowedPrivateKeyLengths.map((o) => Math.ceil(o / 2)))) : void 0, i = mt(t.n, { BITS: e2.nBitLength, allowedLengths: n, modFromBytes: e2.wrapPrivateKey }), s = { Fp: r, Fn: i, allowInfinityPoint: e2.allowInfinityPoint, endo: e2.endo, isTorsionFree: e2.isTorsionFree, clearCofactor: e2.clearCofactor, fromBytes: e2.fromBytes, toBytes: e2.toBytes };
+    return { CURVE: t, curveOpts: s };
+  }
+  function hf(e2) {
+    let { CURVE: t, curveOpts: r } = uf(e2), n = { hmac: e2.hmac, randomBytes: e2.randomBytes, lowS: e2.lowS, bits2int: e2.bits2int, bits2int_modN: e2.bits2int_modN };
+    return { CURVE: t, curveOpts: r, hash: e2.hash, ecdsaOpts: n };
+  }
+  function df(e2, t) {
+    let r = t.Point;
+    return Object.assign({}, t, { ProjectivePoint: r, CURVE: Object.assign({}, e2, jn(r.Fn.ORDER, r.Fn.BITS)) });
+  }
+  function ca(e2) {
+    let { CURVE: t, curveOpts: r, hash: n, ecdsaOpts: i } = hf(e2), s = cf(t, r), o = lf(s, n, i);
+    return df(e2, o);
+  }
+  var ia;
+  var ws;
+  var Wt;
+  var Ft;
+  var Ge;
+  var sa;
+  var Ln;
+  var af;
+  var fa = T(() => {
+    Vo();
+    ne();
+    je();
+    Hn();
+    ke();
+    ia = (e2, t) => (e2 + (e2 >= 0 ? t : -t) / sa) / t;
+    ws = class extends Error {
+      constructor(t = "") {
+        super(t);
+      }
+    }, Wt = { Err: ws, _tlv: { encode: (e2, t) => {
+      let { Err: r } = Wt;
+      if (e2 < 0 || e2 > 256) throw new r("tlv.encode: wrong tag");
+      if (t.length & 1) throw new r("tlv.encode: unpadded data");
+      let n = t.length / 2, i = Vr(n);
+      if (i.length / 2 & 128) throw new r("tlv.encode: long form length too big");
+      let s = n > 127 ? Vr(i.length / 2 | 128) : "";
+      return Vr(e2) + s + i + t;
+    }, decode(e2, t) {
+      let { Err: r } = Wt, n = 0;
+      if (e2 < 0 || e2 > 256) throw new r("tlv.encode: wrong tag");
+      if (t.length < 2 || t[n++] !== e2) throw new r("tlv.decode: wrong tlv");
+      let i = t[n++], s = !!(i & 128), o = 0;
+      if (!s) o = i;
+      else {
+        let a = i & 127;
+        if (!a) throw new r("tlv.decode(long): indefinite length not supported");
+        if (a > 4) throw new r("tlv.decode(long): byte length is too big");
+        let f = t.subarray(n, n + a);
+        if (f.length !== a) throw new r("tlv.decode: length bytes not complete");
+        if (f[0] === 0) throw new r("tlv.decode(long): zero leftmost byte");
+        for (let d of f) o = o << 8 | d;
+        if (n += a, o < 128) throw new r("tlv.decode(long): not minimal encoding");
+      }
+      let c = t.subarray(n, n + o);
+      if (c.length !== o) throw new r("tlv.decode: wrong value length");
+      return { v: c, l: t.subarray(n + o) };
+    } }, _int: { encode(e2) {
+      let { Err: t } = Wt;
+      if (e2 < Ft) throw new t("integer: negative integers are not allowed");
+      let r = Vr(e2);
+      if (Number.parseInt(r[0], 16) & 8 && (r = "00" + r), r.length & 1) throw new t("unexpected DER parsing assertion: unpadded hex");
+      return r;
+    }, decode(e2) {
+      let { Err: t } = Wt;
+      if (e2[0] & 128) throw new t("invalid signature integer: negative");
+      if (e2[0] === 0 && !(e2[1] & 128)) throw new t("invalid signature integer: unnecessary leading zero");
+      return _e(e2);
+    } }, toSig(e2) {
+      let { Err: t, _int: r, _tlv: n } = Wt, i = K("signature", e2), { v: s, l: o } = n.decode(48, i);
+      if (o.length) throw new t("invalid signature: left bytes after parsing");
+      let { v: c, l: a } = n.decode(2, s), { v: f, l: d } = n.decode(2, a);
+      if (d.length) throw new t("invalid signature: left bytes after parsing");
+      return { r: r.decode(c), s: r.decode(f) };
+    }, hexFromSig(e2) {
+      let { _tlv: t, _int: r } = Wt, n = t.encode(2, r.encode(e2.r)), i = t.encode(2, r.encode(e2.s)), s = n + i;
+      return t.encode(48, s);
+    } }, Ft = BigInt(0), Ge = BigInt(1), sa = BigInt(2), Ln = BigInt(3), af = BigInt(4);
+  });
+  function Zn(e2, t) {
+    let r = (n) => ca({ ...e2, hash: n });
+    return { ...r(t), create: r };
+  }
+  var la = T(() => {
+    fa();
+  });
+  var ua;
+  var ha;
+  var da;
+  var gf;
+  var mf;
+  var pf;
+  var ga;
+  var ma;
+  var pa;
+  var wa = T(() => {
+    es();
+    la();
+    ke();
+    ua = { p: BigInt("0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff"), n: BigInt("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551"), h: BigInt(1), a: BigInt("0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc"), b: BigInt("0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b"), Gx: BigInt("0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"), Gy: BigInt("0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5") }, ha = { p: BigInt("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff"), n: BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973"), h: BigInt(1), a: BigInt("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffc"), b: BigInt("0xb3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef"), Gx: BigInt("0xaa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab7"), Gy: BigInt("0x3617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f") }, da = { p: BigInt("0x1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), n: BigInt("0x01fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa51868783bf2f966b7fcc0148f709a5d03bb5c9b8899c47aebb6fb71e91386409"), h: BigInt(1), a: BigInt("0x1fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc"), b: BigInt("0x0051953eb9618e1c9a1f929a21a0b68540eea2da725b99b315f3b8b489918ef109e156193951ec7e937b1652c0bd3bb1bf073573df883d2c34f1ef451fd46b503f00"), Gx: BigInt("0x00c6858e06b70404e9cd9e3ecb662395b4429c648139053fb521f828af606b4d3dbaa14b5e77efe75928fe1dc127a2ffa8de3348b3c1856a429bf97e7e31c2e5bd66"), Gy: BigInt("0x011839296a789a3bc0045c8a5fb42c7d1bd998f54449579b446817afbd17273e662c97ee72995ef42640c550b9013fad0761353c7086a272c24088be94769fd16650") }, gf = mt(ua.p), mf = mt(ha.p), pf = mt(da.p), ga = Zn({ ...ua, Fp: gf, lowS: false }, Uo), ma = Zn({ ...ha, Fp: mf, lowS: false }, _o), pa = Zn({ ...da, Fp: pf, lowS: false, allowedPrivateKeyLengths: [130, 131, 132] }, Mn);
+  });
+  function yf(e2, t, r, n) {
+    let i = e2.sqr(r), s = e2.sqr(n), o = e2.add(e2.mul(t.a, i), s), c = e2.add(e2.ONE, e2.mul(t.d, e2.mul(i, s)));
+    return e2.eql(o, c);
+  }
+  function Ef(e2, t = {}) {
+    let r = kn("edwards", e2, t, t.FpFnLE), { Fp: n, Fn: i } = r, s = r.CURVE, { h: o } = s;
+    ce(t, {}, { uvRatio: "function" });
+    let c = ys << BigInt(i.BYTES * 8) - st, a = (A) => n.create(A), f = t.uvRatio || ((A, I) => {
+      try {
+        return { isValid: true, value: n.sqrt(n.div(A, I)) };
+      } catch {
+        return { isValid: false, value: fe };
+      }
+    });
+    if (!yf(n, s, s.Gx, s.Gy)) throw new Error("bad curve params: generator point");
+    function d(A, I, B = false) {
+      let x = B ? st : fe;
+      return jr("coordinate " + A, I, x, c), I;
+    }
+    function g(A) {
+      if (!(A instanceof y)) throw new Error("ExtendedPoint expected");
+    }
+    let l = Ve((A, I) => {
+      let { X: B, Y: x, Z: k } = A, Z = A.is0();
+      I == null && (I = Z ? wf : n.inv(k));
+      let W = a(B * I), P = a(x * I), Y = n.mul(k, I);
+      if (Z) return { x: fe, y: st };
+      if (Y !== st) throw new Error("invZ was invalid");
+      return { x: W, y: P };
+    }), h = Ve((A) => {
+      let { a: I, d: B } = s;
+      if (A.is0()) throw new Error("bad point: ZERO");
+      let { X: x, Y: k, Z, T: W } = A, P = a(x * x), Y = a(k * k), E = a(Z * Z), R = a(E * E), V = a(P * I), D = a(E * a(V + Y)), w = a(R + a(B * a(P * Y)));
+      if (D !== w) throw new Error("bad point: equation left != right (1)");
+      let m = a(x * k), p = a(Z * W);
+      if (m !== p) throw new Error("bad point: equation left != right (2)");
+      return true;
+    });
+    class y {
+      constructor(I, B, x, k) {
+        this.X = d("x", I), this.Y = d("y", B), this.Z = d("z", x, true), this.T = d("t", k), Object.freeze(this);
+      }
+      static CURVE() {
+        return s;
+      }
+      static fromAffine(I) {
+        if (I instanceof y) throw new Error("extended point not allowed");
+        let { x: B, y: x } = I || {};
+        return d("x", B), d("y", x), new y(B, x, st, a(B * x));
+      }
+      static fromBytes(I, B = false) {
+        let x = n.BYTES, { a: k, d: Z } = s;
+        I = as(vt(I, x, "point")), Zt(B, "zip215");
+        let W = as(I), P = I[x - 1];
+        W[x - 1] = P & -129;
+        let Y = Yt(W), E = B ? c : n.ORDER;
+        jr("point.y", Y, fe, E);
+        let R = a(Y * Y), V = a(R - st), D = a(Z * R - k), { isValid: w, value: m } = f(V, D);
+        if (!w) throw new Error("bad point: invalid y coordinate");
+        let p = (m & st) === st, S = (P & 128) !== 0;
+        if (!B && m === fe && S) throw new Error("bad point: x=0 and x_0=1");
+        return S !== p && (m = a(-m)), y.fromAffine({ x: m, y: Y });
+      }
+      static fromHex(I, B = false) {
+        return y.fromBytes(K("point", I), B);
+      }
+      get x() {
+        return this.toAffine().x;
+      }
+      get y() {
+        return this.toAffine().y;
+      }
+      precompute(I = 8, B = true) {
+        return b.createCache(this, I), B || this.multiply(ys), this;
+      }
+      assertValidity() {
+        h(this);
+      }
+      equals(I) {
+        g(I);
+        let { X: B, Y: x, Z: k } = this, { X: Z, Y: W, Z: P } = I, Y = a(B * P), E = a(Z * k), R = a(x * P), V = a(W * k);
+        return Y === E && R === V;
+      }
+      is0() {
+        return this.equals(y.ZERO);
+      }
+      negate() {
+        return new y(a(-this.X), this.Y, this.Z, a(-this.T));
+      }
+      double() {
+        let { a: I } = s, { X: B, Y: x, Z: k } = this, Z = a(B * B), W = a(x * x), P = a(ys * a(k * k)), Y = a(I * Z), E = B + x, R = a(a(E * E) - Z - W), V = Y + W, D = V - P, w = Y - W, m = a(R * D), p = a(V * w), S = a(R * w), v = a(D * V);
+        return new y(m, p, v, S);
+      }
+      add(I) {
+        g(I);
+        let { a: B, d: x } = s, { X: k, Y: Z, Z: W, T: P } = this, { X: Y, Y: E, Z: R, T: V } = I, D = a(k * Y), w = a(Z * E), m = a(P * x * V), p = a(W * R), S = a((k + Z) * (Y + E) - D - w), v = p - m, M = p + m, N = a(w - B * D), C = a(S * v), U = a(M * N), H = a(S * N), Q = a(v * M);
+        return new y(C, U, Q, H);
+      }
+      subtract(I) {
+        return this.add(I.negate());
+      }
+      multiply(I) {
+        if (!i.isValidNot0(I)) throw new Error("invalid scalar: expected 1 <= sc < curve.n");
+        let { p: B, f: x } = b.cached(this, I, (k) => Kt(y, k));
+        return Kt(y, [B, x])[0];
+      }
+      multiplyUnsafe(I, B = y.ZERO) {
+        if (!i.isValid(I)) throw new Error("invalid scalar: expected 0 <= sc < curve.n");
+        return I === fe ? y.ZERO : this.is0() || I === st ? this : b.unsafe(this, I, (x) => Kt(y, x), B);
+      }
+      isSmallOrder() {
+        return this.multiplyUnsafe(o).is0();
+      }
+      isTorsionFree() {
+        return b.unsafe(this, s.n).is0();
+      }
+      toAffine(I) {
+        return l(this, I);
+      }
+      clearCofactor() {
+        return o === st ? this : this.multiplyUnsafe(o);
+      }
+      toBytes() {
+        let { x: I, y: B } = this.toAffine(), x = n.toBytes(B);
+        return x[x.length - 1] |= I & st ? 128 : 0, x;
+      }
+      toHex() {
+        return Bt(this.toBytes());
+      }
+      toString() {
+        return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
+      }
+      get ex() {
+        return this.X;
+      }
+      get ey() {
+        return this.Y;
+      }
+      get ez() {
+        return this.Z;
+      }
+      get et() {
+        return this.T;
+      }
+      static normalizeZ(I) {
+        return Kt(y, I);
+      }
+      static msm(I, B) {
+        return Ze(y, i, I, B);
+      }
+      _setWindowSize(I) {
+        this.precompute(I);
+      }
+      toRawBytes() {
+        return this.toBytes();
+      }
+    }
+    y.BASE = new y(s.Gx, s.Gy, st, a(s.Gx * s.Gy)), y.ZERO = new y(fe, st, st, fe), y.Fp = n, y.Fn = i;
+    let b = new Le(y, i.BITS);
+    return y.BASE.precompute(8), y;
+  }
+  function If(e2, t, r = {}) {
+    if (typeof t != "function") throw new Error('"hash" function param is required');
+    ce(r, {}, { adjustScalarBytes: "function", randomBytes: "function", domain: "function", prehash: "function", mapToCurve: "function" });
+    let { prehash: n } = r, { BASE: i, Fp: s, Fn: o } = e2, c = r.randomBytes || Ue, a = r.adjustScalarBytes || ((E) => E), f = r.domain || ((E, R, V) => {
+      if (Zt(V, "phflag"), R.length || V) throw new Error("Contexts/pre-hash are not supported");
+      return E;
+    });
+    function d(E) {
+      return o.create(Yt(E));
+    }
+    function g(E) {
+      let R = x.secretKey;
+      E = K("private key", E, R);
+      let V = K("hashed private key", t(E), 2 * R), D = a(V.slice(0, R)), w = V.slice(R, 2 * R), m = d(D);
+      return { head: D, prefix: w, scalar: m };
+    }
+    function l(E) {
+      let { head: R, prefix: V, scalar: D } = g(E), w = i.multiply(D), m = w.toBytes();
+      return { head: R, prefix: V, scalar: D, point: w, pointBytes: m };
+    }
+    function h(E) {
+      return l(E).pointBytes;
+    }
+    function y(E = Uint8Array.of(), ...R) {
+      let V = dt(...R);
+      return d(t(f(V, K("context", E), !!n)));
+    }
+    function b(E, R, V = {}) {
+      E = K("message", E), n && (E = n(E));
+      let { prefix: D, scalar: w, pointBytes: m } = l(R), p = y(V.context, D, E), S = i.multiply(p).toBytes(), v = y(V.context, S, m, E), M = o.create(p + v * w);
+      if (!o.isValid(M)) throw new Error("sign failed: invalid s");
+      let N = dt(S, o.toBytes(M));
+      return vt(N, x.signature, "result");
+    }
+    let A = { zip215: true };
+    function I(E, R, V, D = A) {
+      let { context: w, zip215: m } = D, p = x.signature;
+      E = K("signature", E, p), R = K("message", R), V = K("publicKey", V, x.publicKey), m !== void 0 && Zt(m, "zip215"), n && (R = n(R));
+      let S = p / 2, v = E.subarray(0, S), M = Yt(E.subarray(S, p)), N, C, U;
+      try {
+        N = e2.fromBytes(V, m), C = e2.fromBytes(v, m), U = i.multiplyUnsafe(M);
+      } catch {
+        return false;
+      }
+      if (!m && N.isSmallOrder()) return false;
+      let H = y(w, C.toBytes(), N.toBytes(), R);
+      return C.add(N.multiplyUnsafe(H)).subtract(U).clearCofactor().is0();
+    }
+    let B = s.BYTES, x = { secretKey: B, publicKey: B, signature: 2 * B, seed: B };
+    function k(E = c(x.seed)) {
+      return vt(E, x.seed, "seed");
+    }
+    function Z(E) {
+      let R = Y.randomSecretKey(E);
+      return { secretKey: R, publicKey: h(R) };
+    }
+    function W(E) {
+      return kt(E) && E.length === o.BYTES;
+    }
+    function P(E, R) {
+      try {
+        return !!e2.fromBytes(E, R);
+      } catch {
+        return false;
+      }
+    }
+    let Y = { getExtendedPublicKey: l, randomSecretKey: k, isValidSecretKey: W, isValidPublicKey: P, toMontgomery(E) {
+      let { y: R } = e2.fromBytes(E), V = x.publicKey, D = V === 32;
+      if (!D && V !== 57) throw new Error("only defined for 25519 and 448");
+      let w = D ? s.div(st + R, st - R) : s.div(R - st, R + st);
+      return s.toBytes(w);
+    }, toMontgomerySecret(E) {
+      let R = x.secretKey;
+      vt(E, R);
+      let V = t(E.subarray(0, R));
+      return a(V).subarray(0, R);
+    }, randomPrivateKey: k, precompute(E = 8, R = e2.BASE) {
+      return R.precompute(E, false);
+    } };
+    return Object.freeze({ keygen: Z, getPublicKey: h, sign: b, verify: I, utils: Y, Point: e2, lengths: x });
+  }
+  function xf(e2) {
+    let t = { a: e2.a, d: e2.d, p: e2.Fp.ORDER, n: e2.n, h: e2.h, Gx: e2.Gx, Gy: e2.Gy }, r = e2.Fp, n = mt(t.n, e2.nBitLength, true), i = { Fp: r, Fn: n, uvRatio: e2.uvRatio }, s = { randomBytes: e2.randomBytes, adjustScalarBytes: e2.adjustScalarBytes, domain: e2.domain, prehash: e2.prehash, mapToCurve: e2.mapToCurve };
+    return { CURVE: t, curveOpts: i, hash: e2.hash, eddsaOpts: s };
+  }
+  function bf(e2, t) {
+    let r = t.Point;
+    return Object.assign({}, t, { ExtendedPoint: r, CURVE: e2, nBitLength: r.Fn.BITS, nByteLength: r.Fn.BYTES });
+  }
+  function ya(e2) {
+    let { CURVE: t, curveOpts: r, hash: n, eddsaOpts: i } = xf(e2), s = Ef(t, r), o = If(s, n, i);
+    return bf(e2, o);
+  }
+  var fe;
+  var st;
+  var ys;
+  var wf;
+  var Yn;
+  var Ea = T(() => {
+    je();
+    Hn();
+    ke();
+    fe = BigInt(0), st = BigInt(1), ys = BigInt(2), wf = BigInt(8);
+    Yn = class {
+      constructor(t) {
+        this.ep = t;
+      }
+      static fromBytes(t) {
+        cs();
+      }
+      static fromHex(t) {
+        cs();
+      }
+      get x() {
+        return this.toAffine().x;
+      }
+      get y() {
+        return this.toAffine().y;
+      }
+      clearCofactor() {
+        return this;
+      }
+      assertValidity() {
+        this.ep.assertValidity();
+      }
+      toAffine(t) {
+        return this.ep.toAffine(t);
+      }
+      toHex() {
+        return Bt(this.toBytes());
+      }
+      toString() {
+        return this.toHex();
+      }
+      isTorsionFree() {
+        return true;
+      }
+      isSmallOrder() {
+        return false;
+      }
+      add(t) {
+        return this.assertSame(t), this.init(this.ep.add(t.ep));
+      }
+      subtract(t) {
+        return this.assertSame(t), this.init(this.ep.subtract(t.ep));
+      }
+      multiply(t) {
+        return this.init(this.ep.multiply(t));
+      }
+      multiplyUnsafe(t) {
+        return this.init(this.ep.multiplyUnsafe(t));
+      }
+      double() {
+        return this.init(this.ep.double());
+      }
+      negate() {
+        return this.init(this.ep.negate());
+      }
+      precompute(t, r) {
+        return this.init(this.ep.precompute(t, r));
+      }
+      toRawBytes() {
+        return this.toBytes();
+      }
+    };
+  });
+  function Tf(e2) {
+    let t = BigInt(10), r = BigInt(20), n = BigInt(40), i = BigInt(80), s = Ke, c = e2 * e2 % s * e2 % s, a = Rt(c, Ia, s) * c % s, f = Rt(a, zt, s) * e2 % s, d = Rt(f, Af, s) * f % s, g = Rt(d, t, s) * d % s, l = Rt(g, r, s) * g % s, h = Rt(l, n, s) * l % s, y = Rt(h, i, s) * h % s, b = Rt(y, i, s) * h % s, A = Rt(b, t, s) * d % s;
+    return { pow_p_5_8: Rt(A, Ia, s) * e2 % s, b2: c };
+  }
+  function Bf(e2) {
+    return e2[0] &= 248, e2[31] &= 127, e2[31] |= 64, e2;
+  }
+  function bs(e2, t) {
+    let r = Ke, n = q(t * t * t, r), i = q(n * n * t, r), s = Tf(e2 * i).pow_p_5_8, o = q(e2 * n * s, r), c = q(t * o * o, r), a = o, f = q(o * Es, r), d = c === e2, g = c === q(-e2, r), l = c === q(-e2 * Es, r);
+    return d && (o = a), (g || l) && (o = f), Gt(o, r) && (o = q(-o, r)), { isValid: d || g, value: o };
+  }
+  function ba(e2) {
+    let { d: t } = Lr, r = Ke, n = (I) => le.create(I), i = n(Is * e2 * e2), s = n((i + zt) * Of), o = BigInt(-1), c = n((o - t * i) * n(i + t)), { isValid: a, value: f } = bs(s, c), d = n(f * e2);
+    Gt(d, r) || (d = n(-d)), a || (f = d), a || (o = i);
+    let g = n(o * (i - zt) * Mf - c), l = f * f, h = n((f + f) * c), y = n(g * Rf), b = n(zt - l), A = n(zt + l);
+    return new _t.Point(n(h * A), n(b * y), n(y * A), n(h * b));
+  }
+  function _f(e2) {
+    xt(e2, 64);
+    let t = xs(e2.subarray(0, 32)), r = ba(t), n = xs(e2.subarray(32, 64)), i = ba(n);
+    return new Pt(r.add(i));
+  }
+  var Sf;
+  var zt;
+  var Ia;
+  var hh;
+  var Af;
+  var vf;
+  var Ke;
+  var Lr;
+  var Es;
+  var le;
+  var Nf;
+  var Cf;
+  var _t;
+  var Is;
+  var Rf;
+  var Df;
+  var Of;
+  var Mf;
+  var xa;
+  var Uf;
+  var xs;
+  var Pt;
+  var Sa = T(() => {
+    es();
+    ne();
+    Hn();
+    Ea();
+    ke();
+    je();
+    Sf = BigInt(0), zt = BigInt(1), Ia = BigInt(2), hh = BigInt(3), Af = BigInt(5), vf = BigInt(8), Ke = BigInt("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed"), Lr = { p: Ke, n: BigInt("0x1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed"), h: vf, a: BigInt("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffec"), d: BigInt("0x52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3"), Gx: BigInt("0x216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a"), Gy: BigInt("0x6666666666666666666666666666666666666666666666666666666666666658") };
+    Es = BigInt("19681161376707505956807079304988542015446066515923890162744021073123829784752");
+    le = mt(Lr.p, { isLE: true }), Nf = mt(Lr.n, { isLE: true }), Cf = { ...Lr, Fp: le, hash: Mn, adjustScalarBytes: Bf, uvRatio: bs }, _t = ya(Cf), Is = Es, Rf = BigInt("25063068953384623474111414158702152701244531502492656460079210482610430750235"), Df = BigInt("54469307008909316920995813868745141605393597292927456921205312896311721017578"), Of = BigInt("1159843021668779879193775521855586647937357759715417654439879720876111806838"), Mf = BigInt("40440834346308536858101042469323190826248399146238708352240133220865137265952"), xa = (e2) => bs(zt, e2), Uf = BigInt("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), xs = (e2) => _t.Point.Fp.create(Yt(e2) & Uf);
+    Pt = class e2 extends Yn {
+      constructor(t) {
+        super(t);
+      }
+      static fromAffine(t) {
+        return new e2(_t.Point.fromAffine(t));
+      }
+      assertSame(t) {
+        if (!(t instanceof e2)) throw new Error("RistrettoPoint expected");
+      }
+      init(t) {
+        return new e2(t);
+      }
+      static hashToCurve(t) {
+        return _f(K("ristrettoHash", t, 64));
+      }
+      static fromBytes(t) {
+        xt(t, 32);
+        let { a: r, d: n } = Lr, i = Ke, s = (k) => le.create(k), o = xs(t);
+        if (!ko(le.toBytes(o), t) || Gt(o, i)) throw new Error("invalid ristretto255 encoding 1");
+        let c = s(o * o), a = s(zt + r * c), f = s(zt - r * c), d = s(a * a), g = s(f * f), l = s(r * n * d - g), { isValid: h, value: y } = xa(s(l * g)), b = s(y * f), A = s(y * b * l), I = s((o + o) * b);
+        Gt(I, i) && (I = s(-I));
+        let B = s(a * A), x = s(I * B);
+        if (!h || Gt(x, i) || B === Sf) throw new Error("invalid ristretto255 encoding 2");
+        return new e2(new _t.Point(I, B, zt, x));
+      }
+      static fromHex(t) {
+        return e2.fromBytes(K("ristrettoHex", t, 32));
+      }
+      static msm(t, r) {
+        return Ze(e2, _t.Point.Fn, t, r);
+      }
+      toBytes() {
+        let { X: t, Y: r, Z: n, T: i } = this.ep, s = Ke, o = (A) => le.create(A), c = o(o(n + r) * o(n - r)), a = o(t * r), f = o(a * a), { value: d } = xa(o(c * f)), g = o(d * c), l = o(d * a), h = o(g * l * i), y;
+        if (Gt(i * h, s)) {
+          let A = o(r * Is), I = o(t * Is);
+          t = A, r = I, y = o(g * Df);
+        } else y = l;
+        Gt(t * h, s) && (r = o(-r));
+        let b = o((n - r) * y);
+        return Gt(b, s) && (b = o(-b)), le.toBytes(b);
+      }
+      equals(t) {
+        this.assertSame(t);
+        let { X: r, Y: n } = this.ep, { X: i, Y: s } = t.ep, o = (f) => le.create(f), c = o(r * s) === o(n * i), a = o(n * s) === o(r * i);
+        return c || a;
+      }
+      is0() {
+        return this.equals(e2.ZERO);
+      }
+    };
+    Pt.BASE = new Pt(_t.Point.BASE);
+    Pt.ZERO = new Pt(_t.Point.ZERO);
+    Pt.Fp = le;
+    Pt.Fn = Nf;
+  });
+  function As() {
+    return Ss || (Ss = jf()), Ss;
+  }
+  function Aa(e2) {
+    return typeof e2 == "object" && e2 !== null && e2.__fallback__ === true;
+  }
+  function Kn(e2) {
+    return e2 instanceof ArrayBuffer ? new Uint8Array(e2) : new Uint8Array(e2.buffer, e2.byteOffset, e2.byteLength);
+  }
+  async function Vf() {
+    try {
+      return await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"]), true;
+    } catch {
+      return false;
+    }
+  }
+  async function jf() {
+    return await Vf() ? crypto.subtle : Zf(crypto.subtle);
+  }
+  function Lf(e2, t, r) {
+    let n, i = [];
+    if (e2 === "jwk") {
+      let s = t, o = r ? s.d : s.x;
+      if (s.kty !== "OKP" || s.crv !== "Ed25519" || !o) throw new DOMException("Invalid Ed25519 JWK", "DataError");
+      n = vn(o);
+    } else n = Kn(t), i = e2 === "spki" ? kf : e2 === "pkcs8" ? Hf : [];
+    if (n.length !== i.length + 32 || !i.every((s, o) => n[o] === s)) throw new DOMException(`Invalid Ed25519 ${e2} key`, "DataError");
+    return n.slice(i.length);
+  }
+  function Zf(e2) {
+    return new Proxy(e2, { get(t, r) {
+      if (r === "importKey") return async function(i, s, o, c, a) {
+        if (o?.name === "Ed25519") {
+          let f = a.includes("sign") ? "private" : "public";
+          return { __fallback__: true, algorithm: { name: "Ed25519" }, type: f, bytes: Lf(i, s, f === "private") };
+        }
+        return i === "jwk" ? t.importKey("jwk", s, o, c, a) : t.importKey(i, s, o, c, a);
+      };
+      if (r === "sign") return async function(i, s, o) {
+        if (i?.name === "Ed25519" && Aa(s)) {
+          if (s.type !== "private") throw new DOMException("Invalid key type for signing", "InvalidAccessError");
+          return _t.sign(Kn(o), s.bytes).buffer;
+        }
+        return t.sign(i, s, o);
+      };
+      if (r === "verify") return async function(i, s, o, c) {
+        if (i?.name === "Ed25519" && Aa(s)) {
+          if (s.type !== "public") throw new DOMException("Invalid key type for verify", "InvalidAccessError");
+          try {
+            return _t.verify(Kn(o), Kn(c), s.bytes);
+          } catch {
+            return false;
+          }
+        }
+        return t.verify(i, s, o, c);
+      };
+      let n = Reflect.get(t, r);
+      return typeof n == "function" ? n.bind(t) : n;
+    } });
+  }
+  function Yf(e2) {
+    let t = new Uint8Array([48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 1, 5, 0]), r = e2.length + 1, n = t.length + 1 + Gn(r).length + r, i = new Uint8Array(1 + Gn(n).length + n), s = 0;
+    i[s++] = 48;
+    let o = Gn(n);
+    i.set(o, s), s += o.length, i.set(t, s), s += t.length, i[s++] = 3;
+    let c = Gn(r);
+    return i.set(c, s), s += c.length, i[s++] = 0, i.set(e2, s), i;
+  }
+  function Gn(e2) {
+    return e2 < 128 ? new Uint8Array([e2]) : e2 < 256 ? new Uint8Array([129, e2]) : new Uint8Array([130, e2 >> 8 & 255, e2 & 255]);
+  }
+  async function ue(e2, t, r) {
+    class n {
+      constructor() {
+        this.format = "spki", this.keyData = new Uint8Array(0), this.algorithm = { name: nt.Ecdsa }, this.extractable = true, this.usage = ["verify"];
+      }
+    }
+    let i = new n();
+    if (r.includes("BEGIN")) i.format = "spki", i.keyData = Bn(r);
+    else if (/^[0-9A-Fa-f]+$/.test(r)) i.format = "raw", i.keyData = Tt(r);
+    else {
+      i.format = "spki";
+      let o = O(r);
+      e2.toLowerCase().includes("pkcs1") && o[0] === 48 && o[1] === 130 && o[4] === 2 && o[5] === 130 ? i.keyData = Yf(o) : i.keyData = o;
+    }
+    if (e2.toLowerCase().includes("ecdsa")) if (t.includes("256")) i.algorithm = { name: nt.Ecdsa, namedCurve: It.P256 };
+    else if (t.includes("384")) i.algorithm = { name: nt.Ecdsa, namedCurve: It.P384 };
+    else if (t.includes("521")) i.algorithm = { name: nt.Ecdsa, namedCurve: It.P521 };
+    else throw new Error("Cannot determine ECDSA key size.");
+    else if (e2.toLowerCase().includes("ed25519")) i.algorithm = { name: nt.Ed25519 };
+    else if (e2.toLowerCase().includes("rsa") || e2.toLowerCase().includes("pkcs1")) {
+      let o = j.SHA256, c = t.toUpperCase().replace(/[-_]/g, "");
+      c.includes("SHA256") || c.includes("256") ? o = j.SHA256 : c.includes("SHA384") || c.includes("384") ? o = j.SHA384 : (c.includes("SHA512") || c.includes("512")) && (o = j.SHA512), c.includes(Rr.PKCS1) || c.includes(Rr.RSAPKCS1) ? i.algorithm = { name: re.PKCS1v15, hash: { name: o } } : i.algorithm = { name: re.PSS, hash: { name: o } };
+    } else throw new Error(`Unsupported ${e2}`);
+    return await (await As()).importKey(i.format, i.keyData, i.algorithm, i.extractable, i.usage);
+  }
+  async function pt(e2, t, r, n = "sha256") {
+    let i = await As(), s = { name: e2.algorithm.name };
+    if (e2.algorithm.name === nt.Ecdsa) {
+      let o = e2.algorithm.namedCurve, c = 32;
+      if (o === It.P256 ? c = 32 : o === It.P384 ? c = 48 : o === It.P521 && (c = 66), s.hash = { name: "" }, n.includes("256")) s.hash.name = j.SHA256;
+      else if (n.includes("384")) s.hash.name = j.SHA384;
+      else if (n.includes("512")) s.hash.name = j.SHA512;
+      else throw new Error("Cannot determine hashing algorithm;");
+      let a;
+      try {
+        let f = ht.parseBuffer(r);
+        if (f.subs.length !== 2) return false;
+        let d = f.subs[0].toInteger(), g = f.subs[1].toInteger(), l = 1n << BigInt(c * 8);
+        if (d <= 0n || g <= 0n || d >= l || g >= l) return false;
+        a = new Uint8Array(c * 2), a.set(Tt(d.toString(16).padStart(c * 2, "0")), 0), a.set(Tt(g.toString(16).padStart(c * 2, "0")), c);
+      } catch {
+        return false;
+      }
+      return await i.verify(s, e2, a, t);
+    } else {
+      if (e2.algorithm.name === nt.Ed25519) return await i.verify({ name: e2.algorithm.name }, e2, r, t);
+      if (e2.algorithm.name === re.PSS) {
+        let o = e2.algorithm.hash.name, c = o === j.SHA256 ? 32 : o === j.SHA384 ? 48 : o === j.SHA512 ? 64 : 32;
+        return await i.verify({ name: re.PSS, saltLength: c }, e2, r, t);
+      } else {
+        if (e2.algorithm.name === re.PKCS1v15) return await i.verify({ name: e2.algorithm.name }, e2, r, t);
+        throw new Error("Unsupported key type!");
+      }
+    }
+  }
+  async function va(e2, t, r) {
+    let n = await As();
+    if (e2.algorithm.name !== nt.Ecdsa) throw new Error("verifySignatureOverDigest only supports ECDSA keys");
+    let i = e2.algorithm.namedCurve, s;
+    if (i === It.P256) s = ga;
+    else if (i === It.P384) s = ma;
+    else if (i === It.P521) s = pa;
+    else throw new Error(`Unsupported curve: ${i}`);
+    let o = await n.exportKey("jwk", e2);
+    if (!o.x || !o.y) throw new Error("Invalid ECDSA public key: missing x or y coordinates");
+    let c = vn(o.x), a = vn(o.y), f = new Uint8Array(1 + c.length + a.length);
+    return f[0] = 4, f.set(c, 1), f.set(a, 1 + c.length), s.verify(r, t, f, { format: "der", prehash: false, lowS: false });
+  }
+  var Ss;
+  var kf;
+  var Hf;
+  var Ta = T(() => {
+    po();
+    Cr();
+    Xi();
+    Pi();
+    wa();
+    Sa();
+    Ss = null;
+    kf = [48, 42, 48, 5, 6, 3, 43, 101, 112, 3, 33, 0], Hf = [48, 46, 2, 1, 0, 48, 5, 6, 3, 43, 101, 112, 4, 34, 4, 32];
+  });
+  var z = T(() => {
+    Nr();
+    Zi();
+    Yi();
+    Ki();
+    zi();
+    Fi();
+    Cr();
+    Pi();
+    mo();
+    Ta();
+    Xi();
+  });
+  function ve(e2) {
+    if (typeof e2?.start != "string" || e2.end !== void 0 && typeof e2.end != "string") throw new Error("Invalid authority validity period");
+    let t = new Date(e2.start), r = e2.end === void 0 ? /* @__PURE__ */ new Date(864e13) : new Date(e2.end);
+    if (!Number.isFinite(t.getTime()) || !Number.isFinite(r.getTime()) || t > r) throw new Error("Invalid authority validity period");
+    return { start: t, end: r };
+  }
+  function Zr(e2) {
+    let t = Gf[e2];
+    if (!t) throw new Error(`Unsupported hash algorithm: ${e2}`);
+    return t;
+  }
+  var We;
+  var Gf;
+  var Vt = T(() => {
+    z();
+    z();
+    (function(e2) {
+      e2.certificateAuthorities = "certificateAuthorities", e2.ctlogs = "ctlogs", e2.timestampAuthorities = "timestampAuthorities", e2.tlogs = "tlogs";
+    })(We || (We = {}));
+    Gf = { sha256: j.SHA256, sha384: j.SHA384, sha512: j.SHA512, SHA2_256: j.SHA256, SHA2_384: j.SHA384, SHA2_512: j.SHA512 };
+  });
+  var Fe;
+  var ze;
+  var Wn;
+  var Pe;
+  var Yr;
+  var Ba;
+  var Fn = T(() => {
+    Fe = { "1.2.840.10045.4.3.1": "sha224", "1.2.840.10045.4.3.2": "sha256", "1.2.840.10045.4.3.3": "sha384", "1.2.840.10045.4.3.4": "sha512" }, ze = { "1.2.840.113549.1.1.11": "sha256", "1.2.840.113549.1.1.12": "sha384", "1.2.840.113549.1.1.13": "sha512", "1.2.840.113549.1.1.5": "sha1" }, Wn = "1.2.840.113549.1.1.10", Pe = { "2.16.840.1.101.3.4.2.1": "sha256", "2.16.840.1.101.3.4.2.2": "sha384", "2.16.840.1.101.3.4.2.3": "sha512" }, Yr = "sha256", Ba = { "1.2.840.10045.3.1.7": "secp256r1", "1.3.132.0.34": "secp384r1", "1.3.132.0.35": "secp521r1" };
+  });
+  var zn;
+  var Na = T(() => {
+    z();
+    zn = class e2 {
+      constructor(t) {
+        this.version = t.version, this.logID = t.logID, this.timestamp = t.timestamp, this.extensions = t.extensions, this.hashAlgorithm = t.hashAlgorithm, this.signatureAlgorithm = t.signatureAlgorithm, this.signature = t.signature;
+      }
+      get datetime() {
+        return new Date(Number(oo(this.timestamp)));
+      }
+      get algorithm() {
+        switch (this.hashAlgorithm) {
+          case 0:
+            return "none";
+          case 1:
+            return "md5";
+          case 2:
+            return "sha1";
+          case 3:
+            return "sha224";
+          case 4:
+            return "sha256";
+          case 5:
+            return "sha384";
+          case 6:
+            return "sha512";
+          default:
+            return "unknown";
+        }
+      }
+      async verify(t, r) {
+        let n = new Et();
+        return n.appendChar(this.version), n.appendChar(0), n.appendView(this.timestamp), n.appendUint16(1), n.appendView(t), n.appendUint16(this.extensions.byteLength), this.extensions.byteLength > 0 && n.appendView(this.extensions), await pt(r, n.buffer, this.signature, this.algorithm);
+      }
+      static parse(t) {
+        let r = new Et(t), n = r.getUint8();
+        if (n !== 0) throw new Error(`Unsupported SCT version: ${n} (expected 0 for v1)`);
+        let i = r.getBlock(32), s = r.getBlock(8), o = r.getUint16(), c = r.getBlock(o), a = r.getUint8(), f = r.getUint8(), d = r.getUint16(), g = r.getBlock(d);
+        if (r.position !== t.length) throw new Error("SCT buffer length mismatch");
+        return new e2({ version: n, logID: i, timestamp: s, extensions: c, hashAlgorithm: a, signatureAlgorithm: f, signature: g });
+      }
+    };
+  });
+  var bt;
+  var Pn;
+  var Xn;
+  var Qn;
+  var $n;
+  var Jn;
+  var he;
+  var ct;
+  var Xe;
+  var Qe;
+  var $e;
+  var Je;
+  var qe;
+  var tr;
+  var er;
+  var rr;
+  var nr;
+  var ir;
+  var sr;
+  var or;
+  var ar;
+  var cr;
+  var fr;
+  var lr;
+  var ur;
+  var hr;
+  var dr;
+  var gr;
+  var mr;
+  var Te;
+  var qn = T(() => {
+    z();
+    Na();
+    bt = class {
+      constructor(t) {
+        this.root = t;
+      }
+      get oid() {
+        return this.root.subs[0].toOID();
+      }
+      get critical() {
+        return this.root.subs.length === 3 ? this.root.subs[1].toBoolean() : false;
+      }
+      get value() {
+        return this.extnValueObj.value;
+      }
+      get valueObj() {
+        return this.extnValueObj;
+      }
+      get extnValueObj() {
+        return this.root.subs[this.root.subs.length - 1];
+      }
+    }, Pn = class extends bt {
+      get isCA() {
+        return this.sequence.subs[0]?.toBoolean() ?? false;
+      }
+      get pathLenConstraint() {
+        return this.sequence.subs.length > 1 ? this.sequence.subs[1].toInteger() : void 0;
+      }
+      get sequence() {
+        return this.extnValueObj.subs[0];
+      }
+    }, Xn = class extends bt {
+      get digitalSignature() {
+        return this.bitString[0] === 1;
+      }
+      get keyCertSign() {
+        return this.bitString[5] === 1;
+      }
+      get crlSign() {
+        return this.bitString[6] === 1;
+      }
+      get bitString() {
+        return this.extnValueObj.subs[0].toBitString();
+      }
+    }, Qn = class extends bt {
+      get rfc822Name() {
+        let t = this.findGeneralName(1)?.value;
+        if (t !== void 0) return rt(t);
+      }
+      get uri() {
+        let t = this.findGeneralName(6)?.value;
+        if (t !== void 0) return rt(t);
+      }
+      otherName(t) {
+        let r = this.findGeneralName(0);
+        if (r === void 0 || r.subs[0].toOID() !== t) return;
+        let i = r.subs[1];
+        return rt(i.subs[0].value);
+      }
+      findGeneralName(t) {
+        return this.generalNames.find((r) => r.tag.isContextSpecific(t));
+      }
+      get generalNames() {
+        return this.extnValueObj.subs[0].subs;
+      }
+    }, $n = class extends bt {
+      get keyIdentifier() {
+        return this.findSequenceMember(0)?.value;
+      }
+      findSequenceMember(t) {
+        return this.sequence.subs.find((r) => r.tag.isContextSpecific(t));
+      }
+      get sequence() {
+        return this.extnValueObj.subs[0];
+      }
+    }, Jn = class extends bt {
+      get keyIdentifier() {
+        return this.extnValueObj.subs[0].value;
+      }
+    }, he = class extends bt {
+      get stringValue() {
+        return rt(this.extnValueObj.value);
+      }
+    }, ct = class extends bt {
+      get stringValue() {
+        return rt(this.extnValueObj.subs[0].value);
+      }
+    }, Xe = class extends he {
+      get issuer() {
+        return this.stringValue;
+      }
+    }, Qe = class extends he {
+      get workflowTrigger() {
+        return this.stringValue;
+      }
+    }, $e = class extends he {
+      get workflowSHA() {
+        return this.stringValue;
+      }
+    }, Je = class extends he {
+      get workflowName() {
+        return this.stringValue;
+      }
+    }, qe = class extends he {
+      get workflowRepository() {
+        return this.stringValue;
+      }
+    }, tr = class extends he {
+      get workflowRef() {
+        return this.stringValue;
+      }
+    }, er = class extends ct {
+      get issuer() {
+        return this.stringValue;
+      }
+    }, rr = class extends ct {
+      get buildSignerURI() {
+        return this.stringValue;
+      }
+    }, nr = class extends ct {
+      get buildSignerDigest() {
+        return this.stringValue;
+      }
+    }, ir = class extends ct {
+      get runnerEnvironment() {
+        return this.stringValue;
+      }
+    }, sr = class extends ct {
+      get sourceRepositoryURI() {
+        return this.stringValue;
+      }
+    }, or = class extends ct {
+      get sourceRepositoryDigest() {
+        return this.stringValue;
+      }
+    }, ar = class extends ct {
+      get sourceRepositoryRef() {
+        return this.stringValue;
+      }
+    }, cr = class extends ct {
+      get sourceRepositoryIdentifier() {
+        return this.stringValue;
+      }
+    }, fr = class extends ct {
+      get sourceRepositoryOwnerURI() {
+        return this.stringValue;
+      }
+    }, lr = class extends ct {
+      get sourceRepositoryOwnerIdentifier() {
+        return this.stringValue;
+      }
+    }, ur = class extends ct {
+      get buildConfigURI() {
+        return this.stringValue;
+      }
+    }, hr = class extends ct {
+      get buildConfigDigest() {
+        return this.stringValue;
+      }
+    }, dr = class extends ct {
+      get buildTrigger() {
+        return this.stringValue;
+      }
+    }, gr = class extends ct {
+      get runInvocationURI() {
+        return this.stringValue;
+      }
+    }, mr = class extends ct {
+      get sourceRepositoryVisibility() {
+        return this.stringValue;
+      }
+    }, Te = class extends bt {
+      constructor(t) {
+        super(t);
+      }
+      get signedCertificateTimestamps() {
+        let t = this.extnValueObj.subs[0].value, r = new Et(t), n = r.getUint16() + 2, i = [];
+        for (; r.position < n; ) {
+          let s = r.getUint16(), o = r.getBlock(s);
+          i.push(zn.parse(o));
+        }
+        if (r.position !== n) throw new Error("SCT list length does not match actual length");
+        return i;
+      }
+    };
+  });
+  var Kf;
+  var Wf;
+  var Ff;
+  var zf;
+  var Pf;
+  var pr;
+  var Xf;
+  var Qf;
+  var $f;
+  var Jf;
+  var qf;
+  var tl;
+  var el;
+  var Gr;
+  var Kr;
+  var Wr;
+  var Fr;
+  var zr;
+  var Pr;
+  var ti;
+  var Xr;
+  var Qr;
+  var $r;
+  var Jr;
+  var qr;
+  var tn;
+  var en;
+  var rn;
+  var nn;
+  var sn;
+  var on;
+  var an;
+  var cn;
+  var fn;
+  var ln;
+  var tt;
+  var un = T(() => {
+    z();
+    Vt();
+    Fn();
+    qn();
+    Kf = "2.5.29.14", Wf = "2.5.29.15", Ff = "2.5.29.17", zf = "2.5.29.19", Pf = "2.5.29.35", pr = "1.3.6.1.4.1.11129.2.4.2", Xf = "2.5.4.3", Qf = "2.5.4.6", $f = "2.5.4.7", Jf = "2.5.4.8", qf = "2.5.4.10", tl = "2.5.4.11", el = { [Xf]: "CN", [Qf]: "C", [$f]: "L", [Jf]: "ST", [qf]: "O", [tl]: "OU" }, Gr = "1.3.6.1.4.1.57264.1.1", Kr = "1.3.6.1.4.1.57264.1.2", Wr = "1.3.6.1.4.1.57264.1.3", Fr = "1.3.6.1.4.1.57264.1.4", zr = "1.3.6.1.4.1.57264.1.5", Pr = "1.3.6.1.4.1.57264.1.6", ti = "1.3.6.1.4.1.57264.1.7", Xr = "1.3.6.1.4.1.57264.1.8", Qr = "1.3.6.1.4.1.57264.1.9", $r = "1.3.6.1.4.1.57264.1.10", Jr = "1.3.6.1.4.1.57264.1.11", qr = "1.3.6.1.4.1.57264.1.12", tn = "1.3.6.1.4.1.57264.1.13", en = "1.3.6.1.4.1.57264.1.14", rn = "1.3.6.1.4.1.57264.1.15", nn = "1.3.6.1.4.1.57264.1.16", sn = "1.3.6.1.4.1.57264.1.17", on = "1.3.6.1.4.1.57264.1.18", an = "1.3.6.1.4.1.57264.1.19", cn = "1.3.6.1.4.1.57264.1.20", fn = "1.3.6.1.4.1.57264.1.21", ln = "1.3.6.1.4.1.57264.1.22", tt = class e2 {
+      constructor(t) {
+        this.root = t;
+      }
+      static parse(t) {
+        let r = typeof t == "string" ? Bn(t) : t, n = ht.parseBuffer(r);
+        return new e2(n);
+      }
+      get tbsCertificate() {
+        return this.tbsCertificateObj;
+      }
+      get version() {
+        return `v${(this.versionObj.subs[0].toInteger() + BigInt(1)).toString()}`;
+      }
+      get serialNumber() {
+        return this.serialNumberObj.value;
+      }
+      get notBefore() {
+        return this.validityObj.subs[0].toDate();
+      }
+      get notAfter() {
+        return this.validityObj.subs[1].toDate();
+      }
+      get issuer() {
+        return this.issuerObj.value;
+      }
+      get subject() {
+        return this.subjectObj.value;
+      }
+      get issuerDN() {
+        return this.parseDistinguishedName(this.issuerObj);
+      }
+      get subjectDN() {
+        return this.parseDistinguishedName(this.subjectObj);
+      }
+      get publicKey() {
+        return this.subjectPublicKeyInfoObj.toDER();
+      }
+      async getPublicKeyObj(t, r) {
+        let n = this.subjectPublicKeyInfoObj.toDER(), i = ht.parseBuffer(n), s = i.subs[0].subs[0].toOID(), o = s === "1.2.840.113549.1.1.1";
+        if (s === Wn) throw new Error("RSA-PSS public keys (id-RSASSA-PSS OID) are not supported by WebCrypto. Only certificates with standard RSA keys (rsaEncryption OID) signed using RSA-PSS are supported.");
+        if (o) {
+          let a = t || Yr, f = r ? a : `PKCS1_${a}`;
+          return ue(nt.RSA, f, De(n));
+        } else {
+          let a = i.subs[0].subs[1]?.toOID(), f = Ba[a];
+          if (!f) throw new Error(`Unknown ECDSA curve OID: ${a}`);
+          return ue(nt.Ecdsa, f, De(n));
+        }
+      }
+      get publicKeyObj() {
+        return this.getPublicKeyObj();
+      }
+      get signatureAlgorithm() {
+        let t = this.signatureAlgorithmObj.subs[0].toOID();
+        return Fe[t] || ze[t] || this.parseRsaPssHashAlgorithm();
+      }
+      get signatureAlgorithmOid() {
+        return this.signatureAlgorithmObj.subs[0].toOID();
+      }
+      parseRsaPssHashAlgorithm() {
+        if (this.signatureAlgorithmObj.subs[0].toOID() !== Wn) return "";
+        let r = this.signatureAlgorithmObj.subs[1];
+        if (!r || r.subs.length === 0) return Yr;
+        let n = r.subs[0];
+        if (n && n.subs.length > 0) {
+          let i = n.subs[0];
+          if (i && i.subs.length > 0) {
+            let s = i.subs[0].toOID();
+            return Pe[s] || Yr;
+          }
+        }
+        return Yr;
+      }
+      get signatureValue() {
+        return this.signatureValueObj.value.subarray(1);
+      }
+      get subjectAltName() {
+        let t = this.extSubjectAltName;
+        return t?.uri || t?.rfc822Name;
+      }
+      get extensions() {
+        return this.extensionsObj?.subs[0]?.subs || [];
+      }
+      get extKeyUsage() {
+        let t = this.findExtension(Wf);
+        return t ? new Xn(t) : void 0;
+      }
+      get extBasicConstraints() {
+        let t = this.findExtension(zf);
+        return t ? new Pn(t) : void 0;
+      }
+      get extSubjectAltName() {
+        let t = this.findExtension(Ff);
+        return t ? new Qn(t) : void 0;
+      }
+      get extAuthorityKeyID() {
+        let t = this.findExtension(Pf);
+        return t ? new $n(t) : void 0;
+      }
+      get extSubjectKeyID() {
+        let t = this.findExtension(Kf);
+        return t ? new Jn(t) : void 0;
+      }
+      get extSCT() {
+        let t = this.findExtension(pr);
+        return t ? new Te(t) : void 0;
+      }
+      get extFulcioIssuerV1() {
+        let t = this.findExtension(Gr);
+        return t ? new Xe(t) : void 0;
+      }
+      get extFulcioIssuerV2() {
+        let t = this.findExtension(Xr);
+        return t ? new er(t) : void 0;
+      }
+      get extGitHubWorkflowTrigger() {
+        let t = this.findExtension(Kr);
+        return t ? new Qe(t) : void 0;
+      }
+      get extGitHubWorkflowSHA() {
+        let t = this.findExtension(Wr);
+        return t ? new $e(t) : void 0;
+      }
+      get extGitHubWorkflowName() {
+        let t = this.findExtension(Fr);
+        return t ? new Je(t) : void 0;
+      }
+      get extGitHubWorkflowRepository() {
+        let t = this.findExtension(zr);
+        return t ? new qe(t) : void 0;
+      }
+      get extGitHubWorkflowRef() {
+        let t = this.findExtension(Pr);
+        return t ? new tr(t) : void 0;
+      }
+      get extBuildSignerURI() {
+        let t = this.findExtension(Qr);
+        return t ? new rr(t) : void 0;
+      }
+      get extBuildSignerDigest() {
+        let t = this.findExtension($r);
+        return t ? new nr(t) : void 0;
+      }
+      get extRunnerEnvironment() {
+        let t = this.findExtension(Jr);
+        return t ? new ir(t) : void 0;
+      }
+      get extSourceRepositoryURI() {
+        let t = this.findExtension(qr);
+        return t ? new sr(t) : void 0;
+      }
+      get extSourceRepositoryDigest() {
+        let t = this.findExtension(tn);
+        return t ? new or(t) : void 0;
+      }
+      get extSourceRepositoryRef() {
+        let t = this.findExtension(en);
+        return t ? new ar(t) : void 0;
+      }
+      get extSourceRepositoryIdentifier() {
+        let t = this.findExtension(rn);
+        return t ? new cr(t) : void 0;
+      }
+      get extSourceRepositoryOwnerURI() {
+        let t = this.findExtension(nn);
+        return t ? new fr(t) : void 0;
+      }
+      get extSourceRepositoryOwnerIdentifier() {
+        let t = this.findExtension(sn);
+        return t ? new lr(t) : void 0;
+      }
+      get extBuildConfigURI() {
+        let t = this.findExtension(on);
+        return t ? new ur(t) : void 0;
+      }
+      get extBuildConfigDigest() {
+        let t = this.findExtension(an);
+        return t ? new hr(t) : void 0;
+      }
+      get extBuildTrigger() {
+        let t = this.findExtension(cn);
+        return t ? new dr(t) : void 0;
+      }
+      get extRunInvocationURI() {
+        let t = this.findExtension(fn);
+        return t ? new gr(t) : void 0;
+      }
+      get extSourceRepositoryVisibility() {
+        let t = this.findExtension(ln);
+        return t ? new mr(t) : void 0;
+      }
+      get isCA() {
+        let t = this.extBasicConstraints?.isCA || false;
+        return this.extKeyUsage ? t && this.extKeyUsage.keyCertSign : t;
+      }
+      extension(t) {
+        let r = this.findExtension(t);
+        return r ? new bt(r) : void 0;
+      }
+      async verify(t) {
+        let r = this.signatureAlgorithmOid, n = r === Wn, i = n ? this.parseRsaPssHashAlgorithm() : ze[r] || Fe[r], s = t ? await t.getPublicKeyObj(i, n) : await this.getPublicKeyObj(i, n);
+        return await pt(s, this.tbsCertificate.toDER(), this.signatureValue, this.signatureAlgorithm);
+      }
+      validForDate(t) {
+        return this.notBefore <= t && t <= this.notAfter;
+      }
+      equals(t) {
+        return _(this.root.toDER(), t.root.toDER());
+      }
+      clone() {
+        let t = this.root.toDER(), r = new Uint8Array(t);
+        return e2.parse(r);
+      }
+      findExtension(t) {
+        return this.extensions.find((r) => r.subs[0].toOID() === t);
+      }
+      get tbsCertificateObj() {
+        return this.root.subs[0];
+      }
+      get signatureAlgorithmObj() {
+        return this.root.subs[1];
+      }
+      get signatureValueObj() {
+        return this.root.subs[2];
+      }
+      get versionObj() {
+        return this.tbsCertificateObj.subs[0];
+      }
+      get serialNumberObj() {
+        return this.tbsCertificateObj.subs[1];
+      }
+      get issuerObj() {
+        return this.tbsCertificateObj.subs[3];
+      }
+      get validityObj() {
+        return this.tbsCertificateObj.subs[4];
+      }
+      get subjectObj() {
+        return this.tbsCertificateObj.subs[5];
+      }
+      get subjectPublicKeyInfoObj() {
+        return this.tbsCertificateObj.subs[6];
+      }
+      get extensionsObj() {
+        return this.tbsCertificateObj.subs.find((t) => t.tag.isContextSpecific(3));
+      }
+      parseDistinguishedName(t) {
+        let r = /* @__PURE__ */ new Map();
+        for (let n of t.subs) for (let i of n.subs) if (i.subs.length >= 2) {
+          let s = i.subs[0], o = i.subs[1];
+          if (s.tag.isOID()) {
+            let c = s.toOID(), a = el[c];
+            if (a) {
+              let f = new TextDecoder().decode(o.value);
+              r.set(a, f);
+            }
+          }
+        }
+        return r;
+      }
+    };
+  });
+  function rl(e2) {
+    for (let t = 0; t < e2.length; t++) for (let r = t + 1; r < e2.length; r++) e2[t].equals(e2[r]) && (e2.splice(r, 1), r--);
+    return e2;
+  }
+  var Xt;
+  var vs = T(() => {
+    z();
+    Xt = class {
+      constructor(t) {
+        this.untrustedCert = t.untrustedCert, this.trustedCerts = t.trustedCerts, this.localCerts = rl([...t.trustedCerts, t.untrustedCert]), this.timestamp = t.timestamp;
+      }
+      async verify() {
+        let t = await this.sort();
+        if (this.checkPath(t), !t.every((n) => n.validForDate(this.timestamp))) throw new Error("certificate is not valid or expired at the specified date");
+        return t;
+      }
+      async sort() {
+        let t = this.untrustedCert, r = await this.buildPaths(t);
+        if (r = r.filter((i) => i.some((s) => this.trustedCerts.includes(s))), r.length === 0) throw new Error("no trusted certificate path found");
+        let n = r.reduce((i, s) => i.length < s.length ? i : s);
+        return [t, ...n].slice(0, -1);
+      }
+      async buildPaths(t) {
+        let r = [], n = await this.findIssuer(t);
+        if (n.length === 0) throw new Error("no valid certificate path found");
+        for (let i = 0; i < n.length; i++) {
+          let s = n[i];
+          if (s.equals(t)) {
+            r.push([t]);
+            continue;
+          }
+          let o = await this.buildPaths(s);
+          for (let c = 0; c < o.length; c++) r.push([s, ...o[c]]);
+        }
+        return r;
+      }
+      async findIssuer(t) {
+        let r = [], n;
+        if (_(t.subject, t.issuer) && await t.verify()) return [t];
+        t.extAuthorityKeyID && (n = t.extAuthorityKeyID.keyIdentifier), this.localCerts.forEach((s) => {
+          if (n && s.extSubjectKeyID) {
+            _(s.extSubjectKeyID.keyIdentifier, n) && r.push(s);
+            return;
+          }
+          _(s.subject, t.issuer) && r.push(s);
+        });
+        let i = [];
+        for (let s of r) try {
+          await t.verify(s) && i.push(s);
+        } catch {
+        }
+        return i;
+      }
+      checkPath(t) {
+        if (t.length < 1) throw new Error("certificate chain must contain at least one certificate");
+        if (!t.slice(1).every((n) => n.isCA)) throw new Error("intermediate certificate is not a CA");
+        for (let n = t.length - 2; n >= 0; n--) if (!_(t[n].issuer, t[n + 1].subject)) throw new Error("incorrect certificate name chaining");
+        for (let n = 0; n < t.length; n++) {
+          let i = t[n];
+          if (i.extBasicConstraints?.isCA) {
+            let s = i.extBasicConstraints.pathLenConstraint;
+            if (s !== void 0 && s < BigInt(n - 1)) throw new Error("path length constraint exceeded");
+          }
+        }
+      }
+    };
+  });
+  var Ts = T(() => {
+    un();
+    qn();
+    vs();
+  });
+  function Ra() {
+    let e2 = 0;
+    return (t) => Ca(t) ? (e2 += t.length, e2 <= 16777216) : false;
+  }
+  function St(e2, t) {
+    if (!e2) throw new Error(`Invalid bundle: ${t}`);
+  }
+  function Da(e2, t) {
+    if (e2 == null) return;
+    St(Qt(e2), "timestampVerificationData");
+    let r = e2.rfc3161Timestamps;
+    St(r === void 0 || Array.isArray(r) && r.length <= 32 && r.every((n) => Qt(n) && t(n.signedTimestamp)), "rfc3161Timestamps");
+  }
+  function Oa(e2) {
+    Da(e2, Ra());
+  }
+  function Ma(e2) {
+    let t = Ra();
+    St(Qt(e2) && t(e2.mediaType) && Qt(e2.verificationMaterial), "missing mediaType or verificationMaterial");
+    let r = e2.verificationMaterial, n = r.certificate ? [r.certificate] : r.x509CertificateChain?.certificates;
+    St(Array.isArray(n) && n.length > 0 && n.length <= 32 && n.every((o) => Qt(o) && t(o.rawBytes)), "certificate"), St(Array.isArray(r.tlogEntries) && r.tlogEntries.length > 0 && r.tlogEntries.length <= 32, "tlogEntries");
+    for (let o of r.tlogEntries) {
+      St(Qt(o) && hn(o.logIndex) && t(o.logId?.keyId) && t(o.canonicalizedBody), "tlog entry"), St(t(o.kindVersion?.kind) && t(o.kindVersion?.version), "tlog entry kindVersion"), St(o.integratedTime == null || hn(o.integratedTime) && Number.isFinite(new Date(Number(o.integratedTime) * 1e3).getTime()), "tlog entry integratedTime");
+      let c = o.inclusionPromise?.signedEntryTimestamp;
+      St(o.inclusionPromise === void 0 || t(c) && c !== "" && hn(o.integratedTime) && Number.isSafeInteger(Number(o.logIndex)), "inclusion promise");
+      let a = o.inclusionProof;
+      St(a === void 0 || Qt(a) && hn(a.logIndex) && hn(a.treeSize) && t(a.rootHash) && Array.isArray(a.hashes) && a.hashes.length <= 63 && a.hashes.every(t) && t(a.checkpoint?.envelope), "inclusion proof");
+    }
+    Da(r.timestampVerificationData, t);
+    let { messageSignature: i, dsseEnvelope: s } = e2;
+    St(i === void 0 != (s === void 0), "exactly one of messageSignature or dsseEnvelope"), i !== void 0 ? St(Qt(i) && t(i.signature) && t(i.messageDigest?.algorithm) && t(i.messageDigest?.digest), "messageSignature") : (St(Qt(s) && t(s.payload) && t(s.payloadType), "dsseEnvelope"), St(Array.isArray(s.signatures) && s.signatures.length === 1 && t(s.signatures[0]?.sig), "dsseEnvelope must have exactly one signature"));
+  }
+  var Ca;
+  var hn;
+  var Qt;
+  var Bs = T(() => {
+    Ca = (e2) => typeof e2 == "string";
+    hn = (e2) => Ca(e2) && /^\d{1,19}$/.test(e2) && BigInt(e2) <= 9223372036854775807n, Qt = (e2) => typeof e2 == "object" && e2 !== null;
+  });
+  function Ns(e2, t) {
+    let r = [nl, e2.length, e2, t.length, ""].join(" "), i = new TextEncoder().encode(r);
+    for (let o = 0; o < i.length; o++) if (i[o] > 127) throw new Error(`Invalid non-ASCII character in PAE prefix at position ${o}`);
+    let s = new Uint8Array(i.length + t.length);
+    return s.set(i, 0), s.set(t, i.length), s;
+  }
+  var nl;
+  var Ua = T(() => {
+    nl = "DSSEv1";
+  });
+  async function _a(e2) {
+    if (!e2.inclusionProof) throw new Error("Missing inclusion proof");
+    let t = e2.inclusionProof, r = BigInt(t.logIndex), n = BigInt(t.treeSize);
+    if (r < 0n || r >= n) throw new Error(`Invalid log index: ${r}`);
+    let { inner: i, border: s } = il(r, n);
+    if (t.hashes.length !== i + s) throw new Error("Invalid hash count in inclusion proof");
+    let o = t.hashes.slice(0, i).map((g) => O(g)), c = t.hashes.slice(i).map((g) => O(g)), a = await ll(O(e2.canonicalizedBody)), f = await ol(await sl(a, o, r), c), d = O(t.rootHash);
+    if (!_(f, d)) throw new Error("Calculated root hash does not match inclusion proof");
+  }
+  function il(e2, t) {
+    let r = al(e2, t), n = cl(e2 >> BigInt(r));
+    return { inner: r, border: n };
+  }
+  async function sl(e2, t, r) {
+    let n = e2;
+    for (let i = 0; i < t.length; i++) {
+      let s = t[i];
+      r >> BigInt(i) & BigInt(1) ? n = await Rs(s, n) : n = await Rs(n, s);
+    }
+    return n;
+  }
+  async function ol(e2, t) {
+    let r = e2;
+    for (let n of t) r = await Rs(n, r);
+    return r;
+  }
+  function al(e2, t) {
+    return fl(e2 ^ t - BigInt(1));
+  }
+  function cl(e2) {
+    return e2.toString(2).split("1").length - 1;
+  }
+  function fl(e2) {
+    return e2 === 0n ? 0 : e2.toString(2).length;
+  }
+  async function Rs(e2, t) {
+    let r = new Uint8Array(ei.length + e2.length + t.length);
+    r.set(ei, 0), r.set(e2, ei.length), r.set(t, ei.length + e2.length);
+    let n = await crypto.subtle.digest(j.SHA256, r);
+    return new Uint8Array(n);
+  }
+  async function ll(e2) {
+    let t = new Uint8Array(Cs.length + e2.length);
+    t.set(Cs, 0), t.set(e2, Cs.length);
+    let r = await crypto.subtle.digest(j.SHA256, t);
+    return new Uint8Array(r);
+  }
+  var Cs;
+  var ei;
+  var Va = T(() => {
+    z();
+    Vt();
+    Cs = new Uint8Array([0]), ei = new Uint8Array([1]);
+  });
+  async function ja(e2, t) {
+    let r = e2.inclusionProof;
+    if (!r?.checkpoint?.envelope) throw new Error("Missing checkpoint in inclusion proof");
+    let n = Os.fromString(r.checkpoint.envelope), i = Ms.fromString(n.note), s = we(n.note), o = false;
+    for (let c of n.signatures) _(c.keyHint, t.logId.subarray(0, 4)) && await pt(t.publicKey, s, c.signature, t.hashAlgorithm) && (o = true);
+    if (!o) throw new Error("Invalid checkpoint signature");
+    if (i.logSize !== BigInt(r.treeSize) || !_(i.logHash, O(r.rootHash))) throw new Error("Checkpoint does not match inclusion proof");
+  }
+  var Ds;
+  var ul;
+  var Os;
+  var Ms;
+  var ka = T(() => {
+    z();
+    Ds = `
+
+`, ul = /\u2014 (\S+) (\S+)\n/g, Os = class e2 {
+      constructor(t, r) {
+        this.note = t, this.signatures = r;
+      }
+      static fromString(t) {
+        if (!t.includes(Ds)) throw new Error("Missing checkpoint separator");
+        let r = t.indexOf(Ds), n = t.slice(0, r + 1), s = t.slice(r + Ds.length).matchAll(ul), o = [];
+        for (let c of s) {
+          let [, a, f] = c, d = O(f);
+          if (d.length < 5) throw new Error("Malformed checkpoint signature");
+          o.push({ name: a, keyHint: d.subarray(0, 4), signature: d.subarray(4) });
+        }
+        if (o.length === 0) throw new Error("No signatures found in checkpoint");
+        return new e2(n, o);
+      }
+    }, Ms = class e2 {
+      constructor(t, r, n, i) {
+        this.origin = t, this.logSize = r, this.logHash = n, this.rest = i;
+      }
+      static fromString(t) {
+        let r = t.trimEnd().split(`
+`);
+        if (r.length < 3) throw new Error("Too few lines in checkpoint header");
+        let n = r[0], i = BigInt(r[1]), s = O(r[2]), o = r.slice(3);
+        return new e2(n, i, s, o);
+      }
+    };
+  });
+  async function Ha(e2, t, r) {
+    let n = e2;
+    switch (n.apiVersion) {
+      case "0.0.1":
+        return hl(n, t, r);
+      case "0.0.2":
+        return dl(n, t, r);
+      default:
+        throw new Error(`Unsupported hashedrekord version: ${n.apiVersion}`);
+    }
+  }
+  function hl(e2, t, r) {
+    let n = e2.spec;
+    if (!t.messageSignature) throw new Error("Bundle missing messageSignature for hashedrekord entry");
+    de(r, n.signature?.publicKey?.content, true);
+    let i = n.signature.content || "", s = O(i), o = O(t.messageSignature.signature);
+    if (!_(s, o)) throw new Error("Signature mismatch between TLog entry and bundle");
+    let c = n.data.hash?.value || "", a = Tt(c), f = O(t.messageSignature.messageDigest.digest);
+    if (!_(a, f)) throw new Error("Digest mismatch between TLog entry and bundle");
+  }
+  function dl(e2, t, r) {
+    let n = e2.spec.hashedRekordV002;
+    if (!t.messageSignature) throw new Error("Bundle missing messageSignature for hashedrekord v0.0.2 entry");
+    de(r, n?.signature?.verifier?.x509Certificate?.rawBytes, false);
+    let i = n.signature.content || "", s = O(i), o = O(t.messageSignature.signature);
+    if (!_(s, o)) throw new Error("Signature mismatch between TLog entry and bundle (v0.0.2)");
+    let c = n.data.digest || "", a = O(c), f = O(t.messageSignature.messageDigest.digest);
+    if (!_(a, f)) throw new Error("Digest mismatch between TLog entry and bundle (v0.0.2)");
+  }
+  var La = T(() => {
+    z();
+    dn();
+  });
+  async function Za(e2, t, r) {
+    let n = e2;
+    switch (n.apiVersion) {
+      case "0.0.1":
+        return gl(n, t, r);
+      case "0.0.2":
+        return ml(n, t, r);
+      default:
+        throw new Error(`Unsupported dsse version: ${n.apiVersion}`);
+    }
+  }
+  async function gl(e2, t, r) {
+    if (!t.dsseEnvelope) throw new Error("Bundle missing dsseEnvelope for DSSE entry");
+    if (!e2.spec.signatures || e2.spec.signatures.length !== 1) throw new Error("DSSE entry must have exactly one signature");
+    de(r, e2.spec.signatures[0].verifier, true);
+    let n = e2.spec.signatures[0].signature, i = O(n);
+    if (t.dsseEnvelope.signatures.length === 0) throw new Error("Bundle DSSE envelope missing signatures");
+    let s = O(t.dsseEnvelope.signatures[0].sig);
+    if (!_(i, s)) throw new Error("DSSE signature mismatch between TLog entry and bundle");
+    if (!e2.spec.payloadHash?.value || !e2.spec.payloadHash?.algorithm) throw new Error("DSSE entry missing payloadHash or algorithm");
+    let o = Zr(e2.spec.payloadHash.algorithm), c = Tt(e2.spec.payloadHash.value), a = O(t.dsseEnvelope.payload), f = new Uint8Array(await crypto.subtle.digest(o, a));
+    if (!_(c, f)) throw new Error("DSSE payload hash mismatch between TLog entry and bundle");
+  }
+  async function ml(e2, t, r) {
+    if (!t.dsseEnvelope) throw new Error("Bundle missing dsseEnvelope for DSSE v0.0.2 entry");
+    let n = e2.spec.dsseV002;
+    if (!n) throw new Error("DSSE v0.0.2 entry missing dsseV002 spec");
+    if (!n.signatures || n.signatures.length !== 1) throw new Error("DSSE v0.0.2 entry must have exactly one signature");
+    de(r, n.signatures[0].verifier?.x509Certificate?.rawBytes, false);
+    let i = n.signatures[0].content, s = O(i);
+    if (t.dsseEnvelope.signatures.length === 0) throw new Error("Bundle DSSE envelope missing signatures");
+    let o = O(t.dsseEnvelope.signatures[0].sig);
+    if (!_(s, o)) throw new Error("DSSE signature mismatch between TLog entry and bundle (v0.0.2)");
+    if (!n.payloadHash?.digest || !n.payloadHash?.algorithm) throw new Error("DSSE v0.0.2 entry missing payloadHash or algorithm");
+    let c = Zr(n.payloadHash.algorithm), a = O(n.payloadHash.digest), f = O(t.dsseEnvelope.payload), d = new Uint8Array(await crypto.subtle.digest(c, f));
+    if (!_(a, d)) throw new Error("DSSE payload hash mismatch between TLog entry and bundle (v0.0.2)");
+  }
+  var Ya = T(() => {
+    z();
+    Vt();
+    dn();
+  });
+  async function Ga(e2, t, r) {
+    let n = e2;
+    if (n.apiVersion !== "0.0.2") throw new Error(`Unsupported intoto version: ${n.apiVersion}`);
+    if (!t.dsseEnvelope) throw new Error("Bundle missing dsseEnvelope for intoto entry");
+    let i = n.spec.content.envelope;
+    if (!i.signatures || i.signatures.length !== 1) throw new Error("Intoto entry must have exactly one signature");
+    de(r, i.signatures[0].publicKey, true);
+    let s = i.signatures[0].sig, o = Tn(s), c = O(o);
+    if (t.dsseEnvelope.signatures.length === 0) throw new Error("Bundle DSSE envelope missing signatures");
+    let a = O(t.dsseEnvelope.signatures[0].sig);
+    if (!_(c, a)) throw new Error("Intoto signature mismatch between TLog entry and bundle");
+    if (n.spec.content.payloadHash) {
+      if (!n.spec.content.payloadHash.algorithm) throw new Error("Intoto entry missing payloadHash algorithm");
+      let f = Zr(n.spec.content.payloadHash.algorithm), d = Tt(n.spec.content.payloadHash.value), g = O(t.dsseEnvelope.payload), l = new Uint8Array(await crypto.subtle.digest(f, g));
+      if (!_(d, l)) throw new Error("Intoto payload hash mismatch between TLog entry and bundle");
+    }
+  }
+  var Ka = T(() => {
+    z();
+    Vt();
+    dn();
+  });
+  async function Wa(e2, t, r) {
+    let n = pl(e2), { kind: i, version: s } = e2.kindVersion;
+    if (i !== n.kind || s !== n.apiVersion) throw new Error(`kind/version mismatch - expected: ${i}/${s}, received: ${n.kind}/${n.apiVersion}`);
+    switch (n.kind) {
+      case "hashedrekord":
+        return Ha(n, t, r);
+      case "dsse":
+        return Za(n, t, r);
+      case "intoto":
+        return Ga(n, t, r);
+      default:
+        throw new Error(`Unsupported TLog entry kind: ${n.kind}`);
+    }
+  }
+  function de(e2, t, r) {
+    if (typeof t != "string" || t === "") throw new Error("TLog entry does not record the signing certificate");
+    let n = O(t), i = tt.parse(r ? rt(n) : n);
+    if (!e2.equals(i)) throw new Error("Certificate in TLog entry does not match the signing certificate");
+  }
+  function pl(e2) {
+    try {
+      let t = Tn(e2.canonicalizedBody), r = JSON.parse(t);
+      if (!r.apiVersion || !r.kind || !r.spec) throw new Error("Invalid Rekor entry structure");
+      return r;
+    } catch (t) {
+      throw new Error(`Failed to parse canonicalized body: ${t instanceof Error ? t.message : String(t)}`);
+    }
+  }
+  var dn = T(() => {
+    z();
+    un();
+    La();
+    Ya();
+    Ka();
+  });
+  var At;
+  var Us = T(() => {
+    At = class extends Error {
+    };
+  });
+  var ri;
+  var Fa = T(() => {
+    z();
+    Vt();
+    Fn();
+    Us();
+    ri = class {
+      constructor(t) {
+        this.root = t;
+      }
+      get version() {
+        return this.root.subs[0].toInteger();
+      }
+      get genTime() {
+        return this.root.subs[4].toDate();
+      }
+      get messageImprintHashAlgorithm() {
+        let t = this.messageImprintObj.subs[0].subs[0].toOID(), r = Pe[t];
+        if (!r) throw new Error(`Unknown message imprint hash algorithm OID: ${t}`);
+        return r;
+      }
+      get messageImprintHashedMessage() {
+        return this.messageImprintObj.subs[1].value;
+      }
+      get raw() {
+        return this.root.toDER();
+      }
+      async verify(t) {
+        let r = this.messageImprintHashAlgorithm, n = r === "sha256" ? j.SHA256 : r === "sha384" ? j.SHA384 : r === "sha512" ? j.SHA512 : r, i = await crypto.subtle.digest(n, t);
+        if (!_(new Uint8Array(i), this.messageImprintHashedMessage)) throw new At("message imprint does not match artifact");
+      }
+      get messageImprintObj() {
+        return this.root.subs[2];
+      }
+    };
+  });
+  var wl;
+  var yl;
+  var El;
+  var gn;
+  var za = T(() => {
+    z();
+    Vt();
+    Fn();
+    Us();
+    Fa();
+    wl = "1.2.840.113549.1.7.2", yl = "1.2.840.113549.1.9.16.1.4", El = "1.2.840.113549.1.9.4", gn = class e2 {
+      constructor(t) {
+        this.root = t;
+      }
+      static parse(t) {
+        let r = ht.parseBuffer(t);
+        return new e2(r);
+      }
+      get status() {
+        return this.pkiStatusInfoObj.subs[0].toInteger();
+      }
+      get contentType() {
+        return this.contentTypeObj.toOID();
+      }
+      get eContentType() {
+        return this.eContentTypeObj.toOID();
+      }
+      get signingTime() {
+        return this.tstInfo.genTime;
+      }
+      get signerIssuer() {
+        return this.signerSidObj.subs[0].value;
+      }
+      get signerSerialNumber() {
+        return this.signerSidObj.subs[1].value;
+      }
+      get signerDigestAlgorithm() {
+        let t = this.signerDigestAlgorithmObj.subs[0].toOID(), r = Pe[t];
+        if (!r) throw new Error(`Unknown digest algorithm OID: ${t}`);
+        return r;
+      }
+      get signatureAlgorithm() {
+        let t = this.signatureAlgorithmObj.subs[0].toOID();
+        return Fe[t] || ze[t];
+      }
+      get signatureValue() {
+        return this.signatureValueObj.value;
+      }
+      get tstInfo() {
+        return new ri(this.eContentObj.subs[0].subs[0]);
+      }
+      async verify(t, r) {
+        if (!this.timeStampTokenObj) throw new At("timeStampToken is missing");
+        if (this.contentType !== wl) throw new At(`incorrect content type: ${this.contentType}`);
+        if (this.eContentType !== yl) throw new At(`incorrect encapsulated content type: ${this.eContentType}`);
+        await this.tstInfo.verify(t), await this.verifyMessageDigest(), await this.verifySignature(r);
+      }
+      async verifyMessageDigest() {
+        let t = this.signerDigestAlgorithm, r = t === "sha256" ? j.SHA256 : t === "sha384" ? j.SHA384 : t === "sha512" ? j.SHA512 : t, n = await crypto.subtle.digest(r, this.tstInfo.raw), i = this.messageDigestAttributeObj.subs[1].subs[0].value;
+        if (!_(new Uint8Array(n), i)) throw new At("signed data does not match tstInfo");
+      }
+      async verifySignature(t) {
+        let r = this.signedAttrsObj.toDER();
+        r[0] = 49;
+        let n = this.signatureAlgorithmObj.subs[0].toOID(), i = Fe[n] || ze[n];
+        if (!i) throw new At(`Unsupported signature algorithm OID: ${n}`);
+        if (!await pt(t, r, this.signatureValue, i)) throw new At("signature verification failed");
+      }
+      get pkiStatusInfoObj() {
+        return this.root.subs[0];
+      }
+      get timeStampTokenObj() {
+        return this.root.subs[1];
+      }
+      get contentTypeObj() {
+        return this.timeStampTokenObj.subs[0];
+      }
+      get signedDataObj() {
+        let t = this.timeStampTokenObj.subs.find((r) => r.tag.isContextSpecific(0));
+        if (!t) throw new At("Missing timeStampTokenObj sub.");
+        return t.subs[0];
+      }
+      get encapContentInfoObj() {
+        return this.signedDataObj.subs[2];
+      }
+      get signerInfosObj() {
+        let t = this.signedDataObj;
+        return t.subs[t.subs.length - 1];
+      }
+      get signerInfoObj() {
+        return this.signerInfosObj.subs[0];
+      }
+      get eContentTypeObj() {
+        return this.encapContentInfoObj.subs[0];
+      }
+      get eContentObj() {
+        return this.encapContentInfoObj.subs[1];
+      }
+      get signedAttrsObj() {
+        let t = this.signerInfoObj.subs.find((r) => r.tag.isContextSpecific(0));
+        if (!t) throw new At("Missing signedAttrsObj.");
+        return t;
+      }
+      get messageDigestAttributeObj() {
+        let t = this.signedAttrsObj.subs.find((r) => r.subs[0].tag.isOID() && r.subs[0].toOID() === El);
+        if (!t) throw new At("Missing messageDigest.");
+        return t;
+      }
+      get signerSidObj() {
+        return this.signerInfoObj.subs[1];
+      }
+      get signerDigestAlgorithmObj() {
+        return this.signerInfoObj.subs[2];
+      }
+      get signatureAlgorithmObj() {
+        return this.signerInfoObj.subs[4];
+      }
+      get signatureValueObj() {
+        return this.signerInfoObj.subs[5];
+      }
+    };
+  });
+  var Pa = T(() => {
+    za();
+  });
+  async function Xa(e2, t, r) {
+    return (await Qa(e2, t, r)).signingTime;
+  }
+  async function Qa(e2, t, r) {
+    let n = e2.signingTime, i = Il(r, n);
+    i = xl(i, { serialNumber: e2.signerSerialNumber, issuer: e2.signerIssuer });
+    let s = await Promise.allSettled(i.map((a) => bl(e2, t, a))), o = s.findIndex((a) => a.status === "fulfilled");
+    if (o < 0) {
+      let a = s.filter((f) => f.status === "rejected").map((f) => f.reason?.message || "Unknown error");
+      throw new Error(`Timestamp could not be verified against any trusted authority. Errors: ${a.join(", ")}`);
+    }
+    let c = i[o];
+    return { signingTime: n, operator: c.operator || "" };
+  }
+  function Il(e2, t) {
+    return e2.filter((r) => {
+      let { start: n, end: i } = ve(r.validFor);
+      return n <= t && t <= i;
+    });
+  }
+  function xl(e2, t) {
+    return e2.filter((r) => {
+      if (!r.certChain || r.certChain.certificates.length === 0) return false;
+      let n = tt.parse(O(r.certChain.certificates[0].rawBytes));
+      return _(n.serialNumber, t.serialNumber) && _(n.issuer, t.issuer);
+    });
+  }
+  async function bl(e2, t, r) {
+    if (!r.certChain || r.certChain.certificates.length === 0) throw new Error("Certificate authority missing certificate chain");
+    let n = tt.parse(O(r.certChain.certificates[0].rawBytes)), i = e2.signingTime, s = r.certChain.certificates.slice(1).map((c) => tt.parse(O(c.rawBytes)));
+    try {
+      await new Xt({ untrustedCert: n, trustedCerts: s, timestamp: i }).verify();
+    } catch (c) {
+      throw new Error(`TSA certificate chain verification failed: ${c instanceof Error ? c.message : String(c)}`);
+    }
+    let o = await n.publicKeyObj;
+    await e2.verify(t, o);
+  }
+  async function ni(e2, t, r) {
+    if (Oa(e2), !e2?.rfc3161Timestamps?.length) return [];
+    let n = [];
+    for (let i of e2.rfc3161Timestamps) {
+      let s = O(i.signedTimestamp), o = gn.parse(s);
+      n.push({ ...await Qa(o, t, r), signerSerialNumber: Array.from(o.signerSerialNumber).join(",") });
+    }
+    for (let i = 0; i < n.length; i++) for (let s = i + 1; s < n.length; s++) if (n[i].signingTime.getTime() === n[s].signingTime.getTime() && n[i].signerSerialNumber === n[s].signerSerialNumber) throw new Error("Duplicate TSA timestamp detected");
+    return n;
+  }
+  var _s = T(() => {
+    z();
+    Bs();
+    Ts();
+    Vt();
+    Pa();
+  });
+  function ii(e2, t) {
+    let r = new Map(e2);
+    for (let n of e2.keys()) t.includes(n) || r.delete(n);
+    return r;
+  }
+  async function Vs(e2) {
+    let t = /* @__PURE__ */ new Map();
+    for (let r in e2) {
+      let n = e2[r], i = we(ye(n)), s = Mt(new Uint8Array(await crypto.subtle.digest(j.SHA256, i)));
+      if (t.has(s)) throw new Error("Duplicate keyId found!");
+      s !== r && console.warn(`KeyId ${r} does not match the expected ${s}, importing anyway the provided one for proper referencing.`), t.set(r, await ue(n.keytype, n.scheme, n.keyval.public));
+    }
+    return t;
+  }
+  async function mn(e2, t, r, n, i) {
+    if (i < 1) throw new Error("Threshold must be at least 1");
+    if (i > e2.size) throw new Error("Threshold is bigger than the number of keys provided, something is wrong.");
+    let s = new Set(t), o = ye(r), c = 0;
+    for (let a of n) {
+      if (!s.has(a.keyid)) continue;
+      s.delete(a.keyid);
+      let f = e2.get(a.keyid), d = Tt(a.sig);
+      if (!f) throw new Error("Keyid was empty.");
+      await pt(f, we(o), d) === true && c++;
+    }
+    return c >= i;
+  }
+  var $a = T(() => {
+    z();
+  });
+  function wr(e2) {
+    return e2 != null && typeof e2 == "object" && "__raw_bytes__" in e2 && typeof e2.__raw_bytes__ == "string";
+  }
+  function yr(e2) {
+    let t = O(e2.__raw_bytes__);
+    return JSON.parse(new TextDecoder().decode(t));
+  }
+  function Er(e2) {
+    return { __raw_bytes__: De(e2) };
+  }
+  var si = T(() => {
+    z();
+  });
+  var oi;
+  var Ja = T(() => {
+    si();
+    oi = class {
+      async read(t) {
+        let n = (await browser.storage.local.get(t))[t];
+        return wr(n) ? yr(n) : n;
+      }
+      async write(t, r) {
+        await browser.storage.local.set({ [t]: r });
+      }
+      async writeRaw(t, r) {
+        await browser.storage.local.set({ [t]: Er(r) });
+      }
+      async delete(t) {
+        await browser.storage.local.remove(t);
+      }
+    };
+  });
+  var ai;
+  var qa = T(() => {
+    si();
+    ai = class {
+      async read(t) {
+        let r = localStorage.getItem(t);
+        if (r) {
+          let n = JSON.parse(r);
+          return wr(n) ? yr(n) : n;
+        }
+      }
+      async write(t, r) {
+        localStorage.setItem(t, JSON.stringify(r));
+      }
+      async writeRaw(t, r) {
+        localStorage.setItem(t, JSON.stringify(Er(r)));
+      }
+      async delete(t) {
+        localStorage.removeItem(t);
+      }
+    };
+  });
+  var pn;
+  var tc = T(() => {
+    si();
+    pn = class {
+      constructor() {
+        this.cache = /* @__PURE__ */ new Map();
+      }
+      async read(t) {
+        let r = this.cache.get(t);
+        if (r) return wr(r) ? yr(r) : r;
+      }
+      async write(t, r) {
+        this.cache.set(t, r);
+      }
+      async writeRaw(t, r) {
+        this.cache.set(t, Er(r));
+      }
+      async delete(t) {
+        this.cache.delete(t);
+      }
+    };
+  });
+  var L;
+  var ec;
+  var rc = T(() => {
+    z();
+    (function(e2) {
+      e2.Root = "root", e2.Timestamp = "timestamp", e2.Snapshot = "snapshot", e2.Targets = "targets";
+    })(L || (L = {}));
+    ec = [L.Root, L.Targets, L.Snapshot, L.Timestamp];
+  });
+  var nc = {};
+  xn(nc, { TUFClient: () => js });
+  var js;
+  var ic = T(() => {
+    z();
+    $a();
+    Ja();
+    qa();
+    tc();
+    rc();
+    js = class {
+      constructor(t, r, n, i, s) {
+        this.repositoryUrl = t, this.targetBaseUrl = i || t, this.startingRoot = r, this.namespace = n, s?.backend ? this.backend = s.backend : s?.disableCache ? this.backend = new pn() : typeof browser < "u" && browser.storage?.local ? this.backend = new oi() : typeof localStorage < "u" ? this.backend = new ai() : this.backend = new pn();
+      }
+      getCacheKey(t) {
+        if (t.startsWith("/") || t.startsWith("./") || t.includes("..") || t.includes("\\")) throw new Error(`key contains an invalid pattern (${t})`);
+        return `${this.namespace}/${t}.json`;
+      }
+      async getFromCache(t) {
+        let r = this.getCacheKey(t);
+        return await this.backend.read(r);
+      }
+      async setInCache(t, r) {
+        let n = this.getCacheKey(t);
+        await this.backend.write(n, r);
+      }
+      async fetchMetafileBase(t, r, n = false) {
+        let i;
+        t = encodeURIComponent(t), n ? i = `${this.repositoryUrl}${r}.${t}` : i = r !== -1 ? `${this.repositoryUrl}${r}.${t}.json` : `${this.repositoryUrl}${t}.json`;
+        let s = await fetch(i);
+        if (!s.ok) throw new Error(`Failed to fetch file: ${s.status} ${s.statusText}`);
+        return s;
+      }
+      validateMetadata(t) {
+        let r = /* @__PURE__ */ new Set();
+        for (let s of t.signatures) {
+          if (r.has(s.keyid)) throw new Error(`Duplicate signature found for keyid: ${s.keyid}`);
+          r.add(s.keyid);
+        }
+        let n = t.signed.spec_version;
+        if (!n) throw new Error("spec_version is required");
+        let i = n.split(".");
+        if (i.length < 2 || i.length > 3) throw new Error(`Invalid spec_version format: ${n}`);
+        if (!i.every((s) => /^\d+$/.test(s))) throw new Error(`spec_version parts must be numeric: ${n}`);
+        if (i[0] !== "1") throw new Error(`Unsupported spec_version major version: ${i[0]} (expected 1)`);
+      }
+      async fetchMetafileJson(t, r = -1) {
+        let i = await (await this.fetchMetafileBase(t, r)).json();
+        return this.validateMetadata(i), i;
+      }
+      async fetchMetafileBinary(t, r = -1, n = false) {
+        let i = await this.fetchMetafileBase(t, r, n);
+        return new Uint8Array(await i.arrayBuffer());
+      }
+      bootstrapRoot(t) {
+        try {
+          let r = JSON.parse(t);
+          return this.validateMetadata(r), r;
+        } catch (r) {
+          throw new Error(`Failed to load the JSON file:  ${r}`);
+        }
+      }
+      async verifyHashes(t, r, n) {
+        if (!r) return;
+        let i = { sha256: j.SHA256, sha384: j.SHA384, sha512: j.SHA512 };
+        for (let [s, o] of Object.entries(r)) {
+          let c = i[s];
+          if (!c) throw new Error(`${n}: unsupported hash algorithm '${s}'`);
+          let a = Mt(new Uint8Array(await crypto.subtle.digest(c, t)));
+          if (o !== a) throw new Error(`${n}: ${s} hash mismatch`);
+        }
+      }
+      async loadRoot(t, r) {
+        if (t.signed._type !== L.Root) throw new Error("Loading the wrong metafile as root.");
+        let n, i, s;
+        if (r == null ? (n = await Vs(t.signed.keys), s = t.signed.roles.root.keyids, i = t.signed.roles.root.threshold) : (n = r.keys, s = r.roles.root.keyids, i = r.threshold), await mn(n, s, t.signed, t.signatures, i) !== true) throw new Error("Failed to verify metafile.");
+        if (n = await Vs(t.signed.keys), !Number.isSafeInteger(t.signed.version) || t.signed.version < 1) throw new Error("There is something wrong with the root version number.");
+        for (let o of ec) if (!t.signed.roles[o]) throw new Error(`Missing required top-level role: ${o}`);
+        for (let [o, c] of Object.entries(t.signed.roles)) if (new Set(c.keyids).size !== c.keyids.length) throw new Error(`Duplicate key IDs found in role: ${o}`);
+        return { keys: n, version: t.signed.version, expires: new Date(t.signed.expires), threshold: t.signed.roles.root.threshold, consistent_snapshot: t.signed.consistent_snapshot, roles: t.signed.roles };
+      }
+      async updateRoot(t) {
+        let r = await this.getFromCache(L.Root);
+        r || (r = await this.bootstrapRoot(this.startingRoot));
+        let n = await this.loadRoot(r), i = n, s, o;
+        for (let c = n.version + 1; c < Number.MAX_SAFE_INTEGER; c++) {
+          try {
+            o = await this.fetchMetafileJson(L.Root, c);
+          } catch (a) {
+            if (a instanceof Error && a.message.includes("Failed to fetch")) break;
+            throw a;
+          }
+          if (o.signed.version !== c) throw new Error(`Version mismatch: URL version ${c} but file contains version ${o.signed.version}`);
+          if (o.signed?._type !== L.Root) throw new Error("Incorrect metadata type for root.");
+          if (s = await this.loadRoot(o, n), s.version !== n.version + 1) throw new Error(`Root version must be exactly ${n.version + 1}, got ${s.version}. Probable rollback attack.`);
+          s = await this.loadRoot(o), n = s, await this.setInCache(L.Root, o);
+        }
+        if (n.expires <= t) throw new Error("Freeze attack on the root metafile.");
+        if (n.version > i.version) {
+          let c = JSON.stringify(n.roles.timestamp.keyids.sort()) !== JSON.stringify(i.roles.timestamp.keyids.sort()), a = JSON.stringify(n.roles.snapshot.keyids.sort()) !== JSON.stringify(i.roles.snapshot.keyids.sort()), f = JSON.stringify(n.roles.targets.keyids.sort()) !== JSON.stringify(i.roles.targets.keyids.sort());
+          c && (await this.backend.delete(this.getCacheKey(L.Timestamp)), await this.backend.delete(this.getCacheKey(L.Snapshot)), await this.backend.delete(this.getCacheKey(L.Targets))), a && (await this.backend.delete(this.getCacheKey(L.Snapshot)), await this.backend.delete(this.getCacheKey(L.Targets))), f && await this.backend.delete(this.getCacheKey(L.Targets));
+        }
+        return n;
+      }
+      async updateTimestamp(t, r) {
+        let n = ii(t.keys, t.roles.timestamp.keyids);
+        if (n.size < 1) throw new Error("No valid keys found for the timestamp role.");
+        let i = await this.getFromCache(L.Timestamp), s = await this.fetchMetafileBinary(L.Timestamp, -1), o = JSON.parse(rt(s));
+        if (this.validateMetadata(o), o.signed._type !== L.Timestamp) throw new Error(`Invalid metadata type: expected ${L.Timestamp}, got ${o.signed._type}`);
+        if (!o.signed.meta || !o.signed.meta["snapshot.json"]) throw new Error("Timestamp metadata missing required meta['snapshot.json']");
+        if (await mn(n, t.roles.timestamp.keyids, o.signed, o.signatures, t.roles.timestamp.threshold) !== true) throw new Error("Failed verifying timestamp role signature(s).");
+        if (i !== void 0) {
+          if (o.signed.version < i.signed.version) throw new Error("New timestamp file has a lower version that the currently cached one.");
+          if (o.signed.version == i.signed.version) return null;
+          if (o.signed.meta["snapshot.json"].version < i.signed.meta["snapshot.json"].version) throw new Error("Timestamp has been updated, but snapshot version has been rolled back.");
+        }
+        if (new Date(o.signed.expires) <= r) throw new Error("Freeze attack on the timestamp metafile.");
+        return await this.backend.writeRaw(this.getCacheKey(L.Timestamp), s), o;
+      }
+      async updateSnapshot(t, r, n) {
+        let i = n.signed.meta["snapshot.json"].version, s = ii(t.keys, t.roles.snapshot.keyids), o = await this.getFromCache(L.Snapshot), c;
+        t.consistent_snapshot ? c = await this.fetchMetafileBinary(L.Snapshot, i) : c = await this.fetchMetafileBinary(L.Snapshot, -1);
+        let a = n.signed.meta["snapshot.json"];
+        if (a.length !== void 0 && c.length !== a.length) throw new Error(`Snapshot length mismatch: expected ${a.length}, got ${c.length}`);
+        await this.verifyHashes(c, a.hashes, "Snapshot");
+        let f = JSON.parse(rt(c));
+        if (this.validateMetadata(f), f.signed._type !== L.Snapshot) throw new Error(`Invalid metadata type: expected ${L.Snapshot}, got ${f.signed._type}`);
+        if (!f.signed.meta || !f.signed.meta["targets.json"]) throw new Error("Snapshot metadata missing required meta['targets.json']");
+        if (await mn(s, t.roles.snapshot.keyids, f.signed, f.signatures, t.roles.snapshot.threshold) !== true) throw new Error("Failed verifying snapshot role signature(s).");
+        if (f.signed.version !== i) throw new Error(`Snapshot version mismatch: URL version ${i} but file contains version ${f.signed.version}`);
+        if (o !== void 0) for (let [d] of Object.entries(o.signed.meta)) {
+          if (!(d in f.signed.meta)) throw new Error("Target that was listed in an older snapshot was dropped in a newer one.");
+          if (f.signed.meta[d].version < o.signed.meta[d].version) throw new Error("Target version in newer snapshot is lower than the cached one. Probable rollback attack.");
+        }
+        if (new Date(f.signed.expires) <= r) throw new Error("Freeze attack on the snapshot metafile.");
+        return await this.backend.writeRaw(this.getCacheKey(L.Snapshot), c), f.signed.meta;
+      }
+      async updateTargets(t, r, n) {
+        let i = ii(t.keys, t.roles.targets.keyids), s = await this.getFromCache(L.Targets), o;
+        t.consistent_snapshot ? o = await this.fetchMetafileBinary(L.Targets, n[`${L.Targets}.json`].version) : o = await this.fetchMetafileBinary(L.Targets, -1);
+        let c = n[`${L.Targets}.json`];
+        if (c.length !== void 0 && o.length !== c.length) throw new Error(`Targets length mismatch: expected ${c.length}, got ${o.length}`);
+        await this.verifyHashes(o, c.hashes, "Targets");
+        let a = JSON.parse(rt(o));
+        if (this.validateMetadata(a), a.signed._type !== L.Targets) throw new Error(`Invalid metadata type: expected ${L.Targets}, got ${a.signed._type}`);
+        if (await mn(i, t.roles.targets.keyids, a.signed, a.signatures, t.roles.targets.threshold) !== true) throw new Error("Failed verifying targets role.");
+        let f = n[`${L.Targets}.json`].version;
+        if (a.signed.version !== f) throw new Error(`Targets version mismatch: URL version ${f} but file contains version ${a.signed.version}`);
+        if (s !== void 0 && a.signed.version < s.signed.version) throw new Error("Targets version is lower than the cached one. Probable rollback attack.");
+        if (new Date(a.signed.expires) <= r) throw new Error("Freeze attack on the targets metafile.");
+        await this.backend.writeRaw(this.getCacheKey(L.Targets), o);
+      }
+      async listSignedTargets() {
+        let t = await this.getFromCache(L.Targets), r = [];
+        if (t) for (let n of Object.keys(t.signed.targets)) r.push(n);
+        return r;
+      }
+      async fetchTarget(t) {
+        let r = await this.getFromCache(L.Targets);
+        if (r === void 0) throw new Error("Failed to find the targets metafile when it should have existed.");
+        if (!(t in r.signed.targets)) throw new Error(`${t} not present in the targets role.`);
+        let n = r.signed.targets[t], i = n.hashes, s;
+        if (i.sha256) s = i.sha256;
+        else if (i.sha512) s = i.sha512;
+        else throw new Error(`No supported hash algorithm found for ${t}. Available: ${Object.keys(i).join(", ")}`);
+        let o = t.lastIndexOf("/"), c = o === -1 ? `${this.targetBaseUrl}${s}.${t}` : `${this.targetBaseUrl}${t.substring(0, o + 1)}${s}.${t.substring(o + 1)}`, a = await fetch(c);
+        if (!a.ok) throw new Error(`Failed to fetch target: ${a.status} ${a.statusText}`);
+        let f = new Uint8Array(await a.arrayBuffer());
+        if (f.byteLength !== n.length) throw new Error(`${t} length mismatch: expected ${n.length}, got ${f.byteLength}`);
+        return await this.verifyHashes(f, i, `Target '${t}'`), f.buffer;
+      }
+      async updateTUF() {
+        let t = /* @__PURE__ */ new Date(), r = await this.updateRoot(t), n = await this.updateTimestamp(r, t);
+        if (n === null) return;
+        let i = await this.updateSnapshot(r, t, n);
+        await this.updateTargets(r, t, i);
+      }
+      async getTarget(t) {
+        return await this.fetchTarget(t);
+      }
+    };
+  });
+  var sc = {};
+  xn(sc, { default: () => Sl });
+  var Sl;
+  var oc = T(() => {
+    Sl = "ewogInNpZ25hdHVyZXMiOiBbCiAgewogICAia2V5aWQiOiAiNmYyNjAwODlkNTkyM2RhZjIwMTY2Y2E2NTdjNTQzYWY2MTgzNDZhYjk3MTg4NGE5OTk2MmIwMTk4OGJiZTBjMyIsCiAgICJzaWciOiAiIgogIH0sCiAgewogICAia2V5aWQiOiAiZTcxYTU0ZDU0MzgzNWJhODZhZGFkOTQ2MDM3OWM3NjQxZmI4NzI2ZDE2NGVhNzY2ODAxYTFjNTIyYWJhN2VhMiIsCiAgICJzaWciOiAiMzA0NTAyMjEwMGJiZGRkNDY0ZjgwNjZjZWI4OGJhNzg3Mzc1YzEyY2Q2MzMwNjgwZTA4YzI5MTA3MDNlNjUzOGM3MWNjNzlhZDIwMjIwNTE5MGIwNmU0NTM3ZmU5NjFiM2VmODFmZTY4ZWRjZDAwODljMTlmOTE5YWZlZDQyM2I5YWFmZDcwMDY0MTE1MyIKICB9LAogIHsKICAgImtleWlkIjogIjIyZjRjYWVjNmQ4ZTZmOTU1NWFmNjZiM2Q0YzNjYjA2YTNiYjIzZmRjN2UzOWM5MTZjNjFmNDYyZTZmNTJiMDYiLAogICAic2lnIjogIjMwNDQwMjIwNjkzMDZjZDUyNTdmNzMyYTc0MGMxYWZlNjBhOGU0MzNjNWRlNThlYWZlYWRiZTk5YzMzNmM5YzcxZDE5OGNmODAyMjAwZDc3Mzk1M2FlN2RiYzQ4ZDNlNWJhZDlhNmY2NGJhZmZmMTk2YjdlMmFkNGE1MmExOTUxOTM2N2Q0N2RjMDQyIgogIH0sCiAgewogICAia2V5aWQiOiAiNjE2NDM4MzgxMjViNDQwYjQwZGI2OTQyZjVjYjVhMzFjMGRjMDQzNjgzMTZlYjJhYWE1OGI5NTkwNGE1ODIyMiIsCiAgICJzaWciOiAiMzA0NDAyMjA0ZDIxYTJlYzgwZGY2NmU2MWY2ZmUyOTEyOTUxZGM0N2RmODM2MDM2ZjhjMGFiMTA4MTZkMzc1ZTcxZGJmNzllMDIyMDU0N2FkY2UxYWZkZjA0ZTY3OTRlZmEyMDNkZDUyNjRjNmY3ZTBlZjc4ZTU3ZmU5MzRiMGQyNmNiOTk0ZWVjNzYiCiAgfSwKICB7CiAgICJrZXlpZCI6ICJhNjg3ZTViZjRmYWI4MmIwZWU1OGQ0NmUwNWM5NTM1MTQ1YTJjOWFmYjQ1OGY0M2Q0MmI0NWNhMGZkY2UyYTcwIiwKICAgInNpZyI6ICIzMDQ1MDIyMDYwODI2NDk2NTU3MTQ0ZWIxNjQ5ODkzZWQ1ZjZmNGVhNTQ1MzZmZWIwY2E4MmY4Yjg5YWU2NDFiZTM5NzQzZTUwMjIxMDBhZDcxMThiNWU5ZDQ4MzczMjYyMDZlNDEyZmM2ZGEyOTk5OTI1ZDExMDMyOGE3YzE2NmIwNmM2MjQzMzZjOTNmIgogIH0sCiAgewogICAia2V5aWQiOiAiMTgzZTY0ZjM3NjcwZGMxM2NhMGQyODk5NWEzMDUzZjM3NDA5NTRkZGNlNDQzMjFhNDFlNDY1MzRjZjQ0ZTYzMiIsCiAgICJzaWciOiAiMzA0NjAyMjEwMGQ4MTc5NDM5YzJlNzNlYjBjMTczM2FiZWU3ZmFmODMyZGNhZWE3MjYzZWRjYjQ5MTk4OTFjM2EyNDdmMDU5MjMwMjIxMDBlMWE0MzdlMDc5N2U4MDNmOWI3MmRjOWQyZDkyMTU1YjBhMjI3MGMyNGVmZGQ1ZjRiM2E1ZDhmMGIwZjQzMWE3IgogIH0KIF0sCiAic2lnbmVkIjogewogICJfdHlwZSI6ICJyb290IiwKICAiY29uc2lzdGVudF9zbmFwc2hvdCI6IHRydWUsCiAgImV4cGlyZXMiOiAiMjAyNi0wMS0yMlQxMzowNTo1OVoiLAogICJrZXlzIjogewogICAiMGM4NzQzMmMzYmYwOWZkOTkxODlmZGMzMmZhNWVhZWRmNGU0YTVmYWM3YmFiNzNmYTA0YTJlMGZjNjRhZjZmNSI6IHsKICAgICJrZXlpZF9oYXNoX2FsZ29yaXRobXMiOiBbCiAgICAgInNoYTI1NiIsCiAgICAgInNoYTUxMiIKICAgIF0sCiAgICAia2V5dHlwZSI6ICJlY2RzYSIsCiAgICAia2V5dmFsIjogewogICAgICJwdWJsaWMiOiAiLS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS1cbk1Ga3dFd1lIS29aSXpqMENBUVlJS29aSXpqMERBUWNEUWdBRVdSaUdyNStqKzNKNVNzSCtadHI1bkUySDJ3TzdcbkJWK25PM3M5M2dMY2ExOHFUT3pIWTFvV3lBR0R5a01Tc0dUVUJTdDlEK0FuMEtmS3NEMm1mU000MlE9PVxuLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tXG4iCiAgICB9LAogICAgInNjaGVtZSI6ICJlY2RzYS1zaGEyLW5pc3RwMjU2IiwKICAgICJ4LXR1Zi1vbi1jaS1vbmxpbmUtdXJpIjogImdjcGttczpwcm9qZWN0cy9zaWdzdG9yZS1yb290LXNpZ25pbmcvbG9jYXRpb25zL2dsb2JhbC9rZXlSaW5ncy9yb290L2NyeXB0b0tleXMvdGltZXN0YW1wL2NyeXB0b0tleVZlcnNpb25zLzEiCiAgIH0sCiAgICIxODNlNjRmMzc2NzBkYzEzY2EwZDI4OTk1YTMwNTNmMzc0MDk1NGRkY2U0NDMyMWE0MWU0NjUzNGNmNDRlNjMyIjogewogICAgImtleXR5cGUiOiAiZWNkc2EiLAogICAgImtleXZhbCI6IHsKICAgICAicHVibGljIjogIi0tLS0tQkVHSU4gUFVCTElDIEtFWS0tLS0tXG5NRmt3RXdZSEtvWkl6ajBDQVFZSUtvWkl6ajBEQVFjRFFnQUVNeHBQT0pDSVo1b3RHNDEwNmZHSnNlRVFpM1Y5XG5wa01ZUTR1eVY5VGoxTTdXSFhJeUxHK2prZnZ1RzBnbFExSlpiUlpaQlYzZ0FSNHNvamRHSElTZW93PT1cbi0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLVxuIgogICAgfSwKICAgICJzY2hlbWUiOiAiZWNkc2Etc2hhMi1uaXN0cDI1NiIsCiAgICAieC10dWYtb24tY2kta2V5b3duZXIiOiAiQGxhbmNlIgogICB9LAogICAiMjJmNGNhZWM2ZDhlNmY5NTU1YWY2NmIzZDRjM2NiMDZhM2JiMjNmZGM3ZTM5YzkxNmM2MWY0NjJlNmY1MmIwNiI6IHsKICAgICJrZXlpZF9oYXNoX2FsZ29yaXRobXMiOiBbCiAgICAgInNoYTI1NiIsCiAgICAgInNoYTUxMiIKICAgIF0sCiAgICAia2V5dHlwZSI6ICJlY2RzYSIsCiAgICAia2V5dmFsIjogewogICAgICJwdWJsaWMiOiAiLS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS1cbk1Ga3dFd1lIS29aSXpqMENBUVlJS29aSXpqMERBUWNEUWdBRXpCelZPbUhDUG9qTVZMU0kzNjRXaWlWOE5QckRcbjZJZ1J4Vmxpc2t6L3YreTNKRVI1bWNWR2NPTmxpRGNXTUM1SjJsZkhtalBOUGhiNEg3eG04THpmU0E9PVxuLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tXG4iCiAgICB9LAogICAgInNjaGVtZSI6ICJlY2RzYS1zaGEyLW5pc3RwMjU2IiwKICAgICJ4LXR1Zi1vbi1jaS1rZXlvd25lciI6ICJAc2FudGlhZ290b3JyZXMiCiAgIH0sCiAgICI2MTY0MzgzODEyNWI0NDBiNDBkYjY5NDJmNWNiNWEzMWMwZGMwNDM2ODMxNmViMmFhYTU4Yjk1OTA0YTU4MjIyIjogewogICAgImtleWlkX2hhc2hfYWxnb3JpdGhtcyI6IFsKICAgICAic2hhMjU2IiwKICAgICAic2hhNTEyIgogICAgXSwKICAgICJrZXl0eXBlIjogImVjZHNhIiwKICAgICJrZXl2YWwiOiB7CiAgICAgInB1YmxpYyI6ICItLS0tLUJFR0lOIFBVQkxJQyBLRVktLS0tLVxuTUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFRY0RRZ0FFaW5pa1NzQVFtWWtOZUg1ZVlxL0NuSXpMYWFjT1xueGxTYWF3UURPd3FLeS90Q3F4cTV4eFBTSmMyMUs0V0loczlHeU9rS2Z6dWVZM0dJTHpjTUpaNGNXdz09XG4tLS0tLUVORCBQVUJMSUMgS0VZLS0tLS1cbiIKICAgIH0sCiAgICAic2NoZW1lIjogImVjZHNhLXNoYTItbmlzdHAyNTYiLAogICAgIngtdHVmLW9uLWNpLWtleW93bmVyIjogIkBib2JjYWxsYXdheSIKICAgfSwKICAgImE2ODdlNWJmNGZhYjgyYjBlZTU4ZDQ2ZTA1Yzk1MzUxNDVhMmM5YWZiNDU4ZjQzZDQyYjQ1Y2EwZmRjZTJhNzAiOiB7CiAgICAia2V5aWRfaGFzaF9hbGdvcml0aG1zIjogWwogICAgICJzaGEyNTYiLAogICAgICJzaGE1MTIiCiAgICBdLAogICAgImtleXR5cGUiOiAiZWNkc2EiLAogICAgImtleXZhbCI6IHsKICAgICAicHVibGljIjogIi0tLS0tQkVHSU4gUFVCTElDIEtFWS0tLS0tXG5NRmt3RXdZSEtvWkl6ajBDQVFZSUtvWkl6ajBEQVFjRFFnQUUwZ2hyaDkyTHcxWXIzaWRHVjVXcUN0TURCOEN4XG4rRDhoZEM0dzJaTE5JcGxWUm9WR0xza1lhM2doZU15T2ppSjhrUGkxNWFRMi8vN1Arb2o3VXZKUEd3PT1cbi0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLVxuIgogICAgfSwKICAgICJzY2hlbWUiOiAiZWNkc2Etc2hhMi1uaXN0cDI1NiIsCiAgICAieC10dWYtb24tY2kta2V5b3duZXIiOiAiQGpvc2h1YWdsIgogICB9LAogICAiZTcxYTU0ZDU0MzgzNWJhODZhZGFkOTQ2MDM3OWM3NjQxZmI4NzI2ZDE2NGVhNzY2ODAxYTFjNTIyYWJhN2VhMiI6IHsKICAgICJrZXlpZF9oYXNoX2FsZ29yaXRobXMiOiBbCiAgICAgInNoYTI1NiIsCiAgICAgInNoYTUxMiIKICAgIF0sCiAgICAia2V5dHlwZSI6ICJlY2RzYSIsCiAgICAia2V5dmFsIjogewogICAgICJwdWJsaWMiOiAiLS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS1cbk1Ga3dFd1lIS29aSXpqMENBUVlJS29aSXpqMERBUWNEUWdBRUVYc3ozU1pYRmI4ak1WNDJqNnBKbHlqYmpSOEtcbk4zQndvY2V4cTZMTUliNXFzV0tPUXZMTjE2TlVlZkxjNEhzd09vdW1Sc1ZWYWFqU3BRUzZmb2JrUnc9PVxuLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tXG4iCiAgICB9LAogICAgInNjaGVtZSI6ICJlY2RzYS1zaGEyLW5pc3RwMjU2IiwKICAgICJ4LXR1Zi1vbi1jaS1rZXlvd25lciI6ICJAbW5tNjc4IgogICB9CiAgfSwKICAicm9sZXMiOiB7CiAgICJyb290IjogewogICAgImtleWlkcyI6IFsKICAgICAiZTcxYTU0ZDU0MzgzNWJhODZhZGFkOTQ2MDM3OWM3NjQxZmI4NzI2ZDE2NGVhNzY2ODAxYTFjNTIyYWJhN2VhMiIsCiAgICAgIjIyZjRjYWVjNmQ4ZTZmOTU1NWFmNjZiM2Q0YzNjYjA2YTNiYjIzZmRjN2UzOWM5MTZjNjFmNDYyZTZmNTJiMDYiLAogICAgICI2MTY0MzgzODEyNWI0NDBiNDBkYjY5NDJmNWNiNWEzMWMwZGMwNDM2ODMxNmViMmFhYTU4Yjk1OTA0YTU4MjIyIiwKICAgICAiYTY4N2U1YmY0ZmFiODJiMGVlNThkNDZlMDVjOTUzNTE0NWEyYzlhZmI0NThmNDNkNDJiNDVjYTBmZGNlMmE3MCIsCiAgICAgIjE4M2U2NGYzNzY3MGRjMTNjYTBkMjg5OTVhMzA1M2YzNzQwOTU0ZGRjZTQ0MzIxYTQxZTQ2NTM0Y2Y0NGU2MzIiCiAgICBdLAogICAgInRocmVzaG9sZCI6IDMKICAgfSwKICAgInNuYXBzaG90IjogewogICAgImtleWlkcyI6IFsKICAgICAiMGM4NzQzMmMzYmYwOWZkOTkxODlmZGMzMmZhNWVhZWRmNGU0YTVmYWM3YmFiNzNmYTA0YTJlMGZjNjRhZjZmNSIKICAgIF0sCiAgICAidGhyZXNob2xkIjogMSwKICAgICJ4LXR1Zi1vbi1jaS1leHBpcnktcGVyaW9kIjogMzY1MCwKICAgICJ4LXR1Zi1vbi1jaS1zaWduaW5nLXBlcmlvZCI6IDM2NQogICB9LAogICAidGFyZ2V0cyI6IHsKICAgICJrZXlpZHMiOiBbCiAgICAgImU3MWE1NGQ1NDM4MzViYTg2YWRhZDk0NjAzNzljNzY0MWZiODcyNmQxNjRlYTc2NjgwMWExYzUyMmFiYTdlYTIiLAogICAgICIyMmY0Y2FlYzZkOGU2Zjk1NTVhZjY2YjNkNGMzY2IwNmEzYmIyM2ZkYzdlMzljOTE2YzYxZjQ2MmU2ZjUyYjA2IiwKICAgICAiNjE2NDM4MzgxMjViNDQwYjQwZGI2OTQyZjVjYjVhMzFjMGRjMDQzNjgzMTZlYjJhYWE1OGI5NTkwNGE1ODIyMiIsCiAgICAgImE2ODdlNWJmNGZhYjgyYjBlZTU4ZDQ2ZTA1Yzk1MzUxNDVhMmM5YWZiNDU4ZjQzZDQyYjQ1Y2EwZmRjZTJhNzAiLAogICAgICIxODNlNjRmMzc2NzBkYzEzY2EwZDI4OTk1YTMwNTNmMzc0MDk1NGRkY2U0NDMyMWE0MWU0NjUzNGNmNDRlNjMyIgogICAgXSwKICAgICJ0aHJlc2hvbGQiOiAzCiAgIH0sCiAgICJ0aW1lc3RhbXAiOiB7CiAgICAia2V5aWRzIjogWwogICAgICIwYzg3NDMyYzNiZjA5ZmQ5OTE4OWZkYzMyZmE1ZWFlZGY0ZTRhNWZhYzdiYWI3M2ZhMDRhMmUwZmM2NGFmNmY1IgogICAgXSwKICAgICJ0aHJlc2hvbGQiOiAxLAogICAgIngtdHVmLW9uLWNpLWV4cGlyeS1wZXJpb2QiOiA3LAogICAgIngtdHVmLW9uLWNpLXNpZ25pbmctcGVyaW9kIjogNgogICB9CiAgfSwKICAic3BlY192ZXJzaW9uIjogIjEuMCIsCiAgInZlcnNpb24iOiAxMywKICAieC10dWYtb24tY2ktZXhwaXJ5LXBlcmlvZCI6IDE5NywKICAieC10dWYtb24tY2ktc2lnbmluZy1wZXJpb2QiOiA0NgogfQp9";
+  });
+  var wn;
+  var Ir;
+  var ks = T(() => {
+    z();
+    wn = { metadataUrl: "https://tuf-repo-cdn.sigstore.dev/", targetBaseUrl: "https://tuf-repo-cdn.sigstore.dev/targets/", namespace: "tuf-cache", trustedRootTarget: "trusted_root.json", cacheTTL: 36e5 }, Ir = class {
+      constructor(t = {}) {
+        let r = t.metadataUrl || wn.metadataUrl;
+        this.metadataUrl = r.endsWith("/") ? r : `${r}/`;
+        let n = t.targetBaseUrl || wn.targetBaseUrl;
+        this.targetBaseUrl = n.endsWith("/") ? n : `${n}/`, this.initialRoot = t.initialRoot, this.namespace = t.namespace || wn.namespace, this.trustedRootTarget = t.trustedRootTarget || wn.trustedRootTarget, this.cacheTTL = t.cacheTTL ?? wn.cacheTTL, this.disableCache = t.disableCache ?? false;
+      }
+      async initTUFClient() {
+        if (!this.tufClient) try {
+          let { TUFClient: t } = await Promise.resolve().then(() => (ic(), nc)), r = this.initialRoot || await this.getDefaultRoot();
+          this.tufClient = new t(this.metadataUrl, r, this.namespace, this.targetBaseUrl, { disableCache: this.disableCache });
+        } catch (t) {
+          throw new Error(`Failed to initialize TUF client: ${t instanceof Error ? t.message : String(t)}`);
+        }
+      }
+      async getDefaultRoot() {
+        let { default: t } = await Promise.resolve().then(() => (oc(), sc)), r = new TextDecoder(), n = Uint8Array.from(atob(t), (i) => i.charCodeAt(0));
+        return r.decode(n);
+      }
+      isCacheValid() {
+        return !this.cachedRoot || !this.cacheTimestamp ? false : Date.now() - this.cacheTimestamp < this.cacheTTL;
+      }
+      async getTrustedRoot() {
+        if (this.isCacheValid() && this.cachedRoot) return this.cachedRoot;
+        if (await this.initTUFClient(), !this.tufClient) throw new Error("TUF client not initialized");
+        try {
+          await this.tufClient.updateTUF();
+          let t = await this.tufClient.getTarget(this.trustedRootTarget), r = rt(new Uint8Array(t)), n = JSON.parse(r);
+          return this.cachedRoot = n, this.cacheTimestamp = Date.now(), n;
+        } catch (t) {
+          throw new Error(`Failed to fetch trusted root via TUF: ${t instanceof Error ? t.message : String(t)}`);
+        }
+      }
+      async refreshTrustedRoot() {
+        return this.cachedRoot = void 0, this.cacheTimestamp = void 0, await this.getTrustedRoot();
+      }
+      clearCache() {
+        this.cachedRoot = void 0, this.cacheTimestamp = void 0;
+      }
+    };
+  });
+  var $t;
+  var ci;
+  var fi;
+  var li;
+  var ui;
+  var Dt;
+  var Hs = T(() => {
+    $t = class e2 extends Error {
+      constructor(t, r) {
+        super(r), this.code = t, this.name = "VerificationError", Object.setPrototypeOf(this, e2.prototype);
+      }
+    }, ci = class e2 extends $t {
+      constructor(t) {
+        super("TIMESTAMP_ERROR", t), this.name = "TimestampError", Object.setPrototypeOf(this, e2.prototype);
+      }
+    }, fi = class e2 extends $t {
+      constructor(t) {
+        super("CERTIFICATE_ERROR", t), this.name = "CertificateError", Object.setPrototypeOf(this, e2.prototype);
+      }
+    }, li = class e2 extends $t {
+      constructor(t) {
+        super("TLOG_ERROR", t), this.name = "TLogError", Object.setPrototypeOf(this, e2.prototype);
+      }
+    }, ui = class e2 extends $t {
+      constructor(t) {
+        super("SIGNATURE_ERROR", t), this.name = "SignatureError", Object.setPrototypeOf(this, e2.prototype);
+      }
+    }, Dt = class e2 extends $t {
+      constructor(t) {
+        super("POLICY_ERROR", t), this.name = "PolicyError", Object.setPrototypeOf(this, e2.prototype);
+      }
+    };
+  });
+  var ac;
+  var Jt;
+  var ft;
+  var Be;
+  var hi;
+  var di;
+  var gi;
+  var mi;
+  var pi;
+  var xr;
+  var wi;
+  var yi;
+  var Ei;
+  var Ii;
+  var xi;
+  var bi;
+  var Si;
+  var Ai;
+  var vi;
+  var Ti;
+  var Bi;
+  var Ni;
+  var Ci;
+  var Ri;
+  var br;
+  var Sr;
+  var Ar;
+  var Ls = T(() => {
+    Hs();
+    un();
+    ac = "https://token.actions.githubusercontent.com", Jt = class {
+      constructor(t) {
+        this.expectedValue = t;
+      }
+      verify(t) {
+        let r = this.getExtensionValue(t);
+        if (r === void 0) throw new Dt(`Certificate does not contain ${this.name} (${this.oid}) extension`);
+        if (r !== this.expectedValue) throw new Dt(`Certificate's ${this.name} does not match (got '${r}', expected '${this.expectedValue}')`);
+      }
+    }, ft = class extends Jt {
+    }, Be = class extends Jt {
+      constructor() {
+        super(...arguments), this.oid = Gr, this.name = "OIDCIssuer";
+      }
+      getExtensionValue(t) {
+        return t.extFulcioIssuerV1?.issuer;
+      }
+    }, hi = class extends Jt {
+      constructor() {
+        super(...arguments), this.oid = Kr, this.name = "GitHubWorkflowTrigger";
+      }
+      getExtensionValue(t) {
+        return t.extGitHubWorkflowTrigger?.workflowTrigger;
+      }
+    }, di = class extends Jt {
+      constructor() {
+        super(...arguments), this.oid = Wr, this.name = "GitHubWorkflowSHA";
+      }
+      getExtensionValue(t) {
+        return t.extGitHubWorkflowSHA?.workflowSHA;
+      }
+    }, gi = class extends Jt {
+      constructor() {
+        super(...arguments), this.oid = Fr, this.name = "GitHubWorkflowName";
+      }
+      getExtensionValue(t) {
+        return t.extGitHubWorkflowName?.workflowName;
+      }
+    }, mi = class extends Jt {
+      constructor() {
+        super(...arguments), this.oid = zr, this.name = "GitHubWorkflowRepository";
+      }
+      getExtensionValue(t) {
+        return t.extGitHubWorkflowRepository?.workflowRepository;
+      }
+    }, pi = class extends Jt {
+      constructor() {
+        super(...arguments), this.oid = Pr, this.name = "GitHubWorkflowRef";
+      }
+      getExtensionValue(t) {
+        return t.extGitHubWorkflowRef?.workflowRef;
+      }
+    }, xr = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = Xr, this.name = "OIDCIssuerV2";
+      }
+      getExtensionValue(t) {
+        return t.extFulcioIssuerV2?.issuer;
+      }
+    }, wi = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = Qr, this.name = "OIDCBuildSignerURI";
+      }
+      getExtensionValue(t) {
+        return t.extBuildSignerURI?.buildSignerURI;
+      }
+    }, yi = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = $r, this.name = "OIDCBuildSignerDigest";
+      }
+      getExtensionValue(t) {
+        return t.extBuildSignerDigest?.buildSignerDigest;
+      }
+    }, Ei = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = Jr, this.name = "OIDCRunnerEnvironment";
+      }
+      getExtensionValue(t) {
+        return t.extRunnerEnvironment?.runnerEnvironment;
+      }
+    }, Ii = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = qr, this.name = "OIDCSourceRepositoryURI";
+      }
+      getExtensionValue(t) {
+        return t.extSourceRepositoryURI?.sourceRepositoryURI;
+      }
+    }, xi = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = tn, this.name = "OIDCSourceRepositoryDigest";
+      }
+      getExtensionValue(t) {
+        return t.extSourceRepositoryDigest?.sourceRepositoryDigest;
+      }
+    }, bi = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = en, this.name = "OIDCSourceRepositoryRef";
+      }
+      getExtensionValue(t) {
+        return t.extSourceRepositoryRef?.sourceRepositoryRef;
+      }
+    }, Si = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = rn, this.name = "OIDCSourceRepositoryIdentifier";
+      }
+      getExtensionValue(t) {
+        return t.extSourceRepositoryIdentifier?.sourceRepositoryIdentifier;
+      }
+    }, Ai = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = nn, this.name = "OIDCSourceRepositoryOwnerURI";
+      }
+      getExtensionValue(t) {
+        return t.extSourceRepositoryOwnerURI?.sourceRepositoryOwnerURI;
+      }
+    }, vi = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = sn, this.name = "OIDCSourceRepositoryOwnerIdentifier";
+      }
+      getExtensionValue(t) {
+        return t.extSourceRepositoryOwnerIdentifier?.sourceRepositoryOwnerIdentifier;
+      }
+    }, Ti = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = on, this.name = "OIDCBuildConfigURI";
+      }
+      getExtensionValue(t) {
+        return t.extBuildConfigURI?.buildConfigURI;
+      }
+    }, Bi = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = an, this.name = "OIDCBuildConfigDigest";
+      }
+      getExtensionValue(t) {
+        return t.extBuildConfigDigest?.buildConfigDigest;
+      }
+    }, Ni = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = cn, this.name = "OIDCBuildTrigger";
+      }
+      getExtensionValue(t) {
+        return t.extBuildTrigger?.buildTrigger;
+      }
+    }, Ci = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = fn, this.name = "OIDCRunInvocationURI";
+      }
+      getExtensionValue(t) {
+        return t.extRunInvocationURI?.runInvocationURI;
+      }
+    }, Ri = class extends ft {
+      constructor() {
+        super(...arguments), this.oid = ln, this.name = "OIDCSourceRepositoryVisibility";
+      }
+      getExtensionValue(t) {
+        return t.extSourceRepositoryVisibility?.sourceRepositoryVisibility;
+      }
+    }, br = class {
+      constructor(t) {
+        this.children = t;
+      }
+      async verify(t) {
+        for (let r of this.children) try {
+          await r.verify(t);
+          return;
+        } catch {
+        }
+        throw new Dt(`0 of ${this.children.length} policies succeeded`);
+      }
+    }, Sr = class {
+      constructor(t) {
+        this.children = t;
+      }
+      async verify(t) {
+        if (this.children.length < 1) throw new Dt("no child policies to verify");
+        for (let r of this.children) await r.verify(t);
+      }
+    }, Ar = class {
+      constructor(t) {
+        this.identity = t.identity, this.issuerPolicy = t.issuer ? new Be(t.issuer) : null;
+      }
+      verify(t) {
+        this.issuerPolicy && this.issuerPolicy.verify(t);
+        let r = t.extSubjectAltName;
+        if (!r) throw new Dt("Certificate does not contain SubjectAlternativeName extension");
+        let n = /* @__PURE__ */ new Set();
+        r.rfc822Name && n.add(r.rfc822Name), r.uri && n.add(r.uri);
+        let i = r.otherName(ti);
+        if (i && n.add(i), !n.has(this.identity)) throw new Dt(`Certificate's SANs do not match ${this.identity}; actual SANs: ${Array.from(n).join(", ")}`);
+      }
+    };
+  });
+  function Zs(e2) {
+    return e2.size === 0 ? 0 : Math.max(1, e2.size - (e2.has("") ? 1 : 0));
+  }
+  function Al(e2) {
+    switch (e2) {
+      case `${yn}+json;version=0.1`:
+        return "0.1";
+      case `${yn}+json;version=0.2`:
+        return "0.2";
+      case `${yn}+json;version=0.3`:
+        return "0.3";
+    }
+    if (e2.startsWith(`${yn}.v`) && e2.endsWith("+json")) {
+      let t = e2.replace(`${yn}.v`, "").replace("+json", "");
+      if (/^0\.[123]$/.test(t)) return t;
+    }
+    throw new Error(`Unsupported bundle media type: ${e2}`);
+  }
+  var yn;
+  var cc;
+  var fc;
+  var Di;
+  var lc = T(() => {
+    z();
+    Vt();
+    Ts();
+    Bs();
+    Ua();
+    Vt();
+    Va();
+    ka();
+    dn();
+    _s();
+    ks();
+    Ls();
+    yn = "application/vnd.dev.sigstore.bundle", cc = 1024, fc = 32;
+    Di = class {
+      constructor(t = {}) {
+        this.root = void 0, this.rawRoot = void 0, this.options = { tlogThreshold: t.tlogThreshold ?? 1, ctlogThreshold: t.ctlogThreshold ?? 1, tsaThreshold: t.tsaThreshold ?? 0 };
+        for (let [r, n] of Object.entries(this.options)) if (!Number.isSafeInteger(n) || n < 0) throw new Error(`${r} must be a non-negative safe integer`);
+      }
+      async loadLog(t) {
+        return Promise.all(t.map(async (r) => ({ publicKey: await ue(r.publicKey.keyDetails, r.publicKey.keyDetails, r.publicKey.rawBytes), logId: O(r.logId.keyId), hashAlgorithm: r.hashAlgorithm, operator: r.operator || "", validFor: ve(r.publicKey.validFor) })));
+      }
+      async loadCTLogs(t) {
+        if (t.length === 0) throw new Error("Could not find any CT logs in sigstore root.");
+        return Promise.all(t.map(async (r) => ({ logID: O(r.logId.keyId), publicKey: await ue(r.publicKey.keyDetails, r.publicKey.keyDetails, r.publicKey.rawBytes), operator: r.operator || "", validFor: ve(r.publicKey.validFor) })));
+      }
+      async verifyCertificateChain(t, r, n) {
+        let i;
+        for (let s of n) if (!(t < s.validFor.start || t > s.validFor.end)) try {
+          return await new Xt({ trustedCerts: s.certChain, untrustedCert: r, timestamp: t }).verify();
+        } catch (o) {
+          i = o;
+        }
+        throw new Error(`Failed to verify certificate chain: ${i?.message || "No valid CAs found"}`);
+      }
+      loadCA(t) {
+        return t.filter((r) => r.certChain.certificates.length > 0).map((r) => ({ certChain: r.certChain.certificates.map((n) => tt.parse(O(n.rawBytes))), validFor: ve(r.validFor) }));
+      }
+      async loadSigstoreRoot(t) {
+        t.timestampAuthorities?.forEach((n) => ve(n.validFor));
+        let r = { rekor: await this.loadLog(t[We.tlogs]), ctlogs: await this.loadCTLogs(t[We.ctlogs]), certificateAuthorities: this.loadCA(t[We.certificateAuthorities]) };
+        this.rawRoot = t, this.root = r;
+      }
+      async loadSigstoreRootWithTUF(t) {
+        let n = await (t || new Ir()).getTrustedRoot();
+        await this.loadSigstoreRoot(n);
+      }
+      async verifySCT(t, r, n) {
+        let i, s = t.clone();
+        for (let g = 0; g < s.extensions.length; g++) {
+          let l = s.extensions[g];
+          if (l.subs[0].toOID() === pr) {
+            i = new Te(l), s.extensions.splice(g, 1);
+            break;
+          }
+        }
+        if (!i) throw new Error("Certificate is missing required SCT extension");
+        if (i.signedCertificateTimestamps.length === 0) throw new Error("SCT extension is present but contains no SCTs");
+        let o = /* @__PURE__ */ new Set();
+        for (let g of i.signedCertificateTimestamps) {
+          let l = Mt(g.logID);
+          if (o.has(l)) throw new Error(`Duplicate SCT found for log ID: ${l}`);
+          o.add(l);
+        }
+        let c = new Et(), a = new Uint8Array(await crypto.subtle.digest(j.SHA256, r.publicKey));
+        c.appendView(a);
+        let f = s.tbsCertificate.toDER();
+        c.appendUint24(f.length), c.appendView(f);
+        let d = /* @__PURE__ */ new Set();
+        for (let g of i.signedCertificateTimestamps) {
+          let l = n.filter((y) => _(y.logID, g.logID) ? y.validFor.start <= g.datetime && g.datetime <= y.validFor.end : false), h = await (async () => {
+            for (let y of l) try {
+              if (await g.verify(c.buffer, y.publicKey)) return y;
+            } catch {
+            }
+          })();
+          if (!h) throw new Error("SCT verification failed");
+          d.add(h.operator);
+        }
+        return d;
+      }
+      async verifySET(t, r, n) {
+        let i = Number(t.integratedTime), s = new Date(i * 1e3);
+        if (s < n.validFor.start || s > n.validFor.end) throw new Error("Rekor key was not valid at the integrated time.");
+        let o = we(ye({ body: t.canonicalizedBody, integratedTime: i, logIndex: Number(t.logIndex), logID: Mt(n.logId) }));
+        if (!await pt(n.publicKey, o, O(r), n.hashAlgorithm)) throw new Error("Failed to verify the inclusion promise in the provided bundle.");
+        return s;
+      }
+      async verifyTlogEntries(t, r, n) {
+        let i = r.verificationMaterial.tlogEntries, s = Al(r.mediaType) !== "0.1", o = /* @__PURE__ */ new Set(), c = [];
+        for (let f of i) {
+          let d = O(f.logId.keyId), g = n.find((h) => _(h.logId, d));
+          if (!g) continue;
+          let l = f.inclusionPromise?.signedEntryTimestamp;
+          if (!f.inclusionProof && (s || !l)) throw new Error("Transparency log entry requires an inclusion proof.");
+          if (l && c.push(await this.verifySET(f, l, g)), f.inclusionProof && (await _a(f), await ja(f, g)), f.integratedTime && !t.validForDate(new Date(Number(f.integratedTime) * 1e3))) throw new Error("Artifact signing was logged outside of the certificate validity.");
+          await Wa(f, r, t), o.add(g.operator);
+        }
+        let a = Zs(o);
+        if (a < this.options.tlogThreshold) throw new Error(`Not enough verified transparency logs: ${a} < ${this.options.tlogThreshold}`);
+        return c;
+      }
+      async verifyBundle(t, r) {
+        if (Ma(t), !this.root || !this.rawRoot) throw new Error("Sigstore root is undefined");
+        let n = t.verificationMaterial.certificate || t.verificationMaterial.x509CertificateChain?.certificates[0];
+        if (!n) throw new Error("No certificate found in bundle");
+        let i = tt.parse(O(n.rawBytes)), s = O(t.messageSignature ? t.messageSignature.signature : t.dsseEnvelope.signatures[0].sig);
+        await r.verify(i);
+        let o = await this.verifyTlogEntries(i, t, this.root.rekor), c = await ni(t.verificationMaterial.timestampVerificationData, s, this.rawRoot.timestampAuthorities || []), a = Zs(new Set(c.map((h) => h.operator)));
+        if (a < this.options.tsaThreshold) throw new Error(`Not enough verified TSA operators: ${a} < ${this.options.tsaThreshold}`);
+        let f = [...o, ...c.map((h) => h.signingTime)];
+        if (f.length === 0) throw new Error("No verified observer timestamp anchors the signature in time.");
+        let d = [];
+        for (let h of f) d = await this.verifyCertificateChain(h, i, this.root.certificateAuthorities);
+        let g = d.length > 1 ? d[1] : d[0], l = Zs(await this.verifySCT(i, g, this.root.ctlogs));
+        if (l < this.options.ctlogThreshold) throw new Error(`Not enough verified CT log operators: ${l} < ${this.options.ctlogThreshold}`);
+        return { signingCert: i, signature: s };
+      }
+      async verifyArtifactPolicy(t, r, n, i = false) {
+        if (i && n.byteLength !== 32) throw new Error("SHA-256 digest must be exactly 32 bytes");
+        let { signingCert: s, signature: o } = await this.verifyBundle(r, t);
+        if (r.dsseEnvelope) {
+          if (r.dsseEnvelope.payloadType !== "application/vnd.in-toto+json") throw new Error(`Unsupported DSSE payload type: ${r.dsseEnvelope.payloadType}`);
+          let c = O(r.dsseEnvelope.payload), a = JSON.parse(rt(c));
+          if (!Array.isArray(a?.subject) || a.subject.length === 0 || a.subject.length > cc) throw new Error(`DSSE payload must have between 1 and ${cc} subjects`);
+          let f;
+          i ? f = Mt(n) : f = Mt(new Uint8Array(await crypto.subtle.digest(j.SHA256, n)));
+          let d = false;
+          for (let y of a.subject) {
+            let b = y?.digest;
+            if (!b || typeof b != "object" || Array.isArray(b) || Object.keys(b).length > fc) throw new Error(`Invalid DSSE subject digest map (maximum ${fc} digests)`);
+            d || (d = typeof b.sha256 == "string" && f === b.sha256.toLowerCase());
+          }
+          if (!d) throw new Error(`Artifact digest ${f} does not match any subject in DSSE payload`);
+          let g = Ns(r.dsseEnvelope.payloadType, c), l = await s.publicKeyObj;
+          if (!await pt(l, g, o)) throw new Error("DSSE signature verification failed");
+        } else {
+          let { messageDigest: c } = r.messageSignature, a = i ? n : new Uint8Array(await crypto.subtle.digest(j.SHA256, n));
+          if (c.algorithm !== "SHA2_256" || !_(a, O(c.digest))) throw new Error("Artifact digest does not match the bundle message digest");
+          let f = await s.publicKeyObj;
+          if (i) {
+            if (!await va(f, n, o)) throw new Error("Error verifying signature over digest");
+          } else if (!await pt(f, n, o)) {
+            let g = f.algorithm.name || "unknown";
+            throw new Error(`Error verifying artifact signature. Key algorithm: ${g}, Data length: ${n.length}, Signature length: ${o.length}`);
+          }
+        }
+        return true;
+      }
+      async verifyArtifact(t, r, n, i, s = false) {
+        let o = new Sr([new Ar({ identity: t }), new br([new xr(r), new Be(r)])]);
+        return this.verifyArtifactPolicy(o, n, i, s);
+      }
+      async verifyDsse(t, r) {
+        let { signingCert: n, signature: i } = await this.verifyBundle(t, r);
+        if (!t.dsseEnvelope) throw new Error("Bundle does not contain a DSSE envelope");
+        let s = O(t.dsseEnvelope.payload), o = Ns(t.dsseEnvelope.payloadType, s), c = await n.publicKeyObj;
+        if (!await pt(c, o, i)) throw new Error("DSSE signature verification failed");
+        for (let f of t.verificationMaterial.tlogEntries) if (f.kindVersion.kind !== "dsse") throw new Error(`Expected entry type dsse, got ${f.kindVersion.kind}`);
+        return { payloadType: t.dsseEnvelope.payloadType, payload: s };
+      }
+    };
+  });
+  var uc = {};
+  xn(uc, { AllOf: () => Sr, AnyOf: () => br, CertificateChainVerifier: () => Xt, CertificateError: () => fi, EXTENSION_OID_BUILD_CONFIG_DIGEST: () => an, EXTENSION_OID_BUILD_CONFIG_URI: () => on, EXTENSION_OID_BUILD_SIGNER_DIGEST: () => $r, EXTENSION_OID_BUILD_SIGNER_URI: () => Qr, EXTENSION_OID_BUILD_TRIGGER: () => cn, EXTENSION_OID_FULCIO_ISSUER_V1: () => Gr, EXTENSION_OID_FULCIO_ISSUER_V2: () => Xr, EXTENSION_OID_GITHUB_WORKFLOW_NAME: () => Fr, EXTENSION_OID_GITHUB_WORKFLOW_REF: () => Pr, EXTENSION_OID_GITHUB_WORKFLOW_REPOSITORY: () => zr, EXTENSION_OID_GITHUB_WORKFLOW_SHA: () => Wr, EXTENSION_OID_GITHUB_WORKFLOW_TRIGGER: () => Kr, EXTENSION_OID_OTHERNAME: () => ti, EXTENSION_OID_RUNNER_ENVIRONMENT: () => Jr, EXTENSION_OID_RUN_INVOCATION_URI: () => fn, EXTENSION_OID_SCT: () => pr, EXTENSION_OID_SOURCE_REPOSITORY_DIGEST: () => tn, EXTENSION_OID_SOURCE_REPOSITORY_IDENTIFIER: () => rn, EXTENSION_OID_SOURCE_REPOSITORY_OWNER_IDENTIFIER: () => sn, EXTENSION_OID_SOURCE_REPOSITORY_OWNER_URI: () => nn, EXTENSION_OID_SOURCE_REPOSITORY_REF: () => en, EXTENSION_OID_SOURCE_REPOSITORY_URI: () => qr, EXTENSION_OID_SOURCE_REPOSITORY_VISIBILITY: () => ln, GITHUB_OIDC_ISSUER: () => ac, GitHubWorkflowName: () => gi, GitHubWorkflowRef: () => pi, GitHubWorkflowRepository: () => mi, GitHubWorkflowSHA: () => di, GitHubWorkflowTrigger: () => hi, Identity: () => Ar, OIDCBuildConfigDigest: () => Bi, OIDCBuildConfigURI: () => Ti, OIDCBuildSignerDigest: () => yi, OIDCBuildSignerURI: () => wi, OIDCBuildTrigger: () => Ni, OIDCIssuer: () => Be, OIDCIssuerV2: () => xr, OIDCRunInvocationURI: () => Ci, OIDCRunnerEnvironment: () => Ei, OIDCSourceRepositoryDigest: () => xi, OIDCSourceRepositoryIdentifier: () => Si, OIDCSourceRepositoryOwnerIdentifier: () => vi, OIDCSourceRepositoryOwnerURI: () => Ai, OIDCSourceRepositoryRef: () => bi, OIDCSourceRepositoryURI: () => Ii, OIDCSourceRepositoryVisibility: () => Ri, PolicyError: () => Dt, SignatureError: () => ui, SigstoreVerifier: () => Di, TLogError: () => li, TimestampError: () => ci, TrustedRootProvider: () => Ir, VerificationError: () => $t, X509BuildConfigDigestExtension: () => hr, X509BuildConfigURIExtension: () => ur, X509BuildSignerDigestExtension: () => nr, X509BuildSignerURIExtension: () => rr, X509BuildTriggerExtension: () => dr, X509Certificate: () => tt, X509Extension: () => bt, X509FulcioIssuerV1: () => Xe, X509FulcioIssuerV2: () => er, X509GitHubWorkflowNameExtension: () => Je, X509GitHubWorkflowRefExtension: () => tr, X509GitHubWorkflowRepositoryExtension: () => qe, X509GitHubWorkflowSHAExtension: () => $e, X509GitHubWorkflowTriggerExtension: () => Qe, X509RunInvocationURIExtension: () => gr, X509RunnerEnvironmentExtension: () => ir, X509SourceRepositoryDigestExtension: () => or, X509SourceRepositoryIdentifierExtension: () => cr, X509SourceRepositoryOwnerIdentifierExtension: () => lr, X509SourceRepositoryOwnerURIExtension: () => fr, X509SourceRepositoryRefExtension: () => ar, X509SourceRepositoryURIExtension: () => sr, X509SourceRepositoryVisibilityExtension: () => mr, verifyBundleTimestamp: () => ni, verifyRFC3161Timestamp: () => Xa });
+  var Oi = T(() => {
+    lc();
+    Hs();
+    _s();
+    ks();
+    un();
+    qn();
+    vs();
+    Ls();
+  });
+  var Ec = {};
+  xn(Ec, { gunzipSync: () => Ol });
+  function Ol() {
+    throw new Error("no zlib in a browser");
+  }
+  var Ic = T(() => {
+  });
+  var Ne = class extends Error {
+    constructor(t, r) {
+      super(t), this.name = "TinfoilError", r?.cause && (this.cause = r.cause);
+    }
+  };
+  var vr = class extends Ne {
+    constructor(t, r) {
+      super(t, r), this.name = "ConfigurationError";
+    }
+  };
+  var Ot = class extends Ne {
+    constructor(t, r) {
+      super(t, r), this.name = "FetchError";
+    }
+  };
+  var u = class extends Ne {
+    constructor(t, r) {
+      super(t, r), this.name = "AttestationError";
+    }
+  };
+  function yt(e2, t, r) {
+    throw e2 instanceof Ne ? e2 : new t(r, { cause: e2 });
+  }
+  var Nt;
+  (function(e2) {
+    e2.SevGuestV1 = "https://tinfoil.sh/predicate/sev-snp-guest/v1", e2.SevGuestV2 = "https://tinfoil.sh/predicate/sev-snp-guest/v2", e2.SnpTdxMultiplatformV1 = "https://tinfoil.sh/predicate/snp-tdx-multiplatform/v1";
+  })(Nt || (Nt = {}));
+  function Xs(e2, t) {
+    if (e2.type === t.type) {
+      if (e2.registers.length !== t.registers.length || !e2.registers.every((r, n) => r === t.registers[n])) throw new u("Code measurement mismatch: The enclave is running different code than the expected release");
+      return;
+    }
+    if (e2.type === Nt.SnpTdxMultiplatformV1 && t.type === Nt.SevGuestV2) {
+      if (e2.registers.length < 1 || t.registers.length < 1) throw new u("Invalid measurement data: Missing measurement registers");
+      if (e2.registers[0] !== t.registers[0]) throw new u("Code measurement mismatch: The SNP measurement from the enclave does not match the expected measurement from the signed release");
+      return;
+    }
+    if (e2.type === Nt.SevGuestV2 && t.type === Nt.SnpTdxMultiplatformV1) {
+      if (e2.registers.length < 1 || t.registers.length < 1) throw new u("Invalid measurement data: Missing measurement registers");
+      if (e2.registers[0] !== t.registers[0]) throw new u("Code measurement mismatch: The SNP measurement from the enclave does not match the expected measurement from the signed release");
+      return;
+    }
+    throw new u(`Cannot compare measurements: Incompatible measurement types "${e2.type}" and "${t.type}"`);
+  }
+  async function Hi(e2) {
+    if (e2.registers.length === 1) return e2.registers[0];
+    let t = e2.type + e2.registers.join(""), r = new TextEncoder(), n = await crypto.subtle.digest("SHA-256", r.encode(t)), i = new Uint8Array(n);
+    return Array.from(i).map((s) => s.toString(16).padStart(2, "0")).join("");
+  }
+  async function Qs(e2) {
+    let t = e2.format + e2.body, r = new TextEncoder(), n = await crypto.subtle.digest("SHA-256", r.encode(t)), i = new Uint8Array(n);
+    return Array.from(i).map((s) => s.toString(16).padStart(2, "0")).join("");
+  }
+  var qt;
+  (function(e2) {
+    e2[e2.VcekReportSigner = 0] = "VcekReportSigner", e2[e2.VlekReportSigner = 1] = "VlekReportSigner", e2[e2.endorseReserved2 = 2] = "endorseReserved2", e2[e2.endorseReserved3 = 3] = "endorseReserved3", e2[e2.endorseReserved4 = 4] = "endorseReserved4", e2[e2.endorseReserved5 = 5] = "endorseReserved5", e2[e2.endorseReserved6 = 6] = "endorseReserved6", e2[e2.NoneReportSigner = 7] = "NoneReportSigner";
+  })(qt || (qt = {}));
+  function te(e2) {
+    return { ucodeSpl: Number(e2 >> 56n & 0xffn), snpSpl: Number(e2 >> 48n & 0xffn), teeSpl: Number(e2 >> 8n & 0xffn), blSpl: Number(e2 & 0xffn) };
+  }
+  function Tr(e2, t) {
+    return e2.blSpl >= t.blSpl && e2.teeSpl >= t.teeSpl && e2.snpSpl >= t.snpSpl && e2.ucodeSpl >= t.ucodeSpl;
+  }
+  function $s(e2) {
+    return { smtEnabled: !!(e2 & 1n), tsmeEnabled: !!(e2 & 2n), eccEnabled: !!(e2 & 4n), raplDisabled: !!(e2 & 8n), ciphertextHidingDramEnabled: !!(e2 & 16n), aliasCheckComplete: !!(e2 & 32n), tioEnabled: !!(e2 & 128n) };
+  }
+  function Js(e2) {
+    return { abiMinor: Number(e2 & 0xffn), abiMajor: Number(e2 >> 8n & 0xffn), smt: !!(e2 & 1n << 16n), migrateMa: !!(e2 & 1n << 18n), debug: !!(e2 & 1n << 19n), singleSocket: !!(e2 & 1n << 20n), cxlAllowed: !!(e2 & 1n << 21n), memAes256Xts: !!(e2 & 1n << 22n), raplDis: !!(e2 & 1n << 23n), ciphertextHidingDram: !!(e2 & 1n << 24n), pageSwapDisabled: !!(e2 & 1n << 25n) };
+  }
+  function X(e2) {
+    return Array.from(e2).map((t) => t.toString(16).padStart(2, "0")).join("");
+  }
+  var Re = class {
+    constructor(t) {
+      if (t.length < 1184) throw new u(`Invalid attestation report: Data size (${t.length} bytes) is smaller than expected SEV-SNP report size (${1184} bytes)`);
+      let r = new DataView(t.buffer, t.byteOffset, t.byteLength);
+      if (this.version = r.getUint32(0, true), this.guestSvn = r.getUint32(4, true), this.policy = r.getBigUint64(8, true), !(this.policy & 1n << BigInt(17))) throw new u("Invalid attestation report: Policy field has invalid reserved bit (must be 1)");
+      if (this.policy >> 26n) throw new u("Invalid attestation report: Policy field has non-zero reserved bits");
+      this.familyId = t.slice(16, 32), this.imageId = t.slice(32, 48), this.vmpl = r.getUint32(48, true), this.signatureAlgo = r.getUint32(52, true), this.currentTcb = r.getBigUint64(56, true);
+      try {
+        Br(this.currentTcb, "current_tcb", 47, 16);
+      } catch (o) {
+        throw new u("Invalid attestation report: TCB (Trusted Computing Base) version field is malformed", { cause: o });
+      }
+      this.platformInfo = r.getBigUint64(64, true), this.policyParsed = Js(this.policy), this.platformInfoParsed = $s(this.platformInfo), this.signerInfo = r.getUint32(72, true);
+      try {
+        Br(BigInt(this.signerInfo), "signer_info", 31, 5);
+      } catch (o) {
+        throw new u("Invalid attestation report: Signer info field is malformed", { cause: o });
+      }
+      let n = this.signerInfo >> 2 & 7;
+      if (n !== qt.VcekReportSigner) throw new u(`Unsupported signing key type: This verifier only supports VCEK-signed attestation reports (got signing key type ${n})`);
+      this.signerInfoParsed = { signingKey: n, maskChipKey: !!(this.signerInfo & 2), authorKeyEn: !!(this.signerInfo & 1) };
+      try {
+        Ce(t, 76, 80);
+      } catch (o) {
+        throw new u("Invalid attestation report: Reserved bytes at offset 0x4C are not zeroed", { cause: o });
+      }
+      this.reportData = t.slice(80, 144), this.measurement = t.slice(144, 192), this.hostData = t.slice(192, 224), this.idKeyDigest = t.slice(224, 272), this.authorKeyDigest = t.slice(272, 320), this.reportId = t.slice(320, 352), this.reportIdMa = t.slice(352, 384), this.reportedTcb = r.getBigUint64(384, true);
+      try {
+        Br(this.reportedTcb, "reported_tcb", 47, 16);
+      } catch (o) {
+        throw new u("Invalid attestation report: Reported TCB field is malformed", { cause: o });
+      }
+      let i = 392;
+      if (this.version >= 3) this.family = r.getUint8(392), this.model = r.getUint8(393), this.stepping = r.getUint8(394), this.productName = this.initProductName(), i = 395;
+      else if (this.version === 2) this.family = 25, this.model = 17, this.stepping = 1, this.productName = "Genoa";
+      else throw new u(`Unsupported attestation report version: ${this.version}. Only version 2 (revision 1.55) and version 3+ are supported`);
+      try {
+        Ce(t, i, 416);
+      } catch (o) {
+        throw new u("Invalid attestation report: Reserved bytes in version section are not zeroed", { cause: o });
+      }
+      this.chipId = t.slice(416, 480), this.committedTcb = r.getBigUint64(480, true);
+      try {
+        Br(this.committedTcb, "committed_tcb", 47, 16);
+      } catch (o) {
+        throw new u("Invalid attestation report: Committed TCB field is malformed", { cause: o });
+      }
+      this.currentBuild = r.getUint8(488), this.currentMinor = r.getUint8(489), this.currentMajor = r.getUint8(490);
+      try {
+        Ce(t, 491, 492);
+      } catch (o) {
+        throw new u("Invalid attestation report: Reserved bytes after current version are not zeroed", { cause: o });
+      }
+      this.committedBuild = r.getUint8(492), this.committedMinor = r.getUint8(493), this.committedMajor = r.getUint8(494);
+      try {
+        Ce(t, 495, 496);
+      } catch (o) {
+        throw new u("Invalid attestation report: Reserved bytes after committed version are not zeroed", { cause: o });
+      }
+      this.launchTcb = r.getBigUint64(496, true);
+      try {
+        Br(this.launchTcb, "launch_tcb", 47, 16);
+      } catch (o) {
+        throw new u("Invalid attestation report: Launch TCB field is malformed", { cause: o });
+      }
+      let s = this.version < 5 ? 504 : 520;
+      try {
+        Ce(t, s, 672);
+      } catch (o) {
+        throw new u("Invalid attestation report: Reserved bytes before signature are not zeroed", { cause: o });
+      }
+      if (this.signatureAlgo === 1) try {
+        Ce(t, 816, 1184);
+      } catch (o) {
+        throw new u("Invalid attestation report: Reserved bytes after signature are not zeroed", { cause: o });
+      }
+      this.signedData = t.slice(0, 672), this.signature = t.slice(672, 1184);
+    }
+    initProductName() {
+      if (this.family === 25) {
+        if (this.model === 1) return "Milan";
+        if (this.model === 17) return "Genoa";
+      } else if (this.family === 26 && this.model === 2) return "Turin";
+      return "Unknown";
+    }
+  };
+  function Vc(e2, t, r) {
+    for (let n = t; n < r; n++) if (e2[n] !== 0) return n;
+    return r;
+  }
+  function Ce(e2, t, r) {
+    if (Vc(e2, t, r) !== r) {
+      let i = Array.from(e2.slice(t, r)).map((s) => s.toString(16).padStart(2, "0")).join("");
+      throw new u(`reserved bytes at offset 0x${t.toString(16)}-0x${r.toString(16)} contain non-zero data: ${i}`);
+    }
+  }
+  function Br(e2, t, r, n) {
+    let i = (1n << BigInt(r - n + 1)) - 1n;
+    if ((e2 >> BigInt(n) & i) !== 0n) throw new u(`Reserved bits in ${t} field contain non-zero data: 0x${e2.toString(16)}`);
+  }
+  var ro = `-----BEGIN CERTIFICATE-----
+MIIGYzCCBBKgAwIBAgIDAgAAMEYGCSqGSIb3DQEBCjA5oA8wDQYJYIZIAWUDBAIC
+BQChHDAaBgkqhkiG9w0BAQgwDQYJYIZIAWUDBAICBQCiAwIBMKMDAgEBMHsxFDAS
+BgNVBAsMC0VuZ2luZWVyaW5nMQswCQYDVQQGEwJVUzEUMBIGA1UEBwwLU2FudGEg
+Q2xhcmExCzAJBgNVBAgMAkNBMR8wHQYDVQQKDBZBZHZhbmNlZCBNaWNybyBEZXZp
+Y2VzMRIwEAYDVQQDDAlBUkstR2Vub2EwHhcNMjIwMTI2MTUzNDM3WhcNNDcwMTI2
+MTUzNDM3WjB7MRQwEgYDVQQLDAtFbmdpbmVlcmluZzELMAkGA1UEBhMCVVMxFDAS
+BgNVBAcMC1NhbnRhIENsYXJhMQswCQYDVQQIDAJDQTEfMB0GA1UECgwWQWR2YW5j
+ZWQgTWljcm8gRGV2aWNlczESMBAGA1UEAwwJQVJLLUdlbm9hMIICIjANBgkqhkiG
+9w0BAQEFAAOCAg8AMIICCgKCAgEA3Cd95S/uFOuRIskW9vz9VDBF69NDQF79oRhL
+/L2PVQGhK3YdfEBgpF/JiwWFBsT/fXDhzA01p3LkcT/7LdjcRfKXjHl+0Qq/M4dZ
+kh6QDoUeKzNBLDcBKDDGWo3v35NyrxbA1DnkYwUKU5AAk4P94tKXLp80oxt84ahy
+HoLmc/LqsGsp+oq1Bz4PPsYLwTG4iMKVaaT90/oZ4I8oibSru92vJhlqWO27d/Rx
+c3iUMyhNeGToOvgx/iUo4gGpG61NDpkEUvIzuKcaMx8IdTpWg2DF6SwF0IgVMffn
+vtJmA68BwJNWo1E4PLJdaPfBifcJpuBFwNVQIPQEVX3aP89HJSp8YbY9lySS6PlV
+EqTBBtaQmi4ATGmMR+n2K/e+JAhU2Gj7jIpJhOkdH9firQDnmlA2SFfJ/Cc0mGNz
+W9RmIhyOUnNFoclmkRhl3/AQU5Ys9Qsan1jT/EiyT+pCpmnA+y9edvhDCbOG8F2o
+xHGRdTBkylungrkXJGYiwGrR8kaiqv7NN8QhOBMqYjcbrkEr0f8QMKklIS5ruOfq
+lLMCBw8JLB3LkjpWgtD7OpxkzSsohN47Uom86RY6lp72g8eXHP1qYrnvhzaG1S70
+vw6OkbaaC9EjiH/uHgAJQGxon7u0Q7xgoREWA/e7JcBQwLg80Hq/sbRuqesxz7wB
+WSY254cCAwEAAaN+MHwwDgYDVR0PAQH/BAQDAgEGMB0GA1UdDgQWBBSfXfn+Ddjz
+WtAzGiXvgSlPvjGoWzAPBgNVHRMBAf8EBTADAQH/MDoGA1UdHwQzMDEwL6AtoCuG
+KWh0dHBzOi8va2RzaW50Zi5hbWQuY29tL3ZjZWsvdjEvR2Vub2EvY3JsMEYGCSqG
+SIb3DQEBCjA5oA8wDQYJYIZIAWUDBAICBQChHDAaBgkqhkiG9w0BAQgwDQYJYIZI
+AWUDBAICBQCiAwIBMKMDAgEBA4ICAQAdIlPBC7DQmvH7kjlOznFx3i21SzOPDs5L
+7SgFjMC9rR07292GQCA7Z7Ulq97JQaWeD2ofGGse5swj4OQfKfVv/zaJUFjvosZO
+nfZ63epu8MjWgBSXJg5QE/Al0zRsZsp53DBTdA+Uv/s33fexdenT1mpKYzhIg/cK
+tz4oMxq8JKWJ8Po1CXLzKcfrTphjlbkh8AVKMXeBd2SpM33B1YP4g1BOdk013kqb
+7bRHZ1iB2JHG5cMKKbwRCSAAGHLTzASgDcXr9Fp7Z3liDhGu/ci1opGmkp12QNiJ
+uBbkTU+xDZHm5X8Jm99BX7NEpzlOwIVR8ClgBDyuBkBC2ljtr3ZSaUIYj2xuyWN9
+5KFY49nWxcz90CFa3Hzmy4zMQmBe9dVyls5eL5p9bkXcgRMDTbgmVZiAf4afe8DL
+dmQcYcMFQbHhgVzMiyZHGJgcCrQmA7MkTwEIds1wx/HzMcwU4qqNBAoZV7oeIIPx
+dqFXfPqHqiRlEbRDfX1TG5NFVaeByX0GyH6jzYVuezETzruaky6fp2bl2bczxPE8
+HdS38ijiJmm9vl50RGUeOAXjSuInGR4bsRufeGPB9peTa9BcBOeTWzstqTUB/F/q
+aZCIZKr4X6TyfUuSDz/1JDAGl+lxdM0P9+lLaP9NahQjHCVf0zf1c1salVuGFk2w
+/wMz1R1BHg==
+-----END CERTIFICATE-----`;
+  var no = `-----BEGIN CERTIFICATE-----
+MIIGiTCCBDigAwIBAgIDAgACMEYGCSqGSIb3DQEBCjA5oA8wDQYJYIZIAWUDBAIC
+BQChHDAaBgkqhkiG9w0BAQgwDQYJYIZIAWUDBAICBQCiAwIBMKMDAgEBMHsxFDAS
+BgNVBAsMC0VuZ2luZWVyaW5nMQswCQYDVQQGEwJVUzEUMBIGA1UEBwwLU2FudGEg
+Q2xhcmExCzAJBgNVBAgMAkNBMR8wHQYDVQQKDBZBZHZhbmNlZCBNaWNybyBEZXZp
+Y2VzMRIwEAYDVQQDDAlBUkstR2Vub2EwHhcNMjIxMDMxMTMzMzQ4WhcNNDcxMDMx
+MTMzMzQ4WjB7MRQwEgYDVQQLDAtFbmdpbmVlcmluZzELMAkGA1UEBhMCVVMxFDAS
+BgNVBAcMC1NhbnRhIENsYXJhMQswCQYDVQQIDAJDQTEfMB0GA1UECgwWQWR2YW5j
+ZWQgTWljcm8gRGV2aWNlczESMBAGA1UEAwwJU0VWLUdlbm9hMIICIjANBgkqhkiG
+9w0BAQEFAAOCAg8AMIICCgKCAgEAoHJhvk4Fwwkwb03AMfLySXJSXmEaCZMTRbLg
+Paj4oEzaD9tGfxCSw/nsCAiXHQaWUt++bnbjJO05TKT5d+Cdrz4/fiRBpbhf0xzv
+h11O+wJTBPj3uCzDm48vEZ8l5SXMO4wd/QqwsrejFERPD/Hdfv1mGCMW7ac0ug8t
+rDzqGe+l+p8NMjp/EqBDY2vd8hLaVLmS+XjAqlYVNRksh9aTzSYL19/cTrBDmqQ2
+y8k23zNl2lW6q/BtQOpWGVs3EWvBHb/Qnf3f3S9+lC4H2jdDy9yn7kqyTWq4WCBn
+E4qhYJRokulYtzMZM1Ilk4Z6RPkOTR1MJ4gdFtj7lKmrkSuOoJYmqhJIsQJ854lA
+bJybgU7zyzWAwu3uaslkYKUEAQf2ja5Hyl3IBqOzpqY31SpKzbl8NXveZybRMklw
+fe4iDLI25T9ku9CVetDYifCbdGeuHdTwZBBemW4NE57L7iEV8+zz8nxng8OMX//4
+pXntWqmQbEAnBLv2ToTgd1H2zYRthyDLc3V119/+FnTW17LK6bKzTCgEnCHQEcAt
+0hDQLLF799+2lZTxxfBEoduAZax6IjgAMCi6e1ZfKPJSkdvb2m3BwfP8bniG7+AE
+Jv1WOEmnBJc1pVQCttbJUodbi07Vfen5JRUqAvSM3ObWQOzSAGzsGnpIigwFpW6m
+9F7uYVUCAwEAAaOBozCBoDAdBgNVHQ4EFgQUssZ7pDW7HJVkHAmgQf/F3EmGFVow
+HwYDVR0jBBgwFoAUn135/g3Y81rQMxol74EpT74xqFswEgYDVR0TAQH/BAgwBgEB
+/wIBADAOBgNVHQ8BAf8EBAMCAQQwOgYDVR0fBDMwMTAvoC2gK4YpaHR0cHM6Ly9r
+ZHNpbnRmLmFtZC5jb20vdmNlay92MS9HZW5vYS9jcmwwRgYJKoZIhvcNAQEKMDmg
+DzANBglghkgBZQMEAgIFAKEcMBoGCSqGSIb3DQEBCDANBglghkgBZQMEAgIFAKID
+AgEwowMCAQEDggIBAIgu3V2tQJOo0/6GvNmwLXbLDrsLKXqHUqdGyOZUpPHM3ujT
+aex1G+8bEgBswwBa+wNvl1SQqRqy2x2QwP+i//BcWr3lMrUxci4G7/P8hZBV821n
+rAUZtbvfqla5MrRH9AKJXWW/pmtd10czqCHkzdLQNZNjt2dnZHMQAMtGs1AtynRE
+HNwEBiH2KAt7gUc/sKWnSCipztKE76puN/XXbSx+Ws+VPiFw6CBAeI9dqnEiQ1tp
+EgqtWEtcKm7Ggb1XH6oWbISoowvc00/ADWfNom0xl6v2C6RIWYgUoZ2f7PCyV3Dt
+bu/fQfyyZvmtVLA4gB2Ehc6Omjy21Y55WY9IweHlKENMPEUVtRqOvRVI0ml9Wbal
+f049joCu2j33XPqwp3IrzevmPBDGpR2Stdm3K66a/g/BSY7Wc9/VeykP3RXlxY1T
+MMJ8F1lpg6Tmu+c+vow7cliyqOoayAnR71U8+rWrL3HRHheSVX8GPYOaDNBTt831
+Z027vDWv3811vMoxYxhuTRaokvNWCSzmJ2EWrPYHcHOtkjSFKN7ot0Rc70fIRZEY
+c2rb3ywLSicEq3JQCnnz6iCZ1tMfplzcrJ2LnW2F1C8yRV+okylyORlsaxOLKYOW
+jaDTSFaq1NIwodHp7X9fOG48uRuJWS8GmifD969sC4Ut2FJFoklceBVUNCHR
+-----END CERTIFICATE-----`;
+  Oi();
+  z();
+  var ge = { STRUCT_VERSION: "1.3.6.1.4.1.3704.1.1", PRODUCT_NAME: "1.3.6.1.4.1.3704.1.2", BL_SPL: "1.3.6.1.4.1.3704.1.3.1", TEE_SPL: "1.3.6.1.4.1.3704.1.3.2", SNP_SPL: "1.3.6.1.4.1.3704.1.3.3", SPL4: "1.3.6.1.4.1.3704.1.3.4", SPL5: "1.3.6.1.4.1.3704.1.3.5", SPL6: "1.3.6.1.4.1.3704.1.3.6", SPL7: "1.3.6.1.4.1.3704.1.3.7", UCODE: "1.3.6.1.4.1.3704.1.3.8", HWID: "1.3.6.1.4.1.3704.1.4", CSP_ID: "1.3.6.1.4.1.3704.1.5", BOOTLOADER: "1.3.6.1.4.1.3704.1.3.1", TEE: "1.3.6.1.4.1.3704.1.3.2", SNP: "1.3.6.1.4.1.3704.1.3.3" };
+  var vl = "1.2.840.113549.1.1.10";
+  var Tl = "1.2.840.10045.2.1";
+  var Bl = "1.3.132.0.34";
+  var Mi = class e {
+    constructor(t, r, n) {
+      this.ark = t, this.ask = r, this.vcek = n;
+    }
+    static async fromReport(t, r) {
+      if (t.productName !== "Genoa") throw new u(`Unsupported processor: ${t.productName}. This verifier only supports AMD EPYC Genoa processors`);
+      if (t.signerInfoParsed.signingKey !== qt.VcekReportSigner) throw new u("Unsupported signing key: This verifier only supports VCEK-signed attestation reports");
+      let n = tt.parse(ro), i = tt.parse(no), s = tt.parse(r);
+      return new e(n, i, s);
+    }
+    async verifyChain() {
+      try {
+        this.validateArkFormat(), this.validateAskFormat(), this.validateVcekFormat();
+        let t = /* @__PURE__ */ new Date();
+        if (!this.ark.validForDate(t)) throw new u("AMD Root Key (ARK) certificate has expired or is not yet valid");
+        if (!this.ask.validForDate(t)) throw new u("AMD SEV Key (ASK) certificate has expired or is not yet valid");
+        if (!this.vcek.validForDate(t)) throw new u("VCEK certificate has expired or is not yet valid");
+        if (!await this.ark.verify()) throw new u("AMD Root Key (ARK) certificate signature verification failed: Not properly self-signed");
+        if (!await this.ask.verify(this.ark)) throw new u("AMD SEV Key (ASK) certificate signature verification failed: Not signed by ARK");
+        if (!await this.vcek.verify(this.ask)) throw new u("VCEK certificate signature verification failed: Not signed by ASK");
+        return true;
+      } catch (t) {
+        yt(t, u, "AMD certificate chain verification failed");
+      }
+    }
+    validateVcekTcb(t) {
+      let r = this.vcek.extension(ge.BL_SPL);
+      if (!r) throw new u("Invalid VCEK certificate: Missing bootloader security patch level (BL_SPL) extension");
+      let n = this.decodeExtensionInteger(r.value);
+      if (n !== t.blSpl) throw new u(`VCEK TCB mismatch: Bootloader SPL in certificate (${n}) does not match report (${t.blSpl})`);
+      let i = this.vcek.extension(ge.TEE_SPL);
+      if (!i) throw new u("Invalid VCEK certificate: Missing TEE security patch level (TEE_SPL) extension");
+      let s = this.decodeExtensionInteger(i.value);
+      if (s !== t.teeSpl) throw new u(`VCEK TCB mismatch: TEE SPL in certificate (${s}) does not match report (${t.teeSpl})`);
+      let o = this.vcek.extension(ge.SNP_SPL);
+      if (!o) throw new u("Invalid VCEK certificate: Missing SNP security patch level (SNP_SPL) extension");
+      let c = this.decodeExtensionInteger(o.value);
+      if (c !== t.snpSpl) throw new u(`VCEK TCB mismatch: SNP SPL in certificate (${c}) does not match report (${t.snpSpl})`);
+      let a = this.vcek.extension(ge.UCODE);
+      if (!a) throw new u("Invalid VCEK certificate: Missing microcode security patch level (UCODE) extension");
+      let f = this.decodeExtensionInteger(a.value);
+      if (f !== t.ucodeSpl) throw new u(`VCEK TCB mismatch: Microcode SPL in certificate (${f}) does not match report (${t.ucodeSpl})`);
+    }
+    validateVcekHwid(t) {
+      let r = this.vcek.extension(ge.HWID);
+      if (!r) throw new u("Invalid VCEK certificate: Missing hardware ID (HWID) extension");
+      if (!_(r.value, t)) throw new u("VCEK hardware ID mismatch: Certificate HWID does not match the chip ID in the attestation report");
+    }
+    validateArkFormat() {
+      if (this.ark.version !== "v3") throw new u(`Invalid ARK certificate: Expected X.509 version v3, got ${this.ark.version}`);
+      if (!this.validateAmdLocation(this.ark.issuerDN)) throw new u("Invalid ARK certificate: Issuer is not a valid AMD organization");
+      if (!this.validateAmdLocation(this.ark.subjectDN)) throw new u("Invalid ARK certificate: Subject is not a valid AMD organization");
+      let t = this.ark.subjectDN.get("CN");
+      if (t !== "ARK-Genoa") throw new u(`Invalid ARK certificate: Expected common name "ARK-Genoa", got "${t}"`);
+    }
+    validateAskFormat() {
+      if (this.ask.version !== "v3") throw new u(`Invalid ASK certificate: Expected X.509 version v3, got ${this.ask.version}`);
+      if (!this.validateAmdLocation(this.ask.issuerDN)) throw new u("Invalid ASK certificate: Issuer is not a valid AMD organization");
+      if (!this.validateAmdLocation(this.ask.subjectDN)) throw new u("Invalid ASK certificate: Subject is not a valid AMD organization");
+      let t = this.ask.subjectDN.get("CN");
+      if (t !== "SEV-Genoa") throw new u(`Invalid ASK certificate: Expected common name "SEV-Genoa", got "${t}"`);
+    }
+    validateVcekFormat() {
+      if (this.vcek.version !== "v3") throw new u(`Invalid VCEK certificate: Expected X.509 version v3, got ${this.vcek.version}`);
+      if (!this.validateAmdLocation(this.vcek.issuerDN)) throw new u("Invalid VCEK certificate: Issuer is not a valid AMD organization");
+      if (!this.validateAmdLocation(this.vcek.subjectDN)) throw new u("Invalid VCEK certificate: Subject is not a valid AMD organization");
+      let t = this.vcek.subjectDN.get("CN");
+      if (t !== "SEV-VCEK") throw new u(`Invalid VCEK certificate: Expected common name "SEV-VCEK", got "${t}"`);
+      if (this.getSignatureAlgorithmOid(this.vcek) !== vl) throw new u("Invalid VCEK certificate: Signature algorithm must be RSASSA-PSS");
+      let { algorithm: n, curve: i } = this.getPublicKeyInfo(this.vcek);
+      if (n !== Tl) throw new u("Invalid VCEK certificate: Public key must be ECDSA");
+      if (i !== Bl) throw new u("Invalid VCEK certificate: Public key curve must be secp384r1 (P-384)");
+      if (this.vcek.extension(ge.CSP_ID)) throw new u("Invalid VCEK certificate: CSP_ID extension should not be present (this looks like a VLEK certificate)");
+      let o = this.vcek.extension(ge.HWID);
+      if (!o || o.value.length !== 64) throw new u("Invalid VCEK certificate: Missing or malformed hardware ID (HWID) extension");
+      let c = this.vcek.extension(ge.PRODUCT_NAME);
+      if (!c) throw new u("Invalid VCEK certificate: Missing product name extension");
+      let a = new Uint8Array([22, 5, 71, 101, 110, 111, 97]);
+      if (!_(c.value, a)) throw new u('Invalid VCEK certificate: Product name must be "Genoa"');
+    }
+    validateAmdLocation(t) {
+      let r = t.get("C"), n = t.get("L"), i = t.get("ST"), s = t.get("O"), o = t.get("OU");
+      return r === "US" && n === "Santa Clara" && i === "CA" && s === "Advanced Micro Devices" && o === "Engineering";
+    }
+    getSignatureAlgorithmOid(t) {
+      return t.root.subs[1].subs[0].toOID();
+    }
+    getPublicKeyInfo(t) {
+      let i = t.root.subs[0].subs[6].subs[0], s = i.subs[0].toOID(), o = i.subs[1]?.toOID() || "";
+      return { algorithm: s, curve: o };
+    }
+    decodeExtensionInteger(t) {
+      let r = ht.parseBuffer(t);
+      return Number(r.toInteger());
+    }
+    get vcekPublicKey() {
+      return this.vcek.publicKeyObj;
+    }
+  };
+  z();
+  async function Nl(e2, t) {
+    if (t.version < 2) throw new u(`Unsupported attestation report version ${t.version}. Minimum required version is 2`);
+    if (!(t.policy & 1n << BigInt(17))) throw new u("Invalid attestation report: Policy field has invalid reserved bit");
+    if (t.policy >> 26n) throw new u("Invalid attestation report: Policy field has non-zero reserved bits");
+    if (t.signatureAlgo !== 1) throw new u(`Unsupported signature algorithm (${t.signatureAlgo}). Only ECDSA P-384 with SHA-384 (algorithm 1) is supported`);
+    let r = t.signature.slice(0, 72), n = t.signature.slice(72, 144), i = hc(r), s = hc(n), o = gc(dc(i)), c = gc(dc(s)), a = mc(o, 48), f = mc(c, 48), d = new Uint8Array(96);
+    d.set(a, 0), d.set(f, 48);
+    let g = t.signedData.slice();
+    try {
+      return await crypto.subtle.verify({ name: nt.Ecdsa, hash: j.SHA384 }, e2, d, g);
+    } catch (l) {
+      yt(l, u, "Failed to verify attestation report signature using VCEK public key");
+    }
+  }
+  async function pc(e2, t) {
+    if (!await e2.verifyChain()) throw new u("AMD certificate chain verification failed: The chain from ARK to ASK to VCEK could not be verified");
+    let n = await e2.vcekPublicKey;
+    if (!await Nl(n, t)) throw new u("Attestation report signature is invalid: The report was not signed by the expected VCEK key");
+    return true;
+  }
+  function hc(e2) {
+    return new Uint8Array([...e2].reverse());
+  }
+  function dc(e2) {
+    let t = 0;
+    for (; t < e2.length && e2[t] === 0; ) t++;
+    return t === e2.length ? new Uint8Array([0]) : e2.slice(t);
+  }
+  function gc(e2) {
+    if (e2.length === 0) return 0n;
+    let t = 0n;
+    for (let r of e2) t = t << 8n | BigInt(r);
+    return t;
+  }
+  function mc(e2, t) {
+    let r = e2.toString(16);
+    r.length % 2 && (r = "0" + r);
+    let n = new Uint8Array(t), i = r.length / 2, s = t - i;
+    for (let o = 0; o < i; o++) n[s + o] = parseInt(r.slice(o * 2, o * 2 + 2), 16);
+    return n;
+  }
+  z();
+  var wc = { guestPolicy: { abiMinor: 0, abiMajor: 0, smt: true, migrateMa: false, debug: false, singleSocket: false, cxlAllowed: false, memAes256Xts: false, raplDis: false, ciphertextHidingDram: false, pageSwapDisabled: false }, minimumGuestSvn: 0, minimumBuild: 21, minimumVersion: 311, minimumTcb: { blSpl: 7, teeSpl: 0, snpSpl: 14, ucodeSpl: 72 }, minimumLaunchTcb: { blSpl: 7, teeSpl: 0, snpSpl: 14, ucodeSpl: 72 }, permitProvisionalFirmware: false, platformInfo: { smtEnabled: true, tsmeEnabled: true, eccEnabled: false, raplDisabled: false, ciphertextHidingDramEnabled: false, aliasCheckComplete: false, tioEnabled: false }, requireAuthorKey: false, requireIdBlock: false };
+  function Cl(e2, t) {
+    if (Rl(t, e2) > 0) throw new u(`Required ABI version (${t.abiMajor}.${t.abiMinor}) is greater than report's ABI version (${e2.abiMajor}.${e2.abiMinor})`);
+    if (!t.migrateMa && e2.migrateMa) throw new u("Security policy violation: Migration agent is enabled but not allowed");
+    if (!t.debug && e2.debug) throw new u("Security policy violation: Debug mode is enabled but not allowed. The enclave must have debug disabled for production use");
+    if (!t.smt && e2.smt) throw new u("Security policy violation: Simultaneous multithreading (SMT) is enabled but not allowed");
+    if (!t.cxlAllowed && e2.cxlAllowed) throw new u("Security policy violation: CXL (Compute Express Link) is enabled but not allowed");
+    if (!t.memAes256Xts && e2.memAes256Xts) throw new u("Security policy violation: AES-256-XTS memory encryption mode is enabled but not allowed");
+    if (t.singleSocket && !e2.singleSocket) throw new u("Security policy violation: Single socket mode is required but not enabled");
+    if (t.memAes256Xts && !e2.memAes256Xts) throw new u("Security policy violation: AES-256-XTS memory encryption mode is required but not enabled");
+    if (t.raplDis && !e2.raplDis) throw new u("Security policy violation: RAPL (power monitoring) must be disabled but is enabled");
+    if (t.ciphertextHidingDram && !e2.ciphertextHidingDram) throw new u("Security policy violation: DRAM ciphertext hiding is required but not enabled");
+    if (t.pageSwapDisabled && !e2.pageSwapDisabled) throw new u("Security policy violation: Page swap must be disabled but is enabled");
+  }
+  function Rl(e2, t) {
+    return e2.abiMajor !== t.abiMajor ? e2.abiMajor - t.abiMajor : e2.abiMinor - t.abiMinor;
+  }
+  function me(e2) {
+    return `TCBParts(bootloader=${e2.blSpl}, tee=${e2.teeSpl}, snp=${e2.snpSpl}, microcode=${e2.ucodeSpl})`;
+  }
+  function yc(e2, t, r) {
+    if (r.guestPolicy && Cl(e2.policyParsed, r.guestPolicy), r.minimumGuestSvn !== void 0 && e2.guestSvn < r.minimumGuestSvn) throw new u(`Guest SVN ${e2.guestSvn} is less than minimum required ${r.minimumGuestSvn}`);
+    if (r.minimumBuild !== void 0) {
+      if (e2.currentBuild < r.minimumBuild) throw new u(`Current SNP firmware build number ${e2.currentBuild} is less than minimum required ${r.minimumBuild}`);
+      if (e2.committedBuild < r.minimumBuild) throw new u(`Committed SNP firmware build number ${e2.committedBuild} is less than minimum required ${r.minimumBuild}`);
+    }
+    if (r.minimumVersion !== void 0) {
+      let n = e2.currentMajor << 8 | e2.currentMinor, i = e2.committedMajor << 8 | e2.committedMinor;
+      if (n < r.minimumVersion) throw new u(`Current SNP firmware version ${e2.currentMajor}.${e2.currentMinor} is less than minimum required ${r.minimumVersion >> 8}.${r.minimumVersion & 255}`);
+      if (i < r.minimumVersion) throw new u(`Committed SNP firmware version ${e2.committedMajor}.${e2.committedMinor} is less than minimum required ${r.minimumVersion >> 8}.${r.minimumVersion & 255}`);
+    }
+    if (r.minimumTcb) {
+      let n = te(e2.currentTcb), i = te(e2.committedTcb), s = te(e2.reportedTcb);
+      if (!Tr(n, r.minimumTcb)) throw new u(`Current TCB ${me(n)} does not meet minimum requirements ${me(r.minimumTcb)}`);
+      if (!Tr(i, r.minimumTcb)) throw new u(`Committed TCB ${me(i)} does not meet minimum requirements ${me(r.minimumTcb)}`);
+      if (!Tr(s, r.minimumTcb)) throw new u(`Reported TCB ${me(s)} does not meet minimum requirements ${me(r.minimumTcb)}`);
+    }
+    if (t.validateVcekTcb(te(e2.reportedTcb)), r.minimumLaunchTcb) {
+      let n = te(e2.launchTcb);
+      if (!Tr(n, r.minimumLaunchTcb)) throw new u(`Launch TCB ${me(n)} does not meet minimum requirements ${me(r.minimumLaunchTcb)}`);
+    }
+    if (r.reportData) {
+      if (e2.reportData.length !== 64) throw new u(`Report data length is ${e2.reportData.length}, expected 64 bytes`);
+      if (!_(e2.reportData, r.reportData)) throw new u(`Report data mismatch: got ${X(e2.reportData)}, expected ${X(r.reportData)}`);
+    }
+    if (r.hostData) {
+      if (e2.hostData.length !== 32) throw new u(`Host data length is ${e2.hostData.length}, expected 32 bytes`);
+      if (!_(e2.hostData, r.hostData)) throw new u(`Host data mismatch: got ${X(e2.hostData)}, expected ${X(r.hostData)}`);
+    }
+    if (r.measurement) {
+      if (e2.measurement.length !== 48) throw new u(`Measurement length is ${e2.measurement.length}, expected 48 bytes`);
+      if (!_(e2.measurement, r.measurement)) throw new u(`Measurement mismatch: got ${X(e2.measurement)}, expected ${X(r.measurement)}`);
+    }
+    if (r.chipId) {
+      if (e2.chipId.length !== 64) throw new u(`Chip ID length is ${e2.chipId.length}, expected 64 bytes`);
+      if (!_(e2.chipId, r.chipId)) throw new u(`Chip ID mismatch: got ${X(e2.chipId)}, expected ${X(r.chipId)}`);
+    }
+    if (r.imageId) {
+      if (e2.imageId.length !== 16) throw new u(`Image ID length is ${e2.imageId.length}, expected 16 bytes`);
+      if (!_(e2.imageId, r.imageId)) throw new u(`Image ID mismatch: got ${X(e2.imageId)}, expected ${X(r.imageId)}`);
+    }
+    if (r.familyId) {
+      if (e2.familyId.length !== 16) throw new u(`Family ID length is ${e2.familyId.length}, expected 16 bytes`);
+      if (!_(e2.familyId, r.familyId)) throw new u(`Family ID mismatch: got ${X(e2.familyId)}, expected ${X(r.familyId)}`);
+    }
+    if (r.reportId) {
+      if (e2.reportId.length !== 32) throw new u(`Report ID length is ${e2.reportId.length}, expected 32 bytes`);
+      if (!_(e2.reportId, r.reportId)) throw new u(`Report ID mismatch: got ${X(e2.reportId)}, expected ${X(r.reportId)}`);
+    }
+    if (r.reportIdMa) {
+      if (e2.reportIdMa.length !== 32) throw new u(`Report ID MA length is ${e2.reportIdMa.length}, expected 32 bytes`);
+      if (!_(e2.reportIdMa, r.reportIdMa)) throw new u(`Report ID MA mismatch: got ${X(e2.reportIdMa)}, expected ${X(r.reportIdMa)}`);
+    }
+    if (e2.signerInfoParsed.signingKey === qt.VcekReportSigner) {
+      if (e2.signerInfoParsed.maskChipKey && e2.chipId.some((n) => n !== 0)) throw new u("Invalid attestation report: chip ID masking is enabled but chip ID field is not zeroed");
+      e2.signerInfoParsed.maskChipKey || t.validateVcekHwid(e2.chipId);
+    }
+    if (r.platformInfo && Dl(e2.platformInfoParsed, r.platformInfo), r.vmpl !== void 0) {
+      if (!(0 <= e2.vmpl && e2.vmpl <= 3)) throw new u(`VMPL ${e2.vmpl} is not in valid range 0-3`);
+      if (e2.vmpl !== r.vmpl) throw new u(`VMPL mismatch: got ${e2.vmpl}, expected ${r.vmpl}`);
+    }
+    if (r.permitProvisionalFirmware) throw new u("Unsupported option: Provisional firmware validation is not yet implemented");
+    if (e2.committedBuild !== e2.currentBuild) throw new u(`Firmware version mismatch: Committed build (${e2.committedBuild}) does not match current build (${e2.currentBuild}). This may indicate provisional firmware`);
+    if (e2.committedMinor !== e2.currentMinor) throw new u(`Firmware version mismatch: Committed minor version (${e2.committedMinor}) does not match current (${e2.currentMinor})`);
+    if (e2.committedMajor !== e2.currentMajor) throw new u(`Firmware version mismatch: Committed major version (${e2.committedMajor}) does not match current (${e2.currentMajor})`);
+    if (e2.committedTcb !== e2.currentTcb) throw new u("Firmware version mismatch: Committed TCB does not match current TCB. This may indicate provisional firmware");
+    if (r.requireAuthorKey || r.requireIdBlock) throw new u("Unsupported option: ID-block and author key validation is not yet implemented");
+  }
+  function Dl(e2, t) {
+    if (e2.smtEnabled && !t.smtEnabled) throw new u("Platform policy violation: SMT (simultaneous multithreading) is enabled but not allowed");
+    if (!e2.eccEnabled && t.eccEnabled) throw new u("Platform policy violation: ECC memory is required but not enabled");
+    if (!e2.tsmeEnabled && t.tsmeEnabled) throw new u("Platform policy violation: TSME (transparent SME) is required but not enabled");
+    if (!e2.raplDisabled && t.raplDisabled) throw new u("Platform policy violation: RAPL (power monitoring) must be disabled but is enabled");
+    if (!e2.ciphertextHidingDramEnabled && t.ciphertextHidingDramEnabled) throw new u("Platform policy violation: DRAM ciphertext hiding is required but not enabled");
+    if (!e2.aliasCheckComplete && t.aliasCheckComplete) throw new u("Platform policy violation: Memory alias check is required but has not completed");
+    if (!e2.tioEnabled && t.tioEnabled) throw new u("Platform policy violation: TIO (trusted I/O) is required but not enabled");
+  }
+  async function xc(e2, t) {
+    if (e2.format === Nt.SevGuestV2) return Ml(e2.body, Ui(t));
+    throw new u(`Unsupported attestation document format: "${e2.format}". Only SEV-SNP Guest V2 format is supported`);
+  }
+  async function Ml(e2, t) {
+    let r = await Ul(e2, true, t), n = { type: Nt.SevGuestV2, registers: [X(r.measurement)] }, i = r.reportData, s = X(i.slice(0, 32)), o = X(i.slice(32, 64));
+    return { measurement: n, tlsPublicKeyFingerprint: s, hpkePublicKey: o };
+  }
+  async function Ul(e2, t, r) {
+    let n;
+    try {
+      n = Ui(e2);
+    } catch (c) {
+      throw new u("Failed to decode attestation document: Invalid base64 encoding", { cause: c });
+    }
+    t && (n = await Ys(n));
+    let i;
+    try {
+      i = new Re(n);
+    } catch (c) {
+      throw new u("Failed to parse SEV-SNP attestation report", { cause: c });
+    }
+    let s = await Mi.fromReport(i, r), o;
+    try {
+      o = await pc(s, i);
+    } catch (c) {
+      yt(c, u, "Attestation cryptographic verification failed");
+    }
+    if (!o) throw new u("Attestation verification failed: Report signature or certificate chain is invalid");
+    try {
+      yc(i, s, wc);
+    } catch (c) {
+      yt(c, u, "Attestation policy validation failed");
+    }
+    return i;
+  }
+  function Ui(e2) {
+    let t = atob(e2), r = new Uint8Array(t.length);
+    for (let n = 0; n < t.length; n++) r[n] = t.charCodeAt(n);
+    return r;
+  }
+  async function Ys(e2) {
+    if (typeof DecompressionStream < "u") {
+      let r = new Response(e2.buffer).body;
+      if (!r) throw new Error("Failed to create stream from data");
+      let n = r.pipeThrough(new DecompressionStream("gzip")), i = await new Response(n).arrayBuffer();
+      return new Uint8Array(i);
+    }
+    let { gunzipSync: t } = await Promise.resolve().then(() => (Ic(), Ec));
+    return new Uint8Array(t(e2));
+  }
+  var _i = "@tinfoilsh/verifier";
+  var Vi = "1.2.2";
+  var Gs = "https://github-proxy.tinfoil.sh";
+  var _l = "https://kds-proxy.tinfoil.sh";
+  var Vl = { "Tinfoil-SDK": _i, "Tinfoil-SDK-Version": Vi };
+  async function Sc(e2, t) {
+    let [r, n, i] = await Promise.all([En(async () => {
+      let a = await ji(`https://${e2}/.well-known/tinfoil-attestation`, { headers: Vl });
+      return { format: a.format, body: a.body };
+    }), En(async () => {
+      let { tag_name: a } = await ji(`${Gs}/repos/${t}/releases/latest`), f = (await jl(`${Gs}/${t}/releases/download/${a}/tinfoil.hash`)).trim();
+      return { tag: a, digest: f };
+    }), En(async () => (await ji(`https://${e2}/.well-known/tinfoil-certificate`)).certificate)]), s = await En(async () => {
+      let a = await ji(`${Gs}/repos/${t}/attestations/sha256:${n.digest}`);
+      if (!a.attestations?.[0]?.bundle) throw new Ot(`No Sigstore bundle for ${t} at digest ${n.digest}`);
+      return a.attestations[0].bundle;
+    }), o;
+    try {
+      o = new Re(await Ys(Ui(r.body)));
+    } catch (a) {
+      yt(a, u, "Failed to parse attestation report");
+    }
+    let c = await En(async () => {
+      let a = te(o.reportedTcb), f = X(o.chipId), d = await kl(`${_l}/vcek/v1/${o.productName}/${f}?blSPL=${a.blSpl}&teeSPL=${a.teeSpl}&snpSPL=${a.snpSpl}&ucodeSPL=${a.ucodeSpl}`), g = "";
+      for (let l = 0; l < d.length; l++) g += String.fromCharCode(d[l]);
+      return btoa(g);
+    });
+    return { domain: e2, enclaveAttestationReport: r, digest: n.digest, releaseTag: n.tag, sigstoreBundle: s, vcek: c, enclaveCert: i };
+  }
+  var bc = 2;
+  async function En(e2) {
+    for (let t = 0; t <= bc; t++) {
+      try {
+        return await e2();
+      } catch (r) {
+        if (t === bc || !(r instanceof Ot)) throw r;
+      }
+      await new Promise((r) => setTimeout(r, 500 * Math.pow(2, t)));
+    }
+    throw new Error("unreachable");
+  }
+  async function Ks(e2, t) {
+    let r;
+    try {
+      r = await fetch(e2, t);
+    } catch (n) {
+      throw new Ot(`Network error: ${e2}`, { cause: n });
+    }
+    if (!r.ok) throw new Ot(`HTTP ${r.status}: ${e2}`);
+    return r;
+  }
+  async function ji(e2, t) {
+    try {
+      return await (await Ks(e2, t)).json();
+    } catch (r) {
+      yt(r, Ot, `Invalid response from ${e2}`);
+    }
+  }
+  async function jl(e2) {
+    try {
+      return await (await Ks(e2)).text();
+    } catch (t) {
+      yt(t, Ot, `Invalid response from ${e2}`);
+    }
+  }
+  async function kl(e2) {
+    try {
+      return new Uint8Array(await (await Ks(e2)).arrayBuffer());
+    } catch (t) {
+      yt(t, Ot, `Invalid response from ${e2}`);
+    }
+  }
+  var Ac = { mediaType: "application/vnd.dev.sigstore.trustedroot+json;version=0.1", tlogs: [{ baseUrl: "https://rekor.sigstore.dev", hashAlgorithm: "SHA2_256", publicKey: { rawBytes: "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2G2Y+2tabdTV5BcGiBIx0a9fAFwrkBbmLSGtks4L3qX6yYY0zufBnhC8Ur/iy55GhWP/9A/bY2LhC30M9+RYtw==", keyDetails: "PKIX_ECDSA_P256_SHA_256", validFor: { start: "2021-01-12T11:53:27Z" } }, logId: { keyId: "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0=" } }, { baseUrl: "https://log2025-1.rekor.sigstore.dev", hashAlgorithm: "SHA2_256", publicKey: { rawBytes: "MCowBQYDK2VwAyEAt8rlp1knGwjfbcXAYPYAkn0XiLz1x8O4t0YkEhie244=", keyDetails: "PKIX_ED25519", validFor: { start: "2025-09-23T00:00:00Z" } }, logId: { keyId: "zxGZFVvd0FEmjR8WrFwMdcAJ9vtaY/QXf44Y1wUeP6A=" } }], certificateAuthorities: [{ subject: { organization: "sigstore.dev", commonName: "sigstore" }, uri: "https://fulcio.sigstore.dev", certChain: { certificates: [{ rawBytes: "MIIB+DCCAX6gAwIBAgITNVkDZoCiofPDsy7dfm6geLbuhzAKBggqhkjOPQQDAzAqMRUwEwYDVQQKEwxzaWdzdG9yZS5kZXYxETAPBgNVBAMTCHNpZ3N0b3JlMB4XDTIxMDMwNzAzMjAyOVoXDTMxMDIyMzAzMjAyOVowKjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTB2MBAGByqGSM49AgEGBSuBBAAiA2IABLSyA7Ii5k+pNO8ZEWY0ylemWDowOkNa3kL+GZE5Z5GWehL9/A9bRNA3RbrsZ5i0JcastaRL7Sp5fp/jD5dxqc/UdTVnlvS16an+2Yfswe/QuLolRUCrcOE2+2iA5+tzd6NmMGQwDgYDVR0PAQH/BAQDAgEGMBIGA1UdEwEB/wQIMAYBAf8CAQEwHQYDVR0OBBYEFMjFHQBBmiQpMlEk6w2uSu1KBtPsMB8GA1UdIwQYMBaAFMjFHQBBmiQpMlEk6w2uSu1KBtPsMAoGCCqGSM49BAMDA2gAMGUCMH8liWJfMui6vXXBhjDgY4MwslmN/TJxVe/83WrFomwmNf056y1X48F9c4m3a3ozXAIxAKjRay5/aj/jsKKGIkmQatjI8uupHr/+CxFvaJWmpYqNkLDGRU+9orzh5hI2RrcuaQ==" }] }, validFor: { start: "2021-03-07T03:20:29Z", end: "2022-12-31T23:59:59.999Z" } }, { subject: { organization: "sigstore.dev", commonName: "sigstore" }, uri: "https://fulcio.sigstore.dev", certChain: { certificates: [{ rawBytes: "MIICGjCCAaGgAwIBAgIUALnViVfnU0brJasmRkHrn/UnfaQwCgYIKoZIzj0EAwMwKjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTAeFw0yMjA0MTMyMDA2MTVaFw0zMTEwMDUxMzU2NThaMDcxFTATBgNVBAoTDHNpZ3N0b3JlLmRldjEeMBwGA1UEAxMVc2lnc3RvcmUtaW50ZXJtZWRpYXRlMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE8RVS/ysH+NOvuDZyPIZtilgUF9NlarYpAd9HP1vBBH1U5CV77LSS7s0ZiH4nE7Hv7ptS6LvvR/STk798LVgMzLlJ4HeIfF3tHSaexLcYpSASr1kS0N/RgBJz/9jWCiXno3sweTAOBgNVHQ8BAf8EBAMCAQYwEwYDVR0lBAwwCgYIKwYBBQUHAwMwEgYDVR0TAQH/BAgwBgEB/wIBADAdBgNVHQ4EFgQU39Ppz1YkEZb5qNjpKFWixi4YZD8wHwYDVR0jBBgwFoAUWMAeX5FFpWapesyQoZMi0CrFxfowCgYIKoZIzj0EAwMDZwAwZAIwPCsQK4DYiZYDPIaDi5HFKnfxXx6ASSVmERfsynYBiX2X6SJRnZU84/9DZdnFvvxmAjBOt6QpBlc4J/0DxvkTCqpclvziL6BCCPnjdlIB3Pu3BxsPmygUY7Ii2zbdCdliiow=" }, { rawBytes: "MIIB9zCCAXygAwIBAgIUALZNAPFdxHPwjeDloDwyYChAO/4wCgYIKoZIzj0EAwMwKjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTAeFw0yMTEwMDcxMzU2NTlaFw0zMTEwMDUxMzU2NThaMCoxFTATBgNVBAoTDHNpZ3N0b3JlLmRldjERMA8GA1UEAxMIc2lnc3RvcmUwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAAT7XeFT4rb3PQGwS4IajtLk3/OlnpgangaBclYpsYBr5i+4ynB07ceb3LP0OIOZdxexX69c5iVuyJRQ+Hz05yi+UF3uBWAlHpiS5sh0+H2GHE7SXrk1EC5m1Tr19L9gg92jYzBhMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBRYwB5fkUWlZql6zJChkyLQKsXF+jAfBgNVHSMEGDAWgBRYwB5fkUWlZql6zJChkyLQKsXF+jAKBggqhkjOPQQDAwNpADBmAjEAj1nHeXZp+13NWBNa+EDsDP8G1WWg1tCMWP/WHPqpaVo0jhsweNFZgSs0eE7wYI4qAjEA2WB9ot98sIkoF3vZYdd3/VtWB5b9TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ" }] }, validFor: { start: "2022-04-13T20:06:15Z" } }], ctlogs: [{ baseUrl: "https://ctfe.sigstore.dev/test", hashAlgorithm: "SHA2_256", publicKey: { rawBytes: "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbfwR+RJudXscgRBRpKX1XFDy3PyudDxz/SfnRi1fT8ekpfBd2O1uoz7jr3Z8nKzxA69EUQ+eFCFI3zeubPWU7w==", keyDetails: "PKIX_ECDSA_P256_SHA_256", validFor: { start: "2021-03-14T00:00:00Z", end: "2022-10-31T23:59:59.999Z" } }, logId: { keyId: "CGCS8ChS/2hF0dFrJ4ScRWcYrBY9wzjSbea8IgY2b3I=" } }, { baseUrl: "https://ctfe.sigstore.dev/2022", hashAlgorithm: "SHA2_256", publicKey: { rawBytes: "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEiPSlFi0CmFTfEjCUqF9HuCEcYXNKAaYalIJmBZ8yyezPjTqhxrKBpMnaocVtLJBI1eM3uXnQzQGAJdJ4gs9Fyw==", keyDetails: "PKIX_ECDSA_P256_SHA_256", validFor: { start: "2022-10-20T00:00:00Z" } }, logId: { keyId: "3T0wasbHETJjGR4cmWc3AqJKXrjePK3/h4pygC8p7o4=" } }], timestampAuthorities: [{ subject: { organization: "sigstore.dev", commonName: "sigstore-tsa-selfsigned" }, uri: "https://timestamp.sigstore.dev/api/v1/timestamp", certChain: { certificates: [{ rawBytes: "MIICEDCCAZagAwIBAgIUOhNULwyQYe68wUMvy4qOiyojiwwwCgYIKoZIzj0EAwMwOTEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MSAwHgYDVQQDExdzaWdzdG9yZS10c2Etc2VsZnNpZ25lZDAeFw0yNTA0MDgwNjU5NDNaFw0zNTA0MDYwNjU5NDNaMC4xFTATBgNVBAoTDHNpZ3N0b3JlLmRldjEVMBMGA1UEAxMMc2lnc3RvcmUtdHNhMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE4ra2Z8hKNig2T9kFjCAToGG30jky+WQv3BzL+mKvh1SKNR/UwuwsfNCg4sryoYAd8E6isovVA3M4aoNdm9QDi50Z8nTEyvqgfDPtTIwXItfiW/AFf1V7uwkbkAoj0xxco2owaDAOBgNVHQ8BAf8EBAMCB4AwHQYDVR0OBBYEFIn9eUOHz9BlRsMCRscsc1t9tOsDMB8GA1UdIwQYMBaAFJjsAe9/u1H/1JUeb4qImFMHic6/MBYGA1UdJQEB/wQMMAoGCCsGAQUFBwMIMAoGCCqGSM49BAMDA2gAMGUCMDtpsV/6KaO0qyF/UMsX2aSUXKQFdoGTptQGc0ftq1csulHPGG6dsmyMNd3JB+G3EQIxAOajvBcjpJmKb4Nv+2Taoj8Uc5+b6ih6FXCCKraSqupe07zqswMcXJTe1cExvHvvlw==" }, { rawBytes: "MIIB9zCCAXygAwIBAgIUV7f0GLDOoEzIh8LXSW80OJiUp14wCgYIKoZIzj0EAwMwOTEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MSAwHgYDVQQDExdzaWdzdG9yZS10c2Etc2VsZnNpZ25lZDAeFw0yNTA0MDgwNjU5NDNaFw0zNTA0MDYwNjU5NDNaMDkxFTATBgNVBAoTDHNpZ3N0b3JlLmRldjEgMB4GA1UEAxMXc2lnc3RvcmUtdHNhLXNlbGZzaWduZWQwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAAQUQNtfRT/ou3YATa6wB/kKTe70cfJwyRIBovMnt8RcJph/COE82uyS6FmppLLL1VBPGcPfpQPYJNXzWwi8icwhKQ6W/Qe2h3oebBb2FHpwNJDqo+TMaC/tdfkv/ElJB72jRTBDMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBSY7AHvf7tR/9SVHm+KiJhTB4nOvzAKBggqhkjOPQQDAwNpADBmAjEAwGEGrfGZR1cen1R8/DTVMI943LssZmJRtDp/i7SfGHmGRP6gRbuj9vOK3b67Z0QQAjEAuT2H673LQEaHTcyQSZrkp4mX7WwkmF+sVbkYY5mXN+RMH13KUEHHOqASaemYWK/E" }] }, validFor: { start: "2025-07-04T00:00:00Z" } }] };
+  var Ws = class {
+    constructor(t) {
+      this.pattern = typeof t == "string" ? new RegExp(t) : t;
+    }
+    verify(t) {
+      let r = t.extGitHubWorkflowRef;
+      if (!r) throw new u("Sigstore certificate verification failed: Missing GitHub workflow reference extension");
+      if (!this.pattern.test(r.workflowRef)) throw new u(`Sigstore certificate verification failed: Workflow reference "${r.workflowRef}" does not match expected pattern (must be a tagged release)`);
+      this.verifiedWorkflowRef = r.workflowRef;
+    }
+    releaseTag() {
+      if (!this.verifiedWorkflowRef) throw new u("Sigstore certificate verification failed: GitHub workflow reference was not verified");
+      return this.verifiedWorkflowRef.slice(10);
+    }
+  };
+  async function vc(e2, t, r, n) {
+    try {
+      let { SigstoreVerifier: i, GITHUB_OIDC_ISSUER: s, AllOf: o, OIDCIssuer: c, GitHubWorkflowRepository: a } = await Promise.resolve().then(() => (Oi(), uc)), f = new i();
+      await f.loadSigstoreRoot(Ac);
+      let d = e2;
+      if (d?.verificationMaterial?.x509CertificateChain) throw new u("Legacy x509CertificateChain bundle format is not supported; only the v0.3 single-certificate format is accepted");
+      let g = new Ws(/^refs\/tags\//), l = new o([new c(s), new a(r), g]), { payloadType: h, payload: y } = await f.verifyDsse(d, l), b = JSON.parse(new TextDecoder().decode(y));
+      if (h !== "application/vnd.in-toto+json") throw new u(`Unsupported Sigstore payload type: "${h}". Only in-toto statements (application/vnd.in-toto+json) are supported`);
+      {
+        let k = /* @__PURE__ */ new Set(["_type", "subject", "predicateType", "predicate"]), Z = Object.keys(b).filter((W) => !k.has(W));
+        if (Z.length > 0) throw new u(`In-toto statement has unknown top-level field(s): ${Z.sort().join(", ")}`);
+      }
+      let A = b.predicateType, I = b.predicate;
+      if (t !== b.subject[0].digest.sha256) throw new u(`Release digest mismatch: The release digest from GitHub (${t}) does not match the digest in the sigstore bundle (${b.subject[0].digest.sha256})`);
+      let B;
+      if (!I) throw new u("Invalid Sigstore bundle: Payload is missing the predicate field containing measurements");
+      if (A === Nt.SnpTdxMultiplatformV1) {
+        if (!I.snp_measurement) throw new u("Invalid Sigstore bundle: SNP/TDX multiplatform predicate is missing the snp_measurement field");
+        B = [I.snp_measurement];
+      } else throw new u(`Unsupported in-toto predicate type: "${A}". Only SNP/TDX multiplatform V1 is supported`);
+      let x = g.releaseTag();
+      if (n !== void 0 && n !== x) throw new u(`Release tag mismatch: selected release "${n}" was signed from "${x}"`);
+      return { measurement: { type: A, registers: B }, releaseTag: x };
+    } catch (i) {
+      yt(i, u, "Sigstore code bundle verification failed");
+    }
+  }
+  Oi();
+  z();
+  var Hl = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  function Ll(e2) {
+    let t = e2.toUpperCase().replace(/=+$/, "");
+    if (!t) return new Uint8Array(0);
+    let r = new Uint8Array(Math.floor(t.length * 5 / 8)), n = 0, i = 0, s = 0;
+    for (let o of t) {
+      let c = Hl.indexOf(o);
+      if (c < 0) throw new u(`Invalid certificate data: Unexpected character "${o}" in base32-encoded field`);
+      i = i << 5 | c, (n += 5) >= 8 && (r[s++] = i >> (n -= 8) & 255);
+    }
+    return r;
+  }
+  function Fs(e2, t) {
+    let r = `.${t}.`, n = e2.filter((i) => i.includes(r)).sort((i, s) => +i.slice(0, 2) - +s.slice(0, 2)).map((i) => i.split(".")[0].slice(2)).join("");
+    if (!n) throw new u(`Invalid certificate: Missing expected DNS names with prefix "${t}"`);
+    return Ll(n);
+  }
+  var Tc = (e2) => [...e2].map((t) => t.toString(16).padStart(2, "0")).join("");
+  function Zl(e2) {
+    let t = e2.extension("2.5.29.17");
+    if (!t) return [];
+    let r = [], n = ht.parseBuffer(t.value);
+    for (let i of n.subs) i.tag.number === 2 && !i.tag.constructed && r.push(new TextDecoder().decode(i.value));
+    return r;
+  }
+  function Yl(e2) {
+    let t = e2.split(".");
+    return t.length <= 2 ? e2 : t.slice(1).join(".");
+  }
+  function Gl(e2, t) {
+    let r = Yl(t);
+    for (let n of e2) if (n === t || n.startsWith("*.") && n.substring(2) === r && t !== r) return true;
+    return false;
+  }
+  async function Bc(e2, t, r, n) {
+    let i;
+    try {
+      i = tt.parse(e2);
+    } catch (h) {
+      throw new u(`Failed to parse enclave TLS certificate: ${h.message}`, { cause: h });
+    }
+    let s = Zl(i);
+    if (s.length === 0) throw new u("Invalid enclave certificate: No Subject Alternative Names found");
+    if (!Gl(s, t)) throw new u(`Certificate domain mismatch: Certificate is not valid for "${t}"`);
+    let o = s.filter((h) => h.includes(".hpke."));
+    if (o.length === 0) throw new u("Invalid enclave certificate: No HPKE key embedded in Subject Alternative Names");
+    let c;
+    try {
+      c = Fs(o, "hpke");
+    } catch (h) {
+      throw new u(`Failed to extract HPKE key from certificate: ${h.message}`, { cause: h });
+    }
+    let a = Tc(c);
+    if (a !== n) throw new u("HPKE key mismatch: The encryption key in the certificate does not match the attested key");
+    let f = s.filter((h) => h.includes(".hatt."));
+    if (f.length === 0) throw new u("Invalid enclave certificate: No attestation hash embedded in Subject Alternative Names");
+    let d;
+    try {
+      d = Fs(f, "hatt");
+    } catch (h) {
+      throw new u(`Failed to extract attestation hash from certificate: ${h.message}`, { cause: h });
+    }
+    let g = new TextDecoder().decode(d), l = await Qs(r);
+    if (g !== l) throw new u("Attestation hash mismatch: The hash in the certificate does not match the attestation document");
+    return { hpkePublicKey: a, attestationHash: l, dnsNames: s };
+  }
+  function Nc(e2) {
+    return structuredClone(e2);
+  }
+  function Rc() {
+    return { name: _i, version: Vi };
+  }
+  var ki = class {
+    constructor(t) {
+      if (!t.configRepo) throw new vr("configRepo is required for Verifier");
+      this.serverURL = t.serverURL, this.configRepo = t.configRepo;
+    }
+    async verify() {
+      if (!this.serverURL) throw new vr("serverURL is required for verify(). Use verifyBundle() with an attestation bundle instead.");
+      let t = new URL(this.serverURL).hostname, r = await Sc(t, this.configRepo);
+      return this.verifyBundle(r);
+    }
+    async verifyBundle(t) {
+      let { enclaveAttestationReport: r, vcek: n, digest: i, releaseTag: s, sigstoreBundle: o, domain: c, enclaveCert: a } = t, f = { fetchDigest: { status: "success" }, verifyCode: { status: "pending" }, verifyEnclave: { status: "pending" }, compareMeasurements: { status: "pending" }, verifyCertificate: { status: "pending" } };
+      try {
+        let d;
+        try {
+          d = await xc(r, n), f.verifyEnclave = { status: "success" };
+        } catch (h) {
+          throw f.verifyEnclave = { status: "failed", error: h.message }, this.saveFailedVerificationDocument(f, c), h;
+        }
+        let g, l;
+        try {
+          let h = await vc(o, i, this.configRepo, s);
+          g = h.measurement, l = h.releaseTag, f.verifyCode = { status: "success" };
+        } catch (h) {
+          throw f.verifyCode = { status: "failed", error: h.message }, this.saveFailedVerificationDocument(f, c), h;
+        }
+        try {
+          Xs(g, d.measurement), f.compareMeasurements = { status: "success" };
+        } catch (h) {
+          throw f.compareMeasurements = { status: "failed", error: h.message }, this.saveFailedVerificationDocument(f, c), h;
+        }
+        try {
+          await Bc(a, c, r, d.hpkePublicKey || ""), f.verifyCertificate = { status: "success" };
+        } catch (h) {
+          throw f.verifyCertificate = { status: "failed", error: h.message }, this.saveFailedVerificationDocument(f, c), h;
+        }
+        return this.verificationDocument = { schemaVersion: 1, configRepo: this.configRepo, enclaveHost: c, releaseTag: l, releaseDigest: i, codeMeasurement: g, enclaveMeasurement: d, tlsPublicKey: d.tlsPublicKeyFingerprint || "", hpkePublicKey: d.hpkePublicKey || "", codeFingerprint: await Hi(g), enclaveFingerprint: await Hi(d.measurement), selectedRouterEndpoint: c, securityVerified: true, verifier: Rc(), verifiedAt: (/* @__PURE__ */ new Date()).toISOString(), steps: f }, d;
+      } catch (d) {
+        throw this.verificationDocument || this.saveFailedVerificationDocument(f, c), d;
+      }
+    }
+    saveFailedVerificationDocument(t, r) {
+      this.verificationDocument = { schemaVersion: 1, configRepo: this.configRepo, enclaveHost: r, releaseDigest: "", codeMeasurement: { type: "", registers: [] }, enclaveMeasurement: { measurement: { type: "", registers: [] } }, tlsPublicKey: "", hpkePublicKey: "", codeFingerprint: "", enclaveFingerprint: "", selectedRouterEndpoint: r, securityVerified: false, verifier: Rc(), steps: t };
+    }
+    getVerificationDocument() {
+      return this.verificationDocument ? Nc(this.verificationDocument) : void 0;
+    }
+  };
+
+  // <stdin>
+  fixDecompression();
+  return __toCommonJS(stdin_exports);
+})();
+/*! Bundled license information:
+
+@noble/hashes/esm/utils.js:
+  (*! noble-hashes - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
+
+@noble/curves/esm/utils.js:
+@noble/curves/esm/abstract/modular.js:
+@noble/curves/esm/abstract/curve.js:
+@noble/curves/esm/abstract/weierstrass.js:
+@noble/curves/esm/_shortw_utils.js:
+@noble/curves/esm/nist.js:
+@noble/curves/esm/abstract/edwards.js:
+@noble/curves/esm/ed25519.js:
+  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
+*/
+globalThis.TinfoilVerifier = TinfoilVerifier;
