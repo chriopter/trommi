@@ -12,6 +12,10 @@ notes, pick the two to four things people will notice most. A day may have at mo
 (`?mock=1`, never real data), webp, at most 150 KB. The days before the releases had notes are in history.json
 (frozen).
 
+## 16 October 2026
+
+Desks are now called Teams, and the desktop sidebar shows all your Teams as stacks. Helpers live inside their agent's session, and the iPhone chat list and chat header are as calm as a messenger's. Reloading keeps you signed in, and Codex agents stay on the board.
+
 ## 15 October 2026
 
 Interrupted sign-ins resume on the same device, keeping your conversations and settings. Connectors recover their
