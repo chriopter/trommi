@@ -30,7 +30,7 @@ enum PenStore {
   }()
   private static var cache: [String: SVGDoc] = [:]
   private static let lock = NSLock()
-  /** A parsed mark by its key in pen.json ("sketch:later", "draw:rocket", "crown", "desk:BOLT", …). */
+  /** A parsed mark by its key in pen.json ("sketch:later", "draw:cloud", "crown", "desk:BOLT", …). */
   static func doc(_ key: String) -> SVGDoc? {
     lock.lock(); defer { lock.unlock() }
     if let d = cache[key] { return d }

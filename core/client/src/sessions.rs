@@ -85,6 +85,14 @@ pub struct SessionRow {
     pub model_label: String,
 }
 
+impl SessionRow {
+    /// What draws it: always a face, "draw:<face>" (`faces::mark`: its icon's face, else the one its name fits,
+    /// else the one its id picks).
+    pub fn mark(&self) -> String {
+        crate::faces::mark(&self.icon, &self.name, &self.id)
+    }
+}
+
 fn is_hex_id(s: &str) -> bool {
     s.len() >= 12
         && s.bytes()

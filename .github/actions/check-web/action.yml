@@ -9,6 +9,10 @@ runs:
         node-version-file: .node-version
         cache: npm
         cache-dependency-path: app/web/package-lock.json
+    # the iOS app draws the faces from its pen.json, made from app/web/public/ui.mjs: it must be current
+    - name: The iOS pen is the web's
+      shell: bash
+      run: node app/ios/dev/pen.mjs --check
     # the Rust core for the browser: core/bindings/wasm/build.sh, or the same bytes from main's cache (.github/scripts/wasm_core.sh)
     - name: Compiler (rust-toolchain.toml)
       shell: bash

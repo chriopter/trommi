@@ -248,7 +248,7 @@ pub(super) fn from_of(b: &Board, agent: Option<usize>, card: Option<&Card>) -> O
     Some(FromView {
         session_id: a.row.key.clone(),
         name: a.row.name.clone(),
-        mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
+        mark: a.row.mark(),
         path: a.row.path.clone(),
         helper: card.and_then(|c| b.helper_of(c)).map(|h| say("from.helper", format!("Helper {h}"), &[("name", &h)])),
     })

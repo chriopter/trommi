@@ -32,7 +32,7 @@
       "blocked": false,
       "unheard": 0,
       "slug": "payments-service",
-      "mark": "draw:lock",
+      "mark": "draw:pebble",
       "team_id": "platform",
       "online": true,
       "working": true,
@@ -88,7 +88,7 @@
       "blocked": false,
       "unheard": 0,
       "slug": "data-pipeline",
-      "mark": "draw:database",
+      "mark": "draw:pill",
       "team_id": "platform",
       "online": true,
       "working": true,
@@ -141,7 +141,7 @@
       "blocked": true,
       "unheard": 0,
       "slug": "infra",
-      "mark": "draw:mountain",
+      "mark": "draw:peak",
       "team_id": "platform",
       "online": true,
       "working": true,
@@ -206,7 +206,7 @@
       "blocked": false,
       "unheard": 0,
       "slug": "docs-site",
-      "mark": "draw:book",
+      "mark": "draw:bean",
       "team_id": "platform",
       "online": true,
       "working": true,
@@ -287,11 +287,11 @@
         },
         {
           "id": "4abc388943bda4956b58dc2d5eb3e7e1",
-          "mark": "draw:phone"
+          "mark": "draw:ghost"
         },
         {
           "id": "9aa575fae2c64ece4ae4ab1b783673da",
-          "mark": "draw:diamond"
+          "mark": "draw:gem"
         }
       ],
       "faces": [
@@ -301,11 +301,11 @@
         },
         {
           "id": "4abc388943bda4956b58dc2d5eb3e7e1",
-          "mark": "draw:phone"
+          "mark": "draw:ghost"
         },
         {
           "id": "9aa575fae2c64ece4ae4ab1b783673da",
-          "mark": "draw:diamond"
+          "mark": "draw:gem"
         }
       ],
       "sessions": [
@@ -377,7 +377,7 @@
           "blocked": false,
           "unheard": 0,
           "slug": "fernly-ios",
-          "mark": "draw:phone",
+          "mark": "draw:ghost",
           "team_id": "main",
           "online": true,
           "working": true,
@@ -433,7 +433,7 @@
           "blocked": false,
           "unheard": 0,
           "slug": "design-system",
-          "mark": "draw:diamond",
+          "mark": "draw:gem",
           "team_id": "main",
           "online": true,
           "working": true,
@@ -501,33 +501,33 @@
       "edges": [
         {
           "id": "9ace71aadae23ea1f467d62b83b1d604",
-          "mark": "draw:lock"
+          "mark": "draw:pebble"
         },
         {
           "id": "f14180d4caac441522269c631a745866",
-          "mark": "draw:database"
+          "mark": "draw:pill"
         },
         {
           "id": "5ef619647e0e8185fef0e3be40ff4809",
-          "mark": "draw:mountain"
+          "mark": "draw:peak"
         },
         {
           "id": "eeb9fe76ad84d2405625d15419ce6083",
-          "mark": "draw:book"
+          "mark": "draw:bean"
         }
       ],
       "faces": [
         {
           "id": "9ace71aadae23ea1f467d62b83b1d604",
-          "mark": "draw:lock"
+          "mark": "draw:pebble"
         },
         {
           "id": "f14180d4caac441522269c631a745866",
-          "mark": "draw:database"
+          "mark": "draw:pill"
         },
         {
           "id": "5ef619647e0e8185fef0e3be40ff4809",
-          "mark": "draw:mountain"
+          "mark": "draw:peak"
         }
       ],
       "sessions": [
@@ -541,7 +541,7 @@
           "blocked": false,
           "unheard": 0,
           "slug": "payments-service",
-          "mark": "draw:lock",
+          "mark": "draw:pebble",
           "team_id": "platform",
           "online": true,
           "working": true,
@@ -597,7 +597,7 @@
           "blocked": false,
           "unheard": 0,
           "slug": "data-pipeline",
-          "mark": "draw:database",
+          "mark": "draw:pill",
           "team_id": "platform",
           "online": true,
           "working": true,
@@ -650,7 +650,7 @@
           "blocked": true,
           "unheard": 0,
           "slug": "infra",
-          "mark": "draw:mountain",
+          "mark": "draw:peak",
           "team_id": "platform",
           "online": true,
           "working": true,
@@ -715,7 +715,7 @@
           "blocked": false,
           "unheard": 0,
           "slug": "docs-site",
-          "mark": "draw:book",
+          "mark": "draw:bean",
           "team_id": "platform",
           "online": true,
           "working": true,

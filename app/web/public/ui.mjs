@@ -66,6 +66,7 @@ function penPath(points, closed = false) {
   return d
 }
 
+// A scribble for a seed that names no face (a mark no app knows): eight kinds, picked by the seed.
 const DOODLES = [
   // burst: uneven rays from the middle
   r => {
@@ -115,66 +116,78 @@ const DOODLES = [
   r => Array.from({ length: 6 }, (_, i) => `M${(5 + i * 3.6 + r()).toFixed(1)} ${(25 + r() * 2).toFixed(1)} L${(11 + i * 3.6 + r()).toFixed(1)} ${(6 + r() * 2).toFixed(1)}`),
 ]
 
-// Drawings a session can be given by name, next to the eight kinds above: things one can tell apart
-// at a glance. Points in the 32 box; a stroke marked straight keeps its corners, any other is drawn
-// in one curve. The pen wobbles a little on every point.
+// Two things a device is drawn as (auth.mjs: the devices, pairing): a phone and a house. Points in the 32 box; a stroke
+// marked straight keeps its corners, any other is drawn in one curve. The pen wobbles a little on every point.
 const straight = points => Object.assign(points, { straight: true })
-const NAMED = {
-  star: [straight([[16, 4.6], [22.4, 26.2], [4.8, 12.4], [27.2, 12.2], [9.4, 26.4], [16.5, 5.2]])],
-  zigzag: [straight([[4.6, 9], [10.6, 22.6], [15.6, 9.4], [21, 22.8], [27.4, 9.6]])],
-  eight: [[[16, 16], [10, 9.5], [13.5, 4.5], [20, 5.6], [20.6, 11], [16, 16], [11, 21.6], [12.4, 27], [19, 27.4], [21.6, 22], [16.4, 16.2]]],
-  arrow: [straight([[5.4, 26.2], [25.4, 7]]), straight([[14, 6.2], [26, 6.4], [25.6, 18.4]])],
-  leaf: [[[6, 26.5], [7, 14], [15, 6.5], [26, 5.5], [25, 16], [17.5, 24], [6.5, 26.2]], straight([[6.4, 26], [19.6, 12.2]])],
-  eye: [[[4, 16], [10, 9.6], [16, 8], [22, 9.6], [28, 16], [22, 22.4], [16, 24], [10, 22.4], [4.3, 16.4]], [[16, 12.4], [19.6, 16], [16, 19.6], [12.4, 16], [16.3, 12.3]]],
-  key: [[[9, 5.6], [13.6, 7.6], [14.2, 12.6], [10, 15.4], [5.4, 13.4], [5, 8.4], [9.4, 5.4]], straight([[13.2, 13.4], [26.6, 26.6]]), straight([[21.2, 21.6], [24.6, 18.4]]), straight([[24.4, 24.8], [27.6, 21.6]])],
-  anchor: [straight([[16, 7.6], [16.1, 27.2]]), [[16, 3.4], [18.4, 5.6], [16, 7.8], [13.6, 5.6], [16.2, 3.3]], straight([[10.4, 11.6], [21.6, 11.4]]), [[4.8, 18.4], [7.6, 24.6], [16, 27.4], [24.4, 24.6], [27.2, 18.4]]],
-  kite: [straight([[16, 3.6], [25, 12.6], [16, 23.6], [7, 12.6], [16.3, 4]]), straight([[16, 4.2], [16.1, 23.4]]), [[16, 23.6], [13, 25.6], [17.6, 27], [14.4, 29.2]]],
-  comb: [straight([[4.8, 8], [27.2, 8.4]]), straight([[7.4, 8.6], [7.2, 24]]), straight([[12, 8.6], [12.2, 24.6]]), straight([[16.5, 8.6], [16.3, 24]]), straight([[21, 8.6], [21.2, 24.4]]), straight([[25.4, 8.6], [25.2, 24]])],
-  ladder: [straight([[10, 4], [9.4, 28]]), straight([[22, 4], [22.6, 28]]), straight([[10, 9], [22, 9.2]]), straight([[9.8, 15.6], [22.2, 15.8]]), straight([[9.6, 22.4], [22.4, 22.2]])],
-  heart: [[[16, 27], [6, 17.6], [5, 10.6], [9.4, 6], [14, 7.6], [16, 11.6], [18.4, 7.6], [23, 6], [27, 10.6], [26, 17.6], [16.3, 26.6]]],
-  moon: [[[20, 4.4], [11.6, 6.4], [7, 14], [9.4, 23], [18, 27.6], [25.6, 23.4], [19, 21], [15.4, 14.6], [17.4, 8], [20.4, 4.8]]],
-  cloud: [[[8, 23.6], [4.4, 20], [6.4, 15], [11, 14.4], [13, 9.6], [19, 8.4], [22.6, 13], [26.6, 14.6], [27.6, 19.6], [24.4, 23.6], [8.4, 23.9]]],
-  drop: [[[16, 3.8], [9.6, 15], [8.4, 21.6], [12, 26.6], [16, 27.6], [20, 26.6], [23.6, 21.6], [22.4, 15], [16.2, 4.2]]],
-  flag: [straight([[8, 3.8], [8.4, 28.4]]), [[8.2, 5.6], [14, 4], [19, 8], [25.6, 6.4], [25, 16.4], [19, 18.6], [14, 14.6], [8.4, 16.6]]],
+const THINGS = {
   house: [straight([[4.8, 15], [16, 5], [27.2, 15.4]]), straight([[8, 13], [8.2, 27], [24, 27.2], [23.8, 13]]), straight([[14, 27], [14.2, 19.6], [18.2, 19.4], [18, 27]])],
-  tree: [straight([[16, 3.8], [6.4, 20], [25.6, 20.2], [16.4, 4.2]]), straight([[16, 20.2], [16.2, 28.6]])],
-  fish: [[[4, 16], [10, 9.6], [18, 9], [23, 16], [18, 23], [10, 22.4], [4.3, 16.3]], straight([[22.6, 16], [28, 10.4], [27.6, 21.8], [22.9, 16.3]]), straight([[9.2, 14.4], [9.8, 15]])],
-  bird: [[[3.8, 13.4], [7.6, 8.6], [12, 9.6], [16, 17]], [[16, 17], [20, 9.2], [24.4, 8], [28.2, 12.6]]],
-  cup: [straight([[7, 9], [9, 26], [21, 26.2], [23, 9.2]]), straight([[6.4, 9], [23.6, 9.2]]), [[23, 12.4], [28, 13.6], [27.4, 19.6], [22.2, 20.6]]],
-  bell: [[[6, 23.4], [9, 19.6], [9.6, 11.6], [13, 6.6], [16, 5.4], [19, 6.6], [22.4, 11.6], [23, 19.6], [26, 23.4]], straight([[5.4, 23.6], [26.6, 23.8]]), [[13.6, 26], [16, 28.2], [18.4, 26]]],
-  cross: [straight([[7, 7], [25, 25.4]]), straight([[25, 6.6], [7, 25]])],
-  triangle: [straight([[16, 5], [27, 26], [5, 26.4], [16.4, 5.4]])],
-  square: [straight([[6.4, 6.6], [25.8, 6.2], [26, 25.6], [6.2, 26], [6.7, 6]])],
-  diamond: [straight([[16, 3.8], [27, 16], [16, 28.2], [5, 16], [16.4, 4.3]]), straight([[9.4, 11.4], [22.8, 11.2]])],
-  grid: [straight([[12, 4.4], [11.6, 27.6]]), straight([[21, 4.4], [20.6, 27.6]]), straight([[4.4, 12], [27.6, 11.6]]), straight([[4.4, 21], [27.6, 20.6]])],
-  mountain: [straight([[3.4, 26], [12, 8], [17.6, 18], [21.6, 12.4], [28.6, 26.2]]), straight([[9.4, 13.6], [12.2, 15.6], [14.6, 12.8]])],
-  umbrella: [[[4, 16.6], [7, 9.6], [16, 5.4], [25, 9.6], [28, 16.6]], straight([[4, 16.6], [28, 16.8]]), straight([[16, 5.6], [16.1, 25]]), [[16, 25], [15.4, 28], [12.6, 28.2], [12, 25.6]]],
-  crown: [straight([[5, 24], [4.6, 9.6], [11, 17], [16, 7], [21, 17], [27.4, 9.6], [27, 24.2], [5.3, 24.4]])],
-  flame: [[[15.6, 3.6], [15.6, 3.6], [21, 10.4], [24.4, 17.4], [22.6, 24], [16.6, 28], [10.4, 25.6], [7.8, 19.6], [9.6, 13.6], [12.6, 10.4], [15.2, 4]], [[16, 26.4], [13, 22.6], [16.2, 16.6], [16.2, 16.6], [19.2, 22.4], [16.4, 26.2]]],
-  boat: [straight([[4, 19], [28, 19.2], [23.6, 26.6], [8.4, 26.4], [4.4, 19.4]]), straight([[15, 19], [15.2, 4.4]]), straight([[15.4, 5], [24, 16.4], [15.5, 16.6]])],
-  // ---- the kinds of work agents do: a drawing each, so a session can wear what it is busy with ----
-  browser: [straight([[4, 6], [28, 5.6], [28.2, 26], [3.8, 26.4], [4.2, 5.6]]), straight([[4.2, 11.4], [28, 11]]), straight([[7.2, 8.4], [8, 8.6]]), [[8, 18], [13, 16.4], [17.6, 19], [23.6, 17]]],
-  terminal: [straight([[3.8, 6], [28, 5.8], [28.2, 26], [4, 26.2], [4, 5.6]]), straight([[8.4, 12], [13.6, 16], [8.6, 20]]), straight([[15.8, 20.6], [22.6, 20.4]])],
-  database: [[[6, 9], [9, 6.4], [16, 5.4], [23, 6.4], [26, 9], [23, 11.6], [16, 12.6], [9, 11.6], [6.2, 9.3]], straight([[6, 9.4], [6.2, 23]]), straight([[26, 9.4], [25.8, 23]]), [[6.2, 23], [9, 25.8], [16, 26.8], [23, 25.8], [25.8, 23]], [[6.2, 16], [9, 18.6], [16, 19.6], [23, 18.6], [25.8, 16]]],
   phone: [straight([[10, 3.8], [22, 4], [22.4, 28], [9.8, 28.2], [10.2, 3.4]]), straight([[14.2, 7], [18, 7]]), straight([[15.6, 24.6], [16.6, 24.8]])],
-  brush: [straight([[26.4, 4.4], [15, 16]]), [[15, 16], [12.2, 14.8], [10.4, 17.4], [13.2, 19.8], [16, 17.6]], [[11, 17.2], [7.2, 19.2], [6, 23], [4.2, 26.8], [9.2, 26.2], [12.8, 23.6], [13.6, 20]]],
-  flask: [straight([[11, 4.4], [21, 4.2]]), straight([[12.8, 4.6], [12.8, 12]]), straight([[19.2, 4.6], [19.2, 12]]), [[12.8, 12], [9, 18.4], [6, 24], [7.6, 27.4], [16, 28], [24.4, 27.4], [26, 24], [23, 18.4], [19.2, 12]], [[9.2, 20.6], [13, 19.4], [18, 21.2], [22.8, 20]]],
-  lock: [[[10.4, 14], [10.2, 9], [13, 5], [16, 4.2], [19, 5], [21.8, 9], [21.6, 14]], straight([[7, 14], [25, 13.8], [25.2, 27], [6.8, 27.2], [7.2, 13.4]]), straight([[16, 18.6], [16.1, 22.8]])],
-  book: [straight([[16, 8.2], [16.2, 27]]), [[16, 8], [12, 5.8], [4.2, 6.6], [4.1, 15.6], [4, 24.6], [12, 24.4], [16, 27]], [[16, 8], [20, 5.8], [27.8, 6.6], [27.9, 15.6], [28, 24.6], [20, 24.4], [16.2, 27]]],
-  rocket: [[[16, 3.2], [11.6, 9], [10.8, 16.6], [12, 22], [20, 22], [21.2, 16.6], [20.4, 9], [16.2, 3.5]], [[16, 10], [18, 12], [16, 14], [14, 12], [16.2, 9.9]], straight([[10.8, 16.6], [6.4, 23.6], [11.8, 21.4]]), straight([[21.2, 16.6], [25.6, 23.6], [20.2, 21.4]]), [[14, 24.6], [16, 29], [18, 24.6]]],
-  mic: [[[16, 3.8], [12.6, 5.6], [12, 10], [12.4, 15], [16, 17.4], [19.6, 15], [20, 10], [19.4, 5.6], [16.3, 3.7]], [[8, 13.4], [9, 18.4], [12.6, 21.6], [16, 22.4], [19.4, 21.6], [23, 18.4], [24, 13.4]], straight([[16, 22.6], [16.1, 27.4]]), straight([[11.4, 27.6], [20.6, 27.4]])],
-  bug: [[[16, 9], [11, 12], [10, 18], [12, 24], [16, 26], [20, 24], [22, 18], [21, 12], [16.2, 8.9]], [[12.6, 8.8], [16, 5.4], [19.4, 8.8]], straight([[16, 9.6], [16.1, 25.6]]), straight([[10.2, 14], [5, 11.4]]), straight([[9.8, 18.4], [4.4, 18.6]]), straight([[11, 22.6], [6, 26.2]]), straight([[21.8, 14], [27, 11.4]]), straight([[22.2, 18.4], [27.6, 18.6]]), straight([[21, 22.6], [26, 26.2]])],
-  branch: [straight([[9, 7.6], [9.2, 24.8]]), [[9, 4], [11, 5.8], [9, 7.6], [7, 5.8], [9.2, 3.9]], [[9.2, 25], [11.2, 26.8], [9.2, 28.6], [7.2, 26.8], [9.4, 24.9]], [[23, 9], [25, 10.8], [23, 12.6], [21, 10.8], [23.2, 8.9]], [[23, 12.8], [22, 17.6], [14.6, 19], [9.6, 22.4]]],
 }
-const KINDS = ['burst', 'spiral', 'blob', 'flower', 'waves', 'knot', 'bolt', 'hatch']   // DOODLES, in their order
-/** The drawings a session can be given: 52 names (connector/drawings.json is the list the agents read; a connector test keeps it equal to this). A session's mark is then "draw:<name>". */
-const DRAWINGS = [...KINDS, ...Object.keys(NAMED)]
+
+// ---- the agents' faces ----
+// A session wears a face: a soft outline and two eye marks, sometimes a small mouth. The names and their order are
+// the app core's (core/client/src/faces.rs, which also picks a session's face); a connector test keeps them equal.
+// Points in the 32 box. A closed stroke goes round; an eye is a short, heavier stroke (EYE_W), so a face still
+// reads at 16 px.
+const closed = points => Object.assign(points, { closed: true })
+const loop = (cx, cy, rad, n = 18) => closed(Array.from({ length: n }, (_, i) => { const a = (i / n) * Math.PI * 2 - Math.PI / 2, r = rad(a); return [cx + Math.cos(a) * r, cy + Math.sin(a) * r] }))
+const oval = (cx, cy, rx, ry, n = 14) => closed(Array.from({ length: n }, (_, i) => { const a = (i / n) * Math.PI * 2 - Math.PI / 2; return [cx + Math.cos(a) * rx, cy + Math.sin(a) * ry] }))
+const wobble = (base, waves) => a => waves.reduce((r, [k, amp, ph]) => r + amp * Math.cos(k * a + ph), base)
+const EYE_W = 2.9
+// One eye of a kind at (x, y); side: -1 the left eye, 1 the right. A curved eye (happy, sleepy) is drawn in one curve.
+const EYE = {
+  dot: (x, y) => [[x, y - .55], [x, y + .55]],
+  tall: (x, y) => [[x, y - 1.3], [x, y + 1.3]],
+  slash: (x, y) => [[x - .7, y + 1.1], [x + .7, y - 1.1]],                  // both lean the same way
+  focus: (x, y, side) => [[x - 1.1, y + .8 * side], [x + 1.1, y - .8 * side]],   // \ /: set on something
+  soft: (x, y, side) => [[x - 1.1, y - .8 * side], [x + 1.1, y + .8 * side]],    // / \: kind, a little unsure
+  happy: (x, y) => [[x - 1.4, y + .6], [x, y - .8], [x + 1.4, y + .6]],
+  sleepy: (x, y) => [[x - 1.4, y - .4], [x, y + .7], [x + 1.4, y - .4]],
+}
+const eye = (kind, x, y, side) => Object.assign(EYE[kind](x, y, side), { eye: true, curve: kind === 'happy' || kind === 'sleepy' })
+const eyes = (kind, x1, y1, x2, y2, kind2 = kind) => [eye(kind, x1, y1, -1), eye(kind2, x2, y2, 1)]
+const MOUTH = {
+  smile: (x, y, w = 2.6) => [[x - w, y - .5], [x, y + 1.1], [x + w, y - .5]],
+  flat: (x, y) => straight([[x - 1.8, y], [x + 1.8, y + .1]]),
+  o: (x, y) => closed([[x, y - 1.1], [x + 1, y], [x, y + 1.1], [x - 1, y]]),
+  smirk: (x, y) => [[x - 2.2, y + .3], [x + .4, y + .7], [x + 2.4, y - .8]],
+  w: (x, y) => [[x - 2.4, y - .4], [x - 1.2, y + .8], [x, y - .1], [x + 1.2, y + .8], [x + 2.4, y - .4]],
+}
+const mouth = (kind, x, y, w) => MOUTH[kind](x, y, w)
+const FACES = {
+  blob: () => [loop(16, 16.5, wobble(11, [[3, .9, .4], [2, .6, 1.3]])), ...eyes('dot', 12.6, 15, 19.4, 15)],
+  cloud: () => [closed([[7, 23], [3.6, 19.2], [5.6, 14.4], [9.6, 13.8], [11.4, 9], [16.4, 7.2], [21, 9.6], [22.4, 12.8], [26.4, 13.6], [28.4, 18.4], [25.4, 23], [16, 23.6]]), ...eyes('happy', 12.4, 17.2, 19.4, 17.2)],
+  flower: () => [loop(16, 16, a => 10.6 + 1.9 * Math.abs(Math.cos(3 * a)), 30), ...eyes('dot', 13, 15, 19, 15), mouth('smile', 16, 19.2, 2)],
+  drop: () => [closed([[16, 3.6], [11, 11], [7.6, 17.6], [8.6, 24], [13, 27.4], [19, 27.4], [23.4, 24], [24.4, 17.6], [21, 11]]), ...eyes('slash', 13.2, 19, 18.8, 19)],
+  bean: () => [closed([[9, 8], [15, 5.6], [20, 8.4], [22, 12.6], [26, 16], [26.4, 22], [21.4, 26.4], [13.6, 26.2], [7.4, 22], [5.4, 15], [6.4, 10]]), ...eyes('dot', 12.6, 15.4, 18.2, 16.6), mouth('smirk', 16.4, 21.2)],
+  star: () => [loop(16, 17, a => 10.4 + 2.8 * Math.cos(5 * (a + Math.PI / 2)), 30), ...eyes('dot', 13.2, 16.2, 18.8, 16.2), mouth('smile', 16, 19.6, 1.6)],
+  ghost: () => [[[6.4, 26.6], [6.6, 14], [9.6, 7], [16, 4.6], [22.4, 7], [25.4, 14], [25.6, 26.6], [22.2, 24], [19, 27], [16, 24.4], [13, 27], [9.8, 24], [6.6, 26.8]], ...eyes('tall', 12.6, 14.4, 19.4, 14.4)],
+  egg: () => [closed([[16, 4], [10, 7.6], [7, 15], [7.4, 22], [11, 27], [16, 28.2], [21, 27], [24.6, 22], [25, 15], [22, 7.6]]), ...eyes('sleepy', 12.6, 17, 19.4, 17), mouth('o', 16, 22)],
+  bell: () => [[[6, 23], [8.8, 19.4], [9.2, 12], [12.4, 6.8], [16, 5.4], [19.6, 6.8], [22.8, 12], [23.2, 19.4], [26, 23]], straight([[5.4, 23.2], [26.6, 23.4]]), [[13.8, 25.6], [16, 27.8], [18.2, 25.6]], ...eyes('dot', 13.2, 14, 18.8, 14), mouth('smile', 16, 17.8, 1.8)],
+  pebble: () => [closed([[5, 17], [7, 11], [13, 8.4], [20, 8.6], [26, 11.4], [28, 17], [25.4, 22.6], [18, 24.6], [11, 24.2], [6.4, 21.6]]), ...eyes('focus', 12.6, 15.4, 19.6, 15.4), mouth('flat', 16, 19.6)],
+  heart: () => [[[16, 27.2], [6, 18.2], [4.8, 11], [9.2, 6], [13.8, 7.2], [16, 10.6], [18.2, 7.2], [22.8, 6], [27.2, 11], [26, 18.2], [16.3, 26.9]], ...eyes('soft', 12.4, 14.4, 19.6, 14.4)],
+  mushroom: () => [[[5, 16], [6.4, 9.6], [11, 5.6], [16, 4.6], [21, 5.6], [25.6, 9.6], [27, 16], [16, 15.4], [5.2, 16.2]], [[11.4, 16], [11, 22], [12.6, 27], [19.4, 27], [21, 22], [20.6, 16]], ...eyes('dot', 13.8, 20.6, 18.2, 20.6)],
+  leaf: () => [closed([[16, 3.6], [9.6, 9], [6.6, 16], [8, 23], [16, 28.4], [24, 23], [25.4, 16], [22.4, 9]]), ...eyes('dot', 12.8, 16, 19.2, 15.4, 'happy'), mouth('smile', 16, 21, 2)],
+  box: () => [closed([[7.4, 6.6], [16, 6], [24.8, 6.6], [26, 8.4], [26.2, 16], [25.6, 24], [24, 25.6], [16, 26], [8, 25.6], [6.4, 24], [6, 16], [6.2, 8.4]]), ...eyes('tall', 12.6, 13.6, 19.4, 13.6), mouth('flat', 16, 20)],
+  peak: () => [closed([[16, 4.4], [19.6, 9], [26, 22.4], [25.2, 26], [16, 26.8], [6.8, 26], [6, 22.4], [12.4, 9]]), ...eyes('slash', 13.2, 18.6, 18.8, 18.6), mouth('smile', 16, 22.6, 1.6)],
+  sun: () => [oval(16, 16, 7.4, 7.4, 12), ...Array.from({ length: 8 }, (_, i) => { const a = i / 8 * Math.PI * 2 + .3; return straight([[16 + Math.cos(a) * 10.2, 16 + Math.sin(a) * 10.2], [16 + Math.cos(a) * 13.4, 16 + Math.sin(a) * 13.4]]) }), ...eyes('happy', 13.4, 15.4, 18.6, 15.4)],
+  peanut: () => [closed([[16, 3.8], [10.6, 5.6], [9.4, 10.6], [11.4, 15], [9, 19], [8.6, 24.4], [12, 28], [16, 28.6], [20, 28], [23.4, 24.4], [23, 19], [20.6, 15], [22.6, 10.6], [21.4, 5.6]]), ...eyes('dot', 13.6, 10.2, 18.4, 10.2), mouth('o', 16, 22.4)],
+  onion: () => [[[16, 3.4], [14.4, 7.4], [9, 11], [6, 17], [7.6, 23.6], [12, 27], [16, 27.8], [20, 27], [24.4, 23.6], [26, 17], [23, 11], [17.6, 7.4], [16.2, 3.6]], ...eyes('dot', 15.4, 18, 21.2, 18), mouth('smile', 18.6, 22, 1.6)],
+  cat: () => [[[8, 14], [7.2, 5.6], [12.6, 9.4], [16, 9], [19.4, 9.4], [24.8, 5.6], [24, 14], [26, 19.4], [23.4, 25], [16, 27.4], [8.6, 25], [6, 19.4], [8.1, 13.8]], ...eyes('dot', 12.8, 17, 19.2, 17), mouth('w', 16, 21)],
+  jelly: () => [[[5, 17], [7, 9.6], [16, 5.6], [25, 9.6], [27, 17], [5.2, 17.2]], [[9, 17.4], [8.4, 22], [10, 26.6]], [[16, 17.6], [16.6, 22.4], [15.4, 27.4]], [[23, 17.4], [23.6, 22], [22, 26.6]], ...eyes('focus', 12.2, 12.4, 19.8, 12.4)],
+  acorn: () => [[[6, 13], [9, 7.6], [16, 6], [23, 7.6], [26, 13], [16, 12], [6.2, 13.2]], straight([[16, 6.2], [17, 3]]), [[8.4, 13], [8.6, 20], [12.4, 26], [16, 28], [19.6, 26], [23.4, 20], [23.6, 13]], ...eyes('sleepy', 12.8, 18.2, 19.2, 18.2)],
+  gem: () => [closed([[11, 5.6], [21, 5.6], [27, 12.6], [26.4, 20], [21, 26.4], [11, 26.4], [5.6, 20], [5, 12.6]]), ...eyes('soft', 12.6, 15, 19.4, 15), mouth('smile', 16, 19.8, 2)],
+  curl: () => [oval(16, 18.4, 10, 9.4, 14), [[16, 9], [15.4, 5.6], [18.2, 3.4], [20.6, 5], [19, 7]], ...eyes('dot', 12.4, 17.6, 19.6, 17.6, 'happy'), mouth('smile', 16, 22.2, 1.8)],
+  pill: () => [closed([[16, 3.6], [10, 5.8], [8.4, 12], [8.4, 20], [10, 26.2], [16, 28.4], [22, 26.2], [23.6, 20], [23.6, 12], [22, 5.8]]), ...eyes('dot', 13, 13.6, 19, 13.6), mouth('o', 16, 19.4)],
+}
+/** The faces a session can wear: 24 names (core/client/src/faces.rs; a connector test keeps it equal to this). A session's mark is then "draw:<name>". */
+const DRAWINGS = Object.keys(FACES)
 const drawingMark = name => `draw:${name}`
-/** The drawing a mark names ("draw:rocket" -> "rocket"), or null for a seeded scribble. */
+/** The face a mark names ("draw:cloud" -> "cloud"), or null for a seeded scribble. */
 const drawingOf = mark => { const name = /^draw:(.+)$/.exec(String(mark ?? ''))?.[1]; return DRAWINGS.includes(name) ? name : null }
-// Every drawing has one colour of its own, wherever it shows: a hue, turned by the golden angle from
-// one drawing to the next, so neighbours in the picker never look alike. (A session with a seeded
-// scribble instead of a named drawing keeps the colour that comes from its id.) The hue is used as
+// Every face has one colour of its own, wherever it shows: a hue, turned by the golden angle from
+// one face to the next, so neighbours in the picker never look alike. (A session with a seeded
+// scribble instead of a face keeps the colour that comes from its id.) The hue is used as
 // hsl(hue 62% 30%) on light and hsl(hue 70% 76%) on dark, which reads for every hue.
 const drawingHue = name => { const at = DRAWINGS.indexOf(name); return at < 0 ? null : Math.round((162 + at * 137.508) % 360) }
 
@@ -437,13 +450,21 @@ export function sketchSvg(name, cls = '') {
   })
 }
 
-/** A session's scribbled mark. id: a seed, or "draw:<name>". */
+/** A session's mark: its face ("draw:<face>"), a device's drawing ("draw:phone"), else a scribble from the seed. */
 export function doodleSvg(id) {
   return once(`doodle:${id}`, () => {
     const r = seeded(id)
     const name = /^draw:(.+)$/.exec(String(id))?.[1]
-    const ds = KINDS.includes(name) ? DOODLES[KINDS.indexOf(name)](r)
-      : NAMED[name] ? NAMED[name].map(stroke => (stroke.straight ? linePath : penPath)(stroke.map(([x, y]) => [x + (r() - .5) * 1.1, y + (r() - .5) * 1.1])))
+    // a face: the eyes wobble less than the outline and are drawn heavier
+    if (FACES[name]) {
+      const ds = FACES[name]().map(stroke => {
+        const j = stroke.eye ? .35 : 1, pts = stroke.map(([x, y]) => [x + (r() - .5) * j, y + (r() - .5) * j])
+        const d = stroke.closed ? penPath(pts, true) : stroke.straight || (stroke.eye && !stroke.curve) ? linePath(pts) : penPath(pts)
+        return stroke.eye ? `<path d="${d}" stroke-width="${EYE_W}"/>` : `<path d="${d}"/>`
+      })
+      return svg('0 0 32 32', 'doodle', ds.join(''), ` style="rotate:${Math.round((r() - .5) * 14)}deg"`)
+    }
+    const ds = THINGS[name] ? THINGS[name].map(stroke => (stroke.straight ? linePath : penPath)(stroke.map(([x, y]) => [x + (r() - .5) * 1.1, y + (r() - .5) * 1.1])))
       : DOODLES[Math.floor(r() * DOODLES.length)](r)
     return svg('0 0 32 32', 'doodle', paths(ds), ` style="rotate:${Math.round((r() - .5) * 16)}deg"`)
   })

@@ -34,6 +34,7 @@ pub mod codec;
 pub mod desk;
 pub mod team_delete;
 pub mod engine;
+pub mod faces;
 pub mod files;
 pub mod helpers;
 pub mod hub;

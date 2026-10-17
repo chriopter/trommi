@@ -44,6 +44,7 @@ agent-mode lease/command/removal rules.
 | `src/files.rs`, `src/scribble/` | File lifecycle and encryption requests; board items, packed strokes and snapshots |
 | `src/account/`, `src/machines.rs`, `src/selfjoin.rs`, `src/seats.rs`, `src/team_delete.rs` | Account authority, computer approval and hash-bound activation, session founding and resumable team deletion |
 | `src/status.rs`, `src/sessions.rs`, `src/off_mind.rs` | Shared status, session and card-placement rules used by views |
+| `src/faces.rs` | The 24 agent faces (names, words, topics), the symbols of before mapped to faces, and which face a session wears |
 
 Code sign-in starts from the room state authenticated by the recovery code when it is current. It joins the
 room before reading old room Commits, starts catch-up at that accepted join, and reads the Desk for current

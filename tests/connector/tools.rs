@@ -1970,8 +1970,8 @@ async fn a_human_message_keeps_a_live_session_online_and_reaches_inbox() {
     mcp.close().await;
 }
 
-/// The agent can know the drawings: the `icon` description lists them, a name works without its prefix and an
-/// unknown one is an error that lists the valid ones.
+/// The agent can know the faces: the `icon` description lists them, a name works without its prefix, a symbol of
+/// before becomes its face, and an unknown one is an error that lists the valid ones.
 #[tokio::test(flavor = "multi_thread")]
 async fn symbols_are_listed_by_name_and_checked() {
     let (_hub, _human, _seat, mut mcp, _group) = seated().await;
@@ -1984,12 +1984,13 @@ async fn symbols_are_listed_by_name_and_checked() {
             .find(|t| t["name"] == tool)
             .unwrap_or_else(|| panic!("{tool}"));
         let d = t["inputSchema"]["properties"]["icon"]["description"].as_str().unwrap();
-        assert!(d.contains("rocket (release)") && d.contains("branch (git)") && !d.contains("{drawings}"), "{tool}: {d}");
+        assert!(d.contains("drop (release)") && d.contains("leaf (git)") && !d.contains("{drawings}"), "{tool}: {d}");
     }
     let (said, bad) = mcp.call("introduce", json!({ "model": "m", "icon": "spaceship" })).await;
-    assert!(bad && said.contains("spaceship") && said.contains("rocket (release)"), "{said}");
+    assert!(bad && said.contains("spaceship") && said.contains("drop (release)"), "{said}");
     let (said, bad) = mcp.call("introduce", json!({ "model": "m", "icon": "nope" })).await;
-    assert!(bad && said.contains("burst (spark)"), "{said}");
+    assert!(bad && said.contains("blob (general)"), "{said}");
     assert_eq!(mcp.ok("introduce", json!({ "model": "m", "icon": "draw:bell" })).await, "noted");
+    assert_eq!(mcp.ok("introduce", json!({ "model": "m", "icon": "rocket" })).await, "noted");
     mcp.close().await;
 }
