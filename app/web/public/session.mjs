@@ -91,7 +91,7 @@ function talkRow(r, s, vm, t) {
   const base = t.BASE, id = `msg-${r.id}`
   if (r.kind === 'event') return eventLine(id, r.event, r.card, r.time_ms, s, base, { cont: r.cont })
   // A run of card events (the calm chat, Focus.calm): a small chip each that opens its card.
-  if (r.kind === 'events') return html`<div class="evchips" id="${id}">${(r.events ?? []).map(c => c.card ? html`<a class="evchip" data-nav href="${cardPath(c.card, s, base)}" title="${c.says.en}">${ico(ICONS[c.kind] ? c.kind : 'asked')}<span>${c.text}</span></a>` : html`<span class="evchip" title="${c.says.en}">${ico(ICONS[c.kind] ? c.kind : 'asked')}<span>${c.text}</span></span>`)}</div>`
+  if (r.kind === 'events') return html`<div class="evchips" id="${id}">${(r.events ?? []).map(c => c.card ? html`<a class="evchip" data-nav href="${cardPath(c.card, s, base)}" title="${c.text}" aria-label="${c.says.en}">${ico(ICONS[c.kind] ? c.kind : 'asked')}<span>${c.text}</span></a>` : html`<span class="evchip" title="${c.text}" aria-label="${c.says.en}">${ico(ICONS[c.kind] ? c.kind : 'asked')}<span>${c.text}</span></span>`)}</div>`
   if (r.kind === 'work') return workBlock(r, r.work)
   // An open question where it was asked: its Desk row (its own links keep the session in the address).
   if (r.kind === 'ask') return html`<div class="ask ask-card" id="${id}">${raw(String(deskRow(r.row, base)).replaceAll(`href="${base}/card/`, `href="${sessionPath(s, base)}/card/`))}</div>`
