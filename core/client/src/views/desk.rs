@@ -224,6 +224,15 @@ fn duck_all(rows: &[DeskRowView]) -> Option<super::DuckAllView> {
     Some(super::DuckAllView { card_ids, tip, what, ask, yes, no: say("desk.duck.no", "Cancel", &[]) })
 }
 
+/// What the agents published, counted for the Desk's quiet line ("14 artifacts", "1 artifact"); none without any.
+pub fn artifacts_line(all: &[super::ArtifactView]) -> Option<Text> {
+    let n = all.len();
+    (n > 0).then(|| {
+        let s = n.to_string();
+        if n == 1 { say("desk.artifacts_line.one", "1 artifact", &[]) } else { say("desk.artifacts_line", format!("{s} artifacts"), &[("n", &s)]) }
+    })
+}
+
 /// One of the greetings, the same for a whole run of the app; a calm one when no question waits.
 pub fn greeting(calm: bool, dice: u32) -> Text {
     let set: &[&str] = if calm { &CALM } else { &GREETINGS };
@@ -593,6 +602,16 @@ pub fn tiles(options: &[Opt], advised: &[String], multiple: bool, request: bool)
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_artifacts_beside_the_quiet_line_are_counted() {
+        use super::artifacts_line;
+        use crate::views::ArtifactView;
+        assert_eq!(artifacts_line(&[]), None, "none without any");
+        assert_eq!(artifacts_line(&[ArtifactView::default()]).unwrap().en, "1 artifact");
+        let line = artifacts_line(&vec![ArtifactView::default(); 14]).unwrap();
+        assert_eq!((line.en.as_str(), line.key.as_str()), ("14 artifacts", "desk.artifacts_line"));
+    }
+
     use super::*;
     use crate::views::testroom::{dev, Room, MIN, NOW};
     use crate::views::Lens;

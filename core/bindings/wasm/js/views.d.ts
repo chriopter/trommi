@@ -391,6 +391,8 @@ export interface DeskView {
   duck?: DuckAllView
   /** The sessions that are cut off, above the questions: one line each, with the step in its terminal. */
   slip?: SlipView[]
+  /** Beside Off your mind's one line: what the agents published, counted ("14 artifacts"); opens the gallery. */
+  artifacts_line?: Text
 }
 
 /** The duck for all: the cards it clears (`Action::Batch` with way "sweep") and its words (the web's `duckAll`). */
@@ -523,6 +525,20 @@ export interface OffListView {
   older?: Text
   /** A page of older cards is being fetched: the shell shows its quiet "Loading …" line at the end. */
   loading: boolean
+  /** The list in its groups (Running, Put off, Done), only those with rows; each names its rows, counted whole. */
+  groups?: OffGroupView[]
+}
+
+/** One group of the complete list Off your mind. */
+export interface OffGroupView {
+  /** "running", "later" or "done". */
+  key: 'running' | 'later' | 'done'
+  /** Its heading: "Running", "Put off", "Done". */
+  says: Text
+  /** How many cards are in it (the search's words kept). */
+  count: number
+  /** The ids of its rows as shown: of `works` for "running", of `rest` for the others. */
+  ids: string[]
 }
 
 /** More of a long list than its window shows: the line that asks for the next page (an action moves the window,
@@ -1283,6 +1299,8 @@ export interface NotesView {
   send_says?: Text
   /** In the send's place without a crown: "Give a session the crown to send" (opens Settings · Agents). */
   no_crown?: Text
+  /** The empty note line on the Desk: "Write a note to Fernly Website…", without a crown "Write a note…". */
+  line: Text
 }
 
 /** One note. */

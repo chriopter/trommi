@@ -16,7 +16,7 @@
 use super::board::{key_of, Board, Lens, OFF_PAGE};
 use super::desk::{from_of, shown_title};
 use super::words::{local, say};
-use super::{DeskView, DockRowView, DockView, FromView, MoreView, OffHintView, OffListView, OffRowView, OffWorkView, Screen, Text};
+use super::{DeskView, DockRowView, DockView, FromView, MoreView, OffGroupView, OffHintView, OffListView, OffRowView, OffWorkView, Screen, Text};
 use crate::model::types::Card;
 use crate::off_mind::{closed_at, off_mind, OffMind, Running};
 use crate::status::card_place;
@@ -236,6 +236,8 @@ pub fn off_list(b: &Board, off: &OffMind, query: &str) -> OffListView {
     });
     // (the window: the first pages of what is put off and closed; what runs shows whole, it is short)
     let pages = Lens::pages(&b.lens.off_window, query);
+    let later_n = rest.iter().filter(|r| r.place == "later").count();
+    let done_n = rest.len() - later_n;
     let mut rest = rest;
     let left = rest.len().saturating_sub(OFF_PAGE * pages as usize);
     rest.truncate(OFF_PAGE * pages as usize);
@@ -246,7 +248,17 @@ pub fn off_list(b: &Board, off: &OffMind, query: &str) -> OffListView {
     } else {
         (b.lens.off_hub_more && !reading).then(|| MoreView { left: 0, hub: true, says: say("off.more.hub", "Show more", &[]), pages: pages + 1 })
     };
-    OffListView { query: query.into(), works, rest, none, more, older: None, loading: reading }
+    let group = |key: &str, says: Text, count: usize, ids: Vec<String>| (count > 0).then(|| OffGroupView { key: key.into(), says, count: count as u32, ids });
+    let of_rest = |later: bool| rest.iter().filter(|r| (r.place == "later") == later).map(|r| r.id.clone()).collect::<Vec<_>>();
+    let groups = [
+        group("running", say("off.group.running", "Running", &[]), works.len(), works.iter().map(|w| w.id.clone()).collect()),
+        group("later", say("off.group.later", "Put off", &[]), later_n, of_rest(true)),
+        group("done", say("off.group.done", "Done", &[]), done_n, of_rest(false)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    OffListView { query: query.into(), works, rest, none, more, older: None, loading: reading, groups }
 }
 
 #[cfg(test)]
@@ -354,10 +366,18 @@ mod tests {
         assert_eq!(ids(&l.rest, |r| &r.id), ["later-2", "later-1", "shredded", "done-1"]);
         assert_eq!((l.rest[2].at_ms, l.rest[3].at_ms, l.rest[0].at_ms), (NOW - 60 * MIN, NOW - 8 * 60 * MIN, 0));
         assert!(l.none.is_none() && l.older.is_none() && !l.loading);
+        // its groups: running, put off, done (shredded with done), each naming its rows and counted
+        let g: Vec<(&str, &str, u32, Vec<String>)> = l.groups.iter().map(|g| (g.key.as_str(), g.says.en.as_str(), g.count, g.ids.clone())).collect();
+        assert_eq!(g, [
+            ("running", "Running", 3, ids(&l.works, |w| &w.id)),
+            ("later", "Put off", 2, vec!["later-2".to_string(), "later-1".to_string()]),
+            ("done", "Done", 2, vec!["shredded".to_string(), "done-1".to_string()]),
+        ]);
         // every word, in the title or the session's name, any case
         let (_, l) = render(&room(), &lens("LATER b"));
         let l = l.unwrap();
         assert_eq!((ids(&l.works, |w| &w.id), ids(&l.rest, |r| &r.id)), (vec![], vec!["later-2".to_string()]));
+        assert_eq!(l.groups.iter().map(|g| g.key.as_str()).collect::<Vec<_>>(), ["later"], "an empty group is not there");
         let (_, l) = render(&room(), &lens("nothing-like-this"));
         assert_eq!(l.unwrap().none.unwrap().en, "Nothing here has these words.");
         let mut r = Room::default();
@@ -393,6 +413,8 @@ mod tests {
         let list = list.unwrap();
         assert_eq!(list.rest.len(), OFF_PAGE);
         assert_eq!(list.rest[0].id, "d000");
+        let done = &list.groups[0];
+        assert_eq!((done.key.as_str(), done.count as usize, done.ids.len()), ("done", OFF_PAGE + 30, OFF_PAGE), "counted whole, the window's rows named");
         let more = list.more.unwrap();
         assert_eq!((more.left, more.says.en.as_str(), more.pages), (30, "Show more (30)", 2));
         lens.show_more(crate::views::MoreOf::Off { query: String::new() });
