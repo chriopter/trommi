@@ -60,7 +60,7 @@ a.agent-badge:hover, a.agent-badge:focus-visible { scale: 1.08; }
    set in from the pad's hatched corners so the row stands clear of them. A narrow window: back at the left, Full
    screen and More at the right, just inside the smaller corners. ---- */
 .tc-back { color: var(--fg); text-decoration: none; }
-.tc-pad > .tc-frame { position: relative; max-width: calc(100% - 112px); }
+.tc-pad > .tc-frame { position: relative; max-width: 100%; }
 .tc-rail, .t-picture .tc-step { box-sizing: border-box; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 1.3px solid var(--line-strong); border-radius: 48% 52% 50% 50% / 52% 48% 53% 47%; background: var(--surface); color: var(--fg); text-decoration: none; list-style: none; cursor: pointer; box-shadow: none; transition: translate 100ms, border-color 120ms, background 120ms; }
 .tc-rail::-webkit-details-marker { display: none; }
 :is(.tc-rail, .t-picture .tc-step) .sketch { width: 22px; height: 22px; stroke-width: 2; }
@@ -636,16 +636,20 @@ a.focus-stage-step { display: grid; place-items: center; }
 #cardpage .tc-c-in .shots img { max-width: 100%; height: auto; }
 .t-picture-back h1 { text-align: left; }   /* (a phone: clear of the small pictures under the large one) */
 
-/* ---- The tray (card.mjs .tc-pad): card and talk on one drawn desk pad in the session's pale tone: a pen outline, a
-   second line inside it, four hatched corners. The card lies on it with a soft shadow; the talk is written straight
-   on the pad (no boxes), what happened and the times in the session's ink. Its top is the room for the row of round
-   buttons above the card (.tc-rails). ---- */
-.tc-pad { --tone-wash-l: .92; --tone-wash-c: .035; position: relative; max-width: 1084px; padding: 76px 0 18px; border-radius: 12px; background: var(--tone-wash); box-shadow: inset 0 0 0 1.6px var(--tone-pen), inset 0 0 0 5px var(--tone-wash), inset 0 0 0 6px var(--tone-edge); }
-:root[data-theme="dark"] .tc-pad { --tone-wash-l: .24; --tone-wash-c: .035; }
-/* (inside the card the tones are the board's own again: its options keep their pale wash) */
-.tc-pad .tc-card, .tc-pad .tc-bar { --tone-wash-l: .95; --tone-wash-c: .022; }
-:root[data-theme="dark"] .tc-pad :is(.tc-card, .tc-bar) { --tone-wash-l: .28; --tone-wash-c: .03; }
-.tc-notes { position: relative; box-sizing: border-box; max-width: min(100% - 112px, 760px); margin: 30px auto 0; }
+/* ---- The page (card.mjs .tc-pad): no tray. The question is the coloured paper (.tc-card): a pen outline, a second
+   line inside it, four hatched corners, in its session's tone, paler while the session works on it (CardView.paper).
+   The talk stands under it on the page's own ground as the chat's calm bubbles, the field at its foot. ---- */
+.tc-pad { position: relative; max-width: 1084px; padding: 40px 0 18px; }
+.tc-pad .tc-card { --tone-wash-l: .92; --tone-wash-c: .035; border-radius: 6px; overflow: visible; background: var(--tone-wash); box-shadow: inset 0 0 0 1.6px var(--tone-pen), inset 0 0 0 5px var(--tone-wash), inset 0 0 0 6px var(--tone-edge), 0 14px 26px -18px rgb(20 40 60 / .35); }
+:root[data-theme="dark"] .tc-pad .tc-card { --tone-wash-l: .26; --tone-wash-c: .035; box-shadow: inset 0 0 0 1.6px var(--tone-pen), inset 0 0 0 5px var(--tone-wash), inset 0 0 0 6px var(--tone-edge), 0 14px 26px -18px rgb(0 0 0 / .6); }
+.tc-pad .tc-card[data-paper="pale"] { --tone-wash-l: .95; --tone-wash-c: .012; }
+:root[data-theme="dark"] .tc-pad .tc-card[data-paper="pale"] { --tone-wash-l: .24; --tone-wash-c: .01; }
+.tc-pad .tc-card::after { display: none; }
+.tc-pad .tc-card > .tc-left { padding-top: 34px; }
+.tc-pad .tc-card > .tc-right { padding-top: 30px; }
+.tc-pad .tc-bar { --tone-wash-l: .95; --tone-wash-c: .022; }
+:root[data-theme="dark"] .tc-pad .tc-bar { --tone-wash-l: .28; --tone-wash-c: .03; }
+.tc-notes { position: relative; box-sizing: border-box; max-width: min(100%, 760px); margin: 36px auto 0; }
 .tc-notes > :is(.tc-feed, .tc-chat) { margin-inline: auto; }
 .tc-notes > .tc-feed { margin-top: 0; margin-bottom: var(--s-4); }
 .tc-notes > .tc-feed[hidden] + .tc-chat { margin-top: 0; }
@@ -664,14 +668,7 @@ a.focus-stage-step { display: grid; place-items: center; }
 .tc-corner { position: absolute; z-index: 1; width: 54px; height: 54px; fill: var(--tone-edge); stroke: var(--tone-pen); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }
 .tc-corner .hatch { fill: none; stroke-width: 1.2; opacity: .55; }
 .tc-corner.tl { left: -3px; top: -3px; } .tc-corner.tr { right: -3px; top: -3px; rotate: 90deg; } .tc-corner.bl { left: -3px; bottom: -3px; rotate: 270deg; } .tc-corner.br { right: -3px; bottom: -3px; rotate: 180deg; }
-/* the card: white, question side too, a firm ink outline with the pen's thickness at its foot, a real drop shadow */
-.tc-pad .tc-card { background: var(--surface); box-shadow: 0 0 0 1.8px var(--fg), 0 3px 0 0 var(--fg), 0 18px 30px -16px rgb(20 40 60 / .28); }
-.tc-pad .tc-card > .tc-left, .tc-pad .tc-card .tc-lead { background: var(--surface); }
-:root[data-theme="dark"] .tc-pad .tc-card { --card-ink: color-mix(in srgb, var(--fg) 30%, var(--surface)); box-shadow: 0 0 0 1.5px var(--card-ink), 0 3px 0 0 var(--card-ink), 0 18px 30px -16px rgb(0 0 0 / .6); }
 .tc-pad .tc-rail { background: var(--surface); }
-.tc-pad :is(.tc-did, .tc-deed) { color: var(--tone-pen); }
-.tc-pad .tc-feed .msg-time { color: color-mix(in srgb, var(--tone-pen) 70%, var(--tone-wash)); }
-.tc-pad .tc-c-who, .tc-pad .tc-c-who.is-you { background: var(--surface); }
 .tc-pad .tc-ask { box-shadow: inset 0 0 0 1px var(--tone-edge); }
 .tc-pad .tc-ask:focus-within { box-shadow: inset 0 0 0 2px var(--tone-pen); }
 .tc-pad .rich :not(pre) > code, .tc-pad .rich pre { background: color-mix(in srgb, var(--surface) 70%, transparent); }
@@ -992,3 +989,29 @@ body:has(.tc-page.is-full) :is(.corner-note-box, .curl, #phone-bar, #agents, .to
 @media (pointer: coarse) { .tc-opt .tc-opt-pen { opacity: .55; } }
 .tc-rails.tc-tools .tc-more-list { min-width: 260px; }
 .tc-rails.tc-tools .tc-more-item > span, .tc-more-item kbd { white-space: nowrap; }
+
+/* ---- the talk under the paper: the chat's calm bubbles (session.css .bubble), the session's left and his right, no
+   faces and no names; what happened to the card as a small chip in the middle ---- */
+.tc-notes > :is(.tc-feed, .tc-chat) { max-width: min(100%, 720px); }
+.tc-feed .tc-c { display: block; margin: 14px 0 0; padding: 0; }
+.tc-feed .tc-c.cont { margin-top: 4px; padding: 0; }
+.tc-feed .tc-c-in { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.tc-feed .msg-user > .tc-c-in { align-items: flex-end; }
+.tc-feed .bubble { width: fit-content; max-width: min(100%, 36rem); padding: 10px var(--s-4); font: 400 var(--t-md)/1.6 var(--font); }
+.tc-feed .bubble-agent { border-radius: var(--r-sm) var(--r-lg) var(--r-lg) var(--r-lg); background: color-mix(in srgb, var(--fg) 6%, var(--surface)); }
+.tc-feed .bubble-agent:has(.code, .rich-table-wrap, .shots, .tc-vids) { max-width: 100%; }
+.tc-feed .msg-user .bubble { border-radius: var(--r-lg) var(--r-lg) var(--r-sm) var(--r-lg); background: var(--accent-soft); }
+.tc-feed .bubble p { margin: 0; }
+.tc-feed .tc-said { display: block; margin-bottom: var(--s-1); }
+.tc-feed .msg-foot { padding: 0 var(--s-1); color: var(--faint); font: 500 var(--t-xs)/1.4 var(--font); }
+.tc-feed .msg-foot .msg-time { color: inherit; }
+.tc-feed .tc-deed { display: flex; flex-direction: column; align-items: center; margin: 18px 0 4px; padding: 0; color: var(--muted); text-align: center; }
+.tc-feed .tc-deed-thing { display: none; }
+.tc-feed .tc-deed-in { min-height: 0; flex-direction: column; justify-content: center; gap: 6px; }
+.tc-feed .tc-deed-cap { justify-content: center; gap: 0 6px; padding: 2px 11px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--fg) 6%, var(--surface)); font: 500 var(--t-xs)/1.6 var(--font); }
+.tc-feed .tc-deed-cap .msg-time { color: var(--faint); }
+.tc-feed .tc-deed-said { text-align: center; }
+.tc-feed .tc-did { justify-content: center; padding-left: 0; }
+.tc-pad .tc-ask { box-shadow: inset 0 0 0 1px var(--line); }
+.tc-feed .tc-deed-in > * { flex-basis: auto; }
+.tc-feed .tc-deed-cap { order: -1; }

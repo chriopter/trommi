@@ -1706,6 +1706,10 @@ pub struct CardView {
     /// Always written, an empty list too, so a shell never meets it missing.
     #[serde(default)]
     pub menu: Vec<CardMenuItem>,
+    /// The tint of the paper the question stands on: "full" while it waits for him or is settled, "pale" while its
+    /// session works on it (the strip above the title, or the card back with the agent for rework).
+    #[serde(default)]
+    pub paper: String,
 }
 
 /// One entry of a card's ⋯ menu. The shell draws it by its key: `prev`, `next` (the questions before and after it on
