@@ -1010,31 +1010,44 @@ body > main#inbox { contain: strict; }
 
 /* ---- under the questions: the calm tiles (desk.mjs deskTiles), two by two; a phone one under the other ---- */
 .desk-chev { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.inbox-groups > .desk-tiles { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: var(--s-8) 0 96px; text-align: left; }
+.inbox-groups > .desk-tiles { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: row dense; gap: 14px; margin: var(--s-8) 0 96px; text-align: left; }
 .inbox-groups > .desk-tiles[hidden] { display: none; }
-.desk-tile { text-align: left; align-items: stretch; display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 132px; padding: 14px 16px 16px; box-sizing: border-box; border-radius: 16px; background: color-mix(in srgb, var(--fg) 4%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); text-decoration: none; overflow: hidden; }
+/* (the bento: DeskTileView.size; a tile with nothing yet stays its row's height but quiet) */
+.desk-tile.is-wide { grid-column: span 2; }
+.desk-tile.is-narrow { grid-column: span 1; }
+.desk-tile.is-full { grid-column: 1 / -1; }
+.desk-tile { text-align: left; align-items: stretch; display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 168px; padding: 14px 16px 16px; box-sizing: border-box; border-radius: 16px; background: color-mix(in srgb, var(--fg) 4%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); text-decoration: none; overflow: hidden; }
 @media (any-hover: hover) { .desk-tile:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 24%, transparent); } }
 .desk-tile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.dt-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.dt-head .sketch { flex: none; width: 20px; height: 20px; }
-.dt-head b { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 600 var(--t-md)/1.2 var(--font); }
-.dt-head i { font: 500 var(--t-sm)/1 var(--font); font-style: normal; color: var(--faint); font-variant-numeric: tabular-nums; }
-.dt-head .desk-chev { margin-left: auto; color: var(--muted); }
-.dt-line { color: var(--muted); font: 500 var(--t-sm)/1.3 var(--font); }
-.dt-runs { display: grid; gap: 6px; margin-top: 2px; }
-.dt-run { display: flex; align-items: center; gap: 8px; min-width: 0; font: 500 var(--t-sm)/1.3 var(--font); }
-.dt-run .agent-avatar { flex: none; width: 20px; height: 20px; }
-.dt-run span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.dt-pages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 2px; }
+.desk-tile.is-empty { min-height: 0; background: transparent; box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 7%, transparent); }
+.desk-tile.is-empty .dt-head { color: var(--muted); }
+/* (the head: the tile's name small, what it holds beside it; the content below says what it is) */
+.dt-head { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); }
+.dt-head .sketch { flex: none; width: 17px; height: 17px; }
+.dt-head b { flex: none; font: 600 var(--t-xs)/1 var(--font); letter-spacing: .06em; text-transform: uppercase; }
+.dt-head i { min-width: 0; margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 var(--t-sm)/1 var(--font); font-style: normal; color: var(--faint); font-variant-numeric: tabular-nums; }
+.dt-head .desk-chev { flex: none; color: var(--muted); }
+.dt-runs { display: grid; gap: 12px; }
+.dt-run { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 10px; min-width: 0; }
+.dt-run .agent-avatar { width: 34px; height: 34px; }
+.dt-run b, .dt-run small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dt-run b { font: 600 var(--t-md)/1.3 var(--font); }
+.dt-run small { color: var(--muted); font: 500 var(--t-sm)/1.25 var(--font); }
+.dt-pages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .dt-page { display: grid; align-content: start; gap: 4px; aspect-ratio: 4 / 3; padding: 7px; box-sizing: border-box; overflow: hidden; border-radius: 6px; background: #fffdf6; box-shadow: 0 0 0 1px var(--line-strong); }
 .dt-page b { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 700 10px/1.2 var(--font); color: #222; }
 .dt-page i { height: 3px; border-radius: 2px; background: #ddd8c8; }
 .dt-page.is-picture { padding: 0; background: var(--sunken); }
 .dt-page img { width: 100%; height: 100%; object-fit: cover; object-position: top left; display: block; }
-.dt-board { display: block; margin-top: 2px; border-radius: 8px; overflow: hidden; background: var(--sunken); }
-.dt-board canvas { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; }
+.dt-board { display: block; flex: 1; border-radius: 10px; overflow: hidden; background: var(--sunken); }
+.dt-board canvas { display: block; width: 100%; height: auto; aspect-ratio: 12 / 5; }
+.is-full .dt-board canvas { aspect-ratio: 4 / 1; }
+.dt-names { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+.dt-names li { display: flex; align-items: baseline; gap: 9px; min-width: 0; font: 500 var(--t-md)/1.3 var(--font); }
+.dt-names li::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); translate: 0 -2px; }
 @media (max-width: 860px) {
   .inbox-groups > .desk-tiles { grid-template-columns: minmax(0, 1fr); gap: 10px; margin: var(--s-6) 0 72px; }
+  .desk-tile.is-wide, .desk-tile.is-narrow, .desk-tile.is-full { grid-column: 1 / -1; }
   .desk-tile { min-height: 0; }
 }
 

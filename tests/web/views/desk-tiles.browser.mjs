@@ -1,6 +1,6 @@
 // desk-tiles.browser.mjs: the Desk is calm (demo room, ?mock=1). Under the questions stand the core's tiles
-// (DeskView.tiles: Working / Done, Artifacts, Scribble Board, Knowledge), in its order, each with its name, its line and
-// its count as the core says, each a link to its page; the board tile shows the team's board small (ViewModel.thumbs,
+// (DeskView.tiles: Working / Done, Artifacts, Scribble Board, Knowledge), in its order, each with its name, its line,
+// its size in the bento (wide twice as wide as narrow; one column on a phone) and quiet when empty as the core says, each a link to its page; the board tile shows the team's board small (ViewModel.thumbs,
 // painted). The note is the corner's sticky again; the Desk has no turned corner, nothing fixed over the rows but the
 // selection bar and the knock strips. On a wide window Undo is a row at the sidebar's foot, the words in sight. The page
 // /stacks/off shows the core's groups (OffListView.groups) in order, each with its count and its rows.
@@ -21,10 +21,11 @@ const SIZES = [{ name: '1440 wide', width: 1440, height: 900, mobile: false }, {
 const DESK = `(() => {
   const seen = el => { if (!el) return false; const r = el.getBoundingClientRect(), c = getComputedStyle(el); return c.display !== 'none' && c.visibility !== 'hidden' && r.width > 0 && r.height > 0 }
   const vm = trommi.vm(), d = vm.desk, list = document.querySelector('#desk-list'), end = document.querySelector('#desk-end')
-  const want = (d.tiles ?? []).map(t => ({ key: t.key, title: t.title.en, line: t.line.en, count: t.key === 'work' || t.count == null ? '' : String(t.count) }))
-  const shown = [...document.querySelectorAll('#desk-end .desk-tile')].map(a => ({ key: a.dataset.tile, title: a.querySelector('.dt-head b')?.textContent ?? '', line: a.querySelector('.dt-line')?.textContent ?? '', count: a.querySelector('.dt-head i')?.textContent ?? '', href: new URL(a.href).pathname }))
+  const want = (d.tiles ?? []).map(t => ({ key: t.key, title: t.title.en, line: t.line.en, size: t.size, empty: t.empty }))
+  const shown = [...document.querySelectorAll('#desk-end .desk-tile')].map(a => ({ key: a.dataset.tile, title: a.querySelector('.dt-head b')?.textContent ?? '', line: a.querySelector('.dt-head i')?.textContent ?? '', size: ['wide', 'narrow', 'full'].find(x => a.classList.contains('is-' + x)) ?? '', empty: a.classList.contains('is-empty'), href: new URL(a.href).pathname, w: a.getBoundingClientRect().width }))
+  const width = k => shown.find(t => t.key === k)?.w ?? 0
   const fixed = [...document.querySelectorAll('#desk-layer *, #inbox *')].filter(el => seen(el) && ['fixed', 'sticky'].includes(getComputedStyle(el).position)).map(el => el.id || el.className)
-  return { vw: innerWidth, want, shown: shown.map(({ href, ...t }) => t), hrefs: shown.map(t => t.href), last: list.lastElementChild === end,
+  return { vw: innerWidth, want, shown: shown.map(({ href, w, ...t }) => t), hrefs: shown.map(t => t.href), last: list.lastElementChild === end, ratio: width('artifacts') ? width('work') / width('artifacts') : 0,
     painted: document.querySelector('#tile-board canvas')?.dataset.painted ?? null, curl: seen(document.querySelector('.curl')), fixed,
     noteLine: Boolean(document.querySelector('#desk-note, #desk-know')), corner: seen(document.querySelector('.corner-note-head')), page: document.scrollingElement.scrollWidth - innerWidth }
 })()`
@@ -71,6 +72,7 @@ try {
     if (JSON.stringify(p.want) !== JSON.stringify(p.shown)) bad.push(`the tiles: the core says ${JSON.stringify(p.want)}, the Desk shows ${JSON.stringify(p.shown)}`)
     if (p.hrefs.join(' ') !== '/stacks/off /artifacts /scribble-board /knowledge') bad.push(`where the tiles lead: ${p.hrefs.join(' ')}`)
     if (!p.last) bad.push('the tiles are not the last thing under the questions')
+    if (size.mobile ? Math.abs(p.ratio - 1) > 0.05 : p.ratio < 1.8) bad.push(`the bento: Working / Done is ${p.ratio.toFixed(2)} times as wide as Artifacts`)
     if (!p.painted?.startsWith('ready:')) bad.push(`the board tile's picture: ${p.painted}`)
     if (p.curl) bad.push('the Desk has a turned corner')
     if (p.noteLine) bad.push('the note line or the Knowledge chip is still there')

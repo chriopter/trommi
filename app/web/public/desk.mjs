@@ -99,25 +99,30 @@ ${deskTiles(d, base)}`
  *  ids of vm.artifacts), the team's Scribble Board small (ViewModel.thumbs, painted by whiteboard.mjs's controller
  *  "thumbs"), the team's Knowledge. */
 const TILE = { work: ['/stacks/off', 'tick'], artifacts: ['/artifacts', 'picture'], board: ['/scribble-board', 'pen'], knowledge: ['/knowledge', 'book'] }
+const SIZES = new Set(['wide', 'narrow', 'full'])
 export function deskTiles(d, base) {
-  const tiles = d.tiles ?? []
+  const tiles = (d?.tiles ?? []).filter(t => t && TILE[t.key])
   if (!tiles.length) return html`<nav class="desk-tiles" id="desk-end" hidden></nav>`
   const vm = deskVm?.() ?? {}
   const running = new Map((d.off?.running ?? []).map(r => [r.id, r])), arts = new Map((vm.artifacts ?? []).map(a => [a.id, a]))
-  const runRow = r => { const who = whoOf(r.from); return html`<span class="dt-run" style="--hue:${who.hue}">${avatar(who, { crown: false, working: r.running })}<span>${r.title}</span></span>` }
+  const runRow = r => { const who = whoOf(r.from); return html`<span class="dt-run" style="--hue:${who.hue}">${avatar(who, { crown: false, working: r.running })}<span><b>${r.title}</b><small>${r.line?.en ?? ''}</small></span></span>` }
   const page = a => {
     const id = a.files?.[0], f = id ? vm.files?.[id] : null, type = f?.media_type ?? ''
     if (type.startsWith('image/')) return html`<span class="dt-page is-picture"><img src="${fileSrc(id)}" alt="" loading="lazy" decoding="async"></span>`
     return html`<span class="dt-page"><b>${a.title}</b><i></i><i></i><i></i></span>`
   }
   const inside = t => {
-    if (t.key === 'work') return html`<span class="dt-runs">${(t.items ?? []).map(id => running.get(id)).filter(Boolean).map(runRow)}</span>`
-    if (t.key === 'artifacts') return t.items?.length ? html`<span class="dt-pages">${t.items.map(id => arts.get(id)).filter(Boolean).map(page)}</span>` : ''
-    if (t.key === 'board' && t.team_id) return html`<span class="dt-board"><canvas width="520" height="260" data-thumb="${t.team_id}" aria-hidden="true"></canvas></span>`
+    if (t.empty) return ''
+    const items = t.items ?? [], names = t.names ?? []
+    if (t.key === 'work') { const rows = items.map(id => running.get(id)).filter(Boolean); return rows.length ? html`<span class="dt-runs">${rows.map(runRow)}</span>` : '' }
+    if (t.key === 'artifacts') { const pages = items.map(id => arts.get(id)).filter(Boolean); return pages.length ? html`<span class="dt-pages">${pages.map(page)}</span>` : '' }
+    if (t.key === 'board' && t.team_id) return html`<span class="dt-board"><canvas width="720" height="300" data-thumb="${t.team_id}" aria-hidden="true"></canvas></span>`
+    if (t.key === 'knowledge') return names.length ? html`<ul class="dt-names">${names.map(n => html`<li>${n}</li>`)}</ul>` : ''
     return ''
   }
   if (tiles.some(t => t.key === 'board' && t.team_id)) viewModule('whiteboard').catch(() => {})   // (its controller paints the board small)
-  return html`<nav class="desk-tiles" id="desk-end" aria-label="${tiles.map(t => t.title.en).join(', ')}">${tiles.map(t => html`<a class="desk-tile" id="tile-${t.key}" data-tile="${t.key}" data-nav href="${base}${TILE[t.key]?.[0] ?? '/'}"${t.key === 'board' ? raw(' data-controller="thumbs"') : ''} aria-label="${t.title?.en ?? ''}: ${t.line?.en ?? ''}"><span class="dt-head">${sk(TILE[t.key]?.[1] ?? 'page')}<b>${t.title.en}</b>${t.count != null && t.key !== 'work' ? html`<i>${t.count}</i>` : ''}${CHEV}</span><span class="dt-line">${t.line.en}</span>${inside(t)}</a>`)}</nav>`
+  // The bento: each tile takes the room the core gives it (DeskTileView.size); one with nothing yet is small and quiet.
+  return html`<nav class="desk-tiles" id="desk-end" aria-label="${tiles.map(t => t.title?.en ?? '').join(', ')}">${tiles.map(t => html`<a class="desk-tile is-${SIZES.has(t.size) ? t.size : 'narrow'}${t.empty ? ' is-empty' : ''}" id="tile-${t.key}" data-tile="${t.key}" data-nav href="${base}${TILE[t.key][0]}"${t.key === 'board' ? raw(' data-controller="thumbs"') : ''} aria-label="${t.title?.en ?? ''}: ${t.line?.en ?? ''}"><span class="dt-head">${sk(TILE[t.key][1])}<b>${t.title?.en ?? ''}</b><i>${t.line?.en ?? ''}</i>${CHEV}</span>${inside(t)}</a>`)}</nav>`
 }
 
 let deskVm = null, deskAct = null
