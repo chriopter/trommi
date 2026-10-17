@@ -1,17 +1,26 @@
-// The Desk: every open question as a row, in the app core's order (vm.desk, views.d.ts DeskView), and at its foot
-// Off your mind (the starred and running cards at its head, then the hint); the page /stacks/off (vm.off). The markup is the one app.css and desk.css
+// The Desk: every open question as a row, in the app core's order (vm.desk, views.d.ts DeskView), and under them one
+// quiet line ("2 running · 10 done ›", "14 artifacts ›"); the page /stacks/off (vm.off) in its groups. The markup is the one app.css and desk.css
 // style. A row never unfolds: its text is a link to the card's own page, its tiles are forms that answer with one tap
 // (the card's routes, card.mjs). Nothing here decides what stands where: the core does; the page draws and acts.
 import { flipOut } from './app.mjs'
-import { Controller, PLUS, WORDS, agoSpan, avatar, controller, deskRow, fileSrc, html, lastUndo, linkSlip, mq, raw, ringSvg, runSection, sideWays, sk, starMark, undoLast, whoOf } from './ui.mjs'
+import { Controller, PLUS, WORDS, agoSpan, avatar, controller, deskRow, html, lastUndo, linkSlip, mq, raw, ringSvg, runSection, sideWays, sk, starMark, undoLast, whoOf } from './ui.mjs'
 
 // ---- the head: the big line, the goals, Blitz and the duck ----
 function deskHead(d, base) {
   if (d.mode === 'invite') return deskInvite()
   const words = (d.hello?.en ?? '').split(' '), last = words.pop()
-  return html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="${d.waiting}"><h2 class="desk-hello">${words.join(' ')} <em>${last}</em></h2>${d.reading ? html`<p class="desk-reading" role="status">${d.reading.en}</p>` : ''}${deskGoals(d.goals)}${deskKnowledge(d.knowledge, base)}${d.blitz ? html`<div class="desk-tools" id="desk-tools">${duckAll(d, base)}${nextPlease(d, base)}</div>` : ''}</header>`
+  return html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="${d.waiting}"><h2 class="desk-hello">${words.join(' ')} <em>${last}</em></h2>${d.reading ? html`<p class="desk-reading" role="status">${d.reading.en}</p>` : ''}${deskGoals(d.goals)}${deskKnowledge(d.knowledge, base)}${noteLine(deskVm?.()?.notes, base)}${d.blitz ? html`<div class="desk-tools" id="desk-tools">${duckAll(d, base)}${nextPlease(d, base)}</div>` : ''}</header>`
 }
 
+/** The note as a line under the goals (NotesView: the corner's note, its line, whom it goes to): what is typed is
+ *  kept in that note, Enter sends it (controller "note-line": Action::KeepNote, send), Shift+Enter is a new line of
+ *  it. Beside it the way to the team's Scribble Board. On a wide window it takes the corner note's place on the Desk. */
+const CHEV = raw('<svg class="desk-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>')
+function noteLine(n, base) {
+  if (!n) return ''
+  const note = (n.rows ?? []).find(x => x.id === n.corner) ?? null
+  return html`<div class="desk-note" id="desk-note" data-controller="note-line" data-note-line-id-value="${note?.id ?? ''}" data-note-line-text-value="${note?.text ?? ''}"><label class="desk-note-field">${n.to ? avatar(whoOf(n.to), { crown: false }) : sk('page')}<textarea id="desk-note-field" rows="1" placeholder="${n.line?.en ?? ''}" aria-label="${n.line?.en ?? 'Your note'}" data-action="input->note-line#typed keydown->note-line#key blur->note-line#keep"></textarea><kbd aria-hidden="true">↵</kbd></label><a class="desk-scribble" id="desk-scribble" data-nav href="${base}/scribble-board">${sk('pen')}<span>Scribble Board</span>${CHEV}</a></div>`
+}
 /** The team's knowledge (KnowledgeChipView): a quiet chip under the goals that opens its page, with how many entries. */
 const deskKnowledge = (k, base) => k ? html`<a class="desk-know" id="desk-know" data-nav href="${base}/knowledge" title="Team knowledge" aria-label="${k.says.en}">${sk('book')}<span>${k.label.en}</span><b>${k.count}</b></a>` : ''
 /** The team's goals (GoalsView): a checklist of his own under the greeting; a click on the words writes in place
@@ -91,24 +100,16 @@ function deskList(d, base) {
   return html`${linkSlip(d.slip ?? [], base)}${out.map(x => (x.first.from ? run(x.first, x.rows, x.rows.length) : x.rows))}
 ${d.empty ? html`<div class="inbox-empty${d.mode === 'reading' ? ' is-reading' : ''}" id="desk-empty"${d.mode === 'reading' ? raw(' role="status"') : ''}>${sk('desk')}<p>${d.empty.en}</p></div>` : ''}
 <section id="desk-ip" class="tail" hidden></section>
-${offHint(d.off, d.starred, base)}<div class="inbox-stacks stack-tabs is-straight is-two" id="desk-stacks">${artifactsPile(base)}</div>`
+${offLine(d, base)}`
 }
 
-/** "Artifacts N" at the foot of the Desk: what the agents published (vm.artifacts, the newest first), the last four
- *  as small cards, picture or page, each with its title; the heading opens /artifacts. Without any it is not there. */
+/** Under the questions, one quiet line as on the iPhone: Off your mind counted (OffHintView.line, it opens the page
+ *  /stacks/off) and the artifacts counted (DeskView.artifacts_line, it opens the gallery). */
+const offLine = (d, base) => d.off || d.artifacts_line
+  ? html`<nav class="desk-end" id="desk-end" aria-label="Off your mind">${d.off ? html`<a id="desk-off" data-nav href="${base}/stacks/off">${d.off.line.en}${CHEV}</a>` : ''}${d.artifacts_line ? html`<a id="desk-artifacts" data-nav href="${base}/artifacts">${d.artifacts_line.en}${CHEV}</a>` : ''}</nav>`
+  : html`<nav class="desk-end" id="desk-end" hidden></nav>`
+
 let deskVm = null, deskAct = null
-function artifactsPile(base) {
-  const vm = deskVm?.() ?? {}, all = vm.artifacts ?? []
-  if (!all.length) return ''
-  const thumb = a => {
-    const id = a.files?.[0], f = id ? vm.files?.[id] : null, type = f?.media_type ?? ''
-    const url = id && /^(image|video)\//.test(type) ? fileSrc(id) : null
-    if (type.startsWith('image/') && url) return html`<span class="asset-preview is-shown" data-kind="image"><img src="${url}" alt="" loading="lazy" decoding="async"></span>`
-    return html`<span class="df-page"><b>${a.title}</b><i></i><i></i><i></i></span>`
-  }
-  return html`<section class="df-cards" id="desk-artifacts" aria-label="Artifacts, ${all.length}"><div class="end-divider"><svg viewBox="0 0 300 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 4.6 Q60 2.6 120 4.2 T238 3.6 T298 4.4"/></svg><a class="end-head" data-nav href="${base}/artifacts" aria-label="All Artifacts, ${all.length}"><span class="end-head-words">Artifacts</span> <span class="off-count">${all.length}</span>${sk('go')}</a></div>
-<div class="df-row">${all.slice(0, 4).map(a => html`<a class="df-card" id="art-${a.id}" data-nav href="${base}/artifacts/${encodeURIComponent(a.id)}" title="${a.title}"><span class="df-thumb">${thumb(a)}</span><span class="df-title">${a.title}</span></a>`)}</div></section>`
-}
 
 /** The Desk's <main>, and beside it its layer: the selection bar, the knock strips (fixed things
  *  inside <main> would keep it from being a layout boundary). */
@@ -122,43 +123,52 @@ ${deskHead(d, base)}
 <div class="inbox-edge is-down"><button class="inbox-edge-knock" type="button" id="knock-down" data-dir="down" hidden>↓ ${sk('knock')}<span></span></button></div>
 </div>`
 
-// ---- the foot of the Desk: Off your mind (the owner's word of 17 October 2026: no floating stacks, all of it on the
-// Desk, one design with the phone) ----
-// One calm section in the Desk's scroll (OffHintView): at its head the starred cards (DockView starred) and the cards
-// being worked on (OffHintView.running, "2 more running"), each with its agent's drawing (in its turning ring while it
-// runs), the title and "agent · status line"; under them the first put-off and closed rows, fading, and how many. Its
-// heading opens /stacks/off.
+// ---- the page /stacks/off: the complete list (OffListView) in its groups (OffGroupView) ----
 const cardPath = (id, base) => `${base}/card/${encodeURIComponent(id)}`
-/** A section's heading: a pen rule with its small label; with href the label is the link to the whole page. */
-const divider = (label, { href = '' } = {}) => html`<div class="end-divider"><svg viewBox="0 0 300 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 4.6 Q60 2.6 120 4.2 T238 3.6 T298 4.4"/></svg>${href ? html`<a class="end-head" data-nav href="${href}" aria-label="All ${label}"><span class="end-head-words">${label}</span>${sk('go')}</a>` : html`<span aria-hidden="true">${label}</span>`}</div>`
-/** The mark of a card off the Desk (OffRowView.mark: snooze, shred, withdraw, tick). */
-const placeMark = mark => sk(mark)
-/** A starred or running card at the head of Off your mind (DockRowView): the agent's drawing, in its turning ring while
- *  it runs; the title; "agent · status line". */
-const headRow = (r, base, star) => { const who = whoOf(r.from); return html`<a class="oym-run" id="oym-${r.id}" data-nav href="${cardPath(r.id, base)}" style="--hue:${who.hue}"${r.running ? raw(' data-running') : ''} aria-label="${r.title}, ${r.line.en}"><span class="oym-run-mark">${avatar(who, { crown: false, working: r.running })}${r.running ? raw(ringSvg({ drop: true })) : ''}</span><span class="oym-run-words"><b>${star ? starMark() : ''}${r.title}</b><small>${r.line.en}</small></span></a>` }
-export function offHint(o, starred, base) {
-  const stars = starred?.rows ?? [], running = o?.running ?? []
-  if (!o && !stars.length) return html`<section id="desk-end" class="endlist" hidden></section>`
-  return html`<section id="desk-end" class="endlist oym-hint" aria-label="Off your mind">
-${divider('Off your mind', { href: `${base}/stacks/off` })}
-${stars.length ? html`<div class="oym-runs" id="oym-starred" aria-label="${starred.says.en}">${stars.map(r => headRow(r, base, true))}</div>` : ''}${running.length ? html`<div class="oym-runs" id="oym-running" aria-label="Running">${running.map(r => headRow(r, base, false))}${o.running_more ? html`<a class="oym-run-more" data-nav href="${base}/stacks/off">${o.running_more.en}</a>` : ''}</div>` : ''}${o && (o.rows.length || o.put_off || o.closed) ? html`<a class="oym-hint-list" data-nav href="${base}/stacks/off">${o.rows.map(r => html`<span class="oym-hint-row" data-g="${r.place}">${placeMark(r.mark)}<b>${r.title}</b></span>`)}<span class="oym-hint-more">${o.says.en}</span></a>` : ''}
-</section>`
-}
-
-// ---- the page /stacks/off: the complete list (OffListView) ----
-/** A card with its agent: who is on it (drawing), the title, its status line, how long. */
-const liveCard = (w, base) => { const who = whoOf(w.from); return html`<a class="oym-card" id="off-${w.id}" data-nav href="${cardPath(w.id, base)}" style="--hue:${who.hue}" aria-label="${w.says.en}">${avatar(who, { crown: false, working: true })}<span class="oym-card-words"><b>${w.starred ? starMark() : ''}${w.title}</b><small><span class="oym-who">${who.name}</span> · ${w.label.en}</small></span>${agoSpan(w.at_ms, 'ago oym-ago')}</a>` }
-/** A put-off or closed card, small and quiet: a mark, the title, when (until when, for a put-off one). */
-const restRow = (r, base) => html`<a class="pile-rest" id="off-${r.id}" data-nav href="${cardPath(r.id, base)}" data-g="${r.place}" data-id="${r.id}"${r.mark === 'shred' ? raw(' data-shredded') : ''} title="${r.title}"><span class="pile-rest-mark" role="img" aria-label="${r.says.en}">${placeMark(r.mark)}</span><b>${r.starred ? starMark() : ''}${r.title}</b>${r.until ? html`<span class="ago pile-rest-ago">${r.until.en}</span>` : r.at_ms > 0 ? agoSpan(r.at_ms, 'ago pile-rest-ago') : ''}</a>`
+/** A card with its agent, one line: the drawing in its turning ring, the title, "agent · status line", how long. */
+const workRow = (w, base) => { const who = whoOf(w.from); return html`<a class="off-row" id="off-${w.id}" data-nav href="${cardPath(w.id, base)}" style="--hue:${who.hue}" aria-label="${w.says.en}"><span class="off-mark">${avatar(who, { crown: false, working: true })}${raw(ringSvg({ drop: true }))}</span><b>${w.starred ? starMark() : ''}${w.title}</b><small>${who.name}<i> · ${w.label.en}</i></small>${agoSpan(w.at_ms, 'ago off-ago')}</a>` }
+/** A put-off or closed card, one quiet line: its mark, the title, when (until when, for a put-off one). */
+const restRow = (r, base) => html`<a class="off-row is-rest" id="off-${r.id}" data-nav href="${cardPath(r.id, base)}" data-g="${r.place}" data-id="${r.id}"${r.mark === 'shred' ? raw(' data-shredded') : ''} title="${r.title}"><span class="off-mark" role="img" aria-label="${r.says.en}">${sk(r.mark)}</span><b>${r.starred ? starMark() : ''}${r.title}</b><small></small>${r.until ? html`<span class="ago off-ago">${r.until.en}</span>` : r.at_ms > 0 ? agoSpan(r.at_ms, 'ago off-ago') : html`<span></span>`}</a>`
 function offMain(o, base) {
   const q = o?.query ?? ''
+  const works = new Map((o?.works ?? []).map(w => [w.id, w])), rest = new Map((o?.rest ?? []).map(r => [r.id, r]))
+  const group = g => html`<section class="off-group" id="off-${g.key}" aria-label="${g.says.en}"><h3>${g.says.en} <b>${g.count}</b></h3>${g.ids.map(id => (g.key === 'running' ? works.has(id) && workRow(works.get(id), base) : rest.has(id) && restRow(rest.get(id), base)) || '')}</section>`
   return html`<main id="inbox" class="off-page" aria-label="Off your mind"><header class="inbox-head desk-top"><h2 class="desk-hello"><a class="off-back" data-nav href="${base}/" aria-label="Back to the Desk">←</a> Off your <em>mind</em></h2><form class="end-search" method="get" action="${base}/stacks/off" role="search"><label><span class="offscreen">Search</span><input type="search" name="q" value="${q}" placeholder="Search the list" autocomplete="off"></label></form></header>
-<div class="inbox-groups" id="off-list"><section id="off-end" class="endlist oym is-full" aria-label="Off your mind">
-${divider('Off your mind')}
-${o?.works?.length ? html`<div class="pile-cards" id="off-works">${o.works.map(w => liveCard(w, base))}</div>` : ''}${o?.rest?.length ? html`<div class="pile-rests" id="off-rest">${o.rest.map(r => restRow(r, base))}</div>` : ''}${o?.none ? html`<p class="end-none">${o.none.en}</p>` : ''}
-${o?.more ? html`<form class="end-more" method="post" action="${base}/stacks/off/more"><input type="hidden" name="q" value="${q}"><button type="submit" class="end-more-go">${o.more.says.en}</button></form>` : ''}${o?.loading ? html`<p class="end-none" role="status">Loading…</p>` : ''}
-</section></div></main>`
+<div class="inbox-groups" id="off-list"><div class="off-groups" id="off-end">${(o?.groups ?? []).map(group)}${o?.none ? html`<p class="end-none">${o.none.en}</p>` : ''}
+${o?.more ? html`<form class="end-more" method="post" action="${base}/stacks/off/more"><input type="hidden" name="q" value="${q}"><button type="submit" class="end-more-go">${o.more.says.en}</button></form>` : ''}${o?.loading ? html`<p class="end-none" role="status">Loading…</p>` : ''}</div></div></main>`
 }
+
+// ---- controller "note-line" ----
+// The note line on the Desk. What is typed is kept in the corner's note a moment after the last key and when the
+// field is left (POST /notes/line: Action::KeepNote, which also makes the note); Enter sends it to the crowned session
+// (the same action with send: the core sends it, also one it makes right then, and toasts its Undo); Shift+Enter is a
+// new line. The core's words come in while the field is not being written in. "N" (trommi:note) writes here.
+const LINE_KEEP_MS = 700
+controller('note-line', class extends Controller {
+  static values = { id: String, text: String }
+  get field() { return this.element.querySelector('textarea') }
+  connect() {
+    this.field.value = this.textValue; this.fit()
+    this.write = () => { if (getComputedStyle(this.element).display !== 'none') this.field.focus() }
+    document.addEventListener('trommi:note', this.write)
+  }
+  disconnect() { document.removeEventListener('trommi:note', this.write); clearTimeout(this.timer) }
+  textValueChanged(v) { const f = this.field; if (!f || document.activeElement === f || f.value === v) return; f.value = v; this.fit() }
+  fit() { const f = this.field; f.style.height = 'auto'; f.style.height = `${f.scrollHeight}px` }
+  typed() { this.fit(); clearTimeout(this.timer); this.timer = setTimeout(() => this.keep(), LINE_KEEP_MS) }
+  key(e) {
+    if (e.key === 'Escape') { e.preventDefault(); this.field.blur() }
+    else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.send() }
+  }
+  post(send) {
+    const text = this.field.value
+    if (send ? !text.trim() : text === this.textValue) return
+    clearTimeout(this.timer)
+    fetch('/notes/line', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note_id: this.idValue || null, text, send }) }).catch(err => console.warn('note line', err))
+  }
+  keep() { this.post(false) }
+  send() { this.post(true); this.field.value = ''; this.fit() }
+})
 
 // ---- controller "goals" ----
 // The goals under the greeting. One toggle: folded, the first line; open, all of them; kept per team on this device.

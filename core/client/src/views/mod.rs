@@ -646,6 +646,10 @@ pub struct DeskView {
     /// The sessions that are cut off, above the questions: one line each, with the step in its terminal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub slip: Vec<SlipView>,
+    /// Beside Off your mind's one line under the questions: what the agents published, counted ("14 artifacts");
+    /// it opens the gallery (`Screen::Artifacts`). None while there is none, or while the Desk is not in view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifacts_line: Option<Text>,
 }
 
 /// The duck for all: the cards it clears (`Action::Batch` with way "sweep") and its words (the web's `duckAll`).
@@ -807,6 +811,23 @@ pub struct OffListView {
     /// A page of older cards is being fetched: the shell shows its quiet "Loading …" line at the end.
     #[serde(default)]
     pub loading: bool,
+    /// The list in its groups, in this order and only those with rows: "Running" (`works`), "Put off" and "Done"
+    /// (both from `rest`). Each names its rows; its count is every row of it the search keeps, not only the window.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<OffGroupView>,
+}
+
+/// One group of the complete list Off your mind.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OffGroupView {
+    /// "running", "later" or "done".
+    pub key: String,
+    /// Its heading: "Running", "Put off", "Done".
+    pub says: Text,
+    /// How many cards are in it (the search's words kept), shown beside the heading.
+    pub count: u32,
+    /// The ids of its rows as shown, in order: of `works` for "running", of `rest` for the others.
+    pub ids: Vec<String>,
 }
 
 /// More of a long list than its window shows: the line that asks for the next page (an action moves the window,
@@ -1794,6 +1815,9 @@ pub struct NotesView {
     /// In the send's place without a crown: "Give a session the crown to send" (opens Settings · Agents).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_crown: Option<Text>,
+    /// The empty note line on the Desk: "Write a note to Fernly Website…", without a crown "Write a note…".
+    #[serde(default)]
+    pub line: Text,
 }
 
 /// One note.
