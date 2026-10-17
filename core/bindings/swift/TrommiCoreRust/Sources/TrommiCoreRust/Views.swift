@@ -3518,6 +3518,9 @@ public enum CoreView {
     public var name: String
     /// Its caption, when it says more than its name.
     public var title: String
+    /// The line under it in the full-screen viewer: its caption, else the label of the option it shows, else its
+    /// name.
+    public var caption: String
     public var width: UInt64?
     public var height: UInt64?
     /// The page that belongs to it (an attachment id), shown beside it.
@@ -3527,10 +3530,11 @@ public enum CoreView {
     /// Every option a section shows it for (several may share one picture); else its `key`.
     public var keys: [String]
 
-    public init(fileId: String = "", name: String = "", title: String = "", width: UInt64? = nil, height: UInt64? = nil, page: String? = nil, key: String? = nil, keys: [String] = []) {
+    public init(fileId: String = "", name: String = "", title: String = "", caption: String = "", width: UInt64? = nil, height: UInt64? = nil, page: String? = nil, key: String? = nil, keys: [String] = []) {
       self.fileId = fileId
       self.name = name
       self.title = title
+      self.caption = caption
       self.width = width
       self.height = height
       self.page = page
@@ -3542,6 +3546,7 @@ public enum CoreView {
       case fileId = "file_id"
       case name = "name"
       case title = "title"
+      case caption = "caption"
       case width = "width"
       case height = "height"
       case page = "page"
@@ -3554,6 +3559,7 @@ public enum CoreView {
       self.fileId = try c.decode(String.self, forKey: .fileId)
       self.name = try c.decode(String.self, forKey: .name)
       self.title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+      self.caption = try c.decodeIfPresent(String.self, forKey: .caption) ?? ""
       self.width = try c.decodeIfPresent(UInt64.self, forKey: .width)
       self.height = try c.decodeIfPresent(UInt64.self, forKey: .height)
       self.page = try c.decodeIfPresent(String.self, forKey: .page)
@@ -3566,6 +3572,7 @@ public enum CoreView {
       try c.encode(fileId, forKey: .fileId)
       try c.encode(name, forKey: .name)
       if !title.isEmpty { try c.encode(title, forKey: .title) }
+      if !caption.isEmpty { try c.encode(caption, forKey: .caption) }
       try c.encodeIfPresent(width, forKey: .width)
       try c.encodeIfPresent(height, forKey: .height)
       try c.encodeIfPresent(page, forKey: .page)

@@ -1020,6 +1020,9 @@ export interface PictureView {
   name: string
   /** Its caption, when it says more than its name. */
   title?: string
+  /** The line under it in the full-screen viewer: its caption, else the label of the option it shows, else its
+   *  name. */
+  caption?: string
   width?: number
   height?: number
   /** The page that belongs to it (an attachment id), shown beside it. */
