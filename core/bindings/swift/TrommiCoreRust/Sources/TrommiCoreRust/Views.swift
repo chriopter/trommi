@@ -3747,8 +3747,10 @@ public enum CoreView {
     /// Once it is settled (not open, not catching up): the way on that the page offers right after the person
     /// answered here (the shell shows it then): the next open question of the team in view, or that there is none.
     public var after: AfterView?
+    /// The page's small fixed words (`CardWordsView`).
+    public var words: CardWordsView
 
-    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil) {
+    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil, words: CardWordsView = CardWordsView()) {
       self.id = id
       self.sessionId = sessionId
       self.kind = kind
@@ -3790,6 +3792,7 @@ public enum CoreView {
       self.pictures = pictures
       self.earlier = earlier
       self.after = after
+      self.words = words
     }
 
     enum CodingKeys: String, CodingKey {
@@ -3834,6 +3837,7 @@ public enum CoreView {
       case pictures = "pictures"
       case earlier = "earlier"
       case after = "after"
+      case words = "words"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -3879,6 +3883,7 @@ public enum CoreView {
       self.pictures = try c.decodeIfPresent([PictureView].self, forKey: .pictures) ?? []
       self.earlier = try c.decodeIfPresent(MoreView.self, forKey: .earlier)
       self.after = try c.decodeIfPresent(AfterView.self, forKey: .after)
+      self.words = try c.decodeIfPresent(CardWordsView.self, forKey: .words) ?? CardWordsView()
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -3924,6 +3929,7 @@ public enum CoreView {
       if !pictures.isEmpty { try c.encode(pictures, forKey: .pictures) }
       try c.encodeIfPresent(earlier, forKey: .earlier)
       try c.encodeIfPresent(after, forKey: .after)
+      try c.encode(words, forKey: .words)
     }
   }
 
@@ -4005,27 +4011,94 @@ public enum CoreView {
     public var next: CardRefView?
     /// "Next question", or "That was the last open question."
     public var says: Text
+    /// The short word of the one button that takes its place where the answers stood: "Next", or "All done".
+    public var go: Text
 
-    public init(next: CardRefView? = nil, says: Text = Text()) {
+    public init(next: CardRefView? = nil, says: Text = Text(), go: Text = Text()) {
       self.next = next
       self.says = says
+      self.go = go
     }
 
     enum CodingKeys: String, CodingKey {
       case next = "next"
       case says = "says"
+      case go = "go"
     }
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.next = try c.decodeIfPresent(CardRefView.self, forKey: .next)
       self.says = try c.decode(Text.self, forKey: .says)
+      self.go = try c.decodeIfPresent(Text.self, forKey: .go) ?? Text()
     }
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encodeIfPresent(next, forKey: .next)
       try c.encode(says, forKey: .says)
+      try c.encode(go, forKey: .go)
+    }
+  }
+
+  /// The small fixed words of a card's calm page (the iPhone): the mark on the advised option and the three side ways
+  /// as one quiet row, Undo after an answer, and the folded talk.
+  public struct CardWordsView: Codable, Hashable, Sendable {
+    /// "Recommended", beside the option the agent advises.
+    public var recommended: Text
+    /// "Got it", the answer of an info card.
+    public var gotIt: Text
+    /// "Duck it": the agent decides (the duck).
+    public var duck: Text
+    /// "What??": back to the agent to explain.
+    public var what: Text
+    /// "Rework": back to the agent to rework, with the comments.
+    public var rework: Text
+    /// "Undo": takes back the answer that stands.
+    public var undo: Text
+    /// "Talk · 3": the card's talk folded into one row; none when it has none.
+    public var talk: Text?
+
+    public init(recommended: Text = Text(), gotIt: Text = Text(), duck: Text = Text(), what: Text = Text(), rework: Text = Text(), undo: Text = Text(), talk: Text? = nil) {
+      self.recommended = recommended
+      self.gotIt = gotIt
+      self.duck = duck
+      self.what = what
+      self.rework = rework
+      self.undo = undo
+      self.talk = talk
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case recommended = "recommended"
+      case gotIt = "got_it"
+      case duck = "duck"
+      case what = "what"
+      case rework = "rework"
+      case undo = "undo"
+      case talk = "talk"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.recommended = try c.decode(Text.self, forKey: .recommended)
+      self.gotIt = try c.decode(Text.self, forKey: .gotIt)
+      self.duck = try c.decode(Text.self, forKey: .duck)
+      self.what = try c.decode(Text.self, forKey: .what)
+      self.rework = try c.decode(Text.self, forKey: .rework)
+      self.undo = try c.decode(Text.self, forKey: .undo)
+      self.talk = try c.decodeIfPresent(Text.self, forKey: .talk)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(recommended, forKey: .recommended)
+      try c.encode(gotIt, forKey: .gotIt)
+      try c.encode(duck, forKey: .duck)
+      try c.encode(what, forKey: .what)
+      try c.encode(rework, forKey: .rework)
+      try c.encode(undo, forKey: .undo)
+      try c.encodeIfPresent(talk, forKey: .talk)
     }
   }
 

@@ -198,6 +198,12 @@ struct ChatRow: View {
 
 // ---- a card's page ---------------------------------------------------------------------------------------------------
 
+/**
+ * A card's page, calm (owner's pick of 17 October): who and when in one quiet line, the title and the text in the
+ * system's face, the answers as plain rows, the three side ways as one small row, the talk folded. Once answered here
+ * the way on stands where the answers stood: one glass button "Next" with the next card's title, the answer that
+ * stands quietly under it with Undo. Every word comes from the core (`card.words`, `card.after`).
+ */
 struct CardScreen: View {
   @EnvironmentObject var shell: AppShell
   let card: CoreView.CardView
@@ -206,6 +212,8 @@ struct CardScreen: View {
   @State private var attachments: [String] = []
   /** Answered on this page just now: the page then offers the way on (`card.after`). */
   @State private var answeredHere = false
+  /** The card's talk unfolded. */
+  @State private var showTalk = false
   /** The pictures open over the whole screen. */
   @State private var showing: PictureShow?
   @Namespace private var zoom
@@ -215,9 +223,11 @@ struct CardScreen: View {
   }
   private var urgency: String { cardUrgency(card.urgency) }
   private var who: TalkWho? { card.from.map { TalkWho(mark: $0.mark, name: $0.name, hue: Pen.hueFor(id: $0.sessionId, mark: $0.mark)) } }
+  /** The quiet fill of a row and a side way. */
+  private var calmFill: Color { Ink.fg.opacity(0.055) }
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 18) {
+      VStack(alignment: .leading, spacing: 22) {
         lead
         if !card.pictures.isEmpty {
           VStack(spacing: 12) {
@@ -232,7 +242,6 @@ struct CardScreen: View {
         answers
         if card.answer.mode == "options" && !card.sections.isEmpty { sections }
         if let n = card.note { LinkNoteBox(note: n) }
-        if answeredHere, let after = card.after { afterStep(after) }
         thread
       }
       .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 24)
@@ -264,60 +273,43 @@ struct CardScreen: View {
       .accessibilityLabel("More")
     }
     .onAppear { note = card.draft; choices = Set(card.options.filter(\.chosen).map(\.key)) }
-    .onChange(of: card.status) { was, now in answeredHere = was == "open" && now != "open" }
+    .onChange(of: card.status) { was, now in withAnimation(.snappy) { answeredHere = was == "open" && now != "open" } }
     .onChange(of: note) { _, value in shell.act(["do": "draft", "place": card.id, "text": value]) }
   }
 
-  // ---- the head: knock, work, who, title, when, the text ----
+  // ---- the head: who and when, the work strip, the title, the text ----
 
   @ViewBuilder private var lead: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      if let knock = card.knock {
-        HStack(spacing: 6) { Sketch("knock", color: Ink.surface).frame(width: 15, height: 15); Text(knock.en.uppercased()).font(Face.text(11, .bold)).kerning(1) }
-          .foregroundStyle(Ink.surface).padding(.horizontal, 8).padding(.vertical, 4).background(RoundedRectangle(cornerRadius: 6).fill(Ink.urgency(urgency)))
-      }
+    VStack(alignment: .leading, spacing: 12) {
       if let work = card.work { CardWorkStrip(work: work) }
       if let from = card.from {
         Button { shell.focus(.session(sessionId: from.sessionId)) } label: {
-          HStack(spacing: 6) {
-            AgentMark(from: from, size: 20)
-            ForEach(Array(from.path.dropLast().enumerated()), id: \.offset) { _, p in
-              Text(p).font(Face.text(14, .medium)).foregroundStyle(Ink.muted).lineLimit(1)
-              Text("›").font(Face.text(14)).foregroundStyle(Ink.faint)
-            }
-            Text(from.path.last ?? from.name).font(Face.text(14, .bold)).foregroundStyle(Ink.fg).lineLimit(1)
+          HStack(spacing: 7) {
+            // (a card that knocks: a small dot in its urgency's colour, the words for a screen reader)
+            if let knock = card.knock { Circle().fill(Ink.urgency(urgency)).frame(width: 7, height: 7).accessibilityLabel(knock.en) }
+            AgentMark(from: from, size: 18)
+            Text(from.name).font(.subheadline.weight(.semibold)).foregroundStyle(Ink.fg)
+            if card.askedMs > 0 { Text(talkAgo(card.askedMs)).font(.subheadline).foregroundStyle(Ink.muted) }
           }
-          .frame(minHeight: 44, alignment: .leading).contentShape(Rectangle())
+          .lineLimit(1)
+          .frame(minHeight: 32, alignment: .leading).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("From \(from.path.joined(separator: ", "))")
-        // a helper's card: the helper (its agent's subagent) it comes from
-        if let helper = from.helper {
-          HStack(spacing: 5) { Circle().fill(Ink.accent).frame(width: 6, height: 6); Text(helper.en).font(Face.text(12, .semibold)).foregroundStyle(Ink.fg) }
-            .padding(.horizontal, 9).padding(.vertical, 3).background(Capsule().fill(Ink.sunken))
-            .accessibilityIdentifier("card-helper")
-        }
       }
-      Text(card.title).font(Face.display(30, .heavy)).foregroundStyle(Ink.fg).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+      Text(card.title).font(.system(size: 26, weight: .bold)).foregroundStyle(Ink.fg).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
         .accessibilityIdentifier("card-title")
-      HStack(spacing: 6) {
-        Text(card.nr.en).font(Face.text(14, .medium)).foregroundStyle(Ink.muted)
-        if card.askedMs > 0 { Text("·").foregroundStyle(Ink.faint); Text(talkAgo(card.askedMs)).font(Face.text(14)).foregroundStyle(Ink.muted) }
-        if let place = card.place { Text("·").foregroundStyle(Ink.faint); Text(place.says.en).font(Face.text(14)).foregroundStyle(Ink.muted) }
-        ForEach(Array(card.notes.enumerated()), id: \.offset) { _, n in Text("· \(n.en)").font(Face.text(14)).foregroundStyle(Ink.muted) }
-      }
-      .lineLimit(1)
       if let into = card.mergedInto {
-        Button { shell.focus(.card(cardId: into.id)) } label: { Text("Nr. \(into.number): \(into.title)").font(Face.text(15, .medium)).foregroundStyle(Ink.accent).multilineTextAlignment(.leading) }.buttonStyle(.plain)
+        Button { shell.focus(.card(cardId: into.id)) } label: { Text("Nr. \(into.number): \(into.title)").font(.subheadline.weight(.medium)).foregroundStyle(Ink.accent).multilineTextAlignment(.leading) }.buttonStyle(.plain)
       }
       if !card.mergedFrom.isEmpty {
         VStack(alignment: .leading, spacing: 4) {
           ForEach(card.mergedFrom, id: \.id) { o in
-            Button { shell.focus(.card(cardId: o.id)) } label: { Text("Nr. \(o.number) · \(o.title)").font(Face.text(14)).foregroundStyle(Ink.accent).lineLimit(1) }.buttonStyle(.plain)
+            Button { shell.focus(.card(cardId: o.id)) } label: { Text("Nr. \(o.number) · \(o.title)").font(.subheadline).foregroundStyle(Ink.accent).lineLimit(1) }.buttonStyle(.plain)
           }
         }
       }
-      if !card.text.isEmpty { Markdown(text: card.text) }
+      if !card.text.isEmpty { Markdown(text: card.text, size: 17, system: true) }
       if !card.html.isEmpty { InlineHTML(html: card.html).frame(minHeight: 240).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)) }
     }
   }
@@ -326,195 +318,201 @@ struct CardScreen: View {
 
   @ViewBuilder private var answers: some View {
     let a = card.answer
+    let w = card.words
     VStack(alignment: .leading, spacing: 10) {
       switch a.mode {
       case "options":
         ForEach(card.options, id: \.key) { o in option(o) }
         if card.multiple {
-          Button { answer(Array(choices)) } label: { Text("Send the answer").font(Face.text(17, .semibold)).frame(maxWidth: .infinity, minHeight: 54) }
-            .buttonStyle(TileStyle(lead: true, urgency: urgency)).disabled(choices.isEmpty)
+          Button { answer(Array(choices)) } label: {
+            Text("Send the answer").font(.body.weight(.semibold)).foregroundStyle(Ink.accentFg).frame(maxWidth: .infinity, minHeight: 54)
+              .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Ink.accent))
+          }
+          .buttonStyle(TalkPressStyle()).disabled(choices.isEmpty).opacity(choices.isEmpty ? 0.45 : 1)
         }
-        if card.kind == "decision" {
-          HStack(spacing: 10) { Rectangle().fill(Ink.lineStrong).frame(height: 1); Text("OR").font(Face.text(13, .semibold)).kerning(1.4).foregroundStyle(Ink.muted); Rectangle().fill(Ink.lineStrong).frame(height: 1) }
-            .padding(.vertical, 4)
-          Button { shell.act(["do": "answer", "card_id": card.id, "choices": card.options.filter(\.recommended).map(\.key), "trusted": true, "note": note]) } label: { EmptyView() }
-            .buttonStyle(SideWay(kind: .duck) { on in
-              HStack(spacing: 14) {
-                PenMark(doc: PenStore.doc("sketch:duck"), inks: PenInks(stroke: Ink.fg, duck: true, water: on ? Ink.duckInk : Ink.fg)).frame(width: 52, height: 44)
-                Text("I don’t give a duck").font(Face.text(18, .semibold)); Spacer()
-              }.padding(.horizontal, 16)
-            })
-            .accessibilityLabel("I don’t give a duck")
-          otherWays
-        }
+        if card.kind == "decision" { sideWays(duck: true).padding(.top, 2) }
       case "read":
-        Button { shell.act(["do": "read", "card_id": card.id]) } label: {
-          HStack(spacing: 10) { Sketch("tick", color: Ink.accentFg).frame(width: 22, height: 22); Text("Got it").font(Face.text(18, .semibold)) }.frame(maxWidth: .infinity, minHeight: 60)
-        }.buttonStyle(TileStyle(lead: true, urgency: urgency))
-        otherWays
+        row(w.gotIt.en, prominent: true) { shell.act(["do": "read", "card_id": card.id]) }
+        sideWays(duck: false).padding(.top, 2)
       case "request":
         HStack(spacing: 8) {
-          Button { verdict(false) } label: { Text("Deny").font(Face.text(17, .semibold)).frame(maxWidth: .infinity, minHeight: 58) }.buttonStyle(TileStyle(lead: false, urgency: urgency))
-          Button { verdict(true) } label: { Text("Allow").font(Face.text(17, .semibold)).frame(maxWidth: .infinity, minHeight: 58) }.buttonStyle(TileStyle(lead: true, urgency: urgency))
+          Button { verdict(false) } label: { Text("Deny").font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 56) }.buttonStyle(TileStyle(lead: false, urgency: urgency))
+          Button { verdict(true) } label: { Text("Allow").font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 56) }.buttonStyle(TileStyle(lead: true, urgency: urgency))
         }
       case "said":
-        stood(a.label?.en ?? "", a.detail?.en ?? "")
+        // the way on where the answers stood, the answer quietly under it
+        if answeredHere, let after = card.after { nextButton(after).transition(.opacity.combined(with: .scale(scale: 0.97))) }
+        said(a)
         ForEach(Array(a.optionNotes.enumerated()), id: \.offset) { _, n in still(n.label, n.note.en) }
-        saidFoot(a)
         if let settled = a.settled { still("✓ Settled by your answer", settled.en) }
         if !a.summary.isEmpty { still("Done by the agent", a.summary) }
-        if a.finished {
-          Button { shell.act(["do": "hand_back", "card_id": card.id]) } label: { PenMark("sketch:what", color: Ink.fg).frame(width: 70, height: 24).frame(maxWidth: .infinity, minHeight: 56) }
-            .buttonStyle(TileStyle(lead: false)).accessibilityLabel("What??")
-        }
+        if a.finished { sideCapsule(label: { Text(w.what.en) }) { shell.act(["do": "hand_back", "card_id": card.id]) } }
       default:
         if let label = a.label { still(label.en, a.detail?.en ?? "") }
-        else if let says = a.says { Text(says.en).font(Face.text(15)).foregroundStyle(Ink.muted) }
-        if a.did != nil || !a.back.isEmpty { saidFoot(a) }
+        else if let says = a.says { Text(says.en).font(.subheadline).foregroundStyle(Ink.muted) }
+        if a.did != nil || !a.back.isEmpty { said(a) }
       }
     }
   }
-  private var otherWays: some View {
-    HStack(spacing: 10) {
-      Button { shell.act(["do": "hand_back", "card_id": card.id, "note": note]) } label: { EmptyView() }
-        .buttonStyle(SideWay(kind: .what) { on in PenMark("sketch:what", color: on ? .white : Ink.fg, width: 2.2).frame(width: 90, height: 32) })
-        .accessibilityLabel("What??")
-      Button { shell.act(["do": "hand_back", "card_id": card.id, "note": note, "rework": true]) } label: { EmptyView() }
-        .buttonStyle(SideWay(kind: .reverse) { on in Sketch("reverse", color: on ? .white : Ink.fg).frame(width: 30, height: 30) })
-        .accessibilityLabel("Reverse: back to the agent for rework, with the comments")
-    }
-  }
+  /** One answer: a plain row; the advised one with a hair of the accent round it and "Recommended" at its end. */
   @ViewBuilder private func option(_ o: CoreView.OptionView) -> some View {
     let on = choices.contains(o.key)
     Button {
       if card.multiple { if on { choices.remove(o.key) } else { choices.insert(o.key) } }
       else { answer([o.key]) }
     } label: {
-      HStack(alignment: .top, spacing: 12) {
-        if card.multiple { PenMark(on ? "desk:BOX_TICK" : "desk:BOX", color: on ? Ink.accentFg : Ink.fg).frame(width: 26, height: 26) }
-        VStack(alignment: .leading, spacing: 4) {
-          Text(o.label).font(Face.display(19, .bold)).foregroundStyle(on ? Ink.accentFg : Ink.fg).multilineTextAlignment(.leading)
-            .background(alignment: .bottomTrailing) { if o.recommended && !on { PenUnderline().stroke(Ink.urgHigh.opacity(0.75), style: StrokeStyle(lineWidth: 2.4, lineCap: .round)).frame(width: 60, height: 7).offset(y: 6) } }
-          if !o.detail.isEmpty { Text(o.detail).font(Face.text(15)).foregroundStyle(on ? Ink.accentFg.opacity(0.82) : Ink.muted).multilineTextAlignment(.leading) }
-          if o.settles { HStack(spacing: 4) { Sketch("tick", color: on ? Ink.accentFg : Ink.accent).frame(width: 13, height: 13); Text("settles it").font(Face.text(12, .medium)).foregroundStyle(on ? Ink.accentFg : Ink.accent) } }
-          if !o.note.isEmpty { Text(o.note).font(Face.text(14)).italic().foregroundStyle(on ? Ink.accentFg.opacity(0.82) : Ink.muted) }
+      HStack(alignment: .center, spacing: 12) {
+        if card.multiple { Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.system(size: 22)).foregroundStyle(on ? Ink.accent : Ink.muted) }
+        VStack(alignment: .leading, spacing: 3) {
+          Text(o.label).font(.body.weight(.semibold)).foregroundStyle(Ink.fg).multilineTextAlignment(.leading)
+          if !o.detail.isEmpty { Text(o.detail).font(.subheadline).foregroundStyle(Ink.muted).multilineTextAlignment(.leading) }
+          if !o.note.isEmpty { Text(o.note).font(.subheadline).italic().foregroundStyle(Ink.muted) }
         }
-        Spacer(minLength: 4)
+        Spacer(minLength: 6)
+        if o.recommended { Text(card.words.recommended.en).font(.caption.weight(.semibold)).foregroundStyle(Ink.accent) }
       }
-      .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-      .contentShape(Rectangle())
+      .padding(.horizontal, 18).padding(.vertical, 15).frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+      .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(calmFill))
+      .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(on ? Ink.accent : o.recommended ? Ink.accent.opacity(0.55) : .clear, lineWidth: 1.5))
+      .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
     .buttonStyle(TalkPressStyle())
-    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(on ? Ink.accent : Ink.surface))
-    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(on ? Color.clear : o.recommended ? Ink.fg : (who.map { Tone.color(hue: $0.hue, .edge) } ?? Ink.lineStrong), lineWidth: o.recommended ? 2 : 1))
     .accessibilityLabel(o.tip.map { "\(o.label), \($0.en)" } ?? o.label)
+    .accessibilityAddTraits(on ? .isSelected : [])
+  }
+  private func row(_ label: String, prominent: Bool, _ action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Text(label).font(.body.weight(.semibold)).foregroundStyle(prominent ? Ink.accentFg : Ink.fg)
+        .padding(.horizontal, 18).frame(maxWidth: .infinity, minHeight: 56)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(prominent ? Ink.accent : calmFill))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+    .buttonStyle(TalkPressStyle())
+  }
+  /** The side ways as one quiet row: the duck (a decision), What??, Rework. */
+  private func sideWays(duck: Bool) -> some View {
+    let w = card.words
+    return HStack(spacing: 8) {
+      if duck {
+        sideCapsule(label: {
+          HStack(spacing: 6) { PenMark(doc: PenStore.doc("sketch:duck"), inks: PenInks(stroke: Ink.fg, duck: true, water: Ink.fg)).frame(width: 24, height: 20); Text(w.duck.en) }
+        }) { shell.act(["do": "answer", "card_id": card.id, "choices": card.options.filter(\.recommended).map(\.key), "trusted": true, "note": note]) }
+      }
+      sideCapsule(label: { Text(w.what.en) }) { shell.act(["do": "hand_back", "card_id": card.id, "note": note]) }
+      sideCapsule(label: { HStack(spacing: 6) { Image(systemName: "arrow.uturn.left"); Text(w.rework.en) } }) {
+        shell.act(["do": "hand_back", "card_id": card.id, "note": note, "rework": true])
+      }
+    }
+  }
+  private func sideCapsule<L: View>(@ViewBuilder label: () -> L, _ action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      label().font(.subheadline.weight(.medium)).foregroundStyle(Ink.fg).lineLimit(1)
+        .frame(maxWidth: .infinity, minHeight: 44).background(Capsule().fill(calmFill)).contentShape(Capsule())
+    }
+    .buttonStyle(TalkPressStyle())
   }
   /** The options' own paragraphs, after the answers: one block per option, open. */
   private var sections: some View {
     VStack(alignment: .leading, spacing: 14) {
-      Rectangle().fill(Ink.line).frame(height: 1)
       ForEach(Array(card.sections.enumerated()), id: \.offset) { _, s in
         VStack(alignment: .leading, spacing: 4) {
-          Text("\(Text(s.label).font(Face.display(17, .bold)))\(Text(s.recommended ? "  recommended" : "").font(Face.text(13)).foregroundColor(Ink.accent))")
-          if !s.text.isEmpty { Markdown(text: s.text, size: 15) }
+          Text("\(Text(s.label).font(.headline))\(Text(s.recommended ? "  \(card.words.recommended.en)" : "").font(.caption.weight(.semibold)).foregroundColor(Ink.accent))")
+          if !s.text.isEmpty { Markdown(text: s.text, size: 15, system: true) }
           if !s.html.isEmpty { InlineHTML(html: s.html).frame(minHeight: 160) }
         }
       }
     }
+    .padding(.top, 4)
   }
   private func still(_ label: String, _ detail: String = "") -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(label).font(Face.display(19, .bold)).foregroundStyle(Ink.fg)
-      if !detail.isEmpty { Text(detail).font(Face.text(15)).foregroundStyle(Ink.muted) }
+    VStack(alignment: .leading, spacing: 3) {
+      Text(label).font(.body.weight(.semibold)).foregroundStyle(Ink.fg)
+      if !detail.isEmpty { Text(detail).font(.subheadline).foregroundStyle(Ink.muted) }
     }
-    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
-    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.lineStrong, lineWidth: 1))
+    .padding(.horizontal, 18).padding(.vertical, 14).frame(maxWidth: .infinity, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(calmFill))
   }
-  /** The answer that stands: the tile solid in the accent, the pen's tick at its left. */
-  private func stood(_ label: String, _ detail: String) -> some View {
-    HStack(alignment: .center, spacing: 12) {
-      Sketch("tick", color: Ink.accentFg, width: 2.4).frame(width: 24, height: 24).accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 4) {
-        Text(label).font(Face.display(19, .bold)).foregroundStyle(Ink.accentFg).multilineTextAlignment(.leading)
-        if !detail.isEmpty { Text(detail).font(Face.text(15)).foregroundStyle(Ink.accentFg.opacity(0.82)).multilineTextAlignment(.leading) }
+  /** What was said, in one quiet line: a tick, the answer, when, and Undo at its end. */
+  private func said(_ a: CoreView.AnswerView) -> some View {
+    HStack(spacing: 8) {
+      if a.label != nil { Image(systemName: "checkmark.circle.fill").foregroundStyle(Ink.accent).accessibilityHidden(true) }
+      VStack(alignment: .leading, spacing: 2) {
+        Text(a.label?.en ?? a.did?.en ?? "").font(.subheadline.weight(.semibold)).foregroundStyle(Ink.fg).lineLimit(2)
+        if let d = a.detail?.en, !d.isEmpty { Text(d).font(.footnote).foregroundStyle(Ink.muted).lineLimit(2) }
       }
-      Spacer(minLength: 0)
+      if let at = a.atMs { Text(talkAgo(at)).font(.subheadline).foregroundStyle(Ink.muted).lineLimit(1) }
+      Spacer(minLength: 6)
+      if a.back == "reopen" || a.back == "takeback" {
+        Button(card.words.undo.en) { shell.act(["do": a.back == "reopen" ? "decide_again" : "take_back", "card_id": card.id]) }
+          .font(.subheadline.weight(.semibold)).foregroundStyle(Ink.muted).frame(minWidth: 44, minHeight: 44)
+          .accessibilityLabel(a.back == "reopen" ? "Take back your answer" : "Take back the card")
+      }
     }
-    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.accent))
+    .padding(.horizontal, 6)
     .accessibilityElement(children: .combine)
   }
-  /** The line under what was said: what he did and when, and the way back as a quiet underlined link. */
-  private func saidFoot(_ a: CoreView.AnswerView) -> some View {
-    HStack(alignment: .center, spacing: 6) {
-      Text("\(Text(a.did?.en ?? ""))\(Text(a.atMs.map { "  ·  \(talkAgo($0))" } ?? "").foregroundColor(Ink.muted.opacity(0.75)))")
-        .font(Face.text(13, .medium)).foregroundStyle(Ink.muted)
-      Spacer(minLength: 8)
-      if a.back == "reopen" || a.back == "takeback" {
-        Button { shell.act(["do": a.back == "reopen" ? "decide_again" : "take_back", "card_id": card.id]) } label: {
-          HStack(spacing: 5) {
-            ReturnArrow().stroke(Ink.muted, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)).frame(width: 15, height: 15)
-            Text("Take back").font(Face.text(13, .semibold)).underline().foregroundStyle(Ink.muted)
-          }
-          .fixedSize().frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+  /** The way on: one glass button in the accent, "Next" and the next card's title; "All done" when none waits. */
+  private func nextButton(_ after: CoreView.AfterView) -> some View {
+    Button {
+      if !shell.path.isEmpty { shell.path.removeLast() }
+      if let n = after.next { shell.focus(.card(cardId: n.id)) }
+    } label: {
+      HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(after.go.en).font(.headline)
+          if let n = after.next { Text(n.title).font(.subheadline).opacity(0.78).lineLimit(1) }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(a.back == "reopen" ? "Take back your answer" : "Take back the card")
+        Spacer(minLength: 8)
+        Image(systemName: after.next != nil ? "chevron.right" : "checkmark").font(.system(size: 17, weight: .semibold))
       }
+      .foregroundStyle(Ink.accentFg)
+      .padding(.horizontal, 22).frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+      .glass(Capsule(), interactive: true, tint: Ink.accent)
+      .contentShape(Capsule())
     }
-    .padding(.horizontal, 4).padding(.top, -6)
-  }
-  /** Just answered here: the next open question (or that there is none) and Close. */
-  private func afterStep(_ after: CoreView.AfterView) -> some View {
-    VStack(spacing: 8) {
-      if let n = after.next {
-        Button { if !shell.path.isEmpty { shell.path.removeLast() }; shell.focus(.card(cardId: n.id)) } label: {
-          HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) { Text(after.says.en).font(Face.text(17, .bold)); Text(n.title).font(Face.text(13)).opacity(0.7).lineLimit(1) }
-            Spacer(minLength: 8)
-            Image(systemName: "arrow.right").font(.system(size: 17, weight: .semibold))
-          }
-          .foregroundStyle(Ink.bg).padding(.horizontal, 16).padding(.vertical, 12)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.fg))
-          .contentShape(Rectangle())
-        }.buttonStyle(.plain)
-      } else {
-        HStack(spacing: 8) { Sketch("tick", color: Ink.accent).frame(width: 18, height: 18); Text(after.says.en).font(Face.text(15, .semibold)).foregroundStyle(Ink.muted) }
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      Button("Close") { if !shell.path.isEmpty { shell.path.removeLast() } }
-        .font(Face.text(15, .semibold)).foregroundStyle(Ink.muted).underline().frame(minHeight: 44)
-    }
-    .padding(.top, 6)
+    .buttonStyle(.plain)
+    .accessibilityLabel(after.next.map { "\(after.says.en): \($0.title)" } ?? after.says.en)
   }
 
-  // ---- the card's own talk ----
+  // ---- the card's own talk, folded into one quiet row ----
 
   @ViewBuilder private var thread: some View {
-    if !card.lead.isEmpty || !card.talk.isEmpty || !card.versions.isEmpty || card.earlier != nil {
+    if card.words.talk != nil || !card.lead.isEmpty || card.earlier != nil {
       VStack(alignment: .leading, spacing: 10) {
-        EndDivider(title: "The talk")
         ForEach(Array(card.lead.enumerated()), id: \.offset) { _, l in
           VStack(alignment: .leading, spacing: 6) {
-            Text(l.label.en.uppercased()).font(Face.text(11, .bold)).kerning(1).foregroundStyle(Ink.muted)
-            if !l.text.isEmpty { Markdown(text: l.text, size: 15) }
+            Text(l.label.en).font(.footnote.weight(.semibold)).foregroundStyle(Ink.muted)
+            if !l.text.isEmpty { Markdown(text: l.text, size: 15, system: true) }
             if !l.html.isEmpty { InlineHTML(html: l.html).frame(minHeight: 200) }
             ForEach(l.links, id: \.url) { link in
-              if let url = URL(string: link.url) { Link(destination: url) { Text("\(Text(link.label).foregroundColor(Ink.fg))  \(Text(link.short).foregroundColor(Ink.accent))").font(Face.text(14)) } }
+              if let url = URL(string: link.url) { Link(destination: url) { Text("\(Text(link.label).foregroundColor(Ink.fg))  \(Text(link.short).foregroundColor(Ink.accent))").font(.subheadline) } }
             }
           }
           .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-          .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.surface2))
+          .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(calmFill))
         }
-        if let earlier = card.earlier {
-          Button(earlier.says.en) { shell.act(["do": "show_more", "of": ["list": "comments", "card": card.id]]) }.font(Face.text(14, .semibold)).foregroundStyle(Ink.accent)
+        if let fold = card.words.talk {
+          Button { withAnimation(.snappy) { showTalk.toggle() } } label: {
+            HStack(spacing: 6) {
+              Image(systemName: "bubble.left.and.text.bubble.right").font(.subheadline)
+              Text(fold.en).font(.subheadline.weight(.medium))
+              Spacer()
+              Image(systemName: showTalk ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(Ink.muted).frame(minHeight: 44).contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityAddTraits(showTalk ? .isSelected : [])
         }
-        ForEach(Array(card.talk.enumerated()), id: \.element.id) { i, row in TalkRow(row: row, who: who, inCard: true, last: i + 1 == card.talk.count || !card.talk[i + 1].cont) }
-        ForEach(card.versions, id: \.n) { v in RevisionRow(version: v) }
+        if showTalk || card.words.talk == nil {
+          if let earlier = card.earlier {
+            Button(earlier.says.en) { shell.act(["do": "show_more", "of": ["list": "comments", "card": card.id]]) }.font(.subheadline.weight(.semibold)).foregroundStyle(Ink.accent)
+          }
+          ForEach(Array(card.talk.enumerated()), id: \.element.id) { i, row in TalkRow(row: row, who: who, inCard: true, last: i + 1 == card.talk.count || !card.talk[i + 1].cont) }
+          ForEach(card.versions, id: \.n) { v in RevisionRow(version: v) }
+        }
       }
+      .padding(.top, 6)
     }
   }
   private func answer(_ keys: [String]) { shell.act(["do": "answer", "card_id": card.id, "choices": keys, "note": note, "attachments": attachments]) }
@@ -569,67 +567,12 @@ struct RevisionRow: View {
   }
 }
 
-/** The pen's return arrow of the Take back link, in its 24-unit box. */
-struct ReturnArrow: Shape {
-  func path(in r: CGRect) -> Path {
-    let k = min(r.width, r.height) / 24
-    func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: r.minX + x * k, y: r.minY + y * k) }
-    var path = Path()
-    path.move(to: p(9.8, 5.6)); path.addQuadCurve(to: p(4.3, 11.2), control: p(6.8, 8.4)); path.addQuadCurve(to: p(10, 16.6), control: p(7.1, 13.8))
-    path.move(to: p(4.9, 11.1)); path.addQuadCurve(to: p(14.9, 11.2), control: p(10.4, 10.4))
-    path.addQuadCurve(to: p(19.5, 16.4), control: p(19.8, 12.5)); path.addQuadCurve(to: p(15, 19.7), control: p(19, 19.5))
-    return path
-  }
-}
 /** The finger on an option: a little darker and a hair smaller, flat. */
 struct TalkPressStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .background(Ink.fg.opacity(configuration.isPressed ? 0.07 : 0))
       .scaleEffect(configuration.isPressed ? 0.97 : 1).animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-  }
-}
-
-/** The three side answers (the duck, What??, the reverse card): calm at rest, held they take their colour. */
-struct SideWay<L: View>: ButtonStyle {
-  enum Kind { case duck, what, reverse }
-  let kind: Kind
-  @ViewBuilder let face: (Bool) -> L
-  func makeBody(configuration: Configuration) -> some View { SideWayBody(kind: kind, on: configuration.isPressed, face: face) }
-}
-private struct SideWayBody<L: View>: View {
-  let kind: SideWay<L>.Kind
-  let on: Bool
-  let face: (Bool) -> L
-  @Environment(\.colorScheme) private var scheme
-  var body: some View {
-    let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-    face(on)
-      .foregroundStyle(on ? (kind == .duck ? Ink.duckInk : .white) : Ink.fg)
-      .frame(maxWidth: .infinity, minHeight: 64)
-      .background {
-        ZStack {
-          shape.fill(Ink.surface)
-          shape.fill(Ink.accent.opacity(0.09))
-          if on {
-            switch kind {
-            case .duck: shape.fill(Ink.duckPale)
-            case .what: shape.fill(Color(hex: 0x7a5bc7))
-            case .reverse:
-              AngularGradient(stops: [.init(color: Color(hex: 0xd9483b), location: 0), .init(color: Color(hex: 0xd9483b), location: 0.25),
-                                      .init(color: Color(hex: 0xf3c52f), location: 0.25), .init(color: Color(hex: 0xf3c52f), location: 0.5),
-                                      .init(color: Color(hex: 0x3f9f58), location: 0.5), .init(color: Color(hex: 0x3f9f58), location: 0.75),
-                                      .init(color: Color(hex: 0x2f70c4), location: 0.75), .init(color: Color(hex: 0x2f70c4), location: 1)],
-                              center: UnitPoint(x: 0.53, y: 0.47), angle: .degrees(-83)).clipShape(shape)
-            }
-          }
-        }
-      }
-      .overlay(shape.strokeBorder(on ? (kind == .duck ? Ink.duckInk : kind == .what ? Color(hex: 0x7a5bc7).opacity(0.7) : Color(hex: 0x14161a)) : (scheme == .dark ? Ink.lineStrong : .clear), lineWidth: on ? 1.5 : 1))
-      .contentShape(shape)
-      .scaleEffect(on ? 0.97 : 1)
-      .animation(.easeOut(duration: 0.12), value: on)
-      .sensoryFeedback(.impact(weight: .light), trigger: on) { _, now in now }
   }
 }
 
@@ -1397,6 +1340,9 @@ struct Markdown: View {
   let text: String
   var size: CGFloat = 16
   var color: Color = Ink.fg
+  /** The system's face instead of the app's (a card's calm page). */
+  var system = false
+  private func face(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font { system ? .system(size: size, weight: weight) : Face.text(size, weight) }
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       ForEach(Array(MarkBlock.blocks(text).enumerated()), id: \.offset) { _, b in block(b) }
@@ -1406,10 +1352,10 @@ struct Markdown: View {
   @ViewBuilder private func block(_ b: MarkBlock) -> some View {
     switch b {
     case .text(let s):
-      Text(MarkBlock.inline(s)).font(Face.text(size)).foregroundStyle(color).lineSpacing(3).textSelection(.enabled).tint(Ink.accent)
+      Text(MarkBlock.inline(s)).font(face(size)).foregroundStyle(color).lineSpacing(3).textSelection(.enabled).tint(Ink.accent)
         .fixedSize(horizontal: false, vertical: true)
     case .heading(let s, let level):
-      Text(MarkBlock.inline(s)).font(Face.display(level <= 1 ? size + 6 : level == 2 ? size + 3 : size + 1, .bold)).foregroundStyle(color)
+      Text(MarkBlock.inline(s)).font(system ? .system(size: level <= 1 ? size + 6 : level == 2 ? size + 3 : size + 1, weight: .bold) : Face.display(level <= 1 ? size + 6 : level == 2 ? size + 3 : size + 1, .bold)).foregroundStyle(color)
     case .code(let s):
       ScrollView(.horizontal, showsIndicators: false) {
         Text(s).font(Face.mono(size - 3)).foregroundStyle(Ink.fg).textSelection(.enabled).padding(12)
@@ -1420,13 +1366,13 @@ struct Markdown: View {
       ScrollView(.horizontal, showsIndicators: false) {
         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
           ForEach(Array(rows.enumerated()), id: \.offset) { i, r in
-            GridRow { ForEach(Array(r.enumerated()), id: \.offset) { _, c in Text(MarkBlock.inline(c)).font(Face.text(size - 2, i == 0 ? .semibold : .regular)).foregroundStyle(Ink.fg) } }
+            GridRow { ForEach(Array(r.enumerated()), id: \.offset) { _, c in Text(MarkBlock.inline(c)).font(face(size - 2, i == 0 ? .semibold : .regular)).foregroundStyle(Ink.fg) } }
             if i == 0 { Rectangle().fill(Ink.fg).frame(height: 1.5).gridCellUnsizedAxes(.horizontal) } else { Rectangle().fill(Ink.lineStrong).frame(height: 1).gridCellUnsizedAxes(.horizontal) }
           }
         }.padding(.vertical, 4)
       }
     case .quote(let s):
-      HStack(spacing: 10) { Rectangle().fill(Ink.lineStrong).frame(width: 3); Text(MarkBlock.inline(s)).font(Face.text(size)).foregroundStyle(Ink.muted) }
+      HStack(spacing: 10) { Rectangle().fill(Ink.lineStrong).frame(width: 3); Text(MarkBlock.inline(s)).font(face(size)).foregroundStyle(Ink.muted) }
     case .rule:
       Rectangle().fill(Ink.line).frame(height: 1)
     }

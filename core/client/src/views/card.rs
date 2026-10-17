@@ -465,8 +465,26 @@ fn after_of(b: &Board, v: &CardView, walk: &[String]) -> Option<AfterView> {
         };
         CardRefView { number: b.number_of(&id), id, title }
     });
-    let says = if next.is_some() { say("card.next", "Next question", &[]) } else { say("card.next.none", "That was the last open question.", &[]) };
-    Some(AfterView { next, says })
+    let (says, go) = if next.is_some() {
+        (say("card.next", "Next question", &[]), say("card.next.go", "Next", &[]))
+    } else {
+        (say("card.next.none", "That was the last open question.", &[]), say("card.next.done", "All done", &[]))
+    };
+    Some(AfterView { next, says, go })
+}
+
+/// The page's small fixed words; `talk`: how many rows its talk holds (comments, events and versions).
+fn words_of(talk: usize) -> super::CardWordsView {
+    let n = talk.to_string();
+    super::CardWordsView {
+        recommended: say("card.recommended", "Recommended", &[]),
+        got_it: say("card.got_it", "Got it", &[]),
+        duck: say("card.duck", "Duck it", &[]),
+        what: say("card.what", "What??", &[]),
+        rework: say("card.rework", "Rework", &[]),
+        undo: say("card.undo", "Undo", &[]),
+        talk: (talk > 0).then(|| say("card.talk.fold", format!("Talk · {n}"), &[("n", &n)])),
+    }
 }
 
 /// The page of the card or request `id` (its id, or its number of the address); none when this device does not
@@ -481,6 +499,7 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         x.text = titled(&x.text, assets);
     }
     v.after = after_of(b, &v, walk);
+    v.words = words_of(v.talk.len() + v.versions.len());
     // The comments' window: the newest page stands, each "Load earlier (N)" shows a page more above it.
     let pages = Lens::pages(&b.lens.comments_window, &v.id);
     let left = v.talk.len().saturating_sub(COMMENTS_PAGE * pages as usize);
@@ -834,6 +853,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         merged_into: (!into.is_empty()).then(|| other(&into)),
         after: None,
         earlier: None,
+        words: Default::default(),
         id,
     })
 }
@@ -1098,12 +1118,30 @@ mod tests {
         r.card("q2", "a", "decision", "normal");
         let v = view(&r, "done");
         let after = v.after.unwrap();
-        assert_eq!((after.next.as_ref().map(|n| n.id.as_str()), after.says.en.as_str()), (Some("q1"), "Next question"));
+        assert_eq!((after.next.as_ref().map(|n| n.id.as_str()), after.says.en.as_str(), after.go.en.as_str()), (Some("q1"), "Next question", "Next"));
         // an open card offers none: the shell shows it right after an answer only
         assert!(view(&r, "q1").after.is_none());
         r.cards.retain(|c| c["object_id"] == "done");
         let after = view(&r, "done").after.unwrap();
-        assert_eq!((after.next, after.says.en.as_str()), (None, "That was the last open question."));
+        assert_eq!((after.next, after.says.en.as_str(), after.go.en.as_str()), (None, "That was the last open question.", "All done"));
+    }
+
+    /// The calm page's small words: the side ways, Undo, and the talk folded with its count (none without talk).
+    #[test]
+    fn the_calm_words_and_the_folded_talk() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.card("q", "a", "decision", "normal");
+        let v = view(&r, "q");
+        let w = &v.words;
+        assert_eq!(
+            [&w.recommended, &w.got_it, &w.duck, &w.what, &w.rework, &w.undo].map(|t| t.en.as_str()),
+            ["Recommended", "Got it", "Duck it", "What??", "Rework", "Undo"]
+        );
+        let rows = v.talk.len() + v.versions.len();
+        assert_eq!(w.talk.as_ref().map(|t| t.en.clone()), (rows > 0).then(|| format!("Talk · {rows}")));
+        assert_eq!(words_of(0).talk, None);
+        assert_eq!(words_of(3).talk.map(|t| (t.en, t.args.get("n").cloned())), Some(("Talk · 3".into(), Some("3".into()))));
     }
 
     /// An Artifact link on the card's page is named by its title (markdown the shell draws); on the Desk's row too,
