@@ -2493,7 +2493,7 @@ function start(signal) {
     'card.prev': () => press($('.tc-rails a.is-prev')),
     'card.pic.next': () => press($('.tc-card .tc-step.is-next')),
     'card.pic.prev': () => press($('.tc-card .tc-step.is-prev')),
-    'card.leave': (n, e) => { if (typingIn(e.target)) return e.target.blur(); const leave = $('.tc-rails .tc-full.is-leave'); return press(leave?.getClientRects().length ? leave : $('.tc-rails .tc-back')) },
+    'card.leave': (n, e) => { if (typingIn(e.target)) return e.target.blur(); const leave = $('.tc-rails .tc-full.is-leave'); return press(leave ?? $('.tc-rails .tc-back')) },
 
     'pic.next': () => press($('.t-picture .tc-step.is-next')),
     'pic.prev': () => press($('.t-picture .tc-step.is-prev')),

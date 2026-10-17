@@ -208,5 +208,34 @@
       },
       "en": "Talk · 2"
     }
-  }
+  },
+  "menu": [
+    {
+      "key": "focus",
+      "label": {
+        "key": "card.menu.focus",
+        "en": "Focus"
+      },
+      "keys": "",
+      "now_only": false
+    },
+    {
+      "key": "chat",
+      "label": {
+        "key": "card.menu.chat",
+        "en": "Open the conversation"
+      },
+      "keys": "",
+      "now_only": false
+    },
+    {
+      "key": "copy",
+      "label": {
+        "key": "card.menu.copy",
+        "en": "Copy"
+      },
+      "keys": "",
+      "now_only": false
+    }
+  ]
 }

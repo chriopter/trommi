@@ -42,10 +42,25 @@ test('an open decision: its options post /decide, the duck, What?? and the rever
   for (const o of card.options) assert.match(main, new RegExp(`formaction="/cards/${card.id}/decide" name="key" value="${o.key}"`))
   for (const way of ['trust', 'what', 'revise']) assert.match(main, new RegExp(`formaction="/cards/${card.id}/${way}"`))
   assert.match(main, /data-key="centered" data-controller="circles"/, 'the picture on the stage names its option')
-  assert.match(main, new RegExp(`${card.place.says.en}`), 'its place on the Desk')
+  assert.doesNotMatch(main, new RegExp(`${card.place.says.en}`), 'no meta line: its place is the ⋯\'s questions before and after')
+  assert.match(main, /<h1 class="tc-title"[^>]*>[^<]*<\/h1><nav class="tc-rails tc-tools"/, 'the star and the ⋯ beside the title')
+  for (const m of card.menu) assert.match(main, new RegExp(`<span>${m.label.en}</span>|class="cardclip-copy"`), `${m.key} in the ⋯`)
+  assert.match(main, new RegExp(`class="tc-more-item is-next" role="menuitem" data-nav href="/card/${card.place.next}"`))
+  assert.doesNotMatch(main, /class="tc-rail tc-back"|tc-fromline|tc-helper|class="tc-meta"|class="final-sign"/, 'no X, no from line, no helper chip, no meta line, no tick on the tiles')
   const feed = /<section class="tc-feed"[^>]*>([\s\S]*?)<\/section>\s*<form class="tc-chat"/.exec(main)[1]
   assert.ok([...feed.matchAll(/^<(?:article|div|section|p|form)\b([^>]*)>/gm)].every(m => / id="/.test(m[1])), 'every row of the comments has an id (the morph keeps them)')
   assert.doesNotMatch(main, /undefined|\[object |NaN/)
+})
+
+test('a card without a menu, an empty one or a working one: the page still stands', async () => {
+  for (const change of [c => { delete c.menu }, c => { c.menu = [] }, c => { c.menu = null }, c => { c.answer = { mode: 'working', label: { en: 'Being worked on' } } }]) {
+    const vm = vmOf(43), card = cardOf(vm)
+    change(card)
+    const main = await board(vm).get('/card/43')
+    assert.match(main, /class="tc-title"/)
+    assert.match(main, /class="tc-back tc-sr"/, 'Esc still has its way back')
+    assert.doesNotMatch(main, /undefined|\[object |NaN|Being worked on/)
+  }
 })
 
 test('answered here (?decided=1): what was said, the way back, and the next question of CardView.after', async () => {

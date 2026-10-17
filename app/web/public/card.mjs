@@ -116,21 +116,16 @@ ${all > 1 || others.length ? html`<div class="tc-thumbs"><span class="tc-roll">$
 // ---- the left column: who, title, one quiet line, the text, the picture, the options explained ----
 /** Who a card comes from, above its title: the session's drawing and where it stands, team › session, its name in
  *  bold; a link to the session. A helper's card names the helper in a chip under it (FromView.helper). */
-function fromLine(from, base) {
-  const who = whoOf(from), path = from.path?.length ? from.path : [from.name], name = path.at(-1)
-  return html`<a class="tc-fromline" data-nav href="${base}/chat/${encodeURIComponent(from.session_id)}" style="--hue:${who.hue}" aria-label="From ${path.join(', ')}${from.helper ? `, ${from.helper.en}` : ''}">${raw(doodleSvg(from.mark))}${path.slice(0, -1).map(p => html`<span>${p}</span><i aria-hidden="true">›</i>`)}<b>${name}</b></a>${from.helper ? html`<span class="tc-helper">${from.helper.en}</span>` : ''}`
-}
 /** The strip above the title while the card's session works on it (CardWorkView): its drawing redrawing itself,
  *  "<session> is working on it", its status line and how long ago that was said, the pen line under it. */
 const workStrip = w => (w ? html`<div class="tc-work" role="status">${avatar(whoOf(w), { crown: false, working: true })}<span class="tc-work-words"><b>${w.says.en}</b><span>${w.words.en}${w.at_ms ? html` · ${agoSpan(w.at_ms, 'ago')}` : ''}</span></span>${PEN_RUN}</div>` : '')
 /** The words of the left column (#card-lead-<id>). old: a version before (VersionView), read only. */
-function cardLead(card, base, old = null) {
-  const notes = [...(card.notes ?? []).map(n => n.en), old ? `version ${old.n}, as it was` : ''].filter(Boolean)
+function cardLead(card, base, old = null, tools = '') {
   const text = old ? old.text ?? '' : card.text
   return html`<div class="tc-lead focus-lead" id="card-lead-${card.id}">
 ${card.knock ? html`<span class="inbox-tab tc-knock">${sk('knock')}${card.knock.en}</span>` : ''}
-${old ? '' : workStrip(card.work)}${card.from ? fromLine(card.from, base) : ''}<h1 class="tc-title" id="card-title-${card.id}">${old?.title || card.title}</h1>
-<p class="tc-meta">${agoSpan(card.asked_ms, 'tc-ago')}<span aria-hidden="true">·</span><span>${card.nr.en}</span>${card.place && !old ? html`<span aria-hidden="true">·</span><span class="tc-count" title="Its place">${card.place.says.en}</span>` : ''}${notes.length ? html`<span aria-hidden="true">·</span><a href="#card-thread-${card.id}">${notes.join(' · ')}</a>` : ''}</p>
+${old ? '' : workStrip(card.work)}<div class="tc-head"><h1 class="tc-title" id="card-title-${card.id}">${old?.title || card.title}</h1>${tools}</div>
+${old ? html`<p class="tc-meta">version ${old.n}, as it was</p>` : ''}
 ${text ? html`<div class="tc-text">${rich(text)}</div>` : ''}${card.more && !old ? html`<a class="tc-more-text" href="#card-whole-${card.id}">More in the comments ↓</a>` : ''}
 </div>`
 }
@@ -169,7 +164,7 @@ function cardAnswer(card, { old = null, pic = 1, after = null, self = '' } = {})
   switch (a.mode) {
     case 'said': return box(html`<div class="tc-opts">${stood(words(a.label), words(a.detail))}${saidFoot(card, a)}${(a.option_notes ?? []).map(n => still(n.label, n.note.en))}${a.settled ? still(html`${sk('tick')}${SETTLED}`, a.settled.en, 'is-settled') : ''}${a.summary ? still('Done by the agent', a.summary) : ''}</div>${after ? nextStep(card.after ?? { says: { en: '' } }, after) : ''}${a.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}`)
     case 'revising': return box(html`<div class="tc-opts">${still(words(a.label), words(a.detail))}${saidFoot(card, a)}</div>`)
-    case 'working': return box(html`<div class="tc-opts">${still(words(a.label), words(a.detail))}</div>`)
+    case 'working': return box('')   // (the strip above the title says it)
     // An info: Got it is its answer; at the column's foot What?? and the reverse card, as on a decision.
     case 'read': return box(html`<div class="tc-or tc-info-ways"><button class="tc-tile is-ack" type="submit" form="${form}" formaction="${act(card, 'close')}" title="${WORDS.ack}">${sk('tick')}<span>${WORDS.ack}</span></button><div class="tc-or-pair">${whatTile(card, 'tc-tile tc-wtf is-what')}${reviseTile(card)}</div></div>`)
     case 'options': case 'request': break
@@ -179,7 +174,7 @@ function cardAnswer(card, { old = null, pic = 1, after = null, self = '' } = {})
   const way = a.mode === 'request' ? 'verdict' : 'decide'
   const option = o => {
     // (A link written into an option is not on its tile: the tile says it in plain words, the link stands in the comments.)
-    const words = html`<span class="tc-opt-words"><span class="tc-opt-label"${o.recommended ? raw(' data-controller="advice"') : ''}>${o.label}</span>${o.detail ? html`<span class="tc-opt-detail">${o.detail}</span>` : ''}${o.recommended ? raw('<span class="tc-sr">, recommended by the agent</span>') : ''}</span>${o.settles ? finalSign(true) : ''}`
+    const words = html`<span class="tc-opt-words"><span class="tc-opt-label"${o.recommended ? raw(' data-controller="advice"') : ''}>${o.label}</span>${o.detail ? html`<span class="tc-opt-detail">${o.detail}</span>` : ''}${o.recommended ? raw('<span class="tc-sr">, recommended by the agent</span>') : ''}${o.settles ? raw('<span class="tc-sr">, settles it</span>') : ''}</span>`
     const pencil = decision ? html`<span class="tc-opt-pen" data-key="${o.key}" data-action="click->card#note" title="Note">${sk('pen')}</span>` : ''
     const marks = html`${o.tip ? html` title="${o.tip.en}"` : ''}${shownKey === o.key ? raw(' data-match') : ''}`
     const tile = card.multiple
@@ -322,13 +317,8 @@ ${laterTag('tc-bar-later')}
   // card is white with an ink outline and a drop shadow, an object on it; the talk in time order, the field at its foot.
   const tone = card.from ? whoOf(card.from).hue : null
   const more = (cls, drawing, word, tip, way) => html`<button class="tc-more-item ${cls}" type="submit" form="${form}" formaction="${act(card, way)}" title="${tip}">${sk(drawing)}<span>${word}</span></button>`
-  // What stands unsent (the draft: the field's words, the ticks, the notes on options) is given to the controller,
-  // which puts it into the fields once: the fields' markup never changes while he types.
-  const kept = drafting ? { note: card.draft ?? '', keys: card.multiple ? card.options.filter(o => o.chosen).map(o => o.key) : [], notes: Object.fromEntries(card.options.filter(o => o.note).map(o => [o.key, o.note])) } : { note: card.draft ?? '' }
-  const after = decided && !old && card.state !== 'open' ? { self, home, focus } : null
-  return html`<main id="cardpage" class="tc-page${large ? ' is-full' : focus ? ' is-focus' : ''}" aria-label="Question ${card.number}" data-id="${card.id}"${focus ? raw(' data-focus') : ''} data-controller="card" data-card-draft-value="${drafting ? act(card, 'draft') : ''}" data-card-kept-value="${JSON.stringify(kept)}" data-card-pictures-value="${JSON.stringify(picturesOf(media.pictures, vm, here))}" data-action="turbo:frame-load->card#framed circles:drawn->card#link turbo:submit-start->card#sent turbo:submit-end->card#done dragover->card#over drop->card#drop">
-<div class="tc-pad"${tone != null ? html` style="--hue:${tone}"` : ''}>${corner('tl')}${corner('tr')}${corner('bl')}${corner('br')}${bar}<div class="tc-frame">
-<nav class="tc-rails" aria-label="Around this question">
+  // The row around a picture opened large (card.css .is-full): the way back to the card and the pen.
+  const rails = () => html`<nav class="tc-rails" aria-label="Around this question">
 <a class="tc-rail tc-back" data-nav href="${home}" aria-keyshortcuts="Escape" title="Back (Esc)" aria-label="Back to ${from ? from.name : WORDS.desk}">${CROSS}</a>
 ${old ? '' : starButton(card)}
 ${card.place && !old ? html`${step(card.place.prev, 'is-prev', 'The question before', BACK)}${step(card.place.next, 'is-next', 'The next question', FORTH)}` : ''}
@@ -341,8 +331,34 @@ ${copyButton(card)}
 ${answering ? more('is-shred', 'bin', WORDS.shred, WORDS.shred, 'shred') : ''}
 </div></details>
 </nav>
+`
+  // Beside the title: the star and the ⋯ (CardView.menu, in its order); no X: Esc, a click beside the paper or the
+  // browser's back closes the page (the way back stays here, unseen, for Esc and screen readers).
+  const kbd = m => (m.keys ? html`<kbd>${m.keys}</kbd>` : '')
+  const item = m => {
+    const words = html`<span>${m.label?.en ?? ''}</span>${kbd(m)}`
+    switch (m.key) {
+      case 'prev': case 'next': { const to = card.place?.[m.key]; return to ? html`<a class="tc-more-item is-${m.key}" role="menuitem" data-nav href="${cardPath(to, self)}${walk ? '?walk=1' : ''}">${m.key === 'prev' ? BACK : FORTH}${words}</a>` : '' }
+      case 'draw': return html`<button type="button" class="tc-more-item tc-draw" role="menuitem" data-action="card#trace" data-pop-close aria-pressed="false">${DRAW}${words}</button>`
+      case 'focus': return html`<a class="tc-more-item tc-full${focus ? ' is-leave' : ''}" role="menuitem" data-nav href="${focusAt(`${here}?${shownPic > 1 ? `pic=${shownPic}` : ''}${query}`, !focus)}" data-turbo-action="replace" data-action="card#focus" aria-pressed="${String(focus)}">${FULL}${LESS}<span>${FOCUS_WORDS[focus]}</span></a>`
+      case 'chat': { const sid = card.from?.session_id ?? card.session_id; return sid ? html`<a class="tc-more-item" role="menuitem" data-nav href="${self}/chat/${encodeURIComponent(sid)}">${sk('bubble')}${words}</a>` : '' }
+      case 'copy': return copyButton(card)
+      case 'wake': return more('', 'wake', m.label?.en ?? WORDS.wake, `${WORDS.wake}: back on the Desk now`, 'wake')
+      case 'shred': return more('is-shred', 'bin', m.label?.en ?? WORDS.shred, WORDS.shred, 'shred')
+      default: return ''
+    }
+  }
+  const menu = (Array.isArray(card.menu) ? card.menu : []).filter(m => m && !(old && m.now_only))
+  const tools = large ? '' : html`<nav class="tc-rails tc-tools" aria-label="Around this question"><a class="tc-back tc-sr" data-nav href="${home}" aria-keyshortcuts="Escape" aria-label="Back to ${from ? from.name : WORDS.desk}">Back</a>${old ? '' : starButton(card)}${menu.length ? html`<details class="tc-more" data-controller="pops"><summary class="tc-rail tc-more-open" title="More" aria-label="More for this question">${DOTS}</summary><div class="tc-more-list" role="menu">${menu.map(item)}</div></details>` : ''}</nav>`
+  // What stands unsent (the draft: the field's words, the ticks, the notes on options) is given to the controller,
+  // which puts it into the fields once: the fields' markup never changes while he types.
+  const kept = drafting ? { note: card.draft ?? '', keys: card.multiple ? card.options.filter(o => o.chosen).map(o => o.key) : [], notes: Object.fromEntries(card.options.filter(o => o.note).map(o => [o.key, o.note])) } : { note: card.draft ?? '' }
+  const after = decided && !old && card.state !== 'open' ? { self, home, focus } : null
+  return html`<main id="cardpage" class="tc-page${large ? ' is-full' : focus ? ' is-focus' : ''}" aria-label="Question ${card.number}" data-id="${card.id}"${focus ? raw(' data-focus') : ''} data-controller="card" data-card-draft-value="${drafting ? act(card, 'draft') : ''}" data-card-kept-value="${JSON.stringify(kept)}" data-card-pictures-value="${JSON.stringify(picturesOf(media.pictures, vm, here))}" data-action="pointerdown->card#besideStart click->card#beside turbo:frame-load->card#framed circles:drawn->card#link turbo:submit-start->card#sent turbo:submit-end->card#done dragover->card#over drop->card#drop">
+<div class="tc-pad"${tone != null ? html` style="--hue:${tone}"` : ''}>${corner('tl')}${corner('tr')}${corner('bl')}${corner('br')}${bar}<div class="tc-frame">
+${large ? rails() : ''}
 <article class="tc-card" id="card-${card.id}" style="--hue:162" data-id="${card.id}" data-kind="${card.kind}" data-urgency="${URGENCY[card.urgency] ?? 'normal'}" aria-labelledby="card-title-${card.id}"${shown ? raw(' data-pictures') : ''}${card.state === 'open' && mode !== 'revising' ? '' : raw(' data-settled')}>
-<div class="tc-left">${cardLead(card, self, old)}
+<div class="tc-left">${cardLead(card, self, old, tools)}
 ${cardMedia(card.id, media, vm, here, shownPic, query)}
 ${old ? '' : optionsSaid(card)}
 </div>
@@ -1353,6 +1369,13 @@ controller('card', class extends Controller {
   // ---- focus: the card's page alone in the window (card.css .is-focus), with the talk and the field ----
   // Switched in place, so what is written, drawn or scrolled stays; the address says it (?focus=1), so a reload and
   // back and forward keep it, and the card's forms say it, so the card that comes next is in focus too.
+  // A click beside the paper (on the page itself, pressed and let go there, nothing selected) closes it, as Esc does.
+  besideStart(event) { this.downBeside = event.target === this.element }
+  beside(event) {
+    const was = this.downBeside; this.downBeside = false
+    if (!was || event.target !== this.element || event.button !== 0 || String(getSelection?.() ?? '')) return
+    this.element.querySelector('.tc-rails .tc-back')?.click()
+  }
   focus(event) {
     event.preventDefault()
     const on = !this.element.hasAttribute('data-focus'), button = event.currentTarget, to = focusAt(location.href, on)
@@ -1364,6 +1387,7 @@ controller('card', class extends Controller {
     button.classList.toggle('is-leave', on)
     button.setAttribute('aria-pressed', String(on))
     button.removeAttribute('title'); button.dataset.tip = FOCUS_WORDS[on]; button.setAttribute('aria-label', FOCUS_WORDS[on])
+    button.querySelector(':scope > span')?.replaceChildren(FOCUS_WORDS[on])
     for (const form of this.element.querySelectorAll('form[method="post"]')) {
       form.querySelector(':scope > input[name="focus"]')?.remove()
       if (on) form.insertAdjacentHTML('afterbegin', FOCUS_FIELD)

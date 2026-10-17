@@ -21,7 +21,7 @@ use super::session::{link_note, unheard_fix};
 use super::sidebar::link_of;
 use super::talk::{card_ref, choices_of, events_of, file_ids, in_order, items_of, Entry, Side};
 use super::words::{minutes, minutes_tick, say};
-use super::{AfterView, AnswerView, LeadView, MoreView, OptionLinkView, CardRefView, CardView, PictureView, CardWorkView, LinkNoteView, NotedView, OptionView, PlaceView, SectionView, TalkRow, Text, VersionView};
+use super::{AfterView, AnswerView, LeadView, MoreView, OptionLinkView, CardRefView, CardMenuItem, CardView, PictureView, CardWorkView, LinkNoteView, NotedView, OptionView, PlaceView, SectionView, TalkRow, Text, VersionView};
 use crate::model::types::{Card, PermissionRequest, StatusLine};
 use crate::off_mind::went_at;
 use crate::status::card_place;
@@ -812,7 +812,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         None => super::CardRefView { id: id.into(), number: 0, title: String::new() },
     };
     let into = field("merged_into_object_id");
-    Some(CardView {
+    let mut v = CardView {
         session_id: agent.map(|i| b.agents[i].row.key.clone()),
         kind: if info { "info" } else { "decision" }.into(),
         state: c.object_state.clone(),
@@ -854,8 +854,44 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         after: None,
         earlier: None,
         words: Default::default(),
+        menu: Vec::new(),
         id,
-    })
+    };
+    v.menu = menu_of(&v);
+    Some(v)
+}
+
+/// The card's ⋯ menu, from what the page shows of it: the questions before and after it while it has a place,
+/// the pen while it can be drawn on (an open decision, an info still to be read), its session's conversation when
+/// it has one, Wake up while it is put off, Shred while it waits for an answer; focus and copy always.
+pub(crate) fn menu_of(v: &CardView) -> Vec<CardMenuItem> {
+    let item = |key: &str, en: &str, keys: &str, now_only: bool| CardMenuItem { key: key.into(), label: say(&format!("card.menu.{key}"), en, &[]), keys: keys.into(), now_only };
+    let open = v.state == "open";
+    let answering = matches!(v.answer.mode.as_str(), "options" | "read");
+    let mut menu = Vec::new();
+    if let Some(p) = &v.place {
+        if p.prev.is_some() {
+            menu.push(item("prev", "Previous question", "Shift ↑", true));
+        }
+        if p.next.is_some() {
+            menu.push(item("next", "Next question", "Shift ↓", true));
+        }
+    }
+    if (open && v.kind == "decision") || (answering && v.kind == "info") {
+        menu.push(item("draw", "Draw on the card", "", true));
+    }
+    menu.push(item("focus", "Focus", "", false));
+    if v.session_id.is_some() && v.from.is_some() {
+        menu.push(item("chat", "Open the conversation", "", false));
+    }
+    menu.push(item("copy", "Copy", "", false));
+    if open && v.kind != "request" && v.snoozed_until.is_some() {
+        menu.push(item("wake", "Wake up", "", true));
+    }
+    if answering {
+        menu.push(item("shred", "Shred", "", true));
+    }
+    menu
 }
 
 /// A request for approval as a card's page: what it asks to run, and Allow or Deny.
@@ -896,7 +932,7 @@ fn request(b: &Board, p: &PermissionRequest, number: u32, nr: Text, walk: &[Stri
         AnswerView { mode: "request".into(), says: Some(say("card.answer.one", "Your answer. One tap answers.", &[])), ..Default::default() }
     };
     let live = open && read;
-    CardView {
+    let mut v = CardView {
         id: p.object_id.clone(),
         session_id: agent.map(|i| b.agents[i].row.key.clone()),
         kind: if open && !read { "info" } else { "request" }.into(),
@@ -918,7 +954,9 @@ fn request(b: &Board, p: &PermissionRequest, number: u32, nr: Text, walk: &[Stri
         ask: ask_words(b, agent),
         star_says: say("card.star", "Star", &[]),
         ..Default::default()
-    }
+    };
+    v.menu = menu_of(&v);
+    v
 }
 
 #[cfg(test)]
@@ -978,6 +1016,77 @@ mod tests {
         // (another card's window is its own)
         lens.show_more(crate::views::MoreOf::Comments { card: "other".into() });
         assert_eq!(at(&lens).talk.len(), COMMENTS_PAGE);
+    }
+
+    fn menu(v: &CardView) -> Vec<&str> {
+        v.menu.iter().map(|m| m.key.as_str()).collect()
+    }
+
+    /// The ⋯ beside the title: an open decision can be drawn on and shredded, and walks to its neighbour.
+    #[test]
+    fn an_open_decision_has_the_whole_menu() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.card("q", "a", "decision", "normal");
+        r.card("p", "a", "decision", "normal");
+        let v = view(&r, "q");
+        let keys = menu(&v);
+        assert!(keys.contains(&"prev") || keys.contains(&"next"), "{keys:?}");
+        for k in ["draw", "focus", "chat", "copy", "shred"] {
+            assert!(keys.contains(&k), "{k} in {keys:?}");
+        }
+        assert!(!keys.contains(&"wake"), "{keys:?}");
+        assert!(v.menu.iter().all(|m| !m.label.en.is_empty()));
+        assert_eq!(v.menu.iter().find(|m| m.key == "focus").map(|m| m.now_only), Some(false));
+        assert_eq!(v.menu.iter().find(|m| m.key == "shred").map(|m| m.now_only), Some(true));
+    }
+
+    /// Once answered, nothing is drawn on or shredded any more; focus and copy stay.
+    #[test]
+    fn an_answered_card_keeps_only_the_quiet_entries() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.answered("q", "a", NOW - MIN, 500);
+        let v = view(&r, "q");
+        let keys = menu(&v);
+        assert!(!keys.contains(&"draw") && !keys.contains(&"shred"), "{keys:?}");
+        assert!(keys.contains(&"focus") && keys.contains(&"copy"), "{keys:?}");
+    }
+
+    /// An info still to be read can be drawn on and shredded, like a question.
+    #[test]
+    fn an_open_info_can_be_drawn_on() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.card("i", "a", "info", "normal");
+        let v = view(&r, "i");
+        let keys = menu(&v);
+        assert!(keys.contains(&"draw") && keys.contains(&"shred"), "{keys:?}");
+    }
+
+    /// A request for approval has no pen and no shredder.
+    #[test]
+    fn a_request_has_no_pen_and_no_shredder() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.request("perm", "a", "ok");
+        let m = r.model(NOW);
+        let lens = Lens::default();
+        let b = Board::new(&m, &lens, NOW);
+        let walk = desk::desk(&b).stack;
+        let v = card(&b, "perm", &walk).expect("held");
+        let keys = menu(&v);
+        assert!(!keys.contains(&"draw") && !keys.contains(&"shred"), "{keys:?}");
+        assert!(keys.contains(&"copy"), "{keys:?}");
+    }
+
+    /// The menu is always written, an empty one too: a shell never finds the field missing.
+    #[test]
+    fn the_menu_is_always_written() {
+        let v = serde_json::to_value(CardView::default()).unwrap();
+        assert_eq!(v.get("menu"), Some(&json!([])));
+        let back: CardView = serde_json::from_value(json!({ "id": "x" })).unwrap_or_default();
+        assert!(back.menu.is_empty());
     }
 
     /// The web's `pictureKeys`, case by case.
