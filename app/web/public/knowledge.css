@@ -7,6 +7,8 @@ body[data-page="knowledge"] #knowledge {
 }
 .kn-column { max-width: 760px; margin-inline: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-4); }
 .kn-head.page-head { margin: 0; }
+.kn-team { display: flex; align-items: center; gap: 6px; margin: 0 0 4px !important; color: var(--muted); font: 600 var(--t-sm)/1.2 var(--font) !important; }
+.kn-team .sketch { width: 16px; height: 16px; }
 .kn-total { font-weight: 700; color: var(--muted); }
 
 .kn-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }

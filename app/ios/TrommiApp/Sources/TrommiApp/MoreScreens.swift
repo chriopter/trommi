@@ -719,6 +719,7 @@ struct KnowledgeScreen: View {
       LazyVStack(alignment: .leading, spacing: 12) {
         if let k = shell.view.knowledge {
           VStack(alignment: .leading, spacing: 4) {
+            teamSwitch(k)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
               PageHeading(text: k.title.en)
               Text("(\(k.count))").font(Face.display(26, .bold)).foregroundStyle(Ink.muted).accessibilityLabel(k.summary.en)
@@ -801,6 +802,27 @@ struct KnowledgeScreen: View {
     }
     .padding(.bottom, isOpen ? 40 : 0)
     .accessibilityIdentifier("knowledge-\(row.id)")
+  }
+  /** Whose knowledge this is: the team's name; with two teams or more, a menu that shows another team's. */
+  private func teamSwitch(_ k: CoreView.KnowledgeView) -> some View {
+    let teams = shell.view.sidebar.teams
+    return Menu {
+      ForEach(teams, id: \.id) { team in
+        Button { shell.show(.knowledge(query: query.trimmingCharacters(in: .whitespaces), filter: k.filter), team: team.id) } label: {
+          Label { Text(team.name.en) } icon: { if team.id == k.teamId { Image(systemName: "checkmark") } }
+        }
+      }
+    } label: {
+      HStack(spacing: 6) {
+        PenMark("sketch:desk", color: Ink.muted).frame(width: 16, height: 16)
+        Text(k.team.en).font(Face.text(14, .semibold)).foregroundStyle(Ink.muted)
+        if teams.count > 1 { Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Ink.faint) }
+      }
+      .padding(.top, 10)
+    }
+    .disabled(teams.count < 2)
+    .accessibilityLabel("Team: \(k.team.en)")
+    .accessibilityIdentifier("knowledge-team")
   }
   /** The filter as one quiet segmented track: All · Pinned, each with its count (the core's choices). */
   private func filters(_ k: CoreView.KnowledgeView) -> some View {
