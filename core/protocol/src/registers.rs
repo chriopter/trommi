@@ -40,6 +40,13 @@ pub const JOIN_LINK: &str = "join_link/";
 pub const MACHINE_APPROVED: &str = "machine_approved";
 /// The prefix of the name of a Desk, whose value carries the Desk's Goals.
 pub const DESK: &str = "desk/";
+/// The prefix of a team's knowledge entry (section 9.3.7): `knowledge/<entry id>`, written by human devices in
+/// the room group, and mirrored by them into the session groups of that team's main sessions.
+pub const KNOWLEDGE: &str = "knowledge/";
+/// The most characters (Unicode scalar values) a knowledge entry's title has.
+pub const MAX_KNOWLEDGE_TITLE_LEN: usize = 80;
+/// The most characters a knowledge entry's text has.
+pub const MAX_KNOWLEDGE_TEXT_LEN: usize = 600;
 /// The most lines Goals have.
 pub const MAX_GOALS_LINES: usize = 20;
 /// The most characters (Unicode scalar values) one line of Goals has.
@@ -122,10 +129,39 @@ fn goals_fit(name: &str, value: &serde_json::Value) -> Result<(), Error> {
     Ok(())
 }
 
+/// Holds a knowledge entry (`knowledge/<id>`, section 9.3.7) to its limits: null, or an object whose `title` is
+/// one line of text of 1 to [`MAX_KNOWLEDGE_TITLE_LEN`] characters and whose `text` is text of at most
+/// [`MAX_KNOWLEDGE_TEXT_LEN`] characters. `bad-format` for any other shape, `too-large` beyond the limits. Its
+/// other fields pass: this module does not look into them.
+fn knowledge_fits(name: &str, value: &serde_json::Value) -> Result<(), Error> {
+    if !name.starts_with(KNOWLEDGE) {
+        return Ok(());
+    }
+    let entry = match value {
+        serde_json::Value::Null => return Ok(()),
+        serde_json::Value::Object(entry) => entry,
+        _ => return Err(Error::BadFormat),
+    };
+    let (Some(serde_json::Value::String(title)), Some(serde_json::Value::String(text))) =
+        (entry.get("title"), entry.get("text"))
+    else {
+        return Err(Error::BadFormat);
+    };
+    if title.trim().is_empty() || title.contains(['\n', '\r']) {
+        return Err(Error::BadFormat);
+    }
+    if title.chars().count() > MAX_KNOWLEDGE_TITLE_LEN
+        || text.chars().count() > MAX_KNOWLEDGE_TEXT_LEN
+    {
+        return Err(Error::TooLarge);
+    }
+    Ok(())
+}
+
 impl Value {
     /// The value a register envelope's payload holds. `bad-format` unless it is a JSON object with a text
     /// `name`, a `value` (any JSON, or null) and a whole, non-negative `lamport`, each once; other fields are
-    /// ignored. `too-large` for a value above [`MAX_VALUE_LEN`], and for Goals beyond their limits: a reader
+    /// ignored. `too-large` for a value above [`MAX_VALUE_LEN`], and for Goals or a knowledge entry beyond their limits: a reader
     /// holds a value to what a writer may write, and does not take one that is beyond it.
     pub fn parse(payload: &[u8]) -> Result<Self, Error> {
         if !envelope::is_json_object(payload) {
@@ -133,6 +169,7 @@ impl Value {
         }
         let wire: Wire = serde_json::from_slice(payload).map_err(|_| Error::BadFormat)?;
         goals_fit(&wire.name, &wire.value)?;
+        knowledge_fits(&wire.name, &wire.value)?;
         let value = match wire.value {
             serde_json::Value::Null => None,
             value => Some(serde_json::to_string(&value).map_err(|_| Error::BadFormat)?),
@@ -152,7 +189,7 @@ impl Value {
 
     /// The payload of the register envelope that carries this value. `bad-format` if `value` is not JSON
     /// text, or its `goals` is neither text nor null; `too-large` above [`MAX_VALUE_LEN`], measured as compact
-    /// JSON, and for Goals of more than [`MAX_GOALS_LINES`] lines or a line of more than
+    /// JSON, and for Goals of more than [`MAX_GOALS_LINES`] lines (a knowledge entry: as `knowledge_fits` says) or a line of more than
     /// [`MAX_GOALS_LINE_LEN`] characters.
     pub fn payload(&self) -> Result<Vec<u8>, Error> {
         let value = match &self.value {
@@ -160,6 +197,7 @@ impl Value {
             Some(text) => serde_json::from_str(text).map_err(|_| Error::BadFormat)?,
         };
         goals_fit(&self.name, &value)?;
+        knowledge_fits(&self.name, &value)?;
         let compact = serde_json::to_string(&value).map_err(|_| Error::BadFormat)?;
         if !value.is_null() && compact.len() > value_limit(&self.name) {
             return Err(Error::TooLarge);
@@ -250,10 +288,11 @@ pub fn name_owner(name: &str, in_room: bool) -> Option<NameOwner> {
                 "star/",
                 "read/",
                 BOARD_SNAPSHOT,
+                KNOWLEDGE,
             ]);
         return room_humans.then_some(NameOwner::RoomHumans);
     }
-    if name == GOALS || name == MACHINE_APPROVED || has_prefix(&[JOIN_LINK]) {
+    if name == GOALS || name == MACHINE_APPROVED || has_prefix(&[JOIN_LINK, KNOWLEDGE]) {
         return Some(NameOwner::SessionHumans);
     }
     let session_devices =

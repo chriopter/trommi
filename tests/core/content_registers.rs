@@ -21,7 +21,7 @@ fn owned_by(name: &str, role: Role, sender: &DeviceId) -> Option<bool> {
         Some(true)
     } else if let Some(device) = name.strip_prefix("device/") {
         (device == sender.to_base64url()).then_some(false)
-    } else if name == "goals" {
+    } else if name == "goals" || name.strip_prefix("knowledge/").is_some_and(|id| !id.is_empty()) {
         (!agent).then_some(false)
     } else if name == "profile"
         || name == "heard"
@@ -628,6 +628,7 @@ mod rules {
             ("star/x", true, false, false, false),
             ("read/session/x", true, false, false, false),
             ("board_snapshot/x", true, false, false, false),
+            ("knowledge/x", true, true, false, false),
             (own.as_str(), true, true, true, true),
             (other.as_str(), false, false, false, false),
             ("heads", true, true, true, true),
@@ -642,6 +643,7 @@ mod rules {
             // Names the table does not have.
             ("join_ask/", false, false, false, false),
             ("join_link/", false, false, false, false),
+            ("knowledge/", false, false, false, false),
             ("", false, false, false, false),
             ("desk/", false, false, false, false),
             ("desk", false, false, false, false),
@@ -1040,6 +1042,52 @@ mod rules {
         let kept = scene.registers[&session()].get("goals").unwrap().to_owned();
         assert_eq!(kept, handed("Ship it"));
     }
+}
+
+#[test]
+fn a_knowledge_entry_keeps_to_its_title_and_text() {
+    use serde_json::json;
+    use trommi_core::registers::{MAX_KNOWLEDGE_TEXT_LEN, MAX_KNOWLEDGE_TITLE_LEN};
+    let read_as = |value: &str| {
+        let payload = format!(r#"{{"name":"knowledge/abc","value":{value},"lamport":1}}"#);
+        Value::parse(payload.as_bytes()).map(|_| ())
+    };
+    let written = |value: &str| {
+        Value { name: "knowledge/abc".into(), value: Some(value.into()), lamport: 1 }.payload().map(|_| ())
+    };
+    let entry = |title: &str, text: &str| json!({ "desk": "main", "title": title, "text": text, "pinned": true }).to_string();
+    for fits in [
+        entry("Hub deploy", "runs as the Docker container trommi"),
+        entry(&"ä".repeat(MAX_KNOWLEDGE_TITLE_LEN), &"ö".repeat(MAX_KNOWLEDGE_TEXT_LEN)),
+        entry("T", ""),
+        "null".to_owned(),
+    ] {
+        assert_eq!(read_as(&fits), Ok(()), "{fits}");
+        if fits != "null" {
+            assert_eq!(written(&fits), Ok(()), "{fits}");
+        }
+    }
+    for beyond in [
+        entry(&"a".repeat(MAX_KNOWLEDGE_TITLE_LEN + 1), "x"),
+        entry("T", &"b".repeat(MAX_KNOWLEDGE_TEXT_LEN + 1)),
+    ] {
+        assert_eq!(read_as(&beyond), Err(Error::TooLarge));
+        assert_eq!(written(&beyond), Err(Error::TooLarge));
+    }
+    for odd in [
+        r#""text""#.to_owned(),
+        r#"{"title":"T"}"#.to_owned(),
+        r#"{"text":"x"}"#.to_owned(),
+        r#"{"title":7,"text":"x"}"#.to_owned(),
+        entry("   ", "x"),
+        entry("two\nlines", "x"),
+    ] {
+        assert_eq!(read_as(&odd), Err(Error::BadFormat), "{odd}");
+        assert_eq!(written(&odd), Err(Error::BadFormat), "{odd}");
+    }
+    // (only `knowledge/` is held to it: the same value under another name passes)
+    let other = format!(r#"{{"name":"profile","value":{},"lamport":1}}"#, entry(&"a".repeat(200), "x"));
+    assert!(Value::parse(other.as_bytes()).is_ok());
 }
 
 /// A value with a number reads and writes the same, to the last bit: written again by a device that read it, it

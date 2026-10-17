@@ -421,8 +421,13 @@ pub fn items_of(b: &Board, t: &Timeline, card: Option<&Card>, heard_up_to: Optio
         }
         out.push(entry(row, side));
     }
+    // (what the session's agent holds of its team's knowledge: the count its knowledge steps name)
+    let held = match t.timeline_id.strip_prefix("session/") {
+        Some(session) if !trails.is_empty() => crate::knowledge::held_by(m, session),
+        _ => 0,
+    };
     for Trail { at, envelopes, places } in trails {
-        let work = fold_work(&envelopes);
+        let work = fold_work(&envelopes, held);
         let seqs: Vec<u64> = places.iter().map(|p| p.0).collect();
         if let Some((seq, id, ts)) = work_anchor(&seqs, &typed).and_then(|s| places.iter().find(|p| p.0 == s)) {
             let e = &mut out[at];
@@ -489,12 +494,15 @@ struct Line {
     text: String,
     input: String,
     output: String,
+    /// A step that read the team's knowledge (the connector marks `search_knowledge` and `read_knowledge`).
+    knowledge: bool,
 }
 
 /// The envelopes of ONE turn as one block. They are applied in the order of their `seq`, whatever order they are
 /// given in; a line (by `id`) stands where it first came and takes the fields of every later envelope that names
 /// it; the turn's state and times are those of the last envelope that says them.
-pub fn fold_work(envelopes: &[&Value]) -> WorkView {
+/// `held`: the knowledge entries the session's agent holds, for a step that read them ("reads team knowledge (12)").
+pub fn fold_work(envelopes: &[&Value], held: usize) -> WorkView {
     let num = |v: Option<&Value>| v.and_then(Value::as_f64).filter(|n| n.is_finite() && *n >= 0.0).map(|n| n as u64);
     let mut list: Vec<&Value> = envelopes.iter().copied().filter(|w| w.is_object()).collect();
     list.sort_by_key(|w| num(w.get("seq")).unwrap_or(0));
@@ -544,6 +552,9 @@ pub fn fold_work(envelopes: &[&Value]) -> WorkView {
                 if let Some(s) = x.get(key).and_then(Value::as_str) {
                     *slot = cut(s, max);
                 }
+            }
+            if x.get("knowledge") == Some(&Value::Bool(true)) && line.kind == "step" {
+                line.knowledge = true;
             }
             let s = str_of(x, "state");
             if matches!(s, "running" | "ok" | "failed" | "interrupted") {
@@ -596,11 +607,16 @@ pub fn fold_work(envelopes: &[&Value]) -> WorkView {
             x.tool.clone()
         }
     };
+    // (a step that read the team's knowledge says so in the person's words, with what it searched for)
+    let knows = |x: &Line| super::knowledge::work_words(held, &x.subject).en;
     let now = if state == "running" {
         lines
             .iter()
             .rfind(|x| x.kind != "text" && (x.state.is_empty() || x.state == "running"))
             .map(|x| {
+                if x.knowledge {
+                    return knows(x);
+                }
                 let tool = if x.kind == "helper" { bold(x) } else { x.tool.clone() };
                 let what = if x.title.is_empty() { x.subject.clone() } else { x.title.clone() };
                 [tool, what].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")
@@ -629,8 +645,8 @@ pub fn fold_work(envelopes: &[&Value]) -> WorkView {
                     (None, "interrupted") => say("work.step.interrupted", "interrupted", &[]),
                     _ => say("work.step.running", "running", &[]),
                 }),
-                tool: bold(x),
-                what: [x.title.as_str(), x.subject.as_str()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · "),
+                tool: if x.knowledge { String::new() } else { bold(x) },
+                what: if x.knowledge { knows(x) } else { [x.title.as_str(), x.subject.as_str()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ") },
                 count: match (helper, x.steps.filter(|n| *n > 0), &exit) {
                     (true, Some(n), _) => Some(say("work.step.steps", count(n, "step"), &[("n", &n.to_string())])),
                     (false, _, Some(e)) => Some(say("work.step.exit", format!("exit code {e}"), &[("code", e)])),
@@ -696,7 +712,7 @@ mod tests {
             { "id": "5", "kind": "step", "tool": "Edit", "subject": "views.rs" },
         ] });
         // (given out of order: applied by seq)
-        let w = fold_work(&[&b, &a]);
+        let w = fold_work(&[&b, &a], 0);
         assert_eq!((w.turn.as_str(), w.state.as_str(), w.head.en.as_str(), w.now.as_str()), ("t1", "running", "Working", "Edit · views.rs"));
         assert_eq!(w.sum.as_ref().unwrap().en, "2 steps · 1 helper · 1 with an error");
         let l: Vec<(&str, &str, &str, &str, &str)> = w.lines.iter().map(|x| (x.id.as_str(), x.kind.as_str(), x.state.as_str(), x.tool.as_str(), x.what.as_str())).collect();
@@ -705,13 +721,28 @@ mod tests {
         assert_eq!((w.lines[1].text.as_str(), w.lines[2].count.as_ref().unwrap().en.as_str()), ("Two fail.", "3 steps"));
         // the turn ended: how long it took, and what is not listed
         let c = json!({ "turn": "t1", "seq": 3, "state": "done", "ended_at": 121_000, "more": 12, "items": [] });
-        let w = fold_work(&[&a, &b, &c]);
+        let w = fold_work(&[&a, &b, &c], 0);
         assert_eq!((w.head.en.as_str(), w.now.as_str(), w.rest.unwrap().en.as_str()), ("Worked 2 min", "", "and 12 more steps, not listed"));
         assert_eq!(w.sum.unwrap().en, "14 steps · 1 helper · 1 with an error");
         let d = json!({ "turn": "t1", "seq": 4, "state": "interrupted" });
-        assert_eq!(fold_work(&[&a, &c, &d]).head.en, "Interrupted after 2 min");
+        assert_eq!(fold_work(&[&a, &c, &d], 0).head.en, "Interrupted after 2 min");
         let e = json!({ "turn": "t2", "seq": 1, "state": "failed", "items": [] });
-        assert_eq!(fold_work(&[&e]).head.en, "Stopped by an error");
+        assert_eq!(fold_work(&[&e], 0).head.en, "Stopped by an error");
+    }
+
+    #[test]
+    fn a_step_that_read_the_team_knowledge_says_so() {
+        let a = json!({ "turn": "t1", "seq": 1, "state": "running", "items": [
+            { "id": "1", "kind": "step", "tool": "trommi: search_knowledge", "knowledge": true, "subject": "deploy", "state": "ok" },
+            { "id": "2", "kind": "step", "tool": "trommi: read_knowledge", "knowledge": true },
+        ] });
+        let w = fold_work(&[&a], 12);
+        assert_eq!(w.now, "reads team knowledge (12)");
+        let l: Vec<(&str, &str)> = w.lines.iter().map(|x| (x.tool.as_str(), x.what.as_str())).collect();
+        assert_eq!(l, [("", "reads team knowledge (12) · “deploy”"), ("", "reads team knowledge (12)")]);
+        // (the mark only counts on a step)
+        let b = json!({ "turn": "t1", "seq": 1, "items": [{ "id": "1", "kind": "helper", "tool": "Explore", "knowledge": true }] });
+        assert_eq!(fold_work(&[&b], 3).lines[0].tool, "Helper Explore");
     }
 
     /// The web's `workAnchor` tests.

@@ -64,6 +64,9 @@ pub struct Sent {
     /// The goals this App wrote into a session's group (`goals`), by session: the value and its outbox entry, so the
     /// same value is not written again while it is on its way.
     pub goals: BTreeMap<String, (Value, u64)>,
+    /// The knowledge entries this App wrote into a session's group (`knowledge/<id>`), by session and name: the value
+    /// and its outbox entry, as for `goals`.
+    pub knowledge: BTreeMap<String, BTreeMap<String, (Value, u64)>>,
     /// The highest lamport this App gave a Note's version (9.3.2 chooses the current version by it).
     pub lamport: u64,
 }

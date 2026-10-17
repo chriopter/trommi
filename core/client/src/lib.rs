@@ -38,6 +38,7 @@ pub mod faces;
 pub mod files;
 pub mod helpers;
 pub mod hub;
+pub mod knowledge;
 pub mod machines;
 pub mod model;
 pub mod off_mind;

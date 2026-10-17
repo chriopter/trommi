@@ -66,6 +66,8 @@ pub struct Lens {
     pub seen: Option<std::collections::BTreeMap<String, u64>>,
     /// The gallery is in view, with its filter (`Screen::Artifacts.kind`): "", "media" or "pages".
     pub gallery: Option<String>,
+    /// The page Knowledge is in view, with its search and filter: its unit is made.
+    pub knowledge: Option<super::knowledge::Ask>,
     /// How many pages of a session's talk show ([`TALK_PAGE`] rows each), for that session (its key or short id);
     /// none, or another session: one page.
     pub talk_window: Option<(String, u32)>,
@@ -573,6 +575,7 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
         view.gallery = Some(gallery);
         view.artifacts = Some(shown);
     }
+    view.knowledge = lens.knowledge.as_ref().map(|ask| super::knowledge::page(&b, ask));
     view.notes = super::notes::notes(&b);
     // (what the account read keeps: the e-mail is the account's, W3)
     // (what the App adds beside the model: the account read, the room, the teams' deletes)

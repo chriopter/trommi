@@ -136,6 +136,8 @@ public enum CoreView {
     /// The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
     /// videos and files, "pages" the pages.
     case artifacts(kind: String)
+    /// The page Knowledge of the team in view, with the search's words and its filter ("" every entry, "pinned").
+    case knowledge(query: String, filter: String)
     /// Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
     /// "data", "security").
     case settings(page: String)
@@ -149,6 +151,7 @@ public enum CoreView {
       case query = "query"
       case boardId = "board_id"
       case kind = "kind"
+      case filter = "filter"
       case page = "page"
     }
 
@@ -162,6 +165,7 @@ public enum CoreView {
       case "off": self = .off(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "")
       case "scribble": self = .scribble(boardId: try c.decode(String.self, forKey: .boardId))
       case "artifacts": self = .artifacts(kind: try c.decodeIfPresent(String.self, forKey: .kind) ?? "")
+      case "knowledge": self = .knowledge(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "", filter: try c.decodeIfPresent(String.self, forKey: .filter) ?? "")
       case "settings": self = .settings(page: try c.decodeIfPresent(String.self, forKey: .page) ?? "")
       case let other: throw DecodingError.dataCorruptedError(forKey: .screen, in: c, debugDescription: "Screen: no variant \(other)")
       }
@@ -189,6 +193,10 @@ public enum CoreView {
       case .artifacts(let kind):
         try c.encode("artifacts", forKey: .screen)
         try c.encode(kind, forKey: .kind)
+      case .knowledge(let query, let filter):
+        try c.encode("knowledge", forKey: .screen)
+        try c.encode(query, forKey: .query)
+        try c.encode(filter, forKey: .filter)
       case .settings(let page):
         try c.encode("settings", forKey: .screen)
         try c.encode(page, forKey: .page)
@@ -226,9 +234,11 @@ public enum CoreView {
     /// Every team's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
     /// teams); none else.
     public var thumbs: [ThumbView]?
+    /// The page Knowledge of the team in view, while it is in view (`Screen::Knowledge`); none else.
+    public var knowledge: KnowledgeView?
     public var toasts: [Toast]
 
-    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, artifacts: [ArtifactView]? = nil, gallery: GalleryView? = nil, thumbs: [ThumbView]? = nil, toasts: [Toast] = []) {
+    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, artifacts: [ArtifactView]? = nil, gallery: GalleryView? = nil, thumbs: [ThumbView]? = nil, knowledge: KnowledgeView? = nil, toasts: [Toast] = []) {
       self.rev = rev
       self.phase = phase
       self.status = status
@@ -245,6 +255,7 @@ public enum CoreView {
       self.artifacts = artifacts
       self.gallery = gallery
       self.thumbs = thumbs
+      self.knowledge = knowledge
       self.toasts = toasts
     }
 
@@ -265,6 +276,7 @@ public enum CoreView {
       case artifacts = "artifacts"
       case gallery = "gallery"
       case thumbs = "thumbs"
+      case knowledge = "knowledge"
       case toasts = "toasts"
     }
 
@@ -286,6 +298,7 @@ public enum CoreView {
       self.artifacts = try c.decodeIfPresent([ArtifactView].self, forKey: .artifacts)
       self.gallery = try c.decodeIfPresent(GalleryView.self, forKey: .gallery)
       self.thumbs = try c.decodeIfPresent([ThumbView].self, forKey: .thumbs)
+      self.knowledge = try c.decodeIfPresent(KnowledgeView.self, forKey: .knowledge)
       self.toasts = try c.decodeIfPresent([Toast].self, forKey: .toasts) ?? []
     }
 
@@ -307,6 +320,7 @@ public enum CoreView {
       try c.encodeIfPresent(artifacts, forKey: .artifacts)
       try c.encodeIfPresent(gallery, forKey: .gallery)
       try c.encodeIfPresent(thumbs, forKey: .thumbs)
+      try c.encodeIfPresent(knowledge, forKey: .knowledge)
       if !toasts.isEmpty { try c.encode(toasts, forKey: .toasts) }
     }
   }
@@ -361,6 +375,8 @@ public enum CoreView {
     case gallery(view: GalleryView?)
     /// The teams' boards small, whole; none when no page shows them.
     case thumbs(view: [ThumbView]?)
+    /// The page Knowledge, whole; none when it is left.
+    case knowledge(view: KnowledgeView?)
     case toasts(toasts: [Toast])
 
     enum CodingKeys: String, CodingKey {
@@ -391,6 +407,7 @@ public enum CoreView {
       case "artifacts": self = .artifacts(view: try c.decodeIfPresent([ArtifactView].self, forKey: .view))
       case "gallery": self = .gallery(view: try c.decodeIfPresent(GalleryView.self, forKey: .view))
       case "thumbs": self = .thumbs(view: try c.decodeIfPresent([ThumbView].self, forKey: .view))
+      case "knowledge": self = .knowledge(view: try c.decodeIfPresent(KnowledgeView.self, forKey: .view))
       case "toasts": self = .toasts(toasts: try c.decode([Toast].self, forKey: .toasts))
       case let other: throw DecodingError.dataCorruptedError(forKey: .part, in: c, debugDescription: "ViewPart: no variant \(other)")
       }
@@ -447,6 +464,9 @@ public enum CoreView {
         try c.encode(view, forKey: .view)
       case .thumbs(let view):
         try c.encode("thumbs", forKey: .part)
+        try c.encode(view, forKey: .view)
+      case .knowledge(let view):
+        try c.encode("knowledge", forKey: .part)
         try c.encode(view, forKey: .view)
       case .toasts(let toasts):
         try c.encode("toasts", forKey: .part)
@@ -1300,6 +1320,8 @@ public enum CoreView {
     public var reading: Text?
     /// The team's goals; none on All teams.
     public var goals: GoalsView?
+    /// The chip that opens the team's page Knowledge; none on All teams, as the goals.
+    public var knowledge: KnowledgeChipView?
     /// What waits, in the Desk's order: the questions and what is only to read.
     public var rows: [DeskRowView]
     /// The open questions (no infos): the number in the window's title.
@@ -1312,7 +1334,7 @@ public enum CoreView {
     /// The sessions that are cut off, above the questions: one line each, with the step in its terminal.
     public var slip: [SlipView]
 
-    public init(stack: [String] = [], offYourMind: [String] = [], later: [String] = [], done: [String] = [], starred: DockView? = nil, running: DockView? = nil, off: OffHintView? = nil, empty: Text? = nil, mode: String = "", hello: Text? = nil, reading: Text? = nil, goals: GoalsView? = nil, rows: [DeskRowView] = [], waiting: UInt32 = 0, blitz: Text? = nil, duck: DuckAllView? = nil, slip: [SlipView] = []) {
+    public init(stack: [String] = [], offYourMind: [String] = [], later: [String] = [], done: [String] = [], starred: DockView? = nil, running: DockView? = nil, off: OffHintView? = nil, empty: Text? = nil, mode: String = "", hello: Text? = nil, reading: Text? = nil, goals: GoalsView? = nil, knowledge: KnowledgeChipView? = nil, rows: [DeskRowView] = [], waiting: UInt32 = 0, blitz: Text? = nil, duck: DuckAllView? = nil, slip: [SlipView] = []) {
       self.stack = stack
       self.offYourMind = offYourMind
       self.later = later
@@ -1325,6 +1347,7 @@ public enum CoreView {
       self.hello = hello
       self.reading = reading
       self.goals = goals
+      self.knowledge = knowledge
       self.rows = rows
       self.waiting = waiting
       self.blitz = blitz
@@ -1345,6 +1368,7 @@ public enum CoreView {
       case hello = "hello"
       case reading = "reading"
       case goals = "goals"
+      case knowledge = "knowledge"
       case rows = "rows"
       case waiting = "waiting"
       case blitz = "blitz"
@@ -1366,6 +1390,7 @@ public enum CoreView {
       self.hello = try c.decodeIfPresent(Text.self, forKey: .hello)
       self.reading = try c.decodeIfPresent(Text.self, forKey: .reading)
       self.goals = try c.decodeIfPresent(GoalsView.self, forKey: .goals)
+      self.knowledge = try c.decodeIfPresent(KnowledgeChipView.self, forKey: .knowledge)
       self.rows = try c.decodeIfPresent([DeskRowView].self, forKey: .rows) ?? []
       self.waiting = try c.decodeIfPresent(UInt32.self, forKey: .waiting) ?? 0
       self.blitz = try c.decodeIfPresent(Text.self, forKey: .blitz)
@@ -1387,6 +1412,7 @@ public enum CoreView {
       try c.encodeIfPresent(hello, forKey: .hello)
       try c.encodeIfPresent(reading, forKey: .reading)
       try c.encodeIfPresent(goals, forKey: .goals)
+      try c.encodeIfPresent(knowledge, forKey: .knowledge)
       if !rows.isEmpty { try c.encode(rows, forKey: .rows) }
       try c.encode(waiting, forKey: .waiting)
       try c.encodeIfPresent(blitz, forKey: .blitz)
@@ -1915,6 +1941,323 @@ public enum CoreView {
       try c.encode(label, forKey: .label)
       try c.encode(atMs, forKey: .atMs)
       try c.encode(says, forKey: .says)
+    }
+  }
+
+  /// The chip on a team's Desk that opens its page Knowledge.
+  public struct KnowledgeChipView: Codable, Hashable, Sendable {
+    public var teamId: String
+    /// "Knowledge".
+    public var label: Text
+    /// How many entries the team holds.
+    public var count: UInt32
+    /// The chip in a sentence ("Team knowledge: 12 entries"), for a screen reader and a tooltip.
+    public var says: Text
+
+    public init(teamId: String = "", label: Text = Text(), count: UInt32 = 0, says: Text = Text()) {
+      self.teamId = teamId
+      self.label = label
+      self.count = count
+      self.says = says
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case teamId = "team_id"
+      case label = "label"
+      case count = "count"
+      case says = "says"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.teamId = try c.decode(String.self, forKey: .teamId)
+      self.label = try c.decode(Text.self, forKey: .label)
+      self.count = try c.decodeIfPresent(UInt32.self, forKey: .count) ?? 0
+      self.says = try c.decode(Text.self, forKey: .says)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(teamId, forKey: .teamId)
+      try c.encode(label, forKey: .label)
+      try c.encode(count, forKey: .count)
+      try c.encode(says, forKey: .says)
+    }
+  }
+
+  /// The page Knowledge of a team (`Screen::Knowledge`, core/client/src/views/knowledge.rs): its entries, pinned first
+  /// then the one changed last, as the search and the filter let them through.
+  public struct KnowledgeView: Codable, Hashable, Sendable {
+    public var teamId: String
+    /// The team's name.
+    public var team: Text
+    /// "Knowledge".
+    public var title: Text
+    /// How many entries the team holds, all of them.
+    public var count: UInt32
+    /// The same in words ("12 entries").
+    public var summary: Text
+    /// The line under the title.
+    public var lead: Text
+    /// The search's words in force, trimmed; "" for none.
+    public var query: String
+    /// The filter in force: "" every entry, "pinned" the pinned ones.
+    public var filter: String
+    /// The filter's choices, in order: All, Pinned.
+    public var filters: [KnowledgeFilterView]
+    /// The search field's hint.
+    public var search: Text
+    /// What the search and the filter let through, in order.
+    public var rows: [KnowledgeRowView]
+    /// What the page says when it lists nothing; none when it lists something.
+    public var none: Text?
+    /// The team holds as many entries as it may: no new one (`words.full` says so).
+    public var full: Bool
+    /// A title's and a text's limits, in characters.
+    public var titleMax: UInt32
+    public var textMax: UInt32
+    /// The page's other words: its buttons, the editor's hints, the question before a delete.
+    public var words: KnowledgeWordsView
+
+    public init(teamId: String = "", team: Text = Text(), title: Text = Text(), count: UInt32 = 0, summary: Text = Text(), lead: Text = Text(), query: String = "", filter: String = "", filters: [KnowledgeFilterView] = [], search: Text = Text(), rows: [KnowledgeRowView] = [], none: Text? = nil, full: Bool = false, titleMax: UInt32 = 0, textMax: UInt32 = 0, words: KnowledgeWordsView = KnowledgeWordsView()) {
+      self.teamId = teamId
+      self.team = team
+      self.title = title
+      self.count = count
+      self.summary = summary
+      self.lead = lead
+      self.query = query
+      self.filter = filter
+      self.filters = filters
+      self.search = search
+      self.rows = rows
+      self.none = none
+      self.full = full
+      self.titleMax = titleMax
+      self.textMax = textMax
+      self.words = words
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case teamId = "team_id"
+      case team = "team"
+      case title = "title"
+      case count = "count"
+      case summary = "summary"
+      case lead = "lead"
+      case query = "query"
+      case filter = "filter"
+      case filters = "filters"
+      case search = "search"
+      case rows = "rows"
+      case none = "none"
+      case full = "full"
+      case titleMax = "title_max"
+      case textMax = "text_max"
+      case words = "words"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.teamId = try c.decode(String.self, forKey: .teamId)
+      self.team = try c.decode(Text.self, forKey: .team)
+      self.title = try c.decode(Text.self, forKey: .title)
+      self.count = try c.decodeIfPresent(UInt32.self, forKey: .count) ?? 0
+      self.summary = try c.decode(Text.self, forKey: .summary)
+      self.lead = try c.decode(Text.self, forKey: .lead)
+      self.query = try c.decodeIfPresent(String.self, forKey: .query) ?? ""
+      self.filter = try c.decodeIfPresent(String.self, forKey: .filter) ?? ""
+      self.filters = try c.decodeIfPresent([KnowledgeFilterView].self, forKey: .filters) ?? []
+      self.search = try c.decode(Text.self, forKey: .search)
+      self.rows = try c.decodeIfPresent([KnowledgeRowView].self, forKey: .rows) ?? []
+      self.none = try c.decodeIfPresent(Text.self, forKey: .none)
+      self.full = try c.decodeIfPresent(Bool.self, forKey: .full) ?? false
+      self.titleMax = try c.decodeIfPresent(UInt32.self, forKey: .titleMax) ?? 0
+      self.textMax = try c.decodeIfPresent(UInt32.self, forKey: .textMax) ?? 0
+      self.words = try c.decode(KnowledgeWordsView.self, forKey: .words)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(teamId, forKey: .teamId)
+      try c.encode(team, forKey: .team)
+      try c.encode(title, forKey: .title)
+      try c.encode(count, forKey: .count)
+      try c.encode(summary, forKey: .summary)
+      try c.encode(lead, forKey: .lead)
+      try c.encode(query, forKey: .query)
+      try c.encode(filter, forKey: .filter)
+      try c.encode(filters, forKey: .filters)
+      try c.encode(search, forKey: .search)
+      try c.encode(rows, forKey: .rows)
+      try c.encodeIfPresent(none, forKey: .none)
+      try c.encode(full, forKey: .full)
+      try c.encode(titleMax, forKey: .titleMax)
+      try c.encode(textMax, forKey: .textMax)
+      try c.encode(words, forKey: .words)
+    }
+  }
+
+  /// One choice of the page's filter.
+  public struct KnowledgeFilterView: Codable, Hashable, Sendable {
+    /// "" or "pinned": what `Screen::Knowledge.filter` takes.
+    public var key: String
+    public var label: Text
+    public var count: UInt32
+    public var on: Bool
+
+    public init(key: String = "", label: Text = Text(), count: UInt32 = 0, on: Bool = false) {
+      self.key = key
+      self.label = label
+      self.count = count
+      self.on = on
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case label = "label"
+      case count = "count"
+      case on = "on"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decodeIfPresent(String.self, forKey: .key) ?? ""
+      self.label = try c.decode(Text.self, forKey: .label)
+      self.count = try c.decodeIfPresent(UInt32.self, forKey: .count) ?? 0
+      self.on = try c.decodeIfPresent(Bool.self, forKey: .on) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(label, forKey: .label)
+      try c.encode(count, forKey: .count)
+      try c.encode(on, forKey: .on)
+    }
+  }
+
+  /// One entry on the page.
+  public struct KnowledgeRowView: Codable, Hashable, Sendable {
+    /// Its id: what `Action::KnowledgeSave`, `KnowledgePin` and `KnowledgeDelete` take.
+    public var id: String
+    public var title: String
+    public var text: String
+    public var pinned: Bool
+    /// Who brought it and when ("proposed by Claude: Web · Yesterday", "added by you · Today").
+    public var by: Text
+    /// When it last changed.
+    public var atMs: UInt64
+
+    public init(id: String = "", title: String = "", text: String = "", pinned: Bool = false, by: Text = Text(), atMs: UInt64 = 0) {
+      self.id = id
+      self.title = title
+      self.text = text
+      self.pinned = pinned
+      self.by = by
+      self.atMs = atMs
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case title = "title"
+      case text = "text"
+      case pinned = "pinned"
+      case by = "by"
+      case atMs = "at_ms"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.title = try c.decode(String.self, forKey: .title)
+      self.text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+      self.pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+      self.by = try c.decode(Text.self, forKey: .by)
+      self.atMs = try c.decodeIfPresent(UInt64.self, forKey: .atMs) ?? 0
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(title, forKey: .title)
+      try c.encode(text, forKey: .text)
+      try c.encode(pinned, forKey: .pinned)
+      try c.encode(by, forKey: .by)
+      try c.encode(atMs, forKey: .atMs)
+    }
+  }
+
+  /// The words of the page Knowledge beside its entries.
+  public struct KnowledgeWordsView: Codable, Hashable, Sendable {
+    public var add: Text
+    public var edit: Text
+    public var delete: Text
+    public var pin: Text
+    public var unpin: Text
+    public var save: Text
+    public var cancel: Text
+    public var titleHint: Text
+    public var textHint: Text
+    public var deleteAsk: Text
+    public var full: Text
+
+    public init(add: Text = Text(), edit: Text = Text(), delete: Text = Text(), pin: Text = Text(), unpin: Text = Text(), save: Text = Text(), cancel: Text = Text(), titleHint: Text = Text(), textHint: Text = Text(), deleteAsk: Text = Text(), full: Text = Text()) {
+      self.add = add
+      self.edit = edit
+      self.delete = delete
+      self.pin = pin
+      self.unpin = unpin
+      self.save = save
+      self.cancel = cancel
+      self.titleHint = titleHint
+      self.textHint = textHint
+      self.deleteAsk = deleteAsk
+      self.full = full
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case add = "add"
+      case edit = "edit"
+      case delete = "delete"
+      case pin = "pin"
+      case unpin = "unpin"
+      case save = "save"
+      case cancel = "cancel"
+      case titleHint = "title_hint"
+      case textHint = "text_hint"
+      case deleteAsk = "delete_ask"
+      case full = "full"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.add = try c.decode(Text.self, forKey: .add)
+      self.edit = try c.decode(Text.self, forKey: .edit)
+      self.delete = try c.decode(Text.self, forKey: .delete)
+      self.pin = try c.decode(Text.self, forKey: .pin)
+      self.unpin = try c.decode(Text.self, forKey: .unpin)
+      self.save = try c.decode(Text.self, forKey: .save)
+      self.cancel = try c.decode(Text.self, forKey: .cancel)
+      self.titleHint = try c.decode(Text.self, forKey: .titleHint)
+      self.textHint = try c.decode(Text.self, forKey: .textHint)
+      self.deleteAsk = try c.decode(Text.self, forKey: .deleteAsk)
+      self.full = try c.decode(Text.self, forKey: .full)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(add, forKey: .add)
+      try c.encode(edit, forKey: .edit)
+      try c.encode(delete, forKey: .delete)
+      try c.encode(pin, forKey: .pin)
+      try c.encode(unpin, forKey: .unpin)
+      try c.encode(save, forKey: .save)
+      try c.encode(cancel, forKey: .cancel)
+      try c.encode(titleHint, forKey: .titleHint)
+      try c.encode(textHint, forKey: .textHint)
+      try c.encode(deleteAsk, forKey: .deleteAsk)
+      try c.encode(full, forKey: .full)
     }
   }
 
@@ -4488,8 +4831,10 @@ public enum CoreView {
     public var files: UInt64
     public var artifacts: UInt64
     public var goals: UInt64
+    /// Entries of its knowledge.
+    public var knowledge: UInt64
 
-    public init(teamId: String = "", sessions: UInt64 = 0, helpers: UInt64 = 0, archived: UInt64 = 0, openCards: UInt64 = 0, doneCards: UInt64 = 0, agents: UInt64 = 0, board: UInt64? = nil, pictures: UInt64? = nil, notes: UInt64? = nil, files: UInt64 = 0, artifacts: UInt64 = 0, goals: UInt64 = 0) {
+    public init(teamId: String = "", sessions: UInt64 = 0, helpers: UInt64 = 0, archived: UInt64 = 0, openCards: UInt64 = 0, doneCards: UInt64 = 0, agents: UInt64 = 0, board: UInt64? = nil, pictures: UInt64? = nil, notes: UInt64? = nil, files: UInt64 = 0, artifacts: UInt64 = 0, goals: UInt64 = 0, knowledge: UInt64 = 0) {
       self.teamId = teamId
       self.sessions = sessions
       self.helpers = helpers
@@ -4503,6 +4848,7 @@ public enum CoreView {
       self.files = files
       self.artifacts = artifacts
       self.goals = goals
+      self.knowledge = knowledge
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4519,6 +4865,7 @@ public enum CoreView {
       case files = "files"
       case artifacts = "artifacts"
       case goals = "goals"
+      case knowledge = "knowledge"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4536,6 +4883,7 @@ public enum CoreView {
       self.files = try c.decode(UInt64.self, forKey: .files)
       self.artifacts = try c.decode(UInt64.self, forKey: .artifacts)
       self.goals = try c.decode(UInt64.self, forKey: .goals)
+      self.knowledge = try c.decodeIfPresent(UInt64.self, forKey: .knowledge) ?? 0
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4553,6 +4901,7 @@ public enum CoreView {
       try c.encode(files, forKey: .files)
       try c.encode(artifacts, forKey: .artifacts)
       try c.encode(goals, forKey: .goals)
+      try c.encode(knowledge, forKey: .knowledge)
     }
   }
 

@@ -17,7 +17,8 @@
 //!    deleted at the hub at once (`DELETE /v1/files/{file}`, a human device may delete any file; an answer
 //!    `not-found` counts as done).
 //! 7. `WriteSnapshot`: a snapshot of the empty board, so the hub prunes the board's items (10.9).
-//! 8. `RemoveTeam`: the team's register is taken away (`desk/<id>` null).
+//! 8. `ForgetKnowledge`: every entry of the team's knowledge is taken away (`knowledge/<id>` null, 9.3.7).
+//! 9. `RemoveTeam`: the team's register is taken away (`desk/<id>` null).
 //!
 //! The hub drops the sealed copies itself: a settled object's bodies and an archived group's messages after 30 days
 //! (spec 9.4.1, 14.3), the board's items once a snapshot covers them (9.4.3).
@@ -76,6 +77,8 @@ pub struct Counts {
     pub artifacts: u64,
     /// Lines of its goals.
     pub goals: u64,
+    /// Entries of its knowledge.
+    pub knowledge: u64,
 }
 
 /// One step of the delete.
@@ -98,6 +101,8 @@ pub enum Step {
     DeleteFiles { file_ids: Vec<String> },
     /// Write a snapshot of the (now empty) board.
     WriteSnapshot { team_id: String },
+    /// Take these entries of the team's knowledge away (their ids, hex).
+    ForgetKnowledge { entry_ids: Vec<String> },
     /// Take the team's register away (write null).
     RemoveTeam { register: String },
     /// Nothing left: the team is gone.
@@ -242,6 +247,8 @@ impl Model {
             Step::WriteSnapshot {
                 team_id: team_id.to_string(),
             }
+        } else if !work.knowledge.is_empty() {
+            Step::ForgetKnowledge { entry_ids: work.knowledge }
         } else {
             Step::RemoveTeam { register }
         };
@@ -393,9 +400,11 @@ impl Model {
             .and_then(|v| v.get("goals"))
             .and_then(Value::as_str)
             .map_or(0, |g| g.lines().filter(|l| !l.trim().is_empty()).count() as u64);
-        // Units: one per card to shred, session to archive, device to remove, shape to erase, file to delete, and one
-        // each for the snapshot and the register.
-        let units = (w.shred.len() + w.archive.len() + w.devices.len() + w.files.len()) as u64
+        w.knowledge = crate::knowledge::of_team(self, team_id).into_iter().map(|e| e.id).collect();
+        c.knowledge = w.knowledge.len() as u64;
+        // Units: one per card to shred, session to archive, device to remove, shape to erase, file to delete, entry
+        // to forget, and one each for the snapshot and the register.
+        let units = (w.shred.len() + w.archive.len() + w.devices.len() + w.files.len() + w.knowledge.len()) as u64
             + board.map_or(0, |b| b.shapes.len() as u64)
             + u64::from(!board.is_some_and(|b| b.snapshot_empty))
             + u64::from(teams_of(self).contains_key(team_id));
@@ -405,6 +414,7 @@ impl Model {
 
 #[derive(Debug, Default)]
 struct Work {
+    knowledge: Vec<String>,
     shred: Vec<String>,
     archive: Vec<ArchiveOne>,
     devices: Vec<String>,
@@ -688,6 +698,25 @@ mod tests {
                 device_ids: vec![A1.into(), A3.into()]
             }
         );
+    }
+
+    #[test]
+    fn a_teams_knowledge_goes_with_it_and_another_teams_stays() {
+        let mut m = room();
+        set(&mut m, "desk/empty", json!({ "name": "Empty", "created_at": 3 }));
+        let entry = |team: &str| json!({ "desk": team, "title": "T", "text": "x", "at": 1 });
+        let (mine, other) = ("a".repeat(32), "b".repeat(32));
+        set(&mut m, &format!("knowledge/{mine}"), entry("empty"));
+        set(&mut m, &format!("knowledge/{other}"), entry("main"));
+        assert_eq!(m.team_contents("empty", None).knowledge, 1);
+        let k = Known { board: Some(board(0, true)), ..Default::default() };
+        let p = m.team_delete_plan("empty", &k, ME, 1);
+        mark(&mut m, &p);
+        let p = m.team_delete_plan("empty", &k, ME, 2);
+        assert_eq!(p.step, Step::ForgetKnowledge { entry_ids: vec![mine.clone()] });
+        set(&mut m, &format!("knowledge/{mine}"), Value::Null);
+        assert_eq!(m.team_delete_plan("empty", &k, ME, 3).step, Step::RemoveTeam { register: "desk/empty".into() });
+        assert!(!m.human[&format!("knowledge/{other}")].value.is_null());
     }
 
     #[test]

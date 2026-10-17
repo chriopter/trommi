@@ -319,6 +319,17 @@ impl World {
         self.write(false, &draft)
     }
 
+    /// The agent proposes something for the team's knowledge: a Decision card whose body carries `knowledge` (the
+    /// proposal as JSON text, ids as the wire writes them) beside words of its own, which the app does not show.
+    pub fn agent_proposes(&mut self, knowledge: &str) -> u64 {
+        self.cards += 1;
+        let payload = format!(
+            r#"{{"card_type":"decision","title":"Trust me","body":"anything","options":[{{"key":"yes"}},{{"key":"no"}}],"knowledge":{knowledge},"object_version":1,"previous_version_hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}"#
+        );
+        let draft = Draft::CardFirst { session: self.session, urgency: Urgency::Normal, push: false, payload: text(&payload) };
+        self.write(false, &draft)
+    }
+
     /// The agent asks a Decision card. Returns the card, the hash of this version (as a later version names it) and
     /// the change the hub gave it.
     pub fn agent_card(&mut self, title: &str) -> (trommi_core::ids::ObjectId, String, u64) {
@@ -335,6 +346,14 @@ impl World {
         let payload = format!(
             r#"{{"card_type":"decision","title":"{title}","options":[{{"key":"yes"}},{{"key":"no"}}],"object_version":{version},"previous_version_hash":"{previous}"}}"#
         );
+        let draft = Draft::CardVersion { session: self.session, object_id: card, closed: false, urgency: Urgency::Normal, push: false, payload: text(&payload) };
+        let (sealed, change) = self.seal(false, &draft);
+        (trommi_core::ids::base64url_encode(sealed.envelope_hash.as_bytes()), change)
+    }
+
+    /// The agent writes a later version of a card with this body (without its version's number and predecessor).
+    pub fn agent_version(&mut self, card: trommi_core::ids::ObjectId, previous: &str, body: &str, version: u32) -> (String, u64) {
+        let payload = format!(r#"{},"object_version":{version},"previous_version_hash":"{previous}"}}"#, body);
         let draft = Draft::CardVersion { session: self.session, object_id: card, closed: false, urgency: Urgency::Normal, push: false, payload: text(&payload) };
         let (sealed, change) = self.seal(false, &draft);
         (trommi_core::ids::base64url_encode(sealed.envelope_hash.as_bytes()), change)

@@ -72,6 +72,7 @@ struct CorePage: View {
     case .off: OffScreen()
     case .settings(let page): SettingsScreen(page: page)
     case .artifacts: ArtifactsScreen()
+    case .knowledge: KnowledgeScreen()
     case .scribble: ScribbleScreen()
     }
   }
@@ -207,6 +208,7 @@ struct PlacePill: View {
       }
       Section {
         Button { go(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
+        Button { go(.knowledge(query: "", filter: "")) } label: { Label("Knowledge", systemImage: "book") }
         Button { go(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
         Button { go(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
       }
@@ -293,6 +295,7 @@ struct Sidebar: View {
       Menu {
         Button { shell.focus(.settings(page: "")); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "key") }
         Button { shell.focus(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
+        Button { shell.focus(.knowledge(query: "", filter: "")) } label: { Label("Knowledge", systemImage: "book") }
         Button { shell.focus(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
         Button { shell.focus(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
         Button { shell.focus(.notes) } label: { Label("Note", systemImage: "note.text") }
@@ -387,6 +390,7 @@ struct DeskScreen: View {
           VStack(alignment: .leading, spacing: 0) {
             Greeting(text: hello.en)
             if let goals = desk.goals { GoalsDrawing(goals: goals).id(goals.teamId) }
+            if let know = desk.knowledge { KnowledgeChip(chip: know) }
           }.padding(.top, 18).padding(.bottom, 6)
         }
         if let reading = desk.reading { Text(reading.en).font(Face.text(14)).foregroundStyle(Ink.muted).accessibilityIdentifier("reading-history") }
@@ -736,6 +740,28 @@ struct OffHint: View {
   }
 }
 /** The team's goals under the greeting: a quiet line or a few; a tap writes in place; one toggle folds them. */
+/** The chip under a team's goals that opens its page Knowledge (`DeskView.knowledge`): "Knowledge" and how many. */
+struct KnowledgeChip: View {
+  @EnvironmentObject var shell: AppShell
+  let chip: CoreView.KnowledgeChipView
+  var body: some View {
+    Button { shell.focus(.knowledge(query: "", filter: "")) } label: {
+      HStack(spacing: 6) {
+        Sketch("book", color: Ink.muted).frame(width: 15, height: 15)
+        Text(chip.label.en).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted)
+        Text("\(chip.count)").font(Face.text(13, .bold)).foregroundStyle(Ink.fg).monospacedDigit()
+      }
+      .padding(.horizontal, 10).frame(minHeight: 30)
+      .background(Capsule().stroke(Ink.line, lineWidth: 1))
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .padding(.top, 6)
+    .accessibilityLabel(chip.says.en)
+    .accessibilityIdentifier("desk-knowledge")
+  }
+}
+
 struct GoalsDrawing: View {
   @EnvironmentObject var shell: AppShell
   let goals: CoreView.GoalsView

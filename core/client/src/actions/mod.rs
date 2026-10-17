@@ -205,6 +205,29 @@ pub enum Action {
         folded: bool,
     },
 
+    // ---- team knowledge (crate::knowledge) ----
+    /// An entry of a team's knowledge, written by the person: a new one (`entry_id` none) or one anew. Its title and
+    /// text are kept as `knowledge::clean_title` and `clean_text` say.
+    KnowledgeSave {
+        team_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry_id: Option<String>,
+        title: String,
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        pinned: bool,
+    },
+    /// An entry pinned (its team's agents read it first) or not.
+    KnowledgePin {
+        entry_id: String,
+        on: bool,
+    },
+    /// An entry taken away: no agent of its team reads it any more.
+    KnowledgeDelete {
+        entry_id: String,
+    },
+
     // ---- notes, scribble, files ----
     /// A sealed native share inbox item. Recipient selection and upload completion belong to the core.
     ImportShare {

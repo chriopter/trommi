@@ -113,6 +113,11 @@ impl App {
         match step {
             Step::Mark { register, value } => self.run_action(now_ms, Action::RoomRegister { key: register, value }, out),
             Step::RemoveTeam { register } => self.run_action(now_ms, Action::RoomRegister { key: register, value: serde_json::Value::Null }, out),
+            Step::ForgetKnowledge { entry_ids } => {
+                for entry_id in entry_ids {
+                    self.run_action(now_ms, Action::KnowledgeDelete { entry_id }, out);
+                }
+            }
             Step::Shred { object_ids } => {
                 for card_id in object_ids {
                     self.run_action(now_ms, Action::Shred { card_id, note: None, attachments: Vec::new(), marks: Vec::new() }, out);
@@ -189,6 +194,7 @@ impl App {
                     files: c.files,
                     artifacts: c.artifacts,
                     goals: c.goals,
+                    knowledge: c.knowledge,
                 }
             })
             .collect()

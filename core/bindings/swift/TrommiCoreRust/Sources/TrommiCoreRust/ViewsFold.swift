@@ -34,6 +34,7 @@ extension CoreView.ViewModel {
       case .artifacts(let view): artifacts = view
       case .gallery(let view): gallery = view
       case .thumbs(let view): thumbs = view
+      case .knowledge(let view): knowledge = view
       }
     }
     rev = delta.base + 1

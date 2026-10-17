@@ -113,6 +113,7 @@ pub const CARD_CONTENT_FIELDS: &[&str] = &[
     "merged_from_object_ids",
     "working",
     "helper",
+    "knowledge",
 ];
 /// One content field of a card: a plain value as it is; a list or object (options, sections, attachments) as its JSON
 /// text, read only by the apps (as `Value`s they would take several times their text, a thousand cards' worth).
@@ -179,7 +180,7 @@ impl<'de> Deserialize<'de> for Slot {
 /// A card's content fields, one slot per name of `CARD_CONTENT_FIELDS` (the newest version's body; a field it lacks
 /// holds its default). Slots, not a map: a thousand cards would keep a thousand maps of the same seventeen names.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct CardFields([Slot; 18]);
+pub struct CardFields([Slot; 19]);
 
 impl CardFields {
     fn slot(name: &str) -> Option<usize> {
@@ -294,6 +295,7 @@ struct CardIn {
     merged_from_object_ids: Option<Slot>,
     working: Option<Slot>,
     helper: Option<Slot>,
+    knowledge: Option<Slot>,
     object_version: i64,
     version_hash: Option<String>,
     envelope_number: u64,
@@ -336,7 +338,12 @@ impl From<CardIn> for Card {
             c.merged_from_object_ids,
             c.working,
             c.helper,
+            c.knowledge,
         ];
+        // (a proposal for the team's knowledge is drawn from what it asks, however the card was stored)
+        let mut fields = CardFields(slots.map(Option::unwrap_or_default));
+        let first = c.versions.iter().max_by_key(|v| v.envelope_number).is_none_or(|v| v.previous_version_hash.is_none());
+        crate::knowledge::dress(&mut fields, first);
         Card {
             object_id: c.object_id,
             catching_up: c.catching_up,
@@ -344,7 +351,7 @@ impl From<CardIn> for Card {
             session_id: c.session_id,
             object_state: c.object_state,
             urgency: c.urgency,
-            fields: CardFields(slots.map(Option::unwrap_or_default)),
+            fields,
             object_version: c.object_version,
             version_hash: c.version_hash,
             envelope_number: c.envelope_number,
