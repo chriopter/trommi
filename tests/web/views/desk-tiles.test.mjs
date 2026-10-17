@@ -21,6 +21,22 @@ test('empty items, and items the Desk does not hold, draw nothing small', () => 
   assert.doesNotMatch(String(deskTiles(d, '')), /dt-run"|dt-page/)
 })
 
+test('the bento: the size and the quiet state the core gives; an unknown size is narrow', () => {
+  const d = { tiles: [tile('work', { size: 'wide', empty: true }), tile('artifacts', { size: 'narrow' }), tile('board', { size: 'full', team_id: 'main' }), tile('knowledge', { size: 'huge', names: ['A', 'B'] })] }
+  const out = String(deskTiles(d, ''))
+  assert.match(out, /class="desk-tile is-wide is-empty" id="tile-work"/)
+  assert.match(out, /class="desk-tile is-full" id="tile-board"/)
+  assert.match(out, /class="desk-tile is-narrow" id="tile-knowledge"/)
+  assert.equal(out.match(/<li>/g)?.length, 2, "Knowledge shows the core's titles")
+})
+
+test('a tile without names, or with lists that are null, draws; an unknown tile is left out', () => {
+  const d = { tiles: [tile('knowledge', { names: null, items: null }), tile('work', { items: null }), tile('mystery'), null] }
+  const out = String(deskTiles(d, ''))
+  assert.match(out, /id="tile-knowledge"/)
+  assert.doesNotMatch(out, /tile-mystery|<li>/)
+})
+
 test('no tiles: an empty, hidden foot', () => {
   assert.match(String(deskTiles({}, '')), /<nav class="desk-tiles" id="desk-end" hidden><\/nav>/)
   assert.match(String(deskTiles({ tiles: [] }, '')), /hidden/)

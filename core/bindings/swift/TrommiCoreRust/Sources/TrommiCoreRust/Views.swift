@@ -1460,16 +1460,27 @@ public enum CoreView {
     /// artifacts (ids of `ViewModel.artifacts`, at most four) for "artifacts"; empty for "board". Always sent, also
     /// empty: a shell maps over it.
     public var items: [String]
+    /// What it shows as short lines, always sent: the first entries' titles for "knowledge" (pinned first, as its
+    /// page); empty for the others.
+    public var names: [String]
+    /// How much room it takes in the Desk's bento: "wide" (two of three columns: Working / Done, the Scribble Board),
+    /// "narrow" (one: Artifacts, Knowledge), "full" (all three: the board when there is no Knowledge tile).
+    public var size: String
+    /// It holds nothing yet: the shell draws it small and quiet, with its line only.
+    public var empty: Bool
     /// "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams.
     public var teamId: String?
 
-    public init(key: String = "", title: Text = Text(), line: Text = Text(), count: UInt32? = nil, opens: Screen = .desk, items: [String] = [], teamId: String? = nil) {
+    public init(key: String = "", title: Text = Text(), line: Text = Text(), count: UInt32? = nil, opens: Screen = .desk, items: [String] = [], names: [String] = [], size: String = "", empty: Bool = false, teamId: String? = nil) {
       self.key = key
       self.title = title
       self.line = line
       self.count = count
       self.opens = opens
       self.items = items
+      self.names = names
+      self.size = size
+      self.empty = empty
       self.teamId = teamId
     }
 
@@ -1480,6 +1491,9 @@ public enum CoreView {
       case count = "count"
       case opens = "opens"
       case items = "items"
+      case names = "names"
+      case size = "size"
+      case empty = "empty"
       case teamId = "team_id"
     }
 
@@ -1491,6 +1505,9 @@ public enum CoreView {
       self.count = try c.decodeIfPresent(UInt32.self, forKey: .count)
       self.opens = try c.decode(Screen.self, forKey: .opens)
       self.items = try c.decodeIfPresent([String].self, forKey: .items) ?? []
+      self.names = try c.decodeIfPresent([String].self, forKey: .names) ?? []
+      self.size = try c.decodeIfPresent(String.self, forKey: .size) ?? ""
+      self.empty = try c.decodeIfPresent(Bool.self, forKey: .empty) ?? false
       self.teamId = try c.decodeIfPresent(String.self, forKey: .teamId)
     }
 
@@ -1502,6 +1519,9 @@ public enum CoreView {
       try c.encodeIfPresent(count, forKey: .count)
       try c.encode(opens, forKey: .opens)
       try c.encode(items, forKey: .items)
+      try c.encode(names, forKey: .names)
+      try c.encode(size, forKey: .size)
+      try c.encode(empty, forKey: .empty)
       try c.encodeIfPresent(teamId, forKey: .teamId)
     }
   }
@@ -2105,12 +2125,15 @@ public enum CoreView {
     public var count: UInt32
     /// The chip in a sentence ("Team knowledge: 12 entries"), for a screen reader and a tooltip.
     public var says: Text
+    /// The first entries' titles, pinned first as on its page (at most four), always sent: the Desk's tile shows them.
+    public var first: [String]
 
-    public init(teamId: String = "", label: Text = Text(), count: UInt32 = 0, says: Text = Text()) {
+    public init(teamId: String = "", label: Text = Text(), count: UInt32 = 0, says: Text = Text(), first: [String] = []) {
       self.teamId = teamId
       self.label = label
       self.count = count
       self.says = says
+      self.first = first
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2118,6 +2141,7 @@ public enum CoreView {
       case label = "label"
       case count = "count"
       case says = "says"
+      case first = "first"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2126,6 +2150,7 @@ public enum CoreView {
       self.label = try c.decode(Text.self, forKey: .label)
       self.count = try c.decodeIfPresent(UInt32.self, forKey: .count) ?? 0
       self.says = try c.decode(Text.self, forKey: .says)
+      self.first = try c.decodeIfPresent([String].self, forKey: .first) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2134,6 +2159,7 @@ public enum CoreView {
       try c.encode(label, forKey: .label)
       try c.encode(count, forKey: .count)
       try c.encode(says, forKey: .says)
+      try c.encode(first, forKey: .first)
     }
   }
 
@@ -3990,8 +4016,11 @@ public enum CoreView {
     public var after: AfterView?
     /// The page's small fixed words (`CardWordsView`).
     public var words: CardWordsView
+    /// The card's ⋯ menu beside its title, in order (`CardMenuItem`): what can be done with it besides answering.
+    /// Always written, an empty list too, so a shell never meets it missing.
+    public var menu: [CardMenuItem]
 
-    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil, words: CardWordsView = CardWordsView()) {
+    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil, words: CardWordsView = CardWordsView(), menu: [CardMenuItem] = []) {
       self.id = id
       self.sessionId = sessionId
       self.kind = kind
@@ -4034,6 +4063,7 @@ public enum CoreView {
       self.earlier = earlier
       self.after = after
       self.words = words
+      self.menu = menu
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4079,6 +4109,7 @@ public enum CoreView {
       case earlier = "earlier"
       case after = "after"
       case words = "words"
+      case menu = "menu"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4125,6 +4156,7 @@ public enum CoreView {
       self.earlier = try c.decodeIfPresent(MoreView.self, forKey: .earlier)
       self.after = try c.decodeIfPresent(AfterView.self, forKey: .after)
       self.words = try c.decodeIfPresent(CardWordsView.self, forKey: .words) ?? CardWordsView()
+      self.menu = try c.decodeIfPresent([CardMenuItem].self, forKey: .menu) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4171,6 +4203,49 @@ public enum CoreView {
       try c.encodeIfPresent(earlier, forKey: .earlier)
       try c.encodeIfPresent(after, forKey: .after)
       try c.encode(words, forKey: .words)
+      try c.encode(menu, forKey: .menu)
+    }
+  }
+
+  /// One entry of a card's ⋯ menu. The shell draws it by its key: `prev`, `next` (the questions before and after it on
+  /// the Desk), `draw` (the pen on the card), `focus` (the page alone in the window), `chat` (its session's
+  /// conversation), `copy` (the card as one line), `wake` (back on the Desk now), `shred` (thrown away unanswered).
+  public struct CardMenuItem: Codable, Hashable, Sendable {
+    public var key: String
+    public var label: Text
+    /// The keys that do the same ("Shift ↓"); empty when none.
+    public var keys: String
+    /// Only on the card as it stands now: an older version shown read-only leaves it out.
+    public var nowOnly: Bool
+
+    public init(key: String = "", label: Text = Text(), keys: String = "", nowOnly: Bool = false) {
+      self.key = key
+      self.label = label
+      self.keys = keys
+      self.nowOnly = nowOnly
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case label = "label"
+      case keys = "keys"
+      case nowOnly = "now_only"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decode(String.self, forKey: .key)
+      self.label = try c.decode(Text.self, forKey: .label)
+      self.keys = try c.decodeIfPresent(String.self, forKey: .keys) ?? ""
+      self.nowOnly = try c.decodeIfPresent(Bool.self, forKey: .nowOnly) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(label, forKey: .label)
+      try c.encode(keys, forKey: .keys)
+      try c.encode(nowOnly, forKey: .nowOnly)
     }
   }
 

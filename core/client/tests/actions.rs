@@ -852,6 +852,9 @@ fn the_person_writes_entries_on_the_page_and_finds_them() {
     sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, ..Default::default() } });
     assert!(sim.view.knowledge.is_none(), "the page is left");
     assert_eq!(sim.view.desk.knowledge.as_ref().map(|k| (k.count, k.label.en.as_str())), Some((2, "Knowledge")));
+    // its tile shows the first titles, the pinned one first, as the page
+    let page_titles: Vec<String> = page.rows.iter().map(|r| r.title.clone()).collect();
+    assert_eq!(sim.view.desk.knowledge.as_ref().map(|k| k.first.clone()), Some(page_titles));
 }
 
 /// spec/v1.md 9.3.7: only a card's first version proposes. The agent writing the card again (here: another

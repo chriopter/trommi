@@ -98,8 +98,11 @@ pub fn page(b: &Board, ask: &Ask) -> KnowledgeView {
 /// The chip on a team's Desk that opens its page: "Knowledge" and how many entries.
 pub fn chip(b: &Board) -> KnowledgeChipView {
     let team = team(b);
-    let n = of_team(b.model, &team).len();
+    let entries = of_team(b.model, &team);
+    let n = entries.len();
+    let first = Index::new(entries).search("", 4).into_iter().map(|e| e.title.clone()).collect();
     KnowledgeChipView {
+        first,
         count: n as u32,
         label: say("knowledge.chip", "Knowledge", &[]),
         says: say("knowledge.chip.says", format!("Team knowledge: {}", count_words(n)), &[("n", &n.to_string())]),

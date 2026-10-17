@@ -681,6 +681,17 @@ pub struct DeskTileView {
     /// empty: a shell maps over it.
     #[serde(default)]
     pub items: Vec<String>,
+    /// What it shows as short lines, always sent: the first entries' titles for "knowledge" (pinned first, as its
+    /// page); empty for the others.
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// How much room it takes in the Desk's bento: "wide" (two of three columns: Working / Done, the Scribble Board),
+    /// "narrow" (one: Artifacts, Knowledge), "full" (all three: the board when there is no Knowledge tile).
+    #[serde(default)]
+    pub size: String,
+    /// It holds nothing yet: the shell draws it small and quiet, with its line only.
+    #[serde(default)]
+    pub empty: bool,
     /// "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team_id: Option<String>,
@@ -909,6 +920,9 @@ pub struct KnowledgeChipView {
     pub count: u32,
     /// The chip in a sentence ("Team knowledge: 12 entries"), for a screen reader and a tooltip.
     pub says: Text,
+    /// The first entries' titles, pinned first as on its page (at most four), always sent: the Desk's tile shows them.
+    #[serde(default)]
+    pub first: Vec<String>,
 }
 
 /// Sealed dictation (spec/v1.md 18): what the chat field's microphone shows. While the field is empty its send

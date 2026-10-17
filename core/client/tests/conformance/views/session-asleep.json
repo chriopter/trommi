@@ -407,6 +407,7 @@
             },
             "knowledge": {
               "count": 0,
+              "first": [],
               "label": {
                 "en": "Knowledge",
                 "key": "knowledge.chip"
@@ -759,6 +760,7 @@
             },
             "knowledge": {
               "count": 0,
+              "first": [],
               "label": {
                 "en": "Knowledge",
                 "key": "knowledge.chip"
@@ -2765,6 +2767,7 @@
       },
       "knowledge": {
         "count": 0,
+        "first": [],
         "label": {
           "en": "Knowledge",
           "key": "knowledge.chip"

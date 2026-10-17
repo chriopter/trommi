@@ -420,6 +420,14 @@ export interface DeskTileView {
    *  artifacts (ids of `ViewModel.artifacts`, at most four) for "artifacts"; empty for "board". Always sent, also
    *  empty: a shell maps over it. */
   items: string[]
+  /** What it shows as short lines, always sent: the first entries' titles for "knowledge" (pinned first, as its
+   *  page); empty for the others. */
+  names: string[]
+  /** How much room it takes in the Desk's bento: "wide" (two of three columns: Working / Done, the Scribble Board),
+   *  "narrow" (one: Artifacts, Knowledge), "full" (all three: the board when there is no Knowledge tile). */
+  size: string
+  /** It holds nothing yet: the shell draws it small and quiet, with its line only. */
+  empty: boolean
   /** "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams. */
   team_id?: string
 }
@@ -609,6 +617,8 @@ export interface KnowledgeChipView {
   count: number
   /** The chip in a sentence ("Team knowledge: 12 entries"), for a screen reader and a tooltip. */
   says: Text
+  /** The first entries' titles, pinned first as on its page (at most four), always sent: the Desk's tile shows them. */
+  first: string[]
 }
 
 /** Sealed dictation (spec/v1.md 18): what the chat field's microphone shows. While the field is empty its send
@@ -1204,6 +1214,21 @@ export interface CardView {
   after?: AfterView
   /** The page's small fixed words (`CardWordsView`). */
   words: CardWordsView
+  /** The card's ⋯ menu beside its title, in order (`CardMenuItem`): what can be done with it besides answering.
+   *  Always written, an empty list too, so a shell never meets it missing. */
+  menu: CardMenuItem[]
+}
+
+/** One entry of a card's ⋯ menu. The shell draws it by its key: `prev`, `next` (the questions before and after it on
+ *  the Desk), `draw` (the pen on the card), `focus` (the page alone in the window), `chat` (its session's
+ *  conversation), `copy` (the card as one line), `wake` (back on the Desk now), `shred` (thrown away unanswered). */
+export interface CardMenuItem {
+  key: string
+  label: Text
+  /** The keys that do the same ("Shift ↓"); empty when none. */
+  keys: string
+  /** Only on the card as it stands now: an older version shown read-only leaves it out. */
+  now_only: boolean
 }
 
 /** A picture of a card, and the option it belongs to (the web's `pictureKeys`, `picturesOf`): a section that names
