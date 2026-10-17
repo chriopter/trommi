@@ -73,6 +73,8 @@ pub struct Lens {
     pub off_window: Option<(String, u32)>,
     /// How many pages of a card's comments show ([`COMMENTS_PAGE`] rows each), for that card (its id).
     pub comments_window: Option<(String, u32)>,
+    /// A phone's screen (`Focus.phone`): the calm chat.
+    pub phone: bool,
 }
 
 /// Rows of a session's talk in one page of its window (the web's PAGE).
