@@ -948,6 +948,29 @@
   ],
   "status_lines": [
     {
+      "id": "load",
+      "label": "Load test",
+      "detail": "Waiting for your OK to run k6",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469620000
+    },
+    {
+      "id": "load-test-k6",
+      "label": "k6 run",
+      "helper": "Load Testing",
+      "detail": "Asks to run 400 users for 10 min",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469620000
+    },
+    {
       "id": "checkout",
       "label": "Checkout",
       "detail": "Sheet or page? Needed by Thursday",
@@ -962,17 +985,6 @@
         "number": 45,
         "title": "Checkout: a sheet over the app, or its own page?"
       }
-    },
-    {
-      "id": "load",
-      "label": "Load test",
-      "detail": "Waiting for your OK to run k6",
-      "state": "working",
-      "says": {
-        "key": "line.working",
-        "en": "working"
-      },
-      "updated_ms": 1791469620000
     },
     {
       "id": "checkout-variant",
@@ -1024,20 +1036,15 @@
         "number": 29,
         "title": "Show prices with VAT included everywhere?"
       }
-    },
-    {
-      "id": "load-test-k6",
-      "label": "k6 run",
-      "helper": "Load Testing",
-      "detail": "Asks to run 400 users for 10 min",
-      "state": "working",
-      "says": {
-        "key": "line.working",
-        "en": "working"
-      },
-      "updated_ms": 1791469620000
     }
   ],
+  "status_more": {
+    "key": "session.status_more",
+    "args": {
+      "n": "5"
+    },
+    "en": "+5"
+  },
   "questions": [
     {
       "id": "992640bed603743781e3241f6a2de105",

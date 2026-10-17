@@ -940,7 +940,12 @@ pub struct SessionView {
     pub blocked: bool,
     /// Talk rows, newest last.
     pub talk: Vec<TalkRow>,
+    /// The lines that show, the one its agent set last first: the chat's foot draws the first in one line beside the
+    /// working dots, and `status_more` for the rest, which a tap opens.
     pub status_lines: Vec<StatusLineView>,
+    /// "+N": how many lines stand behind the first; none with one line or none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_more: Option<Text>,
     /// Every card of the session, the newest first (its page "Questions").
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub questions: Vec<CardRefView>,

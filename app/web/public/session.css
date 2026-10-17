@@ -78,6 +78,38 @@ body[data-filter] .jump { display: none; }
 .msg-user:has(+ .msg-user.cont) .msg-time { display: none; }
 .msg-user:has(+ .msg-user.cont) .bubble { border-radius: var(--r-lg) var(--r-lg) var(--r-sm) var(--r-lg); }
 
+/* His words: the accent's soft tint, so his side and the agent's grey tell apart at a glance. */
+.msg-user .bubble { background: var(--accent-soft); }
+
+/* The agent's words: a grey bubble on the left, as in a messenger. Its drawing stands beside the first bubble of a
+   run, its name above it; one time under the last bubble of the run, every other on hover. A bubble holds at most
+   about two thirds of the column, and the whole column once it carries code, a table or pictures. */
+.msg-agent { display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 10px; align-items: start; }
+.msg-agent.cont { margin-top: var(--s-1); }
+.msg-face { grid-column: 1; padding-top: 22px; }
+.msg-face .agent-avatar { width: 30px; height: 30px; border-radius: 9px; }
+.msg-col { grid-column: 2; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.msg-agent .msg-head { gap: var(--s-2); margin: 0 0 var(--s-1) 4px; min-height: 18px; }
+.msg-agent .msg-name { font-size: var(--t-xs); color: var(--muted); }
+.bubble-agent { max-width: min(100%, 36rem); padding: 10px var(--s-4); background: color-mix(in srgb, var(--fg) 6%, var(--surface)); border-radius: var(--r-sm) var(--r-lg) var(--r-lg) var(--r-lg); }
+.msg-agent.cont .bubble-agent { border-top-left-radius: var(--r-sm); }
+.bubble-agent:has(.code, .rich-table-wrap, .shots, .media, iframe) { max-width: 100%; }
+.msg-agent.is-artifact .bubble-agent { padding: 0; background: none; border-radius: 0; }
+.bubble-agent > .rich { line-height: 1.6; }
+#chat .bubble-agent .rich :not(pre) > code { background: var(--surface); }
+#chat .bubble-agent .rich .code { background: var(--surface); }
+.bubble-agent > .msg-details { background: var(--surface); }
+.msg-agent .msg-time { margin: 5px 0 0 4px; }
+.msg-agent:has(+ .msg-agent.cont) > .msg-col > .msg-time { display: none; }
+.msg-agent:hover > .msg-col > .msg-time { display: block; }
+.msg-agent .cardclip-row { margin-top: var(--s-1); }
+@media (max-width: 860px) {
+  .msg-agent { grid-template-columns: 26px minmax(0, 1fr); column-gap: 8px; }
+  .msg-face .agent-avatar { width: 26px; height: 26px; border-radius: 8px; }
+  .bubble-agent { max-width: 92%; padding: 9px 14px; }
+  .bubble-agent:has(.code, .rich-table-wrap, .shots, .media, iframe) { max-width: 100%; }
+}
+
 /* Markdown as rich() builds it. Shared by the conversation and the history. */
 :is(#chat, #inbox) .rich { font-size: 1rem; line-height: 1.65; overflow-wrap: anywhere; min-width: 0; }
 :is(#chat, #inbox) .rich > * + * { margin-top: .8em; }
@@ -582,23 +614,30 @@ form.log-earlier { display: contents; }
 .session-helpers li span { min-width: 0; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); }
 .status-helper { flex: none; color: var(--muted); font: 600 11px/1.2 var(--font); }
 .msg-helper { padding: 1px 8px; border-radius: 999px; background: var(--sunken); color: var(--muted); font: 600 12px/1.5 var(--font); }
-.session-status { display: grid; gap: 6px; justify-items: stretch; margin-top: var(--s-6); }
+.session-status { display: grid; gap: 6px; justify-items: start; margin-top: var(--s-6); }
 .session-status[hidden] { display: none; }
-.session-status .working { margin-top: var(--s-2); }
-/* one row of chips, never two; on a phone it scrolls sideways (session.mjs sessionStatus) */
-.status-chips { display: flex; gap: 6px; min-width: 0; overflow: visible; padding-bottom: 2px; }
-.status-chip { display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 16rem; height: 30px; padding: 0 10px 0 7px; border: 0; border-radius: var(--r-pill); background: var(--sunken); color: var(--fg); font: 400 var(--t-sm)/1 var(--font); text-decoration: none; cursor: pointer; }
-.status-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.status-chip .status-mark { display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; }
-.status-chip .status-mark :is(svg, .sketch) { width: 16px; height: 16px; }
-.status-chip[data-state="decision"] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--urg-high) 55%, transparent); }
+/* One calm line (session.mjs sessionStatus): the drawing, "… is working" and its dots, the line set last, "+N". */
+.session-status .working { gap: 8px; max-width: 100%; min-width: 0; margin-top: var(--s-2); min-height: 28px; font-size: var(--t-xs); }
+.session-status .working .agent-avatar { flex: none; width: 20px; height: 20px; border-radius: 6px; }
+.session-status .working.is-quiet .agent-avatar { animation: none; }
+.working-says { flex: none; white-space: nowrap; }
+.working .dots { flex: none; }
+.working-sep { flex: none; color: var(--faint); }
+.status-chip { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 24rem; height: 26px; padding: 0 8px 0 6px; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); font: 400 var(--t-xs)/1 var(--font); text-decoration: none; cursor: pointer; }
+.status-chip:hover, .status-chip[aria-expanded="true"] { background: var(--sunken); color: var(--fg); }
+.status-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--fg); }
+.status-chip .status-mark { display: inline-grid; place-items: center; flex: none; width: 14px; height: 14px; }
+.status-chip .status-mark :is(svg, .sketch) { width: 14px; height: 14px; }
 .status-chip[data-state="decision"] .status-mark { color: var(--urg-high); }
-.status-chip:is([data-state="later"], [data-state="done"]) { color: var(--muted); }
+.status-chip:is([data-state="later"], [data-state="done"]) b { color: var(--muted); }
 .status-chip:is([data-state="later"], [data-state="done"]) .status-mark { color: var(--faint); }
-.status-chip[aria-expanded="true"] { box-shadow: inset 0 0 0 1px var(--line-strong); }
-a.status-chip:hover b, a.status-chip:focus-visible b { text-decoration: underline; text-underline-offset: 3px; }
+.status-pile { flex: none; height: 26px; padding: 0 6px; border: 0; border-radius: var(--r-sm); background: none; color: var(--faint); font: 600 var(--t-xs)/1 var(--font); font-variant-numeric: tabular-nums; cursor: pointer; }
+.status-pile:hover, .status-pile[aria-expanded="true"] { background: var(--sunken); color: var(--fg); }
+/* the rest, under the line, one under the other */
+.status-more { display: grid; justify-items: start; gap: 2px; margin-left: 24px; padding: 4px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); max-width: calc(100% - 24px); }
+.status-more[hidden] { display: none; }
 .status-age { color: var(--faint); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
-.status-open { display: grid; gap: 6px; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--sunken); }
+.status-open { display: grid; gap: 6px; justify-self: stretch; margin: 0 0 0 24px; padding: 10px 12px; border-radius: 12px; background: var(--sunken); }
 .status-open[hidden] { display: none; }
 .status-open-text { margin: 0; color: var(--fg); font: 400 var(--t-sm)/1.45 var(--font); overflow-wrap: anywhere; }
 .status-open-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0; color: var(--muted); font-size: var(--t-xs); }
@@ -607,7 +646,6 @@ a.status-chip:hover b, a.status-chip:focus-visible b { text-decoration: underlin
 /* a stale line: greyed, a still hollow ring instead of the spinning one */
 .status-chip[data-state="stale"] { color: var(--muted); }
 .status-still { display: block; width: 11px; height: 11px; border: 1.6px solid var(--faint); border-radius: 50%; box-sizing: border-box; }
-@media (max-width: 860px) { .status-chip { max-width: 11rem; } }
 /* The composer: the clip is the label of a real file field; the chosen files stand above the words. */
 .composer-clip { cursor: pointer; }
 /* The heading's controls (ui.mjs), on the heading's line: the name in the heading's letters. */
@@ -822,21 +860,6 @@ a.files-where:hover span { text-decoration: underline; }
 .empty-row .ico { width: 16px; height: 16px; color: var(--faint); fill: none; stroke: currentColor; stroke-width: 2; }
 .empty-row:hover .ico { color: var(--accent); }
 
-/* ---- no sideways scroll for the chips (session.mjs status-lines): what does not fit lies on a stack "+N"; a tap opens
-   it, one under the other ---- */
-.status-chips > .status-chip[hidden] { display: none; }
-.status-pile { position: relative; flex: none; display: inline-flex; align-items: center; height: 30px; padding: 0 10px; border: 0; border-radius: var(--r-pill); background: var(--sunken); color: var(--fg); font: 600 var(--t-sm)/1 var(--font); cursor: pointer; isolation: isolate; margin-right: calc(var(--behind, 1) * 4px); }
-.status-pile[hidden] { display: none; }
-/* the edges of the chips under it */
-.status-pile { box-shadow: inset 0 0 0 1px var(--line-strong); }
-.status-pile::before, .status-pile::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.status-pile::before { transform: translate(4px, 3px) rotate(1.5deg); }
-.status-pile::after { transform: translate(8px, 6px) rotate(-1deg); opacity: .7; }
-.status-pile[aria-expanded="true"] { box-shadow: inset 0 0 0 1px var(--line-strong); }
-.status-pile-n { font-variant-numeric: tabular-nums; }
-.status-more { display: grid; justify-items: start; gap: 6px; margin-top: 6px; padding: 8px; border-radius: 14px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong); width: max-content; max-width: 100%; }
-.status-more[hidden] { display: none; }
-.status-more > .status-chip { max-width: min(28rem, 100%); }
 
 /* ---- A calm chat (a wide screen; session.mjs headPill, sidePanel, the core's SessionView.tabs) ----
    The head is one pill in the middle (drawing, name, a small dot, what waits); a click opens the side panel at the

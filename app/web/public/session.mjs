@@ -107,7 +107,8 @@ function talkRow(r, s, vm, t) {
   const body = r.kind === 'artifact'
     ? artifactCard({ id: r.published, note: r.text, from: r.id }, base)
     : raw(String(words(r.text ?? '', { extra: r.html ?? '' })).replace(/<\/div>$/, () => `${attachments(r.files, s, vm, t, r.id)}</div>`))
-  return html`<article class="msg msg-agent${r.cont ? ' cont' : ''}" id="${id}"${r.cont ? html` title="${FULL.format(r.time_ms)}"` : ''}>${r.cont ? '' : html`<header class="msg-head">${agentMark(s)}<span class="msg-name">${s.name.en}</span>${r.helper ? html`<span class="msg-helper">${r.helper}</span>` : ''}${timeNode(r.time_ms, 'msg-time')}</header>`}${about}${body}${cardChips(r, s, base)}${r.details ? html`<details class="msg-details"><summary>Details</summary>${words(r.details)}</details>` : ''}</article>`
+  // A bubble on the left: the session's drawing beside the first of a run, its name above it; the time of each on hover.
+  return html`<article class="msg msg-agent${r.cont ? ' cont' : ''}${r.kind === 'artifact' ? ' is-artifact' : ''}" id="${id}">${r.cont ? html`<span class="msg-face" aria-hidden="true"></span>` : html`<span class="msg-face">${agentMark(s)}</span>`}<div class="msg-col">${r.cont ? '' : html`<header class="msg-head"><span class="msg-name">${s.name.en}</span>${r.helper ? html`<span class="msg-helper">${r.helper}</span>` : ''}</header>`}${about}<div class="bubble bubble-agent">${body}${r.details ? html`<details class="msg-details"><summary>Details</summary>${words(r.details)}</details>` : ''}</div>${cardChips(r, s, base)}${timeNode(r.time_ms, 'msg-time')}</div></article>`
 }
 // (every child of the log has an id: the page drawn again is morphed row by row)
 const talk = (s, vm, t) => s.talk.map(r => html`${r.day ? html`<div class="day" id="day-${r.id}"><span>${r.day.en}</span></div>` : ''}${talkRow(r, s, vm, t)}`)
@@ -149,54 +150,27 @@ export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
  *  state; no way into a chat of their own (their cards and words are this session's). */
 const helperList = s => (s.helpers ? html`<section class="session-helpers" id="session-helpers-${s.id}" aria-label="${s.helpers.head.en}"><h3>${s.helpers.head.en} <small>${s.helpers.sub.en}</small></h3><ul>${s.helpers.rows.map(h => html`<li${h.working ? raw(' class="is-working"') : ''}><i aria-hidden="true"></i><b>${h.name}</b><span>${h.says.en}</span></li>`)}</ul></section>` : '')
 const lineMark = l => html`<span class="status-mark">${l.state === 'working' ? raw(ringSvg({ drop: true })) : l.state === 'stale' ? html`<i class="status-still" aria-hidden="true"></i>` : l.state === 'decision' ? sk('knock') : l.state === 'later' ? sk('snooze') : sk('tick')}</span>`
-/** One row of small chips (mark, title, age), never two rows; what does not fit lies on a stack "+N" (controller
- *  "status-lines"). A tap opens a chip under the row: its whole text, how it stands, the way to its card. */
+/** One calm line at the chat's foot: the drawing, "… is working" with its dots while it answers, the status line its
+ *  agent set last (the core's first) with its age, and the core's "+N" for the rest, which a tap opens under the line
+ *  (controller "status-lines"). A tap on a line opens it: its whole text, how it stands, the way to its card. */
+const statusChip = (l, s, base) => html`<button type="button" class="status-chip" data-state="${l.state}" data-key="${s.id}:${l.id}" data-label="${l.label}" data-detail="${l.detail}" data-said="${l.says.en}"${l.card ? html` data-href="${cardPath(l.card, s, base)}" data-card="${l.card.title}"` : ''} title="${l.label}" aria-expanded="false" aria-controls="status-open-${s.id}" data-action="status-lines#toggle">${lineMark(l)}${l.helper ? html`<small class="status-helper">${l.helper}</small>` : ''}<b>${l.label}</b>${l.updated_ms ? html`<span class="status-age" aria-hidden="true" data-ts="${l.updated_ms}">${agoShort(l.updated_ms)}</span>${agoSpan(l.updated_ms, 'offscreen')}` : ''}</button>`
 function sessionStatus(s, base) {
-  const lines = s.status_lines ?? []
-  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || s.answering ? '' : raw(' hidden')}>${s.answering ? html`<div class="working">${agentMark(s)}<span>${s.answering.en}</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.length ? html`<div class="status-chips" role="list">${lines.map(l => html`<button type="button" class="status-chip" role="listitem" data-state="${l.state}" data-key="${s.id}:${l.id}" data-label="${l.label}" data-detail="${l.detail}" data-said="${l.says.en}"${l.card ? html` data-href="${cardPath(l.card, s, base)}" data-card="${l.card.title}"` : ''} title="${l.label}" aria-expanded="false" aria-controls="status-open-${s.id}" data-action="status-lines#toggle">${lineMark(l)}${l.helper ? html`<small class="status-helper">${l.helper}</small>` : ''}<b>${l.label}</b>${l.updated_ms ? html`<span class="status-age" aria-hidden="true" data-ts="${l.updated_ms}">${agoShort(l.updated_ms)}</span>${agoSpan(l.updated_ms, 'offscreen')}` : ''}</button>`)}</div><div class="status-open" id="status-open-${s.id}" hidden></div>` : ''}</div>`
+  const lines = s.status_lines ?? [], [first, ...rest] = lines
+  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || s.answering ? '' : raw(' hidden')}><div class="working${s.answering ? '' : ' is-quiet'}">${agentMark(s)}${s.answering ? html`<span class="working-says">${s.answering.en}</span><span class="dots"><i></i><i></i><i></i></span>` : ''}${first ? html`${s.answering ? html`<span class="working-sep" aria-hidden="true">·</span>` : ''}${statusChip(first, s, base)}` : ''}${s.status_more ? html`<button type="button" class="status-pile" aria-expanded="false" aria-controls="status-more-${s.id}" aria-label="${rest.length} more" data-action="status-lines#more">${s.status_more.en}</button>` : ''}</div>${rest.length ? html`<div class="status-more" id="status-more-${s.id}" role="list" hidden>${rest.map(l => statusChip(l, s, base))}</div>` : ''}${lines.length ? html`<div class="status-open" id="status-open-${s.id}" hidden></div>` : ''}</div>`
 }
-// The one chip open stays open when the page is drawn again.
-const statusOpen = new Set()
-// No sideways scroll (the owner, 13 October 2026): the chips that fit stand in the row; what does not fit lies on a
-// small stack "+N" at its end, and a tap on the stack opens what lies on it under the row.
+// The line open and the list of the rest stay open when the page is drawn again.
+const statusOpen = new Set(), moreOpen = new Set()
 controller('status-lines', class extends Controller {
   connect() {
     const chip = [...this.element.querySelectorAll('.status-chip[data-key]')].find(c => statusOpen.has(c.dataset.key)); if (chip) this.show(chip)
-    const row = this.element.querySelector('.status-chips')
-    if (!row) return
-    this.pile = Object.assign(document.createElement('button'), { type: 'button', className: 'status-pile', hidden: true })
-    this.pile.setAttribute('aria-expanded', 'false')
-    this.pile.addEventListener('click', () => this.openPile())
-    row.append(this.pile)
-    this.more = Object.assign(document.createElement('div'), { className: 'status-more', role: 'list', hidden: true })
-    row.after(this.more)
-    this.watch = new ResizeObserver(() => this.place()); this.watch.observe(row)
-    this.place()
+    if (moreOpen.has(this.element.id)) this.setMore(true)
   }
-  disconnect() { this.watch?.disconnect(); this.pile?.remove(); this.more?.remove() }
-  place() {
-    const row = this.element.querySelector('.status-chips'), chips = [...row.querySelectorAll(':scope > .status-chip')]
-    for (const c of chips) c.hidden = false
-    // (the stack's room is kept free while measuring: as wide as "+9")
-    this.pile.hidden = false
-    this.pile.innerHTML = '<span class="status-pile-n">+9</span>'
-    const room = this.pile.getBoundingClientRect().width + 14, right = row.getBoundingClientRect().right
-    const all = chips.every(c => c.getBoundingClientRect().right <= right)
-    const over = all ? [] : chips.filter(c => c.getBoundingClientRect().right > right - room)
-    for (const c of over) c.hidden = true
-    this.pile.hidden = !over.length
-    this.pile.innerHTML = `<span class="status-pile-n">+${over.length}</span>`
-    this.pile.setAttribute('aria-label', `${over.length} more`)
-    this.pile.style.setProperty('--behind', String(Math.min(over.length, 2)))
-    this.over = over
-    if (!this.more.hidden) { if (over.length) this.fill(); else { this.more.hidden = true; this.pile.setAttribute('aria-expanded', 'false') } }
-  }
-  fill() { this.more.replaceChildren(...this.over.map(c => { const k = c.cloneNode(true); k.hidden = false; return k })) }
-  openPile() {
-    if (!this.over?.length) return
-    const open = this.more.hidden
-    this.more.hidden = !open; this.pile.setAttribute('aria-expanded', String(open))
-    if (open) this.fill()
+  more() { this.setMore(this.element.querySelector('.status-more')?.hidden ?? false) }
+  setMore(open) {
+    const list = this.element.querySelector('.status-more'), pile = this.element.querySelector('.status-pile')
+    if (!list || !pile) return
+    list.hidden = !open; pile.setAttribute('aria-expanded', String(open))
+    if (open) moreOpen.add(this.element.id); else moreOpen.delete(this.element.id)
   }
   toggle(e) {
     const chip = e.currentTarget, on = chip.getAttribute('aria-expanded') === 'true'
