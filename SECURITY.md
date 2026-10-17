@@ -83,6 +83,13 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   removed, when notifications are off on this phone, and when a new copy cannot be written; until the app runs after
   a key change, the copy still holds the key of the period before. Without the copy, before the first unlock or
   after a key change the app has not written yet, the notification shows the plain text ("A new question.").
+- Team knowledge: a team's entries are end-to-end encrypted in the room group, which only your devices read. Your
+  devices copy each team's entries into the sessions of that team, so every agent of a team reads that team's
+  knowledge, and nothing of another team's or of the room. An agent cannot write an entry: it proposes one (or a
+  change, or a removal) on a yes/no card that your app draws from the proposal itself, not from the agent's words, and
+  only your Yes, written by your device, keeps it; a change or removal also only while the entry still has the title
+  the agent read. Only a card's first version proposes, so a card cannot change under your Yes. The hub sees nothing new: these are encrypted registers like the others (who wrote one, when, its
+  padded size).
 - An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
   are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
   Claude Code's status line (put around one already there), never from their credential files.

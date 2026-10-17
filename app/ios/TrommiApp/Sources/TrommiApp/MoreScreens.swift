@@ -701,6 +701,177 @@ struct SettingsScreen: View {
   private func addTeam() { shell.act(["do": "add_team", "name": teamName]); teamName = "" }
 }
 
+// ---- Knowledge -----------------------------------------------------------------------------------------------------
+
+/**
+ * The page Knowledge of the team in view (`ViewModel.knowledge`, the core's KnowledgeView): the search, the filter All ·
+ * Pinned, the entries in the core's order. A tap opens an entry (all of its text); its menu has Edit, Pin or Unpin and
+ * Delete. "Add entry" opens the editor. The core keeps the entries, writes them and says every word.
+ */
+struct KnowledgeScreen: View {
+  @EnvironmentObject var shell: AppShell
+  @State private var query = ""
+  @State private var open: String?
+  @State private var editing: KnowledgeDraft?
+  @State private var deleting: CoreView.KnowledgeRowView?
+  var body: some View {
+    ScrollView {
+      LazyVStack(alignment: .leading, spacing: 12) {
+        if let k = shell.view.knowledge {
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+              PageHeading(text: k.title.en)
+              Text("(\(k.count))").font(Face.display(26, .bold)).foregroundStyle(Ink.muted).accessibilityLabel(k.summary.en)
+            }
+            Text(k.lead.en).font(Face.text(15)).foregroundStyle(Ink.muted)
+          }
+          PaperSearch(text: $query, prompt: k.search.en)
+          HStack(spacing: 10) {
+            filters(k)
+            Spacer(minLength: 0)
+            Button { editing = KnowledgeDraft(teamId: k.teamId) } label: {
+              Label(k.words.add.en, systemImage: "plus").font(Face.text(15, .semibold)).padding(.horizontal, 14).frame(minHeight: 40)
+                .background(Capsule().stroke(Ink.lineStrong, lineWidth: 1))
+            }
+            .buttonStyle(.plain).disabled(k.full)
+            .accessibilityIdentifier("knowledge-add")
+          }
+          if k.full { Text(k.words.full.en).font(Face.text(13)).foregroundStyle(Ink.muted) }
+          if !k.rows.isEmpty {
+            VStack(spacing: 0) {
+              ForEach(Array(k.rows.enumerated()), id: \.element.id) { i, row in
+                if i > 0 { Divider().overlay(Ink.line) }
+                entry(row, k)
+              }
+            }
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Ink.surface))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Ink.line, lineWidth: 1))
+          }
+          if let none = k.none { Text(none.en).font(Face.text(15)).foregroundStyle(Ink.muted).padding(.vertical, 20).frame(maxWidth: .infinity).multilineTextAlignment(.center).accessibilityIdentifier("knowledge-none") }
+        } else {
+          Loading()
+        }
+      }
+      .padding(.horizontal, 16).padding(.bottom, 120)
+      .frame(maxWidth: 760).frame(maxWidth: .infinity)
+    }
+    .background(Ink.bg)
+    .scrollDismissesKeyboard(.interactively)
+    .pushedPills(center: { EmptyView() }, trailing: { EmptyView() })
+    .onAppear { query = shell.view.knowledge?.query ?? "" }
+    .onChange(of: query) { _, text in pick(query: text, filter: shell.view.knowledge?.filter ?? "") }
+    .sheet(item: $editing) { draft in KnowledgeEditor(draft: draft, words: shell.view.knowledge?.words ?? CoreView.KnowledgeWordsView(), titleMax: Int(shell.view.knowledge?.titleMax ?? 80), textMax: Int(shell.view.knowledge?.textMax ?? 600)).presentationDetents([.medium, .large]) }
+    .confirmationDialog(shell.view.knowledge?.words.deleteAsk.en ?? "", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+      if let row = deleting { Button(shell.view.knowledge?.words.delete.en ?? "Delete", role: .destructive) { shell.act(["do": "knowledge_delete", "entry_id": row.id]); deleting = nil } }
+    }
+  }
+  /** One entry: its drawing, the title, the text (two lines, all of it when open), who brought it and when, the pin. */
+  private func entry(_ row: CoreView.KnowledgeRowView, _ k: CoreView.KnowledgeView) -> some View {
+    let isOpen = open == row.id
+    return Button { withAnimation(.easeOut(duration: 0.15)) { open = isOpen ? nil : row.id } } label: {
+      HStack(alignment: .top, spacing: 12) {
+        Sketch("book", color: Ink.muted).frame(width: 18, height: 18).frame(width: 32, height: 32)
+          .background(RoundedRectangle(cornerRadius: 9).fill(Ink.sunken))
+        VStack(alignment: .leading, spacing: 3) {
+          Text(row.title).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).multilineTextAlignment(.leading)
+          if !row.text.isEmpty { Text(row.text).font(Face.text(14)).foregroundStyle(Ink.fg).lineLimit(isOpen ? nil : 2).multilineTextAlignment(.leading) }
+          Text(row.by.en).font(Face.text(12)).foregroundStyle(Ink.faint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        if row.pinned { Sketch("pin", color: Ink.accent).frame(width: 16, height: 16).accessibilityLabel("Pinned") }
+      }
+      .padding(14).contentShape(Rectangle())
+      .background(isOpen ? Ink.accentSoft : .clear)
+    }
+    .buttonStyle(.plain)
+    .contextMenu {
+      Button { editing = KnowledgeDraft(teamId: k.teamId, row: row) } label: { Label(k.words.edit.en, systemImage: "pencil") }
+      Button { shell.act(["do": "knowledge_pin", "entry_id": row.id, "on": !row.pinned]) } label: { Label(row.pinned ? k.words.unpin.en : k.words.pin.en, systemImage: row.pinned ? "pin.slash" : "pin") }
+      Button(role: .destructive) { deleting = row } label: { Label(k.words.delete.en, systemImage: "trash") }
+    }
+    .overlay(alignment: .bottomTrailing) {
+      if isOpen {
+        HStack(spacing: 8) {
+          Button(k.words.edit.en) { editing = KnowledgeDraft(teamId: k.teamId, row: row) }
+          Button(row.pinned ? k.words.unpin.en : k.words.pin.en) { shell.act(["do": "knowledge_pin", "entry_id": row.id, "on": !row.pinned]) }
+          Button(k.words.delete.en, role: .destructive) { deleting = row }
+        }
+        .font(Face.text(13, .semibold)).buttonStyle(.bordered).controlSize(.small).padding(10)
+      }
+    }
+    .padding(.bottom, isOpen ? 40 : 0)
+    .accessibilityIdentifier("knowledge-\(row.id)")
+  }
+  /** The filter as one quiet segmented track: All · Pinned, each with its count (the core's choices). */
+  private func filters(_ k: CoreView.KnowledgeView) -> some View {
+    HStack(spacing: 4) {
+      ForEach(k.filters, id: \.key) { f in
+        Button { pick(query: query, filter: f.key) } label: {
+          Text("\(f.label.en) \(f.count)").font(Face.text(15, f.on ? .semibold : .regular)).foregroundStyle(Ink.fg)
+            .padding(.horizontal, 12).frame(minHeight: 36)
+            .background { if f.on { Capsule().fill(Ink.surface).shadow(color: .black.opacity(0.08), radius: 2, y: 1) } }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(f.on ? .isSelected : [])
+        .accessibilityIdentifier("knowledge-filter-" + (f.key.isEmpty ? "all" : f.key))
+      }
+    }
+    .padding(4).background(Capsule().fill(Ink.sunken))
+  }
+  private func pick(query: String, filter: String) {
+    let screen = CoreView.Screen.knowledge(query: query.trimmingCharacters(in: .whitespaces), filter: filter)
+    if case .knowledge = shell.path.last { shell.path[shell.path.count - 1] = screen; shell.show(screen) } else { shell.show(screen) }
+  }
+}
+
+/** What the editor writes: a new entry of the team (no id), or one anew. */
+struct KnowledgeDraft: Identifiable {
+  let id = UUID()
+  let teamId: String
+  var entryId: String? = nil
+  var title = ""
+  var text = ""
+  var pinned = false
+  init(teamId: String, row: CoreView.KnowledgeRowView? = nil) {
+    self.teamId = teamId
+    if let row { entryId = row.id; title = row.title; text = row.text; pinned = row.pinned }
+  }
+}
+
+/** The editor of an entry: its title, its text, pinned; Save sends it to the core (Action::KnowledgeSave). */
+struct KnowledgeEditor: View {
+  @EnvironmentObject var shell: AppShell
+  @Environment(\.dismiss) private var dismiss
+  @State var draft: KnowledgeDraft
+  let words: CoreView.KnowledgeWordsView
+  let titleMax: Int
+  let textMax: Int
+  var body: some View {
+    NavigationStack {
+      Form {
+        TextField(words.titleHint.en, text: $draft.title).font(Face.text(17, .semibold))
+          .onChange(of: draft.title) { _, t in if t.count > titleMax { draft.title = String(t.prefix(titleMax)) } }
+        TextField(words.textHint.en, text: $draft.text, axis: .vertical).lineLimit(4...12).font(Face.text(15))
+          .onChange(of: draft.text) { _, t in if t.count > textMax { draft.text = String(t.prefix(textMax)) } }
+        Toggle(words.pin.en, isOn: $draft.pinned)
+      }
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button(words.cancel.en) { dismiss() } }
+        ToolbarItem(placement: .confirmationAction) {
+          Button(words.save.en) {
+            var a: [String: Any] = ["do": "knowledge_save", "team_id": draft.teamId, "title": draft.title, "text": draft.text, "pinned": draft.pinned]
+            if let id = draft.entryId { a["entry_id"] = id }
+            shell.act(a)
+            dismiss()
+          }
+          .disabled(draft.title.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+      }
+    }
+  }
+}
+
 // ---- Artifacts -----------------------------------------------------------------------------------------------------
 
 struct ArtifactsScreen: View {

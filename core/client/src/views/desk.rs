@@ -143,6 +143,8 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
             lines,
         }
     });
+    // (a team's knowledge, as its goals: home shows none)
+    let knowledge = (!units.is_empty() && !b.lens.desk_all).then(|| super::knowledge::chip(b));
     // Nothing is open at all (what is with an agent counts as open): the list's place says so.
     let any_open = walk_len > 0
         || m.cards.values().any(|c| {
@@ -166,6 +168,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         hello,
         reading: progress.filter(|_| reading),
         goals,
+        knowledge,
         rows,
         waiting: questions,
         blitz: (walk_len > 0 && !units.is_empty()).then(|| {

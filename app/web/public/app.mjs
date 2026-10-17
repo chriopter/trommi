@@ -31,6 +31,7 @@ const LAZY = {
   card: { load: () => import('./card.mjs'), paths: /^(?:\/chat\/[^/]+)?\/card\/|^\/cards\/[0-9a-f]+\// },
   session: { load: () => import('./session.mjs'), paths: /^\/chat\// },
   media: { load: () => import('./media.mjs'), paths: /^\/artifacts(?:\/|$)/ },
+  knowledge: { load: () => import('./knowledge.mjs'), paths: /^\/knowledge(?:\/|$)/ },
   whiteboard: { load: () => import('./whiteboard.mjs'), paths: /^\/scribble-board$/ },
   proof: { load: () => import('./proof.mjs'), paths: PROOF_PATH },
   news: { load: () => import('./news.mjs'), paths: /^\/whats-new$/ },
@@ -215,6 +216,7 @@ export function screenOf(pathname, search = '') {
   if ((m = /^\/chat\/([^/]+)/.exec(pathname))) return { screen: 'session', session_id: decodeURIComponent(m[1]) }
   if (pathname === '/stacks/off') return { screen: 'off', query: new URLSearchParams(search).get('q') ?? '' }
   if (/^\/artifacts(?:\/|$)/.test(pathname)) return { screen: 'artifacts' }
+  if (pathname === '/knowledge') { const p = new URLSearchParams(search); return { screen: 'knowledge', query: (p.get('q') ?? '').trim(), filter: p.get('filter') === 'pinned' ? 'pinned' : '' } }
   if (pathname === '/scribble-board') return { screen: 'scribble', board_id: teamBoard() }
   if (/^\/(?:settings|devices|pair|sessions)(?:\/|$)/.test(pathname)) return { screen: 'settings' }
   return { screen: 'desk' }
@@ -867,7 +869,7 @@ if (sw) {
 // #says-host: one per toast of the view model, gone when the model drops it. Its button posts /toast/<id> (the action
 // it offers), its time runs out into Dismiss.
 const shown = new Map()   // toast id -> its element
-const toastPath = s => s?.screen === 'session' ? `/chat/${encodeURIComponent(s.session_id)}` : s?.screen === 'card' ? `/card/${encodeURIComponent(s.card_id)}` : s?.screen === 'settings' ? '/settings' : s?.screen === 'artifacts' ? '/artifacts' : s?.screen === 'off' ? '/stacks/off' : '/'
+const toastPath = s => s?.screen === 'session' ? `/chat/${encodeURIComponent(s.session_id)}` : s?.screen === 'card' ? `/card/${encodeURIComponent(s.card_id)}` : s?.screen === 'settings' ? '/settings' : s?.screen === 'artifacts' ? '/artifacts' : s?.screen === 'knowledge' ? '/knowledge' : s?.screen === 'off' ? '/stacks/off' : '/'
 function syncToasts(vm) {
   const now = new Map((vm.toasts ?? []).map(x => [x.id, x]))
   for (const [id, el] of shown) if (!now.has(id)) { el.remove(); shown.delete(id) }

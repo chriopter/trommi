@@ -9,9 +9,9 @@ website, the iOS app, the design system) and "platform" (Platform: payments, the
 docs), each with its goals. On them work seven main sessions (two of them Codex) with 31 helpers, 1 to 8 each, all
 with plain names ("Fernly Website", "Push Reminders"); a helper's cards, status lines and words stand in its
 session with its name; each session has its conversation, some with work trails, notes
-and artifacts in it. There are 52 cards: 31 open (yes/no, two and three options with pictures, multiple choice,
+and artifacts in it. There are 53 cards: 32 open (yes/no, one an agent's proposal for the team's knowledge, two and three options with pictures, multiple choice,
 sections, a table, every urgency, two handed back to their agent), and answered, closed, settled, read, shredded,
-withdrawn and merged ones; 14 artifacts, two permission requests already answered, the corner note, a Scribble Board
+withdrawn and merged ones; 14 artifacts, two permission requests already answered, the corner note, the team knowledge of each team (ten entries, a few pinned), a Scribble Board
 per team (and one of the view of every team at once, which is gone), and the 40 pictures, pages and files they name. The Desk is meant to look inviting:
 one blocking card, one that knocks, then design and product choices with pictures (oldest first), the plain
 questions after them and the reports last. `/screens` lists the states of the account screens, the Desk on each team, chats, cards,
@@ -40,7 +40,7 @@ demo/
 | `cards` | the decision and info cards, each with its versions and answers |
 | `permissions`, `notes`, `published` | waiting permission requests, the corner note, published artifacts |
 | `timelines` | the conversations (`chat:session/<device>`, `chat:card/<object>`) and the Scribble Boards (`scribble:desk/<id>`) |
-| `human` | the human registers: `drafts`, `snoozes`, `ducks`, `crown`, `desks` (the teams), `session_settings` |
+| `human` | the human registers: `drafts`, `snoozes`, `ducks`, `crown`, `desks` (the teams), `knowledge` (each team's entries, by id; the core copies them into the team's sessions as the person's devices do), `session_settings` |
 
 An attachment names its file as `url: "/demo/files/<name>"`; the file is `data/files/<name>`.
 

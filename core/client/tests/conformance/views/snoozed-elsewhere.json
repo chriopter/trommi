@@ -392,6 +392,21 @@
               "en": "Catching up…",
               "key": "desk.hello.catching_up"
             },
+            "knowledge": {
+              "count": 0,
+              "label": {
+                "en": "Knowledge",
+                "key": "knowledge.chip"
+              },
+              "says": {
+                "args": {
+                  "n": "0"
+                },
+                "en": "Team knowledge: 0 entries",
+                "key": "knowledge.chip.says"
+              },
+              "team_id": "main"
+            },
             "later": [],
             "mode": "desk",
             "off_your_mind": [],
@@ -813,6 +828,21 @@
             "hello": {
               "en": "Welcome back.",
               "key": "desk.hello.greeting.0"
+            },
+            "knowledge": {
+              "count": 0,
+              "label": {
+                "en": "Knowledge",
+                "key": "knowledge.chip"
+              },
+              "says": {
+                "args": {
+                  "n": "0"
+                },
+                "en": "Team knowledge: 0 entries",
+                "key": "knowledge.chip.says"
+              },
+              "team_id": "main"
             },
             "later": [],
             "mode": "desk",
@@ -1417,6 +1447,21 @@
               "en": "All quiet.",
               "key": "desk.hello.calm.0"
             },
+            "knowledge": {
+              "count": 0,
+              "label": {
+                "en": "Knowledge",
+                "key": "knowledge.chip"
+              },
+              "says": {
+                "args": {
+                  "n": "0"
+                },
+                "en": "Team knowledge: 0 entries",
+                "key": "knowledge.chip.says"
+              },
+              "team_id": "main"
+            },
             "later": [
               "00000006eeeeeeeeeeeeeeeeeeeeeeee"
             ],
@@ -1482,6 +1527,21 @@
       "hello": {
         "en": "All quiet.",
         "key": "desk.hello.calm.0"
+      },
+      "knowledge": {
+        "count": 0,
+        "label": {
+          "en": "Knowledge",
+          "key": "knowledge.chip"
+        },
+        "says": {
+          "args": {
+            "n": "0"
+          },
+          "en": "Team knowledge: 0 entries",
+          "key": "knowledge.chip.says"
+        },
+        "team_id": "main"
       },
       "later": [
         "00000006eeeeeeeeeeeeeeeeeeeeeeee"

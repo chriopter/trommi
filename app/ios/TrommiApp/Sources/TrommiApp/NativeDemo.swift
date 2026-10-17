@@ -63,6 +63,10 @@ enum NativeDemo {
     case "settings": shell.focus(.settings(page: SettingsScreen.page(of: parts.dropFirst().first)))
     case "stacks": shell.focus(.off(query: ""))
     case "artifacts": shell.focus(.artifacts(kind: URLComponents(string: path)?.queryItems?.first { $0.name == "kind" }?.value ?? ""))
+    case "knowledge":
+      let items = URLComponents(string: path)?.queryItems ?? []
+      let item = { (name: String) in items.first { $0.name == name }?.value ?? "" }
+      shell.focus(.knowledge(query: item("q"), filter: item("filter")), team: items.contains { $0.name == "team" } ? item("team") : nil)
     default: shell.focus(.desk)
     }
   }

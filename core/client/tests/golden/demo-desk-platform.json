@@ -185,6 +185,21 @@
       "en": "Show the first goal only"
     }
   },
+  "knowledge": {
+    "team_id": "platform",
+    "label": {
+      "key": "knowledge.chip",
+      "en": "Knowledge"
+    },
+    "count": 3,
+    "says": {
+      "key": "knowledge.chip.says",
+      "args": {
+        "n": "3"
+      },
+      "en": "Team knowledge: 3 entries"
+    }
+  },
   "rows": [
     {
       "id": "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
