@@ -31,6 +31,10 @@
               "status_kind": "off"
             },
             "notes": {
+              "line": {
+                "en": "",
+                "key": ""
+              },
               "notes": [],
               "says": {
                 "en": "",
@@ -181,6 +185,10 @@
         {
           "part": "notes",
           "view": {
+            "line": {
+              "en": "Write a note…",
+              "key": "note.line"
+            },
             "no_crown": {
               "en": "Give a session the crown to send",
               "key": "note.no_crown"
@@ -1653,6 +1661,10 @@
       "status_kind": "off"
     },
     "notes": {
+      "line": {
+        "en": "Write a note…",
+        "key": "note.line"
+      },
       "no_crown": {
         "en": "Give a session the crown to send",
         "key": "note.no_crown"
