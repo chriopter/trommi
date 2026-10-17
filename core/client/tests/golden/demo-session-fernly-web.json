@@ -1441,15 +1441,6 @@
           "key": "work.running",
           "en": "Working"
         },
-        "sum": {
-          "key": "work.sum",
-          "args": {
-            "failed": "0",
-            "helpers": "0",
-            "steps": "4"
-          },
-          "en": "4 steps"
-        },
         "now": "reads team knowledge (7) · “deploy”",
         "lines": [
           {
@@ -2025,6 +2016,13 @@
   "compose": {
     "key": "compose",
     "en": "Message to the agent"
+  },
+  "answering": {
+    "key": "session.answering",
+    "args": {
+      "name": "Fernly Website"
+    },
+    "en": "Fernly Website is working"
   },
   "waiting": [
     {

@@ -1130,6 +1130,10 @@ pub struct SessionView {
     /// "+N": how many lines stand behind the first; none with one line or none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_more: Option<Text>,
+    /// The calm chat (`Focus.calm`): the agent at work, drawn at the chat's end as its face drawing itself; a tap
+    /// opens the details (the step it is at, its lines, the turn's trail). None while it does not work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working: Option<WorkingView>,
     /// Every card of the session, the newest first (its page "Questions").
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub questions: Vec<CardRefView>,
@@ -1394,6 +1398,21 @@ pub struct EventView {
     /// "decided", "trusted", "shredded": the files he sent along (`ViewModel.files`), shown under the deed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<String>,
+}
+
+/// The agent at work in the calm chat (`SessionView.working`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkingView {
+    /// "trommi is working": what a screen reader says for the face.
+    pub says: Text,
+    /// The details' head, live: "Working · Bash · run the tests", or "Working" between steps. No counts, no time.
+    pub head: Text,
+    /// The step it is at ("Bash · run the tests"); "" between steps.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub now: String,
+    /// The trail of the turn it works on (the details list it; the talk does not).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trail: Option<WorkView>,
 }
 
 /// A turn's trail: what the agent did between his prompt and its answer, as one block.

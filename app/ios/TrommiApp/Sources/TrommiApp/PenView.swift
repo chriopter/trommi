@@ -235,6 +235,8 @@ struct PenInks {
   /** The note as a plain outline (a bar item, a label): no yellow paper, every line in the stroke's ink; its written
    *  lines only when `true` (something is on the note), none when `false`. nil: the note in its own colours. */
   var plainNote: Bool? = nil
+  /** How much of each stroke is drawn, 0…1 (the pen drawing it on); a fill comes in as the strokes close. */
+  var drawn: CGFloat = 1
 }
 
 /** One mark of the pen, by its pen.json key, sized by its frame. */
@@ -272,7 +274,7 @@ enum PenDraw {
     let base = inks.width ?? baseWidth(d)
     let docCls = d.classes
     for it in d.items {
-      let p = it.path.applying(t)
+      let p = inks.drawn < 1 ? it.path.applying(t).trimmedPath(from: 0, to: max(0, inks.drawn)) : it.path.applying(t)
       let c = it.classes.union(docCls)
       if let written = inks.plainNote, c.contains("note-fill") || (c.contains("note-lines") && !written) { continue }
       // a drawing with a coloured fill (the yellow duck, the yellow note) keeps dark ink in dark mode too; only a drawing
@@ -329,7 +331,7 @@ enum PenDraw {
       }
       var g = ctx
       g.opacity = opacity
-      if let f = fill { g.fill(p, with: .color(f)) }
+      if let f = fill { if inks.drawn < 1 { var h = g; h.opacity = opacity * Double(max(0, (inks.drawn - 0.7) / 0.3)); h.fill(it.path.applying(t), with: .color(f)) } else { g.fill(p, with: .color(f)) } }
       if let s = stroke {
         g.stroke(p, with: .color(s), style: StrokeStyle(lineWidth: lw, lineCap: .round, lineJoin: .round, dash: dash, dashPhase: phase))
       }

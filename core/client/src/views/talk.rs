@@ -586,13 +586,14 @@ pub fn fold_work(envelopes: &[&Value], held: usize) -> WorkView {
         _ => say("work.failed_took", format!("Stopped by an error after {took}"), &[("took", &took)]),
     };
     let mut parts = Vec::new();
-    if steps > 0 {
+    // (while it runs it is live: no counts, only the step it is at; a turn that ended says what it took)
+    if steps > 0 && state != "running" {
         parts.push(count(steps, "step"));
     }
-    if helpers > 0 {
+    if helpers > 0 && state != "running" {
         parts.push(count(helpers, "helper"));
     }
-    if failed > 0 {
+    if failed > 0 && state != "running" {
         parts.push(format!("{failed} with {}", if failed == 1 { "an error" } else { "errors" }));
     }
     let sum = (!parts.is_empty()).then(|| {
@@ -714,7 +715,7 @@ mod tests {
         // (given out of order: applied by seq)
         let w = fold_work(&[&b, &a], 0);
         assert_eq!((w.turn.as_str(), w.state.as_str(), w.head.en.as_str(), w.now.as_str()), ("t1", "running", "Working", "Edit · views.rs"));
-        assert_eq!(w.sum.as_ref().unwrap().en, "2 steps · 1 helper · 1 with an error");
+        assert_eq!(w.sum, None, "while it runs it is live: no counts");
         let l: Vec<(&str, &str, &str, &str, &str)> = w.lines.iter().map(|x| (x.id.as_str(), x.kind.as_str(), x.state.as_str(), x.tool.as_str(), x.what.as_str())).collect();
         assert_eq!(l, [("1", "step", "failed", "Bash", "run the tests"), ("2", "text", "", "", ""), ("3", "helper", "ok", "Helper Explore", ""), ("5", "step", "running", "Edit", "views.rs")]);
         assert_eq!((w.lines[0].says.as_ref().unwrap().en.as_str(), w.lines[0].count.as_ref().unwrap().en.as_str(), w.lines[0].took.as_str(), w.lines[0].output.as_str()), ("exit code 2", "exit code 2", "12 s", "FAILED"));

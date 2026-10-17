@@ -292,10 +292,11 @@ final class NativeScreensTests: XCTestCase {
   func testAgentBubblesAndOneWorkingLine() {
     launch("chat--payments-service")
     XCTAssertTrue(app.staticTexts["talk-message"].firstMatch.waitForExistence(timeout: 15))
-    // (an iPhone: one small line above the field, the newest status line and "and N more"; a tap opens them all)
-    let more = app.buttons["status-line"]
+    // (an iPhone: the agent at work is only its face drawing itself; a tap opens what it works on)
+    let more = app.buttons["working-face"]
     XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
     XCTAssertFalse(app.descendants(matching: .any)["session-helpers"].exists, "no helper list on an iPhone")
+    XCTAssertFalse(app.buttons["status-line"].exists, "no working line above the field")
     capture("chat-bubbles")
     more.tap()
     capture("chat-status-more")
