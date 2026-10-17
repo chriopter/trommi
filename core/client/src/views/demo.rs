@@ -37,6 +37,11 @@ fn text<'a>(o: &'a Map<String, Value>, key: &str) -> &'a str {
     o.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
+/// The person's registers of the fixture, grouped by kind.
+fn h_of(f: &Value) -> Map<String, Value> {
+    f.get("human").and_then(Value::as_object).cloned().unwrap_or_default()
+}
+
 /// The demo room as a model, its Desk projected at `now_ms`. `fixture`: the parsed `fixture.json`.
 pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
     let made = fixture.get("made_at").and_then(Value::as_i64).ok_or("the fixture names no made_at")?;
@@ -87,14 +92,24 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
                 .map(|c| text(c, "object_id"))
                 .collect();
             o.insert("card_ids".into(), json!(mine));
-            o.insert("registers".into(), json!([]));
+            // (the person's devices copy the team's knowledge into its sessions: the demo holds those copies too)
+            let team = h_of(&f).get("session_settings").and_then(|all| all.get(&dev)).and_then(|v| v.get("desk")).and_then(Value::as_str).unwrap_or("main").to_string();
+            let carried: Vec<Value> = h_of(&f)
+                .get("knowledge")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .filter(|(_, v)| v.get("desk").and_then(Value::as_str) == Some(team.as_str()))
+                .map(|(id, v)| json!([format!("knowledge/{id}"), { "value": v }]))
+                .collect();
+            o.insert("registers".into(), Value::Array(carried));
             pair(&id, o)
         })
         .collect();
     let notes: Vec<Value> = list(&f, "notes").map(|n| pair(text(n, "object_id"), n.clone())).collect();
 
     // The person's registers under their names: `session/<key>`, `desk/<id>`, `snooze/<card>`, `draft/<card>`,
-    // `duck/<card>`, `star/<card>`, `crown`.
+    // `duck/<card>`, `star/<card>`, `knowledge/<entry>`, `crown`.
     let mut human: Vec<Value> = Vec::new();
     let h = f.get("human").and_then(Value::as_object).cloned().unwrap_or_default();
     let mut put = |key: String, value: &Value| {
@@ -109,6 +124,7 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
         ("drafts", "draft"),
         ("ducks", "duck"),
         ("stars", "star"),
+        ("knowledge", "knowledge"),
     ] {
         for (id, v) in h.get(group).and_then(Value::as_object).into_iter().flatten() {
             put(format!("{name}/{id}"), v);

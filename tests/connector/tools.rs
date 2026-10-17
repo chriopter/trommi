@@ -1994,3 +1994,73 @@ async fn symbols_are_listed_by_name_and_checked() {
     assert_eq!(mcp.ok("introduce", json!({ "model": "m", "icon": "rocket" })).await, "noted");
     mcp.close().await;
 }
+
+/// Team knowledge (spec/v1.md 9.3.7): the entries a human device copies into the session reach the agent as a digest
+/// with a tool's result, `search_knowledge` and `read_knowledge` read them from the session's copy, and
+/// `propose_knowledge`, `correct_knowledge` and `forget_knowledge` file yes/no cards that carry the proposal, the
+/// entry named as the wire writes ids; nothing of the room is read and no entry is written by the agent.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_team_knowledge_is_read_and_changes_are_asked_for_on_cards() {
+    let (_hub, mut human, _seat, mut mcp, group) = seated().await;
+    let listed = mcp.request("tools/list", json!({})).await;
+    let names = tool_names(&listed);
+    for tool in ["search_knowledge", "read_knowledge", "propose_knowledge", "correct_knowledge", "forget_knowledge"] {
+        assert!(names.iter().any(|n| n == tool), "{tool} is listed: {names:?}");
+    }
+    assert!(mcp.ok("search_knowledge", json!({})).await.contains("empty"));
+
+    let (deploy, rule) = ([1u8; 16], [2u8; 16]);
+    let wire = |id: &[u8; 16]| trommi_core::ids::base64url_encode(id);
+    human
+        .set_register(&group, &format!("knowledge/{}", wire(&deploy)), Some(json!({ "desk": "main", "title": "Hub deploy", "text": "runs as the Docker container trommi", "pinned": true, "by": "Codex: radl", "at": 1 })))
+        .await
+        .expect("the hub takes the entry");
+    human
+        .set_register(&group, &format!("knowledge/{}", wire(&rule)), Some(json!({ "desk": "main", "title": "Release branches", "text": "every change on release/<date>-<n>", "at": 2 })))
+        .await
+        .expect("the hub takes the entry");
+    // the digest rides on a tool's result, once
+    let mut told = String::new();
+    for _ in 0..600 {
+        told = mcp.ok("reply", json!({ "text": "On it." })).await;
+        if told.contains("team knowledge") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(told.contains("2 entries") && told.contains("Pinned:\n- Hub deploy") && told.contains("Newest:\n- Release branches"), "{told}");
+    assert!(!mcp.ok("reply", json!({ "text": "Still on it." })).await.contains("team knowledge"), "told once");
+
+    let found = mcp.ok("search_knowledge", json!({ "query": "docker" })).await;
+    assert!(found.contains("1 of 2 entries match") && found.contains(&hex(&deploy)) && !found.contains("Release"), "{found}");
+    let read = mcp.ok("read_knowledge", json!({ "id": &hex(&deploy)[..8] })).await;
+    assert!(read.contains("runs as the Docker container trommi") && read.contains("proposed by Codex: radl"), "{read}");
+    let (missing, failed) = mcp.call("read_knowledge", json!({ "id": "ffffffff" })).await;
+    assert!(failed && missing.contains("no entry"), "{missing}");
+
+    // proposals: cards the app draws from what they carry
+    let made = mcp.ok("propose_knowledge", json!({ "title": "Staging", "text": "there is none: PRs go to main" })).await;
+    assert!(made.contains("Add to team knowledge? Staging"), "{made}");
+    let (long, failed) = mcp.call("propose_knowledge", json!({ "title": "x".repeat(81), "text": "y" })).await;
+    assert!(failed && long.contains("at most 80"), "{long}");
+    let (twice, failed) = mcp.call("propose_knowledge", json!({ "title": "hub deploy", "text": "y" })).await;
+    assert!(failed && twice.contains("correct_knowledge"), "{twice}");
+    mcp.ok("correct_knowledge", json!({ "id": hex(&rule), "text": "every change on release/<date>-<n>, squash merge" })).await;
+    let (same, failed) = mcp.call("correct_knowledge", json!({ "id": hex(&rule), "title": "Release branches" })).await;
+    assert!(failed && same.contains("nothing to change"), "{same}");
+    mcp.ok("forget_knowledge", json!({ "id": hex(&deploy) })).await;
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    let asked: Vec<&Value> = payloads(&human, "knowledge");
+    let ops: Vec<(Value, Value, Value)> = asked.iter().map(|p| (p["knowledge"]["op"].clone(), p["knowledge"]["entry"].clone(), p["knowledge"]["was"].clone())).collect();
+    assert_eq!(
+        ops,
+        [
+            (json!("add"), Value::Null, Value::Null),
+            (json!("change"), json!(wire(&rule)), json!("Release branches")),
+            (json!("forget"), json!(wire(&deploy)), json!("Hub deploy")),
+        ]
+    );
+    assert!(asked.iter().all(|p| p["card_type"] == "decision" && p["options"][0]["key"] == "yes" && p["options"][1]["key"] == "no"));
+    mcp.close().await;
+}

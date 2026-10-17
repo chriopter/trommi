@@ -1172,6 +1172,129 @@
       }
     },
     {
+      "name": "search_knowledge",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words to find in titles and texts (each word matches the start of a word). Left out: every entry, pinned first."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "At most this many entries (1 to 50, default 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "read_knowledge",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The entry's id, as search_knowledge names it (its first 8 characters are enough)"
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "propose_knowledge",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "What it is about, one line, at most 80 characters"
+          },
+          "text": {
+            "type": "string",
+            "description": "The fact itself, plain and short: at most 600 characters"
+          },
+          "pinned": {
+            "type": "boolean",
+            "description": "true: every agent of the team reads it first, at its start"
+          },
+          "helper": {
+            "type": "string",
+            "description": "A helper (your subagent) this is for, by its short name: the card shows with its name, the answer comes with meta helper. Left out: yours."
+          }
+        },
+        "required": ["title", "text"]
+      }
+    },
+    {
+      "name": "correct_knowledge",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The entry's id"
+          },
+          "title": {
+            "type": "string",
+            "description": "The new title (at most 80 characters); left out: as it is"
+          },
+          "text": {
+            "type": "string",
+            "description": "The new text, whole (at most 600 characters); left out: as it is"
+          },
+          "pinned": {
+            "type": "boolean",
+            "description": "Pinned or not; left out: as it is"
+          },
+          "helper": {
+            "type": "string",
+            "description": "A helper (your subagent) this is for, by its short name: the card shows with its name, the answer comes with meta helper. Left out: yours."
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "forget_knowledge",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The entry's id"
+          },
+          "helper": {
+            "type": "string",
+            "description": "A helper (your subagent) this is for, by its short name: the card shows with its name, the answer comes with meta helper. Left out: yours."
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
       "name": "publish_asset",
       "annotations": {
         "readOnlyHint": false,

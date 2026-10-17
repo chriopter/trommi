@@ -25,7 +25,7 @@ function teamCard(d, c, p, last) {
 function confirmDialog(d, c, p) {
   const name = d.name.en
   const row = (key, one, many, rest = '') => html`<li data-row="${key}"${c[key] ? '' : raw(' hidden')}><b>${c[key] ?? '…'}</b><span><span>${c[key] === 1 ? one : many}</span>${rest ? html` <small>${rest}</small>` : ''}</span></li>`
-  const keys = ['sessions', 'helpers', 'archived', 'agents', 'open_cards', 'done_cards', 'board', 'files', 'goals']
+  const keys = ['sessions', 'helpers', 'archived', 'agents', 'open_cards', 'done_cards', 'board', 'files', 'goals', 'knowledge']
   return html`<dialog class="dk-dialog" id="team-del-${d.id}" aria-labelledby="team-del-title-${d.id}" data-team="${d.id}">
 <div class="dk-dialog-in">
 <h3 id="team-del-title-${d.id}">Delete ${name}?</h3>
@@ -41,6 +41,7 @@ ${row('done_cards', 'done card', 'done cards')}
 ${row('board', 'thing on the Scribble Board', 'things on the Scribble Board')}
 ${row('files', 'file', 'files', 'pictures, Artifacts and share links, deleted at once')}
 ${row('goals', 'goal', 'goals')}
+${row('knowledge', 'entry of its knowledge', 'entries of its knowledge')}
 </ul>
 <p class="dk-empty"${keys.some(k => c[k]) ? raw(' hidden') : ''}>Nothing stands on this team: only its name goes.</p>
 <p class="dk-dialog-small">The server drops the encrypted data within 30 days. Your agents' computers keep nothing of it they can still open. This cannot be undone.</p>

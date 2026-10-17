@@ -9,9 +9,11 @@ import { Controller, PLUS, WORDS, agoSpan, avatar, controller, deskRow, fileSrc,
 function deskHead(d, base) {
   if (d.mode === 'invite') return deskInvite()
   const words = (d.hello?.en ?? '').split(' '), last = words.pop()
-  return html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="${d.waiting}"><h2 class="desk-hello">${words.join(' ')} <em>${last}</em></h2>${d.reading ? html`<p class="desk-reading" role="status">${d.reading.en}</p>` : ''}${deskGoals(d.goals)}${d.blitz ? html`<div class="desk-tools" id="desk-tools">${duckAll(d, base)}${nextPlease(d, base)}</div>` : ''}</header>`
+  return html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="${d.waiting}"><h2 class="desk-hello">${words.join(' ')} <em>${last}</em></h2>${d.reading ? html`<p class="desk-reading" role="status">${d.reading.en}</p>` : ''}${deskGoals(d.goals)}${deskKnowledge(d.knowledge, base)}${d.blitz ? html`<div class="desk-tools" id="desk-tools">${duckAll(d, base)}${nextPlease(d, base)}</div>` : ''}</header>`
 }
 
+/** The team's knowledge (KnowledgeChipView): a quiet chip under the goals that opens its page, with how many entries. */
+const deskKnowledge = (k, base) => k ? html`<a class="desk-know" id="desk-know" data-nav href="${base}/knowledge" title="Team knowledge" aria-label="${k.says.en}">${sk('book')}<span>${k.label.en}</span><b>${k.count}</b></a>` : ''
 /** The team's goals (GoalsView): a checklist of his own under the greeting; a click on the words writes in place
  *  (controller "goals": Action::SetGoal). One toggle folds them to the first line (Action::FoldGoals: GoalsView.folded);
  *  folded is this device's: the teams are kept in localStorage and sent to the core again at the start. */

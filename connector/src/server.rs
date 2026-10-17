@@ -279,6 +279,8 @@ pub struct Conn {
     trail_timer: AtomicBool,
     /// The team goals this process last told its agent (line.rs goals_block; "" for none).
     goals_told: Mutex<Option<String>>,
+    /// The digest of the team's knowledge this process last told its agent (knowledge::digest; "" for none).
+    knowledge_told: Mutex<Option<String>>,
     missed: Mutex<Vec<Missed>>,
     deaf_told: AtomicBool,
     marks: Mutex<HashMap<String, u64>>,
@@ -1362,6 +1364,42 @@ impl Conn {
             format!("{out}\n\n{note}")
         }
     }
+    /// `out` with the goals of the team, and then the digest of its knowledge (README "Team knowledge"): each when it
+    /// is new to this agent or changed since it was told.
+    async fn with_team(&self, out: String) -> String {
+        let out = self.with_goals(out).await;
+        self.with_knowledge(out)
+    }
+
+    /// `out` with the digest of the team's knowledge this session holds (`knowledge::digest`: the pinned entries,
+    /// the newest titles), when it is new to this agent or changed since it was told; a word when it went empty.
+    fn with_knowledge(&self, out: String) -> String {
+        use trommi_client_core::knowledge;
+        let Some(c) = self.member.client() else {
+            return out;
+        };
+        let block = {
+            let core = c.lock();
+            let session = core.session_id().and_then(|sid| core.model().sessions.get(&sid));
+            let list = session.map(|s| knowledge::entries(s.registers.iter().map(|(k, r)| (k, &r.value)), None)).unwrap_or_default();
+            let team = session
+                .and_then(|s| s.registers.get("goals"))
+                .and_then(|r| r.value.get("desk_name").and_then(Value::as_str).map(str::to_string))
+                .unwrap_or_default();
+            knowledge::digest(&team, &list)
+        };
+        let mut told = self.knowledge_told.lock().unwrap();
+        if told.as_deref() == Some(block.as_str()) || (told.is_none() && block.is_empty()) {
+            return out;
+        }
+        *told = Some(block.clone());
+        let note = if block.is_empty() { line::KNOWLEDGE_GONE.to_string() } else { block };
+        if out.is_empty() {
+            note
+        } else {
+            format!("{out}\n\n{note}")
+        }
+    }
     /// A line of the terminal mirror (the hooks `prompt` and `stop`): queued and answered at once; sent from here.
     fn mirror_request(&self, req: &Value) -> Value {
         let steps = mirror::level() >= mirror::Level::Steps;
@@ -2047,7 +2085,7 @@ impl mcp::Server for Conn {
                     } else {
                         String::new()
                     };
-                    let said = self.with_goals(events).await;
+                    let said = self.with_team(events).await;
                     return text(if said.is_empty() {
                         "No new board events.".into()
                     } else {
@@ -2077,7 +2115,7 @@ impl mcp::Server for Conn {
                         self.touch();
                         self.sync_link().await;
                         let out = if child.is_none() {
-                            self.with_goals(out).await
+                            self.with_team(out).await
                         } else {
                             out
                         };
@@ -2170,6 +2208,7 @@ pub async fn main_server() {
         trail: Mutex::new(trail::Trail::default()),
         trail_timer: AtomicBool::new(false),
         goals_told: Mutex::new(None),
+        knowledge_told: Mutex::new(None),
         missed: Mutex::new(vec![]),
         deaf_told: AtomicBool::new(false),
         marks: Mutex::new(HashMap::new()),

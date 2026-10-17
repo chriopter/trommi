@@ -46,6 +46,8 @@ export type Screen =
   /** The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
    *  videos and files, "pages" the pages. */
   | { screen: 'artifacts'; kind?: string }
+  /** The page Knowledge of the team in view, with the search's words and its filter ("" every entry, "pinned"). */
+  | { screen: 'knowledge'; query?: string; filter?: string }
   /** Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
    *  "data", "security"). */
   | { screen: 'settings'; page?: string }
@@ -80,6 +82,8 @@ export interface ViewModel {
   /** Every team's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
    *  teams); none else. */
   thumbs?: ThumbView[]
+  /** The page Knowledge of the team in view, while it is in view (`Screen::Knowledge`); none else. */
+  knowledge?: KnowledgeView
   toasts?: Toast[]
 }
 
@@ -111,6 +115,8 @@ export type ViewPart =
   | { part: 'gallery'; view: GalleryView | null }
   /** The teams' boards small, whole; none when no page shows them. */
   | { part: 'thumbs'; view: ThumbView[] | null }
+  /** The page Knowledge, whole; none when it is left. */
+  | { part: 'knowledge'; view: KnowledgeView | null }
   | { part: 'toasts'; toasts: Toast[] }
 
 /** Edits of a long list, by position: at `at`, `gone` rows leave and `rows` come (the Desk's stack ops today). */
@@ -372,6 +378,8 @@ export interface DeskView {
   reading?: Text
   /** The team's goals; none on All teams. */
   goals?: GoalsView
+  /** The chip that opens the team's page Knowledge; none on All teams, as the goals. */
+  knowledge?: KnowledgeChipView
   /** What waits, in the Desk's order: the questions and what is only to read. */
   rows?: DeskRowView[]
   /** The open questions (no infos): the number in the window's title. */
@@ -538,6 +546,89 @@ export interface OffWorkView {
   at_ms: number
   /** The whole row to a screen reader: "Fix the login, Fernly is on it". */
   says: Text
+}
+
+/** The chip on a team's Desk that opens its page Knowledge. */
+export interface KnowledgeChipView {
+  team_id: string
+  /** "Knowledge". */
+  label: Text
+  /** How many entries the team holds. */
+  count: number
+  /** The chip in a sentence ("Team knowledge: 12 entries"), for a screen reader and a tooltip. */
+  says: Text
+}
+
+/** The page Knowledge of a team (`Screen::Knowledge`, core/client/src/views/knowledge.rs): its entries, pinned first
+ *  then the one changed last, as the search and the filter let them through. */
+export interface KnowledgeView {
+  team_id: string
+  /** The team's name. */
+  team: Text
+  /** "Knowledge". */
+  title: Text
+  /** How many entries the team holds, all of them. */
+  count: number
+  /** The same in words ("12 entries"). */
+  summary: Text
+  /** The line under the title. */
+  lead: Text
+  /** The search's words in force, trimmed; "" for none. */
+  query: string
+  /** The filter in force: "" every entry, "pinned" the pinned ones. */
+  filter: string
+  /** The filter's choices, in order: All, Pinned. */
+  filters: KnowledgeFilterView[]
+  /** The search field's hint. */
+  search: Text
+  /** What the search and the filter let through, in order. */
+  rows: KnowledgeRowView[]
+  /** What the page says when it lists nothing; none when it lists something. */
+  none?: Text
+  /** The team holds as many entries as it may: no new one (`words.full` says so). */
+  full: boolean
+  /** A title's and a text's limits, in characters. */
+  title_max: number
+  text_max: number
+  /** The page's other words: its buttons, the editor's hints, the question before a delete. */
+  words: KnowledgeWordsView
+}
+
+/** One choice of the page's filter. */
+export interface KnowledgeFilterView {
+  /** "" or "pinned": what `Screen::Knowledge.filter` takes. */
+  key: string
+  label: Text
+  count: number
+  on: boolean
+}
+
+/** One entry on the page. */
+export interface KnowledgeRowView {
+  /** Its id: what `Action::KnowledgeSave`, `KnowledgePin` and `KnowledgeDelete` take. */
+  id: string
+  title: string
+  text: string
+  pinned: boolean
+  /** Who brought it and when ("proposed by Claude: Web · Yesterday", "added by you · Today"). */
+  by: Text
+  /** When it last changed. */
+  at_ms: number
+}
+
+/** The words of the page Knowledge beside its entries. */
+export interface KnowledgeWordsView {
+  add: Text
+  edit: Text
+  delete: Text
+  pin: Text
+  unpin: Text
+  save: Text
+  cancel: Text
+  title_hint: Text
+  text_hint: Text
+  delete_ask: Text
+  full: Text
 }
 
 /** A team's goals: a note of the person's, at most twenty lines. */
@@ -1290,6 +1381,8 @@ export interface TeamCountsView {
   files: number
   artifacts: number
   goals: number
+  /** Entries of its knowledge. */
+  knowledge: number
 }
 
 /** An Artifact in the gallery: what an agent published. */

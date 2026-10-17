@@ -339,6 +339,20 @@ final class NativeScreensTests: XCTestCase {
     app.buttons["artifacts-kind-media"].tap()
     capture("artifacts-media")
   }
+  /** The team's knowledge (demo room): the core's entries, the filter Pinned, the editor of a new entry. */
+  func testKnowledgePage() {
+    launch("knowledge")
+    let pinned = app.buttons["knowledge-filter-pinned"]
+    XCTAssertTrue(pinned.waitForExistence(timeout: 15), app.debugDescription)
+    capture("knowledge-all")
+    pinned.tap()
+    expectation(for: NSPredicate(format: "selected == true"), evaluatedWith: pinned)
+    waitForExpectations(timeout: 5)
+    capture("knowledge-pinned")
+    app.buttons["knowledge-add"].tap()
+    XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 5))
+    capture("knowledge-add")
+  }
   func testTheNoteSavesItself() {
     launch("desk")
     XCTAssertTrue(app.buttons["note-open"].waitForExistence(timeout: 15))

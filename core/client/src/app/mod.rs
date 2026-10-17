@@ -215,7 +215,8 @@ pub struct App {
     sent: Sent,
     /// The room's cache: read before the engine starts, written behind the board (`cache::keeper`).
     cache: Option<crate::cache::Keeper>,
-    /// The model moved: the sessions' goals are compared with their teams' once live (`Doing::sync_goals`).
+    /// The model moved: the sessions' goals and knowledge are compared with their teams' once live (`Doing::sync_goals`,
+    /// `Doing::sync_knowledge`).
     goals_check: bool,
     /// The Scribble Boards read on this device (`crate::scribble`).
     scribble: crate::scribble::Scribble,
@@ -1051,6 +1052,10 @@ impl App {
                     Screen::Artifacts { kind } => Some(kind.clone()),
                     _ => None,
                 };
+                self.lens.knowledge = match &focus.screen {
+                    Screen::Knowledge { query, filter } => Some(crate::views::knowledge::Ask { query: query.clone(), filter: filter.clone() }),
+                    _ => None,
+                };
                 let (session, card, off) = match focus.screen {
                     Screen::Session { session_id } => (Some(session_id), None, None),
                     Screen::Card { card_id } => (None, Some(card_id), None),
@@ -1584,6 +1589,9 @@ impl App {
     fn settle_actions(&mut self, now_ms: u64, refused: Vec<(u64, &'static str)>, out: &mut Vec<Effect>) {
         // (goals refused are written again at the next look)
         self.sent.goals.retain(|_, (_, entry)| !refused.iter().any(|(id, _)| id == entry));
+        for written in self.sent.knowledge.values_mut() {
+            written.retain(|_, (_, entry)| !refused.iter().any(|(id, _)| id == entry));
+        }
         let mut gone: Vec<(u64, crate::views::Text)> =
             refused.into_iter().map(|(id, code)| (id, actions::run::refused(code))).collect();
         if !self.sent.is_empty() {
@@ -2028,7 +2036,10 @@ impl App {
             }
         }
         if self.goals_check && self.next_view.phase == Phase::Live {
-            self.doing(now_ms, out, |doing| doing.sync_goals());
+            self.doing(now_ms, out, |doing| {
+                doing.sync_goals();
+                doing.sync_knowledge();
+            });
             self.goals_check = false;
         }
         // this device's push, as the hub has it; its notes whose hold ran out go to their session
@@ -2143,6 +2154,9 @@ fn writes_room_registers(action: &Action) -> bool {
             | Action::RenameTeam { .. }
             | Action::RemoveTeam { .. }
             | Action::SetGoal { .. }
+            | Action::KnowledgeSave { .. }
+            | Action::KnowledgePin { .. }
+            | Action::KnowledgeDelete { .. }
             | Action::SessionIcon { .. }
             | Action::SessionGroup { .. }
             | Action::PlaceSession { .. }

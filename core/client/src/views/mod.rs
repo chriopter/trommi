@@ -25,6 +25,7 @@ pub mod card;
 pub mod demo;
 pub mod files_seen;
 pub mod desk;
+pub mod knowledge;
 pub mod links;
 pub mod notes;
 pub mod off;
@@ -141,6 +142,13 @@ pub enum Screen {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         kind: String,
     },
+    /// The page Knowledge of the team in view, with the search's words and its filter ("" every entry, "pinned").
+    Knowledge {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        query: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        filter: String,
+    },
     /// Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
     /// "data", "security").
     Settings {
@@ -189,6 +197,9 @@ pub struct ViewModel {
     /// teams); none else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thumbs: Option<Vec<ThumbView>>,
+    /// The page Knowledge of the team in view, while it is in view (`Screen::Knowledge`); none else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knowledge: Option<KnowledgeView>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub toasts: Vec<Toast>,
 }
@@ -259,6 +270,10 @@ pub enum ViewPart {
     /// The teams' boards small, whole; none when no page shows them.
     Thumbs {
         view: Option<Vec<ThumbView>>,
+    },
+    /// The page Knowledge, whole; none when it is left.
+    Knowledge {
+        view: Option<KnowledgeView>,
     },
     Toasts {
         toasts: Vec<Toast>,
@@ -612,6 +627,9 @@ pub struct DeskView {
     /// The team's goals; none on All teams.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goals: Option<GoalsView>,
+    /// The chip that opens the team's page Knowledge; none on All teams, as the goals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knowledge: Option<KnowledgeChipView>,
     /// What waits, in the Desk's order: the questions and what is only to read.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rows: Vec<DeskRowView>,
@@ -814,6 +832,110 @@ pub struct OffWorkView {
     pub at_ms: u64,
     /// The whole row to a screen reader: "Fix the login, Fernly is on it".
     pub says: Text,
+}
+
+/// The chip on a team's Desk that opens its page Knowledge.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnowledgeChipView {
+    pub team_id: String,
+    /// "Knowledge".
+    pub label: Text,
+    /// How many entries the team holds.
+    #[serde(default)]
+    pub count: u32,
+    /// The chip in a sentence ("Team knowledge: 12 entries"), for a screen reader and a tooltip.
+    pub says: Text,
+}
+
+/// The page Knowledge of a team (`Screen::Knowledge`, core/client/src/views/knowledge.rs): its entries, pinned first
+/// then the one changed last, as the search and the filter let them through.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnowledgeView {
+    pub team_id: String,
+    /// The team's name.
+    pub team: Text,
+    /// "Knowledge".
+    pub title: Text,
+    /// How many entries the team holds, all of them.
+    #[serde(default)]
+    pub count: u32,
+    /// The same in words ("12 entries").
+    pub summary: Text,
+    /// The line under the title.
+    pub lead: Text,
+    /// The search's words in force, trimmed; "" for none.
+    #[serde(default)]
+    pub query: String,
+    /// The filter in force: "" every entry, "pinned" the pinned ones.
+    #[serde(default)]
+    pub filter: String,
+    /// The filter's choices, in order: All, Pinned.
+    #[serde(default)]
+    pub filters: Vec<KnowledgeFilterView>,
+    /// The search field's hint.
+    pub search: Text,
+    /// What the search and the filter let through, in order.
+    #[serde(default)]
+    pub rows: Vec<KnowledgeRowView>,
+    /// What the page says when it lists nothing; none when it lists something.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub none: Option<Text>,
+    /// The team holds as many entries as it may: no new one (`words.full` says so).
+    #[serde(default)]
+    pub full: bool,
+    /// A title's and a text's limits, in characters.
+    #[serde(default)]
+    pub title_max: u32,
+    #[serde(default)]
+    pub text_max: u32,
+    /// The page's other words: its buttons, the editor's hints, the question before a delete.
+    pub words: KnowledgeWordsView,
+}
+
+/// One choice of the page's filter.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnowledgeFilterView {
+    /// "" or "pinned": what `Screen::Knowledge.filter` takes.
+    #[serde(default)]
+    pub key: String,
+    pub label: Text,
+    #[serde(default)]
+    pub count: u32,
+    #[serde(default)]
+    pub on: bool,
+}
+
+/// One entry on the page.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnowledgeRowView {
+    /// Its id: what `Action::KnowledgeSave`, `KnowledgePin` and `KnowledgeDelete` take.
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub pinned: bool,
+    /// Who brought it and when ("proposed by Claude: Web · Yesterday", "added by you · Today").
+    pub by: Text,
+    /// When it last changed.
+    #[serde(default)]
+    pub at_ms: u64,
+}
+
+/// The words of the page Knowledge beside its entries.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnowledgeWordsView {
+    pub add: Text,
+    pub edit: Text,
+    pub delete: Text,
+    pub pin: Text,
+    pub unpin: Text,
+    pub save: Text,
+    pub cancel: Text,
+    pub title_hint: Text,
+    pub text_hint: Text,
+    pub delete_ask: Text,
+    pub full: Text,
 }
 
 /// A team's goals: a note of the person's, at most twenty lines.
@@ -1797,6 +1919,9 @@ pub struct TeamCountsView {
     pub files: u64,
     pub artifacts: u64,
     pub goals: u64,
+    /// Entries of its knowledge.
+    #[serde(default)]
+    pub knowledge: u64,
 }
 
 /// An Artifact in the gallery: what an agent published.
@@ -2340,6 +2465,7 @@ impl ViewModel {
                 ViewPart::Artifacts { view } => self.artifacts = view.clone(),
                 ViewPart::Gallery { view } => self.gallery = view.clone(),
                 ViewPart::Thumbs { view } => self.thumbs = view.clone(),
+                ViewPart::Knowledge { view } => self.knowledge = view.clone(),
                 ViewPart::Toasts { toasts } => self.toasts = toasts.clone(),
             }
         }
@@ -2451,6 +2577,11 @@ impl ViewModel {
         if self.thumbs != next.thumbs {
             parts.push(ViewPart::Thumbs {
                 view: next.thumbs.clone(),
+            });
+        }
+        if self.knowledge != next.knowledge {
+            parts.push(ViewPart::Knowledge {
+                view: next.knowledge.clone(),
             });
         }
         if self.toasts != next.toasts {

@@ -170,6 +170,18 @@ their cards goes into that session as before, and the connector archives each (5
 (no open question, no answer it has not closed): at its start and whenever one of their cards is closed or
 withdrawn. Events that waited when a connector was swapped are the coordinator's, as every event is.
 
+## Team knowledge
+
+The team's knowledge (spec/v1.md 9.3.7, README "Team knowledge") reaches the agent as the copies the person's devices
+keep in its session (`knowledge/<id>`); the connector never reads the room group. Five tools: `search_knowledge`
+(words that begin words of a title or text, from a full-text index of the session's copy, built again only when the
+copy changed: `bridge.rs knowledge_index`) and `read_knowledge` read; `propose_knowledge`, `correct_knowledge` and
+`forget_knowledge` file a yes/no card whose body carries the proposal (`knowledge`). The agent writes no entry: the
+person's Yes does, on the person's device. A digest (`trommi_client_core::knowledge::digest`: how many entries, the
+pinned ones with their text, the newest titles) rides on a tool's result when it is new to the agent or changed,
+after the team's goals. A read of the knowledge is a step of the trail (`knowledge: true`, with what was searched for),
+which the app shows as "reads team knowledge (12)".
+
 ## Status lines follow their questions
 
 A status line in state `decision` names its card (`object_id`). The connector keeps it true without the agent's

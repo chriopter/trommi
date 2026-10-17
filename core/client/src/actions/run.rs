@@ -12,6 +12,7 @@ use crate::model::types::Obj;
 use crate::model::Model;
 use crate::views::Text;
 use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 use trommi_core::crypto::SecretBytes;
 use trommi_core::device::{Draft, Sealed};
 use trommi_core::ids::{DeviceId, FileId, GroupId, ObjectId, RoomId, SessionId};
@@ -28,6 +29,8 @@ pub const NOTE_HOLD_MS: u64 = 3_000;
 /// A team's goals: at most so many lines of at most `GOAL_LINE_MAX` characters, no blank lines.
 pub const GOAL_LINES: usize = 20;
 pub const GOAL_LINE_MAX: usize = 200;
+/// The knowledge entries written into session groups in one look at most (`Doing::sync_knowledge`).
+pub const KNOWLEDGE_WRITES: usize = 64;
 /// Every account's first team: the same id and value from every device, so two that write it at once write one.
 pub const FIRST_TEAM_ID: &str = "main";
 
@@ -333,6 +336,16 @@ impl Doing<'_> {
                 self.board_item(action, board_id, local_id, &json!({"content_type": "strokes", "strokes": [{"tool": tool, "color": color, "width": width, "points": ink.to_base64url()}]}))
             }
             Action::BoardItem { board_id, local_id, content } => self.board_item(action, board_id, local_id, content),
+            Action::KnowledgeSave { team_id, entry_id, title, text, pinned } => self.knowledge_save(action, team_id, entry_id.as_deref(), title, text, *pinned),
+            Action::KnowledgePin { entry_id, on } => {
+                let e = self.entry(entry_id)?;
+                let pinned = crate::knowledge::Entry { pinned: *on, updated_at: self.now, ..e };
+                self.registers(action, &[(format!("{}{entry_id}", crate::knowledge::PREFIX), pinned.value())])
+            }
+            Action::KnowledgeDelete { entry_id } => {
+                self.entry(entry_id)?;
+                self.registers(action, &[(format!("{}{entry_id}", crate::knowledge::PREFIX), Value::Null)])
+            }
             _ => Err(not_done("action.unknown", "This cannot be done here yet.")),
         }
     }
@@ -497,6 +510,118 @@ impl Doing<'_> {
         }
     }
 
+    /// The team a session stands on: its own when that team is there, else the first (`knowledge::team_of`).
+    fn team_of_session(&self, session_id: &str) -> String {
+        crate::knowledge::team_of(self.model, session_id)
+    }
+
+    /// A team's knowledge entry by its id.
+    fn entry(&self, entry_id: &str) -> Result<crate::knowledge::Entry, NotDone> {
+        self.model
+            .human
+            .get(&format!("{}{entry_id}", crate::knowledge::PREFIX))
+            .and_then(|r| crate::knowledge::Entry::read(entry_id, &r.value))
+            .ok_or_else(|| not_done("knowledge.gone", "That entry is no longer there."))
+    }
+
+    /// An entry the person writes on the page Knowledge: new, or anew (its team and its agent stay).
+    fn knowledge_save(&mut self, action: &Action, team_id: &str, entry_id: Option<&str>, title: &str, text: &str, pinned: bool) -> Result<(), NotDone> {
+        use crate::knowledge::{clean_text, clean_title, of_team, Entry, ENTRIES_MAX, PREFIX};
+        let title = clean_title(title);
+        if title.is_empty() {
+            return Err(not_done("knowledge.no_title", "An entry needs a title."));
+        }
+        let text = clean_text(text);
+        let entry = match entry_id {
+            Some(id) => Entry { title, text, pinned, updated_at: self.now, ..self.entry(id)? },
+            None => {
+                let live = self.teams();
+                let team = if live.iter().any(|t| t == team_id) {
+                    team_id.to_string()
+                } else if live.is_empty() {
+                    FIRST_TEAM_ID.to_string()
+                } else {
+                    return Err(not_done("action.no_team", "That team is no longer there."));
+                };
+                if of_team(self.model, &team).len() >= ENTRIES_MAX {
+                    return Err(not_done("knowledge.full", "This team holds 200 entries: delete one first."));
+                }
+                Entry { id: self.sent.new_id(self.now), team, title, text, pinned, by: None, at: self.now, updated_at: 0 }
+            }
+        };
+        self.registers(action, &[(format!("{PREFIX}{}", entry.id), entry.value())])
+    }
+
+    /// What a Yes on a card writes into its team's knowledge, if the card carries a proposal (`knowledge::on_yes`):
+    /// a new entry takes the card's id, and names the session's agent as the one that proposed it.
+    fn knowledge_yes(&self, card: &crate::model::types::Card) -> Result<Option<(String, Value)>, NotDone> {
+        let Some(p) = crate::knowledge::proposal_of(card) else { return Ok(None) };
+        let Some(session_id) = card.session_id.as_deref() else { return Ok(None) };
+        let team = self.team_of_session(session_id);
+        let current = crate::knowledge::of_team(self.model, &team);
+        let by = crate::knowledge::agent_name(self.model, session_id);
+        // (what the room holds under the id the proposal names: the card's for a new entry)
+        let named = p.entry.clone().unwrap_or_else(|| card.object_id.clone());
+        let kept = self.model.human.get(&format!("{}{named}", crate::knowledge::PREFIX)).and_then(|r| crate::knowledge::Entry::read(&named, &r.value));
+        crate::knowledge::on_yes(&p, &team, &current, &card.object_id, kept.as_ref(), &by, self.now).map_err(|r| match r {
+            crate::knowledge::Refusal::Changed => not_done("knowledge.changed", "That entry changed since the agent asked: nothing was saved. Say No, or ask the agent again."),
+            crate::knowledge::Refusal::Full => not_done("knowledge.full", "This team holds 200 entries: delete one first."),
+        })
+    }
+
+    /// Each live main session of a team carries that team's knowledge for its agent (spec/v1.md 9.3.7): a register
+    /// `knowledge/<id>` in its group per entry of its team, the same value as the room's, and none for an entry that
+    /// is gone or of another team. Written where it differs from what the group holds and was not written already, at
+    /// most [`KNOWLEDGE_WRITES`] at a time (the rest at the next look); no echo, no toast (the person did not act).
+    pub fn sync_knowledge(&mut self) {
+        use crate::knowledge::{of_team, PREFIX};
+        // (a write the session's group holds now is done: should another device write it over, it is written again)
+        for (sid, written) in self.sent.knowledge.iter_mut() {
+            let held = self.model.sessions.get(sid);
+            written.retain(|key, (value, _)| held.and_then(|s| s.registers.get(key)).map_or(&Value::Null, |r| &r.value) != value);
+        }
+        self.sent.knowledge.retain(|_, written| !written.is_empty());
+        let mut writes: Vec<(String, String, Value)> = Vec::new();
+        let mut teams: BTreeMap<String, BTreeMap<String, Value>> = BTreeMap::new();
+        for (sid, s) in &self.model.sessions {
+            if writes.len() >= KNOWLEDGE_WRITES {
+                break;
+            }
+            let settings = s.settings.clone().or_else(|| self.model.human.get(&format!("session/{sid}")).map(|r| r.value.clone()));
+            let archived = s.group_archived || settings.as_ref().and_then(|v| v.get("archived")) == Some(&Value::Bool(true));
+            if !s.is_active || s.stale || s.parent_session_id.is_some() || s.group_id.is_none() || archived {
+                continue;
+            }
+            let team = crate::knowledge::team_of(self.model, sid);
+            let wanted = teams
+                .entry(team.clone())
+                .or_insert_with(|| of_team(self.model, &team).into_iter().map(|e| (format!("{PREFIX}{}", e.id), e.value())).collect());
+            let sent = self.sent.knowledge.get(sid);
+            let differs = |key: &str, want: &Value| {
+                let held = s.registers.get(key).map(|r| &r.value).unwrap_or(&Value::Null);
+                held != want && sent.and_then(|m| m.get(key)).is_none_or(|(w, _)| w != want)
+            };
+            for (key, value) in wanted.iter() {
+                if differs(key, value) {
+                    writes.push((sid.clone(), key.clone(), value.clone()));
+                }
+            }
+            for (key, r) in &s.registers {
+                if key.starts_with(PREFIX) && !r.value.is_null() && !wanted.contains_key(key) && differs(key, &Value::Null) {
+                    writes.push((sid.clone(), key.clone(), Value::Null));
+                }
+            }
+        }
+        for (sid, key, value) in writes.into_iter().take(KNOWLEDGE_WRITES) {
+            let Some(session) = id(&sid).map(SessionId::new) else { continue };
+            let Ok((name, wire)) = codec::encode_register(&key, &value) else { continue };
+            let draft = Draft::Register { group: GroupId::session(self.room, session), name, value: wire.map(|w| SecretBytes::new(w.into_bytes())) };
+            if let Ok(sealed) = (self.seal)(&draft, None, &[]) {
+                self.sent.knowledge.entry(sid).or_default().insert(key, (value, sealed.outbox_id));
+            }
+        }
+    }
+
     /// Seals a Note's version whose echo stands under `local_id`: the note's fields as they stand with `own` over
     /// them, one version above it, naming it as `previous_version_hash` (zeros for a new note), with a lamport above
     /// every one this device has seen on a note.
@@ -606,6 +731,12 @@ impl Doing<'_> {
         // it; so does a trusted answer, where the agent still chooses.
         let said = |s: &str| !s.trim().is_empty();
         let plain = !note.is_some_and(said) && !option_notes.values().any(|v| v.as_str().is_some_and(said));
+        // a Yes on a proposal for the team's knowledge writes the entry: checked first, so the card is not answered
+        // when what it shows no longer holds
+        let knowledge = if how == "answer" && !trusted && choices == ["yes"] { self.knowledge_yes(card)? } else { None };
+        let card = self.card_of(card_id)?;
+        let options = card.fields.get("options");
+        let options = options.as_array().map(Vec::as_slice).unwrap_or_default();
         let finals: Vec<String> =
             options.iter().filter(|o| o.get("final") == Some(&Value::Bool(true))).filter_map(key_of).collect();
         let settles = how == "answer" && !trusted && plain && !choices.is_empty() && choices.iter().all(|c| finals.contains(c));
@@ -645,6 +776,11 @@ impl Doing<'_> {
         };
         let to = recipient.as_deref().and_then(hex32).map(DeviceId::new);
 
+        // (the entry first: a Yes that cannot be kept leaves the card open to answer again, and asked again the same
+        //  entry is written as it stands, knowledge::on_yes)
+        if let Some(write) = knowledge {
+            self.registers(action, &[write])?;
+        }
         let local_id = self.sent.local_id();
         let echo: Obj = serde_json::from_value(json!({ "answer_action": how, "choices": choices, "note": note, "option_notes": option_notes,
             "attachments": attached, "marks": marks, "trusted": trusted, "bound_version_hash": version_hash, "bound_object_version": version,

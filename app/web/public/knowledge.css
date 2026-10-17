@@ -1,0 +1,87 @@
+/* ---- Knowledge (knowledge.mjs): the team's entries in one quiet list, the search, the filter All · Pinned, the
+   editors in place; and the chip on a team's Desk that opens it (desk.mjs) ---- */
+body[data-page="knowledge"] #inbox, body[data-page="knowledge"] #session { display: none; }
+body[data-page="knowledge"] #knowledge {
+  display: block; grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; overflow-y: auto; background: var(--surface);
+  padding: var(--s-4) var(--gutter) var(--s-10); scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+}
+.kn-column { max-width: 760px; margin-inline: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-4); }
+.kn-head.page-head { margin: 0; }
+.kn-total { font-weight: 700; color: var(--muted); }
+
+.kn-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
+.kn-search { flex: 1 1 260px; margin: 0; }
+.kn-search label { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: var(--r-pill); background: var(--surface); color: var(--muted); }
+.kn-search label:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.kn-search .sketch { flex: none; width: 18px; height: 18px; }
+.kn-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--fg); font: 400 var(--t-md)/1.2 var(--font); }
+.kn-filter { align-self: center; }
+.kn-filter a { display: inline-flex; align-items: center; gap: 2px; }
+.kn-count { margin-left: 4px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.kn-filter a[aria-current] .kn-count { color: var(--muted); }
+.kn-add { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface); color: var(--fg); font: 600 var(--t-sm)/1 var(--font); cursor: pointer; }
+.kn-add:hover { background: var(--sunken); }
+.kn-add:disabled { opacity: .45; cursor: default; }
+.kn-add span { font-size: 1.15em; line-height: 0; }
+
+/* the list: one frame, a line between two entries */
+.kn-list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); }
+.kn-list:empty { display: none; }
+.kn-item + .kn-item { border-top: 1px solid var(--line); }
+.kn-entry > summary { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: var(--s-3); align-items: start; padding: var(--s-4) var(--s-4) var(--s-4) var(--s-3); list-style: none; cursor: pointer; }
+.kn-entry > summary::-webkit-details-marker { display: none; }
+.kn-entry > summary:hover { background: color-mix(in srgb, var(--sunken) 55%, transparent); }
+.kn-entry[open] > summary { background: var(--accent-soft); }
+.kn-ico { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--sunken); color: var(--muted); }
+.kn-item.is-pinned .kn-ico { color: var(--accent); }
+.kn-ico .sketch { width: 18px; height: 18px; }
+.kn-words { display: grid; gap: 3px; min-width: 0; }
+.kn-title { font: 700 var(--t-md)/1.3 var(--font); color: var(--fg); overflow-wrap: anywhere; }
+.kn-text { color: var(--fg); font: 400 var(--t-sm)/1.45 var(--font); white-space: pre-line; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.kn-entry[open] .kn-text { display: block; -webkit-line-clamp: none; }
+.kn-by { color: var(--faint); font: 400 var(--t-xs)/1.3 var(--font); }
+.kn-pinned { display: grid; place-items: center; width: 24px; height: 24px; color: var(--accent); }
+.kn-pinned .sketch { width: 16px; height: 16px; }
+
+/* an entry's actions, open: Edit, Pin or Unpin, Delete (asked once more) */
+.kn-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); padding: 0 var(--s-4) var(--s-4) calc(var(--s-3) + 32px + var(--s-3)); background: var(--accent-soft); }
+.kn-acts form { margin: 0; }
+.kn-btn { display: inline-grid; place-items: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); color: var(--fg); font: 600 var(--t-xs)/1 var(--font); cursor: pointer; list-style: none; }
+.kn-btn::-webkit-details-marker { display: none; }
+.kn-btn:hover { background: var(--sunken); }
+.kn-btn.is-main { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); }
+.kn-btn.is-main:hover { background: var(--accent-hover); }
+.kn-btn.is-danger { color: var(--deny); }
+.kn-btn.is-danger-main { border-color: var(--deny); background: var(--deny); color: var(--surface); }
+.kn-del { position: relative; }
+.kn-del[open] > summary { background: color-mix(in srgb, var(--deny) 12%, var(--surface)); }
+.kn-del-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-2) !important; color: var(--fg); font: 400 var(--t-sm)/1.4 var(--font); }
+
+/* the editor: in place of an entry, or at the head of the list for a new one */
+.kn-edit { display: grid; gap: var(--s-2); padding: var(--s-4); border: 1px solid var(--accent); border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+.kn-edit[hidden] { display: none; }
+.kn-item > .kn-edit { margin: var(--s-2); }
+.kn-edit-title, .kn-edit-text { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--fg); }
+.kn-edit-title { font: 700 var(--t-md)/1.3 var(--font); }
+.kn-edit-text { font: 400 var(--t-sm)/1.45 var(--font); resize: vertical; min-height: 84px; }
+.kn-edit-title:focus, .kn-edit-text:focus { outline: 0; border-color: var(--accent); }
+.kn-edit-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.kn-edit-pin { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font: 500 var(--t-sm)/1 var(--font); cursor: pointer; }
+.kn-edit-pin .sketch { width: 16px; height: 16px; }
+.kn-edit-acts { display: inline-flex; gap: var(--s-2); }
+.kn-full { margin: 0; color: var(--muted); font-size: var(--t-sm); }
+.kn-none { margin: 0; padding: var(--s-6) var(--s-4); border: 1px dashed var(--line-strong); border-radius: var(--r-lg); color: var(--muted); text-align: center; }
+
+/* the chip on a team's Desk, under its goals */
+.desk-know { grid-column: 1; justify-self: start; display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; padding: 4px 10px 4px 8px; border: 1px solid var(--line); border-radius: var(--r-pill); color: var(--muted); font: 600 var(--t-xs)/1 var(--font); text-decoration: none; }
+.desk-know:hover { border-color: var(--line-strong); color: var(--fg); background: var(--sunken); }
+.desk-know .sketch { width: 15px; height: 15px; }
+.desk-know b { color: var(--fg); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 860px) {
+  body[data-page="knowledge"] #knowledge { grid-column: 1; grid-row: 2; padding: var(--s-4) var(--gutter) var(--s-8); }
+  .kn-search input { font-size: max(16px, 1rem); }
+  .kn-add { min-height: 42px; }
+  .kn-entry > summary { padding: var(--s-3); }
+  .kn-acts { padding: 0 var(--s-3) var(--s-3) var(--s-3); }
+}

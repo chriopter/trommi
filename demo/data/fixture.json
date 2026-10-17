@@ -7022,6 +7022,107 @@
       "envelope_number": 877491,
       "updated_at": 1791462600000,
       "helper": "Copywriting"
+    },
+    {
+      "object_id": "6b6e6f776c656467650000000000c4a1",
+      "agent_device_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "first_envelope_number": 877300,
+      "created_at": 1791469440000,
+      "versions": [
+        {
+          "object_version": 1,
+          "version_hash": "6b6e6f776c6564676500000000000000000000000000000000000000c4a10001",
+          "previous_version_hash": null,
+          "envelope_number": 877300,
+          "sent_at": 1791469440000,
+          "object_state": "open",
+          "urgency": "normal",
+          "content": {
+            "card_type": "decision",
+            "title": "Add to team knowledge? Hub deploy",
+            "teaser": null,
+            "body": "The web app deploys from main through ship-web.yml; a failed check puts the build before back within a minute.",
+            "options": [
+              {
+                "key": "yes",
+                "label": "Yes",
+                "detail": "",
+                "final": true
+              },
+              {
+                "key": "no",
+                "label": "No",
+                "detail": "",
+                "final": true
+              }
+            ],
+            "sections": null,
+            "html": null,
+            "allows_multiple": false,
+            "recommended": null,
+            "urgency_reason": "",
+            "attachments": [],
+            "change_note": "",
+            "close_summary": null,
+            "withdraw_reason": null,
+            "merged_into_object_id": null,
+            "merged_from_object_ids": null,
+            "knowledge": {
+              "op": "add",
+              "title": "Hub deploy",
+              "text": "The web app deploys from main through ship-web.yml; a failed check puts the build before back within a minute.",
+              "pinned": false
+            }
+          }
+        }
+      ],
+      "answer": null,
+      "answers": [],
+      "closed_how": null,
+      "in_revision": null,
+      "timeline_key": "chat:card/6b6e6f776c656467650000000000c4a1",
+      "content_state": "ok",
+      "card_type": "decision",
+      "title": "Add to team knowledge? Hub deploy",
+      "teaser": null,
+      "body": "The web app deploys from main through ship-web.yml; a failed check puts the build before back within a minute.",
+      "options": [
+        {
+          "key": "yes",
+          "label": "Yes",
+          "detail": "",
+          "final": true
+        },
+        {
+          "key": "no",
+          "label": "No",
+          "detail": "",
+          "final": true
+        }
+      ],
+      "sections": null,
+      "html": null,
+      "allows_multiple": false,
+      "recommended": null,
+      "urgency_reason": "",
+      "attachments": [],
+      "change_note": "",
+      "close_summary": null,
+      "withdraw_reason": null,
+      "merged_into_object_id": null,
+      "merged_from_object_ids": null,
+      "object_state": "open",
+      "urgency": "normal",
+      "object_version": 1,
+      "version_hash": "6b6e6f776c6564676500000000000000000000000000000000000000c4a10001",
+      "envelope_number": 877300,
+      "updated_at": 1791469440000,
+      "knowledge": {
+        "op": "add",
+        "title": "Hub deploy",
+        "text": "The web app deploys from main through ship-web.yml; a failed check puts the build before back within a minute.",
+        "pinned": false
+      }
     }
   ],
   "permissions": [
@@ -8398,6 +8499,16 @@
                 "at": 1791469576000,
                 "tool": "Bash",
                 "title": "Run the link checker over staging",
+                "state": "ok",
+                "ms": 41000
+              },
+              {
+                "id": "toolu_7c1e5a90b2d4",
+                "kind": "step",
+                "at": 1791469792000,
+                "tool": "plugin_trommi_trommi: search_knowledge",
+                "knowledge": true,
+                "subject": "deploy",
                 "state": "running"
               }
             ]
@@ -10762,6 +10873,78 @@
         "archived": false,
         "group": null,
         "icon": null
+      }
+    },
+    "knowledge": {
+      "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1": {
+        "desk": "main",
+        "title": "Release branches",
+        "text": "Every change goes onto release/<date>-<n> and into main by a pull request with auto-merge. Nothing is pushed to main directly.",
+        "at": 1790951400000,
+        "pinned": true,
+        "by": "Fernly App"
+      },
+      "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2": {
+        "desk": "main",
+        "title": "Launch time",
+        "text": "The web app goes live on Monday at 09:00 CET. From Thursday noon no new features, only fixes.",
+        "at": 1791297000000,
+        "pinned": true
+      },
+      "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3": {
+        "desk": "main",
+        "title": "Design tokens",
+        "text": "One set of tokens for web and iOS, in design/tokens.json. Colours by role, never by hue.",
+        "at": 1791210600000,
+        "by": "Design System"
+      },
+      "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4": {
+        "desk": "main",
+        "title": "Checkout in Safari",
+        "text": "The Stripe iframe can take up to 20 s to load in WebKit. The checkout test waits 30 s there; do not lower it.",
+        "at": 1791383400000,
+        "by": "Fernly Website"
+      },
+      "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5": {
+        "desk": "main",
+        "title": "Staging",
+        "text": "staging.fernly.example is rebuilt from main every 15 minutes. Its data is fake and reset each night.",
+        "at": 1791037800000,
+        "by": "Fernly Website"
+      },
+      "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6": {
+        "desk": "main",
+        "title": "App Store review",
+        "text": "Review notes and the demo login live in ios/AppStore/review.md. Screenshots are made by the ship script, never by hand.",
+        "at": 1791124200000,
+        "by": "Fernly App"
+      },
+      "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7": {
+        "desk": "main",
+        "title": "Plant photos",
+        "text": "Photos people upload are resized to 2048 px on the phone and never leave it in full size.",
+        "at": 1790692200000
+      },
+      "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1": {
+        "desk": "platform",
+        "title": "Cloud budget",
+        "text": "Under 6,000 € a month. Anything that adds more than 200 € a month needs a Yes on the Desk first.",
+        "at": 1791210600000,
+        "pinned": true
+      },
+      "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2": {
+        "desk": "platform",
+        "title": "us-east",
+        "text": "Reads from us-east from October 31; writes stay in eu-central.",
+        "at": 1791297000000,
+        "by": "Infrastructure"
+      },
+      "b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3": {
+        "desk": "platform",
+        "title": "API examples",
+        "text": "Every endpoint in the docs has a runnable curl example; the docs check fails without one.",
+        "at": 1790951400000,
+        "by": "Docs"
       }
     }
   }

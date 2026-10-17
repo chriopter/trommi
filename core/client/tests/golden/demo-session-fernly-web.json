@@ -8,23 +8,6 @@
   "blocked": false,
   "talk": [
     {
-      "id": "e860920",
-      "from_me": false,
-      "text": "Yes: the phone moves under the buttons and the big plant goes. This is the page from top to bottom:",
-      "time_ms": 1791453120000,
-      "heard": false,
-      "pending": false,
-      "files": [
-        "802fca719c40014777ae8bbf02deb82c"
-      ],
-      "kind": "agent",
-      "number": 860920,
-      "cont": false,
-      "terminal": false,
-      "scribble": false,
-      "helper": "Landing Page"
-    },
-    {
       "id": "e865600",
       "from_me": false,
       "text": "44 tests: sign-up, first plant, checkout with three test cards, reminders, sharing.",
@@ -1345,6 +1328,102 @@
       "helper": "Testing"
     },
     {
+      "id": "v877300a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791469440000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 877300,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "6b6e6f776c656467650000000000c4a1",
+        "number": 50,
+        "title": "Add to team knowledge? Hub deploy"
+      },
+      "row": {
+        "id": "6b6e6f776c656467650000000000c4a1",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Add to team knowledge? Hub deploy",
+        "words": "The web app deploys from main through ship-web.yml; a failed check puts the build before back within a minute.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791469440000,
+        "from": {
+          "session_id": "54ddca7af4029f0526984da1e346d833",
+          "name": "Fernly Website",
+          "mark": "draw:leaf",
+          "path": [
+            "Fernly",
+            "Fernly Website"
+          ]
+        },
+        "run": 0,
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "no",
+              "label": "No",
+              "thumb": "no",
+              "thumbs": true,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": true,
+              "tip": {
+                "key": "tile.settles",
+                "en": "Settles it"
+              },
+              "says": {
+                "key": "tile.says.settles",
+                "args": {
+                  "label": "No"
+                },
+                "en": "No (settles it)"
+              }
+            },
+            {
+              "key": "yes",
+              "label": "Yes",
+              "thumb": "yes",
+              "thumbs": true,
+              "lead": true,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": true,
+              "tip": {
+                "key": "tile.settles",
+                "en": "Settles it"
+              },
+              "says": {
+                "key": "tile.says.settles",
+                "args": {
+                  "label": "Yes"
+                },
+                "en": "Yes (settles it)"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
       "id": "e877361",
       "from_me": false,
       "text": "",
@@ -1367,11 +1446,11 @@
           "args": {
             "failed": "0",
             "helpers": "0",
-            "steps": "3"
+            "steps": "4"
           },
-          "en": "3 steps"
+          "en": "4 steps"
         },
-        "now": "Bash · Run the link checker over staging",
+        "now": "reads team knowledge (7) · “deploy”",
         "lines": [
           {
             "id": "say:web-2:0",
@@ -1406,13 +1485,24 @@
           {
             "id": "toolu_a4a340a9fd76",
             "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Bash",
+            "what": "Run the link checker over staging",
+            "took": "41 s"
+          },
+          {
+            "id": "toolu_7c1e5a90b2d4",
+            "kind": "step",
             "state": "running",
             "says": {
               "key": "work.step.running",
               "en": "running"
             },
-            "tool": "Bash",
-            "what": "Run the link checker over staging"
+            "what": "reads team knowledge (7) · “deploy”"
           }
         ]
       },
@@ -1431,7 +1521,7 @@
       "terminal": false,
       "card": {
         "id": "58f19345f724a39460db70a4377995c8",
-        "number": 53,
+        "number": 54,
         "title": "Which drawing welcomes new people?"
       },
       "row": {
@@ -1547,7 +1637,7 @@
       "terminal": false,
       "card": {
         "id": "76ab0cafab45f8b2011853527a3dc10e",
-        "number": 54,
+        "number": 55,
         "title": "Which headline for the launch?"
       },
       "row": {
@@ -1786,13 +1876,18 @@
   "questions": [
     {
       "id": "76ab0cafab45f8b2011853527a3dc10e",
-      "number": 54,
+      "number": 55,
       "title": "Which headline for the launch?"
     },
     {
       "id": "58f19345f724a39460db70a4377995c8",
-      "number": 53,
+      "number": 54,
       "title": "Which drawing welcomes new people?"
+    },
+    {
+      "id": "6b6e6f776c656467650000000000c4a1",
+      "number": 50,
+      "title": "Add to team knowledge? Hub deploy"
     },
     {
       "id": "9c9f4031e513b80e68c67139a12e408b",
@@ -1888,12 +1983,12 @@
   ],
   "has_more": false,
   "earlier": {
-    "left": 28,
+    "left": 29,
     "hub": false,
     "says": {
       "key": "session.earlier",
       "args": {
-        "left": "28"
+        "left": "29"
       },
       "en": "Earlier messages"
     },
@@ -2443,6 +2538,84 @@
       ]
     },
     {
+      "id": "6b6e6f776c656467650000000000c4a1",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Add to team knowledge? Hub deploy",
+      "words": "The web app deploys from main through ship-web.yml; a failed check puts the build before back within a minute.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791469440000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ]
+      },
+      "run": 0,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "no",
+            "label": "No",
+            "thumb": "no",
+            "thumbs": true,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": true,
+            "tip": {
+              "key": "tile.settles",
+              "en": "Settles it"
+            },
+            "says": {
+              "key": "tile.says.settles",
+              "args": {
+                "label": "No"
+              },
+              "en": "No (settles it)"
+            }
+          },
+          {
+            "key": "yes",
+            "label": "Yes",
+            "thumb": "yes",
+            "thumbs": true,
+            "lead": true,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": true,
+            "tip": {
+              "key": "tile.settles",
+              "en": "Settles it"
+            },
+            "says": {
+              "key": "tile.says.settles",
+              "args": {
+                "label": "Yes"
+              },
+              "en": "Yes (settles it)"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
       "id": "58f19345f724a39460db70a4377995c8",
       "kind": "decision",
       "loading": false,
@@ -2639,20 +2812,20 @@
       ]
     }
   ],
-  "open": 8,
+  "open": 9,
   "open_word": {
     "key": "session.open",
     "args": {
-      "n": "8"
+      "n": "9"
     },
-    "en": "8 open"
+    "en": "9 open"
   },
   "open_says": {
     "key": "session.open.some",
     "args": {
-      "n": "8"
+      "n": "9"
     },
-    "en": "8 open questions: go to the first one"
+    "en": "9 open questions: go to the first one"
   },
   "first_open": "v874480a",
   "usage": {
@@ -2771,7 +2944,7 @@
         "key": "panel.questions",
         "en": "Questions"
       },
-      "count": 8
+      "count": 9
     },
     {
       "key": "helpers",

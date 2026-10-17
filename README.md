@@ -138,7 +138,7 @@ flowchart TB
 ```
 
 - **Room group:** all of your devices (at most 1000) and nothing else. It protects what belongs to you, not to one
-  agent: Teams, Goals, Notes, Scribble Boards.
+  agent: Teams, Goals, team knowledge, Notes, Scribble Boards.
 - **Session group:** one per agent session: your devices and that agent's connector. One agent never reads
   another's session, and no agent reads the room group.
 - **Helpers:** an agent's subagents have no group or key of their own. They write through their agent's connector
@@ -146,6 +146,8 @@ flowchart TB
   session. (Until 16 October 2026 a helper got a session group of its own; those still open are read until their
   agent archives them, and the hub founds no new one.)
 - Which team an agent sits on is only a value inside the room group: moving it changes no key.
+- **Goals and team knowledge** live in the room group; your devices copy a team's into each of its sessions, so
+  its agents read them there (spec/v1.md 9.3.4, 9.3.7).
 - **Removing** a device or agent takes it out of every group at once, and the hub ends its access.
 
 </details>
@@ -416,6 +418,39 @@ scripts through the app's fold, and the app against the real hub (`tests/hub.rs`
 quits: CI's smoke test (`.github/workflows/pr-check.yml` on a pull request, `main.yml` on main, only when the
 app or what it is built from changed). Pictures over the real hub: `TROMMI_LINUX_SHOTS=<dir> cargo test --test hub
 -- --ignored pictures` (`TROMMI_LINUX_SCENE=card|session`).
+
+</details>
+
+<details>
+<summary><b>Team knowledge</b> · what every agent of a team knows, kept on your Yes</summary>
+
+Each team has its knowledge: short entries (a title, at most 600 characters of text, pinned or not) that every agent
+of the team reads, such as where the deploy runs or how releases go. The Knowledge page of a team (the chip under its
+goals on the Desk) lists them, pinned first then the newest, with a search and the filter Pinned; there you add,
+edit, pin and delete entries yourself.
+
+```mermaid
+sequenceDiagram
+  participant A as Agent (connector)
+  participant S as Its session group
+  participant Y as Your device
+  participant R as Room group
+  A->>S: Decision card with knowledge: "Add to team knowledge? Hub deploy"
+  S->>Y: the card, drawn from the proposal itself
+  Y->>R: your Yes writes knowledge/<id>
+  Y->>S: a copy into every session of that team
+  S->>A: search_knowledge, read_knowledge read the copy
+```
+
+- **Stored** as encrypted registers `knowledge/<id>` in the room group, which no agent reads. Your devices copy a
+  team's entries into each of its main sessions (spec/v1.md 9.3.7), as they do with the goals.
+- **Agents read** with `search_knowledge` (a full-text index over the session's copy, in the connector) and
+  `read_knowledge`; at its start, and whenever the entries change, an agent gets a short digest with a tool's result:
+  the pinned entries and the newest titles. Its chat shows a quiet line "reads team knowledge (12)".
+- **Agents propose** with `propose_knowledge`, `correct_knowledge` and `forget_knowledge`: each files a yes/no card
+  ("Add to team knowledge?", "Change in team knowledge?", "Forget from team knowledge?"). The app draws it from the
+  proposal, not from the agent's words; your Yes writes the entry on your device, a No writes nothing.
+- The hub sees encrypted registers, as for everything else. The logic is the app core's (`core/client/src/knowledge.rs`).
 
 </details>
 

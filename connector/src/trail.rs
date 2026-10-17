@@ -42,6 +42,11 @@ fn one_line(s: &str, max: usize) -> String {
 pub fn is_board_tool(name: &str) -> bool {
     name.starts_with("mcp__plugin_trommi_trommi__") || name.starts_with("mcp__trommi__")
 }
+/// A board tool that reads the team's knowledge: its step shows ("reads team knowledge (12)"), unlike the board's
+/// other calls, whose work stands on the board already.
+pub fn is_knowledge_read(name: &str) -> bool {
+    is_board_tool(name) && (name.ends_with("__search_knowledge") || name.ends_with("__read_knowledge"))
+}
 /// A tool's name as the trail shows it: `mcp__github__create_issue` is "github: create_issue".
 pub fn tool_label(name: &str) -> String {
     match name.strip_prefix("mcp__") {
@@ -327,7 +332,11 @@ pub fn hook_request(input: &Value, ancestors: &[u32], level: Level) -> Option<Va
         }
         put("id", json!(id));
         put("tool", json!(tool_label(tool)));
-        if is_board_tool(tool) {
+        if is_knowledge_read(tool) {
+            // (the words are the app's: the step only says it read the knowledge, and what it searched for)
+            put("knowledge", json!(true));
+            put("subject", json!(one_line(&redact(str_of(args, "query")), SUBJECT_MAX)));
+        } else if is_board_tool(tool) {
             put("board", json!(true));
             // (the helper a board call is for: `helper`, or `session` as older tools name it)
             let helper = [str_of(args, "helper"), str_of(args, "session")].into_iter().find(|h| !h.trim().is_empty()).unwrap_or("");
@@ -808,7 +817,7 @@ impl Trail {
                 }
                 let mut item =
                     obj(json!({ "id": id, "kind": "step", "state": "running", "at": now }));
-                for k in ["tool", "title", "subject", "input"] {
+                for k in ["tool", "title", "subject", "input", "knowledge"] {
                     if let Some(v) = req.get(k) {
                         item.insert(k.into(), v.clone());
                     }
