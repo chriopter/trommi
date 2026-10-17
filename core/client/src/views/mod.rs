@@ -105,6 +105,10 @@ pub struct Focus {
     /// no search.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chats_query: Option<String>,
+    /// A phone's screen: a session's page is the calm chat (a run of card events as one row of chips, `kind`
+    /// "events"; no helper list; "and 2 more" beside the working line). A wide window leaves it false.
+    #[serde(default)]
+    pub phone: bool,
 }
 
 fn yes() -> bool {
@@ -1164,6 +1168,9 @@ pub struct TalkRow {
     /// The cards it carries, a chip each.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chips: Vec<CardRefView>,
+    /// `kind` "events" (a phone's chat): the card events of a run, a chip each, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<EventChipView>,
     /// A selection of the Scribble Board (its one file is the picture).
     #[serde(default)]
     pub scribble: bool,
@@ -1188,6 +1195,21 @@ pub struct CardRefView {
     /// Its number ("Nr. 12"); 0 when this device does not hold it.
     pub number: u32,
     pub title: String,
+}
+
+/// One card event of a run on a phone (`TalkRow.events`): a small chip that opens its card.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventChipView {
+    /// The talk row it was.
+    pub id: String,
+    /// The event's kind (`EventView.kind`): its sign.
+    pub kind: String,
+    /// What the chip says: the card's title, else what happened.
+    pub text: String,
+    /// For a screen reader: what happened ("Trommi revised it: Release notes").
+    pub says: Text,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card: Option<CardRefView>,
 }
 
 /// One quiet line for something that happened to a card.

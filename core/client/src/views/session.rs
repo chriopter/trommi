@@ -24,7 +24,7 @@ use super::desk::{card_row, request_row, shown_title};
 use super::sidebar::{hand_of, link_of};
 use super::talk::{card_ref, choices_of, event_label_by, events_of, in_order, items_of, Entry, Side, UNSENT};
 use super::words::{local, next_midnight, quiet_words, say};
-use super::{CardRefView, DotView, EmptyTalkView, EventView, FixView, HelperListView, HelperRowView, LinkNoteView, LinkWords, MoreView, PanelTabView, SessionView, StatusLineView, TalkRow, Text};
+use super::{CardRefView, DotView, EmptyTalkView, EventChipView, EventView, FixView, HelperListView, HelperRowView, LinkNoteView, LinkWords, MoreView, PanelTabView, SessionView, StatusLineView, TalkRow, Text};
 use crate::model::types::Card;
 use crate::off_mind::went_at;
 use crate::status::card_place;
@@ -148,7 +148,52 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
             pages: pages + 1,
         });
     }
+    if b.lens.phone {
+        calm(&mut v);
+    }
     Some(v)
+}
+
+/// A phone's chat: only the words and what waits. A run of card events becomes one row of chips (`kind` "events";
+/// an echo of what the asked line already says is left out), the helper list stays off the page (their status lines
+/// name them), and the rest of the working lines is "and N more".
+fn calm(v: &mut SessionView) {
+    let mut talk: Vec<TalkRow> = Vec::with_capacity(v.talk.len());
+    for row in std::mem::take(&mut v.talk) {
+        if row.kind != "event" {
+            talk.push(row);
+            continue;
+        }
+        let Some(ev) = row.event.as_ref() else { continue };
+        if ev.echo {
+            continue;
+        }
+        let text = [row.card.as_ref().map(|c| c.title.as_str()).unwrap_or(""), ev.about.as_str(), ev.text.as_str(), ev.label.en.as_str()]
+            .into_iter()
+            .find(|t| !t.is_empty())
+            .unwrap_or("")
+            .to_string();
+        let says = if text == ev.label.en { ev.label.clone() } else { say("event.chip", format!("{}: {text}", ev.label.en), &[("what", &ev.label.en), ("about", &text)]) };
+        let chip = EventChipView { id: row.id.clone(), kind: ev.kind.clone(), text, says, card: row.card.clone() };
+        match talk.last_mut() {
+            Some(last) if last.kind == "events" && row.day.is_none() => {
+                last.time_ms = row.time_ms;
+                last.events.push(chip);
+            }
+            _ => talk.push(TalkRow { id: row.id.clone(), kind: "events".into(), time_ms: row.time_ms, number: row.number, day: row.day.clone(), events: vec![chip], ..Default::default() }),
+        }
+    }
+    // (a run of the agent's words broken by chips starts again after them)
+    for i in 1..talk.len() {
+        if talk[i - 1].kind == "events" {
+            talk[i].cont = false;
+        }
+    }
+    v.talk = talk;
+    v.helpers = None;
+    v.tabs.retain(|t| t.key != "helpers");
+    let behind = v.status_lines.len().saturating_sub(1).to_string();
+    v.status_more = (v.status_lines.len() > 1).then(|| say("session.status_more.phone", format!("and {behind} more"), &[("n", behind.as_str())]));
 }
 
 fn page(b: &Board, id: &str) -> Option<SessionView> {
@@ -776,6 +821,50 @@ mod tests {
         assert_eq!((v.open, en(&v.open_word), en(&v.open_says), v.first_open.as_deref()), (2, "2 open", "2 open questions: go to the first one", Some("v100a")));
         // (the page "Questions" lists as open exactly what the count counts)
         assert_eq!(v.waiting.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["q-open", "p1"]);
+    }
+
+    /// On a phone the chat is calm: a run of card events is one row of chips (an echo left out), the agent's words
+    /// after it start a run again, the helper list stays off the page and the rest of the working lines is "and N more".
+    #[test]
+    fn a_phone_folds_card_events_into_chips_and_leaves_the_helpers_out() {
+        let mut r = Room::default();
+        r.session("a", None, true)["status_lines"] = json!([
+            { "id": "l1", "label": "iPhone Desk", "state": "working", "helper": "iOS", "updated_at": NOW - MIN },
+            { "id": "l2", "label": "Required check", "state": "working", "helper": "CI", "updated_at": NOW - 2 * MIN },
+            { "id": "l3", "label": "Connector", "state": "working", "updated_at": NOW - 3 * MIN },
+        ]);
+        let history = |n: u64, title: &str| json!([{ "object_version": 1, "envelope_number": n, "sent_at": NOW - 10 * MIN, "object_state": "open", "content": { "title": title } }]);
+        r.card("q-read", "a", "info", "normal")["versions"] = history(101, "q-read");
+        let c = r.card("q-back", "a", "decision", "normal");
+        c["in_revision"] = json!({ "by": "me", "envelope_number": 500 });
+        c["versions"] = history(102, "q-back");
+        r.answered("q-done", "a", NOW - 5 * MIN, 150);
+        let c = r.cards.last_mut().unwrap();
+        c["options"] = json!([{ "key": "a", "label": "Ship it" }]);
+        c["versions"] = history(104, "q-done");
+        c["answers"] = json!([c["answer"].clone()]);
+        r.card("q-i", "a", "decision", "normal")["helper"] = json!("iOS");
+        r.say("a", None, 99, "a", 30 * MIN, msg("Three things for you."));
+        r.say("a", None, 160, "a", 4 * MIN, msg("Both started."));
+        r.say("a", None, 161, "a", 4 * MIN, msg("I need you in the terminal."));
+        let wide = view(&r, "a");
+        assert!(wide.helpers.is_some() && wide.talk.iter().any(|t| t.kind == "event"), "a wide window keeps the lines and the helper list");
+        let m = r.model(NOW);
+        let lens = Lens { phone: true, ..Default::default() };
+        let v = session(&Board::new(&m, &lens, NOW), &dev("a")).unwrap();
+        let rows: Vec<(&str, &str, bool)> = v.talk.iter().map(|t| (t.id.as_str(), t.kind.as_str(), t.cont)).collect();
+        assert_eq!(rows.iter().filter(|r| r.1 == "event").count(), 0, "{rows:?}");
+        let folded: Vec<&TalkRow> = v.talk.iter().filter(|t| t.kind == "events").collect();
+        assert_eq!(folded.len(), 1, "one run, one row: {rows:?}");
+        let chips: Vec<(&str, &str, &str)> = folded[0].events.iter().map(|c| (c.kind.as_str(), c.text.as_str(), c.says.en.as_str())).collect();
+        assert_eq!(chips, [("info", "q-read", "a wrote: q-read"), ("handed", "q-back", "With the agent: q-back"), ("decided", "q-done", "You chose: q-done")]);
+        assert!(folded[0].events.iter().all(|c| c.card.is_some()), "each chip opens its card");
+        let at = v.talk.iter().position(|t| t.kind == "events").unwrap();
+        assert_eq!((v.talk[at + 1].text.as_str(), v.talk[at + 1].cont, v.talk[at + 2].cont), ("Both started.", false, true), "the words after the chips start a run");
+        assert!(v.helpers.is_none() && !v.tabs.iter().any(|t| t.key == "helpers"));
+        assert_eq!(v.status_lines.iter().map(|l| l.helper.as_deref()).collect::<Vec<_>>(), [Some("iOS"), Some("CI"), None], "the lines still name the helpers");
+        let more = v.status_more.expect("two behind the first");
+        assert_eq!((more.key.as_str(), more.en.as_str()), ("session.status_more.phone", "and 2 more"));
     }
 
     /// The count of open questions is what the page "Questions" lists as open: cards to read that wait on the Desk

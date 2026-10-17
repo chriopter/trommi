@@ -30,6 +30,9 @@ export interface Focus {
   /** The words searched for among every team's chats (the phone's Search tab, `SidebarView.found`); none or empty:
    *  no search. */
   chats_query?: string
+  /** A phone's screen: a session's page is the calm chat (a run of card events as one row of chips, `kind`
+   *  "events"; no helper list; "and 2 more" beside the working line). A wide window leaves it false. */
+  phone: boolean
 }
 
 export type Screen =
@@ -809,6 +812,8 @@ export interface TalkRow {
   html?: string
   /** The cards it carries, a chip each. */
   chips?: CardRefView[]
+  /** `kind` "events" (a phone's chat): the card events of a run, a chip each, in order. */
+  events?: EventChipView[]
   /** A selection of the Scribble Board (its one file is the picture). */
   scribble: boolean
   /** A note: when it was written. */
@@ -827,6 +832,19 @@ export interface CardRefView {
   /** Its number ("Nr. 12"); 0 when this device does not hold it. */
   number: number
   title: string
+}
+
+/** One card event of a run on a phone (`TalkRow.events`): a small chip that opens its card. */
+export interface EventChipView {
+  /** The talk row it was. */
+  id: string
+  /** The event's kind (`EventView.kind`): its sign. */
+  kind: string
+  /** What the chip says: the card's title, else what happened. */
+  text: string
+  /** For a screen reader: what happened ("Trommi revised it: Release notes"). */
+  says: Text
+  card?: CardRefView
 }
 
 /** One quiet line for something that happened to a card. */
