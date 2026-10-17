@@ -1248,7 +1248,7 @@ struct TalkRow: View {
             }
           }
           .padding(.horizontal, 14).padding(.vertical, 10)
-          .background(UnevenRoundedRectangle(topLeadingRadius: row.cont ? 18 : 6, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous).fill(Ink.sunken))
+          .background(UnevenRoundedRectangle(topLeadingRadius: row.cont ? 18 : 6, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous).fill(Ink.fg.opacity(0.07)))
           .contextMenu { if !row.text.isEmpty { Button { copyText(row.text) } label: { Label("Copy", systemImage: "doc.on.doc") } } }
         }
         chips
