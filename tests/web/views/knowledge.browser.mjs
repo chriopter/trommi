@@ -48,8 +48,8 @@ try {
     await page.send('Page.navigate', { url: `${APP}/team/main?mock=1` })
     await until("document.readyState === 'complete' && document.documentElement.hasAttribute('data-ready') && Boolean(document.querySelector('#tile-knowledge'))", 10000)
     // the Desk's tile says how many entries and opens the page
-    const chip = await ev(`(() => { const a = document.querySelector('#tile-knowledge'), t = trommi.vm().desk.tiles?.find(x => x.key === 'knowledge'); return a ? { n: a.querySelector('.dt-head i')?.textContent, line: a.querySelector('.dt-line')?.textContent, vm: trommi.vm().desk.knowledge?.count, tile: t?.count, says: t?.line?.en } : null })()`)
-    if (!chip || String(chip.vm) !== chip.n || chip.tile !== chip.vm || chip.line !== chip.says || !(chip.vm > 0)) bad.push(`the Desk's tile: ${JSON.stringify(chip)}`)
+    const chip = await ev(`(() => { const a = document.querySelector('#tile-knowledge'), t = trommi.vm().desk.tiles?.find(x => x.key === 'knowledge'); return a ? { line: a.querySelector('.dt-head i')?.textContent, names: [...a.querySelectorAll('.dt-names li')].map(l => l.textContent), vm: trommi.vm().desk.knowledge?.count, tile: t?.count, says: t?.line?.en, first: t?.names } : null })()`)
+    if (!chip || chip.tile !== chip.vm || chip.line !== chip.says || !(chip.vm > 0) || JSON.stringify(chip.names) !== JSON.stringify(chip.first) || !chip.names.length) bad.push(`the Desk's tile: ${JSON.stringify(chip)}`)
     await ev("document.querySelector('#tile-knowledge').click()")
     if (!(await until("Boolean(document.querySelector('#knowledge .kn-list')) && location.pathname === '/knowledge'"))) bad.push('the tile does not open the page')
     let p = await ev(PROBE)

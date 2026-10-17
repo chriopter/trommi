@@ -276,7 +276,13 @@
         "n": "7"
       },
       "en": "Team knowledge: 7 entries"
-    }
+    },
+    "first": [
+      "Launch time",
+      "Release branches",
+      "Checkout in Safari",
+      "Design tokens"
+    ]
   },
   "rows": [
     {

@@ -211,7 +211,12 @@
         "n": "3"
       },
       "en": "Team knowledge: 3 entries"
-    }
+    },
+    "first": [
+      "Cloud budget",
+      "us-east",
+      "API examples"
+    ]
   },
   "rows": [
     {

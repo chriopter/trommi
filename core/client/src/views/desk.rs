@@ -239,6 +239,9 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
         opens: super::Screen::Off { query: String::new() },
         items: desk.off.as_ref().map(|o| o.running.iter().map(|r| r.id.clone()).collect()).unwrap_or_default(),
         team_id: None,
+        names: Vec::new(),
+        size: "wide".into(),
+        empty: desk.off.is_none(),
     };
     let n = all.len();
     let artifacts = super::DeskTileView {
@@ -253,6 +256,9 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
         opens: super::Screen::Artifacts { kind: String::new() },
         items: all.iter().take(4).map(|a| a.id.clone()).collect(),
         team_id: None,
+        names: Vec::new(),
+        size: "narrow".into(),
+        empty: n == 0,
     };
     let board = super::DeskTileView {
         key: "board".into(),
@@ -262,6 +268,9 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
         opens: super::Screen::Scribble { board_id: team.map(crate::scribble::team_board).unwrap_or_default() },
         items: Vec::new(),
         team_id: team.map(String::from),
+        names: Vec::new(),
+        size: if desk.knowledge.is_some() { "wide" } else { "full" }.into(),
+        empty: false,
     };
     let knowledge = desk.knowledge.as_ref().map(|k| {
         let n = k.count;
@@ -277,6 +286,9 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
             opens: super::Screen::Knowledge { query: String::new(), filter: String::new() },
             items: Vec::new(),
             team_id: Some(k.team_id.clone()),
+            names: k.first.clone(),
+            size: "narrow".into(),
+            empty: n == 0,
         }
     });
     [Some(work), Some(artifacts), Some(board), knowledge].into_iter().flatten().collect()
@@ -291,6 +303,7 @@ pub fn board_tile(desk: &mut DeskView, thumbs: Option<&[super::ThumbView]>) {
     }
     let n = thumb.count;
     tile.count = Some(n as u32);
+    tile.empty = n == 0;
     tile.line = match n {
         0 => say("desk.tile.board.empty", "Empty", &[]),
         1 => say("desk.tile.board.one", "1 element", &[]),
@@ -679,7 +692,7 @@ mod tests {
             serde_json::to_value(&vm.desk).unwrap()["tiles"].as_array().cloned().unwrap_or_default()
         };
         let keys = |t: &[serde_json::Value]| t.iter().map(|t| t["key"].as_str().unwrap_or("").to_string()).collect::<Vec<_>>();
-        let whole = |t: &[serde_json::Value]| t.iter().all(|t| t["items"].is_array() && t["title"]["en"].is_string() && t["line"]["en"].is_string());
+        let whole = |t: &[serde_json::Value]| t.iter().all(|t| t["items"].is_array() && t["names"].is_array() && t["size"].is_string() && t["empty"].is_boolean() && t["title"]["en"].is_string() && t["line"]["en"].is_string());
         // nothing at all: the Desk invites the first agent, no tiles
         assert!(shown(&Room::default(), None).is_empty());
         // an empty team beside one with an agent: it invites its first agent too, no tiles
@@ -735,6 +748,16 @@ mod tests {
         let t = tiles(&desk, &all, Some("main"));
         assert_eq!((t.len(), t[3].key.as_str(), t[3].title.en.as_str(), t[3].line.en.as_str(), t[3].count), (4, "knowledge", "Knowledge", "7 entries", Some(7)));
         assert_eq!(t[3].opens, Screen::Knowledge { query: String::new(), filter: String::new() });
+        // the bento: sizes and quiet tiles from the core
+        assert_eq!(t.iter().map(|t| (t.key.as_str(), t.size.as_str(), t.empty)).collect::<Vec<_>>(), [("work", "wide", false), ("artifacts", "narrow", false), ("board", "wide", false), ("knowledge", "narrow", false)]);
+        let mut quiet = DeskView { knowledge: Some(crate::views::KnowledgeChipView { team_id: "main".into(), ..Default::default() }), ..Default::default() };
+        let q = tiles(&quiet, &[], Some("main"));
+        assert_eq!(q.iter().map(|t| t.empty).collect::<Vec<_>>(), [true, true, false, true], "nothing runs, nothing published, no entries: quiet");
+        quiet.knowledge = None;
+        assert_eq!(tiles(&quiet, &[], None).iter().map(|t| t.size.as_str()).collect::<Vec<_>>(), ["wide", "narrow", "full"], "no Knowledge tile: the board takes the row");
+        let mut d2 = DeskView { tiles: tiles(&quiet, &[], Some("main")), ..Default::default() };
+        board_tile(&mut d2, Some(&[ThumbView { team_id: "main".into(), state: "ready".into(), count: 0, ..Default::default() }]));
+        assert!(d2.tiles[2].empty, "an empty board is quiet too");
     }
 
     use super::*;
