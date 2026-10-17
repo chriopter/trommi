@@ -354,6 +354,29 @@ struct SetRow<Icon: View>: View {
     .contentShape(Rectangle())
   }
 }
+/** Sealed dictation on this device: the switch, and the enclave's state as the core says it (a dot and a line). */
+private struct DictationRow: View {
+  @EnvironmentObject var shell: AppShell
+  var body: some View {
+    let d = shell.view.dictation
+    HStack(spacing: 14) {
+      Sketch("mic").frame(width: 26, height: 26)
+      VStack(alignment: .leading, spacing: 2) {
+        Text("Dictation").font(Face.text(17, .medium)).foregroundStyle(Ink.fg).lineLimit(1)
+        HStack(spacing: 6) {
+          Circle().fill(d.statusKind == "connected" ? Color(red: 0.18, green: 0.62, blue: 0.36) : d.statusKind == "failed" ? Ink.urgCritical : Ink.faint).frame(width: 7, height: 7)
+          Text(d.status?.en ?? "").font(Face.text(13)).foregroundStyle(Ink.muted).lineLimit(2)
+        }
+      }
+      Spacer(minLength: 8)
+      Toggle("Dictation", isOn: Binding(get: { d.on }, set: { on in shell.act(["do": "dictate", "step": ["step": "switch", "on": on]]) }))
+        .labelsHidden().tint(Ink.accent)
+    }
+    .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 52)
+    .accessibilityElement(children: .combine)
+  }
+}
+
 /** A field inside a group: one outlined line on the paper. */
 private struct SetField: View {
   let title: String
@@ -464,6 +487,10 @@ struct SettingsScreen: View {
     }
     SetGroup {
       link("theme", "Theme", detail: theme == "light" ? "Light" : theme == "dark" ? "Dark" : "System") { Sketch(theme == "dark" ? "moon" : "sun") }
+      if shell.view.dictation.available {
+        SetRule()
+        DictationRow()
+      }
     }
     SetGroup {
       link("data", "Data", detail: nil) { Image(systemName: "chart.bar").font(.system(size: 19)).foregroundStyle(Ink.fg) }

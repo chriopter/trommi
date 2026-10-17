@@ -114,6 +114,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Cloudflare sees what it sees of every hub request (see Deployment): your address, the sign-in token, the sizes and
   times; the audio and the words only sealed.
 - Limits: ten dictations a minute and 200 a day per account; a hub without a Tinfoil key offers no dictation.
+- Settings has a switch per device; off, nothing is recorded or checked. Opening Settings checks the enclave (the
+  hub sees that request, as it sees a dictation) and shows "Connected · sealed" only when the check passed.
 - The trust this rests on: AMD's hardware and keys, Tinfoil's published builds and Sigstore's log, and the verifier
   your device runs (in the browser loaded from app.trommi.com, like the rest of the web app; see Known limits).
 
@@ -224,7 +226,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Rulesets (signed commits, no force push, protected tags): being turned on.
 - iOS: account recovery and replacing the recovery code are tested only against a stand-in hub, not a real one.
 - Dictation is as private as Tinfoil's attestation holds: AMD's hardware and keys, Tinfoil's published builds and
-  Sigstore's log; in the browser the verifier comes with the app's code (above). It is on the web only for now.
+  Sigstore's log; in the browser the verifier comes with the app's code (above). On the iPhone the same verifier
+  runs inside the signed app, in a hidden web view that loads nothing from the network.
 - Passkeys: built, but off, because they need the PRF extension, which some password managers lack.
 - Planned: post-quantum encryption once OpenMLS supports it.
 - Planned: deleted content really gone, also on devices and in backups.

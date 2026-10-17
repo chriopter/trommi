@@ -18,10 +18,17 @@
               "waiting": 0
             },
             "dictation": {
+              "available": false,
               "max_ms": 300000,
+              "on": true,
               "session": "",
               "since_ms": 0,
-              "state": "off"
+              "state": "off",
+              "status": {
+                "en": "Not available on this device",
+                "key": "dictate.status.unavailable"
+              },
+              "status_kind": "off"
             },
             "notes": {
               "notes": [],
@@ -1746,10 +1753,17 @@
       "waiting": 0
     },
     "dictation": {
+      "available": false,
       "max_ms": 300000,
+      "on": true,
       "session": "",
       "since_ms": 0,
-      "state": "off"
+      "state": "off",
+      "status": {
+        "en": "Not available on this device",
+        "key": "dictate.status.unavailable"
+      },
+      "status_kind": "off"
     },
     "notes": {
       "no_crown": {

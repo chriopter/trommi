@@ -6,6 +6,8 @@
 	<string>Trommi</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Trommi records what you dictate, seals it on this iPhone and sends it only to a verified enclave that writes it out.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Trommi uses the camera to scan the pairing code a signed-in device shows.</string>
 	<key>NSSupportsLiveActivities</key>

@@ -4,7 +4,7 @@
 
 use super::{log, App, Effect, LogLevel};
 use crate::app::bytes::Bytes;
-use crate::app::io::{IoId, IoResult, PlatformAnswer, PlatformOp};
+use crate::app::io::{Entry, IoId, IoResult, PlatformAnswer, PlatformOp, StoreAnswer, StoreOp};
 use crate::dictation::{Attested, Do, Problem, Sent};
 use crate::hub::{Answer, Codec, Expect, Failure, Route};
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,10 @@ pub enum DictateStep {
     Taken { id: String },
     /// The person saw the problem.
     Dismiss,
+    /// Settings: dictation on or off on this device.
+    Switch { on: bool },
+    /// Settings: check the enclave now (it is also checked when Settings comes into view).
+    Check,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,6 +50,10 @@ pub(super) enum Io {
 pub(super) struct Dictating {
     pub(super) machine: crate::dictation::Dictation,
     asked: BTreeMap<IoId, Io>,
+    /// The cache key of the switch, once the room's cache is open.
+    key: Option<String>,
+    /// The clock of the last event (the view's status depends on it).
+    now: u64,
     /// What a request's answer is checked against.
     expect: BTreeMap<IoId, Expect>,
 }
@@ -64,6 +72,22 @@ impl App {
     pub(super) fn dictate_action(&mut self, now_ms: u64, step: DictateStep, out: &mut Vec<Effect>) {
         if !self.dictation_available() {
             return;
+        }
+        if let DictateStep::Switch { on } = step {
+            let todo = self.dictation.machine.set_on(on);
+            self.dictation_run(now_ms, todo, out);
+            if let Some(key) = self.dictation.key.clone() {
+                let id = self.io(super::Pending::DictationWrite);
+                let op = if on { StoreOp::Put { put: Vec::new(), delete: vec![key] } } else { StoreOp::Put { put: vec![Entry { key, value: Bytes(b"0".to_vec()) }], delete: Vec::new() } };
+                out.push(Effect::Store { id, op });
+            }
+            if on {
+                self.dictation_check(now_ms, out);
+            }
+            return;
+        }
+        if let DictateStep::Check = step {
+            return self.dictation_check(now_ms, out);
         }
         if self.demo {
             let d = &mut self.dictation.machine;
@@ -95,12 +119,41 @@ impl App {
                 self.dictation.machine.dismiss();
                 Vec::new()
             }
+            DictateStep::Switch { .. } | DictateStep::Check => Vec::new(),
         };
         self.dictation_run(now_ms, todo, out);
     }
 
+    /// Settings in view: the enclave checked, so its state shows (the demo shows it as checked).
+    pub(super) fn dictation_check(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
+        if !self.dictation_available() {
+            return;
+        }
+        if self.demo {
+            return self.dictation.machine.demo_connected(now_ms);
+        }
+        let todo = self.dictation.machine.check(now_ms);
+        self.dictation_run(now_ms, todo, out);
+    }
+
+    /// The room's cache opened: the switch is read.
+    pub(super) fn dictation_open(&mut self, room_hex: &str, out: &mut Vec<Effect>) {
+        let key = crate::cache::key(room_hex, crate::cache::part::DICTATION, None);
+        self.dictation.key = Some(key.clone());
+        let id = self.io(super::Pending::DictationRead);
+        out.push(Effect::Store { id, op: StoreOp::Get { keys: vec![key] } });
+    }
+
+    pub(super) fn dictation_read(&mut self, result: &IoResult<StoreAnswer>) {
+        let off = matches!(result, IoResult::Ok(StoreAnswer::Values { values }) if values.first().and_then(Option::as_ref).is_some_and(|v| v.0 == b"0"));
+        if off {
+            self.dictation.machine.set_on(false);
+        }
+    }
+
     /// The clock: a recording stops at its longest.
     pub(super) fn dictation_tick(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
+        self.dictation.now = now_ms;
         if self.demo {
             return;
         }
@@ -262,11 +315,12 @@ impl App {
         self.dictation.asked.retain(|_, io| *io == Io::Drop);
         self.dictation.expect.clear();
         self.dictation.machine = Default::default();
+        self.dictation.key = None;
     }
 
     pub(super) fn show_dictation(&mut self) {
         let available = self.dictation_available();
-        self.next_view.dictation = self.dictation.machine.view(available);
+        self.next_view.dictation = self.dictation.machine.view(available, self.dictation.now);
     }
 }
 
