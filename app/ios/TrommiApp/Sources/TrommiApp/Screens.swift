@@ -34,11 +34,8 @@ struct RootView: View {
         // iPhone: the system's tab bar, Desk · Chats · Search; it shrinks while a list scrolls down. The note lies
         // over everything as a yellow page.
         #if os(iOS)
-        PhoneTabs()
-        .overlay { if shell.noteOpen { NotePage().transition(.move(edge: .bottom)) } }
-        .animation(.snappy, value: shell.noteOpen)
+        PhoneTabs().overlay(alignment: .top) { TopLines() }
         #endif
-        .overlay(alignment: .top) { TopLines() }
       }
     }
     .overlay { ToastHost() }
@@ -104,6 +101,9 @@ struct PhoneTabs: View {
       }
     }
     .tabBarMinimizeBehavior(.onScrollDown)
+    // (the note lies over everything as a yellow page)
+    .overlay { if shell.noteOpen { NotePage().transition(.move(edge: .bottom)) } }
+    .animation(.snappy, value: shell.noteOpen)
     .onChange(of: shell.path) { _, path in
       let screen = path.last ?? (shell.noteOpen ? .notes : .desk)
       if shell.screen != screen { shell.show(screen) }
