@@ -169,7 +169,7 @@ row. Starred and running cards stand at the head of Off your mind on the Desk, a
 Desk) and the top of the sidebar (iPad, Mac) switch the team of the Desk: a menu of the core's `sidebar.teams`, each
 with its open questions.
 
-An iPhone sends `Focus.phone`, and a chat is then calm, as Grok's: the core folds a run of card events into one row of
+An iPhone sends `Focus.calm` (the web too), and a chat is then calm, as Grok's: the core folds a run of card events into one row of
 chips (`TalkRow.kind` "events", `events`, a tap opens the card), leaves the helper list out (their status lines name
 them) and says the rest of the working lines as "and N more"; the app draws only bubbles (no face, name or time beside
 them: the title pill has the face), that working line small right above the field, and a solid top row. Faces stand
