@@ -7,7 +7,7 @@ import UIKit
 import AppKit
 #endif
 
-enum NativeTab: Equatable { case chat, desk }
+enum NativeTab: Hashable { case chat, desk, search }
 
 // Published state is the generated view fold plus drawing/platform state. There is no second board model.
 @MainActor final class AppShell: ObservableObject {
@@ -16,6 +16,9 @@ enum NativeTab: Equatable { case chat, desk }
   @Published var screen = CoreView.Screen.desk
   @Published var path: [CoreView.Screen] = []
   @Published var tab = NativeTab.desk
+  /** The words in the iPhone's Search tab (sent as `Focus.chats_query`; the core filters the chats). */
+  @Published var chatsQuery = ""
+  private var sentTeams = false
   /** The note lies over the page he came from (the iPhone's yellow page, a sheet on a wide window). */
   @Published var noteOpen = false
   @Published var files: [String: Data] = [:]
@@ -53,7 +56,7 @@ enum NativeTab: Equatable { case chat, desk }
         }
       }
       // (the team chosen last on this device; launched in the back by a push, the Desk is not in view)
-      if !preview, let team = Self.lastTeam, let data = try? JSONEncoder().encode(CoreView.Focus(screen: .desk, visible: Self.launchedInFront, team: team)),
+      if !preview, let team = Self.lastTeam, let data = try? JSONEncoder().encode(CoreView.Focus(screen: .desk, visible: Self.launchedInFront, team: team, openTeams: Self.storedOpenTeams ?? [])),
          let focus = try? JSONSerialization.jsonObject(with: data) {
         await session?.send(NativePacket(["type": "focus", "focus": focus]))
       }
@@ -66,6 +69,25 @@ enum NativeTab: Equatable { case chat, desk }
   }
   func leaveDemo() {
     Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; path = []; tab = .desk; noteOpen = false; await start() }
+  }
+  /** The teams whose chats stand open under their title (`Focus.open_teams`), kept on this device; until he folds
+   *  one, every team is open (the list of all chats). */
+  static let openTeamsKey = "trommi-open-teams"
+  static var storedOpenTeams: [String]? { UserDefaults.standard.stringArray(forKey: openTeamsKey) }
+  var demoOpenTeams: [String]?
+  var openTeams: [String] { (isDemo ? demoOpenTeams : Self.storedOpenTeams) ?? view.sidebar.teams.map(\.id) }
+  /** A team's title was tapped: its chats fold to its stack, or open again. */
+  func fold(team id: String) {
+    var open = openTeams
+    if open.contains(id) { open.removeAll { $0 == id } } else { open.append(id) }
+    if !isDemo { UserDefaults.standard.set(open, forKey: Self.openTeamsKey) } else { demoOpenTeams = open }
+    show(screen)
+  }
+  /** A tab of the iPhone's bar was chosen: its root, the note put away, the search's words left with its tab. */
+  func pick(_ next: NativeTab) {
+    closeNote(); path = []
+    if next != .search { chatsQuery = "" }
+    tab = next; show(.desk)
   }
   static var platform: String {
     #if os(macOS)
@@ -91,10 +113,12 @@ enum NativeTab: Equatable { case chat, desk }
     #endif
   }
   func act(_ action: [String: Any], blobs: [Data] = []) {
-    if !isDemo, action["do"] as? String == "fold_goals", let id = action["team_id"] as? String {
-      var folded = UserDefaults.standard.stringArray(forKey: "trommi-goals-folded") ?? []
+    // (what this device folded is kept here and sent again after a start)
+    let kept = ["fold_goals": "trommi-goals-folded"]
+    if !isDemo, let what = action["do"] as? String, let key = kept[what], let id = action["team_id"] as? String {
+      var folded = UserDefaults.standard.stringArray(forKey: key) ?? []
       folded.removeAll { $0 == id }; if action["folded"] as? Bool == true { folded.append(id) }
-      UserDefaults.standard.set(folded, forKey: "trommi-goals-folded")
+      UserDefaults.standard.set(folded, forKey: key)
     }
     send(["type": "action", "action": action], blobs: blobs)
   }
@@ -111,7 +135,8 @@ enum NativeTab: Equatable { case chat, desk }
     self.screen = screen
     if let team, !isDemo { UserDefaults.standard.set(team, forKey: Self.teamKey) }
     let inView = view.sidebar.team.isEmpty ? (isDemo ? nil : Self.lastTeam) : view.sidebar.team
-    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView)
+    let query = chatsQuery.trimmingCharacters(in: .whitespaces)
+    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query)
     if let data = try? JSONEncoder().encode(focus), let json = try? JSONSerialization.jsonObject(with: data) { send(["type": "focus", "focus": json]) }
   }
   func scene(_ active: Bool) { send(["type": active ? "foreground" : "background"]); if !isDemo { NativeServices.shared.foreground(active) } }
@@ -136,6 +161,8 @@ enum NativeTab: Equatable { case chat, desk }
         if NativeDemo.measuring { NativeDemo.foldedAt = (ProcessInfo.processInfo.systemUptime - NativeDemo.launchStart) * 1000 }
         if view.phase == .signedOut { files = [:]; saved = nil; screen = .desk; path = []; tab = .desk; noteOpen = false }
         if !isDemo { NativeServices.shared.draw(view) }
+        // (the first picture names the teams: every one is open until he folds one)
+        if !sentTeams, !view.sidebar.teams.isEmpty { sentTeams = true; show(screen) }
       } catch { platformError = "The view update was out of order." }
     case "file_ready": if let id = e["file_id"] as? String { files[id] = try? packet.bytes(e["bytes"]) }
     case "file_gone": if let id = e["file_id"] as? String { files[id] = nil }

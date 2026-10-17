@@ -27,6 +27,9 @@ export interface Focus {
   /** The teams unfolded in the wide sidebar, their chats under their stack (`TeamStackView.open`). This device's:
    *  the shell keeps them. */
   open_teams?: string[]
+  /** The words searched for among every team's chats (the phone's Search tab, `SidebarView.found`); none or empty:
+   *  no search. */
+  chats_query?: string
 }
 
 export type Screen =
@@ -147,6 +150,19 @@ export interface SidebarView {
   stacks?: TeamStackView[]
   /** The Desk in view is every team's (home, `Focus.desk_all`): no team's head is marked. */
   desk_all: boolean
+  /** Under a search (`Focus.chats_query`): every team with a chat whose name or teaser has the words, with those
+   *  chats, in the menu's order. */
+  found?: ChatGroupView[]
+  /** Under a search that finds no chat: so it says. */
+  found_none?: Text
+}
+
+/** A team in the search's list of chats: its name as a plain section title over the chats found. */
+export interface ChatGroupView {
+  id: string
+  name: Text
+  /** Its chats that have the words, one row each, in drawing order. */
+  rows: SessionRowView[]
 }
 
 /** A team in the wide sidebar: its head (a click opens its Desk) over its sessions, folded to a stack or open. */
