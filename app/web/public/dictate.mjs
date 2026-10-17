@@ -121,6 +121,7 @@ async function attest(op, blobs) {
   let bundle
   try { bundle = JSON.parse(new TextDecoder().decode(blobs[op.bundle])) } catch { return { answer: { answer: 'not_attested', reason: 'not a bundle' }, blobs: [] } }
   try {
+    ;(await import('./gen/vendor/webkit-gunzip.mjs')).fixDecompression()
     const { Verifier } = await import('./gen/vendor/tinfoil-verifier.mjs')
     const found = await new Verifier({ configRepo: op.repo }).verifyBundle(bundle)
     const hex = found?.hpkePublicKey ?? ''
