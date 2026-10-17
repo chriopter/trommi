@@ -298,10 +298,14 @@ impl<T: Clone> Rows<T> {
 pub struct SidebarView {
     /// The teams, in the menu's order. A room without teams has one: "Personal".
     pub teams: Vec<TeamTab>,
+    /// Home in the menu, above the teams: the Desk of every team ("All teams", `Focus.desk_all`), with what waits on
+    /// all of them; `selected` while it is the Desk in view. Its `id` is empty.
+    #[serde(default)]
+    pub home: TeamTab,
     /// The sessions of the team in view, one row each, in drawing order: a main, then its helpers.
     pub sessions: Vec<SessionRowView>,
-    /// The number on the app icon and the tab: the open questions of the team in view (no infos, nothing that is
-    /// with its agent). Never drawn red.
+    /// The number on the app icon and the tab: the open questions of the Desk in view, the team's or on home every
+    /// team's (no infos, nothing that is with its agent). Never drawn red.
     pub badge: u32,
     /// The team in view: its id.
     #[serde(default)]
@@ -309,7 +313,8 @@ pub struct SidebarView {
     /// Where the person is, for the head and the team switch: the team's name.
     #[serde(default)]
     pub place: Text,
-    /// The open questions of the team in view (its lamp is lit while there are some).
+    /// The open questions of the Desk in view, the team's or on home every team's (its lamp is lit while there are
+    /// some).
     #[serde(default)]
     pub waiting: u32,
     /// How many of them knock.
@@ -397,6 +402,7 @@ pub struct TeamTab {
     pub name: Text,
     /// The open questions of the team's sessions.
     pub waiting: u32,
+    /// It is the Desk in view: the team in view, unless home (`desk_all`) is.
     pub selected: bool,
     /// One of them knocks.
     #[serde(default)]

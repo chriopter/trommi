@@ -202,6 +202,7 @@ struct PlacePill: View {
     Menu {
       if shell.isDemo { Section("Demo") { Button { shell.leaveDemo() } label: { Label("Leave Demo", systemImage: "rectangle.portrait.and.arrow.right") } } }
       Section("Teams") {
+        HomeItem(home: side.home) { shell.pick(.desk); shell.home() }
         ForEach(side.teams, id: \.id) { teamItem($0) }
       }
       Section {
@@ -260,6 +261,7 @@ struct Sidebar: View {
     VStack(spacing: 0) {
       // The top: only the switch of the team in view, a menu of the teams, each with its open questions.
       Menu {
+        HomeItem(home: side.home) { shell.home() }
         ForEach(side.teams, id: \.id) { teamItem($0) }
       } label: {
         HStack(spacing: 12) {
@@ -314,6 +316,19 @@ struct Sidebar: View {
       Label { Text(team.waiting > 0 ? "\(team.name.en) · \(team.waiting)" : team.name.en) } icon: { if team.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: team.waiting > 0) } }
     }
     .accessibilityLabel(team.waiting > 0 ? "\(team.name.en), \(team.waiting) waiting" : team.name.en)
+  }
+}
+
+/** Home in the team menu, above the teams: "All teams", the Desk of every team, with what waits on all of them. */
+struct HomeItem: View {
+  let home: CoreView.TeamTab
+  let pick: () -> Void
+  var body: some View {
+    Button(action: pick) {
+      Label { Text(home.waiting > 0 ? "\(home.name.en) · \(home.waiting)" : home.name.en) } icon: { if home.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: home.waiting > 0) } }
+    }
+    .accessibilityLabel(home.waiting > 0 ? "\(home.name.en), \(home.waiting) waiting" : home.name.en)
+    .accessibilityIdentifier("team-home")
   }
 }
 
