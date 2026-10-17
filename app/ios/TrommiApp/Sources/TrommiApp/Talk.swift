@@ -734,6 +734,7 @@ struct SessionScreen: View {
   @State private var renaming = false
   @State private var newName = ""
   @State private var drawing = false
+  @State private var workDetails = false
   private var hue: Int { Pen.hueFor(id: page.slug.isEmpty ? page.id : page.slug, mark: page.mark) }
   var body: some View {
     ScrollViewReader { reader in
@@ -753,6 +754,14 @@ struct SessionScreen: View {
               .id(row.id)
           }
           if !AppShell.phone { SessionStatus(page: page, hue: hue) }
+          // (an iPhone, the calm chat: the agent at work is only its face drawing itself where its answer will come;
+          //  a tap opens the details)
+          if AppShell.phone, let working = page.working {
+            Button { workDetails = true } label: { DrawingFace(mark: page.mark, hue: hue).padding(.vertical, 8).padding(.trailing, 24).contentShape(Rectangle()) }
+              .buttonStyle(.plain).padding(.top, 12)
+              .accessibilityLabel(working.says.en).accessibilityHint("Shows what it works on")
+              .accessibilityIdentifier("working-face")
+          }
           }
           Color.clear.frame(height: 1).id("bottom")
         }
@@ -768,8 +777,6 @@ struct SessionScreen: View {
       .bottomBar {
         VStack(spacing: 0) {
           if let n = page.note { LinkNoteBox(note: n).padding(.horizontal, 12).padding(.top, 8) }
-          // (an iPhone: the running work as one small line right above the field)
-          if AppShell.phone { SessionStatus(page: page, hue: hue, tiny: true).padding(.horizontal, 20) }
           TalkComposer(placeholder: page.compose.en, text: $text, attachments: $attachments) {
             shell.act(["do": "write", "session_id": page.id, "text": text, "attachments": attachments]); text = ""; attachments = []
             withAnimation { reader.scrollTo("bottom", anchor: .bottom) }
@@ -804,6 +811,7 @@ struct SessionScreen: View {
       Button("Cancel", role: .cancel) {}
       Button("Rename") { let n = newName.trimmingCharacters(in: .whitespaces); if !n.isEmpty { shell.act(["do": "rename_session", "session_id": page.id, "name": n]) } }
     }
+    .sheet(isPresented: $workDetails) { WorkDetails(page: page) }
     .sheet(isPresented: $drawing) { DrawingPicker(page: page) { mark in shell.act(["do": "session_icon", "session_id": page.id, "icon": mark]); drawing = false } }
   }
   /** The title in its own glass pill in the middle of the top row (back and ⋯ are round buttons of their own): the
@@ -998,53 +1006,12 @@ struct SessionStatus: View {
   @EnvironmentObject var shell: AppShell
   let page: CoreView.SessionView
   let hue: Int
-  /** An iPhone's line above the field: no chips, the first line in words and the core's "and N more"; a tap opens
-   *  the lines as chips. */
-  var tiny = false
   @State private var shown: String? = nil
   @State private var more = false
   /** One calm line (as the web's): the drawing, "… is working" with its dots while it answers, the status line its
    *  agent set last (the core's first) and the core's "+N" for the rest, which a tap opens under the line. A tap on a
    *  line opens its whole text and the way to its card. */
-  var body: some View {
-    if tiny { small } else { wide }
-  }
-  @ViewBuilder private var small: some View {
-    if page.answering != nil || !page.statusLines.isEmpty {
-      VStack(alignment: .leading, spacing: 6) {
-        if more {
-          FlowChips(spacing: 6) { ForEach(page.statusLines, id: \.id) { line in chip(line) } }
-          if let id = shown, let line = page.statusLines.first(where: { $0.id == id }) { opened(line) }
-        }
-        Button { withAnimation(.easeOut(duration: 0.18)) { more.toggle(); if !more { shown = nil } } } label: {
-          HStack(spacing: 7) {
-            if let answering = page.answering {
-              Text(answering.en).font(Face.text(13)).foregroundStyle(Ink.muted).lineLimit(1)
-              TypingDots()
-            } else if let first = page.statusLines.first {
-              sign(first).frame(width: 13, height: 13)
-              (Text(first.helper.map { "\($0) · " } ?? "").foregroundColor(Ink.muted) + Text(first.label).foregroundColor(Ink.fg))
-                .font(Face.text(13, .medium)).lineLimit(1)
-            }
-            if let plus = page.statusMore { Text(plus.en).font(Face.text(13)).foregroundStyle(Ink.faint).lineLimit(1).fixedSize() }
-            Spacer(minLength: 0)
-          }
-          .frame(minHeight: 30).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(page.statusLines.map { "\($0.helper.map { "\($0), " } ?? "")\($0.label), \($0.says.en)" }.joined(separator: "; "))
-        .accessibilityIdentifier("status-line")
-      }
-      .padding(.top, 4)
-    }
-  }
-  @ViewBuilder private func sign(_ t: CoreView.StatusLineView) -> some View {
-    if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
-    else if t.state == "stale" { Circle().strokeBorder(Ink.faint, lineWidth: 1.6) }
-    else if t.state == "decision" { Sketch("knock", color: Ink.urgHigh) }
-    else if t.state == "later" { Sketch("snooze", color: Ink.faint) }
-    else { Sketch("tick", color: Ink.faint) }
-  }
+  var body: some View { wide }
   @ViewBuilder private var wide: some View {
     if page.answering != nil || !page.statusLines.isEmpty || page.helpers != nil {
       VStack(alignment: .leading, spacing: 8) {
@@ -1119,6 +1086,65 @@ struct SessionStatus: View {
     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.sunken))
   }
 }
+/** The agent at work as only its face, drawing itself with the pen: drawn on in a little over two seconds, held, faded,
+ *  again (as calm as a messenger's typing sign). Reduced motion: the face stands still. */
+struct DrawingFace: View {
+  let mark: String
+  let hue: Int
+  var size: CGFloat = 30
+  @Environment(\.accessibilityReduceMotion) private var still
+  var body: some View {
+    if still {
+      AgentMark(mark: mark, size: size, hue: hue)
+    } else {
+      TimelineView(.animation) { tl in
+        let cycle = 3.6, t = tl.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle)
+        let drawn = t < 2.2 ? CGFloat(0.5 - cos(.pi * t / 2.2) / 2) : 1
+        PenMark(doc: PenStore.mark(mark), inks: PenInks(stroke: Tone.mark(hue), drawn: drawn))
+          .frame(width: size, height: size)
+          .opacity(t > 3.1 ? 1 - (t - 3.1) / 0.5 : 1)
+      }
+    }
+  }
+}
+
+/** What the face opens (`SessionView.working`): "Working · <step>", the lines it works on (a tap opens a line's card),
+ *  and the turn's trail. */
+struct WorkDetails: View {
+  @EnvironmentObject var shell: AppShell
+  @Environment(\.dismiss) private var dismiss
+  let page: CoreView.SessionView
+  var body: some View {
+    NavigationStack {
+      List {
+        if let w = page.working {
+          Section { Text(w.head.en).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg) }
+        }
+        if !page.statusLines.isEmpty {
+          Section("Working on") {
+            ForEach(page.statusLines, id: \.id) { l in
+              Button { if let c = l.card { dismiss(); shell.focus(.card(cardId: c.id)) } } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                  (Text(l.helper.map { "\($0) · " } ?? "").foregroundColor(Ink.muted) + Text(l.label).foregroundColor(Ink.fg)).font(Face.text(16, .medium))
+                  if !l.detail.isEmpty { Text(l.detail).font(Face.text(14)).foregroundStyle(Ink.muted) }
+                  Text(l.card.map { "\(l.says.en) · Nr. \($0.number)" } ?? l.says.en).font(Face.text(13)).foregroundStyle(Ink.faint)
+                }
+              }
+              .buttonStyle(.plain).disabled(l.card == nil)
+            }
+          }
+        }
+        if let trail = page.working?.trail {
+          Section("Steps") { WorkDrawing(work: trail).listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)) }
+        }
+      }
+      .navigationTitle(page.name.en)
+      .navigationBarTitleDisplayMode(.inline)
+    }
+    .presentationDetents([.medium, .large])
+  }
+}
+
 /** Chips in rows that wrap. */
 struct FlowChips: Layout {
   var spacing: CGFloat = 6

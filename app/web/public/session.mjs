@@ -75,7 +75,7 @@ function workLine(x) {
     ? html`<details class="work-more"><summary class="work-line">${line}</summary>${x.input ? html`<pre class="work-io">${x.input}</pre>` : ''}${x.output ? html`<pre class="work-io work-out">${x.output}</pre>` : ''}</details>`
     : html`<div class="work-line">${line}</div>`}</li>`
 }
-const workBlock = (r, w) => html`<article class="msg msg-work is-${w.state}" id="msg-${r.id}"><details class="work"><summary class="work-head"><span class="work-sign" aria-hidden="true">${w.state === 'running' ? html`<i class="work-run"></i>` : w.state === 'done' ? '✓' : w.state === 'failed' ? '✕' : '■'}</span><b>${w.head.en}</b>${w.sum ? html`<span class="work-sum">${w.sum.en}</span>` : ''}${w.now ? html`<span class="work-now">${w.now}</span>` : ''}${timeNode(r.time_ms, 'msg-time')}</summary>
+const workBlock = (r, w) => html`<article class="msg msg-work is-${w.state}" id="msg-${r.id}"><details class="work"><summary class="work-head"><span class="work-sign" aria-hidden="true">${w.state === 'running' ? html`<i class="work-run"></i>` : w.state === 'done' ? '✓' : w.state === 'failed' ? '✕' : '■'}</span><b>${w.head.en}</b>${w.sum ? html`<span class="work-sum">${w.sum.en}</span>` : ''}${w.now ? html`<span class="work-now">${w.now}</span>` : ''}${w.state === 'running' ? '' : timeNode(r.time_ms, 'msg-time')}</summary>
 <ol class="work-list">${w.lines.map(workLine)}</ol>${w.rest ? html`<p class="work-rest">${w.rest.en}</p>` : ''}</details></article>`
 
 // The agent's words (ui.mjs rich), with its code blocks dressed: a head with the button that copies (controller "copy").
@@ -190,6 +190,15 @@ controller('status-lines', class extends Controller {
     out.hidden = false
   }
 })
+/** The agent at work (SessionView.working, the calm chat): only its face drawing itself, where its answer will come; a
+ *  click opens the details: "Working · <step>", the lines it works on (each opens to its card) and the turn's trail. */
+const facesOpen = new Set()
+controller('working-face', class extends Controller {
+  toggle() { if (this.element.open) facesOpen.add(this.element.id); else facesOpen.delete(this.element.id) }
+})
+const workingFace = (s, base) => (s.working
+  ? html`<details class="working-face" id="working-face-${s.id}" data-controller="working-face" data-action="toggle->working-face#toggle"${facesOpen.has(`working-face-${s.id}`) ? raw(' open') : ''}><summary aria-label="${s.working.says.en}" title="Details">${avatar({ ...whoOf(s), online: true }, { working: true })}</summary><div class="working-details"><p class="working-head">${s.working.head.en}</p>${sessionStatus(s, base)}${s.working.trail ? workBlock({ id: `trail-${s.id}`, time_ms: 0 }, s.working.trail) : ''}</div></details>`
+  : html`<span id="working-face-${s.id}" hidden></span>`)
 /** "N open": the questions of this session that wait, and the way to the first of them. */
 const sessionOpen = (s, base) => (s.open ? html`<a class="open-jump" id="session-open-${s.id}" data-nav href="${s.first_open ? `#msg-${s.first_open}` : `${sessionPath(s, base)}/questions`}"${s.first_open ? raw(' data-turbo="false" data-log-target="open" data-action="log#toOpen"') : ''} aria-label="${s.open_says?.en ?? ''}"><span data-log-target="openText">${s.open_word?.en ?? ''}</span>${ico('down')}</a>` : html`<span id="session-open-${s.id}" hidden></span>`)
 
@@ -261,12 +270,12 @@ function sidePanel(s, vm, t, tab) {
 function sessionMain(s, vm, t, { mode = '', text = '', focus = false, panel = '' } = {}) {
   const base = t.BASE
   const body = mode === 'questions' ? html`<div class="pane-list pane-questions"><div class="column">${questionList(s, base)}</div></div>`
-    : html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${s.earlier ? html`<form class="log-earlier" id="earlier-${s.id}" method="post" action="${sessionPath(s, base)}/earlier"><button type="submit" class="log-earlier-link" data-log-target="earlier">${s.earlier.says.en}${s.earlier.left ? html`<b>${s.earlier.left}${s.earlier.hub ? '+' : ''}</b>` : ''}</button></form>` : ''}${s.talk.length ? talk(s, vm, t) : s.empty ? empty(s, base) : ''}<div id="log-end-${s.id}" hidden></div></div></div>`
+    : html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${s.earlier ? html`<form class="log-earlier" id="earlier-${s.id}" method="post" action="${sessionPath(s, base)}/earlier"><button type="submit" class="log-earlier-link" data-log-target="earlier">${s.earlier.says.en}${s.earlier.left ? html`<b>${s.earlier.left}${s.earlier.hub ? '+' : ''}</b>` : ''}</button></form>` : ''}${s.talk.length ? talk(s, vm, t) : s.empty ? empty(s, base) : ''}${workingFace(s, base)}<div id="log-end-${s.id}" hidden></div></div></div>`
   return html`<main id="session" aria-label="Session: ${s.name.en}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}${panel ? raw(' data-panel-open') : ''}>
 <header class="pane-title">${headPill(s, base, panel)}${sessionWho(s, vm, base)}${sessionFilters(s, base, mode)}<div class="head-use" id="session-use-${s.id}">${usageRings(s.usage)}</div></header>${sessionFilters(s, base, mode, { phone: true })}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
-<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' ? '' : sessionOpen(s, base)}<div class="column session-compose">${mode === 'questions' ? '' : sessionStatus(s, base)}${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus })}</div></div>
+<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' ? '' : sessionOpen(s, base)}<div class="column session-compose">${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus })}</div></div>
 </div></section>
 ${filesDrawer(s, vm, t, mode === 'files')}
 ${sidePanel(s, vm, t, panel)}

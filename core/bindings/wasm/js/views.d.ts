@@ -789,6 +789,9 @@ export interface SessionView {
   status_lines: StatusLineView[]
   /** "+N": how many lines stand behind the first; none with one line or none. */
   status_more?: Text
+  /** The calm chat (`Focus.calm`): the agent at work, drawn at the chat's end as its face drawing itself; a tap
+   *  opens the details (the step it is at, its lines, the turn's trail). None while it does not work. */
+  working?: WorkingView
   /** Every card of the session, the newest first (its page "Questions"). */
   questions?: CardRefView[]
   /** Every file of the session's cards, answers, Chats and Artifacts (ids of `ViewModel.files`), the newest
@@ -984,6 +987,18 @@ export interface EventView {
   said?: Text[]
   /** "decided", "trusted", "shredded": the files he sent along (`ViewModel.files`), shown under the deed. */
   files?: string[]
+}
+
+/** The agent at work in the calm chat (`SessionView.working`). */
+export interface WorkingView {
+  /** "trommi is working": what a screen reader says for the face. */
+  says: Text
+  /** The details' head, live: "Working · Bash · run the tests", or "Working" between steps. No counts, no time. */
+  head: Text
+  /** The step it is at ("Bash · run the tests"); "" between steps. */
+  now?: string
+  /** The trail of the turn it works on (the details list it; the talk does not). */
+  trail?: WorkView
 }
 
 /** A turn's trail: what the agent did between his prompt and its answer, as one block. */
