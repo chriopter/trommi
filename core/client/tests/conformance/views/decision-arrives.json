@@ -35,6 +35,16 @@
             "sidebar": {
               "badge": 0,
               "desk_all": false,
+              "home": {
+                "id": "",
+                "knocks": false,
+                "name": {
+                  "en": "",
+                  "key": ""
+                },
+                "selected": false,
+                "waiting": 0
+              },
               "knocking": 0,
               "place": {
                 "en": "",
@@ -81,6 +91,16 @@
           "view": {
             "badge": 0,
             "desk_all": false,
+            "home": {
+              "id": "",
+              "knocks": false,
+              "name": {
+                "en": "All teams",
+                "key": "team.all"
+              },
+              "selected": false,
+              "waiting": 0
+            },
             "knocking": 0,
             "place": {
               "en": "Personal",
@@ -192,6 +212,16 @@
           "view": {
             "badge": 0,
             "desk_all": false,
+            "home": {
+              "id": "",
+              "knocks": false,
+              "name": {
+                "en": "All teams",
+                "key": "team.all"
+              },
+              "selected": false,
+              "waiting": 0
+            },
             "knocking": 0,
             "place": {
               "en": "Personal",
@@ -519,6 +549,16 @@
           "view": {
             "badge": 0,
             "desk_all": false,
+            "home": {
+              "id": "",
+              "knocks": false,
+              "name": {
+                "en": "All teams",
+                "key": "team.all"
+              },
+              "selected": false,
+              "waiting": 0
+            },
             "knocking": 0,
             "place": {
               "en": "Personal",
@@ -873,6 +913,16 @@
           "view": {
             "badge": 1,
             "desk_all": false,
+            "home": {
+              "id": "",
+              "knocks": false,
+              "name": {
+                "en": "All teams",
+                "key": "team.all"
+              },
+              "selected": false,
+              "waiting": 1
+            },
             "knocking": 0,
             "place": {
               "en": "Personal",
@@ -1662,6 +1712,16 @@
     "sidebar": {
       "badge": 1,
       "desk_all": false,
+      "home": {
+        "id": "",
+        "knocks": false,
+        "name": {
+          "en": "All teams",
+          "key": "team.all"
+        },
+        "selected": false,
+        "waiting": 1
+      },
       "knocking": 0,
       "place": {
         "en": "Personal",

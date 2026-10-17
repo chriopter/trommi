@@ -244,7 +244,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
                 id: id.clone(),
                 name: team_name(name),
                 waiting,
-                selected: *id == in_view,
+                selected: *id == in_view && !b.lens.desk_all,
                 knocks,
             }
         })
@@ -252,7 +252,16 @@ pub fn sidebar(b: &Board) -> SidebarView {
     // The tab's number: the open questions of the team in view, never red (the owner, 13 October 2026, card
     // c628976b: "Nur der Desk im Blick"; the web counted every team and showed red on a knock). What waits on the
     // other teams stands in the menu, team by team.
-    let badge = b.fresh().count() as u32;
+    // On home the Desk in view is every team's, and so are its numbers.
+    let on_desk = || b.all_fresh.iter().filter(|f| b.on_desk(f.agent));
+    let badge = on_desk().count() as u32;
+    let home = TeamTab {
+        id: String::new(),
+        name: say("team.all", "All teams", &[]),
+        waiting: b.all_fresh.len() as u32,
+        selected: b.lens.desk_all,
+        knocks: b.all_fresh.iter().any(|f| f.knocks),
+    };
     let place = if b.lens.desk_all {
         say("team.all", "All teams", &[])
     } else {
@@ -267,7 +276,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
     let stacks: Vec<TeamStackView> = tabs
         .iter()
         .map(|t| {
-            let sessions = if t.selected {
+            let sessions = if t.id == in_view {
                 rows.clone()
             } else {
                 // (in a room without teams there is one, and it is in view)
@@ -277,7 +286,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
             TeamStackView {
                 id: t.id.clone(),
                 name: t.name.clone(),
-                selected: t.selected && !b.lens.desk_all,
+                selected: t.selected,
                 open: !sessions.is_empty() && b.lens.open_teams.contains(&t.id),
                 waiting: t.waiting,
                 knocks: t.knocks,
@@ -311,12 +320,13 @@ pub fn sidebar(b: &Board) -> SidebarView {
         stacks,
         desk_all: b.lens.desk_all,
         teams: tabs,
+        home,
         sessions: rows,
         badge,
         team: in_view,
         place,
-        waiting: b.fresh().count() as u32,
-        knocking: b.fresh().filter(|f| f.knocks).count() as u32,
+        waiting: badge,
+        knocking: on_desk().filter(|f| f.knocks).count() as u32,
         stopped: units.iter().filter(|u| u.hand.is_some()).count() as u32,
         working: units.iter().filter(|u| u.working).count() as u32,
         unheard: units.iter().map(|u| u.unheard).sum(),
@@ -560,6 +570,33 @@ mod tests {
         assert!(!v.stacks[2].open && v.stacks[2].faces.is_empty(), "an empty team never opens and has no faces");
         assert_eq!(v.stacks[1].faces.len(), 2);
         assert_eq!((v.desk_all, v.place.en.as_str()), (true, "All teams"));
+    }
+
+    /// Home in the menu (the phone's place pill): "All teams" above the teams with what waits on all of them, marked
+    /// while it is the Desk in view; then no team is marked, and the tab and the lamp count every team's questions.
+    #[test]
+    fn home_stands_above_the_teams_and_counts_them_all() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        r.session("a-work", None, true);
+        r.session("b-lab", None, true);
+        r.on_team("b-lab", "lab");
+        r.card("q1", "a-work", "decision", "normal");
+        r.card("q2", "b-lab", "decision", "high");
+        r.card("q3", "b-lab", "decision", "normal");
+        let m = r.model(NOW);
+        let mut lens = Lens { team: Some("main".into()), ..Default::default() };
+        let marks = |v: &SidebarView| v.teams.iter().map(|d| d.selected).collect::<Vec<_>>();
+        let v = sidebar(&Board::new(&m, &lens, NOW));
+        assert_eq!((v.home.id.as_str(), v.home.name.en.as_str(), v.home.name.key.as_str()), ("", "All teams", "team.all"));
+        assert_eq!((v.home.waiting, v.home.knocks, v.home.selected), (3, true, false));
+        assert_eq!(marks(&v), [true, false]);
+        assert_eq!((v.badge, v.waiting, v.knocking), (1, 1, 0), "a team's Desk counts that team alone");
+        lens.desk_all = true;
+        let v = sidebar(&Board::new(&m, &lens, NOW));
+        assert!(v.home.selected);
+        assert_eq!(marks(&v), [false, false], "on home no team is marked");
+        assert_eq!((v.badge, v.waiting, v.knocking), (3, 3, 1), "home counts every team's questions");
+        assert_eq!(slugs(&v), ["a-work"], "the chats stay the team in view's");
     }
 
     /// The phone's Search: every team's chats whose name or teaser has the words, under their team's title; a

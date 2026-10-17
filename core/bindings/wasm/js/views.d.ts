@@ -126,16 +126,20 @@ export type Rows<T> =
 export interface SidebarView {
   /** The teams, in the menu's order. A room without teams has one: "Personal". */
   teams: TeamTab[]
+  /** Home in the menu, above the teams: the Desk of every team ("All teams", `Focus.desk_all`), with what waits on
+   *  all of them; `selected` while it is the Desk in view. Its `id` is empty. */
+  home: TeamTab
   /** The sessions of the team in view, one row each, in drawing order: a main, then its helpers. */
   sessions: SessionRowView[]
-  /** The number on the app icon and the tab: the open questions of the team in view (no infos, nothing that is
-   *  with its agent). Never drawn red. */
+  /** The number on the app icon and the tab: the open questions of the Desk in view, the team's or on home every
+   *  team's (no infos, nothing that is with its agent). Never drawn red. */
   badge: number
   /** The team in view: its id. */
   team: string
   /** Where the person is, for the head and the team switch: the team's name. */
   place: Text
-  /** The open questions of the team in view (its lamp is lit while there are some). */
+  /** The open questions of the Desk in view, the team's or on home every team's (its lamp is lit while there are
+   *  some). */
   waiting: number
   /** How many of them knock. */
   knocking: number
@@ -202,6 +206,7 @@ export interface TeamTab {
   name: Text
   /** The open questions of the team's sessions. */
   waiting: number
+  /** It is the Desk in view: the team in view, unless home (`desk_all`) is. */
   selected: boolean
   /** One of them knocks. */
   knocks: boolean
@@ -220,7 +225,8 @@ export interface SessionRowView {
   unheard: number
   /** Its short id on the board: its address (`/chat/<slug>`). */
   slug: string
-  /** What draws it: the icon the person or the agent chose ("draw:leaf"), else its slug. */
+  /** What draws it: always a face, "draw:<face>" (`faces::mark`: the icon the person or the agent chose, else the face
+   *  its name fits, else the one its id picks). */
   mark: string
   /** The team it stands on. */
   team_id: string

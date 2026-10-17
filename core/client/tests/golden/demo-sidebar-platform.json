@@ -21,6 +21,16 @@
       "knocks": true
     }
   ],
+  "home": {
+    "id": "",
+    "name": {
+      "key": "team.all",
+      "en": "All teams"
+    },
+    "waiting": 24,
+    "selected": false,
+    "knocks": true
+  },
   "sessions": [
     {
       "id": "9ace71aadae23ea1f467d62b83b1d604",
