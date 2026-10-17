@@ -749,6 +749,12 @@ pub struct OffHintView {
     pub put_off: u32,
     /// Every closed card of the team in view, counted (not only the ones named).
     pub closed: u32,
+    /// All of it in one quiet line under the questions (the iPhone's calm Desk): "2 running · 1 put off · 14 done".
+    #[serde(default)]
+    pub line: Text,
+    /// Where a tap on the hint or its line goes: the complete list.
+    #[serde(default)]
+    pub opens: Screen,
 }
 
 /// A put-off or closed card, one small quiet row.

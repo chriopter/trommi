@@ -383,9 +383,12 @@ struct DeskScreen: View {
   @State private var speedReport: String?
   var body: some View {
     let desk = shell.view.desk
+    // (the iPhone's Desk is calm: only the questions, then one quiet line; no greeting, goals or hint)
+    let calm = hSize == .compact
     ScrollView {
-      LazyVStack(alignment: .leading, spacing: 12) {
+      LazyVStack(alignment: .leading, spacing: calm ? 16 : 12) {
         if desk.mode == "invite" { FirstAgent() }
+        else if calm { Color.clear.frame(height: 4) }
         else if let hello = desk.hello {
           VStack(alignment: .leading, spacing: 0) {
             Greeting(text: hello.en)
@@ -396,13 +399,16 @@ struct DeskScreen: View {
         if let reading = desk.reading { Text(reading.en).font(Face.text(14)).foregroundStyle(Ink.muted).accessibilityIdentifier("reading-history") }
         if !desk.slip.isEmpty { CutSlip(slips: desk.slip) }
         ForEach(desk.rows, id: \.id) { row in DeskRow(row: row) }
-        if let empty = desk.empty {
+        if calm, let empty = desk.empty {
+          ContentUnavailableView(empty.en, systemImage: "checkmark.circle").frame(maxWidth: .infinity).padding(.vertical, 40)
+        } else if let empty = desk.empty {
           VStack(spacing: 10) {
             Sketch("desk", color: Ink.faint).frame(width: 64, height: 64)
             Text(empty.en).font(Face.text(15)).foregroundStyle(Ink.muted).multilineTextAlignment(.center)
           }.frame(maxWidth: .infinity).padding(.vertical, 28)
         }
-        if desk.off != nil || desk.starred != nil { OffHint(off: desk.off, starred: desk.starred) }
+        if calm { if let off = desk.off { OffLine(off: off).padding(.top, 8) } }
+        else if desk.off != nil || desk.starred != nil { OffHint(off: desk.off, starred: desk.starred) }
       }
       .padding(.horizontal, 16).padding(.bottom, 120)
       .frame(maxWidth: 760).frame(maxWidth: .infinity)
@@ -737,6 +743,26 @@ struct OffHint: View {
     .buttonStyle(.plain)
     .accessibilityLabel("\(r.title), \(r.line.en)")
     .accessibilityIdentifier((star ? "off-starred-" : "off-running-") + r.id)
+  }
+}
+/** The iPhone's calm Desk ends in one quiet row: what runs, is put off and is done (`off.line`), opening the list. */
+struct OffLine: View {
+  @EnvironmentObject var shell: AppShell
+  let off: CoreView.OffHintView
+  var body: some View {
+    Button { shell.focus(off.opens) } label: {
+      HStack(spacing: 10) {
+        Image(systemName: "tray").font(.body).foregroundStyle(.secondary)
+        Text(off.line.en).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+        Spacer(minLength: 4)
+        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+      }
+      .padding(.horizontal, 16).frame(minHeight: 48).contentShape(Rectangle())
+      .glass(RoundedRectangle(cornerRadius: 24, style: .continuous), interactive: true)
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Off your mind: \(off.line.en)")
+    .accessibilityIdentifier("off-line")
   }
 }
 /** The team's goals under the greeting: a quiet line or a few; a tap writes in place; one toggle folds them. */

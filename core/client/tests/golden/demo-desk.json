@@ -221,7 +221,20 @@
       "en": "10 done"
     },
     "put_off": 0,
-    "closed": 10
+    "closed": 10,
+    "line": {
+      "key": "off.hint.line.101",
+      "args": {
+        "done": "10",
+        "put_off": "0",
+        "running": "2"
+      },
+      "en": "2 running · 10 done"
+    },
+    "opens": {
+      "screen": "off",
+      "query": ""
+    }
   },
   "mode": "desk",
   "hello": {
