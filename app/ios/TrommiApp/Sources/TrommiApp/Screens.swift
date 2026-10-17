@@ -471,8 +471,9 @@ struct DeskBar: View {
     }
     Menu {
       if let duck = desk.duck {
-        Button(duck.tip.en, systemImage: "checkmark.circle") { asking = true }
-          .accessibilityHint(duck.what.en).accessibilityIdentifier("desk-duck")
+        // (the yellow duck and its short name; its question follows at once and says the rest)
+        Button { asking = true } label: { Label { Text(duck.short.en) } icon: { PenImage.duck } }
+          .accessibilityLabel(duck.tip.en).accessibilityHint(duck.what.en).accessibilityIdentifier("desk-duck")
       }
       Button("Note", systemImage: "square.and.pencil") { shell.focus(.notes) }.accessibilityIdentifier("note-open")
     } label: { Image(systemName: "ellipsis") }

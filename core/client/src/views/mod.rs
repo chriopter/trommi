@@ -661,6 +661,9 @@ pub struct DuckAllView {
     pub card_ids: Vec<String>,
     /// The button's name: "I don’t give a duck: for all 3 open cards".
     pub tip: Text,
+    /// Its short name where its question follows at once (the iPhone's ⋯ menu): "IDGAD".
+    #[serde(default)]
+    pub short: Text,
     /// How many of which, for a screen reader: "2 decisions go to the agents, 1 card to read is closed".
     pub what: Text,
     /// The one question it asks: "Duck all 3?"; only cards to read: "Close all 2 as read?".

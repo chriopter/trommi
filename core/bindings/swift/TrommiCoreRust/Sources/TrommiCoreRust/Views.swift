@@ -1334,8 +1334,11 @@ public enum CoreView {
     public var duck: DuckAllView?
     /// The sessions that are cut off, above the questions: one line each, with the step in its terminal.
     public var slip: [SlipView]
+    /// Beside Off your mind's one line under the questions: what the agents published, counted ("14 artifacts");
+    /// it opens the gallery (`Screen::Artifacts`). None while there is none, or while the Desk is not in view.
+    public var artifactsLine: Text?
 
-    public init(stack: [String] = [], offYourMind: [String] = [], later: [String] = [], done: [String] = [], starred: DockView? = nil, running: DockView? = nil, off: OffHintView? = nil, empty: Text? = nil, mode: String = "", hello: Text? = nil, reading: Text? = nil, goals: GoalsView? = nil, knowledge: KnowledgeChipView? = nil, rows: [DeskRowView] = [], waiting: UInt32 = 0, blitz: Text? = nil, duck: DuckAllView? = nil, slip: [SlipView] = []) {
+    public init(stack: [String] = [], offYourMind: [String] = [], later: [String] = [], done: [String] = [], starred: DockView? = nil, running: DockView? = nil, off: OffHintView? = nil, empty: Text? = nil, mode: String = "", hello: Text? = nil, reading: Text? = nil, goals: GoalsView? = nil, knowledge: KnowledgeChipView? = nil, rows: [DeskRowView] = [], waiting: UInt32 = 0, blitz: Text? = nil, duck: DuckAllView? = nil, slip: [SlipView] = [], artifactsLine: Text? = nil) {
       self.stack = stack
       self.offYourMind = offYourMind
       self.later = later
@@ -1354,6 +1357,7 @@ public enum CoreView {
       self.blitz = blitz
       self.duck = duck
       self.slip = slip
+      self.artifactsLine = artifactsLine
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1375,6 +1379,7 @@ public enum CoreView {
       case blitz = "blitz"
       case duck = "duck"
       case slip = "slip"
+      case artifactsLine = "artifacts_line"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1397,6 +1402,7 @@ public enum CoreView {
       self.blitz = try c.decodeIfPresent(Text.self, forKey: .blitz)
       self.duck = try c.decodeIfPresent(DuckAllView.self, forKey: .duck)
       self.slip = try c.decodeIfPresent([SlipView].self, forKey: .slip) ?? []
+      self.artifactsLine = try c.decodeIfPresent(Text.self, forKey: .artifactsLine)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -1419,6 +1425,7 @@ public enum CoreView {
       try c.encodeIfPresent(blitz, forKey: .blitz)
       try c.encodeIfPresent(duck, forKey: .duck)
       if !slip.isEmpty { try c.encode(slip, forKey: .slip) }
+      try c.encodeIfPresent(artifactsLine, forKey: .artifactsLine)
     }
   }
 
@@ -1429,6 +1436,8 @@ public enum CoreView {
     public var cardIds: [String]
     /// The button's name: "I don’t give a duck: for all 3 open cards".
     public var tip: Text
+    /// Its short name where its question follows at once (the iPhone's ⋯ menu): "IDGAD".
+    public var short: Text
     /// How many of which, for a screen reader: "2 decisions go to the agents, 1 card to read is closed".
     public var what: Text
     /// The one question it asks: "Duck all 3?"; only cards to read: "Close all 2 as read?".
@@ -1438,9 +1447,10 @@ public enum CoreView {
     /// The quiet way out: "Cancel".
     public var no: Text
 
-    public init(cardIds: [String] = [], tip: Text = Text(), what: Text = Text(), ask: Text = Text(), yes: Text = Text(), no: Text = Text()) {
+    public init(cardIds: [String] = [], tip: Text = Text(), short: Text = Text(), what: Text = Text(), ask: Text = Text(), yes: Text = Text(), no: Text = Text()) {
       self.cardIds = cardIds
       self.tip = tip
+      self.short = short
       self.what = what
       self.ask = ask
       self.yes = yes
@@ -1450,6 +1460,7 @@ public enum CoreView {
     enum CodingKeys: String, CodingKey {
       case cardIds = "card_ids"
       case tip = "tip"
+      case short = "short"
       case what = "what"
       case ask = "ask"
       case yes = "yes"
@@ -1460,6 +1471,7 @@ public enum CoreView {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.cardIds = try c.decode([String].self, forKey: .cardIds)
       self.tip = try c.decode(Text.self, forKey: .tip)
+      self.short = try c.decodeIfPresent(Text.self, forKey: .short) ?? Text()
       self.what = try c.decode(Text.self, forKey: .what)
       self.ask = try c.decode(Text.self, forKey: .ask)
       self.yes = try c.decode(Text.self, forKey: .yes)
@@ -1470,6 +1482,7 @@ public enum CoreView {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(cardIds, forKey: .cardIds)
       try c.encode(tip, forKey: .tip)
+      try c.encode(short, forKey: .short)
       try c.encode(what, forKey: .what)
       try c.encode(ask, forKey: .ask)
       try c.encode(yes, forKey: .yes)
@@ -1814,8 +1827,11 @@ public enum CoreView {
     public var older: Text?
     /// A page of older cards is being fetched: the shell shows its quiet "Loading …" line at the end.
     public var loading: Bool
+    /// The list in its groups, in this order and only those with rows: "Running" (`works`), "Put off" and "Done"
+    /// (both from `rest`). Each names its rows; its count is every row of it the search keeps, not only the window.
+    public var groups: [OffGroupView]
 
-    public init(query: String = "", works: [OffWorkView] = [], rest: [OffRowView] = [], none: Text? = nil, more: MoreView? = nil, older: Text? = nil, loading: Bool = false) {
+    public init(query: String = "", works: [OffWorkView] = [], rest: [OffRowView] = [], none: Text? = nil, more: MoreView? = nil, older: Text? = nil, loading: Bool = false, groups: [OffGroupView] = []) {
       self.query = query
       self.works = works
       self.rest = rest
@@ -1823,6 +1839,7 @@ public enum CoreView {
       self.more = more
       self.older = older
       self.loading = loading
+      self.groups = groups
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1833,6 +1850,7 @@ public enum CoreView {
       case more = "more"
       case older = "older"
       case loading = "loading"
+      case groups = "groups"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1844,6 +1862,7 @@ public enum CoreView {
       self.more = try c.decodeIfPresent(MoreView.self, forKey: .more)
       self.older = try c.decodeIfPresent(Text.self, forKey: .older)
       self.loading = try c.decodeIfPresent(Bool.self, forKey: .loading) ?? false
+      self.groups = try c.decodeIfPresent([OffGroupView].self, forKey: .groups) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -1855,6 +1874,49 @@ public enum CoreView {
       try c.encodeIfPresent(more, forKey: .more)
       try c.encodeIfPresent(older, forKey: .older)
       try c.encode(loading, forKey: .loading)
+      if !groups.isEmpty { try c.encode(groups, forKey: .groups) }
+    }
+  }
+
+  /// One group of the complete list Off your mind.
+  public struct OffGroupView: Codable, Hashable, Sendable {
+    /// "running", "later" or "done".
+    public var key: String
+    /// Its heading: "Running", "Put off", "Done".
+    public var says: Text
+    /// How many cards are in it (the search's words kept), shown beside the heading.
+    public var count: UInt32
+    /// The ids of its rows as shown, in order: of `works` for "running", of `rest` for the others.
+    public var ids: [String]
+
+    public init(key: String = "", says: Text = Text(), count: UInt32 = 0, ids: [String] = []) {
+      self.key = key
+      self.says = says
+      self.count = count
+      self.ids = ids
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case says = "says"
+      case count = "count"
+      case ids = "ids"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decode(String.self, forKey: .key)
+      self.says = try c.decode(Text.self, forKey: .says)
+      self.count = try c.decode(UInt32.self, forKey: .count)
+      self.ids = try c.decode([String].self, forKey: .ids)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(says, forKey: .says)
+      try c.encode(count, forKey: .count)
+      try c.encode(ids, forKey: .ids)
     }
   }
 
@@ -4460,8 +4522,10 @@ public enum CoreView {
     public var sendSays: Text?
     /// In the send's place without a crown: "Give a session the crown to send" (opens Settings · Agents).
     public var noCrown: Text?
+    /// The empty note line on the Desk: "Write a note to Fernly Website…", without a crown "Write a note…".
+    public var line: Text
 
-    public init(notes: [String] = [], rows: [NoteView] = [], corner: String? = nil, written: Bool = false, says: Text = Text(), to: NoteToView? = nil, sendSays: Text? = nil, noCrown: Text? = nil) {
+    public init(notes: [String] = [], rows: [NoteView] = [], corner: String? = nil, written: Bool = false, says: Text = Text(), to: NoteToView? = nil, sendSays: Text? = nil, noCrown: Text? = nil, line: Text = Text()) {
       self.notes = notes
       self.rows = rows
       self.corner = corner
@@ -4470,6 +4534,7 @@ public enum CoreView {
       self.to = to
       self.sendSays = sendSays
       self.noCrown = noCrown
+      self.line = line
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4481,6 +4546,7 @@ public enum CoreView {
       case to = "to"
       case sendSays = "send_says"
       case noCrown = "no_crown"
+      case line = "line"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4493,6 +4559,7 @@ public enum CoreView {
       self.to = try c.decodeIfPresent(NoteToView.self, forKey: .to)
       self.sendSays = try c.decodeIfPresent(Text.self, forKey: .sendSays)
       self.noCrown = try c.decodeIfPresent(Text.self, forKey: .noCrown)
+      self.line = try c.decodeIfPresent(Text.self, forKey: .line) ?? Text()
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4505,6 +4572,7 @@ public enum CoreView {
       try c.encodeIfPresent(to, forKey: .to)
       try c.encodeIfPresent(sendSays, forKey: .sendSays)
       try c.encodeIfPresent(noCrown, forKey: .noCrown)
+      try c.encode(line, forKey: .line)
     }
   }
 

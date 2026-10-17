@@ -1715,6 +1715,10 @@
       },
       "en": "I don’t give a duck: for all 17 open cards"
     },
+    "short": {
+      "key": "desk.duck.short",
+      "en": "IDGAD"
+    },
     "what": {
       "key": "desk.duck.what",
       "args": {
