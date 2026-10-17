@@ -99,7 +99,7 @@ ${deskTiles(d, base)}`
  *  ids of vm.artifacts), the team's Scribble Board small (ViewModel.thumbs, painted by whiteboard.mjs's controller
  *  "thumbs"), the team's Knowledge. */
 const TILE = { work: ['/stacks/off', 'tick'], artifacts: ['/artifacts', 'picture'], board: ['/scribble-board', 'pen'], knowledge: ['/knowledge', 'book'] }
-function deskTiles(d, base) {
+export function deskTiles(d, base) {
   const tiles = d.tiles ?? []
   if (!tiles.length) return html`<nav class="desk-tiles" id="desk-end" hidden></nav>`
   const vm = deskVm?.() ?? {}
@@ -111,13 +111,13 @@ function deskTiles(d, base) {
     return html`<span class="dt-page"><b>${a.title}</b><i></i><i></i><i></i></span>`
   }
   const inside = t => {
-    if (t.key === 'work') return html`<span class="dt-runs">${t.items.map(id => running.get(id)).filter(Boolean).map(runRow)}</span>`
-    if (t.key === 'artifacts') return t.items.length ? html`<span class="dt-pages">${t.items.map(id => arts.get(id)).filter(Boolean).map(page)}</span>` : ''
+    if (t.key === 'work') return html`<span class="dt-runs">${(t.items ?? []).map(id => running.get(id)).filter(Boolean).map(runRow)}</span>`
+    if (t.key === 'artifacts') return t.items?.length ? html`<span class="dt-pages">${t.items.map(id => arts.get(id)).filter(Boolean).map(page)}</span>` : ''
     if (t.key === 'board' && t.team_id) return html`<span class="dt-board"><canvas width="520" height="260" data-thumb="${t.team_id}" aria-hidden="true"></canvas></span>`
     return ''
   }
   if (tiles.some(t => t.key === 'board' && t.team_id)) viewModule('whiteboard').catch(() => {})   // (its controller paints the board small)
-  return html`<nav class="desk-tiles" id="desk-end" aria-label="${tiles.map(t => t.title.en).join(', ')}">${tiles.map(t => html`<a class="desk-tile" id="tile-${t.key}" data-tile="${t.key}" data-nav href="${base}${TILE[t.key]?.[0] ?? '/'}"${t.key === 'board' ? raw(' data-controller="thumbs"') : ''} aria-label="${t.title.en}: ${t.line.en}"><span class="dt-head">${sk(TILE[t.key]?.[1] ?? 'page')}<b>${t.title.en}</b>${t.count != null && t.key !== 'work' ? html`<i>${t.count}</i>` : ''}${CHEV}</span><span class="dt-line">${t.line.en}</span>${inside(t)}</a>`)}</nav>`
+  return html`<nav class="desk-tiles" id="desk-end" aria-label="${tiles.map(t => t.title.en).join(', ')}">${tiles.map(t => html`<a class="desk-tile" id="tile-${t.key}" data-tile="${t.key}" data-nav href="${base}${TILE[t.key]?.[0] ?? '/'}"${t.key === 'board' ? raw(' data-controller="thumbs"') : ''} aria-label="${t.title?.en ?? ''}: ${t.line?.en ?? ''}"><span class="dt-head">${sk(TILE[t.key]?.[1] ?? 'page')}<b>${t.title.en}</b>${t.count != null && t.key !== 'work' ? html`<i>${t.count}</i>` : ''}${CHEV}</span><span class="dt-line">${t.line.en}</span>${inside(t)}</a>`)}</nav>`
 }
 
 let deskVm = null, deskAct = null
@@ -143,7 +143,7 @@ const restRow = (r, base) => html`<a class="off-row is-rest" id="off-${r.id}" da
 function offMain(o, base) {
   const q = o?.query ?? ''
   const works = new Map((o?.works ?? []).map(w => [w.id, w])), rest = new Map((o?.rest ?? []).map(r => [r.id, r]))
-  const group = g => html`<section class="off-group" id="off-${g.key}" aria-label="${g.says.en}"><h3>${g.says.en} <b>${g.count}</b></h3>${g.ids.map(id => (g.key === 'running' ? works.has(id) && workRow(works.get(id), base) : rest.has(id) && restRow(rest.get(id), base)) || '')}</section>`
+  const group = g => html`<section class="off-group" id="off-${g.key}" aria-label="${g.says.en}"><h3>${g.says.en} <b>${g.count}</b></h3>${(g.ids ?? []).map(id => (g.key === 'running' ? works.has(id) && workRow(works.get(id), base) : rest.has(id) && restRow(rest.get(id), base)) || '')}</section>`
   return html`<main id="inbox" class="off-page" aria-label="Off your mind"><header class="inbox-head desk-top"><h2 class="desk-hello"><a class="off-back" data-nav href="${base}/" aria-label="Back to the Desk">←</a> Off your <em>mind</em></h2><form class="end-search" method="get" action="${base}/stacks/off" role="search"><label><span class="offscreen">Search</span><input type="search" name="q" value="${q}" placeholder="Search the list" autocomplete="off"></label></form></header>
 <div class="inbox-groups" id="off-list"><div class="off-groups" id="off-end">${(o?.groups ?? []).map(group)}${o?.none ? html`<p class="end-none">${o.none.en}</p>` : ''}
 ${o?.more ? html`<form class="end-more" method="post" action="${base}/stacks/off/more"><input type="hidden" name="q" value="${q}"><button type="submit" class="end-more-go">${o.more.says.en}</button></form>` : ''}${o?.loading ? html`<p class="end-none" role="status">Loading…</p>` : ''}</div></div></main>`

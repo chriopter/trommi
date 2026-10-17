@@ -1457,7 +1457,8 @@ public enum CoreView {
     /// Where a click goes: `Screen::Off`, `Screen::Artifacts`, `Screen::Scribble`.
     public var opens: Screen
     /// What it shows small, in order: the running cards (ids of `DeskView.off.running`) for "work", the newest
-    /// artifacts (ids of `ViewModel.artifacts`, at most four) for "artifacts"; empty for "board".
+    /// artifacts (ids of `ViewModel.artifacts`, at most four) for "artifacts"; empty for "board". Always sent, also
+    /// empty: a shell maps over it.
     public var items: [String]
     /// "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams.
     public var teamId: String?
@@ -1500,7 +1501,7 @@ public enum CoreView {
       try c.encode(line, forKey: .line)
       try c.encodeIfPresent(count, forKey: .count)
       try c.encode(opens, forKey: .opens)
-      if !items.isEmpty { try c.encode(items, forKey: .items) }
+      try c.encode(items, forKey: .items)
       try c.encodeIfPresent(teamId, forKey: .teamId)
     }
   }

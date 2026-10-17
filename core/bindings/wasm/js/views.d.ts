@@ -417,8 +417,9 @@ export interface DeskTileView {
   /** Where a click goes: `Screen::Off`, `Screen::Artifacts`, `Screen::Scribble`. */
   opens: Screen
   /** What it shows small, in order: the running cards (ids of `DeskView.off.running`) for "work", the newest
-   *  artifacts (ids of `ViewModel.artifacts`, at most four) for "artifacts"; empty for "board". */
-  items?: string[]
+   *  artifacts (ids of `ViewModel.artifacts`, at most four) for "artifacts"; empty for "board". Always sent, also
+   *  empty: a shell maps over it. */
+  items: string[]
   /** "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams. */
   team_id?: string
 }

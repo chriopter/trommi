@@ -677,8 +677,9 @@ pub struct DeskTileView {
     /// Where a click goes: `Screen::Off`, `Screen::Artifacts`, `Screen::Scribble`.
     pub opens: Screen,
     /// What it shows small, in order: the running cards (ids of `DeskView.off.running`) for "work", the newest
-    /// artifacts (ids of `ViewModel.artifacts`, at most four) for "artifacts"; empty for "board".
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// artifacts (ids of `ViewModel.artifacts`, at most four) for "artifacts"; empty for "board". Always sent, also
+    /// empty: a shell maps over it.
+    #[serde(default)]
     pub items: Vec<String>,
     /// "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams.
     #[serde(default, skip_serializing_if = "Option::is_none")]
