@@ -42,7 +42,7 @@ enum NativeTab: Hashable { case chat, desk, search }
       let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Trommi/AppCore/default")
       let preview = isDemo
       session = try Spent.time("session.init") { try CoreSession(directory: preview ? nil : dir, network: NativeNetworkHooks(cached: { request in if preview { return NativeDemo.file(request) }; return await NativeServices.shared.prefetched(request) }, before: { _, url in preview && !url.hasPrefix("/demo/files/") ? "denied" : nil })) { [weak self] packet in await self?.effect(packet) } }
-      var config: [String: Any] = ["platform": Self.platform, "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1", "slot": "default", "seed": UInt64.random(in: 0..<(1 << 53)), "locale": Locale.current.identifier, "utc_offset_min": TimeZone.current.secondsFromGMT() / 60, "can": ["notify": true, "secrets": true, "snapshots": true, "push": "apns", "passkeys": false]]
+      var config: [String: Any] = ["platform": Self.platform, "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1", "slot": "default", "seed": UInt64.random(in: 0..<(1 << 53)), "locale": Locale.current.identifier, "utc_offset_min": TimeZone.current.secondsFromGMT() / 60, "can": ["notify": true, "secrets": true, "snapshots": true, "push": "apns", "passkeys": false, "dictate": NativeDictation.can]]
       #if targetEnvironment(simulator)
       // UI automation uses the real executor and store against its own loopback hub.
       if let hub = ProcessInfo.processInfo.environment["TROMMI_TEST_HUB"],

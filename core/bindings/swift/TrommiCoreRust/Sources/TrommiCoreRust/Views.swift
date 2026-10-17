@@ -2155,8 +2155,16 @@ public enum CoreView {
     public var text: DictatedText?
     /// While recording: that only the verified enclave hears it.
     public var hint: Text?
+    /// Settings: whether this device can dictate at all (a microphone and the verifier, and a room).
+    public var available: Bool
+    /// Settings: the person's switch on this device (on unless switched off).
+    public var on: Bool
+    /// Settings: the dot beside the row: `connected` (green), `checking`, `failed` (red), `off` or `unknown` (grey).
+    public var statusKind: String
+    /// Settings: the row's sentence ("Connected · sealed").
+    public var status: Text?
 
-    public init(state: String = "", session: String = "", sinceMs: UInt64 = 0, maxMs: UInt64 = 0, problem: Text? = nil, text: DictatedText? = nil, hint: Text? = nil) {
+    public init(state: String = "", session: String = "", sinceMs: UInt64 = 0, maxMs: UInt64 = 0, problem: Text? = nil, text: DictatedText? = nil, hint: Text? = nil, available: Bool = false, on: Bool = false, statusKind: String = "", status: Text? = nil) {
       self.state = state
       self.session = session
       self.sinceMs = sinceMs
@@ -2164,6 +2172,10 @@ public enum CoreView {
       self.problem = problem
       self.text = text
       self.hint = hint
+      self.available = available
+      self.on = on
+      self.statusKind = statusKind
+      self.status = status
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2174,6 +2186,10 @@ public enum CoreView {
       case problem = "problem"
       case text = "text"
       case hint = "hint"
+      case available = "available"
+      case on = "on"
+      case statusKind = "status_kind"
+      case status = "status"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2185,6 +2201,10 @@ public enum CoreView {
       self.problem = try c.decodeIfPresent(Text.self, forKey: .problem)
       self.text = try c.decodeIfPresent(DictatedText.self, forKey: .text)
       self.hint = try c.decodeIfPresent(Text.self, forKey: .hint)
+      self.available = try c.decodeIfPresent(Bool.self, forKey: .available) ?? false
+      self.on = try c.decodeIfPresent(Bool.self, forKey: .on) ?? false
+      self.statusKind = try c.decodeIfPresent(String.self, forKey: .statusKind) ?? ""
+      self.status = try c.decodeIfPresent(Text.self, forKey: .status)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2196,6 +2216,10 @@ public enum CoreView {
       try c.encodeIfPresent(problem, forKey: .problem)
       try c.encodeIfPresent(text, forKey: .text)
       try c.encodeIfPresent(hint, forKey: .hint)
+      try c.encode(available, forKey: .available)
+      try c.encode(on, forKey: .on)
+      try c.encode(statusKind, forKey: .statusKind)
+      try c.encodeIfPresent(status, forKey: .status)
     }
   }
 

@@ -936,6 +936,18 @@ pub struct DictationView {
     /// While recording: that only the verified enclave hears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<Text>,
+    /// Settings: whether this device can dictate at all (a microphone and the verifier, and a room).
+    #[serde(default)]
+    pub available: bool,
+    /// Settings: the person's switch on this device (on unless switched off).
+    #[serde(default)]
+    pub on: bool,
+    /// Settings: the dot beside the row: `connected` (green), `checking`, `failed` (red), `off` or `unknown` (grey).
+    #[serde(default)]
+    pub status_kind: String,
+    /// Settings: the row's sentence ("Connected · sealed").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<Text>,
 }
 
 /// Words a dictation brought, to go into the chat field once.

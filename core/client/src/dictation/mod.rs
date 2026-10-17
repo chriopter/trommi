@@ -153,6 +153,8 @@ pub struct Dictation {
     texts: u64,
     /// The chat the dictation is for (the shell's id of its field): its words go there and nowhere else.
     session: String,
+    /// The person switched dictation off on this device (Settings).
+    off: bool,
 }
 
 impl Dictation {
@@ -173,8 +175,30 @@ impl Dictation {
         self.phase = Phase::Failed(problem);
     }
 
+    /// Dictation on or off on this device (Settings). Off ends a dictation that runs.
+    pub fn set_on(&mut self, on: bool) -> Vec<Do> {
+        self.off = !on;
+        if on { Vec::new() } else { self.cancel() }
+    }
+
+    pub fn is_on(&self) -> bool {
+        !self.off
+    }
+
+    /// Settings in view: the enclave is checked (if not checked lately), so its state can be shown. Sends nothing.
+    pub fn check(&mut self, now: u64) -> Vec<Do> {
+        if self.off || self.fresh(now) || !matches!(self.phase, Phase::Idle | Phase::Done { .. } | Phase::Failed(_)) {
+            return Vec::new();
+        }
+        self.enclave = Enclave::Fetching;
+        vec![Do::FetchBundle]
+    }
+
     /// The microphone of the field of `session` was tapped.
     pub fn start(&mut self, now: u64, session: &str) -> Vec<Do> {
+        if self.off {
+            return Vec::new();
+        }
         if !matches!(self.phase, Phase::Idle | Phase::Done { .. } | Phase::Failed(_)) {
             return Vec::new();
         }
@@ -409,6 +433,11 @@ impl Dictation {
         self.phase = Phase::Done { id: self.texts, text: text.to_string() };
     }
 
+    /// Demo only: the enclave as a check that passed would leave it.
+    pub fn demo_connected(&mut self, now: u64) {
+        self.enclave = Enclave::Verified { attested: Attested { hpke_key: [0; 32], domain: "demo.tinfoil.sh".into() }, at: now };
+    }
+
     /// Demo only: recording at once.
     pub fn demo_recording(&mut self, now: u64, session: &str) {
         self.session = session.chars().take(200).collect();
@@ -419,9 +448,30 @@ impl Dictation {
         matches!(self.phase, Phase::Recording { .. })
     }
 
-    pub fn view(&self, available: bool) -> DictationView {
+    /// What Settings says of the enclave: a word for the dot (`connected` green, `checking`, `failed` red, `off` and
+    /// `unknown` grey) and its sentence.
+    fn status(&self, available: bool, now: u64) -> (&'static str, Text) {
+        if !available {
+            return ("off", Text::new("dictate.status.unavailable", "Not available on this device"));
+        }
+        if self.off {
+            return ("off", Text::new("dictate.status.off", "Off"));
+        }
+        match &self.enclave {
+            Enclave::Verified { at, .. } if now < at + ATTESTED_FOR_MS => ("connected", Text::new("dictate.status.connected", "Connected · sealed")),
+            Enclave::Verified { .. } | Enclave::Unknown => ("unknown", Text::new("dictate.status.unknown", "Checked when you dictate")),
+            Enclave::Fetching | Enclave::Attesting => ("checking", Text::new("dictate.status.checking", "Checking the enclave…")),
+            Enclave::Refused => ("failed", Text::new("dictate.status.not_verified", "Enclave not verified: nothing is sent")),
+            Enclave::Unreachable(Problem::Off) => ("off", Text::new("dictate.status.hub_off", "Not offered by this hub")),
+            Enclave::Unreachable(Problem::Offline) => ("failed", Text::new("dictate.status.offline", "No connection to the enclave")),
+            Enclave::Unreachable(_) => ("failed", Text::new("dictate.status.failed", "The enclave could not be reached")),
+        }
+    }
+
+    pub fn view(&self, available: bool, now: u64) -> DictationView {
+        let (status_kind, status) = self.status(available, now);
         let (state, since_ms, problem, text) = match &self.phase {
-            _ if !available => ("off", 0, None, None),
+            _ if !available || self.off => ("off", 0, None, None),
             Phase::Idle => ("idle", 0, None, None),
             Phase::Starting => ("starting", 0, None, None),
             Phase::Recording { since } => ("recording", *since, None, None),
@@ -431,13 +481,17 @@ impl Dictation {
             Phase::Failed(p) => ("failed", 0, Some(p.text()), None),
         };
         DictationView {
-            session: if matches!(self.phase, Phase::Idle) || !available { String::new() } else { self.session.clone() },
+            session: if matches!(self.phase, Phase::Idle) || !available || self.off { String::new() } else { self.session.clone() },
             state: state.to_string(),
             since_ms,
             max_ms: MAX_MS,
             problem,
             text,
             hint: (state == "recording").then(|| Text::new("dictate.sealed", "Sealed: only the verified enclave hears this.")),
+            available,
+            on: !self.off,
+            status_kind: status_kind.to_string(),
+            status: Some(status),
         }
     }
 }

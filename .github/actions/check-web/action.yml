@@ -45,6 +45,10 @@ runs:
       working-directory: app/web
       shell: bash
       run: npm ci --no-audit --no-fund
+    # the iPhone runs the web's Tinfoil verifier as a script of its own (app/ios/dev/verifier.mjs): it must be current
+    - name: The iPhone's verifier is the web's
+      shell: bash
+      run: node app/ios/dev/verifier.mjs --check
     # type check, the app's own checks (layout, lint), the tests without a browser: six files at once on four cores
     - name: Test
       working-directory: app/web

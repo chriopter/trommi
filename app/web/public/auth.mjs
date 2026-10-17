@@ -10,7 +10,7 @@
 // app.mjs asks gate(vm, url) on every visit while signed out or while a step runs: the address the page must be on.
 // The UI says "account", never "room". Calm and sober: pen drawings only on the choice buttons.
 import { BELL, Controller, PLUS, SET_CHEVRON, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode } from './ui.mjs'
-import { passkeysOn, pushObstacle } from './app.mjs'
+import { actCore, passkeysOn, pushObstacle } from './app.mjs'
 
 // (the page's core and the QR reader come when first needed: this module also loads in Node, for its tests)
 const qrReader = () => import('./app.mjs').then(app => app.qrReader())
@@ -397,6 +397,8 @@ ${note ? html`<p class="room-lead" id="logout-last">${note}</p>` : ''}<p class="
     else return null
     return html`<div class="set-device" id="set-device" data-state="${state}">${inner}</div>`
   }
+  /** Sealed dictation on this device: the switch, and the enclave's state as the core says it (a dot and a line). */
+  const dictationRow = d => (!d?.available ? '' : html`<label class="set-row set-switch" id="settings-dictation" data-controller="set-dictation"><span class="set-ico">${sk('mic')}</span><b>Dictation</b><span class="set-detail"><i class="set-dot is-${d.status_kind || 'unknown'}" aria-hidden="true"></i>${d.status?.en ?? ''}</span><input type="checkbox" role="switch" aria-label="Dictation"${d.on ? raw(' checked') : ''} data-action="change->set-dictation#flip"><span class="set-knob" aria-hidden="true"></span></label>`)
   const homeMain = () => {
     const s = vm().settings ?? {}, invite = deviceInvite()
     return settingsPage('Settings', html`${!invite ? inviteTiles() : html`<section class="set-group set-invites" aria-label="Invite">${invite}
@@ -409,6 +411,7 @@ ${setRow({ href: '/settings/account', icon: sk('key'), word: 'Account', detail: 
 </nav>
 <nav class="set-group" aria-label="This device">
 ${setRow({ href: '/settings/theme', icon: sk('moon'), word: 'Theme', detail: SHOWN[themeMode()] ?? 'System', id: 'settings-theme' })}
+${dictationRow(vm().dictation)}
 ${setRow({ href: '/settings/keys', icon: sk('keycap'), word: 'Keyboard Shortcuts', id: 'settings-keys' })}
 </nav>
 <nav class="set-group" aria-label="About">
@@ -951,6 +954,10 @@ controller('invite-clip', class extends Controller {
 controller('set-theme', class extends Controller {
   connect() { for (const r of this.element.querySelectorAll('input[name="theme"]')) r.checked = r.value === themeMode() }
   pick(e) { setThemeMode(e.target.value) }
+})
+// Dictation on this device: the switch is sent at once (Action::Dictate switch); the row follows the core's view.
+controller('set-dictation', class extends Controller {
+  flip(e) { actCore({ do: 'dictate', step: { step: 'switch', on: e.target.checked } }) }
 })
 // Push on this device: a level picked is sent at once (the form's handler: Action::Push).
 controller('set-push', class extends Controller {

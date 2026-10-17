@@ -618,10 +618,84 @@ struct TalkComposer: View {
   let placeholder: String
   @Binding var text: String
   @Binding var attachments: [String]
+  /** The chat this field belongs to: with it, sealed dictation (spec/v1.md 18) lives in the send button's place. */
+  var session: String? = nil
   let send: () -> Void
   @State private var keyboard = false
+  @State private var said = ""
+  @State private var taken = ""
+  @State private var levels: [Double] = []
   private var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty }
+  /** The core's dictation as this field shows it: another chat's runs elsewhere, so here it is idle; none without a chat. */
+  private var dictation: String {
+    guard let session else { return "off" }
+    let d = shell.view.dictation
+    if d.state.isEmpty || d.state == "off" { return "off" }
+    return d.session.isEmpty || d.session == session ? d.state : "idle"
+  }
+  private func dictate(_ step: [String: Any]) { shell.act(["do": "dictate", "step": step]) }
   var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      if !said.isEmpty {
+        Text(said).font(Face.text(13)).foregroundStyle(Ink.urgCritical).padding(.leading, 27 + 51).padding(.trailing, 25)
+      }
+      field
+    }
+    .onChange(of: shell.view.dictation) { _, d in took(d) }
+  }
+  /** The words of a dictation into this field (once), a problem said above it. */
+  private func took(_ d: CoreView.DictationView) {
+    guard let session, d.session == session else { return }
+    if d.state == "done", let t = d.text, t.id != taken {
+      taken = t.id
+      let gap = text.isEmpty || text.hasSuffix(" ") || text.hasSuffix("\n") ? "" : " "
+      text += gap + t.text
+      dictate(["step": "taken", "id": t.id])
+    }
+    if d.state == "failed", let p = d.problem {
+      said = p.en
+      dictate(["step": "dismiss"])
+      Task { try? await Task.sleep(for: .seconds(8)); said = "" }
+    }
+  }
+  @ViewBuilder private var recordingRow: some View {
+    HStack(spacing: 10) {
+      Button { dictate(["step": "cancel"]) } label: { Image(systemName: "trash").font(.system(size: 16)).foregroundStyle(Ink.muted).frame(width: 36, height: 40) }
+        .buttonStyle(.plain).accessibilityLabel("Throw the recording away")
+      if dictation == "working" {
+        Text("Writing…").font(Face.text(16)).foregroundStyle(Ink.muted)
+        Spacer(minLength: 0)
+      } else {
+        Circle().fill(Ink.urgCritical).frame(width: 9, height: 9)
+        TimelineView(.periodic(from: .now, by: 0.12)) { tl in
+          HStack(spacing: 10) {
+            let since = Double(shell.view.dictation.sinceMs) / 1000
+            let sec = max(0, Int(tl.date.timeIntervalSince1970 - since))
+            Text(String(format: "%d:%02d", sec / 60, sec % 60)).font(Face.text(16)).monospacedDigit()
+            HStack(spacing: 2) {
+              ForEach(Array(bars(tl.date).enumerated()), id: \.offset) { _, v in Capsule().fill(Ink.muted).frame(width: 3, height: 3 + 17 * v) }
+            }.frame(maxWidth: .infinity, alignment: .leading).clipped()
+          }
+        }
+      }
+      Label("Sealed", systemImage: "lock").font(Face.text(12)).foregroundStyle(Ink.faint).labelStyle(.titleAndIcon)
+        .accessibilityLabel(shell.view.dictation.hint?.en ?? "Sealed")
+      Button { dictate(["step": "stop"]) } label: {
+        RoundedRectangle(cornerRadius: 3).fill(Color.white).frame(width: 12, height: 12)
+          .frame(width: 32, height: 32).background(Circle().fill(Ink.urgCritical)).opacity(dictation == "working" ? 0.5 : 1)
+          .frame(width: 40, height: 40).contentShape(Rectangle())
+      }.buttonStyle(.plain).disabled(dictation == "working").accessibilityLabel("Stop and write it")
+    }
+    .padding(.leading, 6).frame(minHeight: 40)
+  }
+  private func bars(_ now: Date) -> [Double] {
+    DispatchQueue.main.async {
+      levels.append(NativeDictation.shared.level)
+      if levels.count > 60 { levels.removeFirst(levels.count - 60) }
+    }
+    return levels
+  }
+  private var field: some View {
     HStack(alignment: .bottom, spacing: 11) {
       AttachMenu(ids: $attachments) {
         Image(systemName: "plus").font(.system(size: 19, weight: .semibold)).foregroundStyle(Ink.fg).frame(width: 40, height: 40).glass(Circle(), interactive: true)
@@ -642,16 +716,27 @@ struct TalkComposer: View {
             }.padding(.horizontal, 10).padding(.top, 8)
           }
         }
+        if dictation == "recording" || dictation == "working" { recordingRow } else {
         HStack(alignment: .bottom, spacing: 4) {
           TextField(placeholder, text: $text, axis: .vertical)
             .font(Face.text(17)).lineLimit(1...7)
             .padding(.leading, 16).padding(.vertical, 9)
+          if dictation != "off" && !canSend {
+            Button { said = ""; levels = []; dictate(dictation == "starting" ? ["step": "cancel"] : ["step": "start", "session": session ?? ""]) } label: {
+              Image(systemName: "mic").font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Ink.accentFg).frame(width: 32, height: 32).background(Circle().fill(Ink.accent)).opacity(dictation == "starting" ? 0.6 : 1)
+                .frame(width: 40, height: 40).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).accessibilityLabel("Dictate (sealed)")
+          } else {
           Button(action: send) {
             Image(systemName: "arrow.up").font(.system(size: 16, weight: .bold))
               .foregroundStyle(Ink.accentFg).frame(width: 32, height: 32).background(Circle().fill(canSend ? Ink.accent : Ink.faint))
               .frame(width: 40, height: 40).contentShape(Rectangle())
           }
           .buttonStyle(.plain).disabled(!canSend).accessibilityLabel("Send")
+          }
+        }
         }
       }
       .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -720,7 +805,7 @@ struct SessionScreen: View {
       .bottomBar {
         VStack(spacing: 0) {
           if let n = page.note { LinkNoteBox(note: n).padding(.horizontal, 12).padding(.top, 8) }
-          TalkComposer(placeholder: page.compose.en, text: $text, attachments: $attachments) {
+          TalkComposer(placeholder: page.compose.en, text: $text, attachments: $attachments, session: page.id) {
             shell.act(["do": "write", "session_id": page.id, "text": text, "attachments": attachments]); text = ""; attachments = []
             withAnimation { reader.scrollTo("bottom", anchor: .bottom) }
           }

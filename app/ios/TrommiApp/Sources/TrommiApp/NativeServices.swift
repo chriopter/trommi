@@ -21,6 +21,11 @@ import AppKit
   func platform(_ packet: NativePacket, shell: AppShell) async {
     let id = packet.json["id"] as? Int ?? 0
     let op = packet.json["op"] as? [String: Any] ?? [:]
+    if ["record_start", "record_stop", "record_cancel", "attest"].contains(op["op"] as? String) {
+      let (answer, blobs) = await NativeDictation.shared.op(op, blobs: packet.blobs)
+      shell.send(["type": "platform", "id": id, "result": ["ok": answer]], blobs: blobs)
+      return
+    }
     switch op["op"] as? String {
     case "push_register":
       do {

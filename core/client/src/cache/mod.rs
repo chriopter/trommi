@@ -39,6 +39,8 @@ pub mod part {
     pub const DRAFT: &str = "draft";
     /// What the Chat list counts as read on this device: one record (`app::seen`).
     pub const SEEN: &str = "seen";
+    /// Whether dictation is on on this device (`app::dictation`): `0` when switched off.
+    pub const DICTATION: &str = "dictation";
 }
 
 /// The key of a part of a room's cache: `c1/<room>/<part>` or `c1/<room>/<part>/<id>`.
