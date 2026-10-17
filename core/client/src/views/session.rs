@@ -148,13 +148,13 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
             pages: pages + 1,
         });
     }
-    if b.lens.phone {
+    if b.lens.calm {
         calm(&mut v);
     }
     Some(v)
 }
 
-/// A phone's chat: only the words and what waits. A run of card events becomes one row of chips (`kind` "events";
+/// The calm chat (`Focus.calm`: the iPhone, the web): only the words and what waits. A run of card events becomes one row of chips (`kind` "events";
 /// an echo of what the asked line already says is left out), the helper list stays off the page (their status lines
 /// name them), and the rest of the working lines is "and N more".
 fn calm(v: &mut SessionView) {
@@ -193,7 +193,7 @@ fn calm(v: &mut SessionView) {
     v.helpers = None;
     v.tabs.retain(|t| t.key != "helpers");
     let behind = v.status_lines.len().saturating_sub(1).to_string();
-    v.status_more = (v.status_lines.len() > 1).then(|| say("session.status_more.phone", format!("and {behind} more"), &[("n", behind.as_str())]));
+    v.status_more = (v.status_lines.len() > 1).then(|| say("session.status_more.calm", format!("and {behind} more"), &[("n", behind.as_str())]));
 }
 
 fn page(b: &Board, id: &str) -> Option<SessionView> {
@@ -823,10 +823,10 @@ mod tests {
         assert_eq!(v.waiting.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["q-open", "p1"]);
     }
 
-    /// On a phone the chat is calm: a run of card events is one row of chips (an echo left out), the agent's words
+    /// The calm chat (the iPhone, the web): a run of card events is one row of chips (an echo left out), the agent's words
     /// after it start a run again, the helper list stays off the page and the rest of the working lines is "and N more".
     #[test]
-    fn a_phone_folds_card_events_into_chips_and_leaves_the_helpers_out() {
+    fn the_calm_chat_folds_card_events_into_chips_and_leaves_the_helpers_out() {
         let mut r = Room::default();
         r.session("a", None, true)["status_lines"] = json!([
             { "id": "l1", "label": "iPhone Desk", "state": "working", "helper": "iOS", "updated_at": NOW - MIN },
@@ -848,9 +848,9 @@ mod tests {
         r.say("a", None, 160, "a", 4 * MIN, msg("Both started."));
         r.say("a", None, 161, "a", 4 * MIN, msg("I need you in the terminal."));
         let wide = view(&r, "a");
-        assert!(wide.helpers.is_some() && wide.talk.iter().any(|t| t.kind == "event"), "a wide window keeps the lines and the helper list");
+        assert!(wide.helpers.is_some() && wide.talk.iter().any(|t| t.kind == "event"), "without calm (Linux) the lines and the helper list stay");
         let m = r.model(NOW);
-        let lens = Lens { phone: true, ..Default::default() };
+        let lens = Lens { calm: true, ..Default::default() };
         let v = session(&Board::new(&m, &lens, NOW), &dev("a")).unwrap();
         let rows: Vec<(&str, &str, bool)> = v.talk.iter().map(|t| (t.id.as_str(), t.kind.as_str(), t.cont)).collect();
         assert_eq!(rows.iter().filter(|r| r.1 == "event").count(), 0, "{rows:?}");
@@ -864,7 +864,7 @@ mod tests {
         assert!(v.helpers.is_none() && !v.tabs.iter().any(|t| t.key == "helpers"));
         assert_eq!(v.status_lines.iter().map(|l| l.helper.as_deref()).collect::<Vec<_>>(), [Some("iOS"), Some("CI"), None], "the lines still name the helpers");
         let more = v.status_more.expect("two behind the first");
-        assert_eq!((more.key.as_str(), more.en.as_str()), ("session.status_more.phone", "and 2 more"));
+        assert_eq!((more.key.as_str(), more.en.as_str()), ("session.status_more.calm", "and 2 more"));
     }
 
     /// The count of open questions is what the page "Questions" lists as open: cards to read that wait on the Desk

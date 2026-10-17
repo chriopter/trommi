@@ -57,7 +57,7 @@ enum NativeTab: Hashable { case chat, desk, search }
       }
       // (the team chosen last on this device; launched in the back by a push, the Desk is not in view)
       deskAll = preview ? true : Self.storedDeskAll
-      if !preview, let data = try? JSONEncoder().encode(CoreView.Focus(screen: .desk, visible: Self.launchedInFront, team: Self.lastTeam, deskAll: deskAll, openTeams: Self.storedOpenTeams ?? [], phone: Self.phone)),
+      if !preview, let data = try? JSONEncoder().encode(CoreView.Focus(screen: .desk, visible: Self.launchedInFront, team: Self.lastTeam, deskAll: deskAll, openTeams: Self.storedOpenTeams ?? [], calm: Self.phone)),
          let focus = try? JSONSerialization.jsonObject(with: data) {
         await session?.send(NativePacket(["type": "focus", "focus": focus]))
       }
@@ -90,7 +90,7 @@ enum NativeTab: Hashable { case chat, desk, search }
     if next != .search { chatsQuery = "" }
     tab = next; show(.desk)
   }
-  /** An iPhone (sent as `Focus.phone`): the core makes the calm chat; its drawing leaves out faces and times. */
+  /** An iPhone: sends `Focus.calm` (the core makes the calm chat); its drawing leaves out faces and times. */
   static let phone: Bool = {
     #if os(iOS)
     UIDevice.current.userInterfaceIdiom == .phone
@@ -156,7 +156,7 @@ enum NativeTab: Hashable { case chat, desk, search }
     if let team { deskAll = false; if !isDemo { UserDefaults.standard.set(team, forKey: Self.teamKey); UserDefaults.standard.set(false, forKey: Self.deskAllKey) } }
     let inView = view.sidebar.team.isEmpty ? (isDemo ? nil : Self.lastTeam) : view.sidebar.team
     let query = chatsQuery.trimmingCharacters(in: .whitespaces)
-    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, deskAll: deskAll, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query, phone: Self.phone)
+    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, deskAll: deskAll, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query, calm: Self.phone)
     if let data = try? JSONEncoder().encode(focus), let json = try? JSONSerialization.jsonObject(with: data) { send(["type": "focus", "focus": json]) }
   }
   func scene(_ active: Bool) { send(["type": active ? "foreground" : "background"]); if !isDemo { NativeServices.shared.foreground(active) } }

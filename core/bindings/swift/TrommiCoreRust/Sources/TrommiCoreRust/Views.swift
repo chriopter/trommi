@@ -74,11 +74,12 @@ public enum CoreView {
     /// The words searched for among every team's chats (the phone's Search tab, `SidebarView.found`); none or empty:
     /// no search.
     public var chatsQuery: String?
-    /// A phone's screen: a session's page is the calm chat (a run of card events as one row of chips, `kind`
-    /// "events"; no helper list; "and 2 more" beside the working line). A wide window leaves it false.
-    public var phone: Bool
+    /// The calm chat (the iPhone and the web send it): a session's page folds a run of card events into one row of
+    /// chips (`kind` "events"), leaves the helper list out and says "and 2 more" beside the working line. A shell
+    /// that draws the full talk (Linux) leaves it false.
+    public var calm: Bool
 
-    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, deskAll: Bool = false, openTeams: [String] = [], chatsQuery: String? = nil, phone: Bool = false) {
+    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, deskAll: Bool = false, openTeams: [String] = [], chatsQuery: String? = nil, calm: Bool = false) {
       self.screen = screen
       self.visible = visible
       self.team = team
@@ -86,7 +87,7 @@ public enum CoreView {
       self.deskAll = deskAll
       self.openTeams = openTeams
       self.chatsQuery = chatsQuery
-      self.phone = phone
+      self.calm = calm
     }
 
     enum CodingKeys: String, CodingKey {
@@ -97,7 +98,7 @@ public enum CoreView {
       case deskAll = "desk_all"
       case openTeams = "open_teams"
       case chatsQuery = "chats_query"
-      case phone = "phone"
+      case calm = "calm"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -109,7 +110,7 @@ public enum CoreView {
       self.deskAll = try c.decodeIfPresent(Bool.self, forKey: .deskAll) ?? false
       self.openTeams = try c.decodeIfPresent([String].self, forKey: .openTeams) ?? []
       self.chatsQuery = try c.decodeIfPresent(String.self, forKey: .chatsQuery)
-      self.phone = try c.decodeIfPresent(Bool.self, forKey: .phone) ?? false
+      self.calm = try c.decodeIfPresent(Bool.self, forKey: .calm) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -121,7 +122,7 @@ public enum CoreView {
       try c.encode(deskAll, forKey: .deskAll)
       if !openTeams.isEmpty { try c.encode(openTeams, forKey: .openTeams) }
       try c.encodeIfPresent(chatsQuery, forKey: .chatsQuery)
-      try c.encode(phone, forKey: .phone)
+      try c.encode(calm, forKey: .calm)
     }
   }
 

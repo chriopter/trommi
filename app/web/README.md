@@ -210,6 +210,10 @@ instead); files come network first, the cache only offline. On the dev server (`
   tap beside it, a push back, Esc or a choice closes it). A phone's top line is the pill (the desk's drawing and name;
   it opens the menu, `sidebar.mjs` `phoneBar`), in a chat the way back to the chats; at its foot a glass capsule Chat ·
   Desk · Note (`tabBar`).
+- **A chat** is calm, as Grok's (`Focus.calm`, as on the iPhone): the agent's words in grey bubbles with no face, name
+  or time beside them (the time on hover; a helper's name above its words), a run of card events as small chips that
+  open their card (`TalkRow` kind "events"), no helper list, and the running work as one small line right above the
+  field ("and 2 more"). The title pill holds only the face and the name, both grey while its agent is not connected.
 
 ## The Scribble Board
 

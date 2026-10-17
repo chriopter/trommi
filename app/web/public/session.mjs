@@ -90,6 +90,8 @@ const cardChips = (r, s, base) => (r.chips?.length ? html`<div class="cardclip-r
 function talkRow(r, s, vm, t) {
   const base = t.BASE, id = `msg-${r.id}`
   if (r.kind === 'event') return eventLine(id, r.event, r.card, r.time_ms, s, base, { cont: r.cont })
+  // A run of card events (the calm chat, Focus.calm): a small chip each that opens its card.
+  if (r.kind === 'events') return html`<div class="evchips" id="${id}">${(r.events ?? []).map(c => c.card ? html`<a class="evchip" data-nav href="${cardPath(c.card, s, base)}" title="${c.text}" aria-label="${c.says.en}">${ico(ICONS[c.kind] ? c.kind : 'asked')}<span>${c.text}</span></a>` : html`<span class="evchip" title="${c.text}" aria-label="${c.says.en}">${ico(ICONS[c.kind] ? c.kind : 'asked')}<span>${c.text}</span></span>`)}</div>`
   if (r.kind === 'work') return workBlock(r, r.work)
   // An open question where it was asked: its Desk row (its own links keep the session in the address).
   if (r.kind === 'ask') return html`<div class="ask ask-card" id="${id}">${raw(String(deskRow(r.row, base)).replaceAll(`href="${base}/card/`, `href="${sessionPath(s, base)}/card/`))}</div>`
@@ -107,8 +109,8 @@ function talkRow(r, s, vm, t) {
   const body = r.kind === 'artifact'
     ? artifactCard({ id: r.published, note: r.text, from: r.id }, base)
     : raw(String(words(r.text ?? '', { extra: r.html ?? '' })).replace(/<\/div>$/, () => `${attachments(r.files, s, vm, t, r.id)}</div>`))
-  // A bubble on the left: the session's drawing beside the first of a run, its name above it; the time of each on hover.
-  return html`<article class="msg msg-agent${r.cont ? ' cont' : ''}${r.kind === 'artifact' ? ' is-artifact' : ''}" id="${id}">${r.cont ? html`<span class="msg-face" aria-hidden="true"></span>` : html`<span class="msg-face">${agentMark(s)}</span>`}<div class="msg-col">${r.cont ? '' : html`<header class="msg-head"><span class="msg-name">${s.name.en}</span>${r.helper ? html`<span class="msg-helper">${r.helper}</span>` : ''}</header>`}${about}<div class="bubble bubble-agent">${body}${r.details ? html`<details class="msg-details"><summary>Details</summary>${words(r.details)}</details>` : ''}</div>${cardChips(r, s, base)}${timeNode(r.time_ms, 'msg-time')}</div></article>`
+  // A calm bubble on the left: no face and no name (the title has them), a helper's name above its words; the time on hover.
+  return html`<article class="msg msg-agent${r.cont ? ' cont' : ''}${r.kind === 'artifact' ? ' is-artifact' : ''}" id="${id}"><div class="msg-col">${!r.cont && r.helper ? html`<header class="msg-head"><span class="msg-helper">${r.helper}</span></header>` : ''}${about}<div class="bubble bubble-agent">${body}${r.details ? html`<details class="msg-details"><summary>Details</summary>${words(r.details)}</details>` : ''}</div>${cardChips(r, s, base)}${timeNode(r.time_ms, 'msg-time')}</div></article>`
 }
 // (every child of the log has an id: the page drawn again is morphed row by row)
 const talk = (s, vm, t) => s.talk.map(r => html`${r.day ? html`<div class="day" id="day-${r.id}"><span>${r.day.en}</span></div>` : ''}${talkRow(r, s, vm, t)}`)
@@ -156,7 +158,7 @@ const lineMark = l => html`<span class="status-mark">${l.state === 'working' ? r
 const statusChip = (l, s, base) => html`<button type="button" class="status-chip" data-state="${l.state}" data-key="${s.id}:${l.id}" data-label="${l.label}" data-detail="${l.detail}" data-said="${l.says.en}"${l.card ? html` data-href="${cardPath(l.card, s, base)}" data-card="${l.card.title}"` : ''} title="${l.label}" aria-expanded="false" aria-controls="status-open-${s.id}" data-action="status-lines#toggle">${lineMark(l)}${l.helper ? html`<small class="status-helper">${l.helper}</small>` : ''}<b>${l.label}</b>${l.updated_ms ? html`<span class="status-age" aria-hidden="true" data-ts="${l.updated_ms}">${agoShort(l.updated_ms)}</span>${agoSpan(l.updated_ms, 'offscreen')}` : ''}</button>`
 function sessionStatus(s, base) {
   const lines = s.status_lines ?? [], [first, ...rest] = lines
-  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || s.answering ? '' : raw(' hidden')}><div class="working${s.answering ? '' : ' is-quiet'}">${agentMark(s)}${s.answering ? html`<span class="working-says">${s.answering.en}</span><span class="dots"><i></i><i></i><i></i></span>` : ''}${first ? html`${s.answering ? html`<span class="working-sep" aria-hidden="true">·</span>` : ''}${statusChip(first, s, base)}` : ''}${s.status_more ? html`<button type="button" class="status-pile" aria-expanded="false" aria-controls="status-more-${s.id}" aria-label="${rest.length} more" data-action="status-lines#more">${s.status_more.en}</button>` : ''}</div>${rest.length ? html`<div class="status-more" id="status-more-${s.id}" role="list" hidden>${rest.map(l => statusChip(l, s, base))}</div>` : ''}${lines.length ? html`<div class="status-open" id="status-open-${s.id}" hidden></div>` : ''}</div>`
+  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || s.answering ? '' : raw(' hidden')}><div class="working${s.answering ? '' : ' is-quiet'}">${s.answering ? html`<span class="working-says">${s.answering.en}</span><span class="dots"><i></i><i></i><i></i></span>` : ''}${first ? html`${s.answering ? html`<span class="working-sep" aria-hidden="true">·</span>` : ''}${statusChip(first, s, base)}` : ''}${s.status_more ? html`<button type="button" class="status-pile" aria-expanded="false" aria-controls="status-more-${s.id}" aria-label="${rest.length} more" data-action="status-lines#more">${s.status_more.en}</button>` : ''}</div>${rest.length ? html`<div class="status-more" id="status-more-${s.id}" role="list" hidden>${rest.map(l => statusChip(l, s, base))}</div>` : ''}${lines.length ? html`<div class="status-open" id="status-open-${s.id}" hidden></div>` : ''}</div>`
 }
 // The line open and the list of the rest stay open when the page is drawn again.
 const statusOpen = new Set(), moreOpen = new Set()
@@ -228,10 +230,11 @@ const filesDrawer = (s, vm, t, open) => html`<aside class="files-drawer" id="fil
 
 // ---- the side panel: a click on the name opens it (a wide screen), its tabs the core's (SessionView.tabs) ----
 const PANEL_TABS = new Set(['details', 'questions', 'helpers', 'files'])
-/** The pill at the top: the drawing, the name and the dot; it opens the panel (and closes it again). */
+/** The pill at the top, calm as the iPhone's: only the drawing and the name, both grey while its agent is not connected
+ *  (the core's `online`); how it stands and what waits are said to a screen reader. It opens the panel (and closes it). */
 function headPill(s, base, tab) {
-  const d = s.dot, open = Boolean(tab)
-  return html`<a class="head-pill" id="head-pill-${s.id}" data-nav href="${sessionPath(s, base)}${open ? '' : '/panel/details'}" aria-expanded="${String(open)}" aria-controls="side-panel-${s.id}" title="${s.name.en}" aria-label="${s.name.en}: ${open ? 'close the details' : 'details'}">${agentMark(s)}<b>${s.name.en}</b><span class="head-dot${d.on ? ' is-on' : ''}"${d.link ? html` data-link="${d.link}"` : ''} role="img" aria-label="${d.says.en}"><i></i></span>${s.open ? html`<i class="head-pill-n" aria-label="${s.open_word?.en ?? ''}">${s.open}</i>` : ''}</a>`
+  const open = Boolean(tab), says = [s.dot.says.en, s.open_word?.en].filter(Boolean).join(', ')
+  return html`<a class="head-pill${s.online ? '' : ' is-off'}" id="head-pill-${s.id}" data-nav href="${sessionPath(s, base)}${open ? '' : '/panel/details'}" aria-expanded="${String(open)}" aria-controls="side-panel-${s.id}" aria-label="${s.name.en}${says ? `, ${says}` : ''}: ${open ? 'close the details' : 'details'}">${agentMark(s)}<b>${s.name.en}</b></a>`
 }
 const fact = (label, value) => (value ? html`<div class="panel-fact"><dt>${label}</dt><dd>${value}</dd></div>` : '')
 function panelBody(s, vm, t, tab) {
@@ -258,12 +261,12 @@ function sidePanel(s, vm, t, tab) {
 function sessionMain(s, vm, t, { mode = '', text = '', focus = false, panel = '' } = {}) {
   const base = t.BASE
   const body = mode === 'questions' ? html`<div class="pane-list pane-questions"><div class="column">${questionList(s, base)}</div></div>`
-    : html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${s.earlier ? html`<form class="log-earlier" id="earlier-${s.id}" method="post" action="${sessionPath(s, base)}/earlier"><button type="submit" class="log-earlier-link" data-log-target="earlier">${s.earlier.says.en}${s.earlier.left ? html`<b>${s.earlier.left}${s.earlier.hub ? '+' : ''}</b>` : ''}</button></form>` : ''}${s.talk.length ? talk(s, vm, t) : s.empty ? empty(s, base) : ''}<div id="log-end-${s.id}" hidden></div>${helperList(s)}${sessionStatus(s, base)}</div></div>`
+    : html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${s.earlier ? html`<form class="log-earlier" id="earlier-${s.id}" method="post" action="${sessionPath(s, base)}/earlier"><button type="submit" class="log-earlier-link" data-log-target="earlier">${s.earlier.says.en}${s.earlier.left ? html`<b>${s.earlier.left}${s.earlier.hub ? '+' : ''}</b>` : ''}</button></form>` : ''}${s.talk.length ? talk(s, vm, t) : s.empty ? empty(s, base) : ''}<div id="log-end-${s.id}" hidden></div></div></div>`
   return html`<main id="session" aria-label="Session: ${s.name.en}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}${panel ? raw(' data-panel-open') : ''}>
 <header class="pane-title">${headPill(s, base, panel)}${sessionWho(s, vm, base)}${sessionFilters(s, base, mode)}<div class="head-use" id="session-use-${s.id}">${usageRings(s.usage)}</div></header>${sessionFilters(s, base, mode, { phone: true })}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
-<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' ? '' : sessionOpen(s, base)}<div class="column session-compose">${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus })}</div></div>
+<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' ? '' : sessionOpen(s, base)}<div class="column session-compose">${mode === 'questions' ? '' : sessionStatus(s, base)}${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus })}</div></div>
 </div></section>
 ${filesDrawer(s, vm, t, mode === 'files')}
 ${sidePanel(s, vm, t, panel)}

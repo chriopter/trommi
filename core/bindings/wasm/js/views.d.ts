@@ -30,9 +30,10 @@ export interface Focus {
   /** The words searched for among every team's chats (the phone's Search tab, `SidebarView.found`); none or empty:
    *  no search. */
   chats_query?: string
-  /** A phone's screen: a session's page is the calm chat (a run of card events as one row of chips, `kind`
-   *  "events"; no helper list; "and 2 more" beside the working line). A wide window leaves it false. */
-  phone: boolean
+  /** The calm chat (the iPhone and the web send it): a session's page folds a run of card events into one row of
+   *  chips (`kind` "events"), leaves the helper list out and says "and 2 more" beside the working line. A shell
+   *  that draws the full talk (Linux) leaves it false. */
+  calm: boolean
 }
 
 export type Screen =

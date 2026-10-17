@@ -207,7 +207,7 @@ let screenInView = { screen: 'desk' }
 let boardInView = null
 /** The core hears what is in view: the page's screen, the team, the Scribble Board beside it, whether the window is seen. */
 function sendFocus() {
-  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(deskAll ? { desk_all: true } : {}), ...(openTeams.length ? { open_teams: openTeams } : {}) })
+  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(deskAll ? { desk_all: true } : {}), ...(openTeams.length ? { open_teams: openTeams } : {}), calm: true })
 }
 /** The core's Screen for an address (before the page is drawn: its unit is then in the model). */
 export function screenOf(pathname, search = '') {

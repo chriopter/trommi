@@ -46,6 +46,13 @@ body[data-filter] .jump { display: none; }
 
 /* ---- conversation: messages ---------------------------------------------- */
 
+/* A run of card events (TalkRow kind "events"): small chips that open their card. */
+.evchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--s-5); }
+.evchip { display: inline-flex; align-items: center; gap: 6px; max-width: 22rem; height: 28px; padding: 0 11px; border-radius: 999px; background: color-mix(in srgb, var(--fg) 6%, var(--surface)); color: var(--fg); font-size: var(--t-xs); font-weight: 500; text-decoration: none; }
+.evchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evchip .ico { flex: none; width: 13px; height: 13px; stroke: var(--muted); stroke-width: 1.8; }
+a.evchip:hover { background: color-mix(in srgb, var(--fg) 10%, var(--surface)); }
+
 .msg { margin-top: var(--s-8); min-width: 0; }
 .msg.cont { margin-top: var(--s-3); }
 .day + .msg, .day + .event { margin-top: var(--s-5); }
@@ -68,7 +75,8 @@ body[data-filter] .jump { display: none; }
   font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere;
 }
 .bubble p { white-space: pre-wrap; }
-.msg-user .msg-time { margin-top: 5px; padding-right: var(--s-1); }
+.msg-user .msg-time { margin-top: 5px; padding-right: var(--s-1); visibility: hidden; }
+.msg-user:hover .msg-time { visibility: visible; }
 /* A message he typed into the session's terminal (the terminal mirror): a quiet mark before the time. */
 .msg-foot { display: flex; align-items: baseline; gap: var(--s-2); }
 .msg-via { margin-top: 5px; font-size: var(--t-xs); color: var(--faint); display: inline-flex; align-items: baseline; gap: 5px; }
@@ -84,13 +92,11 @@ body[data-filter] .jump { display: none; }
 /* The agent's words: a grey bubble on the left, as in a messenger. Its drawing stands beside the first bubble of a
    run, its name above it; one time under the last bubble of the run, every other on hover. A bubble holds at most
    about two thirds of the column, and the whole column once it carries code, a table or pictures. */
-.msg-agent { display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 10px; align-items: start; }
+/* (calm, as Grok's: no face and no name beside the agent's words, the title has them) */
+.msg-agent { display: block; }
 .msg-agent.cont { margin-top: var(--s-1); }
-.msg-face { grid-column: 1; padding-top: 22px; }
-.msg-face .agent-avatar { width: 30px; height: 30px; border-radius: 9px; }
-.msg-col { grid-column: 2; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
-.msg-agent .msg-head { gap: var(--s-2); margin: 0 0 var(--s-1) 4px; min-height: 18px; }
-.msg-agent .msg-name { font-size: var(--t-xs); color: var(--muted); }
+.msg-col { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.msg-agent .msg-head { gap: var(--s-2); margin: 0 0 var(--s-1); min-height: 18px; }
 .bubble-agent { max-width: min(100%, 36rem); padding: 10px var(--s-4); background: color-mix(in srgb, var(--fg) 6%, var(--surface)); border-radius: var(--r-sm) var(--r-lg) var(--r-lg) var(--r-lg); }
 .msg-agent.cont .bubble-agent { border-top-left-radius: var(--r-sm); }
 .bubble-agent:has(.code, .rich-table-wrap, .shots, .media, iframe) { max-width: 100%; }
@@ -99,13 +105,12 @@ body[data-filter] .jump { display: none; }
 #chat .bubble-agent .rich :not(pre) > code { background: var(--surface); }
 #chat .bubble-agent .rich .code { background: var(--surface); }
 .bubble-agent > .msg-details { background: var(--surface); }
-.msg-agent .msg-time { margin: 5px 0 0 4px; }
-.msg-agent:has(+ .msg-agent.cont) > .msg-col > .msg-time { display: none; }
-.msg-agent:hover > .msg-col > .msg-time { display: block; }
+/* (the time only on hover, its place kept so nothing jumps) */
+.msg-agent .msg-time { margin: 5px 0 0 4px; visibility: hidden; }
+.msg-agent:hover > .msg-col > .msg-time { visibility: visible; }
+.msg-agent:has(+ .msg-agent.cont):not(:hover) > .msg-col > .msg-time { display: none; }
 .msg-agent .cardclip-row { margin-top: var(--s-1); }
 @media (max-width: 860px) {
-  .msg-agent { grid-template-columns: 26px minmax(0, 1fr); column-gap: 8px; }
-  .msg-face .agent-avatar { width: 26px; height: 26px; border-radius: 8px; }
   .bubble-agent { max-width: 92%; padding: 9px 14px; }
   .bubble-agent:has(.code, .rich-table-wrap, .shots, .media, iframe) { max-width: 100%; }
 }
@@ -614,12 +619,11 @@ form.log-earlier { display: contents; }
 .session-helpers li span { min-width: 0; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); }
 .status-helper { flex: none; color: var(--muted); font: 600 11px/1.2 var(--font); }
 .msg-helper { padding: 1px 8px; border-radius: 999px; background: var(--sunken); color: var(--muted); font: 600 12px/1.5 var(--font); }
-.session-status { display: grid; gap: 6px; justify-items: start; margin-top: var(--s-6); }
+/* (one small line right above the field) */
+.session-status { display: grid; gap: 6px; justify-items: start; margin: 0 0 6px 6px; }
 .session-status[hidden] { display: none; }
 /* One calm line (session.mjs sessionStatus): the drawing, "… is working" and its dots, the line set last, "+N". */
-.session-status .working { gap: 8px; max-width: 100%; min-width: 0; margin-top: var(--s-2); min-height: 28px; font-size: var(--t-xs); }
-.session-status .working .agent-avatar { flex: none; width: 20px; height: 20px; border-radius: 6px; }
-.session-status .working.is-quiet .agent-avatar { animation: none; }
+.session-status .working { gap: 8px; max-width: 100%; min-width: 0; margin-top: 0; min-height: 24px; font-size: var(--t-xs); }
 .working-says { flex: none; white-space: nowrap; }
 .working .dots { flex: none; }
 .working-sep { flex: none; color: var(--faint); }
@@ -874,8 +878,8 @@ a.files-where:hover span { text-decoration: underline; }
   .head-pill:hover, .head-pill[aria-expanded="true"] { background: var(--sunken); }
   .head-pill .agent-avatar, .head-pill .msg-mark, .head-pill > :first-child { flex: none; width: 30px; height: 30px; }
   .head-pill b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 15px/1.2 var(--font); }
-  .head-pill .head-dot { flex: none; }
-  .head-pill-n { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--urg-critical); color: #fff; font: 700 12px/20px var(--font); font-style: normal; text-align: center; }
+  .head-pill.is-off .agent-avatar { filter: grayscale(1); opacity: .5; }
+  .head-pill.is-off b { color: var(--faint); }
   #chat .session-helpers { display: none; }
 
   .side-panel:not([hidden]) { position: fixed; z-index: var(--z-panel); top: 0; right: 0; bottom: 0; width: 360px; display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--line); }
