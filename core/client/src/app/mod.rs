@@ -1040,20 +1040,14 @@ impl App {
                     _ => focus.board.as_deref(),
                 };
                 self.scribble.focus(board.and_then(crate::scribble::board_in_view));
-                // (every team's board small: Settings; the team's own on its Desk, for the board tile)
-                let desk = matches!(focus.screen, Screen::Desk) && !focus.desk_all;
-                self.lens.thumbs = matches!(focus.screen, Screen::Settings { .. }) || desk;
-                self.lens.thumbs_desk = desk;
+                // (every team's board small: Settings)
+                self.lens.thumbs = matches!(focus.screen, Screen::Settings { .. });
                 if matches!(focus.screen, Screen::Settings { .. }) {
                     self.dictation_check(now_ms, &mut out);
                 }
                 self.scribble.thumbs = self.lens.thumbs;
                 if self.lens.thumbs && !self.demo {
-                    let only = desk.then(|| self.team_in_view(focus.team.as_deref())).flatten();
                     for (team, _) in crate::sessions::teams_in_order(&self.board.model) {
-                        if only.as_ref().is_some_and(|t| *t != team) {
-                            continue;
-                        }
                         if let Some(b) = crate::scribble::board_of(&crate::scribble::team_board(&team)) {
                             self.scribble.read(b);
                         }
@@ -1323,17 +1317,10 @@ impl App {
                 view
             });
             self.next_view.thumbs = self.thumbs();
-            crate::views::desk::board_tile(&mut self.next_view.desk, self.next_view.thumbs.as_deref());
             self.view_wake = wake;
             self.files.shown(shown, &mut self.next_view.files);
         }
         self.outside(now_ms, out);
-    }
-
-    /// The team in view as the views take it: the one chosen when it is there, else the first (`Board::team`).
-    fn team_in_view(&self, chosen: Option<&str>) -> Option<String> {
-        let teams = crate::sessions::teams_in_order(&self.board.model);
-        teams.iter().find(|(t, _)| Some(t.as_str()) == chosen).or(teams.first()).map(|(t, _)| t.clone())
     }
 
     /// Every team's board small while a page shows them (`Lens::thumbs`): each is read on this device (the demo's
@@ -1342,13 +1329,9 @@ impl App {
         if !self.lens.thumbs {
             return None;
         }
-        let only = if self.lens.thumbs_desk { self.team_in_view(self.lens.team.clone().as_deref()) } else { None };
         let teams = crate::sessions::teams_in_order(&self.board.model);
         let mut out = Vec::with_capacity(teams.len());
         for (team, _) in teams {
-            if only.as_ref().is_some_and(|t| *t != team) {
-                continue;
-            }
             let id = crate::scribble::team_board(&team);
             let Some(board) = crate::scribble::board_of(&id) else { continue };
             let (state, shapes) = if self.demo {
@@ -2103,7 +2086,6 @@ impl App {
             self.next_view.board = self.scribble.view(&self.board.model);
             shown.extend(self.scribble.pictures(&self.board.model));
             self.next_view.thumbs = self.thumbs();
-            crate::views::desk::board_tile(&mut self.next_view.desk, self.next_view.thumbs.as_deref());
             if let Some(engine) = self.engine.as_ref() {
                 self.next_view.settings.room = Some(engine::feed::hex(engine.room().as_bytes()));
                 self.next_view.settings.hub = Some(engine.hub().to_string());
