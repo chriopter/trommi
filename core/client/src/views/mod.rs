@@ -1688,6 +1688,25 @@ pub struct CardView {
     /// The page's small fixed words (`CardWordsView`).
     #[serde(default)]
     pub words: CardWordsView,
+    /// The card's ⋯ menu beside its title, in order (`CardMenuItem`): what can be done with it besides answering.
+    /// Always written, an empty list too, so a shell never meets it missing.
+    #[serde(default)]
+    pub menu: Vec<CardMenuItem>,
+}
+
+/// One entry of a card's ⋯ menu. The shell draws it by its key: `prev`, `next` (the questions before and after it on
+/// the Desk), `draw` (the pen on the card), `focus` (the page alone in the window), `chat` (its session's
+/// conversation), `copy` (the card as one line), `wake` (back on the Desk now), `shred` (thrown away unanswered).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CardMenuItem {
+    pub key: String,
+    pub label: Text,
+    /// The keys that do the same ("Shift ↓"); empty when none.
+    #[serde(default)]
+    pub keys: String,
+    /// Only on the card as it stands now: an older version shown read-only leaves it out.
+    #[serde(default)]
+    pub now_only: bool,
 }
 
 /// A picture of a card, and the option it belongs to (the web's `pictureKeys`, `picturesOf`): a section that names
