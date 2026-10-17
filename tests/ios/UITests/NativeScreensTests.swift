@@ -261,6 +261,17 @@ final class NativeScreensTests: XCTestCase {
     field.typeText("zzz")
     XCTAssertTrue(app.staticTexts["chats-none"].waitForExistence(timeout: 10), app.debugDescription)
   }
+  func testAgentBubblesAndOneWorkingLine() {
+    launch("chat--payments-service")
+    XCTAssertTrue(app.staticTexts["talk-message"].firstMatch.waitForExistence(timeout: 15))
+    // (one line at the foot: the newest status line and "+N" for the rest, which a tap opens)
+    let more = app.buttons["status-more"]
+    XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+    XCTAssertTrue(more.label.hasSuffix("more"), more.label)
+    capture("chat-bubbles")
+    more.tap()
+    capture("chat-status-more")
+  }
   func testChatListAndChatInDark() {
     app = XCUIApplication()
     app.launchArguments += ["-trommi-theme", "dark"]
