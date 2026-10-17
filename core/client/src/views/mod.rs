@@ -106,10 +106,11 @@ pub struct Focus {
     /// no search.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chats_query: Option<String>,
-    /// A phone's screen: a session's page is the calm chat (a run of card events as one row of chips, `kind`
-    /// "events"; no helper list; "and 2 more" beside the working line). A wide window leaves it false.
+    /// The calm chat (the iPhone and the web send it): a session's page folds a run of card events into one row of
+    /// chips (`kind` "events"), leaves the helper list out and says "and 2 more" beside the working line. A shell
+    /// that draws the full talk (Linux) leaves it false.
     #[serde(default)]
-    pub phone: bool,
+    pub calm: bool,
 }
 
 fn yes() -> bool {
