@@ -89,9 +89,12 @@ struct PhoneTabs: View {
   @EnvironmentObject var shell: AppShell
   var body: some View {
     TabView(selection: Binding(get: { shell.tab }, set: { shell.pick($0) })) {
-      // (what waits: the bell's own badge in the bar's ink, never a red count; the number stands on the Desk)
-      Tab("Desk", systemImage: shell.view.sidebar.badge > 0 ? "bell.badge.fill" : "bell.fill", value: NativeTab.desk) { stack(.desk) { DeskScreen() } }
-      Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: NativeTab.chat) { stack(.chat) { ChatsScreen() } }
+      // (icons only, in black: the tray for the Desk, full while something waits, never a red count; the message for
+      // the chats; the system fills the one chosen)
+      Tab(value: NativeTab.desk) { stack(.desk) { DeskScreen() } } label: {
+        Image(systemName: shell.view.sidebar.badge > 0 ? "tray.full" : "tray").accessibilityLabel("Desk")
+      }
+      Tab(value: NativeTab.chat) { stack(.chat) { ChatsScreen() } } label: { Image(systemName: "message").accessibilityLabel("Chats") }
       Tab(value: NativeTab.search, role: .search) {
         stack(.search) {
           // (the system's search field, always shown under the title; the core filters the chats by its words)
@@ -99,8 +102,9 @@ struct PhoneTabs: View {
             .searchable(text: $shell.chatsQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search chats")
             .onChange(of: shell.chatsQuery) { _, _ in shell.show(shell.screen) }
         }
-      }
+      } label: { Image(systemName: "magnifyingglass").accessibilityLabel("Search") }
     }
+    .tint(Color.primary)
     .tabBarMinimizeBehavior(.onScrollDown)
     // (the note lies over everything as a yellow page)
     .overlay { if shell.noteOpen { NotePage().transition(.move(edge: .bottom)) } }
@@ -112,9 +116,11 @@ struct PhoneTabs: View {
   }
   private func stack<Root: View>(_ tab: NativeTab, @ViewBuilder _ root: () -> Root) -> some View {
     NavigationStack(path: Binding(get: { shell.tab == tab ? shell.path : [] }, set: { if shell.tab == tab { shell.path = $0 } })) {
-      root().toolbarBackground(.hidden, for: .navigationBar)
+      // (the bar's black stays the bar's: the pages keep the app's green; lists fade softly under both bars)
+      root().toolbarBackground(.hidden, for: .navigationBar).scrollEdgeEffectStyle(.soft, for: .all).tint(Ink.accent)
         .navigationDestination(for: CoreView.Screen.self) { screen in
           CorePage(screen: screen).toolbarBackground(.hidden, for: .navigationBar).toolbar(.hidden, for: .tabBar)
+            .scrollEdgeEffectStyle(.soft, for: .all)
         }
     }
   }
