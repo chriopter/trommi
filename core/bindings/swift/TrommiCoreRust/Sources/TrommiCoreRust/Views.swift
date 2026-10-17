@@ -74,8 +74,11 @@ public enum CoreView {
     /// The words searched for among every team's chats (the phone's Search tab, `SidebarView.found`); none or empty:
     /// no search.
     public var chatsQuery: String?
+    /// A phone's screen: a session's page is the calm chat (a run of card events as one row of chips, `kind`
+    /// "events"; no helper list; "and 2 more" beside the working line). A wide window leaves it false.
+    public var phone: Bool
 
-    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, deskAll: Bool = false, openTeams: [String] = [], chatsQuery: String? = nil) {
+    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, deskAll: Bool = false, openTeams: [String] = [], chatsQuery: String? = nil, phone: Bool = false) {
       self.screen = screen
       self.visible = visible
       self.team = team
@@ -83,6 +86,7 @@ public enum CoreView {
       self.deskAll = deskAll
       self.openTeams = openTeams
       self.chatsQuery = chatsQuery
+      self.phone = phone
     }
 
     enum CodingKeys: String, CodingKey {
@@ -93,6 +97,7 @@ public enum CoreView {
       case deskAll = "desk_all"
       case openTeams = "open_teams"
       case chatsQuery = "chats_query"
+      case phone = "phone"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -104,6 +109,7 @@ public enum CoreView {
       self.deskAll = try c.decodeIfPresent(Bool.self, forKey: .deskAll) ?? false
       self.openTeams = try c.decodeIfPresent([String].self, forKey: .openTeams) ?? []
       self.chatsQuery = try c.decodeIfPresent(String.self, forKey: .chatsQuery)
+      self.phone = try c.decodeIfPresent(Bool.self, forKey: .phone) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -115,6 +121,7 @@ public enum CoreView {
       try c.encode(deskAll, forKey: .deskAll)
       if !openTeams.isEmpty { try c.encode(openTeams, forKey: .openTeams) }
       try c.encodeIfPresent(chatsQuery, forKey: .chatsQuery)
+      try c.encode(phone, forKey: .phone)
     }
   }
 
@@ -2747,6 +2754,8 @@ public enum CoreView {
     public var html: String
     /// The cards it carries, a chip each.
     public var chips: [CardRefView]
+    /// `kind` "events" (a phone's chat): the card events of a run, a chip each, in order.
+    public var events: [EventChipView]
     /// A selection of the Scribble Board (its one file is the picture).
     public var scribble: Bool
     /// A note: when it was written.
@@ -2758,7 +2767,7 @@ public enum CoreView {
     /// The helper (its agent's subagent) that wrote it, beside the agent's name; none for the agent's own words.
     public var helper: String?
 
-    public init(id: String = "", fromMe: Bool = false, text: String = "", timeMs: UInt64 = 0, heard: Bool = false, pending: Bool = false, files: [String] = [], kind: String = "", number: UInt64 = 0, day: Text? = nil, cont: Bool = false, terminal: Bool = false, card: CardRefView? = nil, event: EventView? = nil, deed: EventView? = nil, row: DeskRowView? = nil, work: WorkView? = nil, published: String? = nil, details: String = "", html: String = "", chips: [CardRefView] = [], scribble: Bool = false, writtenMs: UInt64? = nil, answers: String? = nil, waits: Text? = nil, helper: String? = nil) {
+    public init(id: String = "", fromMe: Bool = false, text: String = "", timeMs: UInt64 = 0, heard: Bool = false, pending: Bool = false, files: [String] = [], kind: String = "", number: UInt64 = 0, day: Text? = nil, cont: Bool = false, terminal: Bool = false, card: CardRefView? = nil, event: EventView? = nil, deed: EventView? = nil, row: DeskRowView? = nil, work: WorkView? = nil, published: String? = nil, details: String = "", html: String = "", chips: [CardRefView] = [], events: [EventChipView] = [], scribble: Bool = false, writtenMs: UInt64? = nil, answers: String? = nil, waits: Text? = nil, helper: String? = nil) {
       self.id = id
       self.fromMe = fromMe
       self.text = text
@@ -2780,6 +2789,7 @@ public enum CoreView {
       self.details = details
       self.html = html
       self.chips = chips
+      self.events = events
       self.scribble = scribble
       self.writtenMs = writtenMs
       self.answers = answers
@@ -2809,6 +2819,7 @@ public enum CoreView {
       case details = "details"
       case html = "html"
       case chips = "chips"
+      case events = "events"
       case scribble = "scribble"
       case writtenMs = "written_ms"
       case answers = "answers"
@@ -2839,6 +2850,7 @@ public enum CoreView {
       self.details = try c.decodeIfPresent(String.self, forKey: .details) ?? ""
       self.html = try c.decodeIfPresent(String.self, forKey: .html) ?? ""
       self.chips = try c.decodeIfPresent([CardRefView].self, forKey: .chips) ?? []
+      self.events = try c.decodeIfPresent([EventChipView].self, forKey: .events) ?? []
       self.scribble = try c.decodeIfPresent(Bool.self, forKey: .scribble) ?? false
       self.writtenMs = try c.decodeIfPresent(UInt64.self, forKey: .writtenMs)
       self.answers = try c.decodeIfPresent(String.self, forKey: .answers)
@@ -2869,6 +2881,7 @@ public enum CoreView {
       if !details.isEmpty { try c.encode(details, forKey: .details) }
       if !html.isEmpty { try c.encode(html, forKey: .html) }
       if !chips.isEmpty { try c.encode(chips, forKey: .chips) }
+      if !events.isEmpty { try c.encode(events, forKey: .events) }
       try c.encode(scribble, forKey: .scribble)
       try c.encodeIfPresent(writtenMs, forKey: .writtenMs)
       try c.encodeIfPresent(answers, forKey: .answers)
@@ -2908,6 +2921,53 @@ public enum CoreView {
       try c.encode(id, forKey: .id)
       try c.encode(number, forKey: .number)
       try c.encode(title, forKey: .title)
+    }
+  }
+
+  /// One card event of a run on a phone (`TalkRow.events`): a small chip that opens its card.
+  public struct EventChipView: Codable, Hashable, Sendable {
+    /// The talk row it was.
+    public var id: String
+    /// The event's kind (`EventView.kind`): its sign.
+    public var kind: String
+    /// What the chip says: the card's title, else what happened.
+    public var text: String
+    /// For a screen reader: what happened ("Trommi revised it: Release notes").
+    public var says: Text
+    public var card: CardRefView?
+
+    public init(id: String = "", kind: String = "", text: String = "", says: Text = Text(), card: CardRefView? = nil) {
+      self.id = id
+      self.kind = kind
+      self.text = text
+      self.says = says
+      self.card = card
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case kind = "kind"
+      case text = "text"
+      case says = "says"
+      case card = "card"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.kind = try c.decode(String.self, forKey: .kind)
+      self.text = try c.decode(String.self, forKey: .text)
+      self.says = try c.decode(Text.self, forKey: .says)
+      self.card = try c.decodeIfPresent(CardRefView.self, forKey: .card)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(kind, forKey: .kind)
+      try c.encode(text, forKey: .text)
+      try c.encode(says, forKey: .says)
+      try c.encodeIfPresent(card, forKey: .card)
     }
   }
 

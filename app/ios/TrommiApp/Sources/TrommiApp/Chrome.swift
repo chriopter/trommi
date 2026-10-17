@@ -36,14 +36,16 @@ extension View {
   }
   /** The same row on a pushed screen: the back circle at the left, the screen's own pill in the middle, its own
    *  buttons at the right. The swipe from the left edge still goes back (PopGesture). */
-  func pushedPills<C: View, T: View>(extraTrailing: CGFloat = 0, @ViewBuilder center: () -> C, @ViewBuilder trailing: () -> T) -> some View {
+  func pushedPills<C: View, T: View>(extraTrailing: CGFloat = 0, solid: Bool = false, @ViewBuilder center: () -> C, @ViewBuilder trailing: () -> T) -> some View {
     self.toolbar(.hidden, for: .navigationBar)
       .safeAreaBar(edge: .top, spacing: 0) {
         HStack(spacing: 10) { BackPill(); Spacer(minLength: 0); trailing() }
           .overlay { center().padding(.leading, 54).padding(.trailing, 54 + extraTrailing) }
           .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 6)
+          // (solid: the page's paper under the row, so no scrolled words show through the pills)
+          .background { if solid { Ink.bg.ignoresSafeArea(edges: .top) } }
       }
-      .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+      .scrollEdgeEffectStyle(solid ? .hard : .soft, for: [.top, .bottom])
       .background { PopGesture().frame(width: 0, height: 0).accessibilityHidden(true) }
       #if os(macOS)
       .toolbar(removing: .title)

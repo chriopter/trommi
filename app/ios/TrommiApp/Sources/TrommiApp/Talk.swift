@@ -161,11 +161,11 @@ struct ChatRow: View {
         .accessibilityLabel([row.name.en, working ? "working" : row.online ? "" : "not connected", row.helpers?.says.en ?? "", teaser, row.last?.when.en ?? ""].filter { !$0.isEmpty }.joined(separator: ". "))
         .accessibilityIdentifier("chat-session-" + row.id)
       HStack(alignment: .center, spacing: 14) {
-        AgentMark(mark: row.mark, size: side * 0.56, hue: hue)
+        // (the face bare, no disc behind it)
+        AgentMark(mark: row.mark, size: side * 0.78, hue: hue)
           .frame(width: side, height: side)
-          .background(Circle().fill(Tone.color(hue: hue, .wash)))
           .opacity(row.online ? 1 : 0.6)
-          .overlay(alignment: .bottomTrailing) { if working { Circle().fill(Ink.stDone).frame(width: 13, height: 13).overlay(Circle().stroke(Ink.bg, lineWidth: 2.5)).offset(x: 1, y: 1) } }
+          .overlay(alignment: .bottomTrailing) { if working { Circle().fill(Ink.stDone).frame(width: 13, height: 13).overlay(Circle().stroke(Ink.bg, lineWidth: 2.5)).offset(x: -3, y: -3) } }
           .allowsHitTesting(false)
           .accessibilityHidden(true)
         VStack(alignment: .leading, spacing: 4) {
@@ -754,7 +754,7 @@ struct SessionScreen: View {
               .padding(.top, row.cont ? 2 : 10)
               .id(row.id)
           }
-          SessionStatus(page: page, hue: hue)
+          if !AppShell.phone { SessionStatus(page: page, hue: hue) }
           }
           Color.clear.frame(height: 1).id("bottom")
         }
@@ -770,13 +770,15 @@ struct SessionScreen: View {
       .bottomBar {
         VStack(spacing: 0) {
           if let n = page.note { LinkNoteBox(note: n).padding(.horizontal, 12).padding(.top, 8) }
+          // (an iPhone: the running work as one small line right above the field)
+          if AppShell.phone { SessionStatus(page: page, hue: hue, tiny: true).padding(.horizontal, 20) }
           TalkComposer(placeholder: page.compose.en, text: $text, attachments: $attachments) {
             shell.act(["do": "write", "session_id": page.id, "text": text, "attachments": attachments]); text = ""; attachments = []
             withAnimation { reader.scrollTo("bottom", anchor: .bottom) }
           }
         }
       }
-      .pushedPills { header } trailing: {
+      .pushedPills(solid: AppShell.phone) { header } trailing: {
           Menu {
             Toggle(isOn: $onlyQuestions) { Label(page.open > 0 ? "Questions Only (\(page.open))" : "Questions Only", systemImage: "questionmark.circle") }
             Button { newName = page.name.en; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
@@ -998,12 +1000,54 @@ struct SessionStatus: View {
   @EnvironmentObject var shell: AppShell
   let page: CoreView.SessionView
   let hue: Int
+  /** An iPhone's line above the field: no chips, the first line in words and the core's "and N more"; a tap opens
+   *  the lines as chips. */
+  var tiny = false
   @State private var shown: String? = nil
   @State private var more = false
   /** One calm line (as the web's): the drawing, "… is working" with its dots while it answers, the status line its
    *  agent set last (the core's first) and the core's "+N" for the rest, which a tap opens under the line. A tap on a
    *  line opens its whole text and the way to its card. */
   var body: some View {
+    if tiny { small } else { wide }
+  }
+  @ViewBuilder private var small: some View {
+    if page.answering != nil || !page.statusLines.isEmpty {
+      VStack(alignment: .leading, spacing: 6) {
+        if more {
+          FlowChips(spacing: 6) { ForEach(page.statusLines, id: \.id) { line in chip(line) } }
+          if let id = shown, let line = page.statusLines.first(where: { $0.id == id }) { opened(line) }
+        }
+        Button { withAnimation(.easeOut(duration: 0.18)) { more.toggle(); if !more { shown = nil } } } label: {
+          HStack(spacing: 7) {
+            if let answering = page.answering {
+              Text(answering.en).font(Face.text(13)).foregroundStyle(Ink.muted).lineLimit(1)
+              TypingDots()
+            } else if let first = page.statusLines.first {
+              sign(first).frame(width: 13, height: 13)
+              (Text(first.helper.map { "\($0) · " } ?? "").foregroundColor(Ink.muted) + Text(first.label).foregroundColor(Ink.fg))
+                .font(Face.text(13, .medium)).lineLimit(1)
+            }
+            if let plus = page.statusMore { Text(plus.en).font(Face.text(13)).foregroundStyle(Ink.faint).lineLimit(1).fixedSize() }
+            Spacer(minLength: 0)
+          }
+          .frame(minHeight: 30).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(page.statusLines.map { "\($0.helper.map { "\($0), " } ?? "")\($0.label), \($0.says.en)" }.joined(separator: "; "))
+        .accessibilityIdentifier("status-line")
+      }
+      .padding(.top, 4)
+    }
+  }
+  @ViewBuilder private func sign(_ t: CoreView.StatusLineView) -> some View {
+    if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
+    else if t.state == "stale" { Circle().strokeBorder(Ink.faint, lineWidth: 1.6) }
+    else if t.state == "decision" { Sketch("knock", color: Ink.urgHigh) }
+    else if t.state == "later" { Sketch("snooze", color: Ink.faint) }
+    else { Sketch("tick", color: Ink.faint) }
+  }
+  @ViewBuilder private var wide: some View {
     if page.answering != nil || !page.statusLines.isEmpty || page.helpers != nil {
       VStack(alignment: .leading, spacing: 8) {
         if let helpers = page.helpers { HelperList(list: helpers) }
@@ -1126,6 +1170,7 @@ struct TalkRow: View {
       case "ask": if let card = row.row { DeskRow(row: card).padding(.vertical, 6) }
       case "work": if let work = row.work { WorkDrawing(work: work, timeMs: row.timeMs) }
       case "event": if let e = row.event, !e.echo { EventLine(event: e, card: row.card, timeMs: row.timeMs, inCard: inCard) }
+      case "events": EventChips(chips: row.events)
       case "user", "note": mine
       case "newer":
         HStack(spacing: 8) { Sketch("wake", color: Ink.muted).frame(width: 16, height: 16); Text(row.text.isEmpty ? "This needs a newer version of Trommi." : row.text).font(Face.text(14)).foregroundStyle(Ink.muted) }
@@ -1197,10 +1242,13 @@ struct TalkRow: View {
                 .foregroundStyle(Ink.faint).padding(.trailing, 4)
             }
           }
-          VStack {
-            if row.pending { Image(systemName: "clock").font(.system(size: 10)).foregroundStyle(Ink.faint) }
-            else { Text(talkClock(row.timeMs)).font(Face.text(10)).foregroundStyle(Ink.faint) }
-          }.frame(width: 30)
+          // (the time beside his words; an iPhone shows only that it is not sent yet)
+          if !AppShell.phone || row.pending {
+            VStack {
+              if row.pending { Image(systemName: "clock").font(.system(size: 10)).foregroundStyle(Ink.faint) }
+              else { Text(talkClock(row.timeMs)).font(Face.text(10)).foregroundStyle(Ink.faint) }
+            }.frame(width: AppShell.phone ? 16 : 30)
+          }
         }
         .contextMenu { if !row.text.isEmpty { Button { copyText(row.text) } label: { Label("Copy", systemImage: "doc.on.doc") } } }
       }
@@ -1211,20 +1259,20 @@ struct TalkRow: View {
   private var agent: some View {
     HStack(alignment: .top, spacing: 8) {
       Group {
-        if !row.cont, let who {
-          AgentMark(mark: who.mark, size: 18, hue: who.hue).frame(width: 30, height: 30)
-            .background(Circle().fill(Tone.color(hue: who.hue, .wash)))
+        // (its face bare, no disc behind it; an iPhone shows none: the title above has it)
+        if !row.cont, let who, !AppShell.phone {
+          AgentMark(mark: who.mark, size: 22, hue: who.hue).frame(width: 30, height: 30)
         } else { Color.clear }
       }
-      .frame(width: 30, height: row.cont ? 1 : 30)
-      .padding(.top, row.cont ? 0 : 20)
+      .frame(width: AppShell.phone ? 0 : 30, height: row.cont ? 1 : 30)
+      .padding(.top, row.cont || AppShell.phone ? 0 : 20)
       .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 4) {
-        if !row.cont {
+        if !row.cont && (!AppShell.phone || row.helper != nil) {
           HStack(spacing: 6) {
-            if let who { Text(who.name).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted) }
+            if let who, !AppShell.phone { Text(who.name).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted) }
             if let helper = row.helper { Text(helper).font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).padding(.horizontal, 7).padding(.vertical, 1).background(Capsule().fill(Ink.sunken)) }
-            if row.terminal { Text(">_").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(Ink.faint) }
+            if row.terminal && !AppShell.phone { Text(">_").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(Ink.faint) }
           }
           .padding(.leading, 4)
         }
@@ -1253,7 +1301,7 @@ struct TalkRow: View {
         }
         chips
         if let waits = row.waits { Text(waits.en).font(Face.text(13)).italic().foregroundStyle(Ink.faint) }
-        if last { Text(talkClock(row.timeMs)).font(Face.text(11)).foregroundStyle(Ink.faint).padding(.leading, 4) }
+        if last && !AppShell.phone { Text(talkClock(row.timeMs)).font(Face.text(11)).foregroundStyle(Ink.faint).padding(.leading, 4) }
       }
       Spacer(minLength: 28)
     }
@@ -1270,6 +1318,30 @@ struct DayLine: View {
       Text(text).font(Face.text(12, .semibold)).foregroundStyle(Ink.faint).fixedSize()
       Rectangle().fill(Ink.line).frame(height: 1)
     }.padding(.vertical, 14)
+  }
+}
+
+/** An iPhone's run of card events (`kind` "events"): a small chip each, its sign and the card's title; a tap opens it. */
+struct EventChips: View {
+  @EnvironmentObject var shell: AppShell
+  let chips: [CoreView.EventChipView]
+  var body: some View {
+    FlowChips(spacing: 6) {
+      ForEach(chips, id: \.id) { c in
+        Button { if let card = c.card { shell.focus(.card(cardId: card.id)) } } label: {
+          HStack(spacing: 6) {
+            Image(systemName: EventLine.icon(c.kind)).font(.system(size: 11, weight: .semibold)).foregroundStyle(EventLine.tint(c.kind))
+            Text(c.text).font(Face.text(13, .medium)).foregroundStyle(Ink.fg).lineLimit(1)
+          }
+          .padding(.horizontal, 10).frame(height: 28).frame(maxWidth: 300).background(Capsule().fill(Ink.sunken))
+          .frame(minHeight: 36).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(c.card == nil)
+        .accessibilityLabel(c.says.en)
+      }
+    }
+    .padding(.vertical, 2)
   }
 }
 
@@ -1300,8 +1372,10 @@ struct EventLine: View {
     .buttonStyle(.plain)
     .disabled(card == nil || inCard)
   }
-  private var icon: String {
-    switch event.kind {
+  private var icon: String { Self.icon(event.kind) }
+  private var tint: Color { Self.tint(event.kind) }
+  static func icon(_ kind: String) -> String {
+    switch kind {
     case "decided", "trusted": "checkmark.circle"
     case "done", "read": "checkmark.seal"
     case "shredded": "trash"
@@ -1314,7 +1388,7 @@ struct EventLine: View {
     default: "questionmark.circle"
     }
   }
-  private var tint: Color { event.kind == "asked" ? Ink.urgHigh : ["decided", "done", "read"].contains(event.kind) ? Ink.accent : Ink.muted }
+  static func tint(_ kind: String) -> Color { kind == "asked" ? Ink.urgHigh : ["decided", "done", "read"].contains(kind) ? Ink.accent : Ink.muted }
 }
 
 // ---- light markdown --------------------------------------------------------------------------------------------------
