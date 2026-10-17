@@ -643,7 +643,11 @@ export interface SessionView {
   blocked: boolean
   /** Talk rows, newest last. */
   talk: TalkRow[]
+  /** The lines that show, the one its agent set last first: the chat's foot draws the first in one line beside the
+   *  working dots, and `status_more` for the rest, which a tap opens. */
   status_lines: StatusLineView[]
+  /** "+N": how many lines stand behind the first; none with one line or none. */
+  status_more?: Text
   /** Every card of the session, the newest first (its page "Questions"). */
   questions?: CardRefView[]
   /** Every file of the session's cards, answers, Chats and Artifacts (ids of `ViewModel.files`), the newest

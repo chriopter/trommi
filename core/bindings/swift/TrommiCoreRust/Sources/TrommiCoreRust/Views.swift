@@ -2269,7 +2269,11 @@ public enum CoreView {
     public var blocked: Bool
     /// Talk rows, newest last.
     public var talk: [TalkRow]
+    /// The lines that show, the one its agent set last first: the chat's foot draws the first in one line beside the
+    /// working dots, and `status_more` for the rest, which a tap opens.
     public var statusLines: [StatusLineView]
+    /// "+N": how many lines stand behind the first; none with one line or none.
+    public var statusMore: Text?
     /// Every card of the session, the newest first (its page "Questions").
     public var questions: [CardRefView]
     /// Every file of the session's cards, answers, Chats and Artifacts (ids of `ViewModel.files`), the newest
@@ -2331,13 +2335,14 @@ public enum CoreView {
     /// "helpers" and "files" where it has some.
     public var tabs: [PanelTabView]
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
       self.id = id
       self.name = name
       self.link = link
       self.blocked = blocked
       self.talk = talk
       self.statusLines = statusLines
+      self.statusMore = statusMore
       self.questions = questions
       self.files = files
       self.hasMore = hasMore
@@ -2376,6 +2381,7 @@ public enum CoreView {
       case blocked = "blocked"
       case talk = "talk"
       case statusLines = "status_lines"
+      case statusMore = "status_more"
       case questions = "questions"
       case files = "files"
       case hasMore = "has_more"
@@ -2415,6 +2421,7 @@ public enum CoreView {
       self.blocked = try c.decode(Bool.self, forKey: .blocked)
       self.talk = try c.decode([TalkRow].self, forKey: .talk)
       self.statusLines = try c.decode([StatusLineView].self, forKey: .statusLines)
+      self.statusMore = try c.decodeIfPresent(Text.self, forKey: .statusMore)
       self.questions = try c.decodeIfPresent([CardRefView].self, forKey: .questions) ?? []
       self.files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
       self.hasMore = try c.decode(Bool.self, forKey: .hasMore)
@@ -2454,6 +2461,7 @@ public enum CoreView {
       try c.encode(blocked, forKey: .blocked)
       try c.encode(talk, forKey: .talk)
       try c.encode(statusLines, forKey: .statusLines)
+      try c.encodeIfPresent(statusMore, forKey: .statusMore)
       if !questions.isEmpty { try c.encode(questions, forKey: .questions) }
       if !files.isEmpty { try c.encode(files, forKey: .files) }
       try c.encode(hasMore, forKey: .hasMore)

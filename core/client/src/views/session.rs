@@ -412,6 +412,11 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
             })
         })
         .collect();
+    // (the line set last first: the foot shows it alone; a sort that keeps the agent's order between equal times)
+    let mut status_lines = status_lines;
+    status_lines.sort_by_key(|l| std::cmp::Reverse(l.updated_ms));
+    let behind = status_lines.len().saturating_sub(1).to_string();
+    let status_more = (status_lines.len() > 1).then(|| say("session.status_more", format!("+{behind}"), &[("n", behind.as_str())]));
 
     let open = waiting.len() as u32;
     let n = open.to_string();
@@ -442,6 +447,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         first_open: fresh.iter().find_map(|id| ask_at.get(*id)).filter(|row| talk.iter().any(|r| &r.id == *row && r.kind == "ask")).cloned(),
         talk,
         status_lines,
+        status_more,
         has_more,
         earlier: None,
         slug: a.row.id.clone(),
@@ -834,6 +840,24 @@ mod tests {
         assert!(view(&r, "b").archived);
     }
 
+    /// The chat's foot shows one line: the status line set last comes first, the rest counted behind it as "+N".
+    #[test]
+    fn the_line_set_last_comes_first_and_the_rest_are_counted() {
+        let mut r = Room::default();
+        r.session("a", None, true)["status_lines"] = json!([
+            { "id": "old", "label": "Older", "state": "working", "updated_at": NOW - 9 * MIN },
+            { "id": "new", "label": "Newest", "state": "working", "helper": "Icons", "updated_at": NOW - MIN },
+            { "id": "mid", "label": "Middle", "state": "working", "updated_at": NOW - 4 * MIN },
+        ]);
+        let v = view(&r, "a");
+        let ids: Vec<&str> = v.status_lines.iter().map(|l| l.id.as_str()).collect();
+        assert_eq!(ids, ["new", "mid", "old"]);
+        let more = v.status_more.expect("two behind the first");
+        assert_eq!((more.key.as_str(), more.en.as_str()), ("session.status_more", "+2"));
+        r.session("a", None, true)["status_lines"] = json!([{ "id": "one", "label": "Alone", "state": "working", "updated_at": NOW - MIN }]);
+        assert_eq!(view(&r, "a").status_more, None, "one line: nothing behind it");
+    }
+
     /// Its helpers stand in a short list: name and state; a helper's status line names it, its words carry its name;
     /// a helper session of before is one of them, its Chat in its main's.
     #[test]
@@ -1028,17 +1052,19 @@ mod tests {
         assert_eq!(
             l,
             [
-                ("w-named", "working", "working", Some("q-named")),
-                ("w-old", "working", "working", None),
+                // (the line set last first; lines of the same moment in the agent's order)
                 // (the newest working line that names no card stands for the card with the session that no line names)
                 ("w-new", "working", "working", Some("q-loose")),
+                ("w-named", "working", "working", Some("q-named")),
                 ("ask", "decision", "waits on you", None),
-                ("done-new", "done", "done", None),
-                ("stale", "stale", "no news for a while", None),
                 ("put-off", "later", "put off", Some("q-later")),
+                ("done-new", "done", "done", None),
+                ("w-old", "working", "working", None),
+                ("stale", "stale", "no news for a while", None),
             ]
         );
-        assert_eq!((v.status_lines[0].label.as_str(), v.status_lines[0].detail.as_str(), v.status_lines[0].updated_ms), ("L w-named", "d", NOW - 5 * MIN));
+        assert_eq!((v.status_lines[1].label.as_str(), v.status_lines[1].detail.as_str(), v.status_lines[1].updated_ms), ("L w-named", "d", NOW - 5 * MIN));
+        assert_eq!(v.status_more.as_ref().map(|t| t.en.as_str()), Some("+6"));
         // (the done line goes a minute from now)
         assert_eq!(wake, Some(NOW + MIN));
         // a session that is archived shows none of its lines (a connected main would come back by itself)

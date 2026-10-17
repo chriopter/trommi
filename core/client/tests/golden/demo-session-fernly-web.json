@@ -1653,22 +1653,6 @@
   ],
   "status_lines": [
     {
-      "id": "launch",
-      "label": "Launch Monday",
-      "detail": "Monday 09:00 or Tuesday? On your Desk",
-      "state": "decision",
-      "says": {
-        "key": "line.decision",
-        "en": "waits on you"
-      },
-      "updated_ms": 1791468720000,
-      "card": {
-        "id": "95a7444523d097bff745b891bc2166cf",
-        "number": 46,
-        "title": "Launch on Monday at 09:00, or on Tuesday?"
-      }
-    },
-    {
       "id": "checklist",
       "label": "Launch checklist",
       "detail": "14 of 19 done",
@@ -1685,19 +1669,31 @@
       }
     },
     {
-      "id": "email",
-      "label": "Sunday e-mail",
-      "detail": "Waiting for your yes",
+      "id": "e2e-tests-suite",
+      "label": "Test suite",
+      "helper": "Testing",
+      "detail": "41 of 44 green, Safari flaky",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469440000
+    },
+    {
+      "id": "launch",
+      "label": "Launch Monday",
+      "detail": "Monday 09:00 or Tuesday? On your Desk",
       "state": "decision",
       "says": {
         "key": "line.decision",
         "en": "waits on you"
       },
-      "updated_ms": 1791467400000,
+      "updated_ms": 1791468720000,
       "card": {
-        "id": "637adcc6eae4b4ac30b47509a3071884",
-        "number": 38,
-        "title": "Send a weekly summary e-mail on Sundays?"
+        "id": "95a7444523d097bff745b891bc2166cf",
+        "number": 46,
+        "title": "Launch on Monday at 09:00, or on Tuesday?"
       }
     },
     {
@@ -1718,6 +1714,18 @@
       }
     },
     {
+      "id": "seo-og",
+      "label": "Social card",
+      "helper": "Search & Social",
+      "detail": "Reworking: the app on a phone",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791468000000
+    },
+    {
       "id": "copy-button",
       "label": "Sign-up button",
       "helper": "Copywriting",
@@ -1732,6 +1740,22 @@
         "id": "daa202f98097523fa1f1fe18068f8322",
         "number": 40,
         "title": "What should the sign-up button say?"
+      }
+    },
+    {
+      "id": "email",
+      "label": "Sunday e-mail",
+      "detail": "Waiting for your yes",
+      "state": "decision",
+      "says": {
+        "key": "line.decision",
+        "en": "waits on you"
+      },
+      "updated_ms": 1791467400000,
+      "card": {
+        "id": "637adcc6eae4b4ac30b47509a3071884",
+        "number": 38,
+        "title": "Send a weekly summary e-mail on Sundays?"
       }
     },
     {
@@ -1750,32 +1774,15 @@
         "number": 34,
         "title": "Ask for notifications on step 3, or after the first watering?"
       }
-    },
-    {
-      "id": "e2e-tests-suite",
-      "label": "Test suite",
-      "helper": "Testing",
-      "detail": "41 of 44 green, Safari flaky",
-      "state": "working",
-      "says": {
-        "key": "line.working",
-        "en": "working"
-      },
-      "updated_ms": 1791469440000
-    },
-    {
-      "id": "seo-og",
-      "label": "Social card",
-      "helper": "Search & Social",
-      "detail": "Reworking: the app on a phone",
-      "state": "working",
-      "says": {
-        "key": "line.working",
-        "en": "working"
-      },
-      "updated_ms": 1791468000000
     }
   ],
+  "status_more": {
+    "key": "session.status_more",
+    "args": {
+      "n": "7"
+    },
+    "en": "+7"
+  },
   "questions": [
     {
       "id": "76ab0cafab45f8b2011853527a3dc10e",
