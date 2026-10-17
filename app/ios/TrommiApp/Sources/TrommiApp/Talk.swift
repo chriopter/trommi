@@ -142,10 +142,10 @@ private struct ChatsTop: ViewModifier {
   }
 }
 
-/** One session of the Chat list, as calm as a messenger's: its drawing large in a round tinted field (a small green
- *  badge on its corner while it works), the name, when it said something last at the right; under it one grey line of
- *  what was said last and, when something is new or waits for him, one dot. No lines, counts or chips; its helpers
- *  are said to VoiceOver only (they are listed in the session). */
+/** One session of the Chat list, as calm as a messenger's: its drawing large and bare, the name, when it said
+ *  something last at the right (faint); under it one grey line of what was said last. A session whose agent is not
+ *  connected (`online` false) is grey, face and words. No dots, lines, counts or chips; what is new or waits and its
+ *  helpers are said to VoiceOver only. */
 struct ChatRow: View {
   @EnvironmentObject var shell: AppShell
   let row: CoreView.SessionRowView
@@ -158,34 +158,33 @@ struct ChatRow: View {
     ZStack {
       Button { shell.focus(.session(sessionId: row.id)) } label: { Rectangle().fill(Color.clear).contentShape(Rectangle()) }
         .buttonStyle(.plain)
-        .accessibilityLabel([row.name.en, working ? "working" : row.online ? "" : "not connected", row.helpers?.says.en ?? "", teaser, row.last?.when.en ?? ""].filter { !$0.isEmpty }.joined(separator: ". "))
+        .accessibilityLabel([row.name.en, working ? "working" : row.online ? "" : "not connected", row.signal.isEmpty ? "" : row.says?.en ?? "New message", row.helpers?.says.en ?? "", teaser, row.last?.when.en ?? ""].filter { !$0.isEmpty }.joined(separator: ". "))
         .accessibilityIdentifier("chat-session-" + row.id)
       HStack(alignment: .center, spacing: 14) {
         // (the face bare, no disc behind it)
         AgentMark(mark: row.mark, size: side * 0.78, hue: hue)
           .frame(width: side, height: side)
-          .opacity(row.online ? 1 : 0.6)
-          .overlay(alignment: .bottomTrailing) { if working { Circle().fill(Ink.stDone).frame(width: 13, height: 13).overlay(Circle().stroke(Ink.bg, lineWidth: 2.5)).offset(x: -3, y: -3) } }
+          // (calm as a messenger's list: no dots; a chat whose agent is not connected is grey, face and words)
+          .grayscale(row.online ? 0 : 1).opacity(row.online ? 1 : 0.45)
           .allowsHitTesting(false)
           .accessibilityHidden(true)
         VStack(alignment: .leading, spacing: 4) {
           HStack(alignment: .firstTextBaseline, spacing: 7) {
-            Text(row.name.en).font(Face.text(17, .medium)).foregroundStyle(row.online ? Ink.fg : Ink.muted).lineLimit(1)
+            Text(row.name.en).font(Face.text(17, .medium)).foregroundStyle(row.online ? Ink.fg : Ink.faint).lineLimit(1)
               .allowsHitTesting(false).accessibilityHidden(true)
             Spacer(minLength: 6)
             if let when = row.last?.when.en {
-              Text(when).font(Face.text(14, relativeTo: .footnote)).foregroundStyle(Ink.faint).lineLimit(1).fixedSize()
+              Text(when).font(Face.text(14, relativeTo: .footnote)).foregroundStyle(Ink.faint.opacity(0.6)).lineLimit(1).fixedSize()
                 .allowsHitTesting(false).accessibilityHidden(true)
             }
           }
           HStack(alignment: .center, spacing: 10) {
             Text(teaser.isEmpty ? " " : teaser).font(Face.text(15, relativeTo: .subheadline))
-              .foregroundStyle(row.last == nil && (row.cap?.kind == "unheard" || row.cap?.kind == "cut") ? Ink.urgHigh : Ink.muted)
+              .foregroundStyle(!row.online ? Ink.faint : row.last == nil && (row.cap?.kind == "unheard" || row.cap?.kind == "cut") ? Ink.urgHigh : Ink.muted)
               .lineLimit(1)
               .frame(maxWidth: .infinity, alignment: .leading)
               .allowsHitTesting(false)
               .accessibilityIdentifier("chat-teaser-" + row.id)
-            badge().allowsHitTesting(false)
           }
         }
       }
@@ -194,16 +193,6 @@ struct ChatRow: View {
     .listRowInsets(EdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 20))
     .listRowBackground(Color.clear)
     .listRowSeparator(.hidden)
-  }
-
-  /** One dot at the end of the teaser's line, as a messenger's unread one: words not seen yet, or a question or a
-   *  raised hand that waits for him. */
-  @ViewBuilder private func badge() -> some View {
-    if !row.signal.isEmpty {
-      Circle().fill(Ink.accent).frame(width: 10, height: 10)
-        .accessibilityLabel(row.says?.en ?? "New message")
-        .accessibilityIdentifier("chat-unread-" + row.id)
-    }
   }
 }
 

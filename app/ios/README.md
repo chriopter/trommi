@@ -103,8 +103,8 @@ stroke encoding is `Action::DrawStroke` in Rust. Goals are edited through `SetGo
 (`sidebar.team`); the shell only remembers the last team chosen on this device (`trommi-team` in UserDefaults) and
 sends it as `Focus.team` after a start, and the core falls back to the first team when it is gone. A session's
 helpers are a line of dots under its name (`helpers`). The Desk's duck for all and Blitz draw `desk.duck` (sent back as `Batch` "sweep") and
-`desk.blitz`; the Chat list draws each row's `last` (teaser and time) and `unread` (read marks the core keeps in its
-cache); Settings has a page per `Screen.settings(page:)`; the Artifacts filter is `Screen.artifacts(kind:)` with
+`desk.blitz`; the Chat list draws each row's `last` (teaser and time), grey while not `online`, and says `signal` to VoiceOver only
+(no dots); Settings has a page per `Screen.settings(page:)`; the Artifacts filter is `Screen.artifacts(kind:)` with
 the words of `view.gallery`; the note saves itself with `KeepNote` a moment after typing and when it is left; the
 start screen shows `account.notice` (logged out, removed, account deleted).
 
