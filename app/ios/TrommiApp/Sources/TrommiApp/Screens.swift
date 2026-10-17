@@ -198,6 +198,8 @@ struct PlacePill: View {
   @EnvironmentObject var shell: AppShell
   /** Round: only the team's drawing in a round glass button (the Chat list); else the drawing with the team's name. */
   var round = false
+  /** The iPhone Desk's centered title: the place's name in the system's font with a chevron, nothing drawn. */
+  var title = false
   var body: some View {
     let side = shell.view.sidebar
     Menu {
@@ -225,7 +227,12 @@ struct PlacePill: View {
         if !shell.isDemo { Button { shell.enterDemo() } label: { Label("Demo", systemImage: "play.rectangle") } }
       }
     } label: {
-      if round {
+      if title {
+        HStack(spacing: 4) {
+          Text(side.place.en).font(.headline).foregroundStyle(.primary).lineLimit(1)
+          Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        }.fixedSize()
+      } else if round {
         PenMark("sketch:desk", color: Ink.fg).frame(width: 22, height: 22)
           .overlay(alignment: .topLeading) { if side.waiting > 0 { Circle().fill(Ink.yellow).frame(width: 7, height: 7).offset(x: 3, y: 1) } }
           .frame(width: 44, height: 44)
@@ -438,15 +445,45 @@ struct DeskTop: ViewModifier {
         ToolbarItem(placement: .primaryAction) { DeskWays() }
       }
     } else {
-      content.topPills { PlacePill() } trailing: {
-        HStack(spacing: 10) {
-          DeskWays()
-          Button { shell.focus(.notes) } label: { NoteGlyph(color: Ink.fg, width: 2.2, written: false).frame(width: 22, height: 22).pillCircle() }
-            .buttonStyle(.plain).accessibilityLabel("Note").accessibilityIdentifier("note-open")
-        }
+      // (the iPhone: the system's bar, calm: the place as a centered title that switches the team, then Blitz and one
+      // ⋯ menu, SF Symbols in one glass group)
+      content.navigationBarTitleDisplayMode(.inline).toolbar {
+        ToolbarItem(placement: .principal) { PlacePill(title: true) }
+        ToolbarItemGroup(placement: .topBarTrailing) { DeskBar() }
       }
     }
     #endif
+  }
+}
+
+/**
+ * The iPhone Desk's two buttons at the top right, in the system's bar: Blitz (the first open card; its count is said,
+ * not drawn) and one ⋯ menu with the duck for all (the core's `desk.duck`, asked once) and the note.
+ */
+struct DeskBar: View {
+  @EnvironmentObject var shell: AppShell
+  @State private var asking = false
+  var body: some View {
+    let desk = shell.view.desk
+    if let blitz = desk.blitz, let first = desk.rows.first {
+      Button { shell.focus(.card(cardId: first.id)) } label: { Image(systemName: "bolt") }
+        .accessibilityLabel(blitz.en).accessibilityIdentifier("desk-blitz")
+    }
+    Menu {
+      if let duck = desk.duck {
+        Button(duck.tip.en, systemImage: "checkmark.circle") { asking = true }
+          .accessibilityHint(duck.what.en).accessibilityIdentifier("desk-duck")
+      }
+      Button("Note", systemImage: "square.and.pencil") { shell.focus(.notes) }.accessibilityIdentifier("note-open")
+    } label: { Image(systemName: "ellipsis") }
+    .accessibilityLabel("More").accessibilityIdentifier("desk-more")
+    .alert(desk.duck?.ask.en ?? "", isPresented: $asking) {
+      if let duck = desk.duck {
+        Button(duck.no.en, role: .cancel) {}
+        Button(duck.yes.en) { shell.act(["do": "batch", "way": "sweep", "card_ids": duck.cardIds]) }
+          .keyboardShortcut(.defaultAction).accessibilityHint(duck.what.en)
+      }
+    } message: { Text(desk.duck?.what.en ?? "") }
   }
 }
 

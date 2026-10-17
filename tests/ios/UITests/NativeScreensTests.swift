@@ -75,7 +75,7 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertFalse(row.label.isEmpty)
     XCTAssertTrue(app.tabBars.buttons["Chats"].exists, "The signed-in iPhone must keep its Desk · Chats · Search tab bar.")
     XCTAssertTrue(app.tabBars.buttons["Desk"].exists)
-    XCTAssertTrue(app.buttons["note-open"].exists)
+    XCTAssertTrue(app.buttons["desk-more"].exists)
     capture("real-signin-desk")
     row.tap()
     XCTAssertTrue(app.staticTexts["card-title"].waitForExistence(timeout: 15))
@@ -91,6 +91,7 @@ final class NativeScreensTests: XCTestCase {
     app.buttons["back"].tap()
     XCTAssertTrue(app.tabBars.buttons["Desk"].waitForExistence(timeout: 10))
     app.tabBars.buttons["Desk"].tap()
+    app.buttons["desk-more"].tap()
     app.buttons["note-open"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["note-text"].waitForExistence(timeout: 10))
     capture("real-signin-note")
@@ -230,13 +231,15 @@ final class NativeScreensTests: XCTestCase {
     launch("desk")
     let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-"))
     XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 15))
-    let duck = app.buttons["desk-duck"], blitz = app.buttons["desk-blitz"]
-    XCTAssertTrue(duck.exists && blitz.exists, "the duck for all and Blitz stand at the Desk's top right. " + app.debugDescription)
+    let duck = app.buttons["desk-duck"], blitz = app.buttons["desk-blitz"], more = app.buttons["desk-more"]
+    XCTAssertTrue(more.exists && blitz.exists, "Blitz and the ⋯ menu stand at the Desk's top right. " + app.debugDescription)
     capture("desk-ways")
     blitz.tap()
     XCTAssertTrue(app.staticTexts["card-title"].waitForExistence(timeout: 10), "Blitz opens the first open card")
     app.buttons["back"].tap()
-    XCTAssertTrue(duck.waitForExistence(timeout: 10))
+    XCTAssertTrue(more.waitForExistence(timeout: 10))
+    more.tap()
+    XCTAssertTrue(duck.waitForExistence(timeout: 5), "the duck for all is in the ⋯ menu")
     duck.tap()
     let yes = app.alerts.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Yes")).firstMatch
     XCTAssertTrue(yes.waitForExistence(timeout: 5), app.debugDescription)
@@ -244,7 +247,8 @@ final class NativeScreensTests: XCTestCase {
     yes.tap()
     let toast = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Left to the agents")).firstMatch
     XCTAssertTrue(toast.waitForExistence(timeout: 10), "one toast with its Undo. " + app.debugDescription)
-    XCTAssertFalse(duck.exists, "nothing left to duck")
+    more.tap()
+    XCTAssertFalse(duck.waitForExistence(timeout: 2), "nothing left to duck")
     capture("desk-duck-done")
   }
   func testChatListIsCalm() {
@@ -379,7 +383,8 @@ final class NativeScreensTests: XCTestCase {
   }
   func testTheNoteSavesItself() {
     launch("desk")
-    XCTAssertTrue(app.buttons["note-open"].waitForExistence(timeout: 15))
+    XCTAssertTrue(app.buttons["desk-more"].waitForExistence(timeout: 15))
+    app.buttons["desk-more"].tap()
     app.buttons["note-open"].tap()
     let field = app.descendants(matching: .any)["note-text"]
     XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -390,7 +395,8 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertFalse(app.buttons["Keep in Note"].exists, "no button to keep it: it keeps itself")
     Thread.sleep(forTimeInterval: 1.2)
     app.descendants(matching: .any)["note-close"].tap()
-    XCTAssertTrue(app.buttons["note-open"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["desk-more"].waitForExistence(timeout: 5))
+    app.buttons["desk-more"].tap()
     app.buttons["note-open"].tap()
     XCTAssertTrue(field.waitForExistence(timeout: 5))
     XCTAssertTrue((field.value as? String ?? "").contains("Buy oat milk"), "kept while typing, there again when it opens: \(String(describing: field.value))")
