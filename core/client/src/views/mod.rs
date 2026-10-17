@@ -201,6 +201,8 @@ pub struct ViewModel {
     /// The page Knowledge of the team in view, while it is in view (`Screen::Knowledge`); none else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub knowledge: Option<KnowledgeView>,
+    /// Sealed dictation (spec/v1.md 18, `crate::dictation`): the microphone of the chat field and its words.
+    pub dictation: DictationView,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub toasts: Vec<Toast>,
 }
@@ -275,6 +277,10 @@ pub enum ViewPart {
     /// The page Knowledge, whole; none when it is left.
     Knowledge {
         view: Option<KnowledgeView>,
+    },
+    /// Sealed dictation, whole.
+    Dictation {
+        view: DictationView,
     },
     Toasts {
         toasts: Vec<Toast>,
@@ -876,6 +882,41 @@ pub struct KnowledgeChipView {
     pub count: u32,
     /// The chip in a sentence ("Team knowledge: 12 entries"), for a screen reader and a tooltip.
     pub says: Text,
+}
+
+/// Sealed dictation (spec/v1.md 18): what the chat field's microphone shows. While the field is empty its send
+/// button is the microphone (`idle`); a tap starts (`starting`), `recording` runs from `since_ms` (stopped by the
+/// core at `max_ms`), `working` while the recording is sealed and transcribed, `done` with the words to put in the
+/// field (once per `text.id`: the shell answers `Action::Dictate { step: taken }`), `failed` with `problem`.
+/// `off` (or empty): no microphone here: the send button stays.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DictationView {
+    /// `off`, `idle`, `starting`, `recording`, `working`, `done`, `failed`.
+    pub state: String,
+    /// The chat field the dictation belongs to (as `DictateStep::Start` named it); empty while idle. Another field
+    /// shows itself idle, and the words go only into this one.
+    #[serde(default)]
+    pub session: String,
+    /// When the recording began (the shell's clock), for the running time; 0 else.
+    #[serde(default)]
+    pub since_ms: u64,
+    /// The longest recording.
+    #[serde(default)]
+    pub max_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<Text>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<DictatedText>,
+    /// While recording: that only the verified enclave hears it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<Text>,
+}
+
+/// Words a dictation brought, to go into the chat field once.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DictatedText {
+    pub id: String,
+    pub text: String,
 }
 
 /// The page Knowledge of a team (`Screen::Knowledge`, core/client/src/views/knowledge.rs): its entries, pinned first
@@ -2550,6 +2591,7 @@ impl ViewModel {
                 ViewPart::Gallery { view } => self.gallery = view.clone(),
                 ViewPart::Thumbs { view } => self.thumbs = view.clone(),
                 ViewPart::Knowledge { view } => self.knowledge = view.clone(),
+                ViewPart::Dictation { view } => self.dictation = view.clone(),
                 ViewPart::Toasts { toasts } => self.toasts = toasts.clone(),
             }
         }
@@ -2666,6 +2708,11 @@ impl ViewModel {
         if self.knowledge != next.knowledge {
             parts.push(ViewPart::Knowledge {
                 view: next.knowledge.clone(),
+            });
+        }
+        if self.dictation != next.dictation {
+            parts.push(ViewPart::Dictation {
+                view: next.dictation.clone(),
             });
         }
         if self.toasts != next.toasts {

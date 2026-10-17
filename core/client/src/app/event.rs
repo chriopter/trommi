@@ -58,6 +58,10 @@ pub struct Abilities {
     /// The shell can register for push: "apns", "web_push", or empty.
     #[serde(default)]
     pub push: String,
+    /// The shell records audio and checks Tinfoil attestations (`PlatformOp::RecordStart`, `Attest`): sealed
+    /// dictation (spec/v1.md 18).
+    #[serde(default)]
+    pub dictate: bool,
 }
 
 /// One input. `now_ms` travels beside it ([`App::handle`](super::App::handle)), never inside.

@@ -5,7 +5,7 @@ import fs from 'node:fs/promises'
 import { launchChromium } from '../../../app/web/dev/cdp.mjs'
 const root = new URL('../../../', import.meta.url)
 const server = http.createServer(async (req, res) => {
-  const files = { '/core.mjs':'app/web/public/core.mjs', '/platform.mjs':'app/web/public/platform.mjs', '/ui.mjs':'app/web/public/ui.mjs', '/gen/vendor/views-fold.mjs':'core/bindings/wasm/js/views-fold.js' }
+  const files = { '/core.mjs':'app/web/public/core.mjs', '/platform.mjs':'app/web/public/platform.mjs', '/dictate.mjs':'app/web/public/dictate.mjs', '/ui.mjs':'app/web/public/ui.mjs', '/gen/vendor/views-fold.mjs':'core/bindings/wasm/js/views-fold.js' }
   res.setHeader('Content-Type', files[req.url] ? 'text/javascript' : 'text/html')
   res.end(files[req.url] ? await fs.readFile(new URL(files[req.url], root)) : '<!doctype html><body>Isolated file lifecycle</body>')
 })

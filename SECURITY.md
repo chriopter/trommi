@@ -96,6 +96,27 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - No forward secrecy for history, on purpose: a new device of yours reads everything, and so does anyone who
   holds one of your devices or the recovery code.
 
+## Dictation (sealed)
+- Dictation turns speech into text for the chat field without the hub, Cloudflare or anyone else hearing it; only a
+  Tinfoil enclave (a confidential-computing machine) does, after your device checked what code it runs.
+- What leaves your device: the recording (at most five minutes, recorded first, then sent), sealed end-to-end with
+  HPKE to the enclave's key (EHBP), in one request through the hub. The recording stays in memory and is dropped
+  when the dictation ends; it is never stored or logged.
+- Before anything is sent your device checks the enclave's attestation itself, with Tinfoil's own verifier: AMD's
+  hardware report and its certificate chain, and that the measured code is Tinfoil's published build in Sigstore's
+  transparency log. It seals only to the key that check yields. If the check fails, nothing is sent.
+- What the hub sees: that your account dictates, when, the sealed size, the enclave's address and the model's name.
+  It holds the one Tinfoil API key (no device does), adds it, and passes nothing else of your request on. No audio
+  and no words reach it, and it logs no body (only the size rounded to 64 KiB, the time taken and the status).
+- What Tinfoil sees outside the enclave: the same headers, sizes and times, the hub's address and the hub's key; not
+  your account, e-mail or address (the hub calls it, for every account with the same key). Inside the enclave: the
+  audio and the words while it transcribes, as its attested code handles them; what you say can of course name you.
+- Cloudflare sees what it sees of every hub request (see Deployment): your address, the sign-in token, the sizes and
+  times; the audio and the words only sealed.
+- Limits: ten dictations a minute and 200 a day per account; a hub without a Tinfoil key offers no dictation.
+- The trust this rests on: AMD's hardware and keys, Tinfoil's published builds and Sigstore's log, and the verifier
+  your device runs (in the browser loaded from app.trommi.com, like the rest of the web app; see Known limits).
+
 ## Signing
 - The hub and the connector each have their own signed release series (`hub-v<N>`, `connector-v<N>`): a list of the
   part's files with their hashes, signed with Ed25519, one key for both. A part is released only when its own checks
@@ -202,6 +223,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   binary must keep working, and the migration gate refuses a release when it does not. Backups are separate.
 - Rulesets (signed commits, no force push, protected tags): being turned on.
 - iOS: account recovery and replacing the recovery code are tested only against a stand-in hub, not a real one.
+- Dictation is as private as Tinfoil's attestation holds: AMD's hardware and keys, Tinfoil's published builds and
+  Sigstore's log; in the browser the verifier comes with the app's code (above). It is on the web only for now.
 - Passkeys: built, but off, because they need the PRF extension, which some password managers lack.
 - Planned: post-quantum encryption once OpenMLS supports it.
 - Planned: deleted content really gone, also on devices and in backups.

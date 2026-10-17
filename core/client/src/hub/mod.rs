@@ -50,6 +50,7 @@ mod refusal;
 mod request;
 mod signin;
 pub mod stream;
+pub mod stt;
 mod types;
 
 pub use account::{account_copies_body, new_account_body};

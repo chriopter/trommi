@@ -13,7 +13,7 @@
 // An open question stands in the talk as its Desk row (ui.mjs deskRow), whose text links to the card's page; what
 // became of a question is one quiet line that links there too.
 import { Controller, agoShort, agoSpan, avatar, controller, usageRings, deskRow, fileTile, handSvg, html, linkNote, mq, raw, revokeTiles, rich, ringSvg, runSection, sessionHeadEdit, sk, whoOf, assetGlyph } from './ui.mjs'
-import { viewModule } from './app.mjs'
+import { viewModule, onCore, actCore, dictateLevel } from './app.mjs'
 // (the Artifacts' drawing, the share control and the file kinds are media.mjs's: loaded before a page is drawn)
 let media = null
 const artifactCard = (...a) => media.artifactCard(...a), sizeText = n => media.sizeText(n), typeOf = f => media.typeOf(f), until = (...a) => media.until(...a)
@@ -205,14 +205,24 @@ const sessionOpen = (s, base) => (s.open ? html`<a class="open-jump" id="session
 // ---- the field to write ----
 /** An empty talk: a quiet card from the agent that joined, and the starters as rows; a tap brings one into the field. */
 const empty = (s, base) => html`<div class="empty-card" id="talk-empty"><div class="empty-card-who">${agentMark(s)}<div><b>${s.name.en}</b>${s.empty.meta ? html`<small>${s.empty.meta}</small>` : ''}</div></div><p>${s.empty.text.en}</p><div class="empty-rows">${s.empty.starters.map(x => html`<a class="empty-row" data-nav href="${sessionPath(s, base)}?say=${encodeURIComponent(x.en)}"><span>${x.en}</span>${ico('send')}</a>`)}</div></div>`
-/** The field: a plain form. The controller "composer" adds Enter to send, the field that grows, the chosen files. */
-const composer = (s, base, { text = '', focus = false } = {}) => html`<form class="composer" id="composer-${s.id}" method="post" action="${sessionPath(s, base)}/message" enctype="multipart/form-data" data-controller="composer" data-composer-agent-value="${s.id}"${focus ? raw(' data-composer-focus-value="true"') : ''} data-action="turbo:submit-start->composer#start turbo:submit-end->composer#sent click->composer#aim dragover@window->composer#over dragleave@window->composer#left drop@window->composer#drop">
+/** The field: a plain form. The controller "composer" adds Enter to send, the field that grows, the chosen files.
+ *  With sealed dictation (`d`, the core's DictationView: not "off") an empty field's send button is the microphone;
+ *  recording, the words' place shows the running time and the level, a bin throws it away and the square ends it. The
+ *  parts are always there while dictation is on (the state is a class), so a new state never repaints the field. */
+const dictOn = d => !!d?.state && d.state !== 'off'
+/** The dictation as this chat's field shows it: another chat's runs elsewhere, so here it is idle. */
+const dictHere = (d, s) => (dictOn(d) && d.session && d.session !== s.id ? { ...d, state: 'idle', since_ms: 0 } : d)
+const STOP = raw('<svg class="dict-stop" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" fill="currentColor"/></svg>')
+const composer = (s, base, { text = '', focus = false, d: dAll = null } = {}) => { const d = dictHere(dAll, s); return html`<form class="composer${dictOn(d) ? ` dict dict-${d.state}` : ''}" id="composer-${s.id}" method="post" action="${sessionPath(s, base)}/message" enctype="multipart/form-data" data-controller="composer" data-composer-agent-value="${s.id}"${focus ? raw(' data-composer-focus-value="true"') : ''}${dictOn(d) ? raw(` data-composer-since-value="${Number(d.since_ms) || 0}"`) : ''} data-action="turbo:submit-start->composer#start turbo:submit-end->composer#sent click->composer#aim dragover@window->composer#over dragleave@window->composer#left drop@window->composer#drop">
 <input type="hidden" name="stay" value="1">
+${dictOn(d) ? html`<button type="button" class="mic dict-cancel" data-action="composer#dictCancel" title="Throw away" aria-label="Throw the recording away">${sk('bin')}</button>` : ''}
 <div class="composer-files" data-composer-target="chips"></div>
 <label class="mic composer-clip" title="Attach">${sk('clip')}<input class="offscreen" type="file" name="files" multiple data-composer-target="picker" data-action="change->composer#paint" aria-label="Attach pictures or files (at most ${MAX_FILES})"></label>
+${dictOn(d) ? html`<div class="dict-rec" aria-live="polite"><span class="dot"></span><span class="time" data-composer-target="time"></span><span class="bars" data-composer-target="bars" aria-hidden="true"></span><span class="dict-writing">Writing…</span><span class="sealed"><span aria-hidden="true">${sk('lock')}Sealed</span><span class="offscreen">${d.hint?.en ?? ''}</span></span></div>` : ''}
 <textarea name="text" id="composer-field-${s.id}" rows="1" data-composer-target="field" data-action="input->composer#typed keydown->composer#keys paste->composer#paste focus->composer#paint" autocomplete="off" enterkeyhint="enter" placeholder="${s.compose.en}" aria-label="Message to ${s.name.en}">${text}</textarea>
+${dictOn(d) ? html`<button type="button" class="dict-go" data-action="composer#dictate" title="${d.state === 'recording' ? 'Done: write it' : 'Dictate'}" aria-label="${d.state === 'recording' ? 'Stop and write it' : 'Dictate (sealed)'}"${d.state === 'working' ? raw(' disabled') : ''}>${d.state === 'recording' || d.state === 'working' ? STOP : sk('mic')}</button>` : ''}
 <button class="send" type="submit" aria-label="Send" data-composer-target="send">${ico('send')}</button>
-</form>`
+</form>` }
 const sendError = (s, text = '') => html`<p class="send-error" id="session-error-${s.id}" role="alert"${text ? '' : raw(' hidden')}>${text}</p>`
 
 // ---- the questions (SessionView.questions): what waits as Desk rows (SessionView.waiting), then every question ----
@@ -275,7 +285,7 @@ function sessionMain(s, vm, t, { mode = '', text = '', focus = false, panel = ''
 <header class="pane-title">${headPill(s, base, panel)}${sessionWho(s, vm, base)}${sessionFilters(s, base, mode)}<div class="head-use" id="session-use-${s.id}">${usageRings(s.usage)}</div></header>${sessionFilters(s, base, mode, { phone: true })}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
-<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' ? '' : sessionOpen(s, base)}<div class="column session-compose">${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus })}</div></div>
+<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' ? '' : sessionOpen(s, base)}<div class="column session-compose">${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus, d: vm.dictation })}</div></div>
 </div></section>
 ${filesDrawer(s, vm, t, mode === 'files')}
 ${sidePanel(s, vm, t, panel)}
@@ -368,23 +378,25 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const held = () => { try { const c = JSON.parse(sessionStorage.getItem(CLIP_KEY) ?? 'null'); return c?.id ? c : null } catch { return null } }
 
 controller('composer', class extends Controller {
-  static targets = ['field', 'picker', 'chips', 'send']
-  static values = { agent: String, focus: Boolean }
+  static targets = ['field', 'picker', 'chips', 'send', 'time', 'bars']
+  static values = { agent: String, focus: Boolean, since: Number }
 
   connect() {
     this.cards = []
+    this.offCore = onCore('render', vm => this.dictation(vm.dictation))
     if (!this.fieldTarget.value) { try { this.fieldTarget.value = localStorage.getItem(this.key) ?? '' } catch {} }
     this.paint({ fit: false })
     if (this.fieldTarget.value) requestAnimationFrame(() => setTimeout(() => { if (this.element.isConnected) this.fit() }, 0))
     if (this.focusValue) { this.fieldTarget.focus(); this.fieldTarget.setSelectionRange(this.fieldTarget.value.length, this.fieldTarget.value.length) }
   }
-  disconnect() { this.revoke() }
+  disconnect() { this.revoke(); this.offCore?.(); this.ticking(false) }
   revoke() { if (this.hasChipsTarget) revokeTiles(this.chipsTarget) }
   get key() { return `trommi-draft:${this.agentValue}` }
   forget() { try { localStorage.removeItem(this.key) } catch {} }
   get empty() { return !this.fieldTarget.value.trim() && !this.pickerTarget.files.length && !this.cards.length }
 
   fit() {
+    this.element.toggleAttribute('data-typed', !!this.fieldTarget.value.trim())
     const field = this.fieldTarget
     if (!field.value) { field.style.height = ''; field.style.overflowY = ''; this.sendTarget.disabled = this.empty; return }
     field.style.height = 'auto'
@@ -420,6 +432,61 @@ controller('composer', class extends Controller {
     if (!this.pickerTarget.files.length) this.setFiles(was.files)
     else this.paint()
     this.typed()
+  }
+
+  // ---- sealed dictation: the state is the core's (vm.dictation); this runs the clock and puts the words in ----
+  dictate() {
+    const state = [...this.element.classList].find(c => c.startsWith('dict-'))?.slice(5)
+    if (state === 'recording') actCore({ do: 'dictate', step: { step: 'stop' } })
+    else if (state === 'starting') this.dictCancel()
+    else if (state === 'idle' || state === 'done' || state === 'failed') { this.say(''); actCore({ do: 'dictate', step: { step: 'start', session: this.agentValue } }) }
+  }
+  dictCancel() { actCore({ do: 'dictate', step: { step: 'cancel' } }) }
+  /** A render of the core: the clock while recording, the words once they came, a problem said under the field. */
+  dictation(d) {
+    if (!this.element.isConnected || !d) return
+    // (another chat's dictation is not this field's business; its words wait for that field)
+    if (d.session && d.session !== this.agentValue) { this.ticking(false); return }
+    this.ticking(d.state === 'recording')
+    if (d.state === 'done' && d.text && d.text.id !== this.taken) {
+      this.taken = d.text.id
+      const field = this.fieldTarget, at = field.selectionStart ?? field.value.length, end = field.selectionEnd ?? at
+      const before = field.value.slice(0, at), after = field.value.slice(end)
+      const gap = before && !/\s$/.test(before) ? ' ' : ''
+      field.value = before + gap + d.text.text + (after && !/^\s/.test(after) ? ' ' : '') + after
+      const caret = (before + gap + d.text.text).length
+      this.typed()
+      // (the field shows again with this render's page: its height and the caret once it stands)
+      requestAnimationFrame(() => { if (!this.element.isConnected) return; this.fit(); field.focus(); field.setSelectionRange(caret, caret) })
+      actCore({ do: 'dictate', step: { step: 'taken', id: d.text.id } })
+    }
+    if (d.state === 'failed' && d.problem) {
+      this.say(d.problem.en)
+      actCore({ do: 'dictate', step: { step: 'dismiss' } })
+    }
+  }
+  say(text) {
+    const out = document.getElementById(`session-error-${this.agentValue}`)
+    if (!out) return
+    clearTimeout(this.said)
+    out.textContent = text
+    out.hidden = !text
+    if (text) this.said = setTimeout(() => { out.hidden = true }, 8000)
+  }
+  ticking(on) {
+    if (!on) { clearInterval(this.tick); this.tick = null; return }
+    if (this.tick) return
+    const bars = []
+    const draw = () => {
+      if (!this.hasTimeTarget) return
+      const since = this.sinceValue || Date.now(), sec = Math.max(0, Math.floor((Date.now() - since) / 1000))
+      this.timeTarget.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+      bars.push(dictateLevel())
+      if (bars.length > 90) bars.shift()
+      this.barsTarget.replaceChildren(...bars.map(v => { const i = document.createElement('i'); i.style.height = `${3 + Math.round(17 * v)}px`; return i }))
+    }
+    draw()
+    this.tick = setInterval(draw, 120)
   }
 
   // ---- files ----

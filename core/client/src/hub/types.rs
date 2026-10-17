@@ -343,6 +343,10 @@ pub enum Route<'a> {
     PushRemove { endpoint: Option<&'a str> },
     /// `POST /v1/live-activity` (15.3).
     LiveActivity { activity: &'a LiveActivity },
+    /// `GET /v1/stt/attestation` (18): Tinfoil's attestation bundle, as the hub fetched it.
+    SttAttestation,
+    /// `POST /v1/stt` (18): a recording sealed to the attested enclave.
+    Stt { sealed: &'a super::stt::SttSealed },
 }
 
 /// A kit's part of a body: its login key and the code sealed under its wrap key. `Debug` shows neither.
@@ -971,6 +975,10 @@ pub enum WishRowKind {
 #[derive(Clone, PartialEq, Eq)]
 pub enum Answer {
     Challenge([u8; 32]),
+    /// Tinfoil's attestation bundle, unread (the device's platform checks it).
+    SttBundle(Vec<u8>),
+    /// A sealed transcript and its `Ehbp-Response-Nonce`.
+    SttSealed { nonce: String, body: Vec<u8> },
     /// `expires_at` is the hub's clock, a hint: the engine bounds the life it assumes.
     Token {
         token: String,
@@ -1097,6 +1105,8 @@ impl std::fmt::Debug for Answer {
         // (an answer may hold a token or a Welcome: its kind is all a log needs)
         f.write_str(match self {
             Answer::Challenge(_) => "Challenge",
+            Answer::SttBundle(_) => "SttBundle",
+            Answer::SttSealed { .. } => "SttSealed",
             Answer::Token { .. } => "Token",
             Answer::Changes(_) => "Changes",
             Answer::Linked { .. } => "Linked",

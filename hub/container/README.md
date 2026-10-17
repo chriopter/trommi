@@ -55,6 +55,18 @@ The directory is operator-owned, mode 0700 and writable in YoloDeploy. Compose, 
 are mounted read-only at identical host/container paths. Other fixed targets stay unchanged. GHCR images and
 signature material must be readable by the server; an unavailable registry/verifier stops the update beforehand.
 
+## Secret settings
+
+The hub's secrets come from `/home/docker/trommi/config/hub-secrets.env` (root only, read by Docker when it creates
+the container), not from 1Password directly. Today they are the push credentials and `HUB_TINFOIL_API_KEY`, the
+Tinfoil key of sealed dictation (spec/v1.md 18; without it the hub offers no dictation). The key lives in the hub's
+1Password Environment; `hub/container/secrets.sh` puts it on the server and recreates the container, the value on
+standard input and never printed:
+
+```bash
+op run --environment <hub production environment id> -- hub/container/secrets.sh
+```
+
 ## Regular backups and rollback
 
 Image rollback preserves writes, so database changes must stay compatible with the previous image. Schema 4

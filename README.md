@@ -57,6 +57,8 @@ The computer-approval release changes the MCP tool contract and needs one client
 - **Sessions:** each agent session is its own encrypted group: your devices and that agent, nobody else.
 - **Hub:** the server stores ciphertext and who is in which group, and pushes to your devices. It cannot read a
   message, a card, a file or a key.
+- **Dictation:** the chat field's microphone records, your device checks a Tinfoil enclave's attestation and seals
+  the recording to it; the hub relays ciphertext only ([spec/v1.md](spec/v1.md) section 18, [SECURITY.md](SECURITY.md)).
 - **Connector:** one signed program that joins a Claude Code or Codex session to your room.
   What the agent is told: [connector/prompt.md](connector/prompt.md).
 

@@ -11,6 +11,11 @@ trommi-wire = { path = "../wire" }
 # The protocol core: ids, and the board items and stroke pieces as it reads them (the codec reuses its rules).
 trommi-core = { path = "../protocol" }
 serde = { version = "=1.0.229", features = ["derive"] }
+# Sealed dictation's EHBP (src/dictation/ehbp.rs): HPKE to the attested enclave, AES-256-GCM and HKDF of its answer;
+# the same crates and versions the protocol core's provider brings.
+hpke-rs = { version = "=0.7.0", default-features = false }
+hpke-rs-crypto = "=0.7.0"
+hpke-rs-rust-crypto = "=0.7.0"
 # raw_value: a body is read without building its values (codec.rs)
 serde_json = { version = "=1.0.151", features = ["raw_value", "float_roundtrip"] }
 

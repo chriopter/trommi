@@ -32,6 +32,7 @@ pub mod board;
 pub mod cache;
 pub mod codec;
 pub mod desk;
+pub mod dictation;
 pub mod team_delete;
 pub mod engine;
 pub mod faces;
