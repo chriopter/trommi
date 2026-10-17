@@ -287,9 +287,7 @@ controller('thumbs', class extends Controller {
         for (const n of this.element.querySelectorAll(`[data-thumb-n="${CSS.escape(th.team_id)}"]`)) n.textContent = th.state === 'loading' ? '' : th.count ? String(th.count) : 'empty'
       }
     }
-    // (not at once: this controller can connect while this module is still being read, before what painting needs
-    //  further down is defined, e.g. isStroke: a ReferenceError)
-    queueMicrotask(() => { if (this.element.isConnected) this.paint() })
+    this.paint()
     import('./app.mjs').then(app => { if (this.element.isConnected) this.off = app.onCore('render', () => requestAnimationFrame(() => this.paint())) }).catch(() => {})
   }
   disconnect() { this.off?.() }
