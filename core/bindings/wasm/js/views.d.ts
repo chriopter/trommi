@@ -1125,6 +1125,8 @@ export interface CardView {
   /** Once it is settled (not open, not catching up): the way on that the page offers right after the person
    *  answered here (the shell shows it then): the next open question of the team in view, or that there is none. */
   after?: AfterView
+  /** The page's small fixed words (`CardWordsView`). */
+  words: CardWordsView
 }
 
 /** A picture of a card, and the option it belongs to (the web's `pictureKeys`, `picturesOf`): a section that names
@@ -1155,6 +1157,27 @@ export interface AfterView {
   next?: CardRefView
   /** "Next question", or "That was the last open question." */
   says: Text
+  /** The short word of the one button that takes its place where the answers stood: "Next", or "All done". */
+  go: Text
+}
+
+/** The small fixed words of a card's calm page (the iPhone): the mark on the advised option and the three side ways
+ *  as one quiet row, Undo after an answer, and the folded talk. */
+export interface CardWordsView {
+  /** "Recommended", beside the option the agent advises. */
+  recommended: Text
+  /** "Got it", the answer of an info card. */
+  got_it: Text
+  /** "Duck it": the agent decides (the duck). */
+  duck: Text
+  /** "What??": back to the agent to explain. */
+  what: Text
+  /** "Rework": back to the agent to rework, with the comments. */
+  rework: Text
+  /** "Undo": takes back the answer that stands. */
+  undo: Text
+  /** "Talk · 3": the card's talk folded into one row; none when it has none. */
+  talk?: Text
 }
 
 export interface OptionView {

@@ -1586,6 +1586,9 @@ pub struct CardView {
     /// answered here (the shell shows it then): the next open question of the team in view, or that there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<AfterView>,
+    /// The page's small fixed words (`CardWordsView`).
+    #[serde(default)]
+    pub words: CardWordsView,
 }
 
 /// A picture of a card, and the option it belongs to (the web's `pictureKeys`, `picturesOf`): a section that names
@@ -1626,6 +1629,30 @@ pub struct AfterView {
     pub next: Option<CardRefView>,
     /// "Next question", or "That was the last open question."
     pub says: Text,
+    /// The short word of the one button that takes its place where the answers stood: "Next", or "All done".
+    #[serde(default)]
+    pub go: Text,
+}
+
+/// The small fixed words of a card's calm page (the iPhone): the mark on the advised option and the three side ways
+/// as one quiet row, Undo after an answer, and the folded talk.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CardWordsView {
+    /// "Recommended", beside the option the agent advises.
+    pub recommended: Text,
+    /// "Got it", the answer of an info card.
+    pub got_it: Text,
+    /// "Duck it": the agent decides (the duck).
+    pub duck: Text,
+    /// "What??": back to the agent to explain.
+    pub what: Text,
+    /// "Rework": back to the agent to rework, with the comments.
+    pub rework: Text,
+    /// "Undo": takes back the answer that stands.
+    pub undo: Text,
+    /// "Talk · 3": the card's talk folded into one row; none when it has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub talk: Option<Text>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
