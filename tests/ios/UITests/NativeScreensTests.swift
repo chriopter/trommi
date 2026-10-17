@@ -228,13 +228,13 @@ final class NativeScreensTests: XCTestCase {
     let teaser = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-teaser-")).firstMatch
     XCTAssertTrue(teaser.waitForExistence(timeout: 15), app.debugDescription)
     XCTAssertFalse(teaser.label.trimmingCharacters(in: .whitespaces).isEmpty, "a row says what was said last")
-    // (calm, as a messenger's: a session's helpers are said, not drawn; what is new or waits is one dot; every
-    // team's chats in one list, each team only a title over them, no team switch)
+    // (calm, as a messenger's: a session's helpers are said, not drawn; no dots, what is new or waits is said in the
+    // row's label; every team's chats in one list, each team only a title over them, no team switch)
     let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "chat-session-", "helper")).firstMatch
     XCTAssertTrue(row.exists, "a row says its helpers. " + app.debugDescription)
     XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-helpers-")).firstMatch.exists, "no helper dots")
     let dot = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-unread-")).firstMatch
-    XCTAssertTrue(dot.exists, "a row with open questions shows the one dot. " + app.debugDescription)
+    XCTAssertFalse(dot.exists, "no dot. " + app.debugDescription)
     XCTAssertFalse(app.buttons["place-pill"].exists, "no team switch over the chats. " + app.debugDescription)
     let titles = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-team-"))
     XCTAssertGreaterThanOrEqual(titles.count, 2, "every team's chats, each under its title. " + app.debugDescription)
@@ -264,10 +264,10 @@ final class NativeScreensTests: XCTestCase {
   func testAgentBubblesAndOneWorkingLine() {
     launch("chat--payments-service")
     XCTAssertTrue(app.staticTexts["talk-message"].firstMatch.waitForExistence(timeout: 15))
-    // (one line at the foot: the newest status line and "+N" for the rest, which a tap opens)
-    let more = app.buttons["status-more"]
+    // (an iPhone: one small line above the field, the newest status line and "and N more"; a tap opens them all)
+    let more = app.buttons["status-line"]
     XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
-    XCTAssertTrue(more.label.hasSuffix("more"), more.label)
+    XCTAssertFalse(app.descendants(matching: .any)["session-helpers"].exists, "no helper list on an iPhone")
     capture("chat-bubbles")
     more.tap()
     capture("chat-status-more")
