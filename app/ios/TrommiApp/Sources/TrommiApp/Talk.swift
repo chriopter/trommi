@@ -193,12 +193,12 @@ struct FoldedChats: View {
   }
 }
 
-/** The Chats tab has no bar at the top; the Search tab has the system's, for its title and field. */
+/** The Chats tab: the main bar (the person, search, +) over the list; the search sheet has the system's bar, for its title and field. */
 private struct ChatsTop: ViewModifier {
   let searching: Bool
   func body(content: Content) -> some View {
     if searching { content.navigationTitle("Search") }
-    else { content.toolbar(.hidden, for: .navigationBar).scrollEdgeEffectStyle(.soft, for: [.top, .bottom]) }
+    else { content.navigationBarTitleDisplayMode(.inline).toolbar { MainBar.items(title: AnyView(Text("Chats").font(.headline)), desk: false) }.scrollEdgeEffectStyle(.soft, for: [.top, .bottom]) }
   }
 }
 

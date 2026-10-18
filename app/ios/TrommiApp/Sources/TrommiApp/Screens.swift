@@ -95,14 +95,14 @@ struct PhoneTabs: View {
         Image(systemName: shell.view.sidebar.badge > 0 ? "tray.full" : "tray").accessibilityLabel("Desk")
       }
       Tab(value: NativeTab.chat) { stack(.chat) { ChatsScreen() } } label: { Image(systemName: "message").accessibilityLabel("Chats") }
-      Tab(value: NativeTab.search, role: .search) {
-        stack(.search) {
-          // (the system's search field, always shown under the title; the core filters the chats by its words)
-          ChatsScreen(searching: true)
-            .searchable(text: $shell.chatsQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search chats")
-            .onChange(of: shell.chatsQuery) { _, _ in shell.show(shell.screen) }
-        }
-      } label: { Image(systemName: "magnifyingglass").accessibilityLabel("Search") }
+    }
+    // (the search, from the top right of Desk and Chats: every team's chats under the words; the core filters)
+    .sheet(isPresented: $shell.searchOpen, onDismiss: { shell.chatsQuery = ""; shell.show(shell.screen) }) {
+      NavigationStack {
+        ChatsScreen(searching: true)
+          .searchable(text: $shell.chatsQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search chats")
+          .onChange(of: shell.chatsQuery) { _, _ in shell.show(shell.screen) }
+      }
     }
     .tint(Color.primary)
     .tabBarMinimizeBehavior(.onScrollDown)
@@ -210,34 +210,9 @@ struct PlacePill: View {
   var body: some View {
     let side = shell.view.sidebar
     Menu {
-      if shell.isDemo { Section("Demo") { Button { shell.leaveDemo() } label: { Label("Leave Demo", systemImage: "rectangle.portrait.and.arrow.right") } } }
       Section("Teams") {
         HomeItem(home: side.home) { shell.pick(.desk); shell.home() }
         ForEach(side.teams, id: \.id) { teamItem($0) }
-      }
-      Section {
-        Button { go(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
-        Button { go(.knowledge(query: "", filter: "", open: "")) } label: { Label("Knowledge", systemImage: "book") }
-        Button { go(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
-        Button { go(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
-      }
-      Section {
-        if let push = shell.view.settings.push {
-          Picker(selection: Binding(get: { push.level }, set: { shell.act(["do": "push", "level": $0]) })) {
-            ForEach(shell.view.settings.pushChoices, id: \.level) { c in
-              Label(c.title.en, systemImage: c.level == "off" ? "bell.slash" : c.level == "knocking" ? "bell.badge" : "bell").tag(c.level)
-            }
-          } label: { Label("Notifications", systemImage: push.level == "off" ? "bell.slash" : push.level == "knocking" ? "bell.badge" : "bell") }
-          .pickerStyle(.menu)
-        }
-        Picker(selection: $theme) {
-          Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark")
-        } label: { Label("Theme", systemImage: theme == "dark" ? "moon" : "sun.max") }
-        .pickerStyle(.menu)
-        Button { go(.settings(page: "")); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "gearshape") }
-        if !shell.isDemo { Button { shell.enterDemo() } label: { Label("Demo", systemImage: "play.rectangle") } }
-        Link(destination: URL(string: "https://app.trommi.com/whats-new")!) { Label("What's new", systemImage: "sparkles") }
-        Button { go(.settings(page: "logout")); shell.account(["step": "read_account"]) } label: { Label(shell.view.settings.logout.title.en, systemImage: "rectangle.portrait.and.arrow.right") }
       }
     } label: {
       if title {
@@ -463,44 +438,110 @@ struct DeskTop: ViewModifier {
     } else {
       // (the iPhone: the system's bar, calm: the place as a centered title that switches the team, then Blitz and one
       // ⋯ menu, SF Symbols in one glass group)
-      content.navigationBarTitleDisplayMode(.inline).toolbar {
-        ToolbarItem(placement: .principal) { PlacePill(title: true) }
-        ToolbarItemGroup(placement: .topBarTrailing) { DeskBar() }
-      }
+      content.navigationBarTitleDisplayMode(.inline).toolbar { MainBar.items(title: AnyView(PlacePill(title: true)), desk: true) }
     }
     #endif
   }
 }
 
 /**
- * The iPhone Desk's two buttons at the top right, in the system's bar: Blitz (the first open card; its count is said,
- * not drawn) and one ⋯ menu with the duck for all (the core's `desk.duck`, asked once) and the note.
+ * The top of the iPhone's main screens, as the wide sidebar's top and foot: the person's picture at the left (the
+ * foot's menu: notifications, the pages, Settings, the demo), search and + at the right (+: an agent, a team, the
+ * note; on the Desk also the duck for all and Blitz). The place or the page's name in the middle.
  */
-struct DeskBar: View {
+enum MainBar {
+  @ToolbarContentBuilder static func items(title: AnyView, desk: Bool) -> some ToolbarContent {
+    ToolbarItem(placement: .topBarLeading) { MePicture() }
+    ToolbarItem(placement: .principal) { title }
+    ToolbarItemGroup(placement: .topBarTrailing) {
+      SearchButton()
+      PlusMenu(desk: desk)
+    }
+  }
+}
+struct SearchButton: View {
   @EnvironmentObject var shell: AppShell
+  var body: some View {
+    Button { shell.searchOpen = true } label: { Image(systemName: "magnifyingglass") }
+      .accessibilityLabel("Search").accessibilityIdentifier("side-search")
+  }
+}
+/** The person's picture: the core's initial (`sidebar.me`), a plain figure until the account is read; its menu. */
+struct MePicture: View {
+  @EnvironmentObject var shell: AppShell
+  @AppStorage("trommi-theme") private var theme = "system"
+  var body: some View {
+    let side = shell.view.sidebar
+    Menu {
+      if shell.isDemo { Section("Demo") { Button { shell.leaveDemo() } label: { Label("Leave Demo", systemImage: "rectangle.portrait.and.arrow.right") } } }
+      if let account = shell.view.settings.account { Text(account) }
+      Section {
+        Button { go(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
+        Button { go(.knowledge(query: "", filter: "", open: "")) } label: { Label("Knowledge", systemImage: "book") }
+        Button { go(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
+        Button { go(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
+      }
+      Section {
+        if let push = shell.view.settings.push {
+          Picker(selection: Binding(get: { push.level }, set: { shell.act(["do": "push", "level": $0]) })) {
+            ForEach(shell.view.settings.pushChoices, id: \.level) { c in
+              Label(c.title.en, systemImage: c.level == "off" ? "bell.slash" : c.level == "knocking" ? "bell.badge" : "bell").tag(c.level)
+            }
+          } label: { Label("Notifications", systemImage: push.level == "off" ? "bell.slash" : push.level == "knocking" ? "bell.badge" : "bell") }
+          .pickerStyle(.menu)
+        }
+        Picker(selection: $theme) {
+          Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark")
+        } label: { Label("Theme", systemImage: theme == "dark" ? "moon" : "sun.max") }
+        .pickerStyle(.menu)
+        Button { go(.settings(page: "")); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "gearshape") }
+        if !shell.isDemo { Button { shell.enterDemo() } label: { Label("Demo", systemImage: "play.rectangle") } }
+        Link(destination: URL(string: "https://app.trommi.com/whats-new")!) { Label("What's new", systemImage: "sparkles") }
+        Button { go(.settings(page: "logout")); shell.account(["step": "read_account"]) } label: { Label(shell.view.settings.logout.title.en, systemImage: "rectangle.portrait.and.arrow.right") }
+      }
+    } label: {
+      Group {
+        if side.me.isEmpty { Image(systemName: "person.crop.circle.fill").font(.system(size: 28)).foregroundStyle(.secondary) }
+        else { Text(side.me).font(.subheadline.weight(.semibold)).foregroundStyle(.white).frame(width: 30, height: 30).background(Circle().fill(Ink.accent)) }
+      }.frame(width: 32, height: 32)
+    }
+    .accessibilityLabel("You, Menu").accessibilityIdentifier("side-avatar")
+    .task { if shell.view.settings.account == nil && !shell.isDemo { shell.account(["step": "read_account"]) } }
+  }
+  private func go(_ screen: CoreView.Screen) { shell.closeNote(); shell.focus(screen) }
+}
+/** + at the top right: an agent, a team, the note; on the Desk the duck for all (asked once) and Blitz. */
+struct PlusMenu: View {
+  @EnvironmentObject var shell: AppShell
+  let desk: Bool
   @State private var asking = false
   var body: some View {
-    let desk = shell.view.desk
-    if let blitz = desk.blitz, let first = desk.rows.first {
-      Button { shell.focus(.card(cardId: first.id)) } label: { Image(systemName: "bolt") }
-        .accessibilityLabel(blitz.en).accessibilityIdentifier("desk-blitz")
-    }
+    let d = shell.view.desk
     Menu {
-      if let duck = desk.duck {
-        // (the yellow duck and its short name; its question follows at once and says the rest)
-        Button { asking = true } label: { Label { Text(duck.short.en) } icon: { PenImage.duck } }
-          .accessibilityLabel(duck.tip.en).accessibilityHint(duck.what.en).accessibilityIdentifier("desk-duck")
-      }
+      Button { shell.focus(.settings(page: "agents")) } label: { Label("Add agent", systemImage: "laptopcomputer") }.accessibilityIdentifier("add-agent")
+      Button { shell.focus(.settings(page: "teams")) } label: { Label("Add team", systemImage: "person.2") }.accessibilityIdentifier("add-team")
       Button("Note", systemImage: "square.and.pencil") { shell.focus(.notes) }.accessibilityIdentifier("note-open")
-    } label: { Image(systemName: "ellipsis") }
-    .accessibilityLabel("More").accessibilityIdentifier("desk-more")
-    .alert(desk.duck?.ask.en ?? "", isPresented: $asking) {
-      if let duck = desk.duck {
+      if desk, d.duck != nil || d.blitz != nil {
+        Section {
+          if let duck = d.duck {
+            // (the yellow duck and its short name; its question follows at once and says the rest)
+            Button { asking = true } label: { Label { Text(duck.short.en) } icon: { PenImage.duck } }
+              .accessibilityLabel(duck.tip.en).accessibilityHint(duck.what.en).accessibilityIdentifier("desk-duck")
+          }
+          if let blitz = d.blitz, let first = d.rows.first {
+            Button { shell.focus(.card(cardId: first.id)) } label: { Label(blitz.en, systemImage: "bolt") }.accessibilityIdentifier("desk-blitz")
+          }
+        }
+      }
+    } label: { Image(systemName: "plus") }
+    .accessibilityLabel("Add").accessibilityIdentifier("side-plus")
+    .alert(d.duck?.ask.en ?? "", isPresented: $asking) {
+      if let duck = d.duck {
         Button(duck.no.en, role: .cancel) {}
         Button(duck.yes.en) { shell.act(["do": "batch", "way": "sweep", "card_ids": duck.cardIds]) }
           .keyboardShortcut(.defaultAction).accessibilityHint(duck.what.en)
       }
-    } message: { Text(desk.duck?.what.en ?? "") }
+    } message: { Text(d.duck?.what.en ?? "") }
   }
 }
 

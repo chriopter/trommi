@@ -221,6 +221,11 @@ fn units_where(b: &Board, on: impl Fn(&super::board::Agent) -> bool) -> Vec<Unit
     units
 }
 
+/// The person's initial from the account's e-mail: its first letter or digit, upper case; empty without one.
+pub fn initial_of(email: Option<&str>) -> String {
+    email.and_then(|e| e.chars().find(|c| c.is_alphanumeric())).map(|c| c.to_uppercase().collect()).unwrap_or_default()
+}
+
 pub fn sidebar(b: &Board) -> SidebarView {
     let units = units_of(b);
 
@@ -315,6 +320,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
         b.wake_at(Some(next_midnight(b.now, b.lens.utc_offset_min)));
     }
     SidebarView {
+        me: String::new(),
         found,
         found_none,
         stacks,
@@ -570,6 +576,17 @@ mod tests {
         assert!(!v.stacks[2].open && v.stacks[2].faces.is_empty(), "an empty team never opens and has no faces");
         assert_eq!(v.stacks[1].faces.len(), 2);
         assert_eq!((v.desk_all, v.place.en.as_str()), (true, "All teams"));
+    }
+
+    /// The person's picture: the e-mail's first letter; nothing known, nothing drawn but a figure.
+    #[test]
+    fn the_persons_initial_comes_from_the_email() {
+        assert_eq!(super::initial_of(Some("christopher@example.com")), "C");
+        assert_eq!(super::initial_of(Some("_ölaf@x.de")), "Ö");
+        assert_eq!(super::initial_of(Some("7up@x.de")), "7");
+        assert_eq!(super::initial_of(Some("")), "");
+        assert_eq!(super::initial_of(Some("@@")), "");
+        assert_eq!(super::initial_of(None), "");
     }
 
     /// Home in the menu (the phone's place pill): "All teams" above the teams with what waits on all of them, marked
