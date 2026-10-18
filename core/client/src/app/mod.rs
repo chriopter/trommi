@@ -1324,6 +1324,7 @@ impl App {
             });
             self.next_view.thumbs = self.thumbs();
             crate::views::desk::board_tile(&mut self.next_view.desk, self.next_view.thumbs.as_deref());
+            self.next_view.settings.logout = crate::views::settings::logout(&self.next_view.settings, true);
             self.view_wake = wake;
             self.files.shown(shown, &mut self.next_view.files);
         }
@@ -2108,6 +2109,8 @@ impl App {
                 self.next_view.settings.room = Some(engine::feed::hex(engine.room().as_bytes()));
                 self.next_view.settings.hub = Some(engine.hub().to_string());
             }
+            self.next_view.settings.security = crate::views::settings::security(&self.next_view.settings, self.lens.utc_offset_min);
+            self.next_view.settings.logout = crate::views::settings::logout(&self.next_view.settings, self.demo);
             self.next_view.settings.team_counts = self.team_counts();
             self.show_team_deletes();
             self.view_wake = wake;

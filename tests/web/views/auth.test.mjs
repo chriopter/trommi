@@ -85,7 +85,7 @@ test('the Emergency Kit: hidden until shown, its words only from the core, Open 
 test('Settings: rows from SettingsView, devices with their words, Push sends its level, a device invite in place', async () => {
   const b = board()
   const d = (id, name, o = {}) => ({ id, name, this_device: false, role: 'human', active: true, online: false, state: 'away', says: { key: 'x', en: 'away' }, fingerprint: 'abcd abcd abcd abcd', icon: 'phone', ...o })
-  b.set({ settings: { agents: { en: '2 agents · 5 sessions' }, devices_says: { en: '2 devices' }, devices: [d('aa', 'Laptop', { this_device: true, says: { en: 'this device' }, icon: 'laptop' }), d('bb', 'Phone')], push: { level: 'knocking', busy: false } } })
+  b.set({ settings: { agents: { en: '2 agents · 5 sessions' }, devices_says: { en: '2 devices' }, devices: [d('aa', 'Laptop', { this_device: true, says: { en: 'this device' }, icon: 'laptop' }), d('bb', 'Phone')], push: { level: 'knocking', busy: false }, push_choices: [{ level: 'all', title: { en: 'Yes' }, detail: { en: 'every card' }, icon: 'bell' }, { level: 'knocking', title: { en: 'Only knocking' }, icon: 'knock' }, { level: 'off', title: { en: 'No' }, icon: 'snooze' }] } })
   const home = (await b.request('GET', '/settings')).main
   assert.match(home, /id="settings-agents"[\s\S]*2 agents · 5 sessions/)
   assert.match(home, /id="settings-devices"[\s\S]*2 devices/)

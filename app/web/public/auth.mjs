@@ -344,17 +344,12 @@ export function register(t) {
 
   // ---- /logout: asks once, then SignOut (the core wipes what this device stored) ----
   const logoutMain = () => {
-    const m = vm(), login = m.settings?.login
-    const others = (m.settings?.devices ?? []).filter(d => d.active && !d.this_device).length
-    const pk = Boolean(login?.passkeys?.length), pw = login?.has_password !== false
-    const again = pk && pw ? 'your passkey or your password' : pk ? 'your passkey' : 'email and password'
-    const ways = pk && pw ? 'your passkey, or your email and password' : pk ? 'your passkey' : 'your email and password'
-    const note = isDemo() ? 'The demo keeps nothing; this only ends it.' : others ? '' : `This is your only device. After this, ${ways} (or your Emergency Kit) ${pw ? 'open' : 'opens'} your account.`
-    return roomShell('Log out', html`<p class="room-lead" id="logout-ask">Log out of this device? You can log in again with ${again}.</p>
-${note ? html`<p class="room-lead" id="logout-last">${note}</p>` : ''}<p class="room-meta">Everything Trommi keeps on this device is deleted here; your account and your other devices stay as they are.</p>
-<form method="post" action="/logout" class="room-inline room-logout" id="logout-form"><button type="submit" class="room-danger" id="logout-go">Log Out</button><a href="/" data-nav class="room-back" id="logout-cancel">Cancel</a></form>`)
+    const l = vm().settings?.logout ?? {}
+    return roomShell(l.title?.en ?? '', html`<p class="room-lead" id="logout-ask">${l.ask?.en ?? ''}</p>
+${l.note ? html`<p class="room-lead" id="logout-last">${l.note.en}</p>` : ''}<p class="room-meta">${l.meta?.en ?? ''}</p>
+<form method="post" action="/logout" class="room-inline room-logout" id="logout-form"><button type="submit" class="room-danger" id="logout-go">${l.go?.en ?? ''}</button><a href="/" data-nav class="room-back" id="logout-cancel">${l.cancel?.en ?? ''}</a></form>`)
   }
-  t.get(/^\/logout$/, ({ req, res }) => { readAccount(); page(req, res, 'Log out', logoutMain(), { view: 'logout' }) })
+  t.get(/^\/logout$/, ({ req, res }) => { readAccount(); page(req, res, vm().settings?.logout?.title?.en ?? '', logoutMain(), { view: 'logout' }) })
   t.post(/^\/logout$/, ({ res }) => {
     // (the demo has no account: leaving it is all there is to do)
     if (isDemo()) { try { sessionStorage.removeItem('trommi-mock') } catch {} location.replace('/'); return t.done(res) }
@@ -504,11 +499,10 @@ ${step(joined ? 'done' : dead ? 'dead' : ask ? 'ask' : open ? '' : 'wait', last)
   const member = d => (d.active
     ? html`<a class="set-row set-row-two room-device" id="device-${d.id}" href="/settings/devices/${d.id}" data-nav>${devLine(d)}${SET_CHEVRON}</a>`
     : html`<div class="set-row set-row-two set-fact room-device is-removed" id="device-${d.id}">${devLine(d)}<span></span></div>`)
-  const PUSH_LEVELS = [['all', 'bell', 'Yes', 'every card'], ['knocking', 'knock', 'Only knocking', 'high, critical, a lost session'], ['off', 'snooze', 'No', '']]
   const devicesMain = () => {
     const s = vm().settings ?? {}, push = s.push, gone = s.removed ?? [], stuck = s.unfinished ?? []
     return roomPage('Devices', html`<h3 class="set-label" id="people-head">Your devices</h3><div class="set-group" id="room-people">${(s.devices ?? []).map(member)}</div>${stuck.length ? html`<form method="post" action="/devices/remove" class="set-group" id="devices-unfinished">${stuck.map(id => html`<input type="hidden" name="device_id" value="${id}">`)}<button type="submit" class="set-row set-danger"><span class="set-ico">${sk('logout')}</span><b>${s.remove_unfinished?.en ?? ''}</b><span class="set-detail"></span><span></span></button></form><p class="set-note" id="devices-unfinished-note">A login that hung or was given up leaves a device behind that never came. While it is there, new sessions can't be opened.</p>` : ''}
-${push ? html`<h3 class="set-label" id="push-head">Push on this device</h3><form method="post" action="/settings/push" data-controller="set-push"><fieldset class="set-group set-choice set-push" id="push-level" aria-labelledby="push-head"${push.busy ? raw(' disabled') : ''}>${PUSH_LEVELS.map(([v, icon, word, d]) => html`<label class="set-row"><input type="radio" name="level" value="${v}" data-action="change->set-push#pick"${push.level === v ? raw(' checked') : ''}><span class="set-ico">${sk(icon)}</span><b>${word}</b><span class="set-detail">${d}</span>${sk('tick')}</label>`)}</fieldset></form>
+${push ? html`<h3 class="set-label" id="push-head">Push on this device</h3><form method="post" action="/settings/push" data-controller="set-push"><fieldset class="set-group set-choice set-push" id="push-level" aria-labelledby="push-head"${push.busy ? raw(' disabled') : ''}>${(s.push_choices ?? []).map(c => html`<label class="set-row"><input type="radio" name="level" value="${c.level}" data-action="change->set-push#pick"${push.level === c.level ? raw(' checked') : ''}><span class="set-ico">${sk(c.icon)}</span><b>${c.title.en}</b><span class="set-detail">${c.detail?.en ?? ''}</span>${sk('tick')}</label>`)}</fieldset></form>
 <p class="push-level-note" id="push-level-note" role="status">${push.level === 'off' ? pushObstacle() : ''}</p>` : ''}
 ${gone.length ? html`<div class="set-group" id="room-gone">${setRow({ href: '/settings/devices/removed', icon: sk('archive'), word: 'Removed', detail: String(gone.length), id: 'devices-removed' })}</div>` : html`<div id="room-gone" hidden></div>`}
 <p class="set-note">A new device: Invite a Device in <a href="/settings" data-nav>Settings</a>, or open app.trommi.com on it and log in. Every device holds its own keys; the hub sees sealed envelopes only. Your agents are under <a href="/settings/agents" data-nav>Agents</a>.</p>`, 'The phones, tablets and browsers where you read and answer.')
@@ -545,20 +539,21 @@ ${login ? html`<section id="code-new"><h3 class="set-label">Not in your hands?</
 
   // ---- /settings/security: what opens the account's data, and the self test ----
   const securityMain = () => {
-    const s = vm().settings ?? {}
-    const keyRow = html`<div class="set-row set-row-two set-fact" id="security-key"><span class="set-ico">${sk('key')}</span><span class="set-two"><b>Account key</b><small><span class="room-mono" id="security-key-fp">${s.room ? `${s.room.slice(0, 16)}…` : 'unknown'}</span> · key epoch ${s.key_epoch}${s.hub ? ` · ${s.hub}` : ''}</small></span><span class="set-detail">everything</span><span></span></div>`
-    const kitRow = setRow({ href: '/settings/account/kit', icon: sk('page'), word: 'Emergency Kit', id: 'security-kit' })
-    const devRow = d => html`<a class="set-row set-row-two security-device" id="security-device-${d.id.slice(0, 16)}" href="/settings/devices/${d.id}" data-nav><span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${d.name}${d.this_device ? html` <span class="set-small set-inline">· this device</span>` : ''}</b><small><span class="room-mono">${d.fingerprint}</span> · ${d.added_ms ? `added ${day(d.added_ms)}` : 'added: unknown'}</small></span><span class="set-detail">everything</span>${SET_CHEVRON}</a>`
-    const agentRow = html`<a class="set-row set-row-two" id="security-agents" href="/settings/agents" data-nav><span class="set-ico">${sk('terminal')}</span><span class="set-two"><b>Agents</b><small>${s.agents?.en || 'none'}: each with its own key</small></span><span class="set-detail">own session</span>${SET_CHEVRON}</a>`
-    return settingsPage('Security', html`<h3 class="set-label">Account key</h3><div class="set-group">${keyRow}${kitRow}</div>
-<p class="set-note" id="security-key-note">Opens everything; it is also your recovery key. The hub keeps it only sealed: a way in of your account opens it on a new device.</p>
-<h3 class="set-label">Authorized devices</h3><div class="set-group" id="security-devices">${(s.devices ?? []).filter(d => d.active).map(devRow)}</div>
-<p class="set-note">Each of your devices reads everything, also what came before it was added.</p>
-<h3 class="set-label">Agents</h3><div class="set-group">${agentRow}</div>
-<p class="set-note">An agent reads only its own session and the helper sessions it starts; a helper reads only its own.</p>
-<p class="set-note set-note-strong" id="security-hub">Nobody else, not the hub either: it sees which device is in which group, when, and how much.</p>
-<h3 class="set-label">Check</h3><div class="set-group">${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Self Test', detail: 'runs on this device', id: 'settings-proof' })}</div>`,
-    { lead: 'Every key that opens your data, and the self test.' })
+    const s = vm().settings ?? {}, sec = s.security ?? {}
+    const ICONS = { key: () => sk('key'), page: () => sk('page'), terminal: () => sk('terminal'), tick: () => sk('tick'), phone: () => art('phone'), laptop: () => sk('laptop') }
+    const hrefOf = r => ({ kit: '/settings/account/kit', agents: '/settings/agents', proof: '/settings/proof', device: `/settings/devices/${r.id}` })[r.open]
+    const ROW_IDS = { key: 'security-key', kit: 'security-kit', agents: 'security-agents', proof: 'settings-proof' }
+    const row = (sec, r) => {
+      const id = sec === 'devices' ? `security-device-${r.id.slice(0, 16)}` : ROW_IDS[r.id] ?? `security-${r.id}`, href = hrefOf(r)
+      const second = r.fingerprint || r.detail ? html`<small>${r.fingerprint ? html`<span class="room-mono"${r.id === 'key' ? raw(' id="security-key-fp"') : ''}>${r.fingerprint}</span>` : ''}${r.fingerprint && r.detail ? ' · ' : ''}${r.detail?.en ?? ''}</small>` : ''
+      const inner = html`<span class="set-ico">${(ICONS[r.icon] ?? ICONS.laptop)()}</span><span class="set-two"><b>${r.title.en}${r.mark ? html` <span class="set-small set-inline">· ${r.mark.en}</span>` : ''}</b>${second}</span><span class="set-detail">${r.says?.en ?? ''}</span>`
+      return href ? html`<a class="set-row${second ? ' set-row-two' : ''}${sec === 'devices' ? ' security-device' : ''}" id="${id}" href="${href}" data-nav>${inner}${SET_CHEVRON}</a>`
+        : html`<div class="set-row set-row-two set-fact" id="${id}">${inner}<span></span></div>`
+    }
+    const NOTE_IDS = { key: 'security-key-note' }
+    const group = g => html`<h3 class="set-label">${g.label.en}</h3><div class="set-group"${g.id === 'devices' ? raw(' id="security-devices"') : ''}>${(g.rows ?? []).map(r => row(g.id, r))}</div>
+${(g.notes ?? []).map(n => html`<p class="set-note"${NOTE_IDS[g.id] ? raw(` id="${NOTE_IDS[g.id]}"`) : ''}>${n.en}</p>`)}${g.strong ? html`<p class="set-note set-note-strong" id="security-hub">${g.strong.en}</p>` : ''}`
+    return settingsPage('Security', html`${(sec.sections ?? []).map(group)}`, { lead: sec.lead?.en ?? '' })
   }
   t.get(/^\/settings\/security$/, ({ req, res }) => page(req, res, 'Security · Settings', securityMain(), { view: 'settings-security' }))
 

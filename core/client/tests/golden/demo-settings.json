@@ -639,5 +639,286 @@
     },
     "en": "3 devices"
   },
-  "key_epoch": 1
+  "key_epoch": 1,
+  "push_choices": [
+    {
+      "level": "all",
+      "title": {
+        "key": "push.all",
+        "en": "Yes"
+      },
+      "detail": {
+        "key": "push.all.detail",
+        "en": "every card"
+      },
+      "icon": "bell"
+    },
+    {
+      "level": "knocking",
+      "title": {
+        "key": "push.knocking",
+        "en": "Only knocking"
+      },
+      "detail": {
+        "key": "push.knocking.detail",
+        "en": "high, critical, a lost session"
+      },
+      "icon": "knock"
+    },
+    {
+      "level": "off",
+      "title": {
+        "key": "push.off",
+        "en": "No"
+      },
+      "icon": "snooze"
+    }
+  ],
+  "logout": {
+    "title": {
+      "key": "logout.title",
+      "en": "Log out"
+    },
+    "ask": {
+      "key": "logout.ask.password",
+      "en": "Log out of this device? You can log in again with email and password."
+    },
+    "meta": {
+      "key": "logout.meta",
+      "en": "Everything Trommi keeps on this device is deleted here; your account and your other devices stay as they are."
+    },
+    "go": {
+      "key": "logout.go",
+      "en": "Log Out"
+    },
+    "cancel": {
+      "key": "logout.cancel",
+      "en": "Cancel"
+    }
+  },
+  "team_delete": {
+    "lead": {
+      "key": "team_delete.lead",
+      "en": "This goes for good, on every device:"
+    },
+    "empty": {
+      "key": "team_delete.empty",
+      "en": "Nothing stands on this team: only its name goes."
+    },
+    "small": {
+      "key": "team_delete.small",
+      "en": "The server drops the encrypted data within 30 days. Your agents' computers keep nothing of it they can still open. This cannot be undone."
+    },
+    "hold": {
+      "key": "team_delete.hold",
+      "en": "Hold to Delete"
+    },
+    "cancel": {
+      "key": "team_delete.cancel",
+      "en": "Cancel"
+    },
+    "deleting": {
+      "key": "team_delete.deleting",
+      "en": "Deleting…"
+    }
+  },
+  "security": {
+    "lead": {
+      "key": "security.lead",
+      "en": "Every key that opens your data, and the self test."
+    },
+    "sections": [
+      {
+        "id": "key",
+        "label": {
+          "key": "security.key.label",
+          "en": "Account key"
+        },
+        "rows": [
+          {
+            "id": "key",
+            "title": {
+              "key": "security.key",
+              "en": "Account key"
+            },
+            "fingerprint": "unknown",
+            "detail": {
+              "key": "security.key.detail",
+              "args": {
+                "epoch": "1"
+              },
+              "en": "key epoch 1"
+            },
+            "says": {
+              "key": "security.everything",
+              "en": "everything"
+            },
+            "icon": "key",
+            "open": ""
+          },
+          {
+            "id": "kit",
+            "title": {
+              "key": "security.kit",
+              "en": "Emergency Kit"
+            },
+            "fingerprint": "",
+            "icon": "page",
+            "open": "kit"
+          }
+        ],
+        "notes": [
+          {
+            "key": "security.key.note",
+            "en": "Opens everything; it is also your recovery key. The hub keeps it only sealed: a way in of your account opens it on a new device."
+          }
+        ]
+      },
+      {
+        "id": "devices",
+        "label": {
+          "key": "security.devices.label",
+          "en": "Authorized devices"
+        },
+        "rows": [
+          {
+            "id": "30090210037da72834a586216fcc6a458bdab6a275519f6675e6c412f0dd8242",
+            "title": {
+              "key": "",
+              "en": "Laptop"
+            },
+            "mark": {
+              "key": "security.this_device",
+              "en": "this device"
+            },
+            "fingerprint": "3009 0210 037d a728",
+            "detail": {
+              "key": "security.added",
+              "args": {
+                "when": "9 Sep 2026"
+              },
+              "en": "added 9 Sep 2026"
+            },
+            "says": {
+              "key": "security.everything",
+              "en": "everything"
+            },
+            "icon": "laptop",
+            "open": "device"
+          },
+          {
+            "id": "5e5c199cbf26ef2038765bf094beea7134501402b2629fdf9171b3c9b6ca67f0",
+            "title": {
+              "key": "",
+              "en": "Phone"
+            },
+            "fingerprint": "5e5c 199c bf26 ef20",
+            "detail": {
+              "key": "security.added",
+              "args": {
+                "when": "11 Sep 2026"
+              },
+              "en": "added 11 Sep 2026"
+            },
+            "says": {
+              "key": "security.everything",
+              "en": "everything"
+            },
+            "icon": "phone",
+            "open": "device"
+          },
+          {
+            "id": "bab7d20137fb7093183f65076f6c0ba36a1f1d3ff7defdf7f429c7e45e2ed266",
+            "title": {
+              "key": "",
+              "en": "iPad"
+            },
+            "fingerprint": "bab7 d201 37fb 7093",
+            "detail": {
+              "key": "security.added",
+              "args": {
+                "when": "29 Sep 2026"
+              },
+              "en": "added 29 Sep 2026"
+            },
+            "says": {
+              "key": "security.everything",
+              "en": "everything"
+            },
+            "icon": "phone",
+            "open": "device"
+          }
+        ],
+        "notes": [
+          {
+            "key": "security.devices.note",
+            "en": "Each of your devices reads everything, also what came before it was added."
+          }
+        ]
+      },
+      {
+        "id": "agents",
+        "label": {
+          "key": "security.agents.label",
+          "en": "Agents"
+        },
+        "rows": [
+          {
+            "id": "agents",
+            "title": {
+              "key": "security.agents",
+              "en": "Agents"
+            },
+            "fingerprint": "",
+            "detail": {
+              "key": "security.agents.detail",
+              "args": {
+                "agents": "5 agents · 7 sessions"
+              },
+              "en": "5 agents · 7 sessions: each with its own key"
+            },
+            "says": {
+              "key": "security.own_session",
+              "en": "own session"
+            },
+            "icon": "terminal",
+            "open": "agents"
+          }
+        ],
+        "notes": [
+          {
+            "key": "security.agents.note",
+            "en": "An agent reads only its own session and the helper sessions it starts; a helper reads only its own."
+          }
+        ],
+        "strong": {
+          "key": "security.hub",
+          "en": "Nobody else, not the hub either: it sees which device is in which group, when, and how much."
+        }
+      },
+      {
+        "id": "check",
+        "label": {
+          "key": "security.check.label",
+          "en": "Check"
+        },
+        "rows": [
+          {
+            "id": "proof",
+            "title": {
+              "key": "security.proof",
+              "en": "Self Test"
+            },
+            "fingerprint": "",
+            "says": {
+              "key": "security.proof.where",
+              "en": "runs on this device"
+            },
+            "icon": "tick",
+            "open": "proof"
+          }
+        ]
+      }
+    ]
+  }
 }

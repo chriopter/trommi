@@ -592,6 +592,8 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     view.settings.team_counts = std::mem::take(&mut kept.team_counts);
     view.settings.deleting = std::mem::take(&mut kept.deleting);
     view.settings.push = kept.push.take();
+    view.settings.security = super::settings::security(&view.settings, lens.utc_offset_min);
+    view.settings.logout = super::settings::logout(&view.settings, false);
     // The pages in view: one session, one card. A page that is left is taken away.
     view.sessions.clear();
     if let Some(s) = lens.session.as_deref().and_then(|id| super::session::session(&b, id)) {
