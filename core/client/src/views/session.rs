@@ -24,7 +24,7 @@ use super::desk::{card_row, request_row, shown_title};
 use super::sidebar::{hand_of, link_of};
 use super::talk::{card_ref, choices_of, event_label_by, events_of, in_order, items_of, Entry, Side, UNSENT};
 use super::words::{local, next_midnight, quiet_words, say};
-use super::{CardRefView, DotView, EmptyTalkView, EventChipView, EventView, FixView, HelperListView, HelperRowView, LinkNoteView, LinkWords, MoreView, PanelTabView, SessionView, StatusLineView, TalkRow, Text, WorkingView};
+use super::{CardRefView, DotView, EmptyTalkView, EventChipView, EventView, FixView, HelperListView, HelperRowView, LinkNoteView, LinkWords, MoreView, PanelTabView, SessionView, StatusLineView, QuoteView, TalkRow, Text, WorkingView};
 use crate::model::types::Card;
 use crate::off_mind::went_at;
 use crate::status::card_place;
@@ -172,11 +172,12 @@ fn calm(v: &mut SessionView) {
         trail,
     });
     let mut talk: Vec<TalkRow> = Vec::with_capacity(v.talk.len());
-    for row in std::mem::take(&mut v.talk) {
+    for mut row in std::mem::take(&mut v.talk) {
         if row.kind == "work" {
             continue;
         }
         if row.kind != "event" {
+            row.quote = quote_of(&row);
             talk.push(row);
             continue;
         }
@@ -210,6 +211,18 @@ fn calm(v: &mut SessionView) {
     v.tabs.retain(|t| t.key != "helpers");
     let behind = v.status_lines.len().saturating_sub(1).to_string();
     v.status_more = (v.status_lines.len() > 1).then(|| say("session.status_more.calm", format!("and {behind} more"), &[("n", behind.as_str())]));
+}
+
+/// The card a bubble quotes in the calm chat: his words with what he did to a card (a hand-back, What??), or the
+/// agent's words or his own on a card. None without words, without a card, or for a card this device does not know
+/// (no id, no title: nothing to open or to name).
+fn quote_of(row: &TalkRow) -> Option<QuoteView> {
+    if !matches!(row.kind.as_str(), "user" | "agent") || row.text.trim().is_empty() {
+        return None;
+    }
+    let card = row.card.as_ref().filter(|c| !c.id.trim().is_empty() && !c.title.trim().is_empty())?;
+    let label = row.deed.as_ref().map(|d| d.label.clone()).filter(|l| !l.en.is_empty()).unwrap_or_else(|| say("quote.about", "About", &[]));
+    Some(QuoteView { label, card: card.clone() })
 }
 
 fn page(b: &Board, id: &str) -> Option<SessionView> {
@@ -1040,6 +1053,35 @@ mod tests {
         assert_eq!(v.talk[0].card.as_ref().map(|c| (c.id.as_str(), c.number)), Some(("q1", 1)));
     }
     const HAND_BACK: &str = super::super::talk::HAND_BACK_TEXT;
+
+    /// In the calm chat his answer on a card and the agent's words on it quote the card at the top of the bubble;
+    /// without words, or for a card it cannot name, nothing is quoted.
+    #[test]
+    fn the_calm_chat_quotes_the_card_a_bubble_answers() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.card("q1", "a", "decision", "normal");
+        r.say("a", Some("q1"), 200, "me", 9 * MIN, json!({ "text": HAND_BACK, "hand_back": true }));
+        r.say("a", Some("q1"), 201, "me", 8 * MIN, json!({ "text": "Shorter, please.", "hand_back": true }));
+        r.say("a", Some("q1"), 202, "a", 7 * MIN, json!({ "text": "Shortened." }));
+        r.say("a", None, 203, "me", 6 * MIN, json!({ "text": "And the rest?" }));
+        let m = r.model(NOW);
+        let calm = Lens { calm: true, ..Default::default() };
+        let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+        let q: Vec<(&str, Option<(&str, &str)>)> = v.talk.iter().filter(|t| t.kind != "events").map(|t| (t.text.as_str(), t.quote.as_ref().map(|q| (q.label.en.as_str(), q.card.id.as_str())))).collect();
+        assert_eq!(q, [("Shorter, please.", Some(("You handed it back", "q1"))), ("Shortened.", Some(("About", "q1"))), ("And the rest?", None)]);
+        // (not calm: no quote, the deed and the line above stay as before)
+        assert!(view(&r, "a").talk.iter().all(|t| t.quote.is_none()));
+        // (a card it cannot name or open is not quoted)
+        let mut row = TalkRow { kind: "agent".into(), text: "On it.".into(), card: Some(CardRefView { id: " ".into(), number: 0, title: "x".into() }), ..Default::default() };
+        assert_eq!(quote_of(&row), None);
+        row.card = Some(CardRefView { id: "c".into(), number: 0, title: String::new() });
+        assert_eq!(quote_of(&row), None);
+        row.card = Some(CardRefView { id: "c".into(), number: 3, title: "Ship it?".into() });
+        assert_eq!(quote_of(&row).map(|q| q.label.en), Some("About".to_string()));
+        row.text = String::new();
+        assert_eq!(quote_of(&row), None, "no words, nothing to quote for");
+    }
 
     #[test]
     fn what_a_message_carries() {

@@ -972,3 +972,11 @@ a.files-where:hover span { text-decoration: underline; }
 .pm-acts > a[role="menuitem"] :is(.sketch, .ico) { flex: none; width: 22px; height: 22px; color: var(--muted); }
 .pm-acts > a[role="menuitem"] b { margin-left: auto; color: var(--muted); font-size: var(--t-xs); }
 .pm-acts .panel-acts { display: contents; }
+
+/* The card a bubble answers or is about (TalkRow.quote): quoted at its top, as a messenger's reply. */
+.msg-quote { display: flex; align-items: center; gap: 6px; max-width: 100%; margin: -2px -6px 8px; padding: 6px 10px; border-radius: 12px; background: color-mix(in srgb, var(--fg) 6%, transparent); color: var(--muted); font-size: var(--t-xs); text-decoration: none; }
+.msg-quote .sketch { flex: none; width: 15px; height: 15px; }
+.msg-quote-what { flex: none; font-weight: 600; }
+.msg-quote-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-weight: 500; }
+.msg-quote:hover .msg-quote-title { text-decoration: underline; }
+.bubble.has-quote { display: flex; flex-direction: column; align-items: stretch; }

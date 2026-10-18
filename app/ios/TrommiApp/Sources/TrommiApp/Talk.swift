@@ -1431,7 +1431,8 @@ struct TalkRow: View {
   /** His words on his side: the green bubble (a note: the yellow slip, taped on), the time beside it. */
   private var mine: some View {
     VStack(spacing: 6) {
-      if let deed = row.deed {
+      // (a deed whose words quote the card in their bubble needs no line of its own)
+      if let deed = row.deed, row.quote == nil {
         VStack(spacing: 2) {
           HStack(spacing: 6) {
             Image(systemName: "arrow.uturn.backward").font(.system(size: 10, weight: .semibold))
@@ -1447,7 +1448,7 @@ struct TalkRow: View {
         HStack(alignment: .bottom, spacing: 6) {
           Spacer(minLength: 44)
           VStack(alignment: .trailing, spacing: 4) {
-            about
+            if row.quote == nil { about }
             chips
             if row.kind == "note" {
               VStack(alignment: .leading, spacing: 6) {
@@ -1462,7 +1463,10 @@ struct TalkRow: View {
             } else {
               FileRows(ids: row.files, small: true)
               if !row.text.isEmpty {
-                Text(row.text).font(Face.text(16)).foregroundStyle(Ink.fg).textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 8) {
+                  if let q = row.quote { QuoteChip(quote: q) }
+                  Text(row.text).font(Face.text(16)).foregroundStyle(Ink.fg).textSelection(.enabled)
+                }
                   .padding(.horizontal, 14).padding(.vertical, 10)
                   .background(UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 18, bottomTrailingRadius: row.cont ? 18 : 6, topTrailingRadius: 18, style: .continuous).fill(Ink.accentSoft))
                   .accessibilityIdentifier("talk-message")
@@ -1507,7 +1511,7 @@ struct TalkRow: View {
           }
           .padding(.leading, 4)
         }
-        about
+        if row.quote == nil { about }
         if row.kind == "artifact" {
           HStack(spacing: 10) {
             Sketch("page", color: Ink.accent).frame(width: 22, height: 22)
@@ -1519,6 +1523,7 @@ struct TalkRow: View {
           .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.lineStrong))
         } else if !row.text.isEmpty || !row.html.isEmpty || !row.files.isEmpty || !row.details.isEmpty {
           VStack(alignment: .leading, spacing: 8) {
+            if let q = row.quote { QuoteChip(quote: q) }
             if !row.text.isEmpty { Markdown(text: row.text).accessibilityIdentifier("talk-message") }
             if !row.html.isEmpty { InlineHTML(html: row.html).frame(minHeight: 200).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)) }
             FileRows(ids: row.files)
@@ -1537,6 +1542,27 @@ struct TalkRow: View {
       Spacer(minLength: 28)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/** The card a bubble answers or is about (`TalkRow.quote`), quoted at its top as a messenger's reply: a paper sign,
+ *  what he did, its title; a tap opens it. */
+struct QuoteChip: View {
+  @EnvironmentObject var shell: AppShell
+  let quote: CoreView.QuoteView
+  var body: some View {
+    Button { shell.focus(.card(cardId: quote.card.id)) } label: {
+      HStack(spacing: 6) {
+        Image(systemName: "doc.text").font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.muted)
+        Text(quote.label.en).font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).fixedSize()
+        Text(quote.card.title).font(Face.text(12, .medium)).foregroundStyle(Ink.fg).lineLimit(1)
+      }
+      .padding(.horizontal, 9).padding(.vertical, 6)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.fg.opacity(0.06)))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(quote.label.en): \(quote.card.title)")
   }
 }
 
