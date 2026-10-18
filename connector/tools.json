@@ -1209,7 +1209,7 @@
       }
     },
     {
-      "name": "propose_knowledge",
+      "name": "add_knowledge",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1218,6 +1218,11 @@
       "inputSchema": {
         "type": "object",
         "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["rule", "decision", "fact", "where"],
+            "description": "rule: how things are done; decision: what was settled; fact: what is so; where: where something lives. Default fact"
+          },
           "title": {
             "type": "string",
             "description": "What it is about, one line, at most 80 characters"
@@ -1225,21 +1230,13 @@
           "text": {
             "type": "string",
             "description": "The fact itself, plain and short: at most 600 characters"
-          },
-          "pinned": {
-            "type": "boolean",
-            "description": "true: every agent of the team reads it first, at its start"
-          },
-          "helper": {
-            "type": "string",
-            "description": "A helper (your subagent) this is for, by its short name: the card shows with its name, the answer comes with meta helper. Left out: yours."
           }
         },
         "required": ["title", "text"]
       }
     },
     {
-      "name": "correct_knowledge",
+      "name": "update_knowledge",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1252,21 +1249,18 @@
             "type": "string",
             "description": "The entry's id"
           },
+          "kind": {
+            "type": "string",
+            "enum": ["rule", "decision", "fact", "where"],
+            "description": "Its kind anew; left out: as it is"
+          },
           "title": {
             "type": "string",
             "description": "The new title (at most 80 characters); left out: as it is"
           },
           "text": {
             "type": "string",
-            "description": "The new text, whole (at most 600 characters); left out: as it is"
-          },
-          "pinned": {
-            "type": "boolean",
-            "description": "Pinned or not; left out: as it is"
-          },
-          "helper": {
-            "type": "string",
-            "description": "A helper (your subagent) this is for, by its short name: the card shows with its name, the answer comes with meta helper. Left out: yours."
+            "description": "The new text, whole (at most 600 characters); left out: as it is. Nothing new at all confirms that it still holds"
           }
         },
         "required": ["id"]
@@ -1285,10 +1279,6 @@
           "id": {
             "type": "string",
             "description": "The entry's id"
-          },
-          "helper": {
-            "type": "string",
-            "description": "A helper (your subagent) this is for, by its short name: the card shows with its name, the answer comes with meta helper. Left out: yours."
           }
         },
         "required": ["id"]

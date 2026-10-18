@@ -68,7 +68,7 @@ enum NativeDemo {
     case "knowledge":
       let items = URLComponents(string: path)?.queryItems ?? []
       let item = { (name: String) in items.first { $0.name == name }?.value ?? "" }
-      shell.focus(.knowledge(query: item("q"), filter: item("filter")), team: items.contains { $0.name == "team" } ? item("team") : nil)
+      shell.focus(.knowledge(query: item("q"), filter: item("filter"), open: item("open")), team: items.contains { $0.name == "team" } ? item("team") : nil)
     default: shell.focus(.desk)
     }
   }

@@ -47,8 +47,9 @@ export type Screen =
   /** The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
    *  videos and files, "pages" the pages. */
   | { screen: 'artifacts'; kind?: string }
-  /** The page Knowledge of the team in view, with the search's words and its filter ("" every entry, "pinned"). */
-  | { screen: 'knowledge'; query?: string; filter?: string }
+  /** The page Knowledge of the team in view, with the search's words, its filter ("" every entry, "new",
+   *  "pinned", "forgotten") and the entry open (its history shows). */
+  | { screen: 'knowledge'; query?: string; filter?: string; open?: string }
   /** Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
    *  "data", "security"). */
   | { screen: 'settings'; page?: string }
@@ -628,6 +629,8 @@ export interface KnowledgeChipView {
   says: Text
   /** The first entries' titles, pinned first as on its page (at most four), always sent: the Desk's tile shows them. */
   first: string[]
+  /** How many an agent changed since the person last looked. */
+  fresh: number
 }
 
 /** Sealed dictation (spec/v1.md 18): what the chat field's microphone shows. While the field is empty its send
@@ -715,6 +718,14 @@ export interface KnowledgeView {
   text_max: number
   /** The page's other words: its buttons, the editor's hints, the question before a delete. */
   words: KnowledgeWordsView
+  /** The kinds an entry can be, in order, for the editor. */
+  kinds: KnowledgeKindView[]
+}
+
+/** A kind of entry, for the editor's choice. */
+export interface KnowledgeKindView {
+  key: string
+  label: Text
 }
 
 /** One choice of the page's filter. */
@@ -737,6 +748,38 @@ export interface KnowledgeRowView {
   by: Text
   /** When it last changed. */
   at_ms: number
+  /** What it is ("rule", "decision", "fact", "where") and that in words ("Rule"). */
+  kind: string
+  kind_label: Text
+  /** When it was last said to hold ("confirmed Yesterday"), when that was after it was last written. */
+  confirmed?: Text
+  /** An agent changed it since the person last looked. */
+  new: boolean
+  /** Forgotten: it can be brought back (`restore`) until `gone_in` says. */
+  forgotten: boolean
+  /** The way back from its last change when an agent made it: the change's id for `Action::KnowledgeUndo`. */
+  undo?: string
+  /** A forgotten entry's way back: the forget's change id for `Action::KnowledgeUndo`. */
+  restore?: string
+  gone_in?: Text
+  /** It is the entry open (`Screen::Knowledge.open`): its history is here. */
+  open: boolean
+  /** Its changes, the newest first (only while it is open; at most ten). */
+  history: KnowledgeLogView[]
+}
+
+/** One change of an entry: who did what when ("Codex changed it · Yesterday"), the words it replaced, and the way
+ *  back (`Action::KnowledgeUndo` with its id). */
+export interface KnowledgeLogView {
+  id: string
+  says: Text
+  /** "Before:" with the title and text it replaced, or "It was new." (both empty). */
+  before: Text
+  title: string
+  text: string
+  /** An agent made it (not the person). */
+  by_agent: boolean
+  at_ms: number
 }
 
 /** The words of the page Knowledge beside its entries. */
@@ -752,6 +795,11 @@ export interface KnowledgeWordsView {
   text_hint: Text
   delete_ask: Text
   full: Text
+  /** The mark of an entry new to him, the way back from a change, from a forget, and the history's heading. */
+  new_mark: Text
+  undo: Text
+  restore: Text
+  history: Text
 }
 
 /** A team's goals: a note of the person's, at most twenty lines. */

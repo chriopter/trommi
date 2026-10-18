@@ -13,7 +13,6 @@
     "29e26860adecd0578df14c491915b27a",
     "95a7444523d097bff745b891bc2166cf",
     "9c9f4031e513b80e68c67139a12e408b",
-    "6b6e6f776c656467650000000000c4a1",
     "e3eb869558332fec907b2752f54a608a",
     "58f19345f724a39460db70a4377995c8",
     "76ab0cafab45f8b2011853527a3dc10e"
@@ -273,20 +272,21 @@
       "key": "knowledge.chip",
       "en": "Knowledge"
     },
-    "count": 7,
+    "count": 8,
     "says": {
       "key": "knowledge.chip.says",
       "args": {
-        "n": "7"
+        "n": "8"
       },
-      "en": "Team knowledge: 7 entries"
+      "en": "Team knowledge: 8 entries"
     },
     "first": [
       "Launch time",
       "Release branches",
-      "Checkout in Safari",
-      "Design tokens"
-    ]
+      "TestFlight builds",
+      "Checkout in Safari"
+    ],
+    "fresh": 2
   },
   "rows": [
     {
@@ -1187,7 +1187,7 @@
           "Fernly Website"
         ]
       },
-      "run": 3,
+      "run": 2,
       "tiles": {
         "kind": "pair",
         "tiles": [
@@ -1310,84 +1310,6 @@
                 "label": "Skip until Tuesday"
               },
               "en": "Skip until Tuesday"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "6b6e6f776c656467650000000000c4a1",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Add to team knowledge? Hub deploy",
-      "words": "The web app deploys from main through ship-web.yml; a failed check puts the build before back within a minute.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791469440000,
-      "from": {
-        "session_id": "54ddca7af4029f0526984da1e346d833",
-        "name": "Fernly Website",
-        "mark": "draw:leaf",
-        "path": [
-          "Fernly",
-          "Fernly Website"
-        ]
-      },
-      "run": 0,
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "no",
-            "label": "No",
-            "thumb": "no",
-            "thumbs": true,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": true,
-            "tip": {
-              "key": "tile.settles",
-              "en": "Settles it"
-            },
-            "says": {
-              "key": "tile.says.settles",
-              "args": {
-                "label": "No"
-              },
-              "en": "No (settles it)"
-            }
-          },
-          {
-            "key": "yes",
-            "label": "Yes",
-            "thumb": "yes",
-            "thumbs": true,
-            "lead": true,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": true,
-            "tip": {
-              "key": "tile.settles",
-              "en": "Settles it"
-            },
-            "says": {
-              "key": "tile.says.settles",
-              "args": {
-                "label": "Yes"
-              },
-              "en": "Yes (settles it)"
             }
           }
         ],
@@ -1688,13 +1610,13 @@
       ]
     }
   ],
-  "waiting": 15,
+  "waiting": 14,
   "blitz": {
     "key": "desk.blitz",
     "args": {
-      "n": "17"
+      "n": "16"
     },
-    "en": "Blitz: 17 open cards"
+    "en": "Blitz: 16 open cards"
   },
   "duck": {
     "card_ids": [
@@ -1711,7 +1633,6 @@
       "29e26860adecd0578df14c491915b27a",
       "95a7444523d097bff745b891bc2166cf",
       "9c9f4031e513b80e68c67139a12e408b",
-      "6b6e6f776c656467650000000000c4a1",
       "e3eb869558332fec907b2752f54a608a",
       "58f19345f724a39460db70a4377995c8",
       "76ab0cafab45f8b2011853527a3dc10e"
@@ -1719,11 +1640,11 @@
     "tip": {
       "key": "desk.duck.tip.all",
       "args": {
-        "decisions": "15",
-        "n": "17",
+        "decisions": "14",
+        "n": "16",
         "reads": "2"
       },
-      "en": "I don’t give a duck: for all 17 open cards"
+      "en": "I don’t give a duck: for all 16 open cards"
     },
     "short": {
       "key": "desk.duck.short",
@@ -1732,26 +1653,26 @@
     "what": {
       "key": "desk.duck.what",
       "args": {
-        "decisions": "15",
-        "n": "17",
+        "decisions": "14",
+        "n": "16",
         "reads": "2"
       },
-      "en": "15 decisions go to the agents, 2 cards to read are closed"
+      "en": "14 decisions go to the agents, 2 cards to read are closed"
     },
     "ask": {
       "key": "desk.duck.ask",
       "args": {
-        "decisions": "15",
-        "n": "17",
+        "decisions": "14",
+        "n": "16",
         "reads": "2"
       },
-      "en": "Duck all 17?"
+      "en": "Duck all 16?"
     },
     "yes": {
       "key": "desk.duck.yes",
       "args": {
-        "decisions": "15",
-        "n": "17",
+        "decisions": "14",
+        "n": "16",
         "reads": "2"
       },
       "en": "Yes, duck them all"

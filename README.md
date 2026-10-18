@@ -424,34 +424,39 @@ app or what it is built from changed). Pictures over the real hub: `TROMMI_LINUX
 </details>
 
 <details>
-<summary><b>Team knowledge</b> · what every agent of a team knows, kept on your Yes</summary>
+<summary><b>Team knowledge</b> · what every agent of a team knows, kept up to date by the agents</summary>
 
-Each team has its knowledge: short entries (a title, at most 600 characters of text, pinned or not) that every agent
-of the team reads, such as where the deploy runs or how releases go. The Knowledge page of a team (the chip under its
-goals on the Desk) lists them, pinned first then the newest, with a search and the filter Pinned; there you add,
-edit, pin and delete entries yourself.
+Each team has its knowledge: short entries (a title, at most 600 characters of text, a kind: rule, decision, fact or
+where, pinned or not, when it was last confirmed) that every agent of the team reads and keeps up to date on its own,
+such as where the deploy runs or how releases go. The Knowledge page of a team (its tile on the Desk; on the iPhone
+also the pill's menu) lists them, pinned first then the newest, with a search and the filters New, Pinned and
+Forgotten; it marks what agents changed since you last looked, opens an entry with its history and an Undo for each
+change, and brings a forgotten entry back for 30 days. You add, edit, pin and forget entries there too; only you pin.
 
 ```mermaid
 sequenceDiagram
   participant A as Agent (connector)
   participant S as Its session group
-  participant Y as Your device
+  participant Y as Your devices
   participant R as Room group
-  A->>S: Decision card with knowledge: "Add to team knowledge? Hub deploy"
-  S->>Y: the card, drawn from the proposal itself
-  Y->>R: your Yes writes knowledge/<id>
-  Y->>S: a copy into every session of that team
+  A->>S: knowledge_ask/<id>: add "Hub deploy"
+  S->>Y: the write
+  Y->>R: knowledge/<entry> and knowledge_log/<id> (the text before)
+  Y->>S: knowledge_done/<id>, and a copy of the entry for every session of the team
   S->>A: search_knowledge, read_knowledge read the copy
 ```
 
-- **Stored** as encrypted registers `knowledge/<id>` in the room group, which no agent reads. Your devices copy a
-  team's entries into each of its main sessions (spec/v1.md 9.3.7), as they do with the goals.
+- **Stored** as encrypted registers in the room group, which no agent reads: the entry `knowledge/<id>`, its history
+  `knowledge_log/<id>` (the newest ten changes, each with the text before), when you last looked `knowledge_seen/<team>`
+  (spec/v1.md 9.3.7). Your devices copy a team's entries into each of its main sessions, as they do with the goals.
 - **Agents read** with `search_knowledge` (a full-text index over the session's copy, in the connector) and
   `read_knowledge`; at its start, and whenever the entries change, an agent gets a short digest with a tool's result:
   the pinned entries and the newest titles. Its chat shows a quiet line "reads team knowledge (12)".
-- **Agents propose** with `propose_knowledge`, `correct_knowledge` and `forget_knowledge`: each files a yes/no card
-  ("Add to team knowledge?", "Change in team knowledge?", "Forget from team knowledge?"). The app draws it from the
-  proposal, not from the agent's words; your Yes writes the entry on your device, a No writes nothing.
+- **Agents write** with `add_knowledge`, `update_knowledge` (with nothing new it confirms an entry) and
+  `forget_knowledge`, without asking: the write goes into the agent's own session, and your devices apply it on their
+  own (a change only while the entry is as the agent read it, never a pin) and answer it there; a refusal (a title
+  that exists, an entry changed since) is told to the agent. The tools say when to write: lasting rules, decisions,
+  preferences and corrections, not status or to-dos; update instead of adding a second entry.
 - The hub sees encrypted registers, as for everything else. The logic is the app core's (`core/client/src/knowledge.rs`).
 
 </details>

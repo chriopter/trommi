@@ -1070,10 +1070,31 @@ impl App {
                     Screen::Artifacts { kind } => Some(kind.clone()),
                     _ => None,
                 };
+                // (the page Knowledge: on a visit's first look at a team, what changed since he looked before stays
+                //  new on the page, and from now on it is seen)
+                let mut seen_now: Option<String> = None;
                 self.lens.knowledge = match &focus.screen {
-                    Screen::Knowledge { query, filter } => Some(crate::views::knowledge::Ask { query: query.clone(), filter: filter.clone() }),
+                    Screen::Knowledge { query, filter, open } => {
+                        let teams = crate::sessions::teams_in_order(&self.board.model);
+                        let team = match self.lens.team.as_deref() {
+                            Some(t) if teams.iter().any(|(id, _)| id == t) => t.to_string(),
+                            _ => teams.first().map(|(id, _)| id.clone()).unwrap_or_else(|| crate::views::board::DEFAULT_TEAM.into()),
+                        };
+                        let seen_before = match &self.lens.knowledge {
+                            Some(a) if a.team == team => a.seen_before,
+                            _ => {
+                                seen_now = Some(team.clone());
+                                Some(crate::knowledge::seen_of(&self.board.model, &team))
+                            }
+                        };
+                        Some(crate::views::knowledge::Ask { query: query.clone(), filter: filter.clone(), open: open.clone(), team, seen_before })
+                    }
                     _ => None,
                 };
+                if let Some(team) = seen_now {
+                    let key = format!("{}{team}", crate::knowledge::SEEN_PREFIX);
+                    self.action(now_ms, crate::actions::Action::RoomRegister { key, value: serde_json::json!({ "at": now_ms }) }, &mut out);
+                }
                 let (session, card, off) = match focus.screen {
                     Screen::Session { session_id } => (Some(session_id), None, None),
                     Screen::Card { card_id } => (None, Some(card_id), None),
@@ -2201,6 +2222,7 @@ fn writes_room_registers(action: &Action) -> bool {
             | Action::KnowledgeSave { .. }
             | Action::KnowledgePin { .. }
             | Action::KnowledgeDelete { .. }
+            | Action::KnowledgeUndo { .. }
             | Action::SessionIcon { .. }
             | Action::SessionGroup { .. }
             | Action::PlaceSession { .. }

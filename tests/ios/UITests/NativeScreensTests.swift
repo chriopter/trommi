@@ -396,6 +396,22 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 5))
     capture("knowledge-add")
   }
+  /** What agents wrote on their own: an entry's history with Undo, and a forgotten entry brought back (demo room). */
+  func testKnowledgeHistoryAndUndo() {
+    launch("knowledge--history-of-an-entry")
+    let history = app.descendants(matching: .any)["knowledge-history"]
+    XCTAssertTrue(history.waitForExistence(timeout: 15), app.debugDescription)
+    capture("knowledge-history")
+    XCTAssertTrue(app.buttons["knowledge-undo"].exists)
+    app.buttons["knowledge-undo"].tap()
+    capture("knowledge-undone")
+    launch("knowledge--forgotten")
+    let restore = app.buttons["knowledge-restore"]
+    XCTAssertTrue(restore.waitForExistence(timeout: 15), app.debugDescription)
+    capture("knowledge-forgotten")
+    restore.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["knowledge-none"].waitForExistence(timeout: 5))
+  }
   func testTheNoteSavesItself() {
     launch("desk")
     XCTAssertTrue(app.buttons["desk-more"].waitForExistence(timeout: 15))

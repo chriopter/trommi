@@ -43,6 +43,17 @@ pub const DESK: &str = "desk/";
 /// The prefix of a team's knowledge entry (section 9.3.7): `knowledge/<entry id>`, written by human devices in
 /// the room group, and mirrored by them into the session groups of that team's main sessions.
 pub const KNOWLEDGE: &str = "knowledge/";
+/// The prefix of a change of a team's knowledge as the person's devices keep it (its history, section 9.3.7):
+/// `knowledge_log/<change id>`, room group, human devices.
+pub const KNOWLEDGE_LOG: &str = "knowledge_log/";
+/// The prefix of the moment the person last looked at a team's knowledge (`knowledge_seen/<desk>`), room group.
+pub const KNOWLEDGE_SEEN: &str = "knowledge_seen/";
+/// The prefix of an agent's write of its team's knowledge (`knowledge_ask/<write id>`), session group, agent or
+/// helper device: the person's devices apply it.
+pub const KNOWLEDGE_ASK: &str = "knowledge_ask/";
+/// The prefix of the person's devices' word on such a write (`knowledge_done/<write id>`), session group, human
+/// devices.
+pub const KNOWLEDGE_DONE: &str = "knowledge_done/";
 /// The most characters (Unicode scalar values) a knowledge entry's title has.
 pub const MAX_KNOWLEDGE_TITLE_LEN: usize = 80;
 /// The most characters a knowledge entry's text has.
@@ -129,30 +140,38 @@ fn goals_fit(name: &str, value: &serde_json::Value) -> Result<(), Error> {
     Ok(())
 }
 
-/// Holds a knowledge entry (`knowledge/<id>`, section 9.3.7) to its limits: null, or an object whose `title` is
-/// one line of text of 1 to [`MAX_KNOWLEDGE_TITLE_LEN`] characters and whose `text` is text of at most
-/// [`MAX_KNOWLEDGE_TEXT_LEN`] characters. `bad-format` for any other shape, `too-large` beyond the limits. Its
-/// other fields pass: this module does not look into them.
+/// Holds what the team's knowledge keeps to its limits (section 9.3.7): an entry (`knowledge/<id>`), a change of
+/// one (`knowledge_log/<id>`) and an agent's write (`knowledge_ask/<id>`) are null or an object; a `title` in it is
+/// one line of text of at most [`MAX_KNOWLEDGE_TITLE_LEN`] characters (an entry's: not empty, and it must have one,
+/// as it must have a `text`), a `text` text of at most [`MAX_KNOWLEDGE_TEXT_LEN`] characters. `bad-format` for any
+/// other shape, `too-large` beyond the limits. Their other fields pass: this module does not look into them.
 fn knowledge_fits(name: &str, value: &serde_json::Value) -> Result<(), Error> {
-    if !name.starts_with(KNOWLEDGE) {
+    let entry = name.starts_with(KNOWLEDGE);
+    if !entry && !name.starts_with(KNOWLEDGE_LOG) && !name.starts_with(KNOWLEDGE_ASK) {
         return Ok(());
     }
-    let entry = match value {
+    let fields = match value {
         serde_json::Value::Null => return Ok(()),
-        serde_json::Value::Object(entry) => entry,
+        serde_json::Value::Object(fields) => fields,
         _ => return Err(Error::BadFormat),
     };
-    let (Some(serde_json::Value::String(title)), Some(serde_json::Value::String(text))) =
-        (entry.get("title"), entry.get("text"))
-    else {
-        return Err(Error::BadFormat);
+    let text_of = |key: &str| -> Result<Option<&String>, Error> {
+        match fields.get(key) {
+            None | Some(serde_json::Value::Null) if !entry => Ok(None),
+            Some(serde_json::Value::String(s)) => Ok(Some(s)),
+            _ => Err(Error::BadFormat),
+        }
     };
-    if title.trim().is_empty() || title.contains(['\n', '\r']) {
-        return Err(Error::BadFormat);
+    let (title, text) = (text_of("title")?, text_of("text")?);
+    if let Some(title) = title {
+        if (entry && title.trim().is_empty()) || title.contains(['\n', '\r']) {
+            return Err(Error::BadFormat);
+        }
+        if title.chars().count() > MAX_KNOWLEDGE_TITLE_LEN {
+            return Err(Error::TooLarge);
+        }
     }
-    if title.chars().count() > MAX_KNOWLEDGE_TITLE_LEN
-        || text.chars().count() > MAX_KNOWLEDGE_TEXT_LEN
-    {
+    if text.is_some_and(|text| text.chars().count() > MAX_KNOWLEDGE_TEXT_LEN) {
         return Err(Error::TooLarge);
     }
     Ok(())
@@ -289,14 +308,16 @@ pub fn name_owner(name: &str, in_room: bool) -> Option<NameOwner> {
                 "read/",
                 BOARD_SNAPSHOT,
                 KNOWLEDGE,
+                KNOWLEDGE_LOG,
+                KNOWLEDGE_SEEN,
             ]);
         return room_humans.then_some(NameOwner::RoomHumans);
     }
-    if name == GOALS || name == MACHINE_APPROVED || has_prefix(&[JOIN_LINK, KNOWLEDGE]) {
+    if name == GOALS || name == MACHINE_APPROVED || has_prefix(&[JOIN_LINK, KNOWLEDGE, KNOWLEDGE_DONE]) {
         return Some(NameOwner::SessionHumans);
     }
     let session_devices =
-        ["profile", "heard"].contains(&name) || has_prefix(&["status_line/", "alert/", JOIN_ASK]);
+        ["profile", "heard"].contains(&name) || has_prefix(&["status_line/", "alert/", JOIN_ASK, KNOWLEDGE_ASK]);
     session_devices.then_some(NameOwner::SessionDevices)
 }
 

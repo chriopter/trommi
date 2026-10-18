@@ -289,13 +289,17 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
         super::DeskTileView {
             key: "knowledge".into(),
             title: k.label.clone(),
-            line: match n {
-                0 => none(),
-                1 => say("desk.tile.knowledge.one", "1 entry", &[]),
-                _ => { let s = n.to_string(); say("desk.tile.knowledge.many", format!("{s} entries"), &[("n", &s)]) }
+            line: match (n, k.fresh) {
+                (0, _) => none(),
+                (1, 0) => say("desk.tile.knowledge.one", "1 entry", &[]),
+                (_, 0) => { let s = n.to_string(); say("desk.tile.knowledge.many", format!("{s} entries"), &[("n", &s)]) }
+                (_, f) => {
+                    let (s, f) = (n.to_string(), f.to_string());
+                    say("desk.tile.knowledge.fresh", format!("{s} {} · {f} new", if n == 1 { "entry" } else { "entries" }), &[("n", &s), ("new", &f)])
+                }
             },
             count: Some(n),
-            opens: super::Screen::Knowledge { query: String::new(), filter: String::new() },
+            opens: super::Screen::Knowledge { query: String::new(), filter: if k.fresh > 0 { "new".into() } else { String::new() }, open: String::new() },
             items: Vec::new(),
             team_id: Some(k.team_id.clone()),
             names: k.first.clone(),
@@ -792,7 +796,7 @@ mod tests {
         desk.knowledge = Some(crate::views::KnowledgeChipView { team_id: "main".into(), label: crate::views::words::say("knowledge.chip", "Knowledge", &[]), count: 7, ..Default::default() });
         let t = tiles(&desk, &all, Some("main"));
         assert_eq!((t.len(), t[3].key.as_str(), t[3].title.en.as_str(), t[3].line.en.as_str(), t[3].count), (4, "knowledge", "Knowledge", "7 entries", Some(7)));
-        assert_eq!(t[3].opens, Screen::Knowledge { query: String::new(), filter: String::new() });
+        assert_eq!(t[3].opens, Screen::Knowledge { query: String::new(), filter: String::new(), open: String::new() });
         // the bento: sizes and quiet tiles from the core
         assert_eq!(t.iter().map(|t| (t.key.as_str(), t.size.as_str(), t.empty)).collect::<Vec<_>>(), [("work", "wide", false), ("artifacts", "narrow", false), ("board", "wide", false), ("knowledge", "narrow", false)]);
         let mut quiet = DeskView { knowledge: Some(crate::views::KnowledgeChipView { team_id: "main".into(), ..Default::default() }), ..Default::default() };

@@ -52,7 +52,12 @@ try {
     if (!chip || chip.tile !== chip.vm || chip.line !== chip.says || !(chip.vm > 0) || JSON.stringify(chip.names) !== JSON.stringify(chip.first) || !chip.names.length) bad.push(`the Desk's tile: ${JSON.stringify(chip)}`)
     await ev("document.querySelector('#tile-knowledge').click()")
     if (!(await until("Boolean(document.querySelector('#knowledge .kn-list')) && location.pathname === '/knowledge'"))) bad.push('the tile does not open the page')
+    // (with something new to him, the tile opens the new entries)
     let p = await ev(PROBE)
+    if (p.vm?.filter !== 'new' || !p.shown.length || !same(p.shown, p.vm.rows)) bad.push(`the tile does not open what is new: ${JSON.stringify(p)}`)
+    await ev("window.Turbo.visit('/knowledge')")
+    await until("trommi.vm().knowledge?.filter === '' && document.querySelectorAll('#kn-list > .kn-item').length === trommi.vm().knowledge.rows.length")
+    p = await ev(PROBE)
     if (!p.vm || !same(p.shown, p.vm.rows) || p.total !== `(${p.vm.count})`) bad.push(`the list is not the core's: ${JSON.stringify(p)}`)
     if (p.pinned.length < 1 || !same(p.shown.slice(0, p.pinned.length), p.pinned)) bad.push(`the pinned do not come first: ${JSON.stringify(p.pinned)}`)
     const all = p.vm.count
@@ -80,9 +85,33 @@ try {
     if (!(await until(`trommi.vm().knowledge.rows.find(r => r.id === '${id}')?.text === 'changed in place' && document.getElementById('kn-${id}')?.querySelector('.kn-text')?.textContent === 'changed in place'`))) bad.push('Edit does not change it')
     await ev(`(() => { const li = document.getElementById('kn-${id}'); li.querySelector('details').open = true; li.querySelector('form[action$="/delete"]').requestSubmit() })()`)
     if (!(await until(`trommi.vm().knowledge.count === ${all} && !document.getElementById('kn-${id}')`))) bad.push('Delete does not take it away')
+    // what agents wrote: marked new; an entry's history opens with it, and Undo brings the words before back
+    await ev("window.Turbo.visit('/knowledge')")
+    await until("document.querySelectorAll('.kn-new').length > 0")
+    const fresh = await ev("[document.querySelectorAll('#kn-list .kn-new').length, trommi.vm().knowledge.rows.filter(r => r.new).length]")
+    if (!fresh[0] || fresh[0] !== fresh[1]) bad.push(`new marks: the page ${fresh[0]}, the core ${fresh[1]}`)
+    // (the demo's checkout entry: an agent changed its words two hours ago)
+    const changed = await ev("trommi.vm().knowledge.rows.find(r => r.undo && r.title === 'Checkout in Safari')?.id ?? null")
+    if (!changed) bad.push('no entry an agent changed')
+    else {
+      await ev(`document.querySelector('#kn-${changed} > details > summary').click()`)
+      if (!(await until(`document.querySelectorAll('#kn-${changed} .kn-log').length > 0 && trommi.vm().knowledge.rows.find(r => r.id === '${changed}')?.open`))) bad.push('the history does not open')
+      const before = await ev(`trommi.vm().knowledge.rows.find(r => r.id === '${changed}').history[0].text`)
+      await ev(`document.querySelector('#kn-${changed} .kn-log form').requestSubmit()`)
+      if (!(await until(`trommi.vm().knowledge.rows.find(r => r.id === '${changed}')?.text === ${JSON.stringify(before)}`))) bad.push('Undo does not bring the words before back')
+    }
+    // forgotten: listed under Forgotten, brought back from there
+    await ev("window.Turbo.visit('/knowledge?filter=forgotten')")
+    await until("trommi.vm().knowledge?.filter === 'forgotten'")
+    const gone = await ev("trommi.vm().knowledge.rows.map(r => r.id)")
+    if (!gone.length) bad.push('nothing under Forgotten')
+    else {
+      await ev(`document.querySelector('#kn-${gone[0]} form[action^="/knowledge/undo/"]').requestSubmit()`)
+      if (!(await until(`!trommi.vm().knowledge.rows.some(r => r.id === '${gone[0]}')`))) bad.push('Bring back does not bring it back')
+    }
     p = await ev(PROBE)
     if (p.page > 0) bad.push(`the page scrolls ${p.page}px sideways`)
-    console.log(`${bad.length ? 'FAIL' : 'ok  '} ${size.name}: ${all} entries, the search, Pinned, add, pin, edit, delete${bad.length ? `; ${bad.join('; ')}` : ''}`)
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} ${size.name}: ${all} entries, the search, Pinned, add, pin, edit, forget, new marks, history and undo, bring back${bad.length ? `; ${bad.join('; ')}` : ''}`)
     if (bad.length) failed.push(size.name)
   }
 } finally {

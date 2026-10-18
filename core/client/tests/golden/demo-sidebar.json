@@ -6,7 +6,7 @@
         "key": "team.name",
         "en": "Fernly"
       },
-      "waiting": 15,
+      "waiting": 14,
       "selected": true,
       "knocks": true
     },
@@ -27,7 +27,7 @@
       "key": "team.all",
       "en": "All teams"
     },
-    "waiting": 25,
+    "waiting": 24,
     "selected": false,
     "knocks": true
   },
@@ -65,16 +65,16 @@
           true
         ]
       },
-      "open": 9,
+      "open": 8,
       "knocks": false,
       "away": false,
       "group": "main:on",
       "says": {
         "key": "badge.working_open",
         "args": {
-          "n": "9"
+          "n": "8"
         },
-        "en": "Working, 9 questions open"
+        "en": "Working, 8 questions open"
       },
       "last": {
         "text": "41 of 44 green; the Safari checkout test fails 2 of 12 runs, always on the iframe. Question on your Desk.",
@@ -202,13 +202,13 @@
       "signal": "waiting"
     }
   ],
-  "badge": 15,
+  "badge": 14,
   "team": "main",
   "place": {
     "key": "team.name",
     "en": "Fernly"
   },
-  "waiting": 15,
+  "waiting": 14,
   "knocking": 1,
   "stopped": 0,
   "working": 3,
@@ -222,15 +222,15 @@
       },
       "selected": true,
       "open": false,
-      "waiting": 15,
+      "waiting": 14,
       "knocks": true,
       "says": {
         "key": "team.stack.open",
         "args": {
           "agents": "3",
-          "open": "15"
+          "open": "14"
         },
-        "en": "3 agents, 15 questions open"
+        "en": "3 agents, 14 questions open"
       },
       "edges": [
         {
@@ -294,16 +294,16 @@
               true
             ]
           },
-          "open": 9,
+          "open": 8,
           "knocks": false,
           "away": false,
           "group": "main:on",
           "says": {
             "key": "badge.working_open",
             "args": {
-              "n": "9"
+              "n": "8"
             },
-            "en": "Working, 9 questions open"
+            "en": "Working, 8 questions open"
           },
           "last": {
             "text": "41 of 44 green; the Safari checkout test fails 2 of 12 runs, always on the iframe. Question on your Desk.",

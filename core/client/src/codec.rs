@@ -102,7 +102,7 @@ impl BodyKind {
                 "object_version", "previous_version_hash", "card_type", "title", "teaser", "body", "options",
                 "sections", "html", "allows_multiple", "recommended", "urgency_reason", "attachments", "change_note",
                 "close_summary", "withdraw_reason", "merged_into_object_id", "merged_from_object_ids", "working",
-                "helper", "knowledge",
+                "helper",
             ],
             Self::Artifact => &[
                 "object_version", "previous_version_hash", "artifact_type", "title", "note", "attachments",
@@ -306,13 +306,7 @@ fn soft_wire(v: &Value, n: usize) -> Value {
     wire_id(v, n).map_or_else(|| v.clone(), Value::String)
 }
 type IdMap = fn(&Value, usize) -> Value;
-/// A card's `knowledge` (a proposal, spec/v1.md 9.3.7): the entry it names, one way or the other.
-fn knowledge_ids(v: &Value, id: IdMap) -> Value {
-    match v {
-        Value::Object(o) => with_id(o, "entry", 16, id),
-        other => other.clone(),
-    }
-}
+
 fn id_list(v: &Value, id: IdMap) -> Value {
     match v {
         Value::Array(a) => Value::Array(a.iter().map(|x| id(x, 16)).collect()),
@@ -544,7 +538,10 @@ fn plain_options(options: &[Value]) -> Value {
 /// Register names whose tail is one id of 16 bytes (spec/v1.md 9.3.3). A new per-card or per-session register goes
 /// into this list and needs nothing else. Written: base64url, always. Read: base64url, and the 32 hex digits an
 /// earlier iOS app wrote on the wire, which already are the model's key (it stays as it is).
-const ID_NAMES: [&str; 7] = ["desk/", "session/", "draft/", "snooze/", "duck/", "star/", "knowledge/"];
+const ID_NAMES: [&str; 11] = [
+    "desk/", "session/", "draft/", "snooze/", "duck/", "star/", "knowledge/", "knowledge_log/", "knowledge_ask/", "knowledge_done/",
+    "knowledge_seen/",
+];
 const READ_SCOPES: [&str; 3] = ["read/session/", "read/card/", "read/desk/"];
 
 fn map_name(
@@ -646,6 +643,11 @@ fn register_value(key: &str, value: &Value, to_model: bool) -> Result<Value> {
         }
     } else if key.starts_with("session/") || key.starts_with("knowledge/") {
         with_id(o, "desk", 16, id)
+    } else if key.starts_with("knowledge_log/") {
+        let Value::Object(o) = with_id(o, "desk", 16, id) else { return Ok(value.clone()) };
+        with_id(&o, "entry", 16, id)
+    } else if key.starts_with("knowledge_ask/") || key.starts_with("knowledge_done/") {
+        with_id(o, "entry", 16, id)
     } else if key == "goals" {
         with_id(o, "desk_id", 16, id)
     } else if key.starts_with("status_line/") {
@@ -1487,9 +1489,6 @@ fn fields_from_wire(kind: BodyKind, out: &mut Body<'_>) -> Result<()> {
         if let Some(v) = out.given("merged_from_object_ids") {
             out.put("merged_from_object_ids", id_list(&v, soft_hex));
         }
-        if let Some(v) = out.given("knowledge") {
-            out.put("knowledge", knowledge_ids(&v, soft_hex));
-        }
         let teaser_bad = match out.get("teaser").filter(|t| !t.is_null()) {
             Some(t) => match t.plain_str() {
                 Some(text) => !teaser_text_valid(text),
@@ -1747,9 +1746,6 @@ fn to_wire(kind: BodyKind, f: &Fields) -> Result<Fields> {
             .filter(|v| !v.is_null())
         {
             *v = id_list(v, soft_wire);
-        }
-        if let Some(v) = out.get_mut("knowledge").filter(|v| !v.is_null()) {
-            *v = knowledge_ids(v, soft_wire);
         }
     }
     if kind == BodyKind::Artifact {

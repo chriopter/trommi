@@ -99,7 +99,7 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
                 .and_then(Value::as_object)
                 .into_iter()
                 .flatten()
-                .filter(|(_, v)| v.get("desk").and_then(Value::as_str) == Some(team.as_str()))
+                .filter(|(_, v)| v.get("desk").and_then(Value::as_str) == Some(team.as_str()) && v.get("deleted_at").is_none())
                 .map(|(id, v)| json!([format!("knowledge/{id}"), { "value": v }]))
                 .collect();
             o.insert("registers".into(), Value::Array(carried));
@@ -125,6 +125,8 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
         ("ducks", "duck"),
         ("stars", "star"),
         ("knowledge", "knowledge"),
+        ("knowledge_log", "knowledge_log"),
+        ("knowledge_seen", "knowledge_seen"),
     ] {
         for (id, v) in h.get(group).and_then(Value::as_object).into_iter().flatten() {
             put(format!("{name}/{id}"), v);

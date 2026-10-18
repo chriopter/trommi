@@ -21,8 +21,10 @@ fn owned_by(name: &str, role: Role, sender: &DeviceId) -> Option<bool> {
         Some(true)
     } else if let Some(device) = name.strip_prefix("device/") {
         (device == sender.to_base64url()).then_some(false)
-    } else if name == "goals" || name.strip_prefix("knowledge/").is_some_and(|id| !id.is_empty()) {
+    } else if name == "goals" || ["knowledge/", "knowledge_done/"].iter().any(|p| name.strip_prefix(p).is_some_and(|id| !id.is_empty())) {
         (!agent).then_some(false)
+    } else if name.strip_prefix("knowledge_ask/").is_some_and(|id| !id.is_empty()) {
+        agent.then_some(false)
     } else if name == "profile"
         || name == "heard"
         || name
@@ -629,6 +631,10 @@ mod rules {
             ("read/session/x", true, false, false, false),
             ("board_snapshot/x", true, false, false, false),
             ("knowledge/x", true, true, false, false),
+            ("knowledge_log/x", true, false, false, false),
+            ("knowledge_seen/x", true, false, false, false),
+            ("knowledge_ask/x", false, false, true, true),
+            ("knowledge_done/x", false, true, false, false),
             (own.as_str(), true, true, true, true),
             (other.as_str(), false, false, false, false),
             ("heads", true, true, true, true),
@@ -1084,6 +1090,15 @@ fn a_knowledge_entry_keeps_to_its_title_and_text() {
     ] {
         assert_eq!(read_as(&odd), Err(Error::BadFormat), "{odd}");
         assert_eq!(written(&odd), Err(Error::BadFormat), "{odd}");
+    }
+    // (a change of an entry and an agent's write keep the same limits, a missing title or text included)
+    for name in ["knowledge_log/abc", "knowledge_ask/abc"] {
+        let read = |value: &str| Value::parse(format!(r#"{{"name":"{name}","value":{value},"lamport":1}}"#).as_bytes()).map(|_| ());
+        assert_eq!(read(r#"{"op":"forget","entry":"x"}"#), Ok(()));
+        assert_eq!(read(&json!({ "title": "x".repeat(MAX_KNOWLEDGE_TITLE_LEN + 1) }).to_string()), Err(Error::TooLarge));
+        assert_eq!(read(&json!({ "text": "y".repeat(MAX_KNOWLEDGE_TEXT_LEN + 1) }).to_string()), Err(Error::TooLarge));
+        assert_eq!(read(r#"{"title":"a\nb"}"#), Err(Error::BadFormat));
+        assert_eq!(read(r#""add""#), Err(Error::BadFormat));
     }
     // (only `knowledge/` is held to it: the same value under another name passes)
     let other = format!(r#"{{"name":"profile","value":{},"lamport":1}}"#, entry(&"a".repeat(200), "x"));

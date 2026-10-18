@@ -578,6 +578,18 @@ fn question_fields(
 /// A card's fields with its helper's name (README "Helpers and their events"); none for the agent's own card.
 /// A title or text of a knowledge tool, kept as the team's knowledge keeps it; none when it is not given. Beyond
 /// its limit it is refused, not cut: the agent says it shorter.
+/// The `kind` a knowledge tool gives: one of rule, decision, fact, where; none when it is not given.
+fn knowledge_kind(args: &Map<String, Value>) -> Result<Option<String>> {
+    if !present(args.get("kind")) {
+        return Ok(None);
+    }
+    let kind = trim(&js_str(&args["kind"])).to_lowercase();
+    if !knowledge::KINDS.contains(&kind.as_str()) {
+        return Err(err(format!("kind is one of {}", knowledge::KINDS.join(", "))));
+    }
+    Ok(Some(kind))
+}
+
 fn knowledge_arg(args: &Map<String, Value>, key: &str, max: usize) -> Result<Option<String>> {
     if !present(args.get(key)) {
         return Ok(None);
@@ -1074,38 +1086,53 @@ impl Bridge {
             .ok_or_else(|| err(format!("no entry \"{id}\" in the team's knowledge: search_knowledge names their ids")))
     }
 
-    /// The yes/no card that asks the human to keep a proposal: the app draws it from the proposal itself
-    /// (core/client/src/knowledge.rs `dress`), and his Yes writes it.
-    async fn knowledge_card(&self, args: &Map<String, Value>, p: knowledge::Proposal) -> Result<String> {
-        let spot = Self::spot_of(args)?;
-        let question = p.question();
-        let mut fields = Map::new();
-        fields.insert("card_type".into(), json!("decision"));
-        fields.insert("title".into(), json!(question));
-        fields.insert("body".into(), json!(p.body()));
-        fields.insert(
-            "options".into(),
-            json!([{ "key": "yes", "label": "Yes", "detail": "", "final": true }, { "key": "no", "label": "No", "detail": "", "final": true }]),
-        );
-        fields.insert("allows_multiple".into(), json!(false));
-        fields.insert("urgency".into(), json!("normal"));
-        fields.insert("urgency_reason".into(), json!(""));
-        // (the entry's id as the wire writes it, base64url: the card goes out as written)
-        let mut asked = p.value();
-        if let Some(entry) = asked.get_mut("entry") {
-            *entry = json!(entry.as_str().and_then(trommi_client_core::codec::wire_of_hex_id).unwrap_or_default());
+    /// An agent's write of the team's knowledge: put into this session (`knowledge_ask/<id>`), from where the
+    /// person's devices apply it on their own and answer (`knowledge_done/<id>`, read by `knowledge_answers`).
+    async fn knowledge_write(&self, ask: knowledge::Ask) -> Result<String> {
+        let write = crate::util::random_hex(16);
+        let key = format!("{}{write}", knowledge::ASK_PREFIX);
+        let (name, value) = trommi_client_core::codec::encode_register(&key, &ask.value()).map_err(|_| err("that write does not fit the team's knowledge"))?;
+        let mut values = Map::new();
+        values.insert(name, value.map_or(Value::Null, |v| serde_json::from_str(&v).unwrap_or(Value::Null)));
+        self.client.set_status(values, None).await?;
+        let what = match ask.op {
+            knowledge::Op::Add => format!("\"{}\" written", ask.title),
+            knowledge::Op::Update if ask.kind.is_none() && self.knowledge_index().all().iter().any(|e| Some(&e.id) == ask.entry.as_ref() && (&e.title, &e.text) == (&ask.title, &ask.text)) => format!("\"{}\" confirmed", ask.title),
+            knowledge::Op::Update => format!("\"{}\" changed", ask.title),
+            knowledge::Op::Forget => format!("\"{}\" forgotten", ask.title),
+        };
+        Ok(format!("{what}: the person's devices put it into the team's knowledge on their own (search_knowledge shows it then); the human sees it as new and can undo it. Nothing to wait for."))
+    }
+
+    /// The person's devices' answers to this session's writes of the team's knowledge (`knowledge_done/<id>`): each
+    /// write answered is taken away, and what was refused is said once (none: nothing to say).
+    pub async fn knowledge_answers(&self) -> Option<String> {
+        let (answers, asks) = {
+            let c = self.client.lock();
+            let session = c.session_id().and_then(|sid| c.model().sessions.get(&sid))?;
+            let of = |prefix: &str| -> Vec<(String, Value)> {
+                session.registers.iter().filter_map(|(k, r)| k.strip_prefix(prefix).filter(|_| !r.value.is_null()).map(|w| (w.to_string(), r.value.clone()))).collect()
+            };
+            (of(knowledge::DONE_PREFIX), of(knowledge::ASK_PREFIX))
+        };
+        let mut told = Vec::new();
+        let mut clear = Map::new();
+        for (write, answer) in answers {
+            let Some((_, asked)) = asks.iter().find(|(w, _)| *w == write) else { continue };
+            if answer.get("ok") == Some(&Value::Bool(false)) {
+                let why = answer.get("why").and_then(Value::as_str).unwrap_or("");
+                let title = asked.get("title").and_then(Value::as_str).or_else(|| asked.get("was").and_then(Value::as_str)).unwrap_or("");
+                told.push(format!("\"{title}\": {}", knowledge::refusal_words(why)));
+            }
+            let key = format!("{}{write}", knowledge::ASK_PREFIX);
+            if let Ok((name, _)) = trommi_client_core::codec::encode_register(&key, &Value::Null) {
+                clear.insert(name, Value::Null);
+            }
         }
-        fields.insert("knowledge".into(), asked);
-        fields.insert("attachments".into(), json!([]));
-        tag(&mut fields, &spot);
-        let id = self.client.send_card(fields, None).await?;
-        self.caught_up().await?;
-        self.link_question(&spot, &id, &question).await;
-        Ok(format!(
-            "card {id} asks the human \"{question}\"; his Yes writes it into the team's knowledge and closes the card, his No closes it: nothing for you to do either way. {}{}",
-            choice_arrives(),
-            stripped_hint()
-        ))
+        if !clear.is_empty() {
+            let _ = self.client.set_status(clear, None).await;
+        }
+        (!told.is_empty()).then(|| format!("[Trommi: the team's knowledge did not take your write: {}.]", told.join("; ")))
     }
 
     async fn my_cards(&self) -> Vec<Card> {
@@ -1946,7 +1973,7 @@ impl Bridge {
                 let query = trim(&s(args.get("query")));
                 let limit = args.get("limit").and_then(Value::as_u64).map_or(knowledge::SEARCH_MAX, |n| n.clamp(1, 50) as usize);
                 if index.is_empty() {
-                    return Ok("The team's knowledge is empty. propose_knowledge asks the human to keep something lasting.".into());
+                    return Ok("The team's knowledge is empty. add_knowledge keeps something lasting for every agent of the team.".into());
                 }
                 let found = index.search(&query, limit);
                 let n = index.len();
@@ -1967,37 +1994,32 @@ impl Bridge {
                 let e = index.get(&id).ok_or_else(|| err(format!("no entry \"{id}\" in the team's knowledge: search_knowledge names their ids")))?;
                 Ok(knowledge::full(e))
             }
-            "propose_knowledge" => {
+            "add_knowledge" => {
                 let (title, text) = (knowledge_arg(args, "title", knowledge::TITLE_MAX)?, knowledge_arg(args, "text", knowledge::TEXT_MAX)?);
                 let (title, text) = (title.unwrap_or_default(), text.unwrap_or_default());
                 if title.is_empty() {
                     return Err(err("title is required: what the entry is about, one line"));
                 }
                 if let Some(same) = self.knowledge_index().all().iter().find(|e| e.title.eq_ignore_ascii_case(&title)) {
-                    return Err(err(format!("the team's knowledge has \"{}\" already (id {}): correct_knowledge changes it", same.title, same.id)));
+                    return Err(err(format!("the team's knowledge has \"{}\" already (id {}): update_knowledge changes it", same.title, same.id)));
                 }
-                let pinned = args.get("pinned") == Some(&Value::Bool(true));
-                let p = knowledge::Proposal { op: knowledge::Op::Add, entry: None, was: None, title, text, pinned };
-                self.knowledge_card(args, p).await
+                let kind = knowledge_kind(args)?.unwrap_or_else(|| "fact".into());
+                let ask = knowledge::Ask { op: knowledge::Op::Add, entry: None, was: None, title, text, kind: Some(kind), rev: 0, at: crate::util::now_ms() };
+                self.knowledge_write(ask).await
             }
-            "correct_knowledge" => {
+            "update_knowledge" => {
                 let e = self.knowledge_entry(args)?;
                 let title = knowledge_arg(args, "title", knowledge::TITLE_MAX)?.filter(|t| !t.is_empty()).unwrap_or_else(|| e.title.clone());
                 let text = knowledge_arg(args, "text", knowledge::TEXT_MAX)?.unwrap_or_else(|| e.text.clone());
-                let pinned = match args.get("pinned") {
-                    Some(Value::Bool(b)) => *b,
-                    _ => e.pinned,
-                };
-                if (title.as_str(), text.as_str(), pinned) == (e.title.as_str(), e.text.as_str(), e.pinned) {
-                    return Err(err("nothing to change: give a new title, text or pinned"));
-                }
-                let p = knowledge::Proposal { op: knowledge::Op::Change, entry: Some(e.id.clone()), was: Some(e.title.clone()), title, text, pinned };
-                self.knowledge_card(args, p).await
+                // (nothing new: the agent says the entry still holds, which confirms it)
+                let kind = knowledge_kind(args)?;
+                let ask = knowledge::Ask { op: knowledge::Op::Update, entry: Some(e.id.clone()), was: Some(e.title.clone()), title, text, kind, rev: e.changed(), at: crate::util::now_ms() };
+                self.knowledge_write(ask).await
             }
             "forget_knowledge" => {
                 let e = self.knowledge_entry(args)?;
-                let p = knowledge::Proposal { op: knowledge::Op::Forget, entry: Some(e.id.clone()), was: Some(e.title.clone()), title: e.title, text: String::new(), pinned: false };
-                self.knowledge_card(args, p).await
+                let ask = knowledge::Ask { op: knowledge::Op::Forget, entry: Some(e.id.clone()), was: Some(e.title.clone()), title: e.title.clone(), text: String::new(), kind: None, rev: e.changed(), at: crate::util::now_ms() };
+                self.knowledge_write(ask).await
             }
             // (before helpers lived in their agent's session: an agent still calling these, with tools it was
             //  started with, is told what changed instead of failing)
