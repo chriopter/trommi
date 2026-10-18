@@ -2199,6 +2199,10 @@ export function markControl(agent, base, { stay = false, back = '', cls = 'ledge
  * back: the path of the page that shows the heading; the form answers with a redirect to it.
  * Pass stay: true instead where the heading is kept current by the page's own live stream.
  */
+/** A chat's menu as the session's page draws it (session.mjs registers it; a phone's title, sidebar.mjs, shows it). */
+let chatMenuFn = null
+export const setChatMenu = fn => { chatMenuFn = fn }
+export const chatMenuOf = (s, vm, base) => (chatMenuFn ? chatMenuFn(s, vm, base) : '')
 export const sessionHeadEdit = (agent, base, { back = '', stay = false } = {}) => html`<span class="t-session-edit" data-controller="pops">${markControl(agent, base, { stay, back, cls: 't-head-mark' })}${crownControl(agent, base, { stay, back })}${renameControl(agent, base, { stay, back, cls: 't-head-name' })}</span>`
 
 /** The crown as a switch on the corner of the mark: one per team, given by the human's hand (the hub takes it from whoever wore it). */
