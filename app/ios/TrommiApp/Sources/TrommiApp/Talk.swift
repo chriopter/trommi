@@ -852,6 +852,9 @@ struct SessionScreen: View {
   @State private var newName = ""
   @State private var drawing = false
   @State private var workDetails = false
+  @State private var details = false
+  @State private var files = false
+  @State private var deleting = false
   private var hue: Int { Pen.hueFor(id: page.slug.isEmpty ? page.id : page.slug, mark: page.mark) }
   var body: some View {
     ScrollViewReader { reader in
@@ -908,6 +911,12 @@ struct SessionScreen: View {
       Button("Cancel", role: .cancel) {}
       Button("Rename") { let n = newName.trimmingCharacters(in: .whitespaces); if !n.isEmpty { shell.act(["do": "rename_session", "session_id": page.id, "name": n]) } }
     }
+    .sheet(isPresented: $details) { SessionDetails(page: page, hue: hue) }
+    .sheet(isPresented: $files) { SessionFiles(page: page) }
+    .confirmationDialog("Delete \(page.name.en)?", isPresented: $deleting, titleVisibility: .visible) {
+      Button("Delete", role: .destructive) { shell.act(["do": "delete_session", "session_id": page.id]) }
+      Button("Cancel", role: .cancel) {}
+    } message: { Text("Its connector is removed from the room and the session moves to the archive with its helpers. Open questions are shredded.") }
     .sheet(isPresented: $workDetails) { WorkDetails(page: page) }
     .sheet(isPresented: $drawing) { DrawingPicker(page: page) { mark in shell.act(["do": "session_icon", "session_id": page.id, "icon": mark]); drawing = false } }
   }
@@ -931,8 +940,13 @@ struct SessionScreen: View {
     .accessibilityIdentifier("session-title")
   }
   /** The chat's menu (under its title). */
+  /** The chat's menu (under its title), in the web's order: Details, Questions Only, Files; its own settings; Move to
+   *  Team, Copy Invite Link; Archive (or Back from the Archive, as the web offers it), Delete; what it runs on. */
   @ViewBuilder private var actions: some View {
+    Button { details = true } label: { Label("Details", systemImage: "info.circle") }
     Toggle(isOn: $onlyQuestions) { Label(page.open > 0 ? "Questions Only (\(page.open))" : "Questions Only", systemImage: "questionmark.circle") }
+    if !page.files.isEmpty { Button { files = true } label: { Label("Files (\(page.files.count))", systemImage: "paperclip") } }
+    Divider()
     Button { newName = page.name.en; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
     Button { drawing = true } label: { Label("Change Icon…", systemImage: "scribble") }
     Toggle(isOn: Binding(get: { page.crowned }, set: { _ in shell.act(["do": "crown_session", "session_id": page.id, "on": !page.crowned]) })) { Label("Main Session", systemImage: "crown") }
@@ -940,7 +954,13 @@ struct SessionScreen: View {
     if !others.isEmpty {
       Menu { ForEach(others, id: \.id) { team in Button(team.name.en) { shell.act(["do": "move_session", "session_id": page.id, "team_id": team.id]) } } } label: { Label("Move to Team…", systemImage: "rectangle.stack") }
     }
-    Button(role: .destructive) { shell.act(["do": "archive_session", "session_id": page.id, "on": true]) } label: { Label("Archive", systemImage: "archivebox") }
+    // (an invite link for an agent of this team, shown with its Share in Settings, as the web's /pair)
+    Button { shell.account(["step": "invite_agent", "label": "", "team": page.teamId]); shell.focus(.settings(page: "")) } label: { Label("Copy Invite Link", systemImage: "key") }
+    Divider()
+    if !page.online || page.archived {
+      Button(role: page.archived ? nil : .destructive) { shell.act(["do": "archive_session", "session_id": page.id, "on": !page.archived]) } label: { Label(page.archived ? "Back from the Archive" : "Archive", systemImage: "archivebox") }
+    }
+    Button(role: .destructive) { deleting = true } label: { Label("Delete…", systemImage: "trash") }
     // (what it runs on and how much of its plan is used: in the menu, not in the top row)
     if !page.modelLabel.isEmpty || !(page.usage?.meters.isEmpty ?? true) {
       Section(page.modelLabel) {
@@ -1203,6 +1223,58 @@ struct DrawingFace: View {
           .opacity(t > 3.1 ? 1 - (t - 3.1) / 0.5 : 1)
       }
     }
+  }
+}
+
+/** The chat's Details (the web's side panel, its Details tab): its face and name, then what it runs on, how it is
+ *  connected, how much of its plan is used and its team. */
+struct SessionDetails: View {
+  @EnvironmentObject var shell: AppShell
+  @Environment(\.dismiss) private var dismiss
+  let page: CoreView.SessionView
+  let hue: Int
+  var body: some View {
+    NavigationStack {
+      List {
+        Section {
+          VStack(spacing: 6) {
+            AgentMark(mark: page.mark, size: 64, crowned: page.crowned, hue: hue)
+            Text(page.name.en).font(Face.display(24, .bold)).foregroundStyle(Ink.fg)
+            if !page.modelLabel.isEmpty { Text(page.modelLabel).font(Face.text(14)).foregroundStyle(Ink.muted) }
+          }
+          .frame(maxWidth: .infinity).padding(.vertical, 6).listRowBackground(Color.clear)
+        }
+        Section {
+          if !page.modelLabel.isEmpty { LabeledContent("Model", value: page.modelLabel) }
+          LabeledContent("Connection", value: page.dot.word.en)
+          ForEach(page.usage?.meters ?? [], id: \.key) { m in LabeledContent(m.long, value: "\(m.used) %") }
+          if let team = shell.view.sidebar.teams.first(where: { $0.id == page.teamId }) { LabeledContent("Team", value: team.name.en) }
+          if let hand = page.hand { LabeledContent("Stopped", value: hand.text.en) } else if let quiet = page.quiet { LabeledContent("Quiet", value: quiet.en) }
+        }
+        .font(Face.text(15))
+      }
+      .navigationTitle("Details")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+    }
+    .presentationDetents([.medium, .large])
+  }
+}
+
+/** The chat's Files (the web's Files): every file of its cards, answers and chats, the newest first. */
+struct SessionFiles: View {
+  @Environment(\.dismiss) private var dismiss
+  let page: CoreView.SessionView
+  var body: some View {
+    NavigationStack {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 10) { FileRows(ids: page.files) }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .navigationTitle("Files")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+    }
+    .presentationDetents([.medium, .large])
   }
 }
 
