@@ -287,20 +287,7 @@ impl Doing<'_> {
             }
             Action::PlaceSession { session_id, before, after } => self.place_session(action, session_id, before.as_deref(), after.as_deref()),
             Action::CrownSession { session_id, on } => self.crown_session(action, session_id, *on),
-            Action::OrderTeams { team_ids } => {
-                let live = self.teams();
-                let ids: Vec<&String> = team_ids.iter().filter(|d| live.contains(*d)).collect();
-                if ids.is_empty() {
-                    return Err(not_done("action.no_team", "That team is no longer there."));
-                }
-                let mut values = Vec::new();
-                for (i, d) in ids.into_iter().enumerate() {
-                    let mut team = self.team(d)?;
-                    team.insert("order".into(), json!(i));
-                    values.push((format!("desk/{d}"), Value::Object(team)));
-                }
-                self.registers(action, &values)
-            }
+            Action::OrderTeams { team_ids } => self.order_teams(action, team_ids),
             Action::RenameDevice { name } => {
                 let Some(me) = self.model.my_device_id.clone() else { return Err(bad_id()) };
                 let key = format!("device/{me}");
@@ -925,6 +912,35 @@ impl Doing<'_> {
             settings.insert("position".into(), json!(i));
             self.change.sessions.insert(key.clone());
             values.push((format!("session/{key}"), Value::Object(settings)));
+        }
+        self.registers(action, &values)
+    }
+
+    /// The teams' order (each team's `order` in its register `desk/<id>`): the teams named, each once, then every other
+    /// team there in the order it stands (a team made on another device meanwhile keeps its place after them); a name
+    /// of a team that is gone is passed over. Only a team whose place changes is written.
+    fn order_teams(&mut self, action: &Action, team_ids: &[String]) -> Result<(), NotDone> {
+        let live: Vec<String> = crate::sessions::teams_in_order(self.model).into_iter().map(|(id, _)| id).collect();
+        if !team_ids.iter().any(|d| live.contains(d)) {
+            return Err(not_done("action.no_team", "That team is no longer there."));
+        }
+        let mut ids: Vec<&String> = Vec::with_capacity(live.len());
+        for d in team_ids.iter().chain(live.iter()) {
+            if live.contains(d) && !ids.contains(&d) {
+                ids.push(d);
+            }
+        }
+        let mut values = Vec::new();
+        for (i, d) in ids.into_iter().enumerate() {
+            let mut team = self.team(d)?;
+            if team.get("order").and_then(Value::as_f64) == Some(i as f64) {
+                continue;
+            }
+            team.insert("order".into(), json!(i));
+            values.push((format!("desk/{d}"), Value::Object(team)));
+        }
+        if values.is_empty() {
+            return Ok(());
         }
         self.registers(action, &values)
     }
