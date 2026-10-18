@@ -428,6 +428,9 @@ export interface DeskTileView {
   size: string
   /** It holds nothing yet: the shell draws it small and quiet, with its line only. */
   empty: boolean
+  /** Its numbers in short beside the title where its rows show below (a phone): "2 · 10" (running · done) for
+   *  "work"; none for the others and while nothing runs or is done. */
+  brief?: Text
   /** Its row on a phone (two columns): two "narrow" tiles share one row, side by side in the tiles' order; every
    *  other tile, and a narrow one left alone, takes a row to itself. Rows are drawn by this number. */
   phone_row: number
@@ -497,6 +500,9 @@ export interface DockRowView {
   /** The card (`Screen::Card`). */
   id: string
   title: string
+  /** The title without a status word in front ("Working on: ", "Arbeite an: ", "Paused: "…): what a one-line row
+   *  shows beside the agent's face; the title itself when it has none. */
+  short: string
   from: FromView
   /** The quiet line under the title: "Fernly · running" (a starred card being worked on), "Fernly", "Fernly ·
    *  Reworking the copy" (its status line), "Fernly · on it". */
@@ -1842,6 +1848,8 @@ export interface FileView {
   name: string
   media_type: string
   size: number
+  /** A picture (by its media type or its name's ending): an attachment shows it as a small square thumbnail. */
+  picture: boolean
   /** "uploading", "ready", "failed", "missing". */
   state: string
   /** The attachment's id once the hub has it (an upload's local id maps to it here). */

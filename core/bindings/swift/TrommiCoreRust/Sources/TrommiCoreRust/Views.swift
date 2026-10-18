@@ -1468,13 +1468,16 @@ public enum CoreView {
     public var size: String
     /// It holds nothing yet: the shell draws it small and quiet, with its line only.
     public var empty: Bool
+    /// Its numbers in short beside the title where its rows show below (a phone): "2 · 10" (running · done) for
+    /// "work"; none for the others and while nothing runs or is done.
+    public var brief: Text?
     /// Its row on a phone (two columns): two "narrow" tiles share one row, side by side in the tiles' order; every
     /// other tile, and a narrow one left alone, takes a row to itself. Rows are drawn by this number.
     public var phoneRow: UInt32
     /// "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams.
     public var teamId: String?
 
-    public init(key: String = "", title: Text = Text(), line: Text = Text(), count: UInt32? = nil, opens: Screen = .desk, items: [String] = [], names: [String] = [], size: String = "", empty: Bool = false, phoneRow: UInt32 = 0, teamId: String? = nil) {
+    public init(key: String = "", title: Text = Text(), line: Text = Text(), count: UInt32? = nil, opens: Screen = .desk, items: [String] = [], names: [String] = [], size: String = "", empty: Bool = false, brief: Text? = nil, phoneRow: UInt32 = 0, teamId: String? = nil) {
       self.key = key
       self.title = title
       self.line = line
@@ -1484,6 +1487,7 @@ public enum CoreView {
       self.names = names
       self.size = size
       self.empty = empty
+      self.brief = brief
       self.phoneRow = phoneRow
       self.teamId = teamId
     }
@@ -1498,6 +1502,7 @@ public enum CoreView {
       case names = "names"
       case size = "size"
       case empty = "empty"
+      case brief = "brief"
       case phoneRow = "phone_row"
       case teamId = "team_id"
     }
@@ -1513,6 +1518,7 @@ public enum CoreView {
       self.names = try c.decodeIfPresent([String].self, forKey: .names) ?? []
       self.size = try c.decodeIfPresent(String.self, forKey: .size) ?? ""
       self.empty = try c.decodeIfPresent(Bool.self, forKey: .empty) ?? false
+      self.brief = try c.decodeIfPresent(Text.self, forKey: .brief)
       self.phoneRow = try c.decodeIfPresent(UInt32.self, forKey: .phoneRow) ?? 0
       self.teamId = try c.decodeIfPresent(String.self, forKey: .teamId)
     }
@@ -1528,6 +1534,7 @@ public enum CoreView {
       try c.encode(names, forKey: .names)
       try c.encode(size, forKey: .size)
       try c.encode(empty, forKey: .empty)
+      try c.encodeIfPresent(brief, forKey: .brief)
       try c.encode(phoneRow, forKey: .phoneRow)
       try c.encodeIfPresent(teamId, forKey: .teamId)
     }
@@ -1731,6 +1738,9 @@ public enum CoreView {
     /// The card (`Screen::Card`).
     public var id: String
     public var title: String
+    /// The title without a status word in front ("Working on: ", "Arbeite an: ", "Paused: "…): what a one-line row
+    /// shows beside the agent's face; the title itself when it has none.
+    public var short: String
     public var from: FromView
     /// The quiet line under the title: "Fernly · running" (a starred card being worked on), "Fernly", "Fernly ·
     /// Reworking the copy" (its status line), "Fernly · on it".
@@ -1741,9 +1751,10 @@ public enum CoreView {
     /// starred card.
     public var atMs: UInt64
 
-    public init(id: String = "", title: String = "", from: FromView = FromView(), line: Text = Text(), running: Bool = false, atMs: UInt64 = 0) {
+    public init(id: String = "", title: String = "", short: String = "", from: FromView = FromView(), line: Text = Text(), running: Bool = false, atMs: UInt64 = 0) {
       self.id = id
       self.title = title
+      self.short = short
       self.from = from
       self.line = line
       self.running = running
@@ -1753,6 +1764,7 @@ public enum CoreView {
     enum CodingKeys: String, CodingKey {
       case id = "id"
       case title = "title"
+      case short = "short"
       case from = "from"
       case line = "line"
       case running = "running"
@@ -1763,6 +1775,7 @@ public enum CoreView {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.id = try c.decode(String.self, forKey: .id)
       self.title = try c.decode(String.self, forKey: .title)
+      self.short = try c.decodeIfPresent(String.self, forKey: .short) ?? ""
       self.from = try c.decode(FromView.self, forKey: .from)
       self.line = try c.decode(Text.self, forKey: .line)
       self.running = try c.decode(Bool.self, forKey: .running)
@@ -1773,6 +1786,7 @@ public enum CoreView {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(id, forKey: .id)
       try c.encode(title, forKey: .title)
+      try c.encode(short, forKey: .short)
       try c.encode(from, forKey: .from)
       try c.encode(line, forKey: .line)
       try c.encode(running, forKey: .running)
@@ -6454,6 +6468,8 @@ public enum CoreView {
     public var name: String
     public var mediaType: String
     public var size: UInt64
+    /// A picture (by its media type or its name's ending): an attachment shows it as a small square thumbnail.
+    public var picture: Bool
     /// "uploading", "ready", "failed", "missing".
     public var state: String
     /// The attachment's id once the hub has it (an upload's local id maps to it here).
@@ -6465,10 +6481,11 @@ public enum CoreView {
     /// The Share links this device made for it (`Action::Share`), kept in memory only.
     public var shares: [FileShareView]
 
-    public init(name: String = "", mediaType: String = "", size: UInt64 = 0, state: String = "", attachmentId: String? = nil, percent: UInt8? = nil, loaded: Bool = false, shares: [FileShareView] = []) {
+    public init(name: String = "", mediaType: String = "", size: UInt64 = 0, picture: Bool = false, state: String = "", attachmentId: String? = nil, percent: UInt8? = nil, loaded: Bool = false, shares: [FileShareView] = []) {
       self.name = name
       self.mediaType = mediaType
       self.size = size
+      self.picture = picture
       self.state = state
       self.attachmentId = attachmentId
       self.percent = percent
@@ -6480,6 +6497,7 @@ public enum CoreView {
       case name = "name"
       case mediaType = "media_type"
       case size = "size"
+      case picture = "picture"
       case state = "state"
       case attachmentId = "attachment_id"
       case percent = "percent"
@@ -6492,6 +6510,7 @@ public enum CoreView {
       self.name = try c.decode(String.self, forKey: .name)
       self.mediaType = try c.decode(String.self, forKey: .mediaType)
       self.size = try c.decode(UInt64.self, forKey: .size)
+      self.picture = try c.decodeIfPresent(Bool.self, forKey: .picture) ?? false
       self.state = try c.decode(String.self, forKey: .state)
       self.attachmentId = try c.decodeIfPresent(String.self, forKey: .attachmentId)
       self.percent = try c.decodeIfPresent(UInt8.self, forKey: .percent)
@@ -6504,6 +6523,7 @@ public enum CoreView {
       try c.encode(name, forKey: .name)
       try c.encode(mediaType, forKey: .mediaType)
       try c.encode(size, forKey: .size)
+      try c.encode(picture, forKey: .picture)
       try c.encode(state, forKey: .state)
       try c.encodeIfPresent(attachmentId, forKey: .attachmentId)
       try c.encodeIfPresent(percent, forKey: .percent)

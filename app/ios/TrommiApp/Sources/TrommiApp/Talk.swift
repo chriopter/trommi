@@ -714,6 +714,7 @@ struct TalkComposer: View {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
               ForEach(attachments, id: \.self) { id in
+                if shell.view.files[id]?.picture == true { PictureChip(id: id) { attachments.removeAll { $0 == id } } } else {
                 HStack(spacing: 6) {
                   Image(systemName: "paperclip").font(.system(size: 11, weight: .semibold))
                   Text(shell.view.files[id]?.name ?? "File").font(Face.text(13)).lineLimit(1).frame(maxWidth: 140)
@@ -721,6 +722,7 @@ struct TalkComposer: View {
                   Button { attachments.removeAll { $0 == id } } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(minWidth: 28, minHeight: 36).contentShape(Rectangle()) }.buttonStyle(.plain).accessibilityLabel("Remove")
                 }
                 .padding(.leading, 10).padding(.trailing, 4).background(Capsule().fill(Ink.sunken))
+                }
               }
             }.padding(.horizontal, 10).padding(.top, 8)
           }
@@ -1291,7 +1293,7 @@ struct TalkRow: View {
               .background(Rectangle().fill(Ink.noteYellow).rotationEffect(.degrees(-0.8)).shadow(color: .black.opacity(0.12), radius: 3, y: 2))
               .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.55)).frame(width: 46, height: 14).rotationEffect(.degrees(-3)).offset(y: -7) }
             } else {
-              FileRows(ids: row.files)
+              FileRows(ids: row.files, small: true)
               if !row.text.isEmpty {
                 Text(row.text).font(Face.text(16)).foregroundStyle(Ink.fg).textSelection(.enabled)
                   .padding(.horizontal, 14).padding(.vertical, 10)
@@ -1555,12 +1557,14 @@ enum MarkBlock: Hashable {
 struct NativePicture: View {
   @EnvironmentObject var shell: AppShell
   let id: String
+  /** Fill its frame (a small square), cut at the edges, instead of fitting in it. */
+  var fill = false
   var body: some View {
     Group {
       #if canImport(UIKit)
-      if let data = shell.files[id], let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().accessibilityIdentifier("native-picture") } else { pending }
+      if let data = shell.files[id], let image = UIImage(data: data) { Image(uiImage: image).resizable().aspectRatio(contentMode: fill ? .fill : .fit).accessibilityIdentifier("native-picture") } else { pending }
       #else
-      if let data = shell.files[id], let image = NSImage(data: data) { Image(nsImage: image).resizable().scaledToFit().accessibilityIdentifier("native-picture") } else { pending }
+      if let data = shell.files[id], let image = NSImage(data: data) { Image(nsImage: image).resizable().aspectRatio(contentMode: fill ? .fill : .fit).accessibilityIdentifier("native-picture") } else { pending }
       #endif
     }.task(id: id) { shell.act(["do": "open_file", "attachment_id": id, "save": false]) }
   }
@@ -1568,10 +1572,37 @@ struct NativePicture: View {
     RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.sunken).frame(height: 160).overlay { ProgressView() }
   }
 }
+/** A picture about to be sent: a small square of it, its upload's progress over it, an × in the corner. */
+struct PictureChip: View {
+  @EnvironmentObject var shell: AppShell
+  let id: String
+  let remove: () -> Void
+  var body: some View {
+    ZStack(alignment: .topTrailing) {
+      thumb.frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay { if let p = shell.view.files[id]?.percent, p < 100 { ProgressView(value: Double(p), total: 100).progressViewStyle(.circular).padding(14).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous)) } }
+      Button(action: remove) { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.6)) }
+        .buttonStyle(.plain).offset(x: 6, y: -6).accessibilityLabel("Remove")
+    }
+    .padding(.top, 6)
+    .accessibilityElement(children: .contain).accessibilityLabel(shell.view.files[id]?.name ?? "Picture")
+    .accessibilityIdentifier("attach-picture")
+  }
+  @ViewBuilder private var thumb: some View {
+    #if canImport(UIKit)
+    if let data = shell.files[id], let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFill() } else { placeholder }
+    #else
+    if let data = shell.files[id], let image = NSImage(data: data) { Image(nsImage: image).resizable().scaledToFill() } else { placeholder }
+    #endif
+  }
+  private var placeholder: some View { RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.sunken).overlay { Image(systemName: "photo").foregroundStyle(.secondary) } }
+}
 /** A message's or a card's files: a picture small and round-cornered, any other file as a quiet chip with its size. */
 struct FileRows: View {
   @EnvironmentObject var shell: AppShell
   let ids: [String]
+  /** His own message: its pictures as small squares (as in the composer), a tap opens them big. */
+  var small = false
   /** Its pictures open over the whole screen. */
   @State private var showing: PictureShow?
   @Namespace private var zoom
@@ -1586,7 +1617,10 @@ struct FileRows: View {
             let all = shots
             showing = PictureShow(shots: all, start: all.firstIndex { $0.fileId == id } ?? 0)
           } label: {
-            NativePicture(id: id).frame(maxWidth: 280, maxHeight: 280).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Group {
+              if small { NativePicture(id: id, fill: true).frame(width: 120, height: 120).clipped() }
+              else { NativePicture(id: id).frame(maxWidth: 280, maxHeight: 280) }
+            }.clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
           }
           .buttonStyle(.plain)
           .contextMenu { SavePictureButton(id: id) }

@@ -39,9 +39,7 @@ fn file_of(a: &Value) -> NoteFileView {
     let s = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     let name = a.get("file_name").and_then(Value::as_str).unwrap_or("file").to_string();
     let media_type = s("media_type");
-    let lower = name.to_ascii_lowercase();
-    let picture = media_type.starts_with("image/")
-        || [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].iter().any(|e| lower.ends_with(e));
+    let picture = crate::files::is_picture(&media_type, &name);
     NoteFileView { file_id: s("attachment_id"), name, media_type, picture }
 }
 

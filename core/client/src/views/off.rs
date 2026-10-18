@@ -14,7 +14,7 @@
 //!   name (and, for one with its agent, status line) hold every word.
 
 use super::board::{key_of, Board, Lens, OFF_PAGE};
-use super::desk::{from_of, shown_title};
+use super::desk::{from_of, short_title, shown_title};
 use super::words::{local, say};
 use super::{DeskView, DockRowView, DockView, FromView, MoreView, OffGroupView, OffHintView, OffListView, OffRowView, OffWorkView, Screen, Text};
 use crate::model::types::Card;
@@ -88,7 +88,8 @@ fn dock_row(b: &Board, r: &Running, c: &Card, agent: usize) -> DockRowView {
     } else {
         say("dock.line.label", format!("{name} · {}", r.label), &[("name", &name), ("label", &r.label)])
     };
-    DockRowView { id: c.object_id.clone(), title: shown_title(c), from, line, running: true, at_ms: r.at }
+    let title = shown_title(c);
+    DockRowView { id: c.object_id.clone(), short: short_title(&title), title, from, line, running: true, at_ms: r.at }
 }
 
 fn count_says(key: &str, n: usize, word: &str) -> Text {
@@ -111,7 +112,8 @@ pub fn fill_desk(b: &Board, off: &OffMind, desk: &mut DeskView) {
             } else {
                 say("dock.line.starred", name.as_str(), &[("name", &name)])
             };
-            DockRowView { id: c.object_id.clone(), title: shown_title(c), from, line, running: s.running, at_ms: s.at }
+            let title = shown_title(c);
+            DockRowView { id: c.object_id.clone(), short: short_title(&title), title, from, line, running: s.running, at_ms: s.at }
         })
         .collect();
     let run_rows: Vec<DockRowView> = off

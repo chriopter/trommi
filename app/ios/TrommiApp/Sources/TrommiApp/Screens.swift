@@ -811,6 +811,37 @@ struct DeskTile: View {
   let tile: CoreView.DeskTileView
   private static let symbols = ["work": "tray.full", "artifacts": "photo.on.rectangle", "board": "scribble.variable", "knowledge": "book.closed"]
   var body: some View {
+    if tile.key == "work", !tile.empty, !runningRows.isEmpty { work } else { plain }
+  }
+  /** Working / Done with its running cards: its name and numbers in short, then a line each, the agent's face beside the
+   *  title without its status word (`short`). */
+  private var work: some View {
+    Button { shell.focus(tile.opens) } label: {
+      VStack(alignment: .leading, spacing: 10) {
+        HStack(spacing: 8) {
+          Text(tile.title.en).font(.subheadline.weight(.semibold)).lineLimit(1)
+          Spacer(minLength: 0)
+          if let brief = tile.brief { Text(brief.en).font(.subheadline).foregroundStyle(.secondary).monospacedDigit() }
+          Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+        }
+        ForEach(runningRows.prefix(3), id: \.id) { r in
+          HStack(spacing: 10) {
+            AgentMark(from: r.from, size: 18).frame(width: 22, height: 22)
+            Text(r.short.isEmpty ? r.title : r.short).font(.subheadline).lineLimit(1)
+          }
+        }
+      }
+      .foregroundStyle(.primary)
+      .padding(14).frame(maxWidth: .infinity, alignment: .topLeading)
+      .glass(RoundedRectangle(cornerRadius: 22, style: .continuous), interactive: true)
+    }
+    .buttonStyle(.plain)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("desk-tile-" + tile.key)
+  }
+  /** The running cards it names, by id; one no longer running is left out. */
+  private var runningRows: [CoreView.DockRowView] { tile.items.compactMap { id in shell.view.desk.off?.running.first { $0.id == id } } }
+  private var plain: some View {
     Button { shell.focus(tile.opens) } label: {
       VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 8) {
