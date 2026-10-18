@@ -243,6 +243,26 @@
       "key": "card.undo",
       "en": "Undo"
     },
+    "open_session": {
+      "key": "card.menu.session",
+      "en": "Open Session"
+    },
+    "copy": {
+      "key": "card.menu.copy",
+      "en": "Copy"
+    },
+    "later": {
+      "key": "card.menu.later",
+      "en": "Later"
+    },
+    "shred": {
+      "key": "card.menu.shred",
+      "en": "Shred"
+    },
+    "menu_hint": {
+      "key": "card.menu.hint",
+      "en": "Opens the card’s menu"
+    },
     "talk": {
       "key": "card.talk.fold",
       "args": {
