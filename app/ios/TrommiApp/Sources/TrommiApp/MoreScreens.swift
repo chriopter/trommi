@@ -378,7 +378,7 @@ private struct DictationRow: View {
 }
 
 /** A field inside a group: one outlined line on the paper. */
-private struct SetField: View {
+struct SetField: View {
   let title: String
   @Binding var text: String
   var secure = false
@@ -409,14 +409,14 @@ struct SettingsScreen: View {
   @State private var nextPassword = ""
   @State private var accountEmail = ""
   @State private var kitWords = ""
-  @State private var leaving = false
+  @State private var deletingTeam: CoreView.TeamTab?
   @State private var deleting = false
   @State private var removing: CoreView.AgentView?
   /** The page a web address names (`/settings/<page>`); "" for the list. Navigation only. */
   static func page(of part: String?) -> String {
     switch part {
     case "sessions": return "agents"
-    case "agents", "teams", "devices", "account", "theme", "data", "security": return part ?? ""
+    case "agents", "teams", "devices", "account", "theme", "data", "security", "proof": return part ?? ""
     default: return ""
     }
   }
@@ -429,8 +429,15 @@ struct SettingsScreen: View {
     case "theme": "Theme"
     case "data": "Data"
     case "security": "Security"
-    default: "Settings"
+    case "proof": "Self Test"
+    case "logout": shell.view.settings.logout.title.en
+    default: page.hasPrefix("device:") ? (device?.name ?? "Devices") : "Settings"
     }
+  }
+  /** The device a page "device:<id>" shows: one that is in, or one removed. */
+  private var device: CoreView.DeviceRow? {
+    let id = String(page.dropFirst("device:".count)), s = shell.view.settings
+    return (s.devices + s.removed).first { $0.id == id }
   }
   var body: some View {
     let s = shell.view.settings
@@ -446,7 +453,10 @@ struct SettingsScreen: View {
         case "account": account(s)
         case "theme": themeGroup
         case "data": dataGroup(s)
-        case "security": security(s)
+        case "security": SecurityPage(security: s.security)
+        case "proof": SelfTestPage()
+        case "logout": LogoutPage().padding(.horizontal, -16)
+        case let p where p.hasPrefix("device:"): DevicePage(device: device)
         default: home(s)
         }
       }
@@ -456,9 +466,9 @@ struct SettingsScreen: View {
     .background(Ink.bg.ignoresSafeArea())
     .scrollDismissesKeyboard(.interactively)
     .pushedPills(center: { EmptyView() }, trailing: { EmptyView() })
-    .confirmationDialog("Sign Out of This Device?", isPresented: $leaving, titleVisibility: .visible) {
-      Button("Sign out", role: .destructive) { shell.account(["step": "sign_out"]) }
-    } message: { Text("This device signs in again with e-mail and password or by scanning the code of a signed-in device.") }
+    .sheet(isPresented: Binding(get: { deletingTeam != nil }, set: { if !$0 { deletingTeam = nil } })) {
+      if let team = deletingTeam { TeamDeleteSheet(teamId: team.id, name: team.name.en).environmentObject(shell) }
+    }
     .confirmationDialog("Delete Your Account?", isPresented: $deleting, titleVisibility: .visible) {
       Button("Delete account", role: .destructive) { shell.account(["step": "delete_account", "password": currentPassword]); currentPassword = "" }
     } message: { Text("Your account and everything Trommi keeps for it on the hub are deleted. This cannot be undone.") }
@@ -495,13 +505,14 @@ struct SettingsScreen: View {
     SetGroup {
       link("data", "Data", detail: nil) { Image(systemName: "chart.bar").font(.system(size: 19)).foregroundStyle(Ink.fg) }
       SetRule()
-      link("security", "Security", detail: "Keys, devices, room") { Sketch("lock") }
+      link("security", "Security", detail: "Keys, devices, self test") { Sketch("lock") }
       SetRule()
       // (App Review 5.1.1(i): the privacy policy reachable inside the app)
       Link(destination: URL(string: "https://trommi.com/privacy")!) { SetRow(title: "Privacy Policy", chevron: true) { Image(systemName: "hand.raised").font(.system(size: 20)).foregroundStyle(Ink.fg) } }.buttonStyle(.plain)
     }
-    SetGroup(footer: "This device forgets the room and its keys. Your other devices and your agents carry on.") {
-      Button { leaving = true } label: { SetRow(title: "Sign out…", tint: Ink.urgCritical) { Sketch("logout", color: Ink.urgCritical) } }.buttonStyle(.plain)
+    SetGroup {
+      Button { shell.focus(.settings(page: "logout")); shell.account(["step": "read_account"]) } label: { SetRow(title: s.logout.go.en, tint: Ink.urgCritical, chevron: true) { Sketch("logout", color: Ink.urgCritical) } }
+        .buttonStyle(.plain).accessibilityIdentifier("settings-logout")
     }
     roomLine(s)
   }
@@ -531,8 +542,9 @@ struct SettingsScreen: View {
       SetField(title: "Emergency Kit words", text: $kitWords, secure: true)
       way("Set e-mail", "letter") { shell.account(["step": "set_email", "email": accountEmail, "words": kitWords]); kitWords = "" }
     }
-    SetGroup(footer: "This device forgets the room and its keys. Your other devices and your agents carry on.") {
-      Button { leaving = true } label: { SetRow(title: "Sign out…", tint: Ink.urgCritical) { Sketch("logout", color: Ink.urgCritical) } }.buttonStyle(.plain)
+    SetGroup {
+      Button { shell.focus(.settings(page: "logout")); shell.account(["step": "read_account"]) } label: { SetRow(title: s.logout.go.en, tint: Ink.urgCritical, chevron: true) { Sketch("logout", color: Ink.urgCritical) } }
+        .buttonStyle(.plain).accessibilityIdentifier("settings-logout")
     }
     SetGroup(footer: "Deletes your account and everything Trommi keeps for it. Your current password above confirms it. This cannot be undone.") {
       Button { deleting = true } label: { SetRow(title: "Delete account…", tint: Ink.urgCritical) { Sketch("bin", color: Ink.urgCritical) } }.buttonStyle(.plain)
@@ -540,9 +552,10 @@ struct SettingsScreen: View {
   }
   private var pushGroup: some View {
     SetGroup(header: "Push on This Device") {
-      pushRow("all", "Everything", "bell"); SetRule()
-      pushRow("knocking", "Only Knocking", "knock"); SetRule()
-      pushRow("off", "Off", "snooze")
+      ForEach(Array(shell.view.settings.pushChoices.enumerated()), id: \.element.level) { i, c in
+        if i > 0 { SetRule() }
+        pushRow(c)
+      }
     }
   }
   private var themeGroup: some View {
@@ -557,16 +570,6 @@ struct SettingsScreen: View {
       Button { shell.account(["step": "read_usage"]) } label: { SetRow(title: "Read hub data", chevron: true) { Image(systemName: "chart.bar").font(.system(size: 19)).foregroundStyle(Ink.fg) } }.buttonStyle(.plain)
       ForEach(s.data?.rows ?? [], id: \.id) { row in SetRule(); SetRow(title: row.label.en, detail: row.value.en) { EmptyView() } }
     }
-  }
-  /** Security: the room this device is in, its key epoch, and the devices' fingerprints. */
-  @ViewBuilder private func security(_ s: CoreView.SettingsView) -> some View {
-    SetGroup(header: "Devices", footer: "The fingerprint comes from the device's own key: it must look the same on every device.") {
-      ForEach(Array(s.devices.enumerated()), id: \.element.id) { i, device in
-        if i > 0 { SetRule() }
-        SetRow(title: device.name, detail: device.fingerprint) { DeviceIcon(icon: device.icon) }
-      }
-    }
-    roomLine(s)
   }
   private func roomLine(_ s: CoreView.SettingsView) -> some View {
     VStack(spacing: 4) {
@@ -607,9 +610,10 @@ struct SettingsScreen: View {
   private func way(_ title: String, _ icon: String, _ go: @escaping () -> Void) -> some View {
     Button(action: go) { SetRow(title: title, tint: Ink.accent) { Sketch(icon, color: Ink.accent) } }.buttonStyle(.plain)
   }
-  private func pushRow(_ level: String, _ title: String, _ icon: String) -> some View {
-    Button { shell.act(["do": "push", "level": level]) } label: { SetRow(title: title, ticked: (shell.view.settings.push?.level ?? "off") == level) { Sketch(icon) } }
-      .buttonStyle(.plain).accessibilityAddTraits((shell.view.settings.push?.level ?? "off") == level ? .isSelected : [])
+  private func pushRow(_ c: CoreView.PushChoice) -> some View {
+    let on = (shell.view.settings.push?.level ?? "off") == c.level
+    return Button { shell.act(["do": "push", "level": c.level]) } label: { SetRow(title: c.title.en, detail: c.detail?.en, ticked: on) { Sketch(c.icon) } }
+      .buttonStyle(.plain).accessibilityAddTraits(on ? .isSelected : [])
   }
   private func themeRow(_ key: String, _ title: String, _ icon: String) -> some View {
     Button { theme = key } label: { SetRow(title: title, ticked: theme == key) { Sketch(icon) } }
@@ -622,12 +626,16 @@ struct SettingsScreen: View {
       ForEach(Array(s.devices.enumerated()), id: \.element.id) { i, device in
         if i > 0 { SetRule() }
         HStack(spacing: 14) {
-          DeviceIcon(icon: device.icon).frame(width: 26, height: 26)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(device.name).font(Face.text(17, .medium)).foregroundStyle(device.active ? Ink.fg : Ink.muted).lineLimit(1)
-            Text(device.fingerprint).font(Face.mono(12)).foregroundStyle(Ink.muted).lineLimit(1).textSelection(.enabled)
-            if let seen = device.seen { Text(seen.en).font(Face.text(12)).foregroundStyle(Ink.muted) }
-          }
+          Button { shell.focus(.settings(page: "device:" + device.id)) } label: {
+            HStack(spacing: 14) {
+              DeviceIcon(icon: device.icon).frame(width: 26, height: 26)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(device.name).font(Face.text(17, .medium)).foregroundStyle(device.active ? Ink.fg : Ink.muted).lineLimit(1)
+                Text(device.fingerprint).font(Face.mono(12)).foregroundStyle(Ink.muted).lineLimit(1)
+                if let seen = device.seen { Text(seen.en).font(Face.text(12)).foregroundStyle(Ink.muted) }
+              }
+            }.contentShape(Rectangle())
+          }.buttonStyle(.plain).accessibilityIdentifier("device-row-" + device.id)
           Spacer(minLength: 8)
           if device.active { Circle().fill(device.online ? Ink.stDone : Ink.lineStrong).frame(width: 8, height: 8) }
           Text(device.says.en).font(Face.text(15)).foregroundStyle(Ink.muted).lineLimit(1)
@@ -712,7 +720,10 @@ struct SettingsScreen: View {
         if i > 0 { SetRule() }
         HStack(spacing: 0) {
           Button { shell.focus(.desk, team: team.id) } label: { SetRow(title: team.name.en, detail: team.waiting > 0 ? "\(team.waiting)" : nil, chevron: true) { Sketch("desk") } }.buttonStyle(.plain)
-          Menu { Button("Delete Team", role: .destructive) { shell.act(["do": "remove_team", "team_id": team.id]) } } label: {
+          if let p = shell.view.settings.deleting.first(where: { $0.teamId == team.id }) {
+            ProgressView(value: Double(p.done), total: Double(max(p.total, 1))).frame(width: 44).padding(.trailing, 12)
+          }
+          Menu { Button("Delete \(team.name.en)…", role: .destructive) { deletingTeam = team }.disabled(shell.view.sidebar.teams.count < 2) } label: {
             Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(Ink.fg).frame(width: 40, height: 44)
           }.padding(.trailing, 6).accessibilityLabel("More for \(team.name.en)")
         }

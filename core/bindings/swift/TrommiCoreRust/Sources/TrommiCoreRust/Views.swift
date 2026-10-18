@@ -5158,10 +5158,18 @@ public enum CoreView {
     public var deleting: [TeamDeleteView]
     /// Push on this device, where the platform has push.
     public var push: PushView?
+    /// The choices of Push on this device, in order (whether there is Push at all: `push`).
+    public var pushChoices: [PushChoice]
+    /// Log out of this device.
+    public var logout: LogoutView
+    /// The words every team's delete confirm shares.
+    public var teamDelete: TeamDeleteWords
+    /// The page Security.
+    public var security: SecurityView
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     public var login: LoginView?
 
-    public init(data: DataView? = nil, account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, teams: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, teamCounts: [TeamCountsView] = [], deleting: [TeamDeleteView] = [], push: PushView? = nil, login: LoginView? = nil) {
+    public init(data: DataView? = nil, account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, teams: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, teamCounts: [TeamCountsView] = [], deleting: [TeamDeleteView] = [], push: PushView? = nil, pushChoices: [PushChoice] = [], logout: LogoutView = LogoutView(), teamDelete: TeamDeleteWords = TeamDeleteWords(), security: SecurityView = SecurityView(), login: LoginView? = nil) {
       self.data = data
       self.account = account
       self.devices = devices
@@ -5179,6 +5187,10 @@ public enum CoreView {
       self.teamCounts = teamCounts
       self.deleting = deleting
       self.push = push
+      self.pushChoices = pushChoices
+      self.logout = logout
+      self.teamDelete = teamDelete
+      self.security = security
       self.login = login
     }
 
@@ -5200,6 +5212,10 @@ public enum CoreView {
       case teamCounts = "team_counts"
       case deleting = "deleting"
       case push = "push"
+      case pushChoices = "push_choices"
+      case logout = "logout"
+      case teamDelete = "team_delete"
+      case security = "security"
       case login = "login"
     }
 
@@ -5222,6 +5238,10 @@ public enum CoreView {
       self.teamCounts = try c.decodeIfPresent([TeamCountsView].self, forKey: .teamCounts) ?? []
       self.deleting = try c.decodeIfPresent([TeamDeleteView].self, forKey: .deleting) ?? []
       self.push = try c.decodeIfPresent(PushView.self, forKey: .push)
+      self.pushChoices = try c.decodeIfPresent([PushChoice].self, forKey: .pushChoices) ?? []
+      self.logout = try c.decodeIfPresent(LogoutView.self, forKey: .logout) ?? LogoutView()
+      self.teamDelete = try c.decodeIfPresent(TeamDeleteWords.self, forKey: .teamDelete) ?? TeamDeleteWords()
+      self.security = try c.decodeIfPresent(SecurityView.self, forKey: .security) ?? SecurityView()
       self.login = try c.decodeIfPresent(LoginView.self, forKey: .login)
     }
 
@@ -5244,6 +5264,10 @@ public enum CoreView {
       if !teamCounts.isEmpty { try c.encode(teamCounts, forKey: .teamCounts) }
       if !deleting.isEmpty { try c.encode(deleting, forKey: .deleting) }
       try c.encodeIfPresent(push, forKey: .push)
+      try c.encode(pushChoices, forKey: .pushChoices)
+      try c.encode(logout, forKey: .logout)
+      try c.encode(teamDelete, forKey: .teamDelete)
+      try c.encode(security, forKey: .security)
       try c.encodeIfPresent(login, forKey: .login)
     }
   }
@@ -5313,6 +5337,146 @@ public enum CoreView {
     }
   }
 
+  /// Settings → Security: every key that opens the account's data, and the self test, as groups of rows; every word the
+  /// core's (the web's `securityMain`, the iPhone's page Security).
+  public struct SecurityView: Codable, Hashable, Sendable {
+    /// The line under the page's title.
+    public var lead: Text
+    /// The groups in order: "key", "devices", "agents", "check".
+    public var sections: [SecuritySection]
+
+    public init(lead: Text = Text(), sections: [SecuritySection] = []) {
+      self.lead = lead
+      self.sections = sections
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case lead = "lead"
+      case sections = "sections"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.lead = try c.decode(Text.self, forKey: .lead)
+      self.sections = try c.decode([SecuritySection].self, forKey: .sections)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(lead, forKey: .lead)
+      try c.encode(sections, forKey: .sections)
+    }
+  }
+
+  /// One group of the page Security: its heading, its rows, the lines under it.
+  public struct SecuritySection: Codable, Hashable, Sendable {
+    public var id: String
+    public var label: Text
+    public var rows: [SecurityRow]
+    /// The lines under the group, in order.
+    public var notes: [Text]
+    /// A line said strongly after the notes ("Nobody else, not the hub either: …").
+    public var strong: Text?
+
+    public init(id: String = "", label: Text = Text(), rows: [SecurityRow] = [], notes: [Text] = [], strong: Text? = nil) {
+      self.id = id
+      self.label = label
+      self.rows = rows
+      self.notes = notes
+      self.strong = strong
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case label = "label"
+      case rows = "rows"
+      case notes = "notes"
+      case strong = "strong"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.label = try c.decode(Text.self, forKey: .label)
+      self.rows = try c.decode([SecurityRow].self, forKey: .rows)
+      self.notes = try c.decodeIfPresent([Text].self, forKey: .notes) ?? []
+      self.strong = try c.decodeIfPresent(Text.self, forKey: .strong)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(label, forKey: .label)
+      try c.encode(rows, forKey: .rows)
+      if !notes.isEmpty { try c.encode(notes, forKey: .notes) }
+      try c.encodeIfPresent(strong, forKey: .strong)
+    }
+  }
+
+  /// One row of the page Security.
+  public struct SecurityRow: Codable, Hashable, Sendable {
+    public var id: String
+    public var title: Text
+    /// "this device" beside the title of this device's row.
+    public var mark: Text?
+    /// The key fingerprint (or the account key's head) shown monospaced at the head of the second line; "" none.
+    public var fingerprint: String
+    /// The rest of the second line ("key epoch 88 · https://hub.trommi.com", "added 1 Oct 2026"); none without one.
+    public var detail: Text?
+    /// What it opens, on the right ("everything", "own session", "runs on this device").
+    public var says: Text?
+    /// Its drawing: "key", "page", "phone", "laptop", "terminal", "tick".
+    public var icon: String
+    /// Where a tap goes: "" nowhere, "kit" (Account → Emergency Kit), "device" (the device `id`), "agents", "proof".
+    public var open: String
+
+    public init(id: String = "", title: Text = Text(), mark: Text? = nil, fingerprint: String = "", detail: Text? = nil, says: Text? = nil, icon: String = "", open: String = "") {
+      self.id = id
+      self.title = title
+      self.mark = mark
+      self.fingerprint = fingerprint
+      self.detail = detail
+      self.says = says
+      self.icon = icon
+      self.open = open
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case title = "title"
+      case mark = "mark"
+      case fingerprint = "fingerprint"
+      case detail = "detail"
+      case says = "says"
+      case icon = "icon"
+      case open = "open"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.title = try c.decode(Text.self, forKey: .title)
+      self.mark = try c.decodeIfPresent(Text.self, forKey: .mark)
+      self.fingerprint = try c.decodeIfPresent(String.self, forKey: .fingerprint) ?? ""
+      self.detail = try c.decodeIfPresent(Text.self, forKey: .detail)
+      self.says = try c.decodeIfPresent(Text.self, forKey: .says)
+      self.icon = try c.decode(String.self, forKey: .icon)
+      self.open = try c.decodeIfPresent(String.self, forKey: .open) ?? ""
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(title, forKey: .title)
+      try c.encodeIfPresent(mark, forKey: .mark)
+      try c.encode(fingerprint, forKey: .fingerprint)
+      try c.encodeIfPresent(detail, forKey: .detail)
+      try c.encodeIfPresent(says, forKey: .says)
+      try c.encode(icon, forKey: .icon)
+      try c.encode(open, forKey: .open)
+    }
+  }
+
   /// What a team holds: what its delete takes away.
   public struct TeamCountsView: Codable, Hashable, Sendable {
     public var teamId: String
@@ -5332,8 +5496,12 @@ public enum CoreView {
     public var goals: UInt64
     /// Entries of its knowledge.
     public var knowledge: UInt64
+    /// The confirm's title: "Delete Fernly?".
+    public var title: Text
+    /// The confirm's lines, one per kind it holds that is not none, in order (a count not yet known is left out).
+    public var lines: [TeamDeleteLine]
 
-    public init(teamId: String = "", sessions: UInt64 = 0, helpers: UInt64 = 0, archived: UInt64 = 0, openCards: UInt64 = 0, doneCards: UInt64 = 0, agents: UInt64 = 0, board: UInt64? = nil, pictures: UInt64? = nil, notes: UInt64? = nil, files: UInt64 = 0, artifacts: UInt64 = 0, goals: UInt64 = 0, knowledge: UInt64 = 0) {
+    public init(teamId: String = "", sessions: UInt64 = 0, helpers: UInt64 = 0, archived: UInt64 = 0, openCards: UInt64 = 0, doneCards: UInt64 = 0, agents: UInt64 = 0, board: UInt64? = nil, pictures: UInt64? = nil, notes: UInt64? = nil, files: UInt64 = 0, artifacts: UInt64 = 0, goals: UInt64 = 0, knowledge: UInt64 = 0, title: Text = Text(), lines: [TeamDeleteLine] = []) {
       self.teamId = teamId
       self.sessions = sessions
       self.helpers = helpers
@@ -5348,6 +5516,8 @@ public enum CoreView {
       self.artifacts = artifacts
       self.goals = goals
       self.knowledge = knowledge
+      self.title = title
+      self.lines = lines
     }
 
     enum CodingKeys: String, CodingKey {
@@ -5365,6 +5535,8 @@ public enum CoreView {
       case artifacts = "artifacts"
       case goals = "goals"
       case knowledge = "knowledge"
+      case title = "title"
+      case lines = "lines"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -5383,6 +5555,8 @@ public enum CoreView {
       self.artifacts = try c.decode(UInt64.self, forKey: .artifacts)
       self.goals = try c.decode(UInt64.self, forKey: .goals)
       self.knowledge = try c.decodeIfPresent(UInt64.self, forKey: .knowledge) ?? 0
+      self.title = try c.decodeIfPresent(Text.self, forKey: .title) ?? Text()
+      self.lines = try c.decodeIfPresent([TeamDeleteLine].self, forKey: .lines) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -5401,6 +5575,197 @@ public enum CoreView {
       try c.encode(artifacts, forKey: .artifacts)
       try c.encode(goals, forKey: .goals)
       try c.encode(knowledge, forKey: .knowledge)
+      try c.encode(title, forKey: .title)
+      if !lines.isEmpty { try c.encode(lines, forKey: .lines) }
+    }
+  }
+
+  /// One line of a team's delete confirm: "3 sessions archived".
+  public struct TeamDeleteLine: Codable, Hashable, Sendable {
+    /// "sessions", "helpers", "archived", "agents", "open_cards", "done_cards", "board", "files", "goals", "knowledge".
+    public var key: String
+    public var n: UInt64
+    /// "session" or "sessions".
+    public var word: Text
+    /// What happens to them ("archived", "shredded"); none where nothing more is said.
+    public var rest: Text?
+
+    public init(key: String = "", n: UInt64 = 0, word: Text = Text(), rest: Text? = nil) {
+      self.key = key
+      self.n = n
+      self.word = word
+      self.rest = rest
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case n = "n"
+      case word = "word"
+      case rest = "rest"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decode(String.self, forKey: .key)
+      self.n = try c.decode(UInt64.self, forKey: .n)
+      self.word = try c.decode(Text.self, forKey: .word)
+      self.rest = try c.decodeIfPresent(Text.self, forKey: .rest)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(n, forKey: .n)
+      try c.encode(word, forKey: .word)
+      try c.encodeIfPresent(rest, forKey: .rest)
+    }
+  }
+
+  /// The words of a team's delete confirm that every team shares.
+  public struct TeamDeleteWords: Codable, Hashable, Sendable {
+    /// "This goes for good, on every device:".
+    public var lead: Text
+    /// "Nothing stands on this team: only its name goes."
+    public var empty: Text
+    /// "The server drops the encrypted data within 30 days. …"
+    public var small: Text
+    /// "Hold to Delete".
+    public var hold: Text
+    public var cancel: Text
+    /// "Deleting…".
+    public var deleting: Text
+
+    public init(lead: Text = Text(), empty: Text = Text(), small: Text = Text(), hold: Text = Text(), cancel: Text = Text(), deleting: Text = Text()) {
+      self.lead = lead
+      self.empty = empty
+      self.small = small
+      self.hold = hold
+      self.cancel = cancel
+      self.deleting = deleting
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case lead = "lead"
+      case empty = "empty"
+      case small = "small"
+      case hold = "hold"
+      case cancel = "cancel"
+      case deleting = "deleting"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.lead = try c.decode(Text.self, forKey: .lead)
+      self.empty = try c.decode(Text.self, forKey: .empty)
+      self.small = try c.decode(Text.self, forKey: .small)
+      self.hold = try c.decode(Text.self, forKey: .hold)
+      self.cancel = try c.decode(Text.self, forKey: .cancel)
+      self.deleting = try c.decode(Text.self, forKey: .deleting)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(lead, forKey: .lead)
+      try c.encode(empty, forKey: .empty)
+      try c.encode(small, forKey: .small)
+      try c.encode(hold, forKey: .hold)
+      try c.encode(cancel, forKey: .cancel)
+      try c.encode(deleting, forKey: .deleting)
+    }
+  }
+
+  /// Log out of this device: what the page (web) and the confirm (iPhone) ask and say.
+  public struct LogoutView: Codable, Hashable, Sendable {
+    /// "Log out" (the menu row, the page's title).
+    public var title: Text
+    /// "Log out of this device? You can log in again with your passkey or your password."
+    public var ask: Text
+    /// "This is your only device. …", or the demo's line; none otherwise.
+    public var note: Text?
+    /// "Everything Trommi keeps on this device is deleted here; …"
+    public var meta: Text
+    /// "Log Out" (the button).
+    public var go: Text
+    public var cancel: Text
+
+    public init(title: Text = Text(), ask: Text = Text(), note: Text? = nil, meta: Text = Text(), go: Text = Text(), cancel: Text = Text()) {
+      self.title = title
+      self.ask = ask
+      self.note = note
+      self.meta = meta
+      self.go = go
+      self.cancel = cancel
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case title = "title"
+      case ask = "ask"
+      case note = "note"
+      case meta = "meta"
+      case go = "go"
+      case cancel = "cancel"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.title = try c.decode(Text.self, forKey: .title)
+      self.ask = try c.decode(Text.self, forKey: .ask)
+      self.note = try c.decodeIfPresent(Text.self, forKey: .note)
+      self.meta = try c.decode(Text.self, forKey: .meta)
+      self.go = try c.decode(Text.self, forKey: .go)
+      self.cancel = try c.decode(Text.self, forKey: .cancel)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(title, forKey: .title)
+      try c.encode(ask, forKey: .ask)
+      try c.encodeIfPresent(note, forKey: .note)
+      try c.encode(meta, forKey: .meta)
+      try c.encode(go, forKey: .go)
+      try c.encode(cancel, forKey: .cancel)
+    }
+  }
+
+  /// One choice of Push on this device.
+  public struct PushChoice: Codable, Hashable, Sendable {
+    /// "all", "knocking", "off".
+    public var level: String
+    /// "Yes", "Only knocking", "No".
+    public var title: Text
+    /// "every card"; none for "No".
+    public var detail: Text?
+    /// Its drawing: "bell", "knock", "snooze".
+    public var icon: String
+
+    public init(level: String = "", title: Text = Text(), detail: Text? = nil, icon: String = "") {
+      self.level = level
+      self.title = title
+      self.detail = detail
+      self.icon = icon
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case level = "level"
+      case title = "title"
+      case detail = "detail"
+      case icon = "icon"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.level = try c.decode(String.self, forKey: .level)
+      self.title = try c.decode(Text.self, forKey: .title)
+      self.detail = try c.decodeIfPresent(Text.self, forKey: .detail)
+      self.icon = try c.decode(String.self, forKey: .icon)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(level, forKey: .level)
+      try c.encode(title, forKey: .title)
+      try c.encodeIfPresent(detail, forKey: .detail)
+      try c.encode(icon, forKey: .icon)
     }
   }
 

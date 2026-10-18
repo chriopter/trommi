@@ -317,6 +317,7 @@ impl App {
                         .map(|p| PasskeyView { credential_id: base64url_encode(&p.credential_id), created_at: p.created_at, last_used_at: p.last_used_at })
                         .collect(),
                 });
+                self.next_view.settings.logout = crate::views::settings::logout(&self.next_view.settings, self.demo);
                 let flow = self.changes.flow.as_mut().expect("a change");
                 if let Some(at) = flow.replace_at {
                     // the account read once more before a replacement: unchanged since the way in was set

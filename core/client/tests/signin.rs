@@ -72,7 +72,8 @@ fn settle(world: &World, sim: &mut Sim) {
 }
 
 fn no_secret_shown(sim: &Sim, words: &str) {
-    let first = words.split_whitespace().next().unwrap_or("-");
+    // (the first two words together: one common word alone, "only" or "open", also stands in the app's own sentences)
+    let first = words.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
     for effect in &sim.log {
         let shown = match effect {
             Effect::Log { text, .. } => text.clone(),
