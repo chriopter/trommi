@@ -2211,8 +2211,15 @@ public enum CoreView {
     public var statusKind: String
     /// Settings: the row's sentence ("Connected · sealed").
     public var status: Text?
+    /// Security: the facts of the sealed connection, in order (Enclave, Model, Attestation, Code, Hub); none while
+    /// dictation is off or not available here.
+    public var facts: [DictationFact]
+    /// Security: the test of the sealed connection: `idle`, `running`, `passed`, `failed`.
+    public var testState: String
+    /// Security: the test's result in words ("✓ sealed round trip · 1.9 s", or what failed).
+    public var testResult: Text?
 
-    public init(state: String = "", session: String = "", sinceMs: UInt64 = 0, maxMs: UInt64 = 0, problem: Text? = nil, text: DictatedText? = nil, hint: Text? = nil, available: Bool = false, on: Bool = false, statusKind: String = "", status: Text? = nil) {
+    public init(state: String = "", session: String = "", sinceMs: UInt64 = 0, maxMs: UInt64 = 0, problem: Text? = nil, text: DictatedText? = nil, hint: Text? = nil, available: Bool = false, on: Bool = false, statusKind: String = "", status: Text? = nil, facts: [DictationFact] = [], testState: String = "", testResult: Text? = nil) {
       self.state = state
       self.session = session
       self.sinceMs = sinceMs
@@ -2224,6 +2231,9 @@ public enum CoreView {
       self.on = on
       self.statusKind = statusKind
       self.status = status
+      self.facts = facts
+      self.testState = testState
+      self.testResult = testResult
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2238,6 +2248,9 @@ public enum CoreView {
       case on = "on"
       case statusKind = "status_kind"
       case status = "status"
+      case facts = "facts"
+      case testState = "test_state"
+      case testResult = "test_result"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2253,6 +2266,9 @@ public enum CoreView {
       self.on = try c.decodeIfPresent(Bool.self, forKey: .on) ?? false
       self.statusKind = try c.decodeIfPresent(String.self, forKey: .statusKind) ?? ""
       self.status = try c.decodeIfPresent(Text.self, forKey: .status)
+      self.facts = try c.decodeIfPresent([DictationFact].self, forKey: .facts) ?? []
+      self.testState = try c.decodeIfPresent(String.self, forKey: .testState) ?? ""
+      self.testResult = try c.decodeIfPresent(Text.self, forKey: .testResult)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2268,6 +2284,53 @@ public enum CoreView {
       try c.encode(on, forKey: .on)
       try c.encode(statusKind, forKey: .statusKind)
       try c.encodeIfPresent(status, forKey: .status)
+      if !facts.isEmpty { try c.encode(facts, forKey: .facts) }
+      try c.encode(testState, forKey: .testState)
+      try c.encodeIfPresent(testResult, forKey: .testResult)
+    }
+  }
+
+  /// One fact of the sealed connection (Security): a label, its value, a link where there is one (the release in
+  /// Sigstore's log), and a dot (`connected`, `checking`, `failed`, `unknown`; empty: none).
+  public struct DictationFact: Codable, Hashable, Sendable {
+    public var key: String
+    public var label: Text
+    public var value: Text
+    public var href: String?
+    public var dot: String
+
+    public init(key: String = "", label: Text = Text(), value: Text = Text(), href: String? = nil, dot: String = "") {
+      self.key = key
+      self.label = label
+      self.value = value
+      self.href = href
+      self.dot = dot
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case label = "label"
+      case value = "value"
+      case href = "href"
+      case dot = "dot"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decode(String.self, forKey: .key)
+      self.label = try c.decode(Text.self, forKey: .label)
+      self.value = try c.decode(Text.self, forKey: .value)
+      self.href = try c.decodeIfPresent(String.self, forKey: .href)
+      self.dot = try c.decodeIfPresent(String.self, forKey: .dot) ?? ""
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(label, forKey: .label)
+      try c.encode(value, forKey: .value)
+      try c.encodeIfPresent(href, forKey: .href)
+      try c.encode(dot, forKey: .dot)
     }
   }
 

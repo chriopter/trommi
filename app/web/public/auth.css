@@ -668,3 +668,11 @@ body > main.opening { grid-column: 1 / -1; grid-row: 1 / -1; display: grid; grid
 .set-dot.is-failed { background: var(--urg-critical); }
 @keyframes dict-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .set-dot.is-checking { animation: none; } }
+/* Security · Dictation: the facts of the sealed connection and its test */
+.dl-code { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.dl-form { display: contents; }
+.set-page .dl-run { font: inherit; }
+.dl-run b { color: var(--accent); }
+.dl-run:disabled { cursor: progress; opacity: .7; }
+.set-detail.dl-ok { color: #2e9d5b; }
+.set-detail.dl-bad { color: var(--urg-critical); }

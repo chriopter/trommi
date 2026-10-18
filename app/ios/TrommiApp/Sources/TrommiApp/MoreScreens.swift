@@ -377,6 +377,49 @@ private struct DictationRow: View {
   }
 }
 
+/** Dictation's sealed connection, as the core says it (DictationView.facts, in order), and its test. */
+struct DictationFacts: View {
+  @EnvironmentObject var shell: AppShell
+  private static let icons = ["enclave": "lock", "model": "mic", "attestation": "tick", "code": "key", "hub": "terminal"]
+  private let green = Color(red: 0.18, green: 0.62, blue: 0.36)
+  private func dot(_ kind: String) -> Color { kind == "connected" ? green : kind == "failed" ? Ink.urgCritical : Ink.faint }
+  var body: some View {
+    let d = shell.view.dictation
+    if d.available && d.on && !d.facts.isEmpty {
+      SetGroup(header: "Dictation") {
+        ForEach(Array(d.facts.enumerated()), id: \.offset) { i, f in
+          if i > 0 { SetRule() }
+          HStack(spacing: 14) {
+            Sketch(Self.icons[f.key] ?? "lock").frame(width: 26, height: 26)
+            Text(f.label.en).font(Face.text(17, .medium)).foregroundStyle(Ink.fg).lineLimit(1)
+            Spacer(minLength: 8)
+            if !f.dot.isEmpty { Circle().fill(dot(f.dot)).frame(width: 7, height: 7) }
+            if let href = f.href, let url = URL(string: href) {
+              Link(destination: url) { HStack(spacing: 3) { Text(f.value.en).underline(); Image(systemName: "arrow.up.right").font(.system(size: 11, weight: .semibold)) } }
+                .font(Face.text(15)).foregroundStyle(Ink.muted).lineLimit(1)
+            } else {
+              Text(f.value.en).font(Face.text(15)).foregroundStyle(Ink.muted).lineLimit(2).multilineTextAlignment(.trailing)
+            }
+          }
+          .padding(.horizontal, 16).frame(minHeight: 52).accessibilityElement(children: .combine)
+        }
+        SetRule()
+        Button { shell.act(["do": "dictate", "step": ["step": "test"]]) } label: {
+          HStack(spacing: 14) {
+            Sketch("mic", color: Ink.accent).frame(width: 26, height: 26)
+            Text("Test the connection").font(Face.text(17, .medium)).foregroundStyle(Ink.accent).lineLimit(1).layoutPriority(1)
+            Spacer(minLength: 8)
+            Text(d.testResult?.en ?? "silent clip").font(Face.text(15)).lineLimit(2).multilineTextAlignment(.trailing)
+              .foregroundStyle(d.testState == "passed" ? green : d.testState == "failed" ? Ink.urgCritical : Ink.muted)
+          }
+          .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).disabled(d.testState == "running").accessibilityIdentifier("dictation-test")
+      }
+    }
+  }
+}
+
 /** A field inside a group: one outlined line on the paper. */
 struct SetField: View {
   let title: String

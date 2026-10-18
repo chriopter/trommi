@@ -72,7 +72,7 @@ try {
     await until("document.querySelector('#security-key')", 'the Security page is drawn')
     const p = await ev(READ)
     check(p.title === 'Security' && p.back === 'Settings', `${width}: a page of Settings`, p)
-    check(p.labels.join() === 'Account key,Authorized devices,Agents,Check', `${width}: its four parts, in order`, p.labels)
+    check(p.labels.join() === 'Account key,Authorized devices,Agents,Check,Dictation', `${width}: its parts, in order (Dictation's sealed connection last)`, p.labels)
     check(/ · key epoch \d+/.test(p.key ?? ''), `${width}: the account key: the room it opens, its key epoch`, p.key)
     check(p.devices.length === 3 && p.devices.every(d => /^[0-9a-f]{4}( [0-9a-f]{4}){3} · added \d+ \w+ \d{4}$/.test(d.small) && d.href.startsWith('/settings/devices/') && d.reads === 'everything'), `${width}: every device with its fingerprint, the day it came, a way to its page`, p.devices)
     check(p.devices[0].name === 'Laptop · this device', `${width}: this device says so`, p.devices[0])
