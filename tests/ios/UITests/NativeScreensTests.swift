@@ -251,6 +251,19 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertFalse(duck.waitForExistence(timeout: 2), "nothing left to duck")
     capture("desk-duck-done")
   }
+  /** Under the questions the core's tiles: Working / Done first, each opening its page; light and dark alike. */
+  func testDeskTilesUnderTheQuestions() {
+    launch("desk")
+    let work = app.descendants(matching: .any)["desk-tile-work"]
+    let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-"))
+    XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 15))
+    for _ in 0..<15 where !work.isHittable { app.swipeUp(velocity: .fast) }
+    XCTAssertTrue(work.isHittable, app.debugDescription)
+    XCTAssertTrue(app.descendants(matching: .any)["desk-tile-artifacts"].exists && app.descendants(matching: .any)["desk-tile-board"].exists)
+    capture("desk-tiles")
+    work.tap()
+    XCTAssertTrue(app.buttons["back"].waitForExistence(timeout: 10), "Working / Done opens Off your mind")
+  }
   func testChatListIsCalm() {
     launch("chats")
     let teaser = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-teaser-")).firstMatch

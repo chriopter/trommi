@@ -692,6 +692,10 @@ pub struct DeskTileView {
     /// It holds nothing yet: the shell draws it small and quiet, with its line only.
     #[serde(default)]
     pub empty: bool,
+    /// Its row on a phone (two columns): two "narrow" tiles share one row, side by side in the tiles' order; every
+    /// other tile, and a narrow one left alone, takes a row to itself. Rows are drawn by this number.
+    #[serde(default)]
+    pub phone_row: u32,
     /// "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team_id: Option<String>,
