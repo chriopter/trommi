@@ -585,6 +585,7 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     let mut kept = std::mem::take(&mut view.settings);
     view.settings = super::settings::settings(&b);
     view.settings.account = kept.account.take();
+    view.sidebar.me = super::sidebar::initial_of(view.settings.account.as_deref());
     view.settings.login = kept.login.take();
     view.settings.data = kept.data.take();
     view.settings.room = kept.room.take();

@@ -116,6 +116,7 @@
                 "waiting": 0
               },
               "knocking": 0,
+              "me": "",
               "place": {
                 "en": "",
                 "key": ""
@@ -172,6 +173,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -511,6 +513,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -1120,6 +1123,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -1756,6 +1760,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -2315,6 +2320,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -2479,6 +2485,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -2643,6 +2650,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -2807,6 +2815,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -2971,6 +2980,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -3135,6 +3145,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -3299,6 +3310,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -3463,6 +3475,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -3627,6 +3640,7 @@
               "waiting": 0
             },
             "knocking": 0,
+            "me": "",
             "place": {
               "en": "Personal",
               "key": "team.personal"
@@ -4264,6 +4278,7 @@
         "waiting": 0
       },
       "knocking": 0,
+      "me": "",
       "place": {
         "en": "Personal",
         "key": "team.personal"
