@@ -1005,6 +1005,11 @@ html body .topbar #brand-doors .menu-team-row:first-child .menu-team { padding-r
 #agents .agent-row.is-carried > * { visibility: hidden; }
 #agents .agent-row.is-carried::after { content: ""; position: absolute; inset: 3px 4px; pointer-events: none; border: 1.5px dashed color-mix(in srgb, var(--fg) 38%, transparent); border-radius: 14px 10px 15px 11px / 11px 14px 10px 15px; }
 #agents .agent-row.is-carried-sub { display: none; }
+#agents .team-head.is-carried > * { visibility: hidden; }
+#agents .team-head.is-carried { outline: 1.5px dashed color-mix(in srgb, var(--fg) 38%, transparent); outline-offset: -3px; border-radius: var(--r-md); }
+#agents .team-head.order-ghost { position: fixed; margin: 0; }
+#agents .team-head.order-ghost .team-edges, #agents .team-head.order-ghost .team-bracket { display: none; }
+#agents .team-head[data-team] { -webkit-touch-callout: none; }
 #agents .order-ghost { position: fixed; z-index: 60; margin: 0; pointer-events: none; rotate: -1.4deg; opacity: .93; border-radius: var(--r-md); background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong), 0 14px 24px -14px rgb(20 30 25 / .45); }
 #agents .order-ghost[hidden] { display: flex; }
 @media (prefers-reduced-motion: reduce) { #agents .order-ghost { rotate: 0deg; } }

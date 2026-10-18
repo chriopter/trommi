@@ -190,7 +190,8 @@ pub enum Action {
         key: String,
         value: serde_json::Value,
     },
-    /// Every team's place, in one write: the teams in this order.
+    /// Every team's place, in one write: the teams in this order; a team left out follows them in the order it stands,
+    /// and a team that is gone is passed over.
     OrderTeams {
         team_ids: Vec<String>,
     },

@@ -600,6 +600,22 @@ fn sessions_get_marks_groups_places_and_the_crown_and_desks_their_order() {
     for (i, d) in reversed.iter().enumerate() {
         assert_eq!(human(&sim, &format!("desk/{d}")).unwrap().0["order"], json!(i));
     }
+    let order = |sim: &Sim| sim.view.sidebar.teams.iter().map(|d| d.id.clone()).collect::<Vec<_>>();
+    assert_eq!(order(&sim), reversed);
+    // a new team stands after the ordered ones; an order naming one team, twice, and a team that is gone keeps the
+    // others after it in the order they stand
+    act(&mut sim, Action::AddTeam { name: "Late".into() });
+    world.stream(&mut sim);
+    let late = order(&sim).last().cloned().unwrap();
+    assert!(!ids.contains(&late), "the new team is appended: {:?}", order(&sim));
+    act(&mut sim, Action::OrderTeams { team_ids: vec![late.clone(), "gone".into(), late.clone()] });
+    let mut want = vec![late.clone()];
+    want.extend(reversed.iter().cloned());
+    assert_eq!(order(&sim), want);
+    // a deleted team (its register null, the deletion's last step) leaves the order, the others keep theirs
+    act(&mut sim, Action::RoomRegister { key: format!("desk/{late}"), value: serde_json::Value::Null });
+    world.stream(&mut sim);
+    assert_eq!(order(&sim), reversed);
     act(&mut sim, Action::RenameDevice { name: "  Laptop ".into() });
     let me = sim.app.board().model.my_device_id.clone().unwrap();
     assert_eq!(human(&sim, &format!("device/{me}")).unwrap().0["device_name"], json!("Laptop"));

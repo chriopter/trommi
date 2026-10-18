@@ -203,7 +203,9 @@ instead); files come network first, the cache only offline. On the dev server (`
   (`TeamStackView`): its head card with a group picture of its agents' marks (`faces`) and what waits (a click opens
   the team's Desk); a click on the stack fans its chats out under it, held by a pen bracket, and a click on the bracket
   folds them back (`Focus.open_teams`, kept per device). A chat is a calm row (drawing, name, one grey line, one sign:
-  `SessionRowView.signal`). The sidebar's right edge is dragged to resize it (`side-resize`, kept per device); dragged
+  `SessionRowView.signal`). A chat is dragged up or down within its team, a team's head among the other heads with
+  its chats (Alt+↑/↓ on a focused one; `order` controller: `PlaceSession`, `OrderTeams`, kept in the encrypted team
+  and session registers on every device). The sidebar's right edge is dragged to resize it (`side-resize`, kept per device); dragged
   narrow it becomes the rail (the key [ folds and opens it too). At the foot the account mark and a chevron open the
   menu: Settings, What's new, Demo, Log out, and one row of push, theme and help. A phone keeps the Desk box with the team in view (its chevron opens the menu,
   the teams at its top) and the sessions of that team. Then "New agent" and
