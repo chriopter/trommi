@@ -3418,6 +3418,9 @@ public enum CoreView {
     public var html: String
     /// The cards it carries, a chip each.
     public var chips: [CardRefView]
+    /// The calm chat (`Focus.calm`): the card these words answer or are about, quoted at the top of the bubble as a
+    /// messenger's reply (his answer with what he did to it, the agent's words on it); none without a card it knows.
+    public var quote: QuoteView?
     /// `kind` "events" (a phone's chat): the card events of a run, a chip each, in order.
     public var events: [EventChipView]
     /// A selection of the Scribble Board (its one file is the picture).
@@ -3431,7 +3434,7 @@ public enum CoreView {
     /// The helper (its agent's subagent) that wrote it, beside the agent's name; none for the agent's own words.
     public var helper: String?
 
-    public init(id: String = "", fromMe: Bool = false, text: String = "", timeMs: UInt64 = 0, heard: Bool = false, pending: Bool = false, files: [String] = [], kind: String = "", number: UInt64 = 0, day: Text? = nil, cont: Bool = false, terminal: Bool = false, card: CardRefView? = nil, event: EventView? = nil, deed: EventView? = nil, row: DeskRowView? = nil, work: WorkView? = nil, published: String? = nil, details: String = "", html: String = "", chips: [CardRefView] = [], events: [EventChipView] = [], scribble: Bool = false, writtenMs: UInt64? = nil, answers: String? = nil, waits: Text? = nil, helper: String? = nil) {
+    public init(id: String = "", fromMe: Bool = false, text: String = "", timeMs: UInt64 = 0, heard: Bool = false, pending: Bool = false, files: [String] = [], kind: String = "", number: UInt64 = 0, day: Text? = nil, cont: Bool = false, terminal: Bool = false, card: CardRefView? = nil, event: EventView? = nil, deed: EventView? = nil, row: DeskRowView? = nil, work: WorkView? = nil, published: String? = nil, details: String = "", html: String = "", chips: [CardRefView] = [], quote: QuoteView? = nil, events: [EventChipView] = [], scribble: Bool = false, writtenMs: UInt64? = nil, answers: String? = nil, waits: Text? = nil, helper: String? = nil) {
       self.id = id
       self.fromMe = fromMe
       self.text = text
@@ -3453,6 +3456,7 @@ public enum CoreView {
       self.details = details
       self.html = html
       self.chips = chips
+      self.quote = quote
       self.events = events
       self.scribble = scribble
       self.writtenMs = writtenMs
@@ -3483,6 +3487,7 @@ public enum CoreView {
       case details = "details"
       case html = "html"
       case chips = "chips"
+      case quote = "quote"
       case events = "events"
       case scribble = "scribble"
       case writtenMs = "written_ms"
@@ -3514,6 +3519,7 @@ public enum CoreView {
       self.details = try c.decodeIfPresent(String.self, forKey: .details) ?? ""
       self.html = try c.decodeIfPresent(String.self, forKey: .html) ?? ""
       self.chips = try c.decodeIfPresent([CardRefView].self, forKey: .chips) ?? []
+      self.quote = try c.decodeIfPresent(QuoteView.self, forKey: .quote)
       self.events = try c.decodeIfPresent([EventChipView].self, forKey: .events) ?? []
       self.scribble = try c.decodeIfPresent(Bool.self, forKey: .scribble) ?? false
       self.writtenMs = try c.decodeIfPresent(UInt64.self, forKey: .writtenMs)
@@ -3545,6 +3551,7 @@ public enum CoreView {
       if !details.isEmpty { try c.encode(details, forKey: .details) }
       if !html.isEmpty { try c.encode(html, forKey: .html) }
       if !chips.isEmpty { try c.encode(chips, forKey: .chips) }
+      try c.encodeIfPresent(quote, forKey: .quote)
       if !events.isEmpty { try c.encode(events, forKey: .events) }
       try c.encode(scribble, forKey: .scribble)
       try c.encodeIfPresent(writtenMs, forKey: .writtenMs)
@@ -3585,6 +3592,35 @@ public enum CoreView {
       try c.encode(id, forKey: .id)
       try c.encode(number, forKey: .number)
       try c.encode(title, forKey: .title)
+    }
+  }
+
+  /// The card a bubble answers or is about (`TalkRow.quote`): a tap opens it.
+  public struct QuoteView: Codable, Hashable, Sendable {
+    /// What he did with it ("You handed it back", "You asked for an explanation"), else "About".
+    public var label: Text
+    public var card: CardRefView
+
+    public init(label: Text = Text(), card: CardRefView = CardRefView()) {
+      self.label = label
+      self.card = card
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case label = "label"
+      case card = "card"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.label = try c.decode(Text.self, forKey: .label)
+      self.card = try c.decode(CardRefView.self, forKey: .card)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(label, forKey: .label)
+      try c.encode(card, forKey: .card)
     }
   }
 

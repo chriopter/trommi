@@ -1431,6 +1431,10 @@ pub struct TalkRow {
     /// The cards it carries, a chip each.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chips: Vec<CardRefView>,
+    /// The calm chat (`Focus.calm`): the card these words answer or are about, quoted at the top of the bubble as a
+    /// messenger's reply (his answer with what he did to it, the agent's words on it); none without a card it knows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote: Option<QuoteView>,
     /// `kind` "events" (a phone's chat): the card events of a run, a chip each, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<EventChipView>,
@@ -1458,6 +1462,14 @@ pub struct CardRefView {
     /// Its number ("Nr. 12"); 0 when this device does not hold it.
     pub number: u32,
     pub title: String,
+}
+
+/// The card a bubble answers or is about (`TalkRow.quote`): a tap opens it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuoteView {
+    /// What he did with it ("You handed it back", "You asked for an explanation"), else "About".
+    pub label: Text,
+    pub card: CardRefView,
 }
 
 /// One card event of a run on a phone (`TalkRow.events`): a small chip that opens its card.
