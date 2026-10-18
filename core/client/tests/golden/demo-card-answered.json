@@ -76,7 +76,8 @@
     },
     "at_ms": 1791380400000,
     "back": "reopen",
-    "finished": false
+    "finished": false,
+    "ducked": false
   },
   "ask": {
     "key": "card.ask",

@@ -131,6 +131,8 @@ a.agent-badge:hover, a.agent-badge:focus-visible { scale: 1.08; }
 /* A card that asks nothing any more (answered, done, shredded, out with its agent) is as tall as what stands on it: no
    room is kept for answers (a small floor, so a one-line card is still a card). */
 .tc-card[data-settled], .tc-card[data-settled] > .tc-right { min-height: 150px; }
+/* (answered: the panel stays as it stood open, at its height; nothing moves: card.mjs saidCard) */
+.tc-card[data-settled]:has(> .tc-right .tc-answer.is-said), .tc-card[data-settled]:has(> .tc-right .tc-answer.is-said) > .tc-right { min-height: var(--card-h); }
 .tc-left { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-6) var(--s-6) var(--s-4) var(--s-8); }
 .tc-lead { flex: none; display: grid; gap: var(--s-2); min-width: 0; }
 .tc-knock { justify-self: start; --urg-color: var(--urg-high); border-radius: 6px; }
@@ -948,16 +950,6 @@ body:has(.tc-page.is-full) :is(.corner-note-box, .curl, #phone-bar, #agents, .to
 }
 
 /* ---- just decided on the card's own page (card.mjs nextStep): the next open question, or none, and Close ---- */
-.tc-next { display: grid; gap: var(--s-2); margin-top: var(--s-2); padding-top: var(--s-3); border-top: 1px dashed color-mix(in srgb, var(--fg) 25%, transparent); }
-.tc-next-go { display: grid; justify-items: start; text-align: left; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; align-items: center; column-gap: var(--s-3); padding: 12px 14px; border-radius: 12px; background: var(--fg); color: var(--bg); text-decoration: none; }
-.tc-next-go > span { font: 700 var(--t-md)/1.2 var(--font); }
-.tc-next-go > small { grid-row: 2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--bg) 70%, transparent); font: 500 var(--t-xs)/1.4 var(--font); }
-.tc-next-go > svg { grid-column: 2; grid-row: 1 / 3; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-.tc-next-go:hover { filter: brightness(1.08); }
-.tc-next-none { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font: 600 var(--t-sm)/1.4 var(--font); }
-.tc-next-none .sketch { width: 18px; height: 18px; color: var(--accent); }
-.tc-next-close { justify-self: center; padding: 6px 12px; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); text-decoration: underline; text-underline-offset: 3px; }
-.tc-next-close:hover { color: var(--fg); }
 
 /* ---- who a card comes from (card.mjs fromLine): a quiet line above the title, the session's drawing and its path ---- */
 .tc-fromline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; width: fit-content; max-width: 100%; margin: 0 0 -2px; color: var(--muted); font: 500 var(--t-sm)/1.3 var(--font); text-decoration: none; }
@@ -1015,3 +1007,18 @@ body:has(.tc-page.is-full) :is(.corner-note-box, .curl, #phone-bar, #agents, .to
 .tc-pad .tc-ask { box-shadow: inset 0 0 0 1px var(--line); }
 .tc-feed .tc-deed-in > * { flex-basis: auto; }
 .tc-feed .tc-deed-cap { order: -1; }
+
+/* ---- the answered card (card.mjs saidCard): the panel as it stood open, nothing moves; the said row keeps its look
+   with a small tick at its right edge, the others fade (150 ms); one quiet line under them; Next where What?? stood ---- */
+.tc-opt.is-said { cursor: default; pointer-events: none; }
+.tc-opt.is-said.is-faded { opacity: .35; animation: tc-fade 150ms ease-out; }
+.tc-opt.is-said.is-chosen { position: relative; padding-right: 44px; }
+.tc-chosen-tick { position: absolute; right: 14px; top: 50%; translate: 0 -50%; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; animation: tc-tick 150ms ease-out; }
+@keyframes tc-fade { from { opacity: 1; } }
+@keyframes tc-tick { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tc-opt.is-said.is-faded, .tc-chosen-tick { animation: none; } }
+.tc-said-or { opacity: .35; }
+.tc-answer.is-said .tc-ans-foot { margin: 6px 2px 0; }
+.tc-said-more { margin: 2px 2px 0; color: var(--muted); font: 500 var(--t-xs)/1.4 var(--font); }
+.tc-said-more .sketch { width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; }
+.tc-or-pair .tc-next-tile { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; text-decoration: none; font: 600 var(--t-md)/1 var(--font); }
