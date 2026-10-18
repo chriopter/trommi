@@ -964,3 +964,11 @@ a.files-where:hover span { text-decoration: underline; }
 .dict-rec .sealed > span[aria-hidden] { display: inline-flex; align-items: center; gap: 4px; }
 .dict-rec .sealed .sketch { width: 14px; height: 14px; stroke-width: 2; }
 @media (max-width: 860px) { #session .composer > :is(.dict-go, .dict-cancel) { width: 44px; height: 44px; } .dict-rec .sealed { display: none; } }
+
+/* A phone's chat title opens the chat's menu (sidebar.mjs chatSwitch, session.mjs chatMenu): its rows as the wide menu's. */
+.pm-acts { padding: 4px; }
+.pm-acts > a[role="menuitem"] { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 10px; border-radius: 8px; color: var(--fg); font: 600 var(--t-md)/1.2 var(--font); text-decoration: none; }
+.pm-acts > a[role="menuitem"]:hover { background: var(--sunken); }
+.pm-acts > a[role="menuitem"] :is(.sketch, .ico) { flex: none; width: 22px; height: 22px; color: var(--muted); }
+.pm-acts > a[role="menuitem"] b { margin-left: auto; color: var(--muted); font-size: var(--t-xs); }
+.pm-acts .panel-acts { display: contents; }

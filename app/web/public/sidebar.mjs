@@ -2,7 +2,7 @@
 // Desk box with the Trommi menu, the phone's bars and drawer, and the corner note. Everything it shows is the app
 // core's view model (vm.sidebar, vm.notes, vm.settings); what the person does goes to the core as an action (t.act).
 // The markup is the one app.css and sidebar.css style.
-import { BELL, Controller, PLUS, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, edgeQuirk, el, html, linkCap, raw, sk, sketchSvg, showToast, whoOf, fileSrc } from './ui.mjs'
+import { BELL, chatMenuOf, Controller, PLUS, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, edgeQuirk, el, html, linkCap, raw, sk, sketchSvg, showToast, whoOf, fileSrc } from './ui.mjs'
 
 /** The board's toolkit (register): the controllers send their actions with it. */
 let T = null
@@ -687,11 +687,12 @@ if (typeof document !== 'undefined') {
 // the session with its drawing. Wide screens show neither.
 const PLACES = { off: 'Off your mind', agents: 'Settings', room: 'Settings', artifacts: 'Artifacts', whiteboard: 'Scribble Board' }
 /** In a chat (a phone): its title, the drawing and the name with ▾, opens the sessions of its team to switch to. */
+/** A chat's title on a phone: its drawing and name; a tap opens the chat's menu (as the iPhone's and the wide page's:
+ *  no ⋯ and no switch to another chat). */
 function chatSwitch(vm, base, s) {
-  const mates = vm.sidebar.sessions.filter(r => r.team_id === s.team_id)
-  const team = vm.sidebar.teams.find(d => d.id === s.team_id)
-  return html`<button type="button" class="phone-pill chat-title" id="phone-pill" aria-haspopup="menu" aria-controls="phone-menu" aria-expanded="false" aria-label="${s.name.en}: switch to another agent">${avatar(whoOf(s), { crown: false })}<b>${s.name.en}</b>${sk('unfold')}</button>
-<div class="phone-menu" id="phone-menu" role="menu" aria-label="Agents of this team" data-controller="phone-menu" hidden><p class="pm-h">${team?.name.en ?? 'This team'}</p>${mates.map(a => html`<a role="menuitem" class="pm-row" data-nav draggable="false" href="${base}/chat/${encodeURIComponent(a.slug)}"${a.id === s.id ? raw(' aria-current="true"') : ''}>${avatar(whoOf(a), { crown: false })}<b>${a.name.en}</b>${a.open ? html`<i class="pm-n">${a.open}</i>` : ''}${a.id === s.id ? html`<span class="pm-check">${sk('tick')}</span>` : ''}</a>`)}</div>`
+  const page = vm.sessions?.[s.id]
+  return html`<button type="button" class="phone-pill chat-title" id="phone-pill" aria-haspopup="menu" aria-controls="phone-menu" aria-expanded="false" aria-label="${s.name.en}: menu">${avatar(whoOf(s), { crown: false })}<b>${s.name.en}</b>${sk('unfold')}</button>
+<div class="phone-menu" id="phone-menu" role="menu" aria-label="${s.name.en}" data-controller="phone-menu" hidden><div class="desk-move pm-acts">${page ? chatMenuOf(page, vm, base) : ''}</div></div>`
 }
 
 // The chats (a phone's Chat tab): the last chat opened (the crowned session's at first).
