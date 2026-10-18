@@ -83,3 +83,24 @@ body[data-page="knowledge"] #knowledge {
   .kn-entry > summary { padding: var(--s-3); }
   .kn-acts { padding: 0 var(--s-3) var(--s-3) var(--s-3); }
 }
+
+/* the automatic knowledge: what an entry is, what is new to him, a forgotten entry, the history with its way back */
+.kn-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; }
+.kn-kind { padding: 1px 7px; border-radius: var(--r-pill); background: var(--sunken); color: var(--muted); font: 600 var(--t-xs)/1.4 var(--font); }
+.kn-marks { display: flex; align-items: center; gap: 6px; }
+.kn-new { padding: 1px 8px; border-radius: var(--r-pill); background: var(--accent); color: var(--accent-fg); font: 700 var(--t-xs)/1.5 var(--font); }
+.kn-item.is-new .kn-ico { background: var(--accent-soft); color: var(--accent); }
+.kn-item.is-forgotten .kn-gone { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: var(--s-3); padding: var(--s-4) var(--s-4) var(--s-2) var(--s-3); opacity: .72; }
+.kn-item.is-forgotten .kn-title { text-decoration: line-through; text-decoration-color: var(--faint); }
+.kn-item.is-forgotten .kn-acts { background: none; padding-top: 0; }
+.kn-gone-in { color: var(--muted); font-size: var(--t-xs); }
+.kn-history { margin: 0; padding: 0 var(--s-4) var(--s-4) calc(var(--s-3) + 32px + var(--s-3)); background: var(--accent-soft); }
+.kn-history h3 { margin: 0 0 var(--s-2); color: var(--muted); font: 700 var(--t-xs)/1.2 var(--font); letter-spacing: .06em; text-transform: uppercase; }
+.kn-history ol { display: grid; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.kn-log { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--s-3); align-items: start; padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--surface); }
+.kn-log-says { color: var(--fg); font: 600 var(--t-sm)/1.35 var(--font); }
+.kn-log-before { grid-column: 1; color: var(--muted); font: 400 var(--t-sm)/1.45 var(--font); white-space: pre-line; overflow-wrap: anywhere; }
+.kn-log-before b { color: var(--fg); font-weight: 600; }
+.kn-log form { grid-column: 2; grid-row: 1 / span 2; margin: 0; }
+.kn-edit-kind { min-height: 32px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); color: var(--fg); font: 500 var(--t-sm)/1 var(--font); }
+.kn-filter { flex-wrap: wrap; }

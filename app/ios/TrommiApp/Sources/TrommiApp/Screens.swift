@@ -217,7 +217,7 @@ struct PlacePill: View {
       }
       Section {
         Button { go(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
-        Button { go(.knowledge(query: "", filter: "")) } label: { Label("Knowledge", systemImage: "book") }
+        Button { go(.knowledge(query: "", filter: "", open: "")) } label: { Label("Knowledge", systemImage: "book") }
         Button { go(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
         Button { go(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
       }
@@ -315,7 +315,7 @@ struct Sidebar: View {
       Menu {
         Button { shell.focus(.settings(page: "")); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "key") }
         Button { shell.focus(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
-        Button { shell.focus(.knowledge(query: "", filter: "")) } label: { Label("Knowledge", systemImage: "book") }
+        Button { shell.focus(.knowledge(query: "", filter: "", open: "")) } label: { Label("Knowledge", systemImage: "book") }
         Button { shell.focus(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
         Button { shell.focus(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
         Button { shell.focus(.notes) } label: { Label("Note", systemImage: "note.text") }
@@ -914,7 +914,7 @@ struct KnowledgeChip: View {
   @EnvironmentObject var shell: AppShell
   let chip: CoreView.KnowledgeChipView
   var body: some View {
-    Button { shell.focus(.knowledge(query: "", filter: "")) } label: {
+    Button { shell.focus(.knowledge(query: "", filter: "", open: "")) } label: {
       HStack(spacing: 6) {
         Sketch("book", color: Ink.muted).frame(width: 15, height: 15)
         Text(chip.label.en).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted)

@@ -173,14 +173,16 @@ withdrawn. Events that waited when a connector was swapped are the coordinator's
 ## Team knowledge
 
 The team's knowledge (spec/v1.md 9.3.7, README "Team knowledge") reaches the agent as the copies the person's devices
-keep in its session (`knowledge/<id>`); the connector never reads the room group. Five tools: `search_knowledge`
-(words that begin words of a title or text, from a full-text index of the session's copy, built again only when the
-copy changed: `bridge.rs knowledge_index`) and `read_knowledge` read; `propose_knowledge`, `correct_knowledge` and
-`forget_knowledge` file a yes/no card whose body carries the proposal (`knowledge`). The agent writes no entry: the
-person's Yes does, on the person's device. A digest (`trommi_client_core::knowledge::digest`: how many entries, the
-pinned ones with their text, the newest titles) rides on a tool's result when it is new to the agent or changed,
-after the team's goals. A read of the knowledge is a step of the trail (`knowledge: true`, with what was searched for),
-which the app shows as "reads team knowledge (12)".
+keep in its session (`knowledge/<id>`); the connector never reads or writes the room group. `search_knowledge` (words
+that begin words of a title or text, from a full-text index of the session's copy, built again only when the copy
+changed: `bridge.rs knowledge_index`) and `read_knowledge` read. `add_knowledge`, `update_knowledge` and
+`forget_knowledge` write without asking: each puts a write `knowledge_ask/<id>` into the agent's own session, which
+the person's devices apply on their own and answer (`knowledge_done/<id>`); the connector then takes the write away
+(`knowledge_answers`, with each tool's result) and tells the agent once what was refused. A digest
+(`trommi_client_core::knowledge::digest`: how many entries, the pinned ones with their text, the newest titles, each
+with its kind) rides on a tool's result when it is new to the agent or changed, after the team's goals. A read of the
+knowledge is a step of the trail (`knowledge: true`, with what was searched for), which the app shows as "reads team
+knowledge (12)".
 
 ## Status lines follow their questions
 

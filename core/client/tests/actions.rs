@@ -760,65 +760,138 @@ fn carried(sim: &Sim, session: &str, id: &str) -> serde_json::Value {
 
 fn knowledge_page(sim: &mut Sim, query: &str, filter: &str) -> trommi_client_core::views::KnowledgeView {
     use trommi_client_core::views::{Focus, Screen};
-    sim.send(Event::Focus { focus: Focus { screen: Screen::Knowledge { query: query.into(), filter: filter.into() }, visible: true, ..Default::default() } });
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Knowledge { query: query.into(), filter: filter.into(), open: String::new() }, visible: true, ..Default::default() } });
     sim.view.knowledge.clone().expect("the page Knowledge")
 }
 
-/// spec/v1.md 9.3.7: an agent's proposal is a card the app draws from what it carries; the person's Yes writes the
-/// entry into the room (named by the card, from the session's agent), the person's devices copy it into the session's
-/// group for its agent, and a Yes on a card that no longer says what it would change writes nothing.
+/// The session's register `name` (model spelling), as the person's devices hold it.
+fn session_register(sim: &Sim, session: &str, name: &str) -> serde_json::Value {
+    sim.app.board().model.sessions[session].registers.get(name).map(|r| r.value.clone()).unwrap_or_default()
+}
+
+/// An agent's write of its team's knowledge: the register `knowledge_ask/<id>` in its session (the wire's names), at
+/// the clock's time, and for a change the entry's last change as its agent reads it (`rev`).
+fn agent_writes(world: &mut World, sim: &Sim, write: u8, mut value: serde_json::Value) -> String {
+    value["at"] = json!(sim.now_ms);
+    if let Some(entry) = value.get("entry").and_then(|e| e.as_str()).and_then(trommi_client_core::codec::hex_of_wire_id) {
+        if value.get("rev").is_none() {
+            let e = trommi_client_core::knowledge::entry_of(&sim.app.board().model, &entry).expect("the entry");
+            value["rev"] = json!(e.changed());
+        }
+    }
+    let id = [write; 16];
+    world.agent_register(&format!("knowledge_ask/{}", trommi_core::ids::base64url_encode(&id)), &value.to_string());
+    trommi_client_core::engine::feed::hex(&id)
+}
+
+/// spec/v1.md 9.3.7: an agent writes its team's knowledge without asking. The person's device applies the write on its
+/// own (no card), answers it in the session, keeps a history with the text before, copies the entry to the team's
+/// sessions; the page marks it new, undoes a change, brings a forgotten entry back; an agent never pins, and a write
+/// that no longer fits what it read is refused and said so.
 #[test]
-fn a_yes_on_a_proposal_writes_the_entry_and_every_session_of_the_team_carries_it() {
+fn an_agents_write_is_kept_on_its_own_with_its_history_and_the_way_back() {
     let mut world = World::new();
     let mut sim = world.sim();
-    sim.send(start());
-    assert_eq!(sim.view.phase, Phase::Live);
-    world.agent_proposes(r#"{"op":"add","title":"Hub deploy","text":"runs as the container trommi","pinned":true}"#);
-    assert!(world.stream(&mut sim));
-    let row = sim.view.desk.rows[0].clone();
-    assert_eq!(row.title, "Add to team knowledge? Hub deploy", "drawn from the proposal, not the agent's words");
-    assert!(row.words.starts_with("runs as the container trommi") && row.words.contains("Pinned"), "{}", row.words);
-    let card = row.id.clone();
+    with_card(&mut world, &mut sim);
     let session = sim.view.sidebar.sessions[0].id.clone();
-    act(&mut sim, yes(&card));
-    world.stream(&mut sim);
-    let v = entry(&sim, &card);
-    assert_eq!((v["desk"].clone(), v["title"].clone(), v["text"].clone(), v["pinned"].clone()), (json!("main"), json!("Hub deploy"), json!("runs as the container trommi"), json!(true)), "{v}");
+    let rows = sim.view.desk.rows.len();
+    let w1 = agent_writes(&mut world, &sim, 1, json!({ "op": "add", "title": "Hub deploy", "text": "runs here", "pinned": true }));
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    assert_eq!(sim.view.desk.rows.len(), rows, "no card: nothing to answer");
+    let v = entry(&sim, &w1);
+    assert_eq!((v["title"].clone(), v["text"].clone(), v["pinned"].clone(), v["desk"].clone()), (json!("Hub deploy"), json!("runs here"), serde_json::Value::Null, json!("main")), "{v}");
     assert!(v["by"].as_str().is_some_and(|b| !b.is_empty()), "{v}");
-    assert_eq!(answer_of(&sim, &card).map(|a| a.0), Some("closed".into()), "Yes settles the card");
-    world.stream(&mut sim);
-    assert_eq!(carried(&sim, &session, &card), v, "the session's agent reads it");
+    assert_eq!(session_register(&sim, &session, &format!("knowledge_done/{w1}"))["ok"], json!(true));
+    assert_eq!(carried(&sim, &session, &w1)["title"], json!("Hub deploy"), "its agent reads it");
     // nothing changed: nothing more is written
     let posts = envelope_posts(&world);
     world.agent_says("noted");
     world.stream(&mut sim);
     assert_eq!(envelope_posts(&world), posts);
 
-    // the page shows it; the person changes and deletes it there, and the session's copy follows
+    // new to him on his first look, with its way back
     let page = knowledge_page(&mut sim, "", "");
-    assert_eq!((page.count, page.rows.len(), page.rows[0].title.as_str(), page.rows[0].pinned), (1, 1, "Hub deploy", true));
-    assert!(page.rows[0].by.en.starts_with("proposed by "), "{:?}", page.rows[0].by);
-    act(&mut sim, Action::KnowledgePin { entry_id: card.clone(), on: false });
+    assert_eq!((page.rows.len(), page.rows[0].new, page.rows[0].undo.is_some()), (1, true, true), "{:?}", page.rows);
+    assert_eq!(page.filters.iter().map(|f| (f.key.as_str(), f.count)).collect::<Vec<_>>(), [("", 1), ("new", 1), ("pinned", 0), ("forgotten", 0)]);
     world.stream(&mut sim);
-    world.stream(&mut sim);
-    assert_eq!(carried(&sim, &session, &card)["pinned"], serde_json::Value::Null);
-    assert_eq!(knowledge_page(&mut sim, "", "pinned").rows.len(), 0);
+    leave_page(&mut sim);
+    assert!(!knowledge_page(&mut sim, "", "").rows[0].new, "seen once he looked");
 
-    // a change proposed for a title the entry no longer has: the Yes is refused, the card stays open
-    let wire = trommi_client_core::codec::wire_of_hex_id(&card).unwrap();
-    world.agent_proposes(&format!(r#"{{"op":"change","entry":"{wire}","was":"Old name","title":"Hub deploy","text":"other"}}"#));
+    // an update keeps the text before; the history shows it, and Undo brings it back
+    sim.advance(1_000);
+    agent_writes(&mut world, &sim, 2, json!({ "op": "update", "entry": wire(&w1), "was": "Hub deploy", "title": "Hub deploy", "text": "runs there" }));
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    assert_eq!(entry(&sim, &w1)["text"], json!("runs there"));
+    leave_page(&mut sim);
+    let page = knowledge_open(&mut sim, &w1);
+    let row = &page.rows[0];
+    assert!(row.new && row.open, "{row:?}");
+    assert_eq!(row.history.iter().map(|l| (l.text.as_str(), l.by_agent)).collect::<Vec<_>>(), [("runs here", true), ("", true)]);
+    act(&mut sim, Action::KnowledgeUndo { change_id: row.history[0].id.clone() });
     world.stream(&mut sim);
-    let stale = sim.view.desk.rows[0].id.clone();
-    act(&mut sim, yes(&stale));
-    assert_eq!(answer_of(&sim, &stale), None);
-    assert!(sim.view.toasts.iter().any(|t| t.text.key == "knowledge.changed"), "{:?}", sim.view.toasts);
-    assert_eq!(entry(&sim, &card)["text"], json!("runs as the container trommi"));
+    assert_eq!(entry(&sim, &w1)["text"], json!("runs here"));
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
 
-    // forgotten on the page: gone from the room and from the session
-    act(&mut sim, Action::KnowledgeDelete { entry_id: card.clone() });
+    // a write that read another title: refused, said in the session, nothing changed
+    let w3 = agent_writes(&mut world, &sim, 3, json!({ "op": "update", "entry": wire(&w1), "was": "Old", "title": "X", "text": "y" }));
+    for _ in 0..2 {
+        world.stream(&mut sim);
+    }
+    let done = session_register(&sim, &session, &format!("knowledge_done/{w3}"));
+    assert_eq!((done["ok"].clone(), done["why"].clone()), (json!(false), json!("changed")));
+    assert_eq!(entry(&sim, &w1)["title"], json!("Hub deploy"));
+    // (the agent takes its write away: the answer goes too)
+    world.agent_clears(&format!("knowledge_ask/{}", trommi_core::ids::base64url_encode(&[3; 16])));
+    for _ in 0..2 {
+        world.stream(&mut sim);
+    }
+    assert!(session_register(&sim, &session, &format!("knowledge_done/{w3}")).is_null());
+
+    // forgotten by the agent: no longer copied, listed under Forgotten, brought back by him
+    agent_writes(&mut world, &sim, 4, json!({ "op": "forget", "entry": wire(&w1), "was": "Hub deploy" }));
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    assert!(entry(&sim, &w1)["deleted_at"].as_u64().is_some() && carried(&sim, &session, &w1).is_null());
+    let page = knowledge_page(&mut sim, "", "forgotten");
+    let restore = page.rows[0].restore.clone().expect("its way back");
+    assert!(page.rows[0].forgotten && page.rows[0].gone_in.is_some());
+    act(&mut sim, Action::KnowledgeUndo { change_id: restore });
+    for _ in 0..2 {
+        world.stream(&mut sim);
+    }
+    assert!(entry(&sim, &w1).get("deleted_at").is_none() && carried(&sim, &session, &w1)["title"] == json!("Hub deploy"));
+    // (two writes of one title at once: the second one sees the first, in the same look)
+    let (a, b) = (agent_writes(&mut world, &sim, 5, json!({ "op": "add", "title": "Twice", "text": "1" })), agent_writes(&mut world, &sim, 6, json!({ "op": "add", "title": "twice", "text": "2" })));
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    let answers = [session_register(&sim, &session, &format!("knowledge_done/{a}")), session_register(&sim, &session, &format!("knowledge_done/{b}"))];
+    assert_eq!(answers.iter().filter(|d| d["ok"] == json!(true)).count(), 1, "{answers:?}");
+    assert!(answers.iter().any(|d| d["why"] == json!("duplicate")), "{answers:?}");
+    // (only he pins)
+    act(&mut sim, Action::KnowledgePin { entry_id: w1.clone(), on: true });
     world.stream(&mut sim);
-    world.stream(&mut sim);
-    assert!(entry(&sim, &card).is_null() && carried(&sim, &session, &card).is_null());
+    assert_eq!(entry(&sim, &w1)["pinned"], json!(true));
+}
+
+fn wire(hex: &str) -> String {
+    trommi_client_core::codec::wire_of_hex_id(hex).unwrap()
+}
+
+fn leave_page(sim: &mut Sim) {
+    use trommi_client_core::views::{Focus, Screen};
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, ..Default::default() } });
+}
+
+fn knowledge_open(sim: &mut Sim, open: &str) -> trommi_client_core::views::KnowledgeView {
+    use trommi_client_core::views::{Focus, Screen};
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Knowledge { query: String::new(), filter: String::new(), open: open.into() }, visible: true, ..Default::default() } });
+    sim.view.knowledge.clone().expect("the page Knowledge")
 }
 
 #[test]
@@ -826,7 +899,7 @@ fn the_person_writes_entries_on_the_page_and_finds_them() {
     let mut world = World::new();
     let mut sim = world.sim();
     with_card(&mut world, &mut sim);
-    let save = |title: &str, text: &str| Action::KnowledgeSave { team_id: "main".into(), entry_id: None, title: title.into(), text: text.into(), pinned: false };
+    let save = |title: &str, text: &str| Action::KnowledgeSave { team_id: "main".into(), entry_id: None, title: title.into(), text: text.into(), kind: String::new(), pinned: false };
     act(&mut sim, save("  Release branches ", "every change on release/<date>-<n>\n\n\n\nsquash merge"));
     act(&mut sim, save("OpenMLS", "version 0.9.1, one fixed cipher suite"));
     act(&mut sim, save("   ", "no title"));
@@ -836,17 +909,21 @@ fn the_person_writes_entries_on_the_page_and_finds_them() {
     assert_eq!(page.rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(), ["OpenMLS", "Release branches"], "the newest first");
     assert_eq!(page.rows[1].text, "every change on release/<date>-<n>\n\nsquash merge");
     assert!(page.rows[0].by.en.starts_with("added by you"));
-    assert_eq!(page.filters.iter().map(|f| (f.key.as_str(), f.count, f.on)).collect::<Vec<_>>(), [("", 2, true), ("pinned", 0, false)]);
+    assert_eq!(page.filters.iter().map(|f| (f.key.as_str(), f.count, f.on)).collect::<Vec<_>>(), [("", 2, true), ("new", 0, false), ("pinned", 0, false), ("forgotten", 0, false)]);
+    assert!(page.rows.iter().all(|r| !r.new), "his own entries are not new to him");
     let found = knowledge_page(&mut sim, "squash", "");
     assert_eq!((found.rows.len(), found.rows[0].title.as_str(), found.query.as_str()), (1, "Release branches", "squash"));
     let none = knowledge_page(&mut sim, "nothing", "");
     assert_eq!(none.none.map(|t| t.en), Some("Nothing found for “nothing”.".into()));
     // edited in place: its id stays
     let id = page.rows[0].id.clone();
-    act(&mut sim, Action::KnowledgeSave { team_id: "main".into(), entry_id: Some(id.clone()), title: "OpenMLS".into(), text: "=0.9.1".into(), pinned: true });
+    act(&mut sim, Action::KnowledgeSave { team_id: "main".into(), entry_id: Some(id.clone()), title: "OpenMLS".into(), text: "=0.9.1".into(), kind: "decision".into(), pinned: true });
     world.stream(&mut sim);
     let page = knowledge_page(&mut sim, "", "");
-    assert_eq!((page.rows[0].id.as_str(), page.rows[0].text.as_str(), page.rows[0].pinned), (id.as_str(), "=0.9.1", true));
+    assert_eq!((page.rows[0].id.as_str(), page.rows[0].text.as_str(), page.rows[0].pinned, page.rows[0].kind_label.en.as_str()), (id.as_str(), "=0.9.1", true, "Decision"));
+    assert_eq!(page.rows[1].kind, "fact");
+    assert!(page.rows[0].confirmed.is_none(), "written and confirmed at once: said once");
+    assert_eq!(page.kinds.iter().map(|k| k.key.as_str()).collect::<Vec<_>>(), ["rule", "decision", "fact", "where"]);
     // the chip on the team's Desk counts them
     use trommi_client_core::views::{Focus, Screen};
     sim.send(Event::Focus { focus: Focus { screen: Screen::Desk, visible: true, ..Default::default() } });
@@ -855,23 +932,4 @@ fn the_person_writes_entries_on_the_page_and_finds_them() {
     // its tile shows the first titles, the pinned one first, as the page
     let page_titles: Vec<String> = page.rows.iter().map(|r| r.title.clone()).collect();
     assert_eq!(sim.view.desk.knowledge.as_ref().map(|k| k.first.clone()), Some(page_titles));
-}
-
-/// spec/v1.md 9.3.7: only a card's first version proposes. The agent writing the card again (here: another
-/// proposal in its second version) makes it a plain card, and a Yes on it writes nothing.
-#[test]
-fn a_proposal_written_again_proposes_nothing() {
-    let mut world = World::new();
-    let mut sim = world.sim();
-    sim.send(start());
-    let (card, first, _) = world.agent_card("A plain question");
-    let body = r#"{"card_type":"decision","title":"Add to team knowledge? Harmless","options":[{"key":"yes"},{"key":"no"}],"knowledge":{"op":"add","title":"Hub deploy","text":"anything"}"#;
-    world.agent_version(card, &first, body, 2);
-    assert!(world.stream(&mut sim));
-    let id = trommi_client_core::engine::feed::hex(card.as_bytes());
-    let c = &sim.app.board().model.cards[&id];
-    assert_eq!((c.field("title"), c.field("knowledge")), (json!("Add to team knowledge? Harmless"), serde_json::Value::Null));
-    act(&mut sim, yes(&id));
-    world.stream(&mut sim);
-    assert!(entry(&sim, &id).is_null(), "a Yes on a later version writes no entry");
 }

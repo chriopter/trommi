@@ -137,8 +137,9 @@ public enum CoreView {
     /// The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
     /// videos and files, "pages" the pages.
     case artifacts(kind: String)
-    /// The page Knowledge of the team in view, with the search's words and its filter ("" every entry, "pinned").
-    case knowledge(query: String, filter: String)
+    /// The page Knowledge of the team in view, with the search's words, its filter ("" every entry, "new",
+    /// "pinned", "forgotten") and the entry open (its history shows).
+    case knowledge(query: String, filter: String, open: String)
     /// Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
     /// "data", "security").
     case settings(page: String)
@@ -153,6 +154,7 @@ public enum CoreView {
       case boardId = "board_id"
       case kind = "kind"
       case filter = "filter"
+      case open = "open"
       case page = "page"
     }
 
@@ -166,7 +168,7 @@ public enum CoreView {
       case "off": self = .off(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "")
       case "scribble": self = .scribble(boardId: try c.decode(String.self, forKey: .boardId))
       case "artifacts": self = .artifacts(kind: try c.decodeIfPresent(String.self, forKey: .kind) ?? "")
-      case "knowledge": self = .knowledge(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "", filter: try c.decodeIfPresent(String.self, forKey: .filter) ?? "")
+      case "knowledge": self = .knowledge(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "", filter: try c.decodeIfPresent(String.self, forKey: .filter) ?? "", open: try c.decodeIfPresent(String.self, forKey: .open) ?? "")
       case "settings": self = .settings(page: try c.decodeIfPresent(String.self, forKey: .page) ?? "")
       case let other: throw DecodingError.dataCorruptedError(forKey: .screen, in: c, debugDescription: "Screen: no variant \(other)")
       }
@@ -194,10 +196,11 @@ public enum CoreView {
       case .artifacts(let kind):
         try c.encode("artifacts", forKey: .screen)
         try c.encode(kind, forKey: .kind)
-      case .knowledge(let query, let filter):
+      case .knowledge(let query, let filter, let open):
         try c.encode("knowledge", forKey: .screen)
         try c.encode(query, forKey: .query)
         try c.encode(filter, forKey: .filter)
+        try c.encode(open, forKey: .open)
       case .settings(let page):
         try c.encode("settings", forKey: .screen)
         try c.encode(page, forKey: .page)
@@ -2148,13 +2151,16 @@ public enum CoreView {
     public var says: Text
     /// The first entries' titles, pinned first as on its page (at most four), always sent: the Desk's tile shows them.
     public var first: [String]
+    /// How many an agent changed since the person last looked.
+    public var fresh: UInt32
 
-    public init(teamId: String = "", label: Text = Text(), count: UInt32 = 0, says: Text = Text(), first: [String] = []) {
+    public init(teamId: String = "", label: Text = Text(), count: UInt32 = 0, says: Text = Text(), first: [String] = [], fresh: UInt32 = 0) {
       self.teamId = teamId
       self.label = label
       self.count = count
       self.says = says
       self.first = first
+      self.fresh = fresh
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2163,6 +2169,7 @@ public enum CoreView {
       case count = "count"
       case says = "says"
       case first = "first"
+      case fresh = "fresh"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2172,6 +2179,7 @@ public enum CoreView {
       self.count = try c.decodeIfPresent(UInt32.self, forKey: .count) ?? 0
       self.says = try c.decode(Text.self, forKey: .says)
       self.first = try c.decodeIfPresent([String].self, forKey: .first) ?? []
+      self.fresh = try c.decodeIfPresent(UInt32.self, forKey: .fresh) ?? 0
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2181,6 +2189,7 @@ public enum CoreView {
       try c.encode(count, forKey: .count)
       try c.encode(says, forKey: .says)
       try c.encode(first, forKey: .first)
+      try c.encode(fresh, forKey: .fresh)
     }
   }
 
@@ -2332,8 +2341,10 @@ public enum CoreView {
     public var textMax: UInt32
     /// The page's other words: its buttons, the editor's hints, the question before a delete.
     public var words: KnowledgeWordsView
+    /// The kinds an entry can be, in order, for the editor.
+    public var kinds: [KnowledgeKindView]
 
-    public init(teamId: String = "", team: Text = Text(), title: Text = Text(), count: UInt32 = 0, summary: Text = Text(), lead: Text = Text(), query: String = "", filter: String = "", filters: [KnowledgeFilterView] = [], search: Text = Text(), rows: [KnowledgeRowView] = [], none: Text? = nil, full: Bool = false, titleMax: UInt32 = 0, textMax: UInt32 = 0, words: KnowledgeWordsView = KnowledgeWordsView()) {
+    public init(teamId: String = "", team: Text = Text(), title: Text = Text(), count: UInt32 = 0, summary: Text = Text(), lead: Text = Text(), query: String = "", filter: String = "", filters: [KnowledgeFilterView] = [], search: Text = Text(), rows: [KnowledgeRowView] = [], none: Text? = nil, full: Bool = false, titleMax: UInt32 = 0, textMax: UInt32 = 0, words: KnowledgeWordsView = KnowledgeWordsView(), kinds: [KnowledgeKindView] = []) {
       self.teamId = teamId
       self.team = team
       self.title = title
@@ -2350,6 +2361,7 @@ public enum CoreView {
       self.titleMax = titleMax
       self.textMax = textMax
       self.words = words
+      self.kinds = kinds
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2369,6 +2381,7 @@ public enum CoreView {
       case titleMax = "title_max"
       case textMax = "text_max"
       case words = "words"
+      case kinds = "kinds"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2389,6 +2402,7 @@ public enum CoreView {
       self.titleMax = try c.decodeIfPresent(UInt32.self, forKey: .titleMax) ?? 0
       self.textMax = try c.decodeIfPresent(UInt32.self, forKey: .textMax) ?? 0
       self.words = try c.decode(KnowledgeWordsView.self, forKey: .words)
+      self.kinds = try c.decodeIfPresent([KnowledgeKindView].self, forKey: .kinds) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2409,6 +2423,35 @@ public enum CoreView {
       try c.encode(titleMax, forKey: .titleMax)
       try c.encode(textMax, forKey: .textMax)
       try c.encode(words, forKey: .words)
+      try c.encode(kinds, forKey: .kinds)
+    }
+  }
+
+  /// A kind of entry, for the editor's choice.
+  public struct KnowledgeKindView: Codable, Hashable, Sendable {
+    public var key: String
+    public var label: Text
+
+    public init(key: String = "", label: Text = Text()) {
+      self.key = key
+      self.label = label
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case label = "label"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decode(String.self, forKey: .key)
+      self.label = try c.decode(Text.self, forKey: .label)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(label, forKey: .label)
     }
   }
 
@@ -2462,14 +2505,42 @@ public enum CoreView {
     public var by: Text
     /// When it last changed.
     public var atMs: UInt64
+    /// What it is ("rule", "decision", "fact", "where") and that in words ("Rule").
+    public var kind: String
+    public var kindLabel: Text
+    /// When it was last said to hold ("confirmed Yesterday"), when that was after it was last written.
+    public var confirmed: Text?
+    /// An agent changed it since the person last looked.
+    public var new: Bool
+    /// Forgotten: it can be brought back (`restore`) until `gone_in` says.
+    public var forgotten: Bool
+    /// The way back from its last change when an agent made it: the change's id for `Action::KnowledgeUndo`.
+    public var undo: String?
+    /// A forgotten entry's way back: the forget's change id for `Action::KnowledgeUndo`.
+    public var restore: String?
+    public var goneIn: Text?
+    /// It is the entry open (`Screen::Knowledge.open`): its history is here.
+    public var open: Bool
+    /// Its changes, the newest first (only while it is open; at most ten).
+    public var history: [KnowledgeLogView]
 
-    public init(id: String = "", title: String = "", text: String = "", pinned: Bool = false, by: Text = Text(), atMs: UInt64 = 0) {
+    public init(id: String = "", title: String = "", text: String = "", pinned: Bool = false, by: Text = Text(), atMs: UInt64 = 0, kind: String = "", kindLabel: Text = Text(), confirmed: Text? = nil, new: Bool = false, forgotten: Bool = false, undo: String? = nil, restore: String? = nil, goneIn: Text? = nil, open: Bool = false, history: [KnowledgeLogView] = []) {
       self.id = id
       self.title = title
       self.text = text
       self.pinned = pinned
       self.by = by
       self.atMs = atMs
+      self.kind = kind
+      self.kindLabel = kindLabel
+      self.confirmed = confirmed
+      self.new = new
+      self.forgotten = forgotten
+      self.undo = undo
+      self.restore = restore
+      self.goneIn = goneIn
+      self.open = open
+      self.history = history
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2479,6 +2550,16 @@ public enum CoreView {
       case pinned = "pinned"
       case by = "by"
       case atMs = "at_ms"
+      case kind = "kind"
+      case kindLabel = "kind_label"
+      case confirmed = "confirmed"
+      case new = "new"
+      case forgotten = "forgotten"
+      case undo = "undo"
+      case restore = "restore"
+      case goneIn = "gone_in"
+      case open = "open"
+      case history = "history"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2489,6 +2570,16 @@ public enum CoreView {
       self.pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
       self.by = try c.decode(Text.self, forKey: .by)
       self.atMs = try c.decodeIfPresent(UInt64.self, forKey: .atMs) ?? 0
+      self.kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? ""
+      self.kindLabel = try c.decode(Text.self, forKey: .kindLabel)
+      self.confirmed = try c.decodeIfPresent(Text.self, forKey: .confirmed)
+      self.new = try c.decodeIfPresent(Bool.self, forKey: .new) ?? false
+      self.forgotten = try c.decodeIfPresent(Bool.self, forKey: .forgotten) ?? false
+      self.undo = try c.decodeIfPresent(String.self, forKey: .undo)
+      self.restore = try c.decodeIfPresent(String.self, forKey: .restore)
+      self.goneIn = try c.decodeIfPresent(Text.self, forKey: .goneIn)
+      self.open = try c.decodeIfPresent(Bool.self, forKey: .open) ?? false
+      self.history = try c.decodeIfPresent([KnowledgeLogView].self, forKey: .history) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2498,6 +2589,72 @@ public enum CoreView {
       try c.encode(text, forKey: .text)
       try c.encode(pinned, forKey: .pinned)
       try c.encode(by, forKey: .by)
+      try c.encode(atMs, forKey: .atMs)
+      try c.encode(kind, forKey: .kind)
+      try c.encode(kindLabel, forKey: .kindLabel)
+      try c.encodeIfPresent(confirmed, forKey: .confirmed)
+      try c.encode(new, forKey: .new)
+      try c.encode(forgotten, forKey: .forgotten)
+      try c.encodeIfPresent(undo, forKey: .undo)
+      try c.encodeIfPresent(restore, forKey: .restore)
+      try c.encodeIfPresent(goneIn, forKey: .goneIn)
+      try c.encode(open, forKey: .open)
+      try c.encode(history, forKey: .history)
+    }
+  }
+
+  /// One change of an entry: who did what when ("Codex changed it · Yesterday"), the words it replaced, and the way
+  /// back (`Action::KnowledgeUndo` with its id).
+  public struct KnowledgeLogView: Codable, Hashable, Sendable {
+    public var id: String
+    public var says: Text
+    /// "Before:" with the title and text it replaced, or "It was new." (both empty).
+    public var before: Text
+    public var title: String
+    public var text: String
+    /// An agent made it (not the person).
+    public var byAgent: Bool
+    public var atMs: UInt64
+
+    public init(id: String = "", says: Text = Text(), before: Text = Text(), title: String = "", text: String = "", byAgent: Bool = false, atMs: UInt64 = 0) {
+      self.id = id
+      self.says = says
+      self.before = before
+      self.title = title
+      self.text = text
+      self.byAgent = byAgent
+      self.atMs = atMs
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case says = "says"
+      case before = "before"
+      case title = "title"
+      case text = "text"
+      case byAgent = "by_agent"
+      case atMs = "at_ms"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.says = try c.decode(Text.self, forKey: .says)
+      self.before = try c.decode(Text.self, forKey: .before)
+      self.title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+      self.text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+      self.byAgent = try c.decodeIfPresent(Bool.self, forKey: .byAgent) ?? false
+      self.atMs = try c.decodeIfPresent(UInt64.self, forKey: .atMs) ?? 0
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(says, forKey: .says)
+      try c.encode(before, forKey: .before)
+      try c.encode(title, forKey: .title)
+      try c.encode(text, forKey: .text)
+      try c.encode(byAgent, forKey: .byAgent)
       try c.encode(atMs, forKey: .atMs)
     }
   }
@@ -2515,8 +2672,13 @@ public enum CoreView {
     public var textHint: Text
     public var deleteAsk: Text
     public var full: Text
+    /// The mark of an entry new to him, the way back from a change, from a forget, and the history's heading.
+    public var newMark: Text
+    public var undo: Text
+    public var restore: Text
+    public var history: Text
 
-    public init(add: Text = Text(), edit: Text = Text(), delete: Text = Text(), pin: Text = Text(), unpin: Text = Text(), save: Text = Text(), cancel: Text = Text(), titleHint: Text = Text(), textHint: Text = Text(), deleteAsk: Text = Text(), full: Text = Text()) {
+    public init(add: Text = Text(), edit: Text = Text(), delete: Text = Text(), pin: Text = Text(), unpin: Text = Text(), save: Text = Text(), cancel: Text = Text(), titleHint: Text = Text(), textHint: Text = Text(), deleteAsk: Text = Text(), full: Text = Text(), newMark: Text = Text(), undo: Text = Text(), restore: Text = Text(), history: Text = Text()) {
       self.add = add
       self.edit = edit
       self.delete = delete
@@ -2528,6 +2690,10 @@ public enum CoreView {
       self.textHint = textHint
       self.deleteAsk = deleteAsk
       self.full = full
+      self.newMark = newMark
+      self.undo = undo
+      self.restore = restore
+      self.history = history
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2542,6 +2708,10 @@ public enum CoreView {
       case textHint = "text_hint"
       case deleteAsk = "delete_ask"
       case full = "full"
+      case newMark = "new_mark"
+      case undo = "undo"
+      case restore = "restore"
+      case history = "history"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2557,6 +2727,10 @@ public enum CoreView {
       self.textHint = try c.decode(Text.self, forKey: .textHint)
       self.deleteAsk = try c.decode(Text.self, forKey: .deleteAsk)
       self.full = try c.decode(Text.self, forKey: .full)
+      self.newMark = try c.decode(Text.self, forKey: .newMark)
+      self.undo = try c.decode(Text.self, forKey: .undo)
+      self.restore = try c.decode(Text.self, forKey: .restore)
+      self.history = try c.decode(Text.self, forKey: .history)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2572,6 +2746,10 @@ public enum CoreView {
       try c.encode(textHint, forKey: .textHint)
       try c.encode(deleteAsk, forKey: .deleteAsk)
       try c.encode(full, forKey: .full)
+      try c.encode(newMark, forKey: .newMark)
+      try c.encode(undo, forKey: .undo)
+      try c.encode(restore, forKey: .restore)
+      try c.encode(history, forKey: .history)
     }
   }
 

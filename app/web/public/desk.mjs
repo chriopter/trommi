@@ -122,7 +122,7 @@ export function deskTiles(d, base) {
   }
   if (tiles.some(t => t.key === 'board' && t.team_id)) viewModule('whiteboard').catch(() => {})   // (its controller paints the board small)
   // The bento: each tile takes the room the core gives it (DeskTileView.size); one with nothing yet is small and quiet.
-  return html`<nav class="desk-tiles" id="desk-end" aria-label="${tiles.map(t => t.title?.en ?? '').join(', ')}">${tiles.map(t => html`<a class="desk-tile is-${SIZES.has(t.size) ? t.size : 'narrow'}${t.empty ? ' is-empty' : ''}" id="tile-${t.key}" data-tile="${t.key}" data-nav href="${base}${TILE[t.key][0]}"${t.key === 'board' ? raw(' data-controller="thumbs"') : ''} aria-label="${t.title?.en ?? ''}: ${t.line?.en ?? ''}"><span class="dt-head">${sk(TILE[t.key][1])}<b>${t.title?.en ?? ''}</b><i>${t.line?.en ?? ''}</i>${CHEV}</span>${inside(t)}</a>`)}</nav>`
+  return html`<nav class="desk-tiles" id="desk-end" aria-label="${tiles.map(t => t.title?.en ?? '').join(', ')}">${tiles.map(t => html`<a class="desk-tile is-${SIZES.has(t.size) ? t.size : 'narrow'}${t.empty ? ' is-empty' : ''}" id="tile-${t.key}" data-tile="${t.key}" data-nav href="${base}${TILE[t.key][0]}${t.opens?.filter ? `?filter=${encodeURIComponent(t.opens.filter)}` : ''}"${t.key === 'board' ? raw(' data-controller="thumbs"') : ''} aria-label="${t.title?.en ?? ''}: ${t.line?.en ?? ''}"><span class="dt-head">${sk(TILE[t.key][1])}<b>${t.title?.en ?? ''}</b><i>${t.line?.en ?? ''}</i>${CHEV}</span>${inside(t)}</a>`)}</nav>`
 }
 
 let deskVm = null, deskAct = null

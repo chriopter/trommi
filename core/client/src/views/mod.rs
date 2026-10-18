@@ -143,12 +143,15 @@ pub enum Screen {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         kind: String,
     },
-    /// The page Knowledge of the team in view, with the search's words and its filter ("" every entry, "pinned").
+    /// The page Knowledge of the team in view, with the search's words, its filter ("" every entry, "new",
+    /// "pinned", "forgotten") and the entry open (its history shows).
     Knowledge {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         query: String,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         filter: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        open: String,
     },
     /// Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
     /// "data", "security").
@@ -935,6 +938,9 @@ pub struct KnowledgeChipView {
     /// The first entries' titles, pinned first as on its page (at most four), always sent: the Desk's tile shows them.
     #[serde(default)]
     pub first: Vec<String>,
+    /// How many an agent changed since the person last looked.
+    #[serde(default)]
+    pub fresh: u32,
 }
 
 /// Sealed dictation (spec/v1.md 18): what the chat field's microphone shows. While the field is empty its send
@@ -1027,6 +1033,16 @@ pub struct KnowledgeView {
     pub text_max: u32,
     /// The page's other words: its buttons, the editor's hints, the question before a delete.
     pub words: KnowledgeWordsView,
+    /// The kinds an entry can be, in order, for the editor.
+    #[serde(default)]
+    pub kinds: Vec<KnowledgeKindView>,
+}
+
+/// A kind of entry, for the editor's choice.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnowledgeKindView {
+    pub key: String,
+    pub label: Text,
 }
 
 /// One choice of the page's filter.
@@ -1057,6 +1073,52 @@ pub struct KnowledgeRowView {
     /// When it last changed.
     #[serde(default)]
     pub at_ms: u64,
+    /// What it is ("rule", "decision", "fact", "where") and that in words ("Rule").
+    #[serde(default)]
+    pub kind: String,
+    pub kind_label: Text,
+    /// When it was last said to hold ("confirmed Yesterday"), when that was after it was last written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmed: Option<Text>,
+    /// An agent changed it since the person last looked.
+    #[serde(default)]
+    pub new: bool,
+    /// Forgotten: it can be brought back (`restore`) until `gone_in` says.
+    #[serde(default)]
+    pub forgotten: bool,
+    /// The way back from its last change when an agent made it: the change's id for `Action::KnowledgeUndo`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo: Option<String>,
+    /// A forgotten entry's way back: the forget's change id for `Action::KnowledgeUndo`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restore: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gone_in: Option<Text>,
+    /// It is the entry open (`Screen::Knowledge.open`): its history is here.
+    #[serde(default)]
+    pub open: bool,
+    /// Its changes, the newest first (only while it is open; at most ten).
+    #[serde(default)]
+    pub history: Vec<KnowledgeLogView>,
+}
+
+/// One change of an entry: who did what when ("Codex changed it · Yesterday"), the words it replaced, and the way
+/// back (`Action::KnowledgeUndo` with its id).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnowledgeLogView {
+    pub id: String,
+    pub says: Text,
+    /// "Before:" with the title and text it replaced, or "It was new." (both empty).
+    pub before: Text,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub text: String,
+    /// An agent made it (not the person).
+    #[serde(default)]
+    pub by_agent: bool,
+    #[serde(default)]
+    pub at_ms: u64,
 }
 
 /// The words of the page Knowledge beside its entries.
@@ -1073,6 +1135,11 @@ pub struct KnowledgeWordsView {
     pub text_hint: Text,
     pub delete_ask: Text,
     pub full: Text,
+    /// The mark of an entry new to him, the way back from a change, from a forget, and the history's heading.
+    pub new_mark: Text,
+    pub undo: Text,
+    pub restore: Text,
+    pub history: Text,
 }
 
 /// A team's goals: a note of the person's, at most twenty lines.

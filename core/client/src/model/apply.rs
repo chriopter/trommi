@@ -996,8 +996,6 @@ impl Model {
                             .unwrap_or_else(|| default_of(f));
                         card.fields.insert(f, val);
                     }
-                    // (a proposal for the team's knowledge: drawn from what it asks, never from its agent's words)
-                    crate::knowledge::dress(&mut card.fields, v.previous_version_hash.is_none());
                     card.content_state = "ok".into();
                 } else {
                     card.content_state = content_state.clone();
