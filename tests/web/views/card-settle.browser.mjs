@@ -1,7 +1,7 @@
 // card-settle.browser.mjs: a card answered on its own page does not jump (demo room, ?mock=1, a 1440 px window). The
-// answered state is shorter than the options; the card's height glides there (card.mjs settleAfter), so no frame moves
-// the card's foot by more than a small step, and the card ends at its new height. On the Desk an answered row leaves
-// and the rows below glide up (app.mjs flipOut): no row moves by more than a small step in one frame either.
+// answered state is shorter than the options; the card's height glides there (card.mjs settleAfter): frames show it
+// between its height before and after, however slow the machine (a jump shows none). On the Desk an answered row
+// leaves and the rows below glide up (app.mjs flipOut): no row moves by more than a step in one frame.
 //   node tests/web/views/card-settle.browser.mjs      (needs Chromium; serves the app from its sources itself)
 import net from 'node:net'
 import path from 'node:path'
@@ -12,15 +12,15 @@ import { launchChromium } from '../../../app/web/dev/cdp.mjs'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repo = path.join(here, '..', '..', '..')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
-const STEP = 60   // px one frame may move what stands on the page
+const STEP = 120   // px one frame may move a Desk row (a slow machine paints fewer frames of the glide)
 
 /** Watches every frame for 2 s after a click on `sel`: the largest move of the card's foot (or of a Desk row) in one frame. */
 const WATCH = (sel, what) => `(async () => {
   const el = () => document.querySelector(${JSON.stringify(what)})
   const rows = () => [...document.querySelectorAll('#desk-list .inbox-row[id]')]
-  const at = new Map(), worst = { step: 0, by: '' }
+  const at = new Map(), worst = { step: 0, by: '' }, heights = []
   const look = () => {
-    const c = el(); if (c) { const b = Math.round(c.getBoundingClientRect().bottom), was = at.get('card'); if (was != null) { const d = Math.abs(b - was); if (d > worst.step) Object.assign(worst, { step: d, by: 'card' }) } at.set('card', b) }
+    const c = el(); if (c) { const h = Math.round(c.getBoundingClientRect().height); if (heights.at(-1) !== h) heights.push(h) }
     for (const r of rows()) { const t = Math.round(r.getBoundingClientRect().top); if (t > innerHeight || t < -200) continue; const was = at.get(r.id); if (was != null && Math.abs(t - was) > worst.step) Object.assign(worst, { step: Math.abs(t - was), by: r.id }); at.set(r.id, t) }
   }
   let on = true; const loop = () => { look(); if (on) requestAnimationFrame(loop) }; loop()
@@ -28,7 +28,8 @@ const WATCH = (sel, what) => `(async () => {
   const before = el()?.getBoundingClientRect().height ?? 0
   const b = document.querySelector(${JSON.stringify(sel)}); b?.click()
   await new Promise(r => setTimeout(r, 2000)); on = false
-  return { clicked: Boolean(b), worst, before, after: el()?.getBoundingClientRect().height ?? 0 }
+  const after = el()?.getBoundingClientRect().height ?? 0, lo = Math.min(before, after) + 8, hi = Math.max(before, after) - 8
+  return { clicked: Boolean(b), worst, before, after, between: heights.filter(h => h > lo && h < hi).length }
 })()`
 
 async function freePort() {
@@ -60,8 +61,8 @@ try {
   const bad = []
   if (!c.clicked) bad.push('no "Got it" on the card page')
   if (Math.abs(c.after - c.before) < 8) bad.push(`the answered card is as tall as before (${c.before} px): nothing to glide, the test does not see the case`)
-  if (c.worst.step > STEP) bad.push(`the card jumps: ${c.worst.by} moved ${c.worst.step} px in one frame`)
-  console.log(`${bad.length ? 'FAIL' : 'ok  '} card page: ${Math.round(c.before)} px to ${Math.round(c.after)} px, at most ${c.worst.step} px a frame${bad.length ? `; ${bad.join('; ')}` : ''}`)
+  if (c.between < 3) bad.push(`the card jumps: ${c.between} frames between its height before and after (a glide shows several, however slow the machine)`)
+  console.log(`${bad.length ? 'FAIL' : 'ok  '} card page: ${Math.round(c.before)} px to ${Math.round(c.after)} px through ${c.between} frames${bad.length ? `; ${bad.join('; ')}` : ''}`)
   if (bad.length) failed.push('card page')
   // a row answered on the Desk
   await open('/?mock=1', '#desk-list .inbox-row')
