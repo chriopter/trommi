@@ -218,7 +218,7 @@ export function screenOf(pathname, search = '') {
   if ((m = /^\/chat\/([^/]+)/.exec(pathname))) return { screen: 'session', session_id: decodeURIComponent(m[1]) }
   if (pathname === '/stacks/off') return { screen: 'off', query: new URLSearchParams(search).get('q') ?? '' }
   if (/^\/artifacts(?:\/|$)/.test(pathname)) return { screen: 'artifacts' }
-  if (pathname === '/knowledge') { const p = new URLSearchParams(search); return { screen: 'knowledge', query: (p.get('q') ?? '').trim(), filter: p.get('filter') === 'pinned' ? 'pinned' : '' } }
+  if (pathname === '/knowledge') { const p = new URLSearchParams(search), f = p.get('filter') ?? ''; return { screen: 'knowledge', query: (p.get('q') ?? '').trim(), filter: ['new', 'pinned', 'forgotten'].includes(f) ? f : '', open: /^[0-9a-f]{32}$/.test(p.get('open') ?? '') ? p.get('open') : '' } }
   if (pathname === '/scribble-board') return { screen: 'scribble', board_id: teamBoard() }
   if (/^\/(?:settings|devices|pair|sessions)(?:\/|$)/.test(pathname)) return { screen: 'settings' }
   return { screen: 'desk' }

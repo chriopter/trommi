@@ -683,6 +683,7 @@
             "knowledge": {
               "count": 0,
               "first": [],
+              "fresh": 0,
               "label": {
                 "en": "Knowledge",
                 "key": "knowledge.chip"
@@ -1291,6 +1292,7 @@
             "knowledge": {
               "count": 0,
               "first": [],
+              "fresh": 0,
               "label": {
                 "en": "Knowledge",
                 "key": "knowledge.chip"
@@ -2015,6 +2017,7 @@
             "knowledge": {
               "count": 0,
               "first": [],
+              "fresh": 0,
               "label": {
                 "en": "Knowledge",
                 "key": "knowledge.chip"
@@ -2587,6 +2590,7 @@
       "knowledge": {
         "count": 0,
         "first": [],
+        "fresh": 0,
         "label": {
           "en": "Knowledge",
           "key": "knowledge.chip"

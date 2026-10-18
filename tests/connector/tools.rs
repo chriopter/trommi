@@ -1997,16 +1997,18 @@ async fn symbols_are_listed_by_name_and_checked() {
 
 /// Team knowledge (spec/v1.md 9.3.7): the entries a human device copies into the session reach the agent as a digest
 /// with a tool's result, `search_knowledge` and `read_knowledge` read them from the session's copy, and
-/// `propose_knowledge`, `correct_knowledge` and `forget_knowledge` file yes/no cards that carry the proposal, the
-/// entry named as the wire writes ids; nothing of the room is read and no entry is written by the agent.
+/// `add_knowledge`, `update_knowledge` and `forget_knowledge` write into the agent's own session (`knowledge_ask/<id>`,
+/// the entry named as the wire writes ids, never pinned), without a card; the person's devices apply them. Their
+/// answer (`knowledge_done/<id>`) takes the write away, and a refusal is told to the agent once.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_team_knowledge_is_read_and_changes_are_asked_for_on_cards() {
+async fn the_team_knowledge_is_read_and_written_without_asking() {
     let (_hub, mut human, _seat, mut mcp, group) = seated().await;
     let listed = mcp.request("tools/list", json!({})).await;
     let names = tool_names(&listed);
-    for tool in ["search_knowledge", "read_knowledge", "propose_knowledge", "correct_knowledge", "forget_knowledge"] {
+    for tool in ["search_knowledge", "read_knowledge", "add_knowledge", "update_knowledge", "forget_knowledge"] {
         assert!(names.iter().any(|n| n == tool), "{tool} is listed: {names:?}");
     }
+    assert!(!names.iter().any(|n| n == "propose_knowledge" || n == "correct_knowledge"), "{names:?}");
     assert!(mcp.ok("search_knowledge", json!({})).await.contains("empty"));
 
     let (deploy, rule) = ([1u8; 16], [2u8; 16]);
@@ -2019,7 +2021,6 @@ async fn the_team_knowledge_is_read_and_changes_are_asked_for_on_cards() {
         .set_register(&group, &format!("knowledge/{}", wire(&rule)), Some(json!({ "desk": "main", "title": "Release branches", "text": "every change on release/<date>-<n>", "at": 2 })))
         .await
         .expect("the hub takes the entry");
-    // the digest rides on a tool's result, once
     let mut told = String::new();
     for _ in 0..600 {
         told = mcp.ok("reply", json!({ "text": "On it." })).await;
@@ -2028,39 +2029,60 @@ async fn the_team_knowledge_is_read_and_changes_are_asked_for_on_cards() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    assert!(told.contains("2 entries") && told.contains("Pinned:\n- Hub deploy") && told.contains("Newest:\n- Release branches"), "{told}");
-    assert!(!mcp.ok("reply", json!({ "text": "Still on it." })).await.contains("team knowledge"), "told once");
+    assert!(told.contains("2 entries") && told.contains("Pinned:\n- Hub deploy") && told.contains("without asking"), "{told}");
 
     let found = mcp.ok("search_knowledge", json!({ "query": "docker" })).await;
     assert!(found.contains("1 of 2 entries match") && found.contains(&hex(&deploy)) && !found.contains("Release"), "{found}");
     let read = mcp.ok("read_knowledge", json!({ "id": &hex(&deploy)[..8] })).await;
-    assert!(read.contains("runs as the Docker container trommi") && read.contains("proposed by Codex: radl"), "{read}");
+    assert!(read.contains("runs as the Docker container trommi") && read.contains("written by Codex: radl") && read.contains("last confirmed 1970-01-01"), "{read}");
     let (missing, failed) = mcp.call("read_knowledge", json!({ "id": "ffffffff" })).await;
     assert!(failed && missing.contains("no entry"), "{missing}");
 
-    // proposals: cards the app draws from what they carry
-    let made = mcp.ok("propose_knowledge", json!({ "title": "Staging", "text": "there is none: PRs go to main" })).await;
-    assert!(made.contains("Add to team knowledge? Staging"), "{made}");
-    let (long, failed) = mcp.call("propose_knowledge", json!({ "title": "x".repeat(81), "text": "y" })).await;
+    // writes: into the agent's own session, no card
+    let made = mcp.ok("add_knowledge", json!({ "title": "Staging", "text": "there is none: PRs go to main", "kind": "rule", "pinned": true })).await;
+    assert!(made.contains("\"Staging\" written") && made.contains("undo"), "{made}");
+    let (long, failed) = mcp.call("add_knowledge", json!({ "title": "x".repeat(81), "text": "y" })).await;
     assert!(failed && long.contains("at most 80"), "{long}");
-    let (twice, failed) = mcp.call("propose_knowledge", json!({ "title": "hub deploy", "text": "y" })).await;
-    assert!(failed && twice.contains("correct_knowledge"), "{twice}");
-    mcp.ok("correct_knowledge", json!({ "id": hex(&rule), "text": "every change on release/<date>-<n>, squash merge" })).await;
-    let (same, failed) = mcp.call("correct_knowledge", json!({ "id": hex(&rule), "title": "Release branches" })).await;
-    assert!(failed && same.contains("nothing to change"), "{same}");
+    let (twice, failed) = mcp.call("add_knowledge", json!({ "title": "hub deploy", "text": "y" })).await;
+    assert!(failed && twice.contains("update_knowledge"), "{twice}");
+    mcp.ok("update_knowledge", json!({ "id": hex(&rule), "text": "every change on release/<date>-<n>, squash merge" })).await;
+    let (kind, failed) = mcp.call("add_knowledge", json!({ "title": "Gossip", "text": "x", "kind": "gossip" })).await;
+    assert!(failed && kind.contains("rule, decision, fact, where"), "{kind}");
     mcp.ok("forget_knowledge", json!({ "id": hex(&deploy) })).await;
     human.sync().await;
     assert!(human.findings.is_empty(), "{:?}", human.findings);
-    let asked: Vec<&Value> = payloads(&human, "knowledge");
-    let ops: Vec<(Value, Value, Value)> = asked.iter().map(|p| (p["knowledge"]["op"].clone(), p["knowledge"]["entry"].clone(), p["knowledge"]["was"].clone())).collect();
+    assert!(payloads(&human, "card_type").iter().all(|p| !p["title"].as_str().unwrap_or("").contains("team knowledge")), "no card");
+    let writes: Vec<(String, Value)> = payloads(&human, "name")
+        .iter()
+        .filter(|p| p["name"].as_str().is_some_and(|n| n.starts_with("knowledge_ask/")))
+        .map(|p| (p["name"].as_str().unwrap().to_string(), p["value"].clone()))
+        .collect();
+    let ops: Vec<(Value, Value, Value, Value)> = writes.iter().map(|(_, v)| (v["op"].clone(), v["entry"].clone(), v["was"].clone(), v["pinned"].clone())).collect();
+    assert_eq!(writes[0].1["kind"], json!("rule"));
     assert_eq!(
         ops,
         [
-            (json!("add"), Value::Null, Value::Null),
-            (json!("change"), json!(wire(&rule)), json!("Release branches")),
-            (json!("forget"), json!(wire(&deploy)), json!("Hub deploy")),
+            (json!("add"), Value::Null, Value::Null, Value::Null),
+            (json!("update"), json!(wire(&rule)), json!("Release branches"), Value::Null),
+            (json!("forget"), json!(wire(&deploy)), json!("Hub deploy"), Value::Null),
         ]
     );
-    assert!(asked.iter().all(|p| p["card_type"] == "decision" && p["options"][0]["key"] == "yes" && p["options"][1]["key"] == "no"));
+    // the person's device answers: the update was refused; the agent is told once, and every answered write goes
+    let names: Vec<String> = writes.iter().map(|(n, _)| n.trim_start_matches("knowledge_ask/").to_string()).collect();
+    human.set_register(&group, &format!("knowledge_done/{}", names[0]), Some(json!({ "ok": true }))).await.expect("taken");
+    human.set_register(&group, &format!("knowledge_done/{}", names[1]), Some(json!({ "ok": false, "why": "changed" }))).await.expect("taken");
+    let mut said = String::new();
+    for _ in 0..600 {
+        said = mcp.ok("reply", json!({ "text": "Next." })).await;
+        if said.contains("did not take") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(said.contains("\"Release branches\": that entry changed since you read it"), "{said}");
+    assert!(!mcp.ok("reply", json!({ "text": "Again." })).await.contains("did not take"), "told once");
+    human.sync().await;
+    let cleared: Vec<&Value> = payloads(&human, "name").into_iter().filter(|p| p["value"].is_null() && p["name"].as_str().is_some_and(|n| n.starts_with("knowledge_ask/"))).collect();
+    assert_eq!(cleared.len(), 2, "the two answered writes are taken away, the third waits");
     mcp.close().await;
 }

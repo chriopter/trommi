@@ -1368,7 +1368,18 @@ impl Conn {
     /// is new to this agent or changed since it was told.
     async fn with_team(&self, out: String) -> String {
         let out = self.with_goals(out).await;
-        self.with_knowledge(out)
+        let out = self.with_knowledge(out);
+        // (the person's devices' word on this agent's writes of the knowledge: answered ones are taken away, a refusal
+        //  is said)
+        let bridge = self.bridge.lock().unwrap().clone();
+        match bridge {
+            Some(b) => match b.knowledge_answers().await {
+                Some(note) if out.is_empty() => note,
+                Some(note) => format!("{out}\n\n{note}"),
+                None => out,
+            },
+            None => out,
+        }
     }
 
     /// `out` with the digest of the team's knowledge this session holds (`knowledge::digest`: the pinned entries,

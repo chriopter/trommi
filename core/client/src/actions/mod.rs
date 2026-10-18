@@ -216,6 +216,9 @@ pub enum Action {
         title: String,
         #[serde(default)]
         text: String,
+        /// "rule", "decision", "fact" or "where"; empty: as it is (a new one: "fact").
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        kind: String,
         #[serde(default)]
         pinned: bool,
     },
@@ -224,9 +227,15 @@ pub enum Action {
         entry_id: String,
         on: bool,
     },
-    /// An entry taken away: no agent of its team reads it any more.
+    /// An entry forgotten: no agent of its team reads it any more; it can be brought back for 30 days
+    /// (`KnowledgeUndo` of this change).
     KnowledgeDelete {
         entry_id: String,
+    },
+    /// A change of an entry undone (its id: a `KnowledgeLogView`'s): the entry as it stood before it. A new entry's
+    /// undo forgets it; a forget's brings it back.
+    KnowledgeUndo {
+        change_id: String,
     },
 
     // ---- notes, scribble, files ----
