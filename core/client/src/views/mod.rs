@@ -692,6 +692,10 @@ pub struct DeskTileView {
     /// It holds nothing yet: the shell draws it small and quiet, with its line only.
     #[serde(default)]
     pub empty: bool,
+    /// Its numbers in short beside the title where its rows show below (a phone): "2 · 10" (running · done) for
+    /// "work"; none for the others and while nothing runs or is done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<Text>,
     /// Its row on a phone (two columns): two "narrow" tiles share one row, side by side in the tiles' order; every
     /// other tile, and a narrow one left alone, takes a row to itself. Rows are drawn by this number.
     #[serde(default)]
@@ -776,6 +780,10 @@ pub struct DockRowView {
     /// The card (`Screen::Card`).
     pub id: String,
     pub title: String,
+    /// The title without a status word in front ("Working on: ", "Arbeite an: ", "Paused: "…): what a one-line row
+    /// shows beside the agent's face; the title itself when it has none.
+    #[serde(default)]
+    pub short: String,
     pub from: FromView,
     /// The quiet line under the title: "Fernly · running" (a starred card being worked on), "Fernly", "Fernly ·
     /// Reworking the copy" (its status line), "Fernly · on it".
@@ -2549,6 +2557,9 @@ pub struct FileView {
     pub name: String,
     pub media_type: String,
     pub size: u64,
+    /// A picture (by its media type or its name's ending): an attachment shows it as a small square thumbnail.
+    #[serde(default)]
+    pub picture: bool,
     /// "uploading", "ready", "failed", "missing".
     pub state: String,
     /// The attachment's id once the hub has it (an upload's local id maps to it here).

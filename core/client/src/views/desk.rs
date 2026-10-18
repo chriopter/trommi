@@ -243,6 +243,13 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
         size: "wide".into(),
         empty: desk.off.is_none(),
         phone_row: 0,
+        brief: desk.off.as_ref().and_then(|o| {
+            let running = desk.running.as_ref().map_or(0, |d| d.count);
+            (running > 0 || o.closed > 0).then(|| {
+                let (r, d) = (running.to_string(), o.closed.to_string());
+                say("desk.tile.work.brief", format!("{r} \u{b7} {d}"), &[("running", &r), ("done", &d)])
+            })
+        }),
     };
     let n = all.len();
     let artifacts = super::DeskTileView {
@@ -261,6 +268,7 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
         size: "narrow".into(),
         empty: n == 0,
         phone_row: 0,
+        brief: None,
     };
     let board = super::DeskTileView {
         key: "board".into(),
@@ -274,6 +282,7 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
         size: if desk.knowledge.is_some() { "wide" } else { "full" }.into(),
         empty: false,
         phone_row: 0,
+        brief: None,
     };
     let knowledge = desk.knowledge.as_ref().map(|k| {
         let n = k.count;
@@ -293,6 +302,7 @@ pub fn desk_tiles(desk: &DeskView, all: &[super::ArtifactView], team: Option<&st
             size: "narrow".into(),
             empty: n == 0,
             phone_row: 0,
+            brief: None,
         }
     });
     let mut tiles: Vec<super::DeskTileView> = [Some(work), Some(artifacts), Some(board), knowledge].into_iter().flatten().collect();
@@ -388,6 +398,18 @@ fn sign_of(permission: bool, info: bool, urgency: &str) -> (String, Option<Text>
 
 /// A card's title as every screen shows it: "Loading …" while its body is not read on this device, a line for a
 /// card of a newer Trommi that names none.
+/// A title without the status word an agent put in front ("Working on: …", "Arbeite an: …", "Paused: …"); the title
+/// itself when it has none or when nothing would be left.
+pub fn short_title(title: &str) -> String {
+    const WORDS: [&str; 12] = ["working on", "arbeite an", "arbeitet an", "on it", "done", "fertig", "paused", "pausiert", "waiting", "wartet", "blocked", "blockiert"];
+    let Some((head, rest)) = title.split_once(':') else { return title.to_string() };
+    let rest = rest.trim();
+    if rest.is_empty() || !WORDS.contains(&head.trim().to_lowercase().as_str()) {
+        return title.to_string();
+    }
+    rest.to_string()
+}
+
 pub fn shown_title(c: &Card) -> String {
     let title = text_of(&c.field("title"));
     if is_loading(c) {
@@ -781,6 +803,36 @@ mod tests {
         let mut d2 = DeskView { tiles: tiles(&quiet, &[], Some("main")), ..Default::default() };
         board_tile(&mut d2, Some(&[ThumbView { team_id: "main".into(), state: "ready".into(), count: 0, ..Default::default() }]));
         assert!(d2.tiles[2].empty, "an empty board is quiet too");
+    }
+
+    /// A running card's row beside its agent's face: the title without its status word, nothing lost otherwise.
+    #[test]
+    fn a_short_title_drops_the_status_word_only() {
+        for (t, short) in [
+            ("Arbeite an: kombinierte Netze (Reflexes, Cortex)", "kombinierte Netze (Reflexes, Cortex)"),
+            ("Working on: iPhone-Desk über alle Teams", "iPhone-Desk über alle Teams"),
+            ("Pausiert: Coach-Ziele auf Grün", "Coach-Ziele auf Grün"),
+            ("Kombinierte Netze: Aufzeichnung dafür heute starten?", "Kombinierte Netze: Aufzeichnung dafür heute starten?"),
+            ("Done:", "Done:"),
+            ("", ""),
+            ("No colon at all", "No colon at all"),
+        ] {
+            assert_eq!(short_title(t), short, "{t}");
+        }
+    }
+
+    /// Working / Done says its numbers in short where its rows stand below: running · done; nothing while neither.
+    #[test]
+    fn the_work_tile_says_its_numbers_in_short() {
+        use super::desk_tiles as tiles;
+        use crate::views::{DeskView, DockView, OffHintView};
+        assert!(tiles(&DeskView::default(), &[], None)[0].brief.is_none(), "no hint: no numbers");
+        let quiet = DeskView { off: Some(OffHintView::default()), ..Default::default() };
+        assert!(tiles(&quiet, &[], None)[0].brief.is_none(), "nothing runs or is done");
+        let busy = DeskView { off: Some(OffHintView { closed: 10, ..Default::default() }), running: Some(DockView { count: 2, ..Default::default() }), ..Default::default() };
+        let t = tiles(&busy, &[], None);
+        assert_eq!(t[0].brief.as_ref().map(|b| (b.en.as_str(), b.key.as_str())), Some(("2 \u{b7} 10", "desk.tile.work.brief")));
+        assert!(t[1..].iter().all(|t| t.brief.is_none()));
     }
 
     /// The phone's two columns: Artifacts and Knowledge share a row; on All teams (no Knowledge) Artifacts stands
