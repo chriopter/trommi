@@ -68,13 +68,30 @@ test('a card without a menu, an empty one or a working one: the page still stand
   }
 })
 
-test('answered here (?decided=1): what was said, the way back, and the next question of CardView.after', async () => {
+test('answered here (?decided=1): the panel as it stood, the said row ticked, the others faded, the way back, Next', async () => {
   const vm = vmOf(5), card = cardOf(vm), main = await board(vm).get('/card/5?decided=1')
   assert.equal(card.answer.mode, 'said')
-  assert.match(main, new RegExp(`<span class="tc-opt-label">${card.answer.label.en}</span>`))
+  const opts = card.options ?? []
+  if (opts.length) {
+    assert.equal((main.match(/class="tc-opt[^"]*is-said[^"]*is-faded/g) ?? []).length + (main.match(/class="tc-opt[^"]*is-chosen/g) ?? []).length, opts.length + (card.kind === 'decision' ? 1 : 0), 'every option and the duck keep their place')
+    for (const o of opts.filter(o => o.chosen)) assert.match(main, new RegExp(`<span class="tc-opt-label">${o.label}</span></span><svg class="tc-chosen-tick"`))
+  }
   assert.match(main, new RegExp(`formaction="/cards/${card.id}/reopen"`))
-  assert.match(main, new RegExp(`class="tc-next-go" data-nav href="/card/${card.after.next.number}"`))
-  assert.doesNotMatch(await board(vm).get('/card/5'), /tc-next-go/, 'only right after the answer')
+  assert.match(main, new RegExp(`class="tc-tile tc-next-tile" data-nav href="/card/${card.after.next.number}"[^>]*title="`))
+  assert.doesNotMatch(main, /tc-next-go|tc-next-close|has your answer/, 'no white box, no Close, no plain receipt')
+  assert.doesNotMatch(await board(vm).get('/card/5'), /tc-next-tile/, 'only right after the answer')
+})
+
+test('answered: the duck ticked; lists missing or null draw; no next question: no Next', async () => {
+  for (const change of [c => { c.answer.ducked = true; for (const o of c.options ?? []) o.chosen = false }, c => { c.options = null }, c => { delete c.options; c.answer.option_notes = null }, c => { c.after = { says: { en: 'That was the last open question.' } } }, c => { c.after = null }]) {
+    const vm = vmOf(5), card = cardOf(vm)
+    change(card)
+    const main = await board(vm).get('/card/5?decided=1')
+    assert.doesNotMatch(main, /undefined|\[object |NaN/)
+    assert.match(main, /class="tc-answer is-said"/)
+    if (card.answer.ducked && card.options?.length) assert.match(main, /class="tc-opt tc-whatever is-said is-chosen"/)
+    if (!card.after?.next) assert.doesNotMatch(main, /tc-next-tile/)
+  }
 })
 
 test('handed back: In revision, and Take back posts /takeback', async () => {

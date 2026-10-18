@@ -103,7 +103,8 @@
     },
     "at_ms": 1791468000000,
     "back": "takeback",
-    "finished": false
+    "finished": false,
+    "ducked": false
   },
   "ask": {
     "key": "card.ask",

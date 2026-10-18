@@ -675,6 +675,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
             // (its agent closed it after his answer: What?? asks about what it did)
             finished: status == "done" && c.closed_how.as_deref() == Some("closed") && a.is_some_and(|a| !a.pending && !matches!(a.answer_action.as_str(), "read" | "shred")),
             says: None,
+            ducked: trusted && !info,
         }
     } else if loading {
         quiet("loading", say("card.loading", "Loading … this question is still being decrypted on this device.", &[]))
@@ -1414,6 +1415,7 @@ mod tests {
         assert_eq!((a.mode.as_str(), en(&a.label), en(&a.detail), en(&a.did), a.at_ms, a.back.as_str()), ("said", "Ship it", "Your note: on Monday", "You chose", Some(NOW - 5 * MIN), "reopen"));
         assert_eq!((en(&v.you_chose), v.status.as_str(), v.state.as_str()), ("You chose: Ship it", "decided", "answered"));
         assert_eq!(v.options.iter().map(|o| (o.key.as_str(), o.chosen)).collect::<Vec<_>>(), [("a", true), ("b", false)]);
+        assert!(!a.ducked, "an option was chosen, not the duck");
         assert_eq!(a.option_notes.iter().map(|n| (n.label.as_str(), n.note.en.as_str())).collect::<Vec<_>>(), [("Wait", "Your note: not this week")]);
 
         // the duck, with what the agent advised
@@ -1424,6 +1426,7 @@ mod tests {
         c["answer"] = json!({ "answer_action": "answer", "choices": [], "trusted": true, "envelope_number": 151, "answered_at": NOW - 5 * MIN });
         let v = view(&r, "q-duck");
         assert_eq!((en(&v.answer.label), en(&v.answer.did), v.answer.back.as_str(), v.you_chose.is_none()), ("I don’t give a duck: Wait", "You left it to the agent", "reopen", true));
+        assert!(v.answer.ducked && v.options.iter().all(|o| !o.chosen), "the duck is the one marked, no option");
 
         // settled by a final option; shredded; read; closed by its agent after his answer; withdrawn
         r.answered("q-settled", "a", NOW - 5 * MIN, 152);

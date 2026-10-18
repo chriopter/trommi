@@ -2012,6 +2012,10 @@ pub struct AnswerView {
     /// What the options say to a screen reader ("Your answer. One tap answers."), or the mode's one quiet sentence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub says: Option<Text>,
+    /// "said": he left it to the agent (the duck): the duck's row is the one marked; the options' `chosen` say the
+    /// others. Always sent.
+    #[serde(default)]
+    pub ducked: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -92,7 +92,8 @@
     "says": {
       "key": "card.answer.one",
       "en": "Your answer. One tap answers."
-    }
+    },
+    "ducked": false
   },
   "ask": {
     "key": "card.ask",
