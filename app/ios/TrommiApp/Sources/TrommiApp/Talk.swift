@@ -47,6 +47,8 @@ struct TalkWho { var mark: String; var name: String; var hue: Int }
 struct ChatsScreen: View {
   @EnvironmentObject var shell: AppShell
   var searching = false
+  /** The team whose title a dragged team hovers over (it takes that one's place when let go). */
+  @State private var dropOn: String?
   var body: some View {
     let side = shell.view.sidebar
     let query = !shell.chatsQuery.trimmingCharacters(in: .whitespaces).isEmpty
@@ -64,7 +66,11 @@ struct ChatsScreen: View {
       } else {
         ForEach(side.stacks, id: \.id) { stack in
           Section {
-            if stack.open { ForEach(stack.sessions, id: \.id) { row in ChatRow(row: row) } }
+            // (held and dragged, a chat moves within its team: PlaceSession, as the web's sidebar does)
+            if stack.open {
+              ForEach(stack.sessions, id: \.id) { row in ChatRow(row: row) }
+                .onMove { from, to in if let a = placeChat(stack.sessions, from: from, to: to) { shell.act(a) } }
+            }
             else if !stack.sessions.isEmpty { FoldedChats(stack: stack) }
           } header: {
             Button { withAnimation(.snappy) { shell.fold(team: stack.id) } } label: { TeamTitle(name: stack.name.en, open: stack.sessions.isEmpty ? nil : stack.open) }
@@ -73,6 +79,7 @@ struct ChatsScreen: View {
               .accessibilityLabel("\(stack.name.en), \(stack.says.en)")
               .accessibilityValue(stack.open ? "Open" : "Folded")
               .accessibilityIdentifier("chat-team-" + stack.id)
+              .modifier(TeamMove(stacks: side.stacks, id: stack.id, dropOn: $dropOn))
           }
           .listSectionSeparator(.hidden)
         }
@@ -85,6 +92,57 @@ struct ChatsScreen: View {
     .modifier(ChatsTop(searching: searching))
     .refreshable { shell.act(["do": "retry"]) }
     .accessibilityIdentifier(searching ? "chat-search" : "chat-list")
+  }
+}
+
+/** A chat moved in its team's list (List.onMove, `to` counted before the move): its new place as PlaceSession says
+ *  it, among the rows of its part (`group`: connected or not), before the row now under it or after the last. */
+func placeChat(_ rows: [CoreView.SessionRowView], from: IndexSet, to: Int) -> [String: Any]? {
+  guard from.count == 1, let i = from.first, rows.indices.contains(i) else { return nil }
+  let me = rows[i]
+  var rest = rows
+  rest.remove(at: i)
+  let at = to > i ? to - 1 : to
+  let peers = rest.enumerated().filter { $0.element.group == me.group }
+  if let under = peers.first(where: { $0.offset >= at }) { return ["do": "place_session", "session_id": me.id, "before": under.element.id] }
+  guard let above = peers.last else { return nil }
+  return ["do": "place_session", "session_id": me.id, "after": above.element.id]
+}
+
+/** The teams' order with `moving` in the place of `onto` (OrderTeams); nil when nothing changes or either is gone. */
+func teamOrder(_ ids: [String], moving: String, onto: String) -> [String]? {
+  guard moving != onto, let to = ids.firstIndex(of: onto), ids.contains(moving) else { return nil }
+  var out = ids.filter { $0 != moving }
+  out.insert(moving, at: to)
+  return out
+}
+
+/** A team's title in the Chats list is held and dragged onto another team's title to take its place (the system's
+ *  drag and drop; the title it would land on is lit); VoiceOver moves it with "Move up" and "Move down". */
+struct TeamMove: ViewModifier {
+  @EnvironmentObject var shell: AppShell
+  let stacks: [CoreView.TeamStackView]
+  let id: String
+  @Binding var dropOn: String?
+  private func order(_ ids: [String]?) { if let ids { shell.act(["do": "order_teams", "team_ids": ids]) } }
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    let ids = stacks.map(\.id), i = ids.firstIndex(of: id) ?? 0
+    if ids.count < 2 { content } else {
+      content
+        .background(RoundedRectangle(cornerRadius: 8).fill(Ink.accent.opacity(dropOn == id ? 0.16 : 0)).padding(.horizontal, -8))
+        .draggable(id) { Text(stacks[i].name.en).font(Face.text(15, .semibold)).padding(.horizontal, 12).padding(.vertical, 8).background(Ink.bg, in: Capsule()) }
+        .dropDestination(for: String.self) { items, _ in
+          dropOn = nil
+          guard let moving = items.first, let next = teamOrder(ids, moving: moving, onto: id) else { return false }
+          order(next)
+          return true
+        } isTargeted: { on in
+          if on { dropOn = id } else if dropOn == id { dropOn = nil }
+        }
+        .accessibilityAction(named: "Move up") { if i > 0 { order(teamOrder(ids, moving: id, onto: ids[i - 1])) } }
+        .accessibilityAction(named: "Move down") { if i + 1 < ids.count { order(teamOrder(ids, moving: id, onto: ids[i + 1])) } }
+    }
   }
 }
 

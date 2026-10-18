@@ -843,4 +843,35 @@ mod tests {
         m.apply_groups(&[room], None, &mut c);
         assert!(!m.sessions.contains_key(S1), "forgotten with its group");
     }
+
+    fn team(m: &mut Model, id: &str, value: serde_json::Value) {
+        m.human.insert(format!("desk/{id}"), HumanRegister { value, ..Default::default() });
+    }
+
+    fn team_ids(m: &Model) -> Vec<String> {
+        teams_in_order(m).into_iter().map(|(id, _)| id).collect()
+    }
+
+    /// The teams' order: none without teams; without any place the first team ("main") first, then by age; the places
+    /// he dragged them to, a team without one (made since) after them; a deleted team (its register null) left out.
+    #[test]
+    fn teams_stand_in_their_places_new_ones_after_and_deleted_ones_nowhere() {
+        let mut m = Model::default();
+        assert!(teams_in_order(&m).is_empty(), "no teams, no order");
+        team(&mut m, "lab", json!({ "name": "Lab", "created_at": 5 }));
+        team(&mut m, "ops", json!({ "name": "Ops", "created_at": 2 }));
+        team(&mut m, "main", json!({ "name": "Work", "created_at": 9 }));
+        assert_eq!(team_ids(&m), ["main", "ops", "lab"], "no places: main first, then by age");
+        team(&mut m, "lab", json!({ "name": "Lab", "created_at": 5, "order": 0 }));
+        team(&mut m, "main", json!({ "name": "Work", "created_at": 9, "order": 1 }));
+        team(&mut m, "ops", json!({ "name": "Ops", "created_at": 2, "order": 2 }));
+        assert_eq!(team_ids(&m), ["lab", "main", "ops"]);
+        team(&mut m, "new", json!({ "name": "New", "created_at": 1 }));
+        team(&mut m, "newer", json!({ "name": "Newer", "created_at": 3 }));
+        assert_eq!(team_ids(&m), ["lab", "main", "ops", "new", "newer"], "teams without a place come after, by age");
+        team(&mut m, "main", serde_json::Value::Null);
+        assert_eq!(team_ids(&m), ["lab", "ops", "new", "newer"], "a deleted team is left out, the others keep their order");
+        team(&mut m, "lab", json!({ "name": "Lab", "created_at": 5, "order": "first" }));
+        assert_eq!(team_ids(&m), ["ops", "new", "newer", "lab"], "a place that is no number counts as none");
+    }
 }

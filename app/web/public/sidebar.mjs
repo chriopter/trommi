@@ -270,7 +270,7 @@ export function sidebarRows(vm, base) {
   //  drag and the keys treat them as before; a phone shows the chats of the team in view alone: sidebar.css)
   const inView = sb.team
   const list = stacks.length
-    ? stacks.map(st => { const s = { ...st, team_in_view: st.id === inView }, rs = st.sessions ?? []; return html`${teamStack(s, base)}${rs.map((r, i) => row(r, base, s, i === rs.length - 1))}` })
+    ? stacks.map(st => { const s = { ...st, team_in_view: st.id === inView }, rs = st.sessions ?? []; return html`${teamStack(s, base, stacks.length > 1)}${rs.map((r, i) => row(r, base, s, i === rs.length - 1))}` })
     : rows.map(r => row(r, base))
   return html`${list}${invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
 }
@@ -284,12 +284,12 @@ export function sidebarRows(vm, base) {
 /** A team's picture, as a group's: its sessions' own marks (TeamStackView.faces), small and overlapping; an empty
  *  team a quiet dashed ring. */
 const teamFaces = faces => html`<span class="team-faces" data-n="${faces.length}" aria-hidden="true">${faces.map(f => avatar({ ...whoOf(f), online: true }, { crown: false }))}</span>`
-function teamStack(st, base) {
+function teamStack(st, base, movable = false) {
   const name = st.name.en, edges = st.edges ?? [], n = (st.sessions ?? []).length
   const cls = ['team-head', st.selected && 'is-in-view', st.knocks && 'is-knock', !n && 'is-empty'].filter(Boolean).join(' ')
   const tip = st.open ? 'Fold' : 'Show chats'
   return html`<div class="${cls}" id="team-${st.id}" data-team="${st.id}" data-fold="${st.open ? 'open' : 'shut'}" style="--n:${st.open ? 0 : edges.length}" data-controller="lean" data-action="pointermove->lean#follow pointerleave->lean#rest">
-<a class="team-go" data-nav draggable="false" href="${base}/?team=${encodeURIComponent(st.id)}" title="${name}" aria-label="${name}: ${st.says.en}. Its Desk"${st.selected ? raw(' aria-current="true"') : ''}>${teamFaces(st.faces ?? [])}<strong>${name}</strong>${st.waiting ? html`<i class="team-n" aria-hidden="true">${st.waiting}</i>` : ''}</a>
+<a class="team-go" data-nav draggable="false" href="${base}/?team=${encodeURIComponent(st.id)}" title="${name}" aria-label="${name}: ${st.says.en}. Its Desk"${movable ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" aria-description="Drag, or Alt+Up and Alt+Down, to move the team"') : ''}${st.selected ? raw(' aria-current="true"') : ''}>${teamFaces(st.faces ?? [])}<strong>${name}</strong>${st.waiting ? html`<i class="team-n" aria-hidden="true">${st.waiting}</i>` : ''}</a>
 ${n ? html`<button type="button" class="team-edges" data-team-fold="${st.id}" aria-expanded="${String(st.open)}" title="${tip}" aria-label="${st.open ? `Fold ${name}` : `Show the chats of ${name}`}"${st.open ? raw(' hidden') : ''}>${edges.map((e, i) => { const q = edgeQuirk(e.id); return html`<i style="--i:${i};--hue:${whoOf(e).hue};--tilt:${q.tilt}deg;--dx:${q.dx}px">${raw(q.svg)}</i>` })}</button>
 <svg class="team-bracket" aria-hidden="true"${st.open ? '' : raw(' hidden')}><path/><path class="team-bracket-hit" data-team-fold="${st.id}"><title>Fold</title></path></svg>` : ''}
 </div>`
@@ -361,7 +361,12 @@ const $ = (sel, root = document) => root.querySelector(sel)
 // not). A mouse lifts it as soon as it moves, a finger after a short hold (a swipe still
 // scrolls). A ghost of the row follows the pointer; where it would land the row's place stays open, outlined in
 // pencil, and the others make room. Escape puts it back. On a focused row Alt+↑/↓ moves it one place. Let go, and
-// the new place goes to the core (PlaceSession { before | after }: the sessions' registers, on every device). ----
+// the new place goes to the core (PlaceSession { before | after }: the sessions' registers, on every device).
+// A team's head is picked up the same way, among the other heads, and takes its chats along; its new place goes to
+// the core as the teams' whole order (OrderTeams: each team's register, on every device). ----
+const ORDERED = '.agent-row[data-order], .team-head[data-team]'
+const isHead = n => n.classList.contains('team-head')
+const orderId = n => n.dataset.unit ?? n.dataset.team
 controller('order', class extends Controller {
   connect() {
     this.grab = e => this.down(e)
@@ -377,22 +382,31 @@ controller('order', class extends Controller {
     this.element.removeEventListener('keydown', this.keys)
     this.element.removeEventListener('click', this.noClick, true)
   }
-  /** The rows of one part, in the order they stand. */
-  peers(row) { return [...this.element.querySelectorAll(`:scope > .agent-row[data-order="${CSS.escape(row.dataset.order)}"]`)] }
-  /** The rows that move with a row: itself. */
-  block(row) { return [row] }
+  /** The rows of one part, in the order they stand; a team's head: every team's head. */
+  peers(row) {
+    if (isHead(row)) return [...this.element.querySelectorAll(':scope > .team-head[data-team]')]
+    return [...this.element.querySelectorAll(`:scope > .agent-row[data-order="${CSS.escape(row.dataset.order)}"]`)]
+  }
+  /** The rows that move with a row: itself; a team's head and its chats. */
+  block(row) { return isHead(row) ? [row, ...this.element.querySelectorAll(`:scope > .agent-row[data-team-of="${CSS.escape(row.dataset.team)}"]`)] : [row] }
   /** Puts a block directly before `ref` (null: after the last row of `last`'s block), the others sliding into place. */
   place(rows, ref, peers) {
-    const was = new Map(peers.map(p => [p, p.getBoundingClientRect().top]))
+    const moving = isHead(rows[0]) ? [...this.element.children] : peers
+    const was = new Map(moving.filter(p => !rows.includes(p)).map(p => [p, p.getBoundingClientRect().top]))
     const anchor = ref ?? this.block(peers.at(-1)).at(-1).nextSibling
     for (const r of rows) this.element.insertBefore(r, anchor)
-    for (const [p, top] of was) { const dy = top - p.getBoundingClientRect().top; if (dy && !p.classList.contains('is-carried')) p.animate?.([{ translate: `0 ${dy}px` }, { translate: '0 0' }], { duration: 140, easing: 'ease-out' }) }
+    for (const [p, top] of was) { const dy = top - p.getBoundingClientRect().top; if (dy) p.animate?.([{ translate: `0 ${dy}px` }, { translate: '0 0' }], { duration: 140, easing: 'ease-out' }) }
   }
   /** Where the row stands now among its peers: { before } the next one, or { after } the one above, or null alone. */
   spot(row) { const p = this.peers(row), i = p.indexOf(row); return p[i + 1] ? { before: p[i + 1].dataset.unit } : p[i - 1] ? { after: p[i - 1].dataset.unit } : null }
   /** Sends the row's new place (PlaceSession) and puts the rows back as they were painted (kids): the core's next
    *  render draws the new order, and the page's morph finds its rows where it left them. */
   save(row, kids) {
+    if (isHead(row)) {
+      const order = this.peers(row).map(h => h.dataset.team)
+      for (const k of kids) this.element.append(k)
+      return T?.act({ do: 'order_teams', team_ids: order })
+    }
     const at = this.spot(row), id = row.dataset.unit
     for (const k of kids) this.element.append(k)
     if (at) T?.act({ do: 'place_session', session_id: id, ...at })
@@ -400,7 +414,7 @@ controller('order', class extends Controller {
 
   key(e) {
     if (!e.altKey || e.ctrlKey || e.metaKey || !['ArrowUp', 'ArrowDown'].includes(e.key)) return
-    const row = e.target.closest?.('.agent-row[data-order]')
+    const row = e.target.closest?.(ORDERED)
     if (!row || row.parentElement !== this.element) return
     e.preventDefault()
     const peers = this.peers(row), i = peers.indexOf(row), j = e.key === 'ArrowUp' ? i - 1 : i + 1
@@ -409,14 +423,14 @@ controller('order', class extends Controller {
     this.place(this.block(row), e.key === 'ArrowUp' ? peers[j] : peers[j + 1] ?? null, peers)
     this.save(row, kids)
     // (the core's render draws the sidebar in its new order: the keyboard stays on the row)
-    const id = row.dataset.unit, until = Date.now() + 2000
-    const back = () => { const entry = document.getElementById(`agent-${id}`)?.querySelector(':scope > .agent-entry'); if (entry && document.activeElement !== entry) entry.focus(); if (Date.now() < until) requestAnimationFrame(back) }
+    const id = orderId(row), until = Date.now() + 2000, head = isHead(row)
+    const back = () => { const entry = head ? document.getElementById(`team-${id}`)?.querySelector(':scope > .team-go') : document.getElementById(`agent-${id}`)?.querySelector(':scope > .agent-entry'); if (entry && document.activeElement !== entry) entry.focus(); if (Date.now() < until) requestAnimationFrame(back) }
     requestAnimationFrame(back)
   }
 
   down(event) {
-    const row = event.target.closest?.('.agent-row[data-order]')
-    if (!row || row.parentElement !== this.element || event.button > 0 || event.target.closest('button, .agent-badge')) return
+    const row = event.target.closest?.(ORDERED)
+    if (!row || row.parentElement !== this.element || event.button > 0 || event.target.closest('button, .agent-badge, .team-bracket')) return
     if (document.documentElement.dataset.rail === 'folded' || this.peers(row).length < 2) return
     const id = event.pointerId, touch = event.pointerType !== 'mouse', x0 = event.clientX, y0 = event.clientY
     let live = false, timer = 0, ghost = null, grabAt = 0, home = null, start = '', kids = []
@@ -424,14 +438,14 @@ controller('order', class extends Controller {
     const lift = () => {
       live = true
       try { row.setPointerCapture(id) } catch {}
-      start = this.peers(row).map(r => r.dataset.unit).join()
+      start = this.peers(row).map(orderId).join()
       kids = [...this.element.children]
       home = rows.at(-1).nextSibling
       const box = row.getBoundingClientRect()
       grabAt = y0 - box.top
       ghost = row.cloneNode(true)
       for (const n of [ghost, ...ghost.querySelectorAll('[id], [data-controller], [data-action]')]) { n.removeAttribute('id'); n.removeAttribute('data-controller'); n.removeAttribute('data-action') }
-      delete ghost.dataset.unit; delete ghost.dataset.order
+      delete ghost.dataset.unit; delete ghost.dataset.order; delete ghost.dataset.team
       ghost.classList.add('order-ghost'); ghost.classList.remove('is-active', 'has-active')
       ghost.setAttribute('aria-hidden', 'true'); ghost.inert = true
       Object.assign(ghost.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` })
@@ -472,7 +486,7 @@ controller('order', class extends Controller {
       row.classList.remove('is-carried')
       for (const r of rows.slice(1)) r.classList.remove('is-carried-sub')
       this.element.classList.remove('is-ordering')
-      if (!cancel && row.isConnected && this.peers(row).map(r => r.dataset.unit).join() !== start) this.save(row, kids)
+      if (!cancel && row.isConnected && this.peers(row).map(orderId).join() !== start) this.save(row, kids)
     }
     if (touch) timer = setTimeout(lift, 300)
     this.cancel = () => end({ pointerId: id, type: 'escape' }, true)
