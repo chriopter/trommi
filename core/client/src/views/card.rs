@@ -483,6 +483,11 @@ fn words_of(talk: usize) -> super::CardWordsView {
         what: say("card.what", "What??", &[]),
         rework: say("card.rework", "Rework", &[]),
         undo: say("card.undo", "Undo", &[]),
+        open_session: say("card.menu.session", "Open Session", &[]),
+        copy: say("card.menu.copy", "Copy", &[]),
+        later: say("card.menu.later", "Later", &[]),
+        shred: say("card.menu.shred", "Shred", &[]),
+        menu_hint: say("card.menu.hint", "Opens the card’s menu", &[]),
         talk: (talk > 0).then(|| say("card.talk.fold", format!("Talk · {n}"), &[("n", &n)])),
     }
 }
@@ -1276,6 +1281,10 @@ mod tests {
         assert_eq!(
             [&w.recommended, &w.got_it, &w.duck, &w.what, &w.rework, &w.undo].map(|t| t.en.as_str()),
             ["Recommended", "Got it", "Duck it", "What??", "Rework", "Undo"]
+        );
+        assert_eq!(
+            [&w.open_session, &w.copy, &w.later, &w.shred, &w.menu_hint].map(|t| t.en.as_str()),
+            ["Open Session", "Copy", "Later", "Shred", "Opens the card’s menu"]
         );
         let rows = v.talk.len() + v.versions.len();
         assert_eq!(w.talk.as_ref().map(|t| t.en.clone()), (rows > 0).then(|| format!("Talk · {rows}")));

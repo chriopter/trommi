@@ -250,7 +250,9 @@ struct CardScreen: View {
           .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in if card.status == "open" { answersHeight = h } }
           .frame(minHeight: answeredHere ? answersHeight : nil, alignment: .top)
         if card.answer.mode == "options" && !card.sections.isEmpty { sections }
-        if let n = card.note { LinkNoteBox(note: n) }
+        // (a plain receipt, "Your answer is on its way", stands quietly in the answer's line; a box only for what
+        //  needs a look: the session cut off, asleep, gone)
+        if let n = card.note, !receiptOnly(n) { LinkNoteBox(note: n) }
         thread
       }
       .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 24)
@@ -266,46 +268,50 @@ struct CardScreen: View {
         }
       }
     }
-    .pushedPills(extraTrailing: 54) { EmptyView() } trailing: {
-      if card.kind != "request" {
-        Button { shell.act(["do": "star", "card_id": card.id, "on": !card.starred]) } label: { StarMark(on: card.starred).frame(width: 22, height: 22).pillCircle() }
-          .buttonStyle(.plain).accessibilityLabel(card.starSays.en).accessibilityAddTraits(card.starred ? .isSelected : [])
-      }
-      Menu {
-        if let id = card.sessionId { Button { shell.focus(.session(sessionId: id)) } label: { Label("Open Session", systemImage: "bubble.left.and.bubble.right") } }
-        Button { copyText(card.title + (card.text.isEmpty ? "" : "\n\n" + card.text)) } label: { Label("Copy", systemImage: "doc.on.doc") }
-        if card.status == "open" && card.kind != "request" {
-          Button { shell.act(["do": "snooze", "card_id": card.id]) } label: { Label("Later", systemImage: "zzz") }
-          Button(role: .destructive) { shell.act(["do": "shred", "card_id": card.id, "note": note]) } label: { Label("Shred", systemImage: "trash") }
-        }
-      } label: { Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(Ink.fg).pillCircle() }
-      .accessibilityLabel("More")
-    }
+    .pushedPills { titlePill } trailing: { EmptyView() }
     .onAppear { if card.status == "open" { sawOpen = true }; note = card.draft; choices = Set(card.options.filter(\.chosen).map(\.key)) }
     .onChange(of: card.status) { _, now in if now == "open" { sawOpen = true } }
     .onChange(of: note) { _, value in shell.act(["do": "draft", "place": card.id, "text": value]) }
   }
 
-  // ---- the head: who and when, the work strip, the title, the text ----
+  // ---- the top row: the card's title pill, as a chat's (who asks; a tap opens the card's menu) ----
+
+  @ViewBuilder private var titlePill: some View {
+    let w = card.words
+    Menu {
+      if card.kind != "request" {
+        Button { shell.act(["do": "star", "card_id": card.id, "on": !card.starred]) } label: { Label(card.starSays.en, systemImage: card.starred ? "star.fill" : "star") }
+      }
+      if let id = card.sessionId { Button { shell.focus(.session(sessionId: id)) } label: { Label(w.openSession.en, systemImage: "bubble.left.and.bubble.right") } }
+      Button { copyText(card.title + (card.text.isEmpty ? "" : "\n\n" + card.text)) } label: { Label(w.copy.en, systemImage: "doc.on.doc") }
+      if card.status == "open" && card.kind != "request" {
+        Button { shell.act(["do": "snooze", "card_id": card.id]) } label: { Label(w.later.en, systemImage: "zzz") }
+        Button(role: .destructive) { shell.act(["do": "shred", "card_id": card.id, "note": note]) } label: { Label(w.shred.en, systemImage: "trash") }
+      }
+    } label: {
+      HStack(spacing: 7) {
+        // (a card that knocks: a small dot in its urgency's colour)
+        if card.knock != nil { Circle().fill(Ink.urgency(urgency)).frame(width: 7, height: 7) }
+        if let from = card.from { AgentMark(from: from, size: 22) }
+        Text(card.from?.name ?? card.nr.en).font(Face.text(17, .semibold)).foregroundStyle(Ink.fg).lineLimit(1).minimumScaleFactor(0.85).truncationMode(.middle)
+        if card.starred { StarMark(on: true).frame(width: 14, height: 14) }
+        Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold)).foregroundStyle(Ink.faint)
+      }
+      .padding(.horizontal, 16).frame(height: 44)
+      .glass(Capsule(), interactive: true)
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel([card.knock?.en, card.from.map { "From \($0.path.joined(separator: ", "))" }, card.starred ? card.starSays.en : nil].compactMap { $0 }.joined(separator: ", "))
+    .accessibilityHint(w.menuHint.en)
+    .accessibilityIdentifier("card-menu")
+  }
+
+  // ---- the head: the work strip, the title, the text ----
 
   @ViewBuilder private var lead: some View {
     VStack(alignment: .leading, spacing: 12) {
       if let work = card.work { CardWorkStrip(work: work) }
-      if let from = card.from {
-        Button { shell.focus(.session(sessionId: from.sessionId)) } label: {
-          HStack(spacing: 7) {
-            // (a card that knocks: a small dot in its urgency's colour, the words for a screen reader)
-            if let knock = card.knock { Circle().fill(Ink.urgency(urgency)).frame(width: 7, height: 7).accessibilityLabel(knock.en) }
-            AgentMark(from: from, size: 18)
-            Text(from.name).font(.subheadline.weight(.semibold)).foregroundStyle(Ink.fg)
-            if card.askedMs > 0 { Text(talkAgo(card.askedMs)).font(.subheadline).foregroundStyle(Ink.muted) }
-          }
-          .lineLimit(1)
-          .frame(minHeight: 32, alignment: .leading).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("From \(from.path.joined(separator: ", "))")
-      }
       Text(card.title).font(.system(size: 26, weight: .bold)).foregroundStyle(Ink.fg).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
         .accessibilityIdentifier("card-title")
       if let into = card.mergedInto {
@@ -442,12 +448,16 @@ struct CardScreen: View {
     .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(calmFill))
   }
   /** What was said, in one quiet line: a tick, the answer, when, and Undo at its end. */
+  /** Whether the session note is a plain receipt (on its way, has it), with nothing to do about it. */
+  private func receiptOnly(_ n: CoreView.LinkNoteView) -> Bool { card.answer.mode == "said" && n.receipt != nil && n.line == nil && n.fix == nil }
+  /** What was said, as the card's one calm line, drawn muted: a tick, the answer, under it the receipt, Undo at its end. */
   private func said(_ a: CoreView.AnswerView) -> some View {
-    HStack(spacing: 8) {
-      if a.label != nil { Image(systemName: "checkmark.circle.fill").foregroundStyle(Ink.accent).accessibilityHidden(true) }
+    HStack(spacing: 10) {
+      if a.label != nil { Image(systemName: "checkmark.circle.fill").font(.system(size: 18)).foregroundStyle(Ink.muted).accessibilityHidden(true) }
       VStack(alignment: .leading, spacing: 2) {
-        Text(a.label?.en ?? a.did?.en ?? "").font(.subheadline.weight(.semibold)).foregroundStyle(Ink.fg).lineLimit(2)
-        if let d = a.detail?.en, !d.isEmpty { Text(d).font(.footnote).foregroundStyle(Ink.muted).lineLimit(2) }
+        Text(a.label?.en ?? a.did?.en ?? "").font(.subheadline.weight(.semibold)).foregroundStyle(Ink.muted).lineLimit(2)
+        if let d = a.detail?.en, !d.isEmpty { Text(d).font(.footnote).foregroundStyle(Ink.faint).lineLimit(2) }
+        if let n = card.note, receiptOnly(n), let r = n.receipt { Text(r.en).font(.footnote).foregroundStyle(Ink.faint).lineLimit(1) }
       }
       Spacer(minLength: 6)
       if a.back == "reopen" || a.back == "takeback" {
@@ -456,7 +466,8 @@ struct CardScreen: View {
           .accessibilityLabel(a.back == "reopen" ? "Take back your answer" : "Take back the card")
       }
     }
-    .padding(.horizontal, 6)
+    .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6).frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(calmFill))
     .accessibilityElement(children: .combine)
   }
   /** The way on: one glass button in the accent, "Next" and the next card's title; "All done" when none waits. */
