@@ -17,8 +17,10 @@ func talkClock(_ ms: UInt64) -> String { let f = DateFormatter(); f.dateFormat =
 /** "5 minutes ago": a time under a title. */
 func talkAgo(_ ms: UInt64) -> String {
   guard ms > 0 else { return "" }
-  let f = RelativeDateTimeFormatter(); f.locale = Locale(identifier: "en_GB"); f.unitsStyle = .full
-  return f.localizedString(for: Date(timeIntervalSince1970: Double(ms) / 1000), relativeTo: Date())
+  let f = RelativeDateTimeFormatter(); f.locale = Locale(identifier: "en_GB"); f.unitsStyle = .full; f.dateTimeStyle = .named
+  // (a time a hair ahead of this clock reads as now, never "in 0 seconds")
+  let now = Date()
+  return f.localizedString(for: min(Date(timeIntervalSince1970: Double(ms) / 1000), now), relativeTo: now)
 }
 /** "now", "4m", "3h", "4 Oct": a time beside a small chip. */
 func talkAgoShort(_ ms: UInt64) -> String {
@@ -210,10 +212,15 @@ struct CardScreen: View {
   @State private var note = ""
   @State private var choices: Set<String> = []
   @State private var attachments: [String] = []
-  /** Answered on this page just now: the page then offers the way on (`card.after`). */
-  @State private var answeredHere = false
+  /** The page showed the card open: once it is settled the page offers the way on (`card.after`), in the same
+   *  frame as the answer (no frame without it, so nothing jumps). Open again (Undo), the answers are back. */
+  @State private var sawOpen = false
+  private var answeredHere: Bool { sawOpen && card.status != "open" }
   /** The card's talk unfolded. */
   @State private var showTalk = false
+  /** How tall the answers stood while the card was open: once answered here the way on keeps that room, so nothing
+   *  under it moves and the page does not jump when it gets shorter. */
+  @State private var answersHeight: CGFloat = 0
   /** The pictures open over the whole screen. */
   @State private var showing: PictureShow?
   @Namespace private var zoom
@@ -240,6 +247,8 @@ struct CardScreen: View {
         }
         FileRows(ids: card.files)
         answers
+          .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in if card.status == "open" { answersHeight = h } }
+          .frame(minHeight: answeredHere ? answersHeight : nil, alignment: .top)
         if card.answer.mode == "options" && !card.sections.isEmpty { sections }
         if let n = card.note { LinkNoteBox(note: n) }
         thread
@@ -272,8 +281,8 @@ struct CardScreen: View {
       } label: { Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(Ink.fg).pillCircle() }
       .accessibilityLabel("More")
     }
-    .onAppear { note = card.draft; choices = Set(card.options.filter(\.chosen).map(\.key)) }
-    .onChange(of: card.status) { was, now in withAnimation(.snappy) { answeredHere = was == "open" && now != "open" } }
+    .onAppear { if card.status == "open" { sawOpen = true }; note = card.draft; choices = Set(card.options.filter(\.chosen).map(\.key)) }
+    .onChange(of: card.status) { _, now in if now == "open" { sawOpen = true } }
     .onChange(of: note) { _, value in shell.act(["do": "draft", "place": card.id, "text": value]) }
   }
 
@@ -341,7 +350,7 @@ struct CardScreen: View {
         }
       case "said":
         // the way on where the answers stood, the answer quietly under it
-        if answeredHere, let after = card.after { nextButton(after).transition(.opacity.combined(with: .scale(scale: 0.97))) }
+        if answeredHere, let after = card.after { nextButton(after) }
         said(a)
         ForEach(Array(a.optionNotes.enumerated()), id: \.offset) { _, n in still(n.label, n.note.en) }
         if let settled = a.settled { still("✓ Settled by your answer", settled.en) }
@@ -440,7 +449,6 @@ struct CardScreen: View {
         Text(a.label?.en ?? a.did?.en ?? "").font(.subheadline.weight(.semibold)).foregroundStyle(Ink.fg).lineLimit(2)
         if let d = a.detail?.en, !d.isEmpty { Text(d).font(.footnote).foregroundStyle(Ink.muted).lineLimit(2) }
       }
-      if let at = a.atMs { Text(talkAgo(at)).font(.subheadline).foregroundStyle(Ink.muted).lineLimit(1) }
       Spacer(minLength: 6)
       if a.back == "reopen" || a.back == "takeback" {
         Button(card.words.undo.en) { shell.act(["do": a.back == "reopen" ? "decide_again" : "take_back", "card_id": card.id]) }
