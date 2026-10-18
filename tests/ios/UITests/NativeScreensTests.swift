@@ -160,8 +160,9 @@ final class NativeScreensTests: XCTestCase {
     let message = app.staticTexts["talk-message"].firstMatch
     XCTAssertTrue(message.waitForExistence(timeout: 15))
     XCTAssertFalse(message.label.isEmpty)
-    // (the top row: round back, the title in its own pill in the middle, round ⋯)
-    XCTAssertTrue(app.buttons["back"].exists && app.buttons["session-title"].exists && app.buttons["session-more"].exists, app.debugDescription)
+    // (the top row: round back, the title in its own pill in the middle that opens the menu; no ⋯)
+    XCTAssertTrue(app.buttons["back"].exists && app.buttons["session-title"].exists, app.debugDescription)
+    XCTAssertFalse(app.buttons["session-more"].exists, "no ⋯: the title opens the menu")
     XCTAssertLessThan(abs(app.buttons["session-title"].frame.midX - app.windows.firstMatch.frame.midX), 30, "the title sits in the middle")
     capture("chat")
   }
@@ -341,7 +342,7 @@ final class NativeScreensTests: XCTestCase {
     // (what waits is listed as the Desk's cards, as many as the chip counted)
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).count, count, "the open questions listed are the ones counted. " + app.debugDescription)
     capture("session-questions")
-    app.buttons["session-more"].tap()
+    app.buttons["session-title"].tap()
     XCTAssertTrue(app.buttons["Rename…"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Change Icon…"].exists)
     XCTAssertTrue(app.buttons["Move to Team…"].exists)

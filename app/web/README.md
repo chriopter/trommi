@@ -216,7 +216,8 @@ instead); files come network first, the cache only offline. On the dev server (`
   or time beside them (the time on hover; a helper's name above its words), a run of card events as small chips that
   open their card (`TalkRow` kind "events"), no helper list and no trail. While the agent works (`SessionView.working`)
   only its face draws itself at the chat's end; a click opens the details ("Working · <step>", its lines, the trail).
-  The title pill holds only the face and the name, both grey while its agent is not connected.
+  The title pill holds only the face, the name and a small chevron, grey while its agent is not connected; a click
+  opens the chat's menu (Details opens the side panel, Questions Only, Files, Move to Team, Copy Invite Link, Delete).
 
 ## The Scribble Board
 
