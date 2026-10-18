@@ -44,6 +44,7 @@
       {
         "id": "f35bf13aea8cdbfd193cfddc38f543fb",
         "title": "Promote the replica in a failover drill on Friday?",
+        "short": "Promote the replica in a failover drill on Friday?",
         "from": {
           "session_id": "5ef619647e0e8185fef0e3be40ff4809",
           "name": "Infrastructure",
@@ -82,6 +83,7 @@
       {
         "id": "f35bf13aea8cdbfd193cfddc38f543fb",
         "title": "Promote the replica in a failover drill on Friday?",
+        "short": "Promote the replica in a failover drill on Friday?",
         "from": {
           "session_id": "5ef619647e0e8185fef0e3be40ff4809",
           "name": "Infrastructure",

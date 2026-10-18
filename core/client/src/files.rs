@@ -112,11 +112,18 @@ fn file_ref(reference: &Map<String, Value>) -> Option<FileRef> {
     FileRef::from_base64url(&b64(&id), reference.get("file_key")?.as_str()?, reference.get("sha256")?.as_str()?).ok()
 }
 
+/// A picture by its media type, or by its name's ending when the type says nothing (the notes' rule too).
+pub fn is_picture(media_type: &str, name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    media_type.starts_with("image/") || [".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".svg"].iter().any(|e| lower.ends_with(e))
+}
+
 /// A shown file as the views name it (no key).
 pub fn view_of(reference: &Map<String, Value>) -> FileView {
     let text = |k: &str| reference.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     FileView {
         name: text("file_name"),
+        picture: is_picture(&text("media_type"), &text("file_name")),
         media_type: text("media_type"),
         size: reference.get("total_size").and_then(Value::as_u64).unwrap_or(0),
         state: "ready".into(),
@@ -492,5 +499,23 @@ fn problem(failure: Option<&Failure>, key: &str, en: &str) -> Text {
         Some(Failure::Refused { status: 413, .. }) => Text::new("file.too_large", "That file is too large (60 MB at most)."),
         Some(Failure::Refused { code: Some(code), .. }) if code == "quota" || code == "over-quota" => Text::new("file.quota", "The room's storage is full."),
         _ => Text::new(key, en),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_picture, view_of};
+    use serde_json::{json, Map, Value};
+
+    /// An attachment names whether it is a picture (a square thumbnail on the phone): by its type, else its name;
+    /// no type and no name, or any other file: no.
+    #[test]
+    fn a_file_says_whether_it_is_a_picture() {
+        let r = |v: Value| -> Map<String, Value> { v.as_object().cloned().unwrap_or_default() };
+        assert!(view_of(&r(json!({ "file_name": "a.bin", "media_type": "image/png" }))).picture);
+        assert!(view_of(&r(json!({ "file_name": "IMG_0001.HEIC", "media_type": "" }))).picture);
+        assert!(!view_of(&r(json!({ "file_name": "notes.pdf", "media_type": "application/pdf" }))).picture);
+        assert!(!view_of(&r(json!({}))).picture, "nothing known: no picture");
+        assert!(!is_picture("", ""));
     }
 }

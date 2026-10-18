@@ -168,6 +168,10 @@ enum NativeTab: Hashable { case chat, desk, search }
   /** Bytes picked elsewhere (a photo, the camera) to attach: the core's local id, shown in `view.files` as it uploads. */
   func attach(_ data: Data, name: String, mediaType: String) -> String {
     let id = UUID().uuidString
+    // (a picture this device can draw is kept for its thumbnail in the composer until the core has the file)
+    #if canImport(UIKit)
+    if UIImage(data: data) != nil { files[id] = data }
+    #endif
     act(["do": "attach", "local_id": id, "name": name, "media_type": mediaType, "bytes": 0], blobs: [data])
     return id
   }
