@@ -865,9 +865,9 @@ a.files-where:hover span { text-decoration: underline; }
 .empty-row:hover .ico { color: var(--accent); }
 
 
-/* ---- A calm chat (a wide screen; session.mjs headPill, sidePanel, the core's SessionView.tabs) ----
-   The head is one pill in the middle (drawing, name, a small dot, what waits); a click opens the side panel at the
-   right: the drawing and name large, then its tabs (Details with the model, use and the actions, Questions, Helpers,
+/* ---- A calm chat (a wide screen; session.mjs titleMenu, sidePanel, the core's SessionView.tabs) ----
+   The head is one pill in the middle (drawing, name, a small chevron); a click opens the chat's menu, whose Details
+   opens the side panel at the right: the drawing and name large, then its tabs (Details with the model, use and the actions, Questions, Helpers,
    Files). The filter, the use rings and ⋯ live there now; the helpers leave the conversation for the panel. A phone
    keeps its head as before. */
 .head-pill, .side-panel { display: none; }
@@ -875,7 +875,17 @@ a.files-where:hover span { text-decoration: underline; }
   #session .pane-title { justify-content: center !important; min-height: 64px; border-bottom: 0 !important; }
   #session .pane-title > :is(.pane-who, .session-mode, .head-use) { display: none !important; }
   .head-pill { display: inline-flex; align-items: center; gap: 10px; max-width: min(420px, 100%); height: 44px; padding: 0 16px 0 8px; border-radius: 22px; background: var(--bg); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-sm); color: var(--fg); text-decoration: none; }
-  .head-pill:hover, .head-pill[aria-expanded="true"] { background: var(--sunken); }
+  .head-pill:hover, .title-menu[open] > .head-pill { background: var(--sunken); }
+  .title-menu { position: relative; display: flex; justify-content: center; min-width: 0; }
+  .title-menu > summary { list-style: none; cursor: pointer; }
+  .title-menu > summary::-webkit-details-marker { display: none; }
+  .title-menu .title-pop { top: 52px; left: 50%; transform: translateX(-50%); min-width: 250px; }
+  .title-pop > a[role="menuitem"] { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 0 10px; border-radius: 8px; color: var(--fg); font: 600 var(--t-md)/1.2 var(--font); text-decoration: none; }
+  .title-pop > a[role="menuitem"]:hover { background: var(--sunken); }
+  .title-pop > a[role="menuitem"] :is(.sketch, .ico) { flex: none; width: 22px; height: 22px; color: var(--muted); }
+  .title-pop > a[role="menuitem"] b { margin-left: auto; color: var(--muted); font-size: var(--t-xs); }
+  .title-pop .panel-acts { display: contents; }
+  .pill-chev { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--faint); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
   .head-pill .agent-avatar, .head-pill .msg-mark, .head-pill > :first-child { flex: none; width: 30px; height: 30px; }
   .head-pill b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 15px/1.2 var(--font); }
   .head-pill.is-off .agent-avatar { filter: grayscale(1); opacity: .5; }
