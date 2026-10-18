@@ -15,7 +15,7 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
                                     EMAIL (a user of the team) is one of its testers
   asc.py notes BUILD_ID TEXT [LOCALE]
                                     TestFlight "What to Test" of that build (every localization; LOCALE, default
-                                    de-DE, if none)
+                                    de-DE, if none); symbols Apple refuses are mapped or left out (plain_notes)
   asc.py external BUILD_ID GROUP    the external TestFlight group GROUP (made once by hand in App Store Connect; fails
                                     saying so if it is missing) holds BUILD_ID; prints its public link, if enabled
   asc.py beta-review BUILD_ID       the beta app's test information (Beta App Review contact, demo account, notes from
@@ -54,7 +54,7 @@ Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (the .p8 file). ASC_PLATFOR
 MAC_OS, wait, last-sha and upload look at the Mac's builds only (IOS: the iOS ones) and upload takes a signed .pkg. Nothing here prints
 key material or tokens.
 """
-import base64, datetime, hashlib, http.client, json, os, plistlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
+import base64, datetime, hashlib, http.client, json, os, plistlib, re, subprocess, sys, time, unicodedata, urllib.error, urllib.parse, urllib.request, zipfile
 
 API = "https://api.appstoreconnect.apple.com"
 PLATFORM = os.environ.get("ASC_PLATFORM") or "IOS"
@@ -329,8 +329,35 @@ def internal(build_id, group, email=""):
                       "testers must be users of the team")
 
 
+# What to Test (whatsNew) is refused whole (409 "contains invalid characters") for some symbols, e.g. a check mark.
+# Apple documents no character set for it, only the 4000 characters, so the text is cut down to what is safe: letters,
+# marks, digits, punctuation and spaces of any script (umlauts, quotes, dashes, the ellipsis stay), ASCII as it is,
+# currency signs; a few symbols become words, every other symbol and emoji goes.
+NOTE_WORDS = {"\u2713": "done", "\u2714": "done", "\u2705": "done", "\u2611": "done", "\u2717": "no", "\u2718": "no",
+              "\u274c": "no", "\u2192": "->", "\u2190": "<-", "\u2194": "<->", "\u21d2": "=>", "\u2022": "-", "\u00d7": "x"}
+
+
+def plain_notes(text):
+    out = []
+    for ch in text:
+        if ch in NOTE_WORDS:
+            word = NOTE_WORDS[ch]
+            if word.isalpha() and out and out[-1] not in " \n":
+                word = " " + word
+            out.append(word)
+        elif ch == "\n" or " " <= ch <= "~":
+            out.append(ch)
+        elif ch == "\t" or unicodedata.category(ch) in ("Zs",):
+            out.append(" ")
+        elif unicodedata.category(ch)[0] in "LNP" or unicodedata.category(ch) in ("Mn", "Mc", "Sc"):
+            if not ("\ufe00" <= ch <= "\ufe0f"):
+                out.append(ch)
+    lines = [re.sub(r" {2,}", " ", line).rstrip() for line in "".join(out).split("\n")]
+    return "\n".join(lines).strip()
+
+
 def notes(build_id, text, locale="de-DE"):
-    text = text.strip()[:4000]
+    text = plain_notes(text)[:4000]
     locs = call("GET", f"/v1/builds/{build_id}/betaBuildLocalizations?limit=50")["data"]
     for loc in locs:
         call("PATCH", f"/v1/betaBuildLocalizations/{loc['id']}", {"data": {"type": "betaBuildLocalizations",
