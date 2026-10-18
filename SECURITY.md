@@ -114,6 +114,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Cloudflare sees what it sees of every hub request (see Deployment): your address, the sign-in token, the sizes and
   times; the audio and the words only sealed.
 - Limits: ten dictations a minute and 200 a day per account; a hub without a Tinfoil key offers no dictation.
+- Settings → Security shows the enclave, the model, the attestation and the release's digest with its entry in
+  Sigstore's log, and a test that checks the enclave anew and sends one second of silence sealed there and back.
 - Settings has a switch per device; off, nothing is recorded or checked. Opening Settings checks the enclave (the
   hub sees that request, as it sees a dictation) and shows "Connected · sealed" only when the check passed.
 - The trust this rests on: AMD's hardware and keys, Tinfoil's published builds and Sigstore's log, and the verifier

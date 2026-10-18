@@ -34,6 +34,8 @@ pub enum DictateStep {
     Switch { on: bool },
     /// Settings: check the enclave now (it is also checked when Settings comes into view).
     Check,
+    /// Security: test the sealed connection (a fresh attestation and a silent clip there and back).
+    Test,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,6 +46,7 @@ pub(super) enum Io {
     Attest,
     Bundle,
     Send,
+    Test,
 }
 
 #[derive(Default)]
@@ -89,6 +92,13 @@ impl App {
         if let DictateStep::Check = step {
             return self.dictation_check(now_ms, out);
         }
+        if let DictateStep::Test = step {
+            if self.demo {
+                return self.dictation.machine.demo_tested(now_ms);
+            }
+            let todo = self.dictation.machine.test(now_ms);
+            return self.dictation_run(now_ms, todo, out);
+        }
         if self.demo {
             let d = &mut self.dictation.machine;
             match step {
@@ -119,7 +129,7 @@ impl App {
                 self.dictation.machine.dismiss();
                 Vec::new()
             }
-            DictateStep::Switch { .. } | DictateStep::Check => Vec::new(),
+            DictateStep::Switch { .. } | DictateStep::Check | DictateStep::Test => Vec::new(),
         };
         self.dictation_run(now_ms, todo, out);
     }
@@ -199,6 +209,11 @@ impl App {
                     if !self.dictation_send(now_ms, out, Io::Send, Some(sealed)) {
                         let more = self.dictation.machine.sent(Sent::Offline);
                         self.dictation_run(now_ms, more, out);
+                    }
+                }
+                Do::SendTest(sealed) => {
+                    if !self.dictation_send(now_ms, out, Io::Test, Some(sealed)) {
+                        self.dictation.machine.test_sent(now_ms, Sent::Offline);
                     }
                 }
                 Do::CancelSend => {
@@ -300,6 +315,14 @@ impl App {
             }),
             (Io::Send, Ok(Answer::SttSealed { nonce, body })) => d.sent(Sent::Answered { nonce, body }),
             (Io::Send, Err(failure)) => d.sent(sorted(&failure)),
+            (Io::Test, Ok(Answer::SttSealed { nonce, body })) => {
+                d.test_sent(now_ms, Sent::Answered { nonce, body });
+                Vec::new()
+            }
+            (Io::Test, Err(failure)) => {
+                d.test_sent(now_ms, sorted(&failure));
+                Vec::new()
+            }
             (_, _) => {
                 out.push(log(LogLevel::Warn, "dictation: an answer of another kind"));
                 Vec::new()

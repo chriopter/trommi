@@ -175,8 +175,8 @@ try {
   // ---- 2. from Settings ----
   await open('/settings/security')
   await until("document.querySelector('#settings-proof')", 'Settings → Security shows the row')
-  const row = await evaluate("(() => { const rows = [...document.querySelectorAll('main .set-row')]; const a = document.querySelector('#settings-proof'); return { last: rows.at(-1) === a, word: a.querySelector('b').textContent, detail: a.querySelector('.set-detail').textContent } })()")
-  check(row.last && row.word === 'Self Test' && row.detail === 'runs on this device', 'Self Test is the last row of Settings → Security', row)
+  const row = await evaluate("(() => { const rows = [...document.querySelectorAll('main .set-row')].filter(r => !r.closest('#security-dictation')); const a = document.querySelector('#settings-proof'); return { last: rows.at(-1) === a, word: a.querySelector('b').textContent, detail: a.querySelector('.set-detail').textContent } })()")
+  check(row.last && row.word === 'Self Test' && row.detail === 'runs on this device', 'Self Test is the last row of Settings → Security (before Dictation\'s own group)', row)
   if (SHOTS) for (const [width, height] of [[1440, 900], [390, 844]]) for (const theme of ['light', 'dark']) {
     await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 })
     await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] })

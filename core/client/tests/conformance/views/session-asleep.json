@@ -28,7 +28,8 @@
                 "en": "Not available on this device",
                 "key": "dictate.status.unavailable"
               },
-              "status_kind": "off"
+              "status_kind": "off",
+              "test_state": "idle"
             },
             "notes": {
               "notes": [],
@@ -3837,7 +3838,8 @@
         "en": "Not available on this device",
         "key": "dictate.status.unavailable"
       },
-      "status_kind": "off"
+      "status_kind": "off",
+      "test_state": "idle"
     },
     "notes": {
       "no_crown": {

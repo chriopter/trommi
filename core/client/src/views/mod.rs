@@ -975,6 +975,29 @@ pub struct DictationView {
     /// Settings: the row's sentence ("Connected · sealed").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<Text>,
+    /// Security: the facts of the sealed connection, in order (Enclave, Model, Attestation, Code, Hub); none while
+    /// dictation is off or not available here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub facts: Vec<DictationFact>,
+    /// Security: the test of the sealed connection: `idle`, `running`, `passed`, `failed`.
+    #[serde(default)]
+    pub test_state: String,
+    /// Security: the test's result in words ("✓ sealed round trip · 1.9 s", or what failed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_result: Option<Text>,
+}
+
+/// One fact of the sealed connection (Security): a label, its value, a link where there is one (the release in
+/// Sigstore's log), and a dot (`connected`, `checking`, `failed`, `unknown`; empty: none).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DictationFact {
+    pub key: String,
+    pub label: Text,
+    pub value: Text,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub href: Option<String>,
+    #[serde(default)]
+    pub dot: String,
 }
 
 /// Words a dictation brought, to go into the chat field once.

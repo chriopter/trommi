@@ -40,4 +40,20 @@ final class DictationTests: XCTestCase {
     inside(field, "the field with a long line of words")
     let long = XCTAttachment(screenshot: app.screenshot()); long.name = "long-words"; long.lifetime = .keepAlways; add(long)
   }
+
+  /** Security: the facts of the sealed connection and its test (the demo's test passes at once, as a real one shows). */
+  func testSecurityShowsTheEnclaveAndItsTest() throws {
+    app = XCUIApplication()
+    app.launchEnvironment["TROMMI_SCREEN"] = "settings--security"
+    app.launch()
+    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
+    let test = app.buttons["dictation-test"]
+    XCTAssertTrue(test.waitForExistence(timeout: 20), "the test of the sealed connection is there. " + app.debugDescription)
+    XCTAssertTrue(app.staticTexts["Voxtral Small 24B"].exists)
+    XCTAssertTrue(app.staticTexts["relays ciphertext only"].exists)
+    test.tap()
+    let passed = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "✓ sealed round trip")).firstMatch
+    XCTAssertTrue(passed.waitForExistence(timeout: 10) || test.label.contains("✓ sealed round trip"), "the test's result is shown. " + app.debugDescription)
+    let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "security-dictation"; shot.lifetime = .keepAlways; add(shot)
+  }
 }

@@ -657,6 +657,23 @@ export interface DictationView {
   status_kind: string
   /** Settings: the row's sentence ("Connected · sealed"). */
   status?: Text
+  /** Security: the facts of the sealed connection, in order (Enclave, Model, Attestation, Code, Hub); none while
+   *  dictation is off or not available here. */
+  facts?: DictationFact[]
+  /** Security: the test of the sealed connection: `idle`, `running`, `passed`, `failed`. */
+  test_state: string
+  /** Security: the test's result in words ("✓ sealed round trip · 1.9 s", or what failed). */
+  test_result?: Text
+}
+
+/** One fact of the sealed connection (Security): a label, its value, a link where there is one (the release in
+ *  Sigstore's log), and a dot (`connected`, `checking`, `failed`, `unknown`; empty: none). */
+export interface DictationFact {
+  key: string
+  label: Text
+  value: Text
+  href?: string
+  dot: string
 }
 
 /** Words a dictation brought, to go into the chat field once. */
