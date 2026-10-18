@@ -821,27 +821,7 @@ struct SessionScreen: View {
           }
         }
       }
-      .pushedPills(solid: AppShell.phone) { header } trailing: {
-          Menu {
-            Toggle(isOn: $onlyQuestions) { Label(page.open > 0 ? "Questions Only (\(page.open))" : "Questions Only", systemImage: "questionmark.circle") }
-            Button { newName = page.name.en; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
-            Button { drawing = true } label: { Label("Change Icon…", systemImage: "scribble") }
-            Toggle(isOn: Binding(get: { page.crowned }, set: { _ in shell.act(["do": "crown_session", "session_id": page.id, "on": !page.crowned]) })) { Label("Main Session", systemImage: "crown") }
-            let others = shell.view.sidebar.teams.filter { $0.id != page.teamId }
-            if !others.isEmpty {
-              Menu { ForEach(others, id: \.id) { team in Button(team.name.en) { shell.act(["do": "move_session", "session_id": page.id, "team_id": team.id]) } } } label: { Label("Move to Team…", systemImage: "rectangle.stack") }
-            }
-            Button(role: .destructive) { shell.act(["do": "archive_session", "session_id": page.id, "on": true]) } label: { Label("Archive", systemImage: "archivebox") }
-            // (what it runs on and how much of its plan is used: in the menu, not in the top row)
-            if !page.modelLabel.isEmpty || !(page.usage?.meters.isEmpty ?? true) {
-              Section(page.modelLabel) {
-                ForEach(page.usage?.meters ?? [], id: \.key) { m in Label("\(m.long): \(m.used) %", systemImage: m.hot ? "gauge.with.dots.needle.100percent" : "gauge.with.dots.needle.33percent") }
-              }
-            }
-          } label: { Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(Ink.fg).pillCircle() }
-          .accessibilityLabel("More")
-          .accessibilityIdentifier("session-more")
-      }
+      .pushedPills(solid: AppShell.phone) { header } trailing: { EmptyView() }
     }
     .background(Ink.bg.ignoresSafeArea())
     .alert("Rename Session", isPresented: $renaming) {
@@ -852,41 +832,42 @@ struct SessionScreen: View {
     .sheet(isPresented: $workDetails) { WorkDetails(page: page) }
     .sheet(isPresented: $drawing) { DrawingPicker(page: page) { mark in shell.act(["do": "session_icon", "session_id": page.id, "icon": mark]); drawing = false } }
   }
-  /** The title in its own glass pill in the middle of the top row (back and ⋯ are round buttons of their own): the
-   *  session's drawing, with a tiny dot on its corner (connected green, stopped red, else a ring), and its name; a
-   *  tap opens a menu of the team's sessions to switch to. */
+  /** The title in its own glass pill in the middle of the top row (back is a round button of its own; no ⋯): the
+   *  session's drawing and its name, both grey while it is not connected (the core's `online`), and a small chevron;
+   *  a tap opens the chat's menu. */
   private var header: some View {
-    // (the chats of its own team: the group of the iPhone's list it stands in; else the team in view's)
-    let mates = shell.view.sidebar.stacks.first { $0.sessions.contains { $0.id == page.id } }?.sessions ?? shell.view.sidebar.sessions
-    return Menu {
-      ForEach(mates, id: \.id) { s in
-        Button {
-          if shell.path.isEmpty { shell.path = [.session(sessionId: s.id)] } else { shell.path[shell.path.count - 1] = .session(sessionId: s.id) }
-        } label: {
-          Label { Text(s.name.en) } icon: { if s.id == page.id { Image(systemName: "checkmark") } else if s.crowned { Image(systemName: "crown") } }
-        }
-      }
-    } label: {
-      HStack(spacing: 8) {
-        AgentMark(mark: page.mark, size: 22, hue: hue)
-          .overlay(alignment: .bottomTrailing) {
-            Group {
-              if page.blocked { Circle().fill(Ink.urgCritical) }
-              else if page.dot.on { Circle().fill(Ink.stDone) }
-              else { Circle().fill(Ink.bg).overlay(Circle().strokeBorder(Ink.faint, lineWidth: 1.5)) }
-            }
-            .frame(width: 8, height: 8).offset(x: 3, y: 2)
-          }
-        Text(page.name.en).font(Face.text(17, .semibold)).foregroundStyle(Ink.fg).lineLimit(1).minimumScaleFactor(0.85).truncationMode(.middle)
+    Menu { actions } label: {
+      HStack(spacing: 7) {
+        AgentMark(mark: page.mark, size: 22, hue: hue).grayscale(page.online ? 0 : 1).opacity(page.online ? 1 : 0.5)
+        Text(page.name.en).font(Face.text(17, .semibold)).foregroundStyle(page.online ? Ink.fg : Ink.faint).lineLimit(1).minimumScaleFactor(0.85).truncationMode(.middle)
+        Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold)).foregroundStyle(Ink.faint)
       }
       .padding(.horizontal, 16).frame(height: 44)
       .glass(Capsule(), interactive: true)
       .contentShape(Capsule())
     }
     .buttonStyle(.plain)
-    .accessibilityLabel("\(page.name.en)\(page.modelLabel.isEmpty ? "" : ", \(page.modelLabel)"), \(page.dot.says.en): switch chat")
-    .accessibilityHint(page.quiet?.en ?? "")
+    .accessibilityLabel("\(page.name.en)\(page.modelLabel.isEmpty ? "" : ", \(page.modelLabel)"), \(page.dot.says.en)")
+    .accessibilityHint(page.quiet?.en ?? "Opens the chat's menu")
     .accessibilityIdentifier("session-title")
+  }
+  /** The chat's menu (under its title). */
+  @ViewBuilder private var actions: some View {
+    Toggle(isOn: $onlyQuestions) { Label(page.open > 0 ? "Questions Only (\(page.open))" : "Questions Only", systemImage: "questionmark.circle") }
+    Button { newName = page.name.en; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
+    Button { drawing = true } label: { Label("Change Icon…", systemImage: "scribble") }
+    Toggle(isOn: Binding(get: { page.crowned }, set: { _ in shell.act(["do": "crown_session", "session_id": page.id, "on": !page.crowned]) })) { Label("Main Session", systemImage: "crown") }
+    let others = shell.view.sidebar.teams.filter { $0.id != page.teamId }
+    if !others.isEmpty {
+      Menu { ForEach(others, id: \.id) { team in Button(team.name.en) { shell.act(["do": "move_session", "session_id": page.id, "team_id": team.id]) } } } label: { Label("Move to Team…", systemImage: "rectangle.stack") }
+    }
+    Button(role: .destructive) { shell.act(["do": "archive_session", "session_id": page.id, "on": true]) } label: { Label("Archive", systemImage: "archivebox") }
+    // (what it runs on and how much of its plan is used: in the menu, not in the top row)
+    if !page.modelLabel.isEmpty || !(page.usage?.meters.isEmpty ?? true) {
+      Section(page.modelLabel) {
+        ForEach(page.usage?.meters ?? [], id: \.key) { m in Label("\(m.long): \(m.used) %", systemImage: m.hot ? "gauge.with.dots.needle.100percent" : "gauge.with.dots.needle.33percent") }
+      }
+    }
   }
 }
 

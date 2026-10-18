@@ -249,11 +249,14 @@ const filesDrawer = (s, vm, t, open) => html`<aside class="files-drawer" id="fil
 
 // ---- the side panel: a click on the name opens it (a wide screen), its tabs the core's (SessionView.tabs) ----
 const PANEL_TABS = new Set(['details', 'questions', 'helpers', 'files'])
-/** The pill at the top, calm as the iPhone's: only the drawing and the name, both grey while its agent is not connected
- *  (the core's `online`); how it stands and what waits are said to a screen reader. It opens the panel (and closes it). */
-function headPill(s, base, tab) {
-  const open = Boolean(tab), says = [s.dot.says.en, s.open_word?.en].filter(Boolean).join(', ')
-  return html`<a class="head-pill${s.online ? '' : ' is-off'}" id="head-pill-${s.id}" data-nav href="${sessionPath(s, base)}${open ? '' : '/panel/details'}" aria-expanded="${String(open)}" aria-controls="side-panel-${s.id}" aria-label="${s.name.en}${says ? `, ${says}` : ''}: ${open ? 'close the details' : 'details'}">${agentMark(s)}<b>${s.name.en}</b></a>`
+/** The pill at the top, calm as the iPhone's: the drawing and the name, both grey while its agent is not connected (the
+ *  core's `online`), and a small chevron; a click opens the chat's menu: Details (the side panel), Questions Only,
+ *  Files, then its actions. How it stands and what waits are said to a screen reader. */
+const CHEVRON = raw('<svg class="pill-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>')
+function titleMenu(s, vm, base) {
+  const says = [s.dot.says.en, s.open_word?.en].filter(Boolean).join(', '), here = sessionPath(s, base), n = s.files?.length ?? 0
+  return html`<details class="t-pick title-menu" id="title-menu-${s.id}"><summary class="head-pill${s.online ? '' : ' is-off'}" id="head-pill-${s.id}" aria-label="${s.name.en}${says ? `, ${says}` : ''}: menu">${agentMark(s)}<b>${s.name.en}</b>${CHEVRON}</summary>
+<div class="desk-move t-pop title-pop" role="menu" aria-label="${s.name.en}"><a role="menuitem" data-nav href="${here}/panel/details">${sk('page')}<span>Details</span></a><a role="menuitem" data-nav href="${here}/questions">${sk('knock')}<span>Questions Only</span>${s.open ? html`<b>${s.open}</b>` : ''}</a>${n ? html`<a role="menuitem" href="${here}/files" data-action="files#toggle" aria-controls="files-drawer-${s.id}">${ico('clip')}<span>Files</span><b>${n}</b></a>` : ''}<hr class="desk-move-rule">${sessionMore(s, vm, base, { inline: true })}</div></details>`
 }
 const fact = (label, value) => (value ? html`<div class="panel-fact"><dt>${label}</dt><dd>${value}</dd></div>` : '')
 function panelBody(s, vm, t, tab) {
@@ -282,7 +285,7 @@ function sessionMain(s, vm, t, { mode = '', text = '', focus = false, panel = ''
   const body = mode === 'questions' ? html`<div class="pane-list pane-questions"><div class="column">${questionList(s, base)}</div></div>`
     : html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${s.earlier ? html`<form class="log-earlier" id="earlier-${s.id}" method="post" action="${sessionPath(s, base)}/earlier"><button type="submit" class="log-earlier-link" data-log-target="earlier">${s.earlier.says.en}${s.earlier.left ? html`<b>${s.earlier.left}${s.earlier.hub ? '+' : ''}</b>` : ''}</button></form>` : ''}${s.talk.length ? talk(s, vm, t) : s.empty ? empty(s, base) : ''}${workingFace(s, base)}<div id="log-end-${s.id}" hidden></div></div></div>`
   return html`<main id="session" aria-label="Session: ${s.name.en}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}${panel ? raw(' data-panel-open') : ''}>
-<header class="pane-title">${headPill(s, base, panel)}${sessionWho(s, vm, base)}${sessionFilters(s, base, mode)}<div class="head-use" id="session-use-${s.id}">${usageRings(s.usage)}</div></header>${sessionFilters(s, base, mode, { phone: true })}
+<header class="pane-title">${titleMenu(s, vm, base)}${sessionWho(s, vm, base)}${sessionFilters(s, base, mode)}<div class="head-use" id="session-use-${s.id}">${usageRings(s.usage)}</div></header>${sessionFilters(s, base, mode, { phone: true })}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
 <div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' ? '' : sessionOpen(s, base)}<div class="column session-compose">${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus, d: vm.dictation })}</div></div>
