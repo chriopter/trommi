@@ -1,12 +1,16 @@
 // CardDrawing.swift: "Draw on the card" (the core's card menu, as on the web): the screen as it stands, a pen over it,
 // and the drawing with the card under it as one picture in the card's field, sent with the next words.
 import SwiftUI
+#if os(iOS)
 import UIKit
+#endif
 
-/** The screen when the pen was asked for. */
+/** The screen when the pen was asked for (only the iPhone and iPad draw on a card). */
 struct DrawShot: Identifiable {
   let id = UUID()
+  #if os(iOS)
   let image: UIImage
+  #endif
 }
 
 #if canImport(PencilKit) && os(iOS)
