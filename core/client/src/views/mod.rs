@@ -1798,15 +1798,14 @@ pub struct CardWordsView {
     pub rework: Text,
     /// "Undo": takes back the answer that stands.
     pub undo: Text,
-    /// The card's menu under its title pill: "Open Session", "Copy", "Later", "Shred".
-    #[serde(default)]
-    pub open_session: Text,
-    #[serde(default)]
-    pub copy: Text,
+    /// "Later", in the card's menu beside the core's own (`CardView.menu`) while it waits and is not put off.
     #[serde(default)]
     pub later: Text,
+    /// The sheet to draw on the card (`CardMenuItem` "draw"): "Cancel", and "Attach" (the drawing goes to the field).
     #[serde(default)]
-    pub shred: Text,
+    pub draw_cancel: Text,
+    #[serde(default)]
+    pub draw_done: Text,
     /// What the title pill does, for a screen reader: "Opens the card's menu".
     #[serde(default)]
     pub menu_hint: Text,

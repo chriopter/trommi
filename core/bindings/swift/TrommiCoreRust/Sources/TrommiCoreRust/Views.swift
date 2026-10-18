@@ -4400,27 +4400,26 @@ public enum CoreView {
     public var rework: Text
     /// "Undo": takes back the answer that stands.
     public var undo: Text
-    /// The card's menu under its title pill: "Open Session", "Copy", "Later", "Shred".
-    public var openSession: Text
-    public var copy: Text
+    /// "Later", in the card's menu beside the core's own (`CardView.menu`) while it waits and is not put off.
     public var later: Text
-    public var shred: Text
+    /// The sheet to draw on the card (`CardMenuItem` "draw"): "Cancel", and "Attach" (the drawing goes to the field).
+    public var drawCancel: Text
+    public var drawDone: Text
     /// What the title pill does, for a screen reader: "Opens the card's menu".
     public var menuHint: Text
     /// "Talk · 3": the card's talk folded into one row; none when it has none.
     public var talk: Text?
 
-    public init(recommended: Text = Text(), gotIt: Text = Text(), duck: Text = Text(), what: Text = Text(), rework: Text = Text(), undo: Text = Text(), openSession: Text = Text(), copy: Text = Text(), later: Text = Text(), shred: Text = Text(), menuHint: Text = Text(), talk: Text? = nil) {
+    public init(recommended: Text = Text(), gotIt: Text = Text(), duck: Text = Text(), what: Text = Text(), rework: Text = Text(), undo: Text = Text(), later: Text = Text(), drawCancel: Text = Text(), drawDone: Text = Text(), menuHint: Text = Text(), talk: Text? = nil) {
       self.recommended = recommended
       self.gotIt = gotIt
       self.duck = duck
       self.what = what
       self.rework = rework
       self.undo = undo
-      self.openSession = openSession
-      self.copy = copy
       self.later = later
-      self.shred = shred
+      self.drawCancel = drawCancel
+      self.drawDone = drawDone
       self.menuHint = menuHint
       self.talk = talk
     }
@@ -4432,10 +4431,9 @@ public enum CoreView {
       case what = "what"
       case rework = "rework"
       case undo = "undo"
-      case openSession = "open_session"
-      case copy = "copy"
       case later = "later"
-      case shred = "shred"
+      case drawCancel = "draw_cancel"
+      case drawDone = "draw_done"
       case menuHint = "menu_hint"
       case talk = "talk"
     }
@@ -4448,10 +4446,9 @@ public enum CoreView {
       self.what = try c.decode(Text.self, forKey: .what)
       self.rework = try c.decode(Text.self, forKey: .rework)
       self.undo = try c.decode(Text.self, forKey: .undo)
-      self.openSession = try c.decodeIfPresent(Text.self, forKey: .openSession) ?? Text()
-      self.copy = try c.decodeIfPresent(Text.self, forKey: .copy) ?? Text()
       self.later = try c.decodeIfPresent(Text.self, forKey: .later) ?? Text()
-      self.shred = try c.decodeIfPresent(Text.self, forKey: .shred) ?? Text()
+      self.drawCancel = try c.decodeIfPresent(Text.self, forKey: .drawCancel) ?? Text()
+      self.drawDone = try c.decodeIfPresent(Text.self, forKey: .drawDone) ?? Text()
       self.menuHint = try c.decodeIfPresent(Text.self, forKey: .menuHint) ?? Text()
       self.talk = try c.decodeIfPresent(Text.self, forKey: .talk)
     }
@@ -4464,10 +4461,9 @@ public enum CoreView {
       try c.encode(what, forKey: .what)
       try c.encode(rework, forKey: .rework)
       try c.encode(undo, forKey: .undo)
-      try c.encode(openSession, forKey: .openSession)
-      try c.encode(copy, forKey: .copy)
       try c.encode(later, forKey: .later)
-      try c.encode(shred, forKey: .shred)
+      try c.encode(drawCancel, forKey: .drawCancel)
+      try c.encode(drawDone, forKey: .drawDone)
       try c.encode(menuHint, forKey: .menuHint)
       try c.encodeIfPresent(talk, forKey: .talk)
     }

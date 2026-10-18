@@ -243,21 +243,17 @@
       "key": "card.undo",
       "en": "Undo"
     },
-    "open_session": {
-      "key": "card.menu.session",
-      "en": "Open Session"
-    },
-    "copy": {
-      "key": "card.menu.copy",
-      "en": "Copy"
-    },
     "later": {
       "key": "card.menu.later",
       "en": "Later"
     },
-    "shred": {
-      "key": "card.menu.shred",
-      "en": "Shred"
+    "draw_cancel": {
+      "key": "card.draw.cancel",
+      "en": "Cancel"
+    },
+    "draw_done": {
+      "key": "card.draw.done",
+      "en": "Attach"
     },
     "menu_hint": {
       "key": "card.menu.hint",

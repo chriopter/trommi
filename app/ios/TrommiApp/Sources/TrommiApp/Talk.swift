@@ -281,6 +281,8 @@ struct CardScreen: View {
   @State private var answersHeight: CGFloat = 0
   /** The pictures open over the whole screen. */
   @State private var showing: PictureShow?
+  /** The screen as it stood when "Draw on the card" was chosen: the sheet to draw on it. */
+  @State private var drawShot: DrawShot?
   @Namespace private var zoom
   private func ratioOf(_ p: CoreView.PictureView) -> CGFloat? {
     guard let w = p.width, let h = p.height, w > 0, h > 0 else { return nil }
@@ -319,6 +321,13 @@ struct CardScreen: View {
     .scrollDismissesKeyboard(.interactively)
     .background(Ink.bg.ignoresSafeArea())
     .pictureViewer($showing, zoom: zoom)
+    #if canImport(PencilKit) && os(iOS)
+    .fullScreenCover(item: $drawShot) { shot in
+      CardDrawing(shot: shot.image, cancel: card.words.drawCancel.en, done: card.words.drawDone.en) { png in
+        attachments.append(shell.attach(png, name: "card-drawing.png", mediaType: "image/png"))
+      }
+    }
+    #endif
     .bottomBar {
       if card.kind != "request" {
         TalkComposer(placeholder: card.ask.en, text: $note, attachments: $attachments) {
@@ -340,11 +349,10 @@ struct CardScreen: View {
       if card.kind != "request" {
         Button { shell.act(["do": "star", "card_id": card.id, "on": !card.starred]) } label: { Label(card.starSays.en, systemImage: card.starred ? "star.fill" : "star") }
       }
-      if let id = card.sessionId { Button { shell.focus(.session(sessionId: id)) } label: { Label(w.openSession.en, systemImage: "bubble.left.and.bubble.right") } }
-      Button { copyText(card.title + (card.text.isEmpty ? "" : "\n\n" + card.text)) } label: { Label(w.copy.en, systemImage: "doc.on.doc") }
-      if card.status == "open" && card.kind != "request" {
+      // the core's menu (`CardView.menu`, as on the web), in its order; Later beside it while it waits
+      ForEach(card.menu, id: \.key) { m in menuItem(m) }
+      if card.status == "open" && card.kind != "request" && card.snoozedUntil == nil {
         Button { shell.act(["do": "snooze", "card_id": card.id]) } label: { Label(w.later.en, systemImage: "zzz") }
-        Button(role: .destructive) { shell.act(["do": "shred", "card_id": card.id, "note": note]) } label: { Label(w.shred.en, systemImage: "trash") }
       }
     } label: {
       HStack(spacing: 7) {
@@ -363,6 +371,35 @@ struct CardScreen: View {
     .accessibilityLabel([card.knock?.en, card.from.map { "From \($0.path.joined(separator: ", "))" }, card.starred ? card.starSays.en : nil].compactMap { $0 }.joined(separator: ", "))
     .accessibilityHint(w.menuHint.en)
     .accessibilityIdentifier("card-menu")
+  }
+
+  /** One entry of the core's card menu. Focus is the web's wide reading mode: the iPhone's page is that already. */
+  @ViewBuilder private func menuItem(_ m: CoreView.CardMenuItem) -> some View {
+    switch m.key {
+    case "prev", "next":
+      if let to = m.key == "prev" ? card.place?.prev : card.place?.next {
+        Button {
+          if shell.path.isEmpty { shell.focus(.card(cardId: to)) } else { shell.path[shell.path.count - 1] = .card(cardId: to) }
+        } label: { Label(m.label.en, systemImage: m.key == "prev" ? "chevron.up" : "chevron.down") }
+      }
+    case "draw":
+      #if canImport(PencilKit) && os(iOS)
+      // (the menu closes first: the picture is the card, not the menu over it)
+      Button { Task { @MainActor in try? await Task.sleep(nanoseconds: 400_000_000); drawShot = CardDrawing.snapshot() } } label: { Label(m.label.en, systemImage: "pencil.tip.crop.circle") }
+      #else
+      EmptyView()
+      #endif
+    case "chat":
+      if let id = card.sessionId { Button { shell.focus(.session(sessionId: id)) } label: { Label(m.label.en, systemImage: "bubble.left.and.bubble.right") } }
+    case "copy":
+      Button { copyText(card.title + (card.text.isEmpty ? "" : "\n\n" + card.text)) } label: { Label(m.label.en, systemImage: "doc.on.doc") }
+    case "wake":
+      Button { shell.act(["do": "unsnooze", "card_id": card.id]) } label: { Label(m.label.en, systemImage: "sun.max") }
+    case "shred":
+      Button(role: .destructive) { shell.act(["do": "shred", "card_id": card.id, "note": note]) } label: { Label(m.label.en, systemImage: "trash") }
+    default:
+      EmptyView()
+    }
   }
 
   // ---- the head: the work strip, the title, the text ----
