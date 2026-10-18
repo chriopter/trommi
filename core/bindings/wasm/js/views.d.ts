@@ -428,6 +428,9 @@ export interface DeskTileView {
   size: string
   /** It holds nothing yet: the shell draws it small and quiet, with its line only. */
   empty: boolean
+  /** Its row on a phone (two columns): two "narrow" tiles share one row, side by side in the tiles' order; every
+   *  other tile, and a narrow one left alone, takes a row to itself. Rows are drawn by this number. */
+  phone_row: number
   /** "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams. */
   team_id?: string
 }
@@ -1217,6 +1220,9 @@ export interface CardView {
   /** The card's ⋯ menu beside its title, in order (`CardMenuItem`): what can be done with it besides answering.
    *  Always written, an empty list too, so a shell never meets it missing. */
   menu: CardMenuItem[]
+  /** The tint of the paper the question stands on: "full" while it waits for him or is settled, "pale" while its
+   *  session works on it (the strip above the title, or the card back with the agent for rework). */
+  paper: string
 }
 
 /** One entry of a card's ⋯ menu. The shell draws it by its key: `prev`, `next` (the questions before and after it on

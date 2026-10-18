@@ -1468,10 +1468,13 @@ public enum CoreView {
     public var size: String
     /// It holds nothing yet: the shell draws it small and quiet, with its line only.
     public var empty: Bool
+    /// Its row on a phone (two columns): two "narrow" tiles share one row, side by side in the tiles' order; every
+    /// other tile, and a narrow one left alone, takes a row to itself. Rows are drawn by this number.
+    public var phoneRow: UInt32
     /// "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams.
     public var teamId: String?
 
-    public init(key: String = "", title: Text = Text(), line: Text = Text(), count: UInt32? = nil, opens: Screen = .desk, items: [String] = [], names: [String] = [], size: String = "", empty: Bool = false, teamId: String? = nil) {
+    public init(key: String = "", title: Text = Text(), line: Text = Text(), count: UInt32? = nil, opens: Screen = .desk, items: [String] = [], names: [String] = [], size: String = "", empty: Bool = false, phoneRow: UInt32 = 0, teamId: String? = nil) {
       self.key = key
       self.title = title
       self.line = line
@@ -1481,6 +1484,7 @@ public enum CoreView {
       self.names = names
       self.size = size
       self.empty = empty
+      self.phoneRow = phoneRow
       self.teamId = teamId
     }
 
@@ -1494,6 +1498,7 @@ public enum CoreView {
       case names = "names"
       case size = "size"
       case empty = "empty"
+      case phoneRow = "phone_row"
       case teamId = "team_id"
     }
 
@@ -1508,6 +1513,7 @@ public enum CoreView {
       self.names = try c.decodeIfPresent([String].self, forKey: .names) ?? []
       self.size = try c.decodeIfPresent(String.self, forKey: .size) ?? ""
       self.empty = try c.decodeIfPresent(Bool.self, forKey: .empty) ?? false
+      self.phoneRow = try c.decodeIfPresent(UInt32.self, forKey: .phoneRow) ?? 0
       self.teamId = try c.decodeIfPresent(String.self, forKey: .teamId)
     }
 
@@ -1522,6 +1528,7 @@ public enum CoreView {
       try c.encode(names, forKey: .names)
       try c.encode(size, forKey: .size)
       try c.encode(empty, forKey: .empty)
+      try c.encode(phoneRow, forKey: .phoneRow)
       try c.encodeIfPresent(teamId, forKey: .teamId)
     }
   }
@@ -4019,8 +4026,11 @@ public enum CoreView {
     /// The card's ⋯ menu beside its title, in order (`CardMenuItem`): what can be done with it besides answering.
     /// Always written, an empty list too, so a shell never meets it missing.
     public var menu: [CardMenuItem]
+    /// The tint of the paper the question stands on: "full" while it waits for him or is settled, "pale" while its
+    /// session works on it (the strip above the title, or the card back with the agent for rework).
+    public var paper: String
 
-    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil, words: CardWordsView = CardWordsView(), menu: [CardMenuItem] = []) {
+    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil, words: CardWordsView = CardWordsView(), menu: [CardMenuItem] = [], paper: String = "") {
       self.id = id
       self.sessionId = sessionId
       self.kind = kind
@@ -4064,6 +4074,7 @@ public enum CoreView {
       self.after = after
       self.words = words
       self.menu = menu
+      self.paper = paper
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4110,6 +4121,7 @@ public enum CoreView {
       case after = "after"
       case words = "words"
       case menu = "menu"
+      case paper = "paper"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4157,6 +4169,7 @@ public enum CoreView {
       self.after = try c.decodeIfPresent(AfterView.self, forKey: .after)
       self.words = try c.decodeIfPresent(CardWordsView.self, forKey: .words) ?? CardWordsView()
       self.menu = try c.decodeIfPresent([CardMenuItem].self, forKey: .menu) ?? []
+      self.paper = try c.decodeIfPresent(String.self, forKey: .paper) ?? ""
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4204,6 +4217,7 @@ public enum CoreView {
       try c.encodeIfPresent(after, forKey: .after)
       try c.encode(words, forKey: .words)
       try c.encode(menu, forKey: .menu)
+      try c.encode(paper, forKey: .paper)
     }
   }
 
