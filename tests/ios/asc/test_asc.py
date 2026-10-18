@@ -273,6 +273,18 @@ class WhatsNew(Base):
                          "Fixed:\n"
                          "- Log in no longer hangs.")
 
+    def test_what_to_test_leaves_out_symbols_apple_refuses(self):
+        text = ("Build 213 (abc1234). Fixed:\n- Test the sealed connection\u2026 shows \u2713\n"
+                "- \u201eGr\u00fc\u00dfe\u201c \u2013 'quotes' & caf\u00e9 \u20ac5 \U0001F680\u2764\ufe0f ok\n- a \u2192 b \u2714")
+        self.assertEqual(asc.plain_notes(text), "Build 213 (abc1234). Fixed:\n"
+                         "- Test the sealed connection\u2026 shows done\n"
+                         "- \u201eGr\u00fc\u00dfe\u201c \u2013 'quotes' & caf\u00e9 \u20ac5 ok\n- a -> b done")
+        fake = Fake(**{"GET /v1/builds/b1/betaBuildLocalizations?limit=50": {"data": [{"id": "l1", "attributes": {"locale": "en-US"}}]},
+                       "PATCH /v1/betaBuildLocalizations/l1": {}})
+        code, _, err = self.run_with(fake, asc.notes, "b1", "shows \u2713")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(fake.writes()[0][2]["data"]["attributes"]["whatsNew"], "shows done")
+
     def test_not_whats_new(self):
         code, _, _ = self.run_with(None, asc.whats_new, str(HERE / "fixtures/crash.txt"))
         self.assertNotEqual(code, 0)
