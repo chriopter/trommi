@@ -22,32 +22,22 @@ function teamCard(d, c, p, last) {
 }
 /** The confirm: every number the core counts, a row each (a row of nothing hides), held to delete; while the delete
  *  runs, how far it is. */
-function confirmDialog(d, c, p) {
-  const name = d.name.en
-  const row = (key, one, many, rest = '') => html`<li data-row="${key}"${c[key] ? '' : raw(' hidden')}><b>${c[key] ?? '…'}</b><span><span>${c[key] === 1 ? one : many}</span>${rest ? html` <small>${rest}</small>` : ''}</span></li>`
-  const keys = ['sessions', 'helpers', 'archived', 'agents', 'open_cards', 'done_cards', 'board', 'files', 'goals', 'knowledge']
+function confirmDialog(d, c, p, w) {
+  const name = d.name.en, lines = c.lines ?? []
+  const row = l => html`<li data-row="${l.key}"><b>${l.n}</b><span><span>${l.word.en}</span>${l.rest ? html` <small>${l.rest.en}</small>` : ''}</span></li>`
   return html`<dialog class="dk-dialog" id="team-del-${d.id}" aria-labelledby="team-del-title-${d.id}" data-team="${d.id}">
 <div class="dk-dialog-in">
-<h3 id="team-del-title-${d.id}">Delete ${name}?</h3>
+<h3 id="team-del-title-${d.id}">${c.title?.en || name}</h3>
 <div class="dk-ask"${p ? raw(' hidden') : ''}>
-<p class="dk-dialog-lead">This goes for good, on every device:</p>
+<p class="dk-dialog-lead">${w.lead?.en ?? ''}</p>
 <ul class="dk-list">
-${row('sessions', 'session', 'sessions', 'archived')}
-${row('helpers', 'helper', 'helpers', 'archived')}
-${row('archived', 'archived session', 'archived sessions')}
-${row('agents', 'agent removed from your account', 'agents removed from your account', 'their keys stop working')}
-${row('open_cards', 'open card', 'open cards', 'shredded')}
-${row('done_cards', 'done card', 'done cards')}
-${row('board', 'thing on the Scribble Board', 'things on the Scribble Board')}
-${row('files', 'file', 'files', 'pictures, Artifacts and share links, deleted at once')}
-${row('goals', 'goal', 'goals')}
-${row('knowledge', 'entry of its knowledge', 'entries of its knowledge')}
+${lines.map(row)}
 </ul>
-<p class="dk-empty"${keys.some(k => c[k]) ? raw(' hidden') : ''}>Nothing stands on this team: only its name goes.</p>
-<p class="dk-dialog-small">The server drops the encrypted data within 30 days. Your agents' computers keep nothing of it they can still open. This cannot be undone.</p>
-<div class="dk-dialog-foot"><button type="button" class="dk-cancel" data-action="teams#cancel">Cancel</button><button type="button" class="dk-delete dk-hold" data-action="pointerdown->teams#hold pointerup->teams#release pointerleave->teams#release keydown->teams#holdKey keyup->teams#release"><span class="dk-hold-fill" aria-hidden="true"></span><span class="dk-hold-word">Hold to Delete</span></button></div>
+<p class="dk-empty"${lines.length ? raw(' hidden') : ''}>${w.empty?.en ?? ''}</p>
+<p class="dk-dialog-small">${w.small?.en ?? ''}</p>
+<div class="dk-dialog-foot"><button type="button" class="dk-cancel" data-action="teams#cancel">${w.cancel?.en ?? ''}</button><button type="button" class="dk-delete dk-hold" data-action="pointerdown->teams#hold pointerup->teams#release pointerleave->teams#release keydown->teams#holdKey keyup->teams#release"><span class="dk-hold-fill" aria-hidden="true"></span><span class="dk-hold-word">${w.hold?.en ?? ''}</span></button></div>
 </div>
-<div class="dk-going" role="status" aria-live="polite"${p ? '' : raw(' hidden')}><span class="dk-bar"><i style="width:${pct(p)}%"></i></span><p class="dk-going-line">${p ? `Deleting… ${p.done} of ${p.total}` : 'Deleting…'}</p></div>
+<div class="dk-going" role="status" aria-live="polite"${p ? '' : raw(' hidden')}><span class="dk-bar"><i style="width:${pct(p)}%"></i></span><p class="dk-going-line">${w.deleting?.en ?? ''}${p ? ` ${p.done} of ${p.total}` : ''}</p></div>
 </div></dialog>`
 }
 
@@ -60,7 +50,7 @@ export function register(t) {
     return settingsPage('Teams', html`<div class="dk-page" data-controller="teams" data-teams-open-value="${url?.searchParams.get('del') ?? ''}">
 <div class="dk-cards" id="dk-cards" data-controller="thumbs">${teams.map(d => teamCard(d, counts.get(d.id) ?? {}, going.get(d.id), teams.length < 2))}</div>
 <p class="set-note">Each team with its Scribble Board small. The bin deletes a team with everything on it; you see what goes before.</p>
-<div id="dk-dialogs">${teams.map(d => confirmDialog(d, counts.get(d.id) ?? {}, going.get(d.id)))}</div></div>`, { lead: vm.settings.teams?.en ?? '' })
+<div id="dk-dialogs">${teams.map(d => confirmDialog(d, counts.get(d.id) ?? {}, going.get(d.id), vm.settings.team_delete ?? {}))}</div></div>`, { lead: vm.settings.teams?.en ?? '' })
   }
   t.get(/^\/settings\/teams$/, ({ req, res, url }) => t.page(req, res, { title: 'Teams · Settings · Trommi', view: 'settings-teams', css: 'teams', main: main(url) }))
   t.post(/^\/settings\/teams\/([\w-]+)\/delete$/, ({ res, match }) => { t.act({ do: 'remove_team', team_id: match[1] }); t.done(res) })

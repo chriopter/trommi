@@ -176,11 +176,12 @@ impl App {
         m.human
             .iter()
             .filter(|(k, r)| k.starts_with("desk/") && r.value.is_object())
-            .map(|(k, _)| {
+            .map(|(k, r)| {
                 let id = k.trim_start_matches("desk/").to_string();
                 let board = self.board_known(&crate::scribble::team_board(&id));
                 let c = m.team_contents(&id, board.as_ref());
-                TeamCountsView {
+                let name = r.value.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+                let mut view = TeamCountsView {
                     team_id: id,
                     sessions: c.sessions,
                     helpers: c.helpers,
@@ -195,7 +196,10 @@ impl App {
                     artifacts: c.artifacts,
                     goals: c.goals,
                     knowledge: c.knowledge,
-                }
+                    ..Default::default()
+                };
+                crate::views::settings::team_delete_ask(&mut view, &name);
+                view
             })
             .collect()
     }

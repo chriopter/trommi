@@ -202,6 +202,7 @@ struct NotePage: View {
  */
 struct PlacePill: View {
   @EnvironmentObject var shell: AppShell
+  @AppStorage("trommi-theme") private var theme = "system"
   /** Round: only the team's drawing in a round glass button (the Chat list); else the drawing with the team's name. */
   var round = false
   /** The iPhone Desk's centered title: the place's name in the system's font with a chevron, nothing drawn. */
@@ -223,14 +224,20 @@ struct PlacePill: View {
       Section {
         if let push = shell.view.settings.push {
           Picker(selection: Binding(get: { push.level }, set: { shell.act(["do": "push", "level": $0]) })) {
-            Label("Everything", systemImage: "bell").tag("all")
-            Label("Only Knocking", systemImage: "bell.badge").tag("knocking")
-            Label("Off", systemImage: "bell.slash").tag("off")
+            ForEach(shell.view.settings.pushChoices, id: \.level) { c in
+              Label(c.title.en, systemImage: c.level == "off" ? "bell.slash" : c.level == "knocking" ? "bell.badge" : "bell").tag(c.level)
+            }
           } label: { Label("Notifications", systemImage: push.level == "off" ? "bell.slash" : push.level == "knocking" ? "bell.badge" : "bell") }
           .pickerStyle(.menu)
         }
+        Picker(selection: $theme) {
+          Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark")
+        } label: { Label("Theme", systemImage: theme == "dark" ? "moon" : "sun.max") }
+        .pickerStyle(.menu)
         Button { go(.settings(page: "")); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "gearshape") }
         if !shell.isDemo { Button { shell.enterDemo() } label: { Label("Demo", systemImage: "play.rectangle") } }
+        Link(destination: URL(string: "https://app.trommi.com/whats-new")!) { Label("What's new", systemImage: "sparkles") }
+        Button { go(.settings(page: "logout")); shell.account(["step": "read_account"]) } label: { Label(shell.view.settings.logout.title.en, systemImage: "rectangle.portrait.and.arrow.right") }
       }
     } label: {
       if title {
@@ -315,6 +322,8 @@ struct Sidebar: View {
         if shell.isDemo { Button { shell.leaveDemo() } label: { Label("Leave Demo", systemImage: "rectangle.portrait.and.arrow.right") } }
         else { Button { shell.enterDemo() } label: { Label("Demo", systemImage: "play.rectangle") } }
         Picker("Theme", selection: $theme) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
+        Link(destination: URL(string: "https://app.trommi.com/whats-new")!) { Label("What's new", systemImage: "sparkles") }
+        Button { shell.focus(.settings(page: "logout")); shell.account(["step": "read_account"]) } label: { Label(shell.view.settings.logout.title.en, systemImage: "rectangle.portrait.and.arrow.right") }
       } label: {
         HStack(spacing: 12) {
           PenMark("ui:BELL", color: Ink.fg).frame(width: 30, height: 30)

@@ -2088,6 +2088,18 @@ pub struct SettingsView {
     /// Push on this device, where the platform has push.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push: Option<PushView>,
+    /// The choices of Push on this device, in order (whether there is Push at all: `push`).
+    #[serde(default)]
+    pub push_choices: Vec<PushChoice>,
+    /// Log out of this device.
+    #[serde(default)]
+    pub logout: LogoutView,
+    /// The words every team's delete confirm shares.
+    #[serde(default)]
+    pub team_delete: TeamDeleteWords,
+    /// The page Security.
+    #[serde(default)]
+    pub security: SecurityView,
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login: Option<LoginView>,
@@ -2106,6 +2118,54 @@ pub struct DataRow {
     pub id: String,
     pub label: Text,
     pub value: Text,
+}
+
+/// Settings → Security: every key that opens the account's data, and the self test, as groups of rows; every word the
+/// core's (the web's `securityMain`, the iPhone's page Security).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecurityView {
+    /// The line under the page's title.
+    pub lead: Text,
+    /// The groups in order: "key", "devices", "agents", "check".
+    pub sections: Vec<SecuritySection>,
+}
+
+/// One group of the page Security: its heading, its rows, the lines under it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecuritySection {
+    pub id: String,
+    pub label: Text,
+    pub rows: Vec<SecurityRow>,
+    /// The lines under the group, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Text>,
+    /// A line said strongly after the notes ("Nobody else, not the hub either: …").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strong: Option<Text>,
+}
+
+/// One row of the page Security.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecurityRow {
+    pub id: String,
+    pub title: Text,
+    /// "this device" beside the title of this device's row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mark: Option<Text>,
+    /// The key fingerprint (or the account key's head) shown monospaced at the head of the second line; "" none.
+    #[serde(default)]
+    pub fingerprint: String,
+    /// The rest of the second line ("key epoch 88 · https://hub.trommi.com", "added 1 Oct 2026"); none without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<Text>,
+    /// What it opens, on the right ("everything", "own session", "runs on this device").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<Text>,
+    /// Its drawing: "key", "page", "phone", "laptop", "terminal", "tick".
+    pub icon: String,
+    /// Where a tap goes: "" nowhere, "kit" (Account → Emergency Kit), "device" (the device `id`), "agents", "proof".
+    #[serde(default)]
+    pub open: String,
 }
 
 /// What a team holds: what its delete takes away.
@@ -2132,6 +2192,72 @@ pub struct TeamCountsView {
     /// Entries of its knowledge.
     #[serde(default)]
     pub knowledge: u64,
+    /// The confirm's title: "Delete Fernly?".
+    #[serde(default)]
+    pub title: Text,
+    /// The confirm's lines, one per kind it holds that is not none, in order (a count not yet known is left out).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lines: Vec<TeamDeleteLine>,
+}
+
+/// One line of a team's delete confirm: "3 sessions archived".
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamDeleteLine {
+    /// "sessions", "helpers", "archived", "agents", "open_cards", "done_cards", "board", "files", "goals", "knowledge".
+    pub key: String,
+    pub n: u64,
+    /// "session" or "sessions".
+    pub word: Text,
+    /// What happens to them ("archived", "shredded"); none where nothing more is said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rest: Option<Text>,
+}
+
+/// The words of a team's delete confirm that every team shares.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamDeleteWords {
+    /// "This goes for good, on every device:".
+    pub lead: Text,
+    /// "Nothing stands on this team: only its name goes."
+    pub empty: Text,
+    /// "The server drops the encrypted data within 30 days. …"
+    pub small: Text,
+    /// "Hold to Delete".
+    pub hold: Text,
+    pub cancel: Text,
+    /// "Deleting…".
+    pub deleting: Text,
+}
+
+/// Log out of this device: what the page (web) and the confirm (iPhone) ask and say.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LogoutView {
+    /// "Log out" (the menu row, the page's title).
+    pub title: Text,
+    /// "Log out of this device? You can log in again with your passkey or your password."
+    pub ask: Text,
+    /// "This is your only device. …", or the demo's line; none otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<Text>,
+    /// "Everything Trommi keeps on this device is deleted here; …"
+    pub meta: Text,
+    /// "Log Out" (the button).
+    pub go: Text,
+    pub cancel: Text,
+}
+
+/// One choice of Push on this device.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PushChoice {
+    /// "all", "knocking", "off".
+    pub level: String,
+    /// "Yes", "Only knocking", "No".
+    pub title: Text,
+    /// "every card"; none for "No".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<Text>,
+    /// Its drawing: "bell", "knock", "snooze".
+    pub icon: String,
 }
 
 /// An Artifact in the gallery: what an agent published.

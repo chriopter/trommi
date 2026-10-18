@@ -14,7 +14,7 @@
 
 use super::board::Board;
 use super::words::say;
-use super::{AgentSessionView, AgentView, DeviceRow, MeterView, SettingsView, Text, UsageView};
+use super::{AgentSessionView, AgentView, DeviceRow, LogoutView, MeterView, PushChoice, SecurityRow, TeamCountsView, TeamDeleteLine, TeamDeleteWords, SecuritySection, SecurityView, SettingsView, Text, UsageView};
 use crate::model::types::Member;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -281,6 +281,13 @@ pub fn usage_of(acc: &Value, now: u64) -> Option<UsageView> {
 }
 
 pub fn settings(b: &Board) -> SettingsView {
+    let mut view = settings_rows(b);
+    view.security = security(&view, b.lens.utc_offset_min);
+    view.logout = logout(&view, false);
+    view
+}
+
+fn settings_rows(b: &Board) -> SettingsView {
     let computers: BTreeMap<&str, &str> = b.model.sessions.keys()
         .filter(|s| crate::machines::is_computer(b.model, s))
         .filter_map(|s| crate::machines::granted_device(b.model, s).map(|d| (d, s.as_str()))).collect();
@@ -343,6 +350,10 @@ pub fn settings(b: &Board) -> SettingsView {
         team_counts: Vec::new(),
         deleting: Vec::new(),
         push: None,
+        push_choices: push_choices(),
+        team_delete: team_delete_words(),
+        logout: LogoutView::default(),
+        security: SecurityView::default(),
         agent_list,
         agents_lead,
         agents,
@@ -360,6 +371,180 @@ pub fn settings(b: &Board) -> SettingsView {
         key_epoch: b.model.key_epoch,
         devices,
         removed,
+    }
+}
+
+/// The choices of Push on this device (the web's `PUSH_LEVELS`).
+pub fn push_choices() -> Vec<PushChoice> {
+    let c = |level: &str, en: &str, detail: Option<&str>, icon: &str| PushChoice {
+        level: level.into(),
+        title: say(&format!("push.{level}"), en, &[]),
+        detail: detail.map(|d| say(&format!("push.{level}.detail"), d, &[])),
+        icon: icon.into(),
+    };
+    vec![
+        c("all", "Yes", Some("every card"), "bell"),
+        c("knocking", "Only knocking", Some("high, critical, a lost session"), "knock"),
+        c("off", "No", None, "snooze"),
+    ]
+}
+
+/// Log out of this device: how the person gets in again (the account's ways in, once read), a warning when this is
+/// their only device, the demo's own line.
+pub fn logout(s: &SettingsView, demo: bool) -> LogoutView {
+    let pk = s.login.as_ref().is_some_and(|l| !l.passkeys.is_empty());
+    let pw = s.login.as_ref().is_none_or(|l| l.has_password);
+    let (again_key, again) = match (pk, pw) {
+        (true, true) => ("logout.ask.both", "your passkey or your password"),
+        (true, false) => ("logout.ask.passkey", "your passkey"),
+        _ => ("logout.ask.password", "email and password"),
+    };
+    let (ways_key, ways) = match (pk, pw) {
+        (true, true) => ("logout.only.both", "your passkey, or your email and password"),
+        (true, false) => ("logout.only.passkey", "your passkey"),
+        _ => ("logout.only.password", "your email and password"),
+    };
+    let others = s.devices.iter().any(|d| d.active && !d.this_device);
+    let note = if demo {
+        Some(say("logout.demo", "The demo keeps nothing; this only ends it.", &[]))
+    } else if others {
+        None
+    } else {
+        let verb = if pw { "open" } else { "opens" };
+        Some(say(ways_key, format!("This is your only device. After this, {ways} (or your Emergency Kit) {verb} your account."), &[]))
+    };
+    LogoutView {
+        title: say("logout.title", "Log out", &[]),
+        ask: say(again_key, format!("Log out of this device? You can log in again with {again}."), &[]),
+        note,
+        meta: say("logout.meta", "Everything Trommi keeps on this device is deleted here; your account and your other devices stay as they are.", &[]),
+        go: say("logout.go", "Log Out", &[]),
+        cancel: say("logout.cancel", "Cancel", &[]),
+    }
+}
+
+/// The words of a team's delete confirm that every team shares.
+pub fn team_delete_words() -> TeamDeleteWords {
+    TeamDeleteWords {
+        lead: say("team_delete.lead", "This goes for good, on every device:", &[]),
+        empty: say("team_delete.empty", "Nothing stands on this team: only its name goes.", &[]),
+        small: say("team_delete.small", "The server drops the encrypted data within 30 days. Your agents' computers keep nothing of it they can still open. This cannot be undone.", &[]),
+        hold: say("team_delete.hold", "Hold to Delete", &[]),
+        cancel: say("team_delete.cancel", "Cancel", &[]),
+        deleting: say("team_delete.deleting", "Deleting…", &[]),
+    }
+}
+
+/// One kind a team holds: its key, how many (none while not counted), its word for one and for many, what happens to them.
+type Row<'a> = (&'a str, Option<u64>, &'a str, &'a str, Option<&'a str>);
+
+/// A team's confirm: its title and a line per kind it holds (none of a kind, or not yet counted, is left out).
+pub fn team_delete_ask(c: &mut TeamCountsView, name: &str) {
+    let name = if name.trim().is_empty() { "Personal" } else { name.trim() };
+    c.title = say("team_delete.title", format!("Delete {name}?"), &[("name", name)]);
+    // (key, how many, one, many, what happens to them)
+    let rows: [Row; 10] = [
+        ("sessions", Some(c.sessions), "session", "sessions", Some("archived")),
+        ("helpers", Some(c.helpers), "helper", "helpers", Some("archived")),
+        ("archived", Some(c.archived), "archived session", "archived sessions", None),
+        ("agents", Some(c.agents), "agent removed from your account", "agents removed from your account", Some("their keys stop working")),
+        ("open_cards", Some(c.open_cards), "open card", "open cards", Some("shredded")),
+        ("done_cards", Some(c.done_cards), "done card", "done cards", None),
+        ("board", c.board, "thing on the Scribble Board", "things on the Scribble Board", None),
+        ("files", Some(c.files), "file", "files", Some("pictures, Artifacts and share links, deleted at once")),
+        ("goals", Some(c.goals), "goal", "goals", None),
+        ("knowledge", Some(c.knowledge), "entry of its knowledge", "entries of its knowledge", None),
+    ];
+    c.lines = rows.iter().filter_map(|(key, n, one, many, rest)| {
+        let n = n.filter(|n| *n > 0)?;
+        Some(TeamDeleteLine {
+            key: (*key).into(),
+            n,
+            word: say(&format!("team_delete.{key}"), if n == 1 { *one } else { *many }, &[("n", &n.to_string())]),
+            rest: rest.map(|r| say(&format!("team_delete.{key}.rest"), r, &[])),
+        })
+    }).collect();
+}
+
+/// Settings → Security from the rest of Settings (its devices, its Agents row, the room and hub the App adds): the
+/// account key and the Emergency Kit, every device that is in with its fingerprint, the agents, the self test.
+pub fn security(s: &SettingsView, utc_offset_min: i32) -> SecurityView {
+    let everything = || Some(say("security.everything", "everything", &[]));
+    let epoch = s.key_epoch.to_string();
+    let key_detail = match s.hub.as_deref().filter(|h| !h.is_empty()) {
+        Some(hub) => say("security.key.detail_hub", format!("key epoch {epoch} · {hub}"), &[("epoch", &epoch), ("hub", hub)]),
+        None => say("security.key.detail", format!("key epoch {epoch}"), &[("epoch", &epoch)]),
+    };
+    let key = SecuritySection {
+        id: "key".into(),
+        label: say("security.key.label", "Account key", &[]),
+        rows: vec![
+            SecurityRow {
+                id: "key".into(),
+                title: say("security.key", "Account key", &[]),
+                fingerprint: s.room.as_deref().filter(|r| !r.is_empty()).map_or_else(|| "unknown".into(), |r| format!("{}…", r.chars().take(16).collect::<String>())),
+                detail: Some(key_detail),
+                says: everything(),
+                icon: "key".into(),
+                ..Default::default()
+            },
+            SecurityRow { id: "kit".into(), title: say("security.kit", "Emergency Kit", &[]), icon: "page".into(), open: "kit".into(), ..Default::default() },
+        ],
+        notes: vec![say("security.key.note", "Opens everything; it is also your recovery key. The hub keeps it only sealed: a way in of your account opens it on a new device.", &[])],
+        strong: None,
+    };
+    let devices = SecuritySection {
+        id: "devices".into(),
+        label: say("security.devices.label", "Authorized devices", &[]),
+        rows: s.devices.iter().filter(|d| d.active).map(|d| SecurityRow {
+            id: d.id.clone(),
+            title: Text { key: String::new(), args: Default::default(), en: d.name.clone() },
+            mark: d.this_device.then(|| say("security.this_device", "this device", &[])),
+            fingerprint: d.fingerprint.clone(),
+            detail: Some(match d.added_ms {
+                Some(t) => { let when = super::words::date(t, utc_offset_min); say("security.added", format!("added {when}"), &[("when", &when)]) }
+                None => say("security.added_unknown", "added: unknown", &[]),
+            }),
+            says: everything(),
+            icon: if d.icon.is_empty() { "laptop".into() } else { d.icon.clone() },
+            open: "device".into(),
+        }).collect(),
+        notes: vec![say("security.devices.note", "Each of your devices reads everything, also what came before it was added.", &[])],
+        strong: None,
+    };
+    let count = s.agents.as_ref().map_or_else(|| "none".to_string(), |t| t.en.clone());
+    let agents = SecuritySection {
+        id: "agents".into(),
+        label: say("security.agents.label", "Agents", &[]),
+        rows: vec![SecurityRow {
+            id: "agents".into(),
+            title: say("security.agents", "Agents", &[]),
+            detail: Some(say("security.agents.detail", format!("{count}: each with its own key"), &[("agents", &count)])),
+            says: Some(say("security.own_session", "own session", &[])),
+            icon: "terminal".into(),
+            open: "agents".into(),
+            ..Default::default()
+        }],
+        notes: vec![say("security.agents.note", "An agent reads only its own session and the helper sessions it starts; a helper reads only its own.", &[])],
+        strong: Some(say("security.hub", "Nobody else, not the hub either: it sees which device is in which group, when, and how much.", &[])),
+    };
+    let check = SecuritySection {
+        id: "check".into(),
+        label: say("security.check.label", "Check", &[]),
+        rows: vec![SecurityRow {
+            id: "proof".into(),
+            title: say("security.proof", "Self Test", &[]),
+            says: Some(say("security.proof.where", "runs on this device", &[])),
+            icon: "tick".into(),
+            open: "proof".into(),
+            ..Default::default()
+        }],
+        notes: Vec::new(),
+        strong: None,
+    };
+    SecurityView {
+        lead: say("security.lead", "Every key that opens your data, and the self test.", &[]),
+        sections: vec![key, devices, agents, check],
     }
 }
 
@@ -479,5 +664,71 @@ mod tests {
         m.members.get_mut("phone").unwrap().is_online = true;
         let view = settings(&Board::new(&m, &lens, 100_000));
         assert!(view.devices[0].seen.is_none(), "an online status does not show an old contact time");
+    }
+
+    #[test]
+    fn security_without_room_hub_devices_or_agents_still_says_every_group() {
+        let s = SettingsView::default();
+        let v = security(&s, 0);
+        let ids: Vec<&str> = v.sections.iter().map(|x| x.id.as_str()).collect();
+        assert_eq!(ids, ["key", "devices", "agents", "check"]);
+        assert_eq!(v.sections[0].rows[0].fingerprint, "unknown");
+        assert_eq!(v.sections[0].rows[0].detail.as_ref().unwrap().en, "key epoch 0");
+        assert!(v.sections[1].rows.is_empty(), "no device, no row");
+        assert_eq!(v.sections[2].rows[0].detail.as_ref().unwrap().en, "none: each with its own key");
+        assert_eq!(v.sections[2].strong.as_ref().unwrap().en, "Nobody else, not the hub either: it sees which device is in which group, when, and how much.");
+        assert_eq!(v.sections[3].rows[0].open, "proof");
+    }
+
+    #[test]
+    fn security_lists_the_devices_that_are_in_with_fingerprint_and_day() {
+        let row = |id: &str, me: bool, active: bool, added: Option<u64>| DeviceRow { id: id.into(), name: id.into(), this_device: me, active, fingerprint: "ab12 cd34".into(), icon: "phone".into(), added_ms: added, ..Default::default() };
+        let s = SettingsView {
+            room: Some("e6e33dc6bdcdcdc23d9ce4fcf5028a78".into()),
+            hub: Some("https://hub.trommi.com".into()),
+            key_epoch: 88,
+            agents: Some(say("settings.agents", "2 agents · 7 sessions", &[])),
+            devices: vec![row("Phone", true, true, Some(1_790_000_000_000)), row("Old", false, false, None), row("Mac", false, true, None)],
+            ..Default::default()
+        };
+        let v = security(&s, 0);
+        let key = &v.sections[0].rows[0];
+        assert_eq!(key.fingerprint, "e6e33dc6bdcdcdc2…");
+        assert_eq!(key.detail.as_ref().unwrap().en, "key epoch 88 · https://hub.trommi.com");
+        let devices = &v.sections[1].rows;
+        assert_eq!(devices.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["Phone", "Mac"], "a removed device is not listed");
+        assert_eq!(devices[0].mark.as_ref().unwrap().en, "this device");
+        assert!(devices[1].mark.is_none());
+        assert_eq!(devices[0].detail.as_ref().unwrap().en, "added 21 Sep 2026");
+        assert_eq!(devices[1].detail.as_ref().unwrap().en, "added: unknown");
+        assert_eq!(v.sections[2].rows[0].detail.as_ref().unwrap().en, "2 agents · 7 sessions: each with its own key");
+    }
+
+    #[test]
+    fn logout_says_how_to_get_in_again_and_warns_on_the_only_device() {
+        let me = DeviceRow { id: "a".into(), this_device: true, active: true, ..Default::default() };
+        let mut s = SettingsView { devices: vec![me.clone()], ..Default::default() };
+        let v = logout(&s, false);
+        assert_eq!(v.ask.en, "Log out of this device? You can log in again with email and password.");
+        assert_eq!(v.note.unwrap().en, "This is your only device. After this, your email and password (or your Emergency Kit) open your account.");
+        s.devices.push(DeviceRow { id: "b".into(), active: true, ..Default::default() });
+        assert!(logout(&s, false).note.is_none(), "another device: no warning");
+        s.login = Some(crate::views::LoginView { has_password: false, passkeys: vec![Default::default()], ..Default::default() });
+        assert_eq!(logout(&s, false).ask.en, "Log out of this device? You can log in again with your passkey.");
+        assert_eq!(logout(&SettingsView::default(), true).note.unwrap().en, "The demo keeps nothing; this only ends it.");
+    }
+
+    #[test]
+    fn a_team_delete_names_only_what_the_team_holds() {
+        let mut c = TeamCountsView { sessions: 1, open_cards: 3, board: None, ..Default::default() };
+        team_delete_ask(&mut c, "Fernly");
+        assert_eq!(c.title.en, "Delete Fernly?");
+        let lines: Vec<(String, u64, String)> = c.lines.iter().map(|l| (l.key.clone(), l.n, l.word.en.clone())).collect();
+        assert_eq!(lines, [("sessions".into(), 1, "session".into()), ("open_cards".into(), 3, "open cards".into())]);
+        let mut empty = TeamCountsView::default();
+        team_delete_ask(&mut empty, "");
+        assert_eq!(empty.title.en, "Delete Personal?");
+        assert!(empty.lines.is_empty());
+        assert_eq!(push_choices().iter().map(|c| c.level.as_str()).collect::<Vec<_>>(), ["all", "knocking", "off"]);
     }
 }

@@ -1512,6 +1512,14 @@ export interface SettingsView {
   deleting?: TeamDeleteView[]
   /** Push on this device, where the platform has push. */
   push?: PushView
+  /** The choices of Push on this device, in order (whether there is Push at all: `push`). */
+  push_choices: PushChoice[]
+  /** Log out of this device. */
+  logout: LogoutView
+  /** The words every team's delete confirm shares. */
+  team_delete: TeamDeleteWords
+  /** The page Security. */
+  security: SecurityView
   /** The account's ways in, once read (`AccountAction::ReadAccount`). */
   login?: LoginView
 }
@@ -1527,6 +1535,44 @@ export interface DataRow {
   id: string
   label: Text
   value: Text
+}
+
+/** Settings → Security: every key that opens the account's data, and the self test, as groups of rows; every word the
+ *  core's (the web's `securityMain`, the iPhone's page Security). */
+export interface SecurityView {
+  /** The line under the page's title. */
+  lead: Text
+  /** The groups in order: "key", "devices", "agents", "check". */
+  sections: SecuritySection[]
+}
+
+/** One group of the page Security: its heading, its rows, the lines under it. */
+export interface SecuritySection {
+  id: string
+  label: Text
+  rows: SecurityRow[]
+  /** The lines under the group, in order. */
+  notes?: Text[]
+  /** A line said strongly after the notes ("Nobody else, not the hub either: …"). */
+  strong?: Text
+}
+
+/** One row of the page Security. */
+export interface SecurityRow {
+  id: string
+  title: Text
+  /** "this device" beside the title of this device's row. */
+  mark?: Text
+  /** The key fingerprint (or the account key's head) shown monospaced at the head of the second line; "" none. */
+  fingerprint: string
+  /** The rest of the second line ("key epoch 88 · https://hub.trommi.com", "added 1 Oct 2026"); none without one. */
+  detail?: Text
+  /** What it opens, on the right ("everything", "own session", "runs on this device"). */
+  says?: Text
+  /** Its drawing: "key", "page", "phone", "laptop", "terminal", "tick". */
+  icon: string
+  /** Where a tap goes: "" nowhere, "kit" (Account → Emergency Kit), "device" (the device `id`), "agents", "proof". */
+  open: string
 }
 
 /** What a team holds: what its delete takes away. */
@@ -1548,6 +1594,63 @@ export interface TeamCountsView {
   goals: number
   /** Entries of its knowledge. */
   knowledge: number
+  /** The confirm's title: "Delete Fernly?". */
+  title: Text
+  /** The confirm's lines, one per kind it holds that is not none, in order (a count not yet known is left out). */
+  lines?: TeamDeleteLine[]
+}
+
+/** One line of a team's delete confirm: "3 sessions archived". */
+export interface TeamDeleteLine {
+  /** "sessions", "helpers", "archived", "agents", "open_cards", "done_cards", "board", "files", "goals", "knowledge". */
+  key: string
+  n: number
+  /** "session" or "sessions". */
+  word: Text
+  /** What happens to them ("archived", "shredded"); none where nothing more is said. */
+  rest?: Text
+}
+
+/** The words of a team's delete confirm that every team shares. */
+export interface TeamDeleteWords {
+  /** "This goes for good, on every device:". */
+  lead: Text
+  /** "Nothing stands on this team: only its name goes." */
+  empty: Text
+  /** "The server drops the encrypted data within 30 days. …" */
+  small: Text
+  /** "Hold to Delete". */
+  hold: Text
+  cancel: Text
+  /** "Deleting…". */
+  deleting: Text
+}
+
+/** Log out of this device: what the page (web) and the confirm (iPhone) ask and say. */
+export interface LogoutView {
+  /** "Log out" (the menu row, the page's title). */
+  title: Text
+  /** "Log out of this device? You can log in again with your passkey or your password." */
+  ask: Text
+  /** "This is your only device. …", or the demo's line; none otherwise. */
+  note?: Text
+  /** "Everything Trommi keeps on this device is deleted here; …" */
+  meta: Text
+  /** "Log Out" (the button). */
+  go: Text
+  cancel: Text
+}
+
+/** One choice of Push on this device. */
+export interface PushChoice {
+  /** "all", "knocking", "off". */
+  level: string
+  /** "Yes", "Only knocking", "No". */
+  title: Text
+  /** "every card"; none for "No". */
+  detail?: Text
+  /** Its drawing: "bell", "knock", "snooze". */
+  icon: string
 }
 
 /** An Artifact in the gallery: what an agent published. */

@@ -54,6 +54,12 @@ pub struct Local {
     pub minute: u32,
 }
 
+/// A day as "1 Oct 2026" in the person's zone.
+pub fn date(ms: u64, utc_offset_min: i32) -> String {
+    let a = local(ms, utc_offset_min);
+    format!("{} {} {}", a.day, MONTHS[(a.month - 1) as usize], a.year)
+}
+
 /// `ms` (since 1970, UTC) as the wall clock `utc_offset_min` east of UTC shows it.
 pub fn local(ms: u64, utc_offset_min: i32) -> Local {
     let t = ms as i64 + utc_offset_min as i64 * 60_000;
