@@ -1077,6 +1077,9 @@ export interface TalkRow {
   html?: string
   /** The cards it carries, a chip each. */
   chips?: CardRefView[]
+  /** The calm chat (`Focus.calm`): the card these words answer or are about, quoted at the top of the bubble as a
+   *  messenger's reply (his answer with what he did to it, the agent's words on it); none without a card it knows. */
+  quote?: QuoteView
   /** `kind` "events" (a phone's chat): the card events of a run, a chip each, in order. */
   events?: EventChipView[]
   /** A selection of the Scribble Board (its one file is the picture). */
@@ -1097,6 +1100,13 @@ export interface CardRefView {
   /** Its number ("Nr. 12"); 0 when this device does not hold it. */
   number: number
   title: string
+}
+
+/** The card a bubble answers or is about (`TalkRow.quote`): a tap opens it. */
+export interface QuoteView {
+  /** What he did with it ("You handed it back", "You asked for an explanation"), else "About". */
+  label: Text
+  card: CardRefView
 }
 
 /** One card event of a run on a phone (`TalkRow.events`): a small chip that opens its card. */

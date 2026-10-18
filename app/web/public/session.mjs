@@ -86,6 +86,8 @@ const VIA_TERMINAL = html`<span class="msg-via" title="From the terminal"><span 
 /** The cards a row carries (copied cards): a chip each that opens the card. */
 const cardChips = (r, s, base) => (r.chips?.length ? html`<div class="cardclip-row">${r.chips.map(c => html`<a class="cardclip-chip is-link" data-nav href="${cardPath(c, s, base)}" title="Nr. ${c.number} · ${c.title}"><b>Nr. ${c.number}</b><span class="cardclip-title">${c.title}</span></a>`)}</div>` : '')
 
+/** The card a bubble answers or is about (TalkRow.quote), quoted at its top as a messenger's reply; a click opens it. */
+const quoteOf = (r, s, base) => (r.quote ? html`<a class="msg-quote" data-nav href="${cardPath(r.quote.card, s, base)}" aria-label="${r.quote.label.en}: ${r.quote.card.title}">${sk('page')}<span class="msg-quote-what">${r.quote.label.en}</span><span class="msg-quote-title">${r.quote.card.title}</span></a>` : '')
 // ---- one row of the talk (TalkRow) ----
 function talkRow(r, s, vm, t) {
   const base = t.BASE, id = `msg-${r.id}`
@@ -100,17 +102,17 @@ function talkRow(r, s, vm, t) {
   if (r.kind === 'note') return html`<article class="msg msg-user msg-note-at" id="${id}"><figure class="msg-note"><i class="msg-note-tape" aria-hidden="true"></i><figcaption class="msg-note-cap">${sk('page')}<span>Note</span>${r.written_ms ? html`<span class="msg-note-when">written ${clock(r.written_ms)}</span>` : ''}</figcaption><p>${r.text}</p>${attachments(r.files, s, vm, t, r.id)}</figure>${timeNode(r.time_ms, 'msg-time')}</article>`
   if (r.kind === 'user') {
     // A hand-back, a take-back, What??: a quiet line for the deed; what he wrote with it stays his bubble.
-    const deed = r.deed ? eventLine(r.text || r.files?.length || r.chips?.length ? `${id}-deed` : id, r.deed, r.card, r.time_ms, s, base, { cont: r.cont }) : ''
+    const deed = r.deed && !r.quote ? eventLine(r.text || r.files?.length || r.chips?.length ? `${id}-deed` : id, r.deed, r.card, r.time_ms, s, base, { cont: r.cont }) : ''
     if (deed && !(r.text || r.files?.length || r.chips?.length)) return deed
     const scribble = r.scribble && r.files?.[0] ? t.fileUrl(r.files[0]) : null
-    return html`${deed}<article class="msg msg-user${r.cont ? ' cont' : ''}${r.pending ? ' is-pending' : ''}" id="${id}">${r.scribble ? html`<a class="scribble-card"${scribble ? html` href="${scribble}"` : ''} target="_blank" rel="noopener" aria-label="Scribble sent: open the picture"><img${scribble ? html` src="${scribble}"` : ''} alt="" loading="lazy" decoding="async" width="280" height="210"><span>Scribble</span></a>` : attachments(r.files, s, vm, t, r.id)}${r.deed ? '' : about}${cardChips(r, s, base)}${r.text ? html`<div class="bubble"><p>${r.text}</p></div>` : ''}${r.terminal ? html`<span class="msg-foot">${VIA_TERMINAL}${timeNode(r.time_ms, 'msg-time')}</span>` : timeNode(r.time_ms, 'msg-time')}</article>`
+    return html`${deed}<article class="msg msg-user${r.cont ? ' cont' : ''}${r.pending ? ' is-pending' : ''}" id="${id}">${r.scribble ? html`<a class="scribble-card"${scribble ? html` href="${scribble}"` : ''} target="_blank" rel="noopener" aria-label="Scribble sent: open the picture"><img${scribble ? html` src="${scribble}"` : ''} alt="" loading="lazy" decoding="async" width="280" height="210"><span>Scribble</span></a>` : attachments(r.files, s, vm, t, r.id)}${r.deed || r.quote ? '' : about}${cardChips(r, s, base)}${r.text ? html`<div class="bubble${r.quote ? ' has-quote' : ''}">${quoteOf(r, s, base)}<p>${r.text}</p></div>` : ''}${r.terminal ? html`<span class="msg-foot">${VIA_TERMINAL}${timeNode(r.time_ms, 'msg-time')}</span>` : timeNode(r.time_ms, 'msg-time')}</article>`
   }
   // The agent's words (light markdown; a layout as html goes into the sandboxed frame), or what it published.
   const body = r.kind === 'artifact'
     ? artifactCard({ id: r.published, note: r.text, from: r.id }, base)
     : raw(String(words(r.text ?? '', { extra: r.html ?? '' })).replace(/<\/div>$/, () => `${attachments(r.files, s, vm, t, r.id)}</div>`))
   // A calm bubble on the left: no face and no name (the title has them), a helper's name above its words; the time on hover.
-  return html`<article class="msg msg-agent${r.cont ? ' cont' : ''}${r.kind === 'artifact' ? ' is-artifact' : ''}" id="${id}"><div class="msg-col">${!r.cont && r.helper ? html`<header class="msg-head"><span class="msg-helper">${r.helper}</span></header>` : ''}${about}<div class="bubble bubble-agent">${body}${r.details ? html`<details class="msg-details"><summary>Details</summary>${words(r.details)}</details>` : ''}</div>${cardChips(r, s, base)}${timeNode(r.time_ms, 'msg-time')}</div></article>`
+  return html`<article class="msg msg-agent${r.cont ? ' cont' : ''}${r.kind === 'artifact' ? ' is-artifact' : ''}" id="${id}"><div class="msg-col">${!r.cont && r.helper ? html`<header class="msg-head"><span class="msg-helper">${r.helper}</span></header>` : ''}${r.quote ? '' : about}<div class="bubble bubble-agent">${quoteOf(r, s, base)}${body}${r.details ? html`<details class="msg-details"><summary>Details</summary>${words(r.details)}</details>` : ''}</div>${cardChips(r, s, base)}${timeNode(r.time_ms, 'msg-time')}</div></article>`
 }
 // (every child of the log has an id: the page drawn again is morphed row by row)
 const talk = (s, vm, t) => s.talk.map(r => html`${r.day ? html`<div class="day" id="day-${r.id}"><span>${r.day.en}</span></div>` : ''}${talkRow(r, s, vm, t)}`)
