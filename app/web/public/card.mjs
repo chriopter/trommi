@@ -1093,6 +1093,36 @@ if (typeof window !== 'undefined') window.addEventListener('click', e => {
   if (!on) stage.querySelector('.tc-scroll')?.scrollTo(0, 0)
 }, true)
 
+// ---- a card that settles after an answer: its height glides to the new one ----
+// An answer turns the card's options into its answered state, which is shorter (or taller); the card's height and
+// everything under it (the comments, the field) would jump in one frame. From the press on, every change of the page
+// is looked at as it happens (a MutationObserver: before the next frame is laid out and painted); the first change of
+// the card's height is drawn as a glide from the height before. For at most two seconds; nothing where motion is
+// reduced.
+const SETTLE_MS = 2000
+function settleAfter(form) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  const card = form?.closest?.('.tc-card') ?? document.querySelector('#cardpage .tc-card')
+  const id = card?.dataset.id
+  if (!id) return
+  const from = card.getBoundingClientRect().height
+  const watch = new MutationObserver(() => {
+    const now = document.querySelector(`.tc-card[data-id="${CSS.escape(id)}"]`)
+    if (!now) return
+    const to = now.getBoundingClientRect().height
+    if (Math.abs(to - from) < 8) return
+    watch.disconnect(); clearTimeout(stop)
+    now.animate([{ height: `${from}px`, overflow: 'hidden' }, { height: `${to}px`, overflow: 'hidden' }], { duration: 300, easing: 'cubic-bezier(.3, .6, .3, 1)' })
+  })
+  watch.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true })
+  const stop = setTimeout(() => watch.disconnect(), SETTLE_MS)
+}
+if (typeof document !== 'undefined') document.addEventListener('turbo:submit-start', e => {
+  const form = e.target, by = e.detail?.formSubmission?.submitter
+  if (!(form instanceof HTMLFormElement) || by?.classList.contains('tc-send') || !(form.closest('.tc-card') || form.closest('#cardpage'))) return
+  settleAfter(form)
+})
+
 controller('card', class extends Controller {
   static targets = ['form', 'field', 'files', 'chips', 'saved', 'figure', 'marks', 'where', 'said', 'page', 'gallery']
   static values = { draft: String, kept: Object, pictures: Array }
