@@ -4968,8 +4968,11 @@ public enum CoreView {
     public var finished: Bool
     /// What the options say to a screen reader ("Your answer. One tap answers."), or the mode's one quiet sentence.
     public var says: Text?
+    /// "said": he left it to the agent (the duck): the duck's row is the one marked; the options' `chosen` say the
+    /// others. Always sent.
+    public var ducked: Bool
 
-    public init(mode: String = "", label: Text? = nil, detail: Text? = nil, did: Text? = nil, atMs: UInt64? = nil, back: String = "", optionNotes: [NotedView] = [], settled: Text? = nil, summary: String = "", finished: Bool = false, says: Text? = nil) {
+    public init(mode: String = "", label: Text? = nil, detail: Text? = nil, did: Text? = nil, atMs: UInt64? = nil, back: String = "", optionNotes: [NotedView] = [], settled: Text? = nil, summary: String = "", finished: Bool = false, says: Text? = nil, ducked: Bool = false) {
       self.mode = mode
       self.label = label
       self.detail = detail
@@ -4981,6 +4984,7 @@ public enum CoreView {
       self.summary = summary
       self.finished = finished
       self.says = says
+      self.ducked = ducked
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4995,6 +4999,7 @@ public enum CoreView {
       case summary = "summary"
       case finished = "finished"
       case says = "says"
+      case ducked = "ducked"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -5010,6 +5015,7 @@ public enum CoreView {
       self.summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? ""
       self.finished = try c.decodeIfPresent(Bool.self, forKey: .finished) ?? false
       self.says = try c.decodeIfPresent(Text.self, forKey: .says)
+      self.ducked = try c.decodeIfPresent(Bool.self, forKey: .ducked) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -5025,6 +5031,7 @@ public enum CoreView {
       if !summary.isEmpty { try c.encode(summary, forKey: .summary) }
       try c.encode(finished, forKey: .finished)
       try c.encodeIfPresent(says, forKey: .says)
+      try c.encode(ducked, forKey: .ducked)
     }
   }
 

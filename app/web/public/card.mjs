@@ -148,21 +148,39 @@ const still = (label, detail = '', cls = '') => html`<div class="tc-opt is-still
 const backWay = (card, way) => (way ? html`<button class="tc-undo" type="submit" form="card-form-${card.id}" formaction="${act(card, way)}">${BACK_ARROW}<span>${WORDS.takeBack}</span></button>` : '')
 /** The line under what was said: who did it and when, and the way back at its right end. */
 const saidFoot = (card, a) => (a.did ? html`<p class="tc-ans-foot"><span>${a.did.en}</span>${a.at_ms ? html`<i aria-hidden="true">·</i>${agoSpan(a.at_ms, 'ago')}` : ''}${backWay(card, a.back)}</p>` : '')
-/** The answer that stands: the tile in the accent, the pen's tick at its left. */
-const stood = (label, detail = '') => html`<div class="tc-opt is-still is-picked">${sk('tick')}<span class="tc-opt-words"><span class="tc-opt-label">${label}</span>${detail ? html`<span class="tc-opt-detail">${detail}</span>` : ''}</span></div>`
-/** Just answered on its own page (?decided=1): the card stays, answered, and offers the next open question
- *  (CardView.after), or says there is none, and a way out. */
-function nextStep(after, { self, home, focus }) {
-  return html`<nav class="tc-next" aria-label="What next">${after.next ? html`<a class="tc-next-go" data-nav href="${focusAt(cardPath(after.next, self), focus)}" title="${after.next.title}"><span>${after.says.en}</span><small>${after.next.title}</small>${FORTH}</a>` : html`<p class="tc-next-none">${sk('tick')}<span>${after.says.en}</span></p>`}<a class="tc-next-close" data-nav href="${home}">Close</a></nav>`
+/** The answered card (AnswerView.mode "said", the owner's choice of 18 October 2026): the panel stays exactly as it
+ *  stood open, nothing moves. The options, the "or" and the duck keep their places: the one said (OptionView.chosen, or
+ *  the duck: AnswerView.ducked) with a small tick at its right edge, the others faded. Under them one quiet line, "You
+ *  chose · just now · Take back" (saidFoot); where What?? and the reverse card stood, "Next ›" in their style when
+ *  there is a next question (CardView.after.next, its title as the tooltip), else nothing. What the card says beyond
+ *  (a note, a final answer, the agent's summary, a receipt that is not the plain "has your answer") follows quietly. */
+const TICK_END = raw('<svg class="tc-chosen-tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>')
+function saidCard(card, a, form, after) {
+  const words = x => x?.en ?? ''
+  const opts = card.options ?? [], ducked = Boolean(a.ducked), decision = card.kind === 'decision'
+  const row = (label, detail, chosen, cls = '') => html`<div class="tc-opt is-said${chosen ? ' is-chosen' : ' is-faded'}${cls}"${chosen ? raw(' aria-current="true"') : ''}><span class="tc-opt-words"><span class="tc-opt-label">${label}</span>${detail ? html`<span class="tc-opt-detail">${detail}</span>` : ''}</span>${chosen ? TICK_END : ''}</div>`
+  const next = after && card.after?.next
+    ? html`<a class="tc-tile tc-next-tile" data-nav href="${focusAt(cardPath(card.after.next, after.self), after.focus)}" title="${card.after.next.title ?? ''}">${words(card.after.go) || 'Next'} ›</a>`
+    : ''
+  const quiet = html`${a.detail ? html`<p class="tc-said-more">${words(a.detail)}</p>` : ''}${(a.option_notes ?? []).map(n => html`<p class="tc-said-more"><b>${n.label}</b> ${n.note?.en ?? ''}</p>`)}${a.settled ? html`<p class="tc-said-more">${sk('tick')}${a.settled.en}</p>` : ''}${a.summary ? html`<p class="tc-said-more">${a.summary}</p>` : ''}`
+  const foot = html`${saidFoot(card, a)}${quiet}`
+  const pair = html`<div class="tc-or-pair">${next}${a.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}</div>`
+  if (card.kind === 'info' || !opts.length) {
+    // (an info: its one answer stays, ticked; a card without options, as one withdrawn, says what became of it)
+    return html`<div class="tc-or tc-info-ways is-said">${row(words(a.label), '', true, ' is-ack-said')}${foot}${pair}</div>`
+  }
+  return html`<div class="tc-opts is-said">${opts.map(o => row(o.label, o.detail, Boolean(o.chosen) && !ducked, o.recommended ? ' is-advised' : ''))}</div>
+${decision ? html`<div class="tc-or is-said"><i class="tc-said-or">or</i><div class="tc-opt tc-whatever is-said${ducked ? ' is-chosen' : ' is-faded'}"${ducked ? raw(' aria-current="true"') : ''}>${sk('duck')}<span class="tc-opt-words"><span class="tc-opt-label">${WORDS.trust}</span></span>${ducked ? TICK_END : ''}</div>${foot}${pair}</div>` : html`<div class="tc-or is-said">${foot}${pair}</div>`}`
 }
 /** The right column's answers (#card-answer-<id>), by AnswerView.mode. old: a version before (read only). */
 function cardAnswer(card, { old = null, pic = 1, after = null, self = '' } = {}) {
   const form = `card-form-${card.id}`, a = card.answer
-  const box = inner => html`<div class="tc-answer" id="card-answer-${card.id}"><p class="tc-error" role="alert" hidden></p>${inner}${old ? '' : linkNote(card.note)}</div>`
+  // (answered: the plain receipt "… has your answer." is not shown again under the calm answer; a late one still is)
+  const box = (inner, { said = false } = {}) => html`<div class="tc-answer${said ? ' is-said' : ''}" id="card-answer-${card.id}"><p class="tc-error" role="alert" hidden></p>${inner}${old || (said && card.note?.tone === 'heard') ? '' : linkNote(card.note)}</div>`
   if (old) return box(html`<div class="tc-opts">${(old.options ?? []).map(o => still(o.label, o.detail ?? ''))}</div><p class="tc-quiet">Version ${old.n} cannot be answered. <a data-nav href="${cardPath(card, self)}">The question as it stands now</a></p>`)
   const words = x => x?.en ?? ''
   switch (a.mode) {
-    case 'said': return box(html`<div class="tc-opts">${stood(words(a.label), words(a.detail))}${saidFoot(card, a)}${(a.option_notes ?? []).map(n => still(n.label, n.note.en))}${a.settled ? still(html`${sk('tick')}${SETTLED}`, a.settled.en, 'is-settled') : ''}${a.summary ? still('Done by the agent', a.summary) : ''}</div>${after ? nextStep(card.after ?? { says: { en: '' } }, after) : ''}${a.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}`)
+    case 'said': return box(saidCard(card, a, form, after), { said: true })
     case 'revising': return box(html`<div class="tc-opts">${still(words(a.label), words(a.detail))}${saidFoot(card, a)}</div>`)
     case 'working': return box('')   // (the strip above the title says it)
     // An info: Got it is its answer; at the column's foot What?? and the reverse card, as on a decision.
@@ -183,7 +201,7 @@ function cardAnswer(card, { old = null, pic = 1, after = null, self = '' } = {})
     return decision ? html`${tile}<label class="tc-opt-note" data-note="${o.key}" hidden>${sk('pen')}<input type="text" name="note-${o.key}" form="${form}" maxlength="2000" placeholder="A note on ${o.label}" aria-label="A note on ${o.label}" autocomplete="off" data-action="input->card#keep blur->card#noteLeft keydown->card#noteKey"></label>` : tile
   }
   const trustTip = 'Duck it (R)'
-  return box(html`<div class="tc-opts" data-action="pointerover->card#preview focusin->card#preview pointerleave->card#unpreview focusout->card#unpreview" role="group" aria-label="${words(a.says)}">${card.options.map(option)}${card.multiple ? html`<button class="tc-opt tc-send-many" type="submit" form="${form}" formaction="${act(card, way)}"><span class="tc-opt-words"><span class="tc-opt-label">Send the answer</span></span></button>` : ''}</div>
+  return box(html`<div class="tc-opts" data-action="pointerover->card#preview focusin->card#preview pointerleave->card#unpreview focusout->card#unpreview" role="group" aria-label="${words(a.says)}">${(card.options ?? []).map(option)}${card.multiple ? html`<button class="tc-opt tc-send-many" type="submit" form="${form}" formaction="${act(card, way)}"><span class="tc-opt-words"><span class="tc-opt-label">Send the answer</span></span></button>` : ''}</div>
 ${decision ? html`<div class="tc-or"><i>or</i><button class="tc-opt tc-whatever" type="submit" form="${form}" formaction="${act(card, 'trust')}" title="${trustTip}" aria-label="${trustTip}">${sk('duck')}<span class="tc-opt-words"><span class="tc-opt-label">${WORDS.trust}</span></span></button><div class="tc-or-pair">${whatTile(card)}${reviseTile(card)}</div></div>` : ''}`)
 }
 
@@ -275,7 +293,7 @@ export function cardThread(card, vm, base = '') {
 export const starButton = card => html`<form class="tc-star-form" id="card-star-${card.id}" method="post" action="${act(card, card.starred ? 'unstar' : 'star')}"><input type="hidden" name="stay" value="1"><button class="tc-rail tc-star${card.starred ? ' is-on' : ''}" type="submit" aria-pressed="${String(card.starred)}" title="${card.starred ? 'Unstar' : card.star_says.en}" aria-label="${card.star_says.en}">${sk('star')}</button></form>`
 /** The small button that copies a card as one line, to paste into another agent (controller "clip"). */
 function copyButton(card) {
-  const picked = card.answer.mode === 'said' ? card.options.filter(o => o.chosen).map(o => o.label).join(', ') : ''
+  const picked = card.answer.mode === 'said' ? (card.options ?? []).filter(o => o.chosen).map(o => o.label).join(', ') : ''
   const text = `${card.nr.en} · ${card.title}${picked ? ` → ${picked}` : ''}`
   return html`<button class="cardclip-copy" type="button" data-controller="clip" data-action="clip#copy" data-clip-text-value="${text}" data-clip-card-value="${JSON.stringify({ id: card.id, number: card.number, title: card.title, choice_label: picked })}" title="Copy" aria-label="Copy">${COPY_ICON}</button>`
 }
@@ -305,10 +323,10 @@ export function cardPage(card, vm, { pic = 1, walk = false, version = null, from
   // card's own buttons again: the same form, the same addresses), the duck, What??, the reverse card, Later's tag.
   // (Reverse goes on to the next card, as the card's own reverse tile does: name="next")
   const mini = (cls, way, tip, art) => html`<button class="tc-mini ${cls}" type="submit" form="${form}" formaction="${act(card, way)}"${way === 'revise' ? raw(' name="next" value="1"') : ''} title="${tip}" aria-label="${tip}">${art}</button>`
-  const few = answering && card.kind === 'decision' && !card.multiple && card.options.length <= 4
+  const few = answering && card.kind === 'decision' && !card.multiple && (card.options ?? []).length <= 4
   const laterTag = cls => (open && card.kind !== 'request' && !card.snoozed_until ? html`<form class="${cls}"${cls === 'tc-later' ? raw(' data-action="pointerdown->card#pullStart click->card#pullClick" aria-label="Put this question off"') : ''} method="post" action="${act(card, 'snooze')}"><input type="hidden" name="page" value="1">${keep}${from ? html`<input type="hidden" name="back" value="${home}">` : ''}${sideWays({ duck: false, shred: false, word: false })}</form>` : '')
   const bar = html`<div class="tc-bar" aria-label="This question, in short"><div class="tc-bar-in"><b class="tc-bar-title">${card.title}</b>
-${few ? html`<span class="tc-bar-chips">${card.options.map(o => html`<button class="tc-chip" type="submit" form="${form}" formaction="${act(card, 'decide')}" name="key" value="${o.key}" title="${o.label}">${o.label}${o.settles ? finalSign() : ''}</button>`)}</span>` : ''}<button class="tc-chip is-jump" type="button" data-action="card#toAnswers">To the answers ↑</button>
+${few ? html`<span class="tc-bar-chips">${(card.options ?? []).map(o => html`<button class="tc-chip" type="submit" form="${form}" formaction="${act(card, 'decide')}" name="key" value="${o.key}" title="${o.label}">${o.label}${o.settles ? finalSign() : ''}</button>`)}</span>` : ''}<button class="tc-chip is-jump" type="button" data-action="card#toAnswers">To the answers ↑</button>
 ${answering && card.kind === 'decision' ? html`<i class="tc-bar-sep"></i>${mini('is-duck', 'trust', 'Duck it', sk('duck'))}${mini('is-what', 'what', 'What??', sk('what'))}${mini('is-reverse', 'revise', WORDS.revise, sk('reverse'))}` : answering && card.kind === 'info' ? html`<i class="tc-bar-sep"></i>${mini('is-what', 'what', 'What??', sk('what'))}${mini('is-reverse', 'revise', WORDS.revise, sk('reverse'))}${mini('is-ack', 'close', WORDS.ack, sk('tick'))}` : ''}
 ${laterTag('tc-bar-later')}
 </div></div>`
@@ -351,7 +369,7 @@ ${answering ? more('is-shred', 'bin', WORDS.shred, WORDS.shred, 'shred') : ''}
   const tools = large ? '' : html`<nav class="tc-rails tc-tools" aria-label="Around this question"><a class="tc-back tc-sr" data-nav href="${home}" aria-keyshortcuts="Escape" aria-label="Back to ${from ? from.name : WORDS.desk}">Back</a>${old ? '' : starButton(card)}${menu.length ? html`<details class="tc-more" data-controller="pops"><summary class="tc-rail tc-more-open" title="More" aria-label="More for this question">${DOTS}</summary><div class="tc-more-list" role="menu">${menu.map(item)}</div></details>` : ''}</nav>`
   // What stands unsent (the draft: the field's words, the ticks, the notes on options) is given to the controller,
   // which puts it into the fields once: the fields' markup never changes while he types.
-  const kept = drafting ? { note: card.draft ?? '', keys: card.multiple ? card.options.filter(o => o.chosen).map(o => o.key) : [], notes: Object.fromEntries(card.options.filter(o => o.note).map(o => [o.key, o.note])) } : { note: card.draft ?? '' }
+  const kept = drafting ? { note: card.draft ?? '', keys: card.multiple ? (card.options ?? []).filter(o => o.chosen).map(o => o.key) : [], notes: Object.fromEntries((card.options ?? []).filter(o => o.note).map(o => [o.key, o.note])) } : { note: card.draft ?? '' }
   const after = decided && !old && card.state !== 'open' ? { self, home, focus } : null
   return html`<main id="cardpage" class="tc-page${large ? ' is-full' : focus ? ' is-focus' : ''}" aria-label="Question ${card.number}" data-id="${card.id}"${focus ? raw(' data-focus') : ''} data-controller="card" data-card-draft-value="${drafting ? act(card, 'draft') : ''}" data-card-kept-value="${JSON.stringify(kept)}" data-card-pictures-value="${JSON.stringify(picturesOf(media.pictures, vm, here))}" data-action="pointerdown->card#besideStart click->card#beside turbo:frame-load->card#framed circles:drawn->card#link turbo:submit-start->card#sent turbo:submit-end->card#done dragover->card#over drop->card#drop">
 <div class="tc-pad"${tone != null ? html` style="--hue:${tone}"` : ''}>${bar}<div class="tc-frame">
@@ -1075,6 +1093,36 @@ if (typeof window !== 'undefined') window.addEventListener('click', e => {
   if (!on) stage.querySelector('.tc-scroll')?.scrollTo(0, 0)
 }, true)
 
+// ---- a card that settles after an answer: its height glides to the new one ----
+// An answer turns the card's options into its answered state, which is shorter (or taller); the card's height and
+// everything under it (the comments, the field) would jump in one frame. From the press on, every change of the page
+// is looked at as it happens (a MutationObserver: before the next frame is laid out and painted); the first change of
+// the card's height is drawn as a glide from the height before. For at most two seconds; nothing where motion is
+// reduced.
+const SETTLE_MS = 2000
+function settleAfter(form) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  const card = form?.closest?.('.tc-card') ?? document.querySelector('#cardpage .tc-card')
+  const id = card?.dataset.id
+  if (!id) return
+  const from = card.getBoundingClientRect().height
+  const watch = new MutationObserver(() => {
+    const now = document.querySelector(`.tc-card[data-id="${CSS.escape(id)}"]`)
+    if (!now) return
+    const to = now.getBoundingClientRect().height
+    if (Math.abs(to - from) < 8) return
+    watch.disconnect(); clearTimeout(stop)
+    now.animate([{ height: `${from}px`, overflow: 'hidden' }, { height: `${to}px`, overflow: 'hidden' }], { duration: 300, easing: 'cubic-bezier(.3, .6, .3, 1)' })
+  })
+  watch.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true })
+  const stop = setTimeout(() => watch.disconnect(), SETTLE_MS)
+}
+if (typeof document !== 'undefined') document.addEventListener('turbo:submit-start', e => {
+  const form = e.target, by = e.detail?.formSubmission?.submitter
+  if (!(form instanceof HTMLFormElement) || by?.classList.contains('tc-send') || !(form.closest('.tc-card') || form.closest('#cardpage'))) return
+  settleAfter(form)
+})
+
 controller('card', class extends Controller {
   static targets = ['form', 'field', 'files', 'chips', 'saved', 'figure', 'marks', 'where', 'said', 'page', 'gallery']
   static values = { draft: String, kept: Object, pictures: Array }
@@ -1678,7 +1726,7 @@ const WAYS = {
   },
   verdict: ({ id, f }) => [{ do: 'verdict', request_id: id, allow: f.get('key') === 'allow' }],
   // (the agent still chooses; its recommendation goes as the choices: the card's in view, else the Desk row's tile)
-  trust: ({ id, vm, card, note }) => [{ do: 'answer', card_id: id, choices: card ? card.options.filter(o => o.recommended).map(o => o.key) : (vm.desk.rows?.find(r => r.id === id)?.tiles.tiles ?? []).filter(x => x.advised).map(x => x.key), trusted: true, ...(note ? { note } : {}) }],
+  trust: ({ id, vm, card, note }) => [{ do: 'answer', card_id: id, choices: card ? (card.options ?? []).filter(o => o.recommended).map(o => o.key) : (vm.desk.rows?.find(r => r.id === id)?.tiles.tiles ?? []).filter(x => x.advised).map(x => x.key), trusted: true, ...(note ? { note } : {}) }],
   close: ({ id }) => [{ do: 'read', card_id: id }],
   snooze: ({ id }) => [{ do: 'snooze', card_id: id }],
   wake: ({ id }) => [{ do: 'unsnooze', card_id: id }],

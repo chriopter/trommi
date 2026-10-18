@@ -1450,6 +1450,9 @@ export interface AnswerView {
   finished: boolean
   /** What the options say to a screen reader ("Your answer. One tap answers."), or the mode's one quiet sentence. */
   says?: Text
+  /** "said": he left it to the agent (the duck): the duck's row is the one marked; the options' `chosen` say the
+   *  others. Always sent. */
+  ducked: boolean
 }
 
 export interface NotedView {
