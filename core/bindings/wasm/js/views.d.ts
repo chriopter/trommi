@@ -1290,6 +1290,13 @@ export interface CardWordsView {
   rework: Text
   /** "Undo": takes back the answer that stands. */
   undo: Text
+  /** The card's menu under its title pill: "Open Session", "Copy", "Later", "Shred". */
+  open_session: Text
+  copy: Text
+  later: Text
+  shred: Text
+  /** What the title pill does, for a screen reader: "Opens the card's menu". */
+  menu_hint: Text
   /** "Talk · 3": the card's talk folded into one row; none when it has none. */
   talk?: Text
 }
