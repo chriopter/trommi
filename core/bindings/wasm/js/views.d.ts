@@ -141,6 +141,9 @@ export type Rows<T> =
 export interface SidebarView {
   /** The teams, in the menu's order. A room without teams has one: "Personal". */
   teams: TeamTab[]
+  /** The person's picture where none is uploaded: the account e-mail's first letter, upper case (the phone's top
+   *  left, the sidebar's foot); empty until the account is read: the shell draws a plain figure. */
+  me: string
   /** Home in the menu, above the teams: the Desk of every team ("All teams", `Focus.desk_all`), with what waits on
    *  all of them; `selected` while it is the Desk in view. Its `id` is empty. */
   home: TeamTab

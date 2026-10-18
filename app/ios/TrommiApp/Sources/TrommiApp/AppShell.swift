@@ -16,8 +16,10 @@ enum NativeTab: Hashable { case chat, desk, search }
   @Published var screen = CoreView.Screen.desk
   @Published var path: [CoreView.Screen] = []
   @Published var tab = NativeTab.desk
-  /** The words in the iPhone's Search tab (sent as `Focus.chats_query`; the core filters the chats). */
+  /** The words in the iPhone's search (sent as `Focus.chats_query`; the core filters the chats). */
   @Published var chatsQuery = ""
+  /** The search over every team's chats, opened from the top right of a main screen (a sheet). */
+  @Published var searchOpen = false
   private var sentTeams = false
   /** The note lies over the page he came from (the iPhone's yellow page, a sheet on a wide window). */
   @Published var noteOpen = false
@@ -143,6 +145,7 @@ enum NativeTab: Hashable { case chat, desk, search }
   }
   func account(_ action: [String: Any]) { act(["do": "account", "action": action]) }
   func focus(_ screen: CoreView.Screen, team: String? = nil) {
+    if screen != .desk { searchOpen = false }
     if screen == .notes { path = []; noteOpen = true; show(screen, team: team); return }
     noteOpen = false
     if screen == .desk { path = []; tab = .desk }

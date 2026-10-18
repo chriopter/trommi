@@ -561,6 +561,9 @@ public enum CoreView {
   public struct SidebarView: Codable, Hashable, Sendable {
     /// The teams, in the menu's order. A room without teams has one: "Personal".
     public var teams: [TeamTab]
+    /// The person's picture where none is uploaded: the account e-mail's first letter, upper case (the phone's top
+    /// left, the sidebar's foot); empty until the account is read: the shell draws a plain figure.
+    public var me: String
     /// Home in the menu, above the teams: the Desk of every team ("All teams", `Focus.desk_all`), with what waits on
     /// all of them; `selected` while it is the Desk in view. Its `id` is empty.
     public var home: TeamTab
@@ -595,8 +598,9 @@ public enum CoreView {
     /// Under a search that finds no chat: so it says.
     public var foundNone: Text?
 
-    public init(teams: [TeamTab] = [], home: TeamTab = TeamTab(), sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], deskAll: Bool = false, found: [ChatGroupView] = [], foundNone: Text? = nil) {
+    public init(teams: [TeamTab] = [], me: String = "", home: TeamTab = TeamTab(), sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], deskAll: Bool = false, found: [ChatGroupView] = [], foundNone: Text? = nil) {
       self.teams = teams
+      self.me = me
       self.home = home
       self.sessions = sessions
       self.badge = badge
@@ -615,6 +619,7 @@ public enum CoreView {
 
     enum CodingKeys: String, CodingKey {
       case teams = "teams"
+      case me = "me"
       case home = "home"
       case sessions = "sessions"
       case badge = "badge"
@@ -634,6 +639,7 @@ public enum CoreView {
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.teams = try c.decode([TeamTab].self, forKey: .teams)
+      self.me = try c.decodeIfPresent(String.self, forKey: .me) ?? ""
       self.home = try c.decodeIfPresent(TeamTab.self, forKey: .home) ?? TeamTab()
       self.sessions = try c.decode([SessionRowView].self, forKey: .sessions)
       self.badge = try c.decode(UInt32.self, forKey: .badge)
@@ -653,6 +659,7 @@ public enum CoreView {
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(teams, forKey: .teams)
+      try c.encode(me, forKey: .me)
       try c.encode(home, forKey: .home)
       try c.encode(sessions, forKey: .sessions)
       try c.encode(badge, forKey: .badge)

@@ -75,7 +75,7 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertFalse(row.label.isEmpty)
     XCTAssertTrue(app.tabBars.buttons["Chats"].exists, "The signed-in iPhone must keep its Desk · Chats · Search tab bar.")
     XCTAssertTrue(app.tabBars.buttons["Desk"].exists)
-    XCTAssertTrue(app.buttons["desk-more"].exists)
+    XCTAssertTrue(app.buttons["side-plus"].exists && app.buttons["side-avatar"].exists && app.buttons["side-search"].exists)
     capture("real-signin-desk")
     row.tap()
     XCTAssertTrue(app.staticTexts["card-title"].waitForExistence(timeout: 15))
@@ -91,7 +91,7 @@ final class NativeScreensTests: XCTestCase {
     app.buttons["back"].tap()
     XCTAssertTrue(app.tabBars.buttons["Desk"].waitForExistence(timeout: 10))
     app.tabBars.buttons["Desk"].tap()
-    app.buttons["desk-more"].tap()
+    app.buttons["side-plus"].tap()
     app.buttons["note-open"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["note-text"].waitForExistence(timeout: 10))
     capture("real-signin-note")
@@ -100,7 +100,7 @@ final class NativeScreensTests: XCTestCase {
     app.terminate(); app.launch()
     XCTAssertTrue(row.waitForExistence(timeout: 30), "The signed-in Desk must survive a restart.")
     // signing out: the start screen says so
-    app.buttons["place-pill"].tap()
+    app.buttons["side-avatar"].tap()
     app.buttons["Settings"].firstMatch.tap()
     let signOut = app.buttons["Sign out…"].firstMatch
     for _ in 0..<6 where !signOut.isHittable { app.swipeUp() }
@@ -232,15 +232,19 @@ final class NativeScreensTests: XCTestCase {
     launch("desk")
     let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-"))
     XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 15))
-    let duck = app.buttons["desk-duck"], blitz = app.buttons["desk-blitz"], more = app.buttons["desk-more"]
-    XCTAssertTrue(more.exists && blitz.exists, "Blitz and the ⋯ menu stand at the Desk's top right. " + app.debugDescription)
+    let plus = app.buttons["side-plus"]
+    let duck = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label BEGINSWITH %@ OR label == %@", "desk-duck", "I don", "IDGAD")).firstMatch
+    let blitz = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label BEGINSWITH %@", "desk-blitz", "Blitz")).firstMatch
+    XCTAssertTrue(plus.exists && app.buttons["side-avatar"].exists && app.buttons["side-search"].exists, "the person's picture left, search and + right. " + app.debugDescription)
     capture("desk-ways")
+    plus.tap()
+    XCTAssertTrue(blitz.waitForExistence(timeout: 5), "Blitz is in the + menu. " + app.debugDescription)
     blitz.tap()
     XCTAssertTrue(app.staticTexts["card-title"].waitForExistence(timeout: 10), "Blitz opens the first open card")
     app.buttons["back"].tap()
-    XCTAssertTrue(more.waitForExistence(timeout: 10))
-    more.tap()
-    XCTAssertTrue(duck.waitForExistence(timeout: 5), "the duck for all is in the ⋯ menu")
+    XCTAssertTrue(plus.waitForExistence(timeout: 10))
+    plus.tap()
+    XCTAssertTrue(duck.waitForExistence(timeout: 5), "the duck for all is in the + menu")
     duck.tap()
     let yes = app.alerts.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Yes")).firstMatch
     XCTAssertTrue(yes.waitForExistence(timeout: 5), app.debugDescription)
@@ -248,7 +252,7 @@ final class NativeScreensTests: XCTestCase {
     yes.tap()
     let toast = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Left to the agents")).firstMatch
     XCTAssertTrue(toast.waitForExistence(timeout: 10), "one toast with its Undo. " + app.debugDescription)
-    more.tap()
+    plus.tap()
     XCTAssertFalse(duck.waitForExistence(timeout: 2), "nothing left to duck")
     capture("desk-duck-done")
   }
@@ -291,11 +295,13 @@ final class NativeScreensTests: XCTestCase {
     folded.tap()
     XCTAssertTrue(folded.waitForNonExistence(timeout: 5), "open again. " + app.debugDescription)
     // (Search: the same list under the words; the core keeps the chats that have them)
-    app.tabBars.buttons["Search"].tap()
+    XCTAssertEqual(app.tabBars.buttons.count, 2, "two tabs: Desk and Chats")
+    app.buttons["side-search"].tap()
     let field = app.searchFields.firstMatch
     XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
     field.tap(); field.typeText("Payments")
-    let found = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-"))
+    // (the search lies as a sheet over the list: count its rows only)
+    let found = app.descendants(matching: .any)["chat-search"].buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-"))
     expectation(for: NSPredicate(format: "count == 1"), evaluatedWith: found)
     waitForExpectations(timeout: 10)
     XCTAssertTrue(found.firstMatch.label.hasPrefix("Payments"), found.firstMatch.label)
@@ -414,8 +420,8 @@ final class NativeScreensTests: XCTestCase {
   }
   func testTheNoteSavesItself() {
     launch("desk")
-    XCTAssertTrue(app.buttons["desk-more"].waitForExistence(timeout: 15))
-    app.buttons["desk-more"].tap()
+    XCTAssertTrue(app.buttons["side-plus"].waitForExistence(timeout: 15))
+    app.buttons["side-plus"].tap()
     app.buttons["note-open"].tap()
     let field = app.descendants(matching: .any)["note-text"]
     XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -426,8 +432,8 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertFalse(app.buttons["Keep in Note"].exists, "no button to keep it: it keeps itself")
     Thread.sleep(forTimeInterval: 1.2)
     app.descendants(matching: .any)["note-close"].tap()
-    XCTAssertTrue(app.buttons["desk-more"].waitForExistence(timeout: 5))
-    app.buttons["desk-more"].tap()
+    XCTAssertTrue(app.buttons["side-plus"].waitForExistence(timeout: 5))
+    app.buttons["side-plus"].tap()
     app.buttons["note-open"].tap()
     XCTAssertTrue(field.waitForExistence(timeout: 5))
     XCTAssertTrue((field.value as? String ?? "").contains("Buy oat milk"), "kept while typing, there again when it opens: \(String(describing: field.value))")
