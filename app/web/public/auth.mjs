@@ -538,6 +538,17 @@ ${login ? html`<section id="code-new"><h3 class="set-label">Not in your hands?</
   t.get(/^\/settings\/keys$/, ({ req, res }) => page(req, res, 'Keyboard Shortcuts · Settings', settingsPage('Keyboard Shortcuts', html`<div class="set-group set-keys-group">${keysList()}</div><p class="set-note">More keys later. Keys rest while you type in a field. <a href="/help.html#keys">On the help page</a></p>`), { view: 'settings-keys' }))
 
   // ---- /settings/security: what opens the account's data, and the self test ----
+  /** Dictation's sealed connection, as the core says it (DictationView.facts, in order), and its test. */
+  const FACT_ICON = { enclave: 'lock', model: 'mic', attestation: 'tick', code: 'key', hub: 'terminal' }
+  const dictationFacts = d => {
+    const facts = Array.isArray(d?.facts) ? d.facts : []
+    if (!d?.available || !d.on || !facts.length) return ''
+    const value = f => html`${f.dot ? html`<i class="set-dot is-${f.dot}" aria-hidden="true"></i>` : ''}${f.href ? html`<a class="dl-code" href="${f.href}" target="_blank" rel="noopener">${f.value?.en ?? ''} ↗</a>` : f.value?.en ?? ''}`
+    const running = d.test_state === 'running'
+    return html`<h3 class="set-label">Dictation</h3><div class="set-group" id="security-dictation">
+${facts.map(f => html`<div class="set-row set-fact" id="dictation-fact-${f.key}"><span class="set-ico">${sk(FACT_ICON[f.key] ?? 'lock')}</span><b>${f.label?.en ?? ''}</b><span class="set-detail">${value(f)}</span><span></span></div>`)}
+<form method="post" action="/settings/dictation/test" class="dl-form"><button type="submit" class="set-row dl-run" id="dictation-test"${running ? raw(' disabled') : ''}><span class="set-ico">${sk('mic')}</span><b>Test the sealed connection</b><span class="set-detail${d.test_state === 'passed' ? ' dl-ok' : d.test_state === 'failed' ? ' dl-bad' : ''}" id="dictation-test-result">${d.test_result?.en ?? 'a second of silence'}</span><span></span></button></form></div>`
+  }
   const securityMain = () => {
     const s = vm().settings ?? {}, sec = s.security ?? {}
     const ICONS = { key: () => sk('key'), page: () => sk('page'), terminal: () => sk('terminal'), tick: () => sk('tick'), phone: () => art('phone'), laptop: () => sk('laptop') }
@@ -553,9 +564,10 @@ ${login ? html`<section id="code-new"><h3 class="set-label">Not in your hands?</
     const NOTE_IDS = { key: 'security-key-note' }
     const group = g => html`<h3 class="set-label">${g.label.en}</h3><div class="set-group"${g.id === 'devices' ? raw(' id="security-devices"') : ''}>${(g.rows ?? []).map(r => row(g.id, r))}</div>
 ${(g.notes ?? []).map(n => html`<p class="set-note"${NOTE_IDS[g.id] ? raw(` id="${NOTE_IDS[g.id]}"`) : ''}>${n.en}</p>`)}${g.strong ? html`<p class="set-note set-note-strong" id="security-hub">${g.strong.en}</p>` : ''}`
-    return settingsPage('Security', html`${(sec.sections ?? []).map(group)}`, { lead: sec.lead?.en ?? '' })
+    return settingsPage('Security', html`${(sec.sections ?? []).map(group)}${dictationFacts(vm().dictation)}`, { lead: sec.lead?.en ?? '' })
   }
   t.get(/^\/settings\/security$/, ({ req, res }) => page(req, res, 'Security · Settings', securityMain(), { view: 'settings-security' }))
+  t.post(/^\/settings\/dictation\/test$/, ({ res }) => { t.act({ do: 'dictate', step: { step: 'test' } }); t.done(res) })
 
   // ---- /settings/account: the account's ways in (each a page: password, passkeys, kit; email where there is none).
   // A change asks for the way in of now once more (proofField); its answer is a toast, a problem, or a new kit. ----

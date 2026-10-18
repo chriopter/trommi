@@ -41,6 +41,7 @@ struct SecurityPage: View {
         }
         .accessibilityIdentifier("security-" + section.id)
       }
+      DictationFacts()
     }
   }
   @ViewBuilder private func line(_ row: CoreView.SecurityRow) -> some View {

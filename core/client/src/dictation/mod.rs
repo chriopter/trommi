@@ -18,7 +18,7 @@
 
 pub mod ehbp;
 
-use crate::views::{DictatedText, DictationView, Text};
+use crate::views::{DictatedText, DictationFact, DictationView, Text};
 
 /// The model first asked, and the one asked once more when the first fails at the enclave.
 pub const MODELS: [&str; 2] = ["voxtral-small-24b", "whisper-large-v3-turbo"];
@@ -113,6 +113,37 @@ pub enum Do {
     Send(crate::hub::stt::SttSealed),
     /// Stop waiting for the request in flight.
     CancelSend,
+    /// `POST /v1/stt` of the Settings' test: a short silent clip, sealed like a dictation.
+    SendTest(crate::hub::stt::SttSealed),
+}
+
+/// The Settings' test of the sealed connection: a fresh attestation and a silent clip sealed there and back.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+enum Test {
+    #[default]
+    Idle,
+    Running { since: u64 },
+    Passed { ms: u64 },
+    Failed(Problem),
+}
+
+/// What the attestation bundle says beside what the platform checks: the release's digest and the hardware.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+struct Release {
+    digest: String,
+    platform: String,
+}
+
+impl Release {
+    /// Read from the bundle as the hub passed it (the platform's verifier checks the same bytes): at most a
+    /// 64-digit hex digest and a known platform, else nothing is shown.
+    fn of(bundle: &[u8]) -> Self {
+        let v: serde_json::Value = serde_json::from_slice(bundle).unwrap_or_default();
+        let digest = v.get("digest").and_then(|d| d.as_str()).filter(|d| d.len() == 64 && d.bytes().all(|b| b.is_ascii_hexdigit())).map(str::to_ascii_lowercase).unwrap_or_default();
+        let format = v.get("enclaveAttestationReport").and_then(|r| r.get("format")).and_then(|f| f.as_str()).unwrap_or_default();
+        let platform = if format.contains("sev-snp") { "AMD SEV-SNP" } else if format.contains("tdx") { "Intel TDX" } else { "" };
+        Release { digest, platform: platform.to_string() }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -155,6 +186,11 @@ pub struct Dictation {
     session: String,
     /// The person switched dictation off on this device (Settings).
     off: bool,
+    test: Test,
+    test_opener: Option<ehbp::Opener>,
+    /// Of the last bundle that came: shown in Settings once its enclave is verified.
+    release: Release,
+    pending_release: Release,
 }
 
 impl Dictation {
@@ -192,6 +228,56 @@ impl Dictation {
         }
         self.enclave = Enclave::Fetching;
         vec![Do::FetchBundle]
+    }
+
+    /// Settings: test the sealed connection now: a fresh attestation, then a second of silence sealed to the enclave
+    /// and its answer opened. Nothing else is sent; a dictation that runs keeps its own request.
+    pub fn test(&mut self, now: u64) -> Vec<Do> {
+        if self.off || matches!(self.test, Test::Running { .. }) {
+            return Vec::new();
+        }
+        self.test = Test::Running { since: now };
+        if matches!(self.enclave, Enclave::Fetching | Enclave::Attesting) {
+            // (a check under way: its verdict starts the round trip)
+            return Vec::new();
+        }
+        self.enclave = Enclave::Fetching;
+        vec![Do::FetchBundle]
+    }
+
+    fn seal_test(&mut self, attested: &Attested) -> Vec<Do> {
+        let form = form(&silence(), MODELS[0], self.language);
+        let Ok(sealed) = ehbp::seal(&attested.hpke_key, &form) else {
+            self.test = Test::Failed(Problem::Failed);
+            return Vec::new();
+        };
+        self.test_opener = Some(sealed.opener.clone());
+        vec![Do::SendTest(crate::hub::stt::SttSealed {
+            enclave: format!("https://{}", attested.domain),
+            encapsulated_key: sealed.encapsulated_key.clone(),
+            content_type: format!("multipart/form-data; boundary={BOUNDARY}"),
+            model: MODELS[0].to_string(),
+            body: sealed.body,
+        })]
+    }
+
+    /// The relay's answer to the test: passed when the sealed answer opens (whatever words it holds).
+    pub fn test_sent(&mut self, now: u64, sent: Sent) {
+        let Test::Running { since } = self.test else { return };
+        let opener = self.test_opener.take();
+        self.test = match sent {
+            Sent::Answered { nonce, body } => match opener.and_then(|o| o.open(&nonce, &body).ok()) {
+                Some(_) => Test::Passed { ms: now.saturating_sub(since) },
+                None => {
+                    self.enclave = Enclave::Unknown;
+                    Test::Failed(Problem::Failed)
+                }
+            },
+            Sent::Offline => Test::Failed(Problem::Offline),
+            Sent::TooMany => Test::Failed(Problem::TooMany),
+            Sent::Off => Test::Failed(Problem::Off),
+            Sent::Upstream | Sent::Failed => Test::Failed(Problem::Failed),
+        };
     }
 
     /// The microphone of the field of `session` was tapped.
@@ -291,6 +377,7 @@ impl Dictation {
             return Vec::new();
         }
         self.enclave = Enclave::Attesting;
+        self.pending_release = Release::of(&bundle);
         vec![Do::Attest { bundle, repo: CONFIG_REPO }]
     }
 
@@ -299,6 +386,9 @@ impl Dictation {
             return Vec::new();
         }
         self.enclave = Enclave::Unreachable(why);
+        if matches!(self.test, Test::Running { .. }) {
+            self.test = Test::Failed(why);
+        }
         self.advance()
     }
 
@@ -311,7 +401,24 @@ impl Dictation {
             Some(attested) if crate::hub::stt::enclave_ok(&format!("https://{}", attested.domain)) => Enclave::Verified { attested, at: now },
             _ => Enclave::Refused,
         };
-        self.advance()
+        let mut out = Vec::new();
+        match &self.enclave {
+            Enclave::Verified { attested, .. } => {
+                self.release = std::mem::take(&mut self.pending_release);
+                if matches!(self.test, Test::Running { .. }) {
+                    let attested = attested.clone();
+                    out.extend(self.seal_test(&attested));
+                }
+            }
+            _ => {
+                self.release = Release::default();
+                if matches!(self.test, Test::Running { .. }) {
+                    self.test = Test::Failed(Problem::NotVerified);
+                }
+            }
+        }
+        out.extend(self.advance());
+        out
     }
 
     /// Seals and sends once both the recording and the verdict are here: the one place a request is made.
@@ -435,7 +542,17 @@ impl Dictation {
 
     /// Demo only: the enclave as a check that passed would leave it.
     pub fn demo_connected(&mut self, now: u64) {
+        if self.release.digest.is_empty() {
+            self.release = Release { digest: "3f9a0c5be1d24477a1c08e2f6b9d3e4a5c6b7d8e9f0a1b2c3d4e5f6a7b8c7c21".into(), platform: "AMD SEV-SNP".into() };
+        }
         self.enclave = Enclave::Verified { attested: Attested { hpke_key: [0; 32], domain: "demo.tinfoil.sh".into() }, at: now };
+    }
+
+    /// Demo only: a test that passed, as a real one would show.
+    pub fn demo_tested(&mut self, now: u64) {
+        self.demo_connected(now);
+        self.release = Release { digest: "3f9a0c5be1d24477a1c08e2f6b9d3e4a5c6b7d8e9f0a1b2c3d4e5f6a7b8c7c21".into(), platform: "AMD SEV-SNP".into() };
+        self.test = Test::Passed { ms: 1_900 };
     }
 
     /// Demo only: recording at once.
@@ -468,6 +585,34 @@ impl Dictation {
         }
     }
 
+    /// Settings, Security: the facts of the sealed connection, in order, as the core says them.
+    fn facts(&self, now: u64) -> Vec<DictationFact> {
+        let fact = |key: &str, label: &str, value: Text| DictationFact { key: key.into(), label: Text::new(&format!("dictate.fact.{key}"), label), value, href: None, dot: String::new() };
+        let verified = match &self.enclave { Enclave::Verified { at, .. } => Some(*at), _ => None };
+        let enclave = if self.release.platform.is_empty() || verified.is_none() { "Tinfoil".to_string() } else { format!("Tinfoil · {}", self.release.platform) };
+        let mut out = vec![
+            fact("enclave", "Enclave", Text::new("dictate.fact.enclave.value", &enclave)),
+            fact("model", "Model", Text::new("dictate.fact.model.value", "Voxtral Small 24B")),
+        ];
+        let (attestation, dot) = match &self.enclave {
+            Enclave::Verified { at, .. } => (Text::new("dictate.fact.verified", &format!("verified · {}", ago(now, *at))), "connected"),
+            Enclave::Fetching | Enclave::Attesting => (Text::new("dictate.fact.checking", "checking…"), "checking"),
+            Enclave::Refused => (Text::new("dictate.fact.refused", "not verified: nothing is sent"), "failed"),
+            Enclave::Unreachable(p) => (p.text(), "failed"),
+            Enclave::Unknown => (Text::new("dictate.fact.unchecked", "not checked yet"), "unknown"),
+        };
+        out.push(DictationFact { dot: dot.into(), ..fact("attestation", "Attestation", attestation) });
+        if verified.is_some() && !self.release.digest.is_empty() {
+            let d = &self.release.digest;
+            out.push(DictationFact {
+                href: Some(format!("https://search.sigstore.dev/?hash={d}")),
+                ..fact("code", "Code", Text::new("dictate.fact.code.value", &format!("{}…{}", &d[..4], &d[d.len() - 4..])))
+            });
+        }
+        out.push(fact("hub", "Hub", Text::new("dictate.fact.hub.value", "relays ciphertext only")));
+        out
+    }
+
     pub fn view(&self, available: bool, now: u64) -> DictationView {
         let (status_kind, status) = self.status(available, now);
         let (state, since_ms, problem, text) = match &self.phase {
@@ -488,12 +633,55 @@ impl Dictation {
             problem,
             text,
             hint: (state == "recording").then(|| Text::new("dictate.sealed", "Sealed: only the verified enclave hears this.")),
+            facts: if available && !self.off { self.facts(now) } else { Vec::new() },
+            test_state: match &self.test { Test::Idle => "idle", Test::Running { .. } => "running", Test::Passed { .. } => "passed", Test::Failed(_) => "failed" }.to_string(),
+            test_result: match &self.test {
+                Test::Idle => None,
+                Test::Running { .. } => Some(Text::new("dictate.test.running", "Testing…")),
+                Test::Passed { ms } => Some(Text::new("dictate.test.passed", &format!("✓ sealed round trip · {}", seconds(*ms)))),
+                Test::Failed(p) => Some(p.text()),
+            },
             available,
             on: !self.off,
             status_kind: status_kind.to_string(),
             status: Some(status),
         }
     }
+}
+
+/// "1.9 s".
+fn seconds(ms: u64) -> String {
+    format!("{}.{} s", ms / 1000, (ms % 1000) / 100)
+}
+
+/// "just now", "4 min ago", "2 h ago".
+fn ago(now: u64, at: u64) -> String {
+    let min = now.saturating_sub(at) / 60_000;
+    match min {
+        0 => "just now".to_string(),
+        1..=59 => format!("{min} min ago"),
+        _ => format!("{} h ago", min / 60),
+    }
+}
+
+/// One second of silence, 16 kHz mono 16-bit WAV: what the test seals (no microphone, nothing personal).
+pub fn silence() -> Vec<u8> {
+    let samples: u32 = 16_000;
+    let mut w = Vec::with_capacity(44 + samples as usize * 2);
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + samples * 2).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes());
+    w.extend_from_slice(&16_000u32.to_le_bytes());
+    w.extend_from_slice(&32_000u32.to_le_bytes());
+    w.extend_from_slice(&2u16.to_le_bytes());
+    w.extend_from_slice(&16u16.to_le_bytes());
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&(samples * 2).to_le_bytes());
+    w.resize(44 + samples as usize * 2, 0);
+    w
 }
 
 /// One line of words: spaces at the ends cut, control characters but line breaks out.
