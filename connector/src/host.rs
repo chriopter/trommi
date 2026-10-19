@@ -76,6 +76,38 @@ pub fn thread() -> Option<String> {
     THREAD.lock().unwrap().clone()
 }
 
+/// The Codex threads whose transcript (`rollout-<time>-<thread>.jsonl`) the process `pid` holds open: the threads
+/// a Codex process runs, and with them the thread of a connector it started anew (`codex resume`, an app server
+/// restart) before the agent's first Trommi call names it. Linux only (`/proc/<pid>/fd`); elsewhere none.
+pub fn open_threads(pid: u32) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    let Ok(fds) = std::fs::read_dir(format!("/proc/{pid}/fd")) else {
+        return out;
+    };
+    for fd in fds.flatten() {
+        let Ok(target) = std::fs::read_link(fd.path()) else {
+            continue;
+        };
+        let Some(name) = target.file_name().map(|n| n.to_string_lossy().to_string()) else {
+            continue;
+        };
+        let Some(stem) = name
+            .strip_prefix("rollout-")
+            .and_then(|n| n.strip_suffix(".jsonl"))
+        else {
+            continue;
+        };
+        // (the thread is a UUID: its last 36 characters)
+        let Some(id) = stem.get(stem.len().saturating_sub(36)..) else {
+            continue;
+        };
+        if id.len() == 36 && valid_thread(id) && !out.iter().any(|t| t == id) {
+            out.push(id.to_string());
+        }
+    }
+    out
+}
+
 /// Whether waking is off (`TROMMI_CODEX_WAKE=off`).
 pub fn wake_off() -> bool {
     matches!(

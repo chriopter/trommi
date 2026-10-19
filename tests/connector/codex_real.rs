@@ -1228,3 +1228,647 @@ async fn a_real_codex_tui_soak() {
         worst as f64 / 1000.0
     );
 }
+
+// ---- delivery soak: two real Codex sessions as the owner runs them, for hours -------------------------------------
+
+/// Milliseconds since the epoch of an RFC 3339 time in UTC as Codex writes it (`2026-10-19T08:54:18.407Z`).
+fn rfc3339_ms(t: &str) -> Option<u64> {
+    let (date, time) = t.trim_end_matches('Z').split_once('T')?;
+    let mut d = date.split('-').map(|x| x.parse::<i64>());
+    let (y, m, day) = (d.next()?.ok()?, d.next()?.ok()?, d.next()?.ok()?);
+    let mut parts = time.split(':');
+    let (h, mi) = (
+        parts.next()?.parse::<i64>().ok()?,
+        parts.next()?.parse::<i64>().ok()?,
+    );
+    let s: f64 = parts.next()?.parse().ok()?;
+    // days from the civil date (Howard Hinnant's algorithm)
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(((days * 86_400 + h * 3600 + mi * 60) as f64 * 1000.0 + s * 1000.0) as u64)
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+/// When Codex started turns for queued wakes in `thread` (`[Trommi] …` as the user's message), from its transcript.
+fn wake_times(codex_home: &Path, thread: &str) -> Vec<u64> {
+    let mut dirs = vec![codex_home.join("sessions")];
+    let mut out = vec![];
+    while let Some(d) = dirs.pop() {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                dirs.push(p);
+            } else if p
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().ends_with(&format!("{thread}.jsonl")))
+            {
+                for line in std::fs::read_to_string(&p).unwrap_or_default().lines() {
+                    let Ok(v) = serde_json::from_str::<Value>(line) else {
+                        continue;
+                    };
+                    let pl = &v["payload"];
+                    let woke = pl["type"] == "message"
+                        && pl["role"] == "user"
+                        && pl["content"][0]["text"]
+                            .as_str()
+                            .is_some_and(|t| t.starts_with("[Trommi]"));
+                    if woke {
+                        if let Some(at) = v["timestamp"].as_str().and_then(rfc3339_ms) {
+                            out.push(at);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The pids of `pid` and all its descendants.
+fn family(pid: u32) -> Vec<u32> {
+    let mut out = vec![pid];
+    let mut i = 0;
+    while i < out.len() {
+        let p = out[i];
+        if let Ok(kids) = std::fs::read_to_string(format!("/proc/{p}/task/{p}/children")) {
+            out.extend(kids.split_whitespace().filter_map(|k| k.parse::<u32>().ok()));
+        }
+        i += 1;
+    }
+    out
+}
+
+/// The connector servers (`trommi-connector serve`) among `pids`.
+fn servers_of(pids: &[u32]) -> Vec<u32> {
+    pids.iter()
+        .copied()
+        .filter(|p| {
+            std::fs::read(format!("/proc/{p}/cmdline")).is_ok_and(|c| {
+                let args: Vec<String> = c
+                    .split(|b| *b == 0)
+                    .map(|a| String::from_utf8_lossy(a).into_owned())
+                    .collect();
+                args.iter().any(|a| a.ends_with("trommi-connector")) && args.iter().any(|a| a == "serve")
+            })
+        })
+        .collect()
+}
+
+/// One delivery: what the human sent, when, and when the agent acted on it.
+struct Delivery {
+    session: &'static str,
+    kind: String,
+    sent: u64,
+    done: Option<u64>,
+    woke: Option<u64>,
+    note: String,
+}
+
+/// One Codex session of the soak: its tmux window, project, thread and the agent's device on the board.
+struct Seat2 {
+    name: &'static str,
+    window: String,
+    project: PathBuf,
+    remote: bool,
+    thread: String,
+    group: Option<trommi_core::ids::GroupId>,
+    me: Option<trommi_core::ids::DeviceId>,
+}
+
+fn percentile(sorted: &[u64], p: f64) -> u64 {
+    if sorted.is_empty() {
+        return 0;
+    }
+    let i = ((sorted.len() as f64 - 1.0) * p).round() as usize;
+    sorted[i.min(sorted.len() - 1)]
+}
+
+/// Two real Codex sessions as the owner runs them, against a local hub, for TROMMI_SOAK_MINUTES (default 120):
+/// session A is an interactive Codex (`codex`, its MCP servers its own children), session B a Codex attached to the
+/// app-server daemon (`codex --remote`, as `codex resume` runs on the owner's desktop). Every few minutes the human
+/// writes in the chat, the agent files a card, and the human asks "What??", hands it back and answers it; each
+/// asks for a token in the chat, and the time until the agent wrote it is measured, with the time until Codex
+/// started the woken turn. Meanwhile: a hot swap of the connector, the hub gone for a minute (a network drop),
+/// A's connector stopped for 90 s (SIGSTOP, a laptop's suspend), a message while A is busy in a long turn, a burst to
+/// both sessions at once, and A quit and resumed after more than ten minutes while the human wrote to it. The report
+/// (delivered/total, p50/p95) goes to TROMMI_SOAK_LOG; every delivery must arrive.
+///
+/// ```text
+/// tests/codex-soak/run.sh            # or:
+/// CODEX_HOME=<test home> TROMMI_SOAK_MINUTES=120 cargo test -p trommi-tests --test connector_codex_real \
+///   -- --ignored a_real_codex_delivery_soak --nocapture
+/// ```
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "runs two real Codex sessions for hours (model calls); see its comment"]
+async fn a_real_codex_delivery_soak() {
+    let codex_home = test_codex_home();
+    let minutes: u64 = std::env::var("TROMMI_SOAK_MINUTES")
+        .ok()
+        .and_then(|m| m.parse().ok())
+        .unwrap_or(120);
+    let log_file = std::env::var("TROMMI_SOAK_LOG")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir().join("trommi-delivery-soak.log"));
+    let deadline_s: u64 = std::env::var("TROMMI_SOAK_DELIVERY_S")
+        .ok()
+        .and_then(|m| m.parse().ok())
+        .unwrap_or(300);
+    let model = std::env::var("CODEX_MODEL").unwrap_or("gpt-6-luna".into());
+    let hub = HubProc::start().await;
+    let mut hub = Some(hub);
+    let hub_url = hub.as_ref().unwrap().url.clone();
+    let mut human = Human::found(&hub_url).await;
+    let state = TempDir::new("codex-dsoak");
+    let home = state.path().join("home");
+    let bin = home.join(".local/share/trommi/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let program = bin.join("trommi-connector");
+    let original = std::fs::read(connector_binary()).expect("the built connector");
+    std::fs::write(&program, &original).unwrap();
+    std::fs::set_permissions(&program, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let uid = std::os::unix::fs::MetadataExt::uid(&std::fs::metadata(&home).unwrap());
+    let runtime = format!("/run/user/{uid}");
+    let started = Instant::now();
+    let timeline: Arc<std::sync::Mutex<Vec<(u64, String)>>> = Default::default();
+    let note = |what: &str| {
+        let at = started.elapsed().as_millis() as u64;
+        eprintln!("[dsoak {:>7.1} min] {what}", at as f64 / 60_000.0);
+        timeline.lock().unwrap().push((at, what.to_string()));
+    };
+
+    // two projects; setup codex (MCP server pointing at the test's connector, with the test hub, and hooks)
+    let mut seats = vec![];
+    for (name, remote) in [("A", false), ("B", true)] {
+        let project = state.path().join(format!("project-{}", name.to_lowercase()));
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("README.md"), format!("# Project {name}\n")).unwrap();
+        seats.push(Seat2 {
+            name,
+            window: format!("s{}", name.to_lowercase()),
+            project,
+            remote,
+            thread: String::new(),
+            group: None,
+            me: None,
+        });
+    }
+    let said = connector_cli(&home, &["setup", "codex"]);
+    assert!(said.contains("hooks in"), "{said}");
+    {
+        let run = std::env::temp_dir().join(format!("rd{}", trommi_connector::util::random_hex(3)));
+        std::fs::create_dir_all(&run).unwrap();
+        let setup = Setup {
+            hub_url: hub_url.clone(),
+            program: program.clone(),
+            keys: home.join(".local/share/trommi/keys"),
+            run,
+            project: seats[0].project.clone(),
+        };
+        let mut codex = Codex::start(&setup).await;
+        let n = trust_hooks(&mut codex, &seats[0].project).await;
+        note(&format!("trusted {n} hooks"));
+        codex.close().await;
+    }
+    // the MCP server as setup registered it, but with the test's hub and keys: Codex passes few variables to it
+    // TROMMI_SOAK_RESUME_PAUSE_S (default 660) is how long A stays quit; a shorter pause shortens the window of a
+    // leaving connector's note with it, so the resumed connector still finds none
+    let resume_pause_s: u64 = std::env::var("TROMMI_SOAK_RESUME_PAUSE_S")
+        .ok()
+        .and_then(|m| m.parse().ok())
+        .unwrap_or(660);
+    let return_ms = (resume_pause_s * 1000 * 10 / 11).min(600_000);
+    let mcp_env = format!(
+        "mcp_servers.trommi.env={{TROMMI_CHANNEL_EVENTS=\"off\",TROMMI_CODEX_RETURN_MS=\"{return_ms}\",CODEX_HOME=\"{}\",TROMMI_HUB=\"{}\",TROMMI_KEYS_DIR=\"{}\",HOME=\"{}\"}}",
+        codex_home.display(),
+        hub_url,
+        home.join(".local/share/trommi/keys").display(),
+        home.display()
+    );
+
+    // the app-server daemon for B, with the test's HOME
+    let daemon = |cmd: &str| -> Value {
+        let out = std::process::Command::new("codex")
+            .args(["app-server", "daemon", cmd])
+            .env("HOME", &home)
+            .env("CODEX_HOME", &codex_home)
+            .env("XDG_RUNTIME_DIR", &runtime)
+            .output()
+            .expect("codex runs");
+        let text = String::from_utf8_lossy(&out.stdout);
+        text.lines()
+            .rev()
+            .find_map(|l| serde_json::from_str::<Value>(l).ok())
+            .unwrap_or(Value::Null)
+    };
+    let _ = daemon("stop");
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", &format!("{}/packages/app-server-daemon", codex_home.display())])
+        .status();
+    let up = daemon("start");
+    let socket = up["socketPath"].as_str().expect("the daemon's socket").to_string();
+    let daemon_pid = up["pid"].as_u64().expect("the daemon's pid") as u32;
+    note(&format!("daemon: {up}"));
+
+    let server = format!("trommi-dsoak-{}", trommi_connector::util::random_hex(3));
+    tmux(&server, &["new-session", "-d", "-s", "dsoak", "-n", "ctl", "-x", "180", "-y", "50", "bash --norc --noprofile"]);
+    // (a pane whose Codex quit stays, to be started again)
+    tmux(&server, &["set-option", "-g", "remain-on-exit", "on"]);
+    let codex_line = |s: &Seat2, resume: Option<&str>| {
+        format!(
+            "exec env HOME='{}' CODEX_HOME='{}' XDG_RUNTIME_DIR='{}' codex {} {} -m '{}' -c 'approval_policy=\"never\"' -c 'projects.\"{}\".trust_level=\"trusted\"' -c '{}'",
+            home.display(),
+            codex_home.display(),
+            runtime,
+            resume.map(|t| format!("resume {t}")).unwrap_or_default(),
+            if s.remote { format!("--remote 'unix://{socket}'") } else { String::new() },
+            model,
+            s.project.display(),
+            mcp_env.replace('\'', "'\\''"),
+        )
+    };
+    let start_tui = |s: &Seat2, resume: Option<&str>, fresh: bool| {
+        let cmd = format!("bash --norc --noprofile -c \"{}\"", codex_line(s, resume).replace('"', "\\\""));
+        if fresh {
+            tmux(&server, &["new-window", "-d", "-t", "dsoak", "-n", &s.window, "-c", &s.project.display().to_string(), &cmd]);
+        } else {
+            tmux(&server, &["respawn-pane", "-k", "-t", &format!("dsoak:{}", s.window), "-c", &s.project.display().to_string(), &cmd]);
+        }
+    };
+    let pane_pid = |s: &Seat2| -> u32 {
+        tmux(&server, &["display-message", "-p", "-t", &format!("dsoak:{}", s.window), "#{pane_pid}"])
+            .trim()
+            .parse()
+            .unwrap_or(0)
+    };
+    let type_into = |s: &Seat2, text: String| {
+        let server = server.clone();
+        let target = format!("dsoak:{}", s.window);
+        async move {
+            tmux(&server, &["send-keys", "-t", &target, "-l", &text]);
+            let head: String = text.chars().take(30).collect();
+            for _ in 0..6 {
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                tmux(&server, &["send-keys", "-t", &target, "Enter"]);
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                let screen = tmux(&server, &["capture-pane", "-p", "-t", &target]);
+                let waiting = screen
+                    .lines()
+                    .rev()
+                    .find(|l| l.trim_start().starts_with('›'))
+                    .is_some_and(|l| l.contains(&head));
+                if !waiting {
+                    return;
+                }
+            }
+        }
+    };
+
+    // the threads that own keys, and which TUI runs which
+    let owner_threads = || -> Vec<String> {
+        let mut out = vec![];
+        let mut dirs = vec![home.clone()];
+        while let Some(d) = dirs.pop() {
+            for f in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+                let path = f.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else if path.to_string_lossy().ends_with(".owner") {
+                    let v: Value = std::fs::read_to_string(&path)
+                        .ok()
+                        .and_then(|t| serde_json::from_str(&t).ok())
+                        .unwrap_or(Value::Null);
+                    if let Some(t) = v["owner"].as_str().and_then(|o| o.strip_prefix("codex:")) {
+                        if !out.iter().any(|x| x == t) {
+                            out.push(t.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        out
+    };
+
+    // connect both, one after the other
+    for i in 0..seats.len() {
+        start_tui(&seats[i], None, true);
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        let known = owner_threads();
+        *GROUP.lock().unwrap() = None;
+        let invite = human.invite(None).await;
+        let link = invite.link.clone();
+        *PENDING.lock().unwrap() = Some(invite);
+        type_into(&seats[i], format!("Connect to Trommi with this invite link: {link}")).await;
+        let until = Instant::now() + Duration::from_secs(240);
+        while GROUP.lock().unwrap().is_none() && Instant::now() < until {
+            human_admits(&mut human).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        let group = GROUP.lock().unwrap().expect("the session was founded");
+        let me = human.seat(&group).await.expect("the agent");
+        let mut thread = None;
+        for _ in 0..120 {
+            thread = owner_threads().into_iter().find(|t| !known.contains(t));
+            if thread.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        seats[i].thread = thread.expect("the thread's key");
+        seats[i].group = Some(group);
+        seats[i].me = Some(me);
+        note(&format!("{} connected: thread {}", seats[i].name, seats[i].thread));
+    }
+    // (the connect turns end first)
+    tokio::time::sleep(Duration::from_secs(45)).await;
+
+    let mut deliveries: Vec<Delivery> = vec![];
+    let mut n = 0u32;
+    let mut cards: Vec<Option<String>> = vec![None; seats.len()];
+    let token = |n: u32, kind: &str| format!("{}{}Q{}", kind.to_uppercase(), n, trommi_connector::util::random_hex(2).to_uppercase());
+
+    // Sends `body` (by `how`) to seat `i` and waits until the agent wrote `tok` anywhere on the board.
+    macro_rules! deliver {
+        ($i:expr, $kind:expr, $tok:expr, $send:expr) => {{
+            let i: usize = $i;
+            let sent = now_ms();
+            let r: anyhow_like::Res = $send.await.map_err(|e| format!("{e:?}"));
+            let mut d = Delivery { session: seats[i].name, kind: $kind.to_string(), sent, done: None, woke: None, note: String::new() };
+            if let Err(e) = r {
+                d.note = format!("not sent: {e}");
+            } else {
+                let me = seats[i].me.clone().unwrap();
+                let until = Instant::now() + Duration::from_secs(deadline_s);
+                while Instant::now() < until {
+                    human.sync().await;
+                    let seen = human.items.iter().any(|(_, s, p)| *s == me && p.to_string().contains(&$tok));
+                    if seen {
+                        d.done = Some(now_ms());
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+                d.woke = wake_times(&codex_home, &seats[i].thread).into_iter().find(|t| *t + 1500 >= sent);
+                if d.done.is_none() {
+                    let screen = tmux(&server, &["capture-pane", "-p", "-t", &format!("dsoak:{}", seats[i].window)]);
+                    let tail: Vec<&str> = screen.lines().filter(|l| !l.trim().is_empty()).collect();
+                    d.note = format!("NOT DELIVERED in {deadline_s} s; screen: {}", tail[tail.len().saturating_sub(6)..].join(" | "));
+                }
+            }
+            note(&format!(
+                "{} {} {}: {}",
+                d.session,
+                d.kind,
+                $tok,
+                match d.done {
+                    Some(t) => format!("{:.1} s (wake {})", (t - d.sent) as f64 / 1000.0, d.woke.map(|w| format!("{:.1} s", w.saturating_sub(d.sent) as f64 / 1000.0)).unwrap_or("-".into())),
+                    None => d.note.clone(),
+                }
+            ));
+            let ok = d.done.is_some();
+            deliveries.push(d);
+            ok
+        }};
+    }
+    mod anyhow_like {
+        pub type Res = Result<(), String>;
+    }
+
+    // One cycle on seat i: a chat that asks for a card, "What??", a hand-back, the answer.
+    macro_rules! cycle {
+        ($i:expr) => {{
+            let i: usize = $i;
+            n += 1;
+            let group = seats[i].group.clone().unwrap();
+            let title = format!("Frage {n}");
+            let tok = token(n, "c");
+            let text = format!("Lege mit create_decision eine Entscheidungskarte mit dem Titel \"{title}\" und den Optionen ja und nein an. Schreib danach im Trommi-Chat nur das Wort {tok} und beende deinen Zug.");
+            deliver!(i, "chat", tok, human.say(&group, json!({ "content_type": "message", "text": text })));
+            human.sync().await;
+            cards[i] = human
+                .versions
+                .iter()
+                .rev()
+                .find(|(_, p)| p["title"].as_str() == Some(title.as_str()))
+                .map(|(id, _)| id.clone());
+            if let Some(card) = cards[i].clone() {
+                let tok = token(n, "x");
+                let text = format!("Was meinst du damit? Schreib im Trommi-Chat nur das Wort {tok}.");
+                deliver!(i, "explain", tok, human.card_say(&card, json!({ "content_type": "message", "text": text, "explain": true })));
+                let tok = token(n, "h");
+                let text = format!("Bitte überarbeiten: schreib im Trommi-Chat nur das Wort {tok}.");
+                deliver!(i, "handback", tok, human.card_say(&card, json!({ "content_type": "message", "text": text, "hand_back": true })));
+                let tok = token(n, "a");
+                let text = format!("Schreib im Trommi-Chat nur das Wort {tok}.");
+                deliver!(i, "answer", tok, human.answer(&card, json!({ "answer_action": "answer", "choices": ["ja"], "note": text }), &["ja"], false));
+            } else {
+                note(&format!("{} filed no card \"{title}\"", seats[i].name));
+            }
+        }};
+    }
+    macro_rules! chat {
+        ($i:expr, $kind:expr) => {{
+            let i: usize = $i;
+            n += 1;
+            let group = seats[i].group.clone().unwrap();
+            let tok = token(n, "m");
+            let text = format!("Schreib im Trommi-Chat nur das Wort {tok}.");
+            deliver!(i, $kind, tok, human.say(&group, json!({ "content_type": "message", "text": text })))
+        }};
+    }
+
+    let at = |frac: f64| started + Duration::from_secs((minutes as f64 * 60.0 * frac) as u64);
+    // TROMMI_SOAK_ONLY=<n,…> runs only those disturbances (0 swap, 1 drop, 2 suspend, 3 busy, 4 burst, 5 resume),
+    // one after the other, with no regular cycles between them
+    let only: Option<Vec<usize>> = std::env::var("TROMMI_SOAK_ONLY")
+        .ok()
+        .map(|v| v.split(',').filter_map(|x| x.trim().parse().ok()).collect());
+    let quick = only.is_some();
+    let disturbances = [0.12, 0.25, 0.38, 0.5, 0.62, 0.72];
+    let disturbances: Vec<f64> = if quick { vec![0.0; 6] } else { disturbances.to_vec() };
+    let mut next = 0usize;
+    let mut turn = 0usize;
+    while Instant::now() < at(1.0) || (quick && next < disturbances.len()) {
+        if next < disturbances.len() && Instant::now() >= at(disturbances[next]) {
+            if only.as_ref().is_some_and(|o| !o.contains(&next)) {
+                next += 1;
+                continue;
+            }
+            match next {
+                0 => {
+                    let mut changed = original.clone();
+                    changed.extend_from_slice(b"\ndelivery soak build");
+                    let new_file = bin.join(".new.trommi-connector");
+                    std::fs::write(&new_file, &changed).unwrap();
+                    std::fs::set_permissions(&new_file, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+                    std::fs::rename(&new_file, &program).unwrap();
+                    note("hot swap: a new connector binary is in place");
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    chat!(0, "after-swap");
+                    chat!(1, "after-swap");
+                }
+                1 => {
+                    let (data, port) = hub.take().unwrap().stop();
+                    note("network drop: the hub is gone for 60 s");
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    hub = Some(HubProc::start_in(data, port).await);
+                    note("the hub is back");
+                    tokio::time::sleep(Duration::from_secs(20)).await;
+                    chat!(0, "after-drop");
+                    chat!(1, "after-drop");
+                }
+                2 => {
+                    let servers = servers_of(&family(pane_pid(&seats[0])));
+                    note(&format!("suspend: A's connector {servers:?} stopped for 90 s"));
+                    for p in &servers {
+                        let _ = std::process::Command::new("kill").args(["-STOP", &p.to_string()]).status();
+                    }
+                    let group = seats[0].group.clone().unwrap();
+                    n += 1;
+                    let tok = token(n, "s");
+                    let text = format!("Schreib im Trommi-Chat nur das Wort {tok}.");
+                    let sent = now_ms();
+                    human.say(&group, json!({ "content_type": "message", "text": text })).await.expect("the human writes");
+                    tokio::time::sleep(Duration::from_secs(90)).await;
+                    for p in &servers {
+                        let _ = std::process::Command::new("kill").args(["-CONT", &p.to_string()]).status();
+                    }
+                    note("A's connector continues");
+                    let me = seats[0].me.clone().unwrap();
+                    let until = Instant::now() + Duration::from_secs(deadline_s);
+                    let mut done = None;
+                    while Instant::now() < until {
+                        human.sync().await;
+                        if human.items.iter().any(|(_, s, p)| *s == me && p.to_string().contains(&tok)) {
+                            done = Some(now_ms());
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    }
+                    note(&format!("A during-suspend {tok}: {}", done.map(|t| format!("{:.1} s", (t - sent) as f64 / 1000.0)).unwrap_or("NOT DELIVERED".into())));
+                    deliveries.push(Delivery { session: "A", kind: "during-suspend".into(), sent, done, woke: wake_times(&codex_home, &seats[0].thread).into_iter().find(|t| *t + 1500 >= sent), note: String::new() });
+                }
+                3 => {
+                    note("busy: A runs a long turn, the human writes meanwhile");
+                    type_into(&seats[0], "Run the shell command `sleep 75` and then answer only with: done".into()).await;
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                    chat!(0, "while-busy");
+                }
+                4 => {
+                    note("burst: three messages to A and one to B at once");
+                    let mut toks = vec![];
+                    let sent = now_ms();
+                    for i in [0usize, 0, 0, 1] {
+                        n += 1;
+                        let tok = token(n, "b");
+                        let group = seats[i].group.clone().unwrap();
+                        human.say(&group, json!({ "content_type": "message", "text": format!("Schreib im Trommi-Chat auch das Wort {tok}.") })).await.expect("the human writes");
+                        toks.push((i, tok));
+                    }
+                    let until = Instant::now() + Duration::from_secs(deadline_s);
+                    let mut done: Vec<Option<u64>> = vec![None; toks.len()];
+                    while Instant::now() < until && done.iter().any(|d| d.is_none()) {
+                        human.sync().await;
+                        for (k, (i, tok)) in toks.iter().enumerate() {
+                            let me = seats[*i].me.clone().unwrap();
+                            if done[k].is_none() && human.items.iter().any(|(_, s, p)| *s == me && p.to_string().contains(tok)) {
+                                done[k] = Some(now_ms());
+                            }
+                        }
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    }
+                    for (k, (i, tok)) in toks.iter().enumerate() {
+                        note(&format!("{} burst {tok}: {}", seats[*i].name, done[k].map(|t| format!("{:.1} s", (t - sent) as f64 / 1000.0)).unwrap_or("NOT DELIVERED".into())));
+                        deliveries.push(Delivery { session: seats[*i].name, kind: "burst".into(), sent, done: done[k], woke: None, note: String::new() });
+                    }
+                }
+                5 => {
+                    // Codex quit, the human writes, Codex resumed after more than the ten minutes a leaving connector's
+                    // note lasts: nobody types into it, yet it must hear the board.
+                    let target = format!("dsoak:{}", seats[0].window);
+                    tmux(&server, &["send-keys", "-t", &target, "C-c"]);
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    tmux(&server, &["send-keys", "-t", &target, "C-c"]);
+                    note(&format!("A quit; resumed in {resume_pause_s} s"));
+                    tokio::time::sleep(Duration::from_secs(resume_pause_s)).await;
+                    start_tui(&seats[0], Some(&seats[0].thread.clone()), false);
+                    note("A resumed (nothing typed)");
+                    tokio::time::sleep(Duration::from_secs(20)).await;
+                    chat!(0, "after-resume");
+                }
+                _ => {}
+            }
+            next += 1;
+            continue;
+        }
+        if quick && next < disturbances.len() {
+            tokio::time::sleep_until(at(disturbances[next]).into()).await;
+            continue;
+        }
+        // a regular cycle, alternating, then an idle stretch of up to three minutes
+        cycle!(turn % seats.len());
+        turn += 1;
+        let idle = 30 + (now_ms() % 150);
+        tokio::time::sleep(Duration::from_secs(idle)).await;
+    }
+
+    // the report
+    let mut report = String::new();
+    let total = deliveries.len();
+    let delivered = deliveries.iter().filter(|d| d.done.is_some()).count();
+    let mut lat: Vec<u64> = deliveries.iter().filter_map(|d| d.done.map(|t| t - d.sent)).collect();
+    lat.sort();
+    let mut woke: Vec<u64> = deliveries.iter().filter_map(|d| d.woke.map(|w| w.saturating_sub(d.sent))).collect();
+    woke.sort();
+    report.push_str(&format!(
+        "delivery soak: {minutes} min, Codex {} (A interactive, B on the app-server daemon)\ndelivered {delivered}/{total}; until the agent acted: p50 {:.1} s, p95 {:.1} s; until Codex started the woken turn: p50 {:.1} s, p95 {:.1} s ({} wakes)\n\nby kind:\n",
+        String::from_utf8_lossy(&std::process::Command::new("codex").arg("--version").output().map(|o| o.stdout).unwrap_or_default()).trim(),
+        percentile(&lat, 0.5) as f64 / 1000.0,
+        percentile(&lat, 0.95) as f64 / 1000.0,
+        percentile(&woke, 0.5) as f64 / 1000.0,
+        percentile(&woke, 0.95) as f64 / 1000.0,
+        woke.len(),
+    ));
+    let mut kinds: Vec<String> = deliveries.iter().map(|d| format!("{} {}", d.session, d.kind)).collect();
+    kinds.sort();
+    kinds.dedup();
+    for k in &kinds {
+        let of: Vec<&Delivery> = deliveries.iter().filter(|d| &format!("{} {}", d.session, d.kind) == k).collect();
+        let mut l: Vec<u64> = of.iter().filter_map(|d| d.done.map(|t| t - d.sent)).collect();
+        l.sort();
+        report.push_str(&format!(
+            "  {k:<22} {}/{}  p50 {:.1} s  p95 {:.1} s\n",
+            l.len(),
+            of.len(),
+            percentile(&l, 0.5) as f64 / 1000.0,
+            percentile(&l, 0.95) as f64 / 1000.0
+        ));
+    }
+    report.push_str("\nfailures:\n");
+    for d in deliveries.iter().filter(|d| d.done.is_none()) {
+        report.push_str(&format!("  {:>7.1} min {} {}: {}\n", (d.sent.saturating_sub(now_ms() - started.elapsed().as_millis() as u64)) as f64 / 60_000.0, d.session, d.kind, d.note));
+    }
+    report.push_str("\ntimeline:\n");
+    for (at, what) in timeline.lock().unwrap().iter() {
+        report.push_str(&format!("{:>8.1} min  {what}\n", *at as f64 / 60_000.0));
+    }
+    let _ = std::fs::write(&log_file, &report);
+    eprintln!("{report}");
+
+    tmux(&server, &["kill-server"]);
+    let _ = daemon("stop");
+    let _ = daemon_pid;
+    connector_cli(&home, &["remove", "codex"]);
+    assert_eq!(delivered, total, "every delivery arrived:\n{report}");
+}

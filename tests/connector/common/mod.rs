@@ -237,6 +237,8 @@ pub struct Human {
     pub items: Vec<(String, DeviceId, Value)>,
     /// The Chat messages on a card's own Chat that opened: (card's object id as hex, payload).
     pub card_chats: Vec<(String, Value)>,
+    /// The versions of cards and other objects that opened: (object id as hex, payload).
+    pub versions: Vec<(String, Value)>,
     /// Further human devices a session founded by this device adds at once (their KeyPackages claimed then).
     pub also_add: Vec<DeviceId>,
 }
@@ -302,6 +304,7 @@ impl Human {
             trail: Vec::new(),
             items: Vec::new(),
             card_chats: Vec::new(),
+            versions: Vec::new(),
             also_add: Vec::new(),
         };
         human.post_all().await.expect("the founding is taken");
@@ -1067,6 +1070,7 @@ impl Human {
                 trail: Vec::new(),
                 items: Vec::new(),
                 card_chats: Vec::new(),
+                versions: Vec::new(),
                 also_add: Vec::new(),
                 founding_account: None,
             }
@@ -1401,8 +1405,12 @@ impl Human {
                 return;
             }
         }
+        let mut version_of = None;
         if let Subject::Version(fields) | Subject::Request(fields) = &header.subject {
             let id = hex(fields.object_id.as_bytes());
+            if matches!(header.subject, Subject::Version(_)) {
+                version_of = Some(id.clone());
+            }
             if matches!(header.subject, Subject::Request(_)) {
                 self.requests.insert(id.clone());
             }
@@ -1419,6 +1427,9 @@ impl Human {
             {
                 self.card_chats
                     .push((hex(card.as_bytes()), payload.clone()));
+            }
+            if let Some(id) = version_of {
+                self.versions.push((id, payload.clone()));
             }
             self.items.push((session, header.sender, payload));
         }
@@ -1468,6 +1479,17 @@ impl Human {
             object_id: object_id(card),
             choices: choices.iter().map(|choice| choice.to_string()).collect(),
             closes,
+            payload: payload(&body),
+        })
+        .await
+    }
+
+    /// Writes into a card's own Chat (a hand-back is `"hand_back": true`, a "What??" `"explain": true`).
+    pub async fn card_say(&mut self, card: &str, body: Value) -> Result<()> {
+        self.sync().await;
+        self.write(Draft::CardChat {
+            session: self.session_of(card),
+            card: object_id(card),
             payload: payload(&body),
         })
         .await
