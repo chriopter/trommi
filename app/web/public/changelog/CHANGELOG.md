@@ -12,6 +12,12 @@ notes, pick the two to four things people will notice most. A day may have at mo
 (`?mock=1`, never real data), webp, at most 150 KB. The days before the releases had notes are in history.json
 (frozen).
 
+## 18 October 2026
+
+Team knowledge keeps itself now: agents update it on their own, with history and undo. Dictation is sealed
+everywhere, the iPhone is laid out like the sidebar, and Desk tiles form a bento. Cards read calmer, answers in chat
+quote their card, and teams reorder by drag and drop.
+
 ## 17 October 2026
 
 Teams keep shared knowledge, and dictation is sealed on the web and iPhone. The iPhone and the web got calmer: one
