@@ -1162,3 +1162,102 @@ async fn a_codex_thread_comes_back_after_a_resume_and_by_its_hooks() {
     assert_eq!(wakes(&codex_calls, stranger), 0);
     late.close().await;
 }
+
+/// A process that stands for a Codex process running `thread`: it holds the thread's transcript open, as Codex
+/// does with `rollout-<time>-<thread>.jsonl` while the thread is loaded.
+fn codex_running(dir: &Path, thread: &str) -> tokio::process::Child {
+    let sessions = dir.join("codex-home/sessions/2026/10/19");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let rollout = sessions.join(format!("rollout-2026-10-19T10-48-05-{thread}.jsonl"));
+    std::fs::write(&rollout, "").unwrap();
+    tokio::process::Command::new("sh")
+        .arg("-c")
+        .arg("exec 3<\"$1\"; exec sleep 600")
+        .arg("sh")
+        .arg(&rollout)
+        .kill_on_drop(true)
+        .spawn()
+        .expect("sh runs")
+}
+
+/// The connector of a Codex process `parent` started for a thread it has not named yet.
+async fn serve_codex_of(seat: &Seat, codex: &Path, parent: u32, thread: &str) -> common::process::Mcp {
+    let mut command = seat.command(&[]);
+    command
+        .env_remove("TROMMI_SESSION_KEY")
+        .env("TROMMI_CHANNEL_EVENTS", "off")
+        .env("TROMMI_CODEX_BIN", codex)
+        .env("TROMMI_CODEX_WAKE_MS", "300")
+        .env("TROMMI_CODEX_RETURN_MS", "1")
+        .env("TROMMI_CODEX_REWAKE_MS", "0")
+        .env("TROMMI_LINK_TICK_MS", "500")
+        .env("TROMMI_PARENT_PID", parent.to_string());
+    let mut mcp = common::process::Mcp::start_as(command, common::process::codex_hello()).await;
+    mcp.call_meta = Some(common::process::codex_meta(thread));
+    mcp
+}
+
+/// The owner's case of 2026-10-19: "Codex still receives no messages". His Codex agent had been resumed long after
+/// its connector ended (`codex resume`, a Codex app server that started its MCP servers anew): no note named its
+/// thread, Codex names it only with the agent's next Trommi call, and that call came only when he typed into the
+/// terminal. So the agent held no key, nothing he wrote on the board woke it, and it never heard a message or an
+/// answer. Now a connector that does not know its thread looks which threads its Codex process holds open, and
+/// wakes the one of them that is in a Trommi room and served by no connector; its next call names this connector.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_codex_thread_resumed_long_after_hears_the_board_without_a_word_typed() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let (codex, codex_calls) = fake_codex(seat.home.path());
+    let thread = "01a13951-b78c-77a2-b72e-88f496583c40";
+    let first = codex_running(seat.home.path(), thread);
+    let mut old = serve_codex_of(&seat, &codex, first.id().unwrap(), thread).await;
+    let _ = old.request("tools/list", json!({})).await;
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = old.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await
+    };
+    let ((said, failed), group) = tokio::join!(connect, admit);
+    assert!(!failed && said.starts_with("Check code:"), "{said}");
+    old.ready().await;
+    old.close().await;
+    drop(first);
+
+    // Long after: Codex resumes the thread, and its new connector is never called. Another thread of a Codex
+    // process that is in no room is never woken.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let stranger = "01a13951-0000-7000-8000-00000000abce";
+    let other = codex_running(seat.home.path(), stranger);
+    let quiet = serve_codex_of(&seat, &codex, other.id().unwrap(), stranger).await;
+    let before = wakes(&codex_calls, thread);
+    let resumed = codex_running(seat.home.path(), thread);
+    let mut new = serve_codex_of(&seat, &codex, resumed.id().unwrap(), thread).await;
+    let _ = new.request("tools/list", json!({})).await;
+    let wake = woken(&codex_calls, thread, before).await;
+    assert!(wake.contains("Back on the board"), "{wake}");
+
+    // The woken turn calls the board: the connector is the thread's now, and the human's next message wakes it as
+    // any board event does.
+    let _ = new.call("inbox", json!({})).await;
+    let before = wakes(&codex_calls, thread);
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Hörst du mich?" }),
+        )
+        .await
+        .expect("the human writes");
+    let wake = woken(&codex_calls, thread, before).await;
+    assert!(wake.contains("new board event"), "{wake}");
+    inbox_holds(&mut new, "Hörst du mich?").await;
+    // A served thread is not woken again by its Codex process's other connectors.
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    assert_eq!(wakes(&codex_calls, stranger), 0, "a thread in no room");
+    quiet.close().await;
+    new.close().await;
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+}

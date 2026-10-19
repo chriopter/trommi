@@ -329,8 +329,17 @@ pub fn codex_thread_seen(input: &Value) {
     if member::own_slots(&cfg, &format!("codex:{thread}")).is_empty() {
         return;
     }
+    if claim_codex_wake(thread) {
+        crate::host::wake_detached(thread, crate::host::RETURN_WAKE);
+    }
+}
+
+/// Whether the caller may wake the unserved Codex thread `thread` now: at most once per TROMMI_CODEX_REWAKE_MS
+/// (3 minutes) per thread on this machine, whoever asks (a hook, or a connector that found the thread open in its
+/// Codex process). Notes the wake.
+pub fn claim_codex_wake(thread: &str) -> bool {
     let Ok(dir) = crate::door::door_dir() else {
-        return;
+        return false;
     };
     let marker = dir.join(format!(
         "woke-codex-{}",
@@ -345,10 +354,7 @@ pub fn codex_thread_seen(input: &Value) {
         .ok()
         .and_then(|t| t.elapsed().ok())
         .is_some_and(|age| (age.as_millis() as u64) < rewake);
-    if fresh || write_private(&marker, "").is_err() {
-        return;
-    }
-    crate::host::wake_detached(thread, crate::host::RETURN_WAKE);
+    !fresh && write_private(&marker, "").is_ok()
 }
 
 /// The hooks of a turn's trail (PreToolUse, PostToolUse, PostToolUseFailure, MessageDisplay, SubagentStart,

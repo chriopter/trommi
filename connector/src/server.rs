@@ -269,6 +269,8 @@ pub struct Conn {
     /// When the last wake was queued (ms): a session that took it but never read the board is woken again by a
     /// new event once TROMMI_CODEX_REWAKE_MS passed.
     woke_at: std::sync::atomic::AtomicU64,
+    /// Wakes of Codex threads this unnamed connector found open in its Codex process (codex_open_thread).
+    open_wakes: Mutex<HashMap<String, u32>>,
     feed: Option<MonitorFeed>,
     out: Arc<Out>,
     member: Arc<Member>,
@@ -837,8 +839,8 @@ impl Conn {
             launcher,
             now_ms(),
             env_ms("TROMMI_CODEX_RETURN_MS", 600_000),
-        )? {
-            crate::slots::CodexReturn::Take(thread) => {
+        ) {
+            Some(crate::slots::CodexReturn::Take(thread)) => {
                 if crate::host::note_call_meta(&json!({ "threadId": thread })) {
                     member::set_thread_owner(&thread);
                     self.open_thread_bell();
@@ -846,14 +848,47 @@ impl Conn {
                 }
                 None
             }
-            crate::slots::CodexReturn::Wake(thread) => Some(thread),
+            Some(crate::slots::CodexReturn::Wake(thread)) => Some(thread),
+            None => self.codex_open_thread(),
         }
+    }
+    /// A Codex thread in a Trommi room that the Codex process running this connector holds open while no connector
+    /// serves it: `codex resume` long after the connector before it ended, or an app server that started its MCP
+    /// servers anew without a note. No note names it, and Codex names it only with the agent's next Trommi call, so
+    /// the agent would hear nothing from the board until the human typed into its terminal. It is woken (at most
+    /// three times by this connector, once per TROMMI_CODEX_REWAKE_MS on this machine), and its next call names
+    /// its own connector, whichever process that is. Its identity is not guessed from this: only that call names it.
+    fn codex_open_thread(&self) -> Option<String> {
+        if crate::host::wake_off() {
+            return None;
+        }
+        for thread in crate::host::open_threads(crate::slots::ppid()) {
+            if member::own_slots(&self.cfg, &format!("codex:{thread}")).is_empty()
+                || std::os::unix::net::UnixStream::connect(door::thread_bell_path(&thread)).is_ok()
+            {
+                continue;
+            }
+            {
+                let mut tries = self.open_wakes.lock().unwrap();
+                let n = tries.entry(thread.clone()).or_insert(0);
+                if *n >= 3 {
+                    continue;
+                }
+                if !cli::claim_codex_wake(&thread) {
+                    continue;
+                }
+                *n += 1;
+            }
+            eprintln!("[trommi] Codex thread {thread} is open in this Codex process and no connector serves it: waking it");
+            return Some(thread);
+        }
+        None
     }
     fn wake_returning(thread: String) {
         if crate::host::wake_off() {
             return;
         }
-        eprintln!("[trommi] Codex thread {thread} lost its connector a moment ago: waking it");
+        eprintln!("[trommi] Codex thread {thread} has no connector that knows it: waking it");
         tokio::spawn(async move {
             crate::host::wake_thread(&thread, crate::host::RETURN_WAKE).await;
         });
@@ -2210,6 +2245,7 @@ pub async fn main_server() {
         heard: AtomicBool::new(heard),
         waking: AtomicBool::new(false),
         woke_at: std::sync::atomic::AtomicU64::new(0),
+        open_wakes: Mutex::new(HashMap::new()),
         feed,
         out: Out::new(),
         member: member.clone(),
