@@ -73,6 +73,7 @@ struct CorePage: View {
     case .settings(let page): SettingsScreen(page: page)
     case .artifacts: ArtifactsScreen()
     case .knowledge: KnowledgeScreen()
+    case .wakeups: Loading()
     case .scribble: ScribbleScreen()
     }
   }

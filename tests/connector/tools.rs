@@ -2086,3 +2086,73 @@ async fn the_team_knowledge_is_read_and_written_without_asking() {
     assert_eq!(cleared.len(), 2, "the two answered writes are taken away, the third waits");
     mcp.close().await;
 }
+
+/// Wakeups (spec/v1.md 9.3.8): `wake_me` keeps the agent's wakeup in its own session (`wakeup/<id>`) within the
+/// guardrails, `list_wakeups` names them, `cancel_wakeup` takes one away; the person's word on one
+/// (`wakeup_edit/<id>`) is applied by the connector's clock, and a due wakeup reaches the agent with its note.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_wakes_itself_and_the_person_can_move_or_cancel_it() {
+    let (_hub, mut human, seat, group) = joined().await;
+    // (the person's clock at noon, so that no quiet hour gets in the way whenever this runs)
+    let utc_minutes = (trommi_connector::util::now_ms() / 60_000 % 1440) as i64;
+    let zone = (720 - utc_minutes).to_string();
+    let mut mcp = seat.serve_plain_with(&[("TROMMI_WAKE_TICK_MS", "200"), ("TROMMI_ZONE_MIN", zone.as_str())]).await;
+    mcp.ready().await;
+    let names = tool_names(&mcp.request("tools/list", json!({})).await);
+    for tool in ["wake_me", "list_wakeups", "cancel_wakeup"] {
+        assert!(names.iter().any(|n| n == tool), "{tool} is listed: {names:?}");
+    }
+    assert!(mcp.ok("list_wakeups", json!({})).await.contains("No wakeups"), "none yet: the empty list is said");
+    let (soon, failed) = mcp.call("wake_me", json!({ "in": "1m", "note": "x" })).await;
+    assert!(failed && soon.contains("at least 5 minutes"), "{soon}");
+    let (no_note, failed) = mcp.call("wake_me", json!({ "in": "1h" })).await;
+    assert!(failed && no_note.contains("note"), "{no_note}");
+    let set = mcp.ok("wake_me", json!({ "in": "2h", "note": "check the deploy", "helper": "Testing" })).await;
+    assert!(set.starts_with("Wakeup set: "), "{set}");
+    let daily = mcp.ok("wake_me", json!({ "in": "30m", "every": "1d", "note": "the daily report" })).await;
+    let id_of = |said: &str| said.trim_start_matches("Wakeup set: ").split(' ').next().unwrap().to_string();
+    let (deploy, report) = (id_of(&set), id_of(&daily));
+    let listed = mcp.ok("list_wakeups", json!({})).await;
+    assert!(listed.starts_with("2 wakeup(s)") && listed.find(&report) < listed.find(&deploy), "the next first: {listed}");
+    assert!(listed.contains("every day") && listed.contains("for helper \"Testing\": check the deploy"), "{listed}");
+    let cancelled = mcp.ok("cancel_wakeup", json!({ "id": report })).await;
+    assert!(cancelled.contains("the daily report"), "{cancelled}");
+    let (gone, failed) = mcp.call("cancel_wakeup", json!({ "id": report })).await;
+    assert!(failed && gone.contains("list_wakeups"), "{gone}");
+    // the person moves the other one to now: the clock applies it (a minute ahead at the soonest) and wakes the agent
+    let wire = |hex: &str| trommi_core::ids::base64url_encode(&trommi_connector::util::unhex(hex).unwrap());
+    human.set_register(&group, &format!("wakeup_edit/{}", wire(&deploy)), Some(json!({ "at": 1, "n": "his-word" }))).await.expect("taken");
+    let before = mcp.ok("list_wakeups", json!({})).await;
+    let mut moved = before.clone();
+    for _ in 0..100 {
+        moved = mcp.ok("list_wakeups", json!({})).await;
+        if moved != before {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(moved != before && moved.contains("check the deploy"), "his word is applied at the clock's next look: {before} / {moved}");
+    let mut said = String::new();
+    for _ in 0..400 {
+        said = mcp.ok("inbox", json!({})).await;
+        if said.contains("Your wakeup") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    assert!(said.contains("[Trommi] Your wakeup for helper \"Testing\"") && said.contains("check the deploy"), "{said}");
+    assert!(mcp.ok("list_wakeups", json!({})).await.contains("No wakeups"), "a wakeup that ran once is done");
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    let written: Vec<(String, Value)> = payloads(&human, "name")
+        .iter()
+        .filter(|p| p["name"].as_str().is_some_and(|n| n.starts_with("wakeup/")))
+        .map(|p| (p["name"].as_str().unwrap().to_string(), p["value"].clone()))
+        .collect();
+    let of = |id: &str| written.iter().filter(|(n, _)| *n == format!("wakeup/{}", wire(id))).map(|(_, v)| v.clone()).collect::<Vec<_>>();
+    let deploy_writes = of(&deploy);
+    assert_eq!(deploy_writes.first().and_then(|v| v["note"].as_str()), Some("check the deploy"));
+    assert_eq!(deploy_writes.last(), Some(&Value::Null), "and then it ran");
+    assert_eq!(of(&report).last(), Some(&Value::Null), "the cancelled one is gone");
+    mcp.close().await;
+}

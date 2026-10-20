@@ -26,6 +26,7 @@ pub mod demo;
 pub mod files_seen;
 pub mod desk;
 pub mod knowledge;
+pub mod wakeups;
 pub mod links;
 pub mod notes;
 pub mod off;
@@ -153,6 +154,8 @@ pub enum Screen {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         open: String,
     },
+    /// The page Wakeups of the team in view: when its agents start again on their own.
+    Wakeups,
     /// Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
     /// "data", "security").
     Settings {
@@ -204,6 +207,9 @@ pub struct ViewModel {
     /// The page Knowledge of the team in view, while it is in view (`Screen::Knowledge`); none else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub knowledge: Option<KnowledgeView>,
+    /// The page Wakeups of the team in view, while it is in view (`Screen::Wakeups`); none else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wakeups: Option<WakeupsView>,
     /// Sealed dictation (spec/v1.md 18, `crate::dictation`): the microphone of the chat field and its words.
     pub dictation: DictationView,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -280,6 +286,10 @@ pub enum ViewPart {
     /// The page Knowledge, whole; none when it is left.
     Knowledge {
         view: Option<KnowledgeView>,
+    },
+    /// The page Wakeups, whole; none when it is left.
+    Wakeups {
+        view: Option<WakeupsView>,
     },
     /// Sealed dictation, whole.
     Dictation {
@@ -928,6 +938,68 @@ pub struct OffWorkView {
     pub says: Text,
 }
 
+/// The page Wakeups of a team (`Screen::Wakeups`, core/client/src/views/wakeups.rs): every wakeup its agents set
+/// themselves, the next first.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WakeupsView {
+    pub team_id: String,
+    pub team: Text,
+    /// "Wakeups".
+    pub title: Text,
+    #[serde(default)]
+    pub count: u32,
+    /// The same in words ("3 wakeups").
+    pub summary: Text,
+    pub lead: Text,
+    #[serde(default)]
+    pub rows: Vec<WakeupRowView>,
+    /// What the page says when it lists none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub none: Option<Text>,
+    pub words: WakeupWordsView,
+}
+
+/// One wakeup on the page.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WakeupRowView {
+    /// Its id and its session's key: what `Action::WakeupCancel` and `WakeupMove` take.
+    pub id: String,
+    pub session_id: String,
+    /// The session that set it, and its drawing.
+    pub who: Text,
+    #[serde(default)]
+    pub mark: String,
+    /// The helper it is for; none: the agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helper: Option<String>,
+    /// What it will do then.
+    pub note: String,
+    /// When it runs next ("Today 09:00"), and that moment.
+    pub next: Text,
+    #[serde(default)]
+    pub at_ms: u64,
+    /// How often ("once", "every day").
+    pub repeat: Text,
+    #[serde(default)]
+    pub recurring: bool,
+    /// What became of its last run ("Ran today 07:00", "Waited: quiet hours (…)").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last: Option<Text>,
+    /// What the person asked of it, on its way to the agent's computer ("Cancelling…", "Moving to …").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending: Option<Text>,
+}
+
+/// The words of the page Wakeups beside its rows.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WakeupWordsView {
+    pub cancel: Text,
+    pub move_to: Text,
+    pub save: Text,
+    pub back: Text,
+    pub cancel_ask: Text,
+}
+
 /// The chip on a team's Desk that opens its page Knowledge.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KnowledgeChipView {
@@ -1330,6 +1402,9 @@ pub struct SessionView {
     /// "+N": how many lines stand behind the first; none with one line or none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_more: Option<Text>,
+    /// The chat's quiet line of its next wakeup ("Wakes at 09:00 · check the tests"); none without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wake_line: Option<Text>,
     /// The calm chat (`Focus.calm`): the agent at work, drawn at the chat's end as its face drawing itself; a tap
     /// opens the details (the step it is at, its lines, the turn's trail). None while it does not work.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2926,6 +3001,7 @@ impl ViewModel {
                 ViewPart::Gallery { view } => self.gallery = view.clone(),
                 ViewPart::Thumbs { view } => self.thumbs = view.clone(),
                 ViewPart::Knowledge { view } => self.knowledge = view.clone(),
+                ViewPart::Wakeups { view } => self.wakeups = view.clone(),
                 ViewPart::Dictation { view } => self.dictation = view.clone(),
                 ViewPart::Toasts { toasts } => self.toasts = toasts.clone(),
             }
@@ -3043,6 +3119,11 @@ impl ViewModel {
         if self.knowledge != next.knowledge {
             parts.push(ViewPart::Knowledge {
                 view: next.knowledge.clone(),
+            });
+        }
+        if self.wakeups != next.wakeups {
+            parts.push(ViewPart::Wakeups {
+                view: next.wakeups.clone(),
             });
         }
         if self.dictation != next.dictation {

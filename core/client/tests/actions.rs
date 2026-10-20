@@ -949,3 +949,62 @@ fn the_person_writes_entries_on_the_page_and_finds_them() {
     let page_titles: Vec<String> = page.rows.iter().map(|r| r.title.clone()).collect();
     assert_eq!(sim.view.desk.knowledge.as_ref().map(|k| k.first.clone()), Some(page_titles));
 }
+
+fn wakeups_page(sim: &mut Sim) -> trommi_client_core::views::WakeupsView {
+    use trommi_client_core::views::{Focus, Screen};
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Wakeups, visible: true, ..Default::default() } });
+    sim.view.wakeups.clone().expect("the page Wakeups")
+}
+
+/// spec/v1.md 9.3.8: an agent's wakeups (`wakeup/<id>` in its session) show on the team's page Wakeups, the next
+/// first, and as a line in its chat; the person cancels one or moves it (`wakeup_edit/<id>`, shown as pending until
+/// the agent's connector applied it), and his word goes once it is applied. No wakeups: the page says so.
+#[test]
+fn the_person_sees_the_agents_wakeups_and_cancels_or_moves_them() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    let none = wakeups_page(&mut sim);
+    assert!(none.rows.is_empty() && none.none.is_some(), "no wakeups: the page says so");
+    let wire = |b: u8| trommi_core::ids::base64url_encode(&[b; 16]);
+    let hex = |b: u8| trommi_client_core::engine::feed::hex(&[b; 16]);
+    let now = sim.now_ms;
+    world.agent_register(&format!("wakeup/{}", wire(1)), &json!({ "at": now + 7_200_000, "note": "check the deploy", "set_at": now, "helper": "Testing" }).to_string());
+    world.agent_register(&format!("wakeup/{}", wire(2)), &json!({ "at": now + 1_800_000, "every": 86_400_000, "note": "the daily report", "set_at": now, "last": { "at": now - 1000, "result": "ran", "detail": "" } }).to_string());
+    world.stream(&mut sim);
+    let page = wakeups_page(&mut sim);
+    assert_eq!(page.rows.iter().map(|r| r.note.as_str()).collect::<Vec<_>>(), ["the daily report", "check the deploy"], "the next first");
+    assert_eq!((page.rows[0].repeat.en.as_str(), page.rows[0].recurring, page.rows[1].helper.as_deref()), ("every day", true, Some("Testing")));
+    assert!(page.rows[0].last.as_ref().is_some_and(|l| l.en.starts_with("Ran")), "{:?}", page.rows[0].last);
+    assert_eq!(page.count, 2);
+    sim.send(Event::Focus { focus: trommi_client_core::views::Focus { screen: trommi_client_core::views::Screen::Session { session_id: session.clone() }, ..Default::default() } });
+    let line = sim.view.sessions[&session].wake_line.clone().expect("the chat's wake line");
+    assert!(line.en.starts_with("Wakes at ") && line.en.contains("the daily report, and 1 more"), "{}", line.en);
+
+    // he cancels one and moves the other: shown as pending, written as his word with its mark
+    act(&mut sim, Action::WakeupCancel { session_id: session.clone(), wakeup_id: hex(2) });
+    act(&mut sim, Action::WakeupMove { session_id: session.clone(), wakeup_id: hex(1), at_ms: now + 3 * 3_600_000 });
+    let toasts = sim.view.toasts.len();
+    act(&mut sim, Action::WakeupMove { session_id: session.clone(), wakeup_id: hex(1), at_ms: now - 1 });
+    assert!(sim.view.toasts.len() > toasts, "a time gone by is refused");
+    act(&mut sim, Action::WakeupCancel { session_id: session.clone(), wakeup_id: hex(9) });
+    world.stream(&mut sim);
+    let page = wakeups_page(&mut sim);
+    assert!(page.rows.iter().all(|r| r.pending.is_some()), "{:?}", page.rows.iter().map(|r| &r.pending).collect::<Vec<_>>());
+    let cancel = session_register(&sim, &session, &format!("wakeup_edit/{}", hex(2)));
+    let moved = session_register(&sim, &session, &format!("wakeup_edit/{}", hex(1)));
+    assert_eq!((cancel["cancel"].clone(), moved["at"].clone()), (json!(true), json!(now + 3 * 3_600_000)));
+    assert!(cancel["n"].as_str().is_some_and(|n| !n.is_empty()) && cancel["n"] != moved["n"], "each word has its own mark");
+
+    // its connector applies them: the cancelled one goes, the moved one carries his mark; his words then go
+    world.agent_clears(&format!("wakeup/{}", wire(2)));
+    world.agent_register(&format!("wakeup/{}", wire(1)), &json!({ "at": now + 3 * 3_600_000, "note": "check the deploy", "set_at": now, "edited": moved["n"] }).to_string());
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    let page = wakeups_page(&mut sim);
+    assert_eq!((page.rows.len(), page.rows[0].pending.clone()), (1, None));
+    assert!(session_register(&sim, &session, &format!("wakeup_edit/{}", hex(1))).is_null(), "his applied word goes");
+    assert!(session_register(&sim, &session, &format!("wakeup_edit/{}", hex(2))).is_null());
+}

@@ -450,6 +450,23 @@ sequenceDiagram
 </details>
 
 <details>
+<summary><b>Wakeups</b> · an agent starts again later on its own, on its computer</summary>
+
+An agent sets itself a wakeup with `wake_me` ("in 30m", "at 09:00", "every 1d", and a note of what to do then). Its
+connector keeps the clock on the computer the agent runs on: when one is due it hands the note to the agent, and when
+the session was closed it starts the agent's program again on that conversation (Claude Code `-p --resume`, Codex
+`exec resume`). Limits: 5 open per session, 2 that repeat, 12 runs a day, nothing from 22:00 to 07:00, a woken run
+at most 30 minutes (in Claude Code also 30 turns), a pause while the subscription's five-hour window is 80% used. Claude Code's asks
+for permission in a woken run come to you as yes/no cards.
+
+- **Stored** as encrypted registers in the agent's session: `wakeup/<id>` (written by its connector) and your word on
+  it `wakeup_edit/<id>` (cancel or another time; the connector applies it and your devices then clear it).
+- **Rules** in `core/client/src/wakeups.rs` (guardrails, the clock's tick), the clock and the waker in `connector/src/server.rs` and
+  `connector/src/wakeups.rs`; spec/v1.md 9.3.8.
+
+</details>
+
+<details>
 <summary><b>Connector updates</b> · swapped in, no reconnect</summary>
 
 What Claude Code or Codex starts is a small **launcher** ([`connector/src/launch.rs`](connector/src/launch.rs)). It

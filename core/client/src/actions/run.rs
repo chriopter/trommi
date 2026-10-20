@@ -338,6 +338,13 @@ impl Doing<'_> {
                 let log = self.sent.new_id(self.now);
                 self.registers(action, &crate::knowledge::forget(&e, &log, None, self.now))
             }
+            Action::WakeupCancel { session_id, wakeup_id } => self.wakeup_edit(action, session_id, wakeup_id, crate::wakeups::Edit::Cancel),
+            Action::WakeupMove { session_id, wakeup_id, at_ms } => {
+                if *at_ms < self.now + 60_000 || *at_ms > self.now + crate::wakeups::MAX_AHEAD_MS {
+                    return Err(not_done("wakeups.bad_time", "Choose a time from a minute from now to 60 days ahead."));
+                }
+                self.wakeup_edit(action, session_id, wakeup_id, crate::wakeups::Edit::At(*at_ms))
+            }
             Action::KnowledgeUndo { change_id } => {
                 let log = self
                     .model
@@ -518,6 +525,27 @@ impl Doing<'_> {
         }
     }
 
+    /// The person's word on a wakeup of a session (`wakeup_edit/<id>` in its group, spec/v1.md 9.3.8): its agent's
+    /// connector applies it and takes it away. Shown at once on this device.
+    fn wakeup_edit(&mut self, action: &Action, session_id: &str, wakeup_id: &str, edit: crate::wakeups::Edit) -> Result<(), NotDone> {
+        let key = format!("{}{wakeup_id}", crate::wakeups::EDIT_PREFIX);
+        let s = self.model.sessions.get(session_id).ok_or_else(|| not_done("action.not_found", "That session is no longer there."))?;
+        if !s.registers.get(&format!("{}{wakeup_id}", crate::wakeups::PREFIX)).is_some_and(|r| !r.value.is_null()) {
+            return Err(not_done("wakeups.gone", "That wakeup is no longer there."));
+        }
+        let session = id(session_id).map(SessionId::new).ok_or_else(bad_id)?;
+        let value = edit.value(&self.sent.new_id(self.now));
+        let (name, wire) = codec::encode_register(&key, &value).map_err(|_| bad_id())?;
+        let draft = Draft::Register { group: GroupId::session(self.room, session), name, value: wire.map(|w| SecretBytes::new(w.into_bytes())) };
+        self.seal_plain(action, &draft, None)?;
+        // (his word shows at once; the hub's copy takes its place)
+        if let Some(s) = self.model.sessions.get_mut(session_id) {
+            s.registers.insert(key, crate::model::types::RegisterValue { value, ..Default::default() });
+        }
+        self.change.sessions.insert(session_id.to_string());
+        Ok(())
+    }
+
     /// A team's knowledge entry by its id (a forgotten one too).
     fn entry(&self, entry_id: &str) -> Result<crate::knowledge::Entry, NotDone> {
         crate::knowledge::entry_of(self.model, entry_id).ok_or_else(|| not_done("knowledge.gone", "That entry is no longer there."))
@@ -660,6 +688,14 @@ impl Doing<'_> {
                     }
                 };
                 writes.push((sid.clone(), done_key, answer));
+            }
+            // the person's words on its wakeups, once its connector applied them (or the wakeup is gone), go
+            for (key, r) in &s.registers {
+                let Some(wid) = key.strip_prefix(crate::wakeups::EDIT_PREFIX) else { continue };
+                let w = s.registers.get(&format!("{}{wid}", crate::wakeups::PREFIX)).and_then(|r| crate::wakeups::Wakeup::read(wid, &r.value));
+                if !r.value.is_null() && crate::wakeups::edit_applied(w.as_ref(), &crate::wakeups::mark(&r.value)) && differs(key, &Value::Null) {
+                    writes.push((sid.clone(), key.clone(), Value::Null));
+                }
             }
             for (key, r) in &s.registers {
                 let Some(write) = key.strip_prefix(DONE_PREFIX) else { continue };

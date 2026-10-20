@@ -102,6 +102,11 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
                 .filter(|(_, v)| v.get("desk").and_then(Value::as_str) == Some(team.as_str()) && v.get("deleted_at").is_none())
                 .map(|(id, v)| json!([format!("knowledge/{id}"), { "value": v }]))
                 .collect();
+            // (and the wakeups its agent set itself: `wakeup/<id>` in its group)
+            let mut carried = carried;
+            for (wid, v) in h_of(&f).get("wakeups").and_then(|all| all.get(&dev)).and_then(Value::as_object).into_iter().flatten() {
+                carried.push(json!([format!("wakeup/{wid}"), { "value": v }]));
+            }
             o.insert("registers".into(), Value::Array(carried));
             pair(&id, o)
         })

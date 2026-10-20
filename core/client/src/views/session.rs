@@ -531,6 +531,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         talk,
         status_lines,
         status_more,
+        wake_line: super::wakeups::line(b, &a.row.key),
         working: None,
         has_more,
         earlier: None,

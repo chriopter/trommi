@@ -32,6 +32,7 @@ pub mod usage;
 pub mod util;
 pub mod identity;
 pub mod vault;
+pub mod wakeups;
 
 /// Sent as `Trommi-Client` on every request; the hub answers `client-too-old` when it wants a newer one.
 pub const CLIENT: &str = concat!("connector/", env!("CARGO_PKG_VERSION"));

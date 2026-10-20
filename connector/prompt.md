@@ -138,6 +138,22 @@ Delete a published asset; its link stops working for everyone.
 
 Release an asset for someone outside the board, or take the release back; returns a link valid at most 180 days. Only when the human asked for it.
 
+## wake_me
+
+Wake yourself later on this computer: the connector starts this session again at that time (also after it was closed) with your note as the first words. Use when work must happen later or again: check a deploy in 30m, a daily report at 09:00. Not for waiting on the human: his answers wake you anyway. Limits: 5 open per session, 2 that come again, 12 runs a day; 22:00-07:00 waits for 07:00. The human sees each and can cancel or move it.
+
+## list_wakeups
+
+This session's wakeups: id, next time, how often, note, last run.
+
+## cancel_wakeup
+
+Cancels one of this session's wakeups by its id.
+
+## ask_permission
+
+Only for a woken run: Claude Code asks the human through it to allow a tool use (a card with yes or no). Never call it yourself.
+
 ## reload_connector
 
 Check for a new connector version. Call it only after the human chose "now" on the update card. It answers with how to restart or that it is current.

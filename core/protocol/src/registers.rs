@@ -54,6 +54,13 @@ pub const KNOWLEDGE_ASK: &str = "knowledge_ask/";
 /// The prefix of the person's devices' word on such a write (`knowledge_done/<write id>`), session group, human
 /// devices.
 pub const KNOWLEDGE_DONE: &str = "knowledge_done/";
+/// The prefix of a wakeup an agent set itself (`wakeup/<id>`, section 9.3.8), session group, agent or helper device.
+pub const WAKEUP: &str = "wakeup/";
+/// The prefix of the person's word on a wakeup (`wakeup_edit/<id>`: cancel it, or another time), session group, human
+/// devices.
+pub const WAKEUP_EDIT: &str = "wakeup_edit/";
+/// The most characters a wakeup's note has.
+pub const MAX_WAKEUP_NOTE_LEN: usize = 300;
 /// The most characters (Unicode scalar values) a knowledge entry's title has.
 pub const MAX_KNOWLEDGE_TITLE_LEN: usize = 80;
 /// The most characters a knowledge entry's text has.
@@ -177,6 +184,30 @@ fn knowledge_fits(name: &str, value: &serde_json::Value) -> Result<(), Error> {
     Ok(())
 }
 
+/// Holds a wakeup (`wakeup/<id>`, section 9.3.8) to its limits: null, or an object whose `note` is text of at most
+/// [`MAX_WAKEUP_NOTE_LEN`] characters and whose `at` is a whole number. `bad-format` for any other shape, `too-large`
+/// beyond the limit; its other fields pass.
+fn wakeup_fits(name: &str, value: &serde_json::Value) -> Result<(), Error> {
+    if !name.starts_with(WAKEUP) {
+        return Ok(());
+    }
+    let fields = match value {
+        serde_json::Value::Null => return Ok(()),
+        serde_json::Value::Object(fields) => fields,
+        _ => return Err(Error::BadFormat),
+    };
+    let (Some(serde_json::Value::String(note)), Some(at)) = (fields.get("note"), fields.get("at")) else {
+        return Err(Error::BadFormat);
+    };
+    if at.as_u64().is_none() {
+        return Err(Error::BadFormat);
+    }
+    if note.chars().count() > MAX_WAKEUP_NOTE_LEN {
+        return Err(Error::TooLarge);
+    }
+    Ok(())
+}
+
 impl Value {
     /// The value a register envelope's payload holds. `bad-format` unless it is a JSON object with a text
     /// `name`, a `value` (any JSON, or null) and a whole, non-negative `lamport`, each once; other fields are
@@ -189,6 +220,7 @@ impl Value {
         let wire: Wire = serde_json::from_slice(payload).map_err(|_| Error::BadFormat)?;
         goals_fit(&wire.name, &wire.value)?;
         knowledge_fits(&wire.name, &wire.value)?;
+        wakeup_fits(&wire.name, &wire.value)?;
         let value = match wire.value {
             serde_json::Value::Null => None,
             value => Some(serde_json::to_string(&value).map_err(|_| Error::BadFormat)?),
@@ -217,6 +249,7 @@ impl Value {
         };
         goals_fit(&self.name, &value)?;
         knowledge_fits(&self.name, &value)?;
+        wakeup_fits(&self.name, &value)?;
         let compact = serde_json::to_string(&value).map_err(|_| Error::BadFormat)?;
         if !value.is_null() && compact.len() > value_limit(&self.name) {
             return Err(Error::TooLarge);
@@ -313,11 +346,11 @@ pub fn name_owner(name: &str, in_room: bool) -> Option<NameOwner> {
             ]);
         return room_humans.then_some(NameOwner::RoomHumans);
     }
-    if name == GOALS || name == MACHINE_APPROVED || has_prefix(&[JOIN_LINK, KNOWLEDGE, KNOWLEDGE_DONE]) {
+    if name == GOALS || name == MACHINE_APPROVED || has_prefix(&[JOIN_LINK, KNOWLEDGE, KNOWLEDGE_DONE, WAKEUP_EDIT]) {
         return Some(NameOwner::SessionHumans);
     }
     let session_devices =
-        ["profile", "heard"].contains(&name) || has_prefix(&["status_line/", "alert/", JOIN_ASK, KNOWLEDGE_ASK]);
+        ["profile", "heard"].contains(&name) || has_prefix(&["status_line/", "alert/", JOIN_ASK, KNOWLEDGE_ASK, WAKEUP]);
     session_devices.then_some(NameOwner::SessionDevices)
 }
 
