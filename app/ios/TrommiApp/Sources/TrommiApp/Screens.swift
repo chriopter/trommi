@@ -73,7 +73,7 @@ struct CorePage: View {
     case .settings(let page): SettingsScreen(page: page)
     case .artifacts: ArtifactsScreen()
     case .knowledge: KnowledgeScreen()
-    case .wakeups: Loading()
+    case .wakeups: WakeupsScreen()
     case .scribble: ScribbleScreen()
     }
   }
@@ -292,6 +292,7 @@ struct Sidebar: View {
         Button { shell.focus(.settings(page: "")); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "key") }
         Button { shell.focus(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
         Button { shell.focus(.knowledge(query: "", filter: "", open: "")) } label: { Label("Knowledge", systemImage: "book") }
+        Button { shell.focus(.wakeups) } label: { Label("Wakeups", systemImage: "alarm") }
         Button { shell.focus(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
         Button { shell.focus(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
         Button { shell.focus(.notes) } label: { Label("Note", systemImage: "note.text") }
@@ -479,6 +480,7 @@ struct MePicture: View {
       Section {
         Button { go(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
         Button { go(.knowledge(query: "", filter: "", open: "")) } label: { Label("Knowledge", systemImage: "book") }
+        Button { go(.wakeups) } label: { Label("Wakeups", systemImage: "alarm") }
         Button { go(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
         Button { go(.off(query: "")) } label: { Label("Off your mind", systemImage: "tray") }
       }

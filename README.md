@@ -457,11 +457,14 @@ connector keeps the clock on the computer the agent runs on: when one is due it 
 the session was closed it starts the agent's program again on that conversation (Claude Code `-p --resume`, Codex
 `exec resume`). Limits: 5 open per session, 2 that repeat, 12 runs a day, nothing from 22:00 to 07:00, a woken run
 at most 30 minutes (in Claude Code also 30 turns), a pause while the subscription's five-hour window is 80% used. Claude Code's asks
-for permission in a woken run come to you as yes/no cards.
+for permission in a woken run come to you as yes/no cards. The Wakeups page of a team (the chat's title menu, the
+sidebar's menu; on the iPhone the pill's menu) lists them, the next first, with how often, who set it and how its last
+run went; you cancel one or give it another time there. The chat shows the next one as "Wakes at 09:00".
 
 - **Stored** as encrypted registers in the agent's session: `wakeup/<id>` (written by its connector) and your word on
   it `wakeup_edit/<id>` (cancel or another time; the connector applies it and your devices then clear it).
-- **Rules** in `core/client/src/wakeups.rs` (guardrails, the clock's tick), the clock and the waker in `connector/src/server.rs` and
+- **Rules** in `core/client/src/wakeups.rs` (guardrails, the clock's tick), the page in
+  `core/client/src/views/wakeups.rs` (web `app/web/public/wakeups.mjs`, iPhone `WakeupsScreen.swift`), the clock and the waker in `connector/src/server.rs` and
   `connector/src/wakeups.rs`; spec/v1.md 9.3.8.
 
 </details>

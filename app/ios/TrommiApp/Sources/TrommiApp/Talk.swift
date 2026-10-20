@@ -920,6 +920,18 @@ struct SessionScreen: View {
               .accessibilityIdentifier("working-face")
           }
           }
+          // (its next wakeup, quiet at the chat's end: "Wakes at 09:00 · …"; a tap opens the page Wakeups)
+          if let wake = page.wakeLine {
+            Button { shell.focus(.wakeups) } label: {
+              HStack(spacing: 6) {
+                Image(systemName: "alarm").font(.system(size: 12, weight: .semibold))
+                Text(wake.en).font(Face.text(13, .medium)).lineLimit(1)
+              }
+              .foregroundStyle(Ink.muted).padding(.horizontal, 10).padding(.vertical, 5).background(Capsule().fill(Ink.sunken.opacity(0.7)))
+            }
+            .buttonStyle(.plain).padding(.top, 10)
+            .accessibilityIdentifier("wake-line")
+          }
           Color.clear.frame(height: 1).id("bottom")
         }
         .padding(.horizontal, 14).padding(.top, 6)
@@ -983,6 +995,7 @@ struct SessionScreen: View {
     Button { details = true } label: { Label("Details", systemImage: "info.circle") }
     Toggle(isOn: $onlyQuestions) { Label(page.open > 0 ? "Questions Only (\(page.open))" : "Questions Only", systemImage: "questionmark.circle") }
     if !page.files.isEmpty { Button { files = true } label: { Label("Files (\(page.files.count))", systemImage: "paperclip") } }
+    Button { shell.focus(.wakeups) } label: { Label("Wakeups", systemImage: "alarm") }
     Divider()
     Button { newName = page.name.en; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
     Button { drawing = true } label: { Label("Change Icon…", systemImage: "scribble") }
