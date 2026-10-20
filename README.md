@@ -62,22 +62,10 @@ The computer-approval release changes the MCP tool contract and needs one client
 - **Connector:** one signed program that joins a Claude Code or Codex session to your room.
   What the agent is told: [connector/prompt.md](connector/prompt.md).
 
-```mermaid
-flowchart TB
-  web["Web: HTML/CSS, fetch, IndexedDB"] --> bindings["core/bindings: WebAssembly / UniFFI"]
-  apple["iPhone and Mac: SwiftUI, URLSession, Keychain"] --> bindings
-  bindings --> app["core/client: App, actions, ViewModel"]
-  linux["Linux: Qt/QML"] --> app
-  app --> engine["core/client: engine, model, hub codec, cache"]
-  connector["Connector: MCP, terminal I/O, journal"] --> engine
-  linux --> io["core/io: native I/O executor"]
-  connector --> io
-  engine --> protocol["core/protocol: MLS, envelopes, chains, files"]
-  engine --> wire["core/wire: formats, limits, refusal codes"]
-  hub["Hub: encrypted storage and relay"] --> wire
-  protocol --> mls["OpenMLS"]
-  hub --> mls
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/architecture-dark.svg">
+  <img src=".github/readme/architecture-light.svg" width="880" alt="Trommi's architecture in layers: the apps (web, iPhone and Mac, Linux, connector) draw; core/bindings and core/io bridge to core/client, which decides; core/protocol and core/wire sit below it on OpenMLS; the hub beside them only stores and relays ciphertext">
+</picture>
 
 App logic exists once, in Rust under `core/`:
 
