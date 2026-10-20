@@ -418,6 +418,26 @@ final class NativeScreensTests: XCTestCase {
     restore.tap()
     XCTAssertTrue(app.descendants(matching: .any)["knowledge-none"].waitForExistence(timeout: 5))
   }
+  /** The agents' wakeups (demo room): the core's rows, Cancel through the core (then pending: no buttons on that row),
+   *  and the chat's line that opens the page. */
+  func testWakeupsPage() {
+    launch("wakeups")
+    let cancel = app.buttons["wakeup-cancel"].firstMatch
+    XCTAssertTrue(cancel.waitForExistence(timeout: 15), app.debugDescription)
+    capture("wakeups")
+    let before = app.buttons.matching(identifier: "wakeup-cancel").count
+    cancel.tap()
+    let confirm = app.buttons["wakeup-cancel-confirm"]
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription)
+    confirm.tap()
+    expectation(for: NSPredicate(format: "count == %d", before - 1), evaluatedWith: app.buttons.matching(identifier: "wakeup-cancel"))
+    waitForExpectations(timeout: 5)
+    launch("chat")
+    let line = app.buttons["wake-line"]
+    XCTAssertTrue(line.waitForExistence(timeout: 15), app.debugDescription)
+    line.tap()
+    XCTAssertTrue(app.buttons["wakeup-move"].firstMatch.waitForExistence(timeout: 5))
+  }
   func testTheNoteSavesItself() {
     launch("desk")
     XCTAssertTrue(app.buttons["side-plus"].waitForExistence(timeout: 15))
