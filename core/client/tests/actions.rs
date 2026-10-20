@@ -975,7 +975,7 @@ fn the_person_sees_the_agents_wakeups_and_cancels_or_moves_them() {
     world.stream(&mut sim);
     let page = wakeups_page(&mut sim);
     assert_eq!(page.rows.iter().map(|r| r.note.as_str()).collect::<Vec<_>>(), ["the daily report", "check the deploy"], "the next first");
-    assert_eq!((page.rows[0].repeat.en.as_str(), page.rows[0].recurring, page.rows[1].helper.as_deref()), ("every day", true, Some("Testing")));
+    assert_eq!((page.rows[0].how_often.en.as_str(), page.rows[0].recurring, page.rows[1].helper.as_deref()), ("every day", true, Some("Testing")));
     assert!(page.rows[0].last.as_ref().is_some_and(|l| l.en.starts_with("Ran")), "{:?}", page.rows[0].last);
     assert_eq!(page.count, 2);
     sim.send(Event::Focus { focus: trommi_client_core::views::Focus { screen: trommi_client_core::views::Screen::Session { session_id: session.clone() }, ..Default::default() } });

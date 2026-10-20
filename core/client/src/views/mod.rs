@@ -979,7 +979,7 @@ pub struct WakeupRowView {
     #[serde(default)]
     pub at_ms: u64,
     /// How often ("once", "every day").
-    pub repeat: Text,
+    pub how_often: Text,
     #[serde(default)]
     pub recurring: bool,
     /// What became of its last run ("Ran today 07:00", "Waited: quiet hours (…)").

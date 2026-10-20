@@ -660,7 +660,7 @@ export interface WakeupRowView {
   next: Text
   at_ms: number
   /** How often ("once", "every day"). */
-  repeat: Text
+  how_often: Text
   recurring: boolean
   /** What became of its last run ("Ran today 07:00", "Waited: quiet hours (…)"). */
   last?: Text

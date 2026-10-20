@@ -2247,14 +2247,14 @@ public enum CoreView {
     public var next: Text
     public var atMs: UInt64
     /// How often ("once", "every day").
-    public var `repeat`: Text
+    public var howOften: Text
     public var recurring: Bool
     /// What became of its last run ("Ran today 07:00", "Waited: quiet hours (…)").
     public var last: Text?
     /// What the person asked of it, on its way to the agent's computer ("Cancelling…", "Moving to …").
     public var pending: Text?
 
-    public init(id: String = "", sessionId: String = "", who: Text = Text(), mark: String = "", helper: String? = nil, note: String = "", next: Text = Text(), atMs: UInt64 = 0, `repeat`: Text = Text(), recurring: Bool = false, last: Text? = nil, pending: Text? = nil) {
+    public init(id: String = "", sessionId: String = "", who: Text = Text(), mark: String = "", helper: String? = nil, note: String = "", next: Text = Text(), atMs: UInt64 = 0, howOften: Text = Text(), recurring: Bool = false, last: Text? = nil, pending: Text? = nil) {
       self.id = id
       self.sessionId = sessionId
       self.who = who
@@ -2263,7 +2263,7 @@ public enum CoreView {
       self.note = note
       self.next = next
       self.atMs = atMs
-      self.repeat = `repeat`
+      self.howOften = howOften
       self.recurring = recurring
       self.last = last
       self.pending = pending
@@ -2278,7 +2278,7 @@ public enum CoreView {
       case note = "note"
       case next = "next"
       case atMs = "at_ms"
-      case `repeat` = "repeat"
+      case howOften = "how_often"
       case recurring = "recurring"
       case last = "last"
       case pending = "pending"
@@ -2294,7 +2294,7 @@ public enum CoreView {
       self.note = try c.decode(String.self, forKey: .note)
       self.next = try c.decode(Text.self, forKey: .next)
       self.atMs = try c.decodeIfPresent(UInt64.self, forKey: .atMs) ?? 0
-      self.repeat = try c.decode(Text.self, forKey: .repeat)
+      self.howOften = try c.decode(Text.self, forKey: .howOften)
       self.recurring = try c.decodeIfPresent(Bool.self, forKey: .recurring) ?? false
       self.last = try c.decodeIfPresent(Text.self, forKey: .last)
       self.pending = try c.decodeIfPresent(Text.self, forKey: .pending)
@@ -2310,7 +2310,7 @@ public enum CoreView {
       try c.encode(note, forKey: .note)
       try c.encode(next, forKey: .next)
       try c.encode(atMs, forKey: .atMs)
-      try c.encode(repeat, forKey: .repeat)
+      try c.encode(howOften, forKey: .howOften)
       try c.encode(recurring, forKey: .recurring)
       try c.encodeIfPresent(last, forKey: .last)
       try c.encodeIfPresent(pending, forKey: .pending)

@@ -56,7 +56,7 @@ fn row(b: &Board, session_key: &str, name: &str, mark: &str, w: &Wakeup, edit: O
         note: w.note.clone(),
         next: say("wakeups.next", next.clone(), &[("when", &next)]),
         at_ms: w.at,
-        repeat: say(&format!("wakeups.every.{}", if w.every == 0 { "once" } else { "again" }), every_words(w.every), &[]),
+        how_often: say(&format!("wakeups.every.{}", if w.every == 0 { "once" } else { "again" }), every_words(w.every), &[]),
         recurring: w.every > 0,
         last,
         pending,
