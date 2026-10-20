@@ -2103,6 +2103,9 @@ async fn an_agent_wakes_itself_and_the_person_can_move_or_cancel_it() {
         assert!(names.iter().any(|n| n == tool), "{tool} is listed: {names:?}");
     }
     assert!(mcp.ok("list_wakeups", json!({})).await.contains("No wakeups"), "none yet: the empty list is said");
+    // (ask_permission is a woken run's alone: any other call is told no at once)
+    let asked = mcp.ok("ask_permission", json!({ "tool_name": "Bash", "input": { "command": "ls" } })).await;
+    assert!(asked.contains("\"behavior\":\"deny\"") && asked.contains("only a run a wakeup started"), "{asked}");
     let (soon, failed) = mcp.call("wake_me", json!({ "in": "1m", "note": "x" })).await;
     assert!(failed && soon.contains("at least 5 minutes"), "{soon}");
     let (no_note, failed) = mcp.call("wake_me", json!({ "in": "1h" })).await;
