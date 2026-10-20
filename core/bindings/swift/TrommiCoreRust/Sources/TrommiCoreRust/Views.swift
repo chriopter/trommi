@@ -140,6 +140,8 @@ public enum CoreView {
     /// The page Knowledge of the team in view, with the search's words, its filter ("" every entry, "new",
     /// "pinned", "forgotten") and the entry open (its history shows).
     case knowledge(query: String, filter: String, open: String)
+    /// The page Wakeups of the team in view: when its agents start again on their own.
+    case wakeups
     /// Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
     /// "data", "security").
     case settings(page: String)
@@ -169,6 +171,7 @@ public enum CoreView {
       case "scribble": self = .scribble(boardId: try c.decode(String.self, forKey: .boardId))
       case "artifacts": self = .artifacts(kind: try c.decodeIfPresent(String.self, forKey: .kind) ?? "")
       case "knowledge": self = .knowledge(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "", filter: try c.decodeIfPresent(String.self, forKey: .filter) ?? "", open: try c.decodeIfPresent(String.self, forKey: .open) ?? "")
+      case "wakeups": self = .wakeups
       case "settings": self = .settings(page: try c.decodeIfPresent(String.self, forKey: .page) ?? "")
       case let other: throw DecodingError.dataCorruptedError(forKey: .screen, in: c, debugDescription: "Screen: no variant \(other)")
       }
@@ -201,6 +204,8 @@ public enum CoreView {
         try c.encode(query, forKey: .query)
         try c.encode(filter, forKey: .filter)
         try c.encode(open, forKey: .open)
+      case .wakeups:
+        try c.encode("wakeups", forKey: .screen)
       case .settings(let page):
         try c.encode("settings", forKey: .screen)
         try c.encode(page, forKey: .page)
@@ -240,11 +245,13 @@ public enum CoreView {
     public var thumbs: [ThumbView]?
     /// The page Knowledge of the team in view, while it is in view (`Screen::Knowledge`); none else.
     public var knowledge: KnowledgeView?
+    /// The page Wakeups of the team in view, while it is in view (`Screen::Wakeups`); none else.
+    public var wakeups: WakeupsView?
     /// Sealed dictation (spec/v1.md 18, `crate::dictation`): the microphone of the chat field and its words.
     public var dictation: DictationView
     public var toasts: [Toast]
 
-    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, artifacts: [ArtifactView]? = nil, gallery: GalleryView? = nil, thumbs: [ThumbView]? = nil, knowledge: KnowledgeView? = nil, dictation: DictationView = DictationView(), toasts: [Toast] = []) {
+    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, artifacts: [ArtifactView]? = nil, gallery: GalleryView? = nil, thumbs: [ThumbView]? = nil, knowledge: KnowledgeView? = nil, wakeups: WakeupsView? = nil, dictation: DictationView = DictationView(), toasts: [Toast] = []) {
       self.rev = rev
       self.phase = phase
       self.status = status
@@ -262,6 +269,7 @@ public enum CoreView {
       self.gallery = gallery
       self.thumbs = thumbs
       self.knowledge = knowledge
+      self.wakeups = wakeups
       self.dictation = dictation
       self.toasts = toasts
     }
@@ -284,6 +292,7 @@ public enum CoreView {
       case gallery = "gallery"
       case thumbs = "thumbs"
       case knowledge = "knowledge"
+      case wakeups = "wakeups"
       case dictation = "dictation"
       case toasts = "toasts"
     }
@@ -307,6 +316,7 @@ public enum CoreView {
       self.gallery = try c.decodeIfPresent(GalleryView.self, forKey: .gallery)
       self.thumbs = try c.decodeIfPresent([ThumbView].self, forKey: .thumbs)
       self.knowledge = try c.decodeIfPresent(KnowledgeView.self, forKey: .knowledge)
+      self.wakeups = try c.decodeIfPresent(WakeupsView.self, forKey: .wakeups)
       self.dictation = try c.decode(DictationView.self, forKey: .dictation)
       self.toasts = try c.decodeIfPresent([Toast].self, forKey: .toasts) ?? []
     }
@@ -330,6 +340,7 @@ public enum CoreView {
       try c.encodeIfPresent(gallery, forKey: .gallery)
       try c.encodeIfPresent(thumbs, forKey: .thumbs)
       try c.encodeIfPresent(knowledge, forKey: .knowledge)
+      try c.encodeIfPresent(wakeups, forKey: .wakeups)
       try c.encode(dictation, forKey: .dictation)
       if !toasts.isEmpty { try c.encode(toasts, forKey: .toasts) }
     }
@@ -387,6 +398,8 @@ public enum CoreView {
     case thumbs(view: [ThumbView]?)
     /// The page Knowledge, whole; none when it is left.
     case knowledge(view: KnowledgeView?)
+    /// The page Wakeups, whole; none when it is left.
+    case wakeups(view: WakeupsView?)
     /// Sealed dictation, whole.
     case dictation(view: DictationView)
     case toasts(toasts: [Toast])
@@ -420,6 +433,7 @@ public enum CoreView {
       case "gallery": self = .gallery(view: try c.decodeIfPresent(GalleryView.self, forKey: .view))
       case "thumbs": self = .thumbs(view: try c.decodeIfPresent([ThumbView].self, forKey: .view))
       case "knowledge": self = .knowledge(view: try c.decodeIfPresent(KnowledgeView.self, forKey: .view))
+      case "wakeups": self = .wakeups(view: try c.decodeIfPresent(WakeupsView.self, forKey: .view))
       case "dictation": self = .dictation(view: try c.decode(DictationView.self, forKey: .view))
       case "toasts": self = .toasts(toasts: try c.decode([Toast].self, forKey: .toasts))
       case let other: throw DecodingError.dataCorruptedError(forKey: .part, in: c, debugDescription: "ViewPart: no variant \(other)")
@@ -480,6 +494,9 @@ public enum CoreView {
         try c.encode(view, forKey: .view)
       case .knowledge(let view):
         try c.encode("knowledge", forKey: .part)
+        try c.encode(view, forKey: .view)
+      case .wakeups(let view):
+        try c.encode("wakeups", forKey: .part)
         try c.encode(view, forKey: .view)
       case .dictation(let view):
         try c.encode("dictation", forKey: .part)
@@ -2147,6 +2164,202 @@ public enum CoreView {
     }
   }
 
+  /// The page Wakeups of a team (`Screen::Wakeups`, core/client/src/views/wakeups.rs): every wakeup its agents set
+  /// themselves, the next first.
+  public struct WakeupsView: Codable, Hashable, Sendable {
+    public var teamId: String
+    public var team: Text
+    /// "Wakeups".
+    public var title: Text
+    public var count: UInt32
+    /// The same in words ("3 wakeups").
+    public var summary: Text
+    public var lead: Text
+    public var rows: [WakeupRowView]
+    /// What the page says when it lists none.
+    public var none: Text?
+    public var words: WakeupWordsView
+
+    public init(teamId: String = "", team: Text = Text(), title: Text = Text(), count: UInt32 = 0, summary: Text = Text(), lead: Text = Text(), rows: [WakeupRowView] = [], none: Text? = nil, words: WakeupWordsView = WakeupWordsView()) {
+      self.teamId = teamId
+      self.team = team
+      self.title = title
+      self.count = count
+      self.summary = summary
+      self.lead = lead
+      self.rows = rows
+      self.none = none
+      self.words = words
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case teamId = "team_id"
+      case team = "team"
+      case title = "title"
+      case count = "count"
+      case summary = "summary"
+      case lead = "lead"
+      case rows = "rows"
+      case none = "none"
+      case words = "words"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.teamId = try c.decode(String.self, forKey: .teamId)
+      self.team = try c.decode(Text.self, forKey: .team)
+      self.title = try c.decode(Text.self, forKey: .title)
+      self.count = try c.decodeIfPresent(UInt32.self, forKey: .count) ?? 0
+      self.summary = try c.decode(Text.self, forKey: .summary)
+      self.lead = try c.decode(Text.self, forKey: .lead)
+      self.rows = try c.decodeIfPresent([WakeupRowView].self, forKey: .rows) ?? []
+      self.none = try c.decodeIfPresent(Text.self, forKey: .none)
+      self.words = try c.decode(WakeupWordsView.self, forKey: .words)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(teamId, forKey: .teamId)
+      try c.encode(team, forKey: .team)
+      try c.encode(title, forKey: .title)
+      try c.encode(count, forKey: .count)
+      try c.encode(summary, forKey: .summary)
+      try c.encode(lead, forKey: .lead)
+      try c.encode(rows, forKey: .rows)
+      try c.encodeIfPresent(none, forKey: .none)
+      try c.encode(words, forKey: .words)
+    }
+  }
+
+  /// One wakeup on the page.
+  public struct WakeupRowView: Codable, Hashable, Sendable {
+    /// Its id and its session's key: what `Action::WakeupCancel` and `WakeupMove` take.
+    public var id: String
+    public var sessionId: String
+    /// The session that set it, and its drawing.
+    public var who: Text
+    public var mark: String
+    /// The helper it is for; none: the agent.
+    public var helper: String?
+    /// What it will do then.
+    public var note: String
+    /// When it runs next ("Today 09:00"), and that moment.
+    public var next: Text
+    public var atMs: UInt64
+    /// How often ("once", "every day").
+    public var howOften: Text
+    public var recurring: Bool
+    /// What became of its last run ("Ran today 07:00", "Waited: quiet hours (…)").
+    public var last: Text?
+    /// What the person asked of it, on its way to the agent's computer ("Cancelling…", "Moving to …").
+    public var pending: Text?
+
+    public init(id: String = "", sessionId: String = "", who: Text = Text(), mark: String = "", helper: String? = nil, note: String = "", next: Text = Text(), atMs: UInt64 = 0, howOften: Text = Text(), recurring: Bool = false, last: Text? = nil, pending: Text? = nil) {
+      self.id = id
+      self.sessionId = sessionId
+      self.who = who
+      self.mark = mark
+      self.helper = helper
+      self.note = note
+      self.next = next
+      self.atMs = atMs
+      self.howOften = howOften
+      self.recurring = recurring
+      self.last = last
+      self.pending = pending
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case sessionId = "session_id"
+      case who = "who"
+      case mark = "mark"
+      case helper = "helper"
+      case note = "note"
+      case next = "next"
+      case atMs = "at_ms"
+      case howOften = "how_often"
+      case recurring = "recurring"
+      case last = "last"
+      case pending = "pending"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.sessionId = try c.decode(String.self, forKey: .sessionId)
+      self.who = try c.decode(Text.self, forKey: .who)
+      self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
+      self.helper = try c.decodeIfPresent(String.self, forKey: .helper)
+      self.note = try c.decode(String.self, forKey: .note)
+      self.next = try c.decode(Text.self, forKey: .next)
+      self.atMs = try c.decodeIfPresent(UInt64.self, forKey: .atMs) ?? 0
+      self.howOften = try c.decode(Text.self, forKey: .howOften)
+      self.recurring = try c.decodeIfPresent(Bool.self, forKey: .recurring) ?? false
+      self.last = try c.decodeIfPresent(Text.self, forKey: .last)
+      self.pending = try c.decodeIfPresent(Text.self, forKey: .pending)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(sessionId, forKey: .sessionId)
+      try c.encode(who, forKey: .who)
+      try c.encode(mark, forKey: .mark)
+      try c.encodeIfPresent(helper, forKey: .helper)
+      try c.encode(note, forKey: .note)
+      try c.encode(next, forKey: .next)
+      try c.encode(atMs, forKey: .atMs)
+      try c.encode(howOften, forKey: .howOften)
+      try c.encode(recurring, forKey: .recurring)
+      try c.encodeIfPresent(last, forKey: .last)
+      try c.encodeIfPresent(pending, forKey: .pending)
+    }
+  }
+
+  /// The words of the page Wakeups beside its rows.
+  public struct WakeupWordsView: Codable, Hashable, Sendable {
+    public var cancel: Text
+    public var moveTo: Text
+    public var save: Text
+    public var back: Text
+    public var cancelAsk: Text
+
+    public init(cancel: Text = Text(), moveTo: Text = Text(), save: Text = Text(), back: Text = Text(), cancelAsk: Text = Text()) {
+      self.cancel = cancel
+      self.moveTo = moveTo
+      self.save = save
+      self.back = back
+      self.cancelAsk = cancelAsk
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case cancel = "cancel"
+      case moveTo = "move_to"
+      case save = "save"
+      case back = "back"
+      case cancelAsk = "cancel_ask"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.cancel = try c.decode(Text.self, forKey: .cancel)
+      self.moveTo = try c.decode(Text.self, forKey: .moveTo)
+      self.save = try c.decode(Text.self, forKey: .save)
+      self.back = try c.decode(Text.self, forKey: .back)
+      self.cancelAsk = try c.decode(Text.self, forKey: .cancelAsk)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(cancel, forKey: .cancel)
+      try c.encode(moveTo, forKey: .moveTo)
+      try c.encode(save, forKey: .save)
+      try c.encode(back, forKey: .back)
+      try c.encode(cancelAsk, forKey: .cancelAsk)
+    }
+  }
+
   /// The chip on a team's Desk that opens its page Knowledge.
   public struct KnowledgeChipView: Codable, Hashable, Sendable {
     public var teamId: String
@@ -3250,6 +3463,8 @@ public enum CoreView {
     public var statusLines: [StatusLineView]
     /// "+N": how many lines stand behind the first; none with one line or none.
     public var statusMore: Text?
+    /// The chat's quiet line of its next wakeup ("Wakes at 09:00 · check the tests"); none without one.
+    public var wakeLine: Text?
     /// The calm chat (`Focus.calm`): the agent at work, drawn at the chat's end as its face drawing itself; a tap
     /// opens the details (the step it is at, its lines, the turn's trail). None while it does not work.
     public var working: WorkingView?
@@ -3314,7 +3529,7 @@ public enum CoreView {
     /// "helpers" and "files" where it has some.
     public var tabs: [PanelTabView]
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, wakeLine: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
       self.id = id
       self.name = name
       self.link = link
@@ -3322,6 +3537,7 @@ public enum CoreView {
       self.talk = talk
       self.statusLines = statusLines
       self.statusMore = statusMore
+      self.wakeLine = wakeLine
       self.working = working
       self.questions = questions
       self.files = files
@@ -3362,6 +3578,7 @@ public enum CoreView {
       case talk = "talk"
       case statusLines = "status_lines"
       case statusMore = "status_more"
+      case wakeLine = "wake_line"
       case working = "working"
       case questions = "questions"
       case files = "files"
@@ -3403,6 +3620,7 @@ public enum CoreView {
       self.talk = try c.decode([TalkRow].self, forKey: .talk)
       self.statusLines = try c.decode([StatusLineView].self, forKey: .statusLines)
       self.statusMore = try c.decodeIfPresent(Text.self, forKey: .statusMore)
+      self.wakeLine = try c.decodeIfPresent(Text.self, forKey: .wakeLine)
       self.working = try c.decodeIfPresent(WorkingView.self, forKey: .working)
       self.questions = try c.decodeIfPresent([CardRefView].self, forKey: .questions) ?? []
       self.files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
@@ -3444,6 +3662,7 @@ public enum CoreView {
       try c.encode(talk, forKey: .talk)
       try c.encode(statusLines, forKey: .statusLines)
       try c.encodeIfPresent(statusMore, forKey: .statusMore)
+      try c.encodeIfPresent(wakeLine, forKey: .wakeLine)
       try c.encodeIfPresent(working, forKey: .working)
       if !questions.isEmpty { try c.encode(questions, forKey: .questions) }
       if !files.isEmpty { try c.encode(files, forKey: .files) }

@@ -189,6 +189,23 @@ with its kind) rides on a tool's result when it is new to the agent or changed, 
 knowledge is a step of the trail (`knowledge: true`, with what was searched for), which the app shows as "reads team
 knowledge (12)".
 
+## Wakeups
+
+An agent wakes itself later on this computer (spec/v1.md 9.3.8): `wake_me` (`in` or `at`, `every`, `note`, `helper`)
+puts `wakeup/<id>` into its own session after the core's guardrails (`trommi_client_core::wakeups::set`: 5 open, 2
+that repeat, 5 minutes to 60 days ahead, quiet hours 22:00 to 07:00 in this computer's zone); `list_wakeups` and
+`cancel_wakeup` read and take them away. While the session runs, a clock looks every 30 seconds
+(`server.rs wake_look`, the core's `tick`): it applies the person's word (`wakeup_edit/<id>`: cancel, or another time,
+marked as taken in `edited`), and hands a due wakeup to the agent as a board event (one per look; at most 12 runs a
+session a day; it waits while Claude Code's five-hour window is 80% used). A session that ends with wakeups leaves a
+note of them (`<keys>/wakers/<session>.json`, 0600) and a waker (`trommi-connector waker`, `src/wakeups.rs`), which
+sleeps until the next one, checks the same guardrails and starts `claude -p --resume <session> --max-turns 30
+--permission-prompt-tool …ask_permission` or `codex exec resume <thread>` in the session's folder, killed after 30
+minutes. The connector that run starts takes the note (the waker ends), and its first `inbox` waits for the clock's
+first look, which runs the wakeup as the board has it then (a cancel made meanwhile holds). `ask_permission` turns
+Claude Code's asks into the usual yes/no card and waits for the verdict; no answer is no. A computer that restarts
+ends the waker: the wakeups wait for the session's next start.
+
 ## Status lines follow their questions
 
 A status line in state `decision` names its card (`object_id`). The connector keeps it true without the agent's
@@ -222,6 +239,7 @@ as a quiet info, with a push) and every line linked to it turns `done` with that
 | `src/server.rs`, `src/mcp.rs`, `src/member.rs`, `src/slots.rs`, `src/slotstore.rs`, `src/door.rs` | the MCP server, this process as a member, key slots per folder, the sockets hooks reach it through |
 | `src/line.rs`, `src/mirror.rs`, `src/trail.rs`, `src/hooks.rs` | the monitor's line, the terminal mirror, the work trail, the permission hooks |
 | `src/update.rs` | the check a new binary must pass, and `update` |
+| `src/wakeups.rs` | the wakeups of a closed session: its note, the waker, the command it starts |
 | `src/usage.rs` | the account and usage of Claude Code or Codex for the board, the status line, `remove claude` |
 | `src/launch.rs` | the launcher: passes the MCP session through to the connector and swaps in a new one |
 | `prompt.md`, `tools.json` | every text the agent reads and every tool's schema: the one source, compiled in and checked by `build.rs` |

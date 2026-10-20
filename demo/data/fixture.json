@@ -10925,6 +10925,49 @@
       "platform": {
         "at": 1791466200000
       }
+    },
+    "wakeups": {
+      "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8": {
+        "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1": {
+          "at": 1791471120000,
+          "note": "Run the Safari checkout test 12 times again and post the result",
+          "set_at": 1791467400000,
+          "helper": "Testing"
+        },
+        "d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2": {
+          "at": 1791545400000,
+          "every": 86400000,
+          "note": "Check last night’s error log of the web app and file a card if anything new shows up",
+          "set_at": 1791210600000,
+          "last": {
+            "at": 1791459000000,
+            "result": "ran",
+            "detail": ""
+          },
+          "day": 0,
+          "day_runs": 0
+        }
+      },
+      "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425": {
+        "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3": {
+          "at": 1791646200000,
+          "note": "Look whether App Store review has answered and tell the human",
+          "set_at": 1791451800000
+        }
+      },
+      "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e": {
+        "d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4": {
+          "at": 1791487800000,
+          "every": 21600000,
+          "note": "Compare the nightly row counts with yesterday’s",
+          "set_at": 1791297000000,
+          "last": {
+            "at": 1791466200000,
+            "result": "waited",
+            "detail": "quiet hours"
+          }
+        }
+      }
     }
   }
 }

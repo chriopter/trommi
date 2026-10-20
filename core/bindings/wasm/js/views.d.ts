@@ -50,6 +50,8 @@ export type Screen =
   /** The page Knowledge of the team in view, with the search's words, its filter ("" every entry, "new",
    *  "pinned", "forgotten") and the entry open (its history shows). */
   | { screen: 'knowledge'; query?: string; filter?: string; open?: string }
+  /** The page Wakeups of the team in view: when its agents start again on their own. */
+  | { screen: 'wakeups' }
   /** Settings: its list (`page` ""), or one of its pages ("agents", "teams", "devices", "account", "theme",
    *  "data", "security"). */
   | { screen: 'settings'; page?: string }
@@ -86,6 +88,8 @@ export interface ViewModel {
   thumbs?: ThumbView[]
   /** The page Knowledge of the team in view, while it is in view (`Screen::Knowledge`); none else. */
   knowledge?: KnowledgeView
+  /** The page Wakeups of the team in view, while it is in view (`Screen::Wakeups`); none else. */
+  wakeups?: WakeupsView
   /** Sealed dictation (spec/v1.md 18, `crate::dictation`): the microphone of the chat field and its words. */
   dictation: DictationView
   toasts?: Toast[]
@@ -121,6 +125,8 @@ export type ViewPart =
   | { part: 'thumbs'; view: ThumbView[] | null }
   /** The page Knowledge, whole; none when it is left. */
   | { part: 'knowledge'; view: KnowledgeView | null }
+  /** The page Wakeups, whole; none when it is left. */
+  | { part: 'wakeups'; view: WakeupsView | null }
   /** Sealed dictation, whole. */
   | { part: 'dictation'; view: DictationView }
   | { part: 'toasts'; toasts: Toast[] }
@@ -621,6 +627,56 @@ export interface OffWorkView {
   says: Text
 }
 
+/** The page Wakeups of a team (`Screen::Wakeups`, core/client/src/views/wakeups.rs): every wakeup its agents set
+ *  themselves, the next first. */
+export interface WakeupsView {
+  team_id: string
+  team: Text
+  /** "Wakeups". */
+  title: Text
+  count: number
+  /** The same in words ("3 wakeups"). */
+  summary: Text
+  lead: Text
+  rows: WakeupRowView[]
+  /** What the page says when it lists none. */
+  none?: Text
+  words: WakeupWordsView
+}
+
+/** One wakeup on the page. */
+export interface WakeupRowView {
+  /** Its id and its session's key: what `Action::WakeupCancel` and `WakeupMove` take. */
+  id: string
+  session_id: string
+  /** The session that set it, and its drawing. */
+  who: Text
+  mark: string
+  /** The helper it is for; none: the agent. */
+  helper?: string
+  /** What it will do then. */
+  note: string
+  /** When it runs next ("Today 09:00"), and that moment. */
+  next: Text
+  at_ms: number
+  /** How often ("once", "every day"). */
+  how_often: Text
+  recurring: boolean
+  /** What became of its last run ("Ran today 07:00", "Waited: quiet hours (…)"). */
+  last?: Text
+  /** What the person asked of it, on its way to the agent's computer ("Cancelling…", "Moving to …"). */
+  pending?: Text
+}
+
+/** The words of the page Wakeups beside its rows. */
+export interface WakeupWordsView {
+  cancel: Text
+  move_to: Text
+  save: Text
+  back: Text
+  cancel_ask: Text
+}
+
 /** The chip on a team's Desk that opens its page Knowledge. */
 export interface KnowledgeChipView {
   team_id: string
@@ -938,6 +994,8 @@ export interface SessionView {
   status_lines: StatusLineView[]
   /** "+N": how many lines stand behind the first; none with one line or none. */
   status_more?: Text
+  /** The chat's quiet line of its next wakeup ("Wakes at 09:00 · check the tests"); none without one. */
+  wake_line?: Text
   /** The calm chat (`Focus.calm`): the agent at work, drawn at the chat's end as its face drawing itself; a tap
    *  opens the details (the step it is at, its lines, the turn's trail). None while it does not work. */
   working?: WorkingView

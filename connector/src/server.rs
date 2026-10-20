@@ -283,6 +283,15 @@ pub struct Conn {
     goals_told: Mutex<Option<String>>,
     /// The digest of the team's knowledge this process last told its agent (knowledge::digest; "" for none).
     knowledge_told: Mutex<Option<String>>,
+    /// The clock of this session's wakeups (wakeups.rs): whether it looked once (and took the note of a closed
+    /// session), and the wakeup a waker woke this session for, until the clock ran it.
+    wake_looked: AtomicBool,
+    wake_took: AtomicBool,
+    wake_run: Mutex<Option<String>>,
+    /// Held through one look, so that two looks (the clock's, the first inbox's) never run one wakeup twice.
+    wake_lock: tokio::sync::Mutex<()>,
+    /// A woken run's asks of the human (ask_permission), by request id, until his verdict.
+    asks: Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
     missed: Mutex<Vec<Missed>>,
     deaf_told: AtomicBool,
     marks: Mutex<HashMap<String, u64>>,
@@ -477,6 +486,12 @@ impl Conn {
     }
     pub async fn notify(&self, method: &str, params: Value, about: Option<About>) {
         if method == "notifications/claude/channel/permission" {
+            // (a woken run's ask: its tool call waits for this)
+            let ask = params.get("request_id").and_then(Value::as_str).and_then(|r| self.asks.lock().unwrap().remove(r));
+            if let Some(tx) = ask {
+                let _ = tx.send(params.get("behavior").and_then(Value::as_str) == Some("allow"));
+                return;
+            }
             let desk = self.desk.lock().unwrap().clone();
             if desk.is_some_and(|d| d.verdict(&params)) {
                 return;
@@ -935,6 +950,97 @@ impl Conn {
     }
 
 
+    /// One look of the wakeups' clock: the first look takes the note a closed session left (and the wakeup a waker
+    /// woke it for); a due wakeup reaches the agent as a board event.
+    async fn wake_look(&self) {
+        let _one = self.wake_lock.lock().await;
+        let ready = self.bridge.lock().unwrap().clone().filter(|_| self.member.phase() == "ready");
+        let Some(b) = ready else { return };
+        let Some(sid) = b.client.lock().session_id() else { return };
+        if !self.wake_took.swap(true, Ordering::SeqCst) {
+            *self.wake_run.lock().unwrap() = crate::wakeups::take(&self.cfg.keys_dir, &sid);
+        }
+        let running = self.wake_run.lock().unwrap().clone();
+        let counted = self.wake_runs();
+        match b.wakeups_tick(running.as_deref(), counted).await {
+            Ok(t) => {
+                *self.wake_run.lock().unwrap() = None;
+                let today = trommi_client_core::wakeups::day_of(crate::util::now_ms(), crate::wakeups::zone_min());
+                if (today, t.day_runs) != counted && t.day_runs > 0 {
+                    if let Some(st) = self.member.me.lock().unwrap().storage.clone() {
+                        st.set("wake_runs", json!({ "day": today, "runs": t.day_runs }));
+                    }
+                }
+                for (id, words) in t.runs {
+                    eprintln!("[trommi] wakeup {id} is due: the agent is woken");
+                    let mut meta = Map::new();
+                    meta.insert("kind".into(), json!("wakeup"));
+                    meta.insert("wakeup_id".into(), json!(id));
+                    self.notify("notifications/claude/channel", json!({ "content": words, "meta": meta }), None).await;
+                }
+                // (looked once, and what was due is handed over: a woken run's first inbox finds it)
+                self.wake_looked.store(true, Ordering::SeqCst);
+            }
+            Err(e) => eprintln!("[trommi] wakeups not looked at: {}", e.text()),
+        }
+    }
+
+    /// The session's runs today as this connector kept them (the day, how many).
+    fn wake_runs(&self) -> (u64, u32) {
+        let kept = self.member.me.lock().unwrap().storage.clone().and_then(|st| st.get("wake_runs"));
+        kept.map(|v| (v["day"].as_u64().unwrap_or(0), v["runs"].as_u64().unwrap_or(0) as u32)).unwrap_or((0, 0))
+    }
+
+    /// The note and waker of a session that closes with wakeups left (wakeups.rs).
+    fn leave_wakeups(&self) {
+        let Some(b) = self.bridge.lock().unwrap().clone() else { return };
+        let Some(sid) = b.client.lock().session_id() else { return };
+        let (list, _) = b.wakeups_held();
+        let codex = crate::host::is_codex();
+        let resume = if codex { crate::host::thread() } else { std::env::var("CLAUDE_CODE_SESSION_ID").ok() };
+        let ask_tool = if std::env::var_os("CLAUDE_PLUGIN_ROOT").is_some() { "mcp__plugin_trommi_trommi__ask_permission" } else { "mcp__trommi__ask_permission" };
+        let note = crate::wakeups::Note {
+            session: sid,
+            folder: self.cfg.folder.display().to_string(),
+            program: if codex { "codex" } else { "claude" }.into(),
+            resume: resume.unwrap_or_default(),
+            ask_tool: if codex { String::new() } else { ask_tool.into() },
+            zone_min: crate::wakeups::zone_min(),
+            counted: self.wake_runs(),
+            wakeups: list,
+            ..Default::default()
+        };
+        crate::wakeups::leave(&self.cfg.keys_dir, note);
+    }
+
+    /// `ask_permission`: Claude Code, in a woken run (`--permission-prompt-tool`), asks the human to allow a tool use.
+    /// He answers on the board's yes/no card; no answer within the run's time is no.
+    async fn ask_permission(&self, args: &Value) -> String {
+        let deny = |why: &str| json!({ "behavior": "deny", "message": why }).to_string();
+        let Some(b) = self.bridge.lock().unwrap().clone() else { return deny("not on the board") };
+        let tool = args.get("tool_name").and_then(Value::as_str).unwrap_or("").to_string();
+        let input = args.get("input").cloned().unwrap_or(json!({}));
+        let rid = args.get("tool_use_id").and_then(Value::as_str).filter(|r| !r.is_empty()).map(str::to_string).unwrap_or_else(|| crate::util::random_hex(8));
+        let preview: String = input.to_string().chars().take(1000).collect();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.asks.lock().unwrap().insert(rid.clone(), tx);
+        let params = json!({ "request_id": rid, "tool_name": tool, "description": format!("A woken run (a wakeup) wants to use {tool}"), "input_preview": preview, "expires_in_ms": trommi_client_core::wakeups::RUN_MAX_MS });
+        if let Err(e) = b.permission_request(&params).await {
+            self.asks.lock().unwrap().remove(&rid);
+            return deny(&format!("the human could not be asked: {}", e.text()));
+        }
+        let wait = std::time::Duration::from_millis(env_ms("TROMMI_WAKE_RUN_MS", trommi_client_core::wakeups::RUN_MAX_MS));
+        match tokio::time::timeout(wait, rx).await {
+            Ok(Ok(true)) => json!({ "behavior": "allow", "updatedInput": input }).to_string(),
+            Ok(Ok(false)) => deny("the human said no"),
+            _ => {
+                self.asks.lock().unwrap().remove(&rid);
+                let _ = b.permission_withdraw(&rid, "the woken run ended").await;
+                deny("the human did not answer in time")
+            }
+        }
+    }
+
     async fn bye(&self, why: &str, reason: &str) {
         if self.leaving.swap(true, Ordering::SeqCst) {
             return;
@@ -974,6 +1080,10 @@ impl Conn {
                     now_ms(),
                 );
             }
+        }
+        // a session that closes with wakeups left: a note of them and a waker on this computer (wakeups.rs)
+        if !swap && self.member.phase() == "ready" && !["lease-lost", "state-rolled-back"].contains(&reason) {
+            self.leave_wakeups();
         }
         if let Some(here) = self.here.lock().unwrap().clone() {
             check_out(&here, &self.cfg.base);
@@ -2121,6 +2231,24 @@ impl mcp::Server for Conn {
                     // (every board event is the coordinator's, who forwards a helper's: README "Helpers and their events")
                     return text("No board events for a helper: the agent that runs you reads them and forwards yours.".into());
                 }
+                if name == "ask_permission" {
+                    return text(self.ask_permission(&args).await);
+                }
+                // (a woken run asks the board first: its wakeup is handed over by the clock's first look, which is
+                //  waited for, up to half a minute)
+                if name == "inbox"
+                    && child.is_none()
+                    && !self.wake_looked.load(Ordering::SeqCst)
+                    && (self.wake_run.lock().unwrap().is_some() || crate::wakeups::woken_here(&self.cfg.keys_dir, &self.cfg.folder.display().to_string()))
+                {
+                    for _ in 0..60 {
+                        self.wake_look().await;
+                        if self.wake_looked.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    }
+                }
                 if name == "inbox"
                     && (!self.missed.lock().unwrap().is_empty()
                         || self.bridge.lock().unwrap().is_some())
@@ -2256,6 +2384,11 @@ pub async fn main_server() {
         trail_timer: AtomicBool::new(false),
         goals_told: Mutex::new(None),
         knowledge_told: Mutex::new(None),
+        wake_looked: AtomicBool::new(false),
+        wake_took: AtomicBool::new(false),
+        wake_run: Mutex::new(None),
+        wake_lock: tokio::sync::Mutex::new(()),
+        asks: Mutex::new(HashMap::new()),
         missed: Mutex::new(vec![]),
         deaf_told: AtomicBool::new(false),
         marks: Mutex::new(HashMap::new()),
@@ -2453,6 +2586,20 @@ pub async fn main_server() {
                     }
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(every)).await;
+            }
+        });
+    }
+    // the clock of this session's wakeups (wakeups.rs)
+    {
+        let c = conn.clone();
+        tokio::spawn(async move {
+            let every = env_ms("TROMMI_WAKE_TICK_MS", 30_000).max(200);
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(if c.wake_looked.load(Ordering::SeqCst) { every } else { 500 })).await;
+                if c.leaving.load(Ordering::SeqCst) {
+                    return;
+                }
+                c.wake_look().await;
             }
         });
     }
