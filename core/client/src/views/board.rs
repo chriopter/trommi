@@ -70,6 +70,8 @@ pub struct Lens {
     pub gallery: Option<String>,
     /// The page Knowledge is in view, with its search and filter: its unit is made.
     pub knowledge: Option<super::knowledge::Ask>,
+    /// The page Wakeups is in view.
+    pub wakeups: bool,
     /// How many pages of a session's talk show ([`TALK_PAGE`] rows each), for that session (its key or short id);
     /// none, or another session: one page.
     pub talk_window: Option<(String, u32)>,
@@ -579,6 +581,7 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
         view.artifacts = Some(shown);
     }
     view.knowledge = lens.knowledge.as_ref().map(|ask| super::knowledge::page(&b, ask));
+    view.wakeups = lens.wakeups.then(|| super::wakeups::page(&b));
     view.notes = super::notes::notes(&b);
     // (what the account read keeps: the e-mail is the account's, W3)
     // (what the App adds beside the model: the account read, the room, the teams' deletes)

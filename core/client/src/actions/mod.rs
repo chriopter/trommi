@@ -238,6 +238,19 @@ pub enum Action {
         change_id: String,
     },
 
+    // ---- wakeups (crate::wakeups) ----
+    /// A wakeup an agent set, cancelled by the person: its agent's connector takes it away.
+    WakeupCancel {
+        session_id: String,
+        wakeup_id: String,
+    },
+    /// A wakeup moved to another time by the person (ms; a time in quiet hours waits for their end).
+    WakeupMove {
+        session_id: String,
+        wakeup_id: String,
+        at_ms: u64,
+    },
+
     // ---- notes, scribble, files ----
     /// A sealed native share inbox item. Recipient selection and upload completion belong to the core.
     ImportShare {

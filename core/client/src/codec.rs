@@ -538,9 +538,9 @@ fn plain_options(options: &[Value]) -> Value {
 /// Register names whose tail is one id of 16 bytes (spec/v1.md 9.3.3). A new per-card or per-session register goes
 /// into this list and needs nothing else. Written: base64url, always. Read: base64url, and the 32 hex digits an
 /// earlier iOS app wrote on the wire, which already are the model's key (it stays as it is).
-const ID_NAMES: [&str; 11] = [
+const ID_NAMES: [&str; 13] = [
     "desk/", "session/", "draft/", "snooze/", "duck/", "star/", "knowledge/", "knowledge_log/", "knowledge_ask/", "knowledge_done/",
-    "knowledge_seen/",
+    "knowledge_seen/", "wakeup/", "wakeup_edit/",
 ];
 const READ_SCOPES: [&str; 3] = ["read/session/", "read/card/", "read/desk/"];
 

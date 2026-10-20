@@ -35,6 +35,7 @@ extension CoreView.ViewModel {
       case .gallery(let view): gallery = view
       case .thumbs(let view): thumbs = view
       case .knowledge(let view): knowledge = view
+      case .wakeups(let view): wakeups = view
       case .dictation(let view): dictation = view
       }
     }

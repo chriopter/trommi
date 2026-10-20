@@ -23,7 +23,9 @@ fn owned_by(name: &str, role: Role, sender: &DeviceId) -> Option<bool> {
         (device == sender.to_base64url()).then_some(false)
     } else if name == "goals" || ["knowledge/", "knowledge_done/"].iter().any(|p| name.strip_prefix(p).is_some_and(|id| !id.is_empty())) {
         (!agent).then_some(false)
-    } else if name.strip_prefix("knowledge_ask/").is_some_and(|id| !id.is_empty()) {
+    } else if name.strip_prefix("wakeup_edit/").is_some_and(|id| !id.is_empty()) {
+        (!agent).then_some(false)
+    } else if ["knowledge_ask/", "wakeup/"].iter().any(|p| name.strip_prefix(p).is_some_and(|id| !id.is_empty())) {
         agent.then_some(false)
     } else if name == "profile"
         || name == "heard"
@@ -635,6 +637,9 @@ mod rules {
             ("knowledge_seen/x", true, false, false, false),
             ("knowledge_ask/x", false, false, true, true),
             ("knowledge_done/x", false, true, false, false),
+            ("wakeup/x", false, false, true, true),
+            ("wakeup_edit/x", false, true, false, false),
+            ("wakeup/", false, false, false, false),
             (own.as_str(), true, true, true, true),
             (other.as_str(), false, false, false, false),
             ("heads", true, true, true, true),
@@ -1114,5 +1119,17 @@ fn a_register_number_is_written_again_as_it_was_read() {
         let value = trommi_core::registers::Value::parse(payload.as_bytes()).unwrap();
         let again = trommi_core::registers::Value::parse(&value.payload().unwrap()).unwrap();
         assert_eq!(again, value, "{number}");
+    }
+}
+
+#[test]
+fn a_wakeup_keeps_to_its_note_and_names_its_time() {
+    use trommi_core::registers::MAX_WAKEUP_NOTE_LEN;
+    let read = |value: &str| Value::parse(format!(r#"{{"name":"wakeup/abc","value":{value},"lamport":1}}"#).as_bytes()).map(|_| ());
+    assert_eq!(read(r#"{"at":1790000000000,"note":"check the tests","every":3600000}"#), Ok(()));
+    assert_eq!(read("null"), Ok(()));
+    assert_eq!(read(&serde_json::json!({ "at": 1, "note": "x".repeat(MAX_WAKEUP_NOTE_LEN + 1) }).to_string()), Err(Error::TooLarge));
+    for odd in [r#"{"note":"x"}"#, r#"{"at":"soon","note":"x"}"#, r#"{"at":1}"#, r#""wake""#] {
+        assert_eq!(read(odd), Err(Error::BadFormat), "{odd}");
     }
 }

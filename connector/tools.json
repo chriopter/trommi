@@ -1386,6 +1386,89 @@
           "id"
         ]
       }
+    },
+    {
+      "name": "wake_me",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "in": {
+            "type": "string",
+            "description": "How long from now: 30m, 2h, 1d, 1w (at least 5 minutes). Give in or at"
+          },
+          "at": {
+            "type": "string",
+            "description": "When, on this computer's clock: 09:00 (the next 09:00) or 2026-10-21 09:00"
+          },
+          "every": {
+            "type": "string",
+            "description": "Again every so long: 1h, 6h, 1d, 1w (at least 1h). Leave out for once"
+          },
+          "note": {
+            "type": "string",
+            "description": "What to do then, for yourself, at most 300 characters; the human sees it"
+          },
+          "helper": {
+            "type": "string",
+            "description": "The helper it is for; leave out for yourself"
+          }
+        },
+        "required": ["note"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_wakeups",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cancel_wakeup",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The wakeup's id, as wake_me or list_wakeups named it"
+          }
+        },
+        "required": ["id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ask_permission",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tool_name": { "type": "string" },
+          "input": { "type": "object" },
+          "tool_use_id": { "type": "string" }
+        },
+        "required": ["tool_name"]
+      }
     }
   ],
   "reload": {

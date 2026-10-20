@@ -40,7 +40,7 @@ demo/
 | `cards` | the decision and info cards, each with its versions and answers |
 | `permissions`, `notes`, `published` | waiting permission requests, the corner note, published artifacts |
 | `timelines` | the conversations (`chat:session/<device>`, `chat:card/<object>`) and the Scribble Boards (`scribble:desk/<id>`) |
-| `human` | the human registers: `drafts`, `snoozes`, `ducks`, `crown`, `desks` (the teams), `knowledge` (each team's entries, by id; the core copies the live ones into the team's sessions as the person's devices do), `knowledge_log` (their changes), `knowledge_seen` (when the person last looked, by team), `session_settings` |
+| `human` | the human registers: `drafts`, `snoozes`, `ducks`, `crown`, `desks` (the teams), `knowledge` (each team's entries, by id; the core copies the live ones into the team's sessions as the person's devices do), `knowledge_log` (their changes), `knowledge_seen` (when the person last looked, by team), `wakeups` (by agent device: the wakeups its agent set, which the core puts into that session's group), `session_settings` |
 
 An attachment names its file as `url: "/demo/files/<name>"`; the file is `data/files/<name>`.
 

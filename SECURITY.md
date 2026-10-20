@@ -92,6 +92,16 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   page marks what agents changed since you last looked, undoes any change, and brings a forgotten entry back for 30
   days. Only you pin. The hub sees nothing new: these are encrypted registers like the others (who wrote one, when,
   its padded size).
+- Wakeups (you agreed to this on 20 October 2026): an agent may set itself a wakeup, which its connector keeps in
+  the agent's own session, end-to-end encrypted like any register; the hub sees nothing new. Only that agent's
+  session is ever woken, on the computer it runs on, and only within fixed limits (5 open, 2 that repeat, 12 runs a
+  day, none from 22:00 to 07:00, a run at most 30 minutes, and in Claude Code at most 30 turns; Codex has no turn
+  limit to set). You see every wakeup and can cancel or move
+  it. When the session is closed, the connector leaves a note of its wakeups (with their notes) next to the device
+  key on that computer, readable only by your user, and a small waker process that starts the agent's program
+  again on that conversation. A woken run has the rights the program's own settings give it, no more: Claude Code
+  asks you for each permission on a yes/no card (no answer is no); Codex runs as its own settings say. The woken
+  run takes the wakeup from the board as it stands then, so a cancel made meanwhile holds.
 - An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
   are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
   Claude Code's status line (put around one already there), never from their credential files.

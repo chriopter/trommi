@@ -4,6 +4,7 @@ use crate::driver::{BoxFut, Command, Driver};
 use crate::error::{Fault, Result};
 use crate::html::{clean_fences, fences_hide, fences_show, html_beside, stripped_hint};
 use trommi_client_core::knowledge;
+use trommi_client_core::wakeups;
 use trommi_client_core::model::types::{self as model, Card};
 use crate::util::{now_ms, truthy};
 use serde_json::{json, Map, Value};
@@ -880,6 +881,9 @@ pub struct Bridge {
     /// The full-text index of the team's knowledge this session holds, with the mark of the registers it was built
     /// from (`knowledge_index`): built again only when they changed.
     knowledge: Mutex<Option<KnowledgeIndex>>,
+    /// Held from reading this session's wakeups to writing them (wake_me, cancel_wakeup, the clock's look): two never
+    /// work on one list.
+    wakeups: tokio::sync::Mutex<()>,
 }
 
 /// Where something of this agent is written: its session (none: this agent's own; a helper session of before for
@@ -941,6 +945,7 @@ impl Bridge {
             dropped: Mutex::new(HashSet::new()),
             trail_sent: Mutex::new(HashMap::new()),
             knowledge: Mutex::new(None),
+            wakeups: tokio::sync::Mutex::new(()),
         })
     }
     fn save_state(&self) {
@@ -1133,6 +1138,58 @@ impl Bridge {
             let _ = self.client.set_status(clear, None).await;
         }
         (!told.is_empty()).then(|| format!("[Trommi: the team's knowledge did not take your write: {}.]", told.join("; ")))
+    }
+
+    // ---- wakeups (README "Wakeups"): the agent's own, in its session; the person's words on them beside -------------
+    /// This session's wakeups (the next first) and the person's words on them (id, word, its envelope).
+    pub fn wakeups_held(&self) -> (Vec<wakeups::Wakeup>, Vec<(String, wakeups::Edit, String)>) {
+        let c = self.client.lock();
+        let Some(session) = c.session_id().and_then(|sid| c.model().sessions.get(&sid)) else { return (Vec::new(), Vec::new()) };
+        let list = wakeups::of(session.registers.iter().map(|(k, r)| (k, &r.value)));
+        let edits = session
+            .registers
+            .iter()
+            .filter_map(|(k, r)| Some((k.strip_prefix(wakeups::EDIT_PREFIX)?.to_string(), wakeups::Edit::read(&r.value)?, wakeups::mark(&r.value))))
+            .collect();
+        (list, edits)
+    }
+
+    /// Writes wakeups of this session (none: it is gone).
+    pub async fn wakeups_write(&self, writes: &[(String, Option<wakeups::Wakeup>)]) -> Result<()> {
+        if writes.is_empty() {
+            return Ok(());
+        }
+        let mut values = Map::new();
+        for (id, w) in writes {
+            let value = w.as_ref().map_or(Value::Null, wakeups::Wakeup::value);
+            let (name, wire) = trommi_client_core::codec::encode_register(&format!("{}{id}", wakeups::PREFIX), &value).map_err(|_| err("that wakeup does not fit"))?;
+            values.insert(name, wire.map_or(Value::Null, |v| serde_json::from_str(&v).unwrap_or(Value::Null)));
+        }
+        self.client.set_status(values, None).await?;
+        Ok(())
+    }
+
+    /// One look of the clock: the person's words applied, due wakeups run (their first words in `runs`) or put off.
+    /// `running`: the wakeup a waker woke this session for; `counted`: the session's runs today as kept.
+    pub async fn wakeups_tick(&self, running: Option<&str>, counted: (u64, u32)) -> Result<wakeups::Tick> {
+        let _one = self.wakeups.lock().await;
+        let (list, edits) = self.wakeups_held();
+        let now = now_ms();
+        if list.is_empty() {
+            let today = wakeups::day_of(now, crate::wakeups::zone_min());
+            return Ok(wakeups::Tick { day_runs: if counted.0 == today { counted.1 } else { 0 }, ..Default::default() });
+        }
+        let t = wakeups::tick(&list, &edits, now, crate::wakeups::zone_min(), crate::wakeups::usage(now), running, counted);
+        self.wakeups_write(&t.writes).await?;
+        Ok(t)
+    }
+
+    fn wakeup_line(w: &wakeups::Wakeup, zone: i32) -> String {
+        let now = now_ms();
+        let day = if wakeups::day_of(w.at, zone) == wakeups::day_of(now, zone) { "today".to_string() } else { format!("in {} day(s)", wakeups::day_of(w.at, zone).saturating_sub(wakeups::day_of(now, zone))) };
+        let last = w.last.as_ref().map(|l| format!("; last: {}{}", l.result, if l.detail.is_empty() { String::new() } else { format!(" ({})", l.detail) })).unwrap_or_default();
+        let helper = w.helper.as_deref().map(|h| format!(" for helper \"{h}\"")).unwrap_or_default();
+        format!("{} {} {day}, {}{helper}: {}{last}", w.id, wakeups::clock(w.at, zone), wakeups::every_words(w.every), w.note)
     }
 
     async fn my_cards(&self) -> Vec<Card> {
@@ -2020,6 +2077,43 @@ impl Bridge {
                 let e = self.knowledge_entry(args)?;
                 let ask = knowledge::Ask { op: knowledge::Op::Forget, entry: Some(e.id.clone()), was: Some(e.title.clone()), title: e.title.clone(), text: String::new(), kind: None, rev: e.changed(), at: crate::util::now_ms() };
                 self.knowledge_write(ask).await
+            }
+            "wake_me" => {
+                let helper = Self::helper_arg(args)?;
+                let _one = self.wakeups.lock().await;
+                let (open, _) = self.wakeups_held();
+                let now = now_ms();
+                let zone = crate::wakeups::zone_min();
+                let arg = |k: &str| args.get(k).and_then(Value::as_str);
+                let id = crate::util::random_hex(16);
+                let w = wakeups::set(&id, arg("at"), arg("in"), arg("every"), &s(args.get("note")), helper.as_deref(), &open, now, zone).map_err(|r| err(r.words()))?;
+                self.wakeups_write(&[(id, Some(w.clone()))]).await?;
+                Ok(format!("Wakeup set: {}. This computer wakes you then, also when this session is closed (it must be on); the human sees it and can cancel or move it.", Self::wakeup_line(&w, zone)))
+            }
+            "list_wakeups" => {
+                let (open, edits) = self.wakeups_held();
+                let zone = crate::wakeups::zone_min();
+                if open.is_empty() {
+                    return Ok("No wakeups: wake_me sets one.".into());
+                }
+                let lines: Vec<String> = open
+                    .iter()
+                    .map(|w| {
+                        let asked = edits.iter().any(|(id, _, mark)| *id == w.id && !wakeups::edit_applied(Some(w), mark));
+                        format!("- {}{}", Self::wakeup_line(w, zone), if asked { " (the human changed it; applied at the next look)" } else { "" })
+                    })
+                    .collect();
+                Ok(format!("{} wakeup(s), the next first (id, time, how often, note):\n{}", open.len(), lines.join("\n")))
+            }
+            "cancel_wakeup" => {
+                let id = trim(&s(args.get("id")));
+                let _one = self.wakeups.lock().await;
+                let (open, _) = self.wakeups_held();
+                let Some(w) = open.iter().find(|w| w.id == id) else {
+                    return Err(err(format!("no wakeup \"{id}\": list_wakeups names their ids")));
+                };
+                self.wakeups_write(&[(w.id.clone(), None)]).await?;
+                Ok(format!("Cancelled: {}", w.note))
             }
             // (before helpers lived in their agent's session: an agent still calling these, with tools it was
             //  started with, is told what changed instead of failing)

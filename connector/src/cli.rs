@@ -598,6 +598,7 @@ pub async fn run(argv: &[String]) -> i32 {
             witness(given).await;
             0
         }
+        "waker" => crate::wakeups::waker(given, argv.get(2).cloned()).await,
         "whoami" => match whoami() {
             Ok(s) => {
                 println!("{s}");

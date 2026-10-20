@@ -36,6 +36,7 @@ export function foldView(view, delta) {
       case 'gallery': if (p.view == null) delete v.gallery; else v.gallery = p.view; break
       case 'thumbs': if (p.view == null) delete v.thumbs; else v.thumbs = p.view; break
       case 'knowledge': if (p.view == null) delete v.knowledge; else v.knowledge = p.view; break
+      case 'wakeups': if (p.view == null) delete v.wakeups; else v.wakeups = p.view; break
       case 'dictation': v.dictation = p.view; break
       default: throw new Error(`a view part this fold does not know: ${p.part}`)
     }

@@ -1785,6 +1785,15 @@
     },
     "en": "+7"
   },
+  "wake_line": {
+    "key": "wakeups.line",
+    "args": {
+      "more": "1",
+      "note": "Run the Safari checkout test 12 times again and post the result",
+      "when": "16:52"
+    },
+    "en": "Wakes at 16:52 · Run the Safari checkout test 12 times again and post the result, and 1 more"
+  },
   "questions": [
     {
       "id": "76ab0cafab45f8b2011853527a3dc10e",

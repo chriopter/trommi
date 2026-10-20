@@ -1072,6 +1072,7 @@ impl App {
                 };
                 // (the page Knowledge: on a visit's first look at a team, what changed since he looked before stays
                 //  new on the page, and from now on it is seen)
+                self.lens.wakeups = matches!(focus.screen, Screen::Wakeups);
                 let mut seen_now: Option<String> = None;
                 self.lens.knowledge = match &focus.screen {
                     Screen::Knowledge { query, filter, open } => {
