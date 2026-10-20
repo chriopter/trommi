@@ -287,6 +287,9 @@ pub struct Conn {
     /// session), and the wakeup a waker woke this session for, until the clock ran it.
     wake_looked: AtomicBool,
     wake_took: AtomicBool,
+    /// This process serves a run a waker started (its note named the wakeup): only such a run asks through
+    /// ask_permission.
+    woken: AtomicBool,
     wake_run: Mutex<Option<String>>,
     /// Held through one look, so that two looks (the clock's, the first inbox's) never run one wakeup twice.
     wake_lock: tokio::sync::Mutex<()>,
@@ -958,7 +961,9 @@ impl Conn {
         let Some(b) = ready else { return };
         let Some(sid) = b.client.lock().session_id() else { return };
         if !self.wake_took.swap(true, Ordering::SeqCst) {
-            *self.wake_run.lock().unwrap() = crate::wakeups::take(&self.cfg.keys_dir, &sid);
+            let running = crate::wakeups::take(&self.cfg.keys_dir, &sid);
+            self.woken.store(running.is_some(), Ordering::SeqCst);
+            *self.wake_run.lock().unwrap() = running;
         }
         let running = self.wake_run.lock().unwrap().clone();
         let counted = self.wake_runs();
@@ -1017,6 +1022,13 @@ impl Conn {
     /// He answers on the board's yes/no card; no answer within the run's time is no.
     async fn ask_permission(&self, args: &Value) -> String {
         let deny = |why: &str| json!({ "behavior": "deny", "message": why }).to_string();
+        // (only a woken run asks here; any other call is told no at once instead of waiting for an answer)
+        if !self.wake_took.load(Ordering::SeqCst) {
+            self.wake_look().await;
+        }
+        if !self.woken.load(Ordering::SeqCst) {
+            return deny("only a run a wakeup started asks the human through this tool");
+        }
         let Some(b) = self.bridge.lock().unwrap().clone() else { return deny("not on the board") };
         let tool = args.get("tool_name").and_then(Value::as_str).unwrap_or("").to_string();
         let input = args.get("input").cloned().unwrap_or(json!({}));
@@ -2386,6 +2398,7 @@ pub async fn main_server() {
         knowledge_told: Mutex::new(None),
         wake_looked: AtomicBool::new(false),
         wake_took: AtomicBool::new(false),
+        woken: AtomicBool::new(false),
         wake_run: Mutex::new(None),
         wake_lock: tokio::sync::Mutex::new(()),
         asks: Mutex::new(HashMap::new()),
