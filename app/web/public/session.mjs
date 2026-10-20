@@ -197,6 +197,8 @@ controller('working-face', class extends Controller {
 const workingFace = (s, base) => (s.working
   ? html`<details class="working-face" id="working-face-${s.id}" data-controller="working-face" data-action="toggle->working-face#toggle"${facesOpen.has(`working-face-${s.id}`) ? raw(' open') : ''}><summary aria-label="${s.working.says.en}" title="Details">${avatar({ ...whoOf(s), online: true }, { working: true })}</summary><div class="working-details"><p class="working-head">${s.working.head.en}</p>${sessionStatus(s, base)}${s.working.trail ? workBlock({ id: `trail-${s.id}`, time_ms: 0 }, s.working.trail) : ''}</div></details>`
   : html`<span id="working-face-${s.id}" hidden></span>`)
+/** The quiet line of its next wakeup (SessionView.wake_line): "Wakes at 09:00 · …"; a click opens the page Wakeups. */
+const wakeLine = (s, base) => (s.wake_line ? html`<a class="wake-line" id="wake-line-${s.id}" data-nav href="${base}/wakeups">${sk('snooze')}<span>${s.wake_line.en}</span></a>` : html`<span id="wake-line-${s.id}" hidden></span>`)
 /** "N open": the questions of this session that wait, and the way to the first of them. */
 const sessionOpen = (s, base) => (s.open ? html`<a class="open-jump" id="session-open-${s.id}" data-nav href="${s.first_open ? `#msg-${s.first_open}` : `${sessionPath(s, base)}/questions`}"${s.first_open ? raw(' data-turbo="false" data-log-target="open" data-action="log#toOpen"') : ''} aria-label="${s.open_says?.en ?? ''}"><span data-log-target="openText">${s.open_word?.en ?? ''}</span>${ico('down')}</a>` : html`<span id="session-open-${s.id}" hidden></span>`)
 
@@ -260,7 +262,7 @@ function titleMenu(s, vm, base) {
  *  Files, then its actions. */
 function chatMenu(s, vm, base) {
   const here = sessionPath(s, base), n = s.files?.length ?? 0
-  return html`<a role="menuitem" data-nav href="${here}/questions">${sk('knock')}<span>Questions Only</span>${s.open ? html`<b>${s.open}</b>` : ''}</a>${n ? html`<a role="menuitem" data-nav href="${here}/files">${ico('clip')}<span>Files</span><b>${n}</b></a>` : ''}<hr class="desk-move-rule">${sessionMore(s, vm, base)}`
+  return html`<a role="menuitem" data-nav href="${here}/questions">${sk('knock')}<span>Questions Only</span>${s.open ? html`<b>${s.open}</b>` : ''}</a>${n ? html`<a role="menuitem" data-nav href="${here}/files">${ico('clip')}<span>Files</span><b>${n}</b></a>` : ''}<a role="menuitem" data-nav href="${base}/wakeups">${sk('snooze')}<span>Wakeups</span></a><hr class="desk-move-rule">${sessionMore(s, vm, base)}`
 }
 setChatMenu(chatMenu)
 const fact = (label, value) => (value ? html`<div class="panel-fact"><dt>${label}</dt><dd>${value}</dd></div>` : '')
@@ -288,7 +290,7 @@ function sidePanel(s, vm, t, tab) {
 function sessionMain(s, vm, t, { mode = '', text = '', focus = false, panel = '' } = {}) {
   const base = t.BASE
   const body = mode === 'questions' ? html`<div class="pane-list pane-questions"><div class="column">${questionList(s, base)}</div></div>`
-    : html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${s.earlier ? html`<form class="log-earlier" id="earlier-${s.id}" method="post" action="${sessionPath(s, base)}/earlier"><button type="submit" class="log-earlier-link" data-log-target="earlier">${s.earlier.says.en}${s.earlier.left ? html`<b>${s.earlier.left}${s.earlier.hub ? '+' : ''}</b>` : ''}</button></form>` : ''}${s.talk.length ? talk(s, vm, t) : s.empty ? empty(s, base) : ''}${workingFace(s, base)}<div id="log-end-${s.id}" hidden></div></div></div>`
+    : html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${s.earlier ? html`<form class="log-earlier" id="earlier-${s.id}" method="post" action="${sessionPath(s, base)}/earlier"><button type="submit" class="log-earlier-link" data-log-target="earlier">${s.earlier.says.en}${s.earlier.left ? html`<b>${s.earlier.left}${s.earlier.hub ? '+' : ''}</b>` : ''}</button></form>` : ''}${s.talk.length ? talk(s, vm, t) : s.empty ? empty(s, base) : ''}${workingFace(s, base)}${wakeLine(s, base)}<div id="log-end-${s.id}" hidden></div></div></div>`
   return html`<main id="session" aria-label="Session: ${s.name.en}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}${panel ? raw(' data-panel-open') : ''}>
 <header class="pane-title">${titleMenu(s, vm, base)}${sessionWho(s, vm, base)}${sessionFilters(s, base, mode)}<div class="head-use" id="session-use-${s.id}">${usageRings(s.usage)}</div></header>${sessionFilters(s, base, mode, { phone: true })}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
