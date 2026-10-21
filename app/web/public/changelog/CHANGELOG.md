@@ -12,6 +12,16 @@ notes, pick the two to four things people will notice most. A day may have at mo
 (`?mock=1`, never real data), webp, at most 150 KB. The days before the releases had notes are in history.json
 (frozen).
 
+## 20 October 2026
+
+Agents can set their own wakeups and start again later, even after the session was closed. The new Wakeups page shows
+when they come back, the chat shows the next time, and a woken agent asks for approval on a card. The README has a
+clearer architecture picture.
+
+## 19 October 2026
+
+Codex agents hear your messages and answers again, also after Codex was resumed or restarted.
+
 ## 18 October 2026
 
 Team knowledge keeps itself now: agents update it on their own, with history and undo. Dictation is sealed
