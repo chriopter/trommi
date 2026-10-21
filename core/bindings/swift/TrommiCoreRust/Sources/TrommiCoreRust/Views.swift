@@ -3508,6 +3508,9 @@ public enum CoreView {
     /// Its questions that wait for the person (decisions and approvals, never a card to read), as their Desk rows,
     /// in the order they came: what its page "Questions" lists as open.
     public var waiting: [DeskRowView]
+    /// The calm chat (`Focus.calm`): its open questions pinned right above the field, answerable there, the newest
+    /// first (the shells draw the first whole, the rest as slim rows); they leave the talk and go once answered.
+    public var pinned: [DeskRowView]
     /// How many of them (`waiting`), and the way to the first of them.
     public var open: UInt32
     /// "3 open".
@@ -3529,7 +3532,7 @@ public enum CoreView {
     /// "helpers" and "files" where it has some.
     public var tabs: [PanelTabView]
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, wakeLine: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, wakeLine: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
       self.id = id
       self.name = name
       self.link = link
@@ -3559,6 +3562,7 @@ public enum CoreView {
       self.compose = compose
       self.answering = answering
       self.waiting = waiting
+      self.pinned = pinned
       self.open = open
       self.openWord = openWord
       self.openSays = openSays
@@ -3600,6 +3604,7 @@ public enum CoreView {
       case compose = "compose"
       case answering = "answering"
       case waiting = "waiting"
+      case pinned = "pinned"
       case open = "open"
       case openWord = "open_word"
       case openSays = "open_says"
@@ -3642,6 +3647,7 @@ public enum CoreView {
       self.compose = try c.decodeIfPresent(Text.self, forKey: .compose) ?? Text()
       self.answering = try c.decodeIfPresent(Text.self, forKey: .answering)
       self.waiting = try c.decodeIfPresent([DeskRowView].self, forKey: .waiting) ?? []
+      self.pinned = try c.decodeIfPresent([DeskRowView].self, forKey: .pinned) ?? []
       self.open = try c.decodeIfPresent(UInt32.self, forKey: .open) ?? 0
       self.openWord = try c.decodeIfPresent(Text.self, forKey: .openWord)
       self.openSays = try c.decodeIfPresent(Text.self, forKey: .openSays)
@@ -3684,6 +3690,7 @@ public enum CoreView {
       try c.encode(compose, forKey: .compose)
       try c.encodeIfPresent(answering, forKey: .answering)
       if !waiting.isEmpty { try c.encode(waiting, forKey: .waiting) }
+      if !pinned.isEmpty { try c.encode(pinned, forKey: .pinned) }
       try c.encode(open, forKey: .open)
       try c.encodeIfPresent(openWord, forKey: .openWord)
       try c.encodeIfPresent(openSays, forKey: .openSays)
