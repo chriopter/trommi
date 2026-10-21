@@ -1045,7 +1045,7 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
    head card (a click opens its Desk) over its chats, folded as a fan of card edges, open as calm rows held by a pen
    bracket (the old helpers' stack). At the foot the round account mark and a small chevron open the menu upward. A
    phone keeps its pill, its drawer and its rows as before. */
-.side-top, .team-head, .team-bracket, .agent-teaser, .agent-signal, .open-me { display: none; }
+.side-top, .team-head, .team-bracket, .agent-teaser, .agent-signal, .agent-open, .open-me { display: none; }
 @media (min-width: 861px) {
   /* the top: home (bell and Desk), Search, + */
   html body .topbar .deskpill > :is(.desk-go, .team-switch-open), .topbar .rail-tag { display: none !important; }
@@ -1098,7 +1098,6 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
   #agents .team-lamp { flex: none; display: grid; }
   #agents .team-lamp > .sketch { width: 28px; height: 28px; overflow: visible; stroke-width: 1.6; }
   #agents .team-n { flex: none; margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--sunken); color: var(--fg); font: 700 12px/20px var(--font); font-style: normal; font-variant-numeric: tabular-nums; text-align: center; }
-  #agents .team-head.is-knock .team-n { background: var(--urg-critical); color: #fff; }
   #agents .team-edges { position: absolute; z-index: 0; left: 0; right: 0; top: calc(100% - 4px); height: calc(var(--n) * 5px + 6px); padding: 0; border: 0; background: none; cursor: pointer; }
   #agents .team-edges[hidden] { display: none; }
   #agents .team-edges::after { content: ""; position: absolute; inset: 0 0 -8px; }
@@ -1122,6 +1121,8 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
   #agents .agent-row .agent-text { min-width: 0; flex: 1; }
   #agents .agent-row .agent-text strong { font-weight: 600; }
   #agents .agent-teaser { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 400 13px/1.35 var(--font); }
+  /* (how many of its cards wait: a calm grey count, never red; the core counts) */
+  #agents .agent-open { display: block; flex: none; align-self: center; min-width: 20px; height: 20px; margin-left: var(--s-2); padding: 0 6px; border-radius: 10px; background: var(--sunken); color: var(--muted); font: 700 11px/20px var(--font); font-style: normal; font-variant-numeric: tabular-nums; text-align: center; }
   #agents .agent-signal { display: block; flex: none; width: 9px; height: 9px; margin-left: var(--s-2); border-radius: 50%; background: var(--accent); }
   #agents .agent-signal[data-signal="stopped"], #agents .agent-signal[data-signal="waiting"] { background: var(--urg-critical); }
   html[data-rail="folded"] #agents .agent-teaser { display: none; }

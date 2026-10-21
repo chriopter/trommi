@@ -211,6 +211,13 @@ fn calm(v: &mut SessionView) {
     v.tabs.retain(|t| t.key != "helpers");
     let behind = v.status_lines.len().saturating_sub(1).to_string();
     v.status_more = (v.status_lines.len() > 1).then(|| say("session.status_more.calm", format!("and {behind} more"), &[("n", behind.as_str())]));
+    // (its open questions pinned above the field, the newest first; their rows where they were asked leave the talk)
+    v.pinned = v.waiting.iter().rev().filter(|w| !w.id.trim().is_empty()).cloned().collect();
+    let pinned: HashSet<&str> = v.pinned.iter().map(|w| w.id.as_str()).collect();
+    v.talk.retain(|r| !(r.kind == "ask" && r.row.as_ref().is_some_and(|w| pinned.contains(w.id.as_str()))));
+    if v.first_open.as_deref().is_some_and(|id| !v.talk.iter().any(|r| r.id == id)) {
+        v.first_open = None;
+    }
 }
 
 /// The card a bubble quotes in the calm chat: his words with what he did to a card (a hand-back, What??), or the
@@ -533,6 +540,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         status_more,
         wake_line: super::wakeups::line(b, &a.row.key),
         working: None,
+        pinned: Vec::new(),
         has_more,
         earlier: None,
         slug: a.row.id.clone(),
@@ -1054,6 +1062,34 @@ mod tests {
         assert_eq!(v.talk[0].card.as_ref().map(|c| (c.id.as_str(), c.number)), Some(("q1", 1)));
     }
     const HAND_BACK: &str = super::super::talk::HAND_BACK_TEXT;
+
+    /// The calm chat pins its open questions above the field, the newest first, and leaves their rows out of the talk;
+    /// without open questions nothing is pinned.
+    #[test]
+    fn the_calm_chat_pins_its_open_questions() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let history = |n: u64, title: &str| json!([{ "object_version": 1, "envelope_number": n, "sent_at": NOW - 10 * MIN, "object_state": "open", "content": { "title": title } }]);
+        r.card("q-old", "a", "decision", "normal")["versions"] = history(100, "q-old");
+        r.card("q-new", "a", "decision", "normal")["versions"] = history(101, "q-new");
+        r.say("a", None, 99, "a", 30 * MIN, msg("Two things for you."));
+        let m = r.model(NOW);
+        let calm = Lens { calm: true, ..Default::default() };
+        let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+        assert_eq!(v.pinned.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["q-new", "q-old"], "the newest first");
+        assert!(!v.talk.iter().any(|t| t.kind == "ask"), "no row of them in the talk");
+        assert_eq!(v.open, 2);
+        assert_eq!(v.first_open, None, "nothing to jump to: they stand above the field");
+        // (not calm: nothing pinned, the questions stand where they were asked)
+        let wide = view(&r, "a");
+        assert!(wide.pinned.is_empty() && wide.talk.iter().filter(|t| t.kind == "ask").count() == 2);
+        // (none open: nothing pinned)
+        let mut r = Room::default();
+        r.session("b", None, true);
+        r.say("b", None, 99, "b", 30 * MIN, msg("Nothing for you."));
+        let m = r.model(NOW);
+        assert!(session(&Board::new(&m, &calm, NOW), &dev("b")).unwrap().pinned.is_empty());
+    }
 
     /// In the calm chat his answer on a card and the agent's words on it quote the card at the top of the bubble;
     /// without words, or for a card it cannot name, nothing is quoted.

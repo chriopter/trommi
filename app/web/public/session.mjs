@@ -199,6 +199,14 @@ const workingFace = (s, base) => (s.working
   : html`<span id="working-face-${s.id}" hidden></span>`)
 /** The quiet line of its next wakeup (SessionView.wake_line): "Wakes at 09:00 · …"; a click opens the page Wakeups. */
 const wakeLine = (s, base) => (s.wake_line ? html`<a class="wake-line" id="wake-line-${s.id}" data-nav href="${base}/wakeups">${sk('snooze')}<span>${s.wake_line.en}</span></a>` : html`<span id="wake-line-${s.id}" hidden></span>`)
+/** The calm chat's open questions pinned right above the field (SessionView.pinned, the newest first): the first as
+ *  its Desk row, answerable there, the rest as slim rows that open their card. */
+function pinnedCards(s, base) {
+  const list = s.pinned ?? []
+  if (!list.length) return html`<div class="pinned-cards" id="pinned-${s.id}" hidden></div>`
+  const [first, ...rest] = list
+  return html`<div class="pinned-cards" id="pinned-${s.id}" role="region" aria-label="Open in this chat">${raw(String(deskRow(first, base)).replaceAll(`href="${base}/card/`, `href="${sessionPath(s, base)}/card/`))}${rest.map(w => html`<a class="pinned-more" data-nav href="${sessionPath(s, base)}/card/${encodeURIComponent(w.number || w.id)}">${sk('knock')}<span>${w.title}</span><b>open</b></a>`)}</div>`
+}
 /** "N open": the questions of this session that wait, and the way to the first of them. */
 const sessionOpen = (s, base) => (s.open ? html`<a class="open-jump" id="session-open-${s.id}" data-nav href="${s.first_open ? `#msg-${s.first_open}` : `${sessionPath(s, base)}/questions`}"${s.first_open ? raw(' data-turbo="false" data-log-target="open" data-action="log#toOpen"') : ''} aria-label="${s.open_says?.en ?? ''}"><span data-log-target="openText">${s.open_word?.en ?? ''}</span>${ico('down')}</a>` : html`<span id="session-open-${s.id}" hidden></span>`)
 
@@ -295,7 +303,7 @@ function sessionMain(s, vm, t, { mode = '', text = '', focus = false, panel = ''
 <header class="pane-title">${titleMenu(s, vm, base)}${sessionWho(s, vm, base)}${sessionFilters(s, base, mode)}<div class="head-use" id="session-use-${s.id}">${usageRings(s.usage)}</div></header>${sessionFilters(s, base, mode, { phone: true })}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
-<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' ? '' : sessionOpen(s, base)}<div class="column session-compose">${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus, d: vm.dictation })}</div></div>
+<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' || (s.pinned ?? []).length ? '' : sessionOpen(s, base)}<div class="column session-compose">${mode === 'questions' ? '' : pinnedCards(s, base)}${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus, d: vm.dictation })}</div></div>
 </div></section>
 ${filesDrawer(s, vm, t, mode === 'files')}
 ${sidePanel(s, vm, t, panel)}

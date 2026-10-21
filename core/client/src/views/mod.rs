@@ -1468,6 +1468,10 @@ pub struct SessionView {
     /// in the order they came: what its page "Questions" lists as open.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub waiting: Vec<DeskRowView>,
+    /// The calm chat (`Focus.calm`): its open questions pinned right above the field, answerable there, the newest
+    /// first (the shells draw the first whole, the rest as slim rows); they leave the talk and go once answered.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pinned: Vec<DeskRowView>,
     /// How many of them (`waiting`), and the way to the first of them.
     #[serde(default)]
     pub open: u32,

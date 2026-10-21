@@ -73,7 +73,7 @@ struct ChatsScreen: View {
             }
             else if !stack.sessions.isEmpty { FoldedChats(stack: stack) }
           } header: {
-            Button { withAnimation(.snappy) { shell.fold(team: stack.id) } } label: { TeamTitle(name: stack.name.en, open: stack.sessions.isEmpty ? nil : stack.open) }
+            Button { withAnimation(.snappy) { shell.fold(team: stack.id) } } label: { TeamTitle(name: stack.name.en, open: stack.sessions.isEmpty ? nil : stack.open, count: Int(stack.waiting)) }
               .buttonStyle(.plain)
               .disabled(stack.sessions.isEmpty)
               .accessibilityLabel("\(stack.name.en), \(stack.says.en)")
@@ -150,9 +150,12 @@ struct TeamMove: ViewModifier {
 struct TeamTitle: View {
   let name: String
   let open: Bool?
+  /** How many of its cards wait (the core's), as a quiet count. */
+  var count = 0
   var body: some View {
     HStack(spacing: 5) {
       Text(name).font(Face.text(14, .semibold)).foregroundStyle(Ink.muted)
+      if count > 0 { QuietCount(n: count) }
       if let open {
         Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)).foregroundStyle(Ink.faint)
           .rotationEffect(.degrees(open ? 0 : -90))
@@ -245,6 +248,7 @@ struct ChatRow: View {
               .frame(maxWidth: .infinity, alignment: .leading)
               .allowsHitTesting(false)
               .accessibilityIdentifier("chat-teaser-" + row.id)
+            if row.open > 0 { QuietCount(n: Int(row.open)).allowsHitTesting(false) }
           }
         }
       }
@@ -939,13 +943,15 @@ struct SessionScreen: View {
       }
       .defaultScrollAnchor(onlyQuestions ? .top : .bottom)
       .safeAreaInset(edge: .top, spacing: 0) {
-        if page.open > 0 || onlyQuestions { QuestionsChip(onlyQuestions: $onlyQuestions, count: page.open).padding(.bottom, 4) }
+        // (the calm chat pins its open questions above the field instead; the menu keeps Questions Only)
+        if (page.open > 0 && page.pinned.isEmpty) || onlyQuestions { QuestionsChip(onlyQuestions: $onlyQuestions, count: page.open).padding(.bottom, 4) }
       }
       .scrollDismissesKeyboard(.interactively)
       .onChange(of: page.talk.count) { _, _ in withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo("bottom", anchor: .bottom) } }
       .bottomBar {
         VStack(spacing: 0) {
           if let n = page.note { LinkNoteBox(note: n).padding(.horizontal, 12).padding(.top, 8) }
+          if !onlyQuestions { PinnedCards(cards: page.pinned).padding(.horizontal, 12) }
           TalkComposer(placeholder: page.compose.en, text: $text, attachments: $attachments, session: page.id) {
             shell.act(["do": "write", "session_id": page.id, "text": text, "attachments": attachments]); text = ""; attachments = []
             withAnimation { reader.scrollTo("bottom", anchor: .bottom) }
@@ -1576,6 +1582,45 @@ struct QuoteChip: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel("\(quote.label.en): \(quote.card.title)")
+  }
+}
+
+/** How many cards wait, as a quiet grey count (never red). */
+struct QuietCount: View {
+  let n: Int
+  var body: some View {
+    Text("\(n)").font(Face.text(12, .bold)).monospacedDigit().foregroundStyle(Ink.muted)
+      .padding(.horizontal, 7).frame(minWidth: 22, minHeight: 22).background(Capsule().fill(Ink.sunken))
+      .accessibilityLabel("\(n) open")
+  }
+}
+
+/** The calm chat's open questions pinned above the field (`SessionView.pinned`, the newest first): the first as its
+ *  Desk row, answerable there; the rest as slim rows that open their card. */
+struct PinnedCards: View {
+  @EnvironmentObject var shell: AppShell
+  let cards: [CoreView.DeskRowView]
+  var body: some View {
+    if let first = cards.first {
+      VStack(spacing: 6) {
+        DeskRow(row: first)
+        ForEach(cards.dropFirst(), id: \.id) { w in
+          Button { shell.focus(.card(cardId: w.id)) } label: {
+            HStack(spacing: 8) {
+              Sketch("knock", color: Ink.urgHigh).frame(width: 16, height: 16)
+              Text(w.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+              Spacer(minLength: 4)
+              Text("open").font(Face.text(12)).foregroundStyle(Ink.muted)
+            }
+            .padding(.horizontal, 12).frame(height: 38)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.surface))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.line))
+          }.buttonStyle(.plain)
+        }
+      }
+      .padding(.top, 6)
+      .accessibilityIdentifier("pinned-cards")
+    }
   }
 }
 

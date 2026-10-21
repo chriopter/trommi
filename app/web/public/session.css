@@ -986,3 +986,13 @@ a.files-where:hover span { text-decoration: underline; }
 .wake-line:hover { background: var(--sunken); color: var(--fg); }
 .wake-line .sketch { flex: none; width: 15px; height: 15px; }
 .wake-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The calm chat's open questions pinned above the field (session.mjs pinnedCards): the newest whole, the rest slim. */
+.pinned-cards { display: grid; gap: 6px; margin-bottom: 8px; max-height: 50vh; overflow-y: auto; }
+.pinned-cards[hidden] { display: none; }
+.pinned-cards .desk-row { margin: 0; }
+.pinned-more { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--fg); text-decoration: none; text-align: left; font-size: var(--t-sm); }
+.pinned-more span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pinned-more b { color: var(--muted); font-weight: 500; font-size: var(--t-xs); }
+.pinned-more .sketch { flex: none; width: 18px; height: 18px; color: var(--urg-high); }
+.pinned-more:hover { box-shadow: 0 0 0 1px var(--line-strong); }
