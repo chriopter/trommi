@@ -17,7 +17,7 @@ function row(r, base, st = null, last = false) {
   const cls = ['agent-row', r.main && 'is-main', r.open || r.hand ? 'has-badge' : '', !r.online && 'is-offline', st && (st.team_in_view ? 'of-team-in-view' : 'of-other-team'), st && !st.open && 'in-folded-team', last && 'is-last'].filter(Boolean).join(' ')
   const order = r.group || ''
   return html`<div class="${cls}" id="agent-${r.id}" data-unit="${r.id}" data-slug="${r.slug}"${st ? html` data-team-of="${st.id}"` : ''}${order ? html` data-order="${order}"` : ''}>
-<a class="agent-entry" data-nav href="${base}/chat/${encodeURIComponent(r.slug)}" draggable="false"${order ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"') : ''} title="${working ? 'Working' : ''}">${avatar(who, { working })}<span class="agent-text"><strong>${name}</strong>${working ? html`<span class="sr-only"> (working)</span>` : ''}${linkCap(r.cap)}<span class="agent-teaser">${r.last?.text ?? ''}</span></span>${signalDot(r)}</a>
+<a class="agent-entry" data-nav href="${base}/chat/${encodeURIComponent(r.slug)}" draggable="false"${order ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"') : ''} title="${working ? 'Working' : ''}">${avatar(who, { working })}<span class="agent-text"><strong>${name}</strong>${working ? html`<span class="sr-only"> (working)</span>` : ''}${linkCap(r.cap)}<span class="agent-teaser">${r.last?.text ?? ''}</span></span>${r.open ? html`<i class="agent-open" role="img" aria-label="${r.open} open">${r.open}</i>` : signalDot(r)}</a>
 ${badge(r, base, true)}
 </div>`
 }
