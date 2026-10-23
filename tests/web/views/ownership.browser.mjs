@@ -20,7 +20,7 @@ try {
   const open = async p => { await prepare(p); await p.send('Page.navigate', { url: APP }); await ready(p) }
   let first = await browser.tab()
   // A slow worker must keep the styled loading page, then paint the first actual view; never race a 3 s timer.
-  const delayed = await first.session.send('Page.addScriptToEvaluateOnNewDocument', { source: `globalThis.trommiTestDelayedWorker = true; globalThis.Worker = class extends Worker { postMessage(message, transfer) { if(message?.t === 'start') globalThis.trommiTestReleaseWorker = () => super.postMessage(message, transfer); else super.postMessage(message, transfer) } }` })
+  const delayed = await first.session.send('Page.addScriptToEvaluateOnNewDocument', { source: `globalThis.trommiTestDelayedWorker = true; { const hold = send => function (message, transfer) { if (message?.t === 'start') globalThis.trommiTestReleaseWorker = () => send.call(this, message, transfer); else send.call(this, message, transfer) }; Worker.prototype.postMessage = hold(Worker.prototype.postMessage); MessagePort.prototype.postMessage = hold(MessagePort.prototype.postMessage) }` })
   await prepare(first.session); await first.session.send('Page.navigate', { url: APP })
   await until(first.session, `document.readyState === 'complete' && typeof globalThis.trommiTestReleaseWorker === 'function' && !!document.getElementById('trommi-opening')`, 'styled loading screen before the delayed worker starts')
   // Loading assets may take longer than a fixed worker delay on a busy machine.
@@ -34,15 +34,23 @@ try {
   assert.equal(await ev(first.session, 'globalThis.trommiTestDelayedWorker'), true, 'the slow-worker injection ran')
   for (let n = 0; n < 2; n++) { await first.session.send('Page.reload', { ignoreCache: true }); await sleep(100); await ready(first.session) }
   await first.close(); first = await browser.tab(); await open(first.session)
-  const second = await browser.tab(); await prepare(second.session); await second.session.send('Page.navigate', { url: APP })
-  await until(second.session, `!!document.querySelector('#use-here')`, 'a genuinely live other tab')
+  // A second tab is a second window of the same core (SharedWorker): usable at once, the device held once.
+  const second = await browser.tab(); await open(second.session)
+  assert.equal(await ev(second.session, `navigator.locks.query().then(x=>x.held.filter(l=>l.name==='trommi-core:trommi').length)`), 1, 'one core holds the device for both tabs')
+  await sleep(1000); await ready(first.session)
+  // A tab whose browser has no SharedWorker (Chrome on Android) runs its own core: one tab at a time, as before.
+  const third = await browser.tab(); await prepare(third.session)
+  await third.session.send('Page.addScriptToEvaluateOnNewDocument', { source: 'delete globalThis.SharedWorker' })
+  await third.session.send('Page.navigate', { url: APP })
+  await until(third.session, `!!document.querySelector('#use-here')`, 'a genuinely live other tab')
   await sleep(3300) // Startup must never repaint the stopped core's empty model over this page.
-  const styles = await ev(second.session, `(async () => { await document.fonts.ready; const h=document.querySelector('.room-title'), b=document.querySelector('#use-here'), main=document.querySelector('main');return {font:getComputedStyle(h).fontFamily,loaded:document.fonts.check('800 42px "Bricolage Grotesque"'),width:main.getBoundingClientRect().width,viewport:innerWidth,x:document.querySelector('.room-card').getBoundingClientRect().x,buttonPadding:parseFloat(getComputedStyle(b).paddingTop),radius:parseFloat(getComputedStyle(b).borderRadius),brand:!!document.querySelector('.brand-mark')} })()`)
+  const styles = await ev(third.session, `(async () => { await document.fonts.ready; const h=document.querySelector('.room-title'), b=document.querySelector('#use-here'), main=document.querySelector('main');return {font:getComputedStyle(h).fontFamily,loaded:document.fonts.check('800 42px "Bricolage Grotesque"'),width:main.getBoundingClientRect().width,viewport:innerWidth,x:document.querySelector('.room-card').getBoundingClientRect().x,buttonPadding:parseFloat(getComputedStyle(b).paddingTop),radius:parseFloat(getComputedStyle(b).borderRadius),brand:!!document.querySelector('.brand-mark')} })()`)
   assert.match(styles.font, /Bricolage Grotesque/); assert.equal(styles.loaded, true)
   assert.equal(styles.width, 1280); assert.ok(styles.x > 200); assert.ok(styles.buttonPadding >= 14); assert.ok(styles.radius >= 20); assert.equal(styles.brand, true)
-  await ev(second.session, `document.querySelector('#use-here').click()`); await sleep(100); await ready(second.session)
+  await ev(third.session, `document.querySelector('#use-here').click()`); await sleep(100); await ready(third.session)
   await until(first.session, `document.body.innerText.includes('Trommi moved to another tab')`, 'old owner stopped')
-  await first.close(); await second.close()
+  await until(second.session, `document.body.innerText.includes('Trommi moved to another tab')`, 'its other window stopped too')
+  await first.close(); await second.close(); await third.close()
   // A stranded lock with no live Trommi page must not lock a person out. The revoked holder cannot write.
   const ghost = await browser.tab(); await prepare(ghost.session); await ghost.session.send('Page.navigate', { url: APP + '/help.html' })
   await until(ghost.session, `typeof navigator.locks !== 'undefined' && location.origin === '${APP}'`, 'ghost origin')
@@ -83,5 +91,5 @@ try {
   assert.deepEqual(changedRows, { ids:['row-a','row-b'], tag:'SECTION', oldConnected:false }, 'replacing the first keyed row while the list grows must keep a valid insertion cursor')
   await demo.close()
   assert.deepEqual(exceptions, [], 'no startup or ownership exceptions')
-  console.log('ownership: reload twice, close/reopen, live-owner check, styled busy page, working takeover and stranded-lock recovery passed')
+  console.log('ownership: reload twice, close/reopen, two tabs on one core, a tab without SharedWorker, styled busy page, working takeover and stranded-lock recovery passed')
 } finally { await browser?.close(); server.kill(); await new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('exit', resolve) }) }

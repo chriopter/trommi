@@ -3,8 +3,8 @@
 //! window never names one and is window 0.
 //!
 //! What is a window's: its lens (team, page, search, the pages of a list shown), its parts of the view model
-//! (`WindowParts`: sidebar, Desk, the session and card in view, the board, …), what it was rendered last, whether
-//! it is in front. Everything else is the device's and the same in every window: the room, the phase and its line,
+//! (`WindowParts`: sidebar, Desk, the session and card in view, the board, …), what it was rendered last, the note
+//! it is writing, whether it is in front. Everything else is the device's and the same in every window: the room, the phase and its line,
 //! the account's steps, settings, files, dictation, the toasts.
 //!
 //! The App works on one window at a time, the current one: its lens is `App.lens`, its parts are in
@@ -24,6 +24,8 @@ pub(super) struct Window {
     parts: WindowParts,
     view: ViewModel,
     rendered_once: bool,
+    /// The note this window is writing (`KeepNote` without an id: `App.made_note`).
+    made_note: Option<String>,
     /// The Scribble Board in view (`Focus.board`, `Screen::Scribble`).
     pub(super) board: Option<trommi_core::ids::BoardId>,
     /// The window shows its page (`Focus.visible`): its chat in view counts as read.
@@ -45,6 +47,7 @@ impl Default for Window {
             parts: WindowParts::default(),
             view: ViewModel::default(),
             rendered_once: false,
+            made_note: None,
             board: None,
             looking: false,
             front: true,
@@ -95,12 +98,14 @@ impl App {
         self.next_view.put_window_parts(std::mem::take(&mut incoming.parts));
         let view = std::mem::replace(&mut self.view, std::mem::take(&mut incoming.view));
         let rendered_once = std::mem::replace(&mut self.rendered_once, incoming.rendered_once);
+        let made_note = std::mem::replace(&mut self.made_note, incoming.made_note.take());
         // (the one left keeps what it had: its lens, its parts, what it was shown)
         if let Some(left) = self.windows.get_mut(&self.window) {
             left.lens = lens;
             left.parts = parts;
             left.view = view;
             left.rendered_once = rendered_once;
+            left.made_note = made_note;
         }
         self.next_view.rev = self.view.rev;
         self.seen.looking = incoming.looking;

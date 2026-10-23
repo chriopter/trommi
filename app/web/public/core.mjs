@@ -9,7 +9,10 @@ const CORE_WORKER = typeof __TROMMI_CORE_WORKER__ === 'string' ? __TROMMI_CORE_W
 /** The slot of this browser's device (store-idb.ts names its databases after it). */
 export const SLOT = 'trommi'
 
+// The core's worker, and the port this page talks to it by: the worker itself, or its port when it is the
+// SharedWorker every tab of this profile shares (core/core-worker.ts).
 let worker = null
+let port = null
 // (the fold is the binding's views-fold.js, loaded with the core's start: Node's tests import this module without gen/)
 let fold = null
 let view = { rev: 0 }
@@ -23,8 +26,8 @@ const letGo = (id, url) => { URL.revokeObjectURL(url); gone.set(url, id); if (go
 let lastFocus = ''
 
 const emit = (name, data) => { for (const fn of listeners.get(name) ?? []) { try { fn(data) } catch (err) { console.error(name, err) } } }
-/** `render` (the new view model), `file` (an id whose bytes came), `busy` (another tab has the device), `taken`
- *  (another tab took it), `failed` (the core did not start), `notify`. Returns the way to stop listening. */
+/** `render` (the new view model), `file` (an id whose bytes came), `busy` (another tab has the device: a browser
+ *  without a shared worker, or another build), `taken` (another tab took it), `failed` (the core did not start), `notify`. Returns the way to stop listening. */
 export function on(name, fn) {
   if (!listeners.has(name)) listeners.set(name, new Set())
   listeners.get(name).add(fn)
@@ -35,7 +38,7 @@ export const vm = () => view
 
 function receive(m) {
   switch (m.t) {
-    case 'owner_probe': worker?.postMessage({ t: 'owner_alive', nonce: m.nonce }); return
+    case 'owner_probe': port?.postMessage({ t: 'owner_alive', nonce: m.nonce }); return
     case 'render': {
       try { view = fold.foldView(view, m.delta) } catch (err) { console.error('render', err); return }
       emit('render', view)
@@ -60,19 +63,27 @@ function receive(m) {
     case 'notify': emit('notify', m.notice); return
     case 'platform': {
       Promise.resolve(platform(m.op, m.blobs)).then(
-        ({ answer, blobs }) => worker?.postMessage({ t: 'platform', id: m.id, answer, blobs }),
-        err => worker?.postMessage({ t: 'platform', id: m.id, error: String(err?.message ?? err) }))
+        ({ answer, blobs }) => port?.postMessage({ t: 'platform', id: m.id, answer, blobs }),
+        err => port?.postMessage({ t: 'platform', id: m.id, error: String(err?.message ?? err) }))
       return
     }
     case 'log': (m.level === 'error' ? console.error : m.level === 'warn' ? console.warn : console.debug)('core:', m.text); return
     case 'busy': case 'taken':
       for (const url of urls.values()) URL.revokeObjectURL(url)
       urls.clear(); asked.clear()
-      worker?.terminate(); worker = null
+      letGo()
       view = fold.emptyView(); lastFocus = ''
       emit(m.t, null); return
     case 'failed': emit('failed', new Error(m.error)); return
   }
+}
+
+/** This page leaves its worker: a dedicated one ends, the shared one closes this page's window. */
+function letGo() {
+  if (!worker) return
+  try { port.postMessage({ t: 'close' }) } catch {}
+  if (port !== worker) { try { port.close() } catch {} } else worker.terminate()
+  worker = null; port = null
 }
 
 /** Release decrypted files absent from the painted page. Canvas pictures name their files separately.
@@ -99,22 +110,28 @@ export function releaseUnusedFiles(root, canvasFiles = []) {
 export async function startCore(config, { take = false, slot = SLOT } = {}) {
   fold ??= await import('./gen/vendor/views-fold.mjs')
   if (!worker) {
-    const early = globalThis.__trommiCore ?? null
+    // (the device's core is the one every tab shares, where the browser can; the demo and a share page run their own)
+    const shared = Boolean(slot) && config?.demo == null && typeof SharedWorker === 'function'
+    let early = globalThis.__trommiCore ?? null
     globalThis.__trommiCore = null
-    worker = early?.worker ?? new Worker(CORE_WORKER, { type: 'module', name: 'trommi-core' })
-    worker.onmessage = e => receive(e.data)
+    if (early && early.shared !== shared) { try { if (early.shared) early.port.close(); else early.worker.terminate() } catch {} early = null }
+    worker = early?.worker ?? (shared ? new SharedWorker(CORE_WORKER, { type: 'module', name: 'trommi-core' }) : new Worker(CORE_WORKER, { type: 'module', name: 'trommi-core' }))
+    port = early?.port ?? (shared ? worker.port : worker)
+    port.onmessage = e => receive(e.data)
     worker.onerror = e => emit('failed', new Error(e.message || 'the core worker failed'))
+    port.start?.()
     for (const e of early?.messages ?? []) receive(e.data)
     if (early?.error) emit('failed', new Error(early.error.message || 'the core worker failed'))
   }
   view = fold.emptyView()
-  worker.postMessage({ t: 'start', slot, config, take })
+  port.postMessage({ t: 'start', slot, config, take })
 }
-/** Stops the core (this tab gives the device up). */
-export function stopCore() { worker?.postMessage({ t: 'close' }) }
+/** Stops the core for this tab (a dedicated worker gives the device up; the shared one closes this window, and the
+ *  device with the last). */
+export function stopCore() { letGo() }
 
 /** One event of the contract (core/client/src/app/event.rs), with the bytes its JSON names by index. */
-export function send(event, blobs = []) { worker?.postMessage({ t: 'event', event, blobs }) }
+export function send(event, blobs = []) { port?.postMessage({ t: 'event', event, blobs }) }
 /** What the person did (core/client/src/actions/mod.rs Action). */
 export const act = (action, blobs = []) => send({ type: 'action', action }, blobs)
 /** An account step (core/client/src/account/mod.rs AccountAction). */
@@ -164,7 +181,7 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => send({ type: document.visibilityState === 'visible' ? 'foreground' : 'background' }))
   addEventListener('online', () => send({ type: 'net', online: true }))
   addEventListener('offline', () => send({ type: 'net', online: false }))
-  addEventListener('pagehide', () => { stopCore(); worker?.terminate(); worker = null; globalThis.__trommiCore = null })
+  addEventListener('pagehide', () => { letGo(); globalThis.__trommiCore = null })
   addEventListener('pageshow', e => { if (e.persisted) location.reload() })
   let zone = -new Date().getTimezoneOffset()
   setInterval(() => { const z = -new Date().getTimezoneOffset(); if (z !== zone) { zone = z; send({ type: 'zone', utc_offset_min: z }) } }, 60_000)

@@ -28,7 +28,8 @@ export interface CacheSpace {
 }
 /** What only the page can do. */
 export interface ShellHost {
-  render(delta: unknown): void
+  /** A render for one window of the core (0 where there is one; core/client/src/app/windows.rs). */
+  render(delta: unknown, window: number): void
   fileReady?(fileId: string, mediaType: string, bytes: Uint8Array): void
   fileGone?(fileId: string): void
   saveFile?(name: string, mediaType: string, bytes: Uint8Array): void
@@ -121,7 +122,7 @@ export class CoreShell {
     if (this.barrier !== null) { this.held.push({ effect, blobs }); return }
     const id = effect['id'] as number
     switch (effect['type']) {
-      case 'render': return this.host.render(effect['delta'])
+      case 'render': return this.host.render(effect['delta'], (effect['window'] as number | undefined) ?? 0)
       case 'http': return void this.http(id, effect['request'] as Json, blobs)
       case 'open_stream': return void this.stream(id, effect['request'] as Json, blobs)
       case 'cancel': {

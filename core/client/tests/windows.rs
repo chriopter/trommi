@@ -134,3 +134,19 @@ fn the_edge_reads_the_window_beside_the_type_and_names_it_on_the_render() {
     let wake = r#"{"type":"wake","window":3}"#;
     assert!(handle(&mut app, 3, Packet { json: wake.into(), blobs: Vec::new() }).is_ok(), "a window beside any event is read");
 }
+
+#[test]
+fn a_new_note_written_in_one_window_is_not_the_other_windows_note() {
+    use trommi_client_core::actions::Action;
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    let keep = |text: &str| Event::Action { action: Action::KeepNote { note_id: None, text: text.into(), attachments: vec![], send: false, to: None } };
+    sim.send_in(0, keep("first window's words"));
+    sim.send_in(1, keep("second window's words"));
+    sim.send_in(0, keep("first window's words, more"));
+    let rows: Vec<String> = sim.view.notes.rows.iter().map(|r| format!("{r:?}")).collect();
+    assert_eq!(sim.view.notes.notes.len(), 2, "two notes, one per window: {rows:?}");
+    assert!(rows.iter().any(|r| r.contains("second window's words")), "{rows:?}");
+    assert!(rows.iter().any(|r| r.contains("first window's words, more")), "{rows:?}");
+}
