@@ -78,8 +78,11 @@ public enum CoreView {
     /// chips (`kind` "events"), leaves the helper list out and says "and 2 more" beside the working line. A shell
     /// that draws the full talk (Linux) leaves it false.
     public var calm: Bool
+    /// A card's page is a step of one chat's Blitz (its session key or short id): its way on goes only through that
+    /// chat's open cards (`SessionView.pinned`'s order), and when none is left back to the chat. None: the Desk's.
+    public var walkChat: String?
 
-    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, deskAll: Bool = false, openTeams: [String] = [], chatsQuery: String? = nil, calm: Bool = false) {
+    public init(screen: Screen = .desk, visible: Bool = true, team: String? = nil, board: String? = nil, deskAll: Bool = false, openTeams: [String] = [], chatsQuery: String? = nil, calm: Bool = false, walkChat: String? = nil) {
       self.screen = screen
       self.visible = visible
       self.team = team
@@ -88,6 +91,7 @@ public enum CoreView {
       self.openTeams = openTeams
       self.chatsQuery = chatsQuery
       self.calm = calm
+      self.walkChat = walkChat
     }
 
     enum CodingKeys: String, CodingKey {
@@ -99,6 +103,7 @@ public enum CoreView {
       case openTeams = "open_teams"
       case chatsQuery = "chats_query"
       case calm = "calm"
+      case walkChat = "walk_chat"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -111,6 +116,7 @@ public enum CoreView {
       self.openTeams = try c.decodeIfPresent([String].self, forKey: .openTeams) ?? []
       self.chatsQuery = try c.decodeIfPresent(String.self, forKey: .chatsQuery)
       self.calm = try c.decodeIfPresent(Bool.self, forKey: .calm) ?? false
+      self.walkChat = try c.decodeIfPresent(String.self, forKey: .walkChat)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -123,6 +129,7 @@ public enum CoreView {
       if !openTeams.isEmpty { try c.encode(openTeams, forKey: .openTeams) }
       try c.encodeIfPresent(chatsQuery, forKey: .chatsQuery)
       try c.encode(calm, forKey: .calm)
+      try c.encodeIfPresent(walkChat, forKey: .walkChat)
     }
   }
 

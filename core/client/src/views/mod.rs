@@ -112,6 +112,10 @@ pub struct Focus {
     /// that draws the full talk (Linux) leaves it false.
     #[serde(default)]
     pub calm: bool,
+    /// A card's page is a step of one chat's Blitz (its session key or short id): its way on goes only through that
+    /// chat's open cards (`SessionView.pinned`'s order), and when none is left back to the chat. None: the Desk's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_chat: Option<String>,
 }
 
 fn yes() -> bool {

@@ -951,7 +951,7 @@ struct SessionScreen: View {
       .bottomBar {
         VStack(spacing: 0) {
           if let n = page.note { LinkNoteBox(note: n).padding(.horizontal, 12).padding(.top, 8) }
-          if !onlyQuestions { PinnedCards(cards: page.pinned).padding(.horizontal, 12) }
+          if !onlyQuestions { PinnedCards(session: page.id, cards: page.pinned).padding(.horizontal, 12) }
           TalkComposer(placeholder: page.compose.en, text: $text, attachments: $attachments, session: page.id) {
             shell.act(["do": "write", "session_id": page.id, "text": text, "attachments": attachments]); text = ""; attachments = []
             withAnimation { reader.scrollTo("bottom", anchor: .bottom) }
@@ -1595,44 +1595,58 @@ struct QuietCount: View {
   }
 }
 
-/** The calm chat's open cards pinned above the field (`SessionView.pinned`: its questions, the newest first, then its
- *  cards to read): small cards side by side, swiped sideways; each opens its card. */
+/** The calm chat's open cards above the field (`SessionView.pinned`: its questions, the newest first, then its cards
+ *  to read) as one stack: the first on top, the others as sheets behind it, "+N" beside it. A tap starts this chat's
+ *  Blitz (`Focus.walk_chat`): one card after another, then back to the chat. */
 struct PinnedCards: View {
   @EnvironmentObject var shell: AppShell
+  let session: String
   let cards: [CoreView.DeskRowView]
   var body: some View {
     let list = cards.filter { !$0.id.isEmpty }
-    if !list.isEmpty {
-      ScrollView(.horizontal, showsIndicators: false) {
-        LazyHStack(spacing: 8) {
-          ForEach(Array(list.enumerated()), id: \.element.id) { i, w in
-            let read = w.kind == "info"
-            Button { shell.focus(.card(cardId: w.id)) } label: {
-              VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                  Sketch(read ? "page" : "knock", color: read ? Ink.muted : Ink.urgHigh).frame(width: 15, height: 15)
-                  Text("\(read ? "To read" : "Question") · \(i + 1) of \(list.count)").font(Face.text(12)).foregroundStyle(Ink.muted)
-                }
-                Text(w.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.leading)
-                if !w.words.isEmpty { Text(w.words).font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1) }
+    if let top = list.first {
+      let read = top.kind == "info", more = list.count - 1
+      let go = { shell.walk(chat: session, from: top.id) }
+      HStack(alignment: .center, spacing: 10) {
+        Button(action: go) {
+          ZStack(alignment: .top) {
+            if more >= 2 { sheet.padding(.horizontal, 20).offset(y: -16).opacity(0.7) }
+            if more >= 1 { sheet.padding(.horizontal, 10).offset(y: -8) }
+            VStack(alignment: .leading, spacing: 4) {
+              HStack(spacing: 6) {
+                Sketch(read ? "page" : "knock", color: read ? Ink.muted : Ink.urgHigh).frame(width: 15, height: 15)
+                Text(read ? "To read" : "Question").font(Face.text(12)).foregroundStyle(Ink.muted)
               }
-              .frame(maxWidth: .infinity, alignment: .topLeading)
-              .padding(.horizontal, 12).padding(.vertical, 10)
-              .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
-              .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.line))
+              Text(top.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.leading)
+              if !top.words.isEmpty { Text(top.words).font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1) }
             }
-            .buttonStyle(.plain)
-            .containerRelativeFrame(.horizontal) { w, _ in min(w * 0.82, 340) }
-            .accessibilityIdentifier("pinned-card-" + w.id)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.line))
           }
         }
-        .scrollTargetLayout()
+        .buttonStyle(.plain)
+        .accessibilityLabel(more > 0 ? "\(top.title), and \(more) more: one after another" : top.title)
+        .accessibilityIdentifier("pinned-stack")
+        if more > 0 {
+          Button(action: go) {
+            Text("+\(more)").font(Face.text(14, .bold)).monospacedDigit().foregroundStyle(Ink.fg)
+              .frame(width: 48, height: 48)
+              .background(Circle().fill(Ink.surface))
+              .overlay(Circle().strokeBorder(Ink.line))
+          }
+          .buttonStyle(.plain)
+          .accessibilityHidden(true)
+        }
       }
-      .scrollTargetBehavior(.viewAligned)
-      .scrollClipDisabled()
-      .padding(.top, 6)
+      .padding(.top, 18)
       .accessibilityIdentifier("pinned-cards")
     }
+  }
+  private var sheet: some View {
+    RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.sunken).frame(height: 40)
+      .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.line))
   }
 }
 
