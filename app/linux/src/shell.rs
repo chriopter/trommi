@@ -89,7 +89,7 @@ impl<F: FnMut(String) + Send + 'static> Shell for Window<F> {
                     eprintln!("[trommi] the file could not be saved: {}", e.kind());
                 }
             }
-            Effect::OpenUrl { url } => {
+            Effect::OpenUrl { url, .. } => {
                 if !self.desktop.open_url(&url) {
                     eprintln!("[trommi] a link of another kind was not opened");
                 }

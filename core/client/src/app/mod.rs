@@ -236,6 +236,8 @@ pub struct App {
     /// and rendered view are `lens`, `next_view` and `view`.
     window: u32,
     windows: BTreeMap<u32, windows::Window>,
+    /// The window whose step each I/O in flight belongs to (`windows::origin`).
+    io_windows: BTreeMap<IoId, u32>,
     /// The current window's views were made during this event: the other windows' are made again too.
     views_made: bool,
 }
@@ -305,6 +307,7 @@ impl App {
             seen: seen::Seen::default(),
             window: 0,
             windows: BTreeMap::from([(0, windows::Window::default())]),
+            io_windows: BTreeMap::new(),
             views_made: false,
         }
     }
@@ -507,6 +510,7 @@ impl App {
                         credential_ids: Vec::new(),
                         prf_input: trommi_core::account::PASSKEY_PRF_INPUT.to_vec().into(),
                     },
+                    window: 0,
                 });
             }
             Err(crate::hub::Failure::NotNow { status: 429, .. }) => self.sign_in_failed(Problem::Throttled),
@@ -582,6 +586,7 @@ impl App {
                         user_name,
                         prf_input: trommi_core::account::PASSKEY_PRF_INPUT.to_vec().into(),
                     },
+                    window: 0,
                 });
             }
             Err(crate::hub::Failure::NotNow { status: 429, .. }) => self.found_failed(Problem::Throttled.text()),
@@ -845,9 +850,11 @@ impl App {
             self.switch_window(window);
         }
         self.views_made = false;
+        let origin = self.origin_of(window, &event);
         let mut out = self.handle_event(now_ms, event, window);
         let moved = std::mem::take(&mut self.views_made);
         self.render_others(now_ms, moved, &mut out);
+        self.mark_origin(origin, &mut out);
         out
     }
 

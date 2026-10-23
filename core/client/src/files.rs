@@ -447,7 +447,7 @@ impl Files {
     fn hand(&mut self, id: &str, reference: &Map<String, Value>, save: bool, bytes: Bytes, out: &mut Vec<Effect>) {
         let view = view_of(reference);
         if save {
-            out.push(Effect::SaveFile { name: view.name.clone(), media_type: view.media_type.clone(), bytes });
+            out.push(Effect::SaveFile { name: view.name.clone(), media_type: view.media_type.clone(), bytes, window: 0 });
             self.states.remove(id).filter(|v| v.state != "loading").map(|v| self.states.insert(id.to_string(), v));
         } else {
             out.push(Effect::FileReady { file_id: id.to_string(), media_type: view.media_type.clone(), bytes });

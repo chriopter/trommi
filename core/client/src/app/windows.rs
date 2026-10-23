@@ -11,8 +11,12 @@
 //! `App.next_view`, its rendered model is `App.view`. An event of another window first makes that one current
 //! (`switch_window`). After every event each other window gets its views made again when the room or the clock moved
 //! them, and its own `Render` (`render_others`).
+//!
+//! A step a window started stays that window's through its I/O (`origin_of`, `mark_origin`): a passkey or push
+//! prompt, a file to save, a link to open go to the window whose action led to them, even when another window acted
+//! meanwhile; the shell refuses such a prompt when that window went.
 
-use super::{App, Effect};
+use super::{App, Effect, Event};
 use crate::views::{Lens, ViewModel, WindowParts};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -177,5 +181,46 @@ impl App {
             self.render_window(out);
         }
         self.switch_window(home);
+    }
+
+    /// The window an event's step belongs to: the answer to an I/O is the step of the window that started it;
+    /// anything else is the window it names.
+    pub(super) fn origin_of(&mut self, window: u32, event: &Event) -> u32 {
+        match event {
+            Event::Http { id, .. } | Event::Store { id, .. } | Event::Secret { id, .. } | Event::Platform { id, .. } => {
+                self.io_windows.remove(id).unwrap_or(window)
+            }
+            Event::Stream { id, .. } | Event::Progress { id, .. } => self.io_windows.get(id).copied().unwrap_or(window),
+            _ => window,
+        }
+    }
+
+    /// After an event: its I/O is the step of `origin`, and what only a window shows (a prompt, a file to save, a
+    /// link) names it. Only kept where several windows share the App; bounded (an answer that never came).
+    pub(super) fn mark_origin(&mut self, origin: u32, out: &mut [Effect]) {
+        const KEPT: usize = 1024;
+        for effect in out.iter_mut() {
+            match effect {
+                Effect::Http { id, .. } | Effect::OpenStream { id, .. } | Effect::Store { id, .. } | Effect::Secret { id, .. } => {
+                    if origin != 0 {
+                        self.io_windows.insert(*id, origin);
+                    }
+                }
+                Effect::Platform { id, window, .. } => {
+                    *window = origin;
+                    if origin != 0 {
+                        self.io_windows.insert(*id, origin);
+                    }
+                }
+                Effect::Cancel { id } => {
+                    self.io_windows.remove(id);
+                }
+                Effect::SaveFile { window, .. } | Effect::OpenUrl { window, .. } => *window = origin,
+                _ => {}
+            }
+        }
+        while self.io_windows.len() > KEPT {
+            self.io_windows.pop_first();
+        }
     }
 }

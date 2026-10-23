@@ -150,3 +150,30 @@ fn a_new_note_written_in_one_window_is_not_the_other_windows_note() {
     assert!(rows.iter().any(|r| r.contains("second window's words")), "{rows:?}");
     assert!(rows.iter().any(|r| r.contains("first window's words, more")), "{rows:?}");
 }
+
+#[test]
+fn a_prompt_goes_to_the_window_whose_step_led_to_it_even_when_another_acted_meanwhile() {
+    use trommi_client_core::account::AccountAction;
+    use trommi_client_core::actions::Action;
+    use trommi_client_core::app::io::HttpResponse;
+    use trommi_client_core::app::sim::Sim;
+    let mut sim = Sim::new(1_000);
+    sim.hold = true;
+    sim.send(start());
+    sim.send_in(1, Event::WindowOpened);
+    // window 1 signs in with a passkey: the hub's challenge first
+    let from = sim.log.len();
+    sim.send_in(1, Event::Action { action: Action::Account { action: AccountAction::SignInWithPasskey { hub: None } } });
+    let asked = sim.log[from..]
+        .iter()
+        .find_map(|e| if let Effect::Http { id, request } = e { request.url.ends_with("/v1/account/passkey/challenge").then_some(*id) } else { None })
+        .expect("the hub is asked for a challenge");
+    // window 0 acts while the hub answers
+    sim.send_in(0, looking_at(Screen::Desk, true));
+    let b64 = trommi_core::ids::base64url_encode;
+    let body = format!(r#"{{"challenge":"{}","account":"0f0f0f0f-0f0f-0f0f-0f0f-0f0f0f0f0f0f","user_handle":"{}"}}"#, b64(&[7; 32]), b64(&[0x0f; 16]));
+    let from = sim.log.len();
+    sim.answer(asked, Ok(HttpResponse { status: 200, headers: vec![], body: body.into_bytes().into() }));
+    let prompts: Vec<u32> = sim.log[from..].iter().filter_map(|e| if let Effect::Platform { window, .. } = e { Some(*window) } else { None }).collect();
+    assert_eq!(prompts, [1], "the passkey prompt shows in the window that signs in");
+}

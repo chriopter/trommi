@@ -114,12 +114,12 @@ fn the_desktop_does_what_the_core_asks() {
     assert!(!kept.exists());
     // a file offered: into Downloads, under a free name, never out of it
     for _ in 0..2 {
-        window.show(Effect::SaveFile { name: "../report.pdf".into(), media_type: "application/pdf".into(), bytes: b"pdf".to_vec().into() });
+        window.show(Effect::SaveFile { name: "../report.pdf".into(), media_type: "application/pdf".into(), bytes: b"pdf".to_vec().into(), window: 0 });
     }
     assert!(dir.join("Downloads/report.pdf").is_file() && dir.join("Downloads/report (2).pdf").is_file());
     // links: only the web's and mail
     for url in ["https://trommi.com/help", "file:///etc/passwd", "javascript:alert(1)", "mailto:a@b.c"] {
-        window.show(Effect::OpenUrl { url: url.into() });
+        window.show(Effect::OpenUrl { url: url.into(), window: 0 });
     }
     let text = |en: &str| Text { key: "t".into(), args: Default::default(), en: en.into() };
     window.show(Effect::Notify { notice: Notice { id: "n".into(), title: text("Web: Which hero?"), body: text("Two drafts"), target: Some("c1".into()), urgent: false } });

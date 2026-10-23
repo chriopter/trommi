@@ -26,7 +26,7 @@ if (g.__trommiCore === undefined) {
     const url = typeof __TROMMI_CORE_WORKER__ === 'string' ? __TROMMI_CORE_WORKER__ : '/gen/vendor/core-worker.mjs'
     // (one core for every tab where the browser shares a worker between them; else one per tab)
     const shared = typeof SharedWorker === 'function' && !demoTab()
-    const worker = shared ? new SharedWorker(url, { type: 'module', name: 'trommi-core' }) : new Worker(url, { type: 'module', name: 'trommi-core' })
+    const worker = shared ? new SharedWorker(url, { type: 'module', name: `trommi-core ${url}` }) : new Worker(url, { type: 'module', name: 'trommi-core' })
     const port = shared ? (worker as SharedWorker).port : (worker as Worker)
     const early: EarlyCore = { worker, port, shared, messages: [], error: null }
     port.onmessage = e => { early.messages.push(e) }

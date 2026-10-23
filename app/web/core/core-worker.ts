@@ -13,7 +13,8 @@
 // its pages `taken`. The demo (`config.demo`) keeps nothing and owns nothing, and runs in a dedicated worker.
 //
 // Passkeys and push are a page's (WebAuthn and the push manager live there): such a platform op goes to the window
-// that acted last and its answer comes back. Renders go to their window; files and logs to every window.
+// whose step asks (the core names it, core/client/src/app/windows.rs) and its answer comes back. Renders go to their
+// window; files and logs to every window.
 import { CoreShell, memorySpaces } from './shell.ts'
 import type { CacheSpace, DeviceSpace } from './shell.ts'
 import { IdbStore, deviceOwner, loadCore } from './core-wasm.ts'
@@ -70,10 +71,6 @@ let run = 0
 let stopping: Promise<void> = Promise.resolve()
 /** The next window number of the running core (each core counts from 0). */
 let windows = 0
-/** The page whose window did something last (an action): a platform op, a download, a link to open go there. */
-let lastConn: Conn | null = null
-/** That page went before its window's prompts were answered. */
-let actorLeft = false
 const asked = new Map<number, { conn: Conn; ok: (r: { answer: Json; blobs: Uint8Array[] }) => void; bad: (e: Error) => void }>()
 let asks = 0
 
@@ -81,13 +78,8 @@ const send = (conn: Conn | null, m: FromCore): void => { try { conn?.port.postMe
 /** To every page that asked for the core (`attached`: only those that are windows of it). */
 const everyone = (m: FromCore, attached = true): void => { for (const c of conns) if (attached ? c.window !== null : c.wants) send(c, m) }
 const byWindow = (w: number): Conn | null => { for (const c of conns) if (c.window === w) return c; return null }
-/** Where a page's service goes: the window that did something last, else any window; not another one when that
- *  window went (`any` false: a passkey or push prompt is never shown in a tab that did not ask). */
-const actor = (any: boolean): Conn | null => {
-  if (lastConn && conns.has(lastConn) && lastConn.window !== null) return lastConn
-  if (actorLeft && !any) return null
-  return [...conns].find(c => c.window !== null) ?? null
-}
+/** The window a download or link is for (the core names it), else any window when that one went. */
+const toWindow = (w: number): Conn | null => byWindow(w) ?? [...conns].find(c => c.window !== null) ?? null
 
 /** The slot's device state as the shell takes it: the binding's store, its values wrapped at rest. */
 function deviceSpace(s: DeviceStore): DeviceSpace {
@@ -155,13 +147,13 @@ async function start(m: Extract<ToCore, { t: 'start' }>): Promise<void> {
         render: (delta, window) => send(byWindow(window), { t: 'render', delta }),
         fileReady: (id, media_type, bytes) => everyone({ t: 'file', id, media_type, bytes }),
         fileGone: id => everyone({ t: 'file_gone', id }),
-        saveFile: (name, media_type, bytes) => send(actor(true), { t: 'save', name, media_type, bytes }),
-        openUrl: url => send(actor(true), { t: 'open_url', url }),
-        notify: notice => send(actor(true), { t: 'notify', notice }),
+        saveFile: (name, media_type, bytes, window) => send(toWindow(window), { t: 'save', name, media_type, bytes }),
+        openUrl: (url, window) => send(toWindow(window), { t: 'open_url', url }),
+        notify: notice => send(toWindow(-1), { t: 'notify', notice }),
         log: (level, text) => everyone({ t: 'log', level, text }),
-        platform: (op, blobs) => new Promise((ok, bad) => {
-          // (a passkey or push prompt only in the window that asked; gone: refused, never another tab's)
-          const conn = actor(false)
+        platform: (op, blobs, window) => new Promise((ok, bad) => {
+          // (a passkey or push prompt only in the window whose step asks (the core names it); gone: refused)
+          const conn = byWindow(window)
           if (!conn) { ok({ answer: { answer: 'refused' }, blobs: [] }); return }
           const id = ++asks
           asked.set(id, { conn, ok, bad })
@@ -214,7 +206,6 @@ function leave(conn: Conn): void {
   if (conn.window !== null && shell) shell.send({ type: 'window_closed', window: conn.window })
   for (const [id, a] of asked) if (a.conn === conn) { asked.delete(id); a.ok({ answer: { answer: 'refused' }, blobs: [] }) }
   early = early.filter(e => e.conn !== conn)
-  if (lastConn === conn) { lastConn = null; actorLeft = true }
   if (![...conns].some(c => c.wants)) void giveUp(false)
 }
 
@@ -231,7 +222,6 @@ function receive(conn: Conn, m: ToCore): void {
       return
     case 'event': {
       const blobs = m.blobs ?? []
-      if (m.event['type'] === 'action') { lastConn = conn; actorLeft = false }
       if (shell && conn.window !== null) shell.send({ ...m.event, window: conn.window }, blobs)
       else if (phase === 'starting' && conn.wants) early.push({ conn, event: m.event, blobs })
       return

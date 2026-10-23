@@ -32,17 +32,17 @@ export interface ShellHost {
   render(delta: unknown, window: number): void
   fileReady?(fileId: string, mediaType: string, bytes: Uint8Array): void
   fileGone?(fileId: string): void
-  saveFile?(name: string, mediaType: string, bytes: Uint8Array): void
-  openUrl?(url: string): void
+  saveFile?(name: string, mediaType: string, bytes: Uint8Array, window: number): void
+  openUrl?(url: string, window: number): void
   notify?(notice: unknown): void
   log?(level: string, text: string): void
   /** A platform service only the page has (passkeys, push): `op` as the contract spells it, its bytes by index in
    *  `blobs`. Resolves with the answer (bytes by index in its own `blobs`); `{ answer: 'refused' }` when the person
-   *  said no or the browser cannot. Without it every op is refused. */
-  platform?(op: Json, blobs: Uint8Array[]): Promise<{ answer: Json; blobs: Uint8Array[] }>
+   *  said no or the browser cannot. Without it every op is refused. `window`: the one whose step asks; only it prompts. */
+  platform?(op: Json, blobs: Uint8Array[], window: number): Promise<{ answer: Json; blobs: Uint8Array[] }>
 }
-
 type Json = Record<string, unknown>
+const win = (effect: Json): number => (effect['window'] as number | undefined) ?? 0
 type IoError = { kind: 'offline' | 'timeout' | 'too_large' | 'cancelled' | 'conflict' | 'full' | 'denied' | 'failed'; detail?: string }
 const failure = (kind: IoError['kind'], detail = ''): { err: IoError } => ({ err: { kind, detail } })
 
@@ -122,7 +122,7 @@ export class CoreShell {
     if (this.barrier !== null) { this.held.push({ effect, blobs }); return }
     const id = effect['id'] as number
     switch (effect['type']) {
-      case 'render': return this.host.render(effect['delta'], (effect['window'] as number | undefined) ?? 0)
+      case 'render': return this.host.render(effect['delta'], win(effect))
       case 'http': return void this.http(id, effect['request'] as Json, blobs)
       case 'open_stream': return void this.stream(id, effect['request'] as Json, blobs)
       case 'cancel': {
@@ -133,7 +133,7 @@ export class CoreShell {
       }
       case 'store': return this.store(id, effect['op'] as Json, blobs)
       case 'secret': return this.send({ type: 'secret', id, result: failure('denied') })
-      case 'platform': return void this.platform(id, effect['op'] as Json, blobs)
+      case 'platform': return void this.platform(id, effect['op'] as Json, blobs, win(effect))
       case 'timer': {
         if (this.timer) clearTimeout(this.timer)
         this.timer = null
@@ -143,8 +143,8 @@ export class CoreShell {
       }
       case 'file_ready': return this.host.fileReady?.(effect['file_id'] as string, effect['media_type'] as string, blobs[effect['bytes'] as number] ?? new Uint8Array())
       case 'file_gone': return this.host.fileGone?.(effect['file_id'] as string)
-      case 'save_file': return this.host.saveFile?.(effect['name'] as string, effect['media_type'] as string, blobs[effect['bytes'] as number] ?? new Uint8Array())
-      case 'open_url': return this.host.openUrl?.(effect['url'] as string)
+      case 'save_file': return this.host.saveFile?.(effect['name'] as string, effect['media_type'] as string, blobs[effect['bytes'] as number] ?? new Uint8Array(), win(effect))
+      case 'open_url': return this.host.openUrl?.(effect['url'] as string, win(effect))
       case 'notify': return this.host.notify?.(effect['notice'])
       case 'snapshot': case 'notify_context': case 'share_inbox': case 'forget_shared': return
       case 'log': return this.host.log?.(effect['level'] as string, effect['text'] as string)
@@ -152,10 +152,10 @@ export class CoreShell {
     }
   }
 
-  private async platform(id: number, op: Json, blobs: Uint8Array[]): Promise<void> {
+  private async platform(id: number, op: Json, blobs: Uint8Array[], window: number): Promise<void> {
     if (!this.host.platform) return this.send({ type: 'platform', id, result: { ok: { answer: 'refused' } } })
     try {
-      const { answer, blobs: out } = await this.host.platform(op, blobs)
+      const { answer, blobs: out } = await this.host.platform(op, blobs, window)
       this.send({ type: 'platform', id, result: { ok: answer } }, out)
     } catch (e) {
       this.send({ type: 'platform', id, result: failure('failed', String((e as Error)?.message ?? e)) })

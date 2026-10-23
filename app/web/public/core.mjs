@@ -115,7 +115,7 @@ export async function startCore(config, { take = false, slot = SLOT } = {}) {
     let early = globalThis.__trommiCore ?? null
     globalThis.__trommiCore = null
     if (early && early.shared !== shared) { try { if (early.shared) early.port.close(); else early.worker.terminate() } catch {} early = null }
-    worker = early?.worker ?? (shared ? new SharedWorker(CORE_WORKER, { type: 'module', name: 'trommi-core' }) : new Worker(CORE_WORKER, { type: 'module', name: 'trommi-core' }))
+    worker = early?.worker ?? (shared ? new SharedWorker(CORE_WORKER, { type: 'module', name: `trommi-core ${CORE_WORKER}` }) : new Worker(CORE_WORKER, { type: 'module', name: 'trommi-core' }))
     port = early?.port ?? (shared ? worker.port : worker)
     port.onmessage = e => receive(e.data)
     worker.onerror = e => emit('failed', new Error(e.message || 'the core worker failed'))
