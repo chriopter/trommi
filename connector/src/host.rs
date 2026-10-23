@@ -8,19 +8,30 @@
 //!   session ([`wake`]), so it hears the board at once, as Claude Code with channels does.
 //! - The words for a restart differ: Codex is restarted (or a new session started), Claude Code reconnects in
 //!   /mcp.
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-static CODEX: AtomicBool = AtomicBool::new(false);
+use crate::preset::Preset;
+
+/// The preset of the program that runs this connector (`preset.rs`); Claude Code until another is known.
+static HOST: Mutex<&'static Preset> = Mutex::new(&crate::preset::CLAUDE);
 static THREAD: Mutex<Option<String>> = Mutex::new(None);
+
+/// The preset of the program that runs this connector.
+pub fn preset() -> &'static Preset {
+    *HOST.lock().unwrap()
+}
+
+pub fn set_preset(p: &'static Preset) {
+    *HOST.lock().unwrap() = p;
+}
 
 /// Whether Codex runs this connector.
 pub fn is_codex() -> bool {
-    CODEX.load(Ordering::SeqCst)
+    preset().id == crate::preset::CODEX.id
 }
 
 pub fn set_codex() {
-    CODEX.store(true, Ordering::SeqCst);
+    set_preset(&crate::preset::CODEX);
 }
 
 /// Whether an MCP client's `initialize` names Codex (`clientInfo.name` "codex-mcp-client", or a title "Codex").
@@ -179,7 +190,7 @@ pub async fn wake_thread(thread: &str, text: &str) -> bool {
     if let Some(home) = codex_home() {
         cmd.env("CODEX_HOME", home);
     }
-    cmd.args(["queue", "--thread", thread, "--message", text])
+    cmd.args(queue_args(thread, text))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -218,7 +229,7 @@ pub fn wake_detached(thread: &str, text: &str) {
     if let Some(home) = codex_home() {
         cmd.env("CODEX_HOME", home);
     }
-    cmd.args(["queue", "--thread", thread, "--message", text])
+    cmd.args(queue_args(thread, text))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -226,29 +237,23 @@ pub fn wake_detached(thread: &str, text: &str) {
     let _ = cmd.spawn();
 }
 
+/// The arguments that queue `text` for a Codex thread (the Codex preset's live wake).
+fn queue_args(thread: &str, text: &str) -> Vec<String> {
+    let crate::preset::Live::Command(groups) = crate::preset::CODEX.live else { return vec![] };
+    crate::preset::render(groups, &crate::preset::Fill { prompt: text, resume: thread, ..Default::default() })
+}
+
 /// The program's name, for texts the human reads.
 pub fn name() -> &'static str {
-    if is_codex() {
-        "Codex"
-    } else {
-        "Claude Code"
-    }
+    preset().name
 }
 
 /// How the human restarts this session's connector.
 pub fn restart_line() -> &'static str {
-    if is_codex() {
-        "Quit Codex and start it again in this folder (`codex resume` keeps the conversation)."
-    } else {
-        "In the terminal of this Claude Code session: /mcp, then trommi, then Reconnect."
-    }
+    preset().restart
 }
 
 /// How a newer connector is installed and loaded.
 pub fn update_line() -> &'static str {
-    if is_codex() {
-        "run `trommi-connector update` in a terminal, then quit Codex and start it again (`codex resume` keeps the conversation)"
-    } else {
-        "run `trommi-connector update` in a terminal; this session's connector swaps the new one in by itself (if it does not: /mcp, then trommi, then Reconnect)"
-    }
+    preset().update
 }

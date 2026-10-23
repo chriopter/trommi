@@ -1007,7 +1007,7 @@ impl Conn {
         let note = crate::wakeups::Note {
             session: sid,
             folder: self.cfg.folder.display().to_string(),
-            program: if codex { "codex" } else { "claude" }.into(),
+            program: crate::host::preset().id.into(),
             resume: resume.unwrap_or_default(),
             ask_tool: if codex { String::new() } else { ask_tool.into() },
             zone_min: crate::wakeups::zone_min(),
