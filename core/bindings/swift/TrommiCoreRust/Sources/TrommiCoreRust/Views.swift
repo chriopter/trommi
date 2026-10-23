@@ -745,6 +745,8 @@ public enum CoreView {
     public var open: Bool
     /// The open questions of the team's sessions.
     public var waiting: UInt32
+    /// Its open cards, infos too, and its requests: what Blitz walks on its Desk. The calm grey count.
+    public var cards: UInt32
     /// One of them knocks.
     public var knocks: Bool
     /// What the head says to a screen reader: "3 agents, 2 questions open".
@@ -758,12 +760,13 @@ public enum CoreView {
     /// Its sessions, one row each, in drawing order (connected first); drawn while open.
     public var sessions: [SessionRowView]
 
-    public init(id: String = "", name: Text = Text(), selected: Bool = false, open: Bool = false, waiting: UInt32 = 0, knocks: Bool = false, says: Text = Text(), edges: [StackEdgeView] = [], faces: [StackEdgeView] = [], sessions: [SessionRowView] = []) {
+    public init(id: String = "", name: Text = Text(), selected: Bool = false, open: Bool = false, waiting: UInt32 = 0, cards: UInt32 = 0, knocks: Bool = false, says: Text = Text(), edges: [StackEdgeView] = [], faces: [StackEdgeView] = [], sessions: [SessionRowView] = []) {
       self.id = id
       self.name = name
       self.selected = selected
       self.open = open
       self.waiting = waiting
+      self.cards = cards
       self.knocks = knocks
       self.says = says
       self.edges = edges
@@ -777,6 +780,7 @@ public enum CoreView {
       case selected = "selected"
       case open = "open"
       case waiting = "waiting"
+      case cards = "cards"
       case knocks = "knocks"
       case says = "says"
       case edges = "edges"
@@ -791,6 +795,7 @@ public enum CoreView {
       self.selected = try c.decode(Bool.self, forKey: .selected)
       self.open = try c.decodeIfPresent(Bool.self, forKey: .open) ?? false
       self.waiting = try c.decode(UInt32.self, forKey: .waiting)
+      self.cards = try c.decode(UInt32.self, forKey: .cards)
       self.knocks = try c.decodeIfPresent(Bool.self, forKey: .knocks) ?? false
       self.says = try c.decode(Text.self, forKey: .says)
       self.edges = try c.decodeIfPresent([StackEdgeView].self, forKey: .edges) ?? []
@@ -805,6 +810,7 @@ public enum CoreView {
       try c.encode(selected, forKey: .selected)
       try c.encode(open, forKey: .open)
       try c.encode(waiting, forKey: .waiting)
+      try c.encode(cards, forKey: .cards)
       try c.encode(knocks, forKey: .knocks)
       try c.encode(says, forKey: .says)
       if !edges.isEmpty { try c.encode(edges, forKey: .edges) }
@@ -848,15 +854,18 @@ public enum CoreView {
     public var name: Text
     /// The open questions of the team's sessions.
     public var waiting: UInt32
+    /// Its open cards, infos too, and its requests: what Blitz walks on its Desk.
+    public var cards: UInt32
     /// It is the Desk in view: the team in view, unless home (`desk_all`) is.
     public var selected: Bool
     /// One of them knocks.
     public var knocks: Bool
 
-    public init(id: String = "", name: Text = Text(), waiting: UInt32 = 0, selected: Bool = false, knocks: Bool = false) {
+    public init(id: String = "", name: Text = Text(), waiting: UInt32 = 0, cards: UInt32 = 0, selected: Bool = false, knocks: Bool = false) {
       self.id = id
       self.name = name
       self.waiting = waiting
+      self.cards = cards
       self.selected = selected
       self.knocks = knocks
     }
@@ -865,6 +874,7 @@ public enum CoreView {
       case id = "id"
       case name = "name"
       case waiting = "waiting"
+      case cards = "cards"
       case selected = "selected"
       case knocks = "knocks"
     }
@@ -874,6 +884,7 @@ public enum CoreView {
       self.id = try c.decode(String.self, forKey: .id)
       self.name = try c.decode(Text.self, forKey: .name)
       self.waiting = try c.decode(UInt32.self, forKey: .waiting)
+      self.cards = try c.decode(UInt32.self, forKey: .cards)
       self.selected = try c.decode(Bool.self, forKey: .selected)
       self.knocks = try c.decodeIfPresent(Bool.self, forKey: .knocks) ?? false
     }
@@ -883,6 +894,7 @@ public enum CoreView {
       try c.encode(id, forKey: .id)
       try c.encode(name, forKey: .name)
       try c.encode(waiting, forKey: .waiting)
+      try c.encode(cards, forKey: .cards)
       try c.encode(selected, forKey: .selected)
       try c.encode(knocks, forKey: .knocks)
     }
@@ -917,6 +929,8 @@ public enum CoreView {
     public var helpers: HelperDotsView?
     /// Its open questions: what waits for the person on the Desk (no infos, nothing that is with its agent).
     public var open: UInt32
+    /// Its open cards, infos too, and its requests: what Blitz walks of it. The calm grey count beside its name.
+    public var cards: UInt32
     /// One of them knocks.
     public var knocks: Bool
     /// Why it is stopped, in words.
@@ -938,7 +952,7 @@ public enum CoreView {
     /// "unread" (new words), or "" for none.
     public var signal: String
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, unheard: UInt32 = 0, slug: String = "", mark: String = "", teamId: String = "", online: Bool = false, working: Bool = false, main: Bool = false, crowned: Bool = false, helpers: HelperDotsView? = nil, open: UInt32 = 0, knocks: Bool = false, hand: HandView? = nil, cap: CapView? = nil, away: Bool = false, group: String = "", says: Text? = nil, last: LastSaidView? = nil, unread: Bool = false, signal: String = "") {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, unheard: UInt32 = 0, slug: String = "", mark: String = "", teamId: String = "", online: Bool = false, working: Bool = false, main: Bool = false, crowned: Bool = false, helpers: HelperDotsView? = nil, open: UInt32 = 0, cards: UInt32 = 0, knocks: Bool = false, hand: HandView? = nil, cap: CapView? = nil, away: Bool = false, group: String = "", says: Text? = nil, last: LastSaidView? = nil, unread: Bool = false, signal: String = "") {
       self.id = id
       self.name = name
       self.link = link
@@ -953,6 +967,7 @@ public enum CoreView {
       self.crowned = crowned
       self.helpers = helpers
       self.open = open
+      self.cards = cards
       self.knocks = knocks
       self.hand = hand
       self.cap = cap
@@ -979,6 +994,7 @@ public enum CoreView {
       case crowned = "crowned"
       case helpers = "helpers"
       case open = "open"
+      case cards = "cards"
       case knocks = "knocks"
       case hand = "hand"
       case cap = "cap"
@@ -1006,6 +1022,7 @@ public enum CoreView {
       self.crowned = try c.decodeIfPresent(Bool.self, forKey: .crowned) ?? false
       self.helpers = try c.decodeIfPresent(HelperDotsView.self, forKey: .helpers)
       self.open = try c.decodeIfPresent(UInt32.self, forKey: .open) ?? 0
+      self.cards = try c.decodeIfPresent(UInt32.self, forKey: .cards) ?? 0
       self.knocks = try c.decodeIfPresent(Bool.self, forKey: .knocks) ?? false
       self.hand = try c.decodeIfPresent(HandView.self, forKey: .hand)
       self.cap = try c.decodeIfPresent(CapView.self, forKey: .cap)
@@ -1033,6 +1050,7 @@ public enum CoreView {
       try c.encode(crowned, forKey: .crowned)
       try c.encodeIfPresent(helpers, forKey: .helpers)
       try c.encode(open, forKey: .open)
+      try c.encode(cards, forKey: .cards)
       try c.encode(knocks, forKey: .knocks)
       try c.encodeIfPresent(hand, forKey: .hand)
       try c.encodeIfPresent(cap, forKey: .cap)

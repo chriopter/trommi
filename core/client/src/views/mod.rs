@@ -413,6 +413,8 @@ pub struct TeamStackView {
     pub open: bool,
     /// The open questions of the team's sessions.
     pub waiting: u32,
+    /// Its open cards, infos too, and its requests: what Blitz walks on its Desk. The calm grey count.
+    pub cards: u32,
     /// One of them knocks.
     #[serde(default)]
     pub knocks: bool,
@@ -449,6 +451,8 @@ pub struct TeamTab {
     pub name: Text,
     /// The open questions of the team's sessions.
     pub waiting: u32,
+    /// Its open cards, infos too, and its requests: what Blitz walks on its Desk.
+    pub cards: u32,
     /// It is the Desk in view: the team in view, unless home (`desk_all`) is.
     pub selected: bool,
     /// One of them knocks.
@@ -495,6 +499,9 @@ pub struct SessionRowView {
     /// Its open questions: what waits for the person on the Desk (no infos, nothing that is with its agent).
     #[serde(default)]
     pub open: u32,
+    /// Its open cards, infos too, and its requests: what Blitz walks of it. The calm grey count beside its name.
+    #[serde(default)]
+    pub cards: u32,
     /// One of them knocks.
     #[serde(default)]
     pub knocks: bool,

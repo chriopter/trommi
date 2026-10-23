@@ -762,7 +762,7 @@ struct SettingsScreen: View {
       ForEach(Array(shell.view.sidebar.teams.enumerated()), id: \.element.id) { i, team in
         if i > 0 { SetRule() }
         HStack(spacing: 0) {
-          Button { shell.focus(.desk, team: team.id) } label: { SetRow(title: team.name.en, detail: team.waiting > 0 ? "\(team.waiting)" : nil, chevron: true) { Sketch("desk") } }.buttonStyle(.plain)
+          Button { shell.focus(.desk, team: team.id) } label: { SetRow(title: team.name.en, detail: team.cards > 0 ? "\(team.cards)" : nil, chevron: true) { Sketch("desk") } }.buttonStyle(.plain)
           if let p = shell.view.settings.deleting.first(where: { $0.teamId == team.id }) {
             ProgressView(value: Double(p.done), total: Double(max(p.total, 1))).frame(width: 44).padding(.trailing, 12)
           }
