@@ -1,6 +1,7 @@
 //! The stream's events beside the hub's order: what has no change number and is not read again by a page.
 //!
-//! - **A relayed piece** (7.2, the room group alone): a stroke still being drawn. The protocol core opens it
+//! - **A relayed piece**: a stroke still being drawn (7.2, the room group), or the answer an agent is writing (7.5, a
+//!   session group). The protocol core opens it
 //!   ([`trommi_core::device::Device::receive_relay`]); one that does not open, or opens to anything but a piece,
 //!   is not shown, and nothing else follows from it. It is in no log: a piece missed is missed for good, and the
 //!   finished stroke comes in the order.
@@ -79,7 +80,9 @@ impl Wishes {
 impl Engine {
     /// A piece the hub only passed on: shown if the core opens it.
     pub(super) fn on_relay(&mut self, ctx: &mut Ctx<'_>, group: GroupId, sender: DeviceId, message: &[u8]) {
-        if sender == self.device.id() || !group.is_room() {
+        // (a stroke piece in the room group, 7.2; an answer preview of an agent in a session group, 7.5: the protocol core
+        //  takes each only from whom it may come)
+        if sender == self.device.id() {
             return;
         }
         match self.device.receive_relay(&group, message, ctx.now) {

@@ -1279,10 +1279,15 @@ fn accepted_content_arrives_live_and_a_stream_resumes_by_change_number() {
             .len(),
         log_before
     );
-    // only the room group relays, and the agent device hears none of it
-    s.agent
-        .post_message(hub, &s.group, b"piece", true)
-        .refused(403, "forbidden");
+    // a session group relays from its agent (7.5, an answer preview): passed to the human devices, not in its log;
+    // a human device relays only in the room group
+    let session_path = format!("/v1/groups/{}/log", b64(&s.group));
+    let session_before = s.bea.get(hub, &session_path).ok()["items"].as_array().unwrap().len();
+    s.agent.post_message(hub, &s.group, b"preview", true).ok();
+    let relay = human.until("relay");
+    assert_eq!((relay.data["sender"].as_str(), relay.data["group_id"].as_str()), (Some(b64(&s.agent.id()).as_str()), Some(b64(&s.group).as_str())));
+    assert_eq!(s.bea.get(hub, &session_path).ok()["items"].as_array().unwrap().len(), session_before, "a preview is not stored");
+    s.bea.post_message(hub, &s.group, b"piece", true).refused(403, "forbidden");
     // a work trail step is stored in the session's log and reaches its leaves
     s.agent.post_message(hub, &s.group, b"step 1", false).ok();
     let e = human.until("log");

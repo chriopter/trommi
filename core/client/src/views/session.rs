@@ -170,6 +170,11 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
             pages: pages + 1,
         });
     }
+    // the answer its agent is writing now (7.5), while it is fresh
+    if let Some(l) = b.model.live_answers.get(&v.id).filter(|l| b.now.saturating_sub(l.at) < crate::live_answer::SHOWN_MS) {
+        v.live_answer = l.text.clone();
+        b.wake_at(Some(l.at + crate::live_answer::SHOWN_MS));
+    }
     if b.lens.calm {
         calm(&mut v);
     }
@@ -581,6 +586,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         quiet,
         note,
         compose,
+        live_answer: String::new(),
         answering,
         open,
         open_word: (open > 0).then(|| say("session.open", format!("{n} open"), &[("n", &n)])),

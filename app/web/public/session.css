@@ -920,6 +920,11 @@ a.files-where:hover span { text-decoration: underline; }
 
 /* ---- the agent at work: only its face, drawing itself (SessionView.working) ------------------------------------- */
 .working-face { margin-top: var(--s-6); align-self: flex-start; }
+/* The answer as it is written (spec 7.5): an agent's bubble under the face, a caret at its end. */
+.msg-live { margin-top: var(--s-3); }
+.msg-live .rich > :last-child::after { content: ""; display: inline-block; width: .5em; height: 1.05em; margin-left: 2px; vertical-align: -.15em; background: currentColor; opacity: .55; border-radius: 1px; animation: live-caret 1s steps(2, start) infinite; }
+@keyframes live-caret { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .msg-live .rich > :last-child::after { animation: none; } }
 .working-face > summary { list-style: none; display: inline-grid; place-items: center; width: 40px; height: 40px; margin-left: -3px; border-radius: 12px; cursor: pointer; }
 .working-face > summary::-webkit-details-marker { display: none; }
 .working-face > summary:hover { background: var(--sunken); }

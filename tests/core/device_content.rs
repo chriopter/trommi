@@ -1354,6 +1354,36 @@ fn a_relayed_stroke_piece_is_taken_without_the_log() {
     );
 }
 
+/// 7.5: the answer an agent is writing is relayed in its session group, from its agent device only, never in the log;
+/// every preview weighs the same, whatever the words.
+#[test]
+fn an_answer_preview_is_relayed_from_the_sessions_agent() {
+    use trommi_core::device::Received;
+    use trommi_core::ids::TurnId;
+    let (mut w, mut other) = world_of_two();
+    sync_all(&w.hub, &mut other);
+    let turn = TurnId::new([7; 16]);
+    let mut sizes = Vec::new();
+    for (number, words) in [(1u32, ""), (2, "Sonnig"), (3, &*"lang ".repeat(1_200))] {
+        let preview = trommi_client_core::live_answer::encode(words);
+        w.agent.send_answer_preview(&w.group, &turn, number, &preview).unwrap();
+        trommi_tests::post_ok(&mut w.hub, &mut w.agent);
+        let (group, relayed) = w.hub.relayed.last().unwrap().clone();
+        assert_eq!(group, w.group);
+        sizes.push(relayed.len());
+        let cursor = other.cursor();
+        let got = other.receive_relay(&group, &relayed, now()).unwrap();
+        assert_eq!(got, Some(Received::AnswerPreview { from: w.agent.id(), turn, number, preview: preview.clone() }));
+        assert_eq!(other.cursor(), cursor, "not in the log");
+        assert_eq!(trommi_client_core::live_answer::decode(&preview).as_deref(), Some(trommi_client_core::live_answer::tail(words)));
+    }
+    assert!(sizes.windows(2).all(|p| p[0] == p[1]), "every preview the same size: {sizes:?}");
+    // a human device sends none, and none in the room group; number 0 is no preview
+    assert_eq!(w.human.send_answer_preview(&w.group, &turn, 1, b"{}"), Err(Error::Forbidden));
+    assert_eq!(w.agent.send_answer_preview(&w.room, &turn, 1, b"{}"), Err(Error::Forbidden));
+    assert_eq!(w.agent.send_answer_preview(&w.group, &turn, 0, b"{}"), Err(Error::BadFormat));
+}
+
 /// 7.0: an application message is padded to its bucket: pieces of different lengths in one bucket travel alike,
 /// and still open to what was sent.
 #[test]

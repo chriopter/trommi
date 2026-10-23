@@ -1076,14 +1076,22 @@ pub fn message(
         return Err(refuse("stale-session", "the group waits for a Remove"));
     }
     if relay {
-        // 7.2: a stroke piece. Room group, human devices; passed on, never stored, not in the log.
-        if row.kind != GroupKind::Room {
-            return Err(refuse("forbidden", "only the room group relays"));
+        // 7.2: a stroke piece (room group, human devices) or 7.5: an answer preview (a session group, its agent or
+        // helper devices); passed on to the human devices, never stored, not in the log.
+        let may = match row.kind {
+            GroupKind::Room => auth.who == Who::Human,
+            GroupKind::Main | GroupKind::Helper => matches!(auth.who, Who::Agent | Who::Helper),
+        };
+        if !may {
+            return Err(refuse("forbidden", "the room group relays from human devices, a session group from its agent"));
         }
         joined(x.c, group_id, &auth.device)?;
+        // (to the room's human devices, as a stroke piece: a human device the session has not taken in yet cannot open
+        //  it; agents get none)
+        let audience = Audience { humans: true, others: vec![], except: Some(auth.device) };
         fx.events.push(Event {
             room: auth.room,
-            audience: Audience { humans: true, others: vec![], except: Some(auth.device) },
+            audience,
             name: "relay",
             change: None,
             data: json!({ "group_id": b64(group_id), "epoch": epoch, "sender": b64(&auth.device), "message": b64(bytes) }),

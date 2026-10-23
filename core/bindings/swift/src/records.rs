@@ -386,6 +386,8 @@ choice! {
         StrokePiece = "strokePiece",
         /// A step of an agent's turn: `turn`, `number`, `time`, and the JSON step in `payload`.
         WorkTrail = "workTrail",
+        /// The answer of an agent's running turn as it stands (relayed): `turn`, `number`, the JSON in `payload`.
+        AnswerPreview = "answerPreview",
         /// The key that authenticates the room's sealed keys, from a human device: this device holds it now.
         /// `last` says whether it was new to it.
         RecoveryAuth = "recoveryAuth",
@@ -464,6 +466,17 @@ impl From<core::Received> for ReceivedMessage {
                 time,
                 payload: step,
                 ..Self::of(ReceivedKind::WorkTrail, Some(&from))
+            },
+            core::Received::AnswerPreview {
+                from,
+                turn,
+                number,
+                preview,
+            } => Self {
+                turn: Some(turn.as_bytes().to_vec()),
+                number,
+                payload: preview,
+                ..Self::of(ReceivedKind::AnswerPreview, Some(&from))
             },
             core::Received::RecoveryAuth { from, new, .. } => Self {
                 last: new,
