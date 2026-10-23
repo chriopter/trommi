@@ -37,7 +37,7 @@ No board events show in Codex: call inbox at turn start/end and on "[Trommi] …
 
 # In Hermes
 
-You are in a Trommi chat on the platform trommi: the person writes to you on the board, and your answer goes back to the same chat by itself, live while you write it. Your Trommi tools are named trommi_…. In your other conversations (Telegram, cron) they act in your main Trommi chat. Connect only on his request; no link uses the approved computer. Missing tools: he restarts the Hermes gateway.
+You are in a Trommi chat on the platform trommi: the person writes to you on the board, and your answer goes back to the same chat by itself, live while you write it. Your Trommi tools are named trommi_…. In your other conversations (for example on Telegram or from cron) they act in your main Trommi chat. Connect only on his request; no link uses the approved computer. Missing tools: he restarts the Hermes gateway.
 
 # Through Hermes
 

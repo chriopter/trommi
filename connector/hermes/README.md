@@ -10,7 +10,8 @@ Hermes chat on the platform `trommi`:
 - What Hermes asks to approve comes to the board as a yes/no card. The card's answer settles exactly that request.
   No answer is no.
 - The board tools (cards, status lines, knowledge, wakeups) are Hermes tools named `trommi_<name>`. A call from a Trommi
-  chat acts in that chat. A call from any other conversation of this Hermes (Telegram, cron) acts in its main chat.
+  chat acts in that chat. A call from any other conversation of this Hermes (for example on Telegram or from cron)
+  acts in its main chat.
 - "New chat with …" in the app starts another chat. The add-on starts its connector, which activates itself on
   this approved computer (at most 8 sessions, as for any approved computer).
 

@@ -3,7 +3,7 @@
 The board tools are the connector's own (cards, status lines, knowledge, wakeups, …), named `trommi_<name>`, with the
 schemas and the instructions the connector wrote next to this add-on (`trommi.json`, by `trommi-connector setup
 hermes`): registering them starts nothing. A call goes to the Trommi chat whose turn makes it (the session's platform
-"trommi" and its chat id); from any other conversation of this Hermes (Telegram, cron) to the main chat."""
+"trommi" and its chat id); from any other conversation of this Hermes (for example on Telegram or from cron) to the main chat."""
 from __future__ import annotations
 
 import json

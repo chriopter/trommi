@@ -485,7 +485,7 @@ agent does (Approve a computer). A second Hermes is a Hermes profile with a name
 - **"New chat with …"** under the + (iPhone: the + menu) starts another chat with that Hermes. Its connector activates
   itself on the approved computer, without a tap there.
 - **Exact routing.** The board tools are Hermes tools (`trommi_<name>`). A call from a Trommi chat acts in that chat.
-  A call from another conversation of that Hermes (Telegram, cron) acts in its main chat.
+  A call from another conversation of that Hermes (for example on Telegram or from cron) acts in its main chat.
 - **One connector per chat.** The add-on starts the connector once per chat and speaks MCP to it. Each holds the key of
   its chat. The add-on is part of the signed connector release, and a newer connector writes it again when it starts.
 
