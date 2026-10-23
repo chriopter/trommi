@@ -125,7 +125,7 @@ export function sender(card, base) {
   const f = card.from
   if (!f) return ''
   const who = whoOf(f), path = (f.path?.length ? f.path : [f.name]).join(' › ')
-  return html`<a class="tc-from" data-nav href="${base}/chat/${encodeURIComponent(f.session_id)}" style="--hue:${who.hue}" title="Open the chat of ${who.name}" aria-label="From ${path}${f.helper ? `, ${f.helper.en}` : ''}"><span class="tc-from-mark" aria-hidden="true">${markArt({ ...who, crowned: false })}</span><span class="tc-from-path">${path}</span>${f.helper ? html`<i aria-hidden="true">·</i><span class="tc-from-helper">${f.helper.en}</span>` : ''}</a>`
+  return html`<a class="tc-from" data-nav href="${base}/chat/${encodeURIComponent(f.session_id)}" style="--hue:${who.hue}" title="Open its chat" aria-label="From ${path}${f.helper ? `, ${f.helper.en}` : ''}"><span class="tc-from-mark" aria-hidden="true">${markArt({ ...who, crowned: false })}</span><span class="tc-from-path">${path}</span>${f.helper ? html`<i aria-hidden="true">·</i><span class="tc-from-helper">${f.helper.en}</span>` : ''}</a>`
 }
 /** The words of the left column (#card-lead-<id>). old: a version before (VersionView), read only. */
 function cardLead(card, base, old = null, tools = '') {
