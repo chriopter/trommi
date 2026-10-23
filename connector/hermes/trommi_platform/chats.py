@@ -51,6 +51,9 @@ class Chats:
         self.on_event = on_event
         self.make_child = make_child
         self.children: dict[str, Child] = {}
+        # the chats made by "New chat with …" that are on the board (activated); one that is not yet is activated again
+        self._active: set[str] = set()
+        self._names: dict[str, str] = {}
         self._nonces: list[str] = []
         self._lock = asyncio.Lock()
 
@@ -67,8 +70,9 @@ class Chats:
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.state_file.with_name(f".{self.state_file.name}.{os.getpid()}")
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        chats = [{"id": c, "active": c == MAIN or c in self._active, "name": self._names.get(c, "")} for c in sorted(self.children)]
         with os.fdopen(fd, "w") as f:
-            json.dump({"chats": sorted(self.children), "nonces": self._nonces[-NONCES_KEPT:]}, f)
+            json.dump({"chats": chats, "nonces": self._nonces[-NONCES_KEPT:]}, f)
         os.replace(tmp, self.state_file)
 
     # ---- the children ----
@@ -95,15 +99,37 @@ class Chats:
 
         return self.make_child(self.program, self.env(chat, name), notice, name=chat)
 
+    async def _activate(self, chat: str) -> bool:
+        """A new chat's connector activates itself on the approved computer (its `connect` tool, no link); whether it is
+        on the board now."""
+        try:
+            said = await self.children[chat].call_tool("connect", {})
+        except Exception as exc:  # noqa: BLE001 - tried again at the next start
+            logger.warning("Trommi chat %s not activated: %s", chat, exc)
+            return False
+        if said.startswith("Error"):
+            logger.warning("Trommi chat %s not activated: %s", chat, said[:200])
+            return False
+        self._active.add(chat)
+        self._write()
+        return True
+
     async def start(self) -> None:
         kept = self._read()
         self._nonces = [n for n in kept.get("nonces", []) if isinstance(n, str)][-NONCES_KEPT:]
-        chats = [c for c in kept.get("chats", []) if isinstance(c, str) and CHAT_ID.match(c)]
-        for chat in [MAIN, *[c for c in chats if c != MAIN]][:CHATS_MAX]:
-            child = self._child(chat)
+        rows = [r for r in kept.get("chats", []) if isinstance(r, dict) and isinstance(r.get("id"), str) and CHAT_ID.match(r["id"])]
+        self._active = {r["id"] for r in rows if r.get("active") is True and r["id"] != MAIN}
+        self._names = {r["id"]: str(r.get("name") or "") for r in rows}
+        ids = [MAIN, *[r["id"] for r in rows if r["id"] != MAIN]][:CHATS_MAX]
+        for chat in ids:
+            child = self._child(chat, self._names.get(chat) or None)
             self.children[chat] = child
             await child.start()
         self._write()
+        # (a chat whose activation did not finish before: once more)
+        for chat in ids:
+            if chat != MAIN and chat not in self._active:
+                await self._activate(chat)
 
     async def stop(self) -> None:
         for child in list(self.children.values()):
@@ -114,22 +140,37 @@ class Chats:
         """The child of a Trommi chat; None for an id that is not one (fail closed)."""
         return self.children.get(chat or MAIN)
 
+    async def _prune(self) -> None:
+        """Chats whose session is no more (the person archived or removed it): their connector ends, their place is free."""
+        for chat in [c for c in self.children if c != MAIN and c in self._active]:
+            try:
+                state = await self.children[chat].request("trommi/state", {}, timeout=10)
+            except Exception:  # noqa: BLE001 - one that does not answer stays
+                continue
+            if str((state or {}).get("phase")) in {"retired", "needs-invite"}:
+                await self.children.pop(chat).stop()
+                self._active.discard(chat)
+                self._names.pop(chat, None)
+
     async def new_chat(self, nonce: str) -> str | None:
         """Starts a new chat for the person's ask (`nonce`, once each): its child, which activates itself on the
-        approved computer (its `connect` tool, no link). Returns its chat id; None for a nonce seen before, or past the
-        limit."""
+        approved computer. Returns its chat id; None for a nonce seen before, or past the limit."""
         async with self._lock:
             if nonce in self._nonces:
                 return None
             self._nonces.append(nonce)
             if len(self.children) >= CHATS_MAX:
+                await self._prune()
+            if len(self.children) >= CHATS_MAX:
                 self._write()
+                logger.warning("Trommi: no new chat, this Hermes has %d already", CHATS_MAX)
                 return None
             chat = f"c-{secrets.token_hex(6)}"
-            child = self._child(chat, f"{self.name} {len(self.children) + 1}")
+            name = f"{self.name} {len(self.children) + 1}"
+            child = self._child(chat, name)
             self.children[chat] = child
+            self._names[chat] = name
             self._write()
         await child.start()
-        said = await child.call_tool("connect", {})
-        logger.info("Trommi chat %s: %s", chat, said[:200])
+        await self._activate(chat)
         return chat

@@ -42,11 +42,21 @@ class Child:
         self._stopping = False
         self._ready = asyncio.Event()
         self._supervisor: asyncio.Task | None = None
+        # (what the connector says unasked is handed on in order by a task of its own: a handler that asks this same
+        #  connector something never waits on the reader that would bring the answer)
+        self._notices: asyncio.Queue = asyncio.Queue(maxsize=1000)
+        self._handler: asyncio.Task | None = None
 
     async def start(self) -> None:
         self._stopping = False
+        self._handler = asyncio.create_task(self._hand_on())
         self._supervisor = asyncio.create_task(self._supervise())
-        await asyncio.wait_for(self._ready.wait(), timeout=REQUEST_SECONDS)
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout=REQUEST_SECONDS)
+        except asyncio.TimeoutError:
+            # (a child that did not come up is not left running behind a failed start)
+            await self.stop()
+            raise ChildError("the Trommi connector did not start")
 
     async def _supervise(self) -> None:
         pause = RESTART_MIN
@@ -55,18 +65,42 @@ class Child:
                 await self._spawn()
                 pause = RESTART_MIN
                 assert self._proc is not None
-                await self._proc.wait()
+                # (the process ends, or its stdout reader does: either way this generation is over)
+                ended = asyncio.create_task(self._proc.wait())
+                await asyncio.wait([ended, self._tasks[0]], return_when=asyncio.FIRST_COMPLETED)
+                ended.cancel()
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 - a child that does not start is tried again
                 logger.exception("Trommi connector %s did not start", self.name)
             self._ready.clear()
+            await self._end_process()
             self._fail_waiting("the Trommi connector ended")
             if self._stopping:
                 return
             logger.warning("Trommi connector %s ended; starting it again in %.0f s", self.name, pause)
             await asyncio.sleep(pause)
             pause = min(RESTART_MAX, pause * 2)
+
+    async def _end_process(self) -> None:
+        """The process of the last start, if it still runs (an initialize that failed): ended before another starts."""
+        proc = self._proc
+        if proc is None or proc.returncode is not None:
+            return
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+
+    async def _hand_on(self) -> None:
+        while True:
+            method, params = await self._notices.get()
+            try:
+                await self.on_notice(method, params)
+            except Exception:  # noqa: BLE001 - one event never stops the others
+                logger.exception("Trommi event not handled")
 
     async def _spawn(self) -> None:
         env = {**os.environ, **self.env}
@@ -113,9 +147,9 @@ class Child:
             if isinstance(method, str):
                 params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
                 try:
-                    await self.on_notice(method, params)
-                except Exception:  # noqa: BLE001 - one event never stops the reader
-                    logger.exception("Trommi event not handled")
+                    self._notices.put_nowait((method, params))
+                except asyncio.QueueFull:
+                    logger.warning("Trommi connector %s: too many events waiting; one dropped", self.name)
 
     async def _read_err(self) -> None:
         assert self._proc is not None and self._proc.stderr is not None
@@ -183,6 +217,8 @@ class Child:
                     proc.kill()
         if self._supervisor is not None:
             self._supervisor.cancel()
+        if self._handler is not None:
+            self._handler.cancel()
         for t in self._tasks:
             t.cancel()
         self._fail_waiting("stopped")

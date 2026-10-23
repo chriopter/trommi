@@ -23,18 +23,19 @@ logger = logging.getLogger(__name__)
 CURRENT: dict[str, "TrommiAdapter"] = {}
 
 
-def _pending_request_id(session_key: str) -> str | None:
-    """The Hermes request id of the newest approval that waits in this session (the one the prompt is for), so the
-    verdict resolves exactly that one and never a newer one. None where this Hermes does not say (then the oldest)."""
+def _pending_request_id(session_key: str, command: str) -> str | None:
+    """The Hermes request id of the approval this prompt is for: the one waiting request of this session with this
+    command. None when it cannot be told (none, several alike, or a Hermes that keeps them otherwise): then a yes on the
+    card allows nothing, and Hermes' own deadline denies it."""
     try:
         from tools import approval
 
         with approval._lock:  # noqa: SLF001 - read only; no public accessor in this Hermes version
-            queue = approval._gateway_queues.get(session_key) or []  # noqa: SLF001
-            if queue:
-                rid = queue[-1].data.get("request_id")
-                return str(rid) if rid else None
-    except Exception:  # noqa: BLE001 - an older or newer Hermes: fall back to the oldest
+            queue = list(approval._gateway_queues.get(session_key) or [])  # noqa: SLF001
+        alike = [entry for entry in queue if str(entry.data.get("command") or "") == command]
+        if len(alike) == 1 and alike[0].data.get("request_id"):
+            return str(alike[0].data["request_id"])
+    except Exception:  # noqa: BLE001 - another Hermes version: no correlation, no yes
         return None
     return None
 
@@ -116,6 +117,10 @@ class TrommiAdapter(BasePlatformAdapter):
             if ask is None:
                 return
             session_key, hermes_request = ask
+            if hermes_request is None:
+                # (which request it was cannot be told: a yes allows nothing; Hermes denies it when its time runs out)
+                logger.warning("Trommi: an approval could not be matched to its Hermes request; nothing allowed")
+                return
             choice = "once" if params.get("behavior") == "allow" else "deny"
             from tools.approval import resolve_gateway_approval
 
@@ -134,7 +139,15 @@ class TrommiAdapter(BasePlatformAdapter):
         return SendResult(success=True, message_id=f"trommi-{secrets.token_hex(8)}")
 
     async def send(self, chat_id: str, content: str, reply_to: str | None = None, metadata: dict[str, Any] | None = None) -> SendResult:
-        return await self._notify(chat_id, "trommi/answer", {"text": content})
+        # (a request: only once the connector wrote it to the board is it sent; answers keep their order there)
+        child = self.chats.child_for(chat_id)
+        if child is None:
+            return SendResult(success=False, error=f"no Trommi chat {chat_id}")
+        try:
+            await child.request("trommi/answer", {"text": content})
+        except Exception as exc:  # noqa: BLE001 - the gateway retries or reports
+            return SendResult(success=False, error=str(exc), retryable=True)
+        return SendResult(success=True, message_id=f"trommi-{secrets.token_hex(8)}")
 
     def supports_draft_streaming(self, chat_type=None, metadata=None, chat_id=None) -> bool:
         return True
@@ -151,7 +164,7 @@ class TrommiAdapter(BasePlatformAdapter):
 
     async def _send_exec_approval_prompt(self, prompt) -> SendResult:
         rid = secrets.token_hex(8)
-        self._asks[rid] = (prompt.session_key, _pending_request_id(prompt.session_key))
+        self._asks[rid] = (prompt.session_key, _pending_request_id(prompt.session_key, str(prompt.command or "")))
         result = await self._notify(prompt.chat_id, "notifications/claude/channel/permission_request", {
             "request_id": rid,
             "tool_name": "Hermes",

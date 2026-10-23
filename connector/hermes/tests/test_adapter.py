@@ -35,6 +35,12 @@ class FakeChild:
         self.calls.append((name, args))
         return f"{name} in {self.env['TROMMI_SESSION_KEY']}"
 
+    async def request(self, method, params, timeout=0):
+        self.notes.append((method, params))
+        if method == "trommi/state":
+            return {"phase": getattr(self, "phase", "ready")}
+        return {}
+
 
 @pytest.fixture
 def made():
@@ -83,7 +89,7 @@ async def test_an_approval_is_a_card_and_its_verdict_resolves_that_request(tmp_p
     a = adapter(tmp_path)
     await a.connect()
     main = made[0]
-    monkeypatch.setattr(adapter_mod, "_pending_request_id", lambda key: "req-7")
+    monkeypatch.setattr(adapter_mod, "_pending_request_id", lambda key, command: "req-7" if command == "rm -rf build" else None)
     resolved = []
     import tools.approval
 
@@ -97,6 +103,11 @@ async def test_an_approval_is_a_card_and_its_verdict_resolves_that_request(tmp_p
     assert resolved == [("agent:main:trommi:dm:main", "once", "req-7")]
     # a verdict nobody asked for changes nothing
     await main.on_notice("notifications/claude/channel/permission", {"request_id": "other", "behavior": "allow"})
+    assert len(resolved) == 1
+    # a request that cannot be matched to its Hermes request: a yes allows nothing
+    other = SimpleNamespace(chat_id="main", session_key="agent:main:trommi:dm:main", command="curl x", description="net")
+    await a._send_exec_approval_prompt(other)
+    await main.on_notice("notifications/claude/channel/permission", {"request_id": main.notes[-1][1]["request_id"], "behavior": "allow"})
     assert len(resolved) == 1
 
 
@@ -115,11 +126,49 @@ async def test_the_person_asks_for_a_new_chat_once(tmp_path, made):
     await main.on_notice("notifications/claude/channel", {"content": "x", "meta": {"kind": "new_chat", "nonce": "n1"}})
     await new.on_notice("notifications/claude/channel", {"content": "x", "meta": {"kind": "new_chat", "nonce": "n2"}})
     assert len(made) == 2
-    # kept: the next start brings both back
+    # kept: the next start brings both back, the new one as activated (no second connect)
     await a.disconnect()
     b = adapter(tmp_path)
     await b.connect()
-    assert sorted(c.name for c in made[2:]) == sorted(["main", new.name])
+    again = [c for c in made[2:] if c.name == new.name][0]
+    assert sorted(c.name for c in made[2:]) == sorted(["main", new.name]) and again.calls == []
+
+
+async def test_a_new_chat_that_did_not_activate_is_activated_at_the_next_start(tmp_path, made, monkeypatch):
+    a = adapter(tmp_path)
+    await a.connect()
+    failing = {"on": True}
+    original = FakeChild.call_tool
+
+    async def call_tool(self, name, args):
+        self.calls.append((name, args))
+        return "Error: no human app online" if failing["on"] else f"{name} ok"
+
+    monkeypatch.setattr(FakeChild, "call_tool", call_tool)
+    await made[0].on_notice("notifications/claude/channel", {"content": "x", "meta": {"kind": "new_chat", "nonce": "n1"}})
+    await a.disconnect()
+    failing["on"] = False
+    b = adapter(tmp_path)
+    await b.connect()
+    again = [c for c in made[2:] if c.name.startswith("c-")][0]
+    assert again.calls == [("connect", {})], "activated again"
+    assert again.env["TROMMI_AGENT_NAME"] == "Hermes Einkauf 2", "under the name it asked with"
+    monkeypatch.setattr(FakeChild, "call_tool", original)
+
+
+async def test_a_chat_the_person_removed_frees_its_place(tmp_path, made, monkeypatch):
+    import trommi_platform.chats as chats_mod
+
+    monkeypatch.setattr(chats_mod, "CHATS_MAX", 2)
+    a = adapter(tmp_path)
+    await a.connect()
+    await made[0].on_notice("notifications/claude/channel", {"content": "x", "meta": {"kind": "new_chat", "nonce": "n1"}})
+    first = made[1]
+    await made[0].on_notice("notifications/claude/channel", {"content": "x", "meta": {"kind": "new_chat", "nonce": "n2"}})
+    assert len(made) == 2, "at the limit: no third chat"
+    first.phase = "needs-invite"
+    await made[0].on_notice("notifications/claude/channel", {"content": "x", "meta": {"kind": "new_chat", "nonce": "n3"}})
+    assert len(made) == 3 and first.stopped
 
 
 async def test_a_tool_goes_to_the_chat_whose_turn_calls_it(tmp_path, made, monkeypatch):

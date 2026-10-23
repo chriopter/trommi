@@ -59,7 +59,9 @@ async fn the_hermes_addon_hears_the_board_and_answers_into_the_chat() {
     // Hermes works, its answer grows, then comes whole: the agent's message in the chat.
     mcp.notify("trommi/working", json!({ "on": true })).await;
     mcp.notify("trommi/preview", json!({ "draft": "1", "text": "Sonnig" })).await;
-    mcp.notify("trommi/answer", json!({ "text": "Sonnig, 21 Grad." })).await;
+    // (the answer is a request: answered once it is written to the board)
+    assert_eq!(mcp.request("trommi/answer", json!({ "text": "Sonnig, 21 Grad." })).await, json!({}));
+    assert_eq!(mcp.request("trommi/state", json!({})).await["phase"], "ready");
     mcp.notify("trommi/working", json!({ "on": false })).await;
     until(&mut human, "the answer", |h| h.items.iter().any(|(_, s, p)| *s == me && p["terminal"] == "answer" && p["text"] == "Sonnig, 21 Grad.")).await;
 
