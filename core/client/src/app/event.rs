@@ -134,6 +134,11 @@ pub enum Event {
     Zone {
         utc_offset_min: i32,
     },
+    /// A window that shares this App came (a browser tab): it gets its own view model, whole at its first render.
+    /// Like every event it names its window beside it (`App::handle_in`); a shell with one window never sends it.
+    WindowOpened,
+    /// A window went (its tab closed): what it looked at is forgotten. The last window is never forgotten.
+    WindowClosed,
     /// A push reached the app (sealed, as it came). The core opens it, catches up, and may answer with a Notify.
     Push {
         payload: Bytes,

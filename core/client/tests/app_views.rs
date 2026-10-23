@@ -23,7 +23,7 @@ fn serve_some(world: &World, sim: &mut Sim, most: usize, which: impl Fn(&HttpReq
 fn rendered(sim: &Sim, from: usize) -> Vec<&'static str> {
     sim.log[from..]
         .iter()
-        .filter_map(|e| if let Effect::Render { delta } = e { Some(&delta.parts) } else { None })
+        .filter_map(|e| if let Effect::Render { delta, .. } = e { Some(&delta.parts) } else { None })
         .flatten()
         .map(|p| match p {
             ViewPart::Whole { .. } => "whole",

@@ -88,7 +88,7 @@ fn stable_ids(text: &str) -> String {
 
 /// Records the scene: the deltas the shell was sent, and the view it must reach; compares with the file.
 fn record(name: &str, sim: &Sim) {
-    let deltas: Vec<&ViewDelta> = sim.log.iter().filter_map(|e| if let Effect::Render { delta } = e { Some(delta) } else { None }).collect();
+    let deltas: Vec<&ViewDelta> = sim.log.iter().filter_map(|e| if let Effect::Render { delta, .. } = e { Some(delta) } else { None }).collect();
     // (the core's own fold reaches the same model: the recording is whole)
     let mut folded = ViewModel::default();
     for d in &deltas {

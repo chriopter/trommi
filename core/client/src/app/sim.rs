@@ -28,6 +28,8 @@ pub struct Sim {
     pub app: App,
     pub now_ms: u64,
     pub view: ViewModel,
+    /// The view models of the other windows (`Event` `window` above 0), as their shells folded them.
+    pub windows: BTreeMap<u32, ViewModel>,
     pub cache: BTreeMap<String, Vec<u8>>,
     pub device: (u64, BTreeMap<Vec<u8>, Vec<u8>>),
     pub timer: Option<u64>,
@@ -59,6 +61,7 @@ impl Sim {
             app: App::new(),
             now_ms,
             view: ViewModel::default(),
+            windows: BTreeMap::new(),
             cache: BTreeMap::new(),
             device: (0, BTreeMap::new()),
             timer: None,
@@ -88,6 +91,20 @@ impl Sim {
             let effects = self.app.handle(self.now_ms, event);
             self.execute(effects);
         }
+    }
+
+    /// Sends one event of a window (`App::handle_in`), and runs what follows as `send` does.
+    pub fn send_in(&mut self, window: u32, event: Event) {
+        if self.dead {
+            return;
+        }
+        let effects = self.app.handle_in(self.now_ms, window, event);
+        self.run(effects);
+    }
+
+    /// A window's view model as its shell folded it (window 0: `view`).
+    pub fn window_view(&self, window: u32) -> Option<&ViewModel> {
+        if window == 0 { Some(&self.view) } else { self.windows.get(&window) }
     }
 
     /// Runs effects the test got from the App by hand (`App::act`), and everything that follows from them.
@@ -133,6 +150,7 @@ impl Sim {
     pub fn restart(&mut self) {
         self.app = App::new();
         self.view = ViewModel::default();
+        self.windows.clear();
         self.timer = None;
         self.queue.clear();
         self.streams.clear();
@@ -158,7 +176,8 @@ impl Sim {
             self.log.push(effect.clone());
             match effect {
                 Effect::ShareInbox { .. } | Effect::ForgetShared => {},
-                Effect::Render { delta } => self.view.apply(&delta).expect("renders come in order"),
+                Effect::Render { delta, window: 0 } => self.view.apply(&delta).expect("renders come in order"),
+                Effect::Render { delta, window } => self.windows.entry(window).or_default().apply(&delta).expect("renders come in order"),
                 Effect::Store { id, op } => {
                     let failed = matches!(op, StoreOp::DeviceApply { .. });
                     let result = self.store(op);

@@ -17,7 +17,7 @@ impl Shell for LinuxShell {
     fn send(&mut self, now_ms: u64, event: Event) -> Vec<Effect> {
         let effects = self.app.handle(now_ms, event);
         for effect in &effects {
-            if let Effect::Render { delta } = effect {
+            if let Effect::Render { delta, .. } = effect {
                 assert!(self.view.fold(delta), "a render came out of order");
             }
         }
