@@ -454,9 +454,9 @@ struct CardScreen: View {
           Button { verdict(true) } label: { Text("Allow").font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 56) }.buttonStyle(TileStyle(lead: true, urgency: urgency))
         }
       case "said":
-        // the way on where the answers stood, the answer quietly under it
-        if answeredHere, let after = card.after { nextButton(after) }
+        // the answer, the way on directly under it (as on the web; Undo stays in the row: no toast here)
         said(a)
+        if answeredHere, let after = card.after { nextButton(after) }
         ForEach(Array(a.optionNotes.enumerated()), id: \.offset) { _, n in still(n.label, n.note.en) }
         if let settled = a.settled { still("✓ Settled by your answer", settled.en) }
         if !a.summary.isEmpty { still("Done by the agent", a.summary) }

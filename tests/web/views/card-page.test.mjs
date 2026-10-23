@@ -76,8 +76,11 @@ test('answered here (?decided=1): the panel as it stood, the said row ticked, th
     assert.equal((main.match(/class="tc-opt[^"]*is-said[^"]*is-faded/g) ?? []).length + (main.match(/class="tc-opt[^"]*is-chosen/g) ?? []).length, opts.length + (card.kind === 'decision' ? 1 : 0), 'every option and the duck keep their place')
     for (const o of opts.filter(o => o.chosen)) assert.match(main, new RegExp(`<span class="tc-opt-label">${o.label}</span></span><svg class="tc-chosen-tick"`))
   }
-  assert.match(main, new RegExp(`formaction="/cards/${card.id}/reopen"`))
-  assert.match(main, new RegExp(`class="tc-tile tc-next-tile" data-nav href="/card/${card.after.next.number}"[^>]*title="`))
+  // right after the answer: Next directly under it, no "You chose · Take back" line (Undo is in the toast)
+  assert.match(main, new RegExp(`<div class="tc-or-pair is-near"><a class="tc-tile tc-next-tile" data-nav href="/card/${card.after.next.number}"[^>]*title="`))
+  assert.doesNotMatch(main, /tc-ans-foot|\/reopen"/)
+  // opened later: the quiet line with Take back stays
+  assert.match(await board(vm).get('/card/5'), new RegExp(`class="tc-ans-foot".*formaction="/cards/${card.id}/reopen"`, 's'))
   assert.doesNotMatch(main, /tc-next-go|tc-next-close|has your answer/, 'no white box, no Close, no plain receipt')
   assert.doesNotMatch(await board(vm).get('/card/5'), /tc-next-tile/, 'only right after the answer')
 })
