@@ -5,7 +5,7 @@
 //! minute and hands a due one to the agent as a board event. When the session ends with wakeups left, the connector
 //! leaves a note of them on this computer (`<keys>/wakers/<session>.json`, private like the key beside it) and a waker:
 //! a small process of its own that sleeps until the next one is due, checks the guardrails, and starts the agent's
-//! program again on that conversation (`claude -p --resume`, `codex exec resume`), bounded in time and turns. The
+//! program again on that conversation (its preset's woken run, `preset.rs`: `claude -p --resume`, `codex exec resume`), bounded in time and turns. The
 //! connector that program starts takes the note away and runs the wakeup as it stands then (the person may have
 //! cancelled or moved it meanwhile): the waker only says "a wakeup is due, read the board".
 use serde_json::{json, Value};
@@ -153,23 +153,11 @@ pub fn step(note: &Note, now: u64, usage: Option<f64>) -> Step {
     }
 }
 
-/// The command a woken run is: the agent's program on its conversation, bounded in turns, asking the human through
-/// the board (Claude Code); Codex runs as its settings say (no asking in this version).
+/// The command a woken run is: the agent's program (its preset, `preset.rs`) on its conversation, bounded in turns,
+/// asking the human through the board (Claude Code); Codex runs as its settings say (no asking in this version).
 pub fn command(note: &Note) -> Option<(String, Vec<String>)> {
-    if note.resume.is_empty() {
-        return None;
-    }
-    match note.program.as_str() {
-        "claude" => {
-            let mut args = vec!["-p".to_string(), WOKEN.to_string(), "--resume".into(), note.resume.clone(), "--max-turns".into(), core::RUN_MAX_TURNS.to_string()];
-            if !note.ask_tool.is_empty() {
-                args.extend(["--permission-prompt-tool".to_string(), note.ask_tool.clone()]);
-            }
-            Some((std::env::var("TROMMI_CLAUDE").unwrap_or_else(|_| "claude".into()), args))
-        }
-        "codex" => Some((std::env::var("TROMMI_CODEX").unwrap_or_else(|_| "codex".into()), vec!["exec".into(), "resume".into(), note.resume.clone(), WOKEN.into()])),
-        _ => None,
-    }
+    let turns = core::RUN_MAX_TURNS.to_string();
+    crate::preset::by_id(&note.program)?.woken_command(&crate::preset::Fill { prompt: WOKEN, resume: &note.resume, max_turns: &turns, ask_tool: &note.ask_tool })
 }
 
 /// Leaves the note of a closing session and starts its waker (none when it has no wakeups).
