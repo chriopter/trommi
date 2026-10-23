@@ -67,6 +67,17 @@ pub struct Turn {
     pub last: u64,
 }
 
+/// The answer of an agent's running turn as it stands (7.5, `live_answer.rs`): kept in memory only.
+#[derive(Clone, Debug)]
+pub struct LiveAnswer {
+    pub sender: String,
+    pub turn: String,
+    pub number: u32,
+    pub text: String,
+    /// When this device got it.
+    pub at: u64,
+}
+
 /// The board model of one device.
 #[derive(Debug, Default)]
 pub struct Model {
@@ -94,6 +105,10 @@ pub struct Model {
     pub echoes: HashMap<String, Echo>,
     pub by_hash: HashMap<String, String>,
     pub turns: BTreeMap<String, Turn>,
+    /// Per session: the answer its agent is writing now (7.5), until its message comes.
+    pub live_answers: BTreeMap<String, LiveAnswer>,
+    /// The turns whose answer came, the newest last (bounded): a late preview of one of them shows nothing.
+    pub live_settled: std::collections::VecDeque<String>,
     pub room_commits: Option<(u64, Option<u64>)>,
     pub alert_seq: u64,
     pub echo_seq: u64,

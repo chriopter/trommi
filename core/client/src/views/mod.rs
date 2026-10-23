@@ -1472,6 +1472,10 @@ pub struct SessionView {
     /// What the field says while it is empty.
     #[serde(default)]
     pub compose: Text,
+    /// The answer its agent is writing now, its words so far (spec 7.5): the shells draw it as the agent's message
+    /// growing under its face, until the message itself comes. "" while there is none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub live_answer: String,
     /// "<name> is working": his word was the last, a short while ago.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answering: Option<Text>,

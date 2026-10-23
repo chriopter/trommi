@@ -595,6 +595,34 @@ impl Driver {
         })
     }
 
+    /// The answer of the running turn as it stands (7.5): relayed in the session's group, never stored. `text` is the
+    /// whole answer so far; the core cuts and pads it (`live_answer.rs`). A preview that cannot go now is dropped:
+    /// the next one says it all again.
+    pub async fn answer_preview(&self, turn: [u8; 16], number: u32, text: &str) -> Result<()> {
+        let group = self.lock().group_of(None)?;
+        let preview = trommi_client_core::live_answer::encode(text);
+        self.device_queue(move |d, _now| {
+            let waiting = d
+                .outbox()
+                .iter()
+                .filter(|entry| entry.kind == trommi_core::store::OutboxKind::RelayMessage)
+                .count();
+            if waiting >= 1 {
+                return Ok(());
+            }
+            match d.send_answer_preview(&group, &TurnId::new(turn), number, &preview) {
+                Ok(_) | Err(trommi_core::Error::EpochFull) => Ok(()),
+                Err(e) => Err(e),
+            }
+        })
+    }
+
+        /// The previews of this session that still wait for the hub go (the turns they were of ended).
+    pub async fn drop_previews(&self) -> Result<()> {
+        let group = self.lock().group_of(None)?;
+        self.device_queue(move |d, _now| d.outbox_drop_relays(&group).map(|_| ()))
+    }
+
     /// Encrypts a file under a fresh key (section 11), stores it at the hub and returns the attachment
     /// reference for a body: `file_id`, `file_key`, `sha256`, `total_size` and what `meta` says of it.
     pub async fn upload_attachment(

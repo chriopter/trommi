@@ -435,6 +435,15 @@ impl Model {
             }
         } else if !deeds_only {
             change.sessions.insert(tl.id.clone());
+            // A message of the agent ends what it showed of its answer while it wrote it (7.5).
+            if !human && self.live_answers.get(&tl.id).is_some_and(|l| l.sender == sender) {
+                if let Some(l) = self.live_answers.remove(&tl.id) {
+                    self.live_settled.push_back(l.turn);
+                    while self.live_settled.len() > 64 {
+                        self.live_settled.pop_front();
+                    }
+                }
+            }
             // The agent's final text of a turn ends the trail of what it did.
             if !human
                 && content
@@ -695,6 +704,28 @@ impl Model {
         let s = self.session_of(session_id);
         s.last_activity_at = s.last_activity_at.max(time);
         change.sessions.insert(session_id.to_string());
+        true
+    }
+
+    /// The answer an agent is writing now (7.5): the session whose agent or helper device sent it shows it, a newer
+    /// preview of the same turn (or one of another turn) replacing it. False for one that is not shown.
+    pub fn apply_answer_preview(&mut self, from: &str, turn: &str, number: u32, payload: &[u8], now: u64, change: &mut Change) -> bool {
+        let Some(text) = crate::live_answer::decode(payload) else { return false };
+        let Some(session) = self
+            .sessions
+            .values()
+            .find(|s| s.agent_device_id.as_deref() == Some(from) || s.agent_device_ids.iter().any(|d| d == from))
+            .map(|s| s.session_id.clone())
+        else {
+            return false;
+        };
+        if self.live_answers.get(&session).is_some_and(|l| l.sender == from && l.turn == turn && l.number >= number)
+            || self.live_settled.iter().any(|t| t == turn)
+        {
+            return false;
+        }
+        self.live_answers.insert(session.clone(), crate::model::LiveAnswer { sender: from.to_string(), turn: turn.to_string(), number, text, at: now });
+        change.sessions.insert(session);
         true
     }
 

@@ -3528,6 +3528,9 @@ public enum CoreView {
     public var note: LinkNoteView?
     /// What the field says while it is empty.
     public var compose: Text
+    /// The answer its agent is writing now, its words so far (spec 7.5): the shells draw it as the agent's message
+    /// growing under its face, until the message itself comes. "" while there is none.
+    public var liveAnswer: String
     /// "<name> is working": his word was the last, a short while ago.
     public var answering: Text?
     /// Its questions that wait for the person (decisions and approvals, never a card to read), as their Desk rows,
@@ -3558,7 +3561,7 @@ public enum CoreView {
     /// "helpers" and "files" where it has some.
     public var tabs: [PanelTabView]
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, wakeLine: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, wakeLine: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), liveAnswer: String = "", answering: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
       self.id = id
       self.name = name
       self.link = link
@@ -3586,6 +3589,7 @@ public enum CoreView {
       self.quiet = quiet
       self.note = note
       self.compose = compose
+      self.liveAnswer = liveAnswer
       self.answering = answering
       self.waiting = waiting
       self.pinned = pinned
@@ -3628,6 +3632,7 @@ public enum CoreView {
       case quiet = "quiet"
       case note = "note"
       case compose = "compose"
+      case liveAnswer = "live_answer"
       case answering = "answering"
       case waiting = "waiting"
       case pinned = "pinned"
@@ -3671,6 +3676,7 @@ public enum CoreView {
       self.quiet = try c.decodeIfPresent(Text.self, forKey: .quiet)
       self.note = try c.decodeIfPresent(LinkNoteView.self, forKey: .note)
       self.compose = try c.decodeIfPresent(Text.self, forKey: .compose) ?? Text()
+      self.liveAnswer = try c.decodeIfPresent(String.self, forKey: .liveAnswer) ?? ""
       self.answering = try c.decodeIfPresent(Text.self, forKey: .answering)
       self.waiting = try c.decodeIfPresent([DeskRowView].self, forKey: .waiting) ?? []
       self.pinned = try c.decodeIfPresent([DeskRowView].self, forKey: .pinned) ?? []
@@ -3714,6 +3720,7 @@ public enum CoreView {
       try c.encodeIfPresent(quiet, forKey: .quiet)
       try c.encodeIfPresent(note, forKey: .note)
       try c.encode(compose, forKey: .compose)
+      if !liveAnswer.isEmpty { try c.encode(liveAnswer, forKey: .liveAnswer) }
       try c.encodeIfPresent(answering, forKey: .answering)
       if !waiting.isEmpty { try c.encode(waiting, forKey: .waiting) }
       if !pinned.isEmpty { try c.encode(pinned, forKey: .pinned) }

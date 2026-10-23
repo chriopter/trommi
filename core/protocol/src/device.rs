@@ -219,6 +219,17 @@ pub enum Received {
         /// The JSON step.
         step: Vec<u8>,
     },
+    /// The answer of an agent's running turn as it stands (7.5), relayed.
+    AnswerPreview {
+        /// The sender.
+        from: DeviceId,
+        /// The turn.
+        turn: TurnId,
+        /// The preview's number.
+        number: u32,
+        /// The JSON preview.
+        preview: Vec<u8>,
+    },
     /// The `recovery_mac` of the room's recovery key, from a human device (7.4): this device holds it now.
     RecoveryAuth {
         /// The sender.
@@ -2295,6 +2306,24 @@ impl<S: Storage> Device<S> {
             .filter(|entry| !held.contains(&entry.id))
             .cloned()
             .collect()
+    }
+
+    /// Drops this device's relayed messages of `group` that still wait for the hub (7.5: the answer previews of a turn
+    /// that ended say nothing any more; the next one says it all again). Returns how many went.
+    pub fn outbox_drop_relays(&mut self, group: &GroupId) -> Result<usize, Error> {
+        self.transact(|device, batch| {
+            let ids: Vec<u64> = device
+                .memory
+                .outbox
+                .values()
+                .filter(|entry| entry.kind == OutboxKind::RelayMessage && entry.group == Some(*group))
+                .map(|entry| entry.id)
+                .collect();
+            for id in &ids {
+                device.drop_outbox(batch, *id);
+            }
+            Ok(ids.len())
+        })
     }
 
     /// The hub accepted the outbox entry `id`: the entry goes, and its consequence is applied in the same
@@ -5826,6 +5855,19 @@ impl<S: Storage> Device<S> {
                     step,
                 }
             }
+            // 7.5: from the session's agent or helper devices, as 7.3.
+            TrommiMessage::AnswerPreview {
+                turn,
+                number,
+                preview,
+            } if session.is_some() && !from_human && !from_revoked && number != 0 => {
+                Received::AnswerPreview {
+                    from,
+                    turn,
+                    number,
+                    preview,
+                }
+            }
             TrommiMessage::RecoveryAuth {
                 recipient,
                 recovery_hpke_key,
@@ -6085,6 +6127,40 @@ impl<S: Storage> Device<S> {
                 step: step.to_vec(),
             };
             this.send(batch, group, &message, false)
+        })
+    }
+
+    /// Sends the answer of the running turn as it stands (7.5): a session group, from its agent or helper devices,
+    /// relayed and not stored. `number` counts from 1 within `turn` (`bad-format` for 0); `preview` is the
+    /// application's JSON and is not read here. Counted with the epoch's relayed pieces as 7.2: after
+    /// [`STROKE_PIECES_PER_EPOCH`] of them `epoch-full` (the sender commits an update, or sends none).
+    pub fn send_answer_preview(
+        &mut self,
+        group: &GroupId,
+        turn: &TurnId,
+        number: u32,
+        preview: &[u8],
+    ) -> Result<u64, Error> {
+        self.transact(|this, batch| {
+            if group.is_room() || this.is_human() {
+                return Err(Error::Forbidden);
+            }
+            if number == 0 {
+                return Err(Error::BadFormat);
+            }
+            if this.meta(group)?.pieces >= STROKE_PIECES_PER_EPOCH {
+                return Err(Error::EpochFull);
+            }
+            let message = TrommiMessage::AnswerPreview {
+                turn: *turn,
+                number,
+                preview: preview.to_vec(),
+            };
+            let outbox = this.send(batch, group, &message, true)?;
+            let meta = this.meta(group)?;
+            meta.pieces = meta.pieces.saturating_add(1);
+            this.put_group(batch, group)?;
+            Ok(outbox)
         })
     }
 

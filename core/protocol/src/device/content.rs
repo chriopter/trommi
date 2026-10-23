@@ -1761,10 +1761,10 @@ impl<S: Storage> Device<S> {
 
     // ---- relayed messages ----
 
-    /// Takes a stroke piece the hub only passed on (7.2): it is in no log and has no change number, so the
+    /// Takes a stroke piece (7.2) or an answer preview (7.5) the hub only passed on: it is in no log and has no change number, so the
     /// cursor stays. `message` is the application message as it was relayed; the group's ratchet state after
     /// it is written. None for a message this device cannot open, or of a group it is no leaf of.
-    /// `bad-format`, with nothing consumed, for a message that opens to anything but a stroke piece: every
+    /// `bad-format`, with nothing consumed, for a message that opens to anything else: every
     /// other message comes through the log, once. `group-behind` for a message of an epoch the device has
     /// not reached.
     pub fn receive_relay(
@@ -1779,9 +1779,9 @@ impl<S: Storage> Device<S> {
                 return Ok(None);
             }
             match this.process_message(batch, group, message)? {
-                super::Processed::Message(piece @ super::Received::StrokePiece { .. }) => {
-                    Ok(Some(piece))
-                }
+                super::Processed::Message(
+                    piece @ (super::Received::StrokePiece { .. } | super::Received::AnswerPreview { .. }),
+                ) => Ok(Some(piece)),
                 super::Processed::Message(_) => Err(Error::BadFormat),
                 _ => Ok(None),
             }
