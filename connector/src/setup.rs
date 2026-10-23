@@ -19,6 +19,14 @@
 //! (terminal mirror, permission prompts on the board, work trail) into `$CODEX_HOME/hooks.json` (default
 //! `~/.codex/hooks.json`), leaving every other hook there as it is. Codex runs a new or changed hook only once the
 //! human trusted it (its prompt at the start, or /hooks). `remove codex` takes the hooks and the MCP server out again.
+//!
+//! **Hermes** (Hermes Agent) gets the Trommi add-on (`connector/hermes/`, carried inside this program): a Hermes
+//! platform like Telegram, written into the Hermes home's plugins (`<home>/plugins/trommi-platform`), with what this
+//! connector says its board tools and instructions are (`trommi.json`). Then the add-on is turned on and the platform
+//! "trommi" configured through Hermes' own commands (`hermes plugins enable`, `hermes config set`). The add-on starts
+//! this program once per Trommi chat. A connector of a newer release writes its add-on again when it starts, as one
+//! package under a lock (`refresh_hermes_addon`), so the add-on is always the one of the newest signed release there. A second Hermes is another Hermes profile
+//! (`--profile`), with a name of its own (`--name`). `remove hermes` turns both off and takes the add-on away.
 use crate::usage;
 use serde_json::Value;
 use std::path::Path;
@@ -80,16 +88,18 @@ fn here(name: &str) -> Result<(), String> {
 
 /// The program's name as people know it.
 fn label(which: &str) -> &'static str {
-    if which == "codex" {
-        "Codex"
-    } else {
-        "Claude Code"
+    match which {
+        "codex" => "Codex",
+        "hermes" => "Hermes",
+        _ => "Claude Code",
     }
 }
 
 /// What to do next, one line.
 fn next(which: &str) -> &'static str {
-    if which == "codex" {
+    if which == "hermes" {
+        "restart the Hermes gateway (`hermes gateway restart`); then tell Hermes (in its CLI or any chat) to connect to Trommi with the command from \"Approve a computer\" in the Trommi app. After that, write to it in its chat on the board."
+    } else if which == "codex" {
         "quit every running Codex and start it again (a running Codex does not load new MCP servers), in a project folder; then ask it to connect to Trommi with the command from \"Approve a computer\" in the Trommi app."
     } else {
         "start claude in a project folder and paste what \"Approve a computer\" in the Trommi app shows (the prompt with the link, or /trommi:connect --computer '<link>')."
@@ -120,7 +130,8 @@ pub fn run_cli(which: Option<&str>, flags: &[String]) -> i32 {
     let done = match which {
         Some("claude") => claude(),
         Some("codex") => codex(),
-        _ => Err("use `setup claude` or `setup codex` (add --verbose for the details)".to_string()),
+        Some("hermes") => hermes(flags),
+        _ => Err("use `setup claude`, `setup codex` or `setup hermes` (add --verbose for the details)".to_string()),
     };
     report(which.unwrap_or("claude"), flags, done, false)
 }
@@ -130,7 +141,8 @@ pub fn remove_cli(which: Option<&str>, flags: &[String]) -> i32 {
     let done = match which {
         Some("claude") => return remove_claude(),
         Some("codex") => remove_codex(),
-        _ => Err("use `remove claude` or `remove codex`".to_string()),
+        Some("hermes") => return report("hermes", flags, remove_hermes(flags), true),
+        _ => Err("use `remove claude`, `remove codex` or `remove hermes`".to_string()),
     };
     report("codex", flags, done, true)
 }
@@ -470,6 +482,254 @@ pub fn codex() -> Result<Vec<String>, String> {
     Ok(done)
 }
 
+/// The Trommi add-on for Hermes (`connector/hermes/`), as this program carries it: its files by their path in the
+/// add-on's folder.
+pub const HERMES_ADDON: [(&str, &str); 8] = [
+    ("plugin.yaml", include_str!("../hermes/plugin.yaml")),
+    ("__init__.py", include_str!("../hermes/__init__.py")),
+    ("README.md", include_str!("../hermes/README.md")),
+    ("trommi_platform/__init__.py", include_str!("../hermes/trommi_platform/__init__.py")),
+    ("trommi_platform/plugin.py", include_str!("../hermes/trommi_platform/plugin.py")),
+    ("trommi_platform/adapter.py", include_str!("../hermes/trommi_platform/adapter.py")),
+    ("trommi_platform/chats.py", include_str!("../hermes/trommi_platform/chats.py")),
+    ("trommi_platform/child.py", include_str!("../hermes/trommi_platform/child.py")),
+];
+/// The add-on's folder name in Hermes' plugins.
+pub const HERMES_ADDON_DIR: &str = "trommi-platform";
+
+/// Writes the add-on into `dir` as one package: written whole into a folder beside it, then moved in its place, under a
+/// lock (several chats' connectors may start at once). `force` (setup): always; else only for a newer release than the
+/// one there (`.release`), never a build that is no release. Returns whether it wrote.
+pub fn write_hermes_addon(dir: &Path, force: bool) -> Result<bool, String> {
+    let spec = crate::cli::hermes_spec();
+    let ours = crate::update::RELEASE_VERSION;
+    let files: Vec<(&str, String)> = HERMES_ADDON
+        .iter()
+        .map(|(p, t)| (*p, t.to_string()))
+        .chain([("trommi.json", spec), (".release", ours.to_string())])
+        .collect();
+    // (whether to write: looked at again under the lock, where nobody writes meanwhile)
+    let wanted = || {
+        let same = files.iter().all(|(rel, text)| std::fs::read_to_string(dir.join(rel)).is_ok_and(|now| now == *text));
+        let there = std::fs::read_to_string(dir.join(".release")).ok().and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(0);
+        !same && (force || (ours != 0 && ours > there))
+    };
+    if !wanted() {
+        return Ok(false);
+    }
+    let parent = dir.parent().ok_or("the add-on's folder has no parent")?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    let name = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let lock = parent.join(format!(".{name}.lock"));
+    if std::fs::OpenOptions::new().write(true).create_new(true).open(&lock).is_err() {
+        // (another connector writes it now; one left by a crash a minute ago is taken away)
+        let old = std::fs::metadata(&lock).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age.as_secs() > 60);
+        if !old {
+            return Ok(false);
+        }
+        let _ = std::fs::remove_file(&lock);
+        std::fs::OpenOptions::new().write(true).create_new(true).open(&lock).map_err(|e| format!("{}: {e}", lock.display()))?;
+    }
+    let done = (|| -> Result<bool, String> {
+        if !wanted() {
+            return Ok(false);
+        }
+        let stage = parent.join(format!(".{name}.new-{}", crate::util::random_hex(6)));
+        for (rel, text) in &files {
+            let file = stage.join(rel);
+            std::fs::create_dir_all(file.parent().unwrap_or(&stage)).map_err(|e| e.to_string())?;
+            std::fs::write(&file, text).map_err(|e| format!("{}: {e}", file.display()))?;
+        }
+        let old = parent.join(format!(".{name}.old-{}", crate::util::random_hex(6)));
+        let had = dir.exists();
+        if had {
+            std::fs::rename(dir, &old).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        if let Err(e) = std::fs::rename(&stage, dir) {
+            if had {
+                let _ = std::fs::rename(&old, dir);
+            }
+            let _ = std::fs::remove_dir_all(&stage);
+            return Err(format!("{}: {e}", dir.display()));
+        }
+        if had {
+            let _ = std::fs::remove_dir_all(&old);
+        }
+        Ok(true)
+    })();
+    let _ = std::fs::remove_file(&lock);
+    done
+}
+
+/// When this connector runs for the Hermes add-on: the add-on in the Hermes home (`TROMMI_FOLDER`) is written again
+/// when this connector is a newer release than the one that wrote it. Hermes loads it at its next start.
+pub fn refresh_hermes_addon() {
+    let Some(home) = std::env::var_os("TROMMI_FOLDER").filter(|h| !h.is_empty()) else { return };
+    let plugins = Path::new(&home).join("plugins");
+    let dir = plugins.join(HERMES_ADDON_DIR);
+    if !dir.is_dir() {
+        // (a write that stopped between its two moves left the add-on beside its place: it goes back)
+        let left = std::fs::read_dir(&plugins).ok().into_iter().flatten().flatten().map(|e| e.path()).find(|p| {
+            p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(&format!(".{HERMES_ADDON_DIR}.old-")))
+        });
+        match left {
+            Some(old) if std::fs::rename(&old, &dir).is_ok() => {}
+            _ => return,
+        }
+    }
+    match write_hermes_addon(&dir, false) {
+        Ok(true) => eprintln!("[trommi] the Hermes add-on in {} is this connector's now; Hermes loads it at its next start", dir.display()),
+        Ok(false) => {}
+        Err(why) => eprintln!("[trommi] the Hermes add-on was not written again: {why}"),
+    }
+}
+
+/// One Hermes of this computer (`setup hermes [--name <name>] [--profile <profile>]`): its name on the board ("Hermes",
+/// "Hermes Einkauf") and the Hermes profile it runs as (`hermes -p <profile>`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HermesInstance {
+    pub name: Option<String>,
+    pub profile: Option<String>,
+}
+
+impl HermesInstance {
+    pub fn of(flags: &[String]) -> Result<Self, String> {
+        let get = |k: &str| flags.iter().position(|f| f == k).and_then(|i| flags.get(i + 1)).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let name = get("--name");
+        if name.as_ref().is_some_and(|n| n.chars().count() > 40 || n.chars().any(char::is_control)) {
+            return Err("--name: at most 40 characters, one line".into());
+        }
+        let profile = get("--profile");
+        if profile.as_ref().is_some_and(|p| !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
+            return Err("--profile: letters, digits, - and _ only".into());
+        }
+        Ok(Self { name, profile })
+    }
+    /// Its slug: "" without a name, else the name's letters and digits, lower case.
+    pub fn slug(&self) -> String {
+        self.name.as_deref().unwrap_or("").chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).take(32).collect()
+    }
+    /// Its name on the board.
+    pub fn shown(&self) -> String {
+        match &self.name {
+            Some(n) => format!("Hermes {n}"),
+            None => "Hermes".into(),
+        }
+    }
+    /// The arguments of a `hermes` command for this Hermes: `-p <profile>` first when it has one.
+    fn args<'a>(&'a self, rest: &[&'a str]) -> Vec<&'a str> {
+        let mut out = vec![];
+        if let Some(p) = &self.profile {
+            out.extend(["-p", p.as_str()]);
+        }
+        out.extend(rest);
+        out
+    }
+    fn run(&self, rest: &[&str]) -> Result<String, String> {
+        run("hermes", &self.args(rest))
+    }
+    /// This Hermes' home: its profile's folder, or Hermes' own home.
+    fn home(&self) -> Option<std::path::PathBuf> {
+        let root = std::env::var_os("HERMES_HOME").filter(|h| !h.is_empty()).map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".hermes")))?;
+        Some(match &self.profile {
+            Some(p) => root.join("profiles").join(p),
+            None => root,
+        })
+    }
+    /// One of this Hermes' settings (`hermes config get <key> --json`), none when not set.
+    fn setting(&self, key: &str) -> Option<String> {
+        let said = self.run(&["config", "get", key, "--json"]).ok()?;
+        let line = said.lines().map(str::trim).find(|l| !l.is_empty())?;
+        let v = serde_json::from_str::<Value>(line).unwrap_or_else(|_| Value::String(line.to_string()));
+        let v = match v {
+            Value::String(s) => s,
+            Value::Null => return None,
+            v => v.to_string(),
+        };
+        Some(v.trim().to_string()).filter(|v| !v.is_empty())
+    }
+}
+
+/// `setup hermes [--name <name>] [--profile <profile>]`: the Trommi add-on written into that Hermes, turned on, and its
+/// platform "trommi" configured to start this connector.
+pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
+    let program = program()?;
+    here("hermes")?;
+    let me = HermesInstance::of(flags)?;
+    let home = me.home().ok_or("HOME is not set to a folder")?;
+    let mut done = Vec::new();
+    let dir = home.join("plugins").join(HERMES_ADDON_DIR);
+    let changed = write_hermes_addon(&dir, true)?;
+    done.push(format!("Trommi add-on {} in {}", if changed { "written" } else { "there already, unchanged" }, dir.display()));
+    me.run(&["plugins", "enable", "trommi-platform"])?;
+    done.push("Hermes plugin trommi-platform: on".to_string());
+    let home_text = home.display().to_string();
+    let slug = me.slug();
+    let shown = me.shown();
+    for (key, value) in [
+        ("platforms.trommi.enabled", "true"),
+        ("platforms.trommi.extra.connector", program.as_str()),
+        ("platforms.trommi.extra.instance", slug.as_str()),
+        ("platforms.trommi.extra.name", shown.as_str()),
+        ("platforms.trommi.extra.folder", home_text.as_str()),
+    ] {
+        me.run(&["config", "set", "--force", key, value])?;
+    }
+    done.push(format!("Hermes platform trommi: on, as \"{shown}\", starting {program}"));
+    // (Trommi through Hermes' MCP servers, as an earlier setup made it: the add-on replaces it)
+    if me.setting("mcp_servers.trommi").is_some() {
+        let _ = run_answering("hermes", &me.args(&["mcp", "remove", "trommi"]), "y\n");
+        done.push("the MCP server trommi of an earlier setup: removed (the add-on brings the board tools)".to_string());
+    }
+    if !matches!(me.setting("streaming.enabled").as_deref(), Some("true" | "True")) {
+        done.push("live text: Hermes streams answers only with `hermes config set streaming.enabled true` (this streams on its other platforms too); without it the answer comes whole".to_string());
+    }
+    done.push("each Trommi chat is a Hermes chat: his message goes to Hermes, its answer back into the same chat, growing while it writes; its questions for approval come as yes/no cards; \"New chat with …\" in the app makes another chat".to_string());
+    Ok(done)
+}
+
+/// `remove hermes [--name] [--profile]`: the platform and the add-on off, the add-on's folder taken away.
+pub fn remove_hermes(flags: &[String]) -> Result<Vec<String>, String> {
+    let me = HermesInstance::of(flags)?;
+    let mut done = Vec::new();
+    match me.run(&["config", "set", "--force", "platforms.trommi.enabled", "false"]) {
+        Ok(_) => done.push("Hermes platform trommi: off".to_string()),
+        Err(why) => done.push(format!("Hermes platform trommi: not turned off ({why})")),
+    }
+    match me.run(&["plugins", "disable", "trommi-platform"]) {
+        Ok(_) => done.push("Hermes plugin trommi-platform: off".to_string()),
+        Err(why) => done.push(format!("Hermes plugin trommi-platform: not turned off ({why})")),
+    }
+    if let Some(dir) = me.home().map(|h| h.join("plugins").join(HERMES_ADDON_DIR)) {
+        if std::fs::remove_dir_all(&dir).is_ok() {
+            done.push(format!("the add-on's folder removed ({})", dir.display()));
+        }
+    }
+    done.push("the Trommi chats of this Hermes stay on the board until you archive them".to_string());
+    Ok(done)
+}
+
+/// `run` with these lines on its standard input (the program's own questions: yes).
+fn run_answering(program: &str, args: &[&str], answers: &str) -> Result<String, String> {
+    use std::io::Write;
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("`{program}` does not start ({error})"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(answers.as_bytes());
+    }
+    let output = child.wait_with_output().map_err(|error| format!("`{program}` did not end ({error})"))?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        Err(format!("`{program} {}` failed: {}", args.first().copied().unwrap_or(""), String::from_utf8_lossy(&output.stderr).trim()))
+    }
+}
+
 /// Codex's own folder: `CODEX_HOME`, else `~/.codex`.
 pub fn codex_home() -> Option<std::path::PathBuf> {
     match std::env::var_os("CODEX_HOME").filter(|h| !h.is_empty()) {
@@ -692,4 +952,38 @@ pub fn is_installed(path: &Path) -> bool {
     crate::update::installed_program().is_some_and(|program| {
         matches!((std::fs::canonicalize(path), std::fs::canonicalize(program)), (Ok(a), Ok(b)) if a == b)
     })
+}
+
+#[cfg(test)]
+mod hermes_tests {
+    use super::*;
+
+    #[test]
+    fn a_hermes_has_a_name_profile_and_slug_of_its_own() {
+        let f = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let one = HermesInstance::of(&[]).unwrap();
+        assert_eq!((one.shown(), one.slug(), one.args(&["plugins"])), ("Hermes".to_string(), String::new(), vec!["plugins"]));
+        let two = HermesInstance::of(&f(&["--name", "Einkauf", "--profile", "einkauf"])).unwrap();
+        assert_eq!((two.shown(), two.slug(), two.args(&["plugins"])), ("Hermes Einkauf".to_string(), "einkauf".to_string(), vec!["-p", "einkauf", "plugins"]));
+        assert!(HermesInstance::of(&f(&["--profile", "../x"])).is_err());
+    }
+
+    #[test]
+    fn the_addon_is_written_whole_and_only_when_it_changed() {
+        let base = std::env::temp_dir().join(format!("trommi-addon-{}", crate::util::random_hex(6)));
+        let dir = base.join(HERMES_ADDON_DIR);
+        assert!(write_hermes_addon(&dir, true).unwrap());
+        for (rel, text) in HERMES_ADDON {
+            assert_eq!(std::fs::read_to_string(dir.join(rel)).unwrap(), text);
+        }
+        let spec: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("trommi.json")).unwrap()).unwrap();
+        assert!(spec["tools"].as_array().unwrap().iter().any(|t| t["name"] == "create_decision"));
+        assert!(!write_hermes_addon(&dir, true).unwrap(), "nothing new: nothing written");
+        std::fs::write(dir.join("trommi_platform/adapter.py"), "old").unwrap();
+        // (a build that is no release never replaces it by itself; setup does)
+        assert!(!write_hermes_addon(&dir, false).unwrap());
+        assert!(write_hermes_addon(&dir, true).unwrap());
+        assert_eq!(std::fs::read_dir(&base).unwrap().count(), 1, "no stage, old folder or lock left");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

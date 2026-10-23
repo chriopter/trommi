@@ -13,7 +13,7 @@
 use super::board::{key_of, Board, DEFAULT_TEAM};
 use super::links::plain;
 use super::words::{badge_words, hand_words, link_words, local, next_midnight, say, unheard_words, LinkSubject};
-use super::{CapView, ChatGroupView, HandView, HelperDotsView, LastSaidView, LinkWords, SessionRowView, SidebarView, StackEdgeView, TeamStackView, TeamTab, Text, STACK_EDGES};
+use super::{CapView, ChatGroupView, HandView, HelperDotsView, LastSaidView, LinkWords, NewChatView, SessionRowView, SidebarView, StackEdgeView, TeamStackView, TeamTab, Text, STACK_EDGES};
 use crate::model::Model;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -326,8 +326,19 @@ pub fn sidebar(b: &Board) -> SidebarView {
     if stacks.iter().flat_map(|s| s.sessions.iter()).chain(rows.iter()).any(|r| r.last.is_some()) {
         b.wake_at(Some(next_midnight(b.now, b.lens.utc_offset_min)));
     }
+    // ---- "New chat with …": the chat agents that start a new chat when asked, once each (their main session) ----
+    let new_chat: Vec<NewChatView> = b
+        .agents
+        .iter()
+        .filter(|a| a.row.main && !a.row.archived && !a.row.removed && !a.row.replaced)
+        .filter(|a| {
+            a.row.session_id.as_ref().and_then(|s| b.model.sessions.get(s)).and_then(|s| s.profile.as_ref()).and_then(|p| p.get("chats")).and_then(Value::as_bool) == Some(true)
+        })
+        .filter_map(|a| Some(NewChatView { session_id: a.row.session_id.clone()?, slug: a.row.id.clone(), name: say("agent.name", a.row.name.clone(), &[("name", a.row.name.as_str())]), mark: a.row.mark() }))
+        .collect();
     SidebarView {
         me: String::new(),
+        new_chat,
         found,
         found_none,
         stacks,

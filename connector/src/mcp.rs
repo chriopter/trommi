@@ -99,6 +99,11 @@ pub trait Server: Send + Sync + 'static {
         meta: Value,
     ) -> crate::driver::BoxFut<'static, Value>;
     fn notification(self: Arc<Self>, method: String, params: Value);
+    /// A request of a method of this server's own (not MCP's): its result, or an error's text; None for a method it
+    /// does not know.
+    fn request(self: Arc<Self>, _method: String, _params: Value) -> crate::driver::BoxFut<'static, Option<Result<Value, String>>> {
+        Box::pin(async { None })
+    }
     fn closed(self: Arc<Self>, why: &'static str);
 }
 
@@ -152,7 +157,11 @@ pub async fn serve<S: Server>(server: Arc<S>, out: Arc<Out>) {
                             let r = s.call_tool(name, args, meta).await;
                             o.result(&id, r).await
                         }
-                        _ => o.error(&id, -32601, "Method not found").await,
+                        _ => match s.request(m.clone(), params).await {
+                            Some(Ok(r)) => o.result(&id, r).await,
+                            Some(Err(why)) => o.error(&id, -32000, &why).await,
+                            None => o.error(&id, -32601, "Method not found").await,
+                        },
                     }
                 });
             }

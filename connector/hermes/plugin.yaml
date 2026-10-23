@@ -1,0 +1,11 @@
+name: trommi-platform
+label: Trommi
+kind: platform
+version: 0.1.0
+description: >
+  Trommi as a Hermes platform: every Trommi chat is a Hermes chat. The person's
+  messages come from the board, Hermes' answer goes back to the same chat, live
+  while it is written, and its questions for approval come to the board as
+  yes/no cards. Written and kept current by the Trommi connector
+  (`trommi-connector setup hermes`).
+author: Trommi
