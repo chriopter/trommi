@@ -107,7 +107,9 @@ Linux have one window). An event's JSON names its window beside its `type` (`"wi
 the clock and the platform are the device's. Each window has its own lens and its own parts of the view model
 (sidebar, Desk, the session and card in view, the board, the pages' lists) and gets its own `Render` (`window` on the
 effect, left out for 0), whole at its first. The phase and status line, account, settings, files, dictation and
-toasts are the device's, the same in every window. The stream stays open while any window is in front; a chat in
+toasts are the device's, the same in every window. A step stays the window's that started it through its I/O: its
+`Platform` (a passkey or push prompt), `SaveFile` and `OpenUrl` name that window (`window`, left out for 0), even when
+another window acted meanwhile; when that window went, a shell refuses the prompt and drops the file or link. The stream stays open while any window is in front; a chat in
 view in any window that shows its page counts as read. There is still one device, one engine and one place where its
 keys move on (`src/app/windows.rs`).
 

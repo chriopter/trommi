@@ -355,7 +355,7 @@ impl App {
                 let id = IoId(self.next_id);
                 self.next_id += 1;
                 self.changes.platform.insert(id, create);
-                out.push(Effect::Platform { id, op });
+                out.push(Effect::Platform { id, op, window: 0 });
             }
             (Ask::Main, answer) => self.change_main_answered(now_ms, answer, out),
             (_, answer) => {

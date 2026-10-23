@@ -54,7 +54,8 @@ with `HUB_ORIGINS=http://127.0.0.1:8900` and the dev server, and open the app.
 worker.js              http -> https, the universal links' file, /whats-new.json (whats-new.mjs: What's new from the releases' notes)
 wrangler.jsonc  THIRD-PARTY.md   fonts, Argon2, the QR reader, the word list: whose they are
 core/                  the executor of the Rust app core (core/client, as WebAssembly) in a Web Worker: I/O, storage,
-                       one tab owning the device (core/README.md). All of the app's logic is the core's
+                       one core shared by every tab of the profile (SharedWorker; else one tab owning the
+                       device), core/README.md. All of the app's logic is the core's
 dev/                   serve, build, check, verify; look and the browser tests (cdp.mjs drives Chromium)
 public/
   index.html  sw.js  manifest.webmanifest  _headers  robots.txt  frame.html (the sandbox a published page runs in)
@@ -325,7 +326,9 @@ once the core is past its start and the board this device kept is read (`app.mjs
 opens a 2 px line at the window's top goes on until it is open. The two faces it paints in (Bricolage Grotesque,
 IBM Plex Sans; latin) are preloaded and `fonts/fonts.css` is part of the stylesheet bundle, so it is in Trommi's
 type from the first paint, not in the fallbacks. A start that takes over 30 s shows a quiet note with Reload and goes
-on. The busy/taken screens ("Trommi is open in another tab") use the same frame; browser checks assert their
+on. Every tab of a browser profile is a window of one shared core (SharedWorker), each on its own page; where a browser
+has no SharedWorker (Chrome on Android), or a tab of another build holds the device, the busy/taken screens ("Trommi
+is open in another tab") show instead, in the same frame; browser checks assert their
 computed fonts and geometry, and every demo screen must retain the Trommi stylesheet.
 
 The browser driver starts Chrome once and waits up to 30 seconds for its debugging port; it does not retry a
