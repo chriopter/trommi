@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { topbar } from '../../../app/web/public/sidebar.mjs'
 import { readFileSync } from 'node:fs'
 
-const vm = { sidebar: { teams: [{ id: 'main', name: { en: 'Personal' }, waiting: 0, selected: true, knocks: false }], sessions: [], badge: 0, team: 'main', place: { en: 'Personal' }, waiting: 0, knocking: 0, stopped: 0, working: 0, unheard: 0 }, settings: { logout: { title: { en: 'Log out' } } }, notes: {} }
+const vm = { sidebar: { teams: [{ id: 'main', name: { en: 'Personal' }, waiting: 0, cards: 0, selected: true, knocks: false }], sessions: [], badge: 0, team: 'main', place: { en: 'Personal' }, waiting: 0, knocking: 0, stopped: 0, working: 0, unheard: 0 }, settings: { logout: { title: { en: 'Log out' } } }, notes: {} }
 const menu = () => String(topbar(vm, '', false)).match(/<nav class="sidedoors" id="brand-doors"[\s\S]*?<\/nav>/)[0]
 
 test('the menu has Log out, a menu entry to the /logout page', () => {
@@ -73,10 +73,10 @@ test('1…9 switch to the teams in order', async () => {
 })
 
 test('the team switch lists only the teams, each with what waits, and no row for every team at once', () => {
-  const two = { ...vm, sidebar: { ...vm.sidebar, teams: [{ id: 'main', name: { en: 'Fernly' }, waiting: 3, selected: true, knocks: true }, { id: 'lab', name: { en: 'Lab' }, waiting: 0, selected: false, knocks: false }], place: { en: 'Fernly' } } }
+  const two = { ...vm, sidebar: { ...vm.sidebar, teams: [{ id: 'main', name: { en: 'Fernly' }, waiting: 3, cards: 3, selected: true, knocks: true }, { id: 'lab', name: { en: 'Lab' }, waiting: 0, cards: 0, selected: false, knocks: false }], place: { en: 'Fernly' } } }
   const rows = String(topbar(two, '', false))
   assert.deepEqual([...rows.matchAll(/data-team="([^"]+)" aria-checked/g)].map(m => m[1]), ['main', 'lab'])
   assert.match(rows, /href="\/\?team=lab"/, 'a team is picked by its address')
-  assert.match(rows, /<b>Fernly<\/b><i class="menu-n">3<\/i>/, 'its waiting count')
+  assert.match(rows, /<b>Fernly<\/b><i class="menu-n">3<\/i>/, 'its open cards')
   assert.doesNotMatch(rows, /is-all|All Desks|desk=all/i)
 })

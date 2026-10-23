@@ -32,20 +32,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
 
     // ---- the rows ----
     // What waits on the team in view: the stack's cards that are not with their agent, and the open requests.
-    let mut waiting: Vec<&str> = m
-        .stack
-        .iter()
-        .filter_map(|id| m.cards.get(id))
-        .filter(|c| c.object_state == "open" && !c.catching_up && c.in_revision.is_none() && b.on_desk(agent_of(&c.session_id, &c.agent_device_id)))
-        .map(|c| c.object_id.as_str())
-        .chain(
-            m.open_permission_ids
-                .iter()
-                .filter_map(|id| m.permissions.get(id))
-                .filter(|p| p.permission_state == "pending" && !p.catching_up && b.on_desk(agent_of(&p.session_id, &p.agent_device_id)))
-                .map(|p| p.object_id.as_str()),
-        )
-        .collect();
+    let mut waiting: Vec<&str> = b.all_cards.iter().filter(|f| b.on_desk(f.agent)).map(|f| f.id.as_str()).collect();
     // (in the core's order; a card it does not name yet, between two projections, stands last until it does)
     let mut walk: Vec<&str> = Vec::with_capacity(waiting.len());
     for id in &m.desk_order {
