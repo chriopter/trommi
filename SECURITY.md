@@ -102,6 +102,13 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   again on that conversation. A woken run has the rights the program's own settings give it, no more: Claude Code
   asks you for each permission on a yes/no card (no answer is no); Codex runs as its own settings say. The woken
   run takes the wakeup from the board as it stands then, so a cancel made meanwhile holds.
+- Chat agents (Hermes Agent): the connector hands your messages to the agent's own chat server and its answer back
+  to the board, as plaintext on this computer: only to 127.0.0.1, ::1 or localhost (taken as 127.0.0.1, never looked
+  up), without proxy or redirects; an address elsewhere only over https, and then your messages leave this computer to
+  that server. The server's key is kept beside the device key, readable only by your user, and goes nowhere else. The
+  key opens the agent's whole API server, not only this conversation. Every conversation of that agent (its other
+  chats too) uses the same session's Trommi tools. What the agent asks to approve comes to you as a yes/no card; no
+  answer is no. Wakeups run only while the agent's gateway runs. The hub sees nothing new.
 - An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
   are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
   Claude Code's status line (put around one already there), never from their credential files.

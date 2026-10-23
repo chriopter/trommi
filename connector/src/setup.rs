@@ -19,6 +19,13 @@
 //! (terminal mirror, permission prompts on the board, work trail) into `$CODEX_HOME/hooks.json` (default
 //! `~/.codex/hooks.json`), leaving every other hook there as it is. Codex runs a new or changed hook only once the
 //! human trusted it (its prompt at the start, or /hooks). `remove codex` takes the hooks and the MCP server out again.
+//!
+//! **Hermes** (Hermes Agent) gets the connector as its MCP server `trommi` (`hermes mcp add`), registered with
+//! `TROMMI_HOST=hermes`: the connector then bridges the board to Hermes' API server (`chat_api.rs`). Its API server is
+//! turned on and given a key through `hermes config` when it has none; the address and key are kept beside the
+//! device keys, readable by this user only (`chat_api::Endpoint::save`). The folder and session key are fixed
+//! (`TROMMI_FOLDER` = Hermes' home, `TROMMI_SESSION_KEY=hermes`), so the gateway keeps one Trommi session across its
+//! restarts. `remove hermes` takes the MCP server and the kept key out again.
 use crate::usage;
 use serde_json::Value;
 use std::path::Path;
@@ -80,16 +87,18 @@ fn here(name: &str) -> Result<(), String> {
 
 /// The program's name as people know it.
 fn label(which: &str) -> &'static str {
-    if which == "codex" {
-        "Codex"
-    } else {
-        "Claude Code"
+    match which {
+        "codex" => "Codex",
+        "hermes" => "Hermes",
+        _ => "Claude Code",
     }
 }
 
 /// What to do next, one line.
 fn next(which: &str) -> &'static str {
-    if which == "codex" {
+    if which == "hermes" {
+        "restart the Hermes gateway (`hermes gateway restart`) so that it starts its API server and the Trommi connector; then ask Hermes to connect to Trommi with the command from \"Approve a computer\" in the Trommi app. After that, write to it in its chat on the board."
+    } else if which == "codex" {
         "quit every running Codex and start it again (a running Codex does not load new MCP servers), in a project folder; then ask it to connect to Trommi with the command from \"Approve a computer\" in the Trommi app."
     } else {
         "start claude in a project folder and paste what \"Approve a computer\" in the Trommi app shows (the prompt with the link, or /trommi:connect --computer '<link>')."
@@ -120,7 +129,8 @@ pub fn run_cli(which: Option<&str>, flags: &[String]) -> i32 {
     let done = match which {
         Some("claude") => claude(),
         Some("codex") => codex(),
-        _ => Err("use `setup claude` or `setup codex` (add --verbose for the details)".to_string()),
+        Some("hermes") => hermes(flags),
+        _ => Err("use `setup claude`, `setup codex` or `setup hermes` (add --verbose for the details)".to_string()),
     };
     report(which.unwrap_or("claude"), flags, done, false)
 }
@@ -130,7 +140,8 @@ pub fn remove_cli(which: Option<&str>, flags: &[String]) -> i32 {
     let done = match which {
         Some("claude") => return remove_claude(),
         Some("codex") => remove_codex(),
-        _ => Err("use `remove claude` or `remove codex`".to_string()),
+        Some("hermes") => return report("hermes", flags, remove_hermes(), true),
+        _ => Err("use `remove claude`, `remove codex` or `remove hermes`".to_string()),
     };
     report("codex", flags, done, true)
 }
@@ -467,6 +478,146 @@ pub fn codex() -> Result<Vec<String>, String> {
         "a Codex that was running before this loads Trommi only once it is started again; at its start it asks you to trust the new hooks (or /hooks): without that it does not run them"
             .to_string(),
     );
+    Ok(done)
+}
+
+/// `run` with these lines on its standard input (the program's own questions: yes).
+fn run_answering(program: &str, args: &[&str], answers: &str) -> Result<String, String> {
+    use std::io::Write;
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("`{program}` does not start ({error})"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(answers.as_bytes());
+    }
+    let output = child.wait_with_output().map_err(|error| format!("`{program}` did not end ({error})"))?;
+    let said = |bytes: &[u8]| String::from_utf8_lossy(bytes).trim().to_string();
+    if output.status.success() {
+        Ok(said(&output.stdout))
+    } else {
+        let why = [said(&output.stderr), said(&output.stdout)].into_iter().find(|s| !s.is_empty()).unwrap_or_default();
+        Err(format!("`{program} {}` failed: {why}", args.first().copied().unwrap_or("")))
+    }
+}
+
+/// One of Hermes' settings as it holds it (`hermes config get <key> --raw --json`), none when not set.
+fn hermes_setting(key: &str) -> Option<String> {
+    let said = run("hermes", &["config", "get", key, "--raw", "--json"]).ok()?;
+    let line = said.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let v = serde_json::from_str::<Value>(line).unwrap_or_else(|_| Value::String(line.to_string()));
+    let v = match v {
+        Value::String(s) => s,
+        Value::Null => return None,
+        v => v.to_string(),
+    };
+    Some(v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
+/// Adds `KEY=value` to an env file (made 0600 when new); a link or a key there already is refused.
+fn append_secret(file: &Path, key: &str, value: &str) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    if std::fs::symlink_metadata(file).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(format!("{} is a link: set API_SERVER_KEY yourself (`hermes config set`)", file.display()));
+    }
+    let now = std::fs::read_to_string(file).unwrap_or_default();
+    if now.lines().any(|l| l.trim_start().strip_prefix(key).is_some_and(|r| r.trim_start().starts_with('='))) {
+        return Err(format!("{} has {key} already, but Hermes did not read it", file.display()));
+    }
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let mut f = std::fs::OpenOptions::new().append(true).create(true).mode(0o600).open(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let lead = if now.is_empty() || now.ends_with('\n') { "" } else { "\n" };
+    f.write_all(format!("{lead}{key}={value}\n").as_bytes()).map_err(|e| e.to_string())
+}
+
+/// Hermes' home: `HERMES_HOME`, else `~/.hermes`.
+fn hermes_home() -> Option<std::path::PathBuf> {
+    std::env::var_os("HERMES_HOME").filter(|h| !h.is_empty()).map(Into::into).or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".hermes")))
+}
+
+/// `setup hermes [--url <address>]`: Hermes' API server on, its address and key kept for the connector, and the
+/// connector registered as Hermes' MCP server `trommi`.
+pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
+    let program = program()?;
+    here("hermes")?;
+    let mut done = Vec::new();
+    let url = match flags.iter().position(|f| f == "--url").and_then(|i| flags.get(i + 1)) {
+        Some(u) => u.clone(),
+        None => {
+            let host = hermes_setting("API_SERVER_HOST").unwrap_or_else(|| "127.0.0.1".into());
+            let host = if host == "0.0.0.0" || host == "::" { "127.0.0.1".to_string() } else { host };
+            let port = hermes_setting("API_SERVER_PORT").filter(|p| p.parse::<u16>().is_ok()).unwrap_or_else(|| "8642".into());
+            format!("http://{}:{port}", if host.contains(':') { format!("[{host}]") } else { host })
+        }
+    };
+    let key = match hermes_setting("API_SERVER_KEY") {
+        Some(k) => {
+            done.push("Hermes API server key: there already, kept".to_string());
+            k
+        }
+        None => {
+            // (into Hermes' .env, where `hermes config set` puts secrets: never on a command line, where any process
+            //  of this computer could read it)
+            let k = crate::util::random_hex(32);
+            let env = hermes_home().ok_or("HOME is not set to a folder")?.join(".env");
+            append_secret(&env, "API_SERVER_KEY", &k)?;
+            done.push(format!("Hermes API server key: none was set, a new one is in {}", env.display()));
+            k
+        }
+    };
+    let endpoint = crate::chat_api::Endpoint { url, key, model: "hermes-agent".into() };
+    endpoint.check().map_err(|why| format!("{why} (give the address with --url)"))?;
+    if !matches!(hermes_setting("API_SERVER_ENABLED").as_deref(), Some("true" | "True" | "1" | "yes")) {
+        run("hermes", &["config", "set", "API_SERVER_ENABLED", "true"])?;
+        done.push("Hermes API server: turned on".to_string());
+    } else {
+        done.push("Hermes API server: on already".to_string());
+    }
+    let keys_dir = crate::member::connector_config(None, false).keys_dir;
+    let file = endpoint.save(&keys_dir, crate::preset::HERMES.id).map_err(|e| format!("the address and key could not be kept: {e}"))?;
+    done.push(format!("address {} and key kept in {} (this user only)", endpoint.url, file.display()));
+    let home = hermes_home().ok_or("HOME is not set to a folder")?;
+    let folder = format!("TROMMI_FOLDER={}", home.display());
+    // (a server there already is replaced: Hermes asks before it overwrites, and whether to take all tools)
+    run_answering(
+        "hermes",
+        &["mcp", "add", "trommi", "--command", &program, "--env", "TROMMI_HOST=hermes", "TROMMI_SESSION_KEY=hermes", &folder],
+        "y\ny\ny\n",
+    )?;
+    // (Hermes saves a server it could not start as turned off, and says so without failing)
+    let saved = run("hermes", &["config", "get", "mcp_servers.trommi", "--json"]).ok().and_then(|said| {
+        let from = said.find('{')?;
+        serde_json::from_str::<Value>(&said[from..]).ok()
+    });
+    match saved {
+        Some(v) if v["command"] == program.as_str() && v["enabled"] != false => {}
+        Some(_) => return Err("Hermes saved the MCP server trommi turned off: it could not start the connector (see `hermes mcp test trommi`)".into()),
+        None => return Err("Hermes did not save the MCP server trommi (see `hermes mcp add` above)".into()),
+    }
+    done.push(format!("MCP server trommi: Hermes starts {program}"));
+    done.push("a message on the board goes to Hermes as a turn of one conversation; its answer comes back into the chat, with its steps while it works; /stop ends a turn; what Hermes asks to approve comes to the board as a yes/no card".to_string());
+    Ok(done)
+}
+
+/// `remove hermes`: the MCP server and the kept key out again.
+pub fn remove_hermes() -> Result<Vec<String>, String> {
+    let mut done = Vec::new();
+    let keys_dir = crate::member::connector_config(None, false).keys_dir;
+    let file = crate::chat_api::Endpoint::file(&keys_dir, crate::preset::HERMES.id);
+    if std::fs::remove_file(&file).is_ok() {
+        done.push(format!("kept address and key removed ({})", file.display()));
+    }
+    match run_answering("hermes", &["mcp", "remove", "trommi"], "y\n") {
+        Ok(_) => done.push("MCP server trommi: removed".to_string()),
+        Err(why) => done.push(format!("MCP server trommi: not removed ({why})")),
+    }
+    done.push("Hermes' API server and its key stay as they are (`hermes config set API_SERVER_ENABLED false` turns it off)".to_string());
     Ok(done)
 }
 

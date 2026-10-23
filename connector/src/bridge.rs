@@ -25,6 +25,8 @@ pub const STATUSES: [&str; 3] = ["decision", "working", "done"];
 fn choice_arrives() -> &'static str {
     if crate::host::is_codex() {
         "the choice arrives as a board event: inbox shows it (a queued \"[Trommi] …\" message starts your next turn for it); do not wait for it"
+    } else if crate::host::is_chat() {
+        "the choice arrives as a new turn from the board; do not wait for it"
     } else {
         "the choice will arrive as a channel event"
     }

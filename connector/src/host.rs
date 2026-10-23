@@ -25,6 +25,18 @@ pub fn set_preset(p: &'static Preset) {
     *HOST.lock().unwrap() = p;
 }
 
+/// The program the connector was registered for (`TROMMI_HOST`, set by `setup hermes`), if it names a preset.
+pub fn from_env() {
+    if let Some(p) = std::env::var("TROMMI_HOST").ok().and_then(|h| crate::preset::by_id(&h)) {
+        set_preset(p);
+    }
+}
+
+/// Whether the connector bridges the board to the agent's chat server (`chat_api.rs`).
+pub fn is_chat() -> bool {
+    preset().live == crate::preset::Live::ChatApi
+}
+
 /// Whether Codex runs this connector.
 pub fn is_codex() -> bool {
     preset().id == crate::preset::CODEX.id

@@ -15,6 +15,9 @@ pub enum Live {
     Shown,
     /// A command queues a message for the running conversation (`codex queue`).
     Command(&'static [&'static [&'static str]]),
+    /// The connector itself hands the board to the agent through the agent's own chat server on this computer, as
+    /// the turns of one conversation, and puts the answer into the board's chat (`chat_api.rs`, the chat bridge).
+    ChatApi,
 }
 
 /// One agent program.
@@ -61,7 +64,21 @@ pub const CODEX: Preset = Preset {
     woken_run: Some(&[&["exec", "resume", "{resume}", "{prompt}"]]),
 };
 
-pub const PRESETS: [&Preset; 2] = [&CLAUDE, &CODEX];
+/// Hermes Agent: its gateway starts the connector as its MCP server `trommi` (`setup hermes`), and the connector talks
+/// to its API server (an OpenAI-compatible chat server on this computer). A wakeup runs while the gateway runs; a
+/// closed gateway is not started again.
+pub const HERMES: Preset = Preset {
+    id: "hermes",
+    name: "Hermes",
+    program: "hermes",
+    program_env: &[],
+    restart: "Restart the Hermes gateway (`hermes gateway restart`): it starts the Trommi connector anew.",
+    update: "run `trommi-connector update` in a terminal, then restart the Hermes gateway (`hermes gateway restart`)",
+    live: Live::ChatApi,
+    woken_run: None,
+};
+
+pub const PRESETS: [&Preset; 3] = [&CLAUDE, &CODEX, &HERMES];
 
 /// The preset of a note's `program`.
 pub fn by_id(id: &str) -> Option<&'static Preset> {

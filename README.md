@@ -30,7 +30,8 @@ retries after a restart; contact times and missing profiles never authorize remo
 1. **The app:** [app.trommi.com](https://app.trommi.com) in any browser. On an iPhone: the public beta on
    TestFlight, [trommi.com/beta](https://trommi.com/beta) (every release of main; the App Store gets reviewed versions
    less often).
-2. **An agent**, on a Linux or macOS computer with Claude Code or Codex. Once per machine:
+2. **An agent**, on a Linux or macOS computer with Claude Code, Codex or Hermes Agent (`trommi-connector setup hermes`,
+   see Chat agents below). Once per machine:
 
    ```sh
    curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh
@@ -59,7 +60,7 @@ The computer-approval release changes the MCP tool contract and needs one client
   message, a card, a file or a key.
 - **Dictation:** the chat field's microphone records, your device checks a Tinfoil enclave's attestation and seals
   the recording to it; the hub relays ciphertext only ([spec/v1.md](spec/v1.md) section 18, [SECURITY.md](SECURITY.md)).
-- **Connector:** one signed program that joins a Claude Code or Codex session to your room.
+- **Connector:** one signed program that joins a Claude Code, Codex or Hermes Agent session to your room.
   What the agent is told: [connector/prompt.md](connector/prompt.md).
 
 <picture>
@@ -466,6 +467,33 @@ run went; you cancel one or give it another time there. The chat shows the next 
 - **Rules** in `core/client/src/wakeups.rs` (guardrails, the clock's tick), the page in
   `core/client/src/views/wakeups.rs` (web `app/web/public/wakeups.mjs`, iPhone `WakeupsScreen.swift`), the clock and the waker in `connector/src/server.rs` and
   `connector/src/wakeups.rs`; spec/v1.md 9.3.8.
+
+</details>
+
+<details>
+<summary><b>Chat agents (Hermes)</b> · the board as the agent's chat, through its own chat server</summary>
+
+A chat agent such as [Hermes Agent](https://hermes-agent.nousresearch.com) runs as a gateway with its own
+OpenAI-compatible API server. `trommi-connector setup hermes` turns that server on (with a key, when it has none),
+keeps its address and key beside the device keys (`<keys>/agents/hermes.json`, this user only) and registers the
+connector as Hermes' MCP server `trommi` with `TROMMI_HOST=hermes`. After `hermes gateway restart`, ask Hermes to
+connect to Trommi as any agent does (Approve a computer).
+
+From then on the connector is the bridge (the chat bridge, `connector/src/chat_api.rs`): your message on the board goes
+to Hermes as a turn of one conversation (`X-Hermes-Session-Id: trommi-<session>`, Hermes keeps its history; only the
+new message is sent). While Hermes works the chat shows it working, with its steps (the tools it runs, what it says
+along the way) in the turn's trail; its answer lands as its message. A message you write meanwhile reaches it with its
+next Trommi tool call, or starts the next turn. `/stop` ends a running turn (the request is dropped, Hermes interrupts
+its agent). What Hermes asks to approve comes to you as a yes/no card; no answer in 5 minutes is no. The cards,
+knowledge, status lines and wakeups are the same MCP tools as for every agent.
+
+- **One mechanism:** every agent program is a preset (`connector/src/preset.rs`): Claude Code (channel events),
+  Codex (a queued message), Hermes (the chat bridge). Another OpenAI-compatible chat agent is one more preset.
+- **On this computer only:** the bridge sends plaintext only to 127.0.0.1, ::1 or localhost (taken as 127.0.0.1,
+  never looked up); any other address only over https. No proxy, no redirects. The hub sees nothing new.
+- **One Hermes, one session:** Hermes starts its MCP servers once per gateway, so every conversation of that Hermes
+  (Telegram, its CLI, the board's) uses the same Trommi session; the board's chat is one of them. Wakeups run while
+  the gateway runs; a stopped gateway is not started again.
 
 </details>
 

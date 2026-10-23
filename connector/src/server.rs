@@ -295,6 +295,17 @@ pub struct Conn {
     wake_lock: tokio::sync::Mutex<()>,
     /// A woken run's asks of the human (ask_permission), by request id, until his verdict.
     asks: Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
+    /// The chat bridge (`chat_api.rs`, a preset whose live wake is the agent's chat server): where the agent listens,
+    /// whether a turn runs, how to stop it, and whether the human was told that the agent cannot be reached.
+    chat: Option<crate::chat_api::Endpoint>,
+    chat_busy: AtomicBool,
+    /// The events of the turn being sent: out of the waiting list (so no tool call hands them too), still kept on disk
+    /// with it until the agent's server took the turn; back in the list when it did not.
+    chat_inflight: Mutex<Vec<Missed>>,
+    chat_stop: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    /// A /stop that came before the turn's request went out: the turn is not sent.
+    chat_stop_early: AtomicBool,
+    chat_down_told: AtomicBool,
     missed: Mutex<Vec<Missed>>,
     deaf_told: AtomicBool,
     marks: Mutex<HashMap<String, u64>>,
@@ -367,7 +378,7 @@ impl Conn {
     /// Whether the board reaches the agent at once: channel events, the monitor's line, or a Codex session that
     /// is woken by a queued message.
     fn hears_live(&self) -> bool {
-        self.heard() || self.feed_on() || crate::host::can_wake()
+        self.heard() || self.feed_on() || crate::host::can_wake() || self.chat.is_some()
     }
     /// A board event waits for a Codex session that can be woken: after a short pause (events that come together
     /// wake it once), a queued message starts its next turn, unless it read the board in between.
@@ -413,20 +424,31 @@ impl Conn {
         });
     }
     fn save_missed(&self) {
-        let list: Vec<Value> = self
-            .missed
-            .lock()
-            .unwrap()
-            .iter()
-            .map(missed_json)
+        let inflight: Vec<Value> = self.chat_inflight.lock().unwrap().iter().map(missed_json).collect();
+        let list: Vec<Value> = inflight
+            .into_iter()
+            .chain(self.missed.lock().unwrap().iter().map(missed_json))
             .collect();
         if let Some(st) = self.member.me.lock().unwrap().storage.clone() {
             st.set("missed", Value::Array(list));
         }
     }
     fn queue(&self, params: Value, about: Option<About>) {
+        if self.chat.is_some() && self.chat_busy.load(Ordering::SeqCst) && is_stop(&params) {
+            // (the human's /stop while a turn runs or is about to: the turn ends, or is not sent; the word itself
+            //  goes nowhere)
+            match self.chat_stop.lock().unwrap().take() {
+                Some(stop) => {
+                    let _ = stop.send(());
+                }
+                None => self.chat_stop_early.store(true, Ordering::SeqCst),
+            }
+            self.receipt(&[about]);
+            return;
+        }
         self.stash(params, about);
         self.wake_codex();
+        self.chat_wake();
     }
     /// Keeps an event in the waiting list (and on disk), without waking anyone.
     fn stash(&self, params: Value, about: Option<About>) {
@@ -559,6 +581,36 @@ impl Conn {
             }
         }
     }
+    /// Events out of the waiting list (not yet saved so): the ones of these that were still in it.
+    fn unqueue(&self, events: &[Missed]) -> Vec<Missed> {
+        let mut m = self.missed.lock().unwrap();
+        let mut out = vec![];
+        for e in events {
+            if let Some(i) = m.iter().position(|x| x.params == e.params && x.from == e.from) {
+                out.push(m.remove(i));
+            }
+        }
+        out
+    }
+    /// Events handed to the agent: out of the waiting list, with their receipt.
+    fn take_events(&self, events: &[Missed]) {
+        if events.is_empty() {
+            return;
+        }
+        self.unqueue(events);
+        self.save_missed();
+        self.handed(events);
+    }
+    /// What follows when events reached the agent: the mirror knows, the receipt is written.
+    fn handed(&self, events: &[Missed]) {
+        for e in events {
+            let own = e.from.is_empty() || e.from == self.cfg.session;
+            self.mirror.heard(e.params.get("meta"), own);
+        }
+        let abouts: Vec<Option<About>> = events.iter().map(|e| e.about.clone()).collect();
+        self.receipt(&abouts);
+        self.waking.store(false, Ordering::SeqCst);
+    }
     /// `said` with the waiting events. A helper's call (one that names its helper) gets none: every board event is
     /// the coordinator's, who forwards a helper's to it (README "Helpers and their events").
     fn with_missed(&self, said: &str, helper: Option<&str>) -> String {
@@ -574,27 +626,7 @@ impl Conn {
         } {
             return said.to_string();
         }
-        if !events.is_empty() {
-            {
-                let mut m = self.missed.lock().unwrap();
-                for e in &events {
-                    if let Some(i) = m
-                        .iter()
-                        .position(|x| x.params == e.params && x.from == e.from)
-                    {
-                        m.remove(i);
-                    }
-                }
-            }
-            self.save_missed();
-            for e in &events {
-                let own = e.from.is_empty() || e.from == self.cfg.session;
-                self.mirror.heard(e.params.get("meta"), own);
-            }
-            let abouts: Vec<Option<About>> = events.iter().map(|e| e.about.clone()).collect();
-            self.receipt(&abouts);
-            self.waking.store(false, Ordering::SeqCst);
-        }
+        self.take_events(&events);
         let head = if self.hears_live() {
             String::new()
         } else if crate::host::is_codex() {
@@ -629,7 +661,7 @@ impl Conn {
                 "[Trommi: {} board event{} {}:]",
                 events.len(),
                 if events.len() == 1 { "" } else { "s" },
-                if crate::host::is_codex() {
+                if crate::host::is_codex() || crate::host::is_chat() {
                     "since your last look"
                 } else {
                     "that Claude Code did not show you"
@@ -728,6 +760,9 @@ impl Conn {
         }
     }
     async fn working(&self) -> bool {
+        if self.chat_busy.load(Ordering::SeqCst) {
+            return true;
+        }
         let Some(c) = self.member.client() else {
             return false;
         };
@@ -998,6 +1033,9 @@ impl Conn {
 
     /// The note and waker of a session that closes with wakeups left (wakeups.rs).
     fn leave_wakeups(&self) {
+        if crate::host::preset().woken_run.is_none() {
+            return;
+        }
         let Some(b) = self.bridge.lock().unwrap().clone() else { return };
         let Some(sid) = b.client.lock().session_id() else { return };
         let (list, _) = b.wakeups_held();
@@ -2068,6 +2106,253 @@ fn spawn_witness(cfg: &Cfg) {
     let _ = cmd.spawn();
 }
 
+/// Whether a board event is the human's `/stop`: a chat message of his that says only that.
+fn is_stop(params: &Value) -> bool {
+    params["meta"]["kind"] == "chat"
+        && params["meta"].get("card_id").is_none()
+        && params["content"].as_str().is_some_and(|t| t.trim().eq_ignore_ascii_case("/stop"))
+}
+
+/// The user message of a bridged turn: the human's chat words as he wrote them when that is all that came; else every
+/// event as the inbox tool hands it.
+fn chat_prompt(events: &[Missed], me: &str) -> String {
+    let plain = |e: &Missed| {
+        let m = &e.params["meta"];
+        (e.from.is_empty() || e.from == me)
+            && m["kind"] == "chat"
+            && m.as_object().is_some_and(|o| o.keys().all(|k| k == "kind"))
+    };
+    if events.iter().all(plain) {
+        return events.iter().map(|e| e.params["content"].as_str().unwrap_or("").to_string()).collect::<Vec<_>>().join("\n\n");
+    }
+    let mut parts = vec![format!("[Trommi: {} board event{}:]", events.len(), if events.len() == 1 { "" } else { "s" })];
+    parts.extend(events.iter().map(|e| channel_tag(&e.params)));
+    parts.join("\n\n")
+}
+
+/// The most of an answer that goes into one chat message (an envelope's body is at most 64 KiB).
+const CHAT_ANSWER_MAX: usize = 60_000;
+
+/// What a bridged turn gathered: the words since the last tool (the answer, once the turn ends), the trail's count,
+/// whether the agent took the turn, how it ended.
+#[derive(Default)]
+struct ChatTurn {
+    id: String,
+    /// The asks of this turn on the board (their request ids).
+    asks: Vec<String>,
+    words: String,
+    steps: u64,
+    started: bool,
+    finish: Option<(String, Option<String>)>,
+}
+
+/// The chat bridge (`chat_api.rs`): the board's events go to the agent's chat server as the turns of one
+/// conversation, its answer comes back into the session's chat. One turn at a time; what comes while it runs reaches
+/// the agent with its next Trommi tool call, or starts the next turn.
+impl Conn {
+    fn chat_wake(&self) {
+        if self.chat.is_none() || self.chat_busy.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let me = self.arc();
+        tokio::spawn(async move {
+            me.sync_link().await;
+            let mut again = false;
+            loop {
+                // (events that come together go in one turn)
+                tokio::time::sleep(std::time::Duration::from_millis(env_ms("TROMMI_CHAT_GATHER_MS", 400))).await;
+                let events: Vec<Missed> = me.missed.lock().unwrap().clone();
+                let bridge = me.bridge.lock().unwrap().clone();
+                let Some(b) = bridge.filter(|_| me.member.phase() == "ready") else { break };
+                if events.is_empty() || me.leaving.load(Ordering::SeqCst) {
+                    break;
+                }
+                if !me.chat_turn(b, events).await {
+                    break;
+                }
+                again = true;
+            }
+            me.chat_busy.store(false, Ordering::SeqCst);
+            me.sync_link().await;
+            // (an event that came after the last look)
+            if again && !me.missed.lock().unwrap().is_empty() {
+                me.chat_wake();
+            }
+        });
+    }
+
+    /// One turn: the events as the user's message, the answer into the chat. False when the agent could not be reached
+    /// (the events wait for the next one).
+    async fn chat_turn(self: &Arc<Self>, b: Arc<Bridge>, events: Vec<Missed>) -> bool {
+        let Some(endpoint) = self.chat.clone() else { return false };
+        // (reserved before the request is made: a tool call meanwhile does not hand them again)
+        let events = self.unqueue(&events);
+        if events.is_empty() {
+            return true;
+        }
+        if self.chat_stop_early.swap(false, Ordering::SeqCst) {
+            // (stopped before it went out: nothing is sent)
+            self.save_missed();
+            self.handed(&events);
+            let _ = b.mirror("answer", "(stopped)", &[]).await;
+            return true;
+        }
+        *self.chat_inflight.lock().unwrap() = events.clone();
+        let sid = b.client.lock().session_id().unwrap_or_default();
+        let conversation = format!("trommi-{}", sid.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').take(64).collect::<String>());
+        let text = self.with_team(chat_prompt(&events, &self.cfg.session)).await;
+        let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel();
+        *self.chat_stop.lock().unwrap() = Some(stop_tx);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let ep = endpoint.clone();
+        let task = tokio::spawn(async move {
+            ep.turn(&conversation, &text, |e| {
+                let _ = tx.send(e);
+            })
+            .await
+        });
+        let mut t = ChatTurn { id: format!("chat-{}", crate::util::random_hex(8)), ..Default::default() };
+        let mut stopped = self.chat_stop_early.swap(false, Ordering::SeqCst);
+        if stopped {
+            task.abort();
+        }
+        loop {
+            tokio::select! {
+                e = rx.recv() => match e {
+                    Some(e) => self.chat_event(&b, &endpoint, &mut t, e).await,
+                    None => break,
+                },
+                Ok(()) = &mut stop_rx, if !stopped => {
+                    // (the request is dropped: the agent's server interrupts the turn)
+                    stopped = true;
+                    task.abort();
+                }
+            }
+        }
+        self.chat_stop.lock().unwrap().take();
+        // (asks of this turn that wait still: withdrawn, Hermes hears no)
+        for rid in std::mem::take(&mut t.asks) {
+            if self.asks.lock().unwrap().remove(&rid).is_some() {
+                let _ = b.permission_withdraw(&rid, "the turn ended").await;
+            }
+        }
+        let name = crate::host::name();
+        if !t.started {
+            let inflight = std::mem::take(&mut *self.chat_inflight.lock().unwrap());
+            if stopped {
+                self.save_missed();
+                self.handed(&inflight);
+                let _ = b.mirror("answer", "(stopped)", &[]).await;
+                return true;
+            }
+            // (not taken: the events go back to the front of the list, as they were)
+            {
+                let mut m = self.missed.lock().unwrap();
+                let mut all = inflight;
+                all.append(&mut m);
+                *m = all;
+            }
+            self.save_missed();
+            let why = t.finish.and_then(|f| f.1).unwrap_or_default();
+            eprintln!("[trommi] {name} did not take the turn: {why}");
+            if !self.chat_down_told.swap(true, Ordering::SeqCst) {
+                let said = format!("{name} cannot be reached on this computer ({why}). Is its gateway running with the API server on? The message waits and goes to {name} with the next one.");
+                let _ = b.mirror("answer", &said, &[]).await;
+            }
+            return false;
+        }
+        self.chat_down_told.store(false, Ordering::SeqCst);
+        let mut answer = t.words.trim().to_string();
+        match (&t.finish, stopped) {
+            (_, true) => answer = [answer.as_str(), "(stopped)"].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join("\n\n"),
+            (Some((f, why)), _) if f != "stop" => {
+                let why = why.clone().unwrap_or_else(|| f.clone());
+                answer = [answer, format!("({name} ended the turn early: {why})")].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join("\n\n");
+            }
+            (None, _) => answer = [answer, format!("({name}'s answer broke off)")].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join("\n\n"),
+            _ => {}
+        }
+        if answer.len() > CHAT_ANSWER_MAX {
+            let mut end = CHAT_ANSWER_MAX;
+            while !answer.is_char_boundary(end) {
+                end -= 1;
+            }
+            answer.truncate(end);
+            answer.push_str("\n\n(cut: the answer was longer)");
+        }
+        if !answer.is_empty() {
+            if let Err(e) = b.mirror("answer", &answer, &[]).await {
+                eprintln!("[trommi] the answer did not reach the board: {}", e.text());
+            }
+        }
+        true
+    }
+
+    async fn chat_event(self: &Arc<Self>, b: &Arc<Bridge>, endpoint: &crate::chat_api::Endpoint, t: &mut ChatTurn, e: crate::chat_api::Event) {
+        use crate::chat_api::Event;
+        match e {
+            Event::Started => {
+                // (the message is the agent's now: off the disk too, with its receipt)
+                t.started = true;
+                let inflight = std::mem::take(&mut *self.chat_inflight.lock().unwrap());
+                self.save_missed();
+                self.handed(&inflight);
+            }
+            Event::Text(words) => t.words.push_str(&words),
+            Event::Tool { tool, label, done: false, .. } => {
+                // the words before a tool are what the agent said along the way: into the turn's trail
+                let said = std::mem::take(&mut t.words);
+                let mut items = vec![];
+                if !said.trim().is_empty() {
+                    t.steps += 1;
+                    items.push(json!({ "id": t.steps.to_string(), "kind": "text", "text": said.trim() }));
+                }
+                t.steps += 1;
+                items.push(json!({ "id": t.steps.to_string(), "kind": "step", "tool": tool, "title": label, "state": "ok" }));
+                if let Err(e) = b.work(&json!({ "turn": t.id, "items": items })).await {
+                    eprintln!("[trommi] a step did not reach the board: {}", e.text());
+                }
+            }
+            Event::Tool { .. } => {}
+            Event::Approval(a) => {
+                let rid = a.request_id.clone().filter(|r| !r.is_empty() && r.len() <= 128).unwrap_or_else(|| crate::util::random_hex(8));
+                t.asks.push(rid.clone());
+                let (me, b, ep) = (self.clone(), b.clone(), endpoint.clone());
+                tokio::spawn(async move { me.chat_approval(b, ep, a, rid).await });
+            }
+            Event::Done { finish, error } => t.finish = Some((finish, error)),
+        }
+    }
+
+    /// The agent asks to run something: a yes/no card on the board; no answer in time is no.
+    async fn chat_approval(&self, b: Arc<Bridge>, endpoint: crate::chat_api::Endpoint, a: crate::chat_api::Approval, rid: String) {
+        let wait = env_ms("TROMMI_CHAT_APPROVAL_MS", 300_000);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.asks.lock().unwrap().insert(rid.clone(), tx);
+        let description = if a.description.is_empty() { format!("{} asks to run a command", crate::host::name()) } else { a.description.clone() };
+        let params = json!({ "request_id": rid, "tool_name": crate::host::name(), "description": description, "input_preview": a.command, "expires_in_ms": wait });
+        let yes = match b.permission_request(&params).await {
+            Err(e) => {
+                eprintln!("[trommi] the human could not be asked: {}", e.text());
+                self.asks.lock().unwrap().remove(&rid);
+                false
+            }
+            Ok(_) => match tokio::time::timeout(std::time::Duration::from_millis(wait), rx).await {
+                Ok(Ok(yes)) => yes,
+                _ => {
+                    self.asks.lock().unwrap().remove(&rid);
+                    let _ = b.permission_withdraw(&rid, "not answered in time").await;
+                    false
+                }
+            },
+        };
+        if let Err(e) = endpoint.approve(&a, yes).await {
+            eprintln!("[trommi] the answer did not reach {}: {e}", crate::host::name());
+            let _ = b.permission_withdraw(&rid, "the request ended").await;
+        }
+    }
+}
+
 impl mcp::Server for Conn {
     fn initialize(&self, params: &Value) -> Value {
         if crate::host::client_is_codex(params) {
@@ -2080,7 +2365,7 @@ impl mcp::Server for Conn {
         let ins = ins.replacen("<connector>", &path, 1);
         let instructions = format!(
             "{}{}",
-            if self.heard() || crate::host::is_codex() {
+            if self.heard() || crate::host::is_codex() || crate::host::is_chat() {
                 String::new()
             } else {
                 format!("{} ", prompt::monitor_note())
@@ -2370,11 +2655,21 @@ impl mcp::Server for Conn {
 /// The MCP server: `trommi-connector` without arguments.
 pub async fn main_server() {
     let cfg = member::connector_config(None, true);
+    crate::host::from_env();
     if crate::host::args_are_codex(&args_of(ppid())) {
         crate::host::set_codex();
     }
-    let heard = !crate::host::is_codex() && channels_heard(None);
-    let feed = if heard || crate::host::is_codex() {
+    let chat = if crate::host::is_chat() {
+        let e = crate::chat_api::Endpoint::load(&cfg.keys_dir, crate::host::preset().id);
+        if e.is_none() {
+            eprintln!("[trommi] no chat server is set up for {}: run `trommi-connector setup {}`", crate::host::name(), crate::host::preset().id);
+        }
+        e
+    } else {
+        None
+    };
+    let heard = !crate::host::is_codex() && !crate::host::is_chat() && channels_heard(None);
+    let feed = if heard || crate::host::is_codex() || crate::host::is_chat() {
         None
     } else {
         Some(MonitorFeed::new(ppid()))
@@ -2402,6 +2697,12 @@ pub async fn main_server() {
         wake_run: Mutex::new(None),
         wake_lock: tokio::sync::Mutex::new(()),
         asks: Mutex::new(HashMap::new()),
+        chat,
+        chat_busy: AtomicBool::new(false),
+        chat_inflight: Mutex::new(Vec::new()),
+        chat_stop: Mutex::new(None),
+        chat_stop_early: AtomicBool::new(false),
+        chat_down_told: AtomicBool::new(false),
         missed: Mutex::new(vec![]),
         deaf_told: AtomicBool::new(false),
         marks: Mutex::new(HashMap::new()),

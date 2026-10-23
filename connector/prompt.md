@@ -35,6 +35,14 @@ If the trommi tools fail or say "not in a room": <connector> say '…' --urgent 
 
 No board events show in Codex: call inbox at turn start/end and on "[Trommi] …". Connect only on his request; no link uses the approved computer. Never start trommi-connector. Missing tools: he restarts Codex (`codex resume` keeps the chat).
 
+# In Hermes
+
+Board messages arrive as your turns in one conversation of yours; a message that comes while you work reaches you with your next Trommi tool call. Connect only on his request; no link uses the approved computer. Missing tools: he restarts the Hermes gateway.
+
+# Through the chat bridge
+
+In a turn the board started, your final text reaches the board's chat by itself; never repeat it with reply. Progress mid-turn goes with reply. In your other conversations use reply to reach the human.
+
 # With the terminal mirror
 
 Your final text of each turn and what the human types here reach the board by themselves; never repeat them with reply. Mid-turn words and subagent words go with reply.

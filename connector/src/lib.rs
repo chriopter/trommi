@@ -4,6 +4,7 @@
 
 pub mod agent;
 pub mod bridge;
+pub mod chat_api;
 pub mod cli;
 pub mod door;
 pub mod driver;

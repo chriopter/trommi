@@ -72,15 +72,17 @@ pub fn terminal_mirrored() -> bool {
 /// agent's words reach the human, with the terminal mirror or without it.
 pub fn instructions() -> String {
     // (Claude Code: the plugin's hooks; Codex: the hooks `setup codex` put into its hooks.json, once trusted)
-    let how = if terminal_mirrored() {
+    let how = if crate::host::is_chat() {
+        "# Through the chat bridge"
+    } else if terminal_mirrored() {
         "# With the terminal mirror"
     } else {
         "# Without the terminal mirror"
     };
-    let host = if crate::host::is_codex() {
-        "# In Codex"
-    } else {
-        "# In Claude Code"
+    let host = match crate::host::preset().id {
+        "codex" => "# In Codex",
+        "hermes" => "# In Hermes",
+        _ => "# In Claude Code",
     };
     prompt()
         .get("# Instructions")
@@ -277,6 +279,8 @@ mod contract_tests {
             "# Instructions",
             "# In Codex",
             "# In Claude Code",
+            "# In Hermes",
+            "# Through the chat bridge",
             "# With the terminal mirror",
             "# Without the terminal mirror",
             "## connect",
