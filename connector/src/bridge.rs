@@ -1033,6 +1033,20 @@ impl Bridge {
             }
         }
     }
+    /// Sets one value of this agent's main session profile (`chats`: it starts a new chat when asked), when it is not
+    /// what stands there. Returns whether it wrote.
+    pub async fn put_profile(&self, key: &str, value: Value) -> Result<bool> {
+        let _held = self.profile.lock().await;
+        let mut p = self.my_session(None).await.and_then(|s| s.profile).unwrap_or_default();
+        if p.get(key) == Some(&value) {
+            return Ok(false);
+        }
+        p.insert(key.into(), value);
+        let mut v = Map::new();
+        v.insert("profile".into(), Value::Object(p));
+        self.client.set_status(v, None).await?;
+        Ok(true)
+    }
     /// Writes the account and usage of the program this agent runs in (`usage.rs`) into its main session's profile,
     /// as `account`, when it is not what stands there. Returns whether it wrote.
     pub async fn put_account(&self, account: Value) -> Result<bool> {
@@ -2821,6 +2835,14 @@ impl Bridge {
                         eprintln!("[trommi] timeline item {} not relayed", js_str(ct));
                         return;
                     }
+                }
+                // (the person asks for a new chat with this agent: `NewChat`, spec'd by the app core; only the agent's own
+                //  main session, never a card's chat)
+                if let Some(nonce) = c.get("new_chat").filter(|v| v.is_object()).and_then(|v| v.get("nonce")).and_then(Value::as_str) {
+                    if card.is_none() && nonce.len() <= 64 && nonce.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_') {
+                        return send("The human asks for a new chat with you.".into(), meta(vec![("kind", json!("new_chat")), ("nonce", json!(nonce))])).await;
+                    }
+                    return;
                 }
                 if c.get("present_card").is_some_and(truthy) && is_mine {
                     let k = card.as_ref().unwrap();

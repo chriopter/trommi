@@ -1,0 +1,10 @@
+# The Trommi add-on for Hermes Agent (README.md). Not published on its own: the connector carries it and writes it into
+# the Hermes home (`trommi-connector setup hermes`). These settings are for its tests.
+[project]
+name = "trommi-hermes-platform"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

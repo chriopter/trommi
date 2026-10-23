@@ -639,9 +639,28 @@ pub async fn run(argv: &[String]) -> i32 {
             );
             0
         }
+        "hermes-spec" => {
+            println!("{}", hermes_spec());
+            0
+        }
         other => {
-            eprintln!("[trommi] unknown command {other}; use connect <link>, say \"<text>\" [--helper <name>] [--urgent], whoami, setup claude|codex, remove claude|codex, update [--check] or --version, or no argument for the MCP server");
+            eprintln!("[trommi] unknown command {other}; use connect <link>, say \"<text>\" [--helper <name>] [--urgent], whoami, setup claude|codex|hermes, remove claude|codex|hermes, update [--check] or --version, or no argument for the MCP server");
             1
         }
     }
+}
+
+/// `hermes-spec`: what the Hermes add-on (`connector/hermes/`) registers in Hermes, as this connector says it: its
+/// version, the instructions for a Trommi chat, and the board tools with their schemas (`setup hermes` writes it next to
+/// the add-on, which reads it when Hermes loads it: no connector is started for that).
+pub fn hermes_spec() -> String {
+    crate::host::set_preset(&crate::preset::HERMES);
+    let path = crate::server::self_path().display().to_string();
+    let tools: Value = serde_json::from_str(&crate::prompt::tools_list_json_with_connect(false, None)).unwrap_or(Value::Null);
+    json!({
+        "version": crate::CLIENT,
+        "instructions": crate::prompt::instructions().replacen("<connector>", &path, 1),
+        "tools": tools["tools"],
+    })
+    .to_string()
 }

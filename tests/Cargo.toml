@@ -428,6 +428,10 @@ name = "connector_codex"
 path = "connector/codex.rs"
 
 [[test]]
+name = "connector_hermes"
+path = "connector/hermes.rs"
+
+[[test]]
 name = "connector_sessions"
 path = "connector/sessions.rs"
 

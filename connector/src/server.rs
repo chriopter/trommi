@@ -295,6 +295,16 @@ pub struct Conn {
     wake_lock: tokio::sync::Mutex<()>,
     /// A woken run's asks of the human (ask_permission), by request id, until his verdict.
     asks: Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
+    /// The turn the Hermes add-on drives (host hermes, `trommi/…` notifications): whether the agent answers now, what
+    /// its answer previews say (spec 7.5), their clock, and whether its profile says it starts new chats.
+    turn_on: AtomicBool,
+    turn_live: Arc<Mutex<LiveTurn>>,
+    previews: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Counts the turns: the previews of an ended turn that still wait are dropped only while no new turn started.
+    turn_count: std::sync::atomic::AtomicU64,
+    /// Held while one answer is written: answers go out in the order they came.
+    answers: tokio::sync::Mutex<()>,
+    chats_said: AtomicBool,
     missed: Mutex<Vec<Missed>>,
     deaf_told: AtomicBool,
     marks: Mutex<HashMap<String, u64>>,
@@ -728,6 +738,9 @@ impl Conn {
         }
     }
     async fn working(&self) -> bool {
+        if self.turn_on.load(Ordering::SeqCst) {
+            return true;
+        }
         let Some(c) = self.member.client() else {
             return false;
         };
@@ -998,6 +1011,9 @@ impl Conn {
 
     /// The note and waker of a session that closes with wakeups left (wakeups.rs).
     fn leave_wakeups(&self) {
+        if crate::host::preset().woken_run.is_none() {
+            return;
+        }
         let Some(b) = self.bridge.lock().unwrap().clone() else { return };
         let Some(sid) = b.client.lock().session_id() else { return };
         let (list, _) = b.wakeups_held();
@@ -1219,7 +1235,9 @@ impl Conn {
             }
         }
         let error = me.error.as_ref().map(|e| format!(" ({e})")).unwrap_or_default();
-        if crate::host::is_codex() {
+        if crate::host::is_hermes() {
+            format!("Not on the board{error}: on the human's request, call trommi_connect: with the link he gives you from \"Approve a computer\" in the Trommi app (computer=true), or without a link on a computer he approved before.")
+        } else if crate::host::is_codex() {
             format!("Not on the board{error}: on the human's request, call the connect tool without a link to activate this session on its approved computer.")
         } else {
             format!("Not on the board{error}: activate with /trommi:connect.")
@@ -2068,6 +2086,117 @@ fn spawn_witness(cfg: &Cfg) {
     let _ = cmd.spawn();
 }
 
+/// What the answer previews (spec 7.5) say now: the turn's id, how many went, the answer so far.
+#[derive(Default)]
+struct LiveTurn {
+    turn: [u8; 16],
+    number: u32,
+    draft: String,
+    text: String,
+}
+
+/// The most of an answer that goes into one chat message (an envelope's body is at most 64 KiB).
+const ANSWER_MAX: usize = 60_000;
+
+/// The turn the Hermes add-on drives (`connector/hermes/`): `trommi/working` {on} while Hermes answers (the session
+/// shows it working, and the answer previews go once a second, every one the same size, for as long), `trommi/preview`
+/// {draft, text} the answer as it stands, `trommi/answer` {text} the answer itself, as the agent's message.
+impl Conn {
+    fn turn_notification(self: Arc<Self>, method: &str, params: &Value) {
+        match method {
+            "trommi/working" => {
+                let on = params.get("on").and_then(Value::as_bool).unwrap_or(false);
+                if self.turn_on.swap(on, Ordering::SeqCst) == on {
+                    return;
+                }
+                if on {
+                    self.turn_count.fetch_add(1, Ordering::SeqCst);
+                    *self.turn_live.lock().unwrap() = LiveTurn { turn: crate::util::random().unwrap_or_default(), ..Default::default() };
+                    let bridge = self.bridge.lock().unwrap().clone();
+                    if let Some(b) = bridge {
+                        let (client, live) = (b.client.clone(), self.turn_live.clone());
+                        let clock = tokio::spawn(async move {
+                            loop {
+                                let (turn, number, text) = {
+                                    let mut l = live.lock().unwrap();
+                                    l.number += 1;
+                                    (l.turn, l.number, l.text.clone())
+                                };
+                                if let Err(e) = client.answer_preview(turn, number, &text).await {
+                                    eprintln!("[trommi] a preview did not go: {}", e.text());
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(trommi_client_core::live_answer::EVERY_MS)).await;
+                            }
+                        });
+                        if let Some(old) = self.previews.lock().unwrap().replace(clock) {
+                            old.abort();
+                        }
+                    }
+                } else {
+                    if let Some(clock) = self.previews.lock().unwrap().take() {
+                        clock.abort();
+                    }
+                    self.turn_live.lock().unwrap().text.clear();
+                    let bridge = self.bridge.lock().unwrap().clone();
+                    if let Some(b) = bridge {
+                        // (only while no new turn started: its previews are never dropped; a preview of the ended turn
+                        //  that goes late shows nothing, the answer came)
+                        let (me, count) = (self.clone(), self.turn_count.load(Ordering::SeqCst));
+                        tokio::spawn(async move {
+                            if me.turn_count.load(Ordering::SeqCst) == count && !me.turn_on.load(Ordering::SeqCst) {
+                                let _ = b.client.drop_previews().await;
+                            }
+                        });
+                    }
+                }
+                tokio::spawn(async move { self.sync_link().await });
+            }
+            "trommi/preview" => {
+                let text = params.get("text").and_then(Value::as_str).unwrap_or("");
+                let draft = params.get("draft").map(js_string).unwrap_or_default();
+                let mut l = self.turn_live.lock().unwrap();
+                // (another draft is another answer: a turn of its own, so a device drops what it showed of the one before)
+                if l.draft != draft {
+                    l.draft = draft;
+                    l.turn = crate::util::random().unwrap_or_default();
+                    l.number = 0;
+                }
+                l.text = text.to_string();
+            }
+            _ => {}
+        }
+    }
+
+    /// `trommi/answer` {text}: Hermes' answer as the agent's message, written before the request is answered (in the
+    /// order they came); `trommi/state`: where this connector stands (`phase`: "ready" on the board, "removed", …).
+    async fn turn_request(&self, method: &str, params: &Value) -> Result<Value, String> {
+        match method {
+            "trommi/answer" => {
+                let mut text = params.get("text").and_then(Value::as_str).unwrap_or("").trim().to_string();
+                if text.is_empty() {
+                    return Ok(json!({}));
+                }
+                if text.len() > ANSWER_MAX {
+                    let mut end = ANSWER_MAX;
+                    while !text.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    text.truncate(end);
+                    text.push_str("\n\n(cut: the answer was longer)");
+                }
+                let _in_order = self.answers.lock().await;
+                self.turn_live.lock().unwrap().text.clear();
+                let bridge = self.bridge.lock().unwrap().clone();
+                let b = bridge.ok_or_else(|| "not on the board".to_string())?;
+                b.mirror("answer", &text, &[]).await.map_err(|e| e.text())?;
+                Ok(json!({}))
+            }
+            "trommi/state" => Ok(json!({ "phase": self.member.phase() })),
+            _ => Err("unknown".into()),
+        }
+    }
+}
+
 impl mcp::Server for Conn {
     fn initialize(&self, params: &Value) -> Value {
         if crate::host::client_is_codex(params) {
@@ -2179,7 +2308,7 @@ impl mcp::Server for Conn {
         Box::pin(async move {
             if self.unconnected() {
                 self.offered_connect.store(true, Ordering::SeqCst);
-                let note = "Not on the board: activate with /trommi:connect (in Codex, ask to connect to Trommi). No session joins before that command.";
+                let note = if crate::host::is_hermes() { "Not on the board: on the human's request, call trommi_connect. No session joins before that." } else { "Not on the board: activate with /trommi:connect (in Codex, ask to connect to Trommi). No session joins before that command." };
                 if crate::host::is_codex() {
                     return prompt::tools_list_json_with_connect(true, Some(note));
                 }
@@ -2324,6 +2453,9 @@ impl mcp::Server for Conn {
         })
     }
     fn notification(self: Arc<Self>, method: String, params: Value) {
+        if matches!(method.as_str(), "trommi/working" | "trommi/preview") && crate::host::is_hermes() {
+            return self.turn_notification(&method, &params);
+        }
         if method == crate::launch::STOP && crate::launch::launched() {
             self.handing_over.store(true, Ordering::SeqCst);
             tokio::spawn(async move { self.bye("handed over to a new connector", "swap").await });
@@ -2362,6 +2494,14 @@ impl mcp::Server for Conn {
             }
         });
     }
+    fn request(self: Arc<Self>, method: String, params: Value) -> BoxFut<'static, Option<Result<Value, String>>> {
+        Box::pin(async move {
+            if !crate::host::is_hermes() || !matches!(method.as_str(), "trommi/answer" | "trommi/state") {
+                return None;
+            }
+            Some(self.turn_request(&method, &params).await)
+        })
+    }
     fn closed(self: Arc<Self>, why: &'static str) {
         tokio::spawn(async move { self.bye(why, "stdin").await });
     }
@@ -2370,6 +2510,10 @@ impl mcp::Server for Conn {
 /// The MCP server: `trommi-connector` without arguments.
 pub async fn main_server() {
     let cfg = member::connector_config(None, true);
+    crate::host::from_env();
+    if crate::host::is_hermes() {
+        crate::setup::refresh_hermes_addon();
+    }
     if crate::host::args_are_codex(&args_of(ppid())) {
         crate::host::set_codex();
     }
@@ -2402,6 +2546,12 @@ pub async fn main_server() {
         wake_run: Mutex::new(None),
         wake_lock: tokio::sync::Mutex::new(()),
         asks: Mutex::new(HashMap::new()),
+        turn_on: AtomicBool::new(false),
+        turn_live: Arc::new(Mutex::new(LiveTurn::default())),
+        previews: Mutex::new(None),
+        turn_count: std::sync::atomic::AtomicU64::new(0),
+        answers: tokio::sync::Mutex::new(()),
+        chats_said: AtomicBool::new(false),
         missed: Mutex::new(vec![]),
         deaf_told: AtomicBool::new(false),
         marks: Mutex::new(HashMap::new()),
@@ -2559,6 +2709,25 @@ pub async fn main_server() {
                 match crate::update::update(false).await {
                     Ok(said) => eprintln!("[trommi] update: {said}"),
                     Err(why) => eprintln!("[trommi] update: {why}"),
+                }
+            }
+        });
+    }
+    // the Hermes add-on starts a new chat when the person asks: its profile says so, and the app shows "New chat with …"
+    if crate::host::is_hermes() {
+        let c = conn.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(env_ms("TROMMI_PROFILE_LOOK_MS", 3_000))).await;
+                if c.leaving.load(Ordering::SeqCst) {
+                    return;
+                }
+                let bridge = c.bridge.lock().unwrap().clone();
+                if let Some(b) = bridge.filter(|_| c.member.phase() == "ready") {
+                    if b.put_profile("chats", json!(true)).await.is_ok() {
+                        c.chats_said.store(true, Ordering::SeqCst);
+                        return;
+                    }
                 }
             }
         });

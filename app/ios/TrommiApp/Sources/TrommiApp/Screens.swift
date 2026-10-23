@@ -513,7 +513,7 @@ struct MePicture: View {
   }
   private func go(_ screen: CoreView.Screen) { shell.closeNote(); shell.focus(screen) }
 }
-/** + at the top right: an agent, a team, the note; on the Desk the duck for all (asked once) and Blitz. */
+/** + at the top right: a new chat with a chat agent, an agent, a team, the note; on the Desk the duck for all (asked once) and Blitz. */
 struct PlusMenu: View {
   @EnvironmentObject var shell: AppShell
   let desk: Bool
@@ -521,6 +521,15 @@ struct PlusMenu: View {
   var body: some View {
     let d = shell.view.desk
     Menu {
+      // (a chat agent such as Hermes starts a new chat when asked: `SidebarView.newChat`)
+      if !shell.view.sidebar.newChat.isEmpty {
+        Section("New chat with") {
+          ForEach(shell.view.sidebar.newChat, id: \.sessionId) { n in
+            Button(n.name.en, systemImage: "square.and.pencil") { shell.act(["do": "new_chat", "session_id": n.sessionId]) }
+              .accessibilityIdentifier("new-chat-" + n.slug)
+          }
+        }
+      }
       Button { shell.focus(.settings(page: "agents")) } label: { Label("Add agent", systemImage: "laptopcomputer") }.accessibilityIdentifier("add-agent")
       Button { shell.focus(.settings(page: "teams")) } label: { Label("Add team", systemImage: "person.2") }.accessibilityIdentifier("add-team")
       Button("Note", systemImage: "square.and.pencil") { shell.focus(.notes) }.accessibilityIdentifier("note-open")

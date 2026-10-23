@@ -150,6 +150,9 @@ export type Rows<T> =
 export interface SidebarView {
   /** The teams, in the menu's order. A room without teams has one: "Personal". */
   teams: TeamTab[]
+  /** "New chat with …" under the + at the top (the phone: + at Chats): the agents that start a new chat when asked (a
+   *  chat agent such as Hermes says so in its profile, `chats`), each with its name and drawing. Empty: no such agent. */
+  new_chat?: NewChatView[]
   /** The person's picture where none is uploaded: the account e-mail's first letter, upper case (the phone's top
    *  left, the sidebar's foot); empty until the account is read: the shell draws a plain figure. */
   me: string
@@ -986,6 +989,16 @@ export interface TileView {
   tip?: Text
   /** What it says to a screen reader ("Ship it (settles it)"). */
   says: Text
+}
+
+/** An agent that starts a new chat when asked (`SidebarView::new_chat`): the session the ask goes to, its name and
+ *  drawing. */
+export interface NewChatView {
+  session_id: string
+  /** Its short id (what draws it with its hue, as its row). */
+  slug: string
+  name: Text
+  mark: string
 }
 
 /** One session's page: its heading, its conversation, the status lines of its running work, and what stands above

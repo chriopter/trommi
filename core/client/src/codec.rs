@@ -96,7 +96,7 @@ impl BodyKind {
         match self {
             Self::Message => &[
                 "content_type", "text", "details", "html", "attachments", "explain", "hand_back", "present_card",
-                "copied_cards", "marks", "terminal", "note", "published_object_id", "helper",
+                "copied_cards", "marks", "terminal", "note", "published_object_id", "helper", "new_chat",
             ],
             Self::Card => &[
                 "object_version", "previous_version_hash", "card_type", "title", "teaser", "body", "options",

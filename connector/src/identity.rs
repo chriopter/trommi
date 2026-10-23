@@ -18,9 +18,14 @@ pub fn is_identity(v: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// The name a new session proposes for itself: its folder's name. (The human device names it after the session it
+/// The name a new session proposes for itself: the agent's name its setup gave (`TROMMI_AGENT_NAME`), else its folder's
+/// name. (The human device names it after the session it
 /// was before when the ask's `agent` identity matches one: [`agent_identity`].)
 pub fn session_name(cfg: &Cfg) -> String {
+    // (a chat agent's name as its setup gave it: "Hermes Einkauf")
+    if let Some(name) = std::env::var("TROMMI_AGENT_NAME").ok().map(|n| n.trim().chars().take(40).collect::<String>()).filter(|n| !n.is_empty()) {
+        return name;
+    }
     cfg.folder
         .file_name()
         .map(|x| x.to_string_lossy().to_string())

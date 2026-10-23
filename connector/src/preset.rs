@@ -61,7 +61,31 @@ pub const CODEX: Preset = Preset {
     woken_run: Some(&[&["exec", "resume", "{resume}", "{prompt}"]]),
 };
 
-pub const PRESETS: [&Preset; 2] = [&CLAUDE, &CODEX];
+/// Hermes Agent, through the Trommi add-on for its gateway (`connector/hermes/`, a Hermes platform like Telegram): the
+/// add-on starts one connector per Trommi chat and hands it the board's events, Hermes' answer, its live text and its
+/// questions for approval; the connector shows the board's events to it as channel events. A wakeup runs while the
+/// gateway runs; a stopped gateway is not started again.
+pub const HERMES: Preset = Preset {
+    id: "hermes",
+    name: "Hermes",
+    program: "hermes",
+    program_env: &[],
+    restart: "Restart the Hermes gateway (`hermes gateway restart`): it starts the Trommi connector anew.",
+    update: "run `trommi-connector update` in a terminal, then restart the Hermes gateway (`hermes gateway restart`)",
+    live: Live::Shown,
+    woken_run: None,
+};
+
+pub const PRESETS: [&Preset; 3] = [&CLAUDE, &CODEX, &HERMES];
+
+/// What a preset's instance is filed under: its id, and `-<slug>` for a named one ("hermes", "hermes-einkauf").
+pub fn instance_id(preset: &str, slug: &str) -> String {
+    if slug.is_empty() {
+        preset.to_string()
+    } else {
+        format!("{preset}-{slug}")
+    }
+}
 
 /// The preset of a note's `program`.
 pub fn by_id(id: &str) -> Option<&'static Preset> {

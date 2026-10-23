@@ -285,6 +285,10 @@ pub fn items_of(b: &Board, t: &Timeline, card: Option<&Card>, heard_up_to: Optio
         }
         let from_human = human(i.get("sender_device_id").and_then(Value::as_str).unwrap_or(""));
         let c = i.get("content").unwrap_or(&null);
+        // (the person's ask for a new chat, `NewChat`: for the agent, not a line of the talk)
+        if from_human && c.get("new_chat").is_some_and(Value::is_object) {
+            continue;
+        }
         let number = i.get("envelope_number").and_then(Value::as_u64);
         let id = match number {
             Some(n) => format!("e{n}"),

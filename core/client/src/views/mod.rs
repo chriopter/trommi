@@ -341,6 +341,10 @@ impl<T: Clone> Rows<T> {
 pub struct SidebarView {
     /// The teams, in the menu's order. A room without teams has one: "Personal".
     pub teams: Vec<TeamTab>,
+    /// "New chat with …" under the + at the top (the phone: + at Chats): the agents that start a new chat when asked (a
+    /// chat agent such as Hermes says so in its profile, `chats`), each with its name and drawing. Empty: no such agent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub new_chat: Vec<NewChatView>,
     /// The person's picture where none is uploaded: the account e-mail's first letter, upper case (the phone's top
     /// left, the sidebar's foot); empty until the account is read: the shell draws a plain figure.
     #[serde(default)]
@@ -1394,6 +1398,18 @@ pub struct TileView {
     pub tip: Option<Text>,
     /// What it says to a screen reader ("Ship it (settles it)").
     pub says: Text,
+}
+
+/// An agent that starts a new chat when asked (`SidebarView::new_chat`): the session the ask goes to, its name and
+/// drawing.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewChatView {
+    pub session_id: String,
+    /// Its short id (what draws it with its hue, as its row).
+    #[serde(default)]
+    pub slug: String,
+    pub name: Text,
+    pub mark: String,
 }
 
 /// One session's page: its heading, its conversation, the status lines of its running work, and what stands above

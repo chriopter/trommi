@@ -20,6 +20,22 @@ runs:
     - name: Clippy
       shell: bash
       run: cargo clippy --locked -p trommi-connector --all-targets -- -D warnings
+    # The Hermes add-on (connector/hermes/) against the Hermes Agent version it is pinned to (its README).
+    - name: Hermes Agent, pinned
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: NousResearch/hermes-agent
+        ref: cb757fac59c92b49e9b8f2910e5cd7ab75efffdd
+        path: .hermes-agent-src
+        persist-credentials: false
+    - name: The Hermes add-on's tests
+      shell: bash
+      run: |
+        set -eu
+        python3 -m venv "$RUNNER_TEMP/hermes-venv"
+        "$RUNNER_TEMP/hermes-venv/bin/pip" install -q pytest==9.1.1 pytest-asyncio==1.4.0 pyyaml ruamel.yaml python-dotenv rich
+        cd connector/hermes
+        HERMES_AGENT_SRC="$GITHUB_WORKSPACE/.hermes-agent-src" "$RUNNER_TEMP/hermes-venv/bin/python" -m pytest -q -p no:cacheprovider
     - name: The connector's own tests
       shell: bash
       run: cargo test --locked -p trommi-connector
