@@ -116,6 +116,11 @@ test('the forms become the core\'s actions; a Desk row gets a toast with Undo, t
   assert.match(later.stream, new RegExp(`action="visit" target="/card/${card.place.next}"`))
   await b.post(`/cards/${card.id}/what`, { page: '1' })
   assert.deepEqual(b.acts.at(-1), { do: 'hand_back', card_id: card.id, rework: false, marks: [] })
+  // What?? in Blitz goes on to the next question, as the reverse card and Later do; outside Blitz back where it was opened
+  const walked = await b.post(`/cards/${card.id}/what`, { page: '1', walk: '1' })
+  assert.match(walked.stream, new RegExp(`action="visit" target="/card/${card.place.next}\\?walk=1"`))
+  const home = await b.post(`/cards/${card.id}/what`, { page: '1' })
+  assert.match(home.stream, /action="visit" target="\/"/)
   await b.post(`/cards/${card.id}/more`, {})
   assert.deepEqual(b.acts.at(-1), { do: 'show_more', of: { list: 'comments', card: card.id } })
   const empty = await b.post(`/cards/${card.id}/message`, { note: ' ', stay: '1' })
