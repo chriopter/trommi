@@ -264,7 +264,7 @@ struct ChatRow: View {
 
 /**
  * A card's page, calm (owner's pick of 17 October): who and when in one quiet line, the title and the text in the
- * system's face, the answers as plain rows, the three side ways as one small row, the talk folded. Once answered here
+ * system's face, the answers as plain rows, the three side ways as one small row, the talk open (it folds by its row). Once answered here
  * the way on stands where the answers stood: one glass button "Next" with the next card's title, the answer that
  * stands quietly under it with Undo. Every word comes from the core (`card.words`, `card.after`).
  */
@@ -278,8 +278,8 @@ struct CardScreen: View {
    *  frame as the answer (no frame without it, so nothing jumps). Open again (Undo), the answers are back. */
   @State private var sawOpen = false
   private var answeredHere: Bool { sawOpen && card.status != "open" }
-  /** The card's talk unfolded. */
-  @State private var showTalk = false
+  /** The card's talk unfolded: open at first (owner, 23 October), its row folds it. */
+  @State private var showTalk = true
   /** How tall the answers stood while the card was open: once answered here the way on keeps that room, so nothing
    *  under it moves and the page does not jump when it gets shorter. */
   @State private var answersHeight: CGFloat = 0
@@ -592,7 +592,7 @@ struct CardScreen: View {
     .accessibilityLabel(after.next.map { "\(after.says.en): \($0.title)" } ?? after.says.en)
   }
 
-  // ---- the card's own talk, folded into one quiet row ----
+  // ---- the card's own talk, open under one quiet row that folds it ----
 
   @ViewBuilder private var thread: some View {
     if card.words.talk != nil || !card.lead.isEmpty || card.earlier != nil {
