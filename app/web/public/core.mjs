@@ -144,7 +144,6 @@ export function fetchAgain(url) {
   const now = urls.get(id)
   if (now && now !== url) { emit('file', id); return true }   // (a newer copy is here: drawn again with it)
   if (now) { URL.revokeObjectURL(now); urls.delete(id) }
-  gone.delete(url)
   fileUrl(id)
   return asked.has(id)
 }
