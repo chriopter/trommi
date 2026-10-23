@@ -3,16 +3,20 @@
 //! window never names one and is window 0.
 //!
 //! What is a window's: its lens (team, page, search, the pages of a list shown), its parts of the view model
-//! (`WindowParts`: sidebar, Desk, the session and card in view, the board, …), what it was rendered last, whether
-//! it is in front. Everything else is the device's and the same in every window: the room, the phase and its line,
+//! (`WindowParts`: sidebar, Desk, the session and card in view, the board, …), what it was rendered last, the note
+//! it is writing, whether it is in front. Everything else is the device's and the same in every window: the room, the phase and its line,
 //! the account's steps, settings, files, dictation, the toasts.
 //!
 //! The App works on one window at a time, the current one: its lens is `App.lens`, its parts are in
 //! `App.next_view`, its rendered model is `App.view`. An event of another window first makes that one current
 //! (`switch_window`). After every event each other window gets its views made again when the room or the clock moved
 //! them, and its own `Render` (`render_others`).
+//!
+//! A step a window started stays that window's through its I/O (`origin_of`, `mark_origin`): a passkey or push
+//! prompt, a file to save, a link to open go to the window whose action led to them, even when another window acted
+//! meanwhile; when that window went, the shell refuses the prompt and drops the file or link.
 
-use super::{App, Effect};
+use super::{App, Effect, Event};
 use crate::views::{Lens, ViewModel, WindowParts};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -24,6 +28,8 @@ pub(super) struct Window {
     parts: WindowParts,
     view: ViewModel,
     rendered_once: bool,
+    /// The note this window is writing (`KeepNote` without an id: `App.made_note`).
+    made_note: Option<String>,
     /// The Scribble Board in view (`Focus.board`, `Screen::Scribble`).
     pub(super) board: Option<trommi_core::ids::BoardId>,
     /// The window shows its page (`Focus.visible`): its chat in view counts as read.
@@ -45,6 +51,7 @@ impl Default for Window {
             parts: WindowParts::default(),
             view: ViewModel::default(),
             rendered_once: false,
+            made_note: None,
             board: None,
             looking: false,
             front: true,
@@ -95,12 +102,14 @@ impl App {
         self.next_view.put_window_parts(std::mem::take(&mut incoming.parts));
         let view = std::mem::replace(&mut self.view, std::mem::take(&mut incoming.view));
         let rendered_once = std::mem::replace(&mut self.rendered_once, incoming.rendered_once);
+        let made_note = std::mem::replace(&mut self.made_note, incoming.made_note.take());
         // (the one left keeps what it had: its lens, its parts, what it was shown)
         if let Some(left) = self.windows.get_mut(&self.window) {
             left.lens = lens;
             left.parts = parts;
             left.view = view;
             left.rendered_once = rendered_once;
+            left.made_note = made_note;
         }
         self.next_view.rev = self.view.rev;
         self.seen.looking = incoming.looking;
@@ -172,5 +181,47 @@ impl App {
             self.render_window(out);
         }
         self.switch_window(home);
+    }
+
+    /// The window an event's step belongs to: the answer to an I/O is the step of the window that started it;
+    /// anything else is the window it names.
+    pub(super) fn origin_of(&mut self, window: u32, event: &Event) -> u32 {
+        match event {
+            Event::Http { id, .. } | Event::Store { id, .. } | Event::Secret { id, .. } | Event::Platform { id, .. } => {
+                self.io_windows.remove(id).unwrap_or(window)
+            }
+            Event::Progress { id, .. } => self.io_windows.get(id).copied().unwrap_or(window),
+            _ => window,
+        }
+    }
+
+    /// After an event: its I/O is the step of `origin`, and what only a window shows (a prompt, a file to save, a
+    /// link) names it. Kept for I/O answered once (not the stream), only where a window other than 0 started it;
+    /// bounded (an answer that never came).
+    pub(super) fn mark_origin(&mut self, origin: u32, out: &mut [Effect]) {
+        const KEPT: usize = 1024;
+        for effect in out.iter_mut() {
+            match effect {
+                Effect::Http { id, .. } | Effect::Store { id, .. } | Effect::Secret { id, .. } => {
+                    if origin != 0 {
+                        self.io_windows.insert(*id, origin);
+                    }
+                }
+                Effect::Platform { id, window, .. } => {
+                    *window = origin;
+                    if origin != 0 {
+                        self.io_windows.insert(*id, origin);
+                    }
+                }
+                Effect::Cancel { id } => {
+                    self.io_windows.remove(id);
+                }
+                Effect::SaveFile { window, .. } | Effect::OpenUrl { window, .. } => *window = origin,
+                _ => {}
+            }
+        }
+        while self.io_windows.len() > KEPT {
+            self.io_windows.pop_first();
+        }
     }
 }

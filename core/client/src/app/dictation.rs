@@ -183,21 +183,21 @@ impl App {
             match step {
                 Do::Record { max_ms } => {
                     let id = self.dictation_io(Io::Record);
-                    out.push(Effect::Platform { id, op: PlatformOp::RecordStart { max_ms } });
+                    out.push(Effect::Platform { id, op: PlatformOp::RecordStart { max_ms }, window: 0 });
                 }
                 Do::Stop => {
                     let id = self.dictation_io(Io::Stop);
-                    out.push(Effect::Platform { id, op: PlatformOp::RecordStop });
+                    out.push(Effect::Platform { id, op: PlatformOp::RecordStop, window: 0 });
                 }
                 Do::Drop => {
                     // (what the recording still owes is dropped when it comes: a late recording never enters a new one)
                     self.dictation.asked.retain(|_, io| !matches!(io, Io::Record | Io::Stop));
                     let id = self.dictation_io(Io::Drop);
-                    out.push(Effect::Platform { id, op: PlatformOp::RecordCancel });
+                    out.push(Effect::Platform { id, op: PlatformOp::RecordCancel, window: 0 });
                 }
                 Do::Attest { bundle, repo } => {
                     let id = self.dictation_io(Io::Attest);
-                    out.push(Effect::Platform { id, op: PlatformOp::Attest { bundle: Bytes(bundle), repo: repo.to_string() } });
+                    out.push(Effect::Platform { id, op: PlatformOp::Attest { bundle: Bytes(bundle), repo: repo.to_string() }, window: 0 });
                 }
                 Do::FetchBundle => {
                     if !self.dictation_send(now_ms, out, Io::Bundle, None) {

@@ -258,7 +258,7 @@ impl<C: Core, S: Shell> Loop<C, S> {
                     let result = self.shell.secret(op);
                     self.answer(Event::Secret { id, result });
                 }
-                Effect::Platform { id, op } => {
+                Effect::Platform { id, op, .. } => {
                     let result = self.shell.platform(op);
                     self.answer(Event::Platform { id, result });
                 }

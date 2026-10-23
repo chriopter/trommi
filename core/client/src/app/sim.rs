@@ -243,7 +243,7 @@ impl Sim {
                         }
                     },
                 }),
-                Effect::Platform { id, op } => self.queue.push_back(Event::Platform {
+                Effect::Platform { id, op, .. } => self.queue.push_back(Event::Platform {
                     id,
                     result: match self.platform.as_mut() {
                         Some(platform) => platform(&op),

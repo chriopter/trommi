@@ -107,7 +107,7 @@ impl App {
             self.push.want = None;
             self.push_send(now_ms, out, Ask::Remove);
             let id = self.push_io();
-            out.push(Effect::Platform { id, op: PlatformOp::PushUnregister });
+            out.push(Effect::Platform { id, op: PlatformOp::PushUnregister, window: 0 });
             self.push.token = None;
             self.push.level = Some(PushChoice::Off);
             self.show_push();
@@ -133,7 +133,7 @@ impl App {
     /// The platform asked to register (it may ask the person first).
     fn push_platform(&mut self, out: &mut Vec<Effect>) {
         let id = self.push_io();
-        out.push(Effect::Platform { id, op: PlatformOp::PushRegister { server_key: self.push.vapid.clone().map(Bytes) } });
+        out.push(Effect::Platform { id, op: PlatformOp::PushRegister { server_key: self.push.vapid.clone().map(Bytes) }, window: 0 });
     }
 
     fn push_send(&mut self, now_ms: u64, out: &mut Vec<Effect>, ask: Ask) {

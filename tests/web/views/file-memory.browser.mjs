@@ -17,7 +17,7 @@ try {
   await page.send('Page.enable')
   await page.send('Page.navigate', { url:`http://127.0.0.1:${server.address().port}/` })
   const r = await page.send('Runtime.evaluate', { awaitPromise:true, returnByValue:true, expression:`(async () => {
-    let port, ended = 0; globalThis.Worker = class { constructor() { port = this } postMessage() {} terminate() { ended++ } }
+    let port, ended = 0; delete globalThis.SharedWorker; globalThis.Worker = class { constructor() { port = this } postMessage() {} terminate() { ended++ } }
     const live = new Map(), make = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL)
     URL.createObjectURL = blob => { const url = make(blob); live.set(url, blob.size); return url }
     URL.revokeObjectURL = url => { live.delete(url); revoke(url) }

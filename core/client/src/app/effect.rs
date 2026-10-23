@@ -53,6 +53,10 @@ pub enum Effect {
     Platform {
         id: IoId,
         op: PlatformOp,
+        /// The window whose step led to it (`App::handle_in`): its prompt shows there and in no other window. 0,
+        /// and left out, where a shell has one window.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        window: u32,
     },
     /// Keep these bytes (a decrypted picture or file) under `file_id` for drawing: views name files by that id.
     /// The shell drops them on `FileGone`, or whenever it likes and then shows the file as not loaded.
@@ -98,10 +102,16 @@ pub enum Effect {
         name: String,
         media_type: String,
         bytes: Bytes,
+        /// The window whose step led to it (as `Platform`'s).
+        #[serde(default, skip_serializing_if = "is_zero")]
+        window: u32,
     },
     /// Open this link outside the app (a share link, the help page).
     OpenUrl {
         url: String,
+        /// The window whose step led to it (as `Platform`'s).
+        #[serde(default, skip_serializing_if = "is_zero")]
+        window: u32,
     },
     /// A line for the platform's log. Never holds content, keys, e-mail addresses or tokens.
     Log {

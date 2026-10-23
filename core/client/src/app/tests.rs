@@ -89,6 +89,7 @@ fn bytes_cross_the_edge_beside_the_json() {
         name: "a".into(),
         media_type: "text/plain".into(),
         bytes: b"hi".to_vec().into(),
+        window: 0,
     }];
     let packet = edge::encode_effects(&effects);
     assert_eq!(packet.blobs, vec![b"hi".to_vec()]);
