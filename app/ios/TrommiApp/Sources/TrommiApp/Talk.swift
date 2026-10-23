@@ -1595,29 +1595,41 @@ struct QuietCount: View {
   }
 }
 
-/** The calm chat's open questions pinned above the field (`SessionView.pinned`, the newest first): the first as its
- *  Desk row, answerable there; the rest as slim rows that open their card. */
+/** The calm chat's open cards pinned above the field (`SessionView.pinned`: its questions, the newest first, then its
+ *  cards to read): small cards side by side, swiped sideways; each opens its card. */
 struct PinnedCards: View {
   @EnvironmentObject var shell: AppShell
   let cards: [CoreView.DeskRowView]
   var body: some View {
-    if let first = cards.first {
-      VStack(spacing: 6) {
-        DeskRow(row: first)
-        ForEach(cards.dropFirst(), id: \.id) { w in
-          Button { shell.focus(.card(cardId: w.id)) } label: {
-            HStack(spacing: 8) {
-              Sketch("knock", color: Ink.urgHigh).frame(width: 16, height: 16)
-              Text(w.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
-              Spacer(minLength: 4)
-              Text("open").font(Face.text(12)).foregroundStyle(Ink.muted)
+    let list = cards.filter { !$0.id.isEmpty }
+    if !list.isEmpty {
+      ScrollView(.horizontal, showsIndicators: false) {
+        LazyHStack(spacing: 8) {
+          ForEach(Array(list.enumerated()), id: \.element.id) { i, w in
+            let read = w.kind == "info"
+            Button { shell.focus(.card(cardId: w.id)) } label: {
+              VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                  Sketch(read ? "page" : "knock", color: read ? Ink.muted : Ink.urgHigh).frame(width: 15, height: 15)
+                  Text("\(read ? "To read" : "Question") · \(i + 1) of \(list.count)").font(Face.text(12)).foregroundStyle(Ink.muted)
+                }
+                Text(w.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.leading)
+                if !w.words.isEmpty { Text(w.words).font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1) }
+              }
+              .frame(maxWidth: .infinity, alignment: .topLeading)
+              .padding(.horizontal, 12).padding(.vertical, 10)
+              .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
+              .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.line))
             }
-            .padding(.horizontal, 12).frame(height: 38)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.surface))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.line))
-          }.buttonStyle(.plain)
+            .buttonStyle(.plain)
+            .containerRelativeFrame(.horizontal) { w, _ in min(w * 0.82, 340) }
+            .accessibilityIdentifier("pinned-card-" + w.id)
+          }
         }
+        .scrollTargetLayout()
       }
+      .scrollTargetBehavior(.viewAligned)
+      .scrollClipDisabled()
       .padding(.top, 6)
       .accessibilityIdentifier("pinned-cards")
     }
