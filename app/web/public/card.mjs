@@ -150,10 +150,11 @@ const backWay = (card, way) => (way ? html`<button class="tc-undo" type="submit"
 const saidFoot = (card, a) => (a.did ? html`<p class="tc-ans-foot"><span>${a.did.en}</span>${a.at_ms ? html`<i aria-hidden="true">·</i>${agoSpan(a.at_ms, 'ago')}` : ''}${backWay(card, a.back)}</p>` : '')
 /** The answered card (AnswerView.mode "said", the owner's choice of 18 October 2026): the panel stays exactly as it
  *  stood open, nothing moves. The options, the "or" and the duck keep their places: the one said (OptionView.chosen, or
- *  the duck: AnswerView.ducked) with a small tick at its right edge, the others faded. Under them one quiet line, "You
- *  chose · just now · Take back" (saidFoot); where What?? and the reverse card stood, "Next ›" in their style when
- *  there is a next question (CardView.after.next, its title as the tooltip), else nothing. What the card says beyond
- *  (a note, a final answer, the agent's summary, a receipt that is not the plain "has your answer") follows quietly. */
+ *  the duck: AnswerView.ducked) with a small tick at its right edge, the others faded. Right after the answer (`after`)
+ *  "Next ›" stands directly under them when there is a next question (CardView.after.next, its title as the tooltip),
+ *  and nothing else: Undo is in the toast (the owner's choice of 23 October 2026). Opened later, one quiet line under
+ *  them instead, "You chose · just now · Take back" (saidFoot). What the card says beyond (a note, a final answer, the
+ *  agent's summary, a receipt that is not the plain "has your answer") follows quietly. */
 const TICK_END = raw('<svg class="tc-chosen-tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>')
 function saidCard(card, a, form, after) {
   const words = x => x?.en ?? ''
@@ -163,14 +164,15 @@ function saidCard(card, a, form, after) {
     ? html`<a class="tc-tile tc-next-tile" data-nav href="${focusAt(cardPath(card.after.next, after.self), after.focus)}" title="${card.after.next.title ?? ''}">${words(card.after.go) || 'Next'} ›</a>`
     : ''
   const quiet = html`${a.detail ? html`<p class="tc-said-more">${words(a.detail)}</p>` : ''}${(a.option_notes ?? []).map(n => html`<p class="tc-said-more"><b>${n.label}</b> ${n.note?.en ?? ''}</p>`)}${a.settled ? html`<p class="tc-said-more">${sk('tick')}${a.settled.en}</p>` : ''}${a.summary ? html`<p class="tc-said-more">${a.summary}</p>` : ''}`
-  const foot = html`${saidFoot(card, a)}${quiet}`
-  const pair = html`<div class="tc-or-pair">${next}${a.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}</div>`
+  const foot = html`${after ? '' : saidFoot(card, a)}${quiet}`
+  const pair = html`<div class="tc-or-pair${after ? ' is-near' : ''}">${next}${a.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}</div>`
+  const tail = after ? html`${pair}${foot}` : html`${foot}${pair}`
   if (card.kind === 'info' || !opts.length) {
     // (an info: its one answer stays, ticked; a card without options, as one withdrawn, says what became of it)
-    return html`<div class="tc-or tc-info-ways is-said">${row(words(a.label), '', true, ' is-ack-said')}${foot}${pair}</div>`
+    return html`<div class="tc-or tc-info-ways is-said">${row(words(a.label), '', true, ' is-ack-said')}${tail}</div>`
   }
   return html`<div class="tc-opts is-said">${opts.map(o => row(o.label, o.detail, Boolean(o.chosen) && !ducked, o.recommended ? ' is-advised' : ''))}</div>
-${decision ? html`<div class="tc-or is-said"><i class="tc-said-or">or</i><div class="tc-opt tc-whatever is-said${ducked ? ' is-chosen' : ' is-faded'}"${ducked ? raw(' aria-current="true"') : ''}>${sk('duck')}<span class="tc-opt-words"><span class="tc-opt-label">${WORDS.trust}</span></span>${ducked ? TICK_END : ''}</div>${foot}${pair}</div>` : html`<div class="tc-or is-said">${foot}${pair}</div>`}`
+${decision ? html`<div class="tc-or is-said"><i class="tc-said-or">or</i><div class="tc-opt tc-whatever is-said${ducked ? ' is-chosen' : ' is-faded'}"${ducked ? raw(' aria-current="true"') : ''}>${sk('duck')}<span class="tc-opt-words"><span class="tc-opt-label">${WORDS.trust}</span></span>${ducked ? TICK_END : ''}</div>${tail}</div>` : html`<div class="tc-or is-said">${tail}</div>`}`
 }
 /** The right column's answers (#card-answer-<id>), by AnswerView.mode. old: a version before (read only). */
 function cardAnswer(card, { old = null, pic = 1, after = null, self = '' } = {}) {
