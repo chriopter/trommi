@@ -17,6 +17,10 @@ pub enum Effect {
     /// Apply this to the view state (fold with [`ViewModel::apply`](crate::views::ViewModel::apply)) and draw.
     Render {
         delta: ViewDelta,
+        /// The window it is for (`Event` `window`, a browser tab sharing this App); 0, and left out, where a shell
+        /// has one window.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        window: u32,
     },
     /// Send it; answer with `Event::Http` of the same id.
     Http {
@@ -210,3 +214,7 @@ pub enum LogLevel {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShareTeam { pub id: String, pub name: String, pub crown: Option<crate::views::NoteToView> }
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}

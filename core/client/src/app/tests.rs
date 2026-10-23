@@ -22,7 +22,7 @@ fn an_empty_device_starts_signed_out() {
     assert_eq!(sim.view, *sim.app.view(), "the shell's fold is the core's");
     // the first render is whole, and comes before the I/O
     assert!(
-        matches!(&sim.log[0], Effect::Render { delta } if matches!(delta.parts[0], ViewPart::Whole { .. }))
+        matches!(&sim.log[0], Effect::Render { delta, .. } if matches!(delta.parts[0], ViewPart::Whole { .. }))
     );
     assert!(sim.log.iter().skip(1).any(|effect| matches!(
         effect,

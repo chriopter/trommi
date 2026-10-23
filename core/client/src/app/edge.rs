@@ -66,8 +66,17 @@ pub fn decode_effects(packet: Packet) -> Result<Vec<Effect>, String> {
     effects.map_err(why)
 }
 
-/// `handle` across the edge.
+/// The window an event comes from: a number beside its `type` (`{"type":"focus","window":2,…}`), 0 when there is
+/// none (a shell with one window).
+#[derive(serde::Deserialize)]
+struct WindowOf {
+    #[serde(default)]
+    window: u32,
+}
+
+/// `handle` across the edge, for the window the event names.
 pub fn handle(app: &mut App, now_ms: u64, event: Packet) -> Result<Packet, String> {
+    let window = serde_json::from_str::<WindowOf>(&event.json).map_err(why)?.window;
     let event = decode_event(event)?;
-    Ok(encode_effects(&app.handle(now_ms, event)))
+    Ok(encode_effects(&app.handle_in(now_ms, window, event)))
 }

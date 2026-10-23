@@ -73,6 +73,7 @@ the typed events directly. There is no serialization of private protocol state t
 | `Wake`, `Net`, `Foreground`, `Background`, `Zone` | Clock/network/lifecycle/zone changes |
 | `Push`, `PushToken` | Raw platform push/token data; the core checks it and owns registration policy |
 | `Progress`, `Finished` | Optional transfer progress or completion |
+| `WindowOpened`, `WindowClosed` | A window sharing this App came or went (see Windows below) |
 
 | Effect | Shell responsibility |
 | --- | --- |
@@ -97,6 +98,18 @@ For an open stream, the cap bounds a non-200 body and the core bounds/parses eac
 
 I/O ids are unique within an App. A closed/replaced App drops late results. A refused platform capability is an
 ordinary result, not an app decision in the shell.
+
+### Windows
+
+One App can serve several windows (the browser's tabs of one profile share one core in a SharedWorker; iOS and
+Linux have one window). An event's JSON names its window beside its `type` (`"window": 2`; left out: window 0), and
+`App::handle_in` takes it. `Focus`, `Action`, `Foreground`, `Background` and `WindowOpened` are that window's; I/O,
+the clock and the platform are the device's. Each window has its own lens and its own parts of the view model
+(sidebar, Desk, the session and card in view, the board, the pages' lists) and gets its own `Render` (`window` on the
+effect, left out for 0), whole at its first. The phase and status line, account, settings, files, dictation and
+toasts are the device's, the same in every window. The stream stays open while any window is in front; a chat in
+view in any window that shows its page counts as read. There is still one device, one engine and one place where its
+keys move on (`src/app/windows.rs`).
 
 ## Durability and ownership
 
