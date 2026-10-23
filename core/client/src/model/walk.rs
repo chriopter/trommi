@@ -163,6 +163,19 @@ mod tests {
     }
 
     #[test]
+    fn what_in_blitz_leaves_the_walk_and_leads_on_to_the_next_question() {
+        let mut m = model(vec![card("a", "normal", 1, false), card("b", "normal", 2, false), card("c", "normal", 3, false)]);
+        assert_eq!(m.next_open_after("b", None).as_deref(), Some("c"));
+        // What?? (a hand-back without rework): b is with its agent, off the walk, and the way on is still c, never the end
+        m.cards.get_mut("b").unwrap().in_revision = Some(serde_json::from_value(json!({ "envelope_number": 4 })).unwrap());
+        assert_eq!(m.walk(None), ["a", "c"]);
+        assert_eq!(m.next_open_after("b", None).as_deref(), Some("c"));
+        // the last one asked about: round to the first that still waits
+        m.cards.get_mut("c").unwrap().in_revision = Some(serde_json::from_value(json!({ "envelope_number": 5 })).unwrap());
+        assert_eq!(m.next_open_after("c", None).as_deref(), Some("a"));
+    }
+
+    #[test]
     fn a_more_urgent_card_decided_leads_to_the_top_of_the_rest() {
         let mut m = model(vec![card("crit", "critical", 9, false), card("n1", "normal", 1, false), card("n2", "normal", 2, false)]);
         m.stack.retain(|id| id != "crit");
