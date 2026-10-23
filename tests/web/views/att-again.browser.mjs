@@ -15,6 +15,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 const CARD = 'a38afef6dbdd056db8042980f2b83336'   // demo/data: "Which hero for the landing page?", two pictures
 
 const STATE = `({ gone: document.querySelectorAll('main .att-gone').length, shown: [...document.querySelectorAll('main img')].filter(i => i.naturalWidth > 0).length, imgs: document.querySelectorAll('main img').length, waitWords: [...document.querySelectorAll('main .tc-figure')].map(f => getComputedStyle(f, '::before').content).filter(c => c && c !== 'none').length })`
+const SHOW = `document.querySelector('main .tc-thumbs')?.scrollIntoView({ block: 'nearest' })`
 
 async function freePort() {
   return new Promise((resolve, reject) => { const s = net.createServer(); s.unref(); s.on('error', reject); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)) }) })
@@ -28,7 +29,8 @@ try {
   const page = await browser.page()
   await page.send('Runtime.enable'); await page.send('Page.enable')
   const ev = async x => { const r = await page.send('Runtime.evaluate', { expression: x, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text); return r.result.value }
-  const until = async (test, ms = 5000) => { for (let t = 0; t < ms; t += 100) { const s = await ev(STATE); if (test(s)) return s; await sleep(100) } return ev(STATE) }
+  // (the thumbnails load lazily: below the fold of the card's column they would not come at all, so they are scrolled into view)
+  const until = async (test, ms = 5000) => { for (let t = 0; t < ms; t += 100) { await ev(SHOW); const s = await ev(STATE); if (test(s)) return s; await sleep(100) } return ev(STATE) }
   await page.send('Page.navigate', { url: `http://127.0.0.1:${port}/card/${CARD}?mock=1` })
   const first = await until(s => s.imgs > 0 && s.shown === s.imgs, 15000)
   if (!first.imgs || first.shown !== first.imgs) bad.push(`the card's pictures did not come: ${JSON.stringify(first)}`)
