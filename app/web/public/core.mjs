@@ -71,7 +71,7 @@ function receive(m) {
     case 'busy': case 'taken':
       for (const url of urls.values()) URL.revokeObjectURL(url)
       urls.clear(); asked.clear()
-      letGo()
+      leaveCore()
       view = fold.emptyView(); lastFocus = ''
       emit(m.t, null); return
     case 'failed': emit('failed', new Error(m.error)); return
@@ -79,7 +79,7 @@ function receive(m) {
 }
 
 /** This page leaves its worker: a dedicated one ends, the shared one closes this page's window. */
-function letGo() {
+function leaveCore() {
   if (!worker) return
   try { port.postMessage({ t: 'close' }) } catch {}
   if (port !== worker) { try { port.close() } catch {} } else worker.terminate()
@@ -128,7 +128,7 @@ export async function startCore(config, { take = false, slot = SLOT } = {}) {
 }
 /** Stops the core for this tab (a dedicated worker gives the device up; the shared one closes this window, and the
  *  device with the last). */
-export function stopCore() { letGo() }
+export function stopCore() { leaveCore() }
 
 /** One event of the contract (core/client/src/app/event.rs), with the bytes its JSON names by index. */
 export function send(event, blobs = []) { port?.postMessage({ t: 'event', event, blobs }) }
@@ -181,7 +181,7 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => send({ type: document.visibilityState === 'visible' ? 'foreground' : 'background' }))
   addEventListener('online', () => send({ type: 'net', online: true }))
   addEventListener('offline', () => send({ type: 'net', online: false }))
-  addEventListener('pagehide', () => { letGo(); globalThis.__trommiCore = null })
+  addEventListener('pagehide', () => { leaveCore(); globalThis.__trommiCore = null })
   addEventListener('pageshow', e => { if (e.persisted) location.reload() })
   let zone = -new Date().getTimezoneOffset()
   setInterval(() => { const z = -new Date().getTimezoneOffset(); if (z !== zone) { zone = z; send({ type: 'zone', utc_offset_min: z }) } }, 60_000)
