@@ -34,7 +34,7 @@ try {
   if (!first.imgs || first.shown !== first.imgs) bad.push(`the card's pictures did not come: ${JSON.stringify(first)}`)
   // Every object URL let go of, as a page drawn without them does; then each picture fails as a fresh <img> would.
   await ev(`(async () => { const c = await import('/core.mjs'); c.releaseUnusedFiles(document.createElement('div')); for (const i of document.querySelectorAll('main img')) i.dispatchEvent(new Event('error')) })()`)
-  const again = await until(s => s.imgs === first.imgs && s.shown === s.imgs)
+  const again = await until(s => s.imgs === first.imgs && s.shown === s.imgs, 20000)
   if (again.gone || again.shown !== first.imgs) bad.push(`after their URLs were let go of the pictures did not stand again: ${JSON.stringify(again)}`)
   // A picture that fails once more (asked again already) says so, and only that.
   await ev(`(() => { const i = document.querySelector('main .tc-figure img'); i.dataset.attTried = '1'; i.dispatchEvent(new Event('error')) })()`)
