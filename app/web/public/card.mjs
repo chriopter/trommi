@@ -13,7 +13,7 @@
 // form with its own address (formaction), so what was written goes along. The controller "card" adds the pencil for
 // a note on one option, the draft kept while typing, Enter that sends, files that are pasted or dropped, and the pen's
 // arrow from the picture to its option. Styles: card.css.
-import { Controller, PLUS, avatar, fileTile, isTyping, letterKeysOn, LATER_TAG, SETTLED, WORDS, agoSpan, arrowStrokes, controller, doodleSvg, el, fileSrc, finalSign, html, linkNote, raw, revokeTiles, rich, sideWays, sk, sketch, useFiles, whoOf } from './ui.mjs'
+import { Controller, PLUS, avatar, fileTile, isTyping, letterKeysOn, LATER_TAG, SETTLED, WORDS, agoSpan, arrowStrokes, controller, doodleSvg, el, fileSrc, finalSign, html, linkNote, markArt, raw, revokeTiles, rich, sideWays, sk, sketch, useFiles, whoOf } from './ui.mjs'
 const icon = d => raw(`<svg viewBox="0 0 24 24" class="tc-icon" aria-hidden="true"><path d="${d}"/></svg>`)
 const ARROW_L = 'M19 12H5M11 6l-6 6 6 6', ARROW_R = 'M5 12h14M13 6l6 6-6 6', TICK = 'M5 12.5l4.5 4.5L19 7.5', PLAY = 'M9 6.5v11l9-5.5z', GROW = 'M14 5h5v5M19 5l-6 6M10 19H5v-5M5 19l6-6'
 // Drawn with the pen, for the round buttons above a card: an arrow to the left and one to the right, a cross, three
@@ -119,12 +119,20 @@ ${all > 1 || others.length ? html`<div class="tc-thumbs"><span class="tc-roll">$
 /** The strip above the title while the card's session works on it (CardWorkView): its drawing redrawing itself,
  *  "<session> is working on it", its status line and how long ago that was said, the pen line under it. */
 const workStrip = w => (w ? html`<div class="tc-work" role="status">${avatar(whoOf(w), { crown: false, working: true })}<span class="tc-work-words"><b>${w.says.en}</b><span>${w.words.en}${w.at_ms ? html` · ${agoSpan(w.at_ms, 'ago')}` : ''}</span></span>${PEN_RUN}</div>` : '')
+/** Who the card comes from (CardView.from), as the line above its title: the session's drawing, where it stands
+ *  ("Team › Session", FromView.path), the helper it comes from; a click opens that session's chat. */
+export function sender(card, base) {
+  const f = card.from
+  if (!f) return ''
+  const who = whoOf(f), path = (f.path?.length ? f.path : [f.name]).join(' › ')
+  return html`<a class="tc-from" data-nav href="${base}/chat/${encodeURIComponent(f.session_id)}" style="--hue:${who.hue}" title="Open the chat of ${who.name}" aria-label="From ${path}${f.helper ? `, ${f.helper.en}` : ''}"><span class="tc-from-mark" aria-hidden="true">${markArt({ ...who, crowned: false })}</span><span class="tc-from-path">${path}</span>${f.helper ? html`<i aria-hidden="true">·</i><span class="tc-from-helper">${f.helper.en}</span>` : ''}</a>`
+}
 /** The words of the left column (#card-lead-<id>). old: a version before (VersionView), read only. */
 function cardLead(card, base, old = null, tools = '') {
   const text = old ? old.text ?? '' : card.text
   return html`<div class="tc-lead focus-lead" id="card-lead-${card.id}">
 ${card.knock ? html`<span class="inbox-tab tc-knock">${sk('knock')}${card.knock.en}</span>` : ''}
-${old ? '' : workStrip(card.work)}<div class="tc-head"><h1 class="tc-title" id="card-title-${card.id}">${old?.title || card.title}</h1>${tools}</div>
+${old ? '' : workStrip(card.work)}${sender(card, base)}<div class="tc-head"><h1 class="tc-title" id="card-title-${card.id}">${old?.title || card.title}</h1>${tools}</div>
 ${old ? html`<p class="tc-meta">version ${old.n}, as it was</p>` : ''}
 ${text ? html`<div class="tc-text">${rich(text)}</div>` : ''}${card.more && !old ? html`<a class="tc-more-text" href="#card-whole-${card.id}">More in the comments ↓</a>` : ''}
 </div>`
