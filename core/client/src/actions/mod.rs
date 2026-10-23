@@ -101,6 +101,11 @@ pub enum Action {
     },
 
     // ---- talk ----
+    /// A new chat with a chat agent (`SidebarView::new_chat`): the ask goes to that agent through the session named,
+    /// which starts the new chat on its computer.
+    NewChat {
+        session_id: String,
+    },
     /// A line to a session's agent (or to a card's chat).
     Write {
         session_id: String,

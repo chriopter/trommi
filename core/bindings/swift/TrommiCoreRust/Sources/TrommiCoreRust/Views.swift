@@ -585,6 +585,9 @@ public enum CoreView {
   public struct SidebarView: Codable, Hashable, Sendable {
     /// The teams, in the menu's order. A room without teams has one: "Personal".
     public var teams: [TeamTab]
+    /// "New chat with …" under the + at the top (the phone: + at Chats): the agents that start a new chat when asked (a
+    /// chat agent such as Hermes says so in its profile, `chats`), each with its name and drawing. Empty: no such agent.
+    public var newChat: [NewChatView]
     /// The person's picture where none is uploaded: the account e-mail's first letter, upper case (the phone's top
     /// left, the sidebar's foot); empty until the account is read: the shell draws a plain figure.
     public var me: String
@@ -622,8 +625,9 @@ public enum CoreView {
     /// Under a search that finds no chat: so it says.
     public var foundNone: Text?
 
-    public init(teams: [TeamTab] = [], me: String = "", home: TeamTab = TeamTab(), sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], deskAll: Bool = false, found: [ChatGroupView] = [], foundNone: Text? = nil) {
+    public init(teams: [TeamTab] = [], newChat: [NewChatView] = [], me: String = "", home: TeamTab = TeamTab(), sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], deskAll: Bool = false, found: [ChatGroupView] = [], foundNone: Text? = nil) {
       self.teams = teams
+      self.newChat = newChat
       self.me = me
       self.home = home
       self.sessions = sessions
@@ -643,6 +647,7 @@ public enum CoreView {
 
     enum CodingKeys: String, CodingKey {
       case teams = "teams"
+      case newChat = "new_chat"
       case me = "me"
       case home = "home"
       case sessions = "sessions"
@@ -663,6 +668,7 @@ public enum CoreView {
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.teams = try c.decode([TeamTab].self, forKey: .teams)
+      self.newChat = try c.decodeIfPresent([NewChatView].self, forKey: .newChat) ?? []
       self.me = try c.decodeIfPresent(String.self, forKey: .me) ?? ""
       self.home = try c.decodeIfPresent(TeamTab.self, forKey: .home) ?? TeamTab()
       self.sessions = try c.decode([SessionRowView].self, forKey: .sessions)
@@ -683,6 +689,7 @@ public enum CoreView {
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(teams, forKey: .teams)
+      if !newChat.isEmpty { try c.encode(newChat, forKey: .newChat) }
       try c.encode(me, forKey: .me)
       try c.encode(home, forKey: .home)
       try c.encode(sessions, forKey: .sessions)
@@ -3470,6 +3477,46 @@ public enum CoreView {
       try c.encode(settles, forKey: .settles)
       try c.encodeIfPresent(tip, forKey: .tip)
       try c.encode(says, forKey: .says)
+    }
+  }
+
+  /// An agent that starts a new chat when asked (`SidebarView::new_chat`): the session the ask goes to, its name and
+  /// drawing.
+  public struct NewChatView: Codable, Hashable, Sendable {
+    public var sessionId: String
+    /// Its short id (what draws it with its hue, as its row).
+    public var slug: String
+    public var name: Text
+    public var mark: String
+
+    public init(sessionId: String = "", slug: String = "", name: Text = Text(), mark: String = "") {
+      self.sessionId = sessionId
+      self.slug = slug
+      self.name = name
+      self.mark = mark
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case sessionId = "session_id"
+      case slug = "slug"
+      case name = "name"
+      case mark = "mark"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.sessionId = try c.decode(String.self, forKey: .sessionId)
+      self.slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
+      self.name = try c.decode(Text.self, forKey: .name)
+      self.mark = try c.decode(String.self, forKey: .mark)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(sessionId, forKey: .sessionId)
+      try c.encode(slug, forKey: .slug)
+      try c.encode(name, forKey: .name)
+      try c.encode(mark, forKey: .mark)
     }
   }
 

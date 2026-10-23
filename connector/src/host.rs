@@ -25,6 +25,19 @@ pub fn set_preset(p: &'static Preset) {
     *HOST.lock().unwrap() = p;
 }
 
+/// The program the connector was started for (`TROMMI_HOST`, set by the Hermes add-on), if it names a preset.
+pub fn from_env() {
+    if let Some(p) = std::env::var("TROMMI_HOST").ok().and_then(|h| crate::preset::by_id(&h)) {
+        set_preset(p);
+    }
+}
+
+/// Whether the Hermes add-on runs this connector (`connector/hermes/`): it drives the turn (working, live text, the
+/// answer) through the connector's own notifications.
+pub fn is_hermes() -> bool {
+    preset().id == crate::preset::HERMES.id
+}
+
 /// Whether Codex runs this connector.
 pub fn is_codex() -> bool {
     preset().id == crate::preset::CODEX.id

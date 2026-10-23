@@ -619,7 +619,7 @@ export function topbar(vm, base, isDesk, session = null) {
   return html`<header class="topbar"><div class="brand">
 <h1 class="deskpill"><a href="${base}/" data-nav draggable="false" class="desk-go" id="desk-go" title="${place}"${isDesk ? raw(' aria-current=""') : ''}><span class="desk-lamp" id="desk-lamp">${deskLamp(vm)}</span>${BELL}${teamPlace(vm)}</a>${teamChevron}
 <button type="button" class="brand-open" id="brand-menu"${s ? html` data-session="${s.id}"` : ''} aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" aria-label="Where you are: ${place}. Menu: teams, places, settings" title="Menu (Ctrl K)">${raw(String(BELL).replace('class="brand-mark"', 'class="brand-mark open-mark"'))}<span class="open-me" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12.1 6.3Q14.6 6.4 14.7 9Q14.5 11.6 12 11.7Q9.5 11.5 9.4 9Q9.5 6.4 12.1 6.3Z"/><path d="M6.6 18.6Q7.6 14.2 12 14.1Q16.4 14.2 17.4 18.6"/></svg></span><b class="open-word">Trommi</b>${pillPlace(vm, s)}<span class="conn open-conn" id="conn" data-state="connecting" role="status"><i aria-hidden="true"></i><span id="conn-text" class="tc-sr">Connecting</span></span><span class="brand-fold">${sk('unfold')}</span></button>${inDemo() ? html`<a class="pill-demo" href="${base}/screens?mock=1" target="_blank" rel="noopener" title="Demo">Demo · All screens</a>` : ''}</h1>
-<div class="side-top"><a class="side-home" href="${base}/?home" data-nav draggable="false" title="Desk" aria-label="Desk: every team's questions"${vm?.sidebar?.desk_all && isDesk ? raw(' aria-current="page"') : ''}>${BELL}</a><span class="side-tools"><a class="side-tool" href="${base}/stacks/off" data-nav draggable="false" title="Search" aria-label="Search">${sk('search')}</a><span class="side-add"><button type="button" class="side-tool" id="side-add" title="Add" aria-label="Add: an agent, a team, a scribble" aria-haspopup="menu" aria-expanded="false" aria-controls="side-add-menu">${PLUS}</button><span class="side-add-menu" id="side-add-menu" role="menu" hidden><form method="post" action="/pair"><input type="hidden" name="role" value="computer"><button type="submit" role="menuitem">${sk('laptop')}<span>Add agent</span></button></form><button type="button" role="menuitem" id="side-add-team">${sk('desk')}<span>Add team</span></button><form class="side-add-form" id="side-add-team-form" hidden><input maxlength="40" placeholder="Name of the new team" aria-label="Name of the new team" autocomplete="off"></form><a role="menuitem" href="${base}/scribble-board" data-nav draggable="false">${sk('pen')}<span>Scribble</span></a></span></span></span></div>
+<div class="side-top"><a class="side-home" href="${base}/?home" data-nav draggable="false" title="Desk" aria-label="Desk: every team's questions"${vm?.sidebar?.desk_all && isDesk ? raw(' aria-current="page"') : ''}>${BELL}</a><span class="side-tools"><a class="side-tool" href="${base}/stacks/off" data-nav draggable="false" title="Search" aria-label="Search">${sk('search')}</a><span class="side-add"><button type="button" class="side-tool" id="side-add" title="Add" aria-label="Add: an agent, a team, a scribble" aria-haspopup="menu" aria-expanded="false" aria-controls="side-add-menu">${PLUS}</button><span class="side-add-menu" id="side-add-menu" role="menu" hidden>${newChatItems(vm)}<form method="post" action="/pair"><input type="hidden" name="role" value="computer"><button type="submit" role="menuitem">${sk('laptop')}<span>Add agent</span></button></form><button type="button" role="menuitem" id="side-add-team">${sk('desk')}<span>Add team</span></button><form class="side-add-form" id="side-add-team-form" hidden><input maxlength="40" placeholder="Name of the new team" aria-label="Name of the new team" autocomplete="off"></form><a role="menuitem" href="${base}/scribble-board" data-nav draggable="false">${sk('pen')}<span>Scribble</span></a></span></span></span></div>
 ${menuDoors(vm, base)}
 <button type="button" class="rail-tag" aria-haspopup="menu" aria-controls="brand-doors" title="Switch team" aria-label="Team ${place}: switch teams"><span class="rail-tag-string" aria-hidden="true"></span><span class="rail-tag-paper"><b>${tagLines(place).map(l => html`<span>${l}</span>`)}</b></span></button>
 </div></header>`
@@ -713,8 +713,17 @@ const CHAT_KEY = 'trommi-last-chat'
 export function chatOpened(slug) { try { localStorage.setItem(CHAT_KEY, slug) } catch {} }
 const lastChat = vm => { let id = null; try { id = localStorage.getItem(CHAT_KEY) } catch {} ; return sessionOf(vm, id)?.slug ?? vm.sidebar.sessions.find(r => r.crowned)?.slug ?? vm.sidebar.sessions[0]?.slug ?? null }
 /** The page of chats: the sessions of the team in view, as the sidebar has them. */
+/** "New chat with …" (SidebarView.new_chat): a row per chat agent that starts a new chat when asked, its drawing and
+ *  name; under the + at the top, and on the phone under the + at Chats. Nothing without such an agent. */
+const newChatItems = vm => (vm?.sidebar?.new_chat?.length
+  ? html`<span class="side-add-head" role="presentation">New chat with</span>${vm.sidebar.new_chat.map(n => html`<button type="button" role="menuitem" class="side-new-chat" data-session="${n.session_id}">${avatar(whoOf({ id: n.slug, mark: n.mark }), { crown: false })}<span>${n.name.en}</span></button>`)}<hr class="desk-move-rule">`
+  : '')
+
 export function chatsMain(vm, base) {
-  return html`<main id="chats" class="chats-page" aria-label="Chats"><h1 class="chats-h">Chats</h1><ul class="chats-list">${vm.sidebar.sessions.map(a => html`<li id="chat-${a.id}"><a class="chats-row" data-nav draggable="false" href="${base}/chat/${encodeURIComponent(a.slug)}">${avatar(whoOf(a), { crown: false })}<span class="chats-words"><b>${a.name.en}</b><small>${a.cap?.word.en ?? ''}</small></span><span class="chats-side">${a.cards ? html`<i class="pm-n">${a.cards}</i>` : ''}</span></a></li>`)}</ul></main>`
+  const add = vm.sidebar.new_chat?.length
+    ? html`<span class="chats-add"><button type="button" class="chats-add-go" id="chats-add" aria-haspopup="menu" aria-expanded="false" aria-controls="chats-add-menu" aria-label="New chat" title="New chat">${PLUS}</button><span class="chats-add-menu" id="chats-add-menu" role="menu" hidden>${newChatItems(vm)}</span></span>`
+    : ''
+  return html`<main id="chats" class="chats-page" aria-label="Chats"><h1 class="chats-h">Chats${add}</h1><ul class="chats-list">${vm.sidebar.sessions.map(a => html`<li id="chat-${a.id}"><a class="chats-row" data-nav draggable="false" href="${base}/chat/${encodeURIComponent(a.slug)}">${avatar(whoOf(a), { crown: false })}<span class="chats-words"><b>${a.name.en}</b><small>${a.cap?.word.en ?? ''}</small></span><span class="chats-side">${a.cards ? html`<i class="pm-n">${a.cards}</i>` : ''}</span></a></li>`)}</ul></main>`
 }
 
 /** The phone's top line: in a chat, back to the chats and its title (current: the session, its key or slug);
@@ -1085,6 +1094,18 @@ export function register(t) {
   // The + at the top: Add agent (the invite of a computer), Add team (a name, then AddTeam), Scribble.
   document.addEventListener('click', e => {
     const el = e.target instanceof Element ? e.target : null, menu = $('#side-add-menu'), plus = $('#side-add')
+    // "New chat with …" (the + at the top, the phone's + at Chats): the ask goes to that agent, which starts the chat
+    // on its computer
+    const sheet = $('#chats-add-menu'), ask = el?.closest('.side-new-chat')
+    if (ask) {
+      T?.act({ do: 'new_chat', session_id: ask.dataset.session })
+      if (menu) menu.hidden = true
+      if (sheet) sheet.hidden = true
+      showToast({ head: `Starting a new chat with ${ask.textContent.trim()} …` })
+      return
+    }
+    if (el?.closest('#chats-add') && sheet) { sheet.hidden = !sheet.hidden; $('#chats-add').setAttribute('aria-expanded', String(!sheet.hidden)); return }
+    if (sheet && !sheet.hidden && !el?.closest('#chats-add-menu')) sheet.hidden = true
     if (!menu || !plus) return
     const shut = () => { menu.hidden = true; plus.setAttribute('aria-expanded', 'false'); const f = $('#side-add-team-form'); if (f) f.hidden = true }
     if (el?.closest('#side-add')) { const open = menu.hidden; shut(); menu.hidden = !open; plus.setAttribute('aria-expanded', String(open)); return }
