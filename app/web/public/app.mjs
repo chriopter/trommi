@@ -635,9 +635,13 @@ function createRouter({ board, onPage = () => {}, beforeVisit = () => {} }) {
   }
   const saveScroll = () => { try { history.replaceState({ ...(history.state ?? {}), trommi: true, scroll: window.scrollY }, '') } catch {} }
   /** The page in view, drawn again from the view model and morphed into the body (after the core's render). */
+  let refreshing = 0
   async function refresh() {
     if (!page) return
-    const res = await board.request({ method: 'GET', path: page.path, headers: { accept: 'text/html' } })
+    const path = page.path, mine = ++refreshing, seen = visiting
+    const res = await board.request({ method: 'GET', path, headers: { accept: 'text/html' } })
+    // (a visit or a newer drawing began meanwhile: this markup is of before, its files perhaps let go of already)
+    if (mine !== refreshing || seen !== visiting || page?.path !== path) return
     if (res.kind === 'page') { const back = keepMenu(); paint(page.path, res.opts, { morph: true }); back() }
     else if (res.kind === 'redirect') visit(res.to, { action: 'replace' })
   }
@@ -1075,7 +1079,16 @@ async function boot() {
   defineTurbo()
   watchPwa()
   // A picture that does not come (gone from the hub, a file that does not open) leaves its place as it was: a tile.
-  addEventListener('error', e => { const el = e.target; if (el instanceof HTMLImageElement && el.closest('main, .pad') && !el.closest('[data-keep-broken]')) el.replaceWith(attGone(el)) }, true)
+  // Not one without an address yet (its file is on its way; the page is drawn again with it), and not at once one
+  // whose object URL was let go of while markup drawn before still named it: its file is asked for again, once.
+  addEventListener('error', e => {
+    const el = e.target
+    if (!(el instanceof HTMLImageElement) || !el.closest('main, .pad') || el.closest('[data-keep-broken]')) return
+    const src = el.getAttribute('src') ?? ''
+    if (!src) return
+    if (src.startsWith('blob:') && !el.dataset.attTried) { el.dataset.attTried = '1'; if (core.fetchAgain(src)) { el.removeAttribute('src'); return } }
+    el.replaceWith(attGone(el))
+  }, true)
   // The demo room: ?mock=1 (the fixture); remembered for this tab; ?mock=0 ends it.
   const params = new URLSearchParams(location.search)
   if (params.has('mock')) { if (params.get('mock') === '0') sessionStorage.removeItem('trommi-mock'); else sessionStorage.setItem('trommi-mock', params.get('mock') || '1') }
