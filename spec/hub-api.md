@@ -32,7 +32,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | `POST /v1/groups/{group}/reject` | `{ n }` | 14.7 |
 | `POST /v1/groups/{group}/archive` | | 5.2.10; human devices, and a helper session's opener for that helper session |
 | `GET /v1/groups/{group}/log?after=&limit=&kind=commit` | → `{ items: [ { n, change, epoch, at, kind: "commit", bytes, recovery_auth? } \| { n, change, epoch, at, kind: "message", bytes } ], more }` | the ordered log (5.4.1, 7.0); `gone` when `after` is older than what is kept |
-| `POST /v1/groups/{group}/messages` | `{ epoch, message, relay? }` → `{ n }` | application message; `relay: true`: passed on, not stored (7.2); `wrong-epoch` |
+| `POST /v1/groups/{group}/messages` | `{ epoch, message, relay? }` → `{ n }` | application message; `relay: true`: passed on to the human devices, not stored: in the room group from a human device (7.2), in a session group from its agent or helper device (7.5); `forbidden` otherwise; `wrong-epoch` |
 | `GET /v1/groups/{group}/info?epoch=` | → `{ epoch, group_info }` | without `epoch`: the current one; with it exactly that epoch (`not-found`). Kept: the current one and epoch 0 (the founding) of every group, every epoch that still lacks a `SealedKey` with a `mac` (8.3), every epoch of the room group |
 | `GET /v1/welcomes?after=` | → `[ { id, group_id, welcome, at } ]` | for the asking device, oldest first, after the one numbered `after`; at most 8 MiB of Welcomes (point 22); deleted when it has joined |
 | `PUT /v1/key-packages` | `{ single_use: [..], last_resort? }` → `{ unused }` | 14.2; `bad-key-package` |

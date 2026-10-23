@@ -190,7 +190,7 @@ export interface CommitSummary {
 }
 
 export type ReceivedKind =
-  | 'keys' | 'strokePiece' | 'workTrail' | 'recoveryAuth' | 'recoveryAuthConflict' | 'dropped' | 'newerVersion'
+  | 'keys' | 'strokePiece' | 'workTrail' | 'answerPreview' | 'recoveryAuth' | 'recoveryAuthConflict' | 'dropped' | 'newerVersion'
 
 /** An application message as its receiver takes it. The fields are filled as `kind` says. */
 export interface ReceivedMessage {

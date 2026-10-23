@@ -249,8 +249,14 @@ impl Board {
             }
             Report::Here => m.apply_here(c, now),
             Report::Relay(received) => {
-                if let Received::StrokePiece { from, board, piece } = &**received {
-                    m.apply_stroke_piece(&hex(from.as_bytes()), &hex(board.as_bytes()), piece, now, c);
+                match &**received {
+                    Received::StrokePiece { from, board, piece } => {
+                        m.apply_stroke_piece(&hex(from.as_bytes()), &hex(board.as_bytes()), piece, now, c);
+                    }
+                    Received::AnswerPreview { from, turn, number, preview } => {
+                        m.apply_answer_preview(&hex(from.as_bytes()), &hex(turn.as_bytes()), *number, preview, now, c);
+                    }
+                    _ => {}
                 }
             }
             Report::Founded(_) | Report::LinkJoin(_) | Report::InviteRequest { .. } | Report::FileEvicted { .. } | Report::Alert(_) | Report::Connection(_) | Report::Accepted { .. } | Report::Refused { .. } | Report::Blocked(_) | Report::SessionsJoined { .. } | Report::RoomJoin(_) | Report::Answer(_) | Report::Stopped(_) | Report::Command(_) | Report::Lease(_) | Report::Resealed { .. } => {}

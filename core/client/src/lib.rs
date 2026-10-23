@@ -40,6 +40,7 @@ pub mod files;
 pub mod helpers;
 pub mod hub;
 pub mod knowledge;
+pub mod live_answer;
 pub mod wakeups;
 pub mod machines;
 pub mod model;

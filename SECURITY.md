@@ -102,6 +102,12 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   again on that conversation. A woken run has the rights the program's own settings give it, no more: Claude Code
   asks you for each permission on a yes/no card (no answer is no); Codex runs as its own settings say. The woken
   run takes the wakeup from the board as it stands then, so a cancel made meanwhile holds.
+- While a chat agent (Hermes) writes its answer, your devices show it growing: once a second while it answers, its
+  connector sends the answer so far, end-to-end encrypted in the session's group, relayed by the hub to your devices
+  and never stored. Every preview has the same padded size and comes at the same pace whether the words changed or
+  not, so the hub learns nothing of the answer's length or wording. What it does learn: when the agent's answering
+  starts and ends, to the second (its lease report already tells it when the agent works), and that this agent
+  streams its answers. Only that session's agent device may send one; your devices drop any other.
 - An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
   are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
   Claude Code's status line (put around one already there), never from their credential files.

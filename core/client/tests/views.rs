@@ -386,3 +386,26 @@ fn render_cost_on_a_large_room() {
     );
     assert!(m.cards.len() >= 21_500);
 }
+
+/// The answer an agent is writing (spec 7.5): its session's page shows it while it is fresh; a newer preview of the
+/// turn replaces it, an older one does not; it goes when it grows stale.
+#[test]
+fn a_session_shows_the_answer_its_agent_is_writing() {
+    use trommi_client_core::live_answer::{encode, SHOWN_MS};
+    let (mut m, now) = demo_room();
+    let lens = Lens { session: Some("fernly-web".into()), ..lens(None) };
+    let id = session::session(&Board::new(&m, &lens, now), "fernly-web").unwrap().id;
+    let agent = m.sessions.get(&id).and_then(|s| s.agent_device_id.clone().or_else(|| s.agent_device_ids.first().cloned())).expect("the agent");
+    let mut change = trommi_client_core::model::change::Change::default();
+    assert!(m.apply_answer_preview(&agent, "t1", 2, &encode("Sonnig, 21"), now, &mut change));
+    assert!(!m.apply_answer_preview(&agent, "t1", 1, &encode("Son"), now, &mut change), "an older one changes nothing");
+    assert!(!m.apply_answer_preview("00", "t1", 3, &encode("not its agent"), now, &mut change));
+    let page = |m: &Model, at: u64| session::session(&Board::new(m, &lens, at), "fernly-web").unwrap().live_answer;
+    assert_eq!(page(&m, now + 1_000), "Sonnig, 21");
+    assert_eq!(page(&m, now + SHOWN_MS), "", "stale");
+    assert!(m.apply_answer_preview(&agent, "t2", 1, &encode(""), now, &mut change), "another turn replaces it");
+    assert_eq!(page(&m, now), "");
+    // a late preview of a turn whose answer came shows nothing
+    m.live_settled.push_back("t9".into());
+    assert!(!m.apply_answer_preview(&agent, "t9", 5, &encode("late"), now, &mut change));
+}

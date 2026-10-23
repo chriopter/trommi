@@ -923,6 +923,9 @@ struct SessionScreen: View {
               .accessibilityLabel(working.says.en).accessibilityHint("Shows what it works on")
               .accessibilityIdentifier("working-face")
           }
+          // (the answer its agent is writing now, spec 7.5: its bubble growing, a caret at its end, until the message
+          //  itself comes)
+          if !page.liveAnswer.isEmpty { AnswerPreviewBubble(text: page.liveAnswer).padding(.top, 10) }
           }
           // (its next wakeup, quiet at the chat's end: "Wakes at 09:00 · …"; a tap opens the page Wakeups)
           if let wake = page.wakeLine {
@@ -1331,6 +1334,31 @@ struct SessionFiles: View {
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
     }
     .presentationDetents([.medium, .large])
+  }
+}
+
+/** The answer an agent is writing (`SessionView.liveAnswer`, spec 7.5): its bubble as the talk draws an agent's, the
+ *  words so far and a caret that blinks (still when motion is reduced). Not read out: the message is, once it comes. */
+struct AnswerPreviewBubble: View {
+  let text: String
+  @Environment(\.accessibilityReduceMotion) private var still
+  @State private var on = true
+  var body: some View {
+    HStack(alignment: .lastTextBaseline, spacing: 2) {
+      Markdown(text: text)
+      RoundedRectangle(cornerRadius: 1).fill(Ink.fg.opacity(on ? 0.55 : 0)).frame(width: 8, height: 17)
+    }
+    .padding(.horizontal, 14).padding(.vertical, 10)
+    .background(UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous).fill(Ink.fg.opacity(0.07)))
+    .accessibilityHidden(true)
+    .accessibilityIdentifier("live-answer")
+    .task {
+      guard !still else { return }
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(500))
+        on.toggle()
+      }
+    }
   }
 }
 

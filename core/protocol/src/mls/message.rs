@@ -43,6 +43,7 @@ const TYPE_KEY_HANDOVER: u8 = 1;
 const TYPE_STROKE_PIECE: u8 = 2;
 const TYPE_WORK_TRAIL: u8 = 3;
 const TYPE_RECOVERY_AUTH: u8 = 4;
+const TYPE_ANSWER_PREVIEW: u8 = 5;
 
 /// The content key of one group and epoch, as a handover carries it.
 #[derive(Debug, PartialEq, Eq)]
@@ -104,6 +105,15 @@ pub enum TrommiMessage {
         /// The JSON step.
         step: Vec<u8>,
     },
+    /// The answer of an agent's running turn as it stands, relayed and never stored (7.5).
+    AnswerPreview {
+        /// The turn.
+        turn: TurnId,
+        /// The preview's number within the turn, from 1: a newer one replaces an older one.
+        number: u32,
+        /// The JSON preview.
+        preview: Vec<u8>,
+    },
     /// The `recovery_mac` of a recovery key, for a human device that does not hold it (7.4).
     RecoveryAuth {
         /// The device it is for, or zeros for all.
@@ -146,6 +156,16 @@ impl Encode for TrommiMessage {
                 writer.u64(*time);
                 writer.opaque(step)?;
             }
+            Self::AnswerPreview {
+                turn,
+                number,
+                preview,
+            } => {
+                writer.u8(TYPE_ANSWER_PREVIEW);
+                writer.value(turn)?;
+                writer.u32(*number);
+                writer.opaque(preview)?;
+            }
             Self::RecoveryAuth {
                 recipient,
                 recovery_hpke_key,
@@ -187,6 +207,11 @@ impl Decode for TrommiMessage {
                 number: reader.u32()?,
                 time: reader.u64()?,
                 step: reader.opaque()?.to_vec(),
+            }),
+            TYPE_ANSWER_PREVIEW => Ok(Self::AnswerPreview {
+                turn: reader.value()?,
+                number: reader.u32()?,
+                preview: reader.opaque()?.to_vec(),
             }),
             TYPE_RECOVERY_AUTH => Ok(Self::RecoveryAuth {
                 recipient: reader.value()?,

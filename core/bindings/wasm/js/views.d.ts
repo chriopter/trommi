@@ -1043,6 +1043,9 @@ export interface SessionView {
   note?: LinkNoteView
   /** What the field says while it is empty. */
   compose: Text
+  /** The answer its agent is writing now, its words so far (spec 7.5): the shells draw it as the agent's message
+   *  growing under its face, until the message itself comes. "" while there is none. */
+  live_answer?: string
   /** "<name> is working": his word was the last, a short while ago. */
   answering?: Text
   /** Its questions that wait for the person (decisions and approvals, never a card to read), as their Desk rows,

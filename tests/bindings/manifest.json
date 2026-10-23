@@ -3767,6 +3767,7 @@
       "keys": "keys",
       "strokePiece": "strokePiece",
       "workTrail": "workTrail",
+      "answerPreview": "answerPreview",
       "recoveryAuth": "recoveryAuth",
       "recoveryAuthConflict": "recoveryAuthConflict",
       "dropped": "dropped",
