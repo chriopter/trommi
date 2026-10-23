@@ -34,6 +34,9 @@ export interface Focus {
    *  chips (`kind` "events"), leaves the helper list out and says "and 2 more" beside the working line. A shell
    *  that draws the full talk (Linux) leaves it false. */
   calm: boolean
+  /** A card's page is a step of one chat's Blitz (its session key or short id): its way on goes only through that
+   *  chat's open cards (`SessionView.pinned`'s order), and when none is left back to the chat. None: the Desk's. */
+  walk_chat?: string
 }
 
 export type Screen =
@@ -1040,7 +1043,8 @@ export interface SessionView {
    *  in the order they came: what its page "Questions" lists as open. */
   waiting?: DeskRowView[]
   /** The calm chat (`Focus.calm`): its open cards pinned right above the field: its questions, the newest first, then
-   *  its cards to read (never a task it still works on); the shells draw them as small cards swiped sideways. */
+   *  its cards to read (never a task it still works on); the shells draw them as small cards swiped sideways. The
+   *  questions leave the talk; each goes once answered or read. */
   pinned?: DeskRowView[]
   /** How many of them (`waiting`), and the way to the first of them. */
   open: number

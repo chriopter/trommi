@@ -1822,7 +1822,7 @@ export function register(t) {
       const back = String(f.get('back') ?? ''), home = /^\/chat\/[^/?#]+$/.test(back) ? back : '/', self = home === '/' ? '' : home
       // (in Blitz every way that leaves the card to its agent or to later goes on to the next question, What?? too)
       const walk = f.has('walk'), onward = ANSWERS.has(what) || what === 'snooze' || what === 'revise' || what === 'what'
-      if (walk && onward) to = next ? `${cardPath(next, self)}?walk=1` : '/'
+      if (walk && onward) to = next ? `${cardPath(next, self)}?walk=1` : home   // (a chat's Blitz: back to the chat)
       else if (ANSWERS.has(what)) to = `${cardPath(card ?? id, self)}?decided=1`
       else if (what === 'snooze' || (what === 'revise' && f.has('next'))) to = next ? cardPath(next, self) : home
       else if (what === 'what' || what === 'revise') to = home

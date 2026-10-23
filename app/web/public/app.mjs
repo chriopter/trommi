@@ -207,10 +207,13 @@ function createBoard({ views }) {
 
 // ---- focus: what the person looks at, for the core ----
 let screenInView = { screen: 'desk' }
+/** A card's page that is a step of one chat's Blitz (/chat/<slug>/card/<n>?walk=1): that chat (Focus.walk_chat). */
+let walkChatInView = null
+const walkChatOf = (pathname, search = '') => { const m = /^\/chat\/([^/]+)\/card\//.exec(pathname); return m && new URLSearchParams(search).has('walk') ? decodeURIComponent(m[1]) : null }
 let boardInView = null
 /** The core hears what is in view: the page's screen, the team, the Scribble Board beside it, whether the window is seen. */
 function sendFocus() {
-  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(deskAll ? { desk_all: true } : {}), ...(openTeams.length ? { open_teams: openTeams } : {}), calm: true })
+  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(deskAll ? { desk_all: true } : {}), ...(openTeams.length ? { open_teams: openTeams } : {}), ...(walkChatInView ? { walk_chat: walkChatInView } : {}), calm: true })
 }
 /** The core's Screen for an address (before the page is drawn: its unit is then in the model). */
 export function screenOf(pathname, search = '') {
@@ -227,9 +230,10 @@ export function screenOf(pathname, search = '') {
 }
 /** The page shows its screen's unit once the core sent it: a visit waits a moment for that render. */
 function focusFor(url) {
-  const s = screenOf(url.pathname, url.search)
-  const same = JSON.stringify(s) === JSON.stringify(screenInView)
+  const s = screenOf(url.pathname, url.search), walk = walkChatOf(url.pathname, url.search)
+  const same = JSON.stringify(s) === JSON.stringify(screenInView) && walk === walkChatInView
   screenInView = s
+  walkChatInView = walk
   if (same) return Promise.resolve()
   sendFocus()
   return new Promise(done => { const stop = core.on('render', () => { stop(); clearTimeout(t); done() }); const t = setTimeout(() => { stop(); done() }, 250) })
@@ -1019,6 +1023,7 @@ async function start({ take = false } = {}) {
   let fixture = null
   if (demo) fixture = await fetch('/demo/fixture.json').then(r => r.json()).catch(() => null)
   screenInView = screenOf(location.pathname, location.search)
+  walkChatInView = walkChatOf(location.pathname, location.search)
   await core.startCore(configOf(fixture), { take })
   sendFocus()
   // A cold worker on a slow line can take long. Never draw an incomplete model; the start screen shows the core's

@@ -199,13 +199,16 @@ const workingFace = (s, base) => (s.working
   : html`<span id="working-face-${s.id}" hidden></span>`)
 /** The quiet line of its next wakeup (SessionView.wake_line): "Wakes at 09:00 · …"; a click opens the page Wakeups. */
 const wakeLine = (s, base) => (s.wake_line ? html`<a class="wake-line" id="wake-line-${s.id}" data-nav href="${base}/wakeups">${sk('snooze')}<span>${s.wake_line.en}</span></a>` : html`<span id="wake-line-${s.id}" hidden></span>`)
-/** The calm chat's open cards pinned right above the field (SessionView.pinned: its questions, the newest first, then
- *  its cards to read): small cards side by side, swiped sideways; each opens its card. */
+/** The calm chat's open cards above the field (SessionView.pinned: its questions, the newest first, then its cards to
+ *  read) as one stack: the first on top, the others as sheets behind it, "+N" beside it. A tap starts this chat's
+ *  Blitz (?walk=1: Focus.walk_chat), one card after another, then back to the chat. */
 function pinnedCards(s, base) {
   const list = Array.isArray(s.pinned) ? s.pinned.filter(w => w?.id) : []
   if (!list.length) return html`<div class="pinned-cards" id="pinned-${s.id}" hidden></div>`
-  const read = w => w.kind === 'info'
-  return html`<div class="pinned-cards" id="pinned-${s.id}" role="region" aria-label="Open in this chat"><div class="pinned-track">${list.map((w, i) => html`<a class="pinned-tile${read(w) ? ' is-read' : ''}" data-nav href="${sessionPath(s, base)}/card/${encodeURIComponent(w.number || w.id)}"><em>${sk(read(w) ? 'page' : 'knock')}${read(w) ? 'To read' : 'Question'} · ${i + 1} of ${list.length}</em><strong>${w.title}</strong>${w.words ? html`<span>${w.words}</span>` : ''}</a>`)}</div></div>`
+  const [top] = list, n = list.length, read = top.kind === 'info'
+  const href = `${sessionPath(s, base)}/card/${encodeURIComponent(top.number || top.id)}?walk=1`
+  const behind = Math.min(n - 1, 2)
+  return html`<div class="pinned-cards" id="pinned-${s.id}" role="region" aria-label="Open in this chat"><a class="st-stack" data-nav href="${href}" aria-label="${n === 1 ? top.title : `${top.title}, and ${n - 1} more: one after another`}">${behind >= 2 ? raw('<i class="st-sheet is-2"></i>') : ''}${behind >= 1 ? raw('<i class="st-sheet is-1"></i>') : ''}<span class="st-top${read ? ' is-read' : ''}"><em>${sk(read ? 'page' : 'knock')}${read ? 'To read' : 'Question'}</em><strong>${top.title}</strong>${top.words ? html`<span>${top.words}</span>` : ''}</span></a>${n > 1 ? html`<a class="st-more" data-nav href="${href}" aria-hidden="true" tabindex="-1">+${n - 1}</a>` : ''}</div>`
 }
 /** "N open": the questions of this session that wait, and the way to the first of them. */
 const sessionOpen = (s, base) => (s.open ? html`<a class="open-jump" id="session-open-${s.id}" data-nav href="${s.first_open ? `#msg-${s.first_open}` : `${sessionPath(s, base)}/questions`}"${s.first_open ? raw(' data-turbo="false" data-log-target="open" data-action="log#toOpen"') : ''} aria-label="${s.open_says?.en ?? ''}"><span data-log-target="openText">${s.open_word?.en ?? ''}</span>${ico('down')}</a>` : html`<span id="session-open-${s.id}" hidden></span>`)

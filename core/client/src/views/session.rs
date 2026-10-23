@@ -129,6 +129,28 @@ fn outcome(c: &Card) -> (&'static str, String) {
 }
 
 /// The page of the session `id` (its key, or its short id of the address); none when it is not on the board.
+/// A chat's cards to read that wait on the Desk, the newest first, never a task it still works on.
+fn to_read<'c>(cards: &[&'c Card], on_stack: &HashSet<&str>) -> Vec<&'c Card> {
+    let mut reads: Vec<&Card> = cards
+        .iter()
+        .copied()
+        .filter(|c| waits(c, on_stack) && reads_as_info(c) && !c.is_unsupported() && !super::board::is_loading(c) && c.field("working") != Value::Bool(true))
+        .collect();
+    reads.sort_by_key(|c| std::cmp::Reverse(c.first_envelope_number));
+    reads
+}
+
+/// The Blitz of one chat (`Focus.walk_chat`): its open cards in the order its stack shows them (`SessionView.pinned`):
+/// its questions, the newest first, then its cards to read; none when the chat is not known here.
+pub fn walk_of(b: &Board, id: &str) -> Option<Vec<String>> {
+    let v = page(b, id)?;
+    let idx = b.by_key.get(id).or_else(|| b.by_id.get(id)).copied()?;
+    let cards: Vec<&Card> = b.model.cards.values().filter(|c| b.by_key.get(key_of(&c.session_id, &c.agent_device_id)) == Some(&idx)).collect();
+    let on_stack: HashSet<&str> = b.model.stack.iter().map(String::as_str).collect();
+    let questions = v.waiting.iter().rev().map(|w| w.id.clone()).filter(|id| !id.trim().is_empty());
+    Some(questions.chain(to_read(&cards, &on_stack).into_iter().map(|c| c.object_id.clone())).collect())
+}
+
 pub fn session(b: &Board, id: &str) -> Option<SessionView> {
     let mut v = page(b, id)?;
     piles(b, &mut v);
@@ -541,19 +563,8 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         status_more,
         wake_line: super::wakeups::line(b, &a.row.key),
         working: None,
-        // (the calm chat: its cards to read that wait on the Desk, the newest first, never a task it still works on;
-        //  calm() puts its questions before them)
-        pinned: if b.lens.calm {
-            let mut reads: Vec<&Card> = cards
-                .iter()
-                .copied()
-                .filter(|c| waits(c, &on_stack) && reads_as_info(c) && !c.is_unsupported() && !super::board::is_loading(c) && c.field("working") != Value::Bool(true))
-                .collect();
-            reads.sort_by_key(|c| std::cmp::Reverse(c.first_envelope_number));
-            reads.into_iter().map(|c| card_row(b, c, Some(idx))).collect()
-        } else {
-            Vec::new()
-        },
+        // (the calm chat: its cards to read; calm() puts its questions before them)
+        pinned: if b.lens.calm { to_read(&cards, &on_stack).into_iter().map(|c| card_row(b, c, Some(idx))).collect() } else { Vec::new() },
         has_more,
         earlier: None,
         slug: a.row.id.clone(),
@@ -1106,6 +1117,44 @@ mod tests {
         r.say("b", None, 99, "b", 30 * MIN, msg("Nothing for you."));
         let m = r.model(NOW);
         assert!(session(&Board::new(&m, &calm, NOW), &dev("b")).unwrap().pinned.is_empty());
+    }
+
+    /// One chat's Blitz walks only its own open cards, in its stack's order (questions newest first, then cards to
+    /// read, never a task); a card of another chat is not in it, and once the last is answered the way on is back to
+    /// the chat.
+    #[test]
+    fn a_chats_blitz_walks_only_its_cards() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.session("b", None, true);
+        let history = |n: u64, title: &str| json!([{ "object_version": 1, "envelope_number": n, "sent_at": NOW - 10 * MIN, "object_state": "open", "content": { "title": title } }]);
+        r.card("q-old", "a", "decision", "normal")["versions"] = history(100, "q-old");
+        r.card("q-new", "a", "decision", "normal")["versions"] = history(101, "q-new");
+        r.card("read", "a", "info", "normal")["versions"] = history(102, "read");
+        r.card("task", "a", "info", "normal")["working"] = json!(true);
+        r.card("q-b", "b", "decision", "normal")["versions"] = history(103, "q-b");
+        let m = r.model(NOW);
+        let lens = Lens { calm: true, ..Default::default() };
+        let b = Board::new(&m, &lens, NOW);
+        let walk = walk_of(&b, &dev("a")).unwrap();
+        assert_eq!(walk, ["q-new", "q-old", "read"]);
+        let walk_of_pinned: Vec<String> = session(&b, &dev("a")).unwrap().pinned.iter().map(|w| w.id.clone()).collect();
+        assert_eq!(walk, walk_of_pinned, "the walk is the stack's order");
+        let card = super::super::card::card(&b, "q-new", &walk).unwrap();
+        assert_eq!(card.place.as_ref().map(|p| (p.at, p.of, p.next.clone())), Some((1, 3, Some("q-old".to_string()))));
+        // (the last one answered: the way on is back to the chat)
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.session("b", None, true);
+        r.answered("q-new", "a", NOW - MIN, 112);
+        r.card("q-b", "b", "decision", "normal");
+        let m = r.model(NOW);
+        let lens = Lens { calm: true, walk_chat: Some(dev("a")), ..Default::default() };
+        let b = Board::new(&m, &lens, NOW);
+        let walk = walk_of(&b, &dev("a")).unwrap();
+        assert!(walk.is_empty(), "nothing left in chat a: {walk:?}");
+        let after = super::super::card::card(&b, "q-new", &walk).unwrap().after.unwrap();
+        assert_eq!((after.next.is_none(), after.go.en.as_str()), (true, "Back to the chat"));
     }
 
     /// In the calm chat his answer on a card and the agent's words on it quote the card at the top of the bubble;

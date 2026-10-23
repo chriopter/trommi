@@ -468,7 +468,11 @@ fn after_of(b: &Board, v: &CardView, walk: &[String]) -> Option<AfterView> {
     let (says, go) = if next.is_some() {
         (say("card.next", "Next question", &[]), say("card.next.go", "Next", &[]))
     } else {
-        (say("card.next.none", "That was the last open question.", &[]), say("card.next.done", "All done", &[]))
+        if b.lens.walk_chat.is_some() {
+            (say("card.next.none.chat", "Nothing else waits in this chat.", &[]), say("card.next.chat", "Back to the chat", &[]))
+        } else {
+            (say("card.next.none", "That was the last open question.", &[]), say("card.next.done", "All done", &[]))
+        }
     };
     Some(AfterView { next, says, go })
 }

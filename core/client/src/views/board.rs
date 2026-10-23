@@ -45,6 +45,8 @@ pub struct Lens {
     pub session: Option<String>,
     /// The card whose page is in view: its unit is made.
     pub card: Option<String>,
+    /// That card's page is a step of this chat's Blitz (`Focus.walk_chat`), not of the Desk's.
+    pub walk_chat: Option<String>,
     /// The page Off your mind is in view, with the search's words: its unit is made.
     pub off: Option<String>,
     /// The gallery of Artifacts is in view.
@@ -604,7 +606,9 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
         view.sessions.insert(s.id.clone(), s);
     }
     view.cards.clear();
-    if let Some(c) = lens.card.as_deref().and_then(|id| super::card::card(&b, id, &view.desk.stack)) {
+    // (a step of one chat's Blitz walks that chat's open cards, else the Desk's)
+    let walk = lens.walk_chat.as_deref().and_then(|s| super::session::walk_of(&b, s)).unwrap_or_else(|| view.desk.stack.clone());
+    if let Some(c) = lens.card.as_deref().and_then(|id| super::card::card(&b, id, &walk)) {
         view.cards.insert(c.id.clone(), c);
     }
     // (and when a session's link, red hand or status line changes by the clock: status.rs `recheck_at`)
