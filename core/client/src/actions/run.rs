@@ -151,6 +151,13 @@ impl Doing<'_> {
             }
             Action::DecideAgain { card_id } => self.decide_again(action, card_id),
             Action::Verdict { request_id, allow } => self.verdict(action, request_id, *allow),
+            Action::NewChat { session_id } => {
+                let mut content = Map::new();
+                // (an agent that cannot start one reads this as a line; one that can takes `new_chat`)
+                content.insert("text".into(), json!("Start a new chat with me, please."));
+                content.insert("new_chat".into(), json!({ "v": 1, "nonce": self.sent.local_id() }));
+                self.write(action, Some(session_id), None, content)
+            }
             Action::Write { session_id, card_id, text, attachments, marks, copied_cards } => {
                 let files = self.files_of(attachments)?;
                 let mut content = Map::new();

@@ -30,7 +30,8 @@ retries after a restart; contact times and missing profiles never authorize remo
 1. **The app:** [app.trommi.com](https://app.trommi.com) in any browser. On an iPhone: the public beta on
    TestFlight, [trommi.com/beta](https://trommi.com/beta) (every release of main; the App Store gets reviewed versions
    less often).
-2. **An agent**, on a Linux or macOS computer with Claude Code or Codex. Once per machine:
+2. **An agent**, on a Linux or macOS computer with Claude Code, Codex or Hermes Agent (then `trommi-connector setup
+   hermes`, see Hermes below). Once per machine:
 
    ```sh
    curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh
@@ -59,7 +60,7 @@ The computer-approval release changes the MCP tool contract and needs one client
   message, a card, a file or a key.
 - **Dictation:** the chat field's microphone records, your device checks a Tinfoil enclave's attestation and seals
   the recording to it; the hub relays ciphertext only ([spec/v1.md](spec/v1.md) section 18, [SECURITY.md](SECURITY.md)).
-- **Connector:** one signed program that joins a Claude Code or Codex session to your room.
+- **Connector:** one signed program that joins a Claude Code, Codex or Hermes Agent session to your room.
   What the agent is told: [connector/prompt.md](connector/prompt.md).
 
 <picture>
@@ -466,6 +467,27 @@ run went; you cancel one or give it another time there. The chat shows the next 
 - **Rules** in `core/client/src/wakeups.rs` (guardrails, the clock's tick), the page in
   `core/client/src/views/wakeups.rs` (web `app/web/public/wakeups.mjs`, iPhone `WakeupsScreen.swift`), the clock and the waker in `connector/src/server.rs` and
   `connector/src/wakeups.rs`; spec/v1.md 9.3.8.
+
+</details>
+
+<details>
+<summary><b>Hermes</b> · Trommi as a Hermes platform, a chat per topic</summary>
+
+[Hermes Agent](https://hermes-agent.nousresearch.com) gets Trommi as one of its platforms, like Telegram: the add-on in
+`connector/hermes/` (its README has the details). `trommi-connector setup hermes` writes it into the Hermes home,
+turns it on and configures the platform `trommi`; after `hermes gateway restart`, Hermes connects to Trommi as any
+agent does (Approve a computer). A second Hermes is a Hermes profile with a name of its own:
+`trommi-connector setup hermes --name Einkauf --profile einkauf`.
+
+- **Every Trommi chat is a Hermes chat.** Your message goes to Hermes, and its answer comes back into the same chat,
+  growing while it writes (an answer preview, spec 7.5). The chat shows it working. Its questions for approval come as
+  yes/no cards, and no answer is no.
+- **"New chat with …"** under the + (iPhone: the + menu) starts another chat with that Hermes. Its connector activates
+  itself on the approved computer, without a tap there.
+- **Exact routing.** The board tools are Hermes tools (`trommi_<name>`). A call from a Trommi chat acts in that chat.
+  A call from another conversation of that Hermes (Telegram, cron) acts in its main chat.
+- **One connector per chat.** The add-on starts the connector once per chat and speaks MCP to it. Each holds the key of
+  its chat. The add-on is part of the signed connector release, and a newer connector writes it again when it starts.
 
 </details>
 
