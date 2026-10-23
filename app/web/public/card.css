@@ -1021,4 +1021,8 @@ body:has(.tc-page.is-full) :is(.corner-note-box, .curl, #phone-bar, #agents, .to
 .tc-answer.is-said .tc-ans-foot { margin: 6px 2px 0; }
 .tc-said-more { margin: 2px 2px 0; color: var(--muted); font: 500 var(--t-xs)/1.4 var(--font); }
 .tc-said-more .sketch { width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; }
+/* (right after the answer the way on stands directly under it; opened later, What?? keeps the foot) */
+.tc-or.is-said > .tc-or-pair.is-near { margin-top: var(--s-1); padding-top: 0; }
+.tc-or.is-said > .tc-or-pair.is-near .tc-tile { min-height: 52px; }
+.tc-or.is-said > .tc-or-pair.is-near ~ .tc-said-more { margin-top: var(--s-1); }
 .tc-or-pair .tc-next-tile { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; text-decoration: none; font: 600 var(--t-md)/1 var(--font); }
