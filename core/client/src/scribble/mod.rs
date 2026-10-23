@@ -385,6 +385,8 @@ pub struct Scribble {
     pads: BTreeMap<BoardId, Pad>,
     /// The board in view.
     focus: Option<BoardId>,
+    /// The boards other windows show (`app::windows`): a change of one is shown too.
+    others: Vec<BoardId>,
     asked: BTreeMap<IoId, Asked>,
     /// Something shown changed since the views were made.
     dirty: bool,
@@ -443,6 +445,19 @@ impl Scribble {
         }
     }
 
+    /// The windows' boards: the current window's is the focus, the others' are watched; `thumbs`: a window shows
+    /// every board small. Nothing is marked changed: each window was made with its own.
+    pub fn in_view(&mut self, focus: Option<BoardId>, others: Vec<BoardId>, thumbs: bool) {
+        self.focus = focus;
+        self.others = others;
+        self.thumbs = thumbs;
+    }
+
+    /// Whether a window shows this board.
+    fn shown(&self, board: &BoardId) -> bool {
+        self.focus.as_ref() == Some(board) || self.others.contains(board)
+    }
+
     /// A board to read though it is not in view (a team's delete).
     pub fn read(&mut self, board: BoardId) {
         self.pads.entry(board).or_insert_with(|| Pad::new(board));
@@ -475,7 +490,7 @@ impl Scribble {
         pad.newest_change = pad.newest_change.max(r.change);
         if pad.step == Step::Ready {
             pad.apply(held, now);
-            self.dirty |= self.thumbs || self.focus == Some(board);
+            self.dirty |= self.thumbs || self.shown(&board);
         } else {
             pad.held.insert(r.change, held);
         }
@@ -507,7 +522,7 @@ impl Scribble {
             shape.al = None;
         }
         *at = now;
-        self.dirty |= self.thumbs || self.focus == Some(*board);
+        self.dirty |= self.thumbs || self.shown(board);
     }
 
     /// The hub answered a request of the boards (or the engine gave up on it).
@@ -654,11 +669,11 @@ impl Scribble {
                     pad.apply(item, now);
                 }
                 pad.step = Step::Ready;
-                self.dirty |= self.thumbs || self.focus == Some(*board);
+                self.dirty |= self.thumbs || (self.focus.as_ref() == Some(board) || self.others.contains(board));
             }
             let before = pad.live.len();
             pad.live.retain(|_, (_, at)| now < *at + LIVE_MS);
-            self.dirty |= before != pad.live.len() && self.focus == Some(*board);
+            self.dirty |= before != pad.live.len() && (self.focus.as_ref() == Some(board) || self.others.contains(board));
         }
         if !live {
             return;

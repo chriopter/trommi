@@ -65,7 +65,7 @@ impl<F: FnMut(String) + Send + 'static> Window<F> {
 impl<F: FnMut(String) + Send + 'static> Shell for Window<F> {
     fn show(&mut self, effect: Effect) {
         match effect {
-            Effect::Render { delta } => {
+            Effect::Render { delta, .. } => {
                 if self.view.fold(&delta) {
                     (self.draw)(self.view.json());
                 } else {

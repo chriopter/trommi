@@ -77,7 +77,7 @@ fn no_secret_shown(sim: &Sim, words: &str) {
     for effect in &sim.log {
         let shown = match effect {
             Effect::Log { text, .. } => text.clone(),
-            Effect::Render { delta } => format!("{delta:?}") + &serde_json::to_string(delta).unwrap_or_default(),
+            Effect::Render { delta, .. } => format!("{delta:?}") + &serde_json::to_string(delta).unwrap_or_default(),
             other => format!("{other:?}"),
         };
         assert!(!shown.contains(PASSWORD) && !shown.contains(&format!("{first} ")), "{shown}");
@@ -90,7 +90,7 @@ fn the_password_opens_the_code_and_the_room_is_joined() {
     let words = with_account(&world);
     let mut sim = blank(&world, HUB_URL);
     act(&mut sim, AccountAction::SignIn { email: EMAIL.into(), password: Secret(PASSWORD.into()), hub: None });
-    assert!(sim.log.iter().any(|e| matches!(e, Effect::Render { delta } if format!("{delta:?}").contains("step: \"working\""))), "working is shown");
+    assert!(sim.log.iter().any(|e| matches!(e, Effect::Render { delta, .. } if format!("{delta:?}").contains("step: \"working\""))), "working is shown");
     settle(&world, &mut sim);
     assert_eq!(sim.app.room_join(), Some(RoomJoinStatus::Joined), "{:?}", sim.view.account.problem);
     assert_eq!(sim.view.phase, Phase::Live);

@@ -38,6 +38,7 @@ mod import;
 mod start;
 mod seen;
 mod ways;
+mod windows;
 pub use shared::SHARED_FILE;
 pub mod script;
 pub mod sim;
@@ -231,6 +232,12 @@ pub struct App {
     made_note: Option<String>,
     /// What the Chat list counts as read, kept in the cache (`app::seen`).
     seen: seen::Seen,
+    /// The window events are handled for (`app::windows`), and every window open; the current one's lens, parts
+    /// and rendered view are `lens`, `next_view` and `view`.
+    window: u32,
+    windows: BTreeMap<u32, windows::Window>,
+    /// The current window's views were made during this event: the other windows' are made again too.
+    views_made: bool,
 }
 
 impl Default for App {
@@ -296,6 +303,9 @@ impl App {
             past: past::Past::default(),
             made_note: None,
             seen: seen::Seen::default(),
+            window: 0,
+            windows: BTreeMap::from([(0, windows::Window::default())]),
+            views_made: false,
         }
     }
 
@@ -822,8 +832,26 @@ impl App {
         &self.view
     }
 
-    /// One event in, the effects out. `now_ms` is the shell's clock (ms since 1970).
+    /// One event in, the effects out. `now_ms` is the shell's clock (ms since 1970). For a shell with one window
+    /// (window 0).
     pub fn handle(&mut self, now_ms: u64, event: Event) -> Vec<Effect> {
+        self.handle_in(now_ms, 0, event)
+    }
+
+    /// One event of a window in (`app::windows`): what the person does and looks at is that window's; I/O, the
+    /// clock and the platform are the device's, whichever window names them. Each window gets its own `Render`.
+    pub fn handle_in(&mut self, now_ms: u64, window: u32, event: Event) -> Vec<Effect> {
+        if matches!(event, Event::Focus { .. } | Event::Action { .. } | Event::Foreground | Event::Background | Event::WindowOpened) {
+            self.switch_window(window);
+        }
+        self.views_made = false;
+        let mut out = self.handle_event(now_ms, event, window);
+        let moved = std::mem::take(&mut self.views_made);
+        self.render_others(now_ms, moved, &mut out);
+        out
+    }
+
+    fn handle_event(&mut self, now_ms: u64, event: Event, window: u32) -> Vec<Effect> {
         let mut out = Vec::new();
         if !self.departure_event(now_ms, &event) {
         match event {
@@ -1039,7 +1067,9 @@ impl App {
                     Screen::Scribble { board_id } => Some(board_id.as_str()),
                     _ => focus.board.as_deref(),
                 };
-                self.scribble.focus(board.and_then(crate::scribble::board_in_view));
+                let board = board.and_then(crate::scribble::board_in_view);
+                self.scribble.focus(board);
+                self.this_window().board = board;
                 // (every team's board small: Settings; the team's own on its Desk, for the board tile)
                 let desk = matches!(focus.screen, Screen::Desk) && !focus.desk_all;
                 self.lens.thumbs = matches!(focus.screen, Screen::Settings { .. }) || desk;
@@ -1108,8 +1138,10 @@ impl App {
                 self.lens.card = card;
                 self.lens.off = off;
                 self.stale_views = true;
+                self.this_window().looking = focus.visible;
                 self.seen.looking = focus.visible;
-                self.outside_front(Some(focus.visible), false);
+                self.scribble_windows();
+                self.outside_front(Some(self.any_looking()), false);
             }
             Event::Wake => {
                 self.timer = None;
@@ -1120,6 +1152,8 @@ impl App {
                 }
             }
             Event::Foreground => {
+                let w = self.this_window();
+                (w.front, w.looking) = (true, true);
                 self.seen.looking = true;
                 self.stale_views = true;
                 self.departures.hurry();
@@ -1132,10 +1166,17 @@ impl App {
                 }
             }
             Event::Background => {
+                let w = self.this_window();
+                (w.front, w.looking) = (false, false);
                 self.seen.looking = false;
-                self.outside_front(Some(false), false);
-                self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_background(ctx));
+                // (the app is in the back once no window is in front: another window keeps the stream open)
+                if !self.any_front() {
+                    self.outside_front(Some(false), false);
+                    self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_background(ctx));
+                }
             }
+            Event::WindowOpened => self.stale_views = true,
+            Event::WindowClosed => self.close_window(window),
             Event::Net { online } => {
                 if online { self.departures.hurry(); }
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_net(ctx, online));
@@ -1338,6 +1379,16 @@ impl App {
         if self.stale_views {
             self.outside.due = true;
             self.stale_views = false;
+            self.make_views(now_ms);
+        }
+        self.outside(now_ms, out);
+    }
+
+    /// The current window's views, made from the model and its lens; the files every window names and the earliest
+    /// moment one changes by the clock.
+    fn make_views(&mut self, now_ms: u64) {
+        self.views_made = true;
+        let (wake, mut shown) = if self.demo {
             let (wake, mut shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
             self.next_view.board = self.scribble.focused().map(|b| {
                 let (view, refs) = crate::scribble::model_board(&self.board.model, &b);
@@ -1347,10 +1398,30 @@ impl App {
             self.next_view.thumbs = self.thumbs();
             crate::views::desk::board_tile(&mut self.next_view.desk, self.next_view.thumbs.as_deref());
             self.next_view.settings.logout = crate::views::settings::logout(&self.next_view.settings, true);
-            self.view_wake = wake;
-            self.files.shown(shown, &mut self.next_view.files);
-        }
-        self.outside(now_ms, out);
+            (wake, shown)
+        } else {
+            self.lens.reading = self.board.model.reading;
+            self.lens.talk_waits = self.past.talk_waits(&self.lens, &self.board.model);
+            let (wake, mut shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
+            self.next_view.board = self.scribble.view(&self.board.model);
+            shown.extend(self.scribble.pictures(&self.board.model));
+            self.next_view.thumbs = self.thumbs();
+            crate::views::desk::board_tile(&mut self.next_view.desk, self.next_view.thumbs.as_deref());
+            if let Some(engine) = self.engine.as_ref() {
+                self.next_view.settings.room = Some(engine::feed::hex(engine.room().as_bytes()));
+                self.next_view.settings.hub = Some(engine.hub().to_string());
+            }
+            self.next_view.settings.security = crate::views::settings::security(&self.next_view.settings, self.lens.utc_offset_min);
+            self.next_view.settings.logout = crate::views::settings::logout(&self.next_view.settings, self.demo);
+            self.next_view.settings.team_counts = self.team_counts();
+            self.show_team_deletes();
+            (wake, std::mem::take(&mut shown))
+        };
+        let w = self.this_window();
+        (w.wake, w.shown, w.stale) = (wake, std::mem::take(&mut shown), false);
+        let (shown, wake) = self.windows_shown();
+        self.view_wake = wake;
+        self.files.shown(shown, &mut self.next_view.files);
     }
 
     /// The team in view as the views take it: the one chosen when it is there, else the first (`Board::team`).
@@ -2006,6 +2077,10 @@ impl App {
         if !dropped {
             let mut ctx = engine::Ctx { now: now_ms, next_id: &mut self.next_id, out };
             self.past.tend(&self.lens, &self.board.model, engine, &mut ctx);
+            // (and what the other windows' pages need)
+            for (_, w) in self.windows.iter().filter(|(id, _)| **id != self.window) {
+                self.past.tend(w.lens(), &self.board.model, engine, &mut ctx);
+            }
             let (off_reading, off_hub_more) = self.past.settled_state();
             if (off_reading, off_hub_more) != (self.lens.off_reading, self.lens.off_hub_more) {
                 (self.lens.off_reading, self.lens.off_hub_more) = (off_reading, off_hub_more);
@@ -2121,22 +2196,7 @@ impl App {
         }
         if self.stale_views || view_due {
             self.stale_views = false;
-            self.lens.reading = self.board.model.reading;
-            let (wake, mut shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
-            self.next_view.board = self.scribble.view(&self.board.model);
-            shown.extend(self.scribble.pictures(&self.board.model));
-            self.next_view.thumbs = self.thumbs();
-            crate::views::desk::board_tile(&mut self.next_view.desk, self.next_view.thumbs.as_deref());
-            if let Some(engine) = self.engine.as_ref() {
-                self.next_view.settings.room = Some(engine::feed::hex(engine.room().as_bytes()));
-                self.next_view.settings.hub = Some(engine.hub().to_string());
-            }
-            self.next_view.settings.security = crate::views::settings::security(&self.next_view.settings, self.lens.utc_offset_min);
-            self.next_view.settings.logout = crate::views::settings::logout(&self.next_view.settings, self.demo);
-            self.next_view.settings.team_counts = self.team_counts();
-            self.show_team_deletes();
-            self.view_wake = wake;
-            self.files.shown(shown, &mut self.next_view.files);
+            self.make_views(now_ms);
         }
         if stopped {
             self.closed(now_ms, out);
@@ -2169,6 +2229,11 @@ impl App {
         self.account_extras();
         self.start_status();
         self.show_dictation();
+        self.render_window(out);
+    }
+
+    /// The current window's `Render`, when its view changed.
+    fn render_window(&mut self, out: &mut Vec<Effect>) {
         let delta = if !self.rendered_once {
             self.rendered_once = true;
             let mut whole = self.next_view.clone();
@@ -2186,7 +2251,7 @@ impl App {
             // the core's own fold, so `view` is exactly what a shell holds
             if self.view.apply(&delta).is_ok() {
                 self.next_view.rev = self.view.rev;
-                out.insert(0, Effect::Render { delta });
+                out.insert(0, Effect::Render { delta, window: self.window });
             }
         }
     }

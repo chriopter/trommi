@@ -103,6 +103,20 @@ pub enum MoreOf {
 }
 
 impl Lens {
+    /// What of the lens is the device's and not a window's (`app::windows`): the clock's zone, the room's reading,
+    /// the greeting's dice, the read marks, the past's settled pages, the folded goals. A window that comes into
+    /// view takes these from the one before.
+    pub fn carry_device(&mut self, from: &Lens) {
+        self.utc_offset_min = from.utc_offset_min;
+        self.reading = from.reading;
+        self.reading_progress = from.reading_progress;
+        self.dice = from.dice;
+        self.seen.clone_from(&from.seen);
+        self.off_reading = from.off_reading;
+        self.off_hub_more = from.off_hub_more;
+        self.goals_folded.clone_from(&from.goals_folded);
+    }
+
     /// THE HOOK for the action "show more" (W3 wires it; where the older part is not on this device, the engine's
     /// past reading follows the same action): the window of that list grows by one page. The page a `MoreView`
     /// names (`pages`) is what this sets.

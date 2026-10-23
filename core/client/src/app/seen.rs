@@ -72,6 +72,11 @@ impl App {
 
     /// Before the views are made: the chat in view is read up to its newest word; the first look reads everything.
     pub(super) fn seen_tend(&mut self, out: &mut Vec<Effect>) {
+        // (the chats in view of every window that shows its page)
+        let current = self.window;
+        let looked: Vec<String> = self.seen.looking.then(|| self.lens.session.clone()).flatten().into_iter()
+            .chain(self.windows.iter().filter(|(id, w)| **id != current && w.looking).filter_map(|(_, w)| w.lens().session.clone()))
+            .collect();
         let Some(marks) = self.lens.seen.as_mut() else { return };
         let model = &self.board.model;
         let mut moved = false;
@@ -81,18 +86,16 @@ impl App {
             }
             self.seen.baseline = false;
         }
-        if self.seen.looking {
-            if let Some(shown) = self.lens.session.as_deref() {
-                // (the page's address may name the session by its short id)
-                let key = model.sessions.keys().find(|k| *k == shown).cloned().or_else(|| {
-                    crate::sessions::session_list(model, false).into_iter().find(|r| r.id == shown).map(|r| r.key)
-                });
-                if let Some(key) = key {
-                    if let Some(n) = crate::views::sidebar::newest_word(model, &key) {
-                        if marks.get(&key).is_none_or(|m| *m < n) {
-                            marks.insert(key, n);
-                            moved = true;
-                        }
+        for shown in looked.iter().map(String::as_str) {
+            // (the page's address may name the session by its short id)
+            let key = model.sessions.keys().find(|k| *k == shown).cloned().or_else(|| {
+                crate::sessions::session_list(model, false).into_iter().find(|r| r.id == shown).map(|r| r.key)
+            });
+            if let Some(key) = key {
+                if let Some(n) = crate::views::sidebar::newest_word(model, &key) {
+                    if marks.get(&key).is_none_or(|m| *m < n) {
+                        marks.insert(key, n);
+                        moved = true;
                     }
                 }
             }

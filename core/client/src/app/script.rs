@@ -62,7 +62,7 @@ impl Shell for CoreShell {
     fn send(&mut self, now_ms: u64, event: Event) -> Vec<Effect> {
         let effects = self.app.handle(now_ms, event);
         for e in &effects {
-            if let Effect::Render { delta } = e {
+            if let Effect::Render { delta, .. } = e {
                 self.folded.apply(delta).expect("the core renders in order");
             }
         }

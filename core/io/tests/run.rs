@@ -410,7 +410,7 @@ async fn one_timer_replacing_the_last() {
 struct Window(Arc<Mutex<ViewModel>>);
 impl Shell for Window {
     fn show(&mut self, effect: Effect) {
-        if let Effect::Render { delta } = effect {
+        if let Effect::Render { delta, .. } = effect {
             self.0
                 .lock()
                 .unwrap()

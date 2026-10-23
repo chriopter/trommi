@@ -21,7 +21,7 @@ fn a_start_says_each_step_in_order_and_how_far_the_catching_up_is() {
     let mut view = ViewModel::default();
     let mut lines: Vec<(String, String)> = Vec::new();
     for effect in &sim.log {
-        if let Effect::Render { delta } = effect {
+        if let Effect::Render { delta, .. } = effect {
             view.apply(delta).expect("renders come in order");
             let line = view.status.as_ref().map(|t| (t.key.clone(), t.en.clone())).unwrap_or_default();
             if lines.last() != Some(&line) {

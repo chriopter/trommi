@@ -2951,6 +2951,62 @@ pub struct OutOfOrder {
     pub got: u64,
 }
 
+/// The parts of the view model one window owns: what that window looks at (its team, its page, its board). The rest
+/// (phase, status, account, settings, files, dictation, toasts) is the device's and the same in every window
+/// (`app::windows`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WindowParts {
+    sidebar: SidebarView,
+    desk: DeskView,
+    sessions: BTreeMap<String, SessionView>,
+    cards: BTreeMap<String, CardView>,
+    off: Option<OffListView>,
+    notes: NotesView,
+    board: Option<BoardView>,
+    artifacts: Option<Vec<ArtifactView>>,
+    gallery: Option<GalleryView>,
+    thumbs: Option<Vec<ThumbView>>,
+    knowledge: Option<KnowledgeView>,
+    wakeups: Option<WakeupsView>,
+}
+
+impl ViewModel {
+    /// Takes out one window's parts (left empty).
+    pub fn take_window_parts(&mut self) -> WindowParts {
+        use std::mem::take;
+        WindowParts {
+            sidebar: take(&mut self.sidebar),
+            desk: take(&mut self.desk),
+            sessions: take(&mut self.sessions),
+            cards: take(&mut self.cards),
+            off: take(&mut self.off),
+            notes: take(&mut self.notes),
+            board: take(&mut self.board),
+            artifacts: take(&mut self.artifacts),
+            gallery: take(&mut self.gallery),
+            thumbs: take(&mut self.thumbs),
+            knowledge: take(&mut self.knowledge),
+            wakeups: take(&mut self.wakeups),
+        }
+    }
+
+    /// Puts one window's parts in.
+    pub fn put_window_parts(&mut self, p: WindowParts) {
+        self.sidebar = p.sidebar;
+        self.desk = p.desk;
+        self.sessions = p.sessions;
+        self.cards = p.cards;
+        self.off = p.off;
+        self.notes = p.notes;
+        self.board = p.board;
+        self.artifacts = p.artifacts;
+        self.gallery = p.gallery;
+        self.thumbs = p.thumbs;
+        self.knowledge = p.knowledge;
+        self.wakeups = p.wakeups;
+    }
+}
+
 impl ViewModel {
     /// Folds one delta in. Every shell does exactly this (in its own language, or by calling the core).
     pub fn apply(&mut self, delta: &ViewDelta) -> Result<(), OutOfOrder> {
