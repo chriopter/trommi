@@ -300,6 +300,10 @@ pub struct Conn {
     turn_on: AtomicBool,
     turn_live: Arc<Mutex<LiveTurn>>,
     previews: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// The removal of the last turn's previews that still wait: a new turn's clock starts after it.
+    previews_dropped: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Held while one answer is written: answers go out in the order they came.
+    answers: tokio::sync::Mutex<()>,
     chats_said: AtomicBool,
     missed: Mutex<Vec<Missed>>,
     deaf_told: AtomicBool,
@@ -2110,7 +2114,12 @@ impl Conn {
                     let bridge = self.bridge.lock().unwrap().clone();
                     if let Some(b) = bridge {
                         let (client, live) = (b.client.clone(), self.turn_live.clone());
+                        let dropped = self.previews_dropped.lock().unwrap().take();
                         let clock = tokio::spawn(async move {
+                            // (the last turn's previews that waited go first: never one of this turn)
+                            if let Some(d) = dropped {
+                                let _ = d.await;
+                            }
                             loop {
                                 let (turn, number, text) = {
                                     let mut l = live.lock().unwrap();
@@ -2134,9 +2143,10 @@ impl Conn {
                     self.turn_live.lock().unwrap().text.clear();
                     let bridge = self.bridge.lock().unwrap().clone();
                     if let Some(b) = bridge {
-                        tokio::spawn(async move {
+                        let drop = tokio::spawn(async move {
                             let _ = b.client.drop_previews().await;
                         });
+                        *self.previews_dropped.lock().unwrap() = Some(drop);
                     }
                 }
                 tokio::spawn(async move { self.sync_link().await });
@@ -2153,10 +2163,18 @@ impl Conn {
                 }
                 l.text = text.to_string();
             }
+            _ => {}
+        }
+    }
+
+    /// `trommi/answer` {text}: Hermes' answer as the agent's message, written before the request is answered (in the
+    /// order they came); `trommi/state`: where this connector stands (`phase`: "ready" on the board, "removed", …).
+    async fn turn_request(&self, method: &str, params: &Value) -> Result<Value, String> {
+        match method {
             "trommi/answer" => {
                 let mut text = params.get("text").and_then(Value::as_str).unwrap_or("").trim().to_string();
                 if text.is_empty() {
-                    return;
+                    return Ok(json!({}));
                 }
                 if text.len() > ANSWER_MAX {
                     let mut end = ANSWER_MAX;
@@ -2166,18 +2184,15 @@ impl Conn {
                     text.truncate(end);
                     text.push_str("\n\n(cut: the answer was longer)");
                 }
+                let _in_order = self.answers.lock().await;
                 self.turn_live.lock().unwrap().text.clear();
                 let bridge = self.bridge.lock().unwrap().clone();
-                tokio::spawn(async move {
-                    let Some(b) = bridge else {
-                        return eprintln!("[trommi] the answer did not reach the board: not in a room");
-                    };
-                    if let Err(e) = b.mirror("answer", &text, &[]).await {
-                        eprintln!("[trommi] the answer did not reach the board: {}", e.text());
-                    }
-                });
+                let b = bridge.ok_or_else(|| "not on the board".to_string())?;
+                b.mirror("answer", &text, &[]).await.map_err(|e| e.text())?;
+                Ok(json!({}))
             }
-            _ => {}
+            "trommi/state" => Ok(json!({ "phase": self.member.phase() })),
+            _ => Err("unknown".into()),
         }
     }
 }
@@ -2438,7 +2453,7 @@ impl mcp::Server for Conn {
         })
     }
     fn notification(self: Arc<Self>, method: String, params: Value) {
-        if method.starts_with("trommi/") && crate::host::is_hermes() {
+        if matches!(method.as_str(), "trommi/working" | "trommi/preview") && crate::host::is_hermes() {
             return self.turn_notification(&method, &params);
         }
         if method == crate::launch::STOP && crate::launch::launched() {
@@ -2478,6 +2493,14 @@ impl mcp::Server for Conn {
                 }
             }
         });
+    }
+    fn request(self: Arc<Self>, method: String, params: Value) -> BoxFut<'static, Option<Result<Value, String>>> {
+        Box::pin(async move {
+            if !crate::host::is_hermes() || !matches!(method.as_str(), "trommi/answer" | "trommi/state") {
+                return None;
+            }
+            Some(self.turn_request(&method, &params).await)
+        })
     }
     fn closed(self: Arc<Self>, why: &'static str) {
         tokio::spawn(async move { self.bye(why, "stdin").await });
@@ -2526,6 +2549,8 @@ pub async fn main_server() {
         turn_on: AtomicBool::new(false),
         turn_live: Arc::new(Mutex::new(LiveTurn::default())),
         previews: Mutex::new(None),
+        previews_dropped: Mutex::new(None),
+        answers: tokio::sync::Mutex::new(()),
         chats_said: AtomicBool::new(false),
         missed: Mutex::new(vec![]),
         deaf_told: AtomicBool::new(false),
