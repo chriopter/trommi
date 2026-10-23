@@ -117,7 +117,9 @@ class Chats:
     async def start(self) -> None:
         kept = self._read()
         self._nonces = [n for n in kept.get("nonces", []) if isinstance(n, str)][-NONCES_KEPT:]
-        rows = [r for r in kept.get("chats", []) if isinstance(r, dict) and isinstance(r.get("id"), str) and CHAT_ID.match(r["id"])]
+        # (a row is {id, active, name}; a bare id, as the list was kept before, is a chat on the board)
+        rows = [r if isinstance(r, dict) else {"id": r, "active": True} for r in kept.get("chats", [])]
+        rows = [r for r in rows if isinstance(r.get("id"), str) and CHAT_ID.match(r["id"])]
         self._active = {r["id"] for r in rows if r.get("active") is True and r["id"] != MAIN}
         self._names = {r["id"]: str(r.get("name") or "") for r in rows}
         ids = [MAIN, *[r["id"] for r in rows if r["id"] != MAIN]][:CHATS_MAX]

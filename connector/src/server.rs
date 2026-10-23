@@ -300,8 +300,8 @@ pub struct Conn {
     turn_on: AtomicBool,
     turn_live: Arc<Mutex<LiveTurn>>,
     previews: Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// The removal of the last turn's previews that still wait: a new turn's clock starts after it.
-    previews_dropped: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Counts the turns: the previews of an ended turn that still wait are dropped only while no new turn started.
+    turn_count: std::sync::atomic::AtomicU64,
     /// Held while one answer is written: answers go out in the order they came.
     answers: tokio::sync::Mutex<()>,
     chats_said: AtomicBool,
@@ -2110,16 +2110,12 @@ impl Conn {
                     return;
                 }
                 if on {
+                    self.turn_count.fetch_add(1, Ordering::SeqCst);
                     *self.turn_live.lock().unwrap() = LiveTurn { turn: crate::util::random().unwrap_or_default(), ..Default::default() };
                     let bridge = self.bridge.lock().unwrap().clone();
                     if let Some(b) = bridge {
                         let (client, live) = (b.client.clone(), self.turn_live.clone());
-                        let dropped = self.previews_dropped.lock().unwrap().take();
                         let clock = tokio::spawn(async move {
-                            // (the last turn's previews that waited go first: never one of this turn)
-                            if let Some(d) = dropped {
-                                let _ = d.await;
-                            }
                             loop {
                                 let (turn, number, text) = {
                                     let mut l = live.lock().unwrap();
@@ -2143,10 +2139,14 @@ impl Conn {
                     self.turn_live.lock().unwrap().text.clear();
                     let bridge = self.bridge.lock().unwrap().clone();
                     if let Some(b) = bridge {
-                        let drop = tokio::spawn(async move {
-                            let _ = b.client.drop_previews().await;
+                        // (only while no new turn started: its previews are never dropped; a preview of the ended turn
+                        //  that goes late shows nothing, the answer came)
+                        let (me, count) = (self.clone(), self.turn_count.load(Ordering::SeqCst));
+                        tokio::spawn(async move {
+                            if me.turn_count.load(Ordering::SeqCst) == count && !me.turn_on.load(Ordering::SeqCst) {
+                                let _ = b.client.drop_previews().await;
+                            }
                         });
-                        *self.previews_dropped.lock().unwrap() = Some(drop);
                     }
                 }
                 tokio::spawn(async move { self.sync_link().await });
@@ -2549,7 +2549,7 @@ pub async fn main_server() {
         turn_on: AtomicBool::new(false),
         turn_live: Arc::new(Mutex::new(LiveTurn::default())),
         previews: Mutex::new(None),
-        previews_dropped: Mutex::new(None),
+        turn_count: std::sync::atomic::AtomicU64::new(0),
         answers: tokio::sync::Mutex::new(()),
         chats_said: AtomicBool::new(false),
         missed: Mutex::new(vec![]),

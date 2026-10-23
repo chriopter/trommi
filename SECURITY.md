@@ -117,7 +117,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   on that computer without anyone running connect there: only on a computer you approved, only from your own devices
   (the ask is signed and end-to-end encrypted, the hub can neither read nor forge it), each ask once, and within the
   8 sessions an approved computer may hold. What Hermes asks to approve comes to you as a yes/no card for exactly that
-  request: a yes allows only that request, and nothing when it cannot be told which one it is. No answer is no.
+  request: a yes allows only the one request waiting with that command, and nothing when it cannot be told which one
+  it is. No answer is no.
 - An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
   are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
   Claude Code's status line (put around one already there), never from their credential files.

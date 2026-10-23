@@ -7,6 +7,7 @@ written (`trommi/preview`, shown growing, spec 7.5), typing is `trommi/working`,
 board (the connector's `permission_request`) whose verdict resolves exactly that Hermes request."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 from pathlib import Path
@@ -28,13 +29,11 @@ def _pending_request_id(session_key: str, command: str) -> str | None:
     command. None when it cannot be told (none, several alike, or a Hermes that keeps them otherwise): then a yes on the
     card allows nothing, and Hermes' own deadline denies it."""
     try:
-        from tools import approval
+        from tools.approval import list_gateway_approvals
 
-        with approval._lock:  # noqa: SLF001 - read only; no public accessor in this Hermes version
-            queue = list(approval._gateway_queues.get(session_key) or [])  # noqa: SLF001
-        alike = [entry for entry in queue if str(entry.data.get("command") or "") == command]
-        if len(alike) == 1 and alike[0].data.get("request_id"):
-            return str(alike[0].data["request_id"])
+        alike = [data for data in list_gateway_approvals(session_key) if str(data.get("command") or "") == command]
+        if len(alike) == 1 and alike[0].get("request_id"):
+            return str(alike[0]["request_id"])
     except Exception:  # noqa: BLE001 - another Hermes version: no correlation, no yes
         return None
     return None
@@ -62,6 +61,8 @@ class TrommiAdapter(BasePlatformAdapter):
         self.chats = chats
         # approvals on the board: our request id -> (the Hermes session, its request id)
         self._asks: dict[str, tuple[str, str | None]] = {}
+        # (one answer of a chat at a time: they reach the board in the order Hermes sent them)
+        self._sending: dict[str, asyncio.Lock] = {}
 
     @property
     def name(self) -> str:
@@ -144,7 +145,8 @@ class TrommiAdapter(BasePlatformAdapter):
         if child is None:
             return SendResult(success=False, error=f"no Trommi chat {chat_id}")
         try:
-            await child.request("trommi/answer", {"text": content})
+            async with self._sending.setdefault(chat_id, asyncio.Lock()):
+                await child.request("trommi/answer", {"text": content})
         except Exception as exc:  # noqa: BLE001 - the gateway retries or reports
             return SendResult(success=False, error=str(exc), retryable=True)
         return SendResult(success=True, message_id=f"trommi-{secrets.token_hex(8)}")

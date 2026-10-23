@@ -508,15 +508,14 @@ pub fn write_hermes_addon(dir: &Path, force: bool) -> Result<bool, String> {
         .map(|(p, t)| (*p, t.to_string()))
         .chain([("trommi.json", spec), (".release", ours.to_string())])
         .collect();
-    let same = files.iter().all(|(rel, text)| std::fs::read_to_string(dir.join(rel)).is_ok_and(|now| now == *text));
-    if same {
-        return Ok(false);
-    }
-    if !force {
+    // (whether to write: looked at again under the lock, where nobody writes meanwhile)
+    let wanted = || {
+        let same = files.iter().all(|(rel, text)| std::fs::read_to_string(dir.join(rel)).is_ok_and(|now| now == *text));
         let there = std::fs::read_to_string(dir.join(".release")).ok().and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(0);
-        if ours == 0 || ours <= there {
-            return Ok(false);
-        }
+        !same && (force || (ours != 0 && ours > there))
+    };
+    if !wanted() {
+        return Ok(false);
     }
     let parent = dir.parent().ok_or("the add-on's folder has no parent")?;
     std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
@@ -531,7 +530,10 @@ pub fn write_hermes_addon(dir: &Path, force: bool) -> Result<bool, String> {
         let _ = std::fs::remove_file(&lock);
         std::fs::OpenOptions::new().write(true).create_new(true).open(&lock).map_err(|e| format!("{}: {e}", lock.display()))?;
     }
-    let done = (|| -> Result<(), String> {
+    let done = (|| -> Result<bool, String> {
+        if !wanted() {
+            return Ok(false);
+        }
         let stage = parent.join(format!(".{name}.new-{}", crate::util::random_hex(6)));
         for (rel, text) in &files {
             let file = stage.join(rel);
@@ -553,19 +555,27 @@ pub fn write_hermes_addon(dir: &Path, force: bool) -> Result<bool, String> {
         if had {
             let _ = std::fs::remove_dir_all(&old);
         }
-        Ok(())
+        Ok(true)
     })();
     let _ = std::fs::remove_file(&lock);
-    done.map(|_| true)
+    done
 }
 
 /// When this connector runs for the Hermes add-on: the add-on in the Hermes home (`TROMMI_FOLDER`) is written again
 /// when this connector is a newer release than the one that wrote it. Hermes loads it at its next start.
 pub fn refresh_hermes_addon() {
     let Some(home) = std::env::var_os("TROMMI_FOLDER").filter(|h| !h.is_empty()) else { return };
-    let dir = Path::new(&home).join("plugins").join(HERMES_ADDON_DIR);
+    let plugins = Path::new(&home).join("plugins");
+    let dir = plugins.join(HERMES_ADDON_DIR);
     if !dir.is_dir() {
-        return;
+        // (a write that stopped between its two moves left the add-on beside its place: it goes back)
+        let left = std::fs::read_dir(&plugins).ok().into_iter().flatten().flatten().map(|e| e.path()).find(|p| {
+            p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(&format!(".{HERMES_ADDON_DIR}.old-")))
+        });
+        match left {
+            Some(old) if std::fs::rename(&old, &dir).is_ok() => {}
+            _ => return,
+        }
     }
     match write_hermes_addon(&dir, false) {
         Ok(true) => eprintln!("[trommi] the Hermes add-on in {} is this connector's now; Hermes loads it at its next start", dir.display()),
