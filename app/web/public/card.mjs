@@ -1705,7 +1705,8 @@ controller('circles', class extends Controller {
 // Every way of answering is POST /cards/<id>/<what> (the card's page and the Desk's rows post there): it becomes the
 // core's action. Answered from a Desk row (stay=1), the answer is a toast with Undo; from the card's own page (page=1)
 // the page goes on: an answer keeps the card in view, answered, with the next question (?decided=1, CardView.after); the
-// reverse card and Later go on to the next question (CardView.place.next); What?? goes back where the card was opened.
+// reverse card and Later go on to the next question (CardView.place.next); What?? goes back where the card was opened,
+// in Blitz on to the next question as well.
 /** The toasts a way of answering shows, with the way that takes it back (its Undo). */
 const SAID = {
   decide: { head: 'Answered', back: 'reopen' }, verdict: { head: 'Answered' }, trust: { head: WORDS.trust, back: 'reopen' }, close: { head: 'Read', back: 'reopen' },
@@ -1819,7 +1820,8 @@ export function register(t) {
     let to = null
     if (f.has('page')) {
       const back = String(f.get('back') ?? ''), home = /^\/chat\/[^/?#]+$/.test(back) ? back : '/', self = home === '/' ? '' : home
-      const walk = f.has('walk'), onward = ANSWERS.has(what) || what === 'snooze' || what === 'revise'
+      // (in Blitz every way that leaves the card to its agent or to later goes on to the next question, What?? too)
+      const walk = f.has('walk'), onward = ANSWERS.has(what) || what === 'snooze' || what === 'revise' || what === 'what'
       if (walk && onward) to = next ? `${cardPath(next, self)}?walk=1` : '/'
       else if (ANSWERS.has(what)) to = `${cardPath(card ?? id, self)}?decided=1`
       else if (what === 'snooze' || (what === 'revise' && f.has('next'))) to = next ? cardPath(next, self) : home
