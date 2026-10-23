@@ -937,7 +937,8 @@ html body .topbar #brand-doors .menu-icons .menu-ico { justify-content: center; 
   body[data-t-view="session"] .compose-fab .sketch { width: 24px; height: 24px; stroke-width: 1.9; }
   body[data-t-view="session"] .compose-fab[data-draft]::after { content: ""; position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent, var(--fg)); box-shadow: 0 0 0 2px var(--bg); }
   body[data-t-view="session"] .tabbar { left: calc(50% - 30px); }
-  :root:not([data-compose]) body[data-t-view="session"] #session .session-compose { display: none; }
+  /* (folded: only the chat's open cards stay above the foot) */
+  :root:not([data-compose]) body[data-t-view="session"] #session .session-compose > :not(.pinned-cards) { display: none; }
   :root[data-compose] body[data-t-view="session"] :is(.compose-fab, .tabbar) { display: none; }
   :root:not([data-compose]) body[data-t-view="session"] #session .dock { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 70px); }
 }

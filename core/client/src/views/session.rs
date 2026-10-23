@@ -212,7 +212,8 @@ fn calm(v: &mut SessionView) {
     let behind = v.status_lines.len().saturating_sub(1).to_string();
     v.status_more = (v.status_lines.len() > 1).then(|| say("session.status_more.calm", format!("and {behind} more"), &[("n", behind.as_str())]));
     // (its open questions pinned above the field, the newest first; their rows where they were asked leave the talk)
-    v.pinned = v.waiting.iter().rev().filter(|w| !w.id.trim().is_empty()).cloned().collect();
+    let reads = std::mem::take(&mut v.pinned);
+    v.pinned = v.waiting.iter().rev().filter(|w| !w.id.trim().is_empty()).cloned().chain(reads).collect();
     let pinned: HashSet<&str> = v.pinned.iter().map(|w| w.id.as_str()).collect();
     v.talk.retain(|r| !(r.kind == "ask" && r.row.as_ref().is_some_and(|w| pinned.contains(w.id.as_str()))));
     if v.first_open.as_deref().is_some_and(|id| !v.talk.iter().any(|r| r.id == id)) {
@@ -540,7 +541,19 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         status_more,
         wake_line: super::wakeups::line(b, &a.row.key),
         working: None,
-        pinned: Vec::new(),
+        // (the calm chat: its cards to read that wait on the Desk, the newest first, never a task it still works on;
+        //  calm() puts its questions before them)
+        pinned: if b.lens.calm {
+            let mut reads: Vec<&Card> = cards
+                .iter()
+                .copied()
+                .filter(|c| waits(c, &on_stack) && reads_as_info(c) && !c.is_unsupported() && !super::board::is_loading(c) && c.field("working") != Value::Bool(true))
+                .collect();
+            reads.sort_by_key(|c| std::cmp::Reverse(c.first_envelope_number));
+            reads.into_iter().map(|c| card_row(b, c, Some(idx))).collect()
+        } else {
+            Vec::new()
+        },
         has_more,
         earlier: None,
         slug: a.row.id.clone(),
@@ -1063,8 +1076,8 @@ mod tests {
     }
     const HAND_BACK: &str = super::super::talk::HAND_BACK_TEXT;
 
-    /// The calm chat pins its open questions above the field, the newest first, and leaves their rows out of the talk;
-    /// without open questions nothing is pinned.
+    /// The calm chat pins its open questions above the field, the newest first, then its cards to read (never a task it
+    /// still works on), and leaves the questions' rows out of the talk; without open cards nothing is pinned.
     #[test]
     fn the_calm_chat_pins_its_open_questions() {
         let mut r = Room::default();
@@ -1072,11 +1085,15 @@ mod tests {
         let history = |n: u64, title: &str| json!([{ "object_version": 1, "envelope_number": n, "sent_at": NOW - 10 * MIN, "object_state": "open", "content": { "title": title } }]);
         r.card("q-old", "a", "decision", "normal")["versions"] = history(100, "q-old");
         r.card("q-new", "a", "decision", "normal")["versions"] = history(101, "q-new");
+        r.card("read-old", "a", "info", "normal")["versions"] = history(98, "read-old");
+        r.card("read-new", "a", "info", "low")["versions"] = history(102, "read-new");
+        r.card("task", "a", "info", "normal")["working"] = json!(true);
         r.say("a", None, 99, "a", 30 * MIN, msg("Two things for you."));
         let m = r.model(NOW);
         let calm = Lens { calm: true, ..Default::default() };
         let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
-        assert_eq!(v.pinned.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["q-new", "q-old"], "the newest first");
+        assert_eq!(v.pinned.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["q-new", "q-old", "read-new", "read-old"], "questions first, the newest first; no task");
+        assert_eq!(v.pinned[2].kind, "info");
         assert!(!v.talk.iter().any(|t| t.kind == "ask"), "no row of them in the talk");
         assert_eq!(v.open, 2);
         assert_eq!(v.first_open, None, "nothing to jump to: they stand above the field");

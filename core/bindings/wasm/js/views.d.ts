@@ -1039,8 +1039,8 @@ export interface SessionView {
   /** Its questions that wait for the person (decisions and approvals, never a card to read), as their Desk rows,
    *  in the order they came: what its page "Questions" lists as open. */
   waiting?: DeskRowView[]
-  /** The calm chat (`Focus.calm`): its open questions pinned right above the field, answerable there, the newest
-   *  first (the shells draw the first whole, the rest as slim rows); they leave the talk and go once answered. */
+  /** The calm chat (`Focus.calm`): its open cards pinned right above the field: its questions, the newest first, then
+   *  its cards to read (never a task it still works on); the shells draw them as small cards swiped sideways. */
   pinned?: DeskRowView[]
   /** How many of them (`waiting`), and the way to the first of them. */
   open: number
