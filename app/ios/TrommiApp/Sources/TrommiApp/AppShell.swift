@@ -152,14 +152,19 @@ enum NativeTab: Hashable { case chat, desk, search }
     else if path.last != screen { path.append(screen) }
     show(screen, team: team)
   }
+  /** The chat whose Blitz the card in view is a step of (`Focus.walk_chat`); none: the Desk's. */
+  private(set) var walkChat: String?
+  /** A chat's stack tapped: its first card, and on through that chat's open cards only, then back to the chat. */
+  func walk(chat: String, from cardId: String) { walkChat = chat; focus(.card(cardId: cardId)) }
   func closeNote() { guard noteOpen else { return }; noteOpen = false; show(path.last ?? .desk) }
   func show(_ screen: CoreView.Screen, team: String? = nil) {
     self.screen = screen
+    if case .card = screen {} else { walkChat = nil }
     // (a team chosen: its Desk, no longer home)
     if let team { deskAll = false; if !isDemo { UserDefaults.standard.set(team, forKey: Self.teamKey); UserDefaults.standard.set(false, forKey: Self.deskAllKey) } }
     let inView = view.sidebar.team.isEmpty ? (isDemo ? nil : Self.lastTeam) : view.sidebar.team
     let query = chatsQuery.trimmingCharacters(in: .whitespaces)
-    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, deskAll: deskAll, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query, calm: Self.phone)
+    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, deskAll: deskAll, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query, calm: Self.phone, walkChat: walkChat)
     if let data = try? JSONEncoder().encode(focus), let json = try? JSONSerialization.jsonObject(with: data) { send(["type": "focus", "focus": json]) }
   }
   func scene(_ active: Bool) { send(["type": active ? "foreground" : "background"]); if !isDemo { NativeServices.shared.foreground(active) } }

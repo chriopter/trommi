@@ -1105,6 +1105,7 @@ impl App {
                 // (a card or a session opened is where old history is read: after a sign-in only the open cards
                 //  and what is new are loaded; `app::past` asks for it behind this event, in `after_engine`)
                 self.lens.session = session;
+                self.lens.walk_chat = focus.walk_chat.clone().filter(|_| card.is_some());
                 self.lens.card = card;
                 self.lens.off = off;
                 self.stale_views = true;
