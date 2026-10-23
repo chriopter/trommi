@@ -139,6 +139,8 @@ pub(super) struct Unit {
     /// Index into `Board::agents`.
     pub agent: usize,
     pub open: u32,
+    /// Its open cards, infos too, and its requests (`Board::all_cards`): the calm grey count.
+    pub cards: u32,
     pub knocks: bool,
     pub online: bool,
     pub working: bool,
@@ -209,6 +211,7 @@ fn units_where(b: &Board, on: impl Fn(&super::board::Agent) -> bool) -> Vec<Unit
             Unit {
                 agent: i,
                 open: fresh_of(i).count() as u32,
+                cards: b.all_cards.iter().filter(|f| f.agent == Some(i)).count() as u32,
                 knocks: fresh_of(i).any(|f| f.knocks),
                 online: a.row.online,
                 working: a.row.online && a.row.working,
@@ -240,6 +243,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
         let mine = b.all_fresh.iter().filter(|f| b.team_of(f.agent).unwrap_or(first.as_str()) == team);
         (mine.clone().count() as u32, mine.clone().any(|f| f.knocks))
     };
+    let cards_on = |team: &str| b.all_cards.iter().filter(|f| b.team_of(f.agent).unwrap_or(first.as_str()) == team).count() as u32;
     let in_view = b.team.clone().unwrap_or_else(|| first.clone());
     let tabs: Vec<TeamTab> = teams
         .iter()
@@ -249,6 +253,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
                 id: id.clone(),
                 name: team_name(name),
                 waiting,
+                cards: cards_on(id),
                 selected: *id == in_view && !b.lens.desk_all,
                 knocks,
             }
@@ -264,6 +269,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
         id: String::new(),
         name: say("team.all", "All teams", &[]),
         waiting: b.all_fresh.len() as u32,
+        cards: b.all_cards.len() as u32,
         selected: b.lens.desk_all,
         knocks: b.all_fresh.iter().any(|f| f.knocks),
     };
@@ -294,6 +300,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
                 selected: t.selected,
                 open: !sessions.is_empty() && b.lens.open_teams.contains(&t.id),
                 waiting: t.waiting,
+                cards: t.cards,
                 knocks: t.knocks,
                 says: stack_words(sessions.len(), t.waiting),
                 edges: sessions.iter().take(STACK_EDGES).map(|r| StackEdgeView { id: r.id.clone(), mark: r.mark.clone() }).collect(),
@@ -434,6 +441,7 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, asked: &H
         crowned: a.crowned,
         helpers,
         open: unit.open,
+        cards: unit.cards,
         knocks: unit.knocks,
         says: says(unit.hand.as_ref(), unit.open, unit.online, unit.working),
         hand: unit.hand.clone(),
@@ -688,6 +696,54 @@ mod tests {
         assert_eq!(a.hand.as_ref().map(|h| (h.why.as_str(), h.text.en.as_str())), Some(("permission", "Waiting for permission")));
         assert_eq!(a.says.as_ref().map(|t| t.en.as_str()), Some("Stopped: Waiting for permission, 3 questions open"));
         assert!(a.blocked);
+    }
+
+    /// The calm grey counts (a row's, a team's, the Chats list's) count every open card, infos too, and the
+    /// requests: what the Desk's rows and Blitz walk, from the one list (`Board::all_cards`). A team whose session
+    /// has only infos open showed no number although Blitz said "3 open cards" (the owner, 23 October 2026).
+    #[test]
+    fn the_grey_counts_are_what_blitz_walks() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        r.session("valiido", None, true);
+        r.session("bravo", None, true);
+        r.on_team("bravo", "lab");
+        r.card("d1", "valiido", "decision", "normal");
+        r.card("d2", "valiido", "decision", "high");
+        r.card("i0", "valiido", "info", "normal");
+        r.card("i1", "bravo", "info", "normal");
+        r.card("i2", "bravo", "info", "high");
+        r.card("i3", "bravo", "info", "normal")["helper"] = json!("Icons");
+        // (what is not on the walk counts nowhere: one with its agent again, one decided)
+        r.card("i-back", "bravo", "info", "normal")["in_revision"] = json!({ "by": "me", "envelope_number": 500 });
+        r.answered("d-done", "bravo", NOW - MIN, 10);
+        let blitz = |r: &Room, team: &str| {
+            let m = r.model(NOW);
+            let lens = Lens { team: Some(team.into()), ..Default::default() };
+            let b = Board::new(&m, &lens, NOW);
+            let d = super::super::desk::desk(&b);
+            (d.stack.len() as u32, d.blitz.map(|t| t.en))
+        };
+        assert_eq!(blitz(&r, "lab"), (3, Some("Blitz: 3 open cards".into())));
+        assert_eq!(blitz(&r, "main"), (3, Some("Blitz: 3 open cards".into())));
+        for team in ["main", "lab"] {
+            let v = view(&r, Some(team));
+            let tab = |id: &str| v.teams.iter().find(|t| t.id == id).unwrap().cards;
+            let stack = |id: &str| v.stacks.iter().find(|t| t.id == id).unwrap().cards;
+            assert_eq!((tab("main"), tab("lab"), v.home.cards), (3, 3, 6));
+            assert_eq!((stack("main"), stack("lab")), (3, 3));
+            let rows: Vec<(String, u32)> = v.stacks.iter().flat_map(|s| s.sessions.iter()).map(|x| (x.slug.clone(), x.cards)).collect();
+            assert_eq!(rows, [("valiido".to_string(), 3), ("bravo".to_string(), 3)]);
+        }
+        // (the questions stay questions: bravo asks nothing, the red and the "questions open" words are theirs)
+        let v = view(&r, Some("lab"));
+        let bravo = row(&v, "bravo");
+        assert_eq!((bravo.open, bravo.knocks, bravo.says.as_ref()), (0, false, None));
+        assert_eq!(v.teams.iter().map(|t| (t.waiting, t.cards)).collect::<Vec<_>>(), [(2, 3), (0, 3)]);
+
+        // a request counts as it stands on the Desk, read or not yet
+        r.request("p1", "bravo", "header");
+        let v = view(&r, Some("lab"));
+        assert_eq!((row(&v, "bravo").cards, blitz(&r, "lab").0), (4, 4));
     }
 
     #[test]

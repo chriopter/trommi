@@ -204,6 +204,10 @@ pub struct Board<'a> {
     pub team: Option<String>,
     /// The open questions of the whole board, in the stack's order, the approval requests last.
     pub all_fresh: Vec<Fresh>,
+    /// Every open card of the whole board, infos too, and every open approval request: what the Desk's rows and
+    /// Blitz walk, in the stack's order, the requests last. The calm grey counts count these (one source for the
+    /// Desk, Blitz, the sidebar and the Chats list).
+    pub all_cards: Vec<Fresh>,
     /// How many of his answers each session has not picked up for [`UNHEARD_MS`], by index of `agents`.
     pub unheard: HashMap<usize, u32>,
     wake: Cell<Option<u64>>,
@@ -303,16 +307,31 @@ impl<'a> Board<'a> {
         let by_id: HashMap<String, usize> = agents.iter().enumerate().map(|(i, a)| (a.row.id.clone(), i)).collect();
 
         let mut all_fresh = Vec::new();
+        let mut all_cards = Vec::new();
         for c in model.stack.iter().filter_map(|id| model.cards.get(id)) {
-            if c.object_state != "open" || c.catching_up || c.in_revision.is_some() || reads_as_info(c) {
+            if c.object_state != "open" || c.catching_up || c.in_revision.is_some() {
                 continue;
             }
-            all_fresh.push(Fresh {
+            let fresh = Fresh {
                 id: c.object_id.clone(),
                 agent: by_key.get(key_of(&c.session_id, &c.agent_device_id)).copied(),
                 knocks: matches!(c.urgency.as_str(), "high" | "critical"),
                 permission: false,
-            });
+            };
+            if !reads_as_info(c) {
+                all_fresh.push(fresh.clone());
+            }
+            all_cards.push(fresh);
+        }
+        for p in model.open_permission_ids.iter().filter_map(|id| model.permissions.get(id)) {
+            if p.permission_state == "pending" && !p.catching_up {
+                all_cards.push(Fresh {
+                    id: p.object_id.clone(),
+                    agent: by_key.get(key_of(&p.session_id, &p.agent_device_id)).copied(),
+                    knocks: true,
+                    permission: true,
+                });
+            }
         }
         // (a request not read here yet says nothing of what it asks to run: it waits quietly, as a card does)
         for p in model.open_permission_ids.iter().filter_map(|id| model.permissions.get(id)) {
@@ -339,6 +358,7 @@ impl<'a> Board<'a> {
             teams,
             team,
             all_fresh,
+            all_cards,
             unheard: HashMap::new(),
             wake: Cell::new(None),
             helpers: OnceCell::new(),

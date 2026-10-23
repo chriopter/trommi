@@ -206,6 +206,8 @@ export interface TeamStackView {
   open: boolean
   /** The open questions of the team's sessions. */
   waiting: number
+  /** Its open cards, infos too, and its requests: what Blitz walks on its Desk. The calm grey count. */
+  cards: number
   /** One of them knocks. */
   knocks: boolean
   /** What the head says to a screen reader: "3 agents, 2 questions open". */
@@ -233,6 +235,8 @@ export interface TeamTab {
   name: Text
   /** The open questions of the team's sessions. */
   waiting: number
+  /** Its open cards, infos too, and its requests: what Blitz walks on its Desk. */
+  cards: number
   /** It is the Desk in view: the team in view, unless home (`desk_all`) is. */
   selected: boolean
   /** One of them knocks. */
@@ -268,6 +272,8 @@ export interface SessionRowView {
   helpers?: HelperDotsView
   /** Its open questions: what waits for the person on the Desk (no infos, nothing that is with its agent). */
   open: number
+  /** Its open cards, infos too, and its requests: what Blitz walks of it. The calm grey count beside its name. */
+  cards: number
   /** One of them knocks. */
   knocks: boolean
   /** Why it is stopped, in words. */

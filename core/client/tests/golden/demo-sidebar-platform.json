@@ -7,6 +7,7 @@
         "en": "Fernly"
       },
       "waiting": 14,
+      "cards": 16,
       "selected": false,
       "knocks": true
     },
@@ -17,6 +18,7 @@
         "en": "Platform"
       },
       "waiting": 10,
+      "cards": 13,
       "selected": true,
       "knocks": true
     }
@@ -29,6 +31,7 @@
       "en": "All teams"
     },
     "waiting": 24,
+    "cards": 29,
     "selected": false,
     "knocks": true
   },
@@ -65,6 +68,7 @@
         ]
       },
       "open": 3,
+      "cards": 4,
       "knocks": false,
       "away": false,
       "group": "platform:on",
@@ -118,6 +122,7 @@
         ]
       },
       "open": 2,
+      "cards": 2,
       "knocks": false,
       "away": false,
       "group": "platform:on",
@@ -175,6 +180,7 @@
         ]
       },
       "open": 3,
+      "cards": 5,
       "knocks": true,
       "hand": {
         "why": "blocking",
@@ -236,6 +242,7 @@
         ]
       },
       "open": 2,
+      "cards": 2,
       "knocks": false,
       "away": false,
       "group": "platform:on",
@@ -282,6 +289,7 @@
       "selected": false,
       "open": false,
       "waiting": 14,
+      "cards": 16,
       "knocks": true,
       "says": {
         "key": "team.stack.open",
@@ -354,6 +362,7 @@
             ]
           },
           "open": 8,
+          "cards": 10,
           "knocks": false,
           "away": false,
           "group": "main:on",
@@ -410,6 +419,7 @@
             ]
           },
           "open": 3,
+          "cards": 3,
           "knocks": false,
           "away": false,
           "group": "main:on",
@@ -465,6 +475,7 @@
             ]
           },
           "open": 3,
+          "cards": 3,
           "knocks": true,
           "away": false,
           "group": "main:on",
@@ -500,6 +511,7 @@
       "selected": true,
       "open": false,
       "waiting": 10,
+      "cards": 13,
       "knocks": true,
       "says": {
         "key": "team.stack.open",
@@ -574,6 +586,7 @@
             ]
           },
           "open": 3,
+          "cards": 4,
           "knocks": false,
           "away": false,
           "group": "platform:on",
@@ -627,6 +640,7 @@
             ]
           },
           "open": 2,
+          "cards": 2,
           "knocks": false,
           "away": false,
           "group": "platform:on",
@@ -684,6 +698,7 @@
             ]
           },
           "open": 3,
+          "cards": 5,
           "knocks": true,
           "hand": {
             "why": "blocking",
@@ -745,6 +760,7 @@
             ]
           },
           "open": 2,
+          "cards": 2,
           "knocks": false,
           "away": false,
           "group": "platform:on",

@@ -242,9 +242,9 @@ struct PlacePill: View {
   }
   private func teamItem(_ team: CoreView.TeamTab) -> some View {
     Button { shell.pick(.desk); shell.focus(.desk, team: team.id) } label: {
-      Label { Text(team.waiting > 0 ? "\(team.name.en) · \(team.waiting)" : team.name.en) } icon: { if team.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: team.waiting > 0) } }
+      Label { Text(team.cards > 0 ? "\(team.name.en) · \(team.cards)" : team.name.en) } icon: { if team.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: team.waiting > 0) } }
     }
-    .accessibilityLabel(team.waiting > 0 ? "\(team.name.en), \(team.waiting) waiting" : team.name.en)
+    .accessibilityLabel(team.cards > 0 ? "\(team.name.en), \(team.cards) open" : team.name.en)
   }
   private func go(_ screen: CoreView.Screen) { shell.closeNote(); shell.focus(screen) }
 }
@@ -315,9 +315,9 @@ struct Sidebar: View {
   }
   private func teamItem(_ team: CoreView.TeamTab) -> some View {
     Button { shell.focus(.desk, team: team.id) } label: {
-      Label { Text(team.waiting > 0 ? "\(team.name.en) · \(team.waiting)" : team.name.en) } icon: { if team.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: team.waiting > 0) } }
+      Label { Text(team.cards > 0 ? "\(team.name.en) · \(team.cards)" : team.name.en) } icon: { if team.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: team.waiting > 0) } }
     }
-    .accessibilityLabel(team.waiting > 0 ? "\(team.name.en), \(team.waiting) waiting" : team.name.en)
+    .accessibilityLabel(team.cards > 0 ? "\(team.name.en), \(team.cards) open" : team.name.en)
   }
 }
 
@@ -327,7 +327,7 @@ struct HomeItem: View {
   let pick: () -> Void
   var body: some View {
     Button(action: pick) {
-      Label { Text(home.waiting > 0 ? "\(home.name.en) · \(home.waiting)" : home.name.en) } icon: { if home.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: home.waiting > 0) } }
+      Label { Text(home.cards > 0 ? "\(home.name.en) · \(home.cards)" : home.name.en) } icon: { if home.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: home.waiting > 0) } }
     }
     .accessibilityLabel(home.waiting > 0 ? "\(home.name.en), \(home.waiting) waiting" : home.name.en)
     .accessibilityIdentifier("team-home")
@@ -361,7 +361,7 @@ struct SessionRow: View {
         }
         Spacer(minLength: 4)
         if row.working && !row.blocked && row.open == 0 { WorkingRing(working: true).frame(width: 18, height: 18) }
-        SessionBadge(open: row.open, stopped: row.blocked, says: row.says?.en)
+        SessionBadge(open: row.cards, stopped: row.blocked, says: row.blocked ? row.says?.en : nil)
         if row.unread, row.open == 0 { Circle().fill(Ink.accent).frame(width: 8, height: 8).accessibilityLabel("New message") }
       }
       .padding(.horizontal, 14).padding(.vertical, 8)

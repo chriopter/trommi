@@ -73,7 +73,7 @@ struct ChatsScreen: View {
             }
             else if !stack.sessions.isEmpty { FoldedChats(stack: stack) }
           } header: {
-            Button { withAnimation(.snappy) { shell.fold(team: stack.id) } } label: { TeamTitle(name: stack.name.en, open: stack.sessions.isEmpty ? nil : stack.open, count: Int(stack.waiting)) }
+            Button { withAnimation(.snappy) { shell.fold(team: stack.id) } } label: { TeamTitle(name: stack.name.en, open: stack.sessions.isEmpty ? nil : stack.open, count: Int(stack.cards)) }
               .buttonStyle(.plain)
               .disabled(stack.sessions.isEmpty)
               .accessibilityLabel("\(stack.name.en), \(stack.says.en)")
@@ -248,7 +248,7 @@ struct ChatRow: View {
               .frame(maxWidth: .infinity, alignment: .leading)
               .allowsHitTesting(false)
               .accessibilityIdentifier("chat-teaser-" + row.id)
-            if row.open > 0 { QuietCount(n: Int(row.open)).allowsHitTesting(false) }
+            if row.cards > 0 { QuietCount(n: Int(row.cards)).allowsHitTesting(false) }
           }
         }
       }
