@@ -78,8 +78,7 @@ const send = (conn: Conn | null, m: FromCore): void => { try { conn?.port.postMe
 /** To every page that asked for the core (`attached`: only those that are windows of it). */
 const everyone = (m: FromCore, attached = true): void => { for (const c of conns) if (attached ? c.window !== null : c.wants) send(c, m) }
 const byWindow = (w: number): Conn | null => { for (const c of conns) if (c.window === w) return c; return null }
-/** The window a download or link is for (the core names it), else any window when that one went. */
-const toWindow = (w: number): Conn | null => byWindow(w) ?? [...conns].find(c => c.window !== null) ?? null
+const anyWindow = (): Conn | null => [...conns].find(c => c.window !== null) ?? null
 
 /** The slot's device state as the shell takes it: the binding's store, its values wrapped at rest. */
 function deviceSpace(s: DeviceStore): DeviceSpace {
@@ -147,9 +146,10 @@ async function start(m: Extract<ToCore, { t: 'start' }>): Promise<void> {
         render: (delta, window) => send(byWindow(window), { t: 'render', delta }),
         fileReady: (id, media_type, bytes) => everyone({ t: 'file', id, media_type, bytes }),
         fileGone: id => everyone({ t: 'file_gone', id }),
-        saveFile: (name, media_type, bytes, window) => send(toWindow(window), { t: 'save', name, media_type, bytes }),
-        openUrl: (url, window) => send(toWindow(window), { t: 'open_url', url }),
-        notify: notice => send(toWindow(-1), { t: 'notify', notice }),
+        // (a download or a link only in the window whose step it is (the core names it); gone: dropped)
+        saveFile: (name, media_type, bytes, window) => send(byWindow(window), { t: 'save', name, media_type, bytes }),
+        openUrl: (url, window) => send(byWindow(window), { t: 'open_url', url }),
+        notify: notice => send(anyWindow(), { t: 'notify', notice }),
         log: (level, text) => everyone({ t: 'log', level, text }),
         platform: (op, blobs, window) => new Promise((ok, bad) => {
           // (a passkey or push prompt only in the window whose step asks (the core names it); gone: refused)

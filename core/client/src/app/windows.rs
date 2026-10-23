@@ -14,7 +14,7 @@
 //!
 //! A step a window started stays that window's through its I/O (`origin_of`, `mark_origin`): a passkey or push
 //! prompt, a file to save, a link to open go to the window whose action led to them, even when another window acted
-//! meanwhile; the shell refuses such a prompt when that window went.
+//! meanwhile; when that window went, the shell refuses the prompt and drops the file or link.
 
 use super::{App, Effect, Event};
 use crate::views::{Lens, ViewModel, WindowParts};
@@ -190,18 +190,19 @@ impl App {
             Event::Http { id, .. } | Event::Store { id, .. } | Event::Secret { id, .. } | Event::Platform { id, .. } => {
                 self.io_windows.remove(id).unwrap_or(window)
             }
-            Event::Stream { id, .. } | Event::Progress { id, .. } => self.io_windows.get(id).copied().unwrap_or(window),
+            Event::Progress { id, .. } => self.io_windows.get(id).copied().unwrap_or(window),
             _ => window,
         }
     }
 
     /// After an event: its I/O is the step of `origin`, and what only a window shows (a prompt, a file to save, a
-    /// link) names it. Only kept where several windows share the App; bounded (an answer that never came).
+    /// link) names it. Kept for I/O answered once (not the stream), only where a window other than 0 started it;
+    /// bounded (an answer that never came).
     pub(super) fn mark_origin(&mut self, origin: u32, out: &mut [Effect]) {
         const KEPT: usize = 1024;
         for effect in out.iter_mut() {
             match effect {
-                Effect::Http { id, .. } | Effect::OpenStream { id, .. } | Effect::Store { id, .. } | Effect::Secret { id, .. } => {
+                Effect::Http { id, .. } | Effect::Store { id, .. } | Effect::Secret { id, .. } => {
                     if origin != 0 {
                         self.io_windows.insert(*id, origin);
                     }
