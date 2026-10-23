@@ -171,6 +171,7 @@ turbo-frame.tc-media { flex: none; display: flex; flex-direction: column; gap: v
 .tc-scroll.is-dragged, .tc-scroll.is-dragged * { cursor: grabbing !important; }
 .tc-figure.is-wait { min-height: 96px; min-width: 160px; isolation: isolate; }
 .tc-figure.is-wait::before { content: "Opening the picture…"; position: absolute; inset: 0; z-index: -1; display: grid; place-items: center; color: var(--muted); font: 500 var(--t-sm)/1.2 var(--font); }
+.tc-figure.is-wait:has(> .att-gone)::before { content: none; }   /* (a picture that did not come says so alone) */
 .tc-figure > .att-gone { margin: var(--s-4); }
 .tc-thumb > .att-gone { display: none; }   /* (a small picture that did not come keeps its drawn ground) */
 .tc-step { position: absolute; top: 50%; margin-top: -17px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--surface); color: var(--fg); box-shadow: var(--shadow-md); text-decoration: none; }

@@ -16,6 +16,10 @@ let view = { rev: 0 }
 const listeners = new Map()
 const urls = new Map()        // file id -> object URL
 const asked = new Set()       // file ids asked for (OpenFile) and not here yet
+// Object URLs let go of (a newer copy came, or the page no longer showed it) -> their file id: markup drawn before
+// may still name one, and a picture that then fails asks for its file again (fetchAgain). The newest few hundred.
+const gone = new Map()
+const letGo = (id, url) => { URL.revokeObjectURL(url); gone.set(url, id); if (gone.size > 500) gone.delete(gone.keys().next().value) }
 let lastFocus = ''
 
 const emit = (name, data) => { for (const fn of listeners.get(name) ?? []) { try { fn(data) } catch (err) { console.error(name, err) } } }
@@ -39,7 +43,7 @@ function receive(m) {
     }
     case 'file': {
       const old = urls.get(m.id)
-      if (old) URL.revokeObjectURL(old)
+      if (old) letGo(m.id, old)
       urls.set(m.id, URL.createObjectURL(new Blob([m.bytes], { type: m.media_type || 'application/octet-stream' })))
       asked.delete(m.id)
       emit('file', m.id)
@@ -83,7 +87,7 @@ export function releaseUnusedFiles(root, canvasFiles = []) {
   }
   const canvas = new Set(canvasFiles)
   for (const [id, url] of urls) if (!used.has(url) && !canvas.has(id)) {
-    URL.revokeObjectURL(url)
+    letGo(id, url)
     urls.delete(id)
   }
 }
@@ -130,6 +134,19 @@ export function fileUrl(id) {
   if (url) return url
   if (!asked.has(id) && view.files?.[id]?.state !== 'uploading') { asked.add(id); act({ do: 'open_file', attachment_id: id, save: false }) }
   return null
+}
+/** A picture whose object URL failed (let go while markup drawn before still named it): its file is asked for again,
+ *  and the page is drawn again once it is here. false: no file of this page. */
+export function fetchAgain(url) {
+  const id = gone.get(url) ?? [...urls].find(([, u]) => u === url)?.[0]
+  if (!id) return false
+  if (asked.has(id)) return true
+  const now = urls.get(id)
+  if (now && now !== url) { emit('file', id); return true }   // (a newer copy is here: drawn again with it)
+  if (now) { URL.revokeObjectURL(now); urls.delete(id) }
+  gone.delete(url)
+  fileUrl(id)
+  return asked.has(id)
 }
 /** Saves a file (the core fetches it and hands it over as a download). */
 export const saveFile = id => act({ do: 'open_file', attachment_id: id, save: true })
