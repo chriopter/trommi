@@ -144,8 +144,9 @@ export function focus(f) {
   send({ type: 'focus', focus: f })
 }
 
-/** What a file the hub deleted (a full room made room with its oldest files) stands under: an address no picture
- *  loads from, so its place says why (app.mjs, attGone: the core's note of that file). */
+/** What a picture the hub deleted (a full room made room with its oldest files) stands under: an address no picture
+ *  loads from, so its place says why (app.mjs, attGone: the core's note of that file). Another such file has no
+ *  address: nothing to open or save. */
 export const REMOVED = 'data:,removed#'
 /** The core's words for a file under REMOVED. */
 export const removedNote = src => view.files?.[decodeURIComponent(src.slice(REMOVED.length))]?.note?.en ?? ''
@@ -154,7 +155,7 @@ export function fileUrl(id) {
   if (!id) return null
   const url = urls.get(id)
   if (url) return url
-  if (view.files?.[id]?.state === 'removed') return REMOVED + encodeURIComponent(id)
+  if (view.files?.[id]?.state === 'removed') return view.files[id].picture ? REMOVED + encodeURIComponent(id) : null
   if (!asked.has(id) && view.files?.[id]?.state !== 'uploading') { asked.add(id); act({ do: 'open_file', attachment_id: id, save: false }) }
   return null
 }

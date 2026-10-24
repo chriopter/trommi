@@ -2006,6 +2006,10 @@ async fn upload(
         let a = app.clone();
         blocking(move || {
             a.write_as(&auth, lease, |x, fx| {
+                // a refusal for the number of files comes before anything is deleted
+                x.cfg
+                    .quotas
+                    .room_for(x.c, &auth.room, crate::quota::Counted::Files)?;
                 let arriving = a.arriving(&auth.room);
                 let held = files::make_room(x, &auth.room, arriving, fx)?;
                 if held + arriving > x.cfg.room_quota {

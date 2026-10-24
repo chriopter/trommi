@@ -252,6 +252,9 @@ pub fn record(
             Err(refuse("replay", "other bytes under a used file id"))
         };
     }
+    x.cfg
+        .quotas
+        .room_for(x.c, &auth.room, crate::quota::Counted::Files)?;
     let held = make_room(x, &auth.room, size, fx)?;
     if held + size > x.cfg.room_quota {
         return Err(over_quota(held, x.cfg.room_quota));
