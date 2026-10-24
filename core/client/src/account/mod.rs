@@ -101,6 +101,12 @@ pub enum AccountAction {
         #[serde(default)]
         label: String,
     },
+    /// The name the person gives the Hermes the computer approval is for (its tab on the approval page): the one
+    /// command to paste (`AccountView::hermes_command`) carries it.
+    HermesName {
+        #[serde(default)]
+        name: String,
+    },
     /// Ends an invite this device made: an open one is burned at the hub (its link does nothing any more); a joined
     /// one only leaves the view (`AccountView.invite`).
     DropInvite {

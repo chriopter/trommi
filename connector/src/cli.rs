@@ -90,6 +90,8 @@ async fn finish_join(m: Arc<Member>) -> Result<String> {
 
 /// Explicit activation, or one computer approval followed by this session's activation.
 async fn connect(argv: &[String]) -> Result<String> {
+    // (`setup hermes --link` approves as the Hermes add-on: its ask names Hermes, not Claude Code)
+    crate::host::from_env();
     let computer = argv.iter().any(|a| a == "--computer");
     let args: Vec<_> = argv.iter().filter(|a| a.as_str() != "--computer").collect();
     if args.len() > 1 { return Err(Fault::plain("usage: connect [--computer '<invite link>']")) }

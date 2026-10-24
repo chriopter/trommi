@@ -6957,6 +6957,9 @@ public enum CoreView {
     public var connectPrompt: String?
     /// The corresponding Claude Code command. Contains the invite secret; never log it.
     public var connectCommand: String?
+    /// The ways to bring the agent in with this link, one tab each ("claude", "codex", and for a computer approval
+    /// "hermes"), the first chosen at the start. Their lines contain the invite secret; never log them.
+    public var ways: [ConnectWay]
     /// The six emoji to compare, with their words.
     public var emoji: [EmojiView]
     /// The Emergency Kit words to keep, shown once.
@@ -6985,12 +6988,13 @@ public enum CoreView {
     /// passkey or its kit), which finishes the joins. None otherwise.
     public var resume: Text?
 
-    public init(step: String = "", inviteId: String? = nil, link: String? = nil, connectPrompt: String? = nil, connectCommand: String? = nil, emoji: [EmojiView] = [], kit: [String] = [], asks: [AskView] = [], problem: Text? = nil, invite: InviteView? = nil, kitDue: Bool = false, kitEmail: String? = nil, kitAccount: String? = nil, kitAddress: String? = nil, notice: Text? = nil, resume: Text? = nil) {
+    public init(step: String = "", inviteId: String? = nil, link: String? = nil, connectPrompt: String? = nil, connectCommand: String? = nil, ways: [ConnectWay] = [], emoji: [EmojiView] = [], kit: [String] = [], asks: [AskView] = [], problem: Text? = nil, invite: InviteView? = nil, kitDue: Bool = false, kitEmail: String? = nil, kitAccount: String? = nil, kitAddress: String? = nil, notice: Text? = nil, resume: Text? = nil) {
       self.step = step
       self.inviteId = inviteId
       self.link = link
       self.connectPrompt = connectPrompt
       self.connectCommand = connectCommand
+      self.ways = ways
       self.emoji = emoji
       self.kit = kit
       self.asks = asks
@@ -7010,6 +7014,7 @@ public enum CoreView {
       case link = "link"
       case connectPrompt = "connect_prompt"
       case connectCommand = "connect_command"
+      case ways = "ways"
       case emoji = "emoji"
       case kit = "kit"
       case asks = "asks"
@@ -7030,6 +7035,7 @@ public enum CoreView {
       self.link = try c.decodeIfPresent(String.self, forKey: .link)
       self.connectPrompt = try c.decodeIfPresent(String.self, forKey: .connectPrompt)
       self.connectCommand = try c.decodeIfPresent(String.self, forKey: .connectCommand)
+      self.ways = try c.decodeIfPresent([ConnectWay].self, forKey: .ways) ?? []
       self.emoji = try c.decodeIfPresent([EmojiView].self, forKey: .emoji) ?? []
       self.kit = try c.decodeIfPresent([String].self, forKey: .kit) ?? []
       self.asks = try c.decodeIfPresent([AskView].self, forKey: .asks) ?? []
@@ -7050,6 +7056,7 @@ public enum CoreView {
       try c.encodeIfPresent(link, forKey: .link)
       try c.encodeIfPresent(connectPrompt, forKey: .connectPrompt)
       try c.encodeIfPresent(connectCommand, forKey: .connectCommand)
+      if !ways.isEmpty { try c.encode(ways, forKey: .ways) }
       if !emoji.isEmpty { try c.encode(emoji, forKey: .emoji) }
       if !kit.isEmpty { try c.encode(kit, forKey: .kit) }
       if !asks.isEmpty { try c.encode(asks, forKey: .asks) }
@@ -7219,6 +7226,135 @@ public enum CoreView {
       try c.encode(state, forKey: .state)
       try c.encode(expiresMs, forKey: .expiresMs)
       if !newcomer.isEmpty { try c.encode(newcomer, forKey: .newcomer) }
+    }
+  }
+
+  /// One way to bring an agent in with an invite link, as a tab of the invite's checklist: install (when `install` is
+  /// some), name it (when `name` is some), paste `line`, compare the emoji. `Debug` leaves out `line` and `alt`: they
+  /// carry the invite secret.
+  public struct ConnectWay: Codable, Hashable, Sendable {
+    /// "claude", "codex" or "hermes".
+    public var key: String
+    /// The tab: "Claude Code", "Codex", "Hermes".
+    public var label: Text
+    /// The line that installs the connector, once per computer.
+    public var install: String
+    /// The words before `install`: the first step's title, or (`install_step` false) a hint under `paste`.
+    public var installTitle: Text
+    public var installStep: Bool
+    /// A name to give the agent first (`HermesName` sets it).
+    public var name: NameAsk?
+    /// Where to paste `line`.
+    public var paste: Text
+    /// The line to copy. Contains the invite secret.
+    public var line: String
+    /// A shorter second line for the same (the Claude Code slash command), or none.
+    public var alt: String?
+    /// What to know about pasting it.
+    public var note: Text
+    /// The last step: where the six emoji show, and what follows the match.
+    public var compare: Text
+    public var compareNote: Text
+
+    public init(key: String = "", label: Text = Text(), install: String = "", installTitle: Text = Text(), installStep: Bool = false, name: NameAsk? = nil, paste: Text = Text(), line: String = "", alt: String? = nil, note: Text = Text(), compare: Text = Text(), compareNote: Text = Text()) {
+      self.key = key
+      self.label = label
+      self.install = install
+      self.installTitle = installTitle
+      self.installStep = installStep
+      self.name = name
+      self.paste = paste
+      self.line = line
+      self.alt = alt
+      self.note = note
+      self.compare = compare
+      self.compareNote = compareNote
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case label = "label"
+      case install = "install"
+      case installTitle = "install_title"
+      case installStep = "install_step"
+      case name = "name"
+      case paste = "paste"
+      case line = "line"
+      case alt = "alt"
+      case note = "note"
+      case compare = "compare"
+      case compareNote = "compare_note"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decode(String.self, forKey: .key)
+      self.label = try c.decode(Text.self, forKey: .label)
+      self.install = try c.decode(String.self, forKey: .install)
+      self.installTitle = try c.decode(Text.self, forKey: .installTitle)
+      self.installStep = try c.decodeIfPresent(Bool.self, forKey: .installStep) ?? false
+      self.name = try c.decodeIfPresent(NameAsk.self, forKey: .name)
+      self.paste = try c.decode(Text.self, forKey: .paste)
+      self.line = try c.decode(String.self, forKey: .line)
+      self.alt = try c.decodeIfPresent(String.self, forKey: .alt)
+      self.note = try c.decodeIfPresent(Text.self, forKey: .note) ?? Text()
+      self.compare = try c.decode(Text.self, forKey: .compare)
+      self.compareNote = try c.decodeIfPresent(Text.self, forKey: .compareNote) ?? Text()
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(label, forKey: .label)
+      try c.encode(install, forKey: .install)
+      try c.encode(installTitle, forKey: .installTitle)
+      try c.encode(installStep, forKey: .installStep)
+      try c.encodeIfPresent(name, forKey: .name)
+      try c.encode(paste, forKey: .paste)
+      try c.encode(line, forKey: .line)
+      try c.encodeIfPresent(alt, forKey: .alt)
+      try c.encode(note, forKey: .note)
+      try c.encode(compare, forKey: .compare)
+      try c.encode(compareNote, forKey: .compareNote)
+    }
+  }
+
+  /// A name field on an invite's checklist.
+  public struct NameAsk: Codable, Hashable, Sendable {
+    public var title: Text
+    /// The name so far ("" for none).
+    public var value: String
+    public var placeholder: Text
+    public var note: Text
+
+    public init(title: Text = Text(), value: String = "", placeholder: Text = Text(), note: Text = Text()) {
+      self.title = title
+      self.value = value
+      self.placeholder = placeholder
+      self.note = note
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case title = "title"
+      case value = "value"
+      case placeholder = "placeholder"
+      case note = "note"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.title = try c.decode(Text.self, forKey: .title)
+      self.value = try c.decodeIfPresent(String.self, forKey: .value) ?? ""
+      self.placeholder = try c.decode(Text.self, forKey: .placeholder)
+      self.note = try c.decode(Text.self, forKey: .note)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(title, forKey: .title)
+      try c.encode(value, forKey: .value)
+      try c.encode(placeholder, forKey: .placeholder)
+      try c.encode(note, forKey: .note)
     }
   }
 

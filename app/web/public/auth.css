@@ -168,6 +168,15 @@ a.room-notice-go { text-decoration: none; }
 .clip-alt code { min-width: 0; overflow-wrap: anywhere; font: 500 var(--t-sm)/1.4 var(--mono); }
 .room .clip .clip-alt .clip-copy-word { min-width: 0; height: 28px; padding: 0 var(--s-2); font-size: var(--t-xs, 0.75rem); }
 .clip-in { display: flex; align-items: center; gap: 10px; }
+/* (the ways in as a quiet segmented strip over the list: Claude Code · Codex · Hermes) */
+.clip-ways { display: inline-flex; gap: 2px; justify-self: start; margin: 2px 0 8px; padding: 3px; border-radius: var(--r-md); background: var(--sunken); }
+.clip-ways a { display: grid; place-items: center; min-height: 32px; padding: 0 14px; border-radius: 9px; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); text-decoration: none; }
+.clip-ways a:hover { color: var(--fg); }
+.clip-ways a[aria-current] { background: var(--surface); color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-sm); }
+@media (max-width: 860px) { .clip-ways a { min-height: 36px; } }
+.clip-name input { width: min(100%, 260px); min-height: 40px; padding: 0 12px; border: 1.5px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--fg); font: 400 16px/1.2 var(--font); }
+.clip-nb { white-space: nowrap; }
+.room .clip button.clip-copy:disabled { opacity: .55; cursor: default; translate: none; box-shadow: none; }
 .clip-ask { display: grid; gap: 9px; }
 .clip-ask small strong { color: var(--fg); font-weight: 700; }
 .clip-ask .check-emoji { margin: 2px 0; max-width: none; }

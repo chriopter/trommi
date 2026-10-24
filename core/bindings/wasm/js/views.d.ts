@@ -1992,6 +1992,9 @@ export interface AccountView {
   connect_prompt?: string
   /** The corresponding Claude Code command. Contains the invite secret; never log it. */
   connect_command?: string
+  /** The ways to bring the agent in with this link, one tab each ("claude", "codex", and for a computer approval
+   *  "hermes"), the first chosen at the start. Their lines contain the invite secret; never log them. */
+  ways?: ConnectWay[]
   /** The six emoji to compare, with their words. */
   emoji?: EmojiView[]
   /** The Emergency Kit words to keep, shown once. */
@@ -2059,6 +2062,43 @@ export interface InviteView {
   expires_ms: number
   /** The newcomer's name once it is known ("" before): the device's own, or the agent's session. */
   newcomer?: string
+}
+
+/** One way to bring an agent in with an invite link, as a tab of the invite's checklist: install (when `install` is
+ *  some), name it (when `name` is some), paste `line`, compare the emoji. `Debug` leaves out `line` and `alt`: they
+ *  carry the invite secret. */
+export interface ConnectWay {
+  /** "claude", "codex" or "hermes". */
+  key: string
+  /** The tab: "Claude Code", "Codex", "Hermes". */
+  label: Text
+  /** The line that installs the connector, once per computer. */
+  install: string
+  /** The words before `install`: the first step's title, or (`install_step` false) a hint under `paste`. */
+  install_title: Text
+  install_step: boolean
+  /** A name to give the agent first (`HermesName` sets it). */
+  name?: NameAsk
+  /** Where to paste `line`. */
+  paste: Text
+  /** The line to copy. Contains the invite secret. */
+  line: string
+  /** A shorter second line for the same (the Claude Code slash command), or none. */
+  alt?: string
+  /** What to know about pasting it. */
+  note: Text
+  /** The last step: where the six emoji show, and what follows the match. */
+  compare: Text
+  compare_note: Text
+}
+
+/** A name field on an invite's checklist. */
+export interface NameAsk {
+  title: Text
+  /** The name so far ("" for none). */
+  value: string
+  placeholder: Text
+  note: Text
 }
 
 /** A team's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt. */

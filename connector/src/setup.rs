@@ -584,6 +584,25 @@ pub fn refresh_hermes_addon() {
     }
 }
 
+/// The value of an option of `setup hermes` (`--name`, `--profile`, `--link`): read in order, each option taking the
+/// word after it, so a value that looks like an option (a Hermes named "--link") stays that option's value. None: not
+/// given; Some(None): given without a value.
+fn flag(flags: &[String], key: &str) -> Option<Option<String>> {
+    let mut i = 0;
+    while i < flags.len() {
+        if matches!(flags[i].as_str(), "--name" | "--profile" | "--link") {
+            let value = flags.get(i + 1).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+            if flags[i] == key {
+                return Some(value);
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
 /// One Hermes of this computer (`setup hermes [--name <name>] [--profile <profile>]`): its name on the board ("Hermes",
 /// "Hermes Einkauf") and the Hermes profile it runs as (`hermes -p <profile>`).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -594,7 +613,7 @@ pub struct HermesInstance {
 
 impl HermesInstance {
     pub fn of(flags: &[String]) -> Result<Self, String> {
-        let get = |k: &str| flags.iter().position(|f| f == k).and_then(|i| flags.get(i + 1)).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let get = |k: &str| flag(flags, k).flatten();
         let name = get("--name");
         if name.as_ref().is_some_and(|n| n.chars().count() > 40 || n.chars().any(char::is_control)) {
             return Err("--name: at most 40 characters, one line".into());
@@ -650,12 +669,19 @@ impl HermesInstance {
     }
 }
 
-/// `setup hermes [--name <name>] [--profile <profile>]`: the Trommi add-on written into that Hermes, turned on, and its
-/// platform "trommi" configured to start this connector.
+/// `setup hermes [--name <name>] [--profile <profile>] [--link '<invite link>']`: the Trommi add-on written into that
+/// Hermes, turned on, and its platform "trommi" configured to start this connector. With `--link` (the app's "Approve a
+/// computer", its Hermes tab) this computer is approved with it too, the emoji compared in this terminal as with
+/// `connect --computer`, and Hermes' gateway started again: its first Trommi chat is on the board then.
 pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
     let program = program()?;
     here("hermes")?;
     let me = HermesInstance::of(flags)?;
+    let link = match flag(flags, "--link") {
+        Some(None) => return Err("--link: the invite link of \"Approve a computer\" in the app, in single quotes".into()),
+        Some(Some(l)) => Some(l),
+        None => None,
+    };
     let home = me.home().ok_or("HOME is not set to a folder")?;
     let mut done = Vec::new();
     let dir = home.join("plugins").join(HERMES_ADDON_DIR);
@@ -685,7 +711,50 @@ pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
         done.push("live text: Hermes streams answers only with `hermes config set streaming.enabled true` (this streams on its other platforms too); without it the answer comes whole".to_string());
     }
     done.push("each Trommi chat is a Hermes chat: his message goes to Hermes, its answer back into the same chat, growing while it writes; its questions for approval come as yes/no cards; \"New chat with …\" in the app makes another chat".to_string());
+    if let Some(link) = link {
+        // (the computer approved and the first chat's key made by the connector as the add-on starts it for that
+        // chat: the same folder, name and key; the person compares the emoji here, as with `connect --computer`)
+        eprintln!("[trommi] approving this computer for \"{shown}\": compare the emoji below with the ones in the app");
+        let status = Command::new(&program)
+            .args(["connect", "--computer", link.as_str()])
+            .env_clear()
+            .envs(std::env::vars_os().filter(|(k, _)| inherited(k)))
+            .envs(hermes_env(&me, &home_text))
+            .status()
+            .map_err(|error| format!("`{program} connect` does not start ({error})"))?;
+        if !status.success() {
+            return Err("the add-on is set up, but this computer was not approved: make a new link in the app (Approve a computer, Hermes) and run this again".to_string());
+        }
+        done.push(format!("this computer: approved; \"{shown}\" is on the board"));
+        match me.run(&["gateway", "restart"]) {
+            Ok(_) => done.push("Hermes gateway: started again, with Trommi".to_string()),
+            Err(why) => done.push(format!("Hermes gateway: not started again ({why}); start it (`hermes gateway`) to bring the Trommi chat up")),
+        }
+    } else {
+        done.push("next: in the app, Approve a computer, then Hermes; or `trommi-connector setup hermes --link '<link>'` with its link".to_string());
+    }
     Ok(done)
+}
+
+/// Whether a variable of this terminal goes on to the approving connector: not what names the agent session this runs
+/// in (a Claude Code's or Codex' with Trommi), which would make it that session's connector.
+fn inherited(key: &std::ffi::OsStr) -> bool {
+    const SESSION: [&str; 7] = ["TROMMI_SESSION_KEY", "TROMMI_HOST", "TROMMI_INSTANCE", "TROMMI_AGENT_NAME", "TROMMI_CHANNEL_EVENTS", "TROMMI_JOIN_OTHER", "TROMMI_SPARE"];
+    let key = key.to_string_lossy();
+    !(SESSION.contains(&key.as_ref()) || key.starts_with("CLAUDE") || key.starts_with("CODEX_"))
+}
+
+/// The environment the add-on gives the connector of this Hermes' first chat (trommi_platform/chats.py `env`).
+pub fn hermes_env(me: &HermesInstance, folder: &str) -> Vec<(&'static str, String)> {
+    let slug = me.slug();
+    let key = if slug.is_empty() { "hermes".to_string() } else { format!("hermes-{slug}") };
+    vec![
+        ("TROMMI_HOST", "hermes".into()),
+        ("TROMMI_INSTANCE", slug),
+        ("TROMMI_AGENT_NAME", me.shown()),
+        ("TROMMI_SESSION_KEY", key),
+        ("TROMMI_FOLDER", folder.to_string()),
+    ]
 }
 
 /// `remove hermes [--name] [--profile]`: the platform and the add-on off, the add-on's folder taken away.
@@ -966,6 +1035,11 @@ mod hermes_tests {
         let two = HermesInstance::of(&f(&["--name", "Einkauf", "--profile", "einkauf"])).unwrap();
         assert_eq!((two.shown(), two.slug(), two.args(&["plugins"])), ("Hermes Einkauf".to_string(), "einkauf".to_string(), vec!["-p", "einkauf", "plugins"]));
         assert!(HermesInstance::of(&f(&["--profile", "../x"])).is_err());
+        // (a name that looks like an option is the name's)
+        let odd = f(&["--name", "--link", "--link", "L"]);
+        assert_eq!(HermesInstance::of(&odd).unwrap().name.as_deref(), Some("--link"));
+        assert_eq!(flag(&odd, "--link"), Some(Some("L".into())));
+        assert_eq!(flag(&f(&["--link"]), "--link"), Some(None));
     }
 
     #[test]

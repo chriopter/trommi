@@ -281,15 +281,40 @@ struct AccountScreen: View {
   }
 }
 
-/** An invite this device shows (Settings): its words, its link or prompt, the emoji, the self-join asks. */
+/** An invite this device shows (Settings): its words, its link or prompt (an agent's: one tab per way in, Claude Code,
+ Codex, and for a computer Hermes with its name), the emoji, the self-join asks. */
 struct AccountInvite: View {
   @EnvironmentObject var shell: AppShell
+  @State private var way = ""
+  @State private var hermesName = ""
   var body: some View {
     if let invite = shell.view.account.invite {
       Text(invite.title.en).font(Face.display(22))
       Text(invite.notice.en).font(Face.text(14))
     }
-    if let prompt = shell.view.account.connectPrompt { Text(prompt).font(Face.mono(13)).textSelection(.enabled); ShareLink(item: prompt) }
+    let ways = shell.view.account.ways
+    if let on = ways.first(where: { $0.key == way }) ?? ways.first {
+      if ways.count > 1 {
+        Picker("Agent", selection: Binding(get: { on.key }, set: { way = $0 })) {
+          ForEach(ways, id: \.key) { w in Text(w.label.en).tag(w.key) }
+        }.pickerStyle(.segmented).accessibilityIdentifier("connect-ways")
+      }
+      if on.installStep { step(on.installTitle.en); copyLine(on.install) }
+      if let ask = on.name {
+        step(ask.title.en)
+        TextField(ask.placeholder.en, text: $hermesName).textInputAutocapitalization(.words).autocorrectionDisabled().font(Face.text(16))
+          .padding(10).background(PenBox(r: 10).stroke(Ink.lineStrong, lineWidth: 1.4)).accessibilityIdentifier("hermes-name")
+          .onChange(of: hermesName) { _, name in shell.account(["step": "hermes_name", "name": name]) }
+        Text(ask.note.en).font(Face.text(13)).foregroundStyle(Ink.muted)
+      }
+      step(on.paste.en); copyLine(on.line)
+      if let alt = on.alt { Text("Or the slash command:").font(Face.text(13)).foregroundStyle(Ink.muted); copyLine(alt) }
+      Text(on.note.en).font(Face.text(13)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
+      if !on.installStep { Text(on.installTitle.en).font(Face.text(13)).foregroundStyle(Ink.muted); copyLine(on.install) }
+      step(on.compare.en)
+      Text(on.compareNote.en).font(Face.text(13)).foregroundStyle(Ink.muted)
+    }
+    else if let prompt = shell.view.account.connectPrompt { Text(prompt).font(Face.mono(13)).textSelection(.enabled); ShareLink(item: prompt) }
     else if let link = shell.view.account.link { Text(link).font(Face.mono(13)).textSelection(.enabled); ShareLink(item: link) }
     if !shell.view.account.emoji.isEmpty { Text(shell.view.account.emoji.map(\.emoji).joined(separator: " ")).font(.largeTitle) }
     if let id = shell.view.account.inviteId { HStack { Button("They match") { shell.account(["step": "confirm_emoji", "invite_id": id, "matches": true]) }; Button("Cancel") { shell.account(["step": "drop_invite", "invite_id": id]) } } }
@@ -301,5 +326,16 @@ struct AccountInvite: View {
         ProgressView()
       }.padding().background(Ink.surface2, in: PenBox())
     }
+  }
+
+  private func step(_ words: String) -> some View {
+    Text(words).font(Face.text(15, .semibold)).fixedSize(horizontal: false, vertical: true)
+  }
+  /** A line to paste elsewhere: selectable, and shared (Copy, AirDrop, Messages) with one tap. */
+  private func copyLine(_ line: String) -> some View {
+    HStack(alignment: .top, spacing: 10) {
+      Text(line).font(Face.mono(13)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+      ShareLink(item: line)
+    }.padding(10).background(Ink.sunken, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 }

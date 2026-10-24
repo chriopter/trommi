@@ -474,10 +474,11 @@ run went; you cancel one or give it another time there. The chat shows the next 
 <summary><b>Hermes</b> · Trommi as a Hermes platform, a chat per topic</summary>
 
 [Hermes Agent](https://hermes-agent.nousresearch.com) gets Trommi as one of its platforms, like Telegram: the add-on in
-`connector/hermes/` (its README has the details). `trommi-connector setup hermes` writes it into the Hermes home,
-turns it on and configures the platform `trommi`; after `hermes gateway restart`, Hermes connects to Trommi as any
-agent does (Approve a computer). A second Hermes is a Hermes profile with a name of its own:
-`trommi-connector setup hermes --name Einkauf --profile einkauf`.
+`connector/hermes/` (its README has the details). In the app, Approve a computer and pick the tab Hermes: it gives
+one line, `trommi-connector setup hermes --name Einkauf --link '<link>'`, to paste on the computer where Hermes runs.
+It writes the add-on into the Hermes home, turns it on, configures the platform `trommi`, approves the computer with
+the link (you compare the emoji in the app, as for any agent) and restarts Hermes' gateway. The first chat is then on
+the board. A second Hermes is a Hermes profile with a name of its own (`--name Einkauf --profile einkauf`).
 
 - **Every Trommi chat is a Hermes chat.** Your message goes to Hermes, and its answer comes back into the same chat,
   growing while it writes (an answer preview, spec 7.5). The chat shows it working. Its questions for approval come as
