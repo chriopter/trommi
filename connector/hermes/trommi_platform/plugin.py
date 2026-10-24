@@ -71,7 +71,7 @@ def is_connected(config) -> bool:
 
 
 def interactive_setup() -> None:
-    print("Set Trommi up with the connector: trommi-connector setup hermes [--name <name>] [--profile <profile>]")
+    print("Set Trommi up with the connector: trommi-connector setup hermes [--name <name>] [--profile <profile>] [--link '<link>']")
 
 
 def chat_of_call() -> str:

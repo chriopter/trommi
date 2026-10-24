@@ -14,7 +14,7 @@ use super::{log, App, Effect, LogLevel};
 use crate::account::AccountAction;
 use crate::app::io::IoId;
 use crate::hub::{Answer, Codec, Expect, Failure, Route};
-use crate::views::{AccountView, EmojiView, InviteView, Text};
+use crate::views::{AccountView, ConnectWay, EmojiView, InviteView, NameAsk, Text};
 use serde_json::json;
 use std::collections::BTreeMap;
 use trommi_core::hub_auth::HubAddress;
@@ -118,10 +118,20 @@ impl App {
                     if let Some(id) = self.next_view.account.invite_id.as_deref().and_then(unhex).map(InviteId::new) {
                         if let Some(invite) = self.invites.open.get_mut(&id) { invite.computer = true; }
                     }
-                    if let Some(link) = self.next_view.account.link.as_deref() {
-                        let (prompt, command) = connect_words(link, true);
+                    if let Some(link) = self.next_view.account.link.clone() {
+                        let (prompt, command) = connect_words(&link, true);
                         self.next_view.account.connect_prompt = Some(prompt);
                         self.next_view.account.connect_command = Some(command);
+                        self.next_view.account.ways = connect_ways(&link, true, "");
+                    }
+                }
+            }
+            AccountAction::HermesName { name } => {
+                // (only while a computer approval shows its link and its Hermes tab)
+                if let Some(link) = self.next_view.account.link.clone() {
+                    let account = &mut self.next_view.account;
+                    if let Some(at) = account.ways.iter().position(|w| w.key == "hermes") {
+                        account.ways[at] = hermes_way(&link, name);
                     }
                 }
             }
@@ -145,8 +155,9 @@ impl App {
                 next_look:u64::MAX, asked:None });
             let (prompt, command) = connect_words(&link, false);
             self.next_view.account = AccountView { step:"invite".into(), invite_id:Some(hex(invite.as_bytes())),
-                link:Some(link), connect_prompt:(role == Role::Agent).then_some(prompt),
-                connect_command:(role == Role::Agent).then_some(command), ..Default::default() };
+                link:Some(link.clone()), connect_prompt:(role == Role::Agent).then_some(prompt),
+                connect_command:(role == Role::Agent).then_some(command),
+                ways:if role == Role::Agent { connect_ways(&link, false, "") } else { Vec::new() }, ..Default::default() };
             return true;
         }
         let Some(engine) = self.engine.as_ref() else {
@@ -195,9 +206,11 @@ impl App {
         if shown {
             let (prompt, command) = connect_words(&link, false);
             self.next_view.account = AccountView {
-                step: "invite".into(), invite_id: Some(hex(invite.as_bytes())), link: Some(link),
+                step: "invite".into(), invite_id: Some(hex(invite.as_bytes())), link: Some(link.clone()),
                 connect_prompt: (role == Role::Agent).then_some(prompt),
-                connect_command: (role == Role::Agent).then_some(command), ..Default::default()
+                connect_command: (role == Role::Agent).then_some(command),
+                ways: if role == Role::Agent { connect_ways(&link, false, "") } else { Vec::new() },
+                ..Default::default()
             };
         }
         true
@@ -547,6 +560,79 @@ pub(super) fn emoji_of(code: [u8; 6]) -> Vec<EmojiView> {
         .collect()
 }
 
+/// A word as the shell takes it whole: in single quotes, a quote in it closed and escaped.
+fn shell_quoted(word: &str) -> String {
+    format!("'{}'", word.replace('\'', "'\\''"))
+}
+
+/// The line that installs the connector on a computer, once.
+pub const INSTALL_LINE: &str = "curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh";
+
+/// The tabs of an agent invite's checklist: Claude Code and Codex, and for a computer approval Hermes.
+fn connect_ways(link: &str, computer: bool, hermes_name: &str) -> Vec<ConnectWay> {
+    let (prompt, command) = connect_words(link, computer);
+    let mut ways = vec![
+        ConnectWay {
+            key: "claude".into(), label: Text::new("connect.claude", "Claude Code"), install: INSTALL_LINE.into(), install_step: true, install_title: Text::new("connect.install", "First time on this computer? Install:"), name: None,
+            paste: Text::new("connect.claude_paste", "In your project folder, start claude and paste:"),
+            line: prompt.clone(), alt: Some(command),
+            note: Text::new("connect.claude_note", "Claude Code asks once whether to use the trommi MCP server: choose \"Use this MCP server\"."),
+            compare: Text::new("connect.claude_compare", "Compare the six emoji Claude shows with the ones here"),
+            compare_note: Text::new("connect.compare_note", "Nobody is added before you tap \"They match\"."),
+        },
+        ConnectWay {
+            key: "codex".into(), label: Text::new("connect.codex", "Codex"), install: INSTALL_LINE.into(), install_step: true, install_title: Text::new("connect.install", "First time on this computer? Install:"), name: None,
+            paste: Text::new("connect.codex_paste", "In your project folder, start codex and paste:"),
+            line: prompt, alt: None,
+            note: Text::new("connect.codex_note", "Start Codex again if it was running when Trommi was installed."),
+            compare: Text::new("connect.codex_compare", "Compare the six emoji Codex shows with the ones here"),
+            compare_note: Text::new("connect.compare_note", "Nobody is added before you tap \"They match\"."),
+        },
+    ];
+    if computer {
+        ways.push(hermes_way(link, hermes_name));
+    }
+    ways
+}
+
+/// The Hermes tab: name it, paste one command on its computer, compare the emoji.
+fn hermes_way(link: &str, name: &str) -> ConnectWay {
+    let name = hermes_name(name);
+    let shown = if name.is_empty() { "Hermes".to_string() } else { format!("Hermes {name}") };
+    ConnectWay {
+        key: "hermes".into(), label: Text::new("connect.hermes", "Hermes"),
+        install: INSTALL_LINE.into(), install_step: false, install_title: Text::new("connect.hermes_install", "Trommi not installed on that computer yet? First:"),
+        name: Some(NameAsk {
+            title: Text::new("connect.hermes_name", "Name this Hermes"), value: name.clone(),
+            placeholder: Text::new("connect.hermes_name_placeholder", "e.g. Home"),
+            note: Text::new("connect.hermes_name_note", "A second Hermes gets a name of its own."),
+        }),
+        paste: Text::new("connect.hermes_paste", "On the computer where Hermes runs, paste:"),
+        line: hermes_words(link, &name), alt: None,
+        note: Text::new("connect.hermes_note", "It installs Trommi into Hermes, approves this computer and restarts Hermes."),
+        compare: Text::new("connect.hermes_compare", "Compare the six emoji the terminal shows with the ones here"),
+        compare_note: { let mut t = Text::new("connect.hermes_compare_note", &format!("Then \"{shown}\" shows up as a chat.")); t.args.insert("name".into(), shown); t },
+    }
+}
+
+/// A Hermes name as the setup command takes it: one line, at most 40 characters, trimmed.
+fn hermes_name(name: &str) -> String {
+    name.chars().filter(|c| !c.is_control()).take(40).collect::<String>().trim().to_string()
+}
+
+/// The one command that sets up a Hermes for Trommi on its computer and approves that computer with this link
+/// (`trommi-connector setup hermes`): `name` is the name it shows on the board ("Einkauf" → "Hermes Einkauf"), at most
+/// 40 characters, one line; none when empty.
+pub fn hermes_words(link: &str, name: &str) -> String {
+    let name = hermes_name(name);
+    let mut out = String::from("trommi-connector setup hermes");
+    if !name.is_empty() {
+        out.push_str(&format!(" --name {}", shell_quoted(&name)));
+    }
+    out.push_str(&format!(" --link {}", shell_quoted(link)));
+    out
+}
+
 fn connect_words(link: &str, computer: bool) -> (String, String) {
     let quoted = format!("'{}'", link.replace('\'', "'\\''"));
     if computer {
@@ -587,5 +673,16 @@ mod computer_tests {
         let json = serde_json::to_value(view).unwrap();
         assert!(json["connect_prompt"].as_str().unwrap().contains("computer=true"));
         assert!(json["connect_command"].as_str().unwrap().contains("--computer"));
+        let view = AccountView { ways: connect_ways("private-invite-secret", true, "Home"), ..Default::default() };
+        assert!(!format!("{view:?}").contains("private-invite-secret"));
+        assert!(!format!("{:?}", view.ways).contains("private-invite-secret"));
+    }
+
+    #[test]
+    fn only_a_computer_approval_offers_hermes_and_its_name_stays_one_quoted_word() {
+        assert_eq!(connect_ways("L", false, "").iter().map(|w| w.key.as_str()).collect::<Vec<_>>(), ["claude", "codex"]);
+        assert_eq!(hermes_words("L", ""), "trommi-connector setup hermes --link 'L'");
+        assert_eq!(hermes_words("L", " a$(b) `c`; d\n"), "trommi-connector setup hermes --name 'a$(b) `c`; d' --link 'L'");
+        assert_eq!(hermes_words("L", &"x".repeat(60)).matches('x').count(), 40);
     }
 }

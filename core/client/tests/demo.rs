@@ -133,6 +133,15 @@ fn demo_computer_approval_shows_the_real_permission_and_command_without_io() {
     assert_eq!(shown.title.en, "Approve a computer");
     assert!(shown.notice.en.contains("without another tap"));
     assert!(sim.view.account.connect_command.as_deref().unwrap().contains("--computer"));
+    let keys: Vec<_> = sim.view.account.ways.iter().map(|w| w.key.as_str()).collect();
+    assert_eq!(keys, ["claude", "codex", "hermes"]);
+    let hermes = &sim.view.account.ways[2];
+    assert_eq!(hermes.line, "trommi-connector setup hermes --link 'https://app.trommi.com/#demo-invite'");
+    sim.send(Event::Action { action:Action::Account { action:trommi_client_core::account::AccountAction::HermesName { name:"  Ein'kauf\n ".into() } } });
+    let hermes = &sim.view.account.ways[2];
+    assert_eq!(hermes.line, "trommi-connector setup hermes --name 'Ein'\\''kauf' --link 'https://app.trommi.com/#demo-invite'");
+    assert_eq!(hermes.name.as_ref().unwrap().value, "Ein'kauf");
+    assert!(hermes.compare_note.en.contains("\"Hermes Ein'kauf\""));
     assert!(sim.log.iter().all(|e| !matches!(e, Effect::Http { .. } | Effect::Store { .. } | Effect::OpenStream { .. })));
 }
 

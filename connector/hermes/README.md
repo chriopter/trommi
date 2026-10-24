@@ -28,10 +28,14 @@ add-on: `trommi/working` {on}, `trommi/preview` {draft, text}, `trommi/answer` {
 The connector carries this add-on and installs it:
 
 ```sh
-trommi-connector setup hermes                                  # one Hermes
-trommi-connector setup hermes --name Einkauf --profile einkauf # another Hermes, a Hermes profile of its own
-hermes gateway restart
+trommi-connector setup hermes --link '<link>'                  # one Hermes, with the app's "Approve a computer" link
+trommi-connector setup hermes --name Einkauf --profile einkauf --link '<link>' # another Hermes, a profile of its own
 ```
+
+The app's "Approve a computer", tab Hermes, gives this line with its link. With `--link` the setup also approves the
+computer: it runs `trommi-connector connect --computer '<link>'` with the environment the add-on gives the first chat
+(same name, folder and key), so you compare the emoji in the app as for any agent. Then it runs
+`hermes gateway restart`, and the first chat starts on its key. Without `--link` only the add-on is set up.
 
 `setup hermes` writes the add-on into `<hermes home>/plugins/trommi-platform/` together with `trommi.json`, the
 connector's board tools and instructions. It then turns the plugin on (`hermes plugins enable trommi-platform`) and
