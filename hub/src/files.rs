@@ -152,30 +152,37 @@ pub fn make_room(x: &Ctx, room: &Room, extra: u64, fx: &mut Effects) -> Res<u64>
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?
         .collect::<rusqlite::Result<_>>()?;
-    let in_chats: Vec<Vec<u8>> = x
-        .c
-        .prepare_cached(
-            "SELECT file_ids FROM envelopes WHERE room_id = ?1 AND timeline >= ?2 AND timeline < ?3 AND length(file_ids) > 0",
-        )?
-        .query_map(
-            params![
-                &room[..],
-                &[wire::TIMELINE_CHAT, wire::SCOPE_SESSION][..],
-                &[wire::TIMELINE_CHAT, wire::SCOPE_SESSION + 1][..]
-            ],
-            |r| r.get(0),
-        )?
-        .collect::<rusqlite::Result<_>>()?;
-    for ids in &in_chats {
-        for id in ids.as_chunks::<16>().0 {
-            let row: Option<(i64, i64)> = x
-                .c
-                .prepare_cached("SELECT stored_at, size FROM files WHERE room_id = ?1 AND file_id = ?2 AND deleted_at IS NULL AND group_id IS NOT NULL AND object_id IS NULL")?
-                .query_row(params![&room[..], &id[..]], |r| Ok((r.get(0)?, r.get(1)?)))
-                .optional()?;
-            if let Some((at, size)) = row {
-                may_go.push((at, id.to_vec(), size));
+    // one pass over the envelopes without an object that name files: those of session Chats, and the others (a
+    // register value, a board item), whose files stay even when a Chat names them too
+    let session_chat = [wire::TIMELINE_CHAT, wire::SCOPE_SESSION];
+    let mut in_chats = std::collections::BTreeSet::new();
+    let mut kept = std::collections::HashSet::new();
+    {
+        let mut s = x.c.prepare_cached(
+            "SELECT timeline, file_ids FROM envelopes WHERE room_id = ?1 AND object_id IS NULL AND body IS NOT NULL AND length(file_ids) > 0",
+        )?;
+        let mut rows = s.query([&room[..]])?;
+        while let Some(r) = rows.next()? {
+            let timeline: Option<Vec<u8>> = r.get(0)?;
+            let ids: Vec<u8> = r.get(1)?;
+            let chat = timeline.is_some_and(|t| t.starts_with(&session_chat));
+            for id in ids.as_chunks::<16>().0 {
+                if chat {
+                    in_chats.insert(*id);
+                } else {
+                    kept.insert(*id);
+                }
             }
+        }
+    }
+    for id in in_chats.iter().filter(|id| !kept.contains(*id)) {
+        let row: Option<(i64, i64)> = x
+            .c
+            .prepare_cached("SELECT stored_at, size FROM files WHERE room_id = ?1 AND file_id = ?2 AND deleted_at IS NULL AND group_id IS NOT NULL AND object_id IS NULL")?
+            .query_row(params![&room[..], &id[..]], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?;
+        if let Some((at, size)) = row {
+            may_go.push((at, id.to_vec(), size));
         }
     }
     may_go.sort();

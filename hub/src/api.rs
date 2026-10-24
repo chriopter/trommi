@@ -1987,7 +1987,7 @@ async fn upload(
     let announced: Option<u64> =
         http::header(headers, "content-length").and_then(|v| v.parse().ok());
     let (a, bearer) = (app.clone(), bearer.map(str::to_string));
-    let (auth, mut used, again) = blocking(move || {
+    let (auth, used, again) = blocking(move || {
         a.read(|x| {
             let auth = a.sessions.authorise(x.c, bearer.as_deref(), x.now)?;
             let (used, again) = files::admit(x, &auth, &file, announced)?;
@@ -1997,18 +1997,28 @@ async fn upload(
     .await?;
     let limit = app.cfg.file_limit;
     let bytes = if again { 0 } else { announced.unwrap_or(limit) };
-    // A room at its quota makes room first (11.3.1): the oldest files of finished cards and session Chats go.
-    let extra = app.arriving(&auth.room) + bytes;
-    if bytes > 0 && used + extra > app.cfg.room_quota {
+    // Room for the bytes is reserved before the first one is read, and given back however the upload ends: what
+    // is being uploaded counts against the room's quota like what is stored.
+    let mut reserved = app.reserve_upload(&auth.room, bytes)?;
+    // Stored and arriving bytes past the quota: the room makes room first (11.3.1), the oldest files of finished
+    // cards and session Chats go; judged inside the transaction, with the arriving bytes as they are then.
+    if bytes > 0 && used + app.arriving(&auth.room) > app.cfg.room_quota {
         let a = app.clone();
-        used = blocking(move || {
-            a.write_as(&auth, lease, |x, fx| files::make_room(x, &auth.room, extra, fx))
+        blocking(move || {
+            a.write_as(&auth, lease, |x, fx| {
+                let arriving = a.arriving(&auth.room);
+                let held = files::make_room(x, &auth.room, arriving, fx)?;
+                if held + arriving > x.cfg.room_quota {
+                    return Err(files::over_quota(
+                        (held + arriving).saturating_sub(bytes),
+                        x.cfg.room_quota,
+                    ));
+                }
+                Ok(())
+            })
         })
         .await?;
     }
-    // Room for the bytes is reserved before the first one is read, and given back however the upload ends: what
-    // is being uploaded counts against the room's quota like what is stored.
-    let _reserved = app.reserve_upload(&auth.room, bytes, used)?;
     let io = |e: std::io::Error| {
         crate::log::warn(
             "file_write_failed",
@@ -2046,7 +2056,9 @@ async fn upload(
     // device removed during the upload stores nothing.
     blocking(move || {
         a.write_as(&auth, lease, |x, fx| {
-            if let files::Stored::New = files::record(x, &auth, &file, size, &sha256, fx)? {
+            let stored = files::record(x, &auth, &file, size, &sha256, fx)?;
+            reserved.settle();
+            if let files::Stored::New = stored {
                 up.place().map_err(|e| {
                     crate::log::warn(
                         "file_write_failed",
