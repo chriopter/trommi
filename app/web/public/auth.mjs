@@ -456,10 +456,15 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
     return html`${wrapAt(head)}<span class="clip-link-same" data-same="…">${mid}</span><wbr><span class="clip-link-own">${tail}</span>`
   }
   const step = (state, inner) => html`<li class="clip-step${state ? ` is-${state}` : ''}">${TICKBOX}<div class="clip-step-body">${inner}</div></li>`
-  const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh'
-  const altLine = text => html`<button type="button" class="clip-alt" data-line="slash" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${text.replace(/#.*'$/, "#…'")}</code><span class="clip-copy-word" data-word="Copy">Copy</span></button>`
-  const clipboard = () => {
+  const altLine = (text, line = 'slash', shown = text.replace(/#.*'$/, "#…'")) => html`<button type="button" class="clip-alt" data-line="${line}" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${shown}</code><span class="clip-copy-word" data-word="Copy">Copy</span></button>`
+  /** A command as shown: its --flags kept whole, its link broken after a slash. */
+  const commandShown = text => text.split(' ').map((word, i) => html`${i ? ' ' : ''}${word.startsWith('--') ? html`<span class="clip-nb">${word}</span>` : wrapAt(word)}`)
+  // (the ways in, one tab each: Claude Code, Codex, and for a computer Hermes; the core's AccountView.ways)
+  const wayTabs = (ways, on) => ways.length < 2 ? '' : html`<nav class="clip-ways" aria-label="Which agent">${ways.map(w => html`<a href="/pair/agent?with=${w.key}" data-nav data-way="${w.key}"${w.key === on.key ? raw(' aria-current="page"') : ''}>${w.label.en}</a>`)}</nav>`
+  const nameStep = (n, done) => step(done, html`<b>${n.title.en}</b><form method="post" action="/pair/hermes" class="clip-name"><input name="name" value="${n.value}" placeholder="${n.placeholder.en}" maxlength="40" autocomplete="off" spellcheck="false" aria-label="${n.title.en}" data-action="input->invite-clip#typed change->invite-clip#name"></form><small>${n.note.en}</small>`)
+  const clipboard = (wayKey) => {
     const av = vm().account ?? {}, state = inviteState('agent'), inv = av.invite ?? {}
+    const ways = av.ways ?? [], way = ways.find(w => w.key === wayKey) ?? ways[0]
     if (!inv.invite_id && !av.problem) return html`<main id="room" class="room room-clip" aria-busy="true"><section class="clip">${CLAMP}<progress></progress></section></main>`
     const open = state === 'open', joined = state === 'joined', coming = state === 'adding', ask = state === 'confirm_code', dead = state === 'failed'
     const done = open ? '' : 'done'
@@ -471,7 +476,7 @@ ${matchButtons(av.invite_id, 'agent')}
       : joined ? html`<b class="clip-in"><span>${inv.newcomer || 'The agent'} is in</span></b>`
       : coming ? html`<b>Adding ${inv.newcomer || 'the agent'}…</b>`
       : dead ? html`<b>${av.problem.en}</b>`
-      : html`<b>Compare the six emoji Claude shows with the ones here</b><small>Nobody is added before you tap "They match".</small>`
+      : html`<b>${way?.compare.en ?? 'Compare the six emoji with the ones here'}</b><small>${way?.compare_note.en ?? ''}</small>`
     const foot = joined ? dropButton(inv, 'Done', 'room-done clip-done', 'clip-done')
       : dead ? html`<form method="post" action="/pair" class="clip-again"><input type="hidden" name="role" value="computer"><button type="submit">New link</button></form>`
       : coming ? html`<p class="clip-note">The link is in use: this page stays until the agent is in.</p>`
@@ -479,15 +484,22 @@ ${matchButtons(av.invite_id, 'agent')}
     return html`<main id="room" class="room room-clip" aria-label="${inv.title?.en ?? ''}"><div id="invite-agent" class="room-invite" data-state="${state}">
 <section class="clip" data-controller="invite-clip">${CLAMP}
 <h2>${inv.title?.en ?? ''}</h2><p class="clip-sub">${inv.notice?.en ?? ''}</p>
-<ol class="clip-list">
-${step(done, html`<b>First time on this computer? Install:</b>${open ? html`${copyLine(INSTALL, 'Copy', 'install')}<small>Skip this if you have installed Trommi before (check: <code>trommi-connector --version</code>).</small>` : ''}`)}
-${step(done, html`<b>In your project folder, start claude (or codex) and paste:</b>${open ? html`${copyLine(av.connect_prompt ?? '', 'Copy', 'connect', connectShown(av.connect_prompt ?? ''))}<small class="clip-or">Or in Claude Code, the slash command: ${altLine(av.connect_command ?? '')}</small><small>Claude Code asks once whether to use the trommi MCP server: choose "Use this MCP server". In Codex: start Codex again if it was running when Trommi was installed.</small>` : ''}`)}
+${open ? wayTabs(ways, way) : ''}
+<ol class="clip-list" data-way="${way?.key ?? ''}">
+${way?.install_step ? step(done, html`<b>${way.install_title.en}</b>${open ? html`${copyLine(way.install, 'Copy', 'install')}<small>Skip this if you have installed Trommi before (check: <code>trommi-connector --version</code>).</small>` : ''}`) : ''}
+${open && way?.name ? nameStep(way.name, way.name.value ? 'done' : '') : ''}
+${way ? step(done, html`<b>${way.paste.en}</b>${open ? html`${copyLine(way.line, 'Copy', way.key === 'hermes' ? 'setup' : 'connect', way.key === 'hermes' ? commandShown(way.line) : connectShown(way.line))}${way.alt ? html`<small class="clip-or">Or in Claude Code, the slash command: ${altLine(way.alt)}</small>` : ''}<small>${way.note.en}</small>${way.install_step ? '' : html`<small class="clip-or">${way.install_title.en} ${altLine(way.install, 'install', way.install.replace(/https:\/\/\S*\//, '…/'))}</small>`}` : ''}`) : ''}
 ${step(joined ? 'done' : dead ? 'dead' : ask ? 'ask' : open ? '' : 'wait', last)}
 </ol>${foot}</section></div></main>`
   }
-  t.get(/^\/pair\/agent$/, ({ req, res }) => {
+  t.get(/^\/pair\/agent$/, ({ req, res, url }) => {
     if (inviteState('agent') === 'none' && local.invite?.kind !== 'agent') return t.redirect(res, '/settings')
-    page(req, res, vm().account?.invite?.title?.en ?? '', clipboard(), { view: 'invite' })
+    page(req, res, vm().account?.invite?.title?.en ?? '', clipboard(url.searchParams.get('with')), { view: 'invite' })
+  })
+  // (the Hermes tab's name, without a script: Enter sends it; with one, the field sends it as typed)
+  t.post(/^\/pair\/hermes$/, ({ res, form }) => {
+    t.account({ step: 'hermes_name', name: field(form, 'name') })
+    t.redirect(res, '/pair/agent?with=hermes')
   })
 
   // ---- /settings/devices: the person's devices (phones, tablets, browsers), each with a page of its own, and Push.
@@ -955,6 +967,20 @@ controller('invite-clip', class extends Controller {
     if (ok) line.closest('.clip-step')?.classList.add('is-done')
     clearTimeout(this.said)
     this.said = setTimeout(() => { for (const w of this.element.querySelectorAll('.clip-copy-word')) w.textContent = w.dataset.word }, 1800)
+  }
+  // (while the name is typed the command below still has the old one: it is not copied until the name is in, at
+  //  Enter or when the field is left; then the core writes the command anew and the page is drawn again)
+  typed() {
+    const line = this.element.querySelector('.clip-copy[data-line="setup"]')
+    if (!line || line.disabled) return
+    line.disabled = true
+    line.querySelector('.clip-copy-word').textContent = 'Press Enter'
+  }
+  name(e) {
+    actCore({ do: 'account', action: { step: 'hermes_name', name: e.target.value } })
+    // (the page drawn again keeps what a controller changed: the line is let go here; its text comes with the core)
+    const line = this.element.querySelector('.clip-copy[data-line="setup"]')
+    if (line) { line.disabled = false; const w = line.querySelector('.clip-copy-word'); w.textContent = w.dataset.word }
   }
 })
 

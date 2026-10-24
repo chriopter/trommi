@@ -2707,6 +2707,10 @@ pub struct AccountView {
     /// The corresponding Claude Code command. Contains the invite secret; never log it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connect_command: Option<String>,
+    /// The ways to bring the agent in with this link, one tab each ("claude", "codex", and for a computer approval
+    /// "hermes"), the first chosen at the start. Their lines contain the invite secret; never log them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ways: Vec<ConnectWay>,
     /// The six emoji to compare, with their words.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emoji: Vec<EmojiView>,
@@ -2755,6 +2759,7 @@ impl std::fmt::Debug for AccountView {
             .field("link", &self.link.as_ref().map(|_| "<redacted>"))
             .field("connect_prompt", &self.connect_prompt.as_ref().map(|_| "<redacted>"))
             .field("connect_command", &self.connect_command.as_ref().map(|_| "<redacted>"))
+            .field("ways", &format_args!("<{} ways redacted>", self.ways.len()))
             .field("emoji", &self.emoji)
             .field("kit", &format_args!("<{} words redacted>", self.kit.len()))
             .field("asks", &self.asks)
@@ -2819,6 +2824,50 @@ pub struct InviteView {
     /// The newcomer's name once it is known ("" before): the device's own, or the agent's session.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub newcomer: String,
+}
+
+/// One way to bring an agent in with an invite link, as a tab of the invite's checklist: install (when `install` is
+/// some), name it (when `name` is some), paste `line`, compare the emoji.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConnectWay {
+    /// "claude", "codex" or "hermes".
+    pub key: String,
+    /// The tab: "Claude Code", "Codex", "Hermes".
+    pub label: Text,
+    /// The line that installs the connector, once per computer.
+    pub install: String,
+    /// The words before `install`: the first step's title, or (`install_step` false) a hint under `paste`.
+    pub install_title: Text,
+    #[serde(default)]
+    pub install_step: bool,
+    /// A name to give the agent first (`HermesName` sets it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<NameAsk>,
+    /// Where to paste `line`.
+    pub paste: Text,
+    /// The line to copy. Contains the invite secret.
+    pub line: String,
+    /// A shorter second line for the same (the Claude Code slash command), or none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
+    /// What to know about pasting it.
+    #[serde(default)]
+    pub note: Text,
+    /// The last step: where the six emoji show, and what follows the match.
+    pub compare: Text,
+    #[serde(default)]
+    pub compare_note: Text,
+}
+
+/// A name field on an invite's checklist.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NameAsk {
+    pub title: Text,
+    /// The name so far ("" for none).
+    #[serde(default)]
+    pub value: String,
+    pub placeholder: Text,
+    pub note: Text,
 }
 
 /// A team's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt.
