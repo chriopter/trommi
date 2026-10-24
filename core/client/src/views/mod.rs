@@ -2827,8 +2827,9 @@ pub struct InviteView {
 }
 
 /// One way to bring an agent in with an invite link, as a tab of the invite's checklist: install (when `install` is
-/// some), name it (when `name` is some), paste `line`, compare the emoji.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// some), name it (when `name` is some), paste `line`, compare the emoji. `Debug` leaves out `line` and `alt`: they
+/// carry the invite secret.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConnectWay {
     /// "claude", "codex" or "hermes".
     pub key: String,
@@ -2857,6 +2858,17 @@ pub struct ConnectWay {
     pub compare: Text,
     #[serde(default)]
     pub compare_note: Text,
+}
+
+impl std::fmt::Debug for ConnectWay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConnectWay")
+            .field("key", &self.key)
+            .field("name", &self.name)
+            .field("line", &"<redacted>")
+            .field("alt", &self.alt.as_ref().map(|_| "<redacted>"))
+            .finish_non_exhaustive()
+    }
 }
 
 /// A name field on an invite's checklist.

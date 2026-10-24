@@ -7230,7 +7230,8 @@ public enum CoreView {
   }
 
   /// One way to bring an agent in with an invite link, as a tab of the invite's checklist: install (when `install` is
-  /// some), name it (when `name` is some), paste `line`, compare the emoji.
+  /// some), name it (when `name` is some), paste `line`, compare the emoji. `Debug` leaves out `line` and `alt`: they
+  /// carry the invite secret.
   public struct ConnectWay: Codable, Hashable, Sendable {
     /// "claude", "codex" or "hermes".
     public var key: String

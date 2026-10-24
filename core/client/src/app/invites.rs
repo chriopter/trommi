@@ -675,6 +675,7 @@ mod computer_tests {
         assert!(json["connect_command"].as_str().unwrap().contains("--computer"));
         let view = AccountView { ways: connect_ways("private-invite-secret", true, "Home"), ..Default::default() };
         assert!(!format!("{view:?}").contains("private-invite-secret"));
+        assert!(!format!("{:?}", view.ways).contains("private-invite-secret"));
     }
 
     #[test]

@@ -2065,7 +2065,8 @@ export interface InviteView {
 }
 
 /** One way to bring an agent in with an invite link, as a tab of the invite's checklist: install (when `install` is
- *  some), name it (when `name` is some), paste `line`, compare the emoji. */
+ *  some), name it (when `name` is some), paste `line`, compare the emoji. `Debug` leaves out `line` and `alt`: they
+ *  carry the invite secret. */
 export interface ConnectWay {
   /** "claude", "codex" or "hermes". */
   key: string

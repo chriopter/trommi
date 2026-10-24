@@ -584,6 +584,25 @@ pub fn refresh_hermes_addon() {
     }
 }
 
+/// The value of an option of `setup hermes` (`--name`, `--profile`, `--link`): read in order, each option taking the
+/// word after it, so a value that looks like an option (a Hermes named "--link") stays that option's value. None: not
+/// given; Some(None): given without a value.
+fn flag(flags: &[String], key: &str) -> Option<Option<String>> {
+    let mut i = 0;
+    while i < flags.len() {
+        if matches!(flags[i].as_str(), "--name" | "--profile" | "--link") {
+            let value = flags.get(i + 1).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+            if flags[i] == key {
+                return Some(value);
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
 /// One Hermes of this computer (`setup hermes [--name <name>] [--profile <profile>]`): its name on the board ("Hermes",
 /// "Hermes Einkauf") and the Hermes profile it runs as (`hermes -p <profile>`).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -594,7 +613,7 @@ pub struct HermesInstance {
 
 impl HermesInstance {
     pub fn of(flags: &[String]) -> Result<Self, String> {
-        let get = |k: &str| flags.iter().position(|f| f == k).and_then(|i| flags.get(i + 1)).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let get = |k: &str| flag(flags, k).flatten();
         let name = get("--name");
         if name.as_ref().is_some_and(|n| n.chars().count() > 40 || n.chars().any(char::is_control)) {
             return Err("--name: at most 40 characters, one line".into());
@@ -658,8 +677,7 @@ pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
     let program = program()?;
     here("hermes")?;
     let me = HermesInstance::of(flags)?;
-    let link = flags.iter().position(|f| f == "--link").map(|i| flags.get(i + 1).map(|l| l.trim().to_string()).filter(|l| !l.is_empty()));
-    let link = match link {
+    let link = match flag(flags, "--link") {
         Some(None) => return Err("--link: the invite link of \"Approve a computer\" in the app, in single quotes".into()),
         Some(Some(l)) => Some(l),
         None => None,
@@ -1017,6 +1035,11 @@ mod hermes_tests {
         let two = HermesInstance::of(&f(&["--name", "Einkauf", "--profile", "einkauf"])).unwrap();
         assert_eq!((two.shown(), two.slug(), two.args(&["plugins"])), ("Hermes Einkauf".to_string(), "einkauf".to_string(), vec!["-p", "einkauf", "plugins"]));
         assert!(HermesInstance::of(&f(&["--profile", "../x"])).is_err());
+        // (a name that looks like an option is the name's)
+        let odd = f(&["--name", "--link", "--link", "L"]);
+        assert_eq!(HermesInstance::of(&odd).unwrap().name.as_deref(), Some("--link"));
+        assert_eq!(flag(&odd, "--link"), Some(Some("L".into())));
+        assert_eq!(flag(&f(&["--link"]), "--link"), Some(None));
     }
 
     #[test]

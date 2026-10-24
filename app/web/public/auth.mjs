@@ -977,10 +977,20 @@ controller('invite-clip', class extends Controller {
     line.querySelector('.clip-copy-word').textContent = 'Press Enter'
   }
   name(e) {
-    actCore({ do: 'account', action: { step: 'hermes_name', name: e.target.value } })
-    // (the page drawn again keeps what a controller changed: the line is let go here; its text comes with the core)
     const line = this.element.querySelector('.clip-copy[data-line="setup"]')
-    if (line) { line.disabled = false; const w = line.querySelector('.clip-copy-word'); w.textContent = w.dataset.word }
+    const was = line?.getAttribute('data-invite-clip-text-param')
+    actCore({ do: 'account', action: { step: 'hermes_name', name: e.target.value } })
+    // (the page drawn again keeps what a controller changed: the line is let go once the core's new command is in it,
+    //  or after a second when the name was the same and the command stays)
+    if (!line) return
+    const since = Date.now()
+    const free = () => {
+      if (!line.isConnected) return
+      if (line.getAttribute('data-invite-clip-text-param') === was && Date.now() - since < 1000) return requestAnimationFrame(free)
+      line.disabled = false
+      const w = line.querySelector('.clip-copy-word'); w.textContent = w.dataset.word
+    }
+    requestAnimationFrame(free)
   }
 })
 
