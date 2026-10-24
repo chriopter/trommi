@@ -847,3 +847,64 @@ fn of_two_processes_on_one_agent_device_the_later_wins() {
         )
         .ok();
 }
+
+#[test]
+fn a_full_room_makes_room_with_the_oldest_pictures_of_finished_cards_and_chats() {
+    let mut s = scene_on(TestHub::start_with(&[("HUB_ROOM_QUOTA", "1000")]));
+    let pause = || std::thread::sleep(std::time::Duration::from_millis(5));
+    let picture = |s: &Scene, dev: &Dev, n: usize| -> [u8; 16] {
+        let f = random();
+        upload(&s.w.hub, dev, &f, &vec![1u8; n]).ok();
+        f
+    };
+    let version =
+        |s: &mut Scene, id: [u8; 16], state: u8, previous: [u8; 32], files: &[[u8; 16]]| {
+            let mut item = object(
+                wire::KIND_VERSION,
+                id,
+                wire::TYPE_CARD,
+                state,
+                1,
+                previous,
+                ZERO32,
+            );
+            item.file_ids = files.to_vec();
+            s.agent.send(&s.w.hub, &s.group, &item).ok();
+            s.agent.chain(&s.group).1
+        };
+    // the oldest picture is on a card still open; then a closed card's two, then one in the session's Chat
+    let open_pic = picture(&s, &s.agent, 200);
+    let open_card = enc::object_id(&s.group, &s.agent.id(), s.agent.chain(&s.group).0 + 1);
+    version(&mut s, open_card, wire::STATE_OPEN, ZERO32, &[open_pic]);
+    pause();
+    let c1 = picture(&s, &s.agent, 200);
+    pause();
+    let c2 = picture(&s, &s.agent, 200);
+    let done_card = enc::object_id(&s.group, &s.agent.id(), s.agent.chain(&s.group).0 + 1);
+    let first = version(&mut s, done_card, wire::STATE_OPEN, ZERO32, &[c1, c2]);
+    version(&mut s, done_card, wire::STATE_CLOSED, first, &[]);
+    pause();
+    let line = picture(&s, &s.w.ada, 200);
+    let mut said = chat(&s.session, s.agent.id(), "a picture");
+    said.file_ids = vec![line];
+    s.w.ada.send(&s.w.hub, &s.group, &said).ok();
+    pause();
+
+    // 800 stored; 400 more do not fit: the oldest that may go goes (the closed card's first), not the open card's
+    picture(&s, &s.agent, 400);
+    fetch(&s.w.hub, &s.bea, &c1, None).refused(404, "not-found");
+    for kept in [open_pic, c2, line] {
+        fetch(&s.w.hub, &s.bea, &kept, None).ok();
+    }
+    // 1000 stored; 300 more: the closed card's second and the Chat's picture go
+    picture(&s, &s.agent, 300);
+    fetch(&s.w.hub, &s.bea, &c2, None).refused(404, "not-found");
+    fetch(&s.w.hub, &s.bea, &line, None).refused(404, "not-found");
+    // 900 stored, nothing left that may go: refused, and the open card keeps its picture
+    let over = upload(&s.w.hub, &s.agent, &random(), &[1u8; 300]).refused(413, "quota-exceeded");
+    assert_eq!(
+        (over["used"].as_u64(), over["quota"].as_u64()),
+        (Some(900), Some(1000))
+    );
+    fetch(&s.w.hub, &s.bea, &open_pic, None).ok();
+}

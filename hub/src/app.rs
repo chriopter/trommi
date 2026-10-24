@@ -222,6 +222,12 @@ impl App {
         });
     }
 
+    /// The bytes of the room's uploads in progress.
+    pub fn arriving(&self, room: &Room) -> u64 {
+        let uploads = self.uploads.lock().unwrap_or_else(|e| e.into_inner());
+        uploads.get(room).map_or(0, |(arriving, _)| *arriving)
+    }
+
     /// Reserves room for an upload of `bytes` in a room whose files hold `used`: refused when stored and
     /// arriving bytes together pass the quota, or when the room has 16 uploads in progress.
     pub fn reserve_upload(self: &Arc<Self>, room: &Room, bytes: u64, used: u64) -> Res<UploadSlot> {

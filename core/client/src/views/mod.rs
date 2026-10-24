@@ -2918,7 +2918,7 @@ pub struct FileView {
     /// A picture (by its media type or its name's ending): an attachment shows it as a small square thumbnail.
     #[serde(default)]
     pub picture: bool,
-    /// "uploading", "ready", "failed", "missing".
+    /// "uploading", "loading", "ready", "failed", "missing", "removed" (the hub deleted it: a full room made room).
     pub state: String,
     /// The attachment's id once the hub has it (an upload's local id maps to it here).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2931,6 +2931,9 @@ pub struct FileView {
     /// The Share links this device made for it (`Action::Share`), kept in memory only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shares: Vec<FileShareView>,
+    /// What stands in place of a file that cannot be shown ("removed": "Removed (storage full)").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<Text>,
 }
 
 /// A Share link of a file: the whole link (its key behind the `#`), for the person to copy.

@@ -330,7 +330,7 @@ fn what_a_room_may_hold() {
         )
     };
 
-    // 16: a file is at most 64 MiB (here 1 000 bytes), a room's files 1 GiB (here 1 500)
+    // 16: a file is at most 64 MiB (here 1 000 bytes), a room's files 4 GiB (here 1 500)
     put(&w.hub, &w.ada, &[1u8; 1001]).refused(413, "too-large");
     put(&w.hub, &w.ada, &[1u8; 1000]).ok();
     put(&w.hub, &w.ada, &[1u8; 501]).refused(413, "quota-exceeded");

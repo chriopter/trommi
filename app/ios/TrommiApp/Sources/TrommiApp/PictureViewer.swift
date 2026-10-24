@@ -35,7 +35,7 @@ struct CardPicture: View {
         .aspectRatio(max(r, 0.4), contentMode: .fit)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .top) {
-          if let image { Image(uiImage: image).resizable().interpolation(.high).scaledToFill() } else { ProgressView().frame(maxHeight: .infinity) }
+          if let image { Image(uiImage: image).resizable().interpolation(.high).scaledToFill() } else if let note = shell.view.files[fileId]?.note { RemovedPicture(note: note.en).frame(maxHeight: .infinity) } else { ProgressView().frame(maxHeight: .infinity) }
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.line))
@@ -49,6 +49,15 @@ struct CardPicture: View {
     .task(id: fileId) { if shell.files[fileId] == nil { shell.act(["do": "open_file", "attachment_id": fileId, "save": false]) } }
   }
   private var loaded: UIImage? { shell.files[fileId].flatMap { UIImage(data: $0) } }
+}
+
+/** In place of a picture that cannot be shown (the hub deleted it): the core's note, quietly. */
+struct RemovedPicture: View {
+  let note: String
+  var body: some View {
+    Label(note, systemImage: "photo").font(Face.text(13)).foregroundStyle(Ink.muted).padding(12)
+      .accessibilityIdentifier("picture-removed")
+  }
 }
 
 /** Save (the long press on a picture): the file to the phone, as a tap on it did before the viewer. */
@@ -159,7 +168,7 @@ struct PictureViewer: View {
     // (a Mac: one picture at a time, arrows to go on)
     HStack {
       Button { at = max(at - 1, 0) } label: { Image(systemName: "chevron.left").font(.title2) }.disabled(at == 0)
-      if let data = shell.files[show.shots[at].fileId], let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity) } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+      if let data = shell.files[show.shots[at].fileId], let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity) } else if let note = shell.view.files[show.shots[at].fileId]?.note { RemovedPicture(note: note.en).foregroundStyle(.white).frame(maxWidth: .infinity, maxHeight: .infinity) } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
       Button { at = min(at + 1, show.shots.count - 1) } label: { Image(systemName: "chevron.right").font(.title2) }.disabled(at >= show.shots.count - 1)
     }
     .buttonStyle(.plain).foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 70)
@@ -196,6 +205,8 @@ private struct ZoomPage: View {
     Group {
       if let data = shell.files[fileId], let image = UIImage(data: data) {
         ZoomableImage(image: image, tap: tap, drag: drag, release: release)
+      } else if let note = shell.view.files[fileId]?.note {
+        RemovedPicture(note: note.en).foregroundStyle(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
