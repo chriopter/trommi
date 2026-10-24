@@ -7455,7 +7455,7 @@ public enum CoreView {
     public var size: UInt64
     /// A picture (by its media type or its name's ending): an attachment shows it as a small square thumbnail.
     public var picture: Bool
-    /// "uploading", "ready", "failed", "missing".
+    /// "uploading", "loading", "ready", "failed", "missing", "removed" (the hub deleted it: a full room made room).
     public var state: String
     /// The attachment's id once the hub has it (an upload's local id maps to it here).
     public var attachmentId: String?
@@ -7465,8 +7465,10 @@ public enum CoreView {
     public var loaded: Bool
     /// The Share links this device made for it (`Action::Share`), kept in memory only.
     public var shares: [FileShareView]
+    /// What stands in place of a file that cannot be shown ("removed": "Removed (storage full)").
+    public var note: Text?
 
-    public init(name: String = "", mediaType: String = "", size: UInt64 = 0, picture: Bool = false, state: String = "", attachmentId: String? = nil, percent: UInt8? = nil, loaded: Bool = false, shares: [FileShareView] = []) {
+    public init(name: String = "", mediaType: String = "", size: UInt64 = 0, picture: Bool = false, state: String = "", attachmentId: String? = nil, percent: UInt8? = nil, loaded: Bool = false, shares: [FileShareView] = [], note: Text? = nil) {
       self.name = name
       self.mediaType = mediaType
       self.size = size
@@ -7476,6 +7478,7 @@ public enum CoreView {
       self.percent = percent
       self.loaded = loaded
       self.shares = shares
+      self.note = note
     }
 
     enum CodingKeys: String, CodingKey {
@@ -7488,6 +7491,7 @@ public enum CoreView {
       case percent = "percent"
       case loaded = "loaded"
       case shares = "shares"
+      case note = "note"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -7501,6 +7505,7 @@ public enum CoreView {
       self.percent = try c.decodeIfPresent(UInt8.self, forKey: .percent)
       self.loaded = try c.decode(Bool.self, forKey: .loaded)
       self.shares = try c.decodeIfPresent([FileShareView].self, forKey: .shares) ?? []
+      self.note = try c.decodeIfPresent(Text.self, forKey: .note)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -7514,6 +7519,7 @@ public enum CoreView {
       try c.encodeIfPresent(percent, forKey: .percent)
       try c.encode(loaded, forKey: .loaded)
       if !shares.isEmpty { try c.encode(shares, forKey: .shares) }
+      try c.encodeIfPresent(note, forKey: .note)
     }
   }
 

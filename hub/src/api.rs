@@ -1996,13 +1996,33 @@ async fn upload(
     })
     .await?;
     let limit = app.cfg.file_limit;
+    let bytes = if again { 0 } else { announced.unwrap_or(limit) };
     // Room for the bytes is reserved before the first one is read, and given back however the upload ends: what
     // is being uploaded counts against the room's quota like what is stored.
-    let _reserved = app.reserve_upload(
-        &auth.room,
-        if again { 0 } else { announced.unwrap_or(limit) },
-        used,
-    )?;
+    let mut reserved = app.reserve_upload(&auth.room, bytes)?;
+    // Stored and arriving bytes past the quota: the room makes room first (11.3.1), the oldest files of finished
+    // cards and session Chats go; judged inside the transaction, with the arriving bytes as they are then.
+    if bytes > 0 && used + app.arriving(&auth.room) > app.cfg.room_quota {
+        let a = app.clone();
+        blocking(move || {
+            a.write_as(&auth, lease, |x, fx| {
+                // a refusal for the number of files comes before anything is deleted
+                x.cfg
+                    .quotas
+                    .room_for(x.c, &auth.room, crate::quota::Counted::Files)?;
+                let arriving = a.arriving(&auth.room);
+                let held = files::make_room(x, &auth.room, arriving, fx)?;
+                if held + arriving > x.cfg.room_quota {
+                    return Err(files::over_quota(
+                        (held + arriving).saturating_sub(bytes),
+                        x.cfg.room_quota,
+                    ));
+                }
+                Ok(())
+            })
+        })
+        .await?;
+    }
     let io = |e: std::io::Error| {
         crate::log::warn(
             "file_write_failed",
@@ -2039,8 +2059,10 @@ async fn upload(
     // The row and the file's place in one transaction: a deletion of the row cannot come between the two, and a
     // device removed during the upload stores nothing.
     blocking(move || {
-        a.write_as(&auth, lease, |x, _| {
-            if let files::Stored::New = files::record(x, &auth, &file, size, &sha256)? {
+        a.write_as(&auth, lease, |x, fx| {
+            let stored = files::record(x, &auth, &file, size, &sha256, fx)?;
+            reserved.settle();
+            if let files::Stored::New = stored {
                 up.place().map_err(|e| {
                     crate::log::warn(
                         "file_write_failed",

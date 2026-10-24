@@ -792,7 +792,8 @@ export function thumb(file) {
 export const srcOf = file => attrs({ src: thumb(file).src })
 
 /** Why an attachment did not come, in plain words. why: the error of fetching or opening it (null: not there). */
-export const attGoneText = why => !why || why.code === 'not-found' || why.status === 404 ? 'Attachment no longer available'
+export const attGoneText = why => why?.code === 'removed' && why.message ? why.message
+  : !why || why.code === 'not-found' || why.status === 404 ? 'Attachment no longer available'
   : why.code === 'newer-version' ? 'Made by a newer Trommi: reload the page to open it'
   : `This file could not be loaded: ${why.message || why.code || 'no answer from the hub'}`
 /** What stands in place of a picture (or a file's link) that did not come. A small picture (a Desk row's fan, a card's

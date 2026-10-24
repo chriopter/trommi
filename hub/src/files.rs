@@ -128,6 +128,94 @@ pub fn over_quota(used: u64, quota: u64) -> crate::error::Refused {
         .with(json!({ "used": used, "quota": quota }))
 }
 
+/// 11.3.1: room for `extra` more bytes in a room at its quota. The oldest files of answered or closed cards (with
+/// their card Chats) and of session Chats are deleted, oldest first, until the stored bytes and `extra` fit the
+/// quota. Never a file of an open card, of a request, an Artifact or a Note, a board's or a register's file, one a
+/// counting board frontier keeps, or one with a Share link. When what may go is not enough, nothing is deleted.
+/// Returns the room's stored bytes afterwards.
+pub fn make_room(x: &Ctx, room: &Room, extra: u64, fx: &mut Effects) -> Res<u64> {
+    let held = store::room_row(x.c, room)?.file_bytes;
+    let quota = x.cfg.room_quota;
+    if held + extra <= quota || extra > quota {
+        return Ok(held);
+    }
+    let need = held + extra - quota;
+    // (stored_at, file_id, size) of the files that may go: those of finished cards, then those of session Chats
+    let mut may_go: Vec<(i64, Vec<u8>, i64)> = x
+        .c
+        .prepare_cached(
+            "SELECT f.stored_at, f.file_id, f.size FROM files f JOIN cards k ON k.room_id = f.room_id AND k.object_id = f.object_id
+             WHERE f.room_id = ?1 AND f.deleted_at IS NULL AND f.group_id IS NOT NULL AND k.state IN (?2, ?3)",
+        )?
+        .query_map(
+            params![&room[..], wire::STATE_ANSWERED as i64, wire::STATE_CLOSED as i64],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?
+        .collect::<rusqlite::Result<_>>()?;
+    // one pass over the envelopes without an object that name files: those of session Chats, and the others (a
+    // register value, a board item), whose files stay even when a Chat names them too
+    let session_chat = [wire::TIMELINE_CHAT, wire::SCOPE_SESSION];
+    let mut in_chats = std::collections::BTreeSet::new();
+    let mut kept = std::collections::HashSet::new();
+    {
+        let mut s = x.c.prepare_cached(
+            "SELECT timeline, file_ids FROM envelopes WHERE room_id = ?1 AND object_id IS NULL AND body IS NOT NULL AND length(file_ids) > 0",
+        )?;
+        let mut rows = s.query([&room[..]])?;
+        while let Some(r) = rows.next()? {
+            let timeline: Option<Vec<u8>> = r.get(0)?;
+            let ids: Vec<u8> = r.get(1)?;
+            let chat = timeline.is_some_and(|t| t.starts_with(&session_chat));
+            for id in ids.as_chunks::<16>().0 {
+                if chat {
+                    in_chats.insert(*id);
+                } else {
+                    kept.insert(*id);
+                }
+            }
+        }
+    }
+    for id in in_chats.iter().filter(|id| !kept.contains(*id)) {
+        let row: Option<(i64, i64)> = x
+            .c
+            .prepare_cached("SELECT stored_at, size FROM files WHERE room_id = ?1 AND file_id = ?2 AND deleted_at IS NULL AND group_id IS NOT NULL AND object_id IS NULL")?
+            .query_row(params![&room[..], &id[..]], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?;
+        if let Some((at, size)) = row {
+            may_go.push((at, id.to_vec(), size));
+        }
+    }
+    may_go.sort();
+    may_go.dedup_by(|a, b| a.1 == b.1);
+    let mut going = Vec::new();
+    let mut freed: u64 = 0;
+    for (_, id, size) in may_go {
+        if freed >= need {
+            break;
+        }
+        let shared = x
+            .c
+            .prepare_cached("SELECT 1 FROM shares WHERE room_id = ?1 AND file_id = ?2")?
+            .exists(params![&room[..], &id[..]])?;
+        if shared || crate::prune::kept_by_board(x.c, room, &id)? {
+            continue;
+        }
+        freed += size.max(0) as u64;
+        going.push((id, size));
+    }
+    if freed < need {
+        return Ok(held);
+    }
+    for (id, size) in &going {
+        crate::content::delete_file(x.c, room, id, *size, x.now, fx)?;
+    }
+    crate::log::info(
+        "room_full",
+        json!({ "files_deleted": going.len(), "bytes_freed": freed }),
+    );
+    Ok(held.saturating_sub(freed))
+}
+
 pub enum Stored {
     New,
     /// the same bytes were stored before: answered like the first time
@@ -142,6 +230,7 @@ pub fn record(
     file_id: &[u8; 16],
     size: u64,
     sha256: &[u8; 32],
+    fx: &mut Effects,
 ) -> Res<Stored> {
     let held: Option<(Vec<u8>, i64, Vec<u8>, bool)> = x
         .c
@@ -163,12 +252,12 @@ pub fn record(
             Err(refuse("replay", "other bytes under a used file id"))
         };
     }
-    let room = store::room_row(x.c, &auth.room)?;
-    if room.file_bytes + size > x.cfg.room_quota {
-        return Err(
-            refuse("quota-exceeded", "the room's files are at their limit")
-                .with(json!({ "used": room.file_bytes, "quota": x.cfg.room_quota })),
-        );
+    x.cfg
+        .quotas
+        .room_for(x.c, &auth.room, crate::quota::Counted::Files)?;
+    let held = make_room(x, &auth.room, size, fx)?;
+    if held + size > x.cfg.room_quota {
+        return Err(over_quota(held, x.cfg.room_quota));
     }
     x.cfg
         .quotas

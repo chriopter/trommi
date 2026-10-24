@@ -222,21 +222,22 @@ impl App {
         });
     }
 
-    /// Reserves room for an upload of `bytes` in a room whose files hold `used`: refused when stored and
-    /// arriving bytes together pass the quota, or when the room has 16 uploads in progress.
-    pub fn reserve_upload(self: &Arc<Self>, room: &Room, bytes: u64, used: u64) -> Res<UploadSlot> {
+    /// The bytes of the room's uploads in progress.
+    pub fn arriving(&self, room: &Room) -> u64 {
+        let uploads = self.uploads.lock().unwrap_or_else(|e| e.into_inner());
+        uploads.get(room).map_or(0, |(arriving, _)| *arriving)
+    }
+
+    /// Reserves a place for an upload of `bytes`: refused when the room has 16 uploads in progress. Whether
+    /// stored and arriving bytes fit the quota is judged after it (`files::make_room`), so that a refusal of the
+    /// place never comes after files were deleted.
+    pub fn reserve_upload(self: &Arc<Self>, room: &Room, bytes: u64) -> Res<UploadSlot> {
         let mut uploads = self.uploads.lock().unwrap_or_else(|e| e.into_inner());
         let (arriving, count) = uploads.get(room).copied().unwrap_or((0, 0));
         if count >= 16 {
             return Err(
                 refuse("too-many", "this room has its limit of uploads in progress").retry(5),
             );
-        }
-        if bytes > 0 && used + arriving + bytes > self.cfg.room_quota {
-            return Err(crate::files::over_quota(
-                used + arriving,
-                self.cfg.room_quota,
-            ));
         }
         uploads.insert(*room, (arriving + bytes, count + 1));
         Ok(UploadSlot {
@@ -1078,6 +1079,17 @@ pub struct UploadSlot {
     app: Arc<App>,
     room: Room,
     bytes: u64,
+}
+
+impl UploadSlot {
+    /// Its bytes are stored now (inside the transaction that counts them as stored): no longer arriving.
+    pub fn settle(&mut self) {
+        let mut uploads = self.app.uploads.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((arriving, count)) = uploads.get(&self.room).copied() {
+            uploads.insert(self.room, (arriving.saturating_sub(self.bytes), count));
+        }
+        self.bytes = 0;
+    }
 }
 
 impl Drop for UploadSlot {
