@@ -2168,7 +2168,7 @@ export interface FileView {
   size: number
   /** A picture (by its media type or its name's ending): an attachment shows it as a small square thumbnail. */
   picture: boolean
-  /** "uploading", "ready", "failed", "missing". */
+  /** "uploading", "loading", "ready", "failed", "missing", "removed" (the hub deleted it: a full room made room). */
   state: string
   /** The attachment's id once the hub has it (an upload's local id maps to it here). */
   attachment_id?: string
@@ -2178,6 +2178,8 @@ export interface FileView {
   loaded: boolean
   /** The Share links this device made for it (`Action::Share`), kept in memory only. */
   shares?: FileShareView[]
+  /** What stands in place of a file that cannot be shown ("removed": "Removed (storage full)"). */
+  note?: Text
 }
 
 /** A Share link of a file: the whole link (its key behind the `#`), for the person to copy. */

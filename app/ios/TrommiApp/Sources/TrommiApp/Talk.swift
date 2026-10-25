@@ -1874,7 +1874,9 @@ struct NativePicture: View {
     }.task(id: id) { shell.act(["do": "open_file", "attachment_id": id, "save": false]) }
   }
   private var pending: some View {
-    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.sunken).frame(height: 160).overlay { ProgressView() }
+    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.sunken).frame(height: 160).overlay {
+      if let note = shell.view.files[id]?.note { RemovedPicture(note: note.en) } else { ProgressView() }
+    }
   }
 }
 /** A picture about to be sent: a small square of it, its upload's progress over it, an × in the corner. */

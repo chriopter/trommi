@@ -397,7 +397,9 @@ encrypted.
     sealed (`s`, v1.md 15.3). The ticket of 15.2 is the hub's own
     `room ‖ device ‖ change ‖ expiry ‖ HMAC`; only the hub reads it. One device's envelopes cause at most ten
     pushes a minute (owner, 9 October 2026); a push service is called on port 443 and no redirect is followed.
-27. Uploads in progress count against the room's quota; a room has at most 16 at a time.
+27. Uploads in progress count against the room's quota; a room has at most 16 at a time. An upload that would
+    pass it first deletes the oldest files of finished cards and session Chats (v1.md 11.3.1; owner, 24 October
+    2026: 4 GiB a room, "what goes over, the oldest goes"); `quota-exceeded` only when those are not enough.
 29. **What a room may hold besides its files' bytes** (`hub/src/quota.rs`; counts of things ever made, since a
     deleted file's id, an archived group and a void record stay): 50 000 file ids, zero-byte and deleted ones too
     (`quota-exceeded`); 20 000 register ids (`too-many`, the envelope takes no number); 100 000 void records

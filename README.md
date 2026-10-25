@@ -232,6 +232,7 @@ flowchart LR
 
 - The hub checks every MLS change it can check in public and refuses a device that was not invited.
 - The hub keeps only what is still needed: a writer's older register values and Note versions, board items behind every device's snapshot, and objects settled 30 days ago lose their bodies; strokes being drawn are passed on and never stored.
+- A room holds 4 GiB of files. When an upload would pass that, the hub deletes the oldest pictures of answered or closed cards and of session chats until it fits (never those of an open card, a board, a note or an Artifact); the apps show "Removed (storage full)" in their place.
 - The whole table per stored thing: [`spec/v1.md`](spec/v1.md), section 14.
 
 </details>

@@ -131,6 +131,7 @@ pub fn view_of(reference: &Map<String, Value>) -> FileView {
         percent: None,
         loaded: false,
         shares: Vec::new(),
+        note: None,
     }
 }
 
@@ -249,6 +250,10 @@ impl Files {
             return Ok(None);
         }
         if self.asked.values().any(|a| matches!(a, Asked::Get { attachment_id, save: s, .. } if *attachment_id == id && *s == save)) {
+            return Ok(None);
+        }
+        // the hub said it deleted it: not asked again
+        if self.states.get(&id).is_some_and(|v| v.state == "removed") {
             return Ok(None);
         }
         let file = file_ref(&reference).ok_or_else(|| Text::new("file.unknown", "That file is not here."))?;
@@ -407,6 +412,16 @@ impl Files {
                             Some(Text::new("file.broken", "That file does not open: it is not the one that was sent."))
                         }
                     },
+                    // the hub deleted it (11.3.1: a full room made room with its oldest files; 9.4): it says so in
+                    // its place, without a toast
+                    (Err(Failure::Refused { status: 404, .. }), _) => {
+                        if let Some(v) = self.states.get_mut(&attachment_id) {
+                            v.state = "removed".into();
+                            v.percent = None;
+                            v.note = Some(Text::new("file.removed", "Removed (storage full)"));
+                        }
+                        None
+                    }
                     (other, _) => {
                         self.failed(&attachment_id);
                         Some(problem(other.err().as_ref(), "file.download_failed", "The file could not be fetched."))

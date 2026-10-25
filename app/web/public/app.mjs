@@ -1087,7 +1087,7 @@ async function boot() {
     const src = el.getAttribute('src') ?? ''
     if (!src) return
     if (src.startsWith('blob:') && !el.dataset.attTried) { el.dataset.attTried = '1'; if (core.fetchAgain(src)) { el.removeAttribute('src'); return } }
-    el.replaceWith(attGone(el))
+    el.replaceWith(attGone(el, src.startsWith(core.REMOVED) ? { code: 'removed', message: core.removedNote(src) } : null))
   }, true)
   // The demo room: ?mock=1 (the fixture); remembered for this tab; ?mock=0 ends it.
   const params = new URLSearchParams(location.search)

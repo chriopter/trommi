@@ -90,7 +90,55 @@ fn a_file_is_attached_sent_opened_and_shared() {
     // a file id the views never showed is refused
     act(&mut sim, Action::OpenFile { attachment_id: "00112233445566778899aabbccddeeff".into(), save: false });
     assert!(sim.view.toasts.iter().any(|t| t.text.key == "file.unknown"));
+
+    // the hub deleted it (a full room made room): after a restart it is "removed", without a toast, and not asked again
+    world.hub.borrow_mut().files.clear();
+    sim.restart();
+    sim.send(start());
+    world.stream(&mut sim);
+    sim.send(Event::Focus {
+        focus: trommi_client_core::views::Focus {
+            screen: trommi_client_core::views::Screen::Session {
+                session_id: session.clone(),
+            },
+            ..Default::default()
+        },
+    });
+    sim.hold = true;
+    act(
+        &mut sim,
+        Action::OpenFile {
+            attachment_id: attachment.clone(),
+            save: false,
+        },
+    );
+    sim.hold = false;
+    while let Some((id, request)) = sim.held.pop_front() {
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, got);
+    }
+    assert_eq!(sim.view.files[&attachment].state, "removed");
+    assert_eq!(sim.view.files[&attachment].note.as_ref().map(|t| t.en.as_str()), Some("Removed (storage full)"));
+    assert!(
+        !sim.view
+            .toasts
+            .iter()
+            .any(|t| t.text.key == "file.download_failed"),
+        "{:?}",
+        sim.view.toasts
+    );
+    sim.hold = true;
+    act(
+        &mut sim,
+        Action::OpenFile {
+            attachment_id: attachment.clone(),
+            save: false,
+        },
+    );
+    assert!(sim.held.is_empty(), "not asked again");
+    sim.hold = false;
 }
+
 
 #[test]
 fn a_note_keeps_its_attached_file_and_a_native_pen_stroke_round_trips() {

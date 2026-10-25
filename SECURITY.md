@@ -55,6 +55,9 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   one.
 - A room holds at most 1000 devices.
 - Files are encrypted on the device. Push notifications carry no content.
+- A room holds 4 GiB of files. When an upload would pass that, the hub deletes the oldest encrypted files of answered
+  or closed cards and of session chats until it fits; never those of an open card. The hub could always delete or
+  withhold ciphertext it stores; it still cannot read or alter a file.
 - The web app keeps pictures it showed in the browser still encrypted, as the hub stores them (at most 96 MB);
   signing out deletes them with the rest of the account's private browser data.
 - What push reveals: Apple and the browser's push service learn that something happened for a device, when, and how

@@ -35,6 +35,11 @@ fn file_needed(c: &Connection, room: &Room, file_id: &[u8]) -> Res<bool> {
             return Ok(true);
         }
     }
+    kept_by_board(c, room, file_id)
+}
+
+/// Whether a counting board frontier post keeps a file (10.9).
+pub fn kept_by_board(c: &Connection, room: &Room, file_id: &[u8]) -> Res<bool> {
     let mut s = c.prepare_cached(
         "SELECT files FROM board_frontiers WHERE room_id = ?1 AND counts = 1 AND instr(files, ?2) > 0",
     )?;
