@@ -142,8 +142,18 @@ class Chats:
         """The child of a Trommi chat; None for an id that is not one (fail closed)."""
         return self.children.get(chat or MAIN)
 
-    async def _prune(self) -> None:
-        """Chats whose session is no more (the person archived or removed it): their connector ends, their place is free."""
+    async def prune(self) -> list[str]:
+        """Chats the person deleted, archived or removed: their connector ends and they leave the list, their place
+        is free. Looked at now and then (`adapter.py`), at each start, and when a new chat finds the list full. Returns
+        the chats that went."""
+        async with self._lock:
+            gone = await self._prune()
+            if gone:
+                self._write()
+            return gone
+
+    async def _prune(self) -> list[str]:
+        gone = []
         for chat in [c for c in self.children if c != MAIN and c in self._active]:
             try:
                 state = await self.children[chat].request("trommi/state", {}, timeout=10)
@@ -153,6 +163,9 @@ class Chats:
                 await self.children.pop(chat).stop()
                 self._active.discard(chat)
                 self._names.pop(chat, None)
+                gone.append(chat)
+                logger.info("Trommi chat %s is no longer on the board (deleted or archived in the app): it ends here", chat)
+        return gone
 
     async def new_chat(self, nonce: str) -> str | None:
         """Starts a new chat for the person's ask (`nonce`, once each): its child, which activates itself on the

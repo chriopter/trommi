@@ -976,6 +976,13 @@ impl Member {
 
     fn out_text(was: &Value) -> String {
         let kf = was["key_file"].as_str().unwrap_or("");
+        if crate::host::is_hermes() {
+            return if was["verified"] == Value::Bool(false) {
+                format!("This connector stopped: the hub no longer takes its device (removed, taken over, or the room is gone from this hub). Its state is kept ({kf}); nothing sent from here reaches the board. To bring this Hermes back: in the Trommi app, Approve a computer, tab Hermes, and run its line on this computer.")
+            } else {
+                format!("This connector is retired: its key ({kf}) was removed from the Trommi room (the human removed it or the computer it came with, or archived its chat); it is put aside. Nothing sent from here reaches the board. To bring this Hermes back: in the Trommi app, Approve a computer, tab Hermes, and run its line on this computer.")
+            };
+        }
         let then = if crate::host::is_codex() {
             "gives you the link here and you call connect with it"
         } else {

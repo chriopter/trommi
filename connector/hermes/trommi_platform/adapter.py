@@ -66,6 +66,7 @@ class TrommiAdapter(BasePlatformAdapter):
         # (one answer of a chat at a time: they reach the board in the order Hermes sent them)
         self._sending: dict[str, asyncio.Lock] = {}
         self._upkeep: asyncio.Task | None = None
+        self._pruning: asyncio.Task | None = None
 
     @property
     def name(self) -> str:
@@ -89,16 +90,28 @@ class TrommiAdapter(BasePlatformAdapter):
         every = float(os.getenv("TROMMI_ADDON_LOOK_S") or 300)
         if self._upkeep is None or self._upkeep.done():
             self._upkeep = asyncio.create_task(upkeep.watch_addon(self, every))
+        # (a chat the person deleted in the app ends here soon after, and at once when its answer finds it gone)
+        if self._pruning is None or self._pruning.done():
+            self._pruning = asyncio.create_task(self._prune_now_and_then(float(os.getenv("TROMMI_PRUNE_S") or 60)))
         self._mark_connected()
         return True
 
     async def disconnect(self) -> None:
-        if self._upkeep is not None:
-            self._upkeep.cancel()
-            self._upkeep = None
+        for task in (self._upkeep, self._pruning):
+            if task is not None:
+                task.cancel()
+        self._upkeep = self._pruning = None
         CURRENT.pop(self.instance, None)
         await self.chats.stop()
         self._mark_disconnected()
+
+    async def _prune_now_and_then(self, every: float) -> None:
+        while True:
+            try:
+                await self.chats.prune()
+            except Exception:  # noqa: BLE001 - next time
+                logger.exception("Trommi: the chats were not looked over")
+            await asyncio.sleep(every)
 
     # ---- in ----
 
@@ -158,6 +171,9 @@ class TrommiAdapter(BasePlatformAdapter):
             async with self._sending.setdefault(chat_id, asyncio.Lock()):
                 await child.request("trommi/answer", {"text": content})
         except Exception as exc:  # noqa: BLE001 - the gateway retries or reports
+            # (a chat the person deleted: it ends here, and the answer is not tried again)
+            if chat_id in await self.chats.prune() or self.chats.child_for(chat_id) is not child:
+                return SendResult(success=False, error="this Trommi chat was deleted in the app", retryable=False)
             return SendResult(success=False, error=str(exc), retryable=True)
         return SendResult(success=True, message_id=f"trommi-{secrets.token_hex(8)}")
 

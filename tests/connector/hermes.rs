@@ -153,6 +153,14 @@ async fn setup_hermes_with_a_link_approves_the_computer_and_restarts_the_gateway
     let again = again.stdin(std::process::Stdio::null()).output().await.expect("the setup runs");
     let told = String::from_utf8_lossy(&again.stdout).to_string();
     assert!(again.status.success() && told.contains("already connected as \"Hermes Einkauf\""), "{told}");
+    // The app's Hermes line once more, on the computer approved already: no second approval, it only activates.
+    let fresh = human.invite(None).await;
+    let mut once_more = seat.command(&["setup", "hermes", "--name", "Einkauf", "--link", &fresh.link]);
+    once_more.env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default())).env("HERMES_HOME", &hermes_home);
+    let once_more = once_more.stdin(std::process::Stdio::null()).output().await.expect("the setup runs");
+    let said = format!("{}{}", String::from_utf8_lossy(&once_more.stdout), String::from_utf8_lossy(&once_more.stderr));
+    assert!(once_more.status.success(), "{said}");
+    assert!(said.contains("approved already") && !said.contains("invite answered: check code"), "{said}");
     // The add-on starts the first chat's connector: it finds its key and is on the board without another step.
     let mut command = seat.command(&[]);
     for (k, v) in [("TROMMI_HOST", "hermes"), ("TROMMI_INSTANCE", "einkauf"), ("TROMMI_AGENT_NAME", "Hermes Einkauf"), ("TROMMI_SESSION_KEY", "hermes-einkauf")] {

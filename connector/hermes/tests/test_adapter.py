@@ -215,3 +215,27 @@ def test_the_plugin_registers_the_platform_and_the_board_tools(tmp_path, monkeyp
     assert [t["name"] for t in seen["tools"]] == ["trommi_create_info"]
     assert seen["tools"][0]["schema"]["parameters"]["properties"] == {"title": {"type": "string"}}
     assert seen["tools"][0]["is_async"] is True
+
+async def test_a_chat_deleted_in_the_app_ends_and_its_answer_is_not_retried(tmp_path, made):
+    a = adapter(tmp_path)
+    await a.connect()
+    await made[0].on_notice("notifications/claude/channel", {"content": "x", "meta": {"kind": "new_chat", "nonce": "d1"}})
+    second = made[1]
+    chat = second.name
+    assert chat in a.chats.children
+
+    second.phase = "retired"
+    original = second.request
+
+    async def request(method, params, timeout=None):
+        if method == "trommi/answer":
+            raise RuntimeError("not on the board")
+        return await original(method, params, timeout=timeout) if timeout is not None else await original(method, params)
+
+    second.request = request
+    sent = await a.send(chat, "Kartoffeln …")
+    assert not sent.success and not sent.retryable and "deleted" in (sent.error or "")
+    assert chat not in a.chats.children and second.stopped
+    # the main chat goes on
+    assert (await a.send("main", "Hallo")).success
+    await a.disconnect()

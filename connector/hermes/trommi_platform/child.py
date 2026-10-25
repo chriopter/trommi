@@ -158,7 +158,7 @@ class Child:
             if not line:
                 return
             # (the connector's own log lines; board content is never logged by it)
-            logger.debug("trommi[%s]: %s", self.name, line.decode(errors="replace").rstrip())
+            logger.info("trommi[%s]: %s", self.name, line.decode(errors="replace").rstrip())
 
     def _fail_waiting(self, why: str) -> None:
         for fut in self._waiting.values():

@@ -102,7 +102,11 @@ async fn connect(argv: &[String]) -> Result<String> {
         if computer {
             let link = args.first().ok_or_else(|| Fault::plain("Approve a computer in Trommi, then run connect --computer '<link>'"))?;
             let machine = crate::machine::approval_member(&cfg, link)?;
-            crate::machine::approve(&cfg, link, &machine).await?;
+            match crate::machine::approve(&cfg, link, &machine).await {
+                // (approved before, its key still in the room: the link is not needed, this session only activates)
+                Err(e) if e.code == "already-approved" => eprintln!("[trommi] this computer is approved already: the new link is not needed (it ends unused); activating this session"),
+                other => other?,
+            }
         }
         member.open(false).await?;
         crate::machine::activate(&cfg, &member).await
