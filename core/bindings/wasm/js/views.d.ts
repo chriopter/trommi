@@ -2072,11 +2072,11 @@ export interface ConnectWay {
   key: string
   /** The tab: "Claude Code", "Codex", "Hermes". */
   label: Text
-  /** The line that installs the connector, once per computer. */
-  install: string
-  /** The words before `install`: the first step's title, or (`install_step` false) a hint under `paste`. */
+  /** The line that installs the connector, once per computer, as the first step; none where `line` installs it
+   *  itself (Hermes). */
+  install?: string
+  /** The first step's title. */
   install_title: Text
-  install_step: boolean
   /** A name to give the agent first (`HermesName` sets it). */
   name?: NameAsk
   /** Where to paste `line`. */

@@ -25,14 +25,20 @@ add-on: `trommi/working` {on}, `trommi/preview` {draft, text}, `trommi/answer` {
 
 ## Install and update
 
-The connector carries this add-on and installs it:
+The Trommi connector carries this add-on and writes it into Hermes. The app's "Approve a computer", tab Hermes, gives
+one line that installs the connector (or updates it) and then sets up Hermes:
 
 ```sh
-trommi-connector setup hermes --link '<link>'                  # one Hermes, with the app's "Approve a computer" link
-trommi-connector setup hermes --name Einkauf --profile einkauf --link '<link>' # another Hermes, a profile of its own
+curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh -s -- hermes --name Einkauf --link '<link>'
 ```
 
-The app's "Approve a computer", tab Hermes, gives this line with its link. With `--link` the setup also approves the
+With the connector installed already, the same in its own words:
+
+```sh
+trommi-connector setup hermes --link '<link>'                  # one Hermes
+trommi-connector setup hermes --name Einkauf --profile einkauf --link '<link>' # another Hermes, a profile of its own
+```
+ With `--link` the setup also approves the
 computer: it runs `trommi-connector connect --computer '<link>'` with the environment the add-on gives the first chat
 (same name, folder and key), so you compare the emoji in the app as for any agent. Then it runs
 `hermes gateway restart`, and the first chat starts on its key. Without `--link` only the add-on is set up.

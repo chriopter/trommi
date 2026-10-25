@@ -458,7 +458,7 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
   const step = (state, inner) => html`<li class="clip-step${state ? ` is-${state}` : ''}">${TICKBOX}<div class="clip-step-body">${inner}</div></li>`
   const altLine = (text, line = 'slash', shown = text.replace(/#.*'$/, "#…'")) => html`<button type="button" class="clip-alt" data-line="${line}" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${shown}</code><span class="clip-copy-word" data-word="Copy">Copy</span></button>`
   /** A command as shown: its --flags kept whole, its link broken after a slash. */
-  const commandShown = text => text.split(' ').map((word, i) => html`${i ? ' ' : ''}${word.startsWith('--') ? html`<span class="clip-nb">${word}</span>` : wrapAt(word)}`)
+  const commandShown = text => text.replace(/https:\/\/\S*\/(?=install\.sh)/, '…/').split(' ').map((word, i) => html`${i ? ' ' : ''}${word.startsWith('--') ? html`<span class="clip-nb">${word}</span>` : wrapAt(word)}`)
   // (the ways in, one tab each: Claude Code, Codex, and for a computer Hermes; the core's AccountView.ways)
   const wayTabs = (ways, on) => ways.length < 2 ? '' : html`<nav class="clip-ways" aria-label="Which agent">${ways.map(w => html`<a href="/pair/agent?with=${w.key}" data-nav data-way="${w.key}"${w.key === on.key ? raw(' aria-current="page"') : ''}>${w.label.en}</a>`)}</nav>`
   const nameStep = (n, done) => step(done, html`<b>${n.title.en}</b><form method="post" action="/pair/hermes" class="clip-name"><input name="name" value="${n.value}" placeholder="${n.placeholder.en}" maxlength="40" autocomplete="off" spellcheck="false" aria-label="${n.title.en}" data-action="input->invite-clip#typed change->invite-clip#name"></form><small>${n.note.en}</small>`)
@@ -486,9 +486,9 @@ ${matchButtons(av.invite_id, 'agent')}
 <h2>${inv.title?.en ?? ''}</h2><p class="clip-sub">${inv.notice?.en ?? ''}</p>
 ${open ? wayTabs(ways, way) : ''}
 <ol class="clip-list" data-way="${way?.key ?? ''}">
-${way?.install_step ? step(done, html`<b>${way.install_title.en}</b>${open ? html`${copyLine(way.install, 'Copy', 'install')}<small>Skip this if you have installed Trommi before (check: <code>trommi-connector --version</code>).</small>` : ''}`) : ''}
+${way?.install ? step(done, html`<b>${way.install_title.en}</b>${open ? html`${copyLine(way.install, 'Copy', 'install')}<small>Skip this if the Trommi connector is installed already (check: <code>trommi-connector --version</code>).</small>` : ''}`) : ''}
 ${open && way?.name ? nameStep(way.name, way.name.value ? 'done' : '') : ''}
-${way ? step(done, html`<b>${way.paste.en}</b>${open ? html`${copyLine(way.line, 'Copy', way.key === 'hermes' ? 'setup' : 'connect', way.key === 'hermes' ? commandShown(way.line) : connectShown(way.line))}${way.alt ? html`<small class="clip-or">Or in Claude Code, the slash command: ${altLine(way.alt)}</small>` : ''}<small>${way.note.en}</small>${way.install_step ? '' : html`<small class="clip-or">${way.install_title.en} ${altLine(way.install, 'install', way.install.replace(/https:\/\/\S*\//, '…/'))}</small>`}` : ''}`) : ''}
+${way ? step(done, html`<b>${way.paste.en}</b>${open ? html`${copyLine(way.line, 'Copy', way.key === 'hermes' ? 'setup' : 'connect', way.key === 'hermes' ? commandShown(way.line) : connectShown(way.line))}${way.alt ? html`<small class="clip-or">Or in Claude Code, the slash command: ${altLine(way.alt)}</small>` : ''}<small>${way.note.en}</small>` : ''}`) : ''}
 ${step(joined ? 'done' : dead ? 'dead' : ask ? 'ask' : open ? '' : 'wait', last)}
 </ol>${foot}</section></div></main>`
   }

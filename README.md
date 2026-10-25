@@ -30,8 +30,8 @@ retries after a restart; contact times and missing profiles never authorize remo
 1. **The app:** [app.trommi.com](https://app.trommi.com) in any browser. On an iPhone: the public beta on
    TestFlight, [trommi.com/beta](https://trommi.com/beta) (every release of main; the App Store gets reviewed versions
    less often).
-2. **An agent**, on a Linux or macOS computer with Claude Code, Codex or Hermes Agent (then `trommi-connector setup
-   hermes`, see Hermes below). Once per machine:
+2. **An agent**, on a Linux or macOS computer with Claude Code, Codex or Hermes Agent (for Hermes the app gives one
+   line that does all of this, see Hermes below). The Trommi connector, once per machine:
 
    ```sh
    curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh
@@ -475,9 +475,11 @@ run went; you cancel one or give it another time there. The chat shows the next 
 
 [Hermes Agent](https://hermes-agent.nousresearch.com) gets Trommi as one of its platforms, like Telegram: the add-on in
 `connector/hermes/` (its README has the details). In the app, Approve a computer and pick the tab Hermes: it gives
-one line, `trommi-connector setup hermes --name Einkauf --link '<link>'`, to paste on the computer where Hermes runs.
-It writes the add-on into the Hermes home, turns it on, configures the platform `trommi`, approves the computer with
-the link (you compare the emoji in the app, as for any agent) and restarts Hermes' gateway. The first chat is then on
+one line to paste on the computer where Hermes runs,
+`curl -fsSL https://raw.githubusercontent.com/chriopter/trommi/main/install.sh | sh -s -- hermes --name Einkauf --link '<link>'`.
+It installs the Trommi connector (or updates it), then `trommi-connector setup hermes` writes the add-on into the
+Hermes home, turns it on, configures the platform `trommi`, approves the computer with the link (you compare the emoji
+in the app, as for any agent) and restarts Hermes' gateway. The first chat is then on
 the board. A second Hermes is a Hermes profile with a name of its own (`--name Einkauf --profile einkauf`).
 
 - **Every Trommi chat is a Hermes chat.** Your message goes to Hermes, and its answer comes back into the same chat,

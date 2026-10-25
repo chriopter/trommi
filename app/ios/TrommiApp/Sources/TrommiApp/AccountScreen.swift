@@ -299,7 +299,7 @@ struct AccountInvite: View {
           ForEach(ways, id: \.key) { w in Text(w.label.en).tag(w.key) }
         }.pickerStyle(.segmented).accessibilityIdentifier("connect-ways")
       }
-      if on.installStep { step(on.installTitle.en); copyLine(on.install) }
+      if let install = on.install { step(on.installTitle.en); copyLine(install) }
       if let ask = on.name {
         step(ask.title.en)
         TextField(ask.placeholder.en, text: $hermesName).textInputAutocapitalization(.words).autocorrectionDisabled().font(Face.text(16))
@@ -310,7 +310,6 @@ struct AccountInvite: View {
       step(on.paste.en); copyLine(on.line)
       if let alt = on.alt { Text("Or the slash command:").font(Face.text(13)).foregroundStyle(Ink.muted); copyLine(alt) }
       Text(on.note.en).font(Face.text(13)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
-      if !on.installStep { Text(on.installTitle.en).font(Face.text(13)).foregroundStyle(Ink.muted); copyLine(on.install) }
       step(on.compare.en)
       Text(on.compareNote.en).font(Face.text(13)).foregroundStyle(Ink.muted)
     }

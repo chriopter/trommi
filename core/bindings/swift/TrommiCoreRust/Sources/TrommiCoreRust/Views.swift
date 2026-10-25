@@ -7237,11 +7237,11 @@ public enum CoreView {
     public var key: String
     /// The tab: "Claude Code", "Codex", "Hermes".
     public var label: Text
-    /// The line that installs the connector, once per computer.
-    public var install: String
-    /// The words before `install`: the first step's title, or (`install_step` false) a hint under `paste`.
+    /// The line that installs the connector, once per computer, as the first step; none where `line` installs it
+    /// itself (Hermes).
+    public var install: String?
+    /// The first step's title.
     public var installTitle: Text
-    public var installStep: Bool
     /// A name to give the agent first (`HermesName` sets it).
     public var name: NameAsk?
     /// Where to paste `line`.
@@ -7256,12 +7256,11 @@ public enum CoreView {
     public var compare: Text
     public var compareNote: Text
 
-    public init(key: String = "", label: Text = Text(), install: String = "", installTitle: Text = Text(), installStep: Bool = false, name: NameAsk? = nil, paste: Text = Text(), line: String = "", alt: String? = nil, note: Text = Text(), compare: Text = Text(), compareNote: Text = Text()) {
+    public init(key: String = "", label: Text = Text(), install: String? = nil, installTitle: Text = Text(), name: NameAsk? = nil, paste: Text = Text(), line: String = "", alt: String? = nil, note: Text = Text(), compare: Text = Text(), compareNote: Text = Text()) {
       self.key = key
       self.label = label
       self.install = install
       self.installTitle = installTitle
-      self.installStep = installStep
       self.name = name
       self.paste = paste
       self.line = line
@@ -7276,7 +7275,6 @@ public enum CoreView {
       case label = "label"
       case install = "install"
       case installTitle = "install_title"
-      case installStep = "install_step"
       case name = "name"
       case paste = "paste"
       case line = "line"
@@ -7290,9 +7288,8 @@ public enum CoreView {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.key = try c.decode(String.self, forKey: .key)
       self.label = try c.decode(Text.self, forKey: .label)
-      self.install = try c.decode(String.self, forKey: .install)
-      self.installTitle = try c.decode(Text.self, forKey: .installTitle)
-      self.installStep = try c.decodeIfPresent(Bool.self, forKey: .installStep) ?? false
+      self.install = try c.decodeIfPresent(String.self, forKey: .install)
+      self.installTitle = try c.decodeIfPresent(Text.self, forKey: .installTitle) ?? Text()
       self.name = try c.decodeIfPresent(NameAsk.self, forKey: .name)
       self.paste = try c.decode(Text.self, forKey: .paste)
       self.line = try c.decode(String.self, forKey: .line)
@@ -7306,9 +7303,8 @@ public enum CoreView {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(key, forKey: .key)
       try c.encode(label, forKey: .label)
-      try c.encode(install, forKey: .install)
+      try c.encodeIfPresent(install, forKey: .install)
       try c.encode(installTitle, forKey: .installTitle)
-      try c.encode(installStep, forKey: .installStep)
       try c.encodeIfPresent(name, forKey: .name)
       try c.encode(paste, forKey: .paste)
       try c.encode(line, forKey: .line)

@@ -2835,12 +2835,13 @@ pub struct ConnectWay {
     pub key: String,
     /// The tab: "Claude Code", "Codex", "Hermes".
     pub label: Text,
-    /// The line that installs the connector, once per computer.
-    pub install: String,
-    /// The words before `install`: the first step's title, or (`install_step` false) a hint under `paste`.
-    pub install_title: Text,
+    /// The line that installs the connector, once per computer, as the first step; none where `line` installs it
+    /// itself (Hermes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install: Option<String>,
+    /// The first step's title.
     #[serde(default)]
-    pub install_step: bool,
+    pub install_title: Text,
     /// A name to give the agent first (`HermesName` sets it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<NameAsk>,

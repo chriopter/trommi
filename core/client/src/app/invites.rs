@@ -573,7 +573,7 @@ fn connect_ways(link: &str, computer: bool, hermes_name: &str) -> Vec<ConnectWay
     let (prompt, command) = connect_words(link, computer);
     let mut ways = vec![
         ConnectWay {
-            key: "claude".into(), label: Text::new("connect.claude", "Claude Code"), install: INSTALL_LINE.into(), install_step: true, install_title: Text::new("connect.install", "First time on this computer? Install:"), name: None,
+            key: "claude".into(), label: Text::new("connect.claude", "Claude Code"), install: Some(INSTALL_LINE.into()), install_title: Text::new("connect.install", "First time on this computer? Install the Trommi connector:"), name: None,
             paste: Text::new("connect.claude_paste", "In your project folder, start claude and paste:"),
             line: prompt.clone(), alt: Some(command),
             note: Text::new("connect.claude_note", "Claude Code asks once whether to use the trommi MCP server: choose \"Use this MCP server\"."),
@@ -581,7 +581,7 @@ fn connect_ways(link: &str, computer: bool, hermes_name: &str) -> Vec<ConnectWay
             compare_note: Text::new("connect.compare_note", "Nobody is added before you tap \"They match\"."),
         },
         ConnectWay {
-            key: "codex".into(), label: Text::new("connect.codex", "Codex"), install: INSTALL_LINE.into(), install_step: true, install_title: Text::new("connect.install", "First time on this computer? Install:"), name: None,
+            key: "codex".into(), label: Text::new("connect.codex", "Codex"), install: Some(INSTALL_LINE.into()), install_title: Text::new("connect.install", "First time on this computer? Install the Trommi connector:"), name: None,
             paste: Text::new("connect.codex_paste", "In your project folder, start codex and paste:"),
             line: prompt, alt: None,
             note: Text::new("connect.codex_note", "Start Codex again if it was running when Trommi was installed."),
@@ -601,7 +601,7 @@ fn hermes_way(link: &str, name: &str) -> ConnectWay {
     let shown = if name.is_empty() { "Hermes".to_string() } else { format!("Hermes {name}") };
     ConnectWay {
         key: "hermes".into(), label: Text::new("connect.hermes", "Hermes"),
-        install: INSTALL_LINE.into(), install_step: false, install_title: Text::new("connect.hermes_install", "Trommi not installed on that computer yet? First:"),
+        install: None, install_title: Text::default(),
         name: Some(NameAsk {
             title: Text::new("connect.hermes_name", "Name this Hermes"), value: name.clone(),
             placeholder: Text::new("connect.hermes_name_placeholder", "e.g. Home"),
@@ -609,7 +609,7 @@ fn hermes_way(link: &str, name: &str) -> ConnectWay {
         }),
         paste: Text::new("connect.hermes_paste", "On the computer where Hermes runs, paste:"),
         line: hermes_words(link, &name), alt: None,
-        note: Text::new("connect.hermes_note", "It installs Trommi into Hermes, approves this computer and restarts Hermes."),
+        note: Text::new("connect.hermes_note", "Installs the Trommi connector (or updates it), adds Trommi to Hermes, approves this computer and restarts Hermes."),
         compare: Text::new("connect.hermes_compare", "Compare the six emoji the terminal shows with the ones here"),
         compare_note: { let mut t = Text::new("connect.hermes_compare_note", &format!("Then \"{shown}\" shows up as a chat.")); t.args.insert("name".into(), shown); t },
     }
@@ -620,12 +620,12 @@ fn hermes_name(name: &str) -> String {
     name.chars().filter(|c| !c.is_control()).take(40).collect::<String>().trim().to_string()
 }
 
-/// The one command that sets up a Hermes for Trommi on its computer and approves that computer with this link
-/// (`trommi-connector setup hermes`): `name` is the name it shows on the board ("Einkauf" → "Hermes Einkauf"), at most
+/// The one line that installs the connector (or updates it) and then sets up a Hermes for Trommi on its computer and approves that computer with this link
+/// (install.sh, then `trommi-connector setup hermes`): `name` is the name it shows on the board ("Einkauf" → "Hermes Einkauf"), at most
 /// 40 characters, one line; none when empty.
 pub fn hermes_words(link: &str, name: &str) -> String {
     let name = hermes_name(name);
-    let mut out = String::from("trommi-connector setup hermes");
+    let mut out = format!("{INSTALL_LINE} -s -- hermes");
     if !name.is_empty() {
         out.push_str(&format!(" --name {}", shell_quoted(&name)));
     }
@@ -681,8 +681,8 @@ mod computer_tests {
     #[test]
     fn only_a_computer_approval_offers_hermes_and_its_name_stays_one_quoted_word() {
         assert_eq!(connect_ways("L", false, "").iter().map(|w| w.key.as_str()).collect::<Vec<_>>(), ["claude", "codex"]);
-        assert_eq!(hermes_words("L", ""), "trommi-connector setup hermes --link 'L'");
-        assert_eq!(hermes_words("L", " a$(b) `c`; d\n"), "trommi-connector setup hermes --name 'a$(b) `c`; d' --link 'L'");
+        assert_eq!(hermes_words("L", ""), format!("{INSTALL_LINE} -s -- hermes --link 'L'"));
+        assert_eq!(hermes_words("L", " a$(b) `c`; d\n"), format!("{INSTALL_LINE} -s -- hermes --name 'a$(b) `c`; d' --link 'L'"));
         assert_eq!(hermes_words("L", &"x".repeat(60)).matches('x').count(), 40);
     }
 }

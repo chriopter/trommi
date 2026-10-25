@@ -125,7 +125,7 @@ impl Bench {
         executable(
             &folder.join(&self.asset),
             &format!(
-                "#!/bin/sh\nif [ \"$1\" = setup ]; then echo \"setup $2\" >> \"$HOME/setup-calls\"; [ ! -f \"$HOME/setup-fails\" ]; exit; fi\necho 'trommi-connector 0.0.0 (stand-in; {words})'\n"
+                "#!/bin/sh\nif [ \"$1\" = setup ]; then echo \"setup $2\" >> \"$HOME/setup-calls\"; printf '%s\\n' \"$@\" > \"$HOME/setup-args\"; [ ! -f \"$HOME/setup-fails\" ]; exit; fi\necho 'trommi-connector 0.0.0 (stand-in; {words})'\n"
             ),
         );
         let manifest = Command::new("sh")
@@ -663,6 +663,58 @@ fn the_installer_sets_up_the_programs_it_finds() {
     assert_eq!(calls(), ["setup claude"]);
     assert!(text.contains("Claude Code was not set up"), "{text}");
     assert!(text.contains("trommi-connector setup claude"), "{text}");
+    assert!(bench.installed("trommi-connector").is_file());
+}
+
+/// The Hermes line of the app (`… | sh -s -- hermes --name … --link '…'`): after the connector is in place, its setup
+/// for Hermes with exactly these words, in place of Claude Code's and Codex'; the link is never printed. A Hermes setup
+/// that fails fails the line, the connector staying installed.
+#[test]
+fn the_installer_hands_the_hermes_line_to_its_setup() {
+    let Some(bench) = Bench::new() else { return };
+    let release = bench.release("eight", "trommi-connector", 8, &verified(8), None);
+    let programs = bench.dir.path().join("programs-claude");
+    std::fs::create_dir_all(&programs).expect("a folder");
+    executable(&programs.join("claude"), "#!/bin/sh\nexit 0\n");
+    let link = "https://app.trommi.com/#v1.secret-part";
+    let args = ["--from", release.to_str().expect("plain"), "hermes", "--name", "Mika O'Neil", "--link", link];
+    let output = bench.install(&args, Some(&programs));
+    let text = said(&output);
+    assert!(output.status.success(), "{text}");
+    let calls = std::fs::read_to_string(bench.home().join("setup-calls")).unwrap_or_default();
+    assert_eq!(calls.lines().collect::<Vec<_>>(), ["setup hermes"], "only Hermes is set up: {text}");
+    let words = std::fs::read_to_string(bench.home().join("setup-args")).expect("the setup's words");
+    assert_eq!(words.lines().collect::<Vec<_>>(), ["setup", "hermes", "--name", "Mika O'Neil", "--link", link]);
+    assert!(!text.contains("secret-part"), "the link is not printed: {text}");
+    assert!(!text.contains("/trommi:connect"), "{text}");
+    // (as the app's line runs it: the script on standard input, `sh -s -- …`)
+    let _ = std::fs::remove_file(bench.home().join("setup-args"));
+    let mut piped = Command::new("sh")
+        .args(["-s", "--"])
+        .args(args)
+        .env_clear()
+        .env("HOME", bench.home())
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .current_dir(bench.dir.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("sh runs");
+    {
+        use std::io::Write;
+        let script = std::fs::read(bench.dir.path().join("install.sh")).expect("the installer");
+        piped.stdin.take().expect("stdin").write_all(&script).expect("piped");
+    }
+    let output = piped.wait_with_output().expect("it ends");
+    assert!(output.status.success(), "{}", said(&output));
+    let words = std::fs::read_to_string(bench.home().join("setup-args")).expect("the setup's words, piped");
+    assert_eq!(words.lines().collect::<Vec<_>>(), ["setup", "hermes", "--name", "Mika O'Neil", "--link", link]);
+    std::fs::write(bench.home().join("setup-fails"), "").expect("written");
+    let output = bench.install(&args, Some(&programs));
+    let text = said(&output);
+    assert!(!output.status.success(), "{text}");
+    assert!(text.contains("Hermes was not set up") && !text.contains("secret-part"), "{text}");
     assert!(bench.installed("trommi-connector").is_file());
 }
 

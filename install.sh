@@ -8,6 +8,10 @@
 #   install.sh --from <dir>     a release that lies in a folder already: manifest.json, manifest.json.sig and
 #                               trommi-connector-<target>, as downloaded from a release page
 #   install.sh --verbose        also the details of each step: hashes, paths, what setup did (or TROMMI_VERBOSE=1)
+#   install.sh hermes [--name <name>] [--profile <profile>] --link '<link>'
+#                               then `trommi-connector setup hermes` with these words, in place of step 7: the line
+#                               of the app's "Approve a computer", tab Hermes (`curl … | sh -s -- hermes …`). The
+#                               link opens the approval: it is passed on and never printed.
 #
 # It prints one line per step; colour and bold only when the output is a terminal and NO_COLOR is not set.
 #
@@ -30,6 +34,7 @@
 # and belong to the wrong user. It asks for nothing and changes nothing outside the two folders named above, except:
 #   7. for claude and codex, where they are on the PATH, it runs `trommi-connector setup <program>` (Claude Code's
 #      plugin, Codex's MCP server; nothing that is someone else's is changed). Later: trommi-connector setup <program>.
+#      With `hermes …` it runs `trommi-connector setup hermes …` instead, and ends as that ends.
 #
 # Who vouches for this script itself: on the first run only TLS and GitHub. Whoever wants more downloads a
 # release by hand, checks it with release/sign.sh (verify, then files) from a checkout, and runs
@@ -62,13 +67,14 @@ detail() { [ -z "$verbose" ] || printf '    %s%s%s\n' "$D" "$*" "$Z"; }
 note() { printf '  %s!%s %s\n' "$Y" "$Z" "$*"; }
 fail() { printf '%s✗ install.sh: %s%s\n' "$R" "$*" "$RZ" >&2; exit 1; }
 
-from='' tag=''
+from='' tag='' setup=''
 while [ $# -gt 0 ]; do
   case $1 in
+    hermes) setup=hermes; shift; break ;;
     --from) [ $# -ge 2 ] || fail "--from needs a folder"; from=$2; shift 2 ;;
     --tag) [ $# -ge 2 ] || fail "--tag needs a tag"; tag=$2; shift 2 ;;
     --verbose|-v) verbose=1; shift ;;
-    *) fail "unknown argument $1 (use --tag <tag>, --from <dir> or --verbose)" ;;
+    *) fail "unknown argument (use --tag <tag>, --from <dir>, --verbose or hermes …)" ;;
   esac
 done
 [ -z "$from" ] || [ -z "$tag" ] || fail "--from and --tag do not go together"
@@ -269,6 +275,17 @@ case ":${PATH:-}:" in
 esac
 
 # ---- 7. the programs that start it -----------------------------------------------------------------------------
+# Hermes, when the line asked for it: its setup approves this computer with the link (the emoji to compare show
+# here) and starts Hermes again. Its words, the link among them, go to the connector only.
+if [ "$setup" = hermes ]; then
+  say ""
+  "$bin/trommi-connector" setup hermes "$@" </dev/null || {
+    printf '  %s✗ Hermes was not set up%s\n' "$R" "$RZ" >&2
+    printf '    the connector is installed; once that is solved, run the line from the app again\n' >&2
+    exit 1
+  }
+  return 0
+fi
 # Claude Code and Codex, where they are on the PATH, are told about the connector (`trommi-connector setup`, which
 # changes nothing it does not own and says what it did). That step failing leaves the connector installed.
 found='' codex=''

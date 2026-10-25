@@ -126,10 +126,10 @@ test('a sign-in cut off before its sessions were joined: every address opens, an
 test('Approve a computer: Claude Code, Codex and Hermes as tabs from AccountView.ways; the Hermes name goes to the core', async () => {
   const b = board()
   const t = (en) => ({ key: 'k', en })
-  const way = (key, o) => ({ key, label: t(key), install: 'curl -fsSL https://x/install.sh | sh', install_title: t('First time on this computer? Install:'), install_step: true,
+  const way = (key, o) => ({ key, label: t(key), install: 'curl -fsSL https://x/install.sh | sh', install_title: t('First time on this computer? Install:'),
     paste: t(`paste in ${key}`), line: `${key}-line '#secret'`, note: t(`${key} note`), compare: t(`emoji of ${key}`), compare_note: t(''), ...o })
   const ways = [way('claude', { alt: "/trommi:connect --computer 'L'" }), way('codex'),
-    way('hermes', { install_step: false, install_title: t('Not installed yet? First:'), line: "trommi-connector setup hermes --name 'Home' --link 'L'",
+    way('hermes', { install: undefined, install_title: t(''), line: "curl -fsSL https://x/main/install.sh | sh -s -- hermes --name 'Home' --link 'L'",
       name: { title: t('Name this Hermes'), value: 'Home', placeholder: t('e.g. Home'), note: t('A second Hermes gets a name of its own.') } })]
   b.set({ account: { step: 'invite', invite_id: 'ab', link: 'L', ways, invite: { invite_id: 'ab', role: 'agent', computer: true, state: 'open', expires_ms: Date.now() + 600_000, title: t('Approve a computer') } } })
   const first = (await b.request('GET', '/pair/agent')).main
@@ -145,10 +145,11 @@ test('Approve a computer: Claude Code, Codex and Hermes as tabs from AccountView
   assert.match(hermes, /Name this Hermes/)
   assert.match(hermes, /value="Home"/)
   assert.match(hermes, /data-line="setup"/)
-  assert.match(hermes, /setup hermes --name/)
+  assert.match(hermes, /data-invite-clip-text-param="curl -fsSL https:\/\/x\/main\/install.sh \| sh -s -- hermes --name/)
+  assert.match(hermes, /<code>curl -fsSL …\/(<wbr>)?install.sh \| sh -s/)
   assert.match(hermes, /emoji of hermes/)
   assert.doesNotMatch(hermes, /First time on this computer/)
-  assert.match(hermes, /Not installed yet\? First:/)
+  assert.doesNotMatch(hermes, /data-line="install"/)
   const sent = await b.request('POST', '/pair/hermes', { name: 'Work' })
   assert.deepEqual(b.sent.at(-1), { do: 'account', action: { step: 'hermes_name', name: 'Work' } })
   assert.equal(sent.to, '/pair/agent?with=hermes')
