@@ -114,7 +114,7 @@ pub async fn approve(cfg: &Cfg, link: &str, machine: &Arc<Member>) -> Result<()>
                 return Err(Fault::new("already-approved", "This computer already has a Trommi key for this board. Activate a session with connect without a link. To approve a replacement, remove this computer in Trommi first."));
             }
         }
-        machine.join(link, false, true).await?;
+        machine.join(link, false, true, false).await?;
         let client = machine.client().ok_or_else(|| Fault::new("computer-state", "The computer did not finish joining"))?;
         let deadline = now_ms() + 30_000;
         loop {
@@ -208,7 +208,7 @@ pub async fn activate(cfg: &Cfg, member: &Arc<Member>) -> Result<()> {
             }
             tokio::time::sleep(Duration::from_millis(800)).await;
         };
-        let joining = member.join(&link, false, false);
+        let joining = member.join(&link, false, false, true);
         tokio::pin!(joining);
         let mut bound = false;
         loop {

@@ -305,6 +305,7 @@ for program in claude codex; do
 done
 if [ -z "$found" ]; then
   note "Neither claude nor codex is on your PATH. Once one is installed: trommi-connector setup claude (or: setup codex)"
+  say "      For Hermes: in the app, Approve a computer, tab Hermes, and run its one line here."
 fi
 say ""
 say "${B}Next${Z}"

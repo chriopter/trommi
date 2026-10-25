@@ -121,7 +121,7 @@ class TrommiAdapter(BasePlatformAdapter):
                 user_name="You",
                 source=source,
                 message_id=f"trommi-{secrets.token_hex(8)}",
-                metadata={"trommi": meta},
+                # (no metadata: Hermes' admission keeps only WhatsApp's and refuses any other, invalid_params)
             ))
         elif method == "notifications/claude/channel/permission":
             ask = self._asks.pop(str(params.get("request_id") or ""), None)

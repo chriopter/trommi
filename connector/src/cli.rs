@@ -16,7 +16,7 @@ async fn join(link: String) -> Result<String> {
     let m = Member::new(connector_config(None, true));
     eprintln!("[trommi] joining; confirm this session in the Trommi app");
     let replace_held = std::env::var("TROMMI_JOIN_OTHER").as_deref() != Ok("1");
-    if let Err(e) = m.join(&link, replace_held, true).await {
+    if let Err(e) = m.join(&link, replace_held, true, false).await {
         m.stop().await;
         let spent = [
             "invite-expired",

@@ -137,6 +137,9 @@ async fn setup_hermes_with_a_link_approves_the_computer_and_restarts_the_gateway
     let setup = setup.expect("the setup runs");
     let said = format!("{}{}", String::from_utf8_lossy(&setup.stdout), String::from_utf8_lossy(&setup.stderr));
     assert!(setup.status.success(), "{said}");
+    // one code to compare: the computer's; the first chat's own key is added by the app without one
+    assert_eq!(said.matches("invite answered: check code").count(), 1, "{said}");
+    assert!(said.contains("the app adds it by itself"), "{said}");
     assert!(ask["name"].as_str().is_some_and(|n| n.contains("Hermes Einkauf")) && ask["account_label"] == "Hermes", "{ask}");
     let asked = std::fs::read_to_string(&log).unwrap();
     assert!(asked.contains("config set --force platforms.trommi.extra.instance einkauf"), "{asked}");

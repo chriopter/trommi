@@ -1178,7 +1178,7 @@ impl Member {
         }
         if client.lock().session_id().is_none() {
             self.set_phase("waiting-session");
-            eprintln!("[trommi] waiting for the human's app to put this agent into its session");
+            eprintln!("[trommi] waiting for the human's app to put this agent into its session (keep the app open)");
             tokio::select! {
                 _ = client.when_session() => {},
                 Some(rep) = out_rx.recv() => return Err(removed_err(rep)),
@@ -1375,7 +1375,9 @@ impl Member {
     }
 
     /// Join by an agent invite link; resolves when the human's app has added this device and the session is claimed.
-    pub async fn join(self: &Arc<Self>, link: &str, replace_held: bool, cli: bool) -> Result<()> {
+    /// `vouched`: a link the human's app opened for this session on an approved computer (machine.rs `activate`): the
+    /// app confirms it by itself, there is nothing to compare.
+    pub async fn join(self: &Arc<Self>, link: &str, replace_held: bool, cli: bool, vouched: bool) -> Result<()> {
         if self.phase() == "ready" {
             return Err(Fault::plain("this session is already in a room"));
         }
@@ -1435,8 +1437,12 @@ impl Member {
                     code.emoji().iter().map(|e| e.to_string()).collect(),
                     code.words().iter().map(|w| w.to_string()).collect(),
                 ));
-                eprintln!("[trommi] invite answered: check code {}  ({})", code.emoji().join("  "), code.words().join(", "));
-                eprintln!("[trommi] the Trommi app shows six emoji on its invite page: the same six in the same order? Tap \"They match\" there; if not, \"They don't match\". Waiting for the app to add this session");
+                if vouched {
+                    eprintln!("[trommi] this session asks for its own key; the app adds it by itself on this approved computer (nothing to compare)");
+                } else {
+                    eprintln!("[trommi] invite answered: check code {}  ({})", code.emoji().join("  "), code.words().join(", "));
+                    eprintln!("[trommi] the Trommi app shows six emoji on its invite page: the same six in the same order? Tap \"They match\" there; if not, \"They don't match\". Waiting for the app to add this session");
+                }
             }, move |hash| {
                 hashed.me.lock().unwrap().request_hash = Some(hash.to_base64url());
             }, 800, 15 * 60_000).await?;

@@ -68,6 +68,12 @@ async def test_a_board_message_is_a_message_of_that_chat(tmp_path, made, monkeyp
     assert (main.name, main.env["TROMMI_SESSION_KEY"], main.env["TROMMI_HOST"], main.env["TROMMI_CHANNEL_EVENTS"]) == ("main", "hermes-einkauf", "hermes", "on")
     await main.on_notice("notifications/claude/channel", {"content": "Wie ist das Wetter?", "meta": {"kind": "chat"}})
     assert [(e.text, e.source.chat_id, str(e.source.platform.value)) for e in got] == [("Wie ist das Wetter?", "main", "trommi")]
+    # Hermes' admission takes it: the clauses it checks of the message itself (session_envelope.py)
+    from gateway.session_envelope import _adapter_event, _media_clause, _native_metadata
+
+    event = _adapter_event(got[0])
+    assert _native_metadata(event) == {} and _media_clause(event) is None
+    assert not event.get_command() and not event.internal and not event.prompt_response
     await a.disconnect()
     assert main.stopped
 

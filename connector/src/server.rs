@@ -2912,7 +2912,7 @@ impl Conn {
                             crate::machine::approve(&cfg, link.as_deref().unwrap(), &target).await?;
                             crate::machine::activate(&cfg, &member).await
                         } else if let Some(link) = link {
-                            member.join(&link, false, false).await
+                            member.join(&link, false, false, false).await
                         } else {
                             crate::machine::activate(&cfg, &member).await
                         }
