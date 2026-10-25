@@ -448,6 +448,17 @@ sequenceDiagram
   that exists, an entry changed since) is told to the agent. The tools say when to write: lasting rules, decisions,
   preferences and corrections, not status or to-dos; update instead of adding a second entry.
 - The hub sees encrypted registers, as for everything else. The logic is the app core's (`core/client/src/knowledge.rs`).
+- **A chat on no team.** A chat stands on a team only while its settings name that team and the team is there; else
+  it is on no team, at the top of the list beside the team folders. That is the case for `desk` null (Move to… → No
+  team, or "No team" when you invite an agent or start a new chat), for a chat whose settings name no team (as chats
+  from before this rule may, and a chat whose placement has not reached this device yet), and for a chat whose team
+  was deleted. Every agent invite and approved computer now writes its chat's team, or null. A chat on no team gets no
+  team's goals or knowledge: your devices take the copies it held out of its session, and refuse its agent's writes
+  (`no_team`), until a team that is there is named for it. Its open cards are on the Desk of every team and the bolt,
+  not on a team's count. What its agent read while it was on a team it may still know, as when a chat moves from one
+  team to another. Chats of one Hermes still share their Trommi tools, as above: a Hermes chat on no team can use the
+  tools of that Hermes's chats on a team. One rule decides a chat's team for every part of the app
+  (`sessions::team_of`).
 
 </details>
 
@@ -487,7 +498,12 @@ the board. A second Hermes is a Hermes profile with a name of its own (`--name E
   growing while it writes (an answer preview, spec 7.5). The chat shows it working. Its questions for approval come as
   yes/no cards, and no answer is no.
 - **"New chat with …"** under the + (iPhone: the + menu) starts another chat with that Hermes. Its connector activates
-  itself on the approved computer, without a tap there.
+  itself on the approved computer, without a tap there. It stands where you chose: a team, or no team. Your device
+  writes that choice into the ask itself. The new chat's connector names only the ask it answers, and the app that
+  lets it in places it from your ask, each ask once and within the 15 minutes of an agent invite. Until its place
+  reaches a device, that device counts it on no team. An ask that cannot be read there (too old, used, from someone
+  else, or of a team that is gone) puts the chat on no team, never on a team you did not choose. With no choice made,
+  it stands where the approved computer stands (its team while that team is there, else no team).
 - **Exact routing.** The board tools are Hermes tools (`trommi_<name>`). A call from a Trommi chat acts in that chat.
   A call from another conversation of that Hermes (for example on Telegram or from cron) acts in its main chat.
 - **One connector per chat.** The add-on starts the connector once per chat and speaks MCP to it. Each holds the key of

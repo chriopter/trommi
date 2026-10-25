@@ -172,7 +172,8 @@ pub fn agents_page(b: &Board) -> Vec<AgentView> {
                         slug: a.row.id.clone(),
                         name: say("session.name", a.row.name.as_str(), &[]),
                         mark: a.row.mark(),
-                        team: say("agents.team", format!("{team} team"), &[("team", &team)]),
+                        // (a session on no team says so, never a team it is not on)
+                        team: if a.root { say("agents.no_team", "No team", &[]) } else { say("agents.team", format!("{team} team"), &[("team", &team)]) },
                         folder: member_of(i).map(|d| text(&d.folder)).unwrap_or_default(),
                         helpers: helpers as u32,
                         helpers_says: (helpers > 0).then(|| say("agents.helpers", format!("+{}", plural(helpers, "helper", "helpers")), &[("n", &h)])),

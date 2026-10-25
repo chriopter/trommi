@@ -168,6 +168,57 @@ pub fn verdict(m: &Model, session_id: &str, nonce: &str, request_hash: &str) -> 
     Some(standing && named == request_hash)
 }
 
+/// The person's ask for a new chat that an activation names (`new_chat` in the ask: the nonce of his ask, which the
+/// chat agent passed on), when it names one: `(nonce, place)`. The place is what his own device wrote with that
+/// ask (`Action::NewChat`, `new_chat.desk`), never the agent's word: a team's id, `Some(None)` for no team, `None` for
+/// where the computer's new chats always stood. The agent only names which of his asks it answers, and only his
+/// asks in this computer's own sessions count, each once (`used`: the nonces this device let in already; a session's
+/// `vouched.new_chat` names one let in by any device) and within an agent invite's life. An ask that names one this
+/// device cannot read (not here, from another sender, too old, used, of a team that is gone) stands on no team: it
+/// is never placed on a team the person did not choose.
+pub fn new_chat_place(m: &Model, computer: &str, ask: &Value, used: &BTreeSet<String>, now: u64) -> Option<(String, Option<Option<String>>)> {
+    let nonce = ask.get("new_chat").and_then(Value::as_str).filter(|n| nonce_ok(n))?.to_string();
+    let none = Some((nonce.clone(), Some(None)));
+    let taken = used.contains(&nonce)
+        || m.sessions.values().any(|s| setting(s, "vouched").and_then(|v| v.get("new_chat")).and_then(Value::as_str) == Some(nonce.as_str()));
+    if taken {
+        return none;
+    }
+    let human = |d: &str| m.my_device_id.as_deref() == Some(d) || m.members.get(d).is_some_and(|x| x.device_role == "human");
+    // (the computer's own session, and the sessions it let in)
+    let ours = |s: &Session| s.session_id == computer || setting(s, "vouched").and_then(|v| v.get("by")).and_then(Value::as_str) == Some(computer);
+    for s in m.sessions.values().filter(|s| ours(s)) {
+        let Some(t) = m.timelines.get(&format!("chat:session/{}", s.session_id)) else { continue };
+        for item in t.items.values() {
+            let Some(asked) = item.get("content").and_then(|c| c.get("new_chat")).filter(|a| a.get("nonce").and_then(Value::as_str) == Some(nonce.as_str())) else { continue };
+            let sent = item.get("sent_at").and_then(Value::as_u64).unwrap_or(0);
+            if !human(item.get("sender_device_id").and_then(Value::as_str).unwrap_or("")) || sent + trommi_core::invite::AGENT_INVITE_LIFE_MS < now {
+                return none;
+            }
+            let teams = crate::sessions::teams_in_order(m);
+            return match asked.get("desk") {
+                None => Some((nonce, None)),
+                Some(Value::String(t)) if teams.iter().any(|(id, _)| id == t) => Some((nonce, Some(Some(t.clone())))),
+                _ => none,
+            };
+        }
+    }
+    none
+}
+
+/// Where an activation of the approved computer `computer` stands, and the person's new-chat ask it answers: the
+/// place his ask chose ([`new_chat_place`]); an ask that chose none, or no ask, stands where the computer stands (its
+/// team while that team is there, else no team: `sessions::team_of`).
+pub fn activation_place(m: &Model, computer: &str, ask: &Value, used: &BTreeSet<String>, now: u64) -> (Option<String>, Option<String>) {
+    let asked = new_chat_place(m, computer, ask, used, now);
+    let nonce = asked.as_ref().map(|(n, _)| n.clone());
+    let team = match asked {
+        Some((_, Some(place))) => place,
+        _ => crate::sessions::team_of(m, computer),
+    };
+    (nonce, team)
+}
+
 /// The agent devices of archived sessions that joined by themselves and are still in the room: they go (12.4.5).
 pub fn to_retire(m: &Model) -> Vec<String> {
     let mut out: BTreeSet<String> = BTreeSet::new();
@@ -290,6 +341,85 @@ mod tests {
     }
     fn ask(account: &str) -> Value {
         json!({ "name": "second", "folder": "~/project/", "account": account, "account_label": "claude .claude", "vouched_by": "project" })
+    }
+
+    /// A new chat stands where the person's own ask said: his line in a session of this computer, within an
+    /// invite's life, once; the agent only names which ask. One it cannot be read for stands on no team, never on a
+    /// team he did not choose; an ask that names none stands where the computer's new chats always stood.
+    #[test]
+    fn a_new_chat_stands_where_the_persons_ask_said_once() {
+        use crate::model::types::{HumanRegister, ItemKey};
+        const MAIN: &str = "dddddddddddddddddddddddddddddddd";
+        const HUMAN: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        const NOW: u64 = 10_000_000;
+        let mut m = room();
+        m.members.insert(HUMAN.into(), Member { device_id: HUMAN.into(), device_role: "human".into(), is_active: true, ..Default::default() });
+        for (id, name) in [("main", "Work"), ("lab", "Lab")] {
+            m.human.insert(format!("desk/{id}"), HumanRegister { value: json!({ "name": name }), ..Default::default() });
+        }
+        let s = m.session_of(MAIN);
+        s.group_id = Some("g2".into());
+        s.settings = Some(json!({ "vouched": { "by": S1 } }));
+        let say = |m: &mut Model, n: u64, from: &str, at: u64, asked: Value| {
+            let t = m.timelines.entry(format!("chat:session/{MAIN}")).or_default();
+            let item = json!({ "sender_device_id": from, "sent_at": at, "content": { "text": "Start a new chat with me, please.", "new_chat": asked } });
+            t.items.insert(ItemKey::Number(n), item.as_object().unwrap().clone());
+        };
+        say(&mut m, 1, HUMAN, NOW - 1_000, json!({ "v": 1, "nonce": "aa01", "desk": null }));
+        say(&mut m, 2, HUMAN, NOW - 1_000, json!({ "v": 1, "nonce": "aa02", "desk": "lab" }));
+        say(&mut m, 3, HUMAN, NOW - 1_000, json!({ "v": 1, "nonce": "aa03" }));
+        say(&mut m, 4, AGENT, NOW - 1_000, json!({ "v": 1, "nonce": "aa04", "desk": "lab" }));
+        say(&mut m, 5, HUMAN, NOW - 16 * 60_000, json!({ "v": 1, "nonce": "aa05", "desk": "lab" }));
+        say(&mut m, 6, HUMAN, NOW - 1_000, json!({ "v": 1, "nonce": "aa06", "desk": "gone" }));
+        let none = BTreeSet::new();
+        let place = |m: &Model, nonce: &str, used: &BTreeSet<String>| new_chat_place(m, S1, &json!({ "name": "x", "new_chat": nonce }), used, NOW).map(|(_, p)| p);
+        assert_eq!(new_chat_place(&m, S1, &ask("a"), &none, NOW), None, "no ask named: as always");
+        assert_eq!(place(&m, "aa01", &none), Some(Some(None)), "no team");
+        assert_eq!(place(&m, "aa02", &none), Some(Some(Some("lab".into()))), "his team");
+        assert_eq!(place(&m, "aa03", &none), Some(None), "he chose none: as always");
+        assert_eq!(place(&m, "aa04", &none), Some(Some(None)), "the agent's own line places nothing");
+        assert_eq!(place(&m, "aa05", &none), Some(Some(None)), "too old");
+        assert_eq!(place(&m, "aa06", &none), Some(Some(None)), "a team that is gone");
+        assert_eq!(place(&m, "ffff", &none), Some(Some(None)), "an ask not read here");
+        assert_eq!(place(&m, "aa02", &["aa02".to_string()].into()), Some(Some(None)), "let in once by this device");
+        // let in by any device: once
+        let other = m.session_of("ffffffffffffffffffffffffffffffff");
+        other.settings = Some(json!({ "vouched": { "by": S1, "new_chat": "aa02" } }));
+        assert_eq!(place(&m, "aa02", &none), Some(Some(None)));
+        // another computer's asks are not this one's
+        assert_eq!(new_chat_place(&m, "9999", &json!({ "new_chat": "aa01" }), &none, NOW).map(|(_, p)| p), Some(Some(None)));
+        m.sessions.get_mut(MAIN).unwrap().settings = Some(json!({ "vouched": { "by": "9999" } }));
+        assert_eq!(new_chat_place(&m, S1, &json!({ "new_chat": "aa03" }), &none, NOW).map(|(_, p)| p), Some(Some(None)));
+    }
+
+    /// An activation stands where the person's ask chose; one whose ask chose nothing, and one that names no ask,
+    /// where the approved computer stands (its team, never a team that is gone).
+    #[test]
+    fn an_activation_without_a_choice_stands_where_its_computer_stands() {
+        use crate::model::types::{HumanRegister, ItemKey};
+        const HUMAN: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        const NOW: u64 = 10_000_000;
+        let mut m = room();
+        m.members.insert(HUMAN.into(), Member { device_id: HUMAN.into(), device_role: "human".into(), is_active: true, ..Default::default() });
+        for (id, name) in [("main", "Work"), ("lab", "Lab")] {
+            m.human.insert(format!("desk/{id}"), HumanRegister { value: json!({ "name": name }), ..Default::default() });
+        }
+        let placed = json!({ "machine": { "device": AGENT }, "desk": "lab" });
+        m.sessions.get_mut(S1).unwrap().settings = Some(placed.clone());
+        m.human.insert(format!("session/{S1}"), HumanRegister { value: placed, ..Default::default() });
+        let t = m.timelines.entry(format!("chat:session/{S1}")).or_default();
+        for (n, asked) in [(1, json!({ "v": 1, "nonce": "ab01" })), (2, json!({ "v": 1, "nonce": "ab02", "desk": null })), (3, json!({ "v": 1, "nonce": "ab03", "desk": "main" }))] {
+            let item = json!({ "sender_device_id": HUMAN, "sent_at": NOW - 1_000, "content": { "new_chat": asked } });
+            t.items.insert(ItemKey::Number(n), item.as_object().unwrap().clone());
+        }
+        let none = BTreeSet::new();
+        let at = |m: &Model, ask: Value| activation_place(m, S1, &ask, &none, NOW);
+        assert_eq!(at(&m, ask("a")), (None, Some("lab".into())), "no ask named: the computer's team");
+        assert_eq!(at(&m, json!({ "new_chat": "ab01" })), (Some("ab01".into()), Some("lab".into())), "no choice: the computer's team");
+        assert_eq!(at(&m, json!({ "new_chat": "ab02" })), (Some("ab02".into()), None), "no team chosen");
+        assert_eq!(at(&m, json!({ "new_chat": "ab03" })), (Some("ab03".into()), Some("main".into())), "his team");
+        m.human.insert("desk/lab".into(), HumanRegister { value: Value::Null, ..Default::default() });
+        assert_eq!(at(&m, json!({ "new_chat": "ab01" })).1, None, "the computer's team gone: no team");
     }
 
     #[test]

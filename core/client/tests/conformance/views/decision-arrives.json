@@ -180,6 +180,15 @@
               "en": "Personal",
               "key": "team.personal"
             },
+            "places": [
+              {
+                "chosen": true,
+                "name": {
+                  "en": "No team",
+                  "key": "place.none"
+                }
+              }
+            ],
             "sessions": [],
             "stacks": [
               {
@@ -523,6 +532,15 @@
               "en": "Personal",
               "key": "team.personal"
             },
+            "places": [
+              {
+                "chosen": true,
+                "name": {
+                  "en": "No team",
+                  "key": "place.none"
+                }
+              }
+            ],
             "sessions": [
               {
                 "away": true,
@@ -1138,6 +1156,15 @@
               "en": "Personal",
               "key": "team.personal"
             },
+            "places": [
+              {
+                "chosen": true,
+                "name": {
+                  "en": "No team",
+                  "key": "place.none"
+                }
+              }
+            ],
             "sessions": [
               {
                 "away": true,
@@ -1763,6 +1790,16 @@
           "view": {
             "badge": 1,
             "desk_all": false,
+            "global_blitz": {
+              "card": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
+              "says": {
+                "args": {
+                  "n": "1"
+                },
+                "en": "Blitz: 1 open card",
+                "key": "desk.blitz.one"
+              }
+            },
             "home": {
               "cards": 1,
               "id": "",
@@ -1780,6 +1817,15 @@
               "en": "Personal",
               "key": "team.personal"
             },
+            "places": [
+              {
+                "chosen": true,
+                "name": {
+                  "en": "No team",
+                  "key": "place.none"
+                }
+              }
+            ],
             "sessions": [
               {
                 "away": true,
@@ -3134,6 +3180,16 @@
     "sidebar": {
       "badge": 1,
       "desk_all": false,
+      "global_blitz": {
+        "card": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
+        "says": {
+          "args": {
+            "n": "1"
+          },
+          "en": "Blitz: 1 open card",
+          "key": "desk.blitz.one"
+        }
+      },
       "home": {
         "cards": 1,
         "id": "",
@@ -3151,6 +3207,15 @@
         "en": "Personal",
         "key": "team.personal"
       },
+      "places": [
+        {
+          "chosen": true,
+          "name": {
+            "en": "No team",
+            "key": "place.none"
+          }
+        }
+      ],
       "sessions": [
         {
           "away": true,

@@ -208,7 +208,7 @@ fn a_desk_is_deleted_with_its_sessions_cards_and_board() {
     world.stream(&mut sim);
     let human = |sim: &Sim, k: &str| sim.app.board().model.human.get(k).map(|r| r.value.clone()).unwrap_or(Value::Null);
     let work = sim.app.board().model.human.keys().filter_map(|k| k.strip_prefix("desk/")).find(|d| *d != "main").unwrap().to_string();
-    sim.send(Event::Action { action: Action::MoveSession { session_id: session.clone(), team_id: work.clone() } });
+    sim.send(Event::Action { action: Action::MoveSession { session_id: session.clone(), team_id: Some(work.clone()) } });
     world.stream(&mut sim);
     // a stroke on the team's board
     let board = scribble::team_board(&work);

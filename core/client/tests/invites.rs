@@ -217,9 +217,49 @@ fn computer_approval_is_bound_to_the_confirmed_device_by_the_human_app() {
     let (sid, session) = model.sessions.iter().find(|(_, s)| s.agent_device_id.as_deref() == Some(device.as_str())).expect("computer main session");
     assert_eq!(trommi_client_core::machines::granted_device(model, sid), Some(device.as_str()));
     assert_eq!(session.registers.get("machine_approved").map(|r| r.value["device"].clone()), Some(serde_json::json!(device)));
+    let set = model.human.get(&format!("session/{sid}")).map(|r| r.value.clone()).unwrap_or_default();
+    assert_eq!(set.get("desk"), Some(&serde_json::Value::Null), "placed explicitly, on no team: {set}");
     assert!(!sim.view.settings.devices.iter().any(|r| r.id == device && r.role == "human"));
     let joined = sim.view.account.invite.clone().expect("the invite stays in view, joined");
     assert_eq!((joined.state.as_str(), joined.invite_id.as_str()), ("joined", shown.invite_id.as_str()));
     account(&mut sim, AccountAction::DropInvite { invite_id: joined.invite_id });
     assert_eq!(sim.view.account.invite, None, "Done: it leaves the view");
+}
+
+/// Every agent invite places its session explicitly once it is in: onto the team chosen while that team is there, else
+/// onto no team (`desk` null): none chosen, no team, or a team deleted before the emoji were confirmed.
+#[test]
+fn an_invited_agents_session_is_placed_explicitly() {
+    let lab = "1a".repeat(16);
+    for (team, delete, want) in [
+        (Some(None), false, serde_json::Value::Null),
+        (Some(Some(lab.clone())), false, serde_json::json!(lab.clone())),
+        (None, false, serde_json::Value::Null),
+        (Some(Some(lab.clone())), true, serde_json::Value::Null),
+    ] {
+        let world = World::new();
+        let mut sim = world.sim();
+        sim.send(start());
+        sim.send(Event::Action { action: Action::RoomRegister { key: format!("desk/{lab}"), value: serde_json::json!({ "name": "Lab", "created_at": 1 }) } });
+        account(&mut sim, AccountAction::InviteAgent { label: String::new(), team: team.clone() });
+        let link = sim.view.account.link.clone().expect("the link");
+        let (mut joiner, _store) = new_peer();
+        newcomer_asks(&world, &mut joiner, &link);
+        sim.advance(3_100);
+        assert_eq!(sim.view.account.step, "compare_emoji", "{:?}", sim.view.account.problem);
+        if delete {
+            sim.send(Event::Action { action: Action::RoomRegister { key: format!("desk/{lab}"), value: serde_json::Value::Null } });
+        }
+        let invite_id = sim.view.account.invite_id.clone().unwrap();
+        account(&mut sim, AccountAction::ConfirmEmoji { invite_id, matches: true });
+        for _ in 0..25 {
+            world.stream(&mut sim);
+            sim.advance(1_000);
+        }
+        let device = trommi_client_core::engine::feed::hex(joiner.id().as_bytes());
+        let model = &sim.app.board().model;
+        let (sid, _) = model.sessions.iter().find(|(_, s)| s.agent_device_id.as_deref() == Some(device.as_str()) && s.parent_session_id.is_none()).expect("its main session");
+        let set = model.human.get(&format!("session/{sid}")).map(|r| r.value.clone()).unwrap_or_default();
+        assert_eq!(set.get("desk").cloned(), Some(want), "{team:?} deleted {delete}: {set}");
+    }
 }

@@ -189,6 +189,35 @@ export interface SidebarView {
   found?: ChatGroupView[]
   /** Under a search that finds no chat: so it says. */
   found_none?: Text
+  /** The bolt at the phone's top right: Blitz over every team's open cards, whatever team is in view. None while
+   *  nothing waits on any team. */
+  global_blitz?: GlobalBlitzView
+  /** The chats the person put on no team, one row each, in drawing order: at the top of the list, alongside the
+   *  teams (the phone's folders, the wide sidebar's stacks), never inside one. Their `team_id` is empty. */
+  root?: SessionRowView[]
+  /** Where an agent invited now can stand ("Copy Invite Link"): "No team", then the teams in the menu's order; the
+   *  team in view is `chosen`; in a room without teams only "No team", chosen. */
+  places?: TeamPlaceView[]
+}
+
+/** A place a chat can stand: a team, or no team (`team_id` none: at the top of the list). The action it goes with
+ *  takes `team_id` as it is (null for no team): `move_session`, the account step `invite_agent`'s `team`. */
+export interface TeamPlaceView {
+  /** The team's id; none for no team. */
+  team_id?: string
+  /** "No team", or the team's name. */
+  name: Text
+  /** The place taken when the person picks none. */
+  chosen: boolean
+}
+
+/** Blitz over every team (`SidebarView.global_blitz`): pressed, the shell shows the Desk of every team
+ *  (`Focus.desk_all`) from its first card on; the card's page walks on in that Desk's order. */
+export interface GlobalBlitzView {
+  /** The first card (or request) of every team's Desk, in its order. */
+  card: string
+  /** What it walks: "Blitz: 3 open cards", with `n`, as the Desk's own Blitz says it. */
+  says: Text
 }
 
 /** A team in the search's list of chats: its name as a plain section title over the chats found. */
@@ -1036,7 +1065,11 @@ export interface SessionView {
   slug: string
   /** What draws it (`SessionRowView::mark`). */
   mark: string
+  /** Its team; empty for a chat on no team. */
   team_id: string
+  /** Where its menu's "Move to…" can take it: the other teams, and "No team" while it is on one (a chat on no
+   *  team: the teams). Empty in a room without teams: there is nowhere else. */
+  move_to?: TeamPlaceView[]
   main: boolean
   crowned: boolean
   online: boolean

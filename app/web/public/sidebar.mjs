@@ -272,7 +272,8 @@ export function sidebarRows(vm, base) {
   const list = stacks.length
     ? stacks.map(st => { const s = { ...st, team_in_view: st.id === inView }, rs = st.sessions ?? []; return html`${teamStack(s, base, stacks.length > 1)}${rs.map((r, i) => row(r, base, s, i === rs.length - 1))}` })
     : rows.map(r => row(r, base))
-  return html`${list}${invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
+  const root = html`<div class="chat-root-drop" id="chat-root-drop" aria-label="${sb.places?.[0]?.name.en ?? ''}"><span>${sb.places?.[0]?.name.en ?? ''}</span></div>${(sb.root ?? []).map(r => row(r, base))}`
+  return html`${root}${list}${invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
 }
 
 // ---- every team as a stack (a wide screen: TeamStackView) ----
@@ -431,9 +432,10 @@ controller('order', class extends Controller {
   down(event) {
     const row = event.target.closest?.(ORDERED)
     if (!row || row.parentElement !== this.element || event.button > 0 || event.target.closest('button, .agent-badge, .team-bracket')) return
-    if (document.documentElement.dataset.rail === 'folded' || this.peers(row).length < 2) return
+    const rootDrop = !isHead(row) && row.dataset.teamOf ? this.element.querySelector('#chat-root-drop') : null
+    if (document.documentElement.dataset.rail === 'folded' || (this.peers(row).length < 2 && !rootDrop)) return
     const id = event.pointerId, touch = event.pointerType !== 'mouse', x0 = event.clientX, y0 = event.clientY
-    let live = false, timer = 0, ghost = null, grabAt = 0, home = null, start = '', kids = []
+    let live = false, timer = 0, ghost = null, grabAt = 0, home = null, start = '', kids = [], toRoot = false
     const rows = this.block(row)
     const lift = () => {
       live = true
@@ -453,6 +455,7 @@ controller('order', class extends Controller {
       row.classList.add('is-carried')
       for (const r of rows.slice(1)) r.classList.add('is-carried-sub')
       this.element.classList.add('is-ordering')
+      if (rootDrop) this.element.classList.add('is-moving-chat')
       if (touch) navigator.vibrate?.(8)
     }
     const move = e => {
@@ -465,6 +468,12 @@ controller('order', class extends Controller {
       e.preventDefault()
       if (!row.isConnected) return end(e, true)   // (the sidebar was drawn anew under the pointer)
       ghost.style.top = `${e.clientY - grabAt}px`
+      if (rootDrop) {
+        const b = rootDrop.getBoundingClientRect()
+        toRoot = e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom
+        rootDrop.classList.toggle('is-over', toRoot)
+        if (toRoot) return
+      }
       const peers = this.peers(row), others = peers.filter(p => p !== row)
       const next = others.find(p => { const b = p.getBoundingClientRect(); return e.clientY < b.top + b.height / 2 }) ?? null
       const now = peers[peers.indexOf(row) + 1] ?? null
@@ -485,8 +494,12 @@ controller('order', class extends Controller {
       ghost?.remove()
       row.classList.remove('is-carried')
       for (const r of rows.slice(1)) r.classList.remove('is-carried-sub')
-      this.element.classList.remove('is-ordering')
-      if (!cancel && row.isConnected && this.peers(row).map(orderId).join() !== start) this.save(row, kids)
+      this.element.classList.remove('is-ordering', 'is-moving-chat')
+      rootDrop?.classList.remove('is-over')
+      if (!cancel && row.isConnected && toRoot) {
+        for (const k of kids) this.element.append(k)
+        T?.act({ do: 'move_session', session_id: row.dataset.unit, team_id: null })
+      } else if (!cancel && row.isConnected && this.peers(row).map(orderId).join() !== start) this.save(row, kids)
     }
     if (touch) timer = setTimeout(lift, 300)
     this.cancel = () => end({ pointerId: id, type: 'escape' }, true)
@@ -606,7 +619,7 @@ const nameSize = name => { const n = [...String(name)].length; return n <= 6 ? '
  *  switch, the Trommi menu with the teams at its top (always there, so New team is reachable with one team too). */
 const placeName = vm => vm?.sidebar?.place?.en || 'Personal'
 /** A session by its key or its slug: its sidebar row, else its page (SessionView). */
-const sessionOf = (vm, id) => (id == null ? null : vm.sidebar.sessions.find(r => r.id === id || r.slug === id) ?? Object.values(vm.sessions ?? {}).find(s => s.id === id || s.slug === id) ?? null)
+const sessionOf = (vm, id) => (id == null ? null : [...(vm.sidebar.root ?? []), ...vm.sidebar.sessions, ...(vm.sidebar.stacks ?? []).flatMap(s => s.sessions ?? [])].find(r => r.id === id || r.slug === id) ?? Object.values(vm.sessions ?? {}).find(s => s.id === id || s.slug === id) ?? null)
 /** The pill's words (the menu's button on a wide screen): the session in view with its drawing, else the desk drawing
  *  and the team's name. */
 const pillPlace = (vm, s = null) => (s ? html`<span class="pill-place" id="pill-place">${avatar(whoOf(s), { crown: false })}<b>${s.name.en}</b></span>` : html`<span class="pill-place" id="pill-place"><span class="desk-lamp">${deskLamp(vm)}</span><b>${placeName(vm)}</b></span>`)
@@ -716,7 +729,7 @@ const lastChat = vm => { let id = null; try { id = localStorage.getItem(CHAT_KEY
 /** "New chat with …" (SidebarView.new_chat): a row per chat agent that starts a new chat when asked, its drawing and
  *  name; under the + at the top, and on the phone under the + at Chats. Nothing without such an agent. */
 const newChatItems = vm => (vm?.sidebar?.new_chat?.length
-  ? html`<span class="side-add-head" role="presentation">New chat with</span>${vm.sidebar.new_chat.map(n => html`<button type="button" role="menuitem" class="side-new-chat" data-session="${n.session_id}">${avatar(whoOf({ id: n.slug, mark: n.mark }), { crown: false })}<span>${n.name.en}</span></button>`)}<hr class="desk-move-rule">`
+  ? html`<span class="side-add-head" role="presentation">New chat with</span>${vm.sidebar.new_chat.map(n => html`<details class="desk-move-sub"><summary role="menuitem">${avatar(whoOf({ id: n.slug, mark: n.mark }), { crown: false })}<span>${n.name.en}</span></summary>${(vm.sidebar.places ?? []).map(p => html`<button type="button" role="menuitem" class="side-new-chat" data-session="${n.session_id}" data-team="${p.team_id ?? ''}"><span>${p.name.en}</span></button>`)}</details>`)}<hr class="desk-move-rule">`
   : '')
 
 export function chatsMain(vm, base) {
@@ -1098,7 +1111,7 @@ export function register(t) {
     // on its computer
     const sheet = $('#chats-add-menu'), ask = el?.closest('.side-new-chat')
     if (ask) {
-      T?.act({ do: 'new_chat', session_id: ask.dataset.session })
+      T?.act({ do: 'new_chat', session_id: ask.dataset.session, team_id: ask.dataset.team || null })
       if (menu) menu.hidden = true
       if (sheet) sheet.hidden = true
       showToast({ head: `Starting a new chat with ${ask.textContent.trim()} …` })

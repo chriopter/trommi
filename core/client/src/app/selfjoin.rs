@@ -38,7 +38,12 @@ impl App {
         let s = self.board.model.sessions.get(&ask.session_id);
         let settings = s.and_then(|s| s.settings.clone()).unwrap_or(Value::Null);
         let text = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        // (where the person's ask for a new chat put it, else where the approved computer stands:
+        //  `selfjoin::activation_place`)
+        let used = self.invites.new_chats();
+        let (new_chat, team) = crate::selfjoin::activation_place(&self.board.model, &ask.session_id, &ask.ask, &used, now_ms);
         let vouch = Vouch {
+            new_chat,
             nonce: nonce.clone(),
             session_id: ask.session_id.clone(),
             account: crate::machines::quota(&ask.session_id),
@@ -47,7 +52,6 @@ impl App {
             machine: crate::machines::granted_device(&self.board.model, &ask.session_id).map(String::from),
         };
         let label: String = ask.name.chars().take(120).collect();
-        let team = settings.get("desk").and_then(Value::as_str).map(String::from);
         if !self.invite_open(now_ms, trommi_core::invite::Role::Agent, label, team, Some(vouch), out) {
             self.answer_ask(now_ms, &ask.session_id, nonce, json!({ "refused": "busy" }), out);
         }

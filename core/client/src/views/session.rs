@@ -575,6 +575,8 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         slug: a.row.id.clone(),
         mark: a.row.mark(),
         team_id: a.team.clone().unwrap_or_default(),
+        // (every place but its own: "No team" while it is on one)
+        move_to: super::sidebar::places(b).into_iter().filter(|p| p.team_id != a.team).map(|p| super::TeamPlaceView { chosen: false, ..p }).collect(),
         main: a.row.main,
         crowned: a.crowned,
         online: a.row.online,

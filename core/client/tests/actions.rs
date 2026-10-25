@@ -273,6 +273,8 @@ fn desks_are_made_renamed_given_goals_and_the_last_one_stays() {
     let mut world = World::new();
     let mut sim = world.sim();
     with_card(&mut world, &mut sim);
+    // (its chat, before a team is there: once one is, the chat is on no team until it is moved)
+    let session = sim.view.sidebar.sessions[0].id.clone();
     let teams = |sim: &Sim| sim.app.board().model.human.iter().filter(|(k, r)| k.starts_with("desk/") && !r.value.is_null()).map(|(k, r)| (k.clone(), r.value.clone())).collect::<Vec<_>>();
     act(&mut sim, Action::AddTeam { name: "  Work  ".into() });
     let made = teams(&sim);
@@ -286,8 +288,7 @@ fn desks_are_made_renamed_given_goals_and_the_last_one_stays() {
     act(&mut sim, Action::SetGoal { team_id: work.clone(), text: "ship\n\n  launch \n".into() });
     let v = teams(&sim).into_iter().find(|(k, _)| k.ends_with(&work)).unwrap().1;
     assert_eq!((v["name"].clone(), v["goals"].clone()), (json!("Job"), json!("ship\nlaunch")));
-    let session = sim.view.sidebar.sessions[0].id.clone();
-    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: work.clone() });
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: Some(work.clone()) });
     act(&mut sim, Action::RenameSession { session_id: session.clone(), name: "Builder".into() });
     let s = human(&sim, &format!("session/{session}")).unwrap().0;
     assert_eq!((s["desk"].clone(), s["name"].clone()), (json!(work.clone()), json!("Builder")));
@@ -516,7 +517,7 @@ fn a_sessions_group_carries_its_desks_goals_and_is_written_once() {
     act(&mut sim, Action::SetGoal { team_id: "main".into(), text: "ship it\nwrite the docs".into() });
     world.stream(&mut sim);
     assert!(held(&sim).is_null(), "the session is on no team yet");
-    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: "main".into() });
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: Some("main".into()) });
     world.stream(&mut sim);
     assert_eq!(held(&sim), json!({ "desk_id": "main", "desk_name": "Personal", "goals": "ship it\nwrite the docs" }));
     // nothing changed: nothing more is written
@@ -810,6 +811,10 @@ fn an_agents_write_is_kept_on_its_own_with_its_history_and_the_way_back() {
     let mut sim = world.sim();
     with_card(&mut world, &mut sim);
     let session = sim.view.sidebar.sessions[0].id.clone();
+    // (its chat on the first team: a chat on no team writes no team's knowledge)
+    act(&mut sim, Action::RoomRegister { key: "desk/main".into(), value: json!({ "name": "Personal", "created_at": 0 }) });
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: Some("main".into()) });
+    world.stream(&mut sim);
     let rows = sim.view.desk.rows.len();
     let w1 = agent_writes(&mut world, &sim, 1, json!({ "op": "add", "title": "Hub deploy", "text": "runs here", "pinned": true }));
     for _ in 0..3 {
@@ -893,6 +898,147 @@ fn an_agents_write_is_kept_on_its_own_with_its_history_and_the_way_back() {
     act(&mut sim, Action::KnowledgePin { entry_id: w1.clone(), on: true });
     world.stream(&mut sim);
     assert_eq!(entry(&sim, &w1)["pinned"], json!(true));
+}
+
+/// A chat the person moves onto no team: its other settings stay; it leaves every team for the top of the list; the
+/// team's knowledge its agent held and the team's goals go from its group; its agent's writes are refused (`no_team`)
+/// and change no team's knowledge, whichever entry they name; teams made, put in order or renamed give it none; its
+/// open card stays on the bolt over every team, not on a team's count; moved onto a team again, it holds that team's.
+#[test]
+fn a_chat_on_no_team_holds_no_teams_knowledge_or_goals() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    act(&mut sim, Action::AddTeam { name: "Lab".into() });
+    world.stream(&mut sim);
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: Some("main".into()) });
+    act(&mut sim, Action::RenameSession { session_id: session.clone(), name: "Builder".into() });
+    act(&mut sim, Action::SetGoal { team_id: "main".into(), text: "ship it".into() });
+    world.stream(&mut sim);
+    let w1 = agent_writes(&mut world, &sim, 1, json!({ "op": "add", "title": "Hub deploy", "text": "runs here" }));
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    assert_eq!(carried(&sim, &session, &w1)["title"], json!("Hub deploy"));
+    assert!(!session_register(&sim, &session, "goals").is_null());
+
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: None });
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    let s = human(&sim, &format!("session/{session}")).unwrap().0;
+    assert_eq!((s["desk"].clone(), s["name"].clone()), (serde_json::Value::Null, json!("Builder")), "{s}");
+    let side = &sim.view.sidebar;
+    assert_eq!(side.root.iter().map(|r| (r.id.as_str(), r.team_id.as_str())).collect::<Vec<_>>(), [(session.as_str(), "")]);
+    assert!(side.sessions.iter().chain(side.stacks.iter().flat_map(|t| t.sessions.iter())).all(|r| r.id != session), "in no team");
+    assert!(side.places.first().is_some_and(|p| p.team_id.is_none()), "{:?}", side.places);
+    assert_eq!(side.global_blitz.as_ref().map(|g| g.card.as_str()), Some(card.as_str()), "the bolt walks it");
+    assert!(side.stacks.iter().all(|t| t.cards == 0 && t.waiting == 0), "no team counts it");
+    assert!(carried(&sim, &session, &w1).is_null(), "the team's entry goes from its group");
+    assert!(session_register(&sim, &session, "goals").is_null(), "the team's goals go");
+
+    // its agent's writes: refused, no team's knowledge changed
+    sim.advance(1_000);
+    let w2 = agent_writes(&mut world, &sim, 2, json!({ "op": "update", "entry": wire(&w1), "was": "Hub deploy", "title": "Hub deploy", "text": "elsewhere" }));
+    let w3 = agent_writes(&mut world, &sim, 3, json!({ "op": "add", "title": "New one", "text": "x" }));
+    let w4 = agent_writes(&mut world, &sim, 4, json!({ "op": "forget", "entry": wire(&w1), "was": "Hub deploy" }));
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    for w in [&w2, &w3, &w4] {
+        let done = session_register(&sim, &session, &format!("knowledge_done/{w}"));
+        assert_eq!((done["ok"].clone(), done["why"].clone()), (json!(false), json!("no_team")), "{done}");
+    }
+    let e = entry(&sim, &w1);
+    assert_eq!((e["text"].clone(), e.get("deleted_at").is_none()), (json!("runs here"), true), "{e}");
+    assert!(entry(&sim, &w3).is_null(), "nothing added anywhere");
+
+    // teams made, put in order, renamed: still on none
+    act(&mut sim, Action::AddTeam { name: "Ops".into() });
+    world.stream(&mut sim);
+    let order: Vec<String> = sim.view.sidebar.teams.iter().rev().map(|t| t.id.clone()).collect();
+    act(&mut sim, Action::OrderTeams { team_ids: order });
+    act(&mut sim, Action::RenameTeam { team_id: "main".into(), name: "Work".into() });
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    assert_eq!(sim.view.sidebar.root.len(), 1);
+    assert!(carried(&sim, &session, &w1).is_null() && session_register(&sim, &session, "goals").is_null());
+    assert!(trommi_client_core::sessions::team_of(&sim.app.board().model, &session).is_none());
+    // (a chat on no team is no team's main session)
+    act(&mut sim, Action::CrownSession { session_id: session.clone(), on: true });
+    assert!(sim.view.toasts.iter().any(|t| t.text.key == "action.no_team_crown"), "{:?}", sim.view.toasts);
+
+    // onto a team again: that team's
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: Some("main".into()) });
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    assert!(sim.view.sidebar.root.is_empty());
+    assert_eq!(carried(&sim, &session, &w1)["title"], json!("Hub deploy"));
+}
+
+/// Fails closed: a chat let in whose place never came (the hub withheld it, or it was never written), and one whose
+/// team was deleted, hold no team's knowledge or goals and their agents write none, until a team that is there is
+/// named for them; never the first team's, never another team's.
+#[test]
+fn a_chat_with_no_valid_team_holds_no_teams_knowledge() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    act(&mut sim, Action::AddTeam { name: "Ops".into() });
+    world.stream(&mut sim);
+    act(&mut sim, Action::KnowledgeSave { team_id: "main".into(), entry_id: None, title: "Rule".into(), text: "one".into(), kind: String::new(), pinned: false });
+    act(&mut sim, Action::SetGoal { team_id: "main".into(), text: "ship".into() });
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    let held = |sim: &Sim| sim.app.board().model.sessions[&session].registers.iter().filter(|(k, r)| k.starts_with("knowledge/") && !r.value.is_null()).count();
+    assert_eq!(held(&sim), 0, "let in, never placed: no first team's knowledge");
+    assert!(session_register(&sim, &session, "goals").is_null());
+    let w1 = agent_writes(&mut world, &sim, 1, json!({ "op": "add", "title": "Mine", "text": "x" }));
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    assert_eq!(session_register(&sim, &session, &format!("knowledge_done/{w1}"))["why"], json!("no_team"));
+    // on a team that is then deleted: no team's, not the first one's
+    let ops = sim.view.sidebar.teams.iter().find(|t| t.id != "main").map(|t| t.id.clone()).unwrap();
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: Some(ops.clone()) });
+    for _ in 0..2 {
+        world.stream(&mut sim);
+    }
+    act(&mut sim, Action::RoomRegister { key: format!("desk/{ops}"), value: serde_json::Value::Null });
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    assert_eq!(held(&sim), 0, "its team deleted: no other team's knowledge");
+    assert!(session_register(&sim, &session, "goals").is_null());
+    assert!(trommi_client_core::sessions::team_of(&sim.app.board().model, &session).is_none());
+    // placed on a team that is there: that team's
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), team_id: Some("main".into()) });
+    for _ in 0..3 {
+        world.stream(&mut sim);
+    }
+    assert_eq!(held(&sim), 1);
+}
+
+/// `move_session` takes `team_id` null for no team; a move that names no `team_id` is no move.
+#[test]
+fn a_move_names_its_team_or_null() {
+    let root: Action = serde_json::from_value(json!({ "do": "move_session", "session_id": "s", "team_id": null })).unwrap();
+    assert_eq!(root, Action::MoveSession { session_id: "s".into(), team_id: None });
+    assert_eq!(serde_json::to_value(&root).unwrap()["team_id"], serde_json::Value::Null);
+    assert!(serde_json::from_value::<Action>(json!({ "do": "move_session", "session_id": "s" })).is_err());
+    let chat: Action = serde_json::from_value(json!({ "do": "new_chat", "session_id": "s", "team_id": null })).unwrap();
+    assert_eq!(chat, Action::NewChat { session_id: "s".into(), team_id: Some(None) });
+    let chat: Action = serde_json::from_value(json!({ "do": "new_chat", "session_id": "s" })).unwrap();
+    assert_eq!(chat, Action::NewChat { session_id: "s".into(), team_id: None });
+    let invite: AccountAction = serde_json::from_value(json!({ "step": "invite_agent", "team": null })).unwrap();
+    assert_eq!(invite, AccountAction::InviteAgent { label: String::new(), team: Some(None) });
+    let invite: AccountAction = serde_json::from_value(json!({ "step": "invite_agent" })).unwrap();
+    assert_eq!(invite, AccountAction::InviteAgent { label: String::new(), team: None });
 }
 
 fn wire(hex: &str) -> String {

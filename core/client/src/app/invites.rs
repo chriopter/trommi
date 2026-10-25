@@ -48,6 +48,9 @@ pub(super) struct Vouch {
     pub(super) account_label: String,
     pub(super) by_name: String,
     pub(super) machine: Option<String>,
+    /// The person's ask for a new chat this activation answers (its nonce), when it names one: kept in the new
+    /// session's `vouched`, so no device lets in a second chat for it (`selfjoin::new_chat_place`).
+    pub(super) new_chat: Option<String>,
 }
 
 pub(super) struct Inviting {
@@ -57,6 +60,7 @@ pub(super) struct Inviting {
     /// The link, kept for a vouched one until it is written for the asking agent.
     link: Option<String>,
     label: String,
+    /// The team its session stands on; none: no team. Written explicitly once it is in (`desk`), every agent's.
     team: Option<String>,
     expires_at: u64,
     stage: Stage,
@@ -91,6 +95,13 @@ pub(super) struct Invites {
 }
 
 impl Invites {
+    /// The person's new-chat asks that this device's open invites answer (`Vouch.new_chat`).
+    pub(super) fn new_chats(&self) -> std::collections::BTreeSet<String> {
+        self.open.values().filter_map(|i| i.vouch.as_ref()?.new_chat.clone()).collect()
+    }
+}
+
+impl Invites {
     pub(super) fn wake(&self) -> Option<u64> {
         self.open.values().filter(|i| i.stage == Stage::Open && i.asked.is_none()).map(|i| i.next_look.min(i.expires_at)).min()
     }
@@ -111,7 +122,7 @@ impl App {
                 self.invite_open(now_ms, Role::Human, String::new(), None, None, out);
             }
             AccountAction::InviteAgent { label, team } => {
-                self.invite_open(now_ms, Role::Agent, label.clone(), team.clone(), None, out);
+                self.invite_open(now_ms, Role::Agent, label.clone(), team.clone().flatten(), None, out);
             }
             AccountAction::ApproveComputer { label } => {
                 if self.invite_open(now_ms, Role::Agent, label.clone(), None, None, out) {
@@ -421,7 +432,8 @@ impl App {
             }
             let device = hex(newcomer.as_bytes());
             let session = self.board.model.sessions.iter().find(|(_, s)| s.agent_device_id.as_deref() == Some(device.as_str()) && s.parent_session_id.is_none()).map(|(k, _)| k.clone());
-            let needs_session = self.invites.open.get(&invite).is_some_and(|i| i.role == Role::Agent && (i.computer || !i.label.is_empty() || i.team.is_some() || i.vouch.is_some()));
+            // (every agent's session is placed explicitly, on its team or on none)
+            let needs_session = self.invites.open.get(&invite).is_some_and(|i| i.role == Role::Agent);
             // Keep the human's approval until the authenticated main session is available to bind it to.
             if inside && needs_session && session.is_none() { continue }
             let Some(i) = self.invites.open.remove(&invite) else { continue };
@@ -435,11 +447,15 @@ impl App {
                     if !i.label.is_empty() {
                         place.insert("name".into(), json!(i.label));
                     }
-                    if let Some(team) = &i.team {
-                        place.insert("desk".into(), json!(team));
-                    }
+                    // (its team while that team is there, else no team: null, never left out)
+                    let live = crate::sessions::teams_in_order(&self.board.model);
+                    let team = i.team.as_ref().filter(|t| live.iter().any(|(id, _)| id == *t));
+                    place.insert("desk".into(), json!(team));
                     if let Some(v) = &i.vouch {
                         let mut vouched = json!({ "by": v.session_id, "by_name": v.by_name, "account": v.account, "account_label": v.account_label });
+                        if let Some(n) = &v.new_chat {
+                            vouched["new_chat"] = json!(n);
+                        }
                         if let Some(machine) = &v.machine {
                             vouched["machine"] = json!(machine);
                             vouched["device"] = json!(device);

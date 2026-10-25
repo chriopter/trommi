@@ -19,6 +19,31 @@ use serde_json::Value;
 
 pub const NEEDS_NEWER: &str = "This needs a newer version of Trommi. Update Trommi to see it.";
 
+/// The walk of a Desk: what waits on it (the stack's cards that are not with their agent, and the open requests, of
+/// the sessions `on` takes), in the core's order; a card it does not name yet, between two projections, stands last
+/// until it does. The Desk's rows and Blitz, and the bolt over every team (`SidebarView.global_blitz`), walk this.
+pub(super) fn walk_of<'b>(b: &'b Board, on: impl Fn(Option<usize>) -> bool) -> Vec<&'b str> {
+    let mut waiting: Vec<&str> = b.all_cards.iter().filter(|f| on(f.agent)).map(|f| f.id.as_str()).collect();
+    let mut walk: Vec<&str> = Vec::with_capacity(waiting.len());
+    for id in &b.model.desk_order {
+        if let Some(at) = waiting.iter().position(|w| w == id) {
+            walk.push(waiting.remove(at));
+        }
+    }
+    walk.append(&mut waiting);
+    walk
+}
+
+/// What Blitz walks: "Blitz: 3 open cards".
+pub(super) fn blitz_words(n: u32) -> Text {
+    if n == 1 {
+        say("desk.blitz.one", "Blitz: 1 open card", &[("n", "1")])
+    } else {
+        let n = n.to_string();
+        say("desk.blitz", format!("Blitz: {n} open cards"), &[("n", &n)])
+    }
+}
+
 pub fn desk(b: &Board) -> DeskView {
     desk_with(b, &super::off::of_board(b))
 }
@@ -31,16 +56,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
     let agent_of = |session: &Option<String>, device: &str| b.by_key.get(key_of(session, device)).copied();
 
     // ---- the rows ----
-    // What waits on the team in view: the stack's cards that are not with their agent, and the open requests.
-    let mut waiting: Vec<&str> = b.all_cards.iter().filter(|f| b.on_desk(f.agent)).map(|f| f.id.as_str()).collect();
-    // (in the core's order; a card it does not name yet, between two projections, stands last until it does)
-    let mut walk: Vec<&str> = Vec::with_capacity(waiting.len());
-    for id in &m.desk_order {
-        if let Some(at) = waiting.iter().position(|w| w == id) {
-            walk.push(waiting.remove(at));
-        }
-    }
-    walk.append(&mut waiting);
+    let walk = walk_of(b, |agent| b.on_desk(agent));
     let walk_len = walk.len() as u32;
     let mut rows: Vec<DeskRowView> = walk
         .iter()
@@ -147,7 +163,6 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
             say("desk.empty", "Questions land here.", &[])
         }
     });
-    let n = walk_len.to_string();
     let mut view = DeskView {
         stack: rows.iter().map(|r| r.id.clone()).collect(),
         empty,
@@ -158,13 +173,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         knowledge,
         rows,
         waiting: questions,
-        blitz: (walk_len > 0 && !units.is_empty()).then(|| {
-            if walk_len == 1 {
-                say("desk.blitz.one", "Blitz: 1 open card", &[("n", "1")])
-            } else {
-                say("desk.blitz", format!("Blitz: {n} open cards"), &[("n", &n)])
-            }
-        }),
+        blitz: (walk_len > 0 && !units.is_empty()).then(|| blitz_words(walk_len)),
         slip: cut,
         ..Default::default()
     };

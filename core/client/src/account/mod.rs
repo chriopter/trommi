@@ -89,12 +89,14 @@ pub enum AccountAction {
     },
     /// Make an invite link for a new device of the person.
     InviteDevice,
-    /// Make an invite link for an agent, which founds its main session; `label` names that session, `team` places it.
+    /// Make an invite link for an agent, which founds its main session; `label` names that session, `team` places it:
+    /// a team's id, or null for no team (`SidebarView.places`); without it the session stands where one without a
+    /// team always stood.
     InviteAgent {
         #[serde(default)]
         label: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        team: Option<String>,
+        #[serde(default, deserialize_with = "crate::actions::missing_or_null", skip_serializing_if = "Option::is_none")]
+        team: Option<Option<String>>,
     },
     /// Approve one computer by emoji, after which its local sessions activate without another tap.
     ApproveComputer {

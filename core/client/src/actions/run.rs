@@ -151,11 +151,20 @@ impl Doing<'_> {
             }
             Action::DecideAgain { card_id } => self.decide_again(action, card_id),
             Action::Verdict { request_id, allow } => self.verdict(action, request_id, *allow),
-            Action::NewChat { session_id } => {
+            Action::NewChat { session_id, team_id } => {
+                if team_id.as_ref().and_then(Option::as_ref).is_some_and(|t| !self.teams().contains(t)) {
+                    return Err(not_done("action.no_team", "That team is no longer there."));
+                }
                 let mut content = Map::new();
-                // (an agent that cannot start one reads this as a line; one that can takes `new_chat`)
+                // (an agent that cannot start one reads this as a line; one that can takes `new_chat`. The place the
+                //  person chose goes with the ask, written by his device: the device that lets the new chat in reads it
+                //  there, `crate::selfjoin::new_chat_place`)
                 content.insert("text".into(), json!("Start a new chat with me, please."));
-                content.insert("new_chat".into(), json!({ "v": 1, "nonce": self.sent.local_id() }));
+                let mut ask = json!({ "v": 1, "nonce": self.sent.new_id(self.now) });
+                if let Some(team) = team_id {
+                    ask["desk"] = json!(team);
+                }
+                content.insert("new_chat".into(), ask);
                 self.write(action, Some(session_id), None, content)
             }
             Action::Write { session_id, card_id, text, attachments, marks, copied_cards } => {
@@ -239,8 +248,10 @@ impl Doing<'_> {
                 self.edit_session(action, session_id, "name", json!(name))
             }
             Action::ArchiveSession { session_id, on } => self.edit_session(action, session_id, "archived", json!(on)),
+            // (onto no team: `desk` null, its other settings kept; its goals and the team's knowledge it holds go at
+            //  the next look, `sync_goals`, `sync_knowledge`)
             Action::MoveSession { session_id, team_id } => {
-                if !self.teams().contains(team_id) {
+                if team_id.as_ref().is_some_and(|t| !self.teams().contains(t)) {
                     return Err(not_done("action.no_team", "That team is no longer there."));
                 }
                 self.edit_session(action, session_id, "desk", json!(team_id))
@@ -500,7 +511,8 @@ impl Doing<'_> {
             if !s.is_active || s.stale || s.parent_session_id.is_some() || s.group_id.is_none() || archived {
                 continue;
             }
-            let team_id = settings.as_ref().and_then(|v| v.get("desk")).and_then(Value::as_str).map(str::to_string);
+            // (only a team that is there: none set, no team, or one that is gone carries no goals)
+            let team_id = crate::sessions::team_of(self.model, sid);
             let team = team_id.as_ref().and_then(|d| self.model.human.get(&format!("desk/{d}"))).map(|r| r.value.clone()).unwrap_or(Value::Null);
             let goals = clean_goals(team.get("goals").and_then(Value::as_str).unwrap_or(""));
             let wanted = match team_id {
@@ -629,10 +641,15 @@ impl Doing<'_> {
             if !s.is_active || s.stale || s.parent_session_id.is_some() || s.group_id.is_none() || archived {
                 continue;
             }
+            // (a session on no team holds no team's entries: the ones it holds go, and its writes are refused)
             let team = crate::knowledge::team_of(self.model, sid);
-            let wanted = teams
-                .entry(team.clone())
-                .or_insert_with(|| of_team(self.model, &team).into_iter().map(|e| (format!("{PREFIX}{}", e.id), e.copy())).collect());
+            let none = BTreeMap::new();
+            let wanted = match &team {
+                Some(team) => &*teams
+                    .entry(team.clone())
+                    .or_insert_with(|| of_team(self.model, team).into_iter().map(|e| (format!("{PREFIX}{}", e.id), e.copy())).collect()),
+                None => &none,
+            };
             let sent = self.sent.knowledge.get(sid);
             let held = |key: &str| s.registers.get(key).map(|r| &r.value).filter(|v| !v.is_null());
             let differs = |key: &str, want: &Value| {
@@ -661,9 +678,11 @@ impl Doing<'_> {
                 if room_writes.len() + 2 > KNOWLEDGE_WRITES {
                     break;
                 }
-                let answer = match Ask::read(&r.value) {
-                    None => json!({ "ok": false, "why": "bad" }),
-                    Some(ask) => {
+                let answer = match (Ask::read(&r.value), team.as_deref()) {
+                    (None, _) => json!({ "ok": false, "why": "bad" }),
+                    // (a session on no team writes no team's knowledge, whichever entry it names)
+                    (Some(ask), None) => json!({ "ok": false, "why": "no_team", "entry": ask.entry.clone().unwrap_or_else(|| write.to_string()) }),
+                    (Some(ask), Some(team)) => {
                         let named = ask.entry.clone().unwrap_or_else(|| write.to_string());
                         let entry_key = format!("{PREFIX}{named}");
                         // (the room as it will stand: its registers, then what this device sent and the hub has not
@@ -675,7 +694,7 @@ impl Doing<'_> {
                         };
                         let log_key = format!("{LOG_PREFIX}{write}");
                         let logged = self.model.human.get(&log_key).is_some_and(|l| !l.value.is_null()) || room_sent.contains_key(&log_key) || room_writes.contains_key(&log_key);
-                        let mut current: BTreeMap<String, crate::knowledge::Entry> = of_team(self.model, &team).into_iter().map(|e| (e.id.clone(), e)).collect();
+                        let mut current: BTreeMap<String, crate::knowledge::Entry> = of_team(self.model, team).into_iter().map(|e| (e.id.clone(), e)).collect();
                         for (k, v) in room_sent.iter().map(|(k, (v, _))| (k, v)).chain(room_writes.iter()) {
                             let Some(id) = k.strip_prefix(PREFIX) else { continue };
                             match crate::knowledge::Entry::read(id, v).filter(|e| e.team == team && !e.forgotten()) {
@@ -684,7 +703,7 @@ impl Doing<'_> {
                             };
                         }
                         let current: Vec<crate::knowledge::Entry> = current.into_values().collect();
-                        match apply(&ask, write, &team, &current, kept.as_ref(), logged, &by, self.now) {
+                        match apply(&ask, write, team, &current, kept.as_ref(), logged, &by, self.now) {
                             Applied::Write(w) => {
                                 room_writes.extend(w);
                                 json!({ "ok": true, "entry": named })
@@ -1066,9 +1085,12 @@ impl Doing<'_> {
             return Err(not_done("action.not_found", "That session is no longer there."));
         };
         let crown = if on { json!({ "session_id": session_id, "agent_device_id": s.agent_device_id }) } else { Value::Null };
-        let team = self.settings_of(session_id).get("desk").and_then(Value::as_str).map(str::to_string);
-        let live = self.teams();
-        let team = team.filter(|d| live.contains(d)).or_else(|| live.first().cloned());
+        // (a session on no team is no team's main session, and never takes another team's crown; in a room without
+        //  teams the room's one crown)
+        let team = crate::sessions::team_of(self.model, session_id);
+        if team.is_none() && !self.teams().is_empty() {
+            return Err(not_done("action.no_team_crown", "A chat on no team is no team's main session. Move it onto a team first."));
+        }
         match team {
             Some(d) => {
                 let mut value = self.team(&d)?;

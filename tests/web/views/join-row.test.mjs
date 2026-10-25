@@ -6,6 +6,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { joinRow, sidebarRows } from '../../../app/web/public/sidebar.mjs'
 
+test('root chats stand before team stacks, outside every team', () => {
+  const root = { id: 'root-chat', slug: 'root-chat', name: { en: 'Standalone' }, mark: 'draw:bell', group: ':on', team_id: '', cards: 0, online: true }
+  const vm = { sidebar: { root: [root], places: [{ name: { en: 'No team' } }], sessions: [], stacks: [{ id: 'work', name: { en: 'Work' }, sessions: [], says: { en: 'No chats' }, faces: [], edges: [] }] } }
+  const html = String(sidebarRows(vm, ''))
+  assert.ok(html.includes('id="agent-root-chat"'), 'the top-level chat is drawn')
+  assert.ok(html.indexOf('id="agent-root-chat"') < html.indexOf('id="team-work"'))
+  assert.match(html, /id="chat-root-drop"/)
+  assert.doesNotMatch(html.split('id="agent-root-chat"')[1].split('>')[0], /data-team-of/)
+})
+
 const ask = { nonce: 'ab12', name: 'game', folder: '~/game', host: 'desktop', kind: 'Claude', vouched_by: 'trommi', joining: false, says: { key: 'join.ask', en: 'New Claude session in ~/game on desktop, vouched for by trommi' } }
 
 test('an ask is a row with what it says, Allow and Deny', () => {

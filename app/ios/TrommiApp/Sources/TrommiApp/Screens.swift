@@ -16,7 +16,7 @@ struct RootView: View {
     #if os(macOS)
     true
     #else
-    width == .regular
+    width == .regular || !AppShell.phone
     #endif
   }
   var body: some View {
@@ -31,10 +31,10 @@ struct RootView: View {
         .sheet(isPresented: noteBinding) { NavigationStack { NotesScreen() }.presentationDetents([.large]) }
         .overlay(alignment: .top) { TopLines() }
       } else {
-        // iPhone: the system's tab bar, Desk · Chats · Search; it shrinks while a list scrolls down. The note lies
-        // over everything as a yellow page.
+        // iPhone: one navigation stack, the teams as folders at its root (PhoneFolders.swift); no tab bar. The note
+        // lies over everything as a yellow page.
         #if os(iOS)
-        PhoneTabs().overlay(alignment: .top) { TopLines() }
+        PhoneFrame().overlay(alignment: .top) { TopLines() }
         #endif
       }
     }
@@ -78,55 +78,6 @@ struct CorePage: View {
     }
   }
 }
-
-#if os(iOS)
-/**
- * The iPhone's frame: the system's tab bar with Desk (its number is the core's `sidebar.badge`), Chats (every team's
- * chats in one list) and Search (the same list under the words searched for; the core filters). Each tab keeps its
- * own navigation stack; only the tab in front follows `shell.path`, and a pushed screen hides the bar (it has its own
- * controls at the bottom).
- */
-struct PhoneTabs: View {
-  @EnvironmentObject var shell: AppShell
-  var body: some View {
-    TabView(selection: Binding(get: { shell.tab }, set: { shell.pick($0) })) {
-      // (icons only, in black: the tray for the Desk, full while something waits, never a red count; the message for
-      // the chats; the system fills the one chosen)
-      Tab(value: NativeTab.desk) { stack(.desk) { DeskScreen() } } label: {
-        Image(systemName: shell.view.sidebar.badge > 0 ? "tray.full" : "tray").accessibilityLabel("Desk")
-      }
-      Tab(value: NativeTab.chat) { stack(.chat) { ChatsScreen() } } label: { Image(systemName: "message").accessibilityLabel("Chats") }
-    }
-    // (the search, from the top right of Desk and Chats: every team's chats under the words; the core filters)
-    .sheet(isPresented: $shell.searchOpen, onDismiss: { shell.chatsQuery = ""; shell.show(shell.screen) }) {
-      NavigationStack {
-        ChatsScreen(searching: true)
-          .searchable(text: $shell.chatsQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search chats")
-          .onChange(of: shell.chatsQuery) { _, _ in shell.show(shell.screen) }
-      }
-    }
-    .tint(Color.primary)
-    .tabBarMinimizeBehavior(.onScrollDown)
-    // (the note lies over everything as a yellow page)
-    .overlay { if shell.noteOpen { NotePage().transition(.move(edge: .bottom)) } }
-    .animation(.snappy, value: shell.noteOpen)
-    .onChange(of: shell.path) { _, path in
-      let screen = path.last ?? (shell.noteOpen ? .notes : .desk)
-      if shell.screen != screen { shell.show(screen) }
-    }
-  }
-  private func stack<Root: View>(_ tab: NativeTab, @ViewBuilder _ root: () -> Root) -> some View {
-    NavigationStack(path: Binding(get: { shell.tab == tab ? shell.path : [] }, set: { if shell.tab == tab { shell.path = $0 } })) {
-      // (the bar's black stays the bar's: the pages keep the app's green; lists fade softly under both bars)
-      root().toolbarBackground(.hidden, for: .navigationBar).scrollEdgeEffectStyle(.soft, for: .all).tint(Ink.accent)
-        .navigationDestination(for: CoreView.Screen.self) { screen in
-          CorePage(screen: screen).toolbarBackground(.hidden, for: .navigationBar).toolbar(.hidden, for: .tabBar)
-            .scrollEdgeEffectStyle(.soft, for: .all)
-        }
-    }
-  }
-}
-#endif
 
 /** The lines over the board, under the top row: the core's line (`ViewModel.status`: while it opens, what it does;
  *  offline or stopped, that what shows is what this device last had) and a sign-in that was cut off
@@ -280,6 +231,7 @@ struct Sidebar: View {
       .accessibilityIdentifier("team-switch")
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 2) {
+          ForEach(side.root, id: \.id) { row in SessionRow(row: row) }
           ForEach(side.sessions, id: \.id) { row in SessionRow(row: row) }
           Button { shell.focus(.settings(page: "")); shell.account(["step": "read_account"]) } label: {
             HStack(spacing: 12) { PenMark("ui:PLUS").frame(width: 22, height: 22).padding(.leading, 6); Text("New Agent…").font(Face.text(16, .medium)) }
@@ -478,6 +430,10 @@ struct MePicture: View {
       if shell.isDemo { Section("Demo") { Button { shell.leaveDemo() } label: { Label("Leave Demo", systemImage: "rectangle.portrait.and.arrow.right") } } }
       if let account = shell.view.settings.account { Text(account) }
       Section {
+        if AppShell.phone {
+          Button { shell.teamPage = nil; shell.path = [.desk]; shell.show(.desk) } label: { Label("Desk", systemImage: "tray") }
+            .accessibilityIdentifier("phone-open-desk")
+        }
         Button { go(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
         Button { go(.knowledge(query: "", filter: "", open: "")) } label: { Label("Knowledge", systemImage: "book") }
         Button { go(.wakeups) } label: { Label("Wakeups", systemImage: "alarm") }
@@ -525,7 +481,11 @@ struct PlusMenu: View {
       if !shell.view.sidebar.newChat.isEmpty {
         Section("New chat with") {
           ForEach(shell.view.sidebar.newChat, id: \.sessionId) { n in
-            Button(n.name.en, systemImage: "square.and.pencil") { shell.act(["do": "new_chat", "session_id": n.sessionId]) }
+            Menu {
+              ForEach(Array(shell.view.sidebar.places.enumerated()), id: \.offset) { _, place in
+                Button(place.name.en) { shell.act(["do": "new_chat", "session_id": n.sessionId, "team_id": place.teamId as Any? ?? NSNull()]) }
+              }
+            } label: { Label(n.name.en, systemImage: "square.and.pencil") }
               .accessibilityIdentifier("new-chat-" + n.slug)
           }
         }

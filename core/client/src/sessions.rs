@@ -54,6 +54,8 @@ pub struct SessionRow {
     pub removed: bool,
     pub position: f64,
     pub placed: bool,
+    /// The team its settings name (one that may be gone); empty when they name none. Whether it stands on a team is
+    /// [`team_of`]'s: only on one that is there.
     pub team: String,
     pub starred: bool,
     pub main: bool,
@@ -151,6 +153,44 @@ fn settings_of(m: &Model, s: &Session, key: &str) -> serde_json::Map<String, Val
     match &s.settings {
         Some(Value::Object(o)) => o.clone(),
         _ => serde_json::Map::new(),
+    }
+}
+
+/// Where a session's settings place it (`desk`), before the teams that are there are looked at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Placed {
+    /// `desk` is null: the person put it on no team.
+    Root,
+    /// `desk` names a team (that may be gone).
+    Team(String),
+    /// No `desk`, or one that is not a team's id.
+    Unset,
+}
+
+/// What a session's settings say of its team ([`Placed`]).
+pub fn placed_of(settings: &serde_json::Map<String, Value>) -> Placed {
+    match settings.get("desk") {
+        Some(Value::Null) => Placed::Root,
+        Some(Value::String(t)) if !t.is_empty() => Placed::Team(t.clone()),
+        _ => Placed::Unset,
+    }
+}
+
+/// The one rule of a session's team, for the list, the board, goals, knowledge and the actions alike, failing closed:
+/// the team its settings name while that team is there; else none (`desk` null, none set, an id that is no team's, a
+/// team that is gone). A session on no team stands at the top of the list and gets no team's goals or knowledge, and
+/// its agent writes none, until a team that is there is named for it.
+pub fn team_of(m: &Model, key: &str) -> Option<String> {
+    let set = match m.sessions.get(key) {
+        Some(s) => settings_of(m, s, key),
+        None => match m.human.get(&format!("session/{key}")).map(|r| &r.value) {
+            Some(Value::Object(o)) => o.clone(),
+            _ => serde_json::Map::new(),
+        },
+    };
+    match placed_of(&set) {
+        Placed::Team(t) if teams_in_order(m).iter().any(|(id, _)| *id == t) => Some(t),
+        _ => None,
     }
 }
 
@@ -303,15 +343,14 @@ pub fn teams_in_order(m: &Model) -> Vec<(String, String)> {
     d.into_iter().map(|(id, _, _, name)| (id, name)).collect()
 }
 
-/// Each row's path (`SessionRow::path`): its team's name while there are two teams or more (a team that is gone counts
-/// as the first), its own name.
+/// Each row's path (`SessionRow::path`): its team's name while there are two teams or more, its own name; a session on
+/// no team (none set, or one that is gone), only its own name.
 fn session_paths(m: &Model, out: &mut [SessionRow]) {
     let teams = teams_in_order(m);
     for a in out.iter_mut() {
         let mut p = Vec::new();
         if teams.len() > 1 {
-            let d = teams.iter().find(|(id, _)| *id == a.team).or(teams.first());
-            if let Some((_, n)) = d {
+            if let Some((_, n)) = teams.iter().find(|(id, _)| *id == a.team) {
                 p.push(n.clone());
             }
         }
@@ -427,7 +466,10 @@ fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>, Vec<Leg
             removed: !s.is_active && !s.group_archived,
             position: position.unwrap_or(i as f64),
             placed: position.is_some(),
-            team: text(set.get("desk")).unwrap_or("").to_string(),
+            team: match placed_of(&set) {
+                Placed::Team(t) => t,
+                Placed::Unset | Placed::Root => String::new(),
+            },
             model_label: model_label(text(p.get("model")).unwrap_or("")),
             starred: crown.as_deref() == Some(key.as_str())
                 || (crown.is_some() && crown == s.agent_device_id),
@@ -481,10 +523,6 @@ fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>, Vec<Leg
             }
             _ => i += 1,
         }
-    }
-    // A session without a team stands on the first one ("main").
-    for a in out.iter_mut().filter(|a| a.team.is_empty()) {
-        a.team = "main".into();
     }
     (out, list, legacy)
 }
@@ -629,12 +667,63 @@ mod tests {
         // one team: no team in the path
         m.human.insert("desk/main".into(), HumanRegister { value: json!({ "name": "Work" }), ..Default::default() });
         assert_eq!(row(&m, S0).path, vec![row(&m, S0).name.clone()]);
-        // two teams: the team's name first; a session on no team that is there stands on the first
+        // two teams: the team's name first; a session whose team is gone stands on none (no team in its path)
         m.human.insert("desk/lab".into(), HumanRegister { value: json!({ "name": "Lab", "created_at": 5 }), ..Default::default() });
         m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "desk": "lab", "name": "Core" }), ..Default::default() });
         assert_eq!(row(&m, S0).path, vec!["Lab".to_string(), "Core".to_string()]);
         m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "desk": "gone", "name": "Core" }), ..Default::default() });
-        assert_eq!(row(&m, S0).path, vec!["Work".to_string(), "Core".to_string()]);
+        assert_eq!(row(&m, S0).path, vec!["Core".to_string()]);
+    }
+
+    #[test]
+    fn an_explicit_no_team_chat_stays_at_root() {
+        let mut m = Model::new();
+        member(&mut m, "d0", 1, true);
+        session(&mut m, S0, "d0", true, None, 0);
+        m.human.insert("desk/main".into(), HumanRegister { value: json!({ "name": "Work" }), ..Default::default() });
+        m.human.insert("desk/lab".into(), HumanRegister { value: json!({ "name": "Lab", "created_at": 5 }), ..Default::default() });
+        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "desk": null, "name": "Root chat" }), ..Default::default() });
+        let row = session_list(&m, false).into_iter().find(|r| r.key == S0).unwrap();
+        assert!(row.team.is_empty(), "an explicit root chat must not fall back to Personal");
+        assert_eq!(row.path, vec!["Root chat".to_string()]);
+    }
+
+    /// One rule for every reader, failing closed: a session is on a team only while its settings name that team and
+    /// the team is there. `desk` null, none set, an empty id, a team that is gone or never was: no team, whatever teams
+    /// are made, put in order or deleted. The settings an older web kept under a main session's agent device count.
+    #[test]
+    fn a_sessions_team_is_its_valid_explicit_team_or_none() {
+        let mut m = Model::new();
+        member(&mut m, "d0", 1, true);
+        session(&mut m, S0, "d0", true, None, 0);
+        assert_eq!(team_of(&m, S0), None, "no teams, none set: none");
+        let set = |m: &mut Model, key: &str, v: Value| {
+            m.human.insert(format!("session/{key}"), HumanRegister { value: v, ..Default::default() });
+        };
+        team(&mut m, "main", json!({ "name": "Work" }));
+        team(&mut m, "lab", json!({ "name": "Lab", "created_at": 5 }));
+        assert_eq!(team_of(&m, S0), None, "none set: not the first team");
+        let row = session_list(&m, false).into_iter().find(|r| r.key == S0).unwrap();
+        assert_eq!((row.team.as_str(), row.path.len()), ("", 1), "no first team in its path either");
+        set(&mut m, S0, json!({ "desk": null }));
+        assert_eq!(team_of(&m, S0), None);
+        team(&mut m, "ops", json!({ "name": "Ops", "created_at": 7, "order": 0 }));
+        team(&mut m, "main", Value::Null);
+        assert_eq!(team_of(&m, S0), None, "made, put in order, the first one deleted: still none");
+        set(&mut m, S0, json!({ "desk": "lab", "name": "x" }));
+        assert_eq!(team_of(&m, S0).as_deref(), Some("lab"));
+        team(&mut m, "lab", Value::Null);
+        assert_eq!(team_of(&m, S0), None, "its team deleted: none, never another team");
+        set(&mut m, S0, json!({ "desk": "never" }));
+        assert_eq!(team_of(&m, S0), None);
+        set(&mut m, S0, json!({ "desk": "" }));
+        assert_eq!(team_of(&m, S0), None);
+        set(&mut m, S0, json!({ "desk": 5 }));
+        assert_eq!(team_of(&m, S0), None);
+        // under its agent device, as an older web kept it
+        m.human.remove(&format!("session/{S0}"));
+        set(&mut m, "d0", json!({ "desk": "ops" }));
+        assert_eq!(team_of(&m, S0).as_deref(), Some("ops"));
     }
 
     #[test]

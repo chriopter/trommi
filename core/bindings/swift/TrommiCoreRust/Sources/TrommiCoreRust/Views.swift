@@ -624,8 +624,17 @@ public enum CoreView {
     public var found: [ChatGroupView]
     /// Under a search that finds no chat: so it says.
     public var foundNone: Text?
+    /// The bolt at the phone's top right: Blitz over every team's open cards, whatever team is in view. None while
+    /// nothing waits on any team.
+    public var globalBlitz: GlobalBlitzView?
+    /// The chats the person put on no team, one row each, in drawing order: at the top of the list, alongside the
+    /// teams (the phone's folders, the wide sidebar's stacks), never inside one. Their `team_id` is empty.
+    public var root: [SessionRowView]
+    /// Where an agent invited now can stand ("Copy Invite Link"): "No team", then the teams in the menu's order; the
+    /// team in view is `chosen`; in a room without teams only "No team", chosen.
+    public var places: [TeamPlaceView]
 
-    public init(teams: [TeamTab] = [], newChat: [NewChatView] = [], me: String = "", home: TeamTab = TeamTab(), sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], deskAll: Bool = false, found: [ChatGroupView] = [], foundNone: Text? = nil) {
+    public init(teams: [TeamTab] = [], newChat: [NewChatView] = [], me: String = "", home: TeamTab = TeamTab(), sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], deskAll: Bool = false, found: [ChatGroupView] = [], foundNone: Text? = nil, globalBlitz: GlobalBlitzView? = nil, root: [SessionRowView] = [], places: [TeamPlaceView] = []) {
       self.teams = teams
       self.newChat = newChat
       self.me = me
@@ -643,6 +652,9 @@ public enum CoreView {
       self.deskAll = deskAll
       self.found = found
       self.foundNone = foundNone
+      self.globalBlitz = globalBlitz
+      self.root = root
+      self.places = places
     }
 
     enum CodingKeys: String, CodingKey {
@@ -663,6 +675,9 @@ public enum CoreView {
       case deskAll = "desk_all"
       case found = "found"
       case foundNone = "found_none"
+      case globalBlitz = "global_blitz"
+      case root = "root"
+      case places = "places"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -684,6 +699,9 @@ public enum CoreView {
       self.deskAll = try c.decodeIfPresent(Bool.self, forKey: .deskAll) ?? false
       self.found = try c.decodeIfPresent([ChatGroupView].self, forKey: .found) ?? []
       self.foundNone = try c.decodeIfPresent(Text.self, forKey: .foundNone)
+      self.globalBlitz = try c.decodeIfPresent(GlobalBlitzView.self, forKey: .globalBlitz)
+      self.root = try c.decodeIfPresent([SessionRowView].self, forKey: .root) ?? []
+      self.places = try c.decodeIfPresent([TeamPlaceView].self, forKey: .places) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -705,6 +723,77 @@ public enum CoreView {
       try c.encode(deskAll, forKey: .deskAll)
       if !found.isEmpty { try c.encode(found, forKey: .found) }
       try c.encodeIfPresent(foundNone, forKey: .foundNone)
+      try c.encodeIfPresent(globalBlitz, forKey: .globalBlitz)
+      if !root.isEmpty { try c.encode(root, forKey: .root) }
+      if !places.isEmpty { try c.encode(places, forKey: .places) }
+    }
+  }
+
+  /// A place a chat can stand: a team, or no team (`team_id` none: at the top of the list). The action it goes with
+  /// takes `team_id` as it is (null for no team): `move_session`, the account step `invite_agent`'s `team`.
+  public struct TeamPlaceView: Codable, Hashable, Sendable {
+    /// The team's id; none for no team.
+    public var teamId: String?
+    /// "No team", or the team's name.
+    public var name: Text
+    /// The place taken when the person picks none.
+    public var chosen: Bool
+
+    public init(teamId: String? = nil, name: Text = Text(), chosen: Bool = false) {
+      self.teamId = teamId
+      self.name = name
+      self.chosen = chosen
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case teamId = "team_id"
+      case name = "name"
+      case chosen = "chosen"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.teamId = try c.decodeIfPresent(String.self, forKey: .teamId)
+      self.name = try c.decode(Text.self, forKey: .name)
+      self.chosen = try c.decodeIfPresent(Bool.self, forKey: .chosen) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encodeIfPresent(teamId, forKey: .teamId)
+      try c.encode(name, forKey: .name)
+      try c.encode(chosen, forKey: .chosen)
+    }
+  }
+
+  /// Blitz over every team (`SidebarView.global_blitz`): pressed, the shell shows the Desk of every team
+  /// (`Focus.desk_all`) from its first card on; the card's page walks on in that Desk's order.
+  public struct GlobalBlitzView: Codable, Hashable, Sendable {
+    /// The first card (or request) of every team's Desk, in its order.
+    public var card: String
+    /// What it walks: "Blitz: 3 open cards", with `n`, as the Desk's own Blitz says it.
+    public var says: Text
+
+    public init(card: String = "", says: Text = Text()) {
+      self.card = card
+      self.says = says
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case card = "card"
+      case says = "says"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.card = try c.decode(String.self, forKey: .card)
+      self.says = try c.decode(Text.self, forKey: .says)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(card, forKey: .card)
+      try c.encode(says, forKey: .says)
     }
   }
 
@@ -3555,7 +3644,11 @@ public enum CoreView {
     public var slug: String
     /// What draws it (`SessionRowView::mark`).
     public var mark: String
+    /// Its team; empty for a chat on no team.
     public var teamId: String
+    /// Where its menu's "Move to…" can take it: the other teams, and "No team" while it is on one (a chat on no
+    /// team: the teams). Empty in a room without teams: there is nowhere else.
+    public var moveTo: [TeamPlaceView]
     public var main: Bool
     public var crowned: Bool
     public var online: Bool
@@ -3608,7 +3701,7 @@ public enum CoreView {
     /// "helpers" and "files" where it has some.
     public var tabs: [PanelTabView]
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, wakeLine: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), liveAnswer: String = "", answering: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, wakeLine: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", moveTo: [TeamPlaceView] = [], main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), liveAnswer: String = "", answering: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
       self.id = id
       self.name = name
       self.link = link
@@ -3625,6 +3718,7 @@ public enum CoreView {
       self.slug = slug
       self.mark = mark
       self.teamId = teamId
+      self.moveTo = moveTo
       self.main = main
       self.crowned = crowned
       self.online = online
@@ -3668,6 +3762,7 @@ public enum CoreView {
       case slug = "slug"
       case mark = "mark"
       case teamId = "team_id"
+      case moveTo = "move_to"
       case main = "main"
       case crowned = "crowned"
       case online = "online"
@@ -3712,6 +3807,7 @@ public enum CoreView {
       self.slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
       self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
       self.teamId = try c.decodeIfPresent(String.self, forKey: .teamId) ?? ""
+      self.moveTo = try c.decodeIfPresent([TeamPlaceView].self, forKey: .moveTo) ?? []
       self.main = try c.decodeIfPresent(Bool.self, forKey: .main) ?? false
       self.crowned = try c.decodeIfPresent(Bool.self, forKey: .crowned) ?? false
       self.online = try c.decodeIfPresent(Bool.self, forKey: .online) ?? false
@@ -3756,6 +3852,7 @@ public enum CoreView {
       try c.encode(slug, forKey: .slug)
       try c.encode(mark, forKey: .mark)
       try c.encode(teamId, forKey: .teamId)
+      if !moveTo.isEmpty { try c.encode(moveTo, forKey: .moveTo) }
       try c.encode(main, forKey: .main)
       try c.encode(crowned, forKey: .crowned)
       try c.encode(online, forKey: .online)

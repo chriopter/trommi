@@ -103,8 +103,12 @@ pub enum Action {
     // ---- talk ----
     /// A new chat with a chat agent (`SidebarView::new_chat`): the ask goes to that agent through the session named,
     /// which starts the new chat on its computer.
+    /// `team_id`: where the new chat stands, a team's id or null for no team (`SidebarView.places`); without it, where
+    /// that agent's new chats always stood (its approved computer's team).
     NewChat {
         session_id: String,
+        #[serde(default, deserialize_with = "missing_or_null", skip_serializing_if = "Option::is_none")]
+        team_id: Option<Option<String>>,
     },
     /// A line to a session's agent (or to a card's chat).
     Write {
@@ -144,9 +148,12 @@ pub enum Action {
         session_id: String,
         on: bool,
     },
+    /// A session onto a team (`team_id`), or onto none (`null`: it stands at the top of the list, alongside the
+    /// teams, with no team's goals or knowledge). `team_id` must be there: a move that names nothing is no move.
     MoveSession {
         session_id: String,
-        team_id: String,
+        #[serde(deserialize_with = "nullable")]
+        team_id: Option<String>,
     },
     /// A session's mark (an icon's name); none takes it off.
     SessionIcon {
@@ -381,6 +388,17 @@ pub enum Action {
     Dismiss {
         toast_id: String,
     },
+}
+
+/// A field that must be there, and may be null (`MoveSession.team_id`: null is no team, a missing one no move).
+pub fn nullable<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(d)
+}
+
+/// A field that may be missing (none: as before) or null (`Some(None)`: no team), else a team's id
+/// (`AccountAction::InviteAgent.team`).
+pub fn missing_or_null<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(d).map(Some)
 }
 
 /// Bytes picked in a native share sheet; never logged.

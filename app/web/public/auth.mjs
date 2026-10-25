@@ -420,10 +420,10 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
   })
   t.post(/^\/pair$/, ({ res, form }) => {
     if (['agent', 'computer'].includes(String(form.get('role')))) {
-      const team = t.team()
+      const team = form.has('team') ? (field(form, 'team') || null) : t.team()
       local.invite = { kind: 'agent' }
       if (form.get('role') === 'computer') t.account({ step: 'approve_computer', label: field(form, 'label').trim() })
-      else t.account({ step: 'invite_agent', label: field(form, 'label').trim(), ...(team ? { team } : {}) })
+      else t.account({ step: 'invite_agent', label: field(form, 'label').trim(), team: team || null })
       return t.redirect(res, '/pair/agent')
     }
     local.invite = { kind: 'device' }

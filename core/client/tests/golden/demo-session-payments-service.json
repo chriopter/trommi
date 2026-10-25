@@ -1086,6 +1086,23 @@
   "slug": "payments-service",
   "mark": "draw:pebble",
   "team_id": "platform",
+  "move_to": [
+    {
+      "name": {
+        "key": "place.none",
+        "en": "No team"
+      },
+      "chosen": false
+    },
+    {
+      "team_id": "main",
+      "name": {
+        "key": "team.name",
+        "en": "Fernly"
+      },
+      "chosen": false
+    }
+  ],
   "main": true,
   "crowned": true,
   "online": true,

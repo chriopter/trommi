@@ -123,14 +123,14 @@ const forms = (s, base) => `${base}/sessions/${encodeURIComponent(s.id)}`
  *  once in it), Delete…. */
 function sessionMore(s, vm, base) {
   const name = s.name.en
-  const others = (vm.sidebar?.teams ?? []).length < 2 ? [] : vm.sidebar.teams.filter(d => d.id !== s.team_id)
-  const move = d => html`<form method="post" action="${forms(s, base)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="moved" value="1"><input type="hidden" name="leave" value="1"><button type="submit" role="menuitem" name="team" value="${d.id}">${sk('desk')}<span>${d.name.en || 'Personal'}</span></button></form>`
+  const others = s.move_to ?? []
+  const move = d => html`<form method="post" action="${forms(s, base)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="moved" value="1"><input type="hidden" name="leave" value="1"><button type="submit" role="menuitem" name="team" value="${d.team_id ?? ''}">${sk('desk')}<span>${d.name.en}</span></button></form>`
   const archive = s.online && !s.archived ? '' : html`<form method="post" action="${forms(s, base)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="archived" value="${s.archived ? '0' : '1'}"><button type="submit" role="menuitem">${sk('archive')}<span>${s.archived ? 'Back from the Archive' : 'Archive'}</span></button></form>`
   const del = html`<details class="desk-move-sub desk-move-delete"><summary role="menuitem">${sk('bin')}<span>Delete…</span></summary>
 <form class="session-delete-ask" method="post" action="${forms(s, base)}/delete"><input type="hidden" name="stay" value="1"><p><b>Delete ${name}?</b> Its connector is removed from the room and the session moves to the archive with its helpers. Open questions are shredded.</p>
 <div class="desk-duck-ways"><button type="submit" class="session-delete-yes">${sk('bin')}<span>Delete</span></button><button type="button" class="desk-duck-no" data-pop-close>Cancel</button></div></form></details>`
   const entries = html`${others.length ? html`<details class="desk-move-sub"><summary role="menuitem">${sk('desk')}<span>Move to Team…</span></summary>${others.map(move)}</details>` : ''}
-<form method="post" action="/pair" data-turbo-frame="_top"><input type="hidden" name="role" value="agent"><input type="hidden" name="continue" value="${s.id}"><button type="submit" role="menuitem">${sk('key')}<span>Copy Invite Link</span></button></form><hr class="desk-move-rule">${archive}${del}`
+<details class="desk-move-sub"><summary role="menuitem">${sk('key')}<span>Copy Invite Link</span></summary>${(vm.sidebar?.places ?? []).map(p => html`<form method="post" action="/pair" data-turbo-frame="_top"><input type="hidden" name="role" value="agent"><input type="hidden" name="team" value="${p.team_id ?? ''}"><button type="submit" role="menuitem"><span>${p.name.en}</span></button></form>`)}</details><hr class="desk-move-rule">${archive}${del}`
   return html`<div class="desk-move panel-acts" role="group" aria-label="${name}: actions">${entries}</div>`
 }
 /** The session's drawing and name (the mark opens the drawings, the crown crowns, the name renames: ui.mjs), its dot,

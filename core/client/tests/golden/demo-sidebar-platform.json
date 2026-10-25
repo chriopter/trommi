@@ -788,5 +788,40 @@
       ]
     }
   ],
-  "desk_all": false
+  "desk_all": false,
+  "global_blitz": {
+    "card": "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
+    "says": {
+      "key": "desk.blitz",
+      "args": {
+        "n": "29"
+      },
+      "en": "Blitz: 29 open cards"
+    }
+  },
+  "places": [
+    {
+      "name": {
+        "key": "place.none",
+        "en": "No team"
+      },
+      "chosen": false
+    },
+    {
+      "team_id": "main",
+      "name": {
+        "key": "team.name",
+        "en": "Fernly"
+      },
+      "chosen": false
+    },
+    {
+      "team_id": "platform",
+      "name": {
+        "key": "team.name",
+        "en": "Platform"
+      },
+      "chosen": true
+    }
+  ]
 }

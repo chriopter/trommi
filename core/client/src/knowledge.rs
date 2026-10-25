@@ -251,15 +251,10 @@ pub fn is_new(e: &Entry, seen: u64) -> bool {
     e.last_by().is_some() && e.changed() > seen
 }
 
-/// The team a session stands on: its own when that team is there, else the first (as the sidebar shows it); the
-/// first team's id in a room without teams.
-pub fn team_of(model: &crate::model::Model, session_id: &str) -> String {
-    let teams = crate::sessions::teams_in_order(model);
-    let own = settings_of(model, session_id).and_then(|v| v.get("desk").and_then(Value::as_str).map(str::to_string));
-    match own {
-        Some(t) if teams.iter().any(|(id, _)| *id == t) => t,
-        _ => teams.into_iter().next().map(|(id, _)| id).unwrap_or_else(|| crate::actions::run::FIRST_TEAM_ID.to_string()),
-    }
+/// The team whose knowledge a session's agent reads and writes (`sessions::team_of`, the sidebar's rule): none for a
+/// session on no team, which holds no team's entries and whose writes are refused.
+pub fn team_of(model: &crate::model::Model, session_id: &str) -> Option<String> {
+    crate::sessions::team_of(model, session_id)
 }
 
 fn settings_of(model: &crate::model::Model, session_id: &str) -> Option<Value> {
@@ -767,6 +762,7 @@ pub fn refusal_words(code: &str) -> &'static str {
         "gone" => "that entry is no longer in the team's knowledge",
         "changed" => "that entry changed since you read it; read it again and write again",
         "bad" => "the write did not read (its time is missing or far ahead of the person's device)",
+        "no_team" => "this chat is on no team, so it has no team knowledge; the person can move it onto a team",
         _ => "refused",
     }
 }

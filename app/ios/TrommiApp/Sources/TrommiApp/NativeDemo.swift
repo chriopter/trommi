@@ -49,8 +49,8 @@ enum NativeDemo {
   }
   @MainActor static func route(_ id: String, shell: AppShell) {
     if id == "desk--corner-note-open" { shell.focus(.notes); return }
-    // (the iPhone's Chat page, which has no address of its own)
-    if id == "chats" { shell.focus(.desk); shell.tab = .chat; return }
+    // (the iPhone's teams, its first page, which has no address of its own)
+    if id == "chats" { shell.focus(.desk); return }
     let data = try? Data(contentsOf: url("screens.json"))
     let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     let rows = json?["states"] as? [[String: Any]] ?? []

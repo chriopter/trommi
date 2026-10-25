@@ -159,12 +159,17 @@ pub struct DeskFacts {
 #[derive(Clone, Debug)]
 pub struct Agent {
     pub row: SessionRow,
-    /// The team it stands on: its own when that team is there, else the first; none in a room without teams.
+    /// The team it stands on: the one its settings name while it is there (`sessions::team_of`); none in a room
+    /// without teams, and none for a session on no team (`root`).
     pub team: Option<String>,
-    /// The crowned session of its team (one per team, never one for all).
+    /// The crowned session of its team (one per team, never one for all; never one on no team).
     pub crowned: bool,
-    /// It stands on the team in view (archived or not).
+    /// It stands on the team in view (archived or not); never one on no team.
     pub on_team: bool,
+    /// On no team that is there (`desk` null, none set, a team that is gone), in a room with teams: it stands at the
+    /// top of the list, alongside the teams, on no team's Desk but on the Desk of every team, with no team's goals or
+    /// knowledge.
+    pub root: bool,
     /// Its device says platform "codex".
     pub codex: bool,
     /// Its connector said a last word before its stream closed.
@@ -263,10 +268,14 @@ impl<'a> Board<'a> {
         let agents: Vec<Agent> = rows
             .into_iter()
             .map(|row| {
-                let own = teams.first().map(|first| if has(&row.team) { row.team.clone() } else { first.id.clone() });
+                // (on no team that is there, `sessions::team_of`: no team's, at the top of the list beside the teams;
+                //  in a room without teams there is one list, of every session)
+                let root = !teams.is_empty() && !has(&row.team);
+                let own = (!root && !teams.is_empty()).then(|| row.team.clone());
                 // The crown: a team's own (its register `desk/<id>`, `crown`) decides on that team; a team without
                 // one keeps the room's single crown, if that session stands on it.
                 let crowned = match own.as_ref().and_then(|d| teams.iter().find(|x| &x.id == d)).and_then(|d| d.crown.as_ref()) {
+                    None if root => false,
                     None => row.starred,
                     Some(c) => match c.get("session_id").and_then(Value::as_str).filter(|s| !s.is_empty()) {
                         Some(s) => row.session_id.as_deref() == Some(s),
@@ -278,7 +287,8 @@ impl<'a> Board<'a> {
                 };
                 let session = model.sessions.get(&row.key);
                 Agent {
-                    on_team: teams.is_empty() || own == team,
+                    on_team: teams.is_empty() || (!root && own == team),
+                    root,
                     codex: row
                         .agent_device_id
                         .as_deref()
@@ -384,7 +394,7 @@ impl<'a> Board<'a> {
         self.lens.desk_all || self.in_view(agent)
     }
 
-    /// The team a card of this session counts on, in a room with teams.
+    /// The team a card of this session counts on, in a room with teams; none for a session on no team.
     pub fn team_of(&self, agent: Option<usize>) -> Option<&str> {
         match agent {
             Some(i) => self.agents[i].team.as_deref(),

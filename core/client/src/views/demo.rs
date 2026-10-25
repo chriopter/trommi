@@ -93,13 +93,16 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
                 .collect();
             o.insert("card_ids".into(), json!(mine));
             // (the person's devices copy the team's knowledge into its sessions: the demo holds those copies too)
-            let team = h_of(&f).get("session_settings").and_then(|all| all.get(&dev)).and_then(|v| v.get("desk")).and_then(Value::as_str).unwrap_or("main").to_string();
+            // (a chat on no team, `desk` null, holds none)
+            let human = h_of(&f);
+            let desk = human.get("session_settings").and_then(|all| all.get(&dev)).and_then(|v| v.get("desk"));
+            let team = if desk.is_some_and(Value::is_null) { None } else { Some(desk.and_then(Value::as_str).unwrap_or("main").to_string()) };
             let carried: Vec<Value> = h_of(&f)
                 .get("knowledge")
                 .and_then(Value::as_object)
                 .into_iter()
                 .flatten()
-                .filter(|(_, v)| v.get("desk").and_then(Value::as_str) == Some(team.as_str()) && v.get("deleted_at").is_none())
+                .filter(|(_, v)| team.is_some() && v.get("desk").and_then(Value::as_str) == team.as_deref() && v.get("deleted_at").is_none())
                 .map(|(id, v)| json!([format!("knowledge/{id}"), { "value": v }]))
                 .collect();
             // (and the wakeups its agent set itself: `wakeup/<id>` in its group)

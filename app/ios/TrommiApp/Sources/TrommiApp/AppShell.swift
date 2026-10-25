@@ -86,6 +86,20 @@ enum NativeTab: Hashable { case chat, desk, search }
     if !isDemo { UserDefaults.standard.set(open, forKey: Self.openTeamsKey) } else { demoOpenTeams = open }
     show(screen)
   }
+  /** The team whose chats the iPhone's pushed team page shows (its folder was tapped); none at the folders. */
+  @Published var teamPage: String?
+  /** The iPhone: a team's folder was tapped: its chats on a page of their own, that team in view. */
+  func openTeam(_ id: String) {
+    closeNote(); teamPage = id; path = [.desk]
+    show(.desk, team: id)
+  }
+  /** The bolt at the iPhone's top right: Blitz over every team (`sidebar.global_blitz`) from wherever he is, through
+   *  the Desk of every team (`Focus.desk_all`); back comes to where he pressed it. */
+  func blitzAll() {
+    guard let card = view.sidebar.globalBlitz?.card else { return }
+    deskAll = true; walkChat = nil
+    focus(.card(cardId: card))
+  }
   /** A tab of the iPhone's bar was chosen: its root, the note put away, the search's words left with its tab. */
   func pick(_ next: NativeTab) {
     closeNote(); path = []

@@ -13,7 +13,7 @@
 use super::board::{key_of, Board, DEFAULT_TEAM};
 use super::links::plain;
 use super::words::{badge_words, hand_words, link_words, local, next_midnight, say, unheard_words, LinkSubject};
-use super::{CapView, ChatGroupView, HandView, HelperDotsView, LastSaidView, LinkWords, NewChatView, SessionRowView, SidebarView, StackEdgeView, TeamStackView, TeamTab, Text, STACK_EDGES};
+use super::{CapView, ChatGroupView, GlobalBlitzView, HandView, HelperDotsView, LastSaidView, LinkWords, NewChatView, TeamPlaceView, SessionRowView, SidebarView, StackEdgeView, TeamStackView, TeamTab, Text, STACK_EDGES};
 use crate::model::Model;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -239,11 +239,16 @@ pub fn sidebar(b: &Board) -> SidebarView {
         b.teams.iter().map(|d| (d.id.clone(), d.name.clone())).collect()
     };
     let first = teams[0].0.clone();
+    // (what waits on a chat on no team counts on no team: on home, and on the bolt over every team)
+    let team_of = |agent: Option<usize>| match agent {
+        Some(i) if b.agents[i].root => None,
+        _ => Some(b.team_of(agent).unwrap_or(first.as_str())),
+    };
     let waits_on = |team: &str| {
-        let mine = b.all_fresh.iter().filter(|f| b.team_of(f.agent).unwrap_or(first.as_str()) == team);
+        let mine = b.all_fresh.iter().filter(|f| team_of(f.agent) == Some(team));
         (mine.clone().count() as u32, mine.clone().any(|f| f.knocks))
     };
-    let cards_on = |team: &str| b.all_cards.iter().filter(|f| b.team_of(f.agent).unwrap_or(first.as_str()) == team).count() as u32;
+    let cards_on = |team: &str| b.all_cards.iter().filter(|f| team_of(f.agent) == Some(team)).count() as u32;
     let in_view = b.team.clone().unwrap_or_else(|| first.clone());
     let tabs: Vec<TeamTab> = teams
         .iter()
@@ -311,19 +316,27 @@ pub fn sidebar(b: &Board) -> SidebarView {
         })
         .collect();
 
-    // ---- the search among every team's chats (the phone's Search tab) ----
+    // ---- the chats on no team: at the top of the list, alongside the teams ----
+    let root = rows_of(b, &units_where(b, |a| a.root), &asked);
+
+    // ---- the search among every team's chats (the phone's Search tab), the chats on no team first ----
     let found: Vec<ChatGroupView> = match &b.lens.chats_query {
-        Some(q) => stacks
-            .iter()
-            .map(|s| ChatGroupView { id: s.id.clone(), name: s.name.clone(), rows: s.sessions.iter().filter(|r| matches(r, q)).cloned().collect() })
+        Some(q) => std::iter::once(ChatGroupView { id: String::new(), name: say("chats.root", "Chats", &[]), rows: root.iter().filter(|r| matches(r, q)).cloned().collect() })
+            .chain(stacks.iter().map(|s| ChatGroupView { id: s.id.clone(), name: s.name.clone(), rows: s.sessions.iter().filter(|r| matches(r, q)).cloned().collect() }))
             .filter(|g| !g.rows.is_empty())
             .collect(),
         None => Vec::new(),
     };
     let found_none = b.lens.chats_query.as_ref().filter(|_| found.is_empty()).map(|q| say("chats.none.found", format!("No chat matches \u{201c}{q}\u{201d}."), &[("query", q)]));
 
+    // ---- the bolt over every team (the phone's top right): the walk of every team's Desk, whatever team is in view;
+    // its first card is the first of that Desk's rows (one whose session the list shows) ----
+    let all = super::desk::walk_of(b, |_| true);
+    let shown = |id: &str| b.all_cards.iter().any(|f| f.id == id && f.agent.is_some()) && (b.model.cards.contains_key(id) || b.model.permissions.contains_key(id));
+    let global_blitz = all.iter().find(|id| shown(id)).map(|id| GlobalBlitzView { card: id.to_string(), says: super::desk::blitz_words(all.len() as u32) });
+
     // (a teaser's "14:05" turns into "Yesterday" at midnight)
-    if stacks.iter().flat_map(|s| s.sessions.iter()).chain(rows.iter()).any(|r| r.last.is_some()) {
+    if stacks.iter().flat_map(|s| s.sessions.iter()).chain(rows.iter()).chain(root.iter()).any(|r| r.last.is_some()) {
         b.wake_at(Some(next_midnight(b.now, b.lens.utc_offset_min)));
     }
     // ---- "New chat with …": the chat agents that start a new chat when asked, once each (their main session) ----
@@ -337,10 +350,13 @@ pub fn sidebar(b: &Board) -> SidebarView {
         .filter_map(|a| Some(NewChatView { session_id: a.row.session_id.clone()?, slug: a.row.id.clone(), name: say("agent.name", a.row.name.clone(), &[("name", a.row.name.as_str())]), mark: a.row.mark() }))
         .collect();
     SidebarView {
+        places: places(b),
+        root,
         me: String::new(),
         new_chat,
         found,
         found_none,
+        global_blitz,
         stacks,
         desk_all: b.lens.desk_all,
         teams: tabs,
@@ -355,6 +371,14 @@ pub fn sidebar(b: &Board) -> SidebarView {
         working: units.iter().filter(|u| u.working).count() as u32,
         unheard: units.iter().map(|u| u.unheard).sum(),
     }
+}
+
+/// "No team", then the teams in the menu's order, the team in view chosen ("No team" in a room without teams). Where an
+/// agent invited now can stand (`SidebarView.places`).
+pub(super) fn places(b: &Board) -> Vec<TeamPlaceView> {
+    std::iter::once(TeamPlaceView { team_id: None, name: say("place.none", "No team", &[]), chosen: b.teams.is_empty() })
+        .chain(b.teams.iter().map(|d| TeamPlaceView { team_id: Some(d.id.clone()), name: team_name(&d.name), chosen: b.team.as_deref() == Some(d.id.as_str()) }))
+        .collect()
 }
 
 /// The rows of these units in drawing order: the connected ones first, then those that are away, with no line
@@ -445,7 +469,7 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, asked: &H
         unheard: unit.unheard,
         slug: a.row.id.clone(),
         mark: a.row.mark(),
-        team_id: a.team.clone().unwrap_or_else(|| DEFAULT_TEAM.into()),
+        team_id: if a.root { String::new() } else { a.team.clone().unwrap_or_else(|| DEFAULT_TEAM.into()) },
         online: unit.online,
         working: unit.working,
         main: a.row.main,
@@ -545,7 +569,7 @@ mod tests {
         r.session("d-lab", None, false);
         r.on_team("b-lab", "lab");
         r.on_team("d-lab", "lab");
-        // (a team that is gone counts as the first)
+        // (a team that is gone: on no team, at the top, never the first team's)
         r.on_team("c-work", "nowhere");
         r.card("q1", "d-lab", "decision", "normal");
         let v = view(&r, Some("lab"));
@@ -555,7 +579,8 @@ mod tests {
 
         // one team in view: only its sessions; the tab counts this team alone, the menu says what waits on the other
         let v = view(&r, Some("main"));
-        assert_eq!(slugs(&v), ["c-work", "a-work"]);
+        assert_eq!(slugs(&v), ["a-work"]);
+        assert_eq!(v.root.iter().map(|r| r.slug.as_str()).collect::<Vec<_>>(), ["c-work"]);
         assert_eq!((v.badge, v.waiting, v.place.en.as_str()), (0, 0, "Work"));
         assert_eq!(view(&r, Some("lab")).badge, 1);
         // ("all" is no team any more: the first)
@@ -633,6 +658,84 @@ mod tests {
         assert_eq!(marks(&v), [false, false], "on home no team is marked");
         assert_eq!((v.badge, v.waiting, v.knocking), (3, 3, 1), "home counts every team's questions");
         assert_eq!(slugs(&v), ["a-work"], "the chats stay the team in view's");
+    }
+
+    /// The bolt at the phone's top right walks every team's Desk whatever team is in view: its first card is that
+    /// Desk's first row and it says that Desk's Blitz; it follows the core's order; with nothing open it is none.
+    #[test]
+    fn the_global_blitz_is_every_teams_desk_from_any_team() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        r.session("a-work", None, true);
+        r.session("b-lab", None, true);
+        r.on_team("b-lab", "lab");
+        let m = r.model(NOW);
+        assert_eq!(sidebar(&Board::new(&m, &Lens { team: Some("main".into()), ..Default::default() }, NOW)).global_blitz, None, "nothing open: no bolt");
+
+        r.card("q1", "a-work", "decision", "normal");
+        r.card("q2", "b-lab", "decision", "high");
+        r.card("i3", "b-lab", "info", "normal");
+        let mut m = r.model(NOW);
+        let lenses = |team: &str| {
+            [Lens { team: Some(team.into()), ..Default::default() }, Lens { team: Some(team.into()), desk_all: true, ..Default::default() }]
+        };
+        let home = |m: &Model| super::super::desk::desk(&Board::new(m, &lenses("main")[1], NOW));
+        let check = |m: &Model| {
+            let all = home(m);
+            assert_eq!(all.rows.len(), 3, "every team's Desk");
+            for lens in lenses("main").into_iter().chain(lenses("lab")) {
+                let g = sidebar(&Board::new(m, &lens, NOW)).global_blitz.expect("open cards: a bolt");
+                assert_eq!(g.card, all.rows[0].id, "the first of every team's Desk, from {lens:?}");
+                assert_eq!(Some(&g.says), all.blitz.as_ref());
+                assert_eq!((g.says.key.as_str(), g.says.en.as_str()), ("desk.blitz", "Blitz: 3 open cards"));
+            }
+            all.rows[0].id.clone()
+        };
+        check(&m);
+        // the core's order leads, and from a team's chats the bolt starts on another team's card
+        m.desk_order = ["q2", "i3", "q1"].map(String::from).to_vec();
+        assert_eq!(check(&m), "q2");
+        let main = super::super::desk::desk(&Board::new(&m, &lenses("main")[0], NOW));
+        assert_eq!(main.rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["q1"], "the team's own Desk is the team's");
+        m.desk_order = ["q1", "q2", "i3"].map(String::from).to_vec();
+        assert_eq!(check(&m), "q1");
+    }
+
+    /// A chat on no team stands at the top, alongside the teams, from whichever team is in view: in no team's stack
+    /// or rows, with no team's id; its questions count on home and on the bolt, on no team; the search finds it first;
+    /// the places offer "No team" first and the team in view chosen; its page moves it onto a team.
+    #[test]
+    fn a_chat_on_no_team_stands_at_the_top_alongside_the_teams() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        r.session("a-work", None, true);
+        r.session("b-lab", None, true);
+        r.session("c-root", None, true);
+        r.on_team("b-lab", "lab");
+        r.settings.insert(dev("c-root"), json!({ "desk": null }));
+        r.card("q1", "c-root", "decision", "high");
+        for team in ["main", "lab"] {
+            let m = r.model(NOW);
+            let v = sidebar(&Board::new(&m, &Lens { team: Some(team.into()), ..Default::default() }, NOW));
+            assert_eq!(v.root.iter().map(|r| (r.slug.as_str(), r.team_id.as_str())).collect::<Vec<_>>(), [("c-root", "")]);
+            assert!(v.stacks.iter().all(|s| s.sessions.iter().all(|r| r.slug != "c-root") && s.waiting == 0), "in no team");
+            assert!(!slugs(&v).contains(&"c-root".to_string()));
+            assert_eq!((v.home.waiting, v.badge), (1, 0), "home counts it, the team's Desk does not");
+            assert_eq!(v.global_blitz.as_ref().map(|g| g.card.as_str()), Some("q1"));
+            let places: Vec<(Option<&str>, bool)> = v.places.iter().map(|p| (p.team_id.as_deref(), p.chosen)).collect();
+            assert_eq!(places, [(None, false), (Some("main"), team == "main"), (Some("lab"), team == "lab")]);
+            let page = super::super::session::session(&Board::new(&m, &Lens { team: Some(team.into()), session: Some(dev("c-root")), ..Default::default() }, NOW), &dev("c-root")).unwrap();
+            assert_eq!(page.move_to.iter().map(|p| p.team_id.as_deref()).collect::<Vec<_>>(), [Some("main"), Some("lab")]);
+            let page = super::super::session::session(&Board::new(&m, &Lens { team: Some(team.into()), session: Some(dev("b-lab")), ..Default::default() }, NOW), &dev("b-lab")).unwrap();
+            assert_eq!(page.move_to.iter().map(|p| p.team_id.as_deref()).collect::<Vec<_>>(), [None, Some("main")]);
+        }
+        let m = r.model(NOW);
+        let v = sidebar(&Board::new(&m, &Lens { chats_query: Some("root".into()), ..Default::default() }, NOW));
+        assert_eq!(v.found.iter().map(|g| (g.id.as_str(), g.rows.len())).collect::<Vec<_>>(), [("", 1)]);
+        // without teams: "No team", chosen, so a new chat or an invite always has its place
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let m = r.model(NOW);
+        let places: Vec<(Option<String>, bool)> = sidebar(&Board::new(&m, &Lens::default(), NOW)).places.into_iter().map(|p| (p.team_id, p.chosen)).collect();
+        assert_eq!(places, [(None, true)]);
     }
 
     /// The phone's Search: every team's chats whose name or teaser has the words, under their team's title; a

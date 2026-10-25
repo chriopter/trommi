@@ -394,6 +394,42 @@ pub struct SidebarView {
     /// Under a search that finds no chat: so it says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub found_none: Option<Text>,
+    /// The bolt at the phone's top right: Blitz over every team's open cards, whatever team is in view. None while
+    /// nothing waits on any team.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub global_blitz: Option<GlobalBlitzView>,
+    /// The chats the person put on no team, one row each, in drawing order: at the top of the list, alongside the
+    /// teams (the phone's folders, the wide sidebar's stacks), never inside one. Their `team_id` is empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub root: Vec<SessionRowView>,
+    /// Where an agent invited now can stand ("Copy Invite Link"): "No team", then the teams in the menu's order; the
+    /// team in view is `chosen`; in a room without teams only "No team", chosen.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub places: Vec<TeamPlaceView>,
+}
+
+/// A place a chat can stand: a team, or no team (`team_id` none: at the top of the list). The action it goes with
+/// takes `team_id` as it is (null for no team): `move_session`, the account step `invite_agent`'s `team`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamPlaceView {
+    /// The team's id; none for no team.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<String>,
+    /// "No team", or the team's name.
+    pub name: Text,
+    /// The place taken when the person picks none.
+    #[serde(default)]
+    pub chosen: bool,
+}
+
+/// Blitz over every team (`SidebarView.global_blitz`): pressed, the shell shows the Desk of every team
+/// (`Focus.desk_all`) from its first card on; the card's page walks on in that Desk's order.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GlobalBlitzView {
+    /// The first card (or request) of every team's Desk, in its order.
+    pub card: String,
+    /// What it walks: "Blitz: 3 open cards", with `n`, as the Desk's own Blitz says it.
+    pub says: Text,
 }
 
 /// A team in the search's list of chats: its name as a plain section title over the chats found.
@@ -1456,8 +1492,13 @@ pub struct SessionView {
     /// What draws it (`SessionRowView::mark`).
     #[serde(default)]
     pub mark: String,
+    /// Its team; empty for a chat on no team.
     #[serde(default)]
     pub team_id: String,
+    /// Where its menu's "Move to…" can take it: the other teams, and "No team" while it is on one (a chat on no
+    /// team: the teams). Empty in a room without teams: there is nowhere else.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub move_to: Vec<TeamPlaceView>,
     #[serde(default)]
     pub main: bool,
     #[serde(default)]

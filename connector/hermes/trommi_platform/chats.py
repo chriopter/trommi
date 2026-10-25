@@ -55,6 +55,8 @@ class Chats:
         self._active: set[str] = set()
         self._names: dict[str, str] = {}
         self._nonces: list[str] = []
+        # (a chat started on the person's ask: that ask's nonce, until the chat is on the board)
+        self._asked: dict[str, str] = {}
         self._lock = asyncio.Lock()
 
     # ---- the kept list ----
@@ -70,7 +72,7 @@ class Chats:
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.state_file.with_name(f".{self.state_file.name}.{os.getpid()}")
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        chats = [{"id": c, "active": c == MAIN or c in self._active, "name": self._names.get(c, "")} for c in sorted(self.children)]
+        chats = [{"id": c, "active": c == MAIN or c in self._active, "name": self._names.get(c, ""), **({"asked": self._asked[c]} if c in self._asked else {})} for c in sorted(self.children)]
         with os.fdopen(fd, "w") as f:
             json.dump({"chats": chats, "nonces": self._nonces[-NONCES_KEPT:]}, f)
         os.replace(tmp, self.state_file)
@@ -91,6 +93,8 @@ class Chats:
             "TROMMI_SESSION_KEY": self.session_key(chat),
             "TROMMI_FOLDER": self.folder,
             "TROMMI_CHANNEL_EVENTS": "on",
+            # (the person's ask this chat answers: his app places the chat where he asked)
+            **({"TROMMI_NEW_CHAT": self._asked[chat]} if chat in self._asked else {}),
         }
 
     def _child(self, chat: str, name: str | None = None) -> Child:
@@ -111,6 +115,7 @@ class Chats:
             logger.warning("Trommi chat %s not activated: %s", chat, said[:200])
             return False
         self._active.add(chat)
+        self._asked.pop(chat, None)
         self._write()
         return True
 
@@ -122,6 +127,7 @@ class Chats:
         rows = [r for r in rows if isinstance(r.get("id"), str) and CHAT_ID.match(r["id"])]
         self._active = {r["id"] for r in rows if r.get("active") is True and r["id"] != MAIN}
         self._names = {r["id"]: str(r.get("name") or "") for r in rows}
+        self._asked = {r["id"]: r["asked"] for r in rows if isinstance(r.get("asked"), str) and r["id"] not in self._active}
         ids = [MAIN, *[r["id"] for r in rows if r["id"] != MAIN]][:CHATS_MAX]
         for chat in ids:
             child = self._child(chat, self._names.get(chat) or None)
@@ -182,6 +188,7 @@ class Chats:
                 return None
             chat = f"c-{secrets.token_hex(6)}"
             name = f"{self.name} {len(self.children) + 1}"
+            self._asked[chat] = nonce
             child = self._child(chat, name)
             self.children[chat] = child
             self._names[chat] = name

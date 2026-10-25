@@ -128,6 +128,7 @@ async def test_the_person_asks_for_a_new_chat_once(tmp_path, made):
     assert new.env["TROMMI_SESSION_KEY"] == f"hermes-einkauf-{new.name}"
     assert new.env["TROMMI_AGENT_NAME"] == "Hermes Einkauf 2"
     assert new.calls == [("connect", {})], "it activates itself on the approved computer"
+    assert new.env["TROMMI_NEW_CHAT"] == "n1" and "TROMMI_NEW_CHAT" not in main.env, "its ask goes with it: the app places it"
     # the same ask again, or one from another chat: no second chat
     await main.on_notice("notifications/claude/channel", {"content": "x", "meta": {"kind": "new_chat", "nonce": "n1"}})
     await new.on_notice("notifications/claude/channel", {"content": "x", "meta": {"kind": "new_chat", "nonce": "n2"}})
@@ -138,6 +139,7 @@ async def test_the_person_asks_for_a_new_chat_once(tmp_path, made):
     await b.connect()
     again = [c for c in made[2:] if c.name == new.name][0]
     assert sorted(c.name for c in made[2:]) == sorted(["main", new.name]) and again.calls == []
+    assert "TROMMI_NEW_CHAT" not in again.env, "on the board: its ask is done"
 
 
 async def test_a_new_chat_that_did_not_activate_is_activated_at_the_next_start(tmp_path, made, monkeypatch):
@@ -159,6 +161,7 @@ async def test_a_new_chat_that_did_not_activate_is_activated_at_the_next_start(t
     again = [c for c in made[2:] if c.name.startswith("c-")][0]
     assert again.calls == [("connect", {})], "activated again"
     assert again.env["TROMMI_AGENT_NAME"] == "Hermes Einkauf 2", "under the name it asked with"
+    assert again.env["TROMMI_NEW_CHAT"] == "n1", "for the ask it answers"
     monkeypatch.setattr(FakeChild, "call_tool", original)
 
 

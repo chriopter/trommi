@@ -38,10 +38,10 @@ export function register(t) {
   })
 
   // ---- a session's forms ----
-  const rowOf = id => t.vm().sidebar?.sessions?.find(x => x.id === id) ?? null
+  const rowOf = id => [...(t.vm().sidebar?.root ?? []), ...(t.vm().sidebar?.sessions ?? []), ...(t.vm().sidebar?.stacks ?? []).flatMap(s => s.sessions ?? [])].find(x => x.id === id) ?? null
   const sessionOf = id => t.vm().sessions?.[id] ?? rowOf(id)
   const nameOf = id => sessionOf(id)?.name?.en ?? ''
-  const teamName = id => t.vm().sidebar?.teams?.find(d => d.id === id)?.name?.en || 'Personal'
+  const teamName = id => t.vm().sidebar?.places?.find(p => (p.team_id ?? '') === id)?.name.en ?? ''
   // The drawings of one session's picker: a frame, fetched when the picker is opened.
   t.get(/^\/sessions\/([^/]+)\/marks$/, ({ req, res, url, match }) => {
     const s = sessionOf(decodeURIComponent(match[1]))
@@ -60,9 +60,9 @@ export function register(t) {
     if (form.has('group')) t.act({ do: 'session_group', session_id: id, group: String(form.get('group')) || null })
     if (form.has('team')) {
       const was = sessionOf(id)?.team_id, to = String(form.get('team'))
-      t.act({ do: 'move_session', session_id: id, team_id: to })
+      t.act({ do: 'move_session', session_id: id, team_id: to || null })
       // (from the session's own page: on to the Desk, the session is not on this team any more)
-      if (form.has('moved')) return html`${form.has('leave') ? t.stream('visit', `${BASE}/`) : ''}${t.toast({ head: `Moved to ${teamName(to)}`, line: nameOf(id), undo: was ? undo(id, { team: was, moved: '1' }) : null })}`
+      if (form.has('moved')) return html`${form.has('leave') ? t.stream('visit', `${BASE}/`) : ''}${t.toast({ head: `Moved to ${teamName(to)}`, line: nameOf(id), undo: was != null ? undo(id, { team: was, moved: '1' }) : null })}`
     }
     if (form.has('archived')) {
       const on = form.get('archived') === '1'

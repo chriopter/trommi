@@ -1197,3 +1197,11 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
 .chats-add-menu .side-new-chat { display: flex; align-items: center; gap: 12px; padding: 12px 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--fg); text-align: left; }
 .chats-add-menu .side-new-chat .agent-avatar { width: 28px; height: 28px; }
 .chats-add-menu hr { display: none; }
+
+/* The existing chat drag can leave a Team. This target is visible only while carrying a Team chat. */
+.chat-root-drop { height: 0; overflow: hidden; flex: none; }
+#agents.is-moving-chat .chat-root-drop { min-height: 44px; height: 44px; display: grid; place-items: center; margin: 4px 8px 10px; border: 1px dashed var(--line-strong); border-radius: 10px; color: var(--muted); font-size: 13px; }
+#agents.is-moving-chat .chat-root-drop.is-over { color: var(--fg); background: var(--sunken); border-style: solid; }
+.side-add-menu .desk-move-sub > summary { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; }
+.side-add-menu .desk-move-sub > summary .agent-avatar { width: 22px; height: 22px; }
+.side-add-menu .desk-move-sub .side-new-chat { padding-left: 28px; }

@@ -51,9 +51,8 @@ struct ChatsScreen: View {
   @State private var dropOn: String?
   var body: some View {
     let side = shell.view.sidebar
-    let query = !shell.chatsQuery.trimmingCharacters(in: .whitespaces).isEmpty
     List {
-      if searching && query {
+      if searching {
         ForEach(side.found, id: \.id) { group in
           Section { ForEach(group.rows, id: \.id) { row in ChatRow(row: row) } } header: { TeamTitle(name: group.name.en, open: nil) }
             .listSectionSeparator(.hidden)
@@ -385,6 +384,7 @@ struct CardScreen: View {
         Button {
           if shell.path.isEmpty { shell.focus(.card(cardId: to)) } else { shell.path[shell.path.count - 1] = .card(cardId: to) }
         } label: { Label(m.label.en, systemImage: m.key == "prev" ? "chevron.up" : "chevron.down") }
+        .accessibilityIdentifier("card-menu-" + m.key)
       }
     case "draw":
       #if canImport(PencilKit) && os(iOS)
@@ -590,6 +590,7 @@ struct CardScreen: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel(after.next.map { "\(after.says.en): \($0.title)" } ?? after.says.en)
+    .accessibilityIdentifier("card-next")
   }
 
   // ---- the card's own talk, open under one quiet row that folds it ----
@@ -1009,12 +1010,21 @@ struct SessionScreen: View {
     Button { newName = page.name.en; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
     Button { drawing = true } label: { Label("Change Icon…", systemImage: "scribble") }
     Toggle(isOn: Binding(get: { page.crowned }, set: { _ in shell.act(["do": "crown_session", "session_id": page.id, "on": !page.crowned]) })) { Label("Main Session", systemImage: "crown") }
-    let others = shell.view.sidebar.teams.filter { $0.id != page.teamId }
-    if !others.isEmpty {
-      Menu { ForEach(others, id: \.id) { team in Button(team.name.en) { shell.act(["do": "move_session", "session_id": page.id, "team_id": team.id]) } } } label: { Label("Move to Team…", systemImage: "rectangle.stack") }
+    if !page.moveTo.isEmpty {
+      Menu {
+        ForEach(Array(page.moveTo.enumerated()), id: \.offset) { _, place in
+          Button(place.name.en) { shell.act(["do": "move_session", "session_id": page.id, "team_id": place.teamId as Any? ?? NSNull()]) }
+        }
+      } label: { Label("Move to Team…", systemImage: "rectangle.stack") }
     }
-    // (an invite link for an agent of this team, shown with its Share in Settings, as the web's /pair)
-    Button { shell.account(["step": "invite_agent", "label": "", "team": page.teamId]); shell.focus(.settings(page: "")) } label: { Label("Copy Invite Link", systemImage: "key") }
+    Menu {
+      ForEach(Array(shell.view.sidebar.places.enumerated()), id: \.offset) { _, place in
+        Button(place.name.en) {
+          shell.account(["step": "invite_agent", "label": "", "team": place.teamId as Any? ?? NSNull()])
+          shell.focus(.settings(page: ""))
+        }
+      }
+    } label: { Label("Copy Invite Link", systemImage: "key") }
     Divider()
     if !page.online || page.archived {
       Button(role: page.archived ? nil : .destructive) { shell.act(["do": "archive_session", "session_id": page.id, "on": !page.archived]) } label: { Label(page.archived ? "Back from the Archive" : "Archive", systemImage: "archivebox") }

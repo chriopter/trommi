@@ -174,6 +174,14 @@ async fn exchange(cfg: &Cfg, room: &str, operation: Operation) -> Result<Option<
     result
 }
 
+/// The nonce of the person's ask for a new chat this session answers (`TROMMI_NEW_CHAT`, set by the Hermes add-on
+/// for a chat it started on that ask): lower-case hex, at most 64 characters; none otherwise.
+fn new_chat_nonce() -> Option<String> {
+    std::env::var("TROMMI_NEW_CHAT")
+        .ok()
+        .filter(|n| !n.is_empty() && n.len() <= 64 && n.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+}
+
 /// Explicit per-session activation. Requests and polls briefly open the approved computer, then release it.
 pub async fn activate(cfg: &Cfg, member: &Arc<Member>) -> Result<()> {
     if member.phase() == "ready" {
@@ -195,6 +203,10 @@ pub async fn activate(cfg: &Cfg, member: &Arc<Member>) -> Result<()> {
     let key = format!("join_ask/{nonce}");
     let mut ask = json!({"name":crate::identity::session_name(cfg),"folder":cfg.shown,"host":cfg.host,
         "account_label":crate::host::name(),"agent":crate::identity::agent_identity(&cfg.owner())});
+    // (a chat the person asked for, `new_chat` in his line: its nonce, so that his app places it where he asked)
+    if let Some(n) = new_chat_nonce() {
+        ask["new_chat"] = json!(n);
+    }
     exchange(cfg, &room, Operation::Write(key.clone(), ask.clone())).await?;
     let deadline = now_ms() + trommi_core::invite::AGENT_INVITE_LIFE_MS;
     let result = async {

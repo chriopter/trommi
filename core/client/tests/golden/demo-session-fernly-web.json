@@ -1913,6 +1913,23 @@
   "slug": "fernly-web",
   "mark": "draw:leaf",
   "team_id": "main",
+  "move_to": [
+    {
+      "name": {
+        "key": "place.none",
+        "en": "No team"
+      },
+      "chosen": false
+    },
+    {
+      "team_id": "platform",
+      "name": {
+        "key": "team.name",
+        "en": "Platform"
+      },
+      "chosen": false
+    }
+  ],
   "main": true,
   "crowned": true,
   "online": true,

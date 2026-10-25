@@ -26,6 +26,7 @@ async function freePort() {
 }
 const port = await freePort()
 const server = spawn(process.execPath, [path.join(repo, 'app', 'web', 'dev', 'serve.mjs'), String(port)], { stdio: ['ignore', 'pipe', 'inherit'] })
+process.on('exit', () => server.kill())
 await new Promise((resolve, reject) => { server.stdout.on('data', d => { if (String(d).includes('http://')) resolve() }); server.on('exit', c => reject(new Error(`the app server ended (${c})`))) })
 const APP = `http://127.0.0.1:${port}`
 const failed = []
@@ -51,6 +52,43 @@ for (const width of WIDTHS) {
     const id = width ? `${width}px` : 'default'
     console.log(`${bad.length ? 'FAIL' : 'ok  '} ${id}${bad.length ? `: ${bad.join('; ')}` : ''}`)
     if (bad.length) failed.push(id)
+
+    // Real pointer drag through the existing order controller, then the real core's new root placement.
+    await ev(`document.querySelector('#agents [data-team-fold]').click(); true`)
+    await sleep(300)
+    const moving = await ev(`(() => { const r=document.querySelector('#agents .agent-row[data-team-of]:not(.in-folded-team)'); const b=r?.getBoundingClientRect(); return b && {id:r.dataset.unit,x:b.x+b.width/2,y:b.y+b.height/2} })()`)
+    if (!moving) throw Error('the actual demo has no visible Team chat to drag')
+    if (!await ev(`!!document.getElementById('chat-root-drop')`)) throw Error('missing root drop target for moving a chat outside its Team')
+    await page.send('Input.dispatchMouseEvent', { type:'mousePressed', x:moving.x, y:moving.y, button:'left', clickCount:1 })
+    await page.send('Input.dispatchMouseEvent', { type:'mouseMoved', x:moving.x, y:moving.y-12, button:'left', buttons:1 })
+    const target = await ev(`(() => { const b=document.getElementById('chat-root-drop').getBoundingClientRect(); return {x:b.x+b.width/2,y:b.y+b.height/2} })()`)
+    await page.send('Input.dispatchMouseEvent', { type:'mouseMoved', x:target.x, y:target.y, button:'left', buttons:1 })
+    await page.send('Input.dispatchKeyEvent', { type:'keyDown', key:'Escape', code:'Escape', windowsVirtualKeyCode:27 })
+    await page.send('Input.dispatchMouseEvent', { type:'mouseReleased', x:target.x, y:target.y, button:'left', clickCount:1 })
+    if (await ev(`window.trommi.vm().sidebar.root?.some(r=>r.id===${JSON.stringify(moving.id)})`)) throw Error('Escape must cancel a root move')
+    const again = await ev(`(() => { const b=document.getElementById('agent-'+${JSON.stringify(moving.id)}).getBoundingClientRect(); return {x:b.x+b.width/2,y:b.y+b.height/2} })()`)
+    await page.send('Input.dispatchMouseEvent', { type:'mousePressed', x:again.x, y:again.y, button:'left', clickCount:1 })
+    await page.send('Input.dispatchMouseEvent', { type:'mouseMoved', x:again.x, y:again.y-12, button:'left', buttons:1 })
+    await page.send('Input.dispatchMouseEvent', { type:'mouseMoved', x:target.x, y:target.y, button:'left', buttons:1 })
+    if (process.env.TROMMI_ROOT_PROOF_DIR) {
+      const fs=await import('node:fs'), shot=await page.send('Page.captureScreenshot',{format:'png'})
+      fs.writeFileSync(path.join(process.env.TROMMI_ROOT_PROOF_DIR,`web-root-drop-${id}.png`),Buffer.from(shot.data,'base64'))
+    }
+    await page.send('Input.dispatchMouseEvent', { type:'mouseReleased', x:target.x, y:target.y, button:'left', clickCount:1 })
+    // The core changes first; the shell paints on its next frame. Wait for both without relaxing any assertion.
+    let moved
+    for (let n=0;n<100;n++) {
+      moved = await ev(`(() => { const vm=window.trommi.vm(), r=document.getElementById('agent-'+${JSON.stringify(moving.id)}); return {root:vm.sidebar.root?.some(r=>r.id===${JSON.stringify(moving.id)}),inTeam:vm.sidebar.stacks.some(s=>s.sessions?.some(r=>r.id===${JSON.stringify(moving.id)})),nested:!!r?.dataset.teamOf,first:r?.compareDocumentPosition(document.querySelector('#agents .team-head'))&Node.DOCUMENT_POSITION_FOLLOWING} })()`)
+      if (moved.root && !moved.inTeam && !moved.nested && moved.first) break
+      await sleep(50)
+    }
+    if (!moved.root || moved.inTeam || moved.nested || !moved.first) throw Error('drag-out did not put the actual chat at root: '+JSON.stringify(moved))
+    console.log(`ok  ${id}: actual pointer drag moves Team chat to root`)
+    if (process.env.TROMMI_ROOT_PROOF_DIR) {
+      const fs = await import('node:fs')
+      const shot=await page.send('Page.captureScreenshot',{format:'png'})
+      fs.writeFileSync(path.join(process.env.TROMMI_ROOT_PROOF_DIR,`web-root-${id}.png`),Buffer.from(shot.data,'base64'))
+    }
   } finally { await browser.close() }
 }
 server.kill()

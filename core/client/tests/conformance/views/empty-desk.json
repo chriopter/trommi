@@ -180,6 +180,15 @@
               "en": "Personal",
               "key": "team.personal"
             },
+            "places": [
+              {
+                "chosen": true,
+                "name": {
+                  "en": "No team",
+                  "key": "place.none"
+                }
+              }
+            ],
             "sessions": [],
             "stacks": [
               {
@@ -523,6 +532,15 @@
               "en": "Personal",
               "key": "team.personal"
             },
+            "places": [
+              {
+                "chosen": true,
+                "name": {
+                  "en": "No team",
+                  "key": "place.none"
+                }
+              }
+            ],
             "sessions": [
               {
                 "away": true,
@@ -1138,6 +1156,15 @@
               "en": "Personal",
               "key": "team.personal"
             },
+            "places": [
+              {
+                "chosen": true,
+                "name": {
+                  "en": "No team",
+                  "key": "place.none"
+                }
+              }
+            ],
             "sessions": [
               {
                 "away": true,
@@ -2241,6 +2268,15 @@
         "en": "Personal",
         "key": "team.personal"
       },
+      "places": [
+        {
+          "chosen": true,
+          "name": {
+            "en": "No team",
+            "key": "place.none"
+          }
+        }
+      ],
       "sessions": [
         {
           "away": true,

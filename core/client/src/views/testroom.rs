@@ -30,8 +30,10 @@ pub fn dev(name: &str) -> String {
 }
 
 impl Room {
-    /// A session; with `parent`, a helper session of before under that session (`sessions::LegacyHelper`).
+    /// A session; with `parent`, a helper session of before under that session (`sessions::LegacyHelper`). It is
+    /// placed on the first team ("main", `desk`) unless the test places it elsewhere (`on_team`).
     pub fn session(&mut self, name: &str, parent: Option<&str>, online: bool) -> &mut Value {
+        self.settings.entry(dev(name)).or_insert_with(|| json!({ "desk": "main" }));
         self.sessions.push(json!({
             "parent_session_id": parent.map(dev),
             "agent_device_id": dev(name), "agent_session_id": name, "device_name": name, "is_active": true, "is_online": online,
