@@ -98,7 +98,7 @@ fn label(which: &str) -> &'static str {
 /// What to do next, one line.
 fn next(which: &str) -> &'static str {
     if which == "hermes" {
-        "restart the Hermes gateway (`hermes gateway restart`); then tell Hermes (in its CLI or any chat) to connect to Trommi with the command from \"Approve a computer\" in the Trommi app. After that, write to it in its chat on the board."
+        "in the Trommi app, Approve a computer, tab Hermes, and run its one line on this computer."
     } else if which == "codex" {
         "quit every running Codex and start it again (a running Codex does not load new MCP servers), in a project folder; then ask it to connect to Trommi with the command from \"Approve a computer\" in the Trommi app."
     } else {
@@ -176,12 +176,14 @@ fn report(which: &str, flags: &[String], done: Result<Vec<String>, String>, remo
                 )
             );
             if verbose(flags) || removed {
-                for line in lines {
-                    println!("    {}", paint(out, "2", &line));
+                for line in lines.iter().filter(|l| !l.starts_with(NEXT)) {
+                    println!("    {}", paint(out, "2", line));
                 }
             }
             if !removed {
-                println!("{} {}", paint(out, "1", "Next:"), next(which));
+                // (Hermes says its own: what it found decides it)
+                let own = lines.iter().rev().find_map(|l| l.strip_prefix(NEXT)).map(str::to_string);
+                println!("{} {}", paint(out, "1", "Next:"), own.as_deref().unwrap_or(next(which)));
             }
             0
         }
@@ -625,9 +627,10 @@ impl HermesInstance {
         }
         Ok(Self { name, profile })
     }
-    /// Its slug: "" without a name, else the name's letters and digits, lower case.
+    /// Its slug: the name's letters and digits, lower case; without a name its profile's (two profiles never share
+    /// a key); "" for the one Hermes without either.
     pub fn slug(&self) -> String {
-        self.name.as_deref().unwrap_or("").chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).take(32).collect()
+        self.name.as_deref().or(self.profile.as_deref()).unwrap_or("").chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).take(32).collect()
     }
     /// Its name on the board.
     pub fn shown(&self) -> String {
@@ -724,11 +727,8 @@ pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
         // (the computer approved and the first chat's key made by the connector as the add-on starts it for that
         // chat: the same folder, name and key; the person compares the emoji here, as with `connect --computer`)
         eprintln!("[trommi] approving this computer for \"{shown}\": compare the emoji below with the ones in the app");
-        let status = Command::new(&program)
+        let status = as_first_chat(&program, &me, &home_text)
             .args(["connect", "--computer", link.as_str()])
-            .env_clear()
-            .envs(std::env::vars_os().filter(|(k, _)| inherited(k)))
-            .envs(hermes_env(&me, &home_text))
             .status()
             .map_err(|error| format!("`{program} connect` does not start ({error})"))?;
         if !status.success() {
@@ -736,13 +736,45 @@ pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
         }
         done.push(format!("this computer: approved; \"{shown}\" is on the board"));
         match me.run(&["gateway", "restart"]) {
-            Ok(_) => done.push("Hermes gateway: started again, with Trommi".to_string()),
-            Err(why) => done.push(format!("Hermes gateway: not started again ({why}); start it (`hermes gateway`) to bring the Trommi chat up")),
+            Ok(_) => {
+                done.push("Hermes gateway: started again, with Trommi".to_string());
+                done.push(format!("{NEXT}write to \"{shown}\" in its chat on the board."));
+            }
+            Err(why) => {
+                done.push(format!("Hermes gateway: not started again ({why})"));
+                done.push(format!("{NEXT}start the Hermes gateway (`hermes gateway restart`, or `hermes gateway`); then write to \"{shown}\" in its chat on the board."));
+            }
         }
+    } else if hermes_paired(&program, &me, &home_text) {
+        done.push(format!("{NEXT}already connected as \"{shown}\": restart the Hermes gateway (`hermes gateway restart`) to load the new add-on."));
     } else {
-        done.push("next: in the app, Approve a computer, then Hermes; or `trommi-connector setup hermes --link '<link>'` with its link".to_string());
+        done.push(format!("{NEXT}in the Trommi app, Approve a computer, tab Hermes, and run its one line on this computer."));
     }
     Ok(done)
+}
+
+/// The start of the line of `hermes` that says what comes next (`report` shows it as "Next:").
+const NEXT: &str = "next: ";
+
+/// The installed connector as the add-on starts this Hermes' first chat: its environment, nothing of the session
+/// this runs in.
+fn as_first_chat(program: &str, me: &HermesInstance, folder: &str) -> Command {
+    let mut command = Command::new(program);
+    command.env_clear().envs(std::env::vars_os().filter(|(k, _)| inherited(k))).envs(hermes_env(me, folder));
+    command
+}
+
+/// Whether this Hermes' first chat holds its key already (`whoami` as the add-on would start it): it is connected.
+fn hermes_paired(program: &str, me: &HermesInstance, folder: &str) -> bool {
+    as_first_chat(program, me, folder)
+        .arg("whoami")
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok())
+        .is_some_and(|v| v["has_key"] == true)
 }
 
 /// Hermes' streaming as it reads its settings (gateway/config.py `StreamingConfig`): whether it is switched on
@@ -1064,6 +1096,8 @@ mod hermes_tests {
         let two = HermesInstance::of(&f(&["--name", "Einkauf", "--profile", "einkauf"])).unwrap();
         assert_eq!((two.shown(), two.slug(), two.args(&["plugins"])), ("Hermes Einkauf".to_string(), "einkauf".to_string(), vec!["-p", "einkauf", "plugins"]));
         assert!(HermesInstance::of(&f(&["--profile", "../x"])).is_err());
+        // (a profile without a name is a Hermes of its own all the same: its own key)
+        assert_eq!(HermesInstance::of(&f(&["--profile", "work_2"])).unwrap().slug(), "work2");
         // (a name that looks like an option is the name's)
         let odd = f(&["--name", "--link", "--link", "L"]);
         assert_eq!(HermesInstance::of(&odd).unwrap().name.as_deref(), Some("--link"));

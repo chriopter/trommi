@@ -146,6 +146,13 @@ async fn setup_hermes_with_a_link_approves_the_computer_and_restarts_the_gateway
     // (live text: streaming was off, so setup turns it on and notes that the other platforms keep theirs off)
     assert!(asked.contains("config set --force platforms.trommi.extra.quiet_others true") && asked.contains("config set --force streaming.enabled true"), "{asked}");
     assert_eq!(asked.lines().last(), Some("gateway restart"), "{asked}");
+    assert!(said.contains("Next: write to \"Hermes Einkauf\""), "{said}");
+    // The same setup again without a link (a newer add-on, say): it finds this Hermes connected and says so.
+    let mut again = seat.command(&["setup", "hermes", "--name", "Einkauf"]);
+    again.env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default())).env("HERMES_HOME", &hermes_home);
+    let again = again.stdin(std::process::Stdio::null()).output().await.expect("the setup runs");
+    let told = String::from_utf8_lossy(&again.stdout).to_string();
+    assert!(again.status.success() && told.contains("already connected as \"Hermes Einkauf\""), "{told}");
     // The add-on starts the first chat's connector: it finds its key and is on the board without another step.
     let mut command = seat.command(&[]);
     for (k, v) in [("TROMMI_HOST", "hermes"), ("TROMMI_INSTANCE", "einkauf"), ("TROMMI_AGENT_NAME", "Hermes Einkauf"), ("TROMMI_SESSION_KEY", "hermes-einkauf")] {
