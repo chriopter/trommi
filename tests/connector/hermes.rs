@@ -140,6 +140,8 @@ async fn setup_hermes_with_a_link_approves_the_computer_and_restarts_the_gateway
     assert!(ask["name"].as_str().is_some_and(|n| n.contains("Hermes Einkauf")) && ask["account_label"] == "Hermes", "{ask}");
     let asked = std::fs::read_to_string(&log).unwrap();
     assert!(asked.contains("config set --force platforms.trommi.extra.instance einkauf"), "{asked}");
+    // (live text: streaming was off, so setup turns it on and notes that the other platforms keep theirs off)
+    assert!(asked.contains("config set --force platforms.trommi.extra.quiet_others true") && asked.contains("config set --force streaming.enabled true"), "{asked}");
     assert_eq!(asked.lines().last(), Some("gateway restart"), "{asked}");
     // The add-on starts the first chat's connector: it finds its key and is on the board without another step.
     let mut command = seat.command(&[]);

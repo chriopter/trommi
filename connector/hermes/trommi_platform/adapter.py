@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import secrets
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from typing import Any
 from gateway.config import Platform
 from gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult
 
+from . import upkeep
 from .chats import MAIN, Chats
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,7 @@ class TrommiAdapter(BasePlatformAdapter):
         self._asks: dict[str, tuple[str, str | None]] = {}
         # (one answer of a chat at a time: they reach the board in the order Hermes sent them)
         self._sending: dict[str, asyncio.Lock] = {}
+        self._upkeep: asyncio.Task | None = None
 
     @property
     def name(self) -> str:
@@ -82,10 +85,17 @@ class TrommiAdapter(BasePlatformAdapter):
             self._set_fatal_error("connect_failed", f"The Trommi connector did not start: {exc}", retryable=True)
             return False
         CURRENT[self.instance] = self
+        # (a newer add-on written by a newer connector: the gateway restarts to load it, when no turn runs)
+        every = float(os.getenv("TROMMI_ADDON_LOOK_S") or 300)
+        if self._upkeep is None or self._upkeep.done():
+            self._upkeep = asyncio.create_task(upkeep.watch_addon(self, every))
         self._mark_connected()
         return True
 
     async def disconnect(self) -> None:
+        if self._upkeep is not None:
+            self._upkeep.cancel()
+            self._upkeep = None
         CURRENT.pop(self.instance, None)
         await self.chats.stop()
         self._mark_disconnected()

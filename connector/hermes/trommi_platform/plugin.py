@@ -121,6 +121,10 @@ def register(ctx) -> None:
     from .adapter import TrommiAdapter
 
     register_display_defaults()
+    # (live text that setup turned on for Trommi does not start streaming on the other platforms: upkeep.py)
+    from .upkeep import keep_others_quiet
+
+    keep_others_quiet()
     spec = read_spec()
     ctx.register_platform(
         name="trommi",

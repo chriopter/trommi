@@ -484,7 +484,7 @@ pub fn codex() -> Result<Vec<String>, String> {
 
 /// The Trommi add-on for Hermes (`connector/hermes/`), as this program carries it: its files by their path in the
 /// add-on's folder.
-pub const HERMES_ADDON: [(&str, &str); 8] = [
+pub const HERMES_ADDON: [(&str, &str); 9] = [
     ("plugin.yaml", include_str!("../hermes/plugin.yaml")),
     ("__init__.py", include_str!("../hermes/__init__.py")),
     ("README.md", include_str!("../hermes/README.md")),
@@ -493,6 +493,7 @@ pub const HERMES_ADDON: [(&str, &str); 8] = [
     ("trommi_platform/adapter.py", include_str!("../hermes/trommi_platform/adapter.py")),
     ("trommi_platform/chats.py", include_str!("../hermes/trommi_platform/chats.py")),
     ("trommi_platform/child.py", include_str!("../hermes/trommi_platform/child.py")),
+    ("trommi_platform/upkeep.py", include_str!("../hermes/trommi_platform/upkeep.py")),
 ];
 /// The add-on's folder name in Hermes' plugins.
 pub const HERMES_ADDON_DIR: &str = "trommi-platform";
@@ -707,8 +708,16 @@ pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
         let _ = run_answering("hermes", &me.args(&["mcp", "remove", "trommi"]), "y\n");
         done.push("the MCP server trommi of an earlier setup: removed (the add-on brings the board tools)".to_string());
     }
-    if !matches!(me.setting("streaming.enabled").as_deref(), Some("true" | "True")) {
-        done.push("live text: Hermes streams answers only with `hermes config set streaming.enabled true` (this streams on its other platforms too); without it the answer comes whole".to_string());
+    // (live text: Hermes' streaming is one switch for all its platforms; turned on here, the others keep theirs off,
+    //  as the add-on gives them that default when `quiet_others` says setup turned it on)
+    let (on, transport_off) = hermes_streams(me.setting("streaming.enabled"), me.setting("streaming.mode"), me.setting("streaming.transport"));
+    if !on || transport_off {
+        me.run(&["config", "set", "--force", "platforms.trommi.extra.quiet_others", "true"])?;
+        me.run(&["config", "set", "--force", "streaming.enabled", "true"])?;
+        if transport_off {
+            me.run(&["config", "set", "--force", "streaming.transport", "auto"])?;
+        }
+        done.push("live text: Hermes streaming on for Trommi; your other platforms stay without it (unless you set `display.platforms.<name>.streaming`)".to_string());
     }
     done.push("each Trommi chat is a Hermes chat: his message goes to Hermes, its answer back into the same chat, growing while it writes; its questions for approval come as yes/no cards; \"New chat with …\" in the app makes another chat".to_string());
     if let Some(link) = link {
@@ -736,6 +745,18 @@ pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
     Ok(done)
 }
 
+/// Hermes' streaming as it reads its settings (gateway/config.py `StreamingConfig`): whether it is switched on
+/// (`enabled`, else a `mode` other than off), and whether its transport (or else that mode) is off.
+fn hermes_streams(enabled: Option<String>, mode: Option<String>, transport: Option<String>) -> (bool, bool) {
+    let off = |v: &Option<String>| v.as_deref().is_some_and(|v| v.eq_ignore_ascii_case("off") || v.eq_ignore_ascii_case("false"));
+    let on = match enabled {
+        Some(e) => matches!(e.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on"),
+        None => mode.is_some() && !off(&mode),
+    };
+    let transport = transport.or(mode);
+    (on, off(&transport))
+}
+
 /// Whether a variable of this terminal goes on to the approving connector: not what names the agent session this runs
 /// in (a Claude Code's or Codex' with Trommi), which would make it that session's connector.
 fn inherited(key: &std::ffi::OsStr) -> bool {
@@ -761,6 +782,14 @@ pub fn hermes_env(me: &HermesInstance, folder: &str) -> Vec<(&'static str, Strin
 pub fn remove_hermes(flags: &[String]) -> Result<Vec<String>, String> {
     let me = HermesInstance::of(flags)?;
     let mut done = Vec::new();
+    // (streaming as it was before setup turned it on for Trommi)
+    if matches!(me.setting("platforms.trommi.extra.quiet_others").as_deref(), Some("true" | "True")) {
+        match me.run(&["config", "set", "--force", "streaming.enabled", "false"]) {
+            Ok(_) => done.push("Hermes streaming: off again, as before Trommi".to_string()),
+            Err(why) => done.push(format!("Hermes streaming: not turned off ({why})")),
+        }
+        let _ = me.run(&["config", "set", "--force", "platforms.trommi.extra.quiet_others", "false"]);
+    }
     match me.run(&["config", "set", "--force", "platforms.trommi.enabled", "false"]) {
         Ok(_) => done.push("Hermes platform trommi: off".to_string()),
         Err(why) => done.push(format!("Hermes platform trommi: not turned off ({why})")),
@@ -1040,6 +1069,17 @@ mod hermes_tests {
         assert_eq!(HermesInstance::of(&odd).unwrap().name.as_deref(), Some("--link"));
         assert_eq!(flag(&odd, "--link"), Some(Some("L".into())));
         assert_eq!(flag(&f(&["--link"]), "--link"), Some(None));
+    }
+
+    #[test]
+    fn streaming_is_read_as_hermes_reads_it() {
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(hermes_streams(None, None, None), (false, false));
+        assert_eq!(hermes_streams(s("true"), None, None), (true, false));
+        assert_eq!(hermes_streams(s("true"), None, s("off")), (true, true));
+        assert_eq!(hermes_streams(None, s("edit"), None), (true, false));
+        assert_eq!(hermes_streams(s("true"), s("off"), None), (true, true));
+        assert_eq!(hermes_streams(s("false"), s("edit"), None), (false, false));
     }
 
     #[test]

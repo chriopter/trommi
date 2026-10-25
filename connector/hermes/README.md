@@ -46,9 +46,17 @@ computer: it runs `trommi-connector connect --computer '<link>'` with the enviro
 `setup hermes` writes the add-on into `<hermes home>/plugins/trommi-platform/` together with `trommi.json`, the
 connector's board tools and instructions. It then turns the plugin on (`hermes plugins enable trommi-platform`) and
 configures `platforms.trommi` (`enabled`, `extra.connector`, `extra.instance`, `extra.name`, `extra.folder`). There
-is nothing to update by hand. The add-on is part of the signed connector release, and a newer connector writes its
-add-on again when it starts. Hermes loads it at its next start. Live text needs Hermes' streaming on
-(`hermes config set streaming.enabled true`). `trommi-connector remove hermes` turns it off and removes it.
+is nothing to update by hand. The connector updates itself from signed releases, and a newer connector writes its
+add-on again when it starts. The add-on notices that (every five minutes, `TROMMI_ADDON_LOOK_S`) and, when no turn
+runs, has the gateway restart itself as Hermes' own `/restart` does (`upkeep.py`): it loads the new add-on then. A
+release that leaves the add-on as it was restarts nothing.
+
+Live text needs Hermes' streaming, one switch for all its platforms. When it is off, `setup hermes` turns it on
+(`streaming.enabled`, and `streaming.transport auto` where the transport was off) and notes that it did
+(`platforms.trommi.extra.quiet_others`); the add-on then has every other platform of that Hermes resolve to "no
+streaming" where it would follow the switch, so Telegram and the rest stay as they were (a platform's own
+`display.platforms.<name>.streaming` still wins). `trommi-connector remove hermes` turns Trommi off, removes the
+add-on, and turns streaming off again if setup turned it on.
 
 ## Tests
 
