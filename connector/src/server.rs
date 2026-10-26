@@ -2414,6 +2414,7 @@ impl mcp::Server for Conn {
                     && ["ready", "halted"].contains(&self.member.phase().as_str());
                 if !ready {
                     self.tell_holder();
+                    self.offer_connect().await;
                     return error(self.not_ready());
                 }
                 match self.call_once(&name, &args).await {
@@ -2823,6 +2824,20 @@ pub async fn main_server() {
 impl Conn {
     /// Whether this folder is in no Trommi room: no key of it in any room.
     /// Such a session is offered the connect tool alone.
+    /// A session that is off the board while its client lists the board tools without connect (they were listed
+    /// while it still looked for a key of its own, which then turned out to be out of the room): the client is told
+    /// to list again, so that connect is there for the human's /trommi:connect.
+    async fn offer_connect(&self) {
+        if crate::host::is_codex() || self.offered_connect.load(Ordering::SeqCst) || !self.unconnected() {
+            return;
+        }
+        self.offered_connect.store(true, Ordering::SeqCst);
+        let _ = self
+            .out
+            .notification("notifications/tools/list_changed", Value::Null)
+            .await;
+    }
+
     fn unconnected(&self) -> bool {
         if self.member.phase() == "ready" {
             return false;

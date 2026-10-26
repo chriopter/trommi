@@ -616,6 +616,17 @@ pub async fn ask_yield(
     }
 }
 
+/// Whether a slot is one of this folder's own slots in a room (`<base>-<n>`), which the folder's slot loop tries.
+/// Only the exact name counts: the slots of a folder whose name only starts with this one's (`…-trommi-hub-2` for
+/// `…-trommi`) are another folder's, and an own key of this session there is used where it lies.
+fn folder_slot(cfg: &Cfg, room_id: &str, p: &SlotPaths) -> bool {
+    p.dir == cfg.keys_dir.join(room_id)
+        && p.prefix
+            .strip_prefix(&format!("{}-", cfg.base))
+            .and_then(|n| n.strip_suffix('.'))
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
 /// The slot this process uses in a room.
 pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
     let dir = cfg.keys_dir.join(room_id);
@@ -654,7 +665,7 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
     let owner = cfg.owner();
     for (_, p) in own_slots(cfg, &owner)
         .into_iter()
-        .filter(|(r, p)| r == room_id && !p.prefix.starts_with(&format!("{}-", cfg.base)))
+        .filter(|(r, p)| r == room_id && !folder_slot(cfg, room_id, p))
     {
         let mut r = claim_slot(&p, &cfg.session, cfg.takeover_ms).await;
         let mut handed = false;
@@ -1742,6 +1753,36 @@ mod session_key_tests {
         assert!(got.has_key);
         assert_eq!(got.key_file, legacy.key_file);
         unlock_slot(&got);
+    }
+
+    #[tokio::test]
+    async fn after_a_retire_the_own_key_of_a_folder_with_a_longer_name_is_taken_where_it_lies() {
+        // (a session of `…-project` went on in other folders: its key there was removed and put aside, another
+        //  session holds this folder's slot, and its own older key lies in `…-project-hub`'s slots)
+        let f = Fixture::new("cc:first");
+        let room = f.room();
+        let dir = f.0.keys_dir.join(&room);
+        let others = paths_of(&f.0, &room, 1);
+        f.keyed(&others, "cc:other");
+        let retired = paths_named(&dir, "elsewhere-2");
+        f.keyed(&retired, "cc:first");
+        let mark = json!({ "at": 42, "owner": owner_record("cc:first", Some(ppid())), "verified": true });
+        write_private(&out_file(&retired), &mark.to_string()).unwrap();
+        set_slot_aside(&retired, Some("20261025T132016".into()));
+        let hub = paths_named(&dir, &format!("{}-hub-2", f.0.base));
+        f.keyed(&hub, "cc:first");
+        assert!(!folder_slot(&f.0, &room, &hub));
+        assert!(folder_slot(&f.0, &room, &others));
+        assert_eq!(own_slots(&f.0, "cc:first").len(), 1);
+        assert_eq!(resolve_room(&f.0).unwrap(), Some(room.clone()));
+        let got = pick_slot(&f.0, &room, false).await;
+        assert!(got.has_key, "the own key must be claimed, not skipped as one of this folder's slots");
+        assert_eq!(got.key_file, hub.key_file);
+        unlock_slot(&got);
+        // the retired key stays put aside, the other session's key untouched
+        assert!(!retired.key_file.exists());
+        assert!(dir.join("replaced-20261025T132016-elsewhere-2.out").exists());
+        assert_eq!(owner_of(&others).unwrap()["owner"], "cc:other");
     }
 
     #[tokio::test]

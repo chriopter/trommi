@@ -182,6 +182,14 @@ fn new_chat_nonce() -> Option<String> {
         .filter(|n| !n.is_empty() && n.len() <= 64 && n.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
 }
 
+/// Whether this session's own key is no way back into the room: the hub refused it (`retired`), or it could not
+/// be taken (needs an invite), and no other connector of this session holds a key of its own (an earlier process
+/// still ending, whose key is waited for). Never while the hub is not reachable (asleep with an error), a key is
+/// being opened or a join runs.
+fn own_key_gone(cfg: &Cfg, member: &Arc<Member>) -> bool {
+    ["retired", "needs-invite"].contains(&member.phase().as_str()) && member::own_keys_held(cfg).is_empty()
+}
+
 /// Explicit per-session activation. Requests and polls briefly open the approved computer, then release it.
 pub async fn activate(cfg: &Cfg, member: &Arc<Member>) -> Result<()> {
     if member.phase() == "ready" {
@@ -189,14 +197,19 @@ pub async fn activate(cfg: &Cfg, member: &Arc<Member>) -> Result<()> {
     }
     if !cfg.owner().is_empty() && !member::own_slots(cfg, &cfg.owner()).is_empty() {
         member.claim(false).await;
-        return if member.phase() == "ready" {
-            Ok(())
-        } else {
-            Err(Fault::new(
+        if member.phase() == "ready" {
+            return Ok(());
+        }
+        // Only a key of its own that is still on its way (held by an earlier connector of this session, or being
+        // opened) is waited for. One the hub no longer takes (removed, retired) is no way back: this session
+        // asks for a fresh key, and the old one stays where it is (put aside once the new one works).
+        if !own_key_gone(cfg, member) {
+            return Err(Fault::new(
                 "own-key",
                 "This session already has a key; waiting for that key, without joining again",
-            ))
-        };
+            ));
+        }
+        eprintln!("[trommi] this session's key is out of the room: asking for a fresh key on this approved computer");
     }
     let room = room_for(cfg)?;
     let nonce = crate::util::random_hex(16);
@@ -282,6 +295,38 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(self.0.keys_dir.parent().unwrap());
+        }
+    }
+
+    #[test]
+    fn a_retired_own_key_lets_activation_ask_for_a_fresh_one() {
+        let f = Fixture::new();
+        let member = Member::new(f.0.clone());
+        let set = |p: &str| member.me.lock().unwrap().phase = p.into();
+        // the hub refused the session's key (removed in the app): a fresh key, the old one stays put aside
+        set("retired");
+        assert!(own_key_gone(&f.0, &member));
+        // its key could not be taken and no connector of it holds one: no key is coming
+        set("needs-invite");
+        assert!(own_key_gone(&f.0, &member));
+        // still on its way: an earlier connector of this session holds its key
+        let room = trommi_core::ids::RoomId::new([9; 32]).to_base64url();
+        let p = member::paths_named(&f.0.keys_dir.join(&room), "elsewhere-1");
+        std::fs::create_dir_all(&p.dir).unwrap();
+        std::fs::write(&p.key_file, crate::slotstore::KEY_MARKER).unwrap();
+        crate::slots::write_owner(&p, &crate::slots::owner_record("cc:test", None));
+        let mut holder = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        std::fs::write(format!("{}.{}", p.lock_file.display(), holder.id()), "ppid:1").unwrap();
+        assert!(!own_key_gone(&f.0, &member));
+        // (also beside an old retirement mark: the held key is waited for)
+        set("retired");
+        assert!(!own_key_gone(&f.0, &member));
+        let _ = holder.kill();
+        let _ = holder.wait();
+        // (hub not reachable, a key being opened, a join running: never a fresh key)
+        for phase in ["asleep", "starting", "moving", "joining"] {
+            set(phase);
+            assert!(!own_key_gone(&f.0, &member), "{phase}");
         }
     }
 

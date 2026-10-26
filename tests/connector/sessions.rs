@@ -1068,6 +1068,80 @@ async fn approved_computer_activates_only_explicit_sessions_without_a_running_vo
     revoked.close().await;
 }
 
+/// The tool names a connector lists now.
+async fn listed(s: &mut Session) -> Vec<String> {
+    let list = s.mcp().request("tools/list", json!({})).await;
+    list["tools"].as_array().unwrap().iter().filter_map(|t| t["name"].as_str().map(String::from)).collect()
+}
+
+/// A session whose key the human removed in the app: after a restart (/mcp Reconnect, a resume) it lists connect,
+/// and connect on the approved computer gives it a fresh key; the removed one stays put aside, never used again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_session_whose_key_was_removed_connects_again_after_a_restart() {
+    let mut m = Machine::new().await;
+    let mut voucher = Session::new(&m, "voucher", Client::Claude, "one", "cfg");
+    voucher.start(&m).await;
+    voucher.connect(&mut m, 'A').await;
+    let mut s = Session::new(&m, "removed", Client::Claude, "two", "cfg");
+    s.start(&m).await;
+    s.activate(&mut m, &voucher).await;
+    s.speaks(&mut m).await;
+    // (its key lies in the slots of a folder whose name only starts with this folder's, as a key of an older
+    //  connector that the session went on from: it is still this session's key, and the session takes it)
+    s.close().await;
+    let keys = m.seat.home.path().join("keys");
+    let base = std::fs::read_to_string(s.folder.join(".trommi/slot-base")).unwrap().trim().to_string();
+    let own = walk(&keys).into_iter().find(|d| d.join("session-1.key").exists()
+        && std::fs::read_to_string(d.join("session-1.owner")).is_ok_and(|o| o.contains(&s.id))).expect("the session's key");
+    let room = own.parent().unwrap().parent().unwrap().to_path_buf();
+    for e in std::fs::read_dir(&own).unwrap().flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if let Some(rest) = name.strip_prefix("session-1.") {
+            std::fs::rename(e.path(), room.join(format!("{base}-hub-2.{rest}"))).unwrap();
+        }
+    }
+    s.start(&m).await;
+    s.mcp().ready().await;
+    s.speaks(&mut m).await;
+    let (_, old, _) = s.on.take().unwrap();
+    m.a.remove_agent(old).await;
+    // the running connector finds itself out: connect comes back in its list
+    let mut out = false;
+    for _ in 0..300 {
+        if listed(&mut s).await.contains(&"connect".to_string()) { out = true; break }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(out, "connect is listed once the key is out");
+    for restart in ["/mcp Reconnect", "a resume"] {
+        if restart == "a resume" { s.resume(&m).await } else { s.close().await; s.start(&m).await; }
+        let said = s.refused("inbox").await;
+        assert!(said.contains("connect"), "{restart}: {said}");
+        let tools = listed(&mut s).await;
+        assert!(tools.contains(&"connect".to_string()), "{restart}: connect is not listed: {tools:?}");
+    }
+    let aside = |dir: &std::path::Path| std::fs::read_dir(dir).map(|d| d.flatten().filter(|e| e.file_name().to_string_lossy().starts_with("replaced-")).count()).unwrap_or(0);
+    let count = |keys: &std::path::Path| walk(keys).iter().map(|d| aside(d)).sum::<usize>();
+    s.activate(&mut m, &voucher).await;
+    let (_, fresh, _) = s.on.unwrap();
+    assert_ne!(fresh, old, "a fresh key, not the removed one");
+    s.speaks(&mut m).await;
+    assert!(count(&keys) > 0, "the removed key stays put aside");
+    all_on_board(&mut m, &mut [&mut voucher, &mut s]).await;
+}
+
+/// Every directory under `dir`, itself included.
+fn walk(dir: &std::path::Path) -> Vec<PathBuf> {
+    let mut out = vec![dir.to_path_buf()];
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            if e.file_type().is_ok_and(|t| t.is_dir()) {
+                out.extend(walk(&e.path()));
+            }
+        }
+    }
+    out
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_fresh_mcp_never_consumes_an_invite_from_its_environment() {
     let mut m = Machine::new().await;
