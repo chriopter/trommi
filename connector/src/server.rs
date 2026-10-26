@@ -329,6 +329,8 @@ pub struct Conn {
     grace_ms: u64,
     link_ms: u64,
     said: Mutex<Option<(String, Value, u64)>>,
+    /// Serialize report sampling through handoff to the engine; an older idle snapshot cannot follow a newer busy one.
+    link_sync: tokio::sync::Mutex<()>,
     cut_since: Mutex<Option<u64>>,
     speaking: Mutex<HashSet<String>>,
     present_as: Mutex<String>,
@@ -738,8 +740,11 @@ impl Conn {
         }
     }
     async fn working(&self) -> bool {
-        if self.turn_on.load(Ordering::SeqCst) {
-            return true;
+        let turn_on = self.turn_on.load(Ordering::SeqCst);
+        // Hermes owns an automatic lifecycle. Manual task registers outlive a turn and are projected
+        // separately by the shared core; they must never keep its typing/answering lease on.
+        if crate::host::is_hermes() || turn_on {
+            return turn_on;
         }
         let Some(c) = self.member.client() else {
             return false;
@@ -762,6 +767,7 @@ impl Conn {
             "working": self.working().await, "since": if since > 0 { json!(since) } else { Value::Null }, "cut_since": *self.cut_since.lock().unwrap() })
     }
     async fn sync_link(&self) {
+        let _in_order = self.link_sync.lock().await;
         if self.leaving.load(Ordering::SeqCst) || self.member.phase() != "ready" {
             return;
         }
@@ -789,19 +795,16 @@ impl Conn {
         }
         let was = self.said.lock().unwrap().replace((key, r.clone(), now));
         self.present();
-        let me = self.arc();
-        tokio::spawn(async move {
-            // 13.7: the report travels with the lease: what this process hears, whether it works, its last call.
-            // (on the wire `hears` is true or false: the hub keeps a boolean and the apps read "live" from true)
-            let report = json!({ "hears": r["hears"] == "live", "working": r["working"], "last_call_at": r["last_call_at"] });
-            if let Err(e) = c.report_link(report).await {
-                let mut s = me.said.lock().unwrap();
-                if s.as_ref().is_some_and(|x| x.1 == r) {
-                    *s = was.clone().map(|(k, v, _)| (k, v, 0));
-                }
-                eprintln!("[trommi] link not reported: {}", e.text());
+        // The driver hands this report to the shared engine synchronously; the engine serializes lease I/O.
+        // Do not spawn a task carrying `r`: an old idle report could otherwise overwrite a later busy report.
+        let report = json!({ "hears": r["hears"] == "live", "working": r["working"], "last_call_at": r["last_call_at"] });
+        if let Err(e) = c.report_link(report).await {
+            let mut s = self.said.lock().unwrap();
+            if s.as_ref().is_some_and(|x| x.1 == r) {
+                *s = was.map(|(k, v, _)| (k, v, 0));
             }
-        });
+            eprintln!("[trommi] link not reported: {}", e.text());
+        }
     }
     /// The last word of this process, or of its hold on the key.
     async fn last_report(&self, exit: Value, more: Map<String, Value>) {
@@ -2573,6 +2576,7 @@ pub async fn main_server() {
         grace_ms: env_ms("TROMMI_CUT_GRACE_MS", 20_000),
         link_ms: env_ms("TROMMI_LINK_MS", 30_000),
         said: Mutex::new(None),
+        link_sync: tokio::sync::Mutex::new(()),
         cut_since: Mutex::new(None),
         speaking: Mutex::new(HashSet::new()),
         present_as: Mutex::new(String::new()),

@@ -358,14 +358,17 @@ const deskLamp = vm => deskMark((vm?.sidebar?.waiting ?? 0) > 0)
 
 const $ = (sel, root = document) => root.querySelector(sel)
 
-// ---- the sessions' order: a row is picked up and dragged up or down within its part (its desk, connected or
-// not). A mouse lifts it as soon as it moves, a finger after a short hold (a swipe still
+// ---- the sessions' order: a row is picked up and dragged up or down within its part (SessionRowView.group; chats
+// stand newest first, the core gives them none: a chat is only dragged onto another Team's head, into that Team, or
+// a Team's chat onto the root's place, to no Team: MoveSession). A mouse lifts it as soon as it moves, a finger after a short hold (a swipe still
 // scrolls). A ghost of the row follows the pointer; where it would land the row's place stays open, outlined in
 // pencil, and the others make room. Escape puts it back. On a focused row Alt+↑/↓ moves it one place. Let go, and
 // the new place goes to the core (PlaceSession { before | after }: the sessions' registers, on every device).
 // A team's head is picked up the same way, among the other heads, and takes its chats along; its new place goes to
 // the core as the teams' whole order (OrderTeams: each team's register, on every device). ----
 const ORDERED = '.agent-row[data-order], .team-head[data-team]'
+/** What a pointer may pick up: those, and every chat (onto another Team's head, or the root's place). */
+const LIFTED = `${ORDERED}, .agent-row[data-unit]`
 const isHead = n => n.classList.contains('team-head')
 const orderId = n => n.dataset.unit ?? n.dataset.team
 controller('order', class extends Controller {
@@ -383,9 +386,10 @@ controller('order', class extends Controller {
     this.element.removeEventListener('keydown', this.keys)
     this.element.removeEventListener('click', this.noClick, true)
   }
-  /** The rows of one part, in the order they stand; a team's head: every team's head. */
+  /** The rows of one part, in the order they stand; a team's head: every team's head; a row of no part: itself. */
   peers(row) {
     if (isHead(row)) return [...this.element.querySelectorAll(':scope > .team-head[data-team]')]
+    if (!row.dataset.order) return [row]
     return [...this.element.querySelectorAll(`:scope > .agent-row[data-order="${CSS.escape(row.dataset.order)}"]`)]
   }
   /** The rows that move with a row: itself; a team's head and its chats. */
@@ -430,12 +434,14 @@ controller('order', class extends Controller {
   }
 
   down(event) {
-    const row = event.target.closest?.(ORDERED)
+    const row = event.target.closest?.(LIFTED)
     if (!row || row.parentElement !== this.element || event.button > 0 || event.target.closest('button, .agent-badge, .team-bracket')) return
     const rootDrop = !isHead(row) && row.dataset.teamOf ? this.element.querySelector('#chat-root-drop') : null
-    if (document.documentElement.dataset.rail === 'folded' || (this.peers(row).length < 2 && !rootDrop)) return
+    // (a chat's other places: every Team's head but its own's)
+    const heads = isHead(row) ? [] : [...this.element.querySelectorAll(':scope > .team-head[data-team]')].filter(h => h.dataset.team !== row.dataset.teamOf)
+    if (document.documentElement.dataset.rail === 'folded' || (this.peers(row).length < 2 && !rootDrop && !heads.length)) return
     const id = event.pointerId, touch = event.pointerType !== 'mouse', x0 = event.clientX, y0 = event.clientY
-    let live = false, timer = 0, ghost = null, grabAt = 0, home = null, start = '', kids = [], toRoot = false
+    let live = false, timer = 0, ghost = null, grabAt = 0, home = null, start = '', kids = [], toRoot = false, into = null
     const rows = this.block(row)
     const lift = () => {
       live = true
@@ -468,11 +474,15 @@ controller('order', class extends Controller {
       e.preventDefault()
       if (!row.isConnected) return end(e, true)   // (the sidebar was drawn anew under the pointer)
       ghost.style.top = `${e.clientY - grabAt}px`
-      if (rootDrop) {
-        const b = rootDrop.getBoundingClientRect()
-        toRoot = e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom
-        rootDrop.classList.toggle('is-over', toRoot)
-        if (toRoot) return
+      if (rootDrop || heads.length) {
+        const over = n => { const b = n.getBoundingClientRect(); return b.height > 0 && e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom }
+        const head = heads.find(over) ?? null
+        into = head?.dataset.team ?? null
+        toRoot = !head && Boolean(rootDrop) && over(rootDrop)
+        rootDrop?.classList.toggle('is-over', toRoot)
+        // (the Team it would go to, outlined while the pointer is over its head; sidebar.css has no rule for it yet)
+        for (const h of heads) { h.classList.toggle('is-over', h === head); h.style.outline = h === head ? '1.5px solid color-mix(in srgb, var(--fg) 55%, transparent)' : '' }
+        if (toRoot || head) return
       }
       const peers = this.peers(row), others = peers.filter(p => p !== row)
       const next = others.find(p => { const b = p.getBoundingClientRect(); return e.clientY < b.top + b.height / 2 }) ?? null
@@ -496,9 +506,10 @@ controller('order', class extends Controller {
       for (const r of rows.slice(1)) r.classList.remove('is-carried-sub')
       this.element.classList.remove('is-ordering', 'is-moving-chat')
       rootDrop?.classList.remove('is-over')
-      if (!cancel && row.isConnected && toRoot) {
+      for (const h of heads) { h.classList.remove('is-over'); h.style.outline = '' }
+      if (!cancel && row.isConnected && (toRoot || into)) {
         for (const k of kids) this.element.append(k)
-        T?.act({ do: 'move_session', session_id: row.dataset.unit, team_id: null })
+        T?.act({ do: 'move_session', session_id: row.dataset.unit, team_id: into })
       } else if (!cancel && row.isConnected && this.peers(row).map(orderId).join() !== start) this.save(row, kids)
     }
     if (touch) timer = setTimeout(lift, 300)

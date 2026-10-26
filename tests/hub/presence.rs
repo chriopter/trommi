@@ -62,6 +62,59 @@ fn a_new_stream_of_a_human_device_is_told_who_is_here_at_once() {
 }
 
 #[test]
+fn an_expired_working_lease_clears_activity_even_with_an_open_stream() {
+    let mut w = World::new();
+    let mut agent = w.enrol_agent();
+    w.found_main(&mut [], Some(&mut agent));
+    let process = b64(&random::<16>());
+    let report = |generation| json!({ "process": process, "generation": generation, "hears": true, "working": true, "last_call_at": 1234 });
+    agent.lease = agent.post(&w.hub, "/v1/link", &report(None::<u64>)).ok()["generation"].as_u64();
+    let agent_stream = agent.events(&w.hub, None);
+    let mut page = w.ada.events(&w.hub, None);
+    while let Some(e) = page.next(Duration::from_secs(2)) { if e.name == "here" { break; } }
+    // Expire just this lease deterministically; its device's stream remains healthy.
+    let expired_at = trommi_hub::util::now() as i64 - 1;
+    w.hub.app.db.write(|c| c.execute("UPDATE agent_leases SET expires_at = ?1 WHERE device = ?2", rusqlite::params![expired_at, &agent.id()[..]])).unwrap();
+    w.hub.app.lease_watch();
+    let mut idle = None;
+    while let Some(e) = page.next(Duration::from_millis(500)) {
+        if e.name == "presence" && e.data["device"] == b64(&agent.id()) && e.data["working"] == false { idle = Some(e.data); break; }
+    }
+    let idle = idle.expect("lease expiry must clear the client's held working bit, even while its stream is online");
+    assert_eq!(idle["online"], true);
+    assert_eq!(idle["hears"], true, "an explicit report replaces the held link");
+    // A reconnect that missed expiry must not preserve a cached busy link either.
+    let mut reconnect = w.ada.events(&w.hub, None);
+    let mut snapshot_idle = false;
+    while let Some(e) = reconnect.next(Duration::from_secs(2)) {
+        if e.name == "presence" && e.data["device"] == b64(&agent.id()) {
+            assert_eq!(e.data["online"], true);
+            assert_eq!(e.data["working"], false);
+            assert_eq!(e.data["hears"], true);
+            snapshot_idle = true;
+        }
+        if e.name == "here" { break; }
+    }
+    assert!(snapshot_idle);
+    agent.post(&w.hub, "/v1/link", &report(agent.lease)).ok();
+    // Opening this human device's reconnect replaced `page`; observe the current stream from here on.
+    let mut busy = false;
+    while let Some(e) = reconnect.next(Duration::from_secs(2)) {
+        if e.name == "presence" && e.data["device"] == b64(&agent.id()) && e.data["working"] == true { busy = true; break; }
+    }
+    assert!(busy, "renewal restores the current activity report");
+    drop(agent_stream);
+    w.hub.eventually("the agent stream closes", || !w.hub.app.live.online(&w.room, &agent.id()));
+    w.hub.app.db.write(|c| c.execute("UPDATE agent_leases SET expires_at = ?1 WHERE device = ?2", rusqlite::params![expired_at - 1_000, &agent.id()[..]])).unwrap();
+    w.hub.app.lease_watch();
+    let mut offline = false;
+    while let Some(e) = reconnect.next(Duration::from_secs(2)) {
+        if e.name == "presence" && e.data["device"] == b64(&agent.id()) && e.data["online"] == false { offline = true; break; }
+    }
+    assert!(offline, "without a stream an expired lease becomes offline");
+}
+
+#[test]
 fn public_departures_require_the_exact_devices_signature_and_replay_without_changing_membership() {
     let mut w = World::new();
     let other = w.add_human();

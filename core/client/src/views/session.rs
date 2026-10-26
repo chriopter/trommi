@@ -176,7 +176,8 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
         b.wake_at(Some(l.at + crate::live_answer::SHOWN_MS));
     }
     if b.lens.calm {
-        calm(&mut v);
+        let automatic = b.model.sessions.get(&v.id).is_some_and(|s| crate::status::automatic_turns(b.model, s));
+        calm(&mut v, !automatic);
     }
     Some(v)
 }
@@ -185,10 +186,10 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
 /// (its face), its trail and the cards its lines stand for are not in the talk. A run of card events becomes one row of chips (`kind` "events";
 /// an echo of what the asked line already says is left out), the helper list stays off the page (their status lines
 /// name them), and the rest of the working lines is "and N more".
-fn calm(v: &mut SessionView) {
+fn calm(v: &mut SessionView, manual_face: bool) {
     // The agent at work: only its face at the chat's end; its turn's trail goes into the details, not the talk.
     let trail = v.talk.iter().rfind(|r| r.kind == "work").and_then(|r| r.work.clone()).filter(|w| w.state == "running");
-    let works = v.answering.is_some() || v.status_lines.iter().any(|l| l.state == "working");
+    let works = v.answering.is_some() || (manual_face && v.status_lines.iter().any(|l| l.state == "working"));
     v.working = works.then(|| WorkingView {
         says: v.answering.clone().unwrap_or_else(|| say("session.answering", format!("{} is working", v.name.en), &[("name", v.name.en.as_str())])),
         head: match trail.as_ref().map(|w| w.now.as_str()).filter(|n| !n.is_empty()) {
@@ -463,8 +464,12 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
     // (a session that is gone, or cut off from its tools, does not work on what he wrote, and runs nothing)
     let link_state = link.as_ref().map(|l| l.state.as_str()).unwrap_or("");
     let gone = link_state == "gone";
+    let reported = s.and_then(|s| crate::status::reported_work(m, s, a.row.archived, a.row.removed, a.row.online));
     let answering = match last_said {
         _ if gone || link_state == "cut" => None,
+        _ if reported == Some(true) => Some(say("session.answering", format!("{name} is working"), &[("name", name)])),
+        // A reported stop (including cancel/error) is authoritative; history cannot restart the face.
+        _ if reported == Some(false) => None,
         // (a turn that runs: working as long as its trail runs and the session is connected, however long it takes)
         Some((Side::Work, _)) if trail_runs && a.row.online => Some(say("session.answering", format!("{name} is working"), &[("name", name)])),
         Some((Side::User, ts)) if now.saturating_sub(ts) < WORKING_WINDOW_MS => {
@@ -819,6 +824,63 @@ mod tests {
         // another session's window is its own
         lens.show_more(crate::views::MoreOf::Talk { session: dev("b") });
         assert_eq!(at(&lens).talk.len(), TALK_PAGE);
+    }
+
+    #[test]
+    fn automatic_work_drives_the_shared_chat_face_and_stops_without_an_answer() {
+        let mut r = Room::default();
+        r.session("a", None, true)["link"] = json!({ "hears": "live", "attached": true, "working": true });
+        r.members.push(json!({ "device_id": dev("a"), "device_role": "agent", "is_active": true, "is_online": true, "platform": "hermes" }));
+        // No manual line, tool trail, draft or recent user message is required (thinking/long tools).
+        let calm = Lens { calm: true, ..Default::default() };
+        let mut m = r.model(NOW);
+        let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+        assert!(v.answering.is_some() && v.working.is_some(), "the same view feeds Web and iOS");
+        assert!(v.status_lines.is_empty());
+        println!("LOCAL_FIXTURE_WORK {}", serde_json::to_string(&v).unwrap());
+        let mut change = crate::model::change::Change::new();
+        assert!(m.apply_answer_preview(&dev("a"), "fixture-turn", 1, &crate::live_answer::encode("An answer is growing."), NOW, &mut change));
+        let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+        assert_eq!(v.live_answer, "An answer is growing.");
+        assert!(v.working.is_some());
+        println!("LOCAL_FIXTURE_REPLY {}", serde_json::to_string(&v).unwrap());
+        let v = session(&Board::new(&m, &calm, NOW + crate::live_answer::SHOWN_MS), &dev("a")).unwrap();
+        assert!(v.live_answer.is_empty() && v.working.is_some(), "preview expiry does not stop a working lease");
+        // Error/cancel/normal stop all report false, even with an unanswered recent user message.
+        r.say("a", None, 41, "me", MIN, msg("Work on this."));
+        r.sessions[0]["link"]["working"] = json!(false);
+        let m = r.model(NOW);
+        let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+        assert!(v.answering.is_none() && v.working.is_none(), "an explicit stop beats the ten-minute guess");
+    }
+
+    #[test]
+    fn hermes_manual_tasks_survive_idle_without_a_typing_face() {
+        let mut r = Room::default();
+        r.session("a", None, true)["link"] = json!({ "hears": "live", "attached": true, "working": false });
+        r.sessions[0]["status_lines"] = json!([{ "id": "manual", "label": "A task", "state": "working", "updated_at": NOW - MIN }]);
+        let calm = Lens { calm: true, ..Default::default() };
+        r.members.push(json!({ "device_id": dev("a"), "device_role": "agent", "is_active": true, "is_online": true, "platform": "hermes" }));
+        let m = r.model(NOW);
+        let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+        assert!(v.answering.is_none());
+        assert!(v.working.is_none(), "the task is not proof that Hermes is typing now");
+        assert_eq!(v.status_lines[0].state, "working");
+        assert!(crate::sessions::session_list(&m, false)[0].working, "the task still counts as work");
+    }
+
+    #[test]
+    fn other_hosts_keep_their_existing_activity_and_task_faces() {
+        for host in ["claude-code", "codex"] {
+            let mut r = Room::default();
+            r.session("a", None, true)["link"] = json!({ "hears": "live", "attached": true, "working": false });
+            r.say("a", None, 41, "me", MIN, msg("Work on this."));
+            let calm = Lens { calm: true, ..Default::default() };
+            r.members.push(json!({ "device_id": dev("a"), "device_role": "agent", "is_active": true, "is_online": true, "platform": host }));
+            let m = r.model(NOW);
+            let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+            assert!(v.answering.is_some() && v.working.is_some(), "{host}: no automatic lifecycle callback is available here");
+        }
     }
 
     fn msg(text: &str) -> Value {

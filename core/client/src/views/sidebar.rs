@@ -5,7 +5,8 @@
 //! The rules are the web's of before (`app.mjs` `boardModel` units, `sidebar.mjs` `sidebarParts` and `desksOf`,
 //! `ui.mjs` `badge` and `linkCap`):
 //! - a row per session that is not archived and stands on the team in view;
-//! - a row is "away" when it is not connected: the connected rows first, then the rest, with no line between them;
+//! - chat rows follow newest actual message first, with immutable admission time for empty chats and the
+//!   session list's manual/id order for ties; connection state only changes the row's presentation;
 //! - a row's open questions are those of its session on the Desk now (its helpers' too: they write into it);
 //! - a session's helpers (its agent's subagents, `helpers.rs`) have no row: its row says how many there are, with
 //!   a dot each that is filled while that helper works ([`HelperDotsView`]).
@@ -381,19 +382,34 @@ pub(super) fn places(b: &Board) -> Vec<TeamPlaceView> {
         .collect()
 }
 
-/// The rows of these units in drawing order: the connected ones first, then those that are away, with no line
-/// between them (a row that is away says so itself, greyed, with its cap).
+/// Newest actual message this device holds, never a card update, status, live preview or lease tick.
+fn message_time(b: &Board, agent: usize) -> u64 {
+    let key = &b.agents[agent].row.key;
+    b.model.timelines.get(&format!("chat:session/{key}")).into_iter()
+        .flat_map(|t| t.items.values())
+        .filter_map(|i| {
+            let content = said(i)?;
+            if from_human(b.model, i) && content.get("new_chat").is_some_and(Value::is_object) {
+                return None;
+            }
+            let has_words = ["text", "details", "html"].iter().any(|k| content.get(*k).and_then(Value::as_str).is_some_and(|s| !s.trim().is_empty()));
+            let has_files = ["attachments", "copied_cards"].iter().any(|k| content.get(*k).and_then(Value::as_array).is_some_and(|a| !a.is_empty()));
+            (has_words || has_files).then(|| i.get("sent_at").and_then(Value::as_u64).unwrap_or(0))
+        })
+        .max().unwrap_or_else(|| {
+            b.agents[agent].row.agent_device_id.as_deref()
+                .and_then(|id| b.model.members.get(id))
+                .and_then(|m| m.added_at).unwrap_or(0)
+        })
+}
+
+/// Every chat surface takes the same message-recency order. Existing manual order breaks equal timestamps;
+/// online/offline is only presentation and never moves a chat on a lease or clock tick. Newest first leaves a chat
+/// no place of its own to be dragged to within its list (`group` empty); it still moves to another team or to none.
 fn rows_of(b: &Board, units: &[Unit], asked: &HashMap<usize, (u64, String)>) -> Vec<SessionRowView> {
-    let mut rows = Vec::new();
-    let on: Vec<usize> = (0..units.len()).filter(|u| units[*u].online).collect();
-    let off: Vec<usize> = (0..units.len()).filter(|u| !units[*u].online).collect();
-    for (away, list) in [(false, on), (true, off)] {
-        for u in list {
-            let group = format!("{}:{}", b.agents[units[u].agent].team.as_deref().unwrap_or(""), if away { "off" } else { "on" });
-            rows.push(row(b, units, u, away, group, asked));
-        }
-    }
-    rows
+    let mut indices: Vec<usize> = (0..units.len()).collect();
+    indices.sort_by_cached_key(|u| std::cmp::Reverse(message_time(b, units[*u].agent)));
+    indices.into_iter().map(|u| row(b, units, u, !units[u].online, String::new(), asked)).collect()
 }
 
 /// A chat the search's words find: they stand in its name or in its teaser, whatever the case.
@@ -513,6 +529,109 @@ mod tests {
     fn row<'v>(v: &'v SidebarView, slug: &str) -> &'v SessionRowView {
         v.sessions.iter().find(|r| r.slug == slug).unwrap_or_else(|| panic!("no row {slug}"))
     }
+    #[test]
+    fn chat_recency_message_bumps_root_and_team() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        for name in ["a", "b", "c", "d"] {
+            r.session(name, None, name != "d");
+        }
+        for name in ["a", "b"] {
+            r.settings.insert(dev(name), json!({ "desk": null }));
+        }
+        for name in ["c", "d"] { r.on_team(name, "lab"); }
+        let ids = |rows: &[SessionRowView]| rows.iter().map(|s| s.slug.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(&view(&r, Some("lab")).root), ["a", "b"]);
+        r.say("b", None, 1, "me", MIN, json!({ "text": "Newest root message" }));
+        r.say("d", None, 2, "d", MIN, json!({ "text": "Newest team message" }));
+        let v = view(&r, Some("lab"));
+        assert_eq!(ids(&v.root), ["b", "a"], "an outgoing message bumps a root chat");
+        assert_eq!(ids(&v.sessions), ["d", "c"], "an offline chat's actual message beats an online chat");
+        assert_eq!(ids(&v.stacks.iter().find(|s| s.id == "lab").unwrap().sessions), ["d", "c"]);
+        let unfocused = view(&r, Some("main"));
+        assert_eq!(ids(&unfocused.stacks.iter().find(|s| s.id == "lab").unwrap().sessions), ["d", "c"], "unfocused teams use the same canonical order");
+        assert_eq!(v.stacks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["main", "lab"], "chat activity never reorders team folders");
+    }
+
+    #[test]
+    fn newest_first_chats_offer_no_rank_moves_team_folders_keep_theirs() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        for (name, online) in [("a", true), ("b", false), ("c", true), ("d", false)] {
+            r.session(name, None, online);
+        }
+        r.settings.insert(dev("a"), json!({ "desk": null }));
+        for name in ["c", "d"] { r.on_team(name, "lab"); }
+        let v = view(&r, Some("lab"));
+        let rows: Vec<&SessionRowView> = v.root.iter().chain(&v.sessions).chain(v.stacks.iter().flat_map(|s| &s.sessions)).collect();
+        assert!(rows.len() >= 5, "root, team in view and every folder's chats: {rows:?}");
+        assert!(rows.iter().all(|r| r.group.is_empty()), "newest first: no chat has a part of the list to be dragged within");
+        let m = r.model(NOW);
+        let lens = Lens { team: Some("lab".into()), chats_query: Some("b".into()), ..Default::default() };
+        let found = sidebar(&Board::new(&m, &lens, NOW)).found;
+        assert!(!found.is_empty(), "the search finds b");
+        assert!(found.iter().flat_map(|g| &g.rows).all(|r| r.group.is_empty()), "the search's rows neither");
+        r.teams["main"]["order"] = json!(1);
+        r.teams["lab"]["order"] = json!(0);
+        assert_eq!(view(&r, Some("lab")).stacks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["lab", "main"], "Team folders keep their manual order");
+    }
+
+    #[test]
+    fn chat_recency_empty_chats_use_admission_time_and_stable_ties() {
+        let mut r = Room::default();
+        for name in ["a", "b", "c"] {
+            r.session(name, None, true);
+            r.members.push(json!({ "device_id": dev(name), "device_role": "agent", "added_at": NOW - if name == "a" { 3 * MIN } else { MIN } }));
+        }
+        assert_eq!(slugs(&view(&r, None)), ["b", "c", "a"], "empty chats use their immutable admission time; equal times retain manual/id order");
+        r.say("a", None, 1, "a", 2 * MIN, json!({ "text": "An older message" }));
+        assert_eq!(slugs(&view(&r, None)), ["b", "c", "a"]);
+    }
+
+    #[test]
+    fn chat_recency_ignores_cards_status_activity_and_clock() {
+        let mut r = Room::default();
+        for name in ["a", "b"] { r.session(name, None, true); }
+        r.say("a", None, 1, "a", MIN, json!({ "text": "Actual newest" }));
+        r.say("b", None, 2, "b", 2 * MIN, json!({ "text": "Older" }));
+        r.sessions[1]["last_activity_at"] = json!(NOW);
+        r.sessions[1]["status_lines"] = json!([{ "id": "busy", "label": "Manual status", "state": "working", "updated_at": NOW }]);
+        r.card("A newer card is not a message", "b", "decision", "high")["created_at"] = json!(NOW);
+        r.say("b", None, 3, "b", 0, json!({ "terminal": "work", "work": { "turn": "t", "items": [] } }));
+        assert_eq!(slugs(&view(&r, None)), ["a", "b"]);
+        r.sessions[0]["is_online"] = json!(false);
+        assert_eq!(slugs(&view_at(&r, None, NOW + MIN).0), ["a", "b"], "lease/clock/status never bump chats");
+    }
+
+    #[test]
+    fn chat_recency_counts_attachments_and_out_of_order_messages_not_headers() {
+        let mut r = Room::default();
+        for name in ["a", "b"] { r.session(name, None, true); }
+        r.say("a", None, 10, "a", 2 * MIN, json!({ "text": "Earlier" }));
+        r.say("b", None, 20, "b", MIN, json!({ "attachments": [{ "attachment_id": "file" }] }));
+        r.say("b", None, 30, "b", 4 * MIN, json!({ "text": "Late-arriving older envelope" }));
+        assert_eq!(slugs(&view(&r, None)), ["b", "a"]);
+        r.say("a", None, 40, "a", 0, json!({ "text": "Not loaded yet" }));
+        r.timelines.get_mut(&format!("chat:session/{}", dev("a"))).unwrap().as_array_mut().unwrap().last_mut().unwrap()["item_state"] = json!("header");
+        let m = r.model(NOW);
+        let lens = Lens { chats_query: Some("a".into()), ..Default::default() };
+        let v = sidebar(&Board::new(&m, &lens, NOW));
+        assert_eq!(slugs(&v), ["b", "a"], "unread headers are not messages");
+        let found: Vec<_> = v.found.iter().flat_map(|g| &g.rows).map(|x| x.slug.as_str()).collect();
+        assert_eq!(found, ["b", "a"], "search filters the shared ordered rows without another sort");
+    }
+
+    #[test]
+    fn chat_recency_visible_rich_messages_count_but_hidden_new_chat_requests_do_not() {
+        let mut r = Room::default();
+        for name in ["a", "b"] { r.session(name, None, true); }
+        r.say("a", None, 1, "a", 3 * MIN, json!({ "text": "Earlier words" }));
+        r.say("b", None, 2, "me", 2 * MIN, json!({ "copied_cards": ["card"] }));
+        assert_eq!(slugs(&view(&r, None)), ["b", "a"], "a visible copied-card message bumps its chat");
+        r.say("a", None, 3, "a", MIN, json!({ "details": "A detailed reply" }));
+        assert_eq!(slugs(&view(&r, None)), ["a", "b"], "details-only replies are still visible messages");
+        r.say("b", None, 4, "me", 0, json!({ "text": "Start a new chat", "new_chat": { "request_id": "req" } }));
+        assert_eq!(slugs(&view(&r, None)), ["a", "b"], "the hidden new-chat control request is not a chat message");
+    }
+
     fn two_teams() -> Value {
         json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } })
     }
@@ -544,15 +663,15 @@ mod tests {
     }
 
     #[test]
-    fn the_connected_rows_first_then_disconnected() {
+    fn connection_state_does_not_reorder_tied_chats() {
         let mut r = Room::default();
         r.session("a-off", None, false);
         r.session("b-on", None, true);
         r.session("e-off", None, false);
         let v = view(&r, None);
-        assert_eq!(slugs(&v), ["b-on", "a-off", "e-off"]);
-        assert_eq!(v.sessions.iter().map(|x| x.away).collect::<Vec<_>>(), [false, true, true]);
-        assert_eq!(row(&v, "a-off").group, ":off");
+        assert_eq!(slugs(&v), ["a-off", "b-on", "e-off"]);
+        assert_eq!(v.sessions.iter().map(|x| x.away).collect::<Vec<_>>(), [true, false, true]);
+        assert_eq!(row(&v, "a-off").group, "", "newest first: no rank move within the list");
         // (gone since 13:27, said under its name)
         let cap = row(&v, "a-off").cap.as_ref().unwrap();
         assert_eq!((cap.kind.as_str(), cap.word.en.as_str(), cap.short.en.as_str()), ("gone", "gone · 13:27", "Gone since 13:27"));
@@ -575,7 +694,7 @@ mod tests {
         let v = view(&r, Some("lab"));
         assert_eq!(slugs(&v), ["b-lab", "d-lab"]);
         assert_eq!((v.team.as_str(), v.place.en.as_str(), v.badge), ("lab", "Lab", 1));
-        assert_eq!(row(&v, "d-lab").group, "lab:off");
+        assert_eq!(row(&v, "d-lab").group, "", "newest first: no rank move within the team");
 
         // one team in view: only its sessions; the tab counts this team alone, the menu says what waits on the other
         let v = view(&r, Some("main"));

@@ -37,117 +37,6 @@
   },
   "sessions": [
     {
-      "id": "9ace71aadae23ea1f467d62b83b1d604",
-      "name": {
-        "key": "session.name",
-        "en": "Payments"
-      },
-      "link": "live",
-      "blocked": false,
-      "unheard": 0,
-      "slug": "payments-service",
-      "mark": "draw:pebble",
-      "team_id": "platform",
-      "online": true,
-      "working": true,
-      "main": true,
-      "crowned": true,
-      "helpers": {
-        "says": {
-          "key": "session.helpers",
-          "args": {
-            "n": "4"
-          },
-          "en": "4 helpers"
-        },
-        "working": [
-          true,
-          false,
-          false,
-          false
-        ]
-      },
-      "open": 3,
-      "cards": 4,
-      "knocks": false,
-      "away": false,
-      "group": "platform:on",
-      "says": {
-        "key": "badge.working_open",
-        "args": {
-          "n": "3"
-        },
-        "en": "Working, 3 questions open"
-      },
-      "last": {
-        "text": "Next run: 400 users for 10 minutes. It waits for your OK.",
-        "at_ms": 1791469620000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "16:27"
-          },
-          "en": "16:27"
-        }
-      },
-      "unread": false,
-      "signal": "waiting"
-    },
-    {
-      "id": "f14180d4caac441522269c631a745866",
-      "name": {
-        "key": "session.name",
-        "en": "Data Pipeline"
-      },
-      "link": "live",
-      "blocked": false,
-      "unheard": 0,
-      "slug": "data-pipeline",
-      "mark": "draw:pill",
-      "team_id": "platform",
-      "online": true,
-      "working": true,
-      "main": true,
-      "crowned": false,
-      "helpers": {
-        "says": {
-          "key": "session.helpers.one",
-          "args": {
-            "n": "1"
-          },
-          "en": "1 helper"
-        },
-        "working": [
-          false
-        ]
-      },
-      "open": 2,
-      "cards": 2,
-      "knocks": false,
-      "away": false,
-      "group": "platform:on",
-      "says": {
-        "key": "badge.working_open",
-        "args": {
-          "n": "2"
-        },
-        "en": "Working, 2 questions open"
-      },
-      "last": {
-        "text": "Because opening the app counts. With “watered a plant” it is 14,960. Which one is on your Desk.",
-        "at_ms": 1791468120000,
-        "when": {
-          "key": "chat.when.today",
-          "args": {
-            "time": "16:02"
-          },
-          "en": "16:02"
-        }
-      },
-      "unread": false,
-      "signal": "waiting"
-    },
-    {
       "id": "5ef619647e0e8185fef0e3be40ff4809",
       "name": {
         "key": "session.name",
@@ -190,7 +79,7 @@
         }
       },
       "away": false,
-      "group": "platform:on",
+      "group": "",
       "says": {
         "key": "badge.stopped_open",
         "args": {
@@ -212,6 +101,63 @@
       },
       "unread": false,
       "signal": "stopped"
+    },
+    {
+      "id": "9ace71aadae23ea1f467d62b83b1d604",
+      "name": {
+        "key": "session.name",
+        "en": "Payments"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "slug": "payments-service",
+      "mark": "draw:pebble",
+      "team_id": "platform",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": true,
+      "helpers": {
+        "says": {
+          "key": "session.helpers",
+          "args": {
+            "n": "4"
+          },
+          "en": "4 helpers"
+        },
+        "working": [
+          true,
+          false,
+          false,
+          false
+        ]
+      },
+      "open": 3,
+      "cards": 4,
+      "knocks": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "3"
+        },
+        "en": "Working, 3 questions open"
+      },
+      "last": {
+        "text": "Next run: 400 users for 10 minutes. It waits for your OK.",
+        "at_ms": 1791469620000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:27"
+          },
+          "en": "16:27"
+        }
+      },
+      "unread": false,
+      "signal": "waiting"
     },
     {
       "id": "eeb9fe76ad84d2405625d15419ce6083",
@@ -245,7 +191,7 @@
       "cards": 2,
       "knocks": false,
       "away": false,
-      "group": "platform:on",
+      "group": "",
       "says": {
         "key": "badge.working_open",
         "args": {
@@ -262,6 +208,60 @@
             "time": "16:22"
           },
           "en": "16:22"
+        }
+      },
+      "unread": false,
+      "signal": "waiting"
+    },
+    {
+      "id": "f14180d4caac441522269c631a745866",
+      "name": {
+        "key": "session.name",
+        "en": "Data Pipeline"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "slug": "data-pipeline",
+      "mark": "draw:pill",
+      "team_id": "platform",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": false,
+      "helpers": {
+        "says": {
+          "key": "session.helpers.one",
+          "args": {
+            "n": "1"
+          },
+          "en": "1 helper"
+        },
+        "working": [
+          false
+        ]
+      },
+      "open": 2,
+      "cards": 2,
+      "knocks": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "2"
+        },
+        "en": "Working, 2 questions open"
+      },
+      "last": {
+        "text": "Because opening the app counts. With “watered a plant” it is 14,960. Which one is on your Desk.",
+        "at_ms": 1791468120000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:02"
+          },
+          "en": "16:02"
         }
       },
       "unread": false,
@@ -365,7 +365,7 @@
           "cards": 10,
           "knocks": false,
           "away": false,
-          "group": "main:on",
+          "group": "",
           "says": {
             "key": "badge.working_open",
             "args": {
@@ -422,7 +422,7 @@
           "cards": 3,
           "knocks": false,
           "away": false,
-          "group": "main:on",
+          "group": "",
           "says": {
             "key": "badge.working_open",
             "args": {
@@ -478,7 +478,7 @@
           "cards": 3,
           "knocks": true,
           "away": false,
-          "group": "main:on",
+          "group": "",
           "says": {
             "key": "badge.working_open",
             "args": {
@@ -523,12 +523,26 @@
       },
       "edges": [
         {
+          "id": "5ef619647e0e8185fef0e3be40ff4809",
+          "mark": "draw:peak"
+        },
+        {
           "id": "9ace71aadae23ea1f467d62b83b1d604",
           "mark": "draw:pebble"
         },
         {
+          "id": "eeb9fe76ad84d2405625d15419ce6083",
+          "mark": "draw:bean"
+        },
+        {
           "id": "f14180d4caac441522269c631a745866",
           "mark": "draw:pill"
+        }
+      ],
+      "faces": [
+        {
+          "id": "9ace71aadae23ea1f467d62b83b1d604",
+          "mark": "draw:pebble"
         },
         {
           "id": "5ef619647e0e8185fef0e3be40ff4809",
@@ -539,132 +553,7 @@
           "mark": "draw:bean"
         }
       ],
-      "faces": [
-        {
-          "id": "9ace71aadae23ea1f467d62b83b1d604",
-          "mark": "draw:pebble"
-        },
-        {
-          "id": "f14180d4caac441522269c631a745866",
-          "mark": "draw:pill"
-        },
-        {
-          "id": "5ef619647e0e8185fef0e3be40ff4809",
-          "mark": "draw:peak"
-        }
-      ],
       "sessions": [
-        {
-          "id": "9ace71aadae23ea1f467d62b83b1d604",
-          "name": {
-            "key": "session.name",
-            "en": "Payments"
-          },
-          "link": "live",
-          "blocked": false,
-          "unheard": 0,
-          "slug": "payments-service",
-          "mark": "draw:pebble",
-          "team_id": "platform",
-          "online": true,
-          "working": true,
-          "main": true,
-          "crowned": true,
-          "helpers": {
-            "says": {
-              "key": "session.helpers",
-              "args": {
-                "n": "4"
-              },
-              "en": "4 helpers"
-            },
-            "working": [
-              true,
-              false,
-              false,
-              false
-            ]
-          },
-          "open": 3,
-          "cards": 4,
-          "knocks": false,
-          "away": false,
-          "group": "platform:on",
-          "says": {
-            "key": "badge.working_open",
-            "args": {
-              "n": "3"
-            },
-            "en": "Working, 3 questions open"
-          },
-          "last": {
-            "text": "Next run: 400 users for 10 minutes. It waits for your OK.",
-            "at_ms": 1791469620000,
-            "when": {
-              "key": "chat.when.today",
-              "args": {
-                "time": "16:27"
-              },
-              "en": "16:27"
-            }
-          },
-          "unread": false,
-          "signal": "waiting"
-        },
-        {
-          "id": "f14180d4caac441522269c631a745866",
-          "name": {
-            "key": "session.name",
-            "en": "Data Pipeline"
-          },
-          "link": "live",
-          "blocked": false,
-          "unheard": 0,
-          "slug": "data-pipeline",
-          "mark": "draw:pill",
-          "team_id": "platform",
-          "online": true,
-          "working": true,
-          "main": true,
-          "crowned": false,
-          "helpers": {
-            "says": {
-              "key": "session.helpers.one",
-              "args": {
-                "n": "1"
-              },
-              "en": "1 helper"
-            },
-            "working": [
-              false
-            ]
-          },
-          "open": 2,
-          "cards": 2,
-          "knocks": false,
-          "away": false,
-          "group": "platform:on",
-          "says": {
-            "key": "badge.working_open",
-            "args": {
-              "n": "2"
-            },
-            "en": "Working, 2 questions open"
-          },
-          "last": {
-            "text": "Because opening the app counts. With “watered a plant” it is 14,960. Which one is on your Desk.",
-            "at_ms": 1791468120000,
-            "when": {
-              "key": "chat.when.today",
-              "args": {
-                "time": "16:02"
-              },
-              "en": "16:02"
-            }
-          },
-          "unread": false,
-          "signal": "waiting"
-        },
         {
           "id": "5ef619647e0e8185fef0e3be40ff4809",
           "name": {
@@ -708,7 +597,7 @@
             }
           },
           "away": false,
-          "group": "platform:on",
+          "group": "",
           "says": {
             "key": "badge.stopped_open",
             "args": {
@@ -730,6 +619,63 @@
           },
           "unread": false,
           "signal": "stopped"
+        },
+        {
+          "id": "9ace71aadae23ea1f467d62b83b1d604",
+          "name": {
+            "key": "session.name",
+            "en": "Payments"
+          },
+          "link": "live",
+          "blocked": false,
+          "unheard": 0,
+          "slug": "payments-service",
+          "mark": "draw:pebble",
+          "team_id": "platform",
+          "online": true,
+          "working": true,
+          "main": true,
+          "crowned": true,
+          "helpers": {
+            "says": {
+              "key": "session.helpers",
+              "args": {
+                "n": "4"
+              },
+              "en": "4 helpers"
+            },
+            "working": [
+              true,
+              false,
+              false,
+              false
+            ]
+          },
+          "open": 3,
+          "cards": 4,
+          "knocks": false,
+          "away": false,
+          "group": "",
+          "says": {
+            "key": "badge.working_open",
+            "args": {
+              "n": "3"
+            },
+            "en": "Working, 3 questions open"
+          },
+          "last": {
+            "text": "Next run: 400 users for 10 minutes. It waits for your OK.",
+            "at_ms": 1791469620000,
+            "when": {
+              "key": "chat.when.today",
+              "args": {
+                "time": "16:27"
+              },
+              "en": "16:27"
+            }
+          },
+          "unread": false,
+          "signal": "waiting"
         },
         {
           "id": "eeb9fe76ad84d2405625d15419ce6083",
@@ -763,7 +709,7 @@
           "cards": 2,
           "knocks": false,
           "away": false,
-          "group": "platform:on",
+          "group": "",
           "says": {
             "key": "badge.working_open",
             "args": {
@@ -780,6 +726,60 @@
                 "time": "16:22"
               },
               "en": "16:22"
+            }
+          },
+          "unread": false,
+          "signal": "waiting"
+        },
+        {
+          "id": "f14180d4caac441522269c631a745866",
+          "name": {
+            "key": "session.name",
+            "en": "Data Pipeline"
+          },
+          "link": "live",
+          "blocked": false,
+          "unheard": 0,
+          "slug": "data-pipeline",
+          "mark": "draw:pill",
+          "team_id": "platform",
+          "online": true,
+          "working": true,
+          "main": true,
+          "crowned": false,
+          "helpers": {
+            "says": {
+              "key": "session.helpers.one",
+              "args": {
+                "n": "1"
+              },
+              "en": "1 helper"
+            },
+            "working": [
+              false
+            ]
+          },
+          "open": 2,
+          "cards": 2,
+          "knocks": false,
+          "away": false,
+          "group": "",
+          "says": {
+            "key": "badge.working_open",
+            "args": {
+              "n": "2"
+            },
+            "en": "Working, 2 questions open"
+          },
+          "last": {
+            "text": "Because opening the app counts. With “watered a plant” it is 14,960. Which one is on your Desk.",
+            "at_ms": 1791468120000,
+            "when": {
+              "key": "chat.when.today",
+              "args": {
+                "time": "16:02"
+              },
+              "en": "16:02"
             }
           },
           "unread": false,

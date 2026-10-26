@@ -111,7 +111,7 @@ pub fn clean_link(report: &Value) -> Option<Link> {
         hears: hears.to_string(),
         attached: l.get("attached") != Some(&Value::Bool(false)),
         last_call_at: l.get("last_call_at").and_then(stamp),
-        working: l.get("working") == Some(&Value::Bool(true)),
+        working: l.get("working").and_then(Value::as_bool),
         since: l.get("since").and_then(stamp),
         cut_since: l.get("cut_since").and_then(stamp),
         exit,
@@ -629,7 +629,7 @@ impl Model {
                 m.link = None
             }
             let agent = m.device_role == "agent";
-            let stop = !m.is_online || m.link.as_ref().is_some_and(|l| !l.working);
+            let stop = !m.is_online || m.link.as_ref().is_some_and(|l| l.working == Some(false));
             if agent {
                 self.touch_agent(&d.device_id, change);
                 if stop {

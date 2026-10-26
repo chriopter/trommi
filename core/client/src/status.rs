@@ -22,8 +22,8 @@
 //!
 //! Quiet (a grey hint, never a stop): connected, a status line says "working", and nothing from it for [`QUIET_MS`].
 //!
-//! A session works while one of its status lines shows "working" ([`line_state`]): the chip and the line never
-//! disagree.
+//! A session works while a status line shows "working" ([`line_state`]) or its connected connector reports work.
+//! Hermes reports only its automatic turn; manual task lines remain separate. Other hosts keep their task rules.
 //!
 //! What a status line shows ([`line_state`]), so that it never says more than the Desk's "Off your mind" does
 //! (core/client/README.md "Status lines"): `gone` in an archived session; `done` once its agent said so; linked to a card,
@@ -244,7 +244,7 @@ impl<'a> Context<'a> {
 pub struct Status {
     pub link: Option<LinkView>,
     pub blocked: Option<Blocked>,
-    /// A status line of it says "working".
+    /// An effective manual task line or the connected connector reports work.
     pub working: bool,
     /// Quiet: its last sign of life, when that was [`QUIET_MS`] or more ago.
     pub quiet_since: Option<u64>,
@@ -262,6 +262,22 @@ fn earliest(a: Option<u64>, b: Option<u64>) -> Option<u64> {
         (x, None) => x,
         (None, y) => y,
     }
+}
+
+/// Hermes has an automatic turn lifecycle; other hosts still use their established trail/task rules.
+/// The existing encrypted device label names the actual connector preset (not its display name or chat capability).
+pub fn automatic_turns(m: &Model, s: &Session) -> bool {
+    s.agent_device_id.as_ref().and_then(|id| m.members.get(id)).is_some_and(|d| d.platform.as_str() == Some("hermes"))
+}
+
+/// The Hermes connector's current-turn report, independent of manual tasks.
+/// None means no automatic activity report is available; false is an explicit idle report.
+/// Once the model receives offline/lease-expiry presence, automatic work is no longer shown.
+pub fn reported_work(m: &Model, s: &Session, archived: bool, removed: bool, online: bool) -> Option<bool> {
+    if !automatic_turns(m, s) {
+        return None;
+    }
+    s.link.as_ref().and_then(|l| l.working.map(|working| online && !archived && !removed && l.attached && l.cut_since.is_none() && working))
 }
 
 /// The status of a session as listed (`archived`, `removed`, `online` as the session list decided).
@@ -287,8 +303,8 @@ pub fn status_of(
         recheck = earliest(recheck, at);
         Some(l)
     };
-    // (what each line shows: its card and its session decide; a session cut off still runs. The session works while
-    //  one of its lines shows "working": the chip and the line always say the same, core/client/README.md "Status lines")
+    // Manual task lines retain their card/staleness semantics; reported activity creates no synthetic line.
+    // A session cut off still runs for the purpose of card-linked task lines.
     let runs = online || link.as_ref().is_some_and(|l| l.state == "cut");
     let mut lines = std::collections::BTreeMap::new();
     let mut working_lines: Vec<u64> = vec![];
@@ -301,7 +317,7 @@ pub fn status_of(
         }
         lines.insert(t.id.clone(), shown);
     }
-    let working = !working_lines.is_empty();
+    let working = !working_lines.is_empty() || reported_work(m, s, archived, removed, online) == Some(true);
     let device_active = s
         .agent_device_id
         .as_deref()
@@ -356,7 +372,7 @@ pub fn status_of(
                     since: None,
                 });
             }
-            if working {
+            if !working_lines.is_empty() {
                 let last = working_lines.iter().copied().fold(s.last_activity_at, u64::max);
                 if now.saturating_sub(last) >= QUIET_MS {
                     quiet_since = Some(last);
@@ -437,6 +453,82 @@ mod tests {
     }
     fn why(r: &SessionRow) -> Option<&str> {
         r.blocked.as_ref().map(|b| b.why.as_str())
+    }
+
+    #[test]
+    fn automatic_work_is_visible_without_a_manual_status_line() {
+        let mut m = room(true);
+        m.members.get_mut(D0).unwrap().platform = json!("hermes");
+        m.sessions.get_mut(S0).unwrap().link = Some(crate::model::types::Link {
+            hears: "live".into(), attached: true, working: Some(true), ..Default::default()
+        });
+        let r = at(&mut m, 100_000, false);
+        assert!(r.working, "the live lease reports work, even before any text or tool");
+        assert!(r.lines.is_empty(), "automatic activity must not create task lines");
+    }
+
+    #[test]
+    fn automatic_work_stops_and_reconnects_without_changing_manual_lines() {
+        let mut m = room(true);
+        m.members.get_mut(D0).unwrap().platform = json!("hermes");
+        m.sessions.get_mut(S0).unwrap().link = Some(crate::model::types::Link {
+            hears: "live".into(), attached: true, working: Some(true), ..Default::default()
+        });
+        assert!(at(&mut m, 100_000, false).working);
+        m.sessions.get_mut(S0).unwrap().link.as_mut().unwrap().working = Some(false);
+        assert!(!at(&mut m, 100_001, false).working, "normal end/cancel/error stops automatic work");
+        m.sessions.get_mut(S0).unwrap().status_lines.push(StatusLine {
+            id: "manual".into(), state: json!("working"), updated_at: 100_000, ..Default::default()
+        });
+        let r = at(&mut m, 100_002, false);
+        assert!(r.working, "a manual task can outlive the turn");
+        assert_eq!(r.lines["manual"], "working");
+        m.sessions.get_mut(S0).unwrap().status_lines[0].state = json!("done");
+        let r = at(&mut m, 100_003, false);
+        assert!(!r.working);
+        assert_eq!(r.lines["manual"], "done");
+        m.sessions.get_mut(S0).unwrap().link.as_mut().unwrap().working = Some(true);
+        assert!(at(&mut m, 100_004, false).working, "fresh activity can restart");
+    }
+
+    #[test]
+    fn automatic_work_requires_an_online_attached_unarchived_session() {
+        let mut m = room(true);
+        m.members.get_mut(D0).unwrap().platform = json!("hermes");
+        m.sessions.get_mut(S0).unwrap().link = Some(crate::model::types::Link {
+            hears: "live".into(), attached: true, working: Some(true), ..Default::default()
+        });
+        let status = |m: &Model, archived, removed, online| {
+            super::status_of(&super::Context::new(m, 100_000), &m.sessions[S0], archived, removed, online)
+        };
+        assert!(!status(&m, false, false, false).working, "offline/expired lease is not active work");
+        assert!(!status(&m, true, false, true).working);
+        assert!(!status(&m, false, true, true).working);
+        m.sessions.get_mut(S0).unwrap().link.as_mut().unwrap().attached = false;
+        assert!(!status(&m, false, false, true).working);
+        m.sessions.get_mut(S0).unwrap().link.as_mut().unwrap().attached = true;
+        m.sessions.get_mut(S0).unwrap().link.as_mut().unwrap().cut_since = Some(50_000);
+        assert!(!status(&m, false, false, true).working);
+    }
+
+    #[test]
+    fn automatic_work_alone_does_not_invent_a_quiet_manual_task() {
+        let mut m = room(true);
+        m.members.get_mut(D0).unwrap().platform = json!("hermes");
+        m.sessions.get_mut(S0).unwrap().link = Some(crate::model::types::Link {
+            hears: "live".into(), attached: true, working: Some(true), ..Default::default()
+        });
+        let r = at(&mut m, 2 * super::QUIET_MS, false);
+        assert!(r.working, "thinking and long tools do not expire by the old user-text window");
+        assert_eq!(r.quiet_since, None, "quiet is a manual task hint, not a lack of draft tokens");
+    }
+
+    #[test]
+    fn automatic_work_does_not_treat_an_omitted_report_as_a_stop() {
+        let mut m = room(true);
+        m.members.get_mut(D0).unwrap().platform = json!("hermes");
+        m.sessions.get_mut(S0).unwrap().link = crate::model::groups::clean_link(&json!({ "hears": "live", "attached": true }));
+        assert_eq!(super::reported_work(&m, &m.sessions[S0], false, false, true), None);
     }
 
     /// The red hand stands exactly while the blocking question stands on the Desk: put off (Later), it goes; a newer

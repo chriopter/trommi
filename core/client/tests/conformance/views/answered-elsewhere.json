@@ -570,7 +570,7 @@
                 },
                 "cards": 0,
                 "crowned": false,
-                "group": ":off",
+                "group": "",
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
                 "link": "gone",
@@ -649,7 +649,7 @@
                     },
                     "cards": 0,
                     "crowned": false,
-                    "group": ":off",
+                    "group": "",
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                     "knocks": false,
                     "link": "gone",
@@ -1204,7 +1204,7 @@
                 },
                 "cards": 1,
                 "crowned": false,
-                "group": ":off",
+                "group": "",
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
                 "last": {
@@ -1302,7 +1302,7 @@
                     },
                     "cards": 1,
                     "crowned": false,
-                    "group": ":off",
+                    "group": "",
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                     "knocks": false,
                     "last": {
@@ -2416,7 +2416,7 @@
                 },
                 "cards": 0,
                 "crowned": false,
-                "group": ":off",
+                "group": "",
                 "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
                 "last": {
@@ -2506,7 +2506,7 @@
                     },
                     "cards": 0,
                     "crowned": false,
-                    "group": ":off",
+                    "group": "",
                     "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                     "knocks": false,
                     "last": {
@@ -3603,7 +3603,7 @@
           },
           "cards": 0,
           "crowned": false,
-          "group": ":off",
+          "group": "",
           "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
           "knocks": false,
           "last": {
@@ -3693,7 +3693,7 @@
               },
               "cards": 0,
               "crowned": false,
-              "group": ":off",
+              "group": "",
               "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
               "knocks": false,
               "last": {

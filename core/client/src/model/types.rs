@@ -553,7 +553,8 @@ pub struct Link {
     pub hears: String,
     pub attached: bool,
     pub last_call_at: Option<u64>,
-    pub working: bool,
+    /// None when a link report does not carry activity; false is an explicit idle report.
+    pub working: Option<bool>,
     pub since: Option<u64>,
     pub cut_since: Option<u64>,
     pub exit: Option<LinkExit>,

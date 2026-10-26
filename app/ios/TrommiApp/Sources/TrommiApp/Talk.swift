@@ -65,10 +65,11 @@ struct ChatsScreen: View {
       } else {
         ForEach(side.stacks, id: \.id) { stack in
           Section {
-            // (held and dragged, a chat moves within its team: PlaceSession, as the web's sidebar does)
+            // (held and dragged, a chat moves within its part when the core gives it one: PlaceSession, as the web's
+            //  sidebar does; newest first gives none)
             if stack.open {
               ForEach(stack.sessions, id: \.id) { row in ChatRow(row: row) }
-                .onMove { from, to in if let a = placeChat(stack.sessions, from: from, to: to) { shell.act(a) } }
+                .onMove(perform: chatMove(stack.sessions) { shell.act($0) })
             }
             else if !stack.sessions.isEmpty { FoldedChats(stack: stack) }
           } header: {
@@ -94,10 +95,17 @@ struct ChatsScreen: View {
   }
 }
 
+/** List.onMove for chats: none while the core gives them no part to be moved within (`group` empty: newest first),
+ *  so the list offers no drag that would snap back. */
+func chatMove(_ rows: [CoreView.SessionRowView], _ act: @escaping ([String: Any]) -> Void) -> ((IndexSet, Int) -> Void)? {
+  guard rows.contains(where: { !$0.group.isEmpty }) else { return nil }
+  return { from, to in if let a = placeChat(rows, from: from, to: to) { act(a) } }
+}
+
 /** A chat moved in its team's list (List.onMove, `to` counted before the move): its new place as PlaceSession says
  *  it, among the rows of its part (`group`: connected or not), before the row now under it or after the last. */
 func placeChat(_ rows: [CoreView.SessionRowView], from: IndexSet, to: Int) -> [String: Any]? {
-  guard from.count == 1, let i = from.first, rows.indices.contains(i) else { return nil }
+  guard from.count == 1, let i = from.first, rows.indices.contains(i), !rows[i].group.isEmpty else { return nil }
   let me = rows[i]
   var rest = rows
   rest.remove(at: i)
@@ -962,7 +970,7 @@ struct SessionScreen: View {
           }
         }
       }
-      .pushedPills(solid: AppShell.phone) { header } trailing: { EmptyView() }
+      .sessionChrome(page: page, hue: hue) { header } menu: { actions }
     }
     .background(Ink.bg.ignoresSafeArea())
     .alert("Rename Session", isPresented: $renaming) {
@@ -1452,6 +1460,10 @@ struct TalkRow: View {
   /** The last of a run of the agent's words: its time stands under it. */
   var last = true
   var body: some View {
+    // (the iPhone's messages as bubbles in the system's look: NativeLook.swift)
+    if NativeLook.on, NativeTalkLine.handles(row) { NativeTalkLine(row: row, inCard: inCard) } else { classic }
+  }
+  private var classic: some View {
     VStack(alignment: .leading, spacing: 6) {
       if let day = row.day { DayLine(text: day.en) }
       switch row.kind {
@@ -1603,20 +1615,22 @@ struct TalkRow: View {
 }
 
 /** The card a bubble answers or is about (`TalkRow.quote`), quoted at its top as a messenger's reply: a paper sign,
- *  what he did, its title; a tap opens it. */
+ *  what he did, its title; a tap opens it. On the accent bubble in the accent's own ink, so it reads there too. */
 struct QuoteChip: View {
   @EnvironmentObject var shell: AppShell
   let quote: CoreView.QuoteView
+  var onAccent = false
   var body: some View {
+    let quiet = onAccent ? Ink.accentFg.opacity(0.8) : Ink.muted
     Button { shell.focus(.card(cardId: quote.card.id)) } label: {
       HStack(spacing: 6) {
-        Image(systemName: "doc.text").font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.muted)
-        Text(quote.label.en).font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).fixedSize()
-        Text(quote.card.title).font(Face.text(12, .medium)).foregroundStyle(Ink.fg).lineLimit(1)
+        Image(systemName: "doc.text").font(.system(size: 11, weight: .semibold)).foregroundStyle(quiet)
+        Text(quote.label.en).font(Face.text(12, .semibold)).foregroundStyle(quiet).fixedSize()
+        Text(quote.card.title).font(Face.text(12, .medium)).foregroundStyle(onAccent ? Ink.accentFg : Ink.fg).lineLimit(1)
       }
       .padding(.horizontal, 9).padding(.vertical, 6)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.fg.opacity(0.06)))
+      .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(onAccent ? Ink.accentFg.opacity(0.18) : Ink.fg.opacity(0.06)))
     }
     .buttonStyle(.plain)
     .accessibilityLabel("\(quote.label.en): \(quote.card.title)")

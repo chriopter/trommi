@@ -114,18 +114,19 @@ final class IOSProposalTests: XCTestCase {
 
   func testSearchDoesNotExposeAccordionTeams() {
     launch("chats")
-    XCTAssertTrue(app.buttons["side-search"].waitForExistence(timeout: 20))
-    app.buttons["side-search"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["chat-search"].waitForExistence(timeout: 10))
-    XCTAssertEqual(any("chat-team-").count, 0)
+    // (the system's search field at the bottom of the root, beside the bolt and the +)
     let field = app.searchFields.firstMatch
-    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    XCTAssertTrue(field.waitForExistence(timeout: 20), app.debugDescription)
+    XCTAssertEqual(any("chat-team-").count, 0)
     field.tap(); field.typeText("Fernly")
     XCTAssertTrue(any("chat-session-").firstMatch.waitForExistence(timeout: 10))
     XCTAssertEqual(any("chat-team-").count, 0)
     any("chat-session-").firstMatch.tap()
     XCTAssertTrue(app.descendants(matching: .any)["pinned-cards"].waitForExistence(timeout: 10))
     back()
+    // (back: the search still under its words, as the system keeps it; Cancel shows the folders again)
+    let cancel = app.buttons["Cancel"]
+    if cancel.waitForExistence(timeout: 5) { cancel.tap() } else { app.searchFields.firstMatch.buttons.firstMatch.tap() }
     XCTAssertTrue(app.buttons["chat-folder-main"].waitForExistence(timeout: 10))
   }
 
@@ -150,11 +151,12 @@ final class IOSProposalTests: XCTestCase {
     XCTAssertTrue(page.waitForExistence(timeout: 10), app.debugDescription)
     XCTAssertTrue(app.navigationBars.staticTexts["Platform"].waitForExistence(timeout: 10), app.debugDescription)
 
-    // the bolt at the top right walks every team's cards, not only Platform's
+    // the bolt at the bottom right walks every team's cards, not only Platform's
     let bolt = app.buttons["chats-blitz-all"]
     XCTAssertTrue(bolt.waitForExistence(timeout: 10), app.debugDescription)
     XCTAssertTrue(bolt.isEnabled)
-    XCTAssertGreaterThan(bolt.frame.midX, app.frame.midX, "the bolt stands at the top right")
+    XCTAssertGreaterThan(bolt.frame.midX, app.frame.midX, "the bolt stands at the right")
+    XCTAssertGreaterThan(bolt.frame.midY, app.frame.midY, "the bolt stands in the bottom row")
     capture("platform-chats")
     bolt.tap()
     let title = app.staticTexts["card-title"]

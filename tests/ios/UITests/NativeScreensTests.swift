@@ -160,8 +160,8 @@ final class NativeScreensTests: XCTestCase {
     let message = app.staticTexts["talk-message"].firstMatch
     XCTAssertTrue(message.waitForExistence(timeout: 15))
     XCTAssertFalse(message.label.isEmpty)
-    // (the top row: round back, the title in its own pill in the middle that opens the menu; no ⋯)
-    XCTAssertTrue(app.buttons["back"].exists && app.buttons["session-title"].exists, app.debugDescription)
+    // (the top row: the system's bar, its back, the face and name in the middle that open the menu; no ⋯)
+    XCTAssertTrue(app.navigationBars.buttons.firstMatch.exists && app.buttons["session-title"].exists, app.debugDescription)
     XCTAssertFalse(app.buttons["session-more"].exists, "no ⋯: the title opens the menu")
     XCTAssertLessThan(abs(app.buttons["session-title"].frame.midX - app.windows.firstMatch.frame.midX), 30, "the title sits in the middle")
     capture("chat")

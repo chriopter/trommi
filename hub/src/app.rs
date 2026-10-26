@@ -806,9 +806,19 @@ impl App {
         let expired: Vec<Room> = self
             .db
             .write(|c| {
-                let mut s = c.prepare_cached("UPDATE agent_leases SET working = 0 WHERE working = 1 AND expires_at <= ?1 RETURNING room_id")?;
-                let rows = s.query_map([now as i64], |r| store::fixed::<32>(r.get(0)?))?.collect::<rusqlite::Result<Vec<_>>>()?;
-                Ok::<_, Refused>(rows)
+                let expired = {
+                    let mut s = c.prepare_cached("UPDATE agent_leases SET working = 0 WHERE working = 1 AND expires_at <= ?1 RETURNING room_id, device, hears, last_call_at")?;
+                    let rows = s.query_map([now as i64], |r| Ok((store::fixed::<32>(r.get(0)?)?, store::fixed::<32>(r.get(1)?)?, r.get::<_, bool>(2)?, r.get::<_, i64>(3)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+                    rows
+                };
+                // An open stream keeps the device online, not its expired activity. Tell the held link to stop
+                // under the writer, so this idle report cannot follow a later renewal's busy report.
+                for (room, device, hears, last_call_at) in &expired {
+                    if self.live.online(room, device) {
+                        self.presence(room, device, json!({ "device": b64(device), "online": true, "hears": hears, "working": false, "last_call_at": last_call_at }));
+                    }
+                }
+                Ok::<_, Refused>(expired.into_iter().map(|(room, _, _, _)| room).collect())
             })
             .unwrap_or_default();
         for room in expired {

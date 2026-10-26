@@ -1193,10 +1193,12 @@ impl Member {
         }
         let sid = client.lock().session_id();
         self.me.lock().unwrap().session = Some(json!({ "agent_session_id": sid }));
-        // (the client is known once it said initialize: Codex or Claude Code)
+        // The client is known now: keep the actual host in the existing encrypted device label.
         let mut device_info = self.device_info.clone();
         if crate::host::is_codex() {
             device_info["platform"] = json!("codex");
+        } else if crate::host::is_hermes() {
+            device_info["platform"] = json!("hermes");
         }
         // (who this session is across its devices: one entry and one name for it in the human's list, 9.3.3)
         if let Some(agent) = crate::identity::agent_identity(&self.cfg.owner()) {

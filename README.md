@@ -449,7 +449,8 @@ sequenceDiagram
   preferences and corrections, not status or to-dos; update instead of adding a second entry.
 - The hub sees encrypted registers, as for everything else. The logic is the app core's (`core/client/src/knowledge.rs`).
 - **A chat on no team.** A chat stands on a team only while its settings name that team and the team is there; else
-  it is on no team, at the top of the list beside the team folders. That is the case for `desk` null (Move to… → No
+  it is on no team, at the top of the list beside the team folders (on the iPhone above the folders, in the root list
+  whose bottom row, as on a team's page, holds the search, the bolt over every team and the +). That is the case for `desk` null (Move to… → No
   team, or "No team" when you invite an agent or start a new chat), for a chat whose settings name no team (as chats
   from before this rule may, and a chat whose placement has not reached this device yet), and for a chat whose team
   was deleted. Every agent invite and approved computer now writes its chat's team, or null. A chat on no team gets no
@@ -495,8 +496,11 @@ in the app, as for any agent) and restarts Hermes' gateway. The first chat is th
 the board. A second Hermes is a Hermes profile with a name of its own (`--name Einkauf --profile einkauf`).
 
 - **Every Trommi chat is a Hermes chat.** Your message goes to Hermes, and its answer comes back into the same chat,
-  growing while it writes (an answer preview, spec 7.5). The chat shows it working. Its questions for approval come as
-  yes/no cards, and no answer is no.
+  growing while it writes (an answer preview, spec 7.5). Its working face follows the automatic turn, including
+  thinking and tool work, and stops on finish, error or cancellation. Manual task status lines remain saved and can
+  still count as session work; they do not keep Hermes' typing face or the Live Activity's work mark on after the
+  turn ends. An expired working lease clears even with an open stream, including on reconnect. Its questions for
+  approval come as yes/no cards, and no answer is no.
 - **"New chat with …"** under the + (iPhone: the + menu) starts another chat with that Hermes. Its connector activates
   itself on the approved computer, without a tap there. It stands where you chose: a team, or no team. Your device
   writes that choice into the ask itself. The new chat's connector names only the ask it answers, and the app that

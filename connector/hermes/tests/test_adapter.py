@@ -91,6 +91,74 @@ async def test_the_answer_its_live_text_and_working_go_to_their_chat(tmp_path, m
     assert not (await a.send("c-000000000000", "x")).success, "no such chat: nothing goes"
 
 
+@pytest.mark.parametrize("ending", ["answer", "error", "cancel", "interrupt"])
+async def test_installed_hermes_background_turn_stops_typing(tmp_path, made, ending):
+    """Real installed BasePlatformAdapter lifecycle, recording only the local child pipe."""
+    import asyncio
+    from gateway.platforms.base import MessageEvent, MessageType
+
+    a = adapter(tmp_path)
+    await a.connect()
+    child = made[0]
+    ready = asyncio.Event()
+    release = asyncio.Event()
+
+    async def handle(_event):
+        ready.set()
+        await release.wait()  # thinking/tool work before any answer text
+        if ending == "error":
+            raise RuntimeError("isolated turn failure")
+        if ending == "interrupt":
+            return None
+        return "A final answer."
+
+    a.set_message_handler(handle)
+    event = MessageEvent(text="Work", message_type=MessageType.TEXT,
+                         source=a.build_source(chat_id="main", chat_type="dm", user_id="trommi"))
+    task = asyncio.create_task(a._process_message_background(event, "isolated-trommi-turn"))
+    await asyncio.wait_for(ready.wait(), 1)
+    await asyncio.sleep(2.1)  # the real two-second refresh, not a replaced typing loop
+    ons = [p for m, p in child.notes if m == "trommi/working"]
+    assert len(ons) >= 2 and all(p == {"on": True} for p in ons)
+    assert not any(m == "trommi/answer" for m, _ in child.notes), "busy before any text"
+    if ending == "cancel":
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    else:
+        if ending == "interrupt":
+            await a.interrupt_session_activity("isolated-trommi-turn", "main")
+        release.set()
+        await asyncio.wait_for(task, 3)
+    notes = [p for m, p in child.notes if m == "trommi/working"]
+    assert notes[-1] == {"on": False}
+    after = list(child.notes)
+    await asyncio.sleep(0.05)
+    assert child.notes == after, "no refresh can resurrect the ended turn"
+    if ending == "answer":
+        assert ("trommi/answer", {"text": "A final answer."}) in child.notes
+    await a.disconnect()
+
+
+async def test_installed_hermes_consumer_sends_drafts_then_the_final_answer(tmp_path, made):
+    import asyncio
+    from gateway.stream_consumer import GatewayStreamConsumer, StreamConsumerConfig
+
+    a = adapter(tmp_path)
+    await a.connect()
+    consumer = GatewayStreamConsumer(a, "main", config=StreamConsumerConfig(
+        transport="auto", edit_interval=0.01, buffer_threshold=1, cursor=""))
+    task = asyncio.create_task(consumer.run())
+    consumer.on_delta("An isolated answer.")
+    await asyncio.sleep(0.35)
+    consumer.finish()
+    await asyncio.wait_for(task, 3)
+    notes = made[0].notes
+    assert any(m == "trommi/preview" and "An isolated answer." in p["text"] for m, p in notes)
+    assert any(m == "trommi/answer" and "An isolated answer." in p["text"] for m, p in notes)
+    await a.disconnect()
+
+
 async def test_an_approval_is_a_card_and_its_verdict_resolves_that_request(tmp_path, made, monkeypatch):
     a = adapter(tmp_path)
     await a.connect()

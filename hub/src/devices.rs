@@ -36,14 +36,19 @@ pub fn snapshot(c: &Connection, room: &Room, me: &Device, online: &[Device], now
     for device in online {
         rows.entry(*device).or_insert_with(|| json!({"device": crate::util::b64(device)}))["online"] = json!(true);
     }
-    let mut leases = c.prepare_cached("SELECT device, hears, working, last_call_at FROM agent_leases WHERE room_id = ?1 AND expires_at > ?2")?;
-    let held = leases.query_map(params![&room[..], now as i64], |r| Ok((crate::store::fixed::<32>(r.get(0)?)?, r.get::<_, bool>(1)?, r.get::<_, bool>(2)?, r.get::<_, i64>(3)?)))?
+    let mut leases = c.prepare_cached("SELECT device, hears, working, last_call_at, expires_at > ?2 FROM agent_leases WHERE room_id = ?1")?;
+    let held = leases.query_map(params![&room[..], now as i64], |r| Ok((crate::store::fixed::<32>(r.get(0)?)?, r.get::<_, bool>(1)?, r.get::<_, bool>(2)?, r.get::<_, i64>(3)?, r.get::<_, bool>(4)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    for (device, hears, working, last_call_at) in held {
+    for (device, hears, working, last_call_at, active) in held {
+        // A reconnect may have missed the expiry event. An open stream is still online, but an expired
+        // lease cannot preserve cached busy activity. No expired lease makes an offline device online.
+        if !active && !online.contains(&device) {
+            continue;
+        }
         let row = rows.entry(device).or_insert_with(|| json!({"device": crate::util::b64(&device)}));
         row["online"] = json!(true);
         row["hears"] = json!(hears);
-        row["working"] = json!(working);
+        row["working"] = json!(active && working);
         row["last_call_at"] = json!(last_call_at);
     }
     rows.remove(me);

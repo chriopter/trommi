@@ -1000,7 +1000,7 @@ html body .topbar #brand-doors .menu-team-row:first-child .menu-team { padding-r
 /* ---- the sessions' order (sidebar.mjs, controller "order") ----
    The row being carried leaves its place open: an empty slot outlined in pencil, where it lands when let go. A
    ghost of it follows the pointer, a touch askew; its helpers fold away under it until it is set down. */
-#agents .agent-row[data-order] { -webkit-touch-callout: none; }
+#agents .agent-row[data-unit] { -webkit-touch-callout: none; }
 #agents.is-ordering { cursor: grabbing; -webkit-user-select: none; user-select: none; }
 #agents.is-ordering .agent-entry { cursor: grabbing; }
 #agents .agent-row.is-carried > * { visibility: hidden; }

@@ -89,7 +89,10 @@ impl Model {
             }
         }
         let link = e.hears.map(|h| {
-            let mut l = json!({ "hears": if h { "live" } else { "oncall" }, "attached": true, "working": e.working == Some(true) });
+            let mut l = json!({ "hears": if h { "live" } else { "oncall" }, "attached": true });
+            if let Some(working) = e.working {
+                l["working"] = json!(working);
+            }
             if let Some(t) = e.last_call_at.filter(|t| *t > 0) {
                 l["last_call_at"] = json!(t);
             }

@@ -50,6 +50,9 @@ async fn the_hermes_addon_hears_the_board_and_answers_into_the_chat() {
     assert!(!failed, "{said}");
     mcp.ready().await;
     let me = human.seat(&group).await.expect("the agent");
+    human.sync().await;
+    let device = human.register(&group, &format!("device/{}", me.to_base64url())).await.expect("device label");
+    assert_eq!(device["platform"], "hermes", "the existing encrypted device label must name the actual host");
 
     // The person writes: the add-on hears it as a channel event (it hands it to Hermes as a message of this chat).
     human.say(&group, json!({ "content_type": "message", "text": "Wie ist das Wetter?" })).await.expect("written");
@@ -90,6 +93,76 @@ async fn the_hermes_addon_hears_the_board_and_answers_into_the_chat() {
     let ask: Value = mcp.notification("notifications/claude/channel").await;
     assert_eq!((ask["meta"]["kind"].as_str(), ask["meta"]["nonce"].as_str()), (Some("new_chat"), Some("n1")));
     assert!(human.findings.is_empty(), "{:?}", human.findings);
+    mcp.close().await;
+}
+
+/// The actual MCP -> connector -> lease path: manual tasks must not keep Hermes typing after stop.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hermes_turn_lifecycle_is_independent_of_manual_task_status() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let mut command = seat.command(&[]);
+    command.env("TROMMI_HOST", "hermes").env("TROMMI_CHANNEL_EVENTS", "on");
+    let hello = json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "hermes-trommi", "version": "1" } });
+    let mut mcp = Mcp::start_as(command, hello).await;
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = mcp.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await
+    };
+    let ((said, failed), group) = tokio::join!(connect, admit);
+    assert!(!failed, "{said}");
+    mcp.ready().await;
+    let me = human.seat(&group).await.unwrap();
+    let db = rusqlite::Connection::open(hub.data.path().join("hub.db")).unwrap();
+    let work = || db.query_row("SELECT working FROM agent_leases WHERE device = ?1", [me.as_bytes().as_slice()], |r| r.get::<_, bool>(0)).unwrap();
+    macro_rules! waits {
+        ($on:expr) => {{
+            let mut seen = false;
+            for _ in 0..100 {
+                if work() == $on { seen = true; break; }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            assert!(seen, "Hermes lease working should be {}, was {}", $on, work());
+        }};
+    }
+    waits!(false);
+    mcp.notify("trommi/working", json!({ "on": true })).await;
+    waits!(true); // busy before any draft/text (also while tools run)
+    mcp.notify("trommi/working", json!({ "on": true })).await;
+    mcp.ok("set_status", json!({ "id": "task", "label": "Long running task", "state": "working" })).await;
+    waits!(true);
+    mcp.notify("trommi/working", json!({ "on": false })).await;
+    waits!(false); // regression: the manual working line cannot keep the automatic turn on
+    for text in [None, Some("Final answer")] {
+        mcp.notify("trommi/working", json!({ "on": true })).await;
+        waits!(true);
+        if let Some(text) = text {
+            mcp.notify("trommi/preview", json!({ "draft": "2", "text": "Final" })).await;
+            assert_eq!(mcp.request("trommi/answer", json!({ "text": text })).await, json!({}));
+        }
+        mcp.notify("trommi/working", json!({ "on": false })).await;
+        waits!(false); // cancel/error without an answer, then normal final answer
+    }
+    // Rapid successive turns may coalesce, but the latest report must win.
+    for _ in 0..20 {
+        mcp.notify("trommi/working", json!({ "on": true })).await;
+        mcp.notify("trommi/working", json!({ "on": false })).await;
+    }
+    mcp.notify("trommi/working", json!({ "on": true })).await;
+    waits!(true);
+    mcp.notify("trommi/working", json!({ "on": false })).await;
+    waits!(false);
+    // A late queued report must not resurrect the stopped turn.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(!work());
+    // The encrypted manual register is still working, not removed to hide the face.
+    human.sync().await;
+    let task = human.register(&group, "status_line/task").await.expect("manual task retained");
+    assert_eq!(task["state"], "working");
     mcp.close().await;
 }
 
