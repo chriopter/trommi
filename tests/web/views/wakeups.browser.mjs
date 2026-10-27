@@ -1,6 +1,6 @@
 // wakeups.browser.mjs: the agents' wakeups in the web app (demo room, ?mock=1). The page Wakeups lists what the core
 // lists (WakeupsView.rows, in its order); Cancel and Other time go through the core (Action::WakeupCancel, WakeupMove)
-// and the row then shows his word as pending; the chat of an agent with a wakeup shows its line (SessionView.wake_line),
+// and the row then shows his word as pending; the chat of an agent with a wakeup shows its line (SessionView.wake_line: its short time and note, its words for a screen reader),
 // which opens the page. As a 1440 px window and as a phone.
 //   node tests/web/views/wakeups.browser.mjs      (needs Chromium; serves the app from its sources itself)
 import net from 'node:net'
@@ -60,7 +60,7 @@ try {
     await ev(`window.Turbo.visit('/chat/${chat}')`)
     if (!(await until(`Boolean(document.querySelector('#wake-line-${chat}.wake-line'))`, 6000))) bad.push('no wake line in the chat')
     else {
-      const line = await ev(`[document.querySelector('#wake-line-${chat} span').textContent, trommi.vm().sessions['${chat}']?.wake_line?.en]`)
+      const line = await ev(`[document.querySelector('#wake-line-${chat}').getAttribute('aria-label'), trommi.vm().sessions['${chat}']?.wake_line?.says?.en]`)
       if (line[0] !== line[1]) bad.push(`the line is not the core's: ${JSON.stringify(line)}`)
       await ev(`document.querySelector('#wake-line-${chat}').click()`)
       if (!(await until("location.pathname === '/wakeups' && Boolean(document.querySelector('#wk-list'))"))) bad.push('the line does not open the page')

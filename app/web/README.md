@@ -227,8 +227,10 @@ no page of every group: Blitz (`/blitz`, `G B`) walks every group's open cards (
   or time beside them (the time on hover; a helper's name above its words), a run of card events as small chips that
   open their card (`TalkRow` kind "events"), no helper list and no trail. While the agent works (`SessionView.working`)
   its face draws itself at the chat's end beside "… is working", with the core's "12 steps ›" at the right (a click
-  shows the trail), and under it a loose row per status line, no box: sign, label, grey detail, age, "Card ›"; three
-  stand open, the core's "+N" from the fourth.
+  shows the trail), and under it one row per status line, no box, in columns: sign, who works on it (the helper, else
+  the agent), the label and the grey detail in what is left, age; the row opens its card. What waits on you comes
+  first; three stand open, the core's "4 more" from the fourth and "Show fewer" again. The next wakeup stands in the
+  same columns under a hairline: its short time and its note.
   The title pill holds only the face, the name and a small chevron, grey while its agent is not connected; a click
   opens the chat's menu (Details opens the side panel, Questions Only, Files, Move to Team, Copy Invite Link, Delete).
 

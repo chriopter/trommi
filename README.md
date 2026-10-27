@@ -408,7 +408,7 @@ the session was closed it starts the agent's program again on that conversation 
 at most 30 minutes (in Claude Code also 30 turns), a pause while the subscription's five-hour window is 80% used. Claude Code's asks
 for permission in a woken run come to you as yes/no cards. The Wakeups page of a team (the ⋯ menu of its group page, the chat's
 title menu, the sidebar's menu; on the iPhone the pill's menu) lists them, the next first, with how often, who set it and how its last
-run went; you cancel one or give it another time there. The chat shows the next one as "Wakes at 09:00".
+run went; you cancel one or give it another time there. The chat shows the next one at its end, its time and note ("09:00 · check the tests").
 
 - **Stored** as encrypted registers in the agent's session: `wakeup/<id>` (written by its connector) and your word on
   it `wakeup_edit/<id>` (cancel or another time; the connector applies it and your devices then clear it).

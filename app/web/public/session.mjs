@@ -150,12 +150,17 @@ export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
  *  state; no way into a chat of their own (their cards and words are this session's). */
 const helperList = s => (s.helpers ? html`<section class="session-helpers" id="session-helpers-${s.id}" aria-label="${s.helpers.head.en}"><h3>${s.helpers.head.en} <small>${s.helpers.sub.en}</small></h3><ul>${s.helpers.rows.map(h => html`<li${h.working ? raw(' class="is-working"') : ''}><i aria-hidden="true"></i><b>${h.name}</b><span>${h.says.en}</span></li>`)}</ul></section>` : '')
 const lineMark = l => html`<span class="status-mark">${l.state === 'working' ? raw(ringSvg({ drop: true })) : l.state === 'stale' ? html`<i class="status-still" aria-hidden="true"></i>` : l.state === 'decision' ? sk('knock') : l.state === 'later' ? sk('snooze') : sk('tick')}</span>`
-/** One status line as a loose row under "… is working" (no box): its sign, the helper and label, the grey detail, the
- *  core's short age and its link word ("Card ›") to the card it stands for. */
-const statusRow = (l, s, base) => html`<div class="status-row" role="listitem" data-state="${l.state}">${lineMark(l)}<b>${l.helper ? html`<small class="status-helper">${l.helper}</small>` : ''}<span class="status-label">${l.label}</span></b><span class="status-detail">${l.detail}</span><span class="offscreen">${l.says.en}</span><span class="status-age" aria-hidden="true">${l.age.en}</span>${agoSpan(l.updated_ms, 'offscreen')}${l.card && l.link ? html`<a class="status-card" data-nav href="${cardPath(l.card, s, base)}">${l.link.en}<span class="offscreen"> ${l.card.title}</span><i aria-hidden="true">›</i></a>` : html`<span class="status-card"></span>`}</div>`
+/** One status line as one row under "… is working" (the design "Helfer links", 27 October 2026): its sign, who works
+ *  on it in its own column (the helper, else the agent), the label, then the grey detail in what room is left, and
+ *  the core's short age at the right. A line with a card is that card's link as a whole, "›" beside its age on hover. */
+const statusRow = (l, s, base) => {
+  const inner = html`${lineMark(l)}<span class="status-who">${l.who}</span><span class="status-line"><b class="status-label">${l.label}</b>${l.detail ? html`<span class="status-detail">${l.detail}</span>` : ''}</span><span class="offscreen">${l.says.en}</span><span class="status-age" aria-hidden="true">${l.age.en}<i>${l.card ? '›' : ''}</i></span>${agoSpan(l.updated_ms, 'offscreen')}`
+  return html`<div class="status-item" role="listitem">${l.card ? html`<a class="status-row" data-state="${l.state}" data-nav href="${cardPath(l.card, s, base)}">${inner}<span class="offscreen">${l.link ? ` ${l.link.en}:` : ''} ${l.card.title}</span></a>` : html`<div class="status-row" data-state="${l.state}">${inner}</div>`}</div>`
+}
 /** The agent at work (SessionView.working, the calm chat), where its answer will come: its face drawing itself,
  *  "… is working" with its dots, the core's "12 steps" at the right (a click shows the turn's trail under it), and a
- *  row per status line the core opens (`status_shown`); its "+N" lists the rest. No fold-out, no tooltip. */
+ *  row per status line the core opens (`status_shown`); its "4 more" lists the rest, its "Show fewer" folds them again.
+ *  No fold-out, no tooltip. */
 const facesOpen = new Set()
 controller('working-face', class extends Controller {
   connect() { for (const part of ['steps', 'more']) if (facesOpen.has(`${this.element.id}:${part}`)) this.set(part, true) }
@@ -166,6 +171,9 @@ controller('working-face', class extends Controller {
     const box = this.element.querySelector(`[data-part="${part}"]`), btn = this.element.querySelector(`[data-opens="${part}"]`)
     if (!box || !btn) return
     box.hidden = !open; btn.setAttribute('aria-expanded', String(open))
+    // (the core's two words of the button: "4 more" while folded, "Show fewer" while open)
+    const word = btn.querySelector('.status-pile-word'), say = open ? btn.dataset.less : btn.dataset.more
+    if (word && say) word.textContent = say
     if (open) facesOpen.add(`${this.element.id}:${part}`); else facesOpen.delete(`${this.element.id}:${part}`)
   }
 })
@@ -177,10 +185,15 @@ const liveAnswer = s => (s.live_answer
 const workingFace = (s, base) => {
   if (!s.working) return html`<span id="working-face-${s.id}" hidden></span>`
   const w = s.working, lines = s.status_lines ?? [], open = lines.slice(0, s.status_shown ?? 0), rest = lines.slice(open.length)
-  return html`<section class="working-face" id="working-face-${s.id}" data-controller="working-face" aria-label="${w.says.en}"><div class="working-row">${avatar({ ...whoOf(s), online: true }, { working: true })}<span class="working-says">${w.says.en}</span><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>${w.steps && w.trail ? html`<button type="button" class="working-steps" data-opens="steps" aria-expanded="false" aria-controls="working-trail-${s.id}" data-action="working-face#steps">${w.steps.en}<i aria-hidden="true">›</i></button>` : ''}</div>${open.length ? html`<div class="status-rows" role="list">${open.map(l => statusRow(l, s, base))}</div>` : ''}${rest.length && s.status_more ? html`<button type="button" class="status-pile" data-opens="more" aria-expanded="false" aria-controls="status-more-${s.id}" data-action="working-face#more">${s.status_more.en}</button><div class="status-rows" id="status-more-${s.id}" data-part="more" role="list" hidden>${rest.map(l => statusRow(l, s, base))}</div>` : ''}${w.steps && w.trail ? html`<div class="working-details" id="working-trail-${s.id}" data-part="steps" hidden><p class="working-head">${w.head.en}</p>${workBlock({ id: `trail-${s.id}`, time_ms: 0 }, w.trail)}</div>` : ''}</section>`
+  return html`<section class="working-face" id="working-face-${s.id}" data-controller="working-face" aria-label="${w.says.en}"><div class="working-row">${avatar({ ...whoOf(s), online: true }, { working: true })}<span class="working-says">${w.says.en}</span><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>${w.steps && w.trail ? html`<button type="button" class="working-steps" data-opens="steps" aria-expanded="false" aria-controls="working-trail-${s.id}" data-action="working-face#steps">${w.steps.en}<i aria-hidden="true">›</i></button>` : ''}</div>${open.length ? html`<div class="status-rows" role="list">${open.map(l => statusRow(l, s, base))}</div>` : ''}${rest.length && s.status_more ? html`<div class="status-rows" id="status-more-${s.id}" data-part="more" role="list" hidden>${rest.map(l => statusRow(l, s, base))}</div><button type="button" class="status-pile" data-opens="more" data-more="${s.status_more.en}" data-less="${s.status_less?.en ?? s.status_more.en}" aria-expanded="false" aria-controls="status-more-${s.id}" data-action="working-face#more"><span class="status-mark" aria-hidden="true">${sk('unfold')}</span><span class="status-pile-word">${s.status_more.en}</span></button>` : ''}${w.steps && w.trail ? html`<div class="working-details" id="working-trail-${s.id}" data-part="steps" hidden><p class="working-head">${w.head.en}</p>${workBlock({ id: `trail-${s.id}`, time_ms: 0 }, w.trail)}</div>` : ''}</section>`
 }
-/** The quiet line of its next wakeup (SessionView.wake_line): "Wakes at 09:00 · …"; a click opens the page Wakeups. */
-const wakeLine = (s, base) => (s.wake_line ? html`<a class="wake-line" id="wake-line-${s.id}" data-nav href="${base}/wakeups">${sk('snooze')}<span>${s.wake_line.en}</span></a>` : html`<span id="wake-line-${s.id}" hidden></span>`)
+/** The quiet line of its next wakeup (SessionView.wake_line), in the status rows' columns: its sign, the core's short
+ *  time ("21:12") where a row names who works, and its note in the rest, "and 2 more" after it; a click opens the
+ *  page Wakeups. */
+const wakeLine = (s, base) => {
+  const w = s.wake_line
+  return w ? html`<a class="wake-line" id="wake-line-${s.id}" data-nav href="${base}/wakeups" aria-label="${w.says.en}"><span class="status-mark" aria-hidden="true">${sk('snooze')}</span><span class="wake-at">${w.at.en}</span><span class="wake-note">${w.note}${w.more ? html` <i>${w.more.en}</i>` : ''}</span></a>` : html`<span id="wake-line-${s.id}" hidden></span>`
+}
 /** The calm chat's open cards above the field (SessionView.pinned: its questions, the newest first, then its cards to
  *  read) as one stack: the first on top, the others as sheets behind it, "+N" beside it. A tap starts this chat's
  *  Blitz (?walk=1: Focus.walk_chat), one card after another, then back to the chat. */

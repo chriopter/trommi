@@ -617,38 +617,37 @@ form.log-earlier { display: contents; }
 .session-helpers li.is-working i { background: var(--accent); box-shadow: none; }
 .session-helpers li b { font: 600 var(--t-sm)/1.3 var(--font); }
 .session-helpers li span { min-width: 0; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); }
-.status-helper { flex: none; color: var(--muted); font: 600 11px/1.2 var(--font); }
 .msg-helper { padding: 1px 8px; border-radius: 999px; background: var(--sunken); color: var(--muted); font: 600 12px/1.5 var(--font); }
-/* The status lines under "… is working" (session.mjs statusRow, the design "Lose Zeilen"): a loose row each, no box:
-   sign, label, grey detail, age, "Card ›". */
-.status-rows { display: grid; gap: 2px; max-width: 47.5rem; }
+/* The status lines under "… is working" (session.mjs statusRow, the design "Helfer links", 27 October 2026): one row
+   each, no box, in columns that line up: sign, who works on it, the label (first claim on the room) and the grey
+   detail in what is left with one ellipsis, the age at the right. A line with a card is its link as a whole. */
+.status-rows { display: grid; gap: 1px; max-width: 47.5rem; }
 .status-rows[hidden] { display: none; }
-.status-row { display: grid; grid-template-columns: 16px auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 32px; padding: 5px 10px; border-radius: 10px; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); }
-.status-row:hover { background: var(--sunken); }
-.status-row b { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 22rem; font-weight: 600; color: var(--fg); white-space: nowrap; }
-.status-label { overflow: hidden; text-overflow: ellipsis; }
-.status-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-helper { flex: none; padding: 2px 6px; border-radius: 5px; background: var(--sunken); color: var(--muted); font: 600 11px/1.2 var(--font); }
-.status-row .status-mark { display: inline-grid; place-items: center; width: 16px; height: 16px; }
-.status-row .status-mark :is(svg, .sketch) { width: 16px; height: 16px; }
-.status-row[data-state="decision"] b, .status-row[data-state="decision"] .status-mark { color: var(--urg-critical); }
-.status-row:is([data-state="later"], [data-state="done"], [data-state="stale"]) b { color: var(--muted); }
-.status-row:is([data-state="later"], [data-state="done"]) .status-mark { color: var(--faint); }
-.status-age { color: var(--faint); font: 500 var(--t-xs)/1 var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.status-card { min-width: 3.5em; color: var(--accent); font: 600 var(--t-xs)/1 var(--font); text-decoration: none; white-space: nowrap; }
-.status-card i { margin-left: 4px; font-style: normal; }
-.status-card:hover { text-decoration: underline; text-underline-offset: 3px; }
-.status-pile { justify-self: start; height: 26px; margin-left: 36px; padding: 0 6px; border: 0; border-radius: var(--r-sm); background: none; color: var(--faint); font: 600 var(--t-xs)/1 var(--font); font-variant-numeric: tabular-nums; cursor: pointer; }
-.status-pile:hover, .status-pile[aria-expanded="true"] { background: var(--sunken); color: var(--fg); }
+.status-row, .status-pile, .wake-line { display: grid; grid-template-columns: 16px 6rem minmax(0, 1fr) 3rem; align-items: center; column-gap: 12px; min-height: 34px; padding: 0 10px; border-radius: 9px; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); text-align: left; text-decoration: none; white-space: nowrap; }
+a.status-row:hover, a.status-row:focus-visible { background: var(--sunken); }
+.status-row .status-mark, .status-pile .status-mark, .wake-line .status-mark { display: inline-grid; place-items: center; width: 16px; height: 16px; color: var(--faint); }
+.status-row .status-mark :is(svg, .sketch), .status-pile .status-mark .sketch, .wake-line .status-mark .sketch { width: 16px; height: 16px; }
+.status-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-weight: 500; }
+.status-line { display: flex; align-items: baseline; min-width: 0; }
+.status-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font: 500 var(--t-md)/1.3 var(--font); }
+.status-detail { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--faint); }
+.status-detail::before { content: "·"; margin: 0 .55em; }
+.status-row[data-state="decision"] .status-label, .status-row[data-state="decision"] .status-mark { color: var(--urg-critical); }
+.status-row[data-state="working"] .status-mark { color: var(--accent); }
+.status-row:is([data-state="later"], [data-state="done"], [data-state="stale"]) .status-label { color: var(--muted); }
+.status-age { justify-self: end; color: var(--faint); font: 500 var(--t-xs)/1 var(--font); font-variant-numeric: tabular-nums; }
+.status-age i { display: inline-block; width: .5em; margin-left: 5px; color: var(--accent); font-style: normal; visibility: hidden; }
+a.status-row:is(:hover, :focus-visible) .status-age i { visibility: visible; }
+/* "4 more" / "Show fewer" (the core's words): in the label's column, its chevron in the sign's */
+.status-pile { width: 100%; max-width: 47.5rem; border: 0; background: none; font: 600 var(--t-xs)/1 var(--font); text-align: left; cursor: pointer; }
+.status-pile .status-pile-word { grid-column: 3; }
+.status-pile:hover { background: var(--sunken); color: var(--fg); }
+.status-pile[aria-expanded="true"] .status-mark { rotate: 180deg; }
 /* a stale line: greyed, a still hollow ring instead of the spinning one */
 .status-still { display: block; width: 11px; height: 11px; border: 1.6px solid var(--faint); border-radius: 50%; box-sizing: border-box; }
-/* a phone: the detail gives way first, under the label */
+/* a phone: the column of who works gets narrower; the detail gives way first */
 @media (max-width: 640px) {
-  .status-row { grid-template-columns: 16px minmax(0, 1fr) auto auto; row-gap: 2px; }
-  .status-row b { grid-column: 2; max-width: none; }
-  .status-detail { grid-column: 2; grid-row: 2; }
-  .status-row > .status-age { grid-column: 3; grid-row: 1; }
-  .status-row > .status-card { grid-column: 4; grid-row: 1; }
+  .status-row, .status-pile, .wake-line { grid-template-columns: 16px 4.5rem minmax(0, 1fr) 2.6rem; column-gap: 10px; padding: 0 6px; }
 }
 /* The composer: the clip is the label of a real file field; the chosen files stand above the words. */
 .composer-clip { cursor: pointer; }
@@ -989,11 +988,14 @@ a.files-where:hover span { text-decoration: underline; }
 .msg-quote:hover .msg-quote-title { text-decoration: underline; }
 .bubble.has-quote { display: flex; flex-direction: column; align-items: stretch; }
 
-/* the quiet line of the next wakeup at the chat's end (wakeups.mjs has the page) */
-.wake-line { display: inline-flex; align-items: center; gap: 6px; margin: var(--s-2) 0 0 6px; padding: 4px 10px 4px 8px; border-radius: var(--r-pill); color: var(--muted); font: 500 var(--t-xs)/1.3 var(--font); text-decoration: none; max-width: 100%; }
-.wake-line:hover { background: var(--sunken); color: var(--fg); }
-.wake-line .sketch { flex: none; width: 15px; height: 15px; }
-.wake-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the quiet line of the next wakeup at the chat's end (wakeups.mjs has the page), in the status rows' columns: the
+   core's short time where they name who works, the note in the rest; a hairline under the rows above it */
+.wake-line { position: relative; max-width: 47.5rem; margin-top: var(--s-2); }
+.working-face ~ .wake-line::before { content: ""; position: absolute; left: 10px; right: 10px; top: -4px; height: 1px; background: var(--line); }
+.wake-line:hover, .wake-line:focus-visible { background: var(--sunken); }
+.wake-at { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.wake-note { grid-column: 3 / 5; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--faint); }
+.wake-note i { font-style: normal; color: var(--muted); }
 
 /* The calm chat's open cards above the field (session.mjs pinnedCards): one stack, sheets behind it, "+N" beside it. */
 .pinned-cards { display: flex; align-items: stretch; gap: 10px; min-width: 0; margin-bottom: 8px; padding-top: 18px; }
