@@ -27,6 +27,8 @@ struct ViewsCheck {
       else if name.hasPrefix("demo-group") { same = try roundTrip(CoreView.GroupView.self, data, name) }
       else if name.hasPrefix("demo-session") { same = try roundTrip(CoreView.SessionView.self, data, name) }
       else if name.hasPrefix("demo-card") { same = try roundTrip(CoreView.CardView.self, data, name) }
+      else if name.hasPrefix("demo-notes") { same = try roundTrip(CoreView.NotesView.self, data, name) }
+      else if name.hasPrefix("demo-settings") { same = try roundTrip(CoreView.SettingsView.self, data, name) }
       else { print("\(name): which view is it?"); exit(1) }
       if !same { exit(1) }
       ok += 1

@@ -221,17 +221,17 @@ public enum CoreView {
         try c.encode(boardId, forKey: .boardId)
       case .artifacts(let kind):
         try c.encode("artifacts", forKey: .screen)
-        try c.encode(kind, forKey: .kind)
+        if !kind.isEmpty { try c.encode(kind, forKey: .kind) }
       case .knowledge(let query, let filter, let open):
         try c.encode("knowledge", forKey: .screen)
-        try c.encode(query, forKey: .query)
-        try c.encode(filter, forKey: .filter)
-        try c.encode(open, forKey: .open)
+        if !query.isEmpty { try c.encode(query, forKey: .query) }
+        if !filter.isEmpty { try c.encode(filter, forKey: .filter) }
+        if !open.isEmpty { try c.encode(open, forKey: .open) }
       case .wakeups:
         try c.encode("wakeups", forKey: .screen)
       case .settings(let page):
         try c.encode("settings", forKey: .screen)
-        try c.encode(page, forKey: .page)
+        if !page.isEmpty { try c.encode(page, forKey: .page) }
       }
     }
   }

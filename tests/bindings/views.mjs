@@ -341,7 +341,10 @@ function swiftEnum(d) {
     out += `    case .${swiftCase(v.name)}${binds}:\n      try c.encode("${v.wire}", forKey: .${bare(d.serde.tag)})\n`
     for (const f of v.fields ?? []) {
       const n = bare(f.name)
-      if (f.type.k === 'option' && f.serde.skip_serializing_if) out += `      try c.encodeIfPresent(${n}, forKey: .${n})\n`
+      const skip = f.serde.skip_serializing_if
+      if (f.type.k === 'option' && skip) out += `      try c.encodeIfPresent(${n}, forKey: .${n})\n`
+      else if (skip && /is_empty/.test(skip)) out += `      if !${n}.isEmpty { try c.encode(${n}, forKey: .${n}) }\n`
+      else if (skip) fail(d.line, `${d.name}.${v.name}.${f.name}: skip_serializing_if = "${skip}"`)
       else out += `      try c.encode(${n}, forKey: .${n})\n`
     }
   }
