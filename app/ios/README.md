@@ -185,7 +185,10 @@ where its answer will come (`WorkingRows`) beside "… is working" and the core'
 status line under it in columns (sign, who works on it, label and grey detail, age; the row opens its card; what waits
 on you first; three open, the core's "4 more" from the fourth, then "Show fewer"; the next wakeup in the same columns:
 its short time and note); a tap on
-its head opens the details: "Working · <step>", its lines, the trail. Faces
+its head opens the details: "Working · <step>", its lines, the trail. A line a helper's trail stands for says what
+the helper is at in its detail's place and the core's "running 50m" or "finished" after it, never cut. While its turn
+is over and helpers still run (`SessionView.waits_on_helpers`), the same rows stand under the core's "… waits on 4
+helpers", the face still, without dots, opening nothing. Faces
 stand bare, without a disc, in the chat and the Chats list.
 
 The views draw the look the app had before the shared core (sign-in, Desk, card, Chat, note, settings, the glass

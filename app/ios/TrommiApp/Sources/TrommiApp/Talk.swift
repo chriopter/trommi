@@ -921,8 +921,9 @@ struct SessionScreen: View {
           if !AppShell.phone { SessionStatus(page: page, hue: hue) }
           // (an iPhone, the calm chat: the agent at work where its answer will come, its status lines a loose row each;
           //  a tap on its head opens the details)
-          if AppShell.phone, let working = page.working {
-            WorkingRows(page: page, working: working, hue: hue) { workDetails = true }
+          // (its turn over and its helpers running: the core's "… waits on 4 helpers" in the face's place, still)
+          if AppShell.phone, let says = page.working?.says ?? page.waitsOnHelpers {
+            WorkingRows(page: page, working: page.working, says: says, hue: hue) { workDetails = true }
           }
           // (the answer its agent is writing now, spec 7.5: its bubble growing, a caret at its end, until the message
           //  itself comes)
@@ -932,7 +933,7 @@ struct SessionScreen: View {
           //  beside it; a tap opens the page Wakeups)
           if let wake = page.wakeLine {
             Button { shell.focus(.wakeups) } label: { WakeRow(wake: wake) }
-              .buttonStyle(.plain).padding(.top, page.working != nil && AppShell.phone ? 4 : 10)
+              .buttonStyle(.plain).padding(.top, (page.working != nil || page.waitsOnHelpers != nil) && AppShell.phone ? 4 : 10)
               .accessibilityLabel(wake.says.en)
               .accessibilityIdentifier("wake-line")
           }
@@ -1205,6 +1206,10 @@ struct SessionStatus: View {
             Text(answering.en).font(Face.text(14)).foregroundStyle(Ink.muted).lineLimit(1).layoutPriority(1)
             TypingDots()
             if page.statusLines.first != nil { Text("·").font(Face.text(14)).foregroundStyle(Ink.faint) }
+          } else if let waits = page.waitsOnHelpers {
+            // (its turn over, its helpers running: the core's words, no dots)
+            Text(waits.en).font(Face.text(14)).foregroundStyle(Ink.muted).lineLimit(1).layoutPriority(1)
+            if page.statusLines.first != nil { Text("·").font(Face.text(14)).foregroundStyle(Ink.faint) }
           }
           if let first = page.statusLines.first { chip(first) }
           if let plus = page.statusMore {
@@ -1276,7 +1281,9 @@ struct SessionStatus: View {
 struct WorkingRows: View {
   @EnvironmentObject var shell: AppShell
   let page: CoreView.SessionView
-  let working: CoreView.WorkingView
+  /// None while it only waits on its helpers: then the face stands still, no dots, and opens nothing.
+  let working: CoreView.WorkingView?
+  let says: CoreView.Text
   let hue: Int
   let details: () -> Void
   @State private var more = false
@@ -1286,15 +1293,16 @@ struct WorkingRows: View {
       Button(action: details) {
         HStack(spacing: 8) {
           DrawingFace(mark: page.mark, hue: hue, size: 24)
-          Text(working.says.en).font(Face.text(14, .semibold)).foregroundStyle(Ink.muted).lineLimit(1)
-          TypingDots()
+          Text(says.en).font(Face.text(14, .semibold)).foregroundStyle(Ink.muted).lineLimit(1)
+          if working != nil { TypingDots() }
           Spacer(minLength: 8)
-          if let steps = working.steps { Text(steps.en + " ›").font(Face.text(13, .semibold)).monospacedDigit().foregroundStyle(Ink.muted) }
+          if let steps = working?.steps { Text(steps.en + " ›").font(Face.text(13, .semibold)).monospacedDigit().foregroundStyle(Ink.muted) }
         }
         .frame(minHeight: 44).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .accessibilityLabel(working.says.en).accessibilityHint("Shows what it works on")
+      .disabled(working == nil)
+      .accessibilityLabel(says.en).accessibilityHint(working == nil ? "" : "Shows what it works on")
       .accessibilityIdentifier("working-face")
       ForEach(page.statusLines.prefix(shown), id: \.id) { line in row(line) }
       if let plus = page.statusMore, page.statusLines.count > shown {
@@ -1333,6 +1341,8 @@ struct WorkingRows: View {
       HStack(spacing: 0) {
         Text(t.label).font(Face.text(14, .medium)).foregroundStyle(t.state == "decision" ? Ink.urgCritical : quiet ? Ink.muted : Ink.fg).layoutPriority(1)
         if !t.detail.isEmpty { Text(" · " + t.detail).font(Face.text(13)).foregroundStyle(Ink.faint) }
+        // (how long its helper runs, or "finished": after the detail, never cut)
+        if let ran = t.ran { Text(" · " + ran.en).font(Face.text(13)).monospacedDigit().foregroundStyle(Ink.faint).fixedSize() }
       }
       .lineLimit(1)
     } age: {
@@ -1343,12 +1353,12 @@ struct WorkingRows: View {
       Button { shell.focus(.card(cardId: c.id)) } label: { line }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(t.who): \(t.label), \(t.says.en)")
+        .accessibilityLabel("\(t.who): \(t.label), \(t.says.en)\(t.ran.map { ", \($0.en)" } ?? "")")
         .accessibilityHint(t.link.map { "\($0.en): \(c.title)" } ?? c.title)
     } else {
       line
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(t.who): \(t.label), \(t.says.en)")
+        .accessibilityLabel("\(t.who): \(t.label), \(t.says.en)\(t.ran.map { ", \($0.en)" } ?? "")")
     }
   }
 }
