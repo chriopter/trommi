@@ -85,9 +85,9 @@ enum NativeTab: Hashable { case chat, desk, search }
     if !isDemo { UserDefaults.standard.set(open, forKey: Self.openTeamsKey) } else { demoOpenTeams = open }
     show(screen)
   }
-  /** The team whose chats the iPhone's pushed team page shows (its folder was tapped); none at the folders. */
+  /** The team whose group page the iPhone pushed (its row was tapped); none at the list. */
   @Published var teamPage: String?
-  /** The iPhone: a team's folder was tapped: its chats on a page of their own, that team in view. */
+  /** The iPhone: a team's row was tapped: its group page (its open cards), that team in view. */
   func openTeam(_ id: String) {
     closeNote(); teamPage = id; path = [.group]
     show(.group, team: id)

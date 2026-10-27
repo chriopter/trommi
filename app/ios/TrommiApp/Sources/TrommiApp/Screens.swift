@@ -65,7 +65,12 @@ struct CorePage: View {
   let screen: CoreView.Screen
   var body: some View {
     switch screen {
-    case .group: DeskScreen()
+    case .group:
+      #if os(iOS)
+      if NativeLook.on { NativeGroupPage() } else { DeskScreen() }
+      #else
+      DeskScreen()
+      #endif
     case .card(let id): if let card = shell.view.cards[id] { CardScreen(card: card).id(id) } else { Loading() }
     case .session(let id): if let page = shell.view.sessions[id] { SessionScreen(page: page).id(id) } else { Loading() }
     case .notes: NotesScreen()

@@ -1,8 +1,9 @@
 import XCTest
 
-// The iPhone's native look ("Messages"), the production one: the root and a team's chats as plain lists under a compact
-// bar with the title in the middle, one row of controls at the bottom (the system's search, the bolt over every team,
-// the +), no tab bar and nothing at the top right; a folder pushes, the system's back comes home; a chat keeps its
+// The iPhone's native look ("Grouped"), the production one: the root as two inset groups (the chats on no team, the
+// teams) under the large title, a team's group page (a face per chat, its questions, then what is to read), one row of
+// controls at the bottom (the system's search; the bolt over every team and the + in one group), no tab bar, the
+// person's picture as a small button at the top right; a team pushes, the system's back comes home; a chat keeps its
 // pinned card, composer, Markdown and Copy. Bundled demo (demo/data/fixture.json): team `main` is "Fernly", team
 // `platform` is "Platform". No account, no network.
 final class NativeDesignCaptureTests: XCTestCase {
@@ -50,18 +51,24 @@ final class NativeDesignCaptureTests: XCTestCase {
     XCTAssertFalse(app.buttons["side-search"].exists, "\(page): no search button at the top", file: file, line: line)
     XCTAssertEqual(app.tabBars.count, 0, "\(page): no tab bar", file: file, line: line)
   }
-  private func assertCenteredTitle(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
+  private func assertLargeTitle(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
     let text = app.navigationBars.staticTexts[title]
     XCTAssertTrue(text.waitForExistence(timeout: 10), app.debugDescription, file: file, line: line)
-    XCTAssertLessThan(abs(text.frame.midX - app.windows.firstMatch.frame.midX), 30, "the title sits in the middle", file: file, line: line)
+    XCTAssertLessThan(text.frame.midX, app.windows.firstMatch.frame.midX, "the large title stands at the left", file: file, line: line)
+  }
+  /** On a team's page: a chat's face among the chips, tapped twice (chosen, then its chat); the chat's row id. */
+  private func openFirstChatOfTeam() -> String {
+    XCTAssertTrue(app.descendants(matching: .any)["desk-content"].waitForExistence(timeout: 10), app.debugDescription)
+    let chip = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier != %@", "group-chip-", "group-chip-all")).firstMatch
+    XCTAssertTrue(chip.waitForExistence(timeout: 10), app.debugDescription)
+    let id = "chat-session-" + chip.identifier.dropFirst("group-chip-".count)
+    chip.tap(); chip.tap()
+    return id
   }
   /** Moves the first chat of Platform out of every team (the session menu's "No team") and comes home; its id. */
   private func moveFirstPlatformChatToRoot() -> String {
     app.buttons["chat-folder-platform"].tap()
-    let chat = any("chat-session-").firstMatch
-    XCTAssertTrue(chat.waitForExistence(timeout: 10), app.debugDescription)
-    let id = chat.identifier
-    chat.tap()
+    let id = openFirstChatOfTeam()
     let title = app.buttons["session-title"]
     XCTAssertTrue(title.waitForExistence(timeout: 10), app.debugDescription)
     title.tap()
@@ -76,8 +83,9 @@ final class NativeDesignCaptureTests: XCTestCase {
 
   func testRootHasSearchBoltAndPlusOnOneBottomRow() {
     launch()
-    assertCenteredTitle("Chats")
-    XCTAssertTrue(app.buttons["side-avatar"].exists, "the person's picture and its menu stay at the top left\n" + app.debugDescription)
+    assertLargeTitle("Chats")
+    XCTAssertTrue(app.buttons["side-avatar"].exists, "the person's picture and its menu, a small button in the bar\n" + app.debugDescription)
+    XCTAssertGreaterThan(app.buttons["side-avatar"].frame.midX, app.windows.firstMatch.frame.midX, "the picture stands at the top right")
     assertBottomControls("root")
     capture("A-root-controls")
   }
@@ -85,9 +93,9 @@ final class NativeDesignCaptureTests: XCTestCase {
   func testTeamPageHasTheSameBottomRowAndSystemBack() {
     launch()
     app.buttons["chat-folder-platform"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["team-chats-platform"].waitForExistence(timeout: 10), app.debugDescription)
-    XCTAssertFalse(app.buttons["chat-folder-platform"].exists, "the folder pushed a page of its own")
-    assertCenteredTitle("Platform")
+    XCTAssertTrue(app.descendants(matching: .any)["desk-content"].waitForExistence(timeout: 10), app.debugDescription)
+    XCTAssertFalse(app.buttons["chat-folder-platform"].exists, "the team pushed a page of its own")
+    assertLargeTitle("Platform")
     assertBottomControls("team")
     capture("A-team-controls")
     back()
@@ -123,7 +131,7 @@ final class NativeDesignCaptureTests: XCTestCase {
     XCTAssertTrue(app.buttons["chat-folder-platform"].waitForExistence(timeout: 10), app.debugDescription)
 
     app.buttons["chat-folder-main"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["team-chats-main"].waitForExistence(timeout: 10), app.debugDescription)
+    XCTAssertTrue(app.descendants(matching: .any)["desk-content"].waitForExistence(timeout: 10), app.debugDescription)
     let teamField = app.searchFields.firstMatch
     XCTAssertTrue(teamField.waitForExistence(timeout: 10), app.debugDescription)
     teamField.tap(); teamField.typeText("Payments")
@@ -149,7 +157,7 @@ final class NativeDesignCaptureTests: XCTestCase {
   func testBottomBoltWalksEveryTeamAndComesBackToTheTeam() {
     launch()
     app.buttons["chat-folder-platform"].tap()
-    let page = app.descendants(matching: .any)["team-chats-platform"]
+    let page = app.descendants(matching: .any)["desk-content"]
     XCTAssertTrue(page.waitForExistence(timeout: 10), app.debugDescription)
     let bolt = app.buttons["chats-blitz-all"]
     XCTAssertTrue(bolt.waitForExistence(timeout: 10), app.debugDescription)
@@ -167,10 +175,9 @@ final class NativeDesignCaptureTests: XCTestCase {
   func testChatKeepsPinnedCardComposerAndMessageActions() {
     launch(dark: true)
     app.buttons["chat-folder-main"].tap()
-    let chat = any("chat-session-").firstMatch
-    XCTAssertTrue(chat.waitForExistence(timeout: 10), app.debugDescription)
+    XCTAssertTrue(app.descendants(matching: .any)["desk-content"].waitForExistence(timeout: 10), app.debugDescription)
     capture("A-team-dark")
-    chat.tap()
+    _ = openFirstChatOfTeam()
     XCTAssertTrue(app.buttons["session-title"].waitForExistence(timeout: 10), app.debugDescription)
     XCTAssertLessThan(abs(app.buttons["session-title"].frame.midX - app.windows.firstMatch.frame.midX), 30, "the title sits in the middle")
     XCTAssertTrue(app.descendants(matching: .any)["pinned-cards"].waitForExistence(timeout: 10), "the chat's decision card\n" + app.debugDescription)
@@ -186,7 +193,7 @@ final class NativeDesignCaptureTests: XCTestCase {
     XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 5), "a message keeps Copy\n" + app.debugDescription)
     app.buttons["Copy"].tap()
     back()
-    XCTAssertTrue(chat.waitForExistence(timeout: 10), app.debugDescription)
+    XCTAssertTrue(app.descendants(matching: .any)["desk-content"].waitForExistence(timeout: 10), app.debugDescription)
     assertBottomControls("team after the chat")
     back()
     XCTAssertTrue(app.buttons["chat-folder-main"].waitForExistence(timeout: 10), app.debugDescription)

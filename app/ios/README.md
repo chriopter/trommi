@@ -107,9 +107,10 @@ sends it as `Focus.team` after a start, and the core falls back to the first tea
 helpers are a line of dots under its name (`helpers`). The group page draws `group.questions`, then `group.reads`, under the core's
 headings, its chips (`group.chips`: a tap sends `Focus.group_chat`, the chosen one opens its chat) and its ⋯ menu
 (`group.head.menu`; Rename sends `RenameTeam`); its duck for all and Blitz draw `group.duck` (sent back as `Batch`
-"sweep") and `group.blitz` (every group's open cards, `Focus.walk_all`). The iPhone's look is being redesigned on its
-own; until then the group page uses the components there were; the Chat list draws each row's `last` (teaser and time), grey while not `online`, and says `signal` to VoiceOver only
-(no dots); Settings has a page per `Screen.settings(page:)`; the Artifacts filter is `Screen.artifacts(kind:)` with
+"sweep") and `group.blitz` (every group's open cards, `Focus.walk_all`). The iPhone draws it in its native look
+(`NativeGroup.swift`): the name as the large title, a face per chip, then two inset groups, the questions with their
+answers as two round buttons and what is to read, each row with who sent it and the core's `age`. The Chat list draws
+each row's `last` (teaser and time) in one line, grey while not `online`, with its `signal` as one quiet dot; Settings has a page per `Screen.settings(page:)`; the Artifacts filter is `Screen.artifacts(kind:)` with
 the words of `view.gallery`; the note saves itself with `KeepNote` a moment after typing and when it is left; the
 start screen shows `account.notice` (logged out, removed, account deleted).
 
@@ -164,11 +165,12 @@ views draw it. `TrommiApp/AppStore/shots.sh` uses this on an iPhone/iPad simulat
 and marketing framing live beside it. UI-specific states need review when native layouts change. The former
 Mac-only automatic window/menu capture hook is not implemented by the new shell.
 
-The compact iPhone frame is the system's tab bar (Liquid Glass, smaller while a list scrolls down): Desk · Chats ·
-Search. Desk's bell carries its own dot while questions wait (never a red count). Chats is every team's chats in one
-list (`sidebar.stacks`, as the wide sidebar's), each team's name a quiet section title; a tap on it folds the team to a
-row of its faces (`Focus.open_teams`, kept on the device; every team open until one is folded). Search filters that
-list in the core (`Focus.chats_query`, `sidebar.found`). Cards, conversations and settings push onto the tab's
+The compact iPhone frame is one navigation stack in the system's own parts (`IOSProposal.swift`, `NativeLook.swift`):
+under the large title "Chats" (the only words in Bricolage) two inset groups, the chats on no team (`sidebar.root`)
+and the teams (`sidebar.stacks`). A team's row shows two of its faces stacked, the calm grey count of its open cards
+(`cards`, never chat messages) and what was said last in it (`last`); a tap opens its group page. No chevrons, no
+grey pills. The person's picture is a small button at the top right. At the bottom one row: the system's search, which
+the core filters by (`Focus.chats_query`, `sidebar.found`), then Blitz over every group and the + in one glass group. Cards, conversations and settings push onto the tab's
 navigation stack (the bar hides there), so Back and swipe-back return to the list. The note opens from the group page's top
 row. The place pill and the top of the sidebar (iPad, Mac) switch the group in view: a menu of the core's
 `sidebar.teams` (and "No team", `sidebar.no_team`, while chats stand on none), each with its open cards.

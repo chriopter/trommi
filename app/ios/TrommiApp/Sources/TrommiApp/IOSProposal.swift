@@ -1,9 +1,10 @@
 // IOSProposal.swift: the iPhone's frame. One navigation stack and no tab bar: at its root chats on no team, then every
-// team as a folder (the core's `sidebar.root` and `sidebar.stacks`, in drawing order); a folder pushes that team's
-// chats on a page of their own (`Focus.team`); a chat opens its page as on every device, and the system's back returns
-// home. Both lists end in one row of controls at the bottom: the system's search, the bolt that walks every open card
-// including chats on no team (`sidebar.global_blitz`), the +. The look itself: NativeLook.swift. Drawing only: rows,
-// order, counts and words belong to the core.
+// team (the core's `sidebar.root` and `sidebar.stacks`, in drawing order, as two inset groups); a team pushes its
+// group page (`Focus.team`): its open cards, the questions first, then what is to read; a chat opens its page as on
+// every device, and the system's back returns home. Both end in one row of controls at the bottom: the system's search,
+// then the bolt that walks every open card including chats on no team (`sidebar.global_blitz`) and the + in one glass
+// group. The look itself: NativeLook.swift, NativeGroup.swift. Drawing only: rows, order, counts and words belong to
+// the core.
 import SwiftUI
 import TrommiClient
 
@@ -14,8 +15,8 @@ struct PhoneFrame: View {
     NavigationStack(path: $shell.path) {
       NativeRoot()
         .navigationDestination(for: CoreView.Screen.self) { screen in
-          // (`.group` pushed is a team's page, its chats: the phone draws its group page there)
-          if screen == .group, shell.teamPage != nil { NativeTeamChats() } else { CorePage(screen: screen) }
+          // (`.group` pushed is a team's page: its open cards, the questions first, in the native look)
+          CorePage(screen: screen)
         }
     }
     .tint(Ink.accent)
