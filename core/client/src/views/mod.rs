@@ -1459,10 +1459,14 @@ pub struct SessionView {
     pub blocked: bool,
     /// Talk rows, newest last.
     pub talk: Vec<TalkRow>,
-    /// The lines that show, the one its agent set last first: the chat's foot draws the first in one line beside the
-    /// working dots, and `status_more` for the rest, which a tap opens.
+    /// The lines that show, the one its agent set last first: the first `status_shown` stand open (the calm chat:
+    /// a row each under "… is working"; else the first beside the working dots), and `status_more` for the rest,
+    /// which a tap opens.
     pub status_lines: Vec<StatusLineView>,
-    /// "+N": how many lines stand behind the first; none with one line or none.
+    /// How many of `status_lines` stand open, from the first: the calm chat up to three, else one.
+    #[serde(default)]
+    pub status_shown: u32,
+    /// "+N": how many lines stand behind the open ones; none when all stand open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_more: Option<Text>,
     /// The chat's quiet line of its next wakeup ("Wakes at 09:00 · check the tests"); none without one.
@@ -1777,6 +1781,9 @@ pub struct WorkingView {
     /// The trail of the turn it works on (the details list it; the talk does not).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trail: Option<WorkView>,
+    /// "12 steps": the quiet way to the trail, at the right of "… is working"; none without a step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steps: Option<Text>,
 }
 
 /// A turn's trail: what the agent did between his prompt and its answer, as one block.
@@ -1797,6 +1804,9 @@ pub struct WorkView {
     /// "and 12 more steps, not listed".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rest: Option<Text>,
+    /// How many steps it took so far, listed or not (helpers and words not counted).
+    #[serde(default)]
+    pub steps: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1848,9 +1858,15 @@ pub struct StatusLineView {
     /// When its agent last set it.
     #[serde(default)]
     pub updated_ms: u64,
+    /// How long ago, short: "now", "28m", "3h", "2d".
+    #[serde(default)]
+    pub age: Text,
     /// The card it stands for: the one it names, else the card with its session whose line it is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub card: Option<CardRefView>,
+    /// "Card": the word of the way to `card`; none without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<Text>,
 }
 
 /// One card's page (a question, something to read, a request for approval): who it comes from, its words, its

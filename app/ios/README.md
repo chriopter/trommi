@@ -177,7 +177,9 @@ them), and leaves out the turn's trail and the chip of a card a status line name
 name or time beside them: the title pill has the face) and a solid top row with no ⋯: a tap on the title opens the
 chat's menu. While the agent works (`SessionView.working`:
 his word of the last ten minutes, a trail that still runs, a working line) its face alone draws itself with the pen
-where its answer will come (`DrawingFace`); a tap opens the details: "Working · <step>", its lines, the trail. Faces
+where its answer will come (`WorkingRows`) beside "… is working" and the core's "12 steps ›", with a loose row per
+status line under it (sign, label, grey detail, age, "Card ›"; three open, the core's "+N" from the fourth); a tap on
+its head opens the details: "Working · <step>", its lines, the trail. Faces
 stand bare, without a disc, in the chat and the Chats list.
 
 The views draw the look the app had before the shared core (sign-in, Desk, card, Chat, note, settings, the glass

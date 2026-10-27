@@ -619,37 +619,37 @@ form.log-earlier { display: contents; }
 .session-helpers li span { min-width: 0; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); }
 .status-helper { flex: none; color: var(--muted); font: 600 11px/1.2 var(--font); }
 .msg-helper { padding: 1px 8px; border-radius: 999px; background: var(--sunken); color: var(--muted); font: 600 12px/1.5 var(--font); }
-/* (one small line right above the field) */
-.session-status { display: grid; gap: 6px; justify-items: start; margin: 0 0 6px 6px; }
-.session-status[hidden] { display: none; }
-/* One calm line (session.mjs sessionStatus): the drawing, "… is working" and its dots, the line set last, "+N". */
-.session-status .working { gap: 8px; max-width: 100%; min-width: 0; margin-top: 0; min-height: 24px; font-size: var(--t-xs); }
-.working-says { flex: none; white-space: nowrap; }
-.working .dots { flex: none; }
-.working-sep { flex: none; color: var(--faint); }
-.status-chip { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 24rem; height: 26px; padding: 0 8px 0 6px; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); font: 400 var(--t-xs)/1 var(--font); text-decoration: none; cursor: pointer; }
-.status-chip:hover, .status-chip[aria-expanded="true"] { background: var(--sunken); color: var(--fg); }
-.status-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--fg); }
-.status-chip .status-mark { display: inline-grid; place-items: center; flex: none; width: 14px; height: 14px; }
-.status-chip .status-mark :is(svg, .sketch) { width: 14px; height: 14px; }
-.status-chip[data-state="decision"] .status-mark { color: var(--urg-high); }
-.status-chip:is([data-state="later"], [data-state="done"]) b { color: var(--muted); }
-.status-chip:is([data-state="later"], [data-state="done"]) .status-mark { color: var(--faint); }
-.status-pile { flex: none; height: 26px; padding: 0 6px; border: 0; border-radius: var(--r-sm); background: none; color: var(--faint); font: 600 var(--t-xs)/1 var(--font); font-variant-numeric: tabular-nums; cursor: pointer; }
+/* The status lines under "… is working" (session.mjs statusRow, the design "Lose Zeilen"): a loose row each, no box:
+   sign, label, grey detail, age, "Card ›". */
+.status-rows { display: grid; gap: 2px; max-width: 47.5rem; }
+.status-rows[hidden] { display: none; }
+.status-row { display: grid; grid-template-columns: 16px auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 32px; padding: 5px 10px; border-radius: 10px; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); }
+.status-row:hover { background: var(--sunken); }
+.status-row b { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 22rem; font-weight: 600; color: var(--fg); white-space: nowrap; }
+.status-label { overflow: hidden; text-overflow: ellipsis; }
+.status-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-helper { flex: none; padding: 2px 6px; border-radius: 5px; background: var(--sunken); color: var(--muted); font: 600 11px/1.2 var(--font); }
+.status-row .status-mark { display: inline-grid; place-items: center; width: 16px; height: 16px; }
+.status-row .status-mark :is(svg, .sketch) { width: 16px; height: 16px; }
+.status-row[data-state="decision"] b, .status-row[data-state="decision"] .status-mark { color: var(--urg-critical); }
+.status-row:is([data-state="later"], [data-state="done"], [data-state="stale"]) b { color: var(--muted); }
+.status-row:is([data-state="later"], [data-state="done"]) .status-mark { color: var(--faint); }
+.status-age { color: var(--faint); font: 500 var(--t-xs)/1 var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.status-card { min-width: 3.5em; color: var(--accent); font: 600 var(--t-xs)/1 var(--font); text-decoration: none; white-space: nowrap; }
+.status-card i { margin-left: 4px; font-style: normal; }
+.status-card:hover { text-decoration: underline; text-underline-offset: 3px; }
+.status-pile { justify-self: start; height: 26px; margin-left: 36px; padding: 0 6px; border: 0; border-radius: var(--r-sm); background: none; color: var(--faint); font: 600 var(--t-xs)/1 var(--font); font-variant-numeric: tabular-nums; cursor: pointer; }
 .status-pile:hover, .status-pile[aria-expanded="true"] { background: var(--sunken); color: var(--fg); }
-/* the rest, under the line, one under the other */
-.status-more { display: grid; justify-items: start; gap: 2px; margin-left: 24px; padding: 4px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); max-width: calc(100% - 24px); }
-.status-more[hidden] { display: none; }
-.status-age { color: var(--faint); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
-.status-open { display: grid; gap: 6px; justify-self: stretch; margin: 0 0 0 24px; padding: 10px 12px; border-radius: 12px; background: var(--sunken); }
-.status-open[hidden] { display: none; }
-.status-open-text { margin: 0; color: var(--fg); font: 400 var(--t-sm)/1.45 var(--font); overflow-wrap: anywhere; }
-.status-open-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0; color: var(--muted); font-size: var(--t-xs); }
-.status-open-card { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; color: var(--fg); font: 600 var(--t-sm)/1.3 var(--font); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
-.status-open-card small { color: var(--muted); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22rem; }
 /* a stale line: greyed, a still hollow ring instead of the spinning one */
-.status-chip[data-state="stale"] { color: var(--muted); }
 .status-still { display: block; width: 11px; height: 11px; border: 1.6px solid var(--faint); border-radius: 50%; box-sizing: border-box; }
+/* a phone: the detail gives way first, under the label */
+@media (max-width: 640px) {
+  .status-row { grid-template-columns: 16px minmax(0, 1fr) auto auto; row-gap: 2px; }
+  .status-row b { grid-column: 2; max-width: none; }
+  .status-detail { grid-column: 2; grid-row: 2; }
+  .status-row > .status-age { grid-column: 3; grid-row: 1; }
+  .status-row > .status-card { grid-column: 4; grid-row: 1; }
+}
 /* The composer: the clip is the label of a real file field; the chosen files stand above the words. */
 .composer-clip { cursor: pointer; }
 /* The heading's controls (ui.mjs), on the heading's line: the name in the heading's letters. */
@@ -918,25 +918,28 @@ a.files-where:hover span { text-decoration: underline; }
 }
 @media (min-width: 1280px) { #session[data-panel-open] { padding-right: 360px; } }
 
-/* ---- the agent at work: only its face, drawing itself (SessionView.working) ------------------------------------- */
-.working-face { margin-top: var(--s-6); align-self: flex-start; }
+/* ---- the agent at work (SessionView.working): its face drawing itself, "… is working", "12 steps ›" -------------- */
+.working-face { display: grid; gap: 2px; margin-top: var(--s-6); max-width: 47.5rem; }
+.working-row { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 4px; color: var(--muted); font: 600 var(--t-sm)/1.3 var(--font); }
+.working-says { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.working-row .dots { flex: none; }
+.working-face .agent-avatar { flex: none; width: 26px; height: 26px; background: none; box-shadow: none; }
+.working-steps { flex: none; margin-left: auto; height: 26px; padding: 0 6px; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); font: 600 var(--t-xs)/1 var(--font); font-variant-numeric: tabular-nums; cursor: pointer; }
+.working-steps i { margin-left: 4px; font-style: normal; }
+.working-steps:hover, .working-steps[aria-expanded="true"] { background: var(--sunken); color: var(--fg); }
+.working-face .mark-trace { display: none; }
+.working-face .is-drawing .mark-live path:not(.pair-crown *) { stroke-dasharray: 100 100; stroke-dashoffset: 100; stroke-width: inherit; animation: face-draw 3600ms ease-in-out infinite; }
+@keyframes face-draw { 0% { stroke-dashoffset: 100; opacity: 1; } 60% { stroke-dashoffset: 0; opacity: 1; } 86% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .working-face .is-drawing .mark-live path:not(.pair-crown *) { animation: none; stroke-dashoffset: 0; } }
+.working-details { margin-top: var(--s-2); padding: var(--s-3) var(--s-4); max-height: 50vh; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+.working-details[hidden] { display: none; }
+.working-head { margin: 0; font-weight: 600; }
+.working-details .msg-work { margin-top: var(--s-3); }
 /* The answer as it is written (spec 7.5): an agent's bubble under the face, a caret at its end. */
 .msg-live { margin-top: var(--s-3); }
 .msg-live .rich > :last-child::after { content: ""; display: inline-block; width: .5em; height: 1.05em; margin-left: 2px; vertical-align: -.15em; background: currentColor; opacity: .55; border-radius: 1px; animation: live-caret 1s steps(2, start) infinite; }
 @keyframes live-caret { to { visibility: hidden; } }
 @media (prefers-reduced-motion: reduce) { .msg-live .rich > :last-child::after { animation: none; } }
-.working-face > summary { list-style: none; display: inline-grid; place-items: center; width: 40px; height: 40px; margin-left: -3px; border-radius: 12px; cursor: pointer; }
-.working-face > summary::-webkit-details-marker { display: none; }
-.working-face > summary:hover { background: var(--sunken); }
-.working-face .agent-avatar { width: 32px; height: 32px; background: none; box-shadow: none; }
-.working-face .mark-trace { display: none; }
-.working-face .is-drawing .mark-live path:not(.pair-crown *) { stroke-dasharray: 100 100; stroke-dashoffset: 100; stroke-width: inherit; animation: face-draw 3600ms ease-in-out infinite; }
-@keyframes face-draw { 0% { stroke-dashoffset: 100; opacity: 1; } 60% { stroke-dashoffset: 0; opacity: 1; } 86% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .working-face .is-drawing .mark-live path:not(.pair-crown *) { animation: none; stroke-dashoffset: 0; } }
-.working-details { margin-top: var(--s-2); padding: var(--s-3) var(--s-4); max-width: 34rem; max-height: 50vh; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-md); }
-.working-head { margin: 0; font-weight: 600; }
-.working-details .session-status { margin: var(--s-2) 0 0; }
-.working-details .msg-work { margin-top: var(--s-3); }
 
 /* ---- sealed dictation (vm.dictation; option 2 "mic instead of send", picked 17 October 2026) ----
    While the field is empty (no words, no files) the send button is the microphone. Recording: the words' place

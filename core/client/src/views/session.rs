@@ -22,8 +22,8 @@
 use super::board::{key_of, reads_as_info, Board, Lens, TALK_PAGE, UNHEARD_MS};
 use super::desk::{card_row, request_row, shown_title};
 use super::sidebar::{hand_of, link_of};
-use super::talk::{card_ref, choices_of, event_label_by, events_of, in_order, items_of, Entry, Side, UNSENT};
-use super::words::{local, next_midnight, quiet_words, say};
+use super::talk::{card_ref, choices_of, count, event_label_by, events_of, in_order, items_of, Entry, Side, UNSENT};
+use super::words::{age_short, local, next_midnight, quiet_words, say};
 use super::{CardRefView, DotView, EmptyTalkView, EventChipView, EventView, FixView, HelperListView, HelperRowView, LinkNoteView, LinkWords, MoreView, PanelTabView, SessionView, StatusLineView, QuoteView, TalkRow, Text, WorkingView};
 use crate::model::types::Card;
 use crate::off_mind::went_at;
@@ -182,10 +182,13 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
     Some(v)
 }
 
+/// How many status lines the calm chat shows open, a row each; "+N" from the fourth.
+const CALM_LINES: usize = 3;
+
 /// The calm chat (`Focus.calm`: the iPhone, the web): only the words and what waits; the agent at work is `working`
 /// (its face), its trail and the cards its lines stand for are not in the talk. A run of card events becomes one row of chips (`kind` "events";
 /// an echo of what the asked line already says is left out), the helper list stays off the page (their status lines
-/// name them), and the rest of the working lines is "and N more".
+/// name them), and the working lines stand a row each, three at most, the rest "+N".
 fn calm(v: &mut SessionView, manual_face: bool) {
     // The agent at work: only its face at the chat's end; its turn's trail goes into the details, not the talk.
     let trail = v.talk.iter().rfind(|r| r.kind == "work").and_then(|r| r.work.clone()).filter(|w| w.state == "running");
@@ -197,6 +200,7 @@ fn calm(v: &mut SessionView, manual_face: bool) {
             None => say("work.running", "Working", &[]),
         },
         now: trail.as_ref().map(|w| w.now.clone()).unwrap_or_default(),
+        steps: trail.as_ref().map(|w| w.steps).filter(|n| *n > 0).map(|n| say("working.steps", count(n, "step"), &[("n", &n.to_string())])),
         trail,
     });
     let mut talk: Vec<TalkRow> = Vec::with_capacity(v.talk.len());
@@ -237,8 +241,10 @@ fn calm(v: &mut SessionView, manual_face: bool) {
     v.talk = talk;
     v.helpers = None;
     v.tabs.retain(|t| t.key != "helpers");
-    let behind = v.status_lines.len().saturating_sub(1).to_string();
-    v.status_more = (v.status_lines.len() > 1).then(|| say("session.status_more.calm", format!("and {behind} more"), &[("n", behind.as_str())]));
+    // (a row each for the first three lines, "+N" only from the fourth)
+    v.status_shown = v.status_lines.len().min(CALM_LINES) as u32;
+    let behind = v.status_lines.len().saturating_sub(CALM_LINES).to_string();
+    v.status_more = (v.status_lines.len() > CALM_LINES).then(|| say("session.status_more.calm", format!("+{behind}"), &[("n", behind.as_str())]));
     // (its open questions pinned above the field, the newest first; their rows where they were asked leave the talk)
     let reads = std::mem::take(&mut v.pinned);
     v.pinned = v.waiting.iter().rev().filter(|w| !w.id.trim().is_empty()).cloned().chain(reads).collect();
@@ -513,6 +519,8 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
                 _ => return None,
             };
             b.wake_at(until);
+            let (age, next) = age_short(t.updated_at, now);
+            b.wake_at(Some(next));
             let card = match names_card(t) {
                 Some(id) => m.cards.get(&id),
                 None if state == "working" && loose.is_some_and(|l| l.id == t.id) => with_it(),
@@ -526,6 +534,8 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
                 state: state.into(),
                 says,
                 updated_ms: t.updated_at,
+                age,
+                link: card.is_some().then(|| say("line.card", "Card", &[])),
                 card: card.map(|c| card_ref(b, c)),
             })
         })
@@ -569,6 +579,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         waiting,
         first_open: fresh.iter().find_map(|id| ask_at.get(*id)).filter(|row| talk.iter().any(|r| &r.id == *row && r.kind == "ask")).cloned(),
         talk,
+        status_shown: status_lines.len().min(1) as u32,
         status_lines,
         status_more,
         wake_line: super::wakeups::line(b, &a.row.key),
@@ -966,7 +977,8 @@ mod tests {
     }
 
     /// The calm chat (the iPhone, the web): a run of card events is one row of chips (an echo left out), the agent's words
-    /// after it start a run again, the helper list stays off the page and the rest of the working lines is "and N more".
+    /// after it start a run again, the helper list stays off the page and the working lines stand a row each, three at
+    /// most: "+N" only from the fourth.
     #[test]
     fn the_calm_chat_folds_card_events_into_chips_and_leaves_the_helpers_out() {
         let mut r = Room::default();
@@ -1005,8 +1017,37 @@ mod tests {
         assert_eq!((v.talk[at + 1].text.as_str(), v.talk[at + 1].cont, v.talk[at + 2].cont), ("Both started.", false, true), "the words after the chips start a run");
         assert!(v.helpers.is_none() && !v.tabs.iter().any(|t| t.key == "helpers"));
         assert_eq!(v.status_lines.iter().map(|l| l.helper.as_deref()).collect::<Vec<_>>(), [Some("iOS"), Some("CI"), None], "the lines still name the helpers");
-        let more = v.status_more.expect("two behind the first");
-        assert_eq!((more.key.as_str(), more.en.as_str()), ("session.status_more.calm", "and 2 more"));
+        assert_eq!((v.status_shown, v.status_more.as_ref()), (3, None), "three lines: all open, no \"+N\"");
+        let ages: Vec<&str> = v.status_lines.iter().map(|l| l.age.en.as_str()).collect();
+        assert_eq!(ages, ["1m", "2m", "3m"]);
+        r.sessions[0]["status_lines"].as_array_mut().unwrap().extend([
+            json!({ "id": "l4", "label": "Fourth", "state": "working", "updated_at": NOW - 4 * MIN }),
+            json!({ "id": "l5", "label": "Fifth", "state": "decision", "updated_at": NOW - 5 * MIN }),
+        ]);
+        let m = r.model(NOW);
+        let v = session(&Board::new(&m, &lens, NOW), &dev("a")).unwrap();
+        let more = v.status_more.expect("two behind the three open");
+        assert_eq!((v.status_shown, more.key.as_str(), more.en.as_str()), (3, "session.status_more.calm", "+2"));
+        assert_eq!(view(&r, "a").status_shown, 1, "without calm the first stands alone beside the dots");
+    }
+
+    /// A line's age is short and moves with the clock (the page wakes when it reads otherwise); a line with a card
+    /// has the word of the way to it.
+    #[test]
+    fn a_status_line_says_its_age_short_and_the_way_to_its_card() {
+        for (ago, want, next) in [(10_000, "now", MIN - 10_000), (28 * MIN + 5_000, "28m", MIN - 5_000), (3 * 60 * MIN, "3h", 60 * MIN), (50 * 60 * MIN, "2d", 22 * 60 * MIN)] {
+            let (t, at) = age_short(NOW - ago, NOW);
+            assert_eq!((t.en.as_str(), at - NOW), (want, next), "{ago}");
+        }
+        let mut r = Room::default();
+        r.session("a", None, true)["status_lines"] = json!([
+            { "id": "l1", "label": "With card", "state": "working", "object_id": "task", "updated_at": NOW - 28 * MIN },
+            { "id": "l2", "label": "Without", "state": "decision", "updated_at": NOW - 6 * MIN },
+        ]);
+        r.card("task", "a", "info", "normal")["versions"] = json!([{ "object_version": 1, "envelope_number": 101, "sent_at": NOW - 30 * MIN, "object_state": "open", "content": { "title": "task" } }]);
+        let v = view(&r, "a");
+        let l: Vec<(&str, &str, Option<&str>)> = v.status_lines.iter().map(|l| (l.label.as_str(), l.age.en.as_str(), l.link.as_ref().map(|t| t.en.as_str()))).collect();
+        assert_eq!(l, [("Without", "6m", None), ("With card", "28m", Some("Card"))]);
     }
 
     /// The count of open questions is what the page "Questions" lists as open: cards to read that wait on the Desk
@@ -1321,6 +1362,7 @@ mod tests {
         let w = c.working.clone().expect("the face at the chat's end");
         assert_eq!((w.says.en.as_str(), w.head.en.as_str(), w.now.as_str()), ("a is working", "Working · Bash · run the tests", "Bash · run the tests"));
         assert_eq!(w.trail.as_ref().map(|t| (t.state.as_str(), t.lines.len())), Some(("running", 1)), "the details hold the trail");
+        assert_eq!(en(&w.steps), "1 step", "the quiet way to the steps, in words");
         assert!(c.talk.iter().all(|t| t.kind != "work"), "the calm talk holds no trail");
         // (ended: no longer working, no face)
         r.say("a", None, 22, "a", 2 * MIN, step(2, "done", "ok"));

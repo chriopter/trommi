@@ -924,13 +924,10 @@ struct SessionScreen: View {
               .id(row.id)
           }
           if !AppShell.phone { SessionStatus(page: page, hue: hue) }
-          // (an iPhone, the calm chat: the agent at work is only its face drawing itself where its answer will come;
-          //  a tap opens the details)
+          // (an iPhone, the calm chat: the agent at work where its answer will come, its status lines a loose row each;
+          //  a tap on its head opens the details)
           if AppShell.phone, let working = page.working {
-            Button { workDetails = true } label: { DrawingFace(mark: page.mark, hue: hue).padding(.vertical, 8).padding(.trailing, 24).contentShape(Rectangle()) }
-              .buttonStyle(.plain).padding(.top, 12)
-              .accessibilityLabel(working.says.en).accessibilityHint("Shows what it works on")
-              .accessibilityIdentifier("working-face")
+            WorkingRows(page: page, working: working, hue: hue) { workDetails = true }
           }
           // (the answer its agent is writing now, spec 7.5: its bubble growing, a caret at its end, until the message
           //  itself comes)
@@ -1279,6 +1276,77 @@ struct SessionStatus: View {
     .padding(.horizontal, 12).padding(.vertical, 10)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.sunken))
+  }
+}
+/** The agent at work on an iPhone (`SessionView.working`, the calm chat; the web's workingFace, the design "Lose
+ *  Zeilen"): its face drawing itself, "… is working" with its dots and the core's "12 steps" at the right (a tap opens
+ *  what it works on), and under it a loose row per status line the core opens (`statusShown`): sign, label, grey
+ *  detail, age, "Card ›"; the core's "+N" opens the rest. */
+struct WorkingRows: View {
+  @EnvironmentObject var shell: AppShell
+  let page: CoreView.SessionView
+  let working: CoreView.WorkingView
+  let hue: Int
+  let details: () -> Void
+  @State private var more = false
+  var body: some View {
+    let shown = Int(page.statusShown)
+    VStack(alignment: .leading, spacing: 2) {
+      Button(action: details) {
+        HStack(spacing: 8) {
+          DrawingFace(mark: page.mark, hue: hue, size: 24)
+          Text(working.says.en).font(Face.text(14, .semibold)).foregroundStyle(Ink.muted).lineLimit(1)
+          TypingDots()
+          Spacer(minLength: 8)
+          if let steps = working.steps { Text(steps.en + " ›").font(Face.text(13, .semibold)).monospacedDigit().foregroundStyle(Ink.muted) }
+        }
+        .frame(minHeight: 44).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(working.says.en).accessibilityHint("Shows what it works on")
+      .accessibilityIdentifier("working-face")
+      ForEach(page.statusLines.prefix(shown), id: \.id) { line in row(line) }
+      if let plus = page.statusMore, page.statusLines.count > shown {
+        Button { withAnimation(.easeOut(duration: 0.18)) { more.toggle() } } label: {
+          Text(plus.en).font(Face.text(13, .semibold)).monospacedDigit().foregroundStyle(Ink.muted)
+            .padding(.horizontal, 9).frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).padding(.leading, 20)
+        .accessibilityIdentifier("status-more")
+        if more { ForEach(page.statusLines.dropFirst(shown), id: \.id) { line in row(line) } }
+      }
+    }
+    .padding(.top, 12)
+  }
+  @ViewBuilder private func row(_ t: CoreView.StatusLineView) -> some View {
+    let quiet = t.state == "later" || t.state == "done" || t.state == "stale"
+    HStack(spacing: 8) {
+      Group {
+        if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
+        else if t.state == "stale" { Circle().strokeBorder(Ink.faint, lineWidth: 1.6).frame(width: 11, height: 11) }
+        else if t.state == "decision" { Sketch("knock", color: Ink.urgCritical) }
+        else if t.state == "later" { Sketch("snooze", color: Ink.faint) }
+        else { Sketch("tick", color: Ink.faint) }
+      }.frame(width: 16, height: 16)
+      if let helper = t.helper {
+        Text(helper).font(Face.text(11, .semibold)).foregroundStyle(Ink.muted).lineLimit(1)
+          .padding(.horizontal, 5).padding(.vertical, 1).background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Ink.sunken))
+      }
+      Text(t.label).font(Face.text(14, .semibold)).foregroundStyle(t.state == "decision" ? Ink.urgCritical : quiet ? Ink.muted : Ink.fg).lineLimit(1).layoutPriority(1)
+      if !t.detail.isEmpty { Text(t.detail).font(Face.text(14)).foregroundStyle(Ink.muted).lineLimit(1) }
+      Spacer(minLength: 4)
+      Text(t.age.en).font(Face.text(12, .medium)).monospacedDigit().foregroundStyle(Ink.faint)
+      if let c = t.card, let link = t.link {
+        Button { shell.focus(.card(cardId: c.id)) } label: {
+          Text(link.en + " ›").font(Face.text(13, .semibold)).foregroundStyle(Ink.accent).frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(link.en): \(c.title)")
+      }
+    }
+    .frame(minHeight: 32)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("\(t.label), \(t.says.en)")
   }
 }
 /** The agent at work as only its face, drawing itself with the pen: drawn on in a little over two seconds, held, faded,

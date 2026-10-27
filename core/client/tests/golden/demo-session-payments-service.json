@@ -918,7 +918,8 @@
             "what": "k6 run --vus 400 --duration 10m checkout.js",
             "input": "k6 run --vus 400 --duration 10m load/checkout.js"
           }
-        ]
+        ],
+        "steps": 2
       },
       "scribble": false
     },
@@ -947,7 +948,14 @@
         "key": "line.working",
         "en": "working"
       },
-      "updated_ms": 1791469620000
+      "updated_ms": 1791469620000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "3"
+        },
+        "en": "3m"
+      }
     },
     {
       "id": "load-test-k6",
@@ -959,7 +967,14 @@
         "key": "line.working",
         "en": "working"
       },
-      "updated_ms": 1791469620000
+      "updated_ms": 1791469620000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "3"
+        },
+        "en": "3m"
+      }
     },
     {
       "id": "checkout",
@@ -971,10 +986,21 @@
         "en": "waits on you"
       },
       "updated_ms": 1791468600000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "20"
+        },
+        "en": "20m"
+      },
       "card": {
         "id": "992640bed603743781e3241f6a2de105",
         "number": 45,
         "title": "Checkout: a sheet over the app, or its own page?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
       }
     },
     {
@@ -988,10 +1014,21 @@
         "en": "waits on you"
       },
       "updated_ms": 1791468600000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "20"
+        },
+        "en": "20m"
+      },
       "card": {
         "id": "992640bed603743781e3241f6a2de105",
         "number": 45,
         "title": "Checkout: a sheet over the app, or its own page?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
       }
     },
     {
@@ -1005,10 +1042,21 @@
         "en": "waits on you"
       },
       "updated_ms": 1791466320000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "58"
+        },
+        "en": "58m"
+      },
       "card": {
         "id": "cf5922f1d3baa4cf7dd0d9b573716bfb",
         "number": 33,
         "title": "Which invoice details can people change themselves?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
       }
     },
     {
@@ -1022,13 +1070,25 @@
         "en": "waits on you"
       },
       "updated_ms": 1791465300000,
+      "age": {
+        "key": "age.h",
+        "args": {
+          "n": "1"
+        },
+        "en": "1h"
+      },
       "card": {
         "id": "a2706545530be0dce3b13417c2728966",
         "number": 29,
         "title": "Show prices with VAT included everywhere?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
       }
     }
   ],
+  "status_shown": 1,
   "status_more": {
     "key": "session.status_more",
     "args": {

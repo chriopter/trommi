@@ -1040,10 +1040,13 @@ export interface SessionView {
   blocked: boolean
   /** Talk rows, newest last. */
   talk: TalkRow[]
-  /** The lines that show, the one its agent set last first: the chat's foot draws the first in one line beside the
-   *  working dots, and `status_more` for the rest, which a tap opens. */
+  /** The lines that show, the one its agent set last first: the first `status_shown` stand open (the calm chat:
+   *  a row each under "… is working"; else the first beside the working dots), and `status_more` for the rest,
+   *  which a tap opens. */
   status_lines: StatusLineView[]
-  /** "+N": how many lines stand behind the first; none with one line or none. */
+  /** How many of `status_lines` stand open, from the first: the calm chat up to three, else one. */
+  status_shown: number
+  /** "+N": how many lines stand behind the open ones; none when all stand open. */
   status_more?: Text
   /** The chat's quiet line of its next wakeup ("Wakes at 09:00 · check the tests"); none without one. */
   wake_line?: Text
@@ -1278,6 +1281,8 @@ export interface WorkingView {
   now?: string
   /** The trail of the turn it works on (the details list it; the talk does not). */
   trail?: WorkView
+  /** "12 steps": the quiet way to the trail, at the right of "… is working"; none without a step. */
+  steps?: Text
 }
 
 /** A turn's trail: what the agent did between his prompt and its answer, as one block. */
@@ -1294,6 +1299,8 @@ export interface WorkView {
   lines: WorkLineView[]
   /** "and 12 more steps, not listed". */
   rest?: Text
+  /** How many steps it took so far, listed or not (helpers and words not counted). */
+  steps: number
 }
 
 export interface WorkLineView {
@@ -1331,8 +1338,12 @@ export interface StatusLineView {
   says: Text
   /** When its agent last set it. */
   updated_ms: number
+  /** How long ago, short: "now", "28m", "3h", "2d". */
+  age: Text
   /** The card it stands for: the one it names, else the card with its session whose line it is. */
   card?: CardRefView
+  /** "Card": the word of the way to `card`; none without one. */
+  link?: Text
 }
 
 /** One card's page (a question, something to read, a request for approval): who it comes from, its words, its

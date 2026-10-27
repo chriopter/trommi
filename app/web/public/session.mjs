@@ -12,7 +12,7 @@
 //
 // An open question stands in the talk as its Desk row (ui.mjs deskRow), whose text links to the card's page; what
 // became of a question is one quiet line that links there too.
-import { Controller, setChatMenu, agoShort, agoSpan, avatar, controller, usageRings, deskRow, fileTile, handSvg, html, linkNote, mq, raw, revokeTiles, rich, ringSvg, runSection, sessionHeadEdit, sk, whoOf, assetGlyph } from './ui.mjs'
+import { Controller, setChatMenu, agoSpan, avatar, controller, usageRings, deskRow, fileTile, handSvg, html, linkNote, mq, raw, revokeTiles, rich, ringSvg, runSection, sessionHeadEdit, sk, whoOf, assetGlyph } from './ui.mjs'
 import { viewModule, onCore, actCore, dictateLevel } from './app.mjs'
 // (the Artifacts' drawing, the share control and the file kinds are media.mjs's: loaded before a page is drawn)
 let media = null
@@ -150,58 +150,35 @@ export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
  *  state; no way into a chat of their own (their cards and words are this session's). */
 const helperList = s => (s.helpers ? html`<section class="session-helpers" id="session-helpers-${s.id}" aria-label="${s.helpers.head.en}"><h3>${s.helpers.head.en} <small>${s.helpers.sub.en}</small></h3><ul>${s.helpers.rows.map(h => html`<li${h.working ? raw(' class="is-working"') : ''}><i aria-hidden="true"></i><b>${h.name}</b><span>${h.says.en}</span></li>`)}</ul></section>` : '')
 const lineMark = l => html`<span class="status-mark">${l.state === 'working' ? raw(ringSvg({ drop: true })) : l.state === 'stale' ? html`<i class="status-still" aria-hidden="true"></i>` : l.state === 'decision' ? sk('knock') : l.state === 'later' ? sk('snooze') : sk('tick')}</span>`
-/** One calm line at the chat's foot: the drawing, "… is working" with its dots while it answers, the status line its
- *  agent set last (the core's first) with its age, and the core's "+N" for the rest, which a tap opens under the line
- *  (controller "status-lines"). A tap on a line opens it: its whole text, how it stands, the way to its card. */
-const statusChip = (l, s, base) => html`<button type="button" class="status-chip" data-state="${l.state}" data-key="${s.id}:${l.id}" data-label="${l.label}" data-detail="${l.detail}" data-said="${l.says.en}"${l.card ? html` data-href="${cardPath(l.card, s, base)}" data-card="${l.card.title}"` : ''} title="${l.label}" aria-expanded="false" aria-controls="status-open-${s.id}" data-action="status-lines#toggle">${lineMark(l)}${l.helper ? html`<small class="status-helper">${l.helper}</small>` : ''}<b>${l.label}</b>${l.updated_ms ? html`<span class="status-age" aria-hidden="true" data-ts="${l.updated_ms}">${agoShort(l.updated_ms)}</span>${agoSpan(l.updated_ms, 'offscreen')}` : ''}</button>`
-function sessionStatus(s, base) {
-  const lines = s.status_lines ?? [], [first, ...rest] = lines
-  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || s.answering ? '' : raw(' hidden')}><div class="working${s.answering ? '' : ' is-quiet'}">${s.answering ? html`<span class="working-says">${s.answering.en}</span><span class="dots"><i></i><i></i><i></i></span>` : ''}${first ? html`${s.answering ? html`<span class="working-sep" aria-hidden="true">·</span>` : ''}${statusChip(first, s, base)}` : ''}${s.status_more ? html`<button type="button" class="status-pile" aria-expanded="false" aria-controls="status-more-${s.id}" aria-label="${rest.length} more" data-action="status-lines#more">${s.status_more.en}</button>` : ''}</div>${rest.length ? html`<div class="status-more" id="status-more-${s.id}" role="list" hidden>${rest.map(l => statusChip(l, s, base))}</div>` : ''}${lines.length ? html`<div class="status-open" id="status-open-${s.id}" hidden></div>` : ''}</div>`
-}
-// The line open and the list of the rest stay open when the page is drawn again.
-const statusOpen = new Set(), moreOpen = new Set()
-controller('status-lines', class extends Controller {
-  connect() {
-    const chip = [...this.element.querySelectorAll('.status-chip[data-key]')].find(c => statusOpen.has(c.dataset.key)); if (chip) this.show(chip)
-    if (moreOpen.has(this.element.id)) this.setMore(true)
-  }
-  more() { this.setMore(this.element.querySelector('.status-more')?.hidden ?? false) }
-  setMore(open) {
-    const list = this.element.querySelector('.status-more'), pile = this.element.querySelector('.status-pile')
-    if (!list || !pile) return
-    list.hidden = !open; pile.setAttribute('aria-expanded', String(open))
-    if (open) moreOpen.add(this.element.id); else moreOpen.delete(this.element.id)
-  }
-  toggle(e) {
-    const chip = e.currentTarget, on = chip.getAttribute('aria-expanded') === 'true'
-    for (const c of this.element.querySelectorAll('.status-chip[data-key]')) { c.setAttribute('aria-expanded', 'false'); statusOpen.delete(c.dataset.key) }
-    const out = this.element.querySelector('.status-open')
-    if (on) { if (out) out.hidden = true; return }
-    this.show(chip)
-  }
-  show(chip) {
-    const out = this.element.querySelector('.status-open')
-    if (!out) return
-    chip.setAttribute('aria-expanded', 'true'); statusOpen.add(chip.dataset.key)
-    const d = chip.dataset
-    out.innerHTML = String(html`<p class="status-open-text"><b>${d.label}</b>${d.detail ? html`: ${d.detail}` : ''}</p><p class="status-open-foot"><span>${d.said}</span>${d.href ? html`<a class="status-open-card" data-nav href="${d.href}">Open card<small>${d.card}</small></a>` : ''}</p>`)
-    out.hidden = false
-  }
-})
-/** The agent at work (SessionView.working, the calm chat): only its face drawing itself, where its answer will come; a
- *  click opens the details: "Working · <step>", the lines it works on (each opens to its card) and the turn's trail. */
+/** One status line as a loose row under "… is working" (no box): its sign, the helper and label, the grey detail, the
+ *  core's short age and its link word ("Card ›") to the card it stands for. */
+const statusRow = (l, s, base) => html`<div class="status-row" role="listitem" data-state="${l.state}">${lineMark(l)}<b>${l.helper ? html`<small class="status-helper">${l.helper}</small>` : ''}<span class="status-label">${l.label}</span></b><span class="status-detail">${l.detail}</span><span class="offscreen">${l.says.en}</span><span class="status-age" aria-hidden="true">${l.age.en}</span>${agoSpan(l.updated_ms, 'offscreen')}${l.card && l.link ? html`<a class="status-card" data-nav href="${cardPath(l.card, s, base)}">${l.link.en}<span class="offscreen"> ${l.card.title}</span><i aria-hidden="true">›</i></a>` : html`<span class="status-card"></span>`}</div>`
+/** The agent at work (SessionView.working, the calm chat), where its answer will come: its face drawing itself,
+ *  "… is working" with its dots, the core's "12 steps" at the right (a click shows the turn's trail under it), and a
+ *  row per status line the core opens (`status_shown`); its "+N" lists the rest. No fold-out, no tooltip. */
 const facesOpen = new Set()
 controller('working-face', class extends Controller {
-  toggle() { if (this.element.open) facesOpen.add(this.element.id); else facesOpen.delete(this.element.id) }
+  connect() { for (const part of ['steps', 'more']) if (facesOpen.has(`${this.element.id}:${part}`)) this.set(part, true) }
+  steps() { this.flip('steps') }
+  more() { this.flip('more') }
+  flip(part) { this.set(part, this.element.querySelector(`[data-part="${part}"]`)?.hidden ?? false) }
+  set(part, open) {
+    const box = this.element.querySelector(`[data-part="${part}"]`), btn = this.element.querySelector(`[data-opens="${part}"]`)
+    if (!box || !btn) return
+    box.hidden = !open; btn.setAttribute('aria-expanded', String(open))
+    if (open) facesOpen.add(`${this.element.id}:${part}`); else facesOpen.delete(`${this.element.id}:${part}`)
+  }
 })
 /** The answer its agent is writing now (SessionView.live_answer, spec 7.5): its message growing under the face, with a
  *  caret, until the message itself comes. Hidden from screen readers: the message is read once it is there. */
 const liveAnswer = s => (s.live_answer
   ? html`<article class="msg msg-agent msg-live" id="live-answer-${s.id}" aria-hidden="true"><div class="msg-col"><div class="bubble bubble-agent"><div class="rich">${words(s.live_answer)}</div></div></div></article>`
   : html`<span id="live-answer-${s.id}" hidden></span>`)
-const workingFace = (s, base) => (s.working
-  ? html`<details class="working-face" id="working-face-${s.id}" data-controller="working-face" data-action="toggle->working-face#toggle"${facesOpen.has(`working-face-${s.id}`) ? raw(' open') : ''}><summary aria-label="${s.working.says.en}" title="Details">${avatar({ ...whoOf(s), online: true }, { working: true })}</summary><div class="working-details"><p class="working-head">${s.working.head.en}</p>${sessionStatus(s, base)}${s.working.trail ? workBlock({ id: `trail-${s.id}`, time_ms: 0 }, s.working.trail) : ''}</div></details>`
-  : html`<span id="working-face-${s.id}" hidden></span>`)
+const workingFace = (s, base) => {
+  if (!s.working) return html`<span id="working-face-${s.id}" hidden></span>`
+  const w = s.working, lines = s.status_lines ?? [], open = lines.slice(0, s.status_shown ?? 0), rest = lines.slice(open.length)
+  return html`<section class="working-face" id="working-face-${s.id}" data-controller="working-face" aria-label="${w.says.en}"><div class="working-row">${avatar({ ...whoOf(s), online: true }, { working: true })}<span class="working-says">${w.says.en}</span><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>${w.steps && w.trail ? html`<button type="button" class="working-steps" data-opens="steps" aria-expanded="false" aria-controls="working-trail-${s.id}" data-action="working-face#steps">${w.steps.en}<i aria-hidden="true">›</i></button>` : ''}</div>${open.length ? html`<div class="status-rows" role="list">${open.map(l => statusRow(l, s, base))}</div>` : ''}${rest.length && s.status_more ? html`<button type="button" class="status-pile" data-opens="more" aria-expanded="false" aria-controls="status-more-${s.id}" data-action="working-face#more">${s.status_more.en}</button><div class="status-rows" id="status-more-${s.id}" data-part="more" role="list" hidden>${rest.map(l => statusRow(l, s, base))}</div>` : ''}${w.steps && w.trail ? html`<div class="working-details" id="working-trail-${s.id}" data-part="steps" hidden><p class="working-head">${w.head.en}</p>${workBlock({ id: `trail-${s.id}`, time_ms: 0 }, w.trail)}</div>` : ''}</section>`
+}
 /** The quiet line of its next wakeup (SessionView.wake_line): "Wakes at 09:00 · …"; a click opens the page Wakeups. */
 const wakeLine = (s, base) => (s.wake_line ? html`<a class="wake-line" id="wake-line-${s.id}" data-nav href="${base}/wakeups">${sk('snooze')}<span>${s.wake_line.en}</span></a>` : html`<span id="wake-line-${s.id}" hidden></span>`)
 /** The calm chat's open cards above the field (SessionView.pinned: its questions, the newest first, then its cards to

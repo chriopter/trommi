@@ -307,6 +307,20 @@ pub fn quiet_words(quiet_since: u64, now: u64) -> (Text, u64) {
     (say("session.quiet", format!("quiet for {n} min"), &[("min", &n)]), minutes_tick(quiet_since, now))
 }
 
+/// A status line's age, short: "now", "28m", "3h", "2d". With the moment it reads otherwise.
+pub fn age_short(at: u64, now: u64) -> (Text, u64) {
+    const MIN: u64 = 60_000;
+    let (unit, step) = match now.saturating_sub(at) {
+        a if a < MIN => return (say("age.now", "now", &[]), at + MIN),
+        a if a < 60 * MIN => ("m", MIN),
+        a if a < 24 * 60 * MIN => ("h", 60 * MIN),
+        _ => ("d", 24 * 60 * MIN),
+    };
+    let n = now.saturating_sub(at) / step;
+    let s = n.to_string();
+    (say(&format!("age.{unit}"), format!("{n}{unit}"), &[("n", &s)]), at + (n + 1) * step)
+}
+
 /// What a row's badge says to a screen reader: stopped, working, disconnected, and how many questions are open.
 pub fn badge_words(hand: Option<&HandView>, open: u32, online: bool, working: bool) -> Text {
     let q = questions(open);

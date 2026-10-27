@@ -476,7 +476,7 @@ pub fn span(ms: u64) -> String {
     }
 }
 
-fn count(n: u64, one: &str) -> String {
+pub(super) fn count(n: u64, one: &str) -> String {
     format!("{n} {one}{}", if n == 1 { "" } else { "s" })
 }
 
@@ -672,6 +672,7 @@ pub fn fold_work(envelopes: &[&Value], held: usize) -> WorkView {
         now,
         lines: rows,
         rest: (more > 0).then(|| say("work.rest", format!("and {}, not listed", count(more, "more step")), &[("n", &more.to_string())])),
+        steps,
     }
 }
 

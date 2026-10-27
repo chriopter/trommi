@@ -316,7 +316,8 @@
             "what": "Measure the landing page on a slow phone",
             "took": "20 s"
           }
-        ]
+        ],
+        "steps": 7
       },
       "scribble": false
     },
@@ -1208,7 +1209,8 @@
             "what": "npx playwright test checkout --project=webkit --repeat-each=12",
             "took": "6 min"
           }
-        ]
+        ],
+        "steps": 3
       },
       "scribble": false,
       "helper": "Testing"
@@ -1416,7 +1418,8 @@
             },
             "what": "reads team knowledge (8) · “deploy”"
           }
-        ]
+        ],
+        "steps": 4
       },
       "scribble": false
     },
@@ -1664,10 +1667,21 @@
         "en": "working"
       },
       "updated_ms": 1791469560000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "4"
+        },
+        "en": "4m"
+      },
       "card": {
         "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
         "number": 41,
         "title": "Social card for the launch: photo or illustration?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
       }
     },
     {
@@ -1680,7 +1694,14 @@
         "key": "line.working",
         "en": "working"
       },
-      "updated_ms": 1791469440000
+      "updated_ms": 1791469440000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "6"
+        },
+        "en": "6m"
+      }
     },
     {
       "id": "launch",
@@ -1692,10 +1713,21 @@
         "en": "waits on you"
       },
       "updated_ms": 1791468720000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "18"
+        },
+        "en": "18m"
+      },
       "card": {
         "id": "95a7444523d097bff745b891bc2166cf",
         "number": 46,
         "title": "Launch on Monday at 09:00, or on Tuesday?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
       }
     },
     {
@@ -1709,10 +1741,21 @@
         "en": "waits on you"
       },
       "updated_ms": 1791468240000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "26"
+        },
+        "en": "26m"
+      },
       "card": {
         "id": "a38afef6dbdd056db8042980f2b83336",
         "number": 43,
         "title": "Which hero for the landing page?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
       }
     },
     {
@@ -1725,7 +1768,14 @@
         "key": "line.working",
         "en": "working"
       },
-      "updated_ms": 1791468000000
+      "updated_ms": 1791468000000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "30"
+        },
+        "en": "30m"
+      }
     },
     {
       "id": "copy-button",
@@ -1738,10 +1788,21 @@
         "en": "waits on you"
       },
       "updated_ms": 1791467820000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "33"
+        },
+        "en": "33m"
+      },
       "card": {
         "id": "daa202f98097523fa1f1fe18068f8322",
         "number": 40,
         "title": "What should the sign-up button say?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
       }
     },
     {
@@ -1754,10 +1815,21 @@
         "en": "waits on you"
       },
       "updated_ms": 1791467400000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "40"
+        },
+        "en": "40m"
+      },
       "card": {
         "id": "637adcc6eae4b4ac30b47509a3071884",
         "number": 38,
         "title": "Send a weekly summary e-mail on Sundays?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
       }
     },
     {
@@ -1771,13 +1843,25 @@
         "en": "waits on you"
       },
       "updated_ms": 1791466680000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "52"
+        },
+        "en": "52m"
+      },
       "card": {
         "id": "7e86fa6e752b2ff5cf636658aa14f1f0",
         "number": 34,
         "title": "Ask for notifications on step 3, or after the first watering?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
       }
     }
   ],
+  "status_shown": 1,
   "status_more": {
     "key": "session.status_more",
     "args": {

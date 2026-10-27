@@ -3619,10 +3619,13 @@ public enum CoreView {
     public var blocked: Bool
     /// Talk rows, newest last.
     public var talk: [TalkRow]
-    /// The lines that show, the one its agent set last first: the chat's foot draws the first in one line beside the
-    /// working dots, and `status_more` for the rest, which a tap opens.
+    /// The lines that show, the one its agent set last first: the first `status_shown` stand open (the calm chat:
+    /// a row each under "… is working"; else the first beside the working dots), and `status_more` for the rest,
+    /// which a tap opens.
     public var statusLines: [StatusLineView]
-    /// "+N": how many lines stand behind the first; none with one line or none.
+    /// How many of `status_lines` stand open, from the first: the calm chat up to three, else one.
+    public var statusShown: UInt32
+    /// "+N": how many lines stand behind the open ones; none when all stand open.
     public var statusMore: Text?
     /// The chat's quiet line of its next wakeup ("Wakes at 09:00 · check the tests"); none without one.
     public var wakeLine: Text?
@@ -3701,13 +3704,14 @@ public enum CoreView {
     /// "helpers" and "files" where it has some.
     public var tabs: [PanelTabView]
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusMore: Text? = nil, wakeLine: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", moveTo: [TeamPlaceView] = [], main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), liveAnswer: String = "", answering: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusShown: UInt32 = 0, statusMore: Text? = nil, wakeLine: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", moveTo: [TeamPlaceView] = [], main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), liveAnswer: String = "", answering: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
       self.id = id
       self.name = name
       self.link = link
       self.blocked = blocked
       self.talk = talk
       self.statusLines = statusLines
+      self.statusShown = statusShown
       self.statusMore = statusMore
       self.wakeLine = wakeLine
       self.working = working
@@ -3752,6 +3756,7 @@ public enum CoreView {
       case blocked = "blocked"
       case talk = "talk"
       case statusLines = "status_lines"
+      case statusShown = "status_shown"
       case statusMore = "status_more"
       case wakeLine = "wake_line"
       case working = "working"
@@ -3797,6 +3802,7 @@ public enum CoreView {
       self.blocked = try c.decode(Bool.self, forKey: .blocked)
       self.talk = try c.decode([TalkRow].self, forKey: .talk)
       self.statusLines = try c.decode([StatusLineView].self, forKey: .statusLines)
+      self.statusShown = try c.decodeIfPresent(UInt32.self, forKey: .statusShown) ?? 0
       self.statusMore = try c.decodeIfPresent(Text.self, forKey: .statusMore)
       self.wakeLine = try c.decodeIfPresent(Text.self, forKey: .wakeLine)
       self.working = try c.decodeIfPresent(WorkingView.self, forKey: .working)
@@ -3842,6 +3848,7 @@ public enum CoreView {
       try c.encode(blocked, forKey: .blocked)
       try c.encode(talk, forKey: .talk)
       try c.encode(statusLines, forKey: .statusLines)
+      try c.encode(statusShown, forKey: .statusShown)
       try c.encodeIfPresent(statusMore, forKey: .statusMore)
       try c.encodeIfPresent(wakeLine, forKey: .wakeLine)
       try c.encodeIfPresent(working, forKey: .working)
@@ -4405,12 +4412,15 @@ public enum CoreView {
     public var now: String
     /// The trail of the turn it works on (the details list it; the talk does not).
     public var trail: WorkView?
+    /// "12 steps": the quiet way to the trail, at the right of "… is working"; none without a step.
+    public var steps: Text?
 
-    public init(says: Text = Text(), head: Text = Text(), now: String = "", trail: WorkView? = nil) {
+    public init(says: Text = Text(), head: Text = Text(), now: String = "", trail: WorkView? = nil, steps: Text? = nil) {
       self.says = says
       self.head = head
       self.now = now
       self.trail = trail
+      self.steps = steps
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4418,6 +4428,7 @@ public enum CoreView {
       case head = "head"
       case now = "now"
       case trail = "trail"
+      case steps = "steps"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4426,6 +4437,7 @@ public enum CoreView {
       self.head = try c.decode(Text.self, forKey: .head)
       self.now = try c.decodeIfPresent(String.self, forKey: .now) ?? ""
       self.trail = try c.decodeIfPresent(WorkView.self, forKey: .trail)
+      self.steps = try c.decodeIfPresent(Text.self, forKey: .steps)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4434,6 +4446,7 @@ public enum CoreView {
       try c.encode(head, forKey: .head)
       if !now.isEmpty { try c.encode(now, forKey: .now) }
       try c.encodeIfPresent(trail, forKey: .trail)
+      try c.encodeIfPresent(steps, forKey: .steps)
     }
   }
 
@@ -4451,8 +4464,10 @@ public enum CoreView {
     public var lines: [WorkLineView]
     /// "and 12 more steps, not listed".
     public var rest: Text?
+    /// How many steps it took so far, listed or not (helpers and words not counted).
+    public var steps: UInt64
 
-    public init(turn: String = "", state: String = "", head: Text = Text(), sum: Text? = nil, now: String = "", lines: [WorkLineView] = [], rest: Text? = nil) {
+    public init(turn: String = "", state: String = "", head: Text = Text(), sum: Text? = nil, now: String = "", lines: [WorkLineView] = [], rest: Text? = nil, steps: UInt64 = 0) {
       self.turn = turn
       self.state = state
       self.head = head
@@ -4460,6 +4475,7 @@ public enum CoreView {
       self.now = now
       self.lines = lines
       self.rest = rest
+      self.steps = steps
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4470,6 +4486,7 @@ public enum CoreView {
       case now = "now"
       case lines = "lines"
       case rest = "rest"
+      case steps = "steps"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4481,6 +4498,7 @@ public enum CoreView {
       self.now = try c.decodeIfPresent(String.self, forKey: .now) ?? ""
       self.lines = try c.decode([WorkLineView].self, forKey: .lines)
       self.rest = try c.decodeIfPresent(Text.self, forKey: .rest)
+      self.steps = try c.decodeIfPresent(UInt64.self, forKey: .steps) ?? 0
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4492,6 +4510,7 @@ public enum CoreView {
       if !now.isEmpty { try c.encode(now, forKey: .now) }
       try c.encode(lines, forKey: .lines)
       try c.encodeIfPresent(rest, forKey: .rest)
+      try c.encode(steps, forKey: .steps)
     }
   }
 
@@ -4588,10 +4607,14 @@ public enum CoreView {
     public var says: Text
     /// When its agent last set it.
     public var updatedMs: UInt64
+    /// How long ago, short: "now", "28m", "3h", "2d".
+    public var age: Text
     /// The card it stands for: the one it names, else the card with its session whose line it is.
     public var card: CardRefView?
+    /// "Card": the word of the way to `card`; none without one.
+    public var link: Text?
 
-    public init(id: String = "", label: String = "", helper: String? = nil, detail: String = "", state: String = "", says: Text = Text(), updatedMs: UInt64 = 0, card: CardRefView? = nil) {
+    public init(id: String = "", label: String = "", helper: String? = nil, detail: String = "", state: String = "", says: Text = Text(), updatedMs: UInt64 = 0, age: Text = Text(), card: CardRefView? = nil, link: Text? = nil) {
       self.id = id
       self.label = label
       self.helper = helper
@@ -4599,7 +4622,9 @@ public enum CoreView {
       self.state = state
       self.says = says
       self.updatedMs = updatedMs
+      self.age = age
       self.card = card
+      self.link = link
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4610,7 +4635,9 @@ public enum CoreView {
       case state = "state"
       case says = "says"
       case updatedMs = "updated_ms"
+      case age = "age"
       case card = "card"
+      case link = "link"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4622,7 +4649,9 @@ public enum CoreView {
       self.state = try c.decode(String.self, forKey: .state)
       self.says = try c.decodeIfPresent(Text.self, forKey: .says) ?? Text()
       self.updatedMs = try c.decodeIfPresent(UInt64.self, forKey: .updatedMs) ?? 0
+      self.age = try c.decodeIfPresent(Text.self, forKey: .age) ?? Text()
       self.card = try c.decodeIfPresent(CardRefView.self, forKey: .card)
+      self.link = try c.decodeIfPresent(Text.self, forKey: .link)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4634,7 +4663,9 @@ public enum CoreView {
       try c.encode(state, forKey: .state)
       try c.encode(says, forKey: .says)
       try c.encode(updatedMs, forKey: .updatedMs)
+      try c.encode(age, forKey: .age)
       try c.encodeIfPresent(card, forKey: .card)
+      try c.encodeIfPresent(link, forKey: .link)
     }
   }
 
