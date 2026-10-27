@@ -387,27 +387,23 @@ impl<'a> Board<'a> {
         board
     }
 
-    /// Whether what belongs to this session shows on the team in view. A session the list does not show counts as
-    /// standing on the first team.
+    /// Whether what belongs to this session shows on the team in view. What belongs to a session the list does not
+    /// show stands on no team: no row shows it, so it waits on none (it stood on the first team, the owner,
+    /// 27 October 2026).
     pub fn in_view(&self, agent: Option<usize>) -> bool {
-        match agent {
-            Some(i) => self.agents[i].on_team,
-            None => self.teams.is_empty() || self.team.as_deref() == self.teams.first().map(|d| d.id.as_str()),
-        }
+        agent.is_some_and(|i| self.agents[i].on_team)
     }
 
     /// Whether what belongs to this session stands on the Desk in view: home holds every team's, else the team in
-    /// view's.
+    /// view's. What belongs to a session the list does not show stands on none, home's either.
     pub fn on_desk(&self, agent: Option<usize>) -> bool {
-        self.lens.desk_all || self.in_view(agent)
+        agent.is_some() && (self.lens.desk_all || self.in_view(agent))
     }
 
-    /// The team a card of this session counts on, in a room with teams; none for a session on no team.
+    /// The team a card of this session counts on, in a room with teams; none for a session on no team and for one
+    /// the list does not show.
     pub fn team_of(&self, agent: Option<usize>) -> Option<&str> {
-        match agent {
-            Some(i) => self.agents[i].team.as_deref(),
-            None => self.teams.first().map(|d| d.id.as_str()),
-        }
+        agent.and_then(|i| self.agents[i].team.as_deref())
     }
 
     /// A card's or a request's number ("Nr. 12"): the order they were first filed in, from 1, never reused, the

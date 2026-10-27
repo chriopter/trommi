@@ -240,10 +240,12 @@ pub fn sidebar(b: &Board) -> SidebarView {
         b.teams.iter().map(|d| (d.id.clone(), d.name.clone())).collect()
     };
     let first = teams[0].0.clone();
-    // (what waits on a chat on no team counts on no team: on home, and on the bolt over every team)
+    // (what waits on a chat on no team counts on no team: on home, and on the bolt over every team; what belongs to a
+    //  session the list does not show counts nowhere)
     let team_of = |agent: Option<usize>| match agent {
         Some(i) if b.agents[i].root => None,
-        _ => Some(b.team_of(agent).unwrap_or(first.as_str())),
+        Some(_) => Some(b.team_of(agent).unwrap_or(first.as_str())),
+        None => None,
     };
     let waits_on = |team: &str| {
         let mine = b.all_fresh.iter().filter(|f| team_of(f.agent) == Some(team));
@@ -271,13 +273,15 @@ pub fn sidebar(b: &Board) -> SidebarView {
     // On home the Desk in view is every team's, and so are its numbers.
     let on_desk = || b.all_fresh.iter().filter(|f| b.on_desk(f.agent));
     let badge = on_desk().count() as u32;
+    // (home: what every row shows, so not what belongs to a session the list does not show)
+    let shown_fresh = || b.all_fresh.iter().filter(|f| f.agent.is_some());
     let home = TeamTab {
         id: String::new(),
         name: say("team.all", "All teams", &[]),
-        waiting: b.all_fresh.len() as u32,
+        waiting: shown_fresh().count() as u32,
         cards: b.all_cards.len() as u32,
         selected: b.lens.desk_all,
-        knocks: b.all_fresh.iter().any(|f| f.knocks),
+        knocks: shown_fresh().any(|f| f.knocks),
     };
     let place = if b.lens.desk_all {
         say("team.all", "All teams", &[])
@@ -1164,5 +1168,32 @@ mod tests {
             counts(&r, "lab"),
             (vec![0, 1], vec![0, 1], vec![0, 1], 1, 1, Some("Blitz: 1 open card".into()), Some("w2".into()))
         );
+    }
+    /// The red counts as the grey: a question or a request of a session the list does not show waited on the first
+    /// team (its menu row, the tab's badge, home and the Desk's head) though no row shows it; it waits nowhere now.
+    #[test]
+    fn a_question_of_an_unknown_session_waits_nowhere() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        r.session("valiido", None, true);
+        r.session("bravo", None, true);
+        r.on_team("bravo", "lab");
+        r.card("q-ghost", "nobody", "decision", "high");
+        r.request("p-ghost", "nobody", "ok");
+        r.card("q-lab", "bravo", "decision", "normal");
+        let counts = |r: &Room, lens: Lens| {
+            let m = r.model(NOW);
+            let b = Board::new(&m, &lens, NOW);
+            let v = sidebar(&b);
+            let d = super::super::desk::desk(&b);
+            let tabs: Vec<(u32, bool)> = v.teams.iter().map(|t| (t.waiting, t.knocks)).collect();
+            (tabs, (v.home.waiting, v.home.knocks), (v.badge, v.waiting, v.knocking), d.waiting, d.empty.map(|t| t.en))
+        };
+        let main = Lens { team: Some("main".into()), ..Default::default() };
+        let lab = Lens { team: Some("lab".into()), ..Default::default() };
+        let home = Lens { desk_all: true, ..Default::default() };
+        let tabs = vec![(0, false), (1, false)];
+        assert_eq!(counts(&r, main), (tabs.clone(), (1, false), (0, 0, 0), 0, Some("Questions land here.".into())));
+        assert_eq!(counts(&r, lab), (tabs.clone(), (1, false), (1, 1, 0), 1, None));
+        assert_eq!(counts(&r, home), (tabs, (1, false), (1, 1, 0), 1, None));
     }
 }
