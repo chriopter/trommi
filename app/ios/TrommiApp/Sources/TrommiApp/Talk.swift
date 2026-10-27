@@ -928,17 +928,13 @@ struct SessionScreen: View {
           //  itself comes)
           if !page.liveAnswer.isEmpty { AnswerPreviewBubble(text: page.liveAnswer).padding(.top, 10) }
           }
-          // (its next wakeup, quiet at the chat's end: "Wakes at 09:00 · …"; a tap opens the page Wakeups)
+          // (its next wakeup, quiet at the chat's end, in the status rows' columns: the core's short time, its note
+          //  beside it; a tap opens the page Wakeups)
           if let wake = page.wakeLine {
-            Button { shell.focus(.wakeups) } label: {
-              HStack(spacing: 6) {
-                Image(systemName: "alarm").font(.system(size: 12, weight: .semibold))
-                Text(wake.en).font(Face.text(13, .medium)).lineLimit(1)
-              }
-              .foregroundStyle(Ink.muted).padding(.horizontal, 10).padding(.vertical, 5).background(Capsule().fill(Ink.sunken.opacity(0.7)))
-            }
-            .buttonStyle(.plain).padding(.top, 10)
-            .accessibilityIdentifier("wake-line")
+            Button { shell.focus(.wakeups) } label: { WakeRow(wake: wake) }
+              .buttonStyle(.plain).padding(.top, page.working != nil && AppShell.phone ? 4 : 10)
+              .accessibilityLabel(wake.says.en)
+              .accessibilityIdentifier("wake-line")
           }
           Color.clear.frame(height: 1).id("bottom")
         }
@@ -1275,8 +1271,8 @@ struct SessionStatus: View {
 }
 /** The agent at work on an iPhone (`SessionView.working`, the calm chat; the web's workingFace, the design "Lose
  *  Zeilen"): its face drawing itself, "… is working" with its dots and the core's "12 steps" at the right (a tap opens
- *  what it works on), and under it a loose row per status line the core opens (`statusShown`): sign, label, grey
- *  detail, age, "Card ›"; the core's "+N" opens the rest. */
+ *  what it works on), and under it one row per status line the core opens (`statusShown`): sign, who, label, grey
+ *  detail, age; the row opens its card. The core's "4 more" opens the rest, its "Show fewer" folds them again. */
 struct WorkingRows: View {
   @EnvironmentObject var shell: AppShell
   let page: CoreView.SessionView
@@ -1302,46 +1298,91 @@ struct WorkingRows: View {
       .accessibilityIdentifier("working-face")
       ForEach(page.statusLines.prefix(shown), id: \.id) { line in row(line) }
       if let plus = page.statusMore, page.statusLines.count > shown {
-        Button { withAnimation(.easeOut(duration: 0.18)) { more.toggle() } } label: {
-          Text(plus.en).font(Face.text(13, .semibold)).monospacedDigit().foregroundStyle(Ink.muted)
-            .padding(.horizontal, 9).frame(minHeight: 44).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).padding(.leading, 20)
-        .accessibilityIdentifier("status-more")
         if more { ForEach(page.statusLines.dropFirst(shown), id: \.id) { line in row(line) } }
+        // (the core's "4 more", "Show fewer" once open; in the label's column, its chevron in the sign's)
+        Button { withAnimation(.easeOut(duration: 0.18)) { more.toggle() } } label: {
+          StatusColumns {
+            Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).rotationEffect(.degrees(more ? 180 : 0))
+          } who: { EmptyView() } line: {
+            Text(more ? (page.statusLess ?? plus).en : plus.en).font(Face.text(13, .semibold)).monospacedDigit()
+          } age: { EmptyView() }
+          .foregroundStyle(Ink.muted).frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("status-more")
       }
     }
     .padding(.top, 12)
   }
+  /** One line as one row (the design "Helfer links"): sign, who works on it in its own column, the label (it has the
+   *  first claim on the room) and the grey detail in what is left, the core's age at the right. A line with a card
+   *  is the way to it as a whole. */
   @ViewBuilder private func row(_ t: CoreView.StatusLineView) -> some View {
     let quiet = t.state == "later" || t.state == "done" || t.state == "stale"
-    HStack(spacing: 8) {
+    let line = StatusColumns {
       Group {
         if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
         else if t.state == "stale" { Circle().strokeBorder(Ink.faint, lineWidth: 1.6).frame(width: 11, height: 11) }
         else if t.state == "decision" { Sketch("knock", color: Ink.urgCritical) }
         else if t.state == "later" { Sketch("snooze", color: Ink.faint) }
         else { Sketch("tick", color: Ink.faint) }
-      }.frame(width: 16, height: 16)
-      if let helper = t.helper {
-        Text(helper).font(Face.text(11, .semibold)).foregroundStyle(Ink.muted).lineLimit(1)
-          .padding(.horizontal, 5).padding(.vertical, 1).background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Ink.sunken))
       }
-      Text(t.label).font(Face.text(14, .semibold)).foregroundStyle(t.state == "decision" ? Ink.urgCritical : quiet ? Ink.muted : Ink.fg).lineLimit(1).layoutPriority(1)
-      if !t.detail.isEmpty { Text(t.detail).font(Face.text(14)).foregroundStyle(Ink.muted).lineLimit(1) }
-      Spacer(minLength: 4)
+    } who: {
+      Text(t.who).font(Face.text(13, .medium)).foregroundStyle(Ink.muted)
+    } line: {
+      HStack(spacing: 0) {
+        Text(t.label).font(Face.text(14, .medium)).foregroundStyle(t.state == "decision" ? Ink.urgCritical : quiet ? Ink.muted : Ink.fg).layoutPriority(1)
+        if !t.detail.isEmpty { Text(" · " + t.detail).font(Face.text(13)).foregroundStyle(Ink.faint) }
+      }
+      .lineLimit(1)
+    } age: {
       Text(t.age.en).font(Face.text(12, .medium)).monospacedDigit().foregroundStyle(Ink.faint)
-      if let c = t.card, let link = t.link {
-        Button { shell.focus(.card(cardId: c.id)) } label: {
-          Text(link.en + " ›").font(Face.text(13, .semibold)).foregroundStyle(Ink.accent).frame(minHeight: 44).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(link.en): \(c.title)")
-      }
     }
-    .frame(minHeight: 32)
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("\(t.label), \(t.says.en)")
+    .frame(minHeight: 36).contentShape(Rectangle())
+    if let c = t.card {
+      Button { shell.focus(.card(cardId: c.id)) } label: { line }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(t.who): \(t.label), \(t.says.en)")
+        .accessibilityHint(t.link.map { "\($0.en): \(c.title)" } ?? c.title)
+    } else {
+      line
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(t.who): \(t.label), \(t.says.en)")
+    }
+  }
+}
+/** The status rows' columns (the web's `.status-row` grid): the sign, who works on it, the line, the age at the right;
+ *  the columns stand at the same places in every row, "4 more" and the wakeup's line too. */
+struct StatusColumns<Mark: View, Who: View, Line: View, Age: View>: View {
+  @ViewBuilder let mark: () -> Mark
+  @ViewBuilder let who: () -> Who
+  @ViewBuilder let line: () -> Line
+  @ViewBuilder let age: () -> Age
+  var body: some View {
+    HStack(spacing: 10) {
+      mark().frame(width: 16, height: 16)
+      who().lineLimit(1).truncationMode(.tail).frame(width: AppShell.phone ? 72 : 96, alignment: .leading)
+      line().frame(maxWidth: .infinity, alignment: .leading)
+      age().frame(width: 34, alignment: .trailing)
+    }
+    .padding(.horizontal, 4)
+  }
+}
+/** The chat's quiet line of its next wakeup in the status rows' columns: its sign, the core's short time ("21:12"),
+ *  its note in the rest and "and 2 more" after it. */
+struct WakeRow: View {
+  let wake: CoreView.WakeLineView
+  var body: some View {
+    StatusColumns {
+      Image(systemName: "alarm").font(.system(size: 12, weight: .semibold)).foregroundStyle(Ink.faint)
+    } who: {
+      Text(wake.at.en).font(Face.text(13, .medium)).monospacedDigit().foregroundStyle(Ink.muted)
+    } line: {
+      (Text(wake.note).foregroundColor(Ink.faint) + Text(wake.more.map { " " + $0.en } ?? "").foregroundColor(Ink.muted))
+        .font(Face.text(13)).lineLimit(1)
+    } age: { EmptyView() }
+    .frame(minHeight: 36).contentShape(Rectangle())
   }
 }
 /** The agent at work as only its face, drawing itself with the pen: drawn on in a little over two seconds, held, faded,
