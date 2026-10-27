@@ -158,24 +158,20 @@ const backWay = (card, way) => (way ? html`<button class="tc-undo" type="submit"
 const saidFoot = (card, a) => (a.did ? html`<p class="tc-ans-foot"><span>${a.did.en}</span>${a.at_ms ? html`<i aria-hidden="true">·</i>${agoSpan(a.at_ms, 'ago')}` : ''}${backWay(card, a.back)}</p>` : '')
 /** The answered card (AnswerView.mode "said", the owner's choice of 18 October 2026): the panel stays exactly as it
  *  stood open, nothing moves. The options, the "or" and the duck keep their places: the one said (OptionView.chosen, or
- *  the duck: AnswerView.ducked) with a small tick at its right edge, the others faded. Right after the answer (`after`)
- *  "Next ›" stands directly under them when there is a next question (CardView.after.next, its title as the tooltip),
- *  and nothing else: Undo is in the toast (the owner's choice of 23 October 2026). Opened later, one quiet line under
- *  them instead, "You chose · just now · Take back" (saidFoot). What the card says beyond (a note, a final answer, the
- *  agent's summary, a receipt that is not the plain "has your answer") follows quietly. */
+ *  the duck: AnswerView.ducked) with a small tick at its right edge, the others faded, and one quiet line under them,
+ *  "You chose · just now · Take back" (saidFoot). Answered on this page, the page has gone on to the next card already
+ *  (the owner's choice of 27 October 2026: no "Next ›"; Undo is in the core's toast). What the card says beyond (a note,
+ *  a final answer, the agent's summary, a receipt that is not the plain "has your answer") follows quietly. */
 const TICK_END = raw('<svg class="tc-chosen-tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>')
-function saidCard(card, a, form, after) {
+function saidCard(card, a, form) {
   const words = x => x?.en ?? ''
   const opts = card.options ?? [], ducked = Boolean(a.ducked), decision = card.kind === 'decision'
   const row = (label, detail, chosen, cls = '') => html`<div class="tc-opt is-said${chosen ? ' is-chosen' : ' is-faded'}${cls}"${chosen ? raw(' aria-current="true"') : ''}><span class="tc-opt-words"><span class="tc-opt-label">${label}</span>${detail ? html`<span class="tc-opt-detail">${detail}</span>` : ''}</span>${chosen ? TICK_END : ''}</div>`
-  const next = after && card.after?.next
-    ? html`<a class="tc-tile tc-next-tile" data-nav href="${focusAt(cardPath(card.after.next, after.self), after.focus)}" title="${card.after.next.title ?? ''}">${words(card.after.go) || 'Next'} ›</a>`
-    : ''
   // (AnswerView.not_sent: the answer is still on this device, the outbox halts on the hub's refusal)
   const quiet = html`${a.not_sent ? html`<p class="tc-said-more tc-not-sent" role="status">${a.not_sent.en}</p>` : ''}${a.detail ? html`<p class="tc-said-more">${words(a.detail)}</p>` : ''}${(a.option_notes ?? []).map(n => html`<p class="tc-said-more"><b>${n.label}</b> ${n.note?.en ?? ''}</p>`)}${a.settled ? html`<p class="tc-said-more">${sk('tick')}${a.settled.en}</p>` : ''}${a.summary ? html`<p class="tc-said-more">${a.summary}</p>` : ''}`
-  const foot = html`${after ? '' : saidFoot(card, a)}${quiet}`
-  const pair = html`<div class="tc-or-pair${after ? ' is-near' : ''}">${next}${a.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}</div>`
-  const tail = after ? html`${pair}${foot}` : html`${foot}${pair}`
+  const foot = html`${saidFoot(card, a)}${quiet}`
+  const pair = html`<div class="tc-or-pair">${a.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}</div>`
+  const tail = html`${foot}${pair}`
   if (card.kind === 'info' || !opts.length) {
     // (an info: its one answer stays, ticked; a card without options, as one withdrawn, says what became of it)
     return html`<div class="tc-or tc-info-ways is-said">${row(words(a.label), '', true, ' is-ack-said')}${tail}</div>`
@@ -184,14 +180,14 @@ function saidCard(card, a, form, after) {
 ${decision ? html`<div class="tc-or is-said"><i class="tc-said-or">or</i><div class="tc-opt tc-whatever is-said${ducked ? ' is-chosen' : ' is-faded'}"${ducked ? raw(' aria-current="true"') : ''}>${sk('duck')}<span class="tc-opt-words"><span class="tc-opt-label">${WORDS.trust}</span></span>${ducked ? TICK_END : ''}</div>${tail}</div>` : html`<div class="tc-or is-said">${tail}</div>`}`
 }
 /** The right column's answers (#card-answer-<id>), by AnswerView.mode. old: a version before (read only). */
-function cardAnswer(card, { old = null, pic = 1, after = null, self = '' } = {}) {
+function cardAnswer(card, { old = null, pic = 1, self = '' } = {}) {
   const form = `card-form-${card.id}`, a = card.answer
   // (answered: the plain receipt "… has your answer." is not shown again under the calm answer; a late one still is)
   const box = (inner, { said = false } = {}) => html`<div class="tc-answer${said ? ' is-said' : ''}" id="card-answer-${card.id}"><p class="tc-error" role="alert" hidden></p>${inner}${old || (said && card.note?.tone === 'heard') ? '' : linkNote(card.note)}</div>`
   if (old) return box(html`<div class="tc-opts">${(old.options ?? []).map(o => still(o.label, o.detail ?? ''))}</div><p class="tc-quiet">Version ${old.n} cannot be answered. <a data-nav href="${cardPath(card, self)}">The question as it stands now</a></p>`)
   const words = x => x?.en ?? ''
   switch (a.mode) {
-    case 'said': return box(saidCard(card, a, form, after), { said: true })
+    case 'said': return box(saidCard(card, a, form), { said: true })
     case 'revising': return box(html`<div class="tc-opts">${still(words(a.label), words(a.detail))}${saidFoot(card, a)}</div>`)
     case 'working': return box('')   // (the strip above the title says it)
     // An info: Got it is its answer; at the column's foot What?? and the reverse card, as on a decision.
@@ -311,8 +307,8 @@ function copyButton(card) {
 
 /** The whole <main> of a card's page. pic: which picture stands. walk: a step of Blitz. version: a version before, as
  *  it was. from: the session it was opened from (/chat/<slug>/card/<n>: { slug, name }): the way back and the links
- *  lead there. full: a picture opened large. focus: the page alone in the window. decided: just answered here. */
-export function cardPage(card, vm, { pic = 1, walk = false, version = null, from = null, full = false, focus = false, decided = false } = {}) {
+ *  lead there. full: a picture opened large. focus: the page alone in the window. */
+export function cardPage(card, vm, { pic = 1, walk = false, version = null, from = null, full = false, focus = false } = {}) {
   const old = version ? card.versions?.find(v => v.n === version) ?? null : null
   const mode = card.answer.mode, answering = !old && (mode === 'options' || mode === 'read')
   const open = card.state === 'open' && !old
@@ -381,7 +377,6 @@ ${answering ? more('is-shred', 'bin', WORDS.shred, WORDS.shred, 'shred') : ''}
   // What stands unsent (the draft: the field's words, the ticks, the notes on options) is given to the controller,
   // which puts it into the fields once: the fields' markup never changes while he types.
   const kept = drafting ? { note: card.draft ?? '', keys: card.multiple ? (card.options ?? []).filter(o => o.chosen).map(o => o.key) : [], notes: Object.fromEntries((card.options ?? []).filter(o => o.note).map(o => [o.key, o.note])) } : { note: card.draft ?? '' }
-  const after = decided && !old && card.state !== 'open' ? { self, home, focus } : null
   return html`<main id="cardpage" class="tc-page${large ? ' is-full' : focus ? ' is-focus' : ''}" aria-label="Question ${card.number}" data-id="${card.id}"${focus ? raw(' data-focus') : ''} data-controller="card" data-card-draft-value="${drafting ? act(card, 'draft') : ''}" data-card-kept-value="${JSON.stringify(kept)}" data-card-pictures-value="${JSON.stringify(picturesOf(media.pictures, vm, here))}" data-action="pointerdown->card#besideStart click->card#beside turbo:frame-load->card#framed circles:drawn->card#link turbo:submit-start->card#sent turbo:submit-end->card#done dragover->card#over drop->card#drop">
 <div class="tc-pad"${tone != null ? html` style="--hue:${tone}"` : ''}>${bar}<div class="tc-frame">
 ${large ? rails() : ''}
@@ -391,7 +386,7 @@ ${cardMedia(card.id, media, vm, here, shownPic, query)}
 ${old ? '' : optionsSaid(card)}
 </div>
 <div class="tc-right">
-${cardAnswer(card, { old, pic: shownPic, after, self })}
+${cardAnswer(card, { old, pic: shownPic, self })}
 </div>
 <div class="tc-ink" style="display:contents"></div>
 </article>
@@ -1717,19 +1712,22 @@ controller('circles', class extends Controller {
 // ---- the card's routes: its page, its picture, the forms that answer it ----
 // Every way of answering is POST /cards/<id>/<what> (the card's page and the Desk's rows post there): it becomes the
 // core's action. Answered from a Desk row (stay=1), the answer is a toast with Undo; from the card's own page (page=1)
-// the page goes on: an answer keeps the card in view, answered, with the next question (?decided=1, CardView.after); the
-// reverse card and Later go on to the next question (CardView.place.next); What?? goes back where the card was opened,
-// in Blitz on to the next question as well.
+// the page goes on at once: an answer to the next card (CardView.after.next, the core's way on), or back where the card
+// was opened when none waits, the core's toast saying what was done with its Undo (Action onward); the reverse card and
+// Later go on to the next question (CardView.place.next); What?? goes back where the card was opened, in Blitz on to
+// the next question as well.
 /** The toasts a way of answering shows, with the way that takes it back (its Undo). */
 const SAID = {
   decide: { head: 'Answered', back: 'reopen' }, verdict: { head: 'Answered' }, trust: { head: WORDS.trust, back: 'reopen' }, close: { head: 'Read', back: 'reopen' },
   shred: { head: 'Shredded', back: 'reopen' }, snooze: { head: WORDS.later, back: 'wake' }, revise: { head: 'Handed back', back: 'takeback' }, what: { head: `Asked: ${WORDS.what}`, back: 'takeback' },
 }
-/** The ways that settle a card: on its own page each is followed by the next question. */
+/** The ways that settle a card: on its own page each goes on to the next question. */
 export const ANSWERS = new Set(['decide', 'verdict', 'trust', 'close', 'shred'])
 const one = x => (x ? [x] : [])
 /** After a message or a hand-back from the card's field, its draft keeps no words and no drawing. */
 const forget = card => (card?.draft ? [{ do: 'draft', place: card.id, text: '', marks: [] }] : [])
+/** Answered on the card's own page, which goes on at once: the core says what was done in a toast with Undo. */
+const onwardOf = f => (f.has('page') ? { onward: true } : {})
 /** A hand back (rework) or What?? (explain), the draft first when the card's field was sent along. */
 const handBack = (a, rework) => [...(a.f.has('note') ? WAYS.draft(a) : []), { do: 'hand_back', card_id: a.id, rework, ...(a.attachments.length ? { attachments: a.attachments } : {}) }]
 /** The core's actions for one way of answering (a list; an Error says what is missing). */
@@ -1738,12 +1736,12 @@ const WAYS = {
     const keys = f.getAll('keys').map(String), choices = keys.length ? keys : f.has('key') ? [String(f.get('key'))] : []
     if (!choices.length) throw new Error('Pick an option first.')
     if (card?.kind === 'request') return [{ do: 'verdict', request_id: id, allow: choices[0] === 'allow' }]
-    return [{ do: 'answer', card_id: id, choices, ...(note ? { note } : {}), attachments, option_notes: notes, marks }]
+    return [{ do: 'answer', card_id: id, choices, ...(note ? { note } : {}), attachments, option_notes: notes, marks, ...onwardOf(f) }]
   },
   verdict: ({ id, f }) => [{ do: 'verdict', request_id: id, allow: f.get('key') === 'allow' }],
   // (the agent still chooses; its recommendation goes as the choices: the card's in view, else the Desk row's tile)
-  trust: ({ id, vm, card, note }) => [{ do: 'answer', card_id: id, choices: card ? (card.options ?? []).filter(o => o.recommended).map(o => o.key) : ([...(vm.group?.questions ?? []), ...(vm.group?.reads ?? [])].find(r => r.id === id)?.tiles.tiles ?? []).filter(x => x.advised).map(x => x.key), trusted: true, ...(note ? { note } : {}) }],
-  close: ({ id }) => [{ do: 'read', card_id: id }],
+  trust: ({ id, vm, card, f, note }) => [{ do: 'answer', card_id: id, choices: card ? (card.options ?? []).filter(o => o.recommended).map(o => o.key) : ([...(vm.group?.questions ?? []), ...(vm.group?.reads ?? [])].find(r => r.id === id)?.tiles.tiles ?? []).filter(x => x.advised).map(x => x.key), trusted: true, ...(note ? { note } : {}), ...onwardOf(f) }],
+  close: ({ id, f }) => [{ do: 'read', card_id: id, ...onwardOf(f) }],
   snooze: ({ id }) => [{ do: 'snooze', card_id: id }],
   wake: ({ id }) => [{ do: 'unsnooze', card_id: id }],
   star: ({ id }) => [{ do: 'star', card_id: id, on: true }],
@@ -1781,7 +1779,7 @@ export function register(t) {
   const dec = x => (x ? decodeURIComponent(x) : null)
   t.get(/^\/(?:chat\/([^/]+)\/)?card\/([\w-]+)$/, ({ req, res, url, match: [, slug, ref] }) => {
     const q = url.searchParams
-    show(req, res, dec(ref), dec(slug), { pic: Number(q.get('pic')) || 1, walk: q.has('walk'), focus: q.has('focus'), version: Number(q.get('v')) || null, decided: q.has('decided') && !q.has('walk') })
+    show(req, res, dec(ref), dec(slug), { pic: Number(q.get('pic')) || 1, walk: q.has('walk'), focus: q.has('focus'), version: Number(q.get('v')) || null })
   })
   // A picture opened large (the card's page with the stage alone).
   t.get(/^\/(?:chat\/([^/]+)\/)?card\/([\w-]+)\/picture\/(\d+)$/, ({ req, res, url, match: [, slug, ref, at] }) => {
@@ -1822,17 +1820,20 @@ export function register(t) {
     try { const list = JSON.parse(String(f.get('marks') ?? '[]')); if (Array.isArray(list)) marks = list } catch {}
     const notes = Object.fromEntries([...f.keys()].filter(k => k.startsWith('note-')).map(k => [k.slice(5), String(f.get(k) ?? '').trim()]).filter(([, said]) => said))
     const next = card?.place?.next ?? null   // (the question after it, before the answer moves it)
+    let acts = []
     try {
       const files = what === 'draft' ? [] : f.getAll('files').filter(v => typeof v === 'object' && v?.size > 0)
       const attachments = files.length ? await attachAll(files) : []
-      for (const a of WAYS[what]({ id, vm, card, f, note, notes, marks, attachments })) t.act(a)
+      acts = WAYS[what]({ id, vm, card, f, note, notes, marks, attachments })
+      for (const a of acts) t.act(a)
     } catch (err) {
       return t.sendStream(req, res, t.toast({ head: what === 'message' ? 'Not sent' : 'Not saved', line: String(err?.message ?? err), role: 'alert' }), 422)
     }
     if (what === 'draft' || what === 'more') return t.done(res)
     // Undone from a toast: back to that card, unless its page is in view already.
     if (f.has('undo')) return /\/card\/[^/]+$/.test(new URL(String(req.headers?.referer ?? '/'), 'http://x').pathname) ? t.done(res) : t.sendStream(req, res, stream('visit', cardPath(card ?? id)))
-    const said = !f.has('quiet') && SAID[what]
+    // (gone on from the card's page: the core's toast says it, with its Undo)
+    const said = !f.has('quiet') && !acts.some(a => a.onward) && SAID[what]
     const toast = said ? t.toast({ head: said.head, line: card?.title ?? [...(vm.group?.questions ?? []), ...(vm.group?.reads ?? [])].find(r => r.id === id)?.title ?? '', undo: said.back ? { action: `/cards/${id}/${said.back}` } : null }) : ''
     let to = null
     if (f.has('page')) {
@@ -1840,7 +1841,7 @@ export function register(t) {
       // (in Blitz every way that leaves the card to its agent or to later goes on to the next question, What?? too)
       const walk = f.has('walk'), onward = ANSWERS.has(what) || what === 'snooze' || what === 'revise' || what === 'what'
       if (walk && onward) to = next ? `${cardPath(next, self)}?walk=1` : home   // (a chat's Blitz: back to the chat)
-      else if (ANSWERS.has(what)) to = `${cardPath(card ?? id, self)}?decided=1`
+      else if (ANSWERS.has(what)) to = card?.after?.next ? cardPath(card.after.next, self) : home
       else if (what === 'snooze' || (what === 'revise' && f.has('next'))) to = next ? cardPath(next, self) : home
       else if (what === 'what' || what === 'revise') to = home
       if (to) to = focusAt(to, f.has('focus'))

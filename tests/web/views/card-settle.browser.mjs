@@ -1,7 +1,7 @@
-// card-settle.browser.mjs: a card answered on its own page does not jump (demo room, ?mock=1, a 1440 px window). The
-// answered state is shorter than the options; the card's height glides there (card.mjs settleAfter): frames show it
-// between its height before and after, however slow the machine (a jump shows none). On the Desk an answered row
-// leaves and the rows below glide up (app.mjs flipOut): no row moves by more than a step in one frame.
+// card-settle.browser.mjs: a card read on its own page goes on at once (demo room, ?mock=1, a 1440 px window): the
+// page leaves the card, for the next one or the group page, and the core's toast says it with Undo (Action onward). On
+// the group page an answered row leaves and the rows below glide up (app.mjs flipOut): no row moves by more than a step
+// in one frame.
 //   node tests/web/views/card-settle.browser.mjs      (needs Chromium; serves the app from its sources itself)
 import net from 'node:net'
 import path from 'node:path'
@@ -55,16 +55,16 @@ try {
   }
   // a card to read, answered on its own page
   await open('/?mock=1', '#desk-list')
-  const id = await ev("trommi.vm().desk.rows.find(r => r.kind === 'info')?.id ?? ''")
+  const id = await ev("(trommi.vm().group?.reads ?? []).find(r => r.kind === 'info')?.id ?? ''")
   await open(`/card/${id}?mock=1`, '.tc-card .tc-tile.is-ack')
+  const at = await ev('location.pathname')
   const c = await ev(WATCH('.tc-card .tc-tile.is-ack', '.tc-card'))
+  const gone = await ev(`({ path: location.pathname, here: Boolean(document.querySelector('#card-${id}')), toast: [...document.querySelectorAll('#says-host *')].some(x => /Read/.test(x.textContent) && /Undo/.test(x.textContent)) })`)
   const bad = []
   if (!c.clicked) bad.push('no "Got it" on the card page')
-  // (the answered card keeps the open panel's height since 18 October 2026: then nothing moves at all; where it does
-  //  change, it glides)
-  const still = Math.abs(c.after - c.before) < 8
-  if (!still && c.between < 3) bad.push(`the card jumps: ${c.between} frames between its height before and after (a glide shows several, however slow the machine)`)
-  console.log(`${bad.length ? 'FAIL' : 'ok  '} card page: ${Math.round(c.before)} px to ${Math.round(c.after)} px${still ? ', nothing moves' : ` through ${c.between} frames`}${bad.length ? `; ${bad.join('; ')}` : ''}`)
+  if (gone.path === at || gone.here) bad.push(`the page stayed on the card (${gone.path})`)
+  if (!gone.toast) bad.push('no toast "Read" with Undo')
+  console.log(`${bad.length ? 'FAIL' : 'ok  '} card page: read, on to ${gone.path}${bad.length ? `; ${bad.join('; ')}` : ''}`)
   if (bad.length) failed.push('card page')
   // a row answered on the Desk
   await open('/?mock=1', '#desk-list .inbox-row')

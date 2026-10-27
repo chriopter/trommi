@@ -68,32 +68,26 @@ test('a card without a menu, an empty one or a working one: the page still stand
   }
 })
 
-test('answered here (?decided=1): the panel as it stood, the said row ticked, the others faded, the way back, Next', async () => {
-  const vm = vmOf(5), card = cardOf(vm), main = await board(vm).get('/card/5?decided=1')
+test('answered: the panel as it stood, the said row ticked, the others faded, the way back; no Next', async () => {
+  const vm = vmOf(5), card = cardOf(vm), main = await board(vm).get('/card/5')
   assert.equal(card.answer.mode, 'said')
   const opts = card.options ?? []
   if (opts.length) {
     assert.equal((main.match(/class="tc-opt[^"]*is-said[^"]*is-faded/g) ?? []).length + (main.match(/class="tc-opt[^"]*is-chosen/g) ?? []).length, opts.length + (card.kind === 'decision' ? 1 : 0), 'every option and the duck keep their place')
     for (const o of opts.filter(o => o.chosen)) assert.match(main, new RegExp(`<span class="tc-opt-label">${o.label}</span></span><svg class="tc-chosen-tick"`))
   }
-  // right after the answer: Next directly under it, no "You chose · Take back" line (Undo is in the toast)
-  assert.match(main, new RegExp(`<div class="tc-or-pair is-near"><a class="tc-tile tc-next-tile" data-nav href="/card/${card.after.next.number}"[^>]*title="`))
-  assert.doesNotMatch(main, /tc-ans-foot|\/reopen"/)
-  // opened later: the quiet line with Take back stays
-  assert.match(await board(vm).get('/card/5'), new RegExp(`class="tc-ans-foot".*formaction="/cards/${card.id}/reopen"`, 's'))
-  assert.doesNotMatch(main, /tc-next-go|tc-next-close|has your answer/, 'no white box, no Close, no plain receipt')
-  assert.doesNotMatch(await board(vm).get('/card/5'), /tc-next-tile/, 'only right after the answer')
+  assert.match(main, new RegExp(`class="tc-ans-foot".*formaction="/cards/${card.id}/reopen"`, 's'), 'the quiet line with Take back')
+  assert.doesNotMatch(main, /tc-next-tile|tc-next-go|tc-next-close|has your answer/, 'no Next (the page went on already), no Close, no plain receipt')
 })
 
-test('answered: the duck ticked; lists missing or null draw; no next question: no Next', async () => {
-  for (const change of [c => { c.answer.ducked = true; for (const o of c.options ?? []) o.chosen = false }, c => { c.options = null }, c => { delete c.options; c.answer.option_notes = null }, c => { c.after = { says: { en: 'That was the last open question.' } } }, c => { c.after = null }]) {
+test('answered: the duck ticked; lists missing or null draw', async () => {
+  for (const change of [c => { c.answer.ducked = true; for (const o of c.options ?? []) o.chosen = false }, c => { c.options = null }, c => { delete c.options; c.answer.option_notes = null }, c => { c.after = null }]) {
     const vm = vmOf(5), card = cardOf(vm)
     change(card)
-    const main = await board(vm).get('/card/5?decided=1')
+    const main = await board(vm).get('/card/5')
     assert.doesNotMatch(main, /undefined|\[object |NaN/)
     assert.match(main, /class="tc-answer is-said"/)
     if (card.answer.ducked && card.options?.length) assert.match(main, /class="tc-opt tc-whatever is-said is-chosen"/)
-    if (!card.after?.next) assert.doesNotMatch(main, /tc-next-tile/)
   }
 })
 
@@ -114,7 +108,11 @@ test('the forms become the core\'s actions; a Desk row gets a toast with Undo, t
   assert.deepEqual(b.acts.at(-1), { do: 'answer', card_id: card.id, choices: card.options.filter(o => o.recommended).map(o => o.key), trusted: true })
   const page = await b.post(`/cards/${card.id}/decide`, { key: 'centered', page: '1', 'note-centered': 'warmer' })
   assert.deepEqual(b.acts.at(-1).option_notes, { centered: 'warmer' })
-  assert.match(page.stream, /action="visit" target="\/card\/43\?decided=1"/)
+  // answered on its page: on at once to the core's next card, the core's toast with Undo (onward), none of the page's
+  assert.equal(b.acts.at(-1).onward, true)
+  assert.ok(card.after?.next, 'the core names the way on while the card is open')
+  assert.match(page.stream, new RegExp(`action="visit" target="/card/${card.after.next.number}"`))
+  assert.doesNotMatch(page.stream, /<toast>/)
   const later = await b.post(`/cards/${card.id}/snooze`, { page: '1' })
   assert.match(later.stream, new RegExp(`action="visit" target="/card/${card.place.next}"`))
   await b.post(`/cards/${card.id}/what`, { page: '1' })
@@ -148,4 +146,27 @@ test('What?? and the reverse card take what is written under the card along: the
     await b.post(`/cards/${card.id}/${way}`, { stay: '1' })
     assert.deepEqual(b.acts.slice(from), [{ do: 'hand_back', card_id: card.id, rework }], way)
   }
+})
+
+test('answered or read on the card\'s page, it goes on at once: the next card the core names, else back home; the core\'s toast says it', async () => {
+  const vm = vmOf(43), card = cardOf(vm), b = board(vm)
+  for (const [way, fields, act] of [
+    ['trust', {}, { do: 'answer', card_id: card.id, choices: card.options.filter(o => o.recommended).map(o => o.key), trusted: true, onward: true }],
+    ['close', {}, { do: 'read', card_id: card.id, onward: true }],
+  ]) {
+    const res = await b.post(`/cards/${card.id}/${way}`, { page: '1', ...fields })
+    assert.deepEqual(b.acts.at(-1), act, way)
+    assert.match(res.stream, new RegExp(`action="visit" target="/card/${card.after.next.number}"`), way)
+    assert.doesNotMatch(res.stream, /<toast>/, way)
+  }
+  // a Desk row: no onward, the page's own toast with Undo, no visit
+  const row = await b.post(`/cards/${card.id}/close`, { stay: '1' })
+  assert.deepEqual(b.acts.at(-1), { do: 'read', card_id: card.id })
+  assert.match(row.stream, /<toast>/)
+  // none waits: back where the card was opened (a chat's page too)
+  card.after = { says: { en: 'That was the last open question.' }, go: { en: 'All done' } }
+  const last = await b.post(`/cards/${card.id}/decide`, { key: 'centered', page: '1' })
+  assert.match(last.stream, /action="visit" target="\/"/)
+  const chat = await b.post(`/cards/${card.id}/decide`, { key: 'centered', page: '1', back: '/chat/fernly' })
+  assert.match(chat.stream, /action="visit" target="\/chat\/fernly"/)
 })
