@@ -800,7 +800,8 @@ struct CardWays: View {
     ForEach(ways, id: \.self) { way in
       switch way {
       case "later": Button { shell.act(["do": "snooze", "card_id": id]) } label: { Label("Later", systemImage: "zzz") }
-      case "reverse": Button { shell.act(["do": "hand_back", "card_id": id]) } label: { Label("What??", systemImage: "questionmark.bubble") }
+      // (Reverse: back to the agent for rework, as on the web; the core takes the card's draft along)
+      case "reverse": Button { shell.act(["do": "hand_back", "card_id": id, "rework": true]) } label: { Label("Reverse", systemImage: "arrow.uturn.left") }
       case "shred": Button(role: .destructive) { shell.act(["do": "shred", "card_id": id]) } label: { Label("Shred", systemImage: "trash") }
       default: EmptyView()
       }

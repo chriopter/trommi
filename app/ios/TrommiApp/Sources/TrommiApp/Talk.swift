@@ -468,7 +468,7 @@ struct CardScreen: View {
         ForEach(Array(a.optionNotes.enumerated()), id: \.offset) { _, n in still(n.label, n.note.en) }
         if let settled = a.settled { still("✓ Settled by your answer", settled.en) }
         if !a.summary.isEmpty { still("Done by the agent", a.summary) }
-        if a.finished { sideCapsule(label: { Text(w.what.en) }) { shell.act(["do": "hand_back", "card_id": card.id]) } }
+        if a.finished { sideCapsule(label: { Text(w.what.en) }) { handBack(rework: false) } }
       default:
         if let label = a.label { still(label.en, a.detail?.en ?? "") }
         else if let says = a.says { Text(says.en).font(.subheadline).foregroundStyle(Ink.muted) }
@@ -520,11 +520,15 @@ struct CardScreen: View {
           HStack(spacing: 6) { PenMark(doc: PenStore.doc("sketch:duck"), inks: PenInks(stroke: Ink.fg, duck: true, water: Ink.fg)).frame(width: 24, height: 20); Text(w.duck.en) }
         }) { shell.act(["do": "answer", "card_id": card.id, "choices": card.options.filter(\.recommended).map(\.key), "trusted": true, "note": note]) }
       }
-      sideCapsule(label: { Text(w.what.en) }) { shell.act(["do": "hand_back", "card_id": card.id, "note": note]) }
-      sideCapsule(label: { HStack(spacing: 6) { Image(systemName: "arrow.uturn.left"); Text(w.rework.en) } }) {
-        shell.act(["do": "hand_back", "card_id": card.id, "note": note, "rework": true])
-      }
+      sideCapsule(label: { Text(w.what.en) }) { handBack(rework: false) }
+      sideCapsule(label: { HStack(spacing: 6) { Image(systemName: "arrow.uturn.left"); Text(w.rework.en) } }) { handBack(rework: true) }
     }
+  }
+  /** What?? or Rework: a bare hand back; the core takes the card's draft along (the field's words are kept as it on
+   *  every change) and spends it, so the field and its files go empty here. */
+  private func handBack(rework: Bool) {
+    shell.act(["do": "hand_back", "card_id": card.id, "rework": rework, "attachments": attachments])
+    note = ""; attachments = []
   }
   private func sideCapsule<L: View>(@ViewBuilder label: () -> L, _ action: @escaping () -> Void) -> some View {
     Button(action: action) {
