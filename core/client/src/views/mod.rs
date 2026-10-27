@@ -1510,6 +1510,13 @@ pub struct SessionView {
     /// "<name> is working": his word was the last, a short while ago.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answering: Option<Text>,
+    /// "<name> waits on 4 helpers": its turn is over and helpers it started still run (the calm chat draws it where
+    /// the face stands, still); none while it works itself or no helper runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waits_on_helpers: Option<Text>,
+    /// What it is at, for its heading: "working", "waits on 4 helpers", "ready"; none while it is not connected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<Text>,
     /// Its questions that wait for the person (decisions and approvals, never a card to read), as their card rows,
     /// in the order they came: what its page "Questions" lists as open.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1822,6 +1829,12 @@ pub struct StatusLineView {
     /// Who works on it, drawn in its own column before the label: the helper's name, else its agent's own name.
     #[serde(default)]
     pub who: String,
+    /// How long the helper it stands for runs ("running 50m", "just started"), or "finished" once it ended; drawn
+    /// after `detail`; none for a line no helper's trail stands for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ran: Option<Text>,
+    /// Its grey words: what the helper it stands for is at while it runs (its newest step's own description,
+    /// "Polling until the tests finish"), else what its agent wrote.
     pub detail: String,
     /// "working", "decision", "later", "done" (for ten minutes), "stale" (greyed and still, for a day).
     pub state: String,

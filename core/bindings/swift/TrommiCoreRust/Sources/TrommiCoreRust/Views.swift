@@ -3542,6 +3542,11 @@ public enum CoreView {
     public var liveAnswer: String
     /// "<name> is working": his word was the last, a short while ago.
     public var answering: Text?
+    /// "<name> waits on 4 helpers": its turn is over and helpers it started still run (the calm chat draws it where
+    /// the face stands, still); none while it works itself or no helper runs.
+    public var waitsOnHelpers: Text?
+    /// What it is at, for its heading: "working", "waits on 4 helpers", "ready"; none while it is not connected.
+    public var activity: Text?
     /// Its questions that wait for the person (decisions and approvals, never a card to read), as their card rows,
     /// in the order they came: what its page "Questions" lists as open.
     public var waiting: [DeskRowView]
@@ -3570,7 +3575,7 @@ public enum CoreView {
     /// "helpers" and "files" where it has some.
     public var tabs: [PanelTabView]
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusShown: UInt32 = 0, statusMore: Text? = nil, statusLess: Text? = nil, wakeLine: WakeLineView? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", moveTo: [TeamPlaceView] = [], main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), liveAnswer: String = "", answering: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusShown: UInt32 = 0, statusMore: Text? = nil, statusLess: Text? = nil, wakeLine: WakeLineView? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", moveTo: [TeamPlaceView] = [], main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), liveAnswer: String = "", answering: Text? = nil, waitsOnHelpers: Text? = nil, activity: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
       self.id = id
       self.name = name
       self.link = link
@@ -3603,6 +3608,8 @@ public enum CoreView {
       self.compose = compose
       self.liveAnswer = liveAnswer
       self.answering = answering
+      self.waitsOnHelpers = waitsOnHelpers
+      self.activity = activity
       self.waiting = waiting
       self.pinned = pinned
       self.open = open
@@ -3649,6 +3656,8 @@ public enum CoreView {
       case compose = "compose"
       case liveAnswer = "live_answer"
       case answering = "answering"
+      case waitsOnHelpers = "waits_on_helpers"
+      case activity = "activity"
       case waiting = "waiting"
       case pinned = "pinned"
       case open = "open"
@@ -3696,6 +3705,8 @@ public enum CoreView {
       self.compose = try c.decodeIfPresent(Text.self, forKey: .compose) ?? Text()
       self.liveAnswer = try c.decodeIfPresent(String.self, forKey: .liveAnswer) ?? ""
       self.answering = try c.decodeIfPresent(Text.self, forKey: .answering)
+      self.waitsOnHelpers = try c.decodeIfPresent(Text.self, forKey: .waitsOnHelpers)
+      self.activity = try c.decodeIfPresent(Text.self, forKey: .activity)
       self.waiting = try c.decodeIfPresent([DeskRowView].self, forKey: .waiting) ?? []
       self.pinned = try c.decodeIfPresent([DeskRowView].self, forKey: .pinned) ?? []
       self.open = try c.decodeIfPresent(UInt32.self, forKey: .open) ?? 0
@@ -3743,6 +3754,8 @@ public enum CoreView {
       try c.encode(compose, forKey: .compose)
       if !liveAnswer.isEmpty { try c.encode(liveAnswer, forKey: .liveAnswer) }
       try c.encodeIfPresent(answering, forKey: .answering)
+      try c.encodeIfPresent(waitsOnHelpers, forKey: .waitsOnHelpers)
+      try c.encodeIfPresent(activity, forKey: .activity)
       if !waiting.isEmpty { try c.encode(waiting, forKey: .waiting) }
       if !pinned.isEmpty { try c.encode(pinned, forKey: .pinned) }
       try c.encode(open, forKey: .open)
@@ -4472,6 +4485,11 @@ public enum CoreView {
     public var helper: String?
     /// Who works on it, drawn in its own column before the label: the helper's name, else its agent's own name.
     public var who: String
+    /// How long the helper it stands for runs ("running 50m", "just started"), or "finished" once it ended; drawn
+    /// after `detail`; none for a line no helper's trail stands for.
+    public var ran: Text?
+    /// Its grey words: what the helper it stands for is at while it runs (its newest step's own description,
+    /// "Polling until the tests finish"), else what its agent wrote.
     public var detail: String
     /// "working", "decision", "later", "done" (for ten minutes), "stale" (greyed and still, for a day).
     public var state: String
@@ -4486,11 +4504,12 @@ public enum CoreView {
     /// "Card": the word of the way to `card`; none without one.
     public var link: Text?
 
-    public init(id: String = "", label: String = "", helper: String? = nil, who: String = "", detail: String = "", state: String = "", says: Text = Text(), updatedMs: UInt64 = 0, age: Text = Text(), card: CardRefView? = nil, link: Text? = nil) {
+    public init(id: String = "", label: String = "", helper: String? = nil, who: String = "", ran: Text? = nil, detail: String = "", state: String = "", says: Text = Text(), updatedMs: UInt64 = 0, age: Text = Text(), card: CardRefView? = nil, link: Text? = nil) {
       self.id = id
       self.label = label
       self.helper = helper
       self.who = who
+      self.ran = ran
       self.detail = detail
       self.state = state
       self.says = says
@@ -4505,6 +4524,7 @@ public enum CoreView {
       case label = "label"
       case helper = "helper"
       case who = "who"
+      case ran = "ran"
       case detail = "detail"
       case state = "state"
       case says = "says"
@@ -4520,6 +4540,7 @@ public enum CoreView {
       self.label = try c.decode(String.self, forKey: .label)
       self.helper = try c.decodeIfPresent(String.self, forKey: .helper)
       self.who = try c.decodeIfPresent(String.self, forKey: .who) ?? ""
+      self.ran = try c.decodeIfPresent(Text.self, forKey: .ran)
       self.detail = try c.decode(String.self, forKey: .detail)
       self.state = try c.decode(String.self, forKey: .state)
       self.says = try c.decodeIfPresent(Text.self, forKey: .says) ?? Text()
@@ -4535,6 +4556,7 @@ public enum CoreView {
       try c.encode(label, forKey: .label)
       try c.encodeIfPresent(helper, forKey: .helper)
       try c.encode(who, forKey: .who)
+      try c.encodeIfPresent(ran, forKey: .ran)
       try c.encode(detail, forKey: .detail)
       try c.encode(state, forKey: .state)
       try c.encode(says, forKey: .says)

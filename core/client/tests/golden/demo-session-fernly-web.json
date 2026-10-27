@@ -2075,6 +2075,10 @@
     },
     "en": "Fernly Website is working"
   },
+  "activity": {
+    "key": "session.activity.working",
+    "en": "working"
+  },
   "waiting": [
     {
       "id": "7e86fa6e752b2ff5cf636658aa14f1f0",

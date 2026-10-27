@@ -1198,6 +1198,10 @@
     "key": "compose",
     "en": "Message to the agent"
   },
+  "activity": {
+    "key": "session.activity.ready",
+    "en": "ready"
+  },
   "waiting": [
     {
       "id": "a2706545530be0dce3b13417c2728966",

@@ -139,7 +139,9 @@ flowchart TB
   another's session, and no agent reads the room group.
 - **Helpers:** an agent's subagents have no group or key of their own. They write through their agent's connector
   into its session group, each card, status line and message with the helper's name; the apps show them inside that
-  session. (Until 16 October 2026 a helper got a session group of its own; those still open are read until their
+  session. What a running helper is at (its newest step's own description) and how long it runs come from the
+  terminal's work trail by themselves, on the status line of its card; the chat says "waits on 4 helpers" once the
+  agent's own turn is over, not "is working". (Until 16 October 2026 a helper got a session group of its own; those still open are read until their
   agent archives them, and the hub founds no new one.)
 - Which team an agent sits on is only a value inside the room group: moving it changes no key.
 - **Goals and team knowledge** live in the room group; your devices copy a team's into each of its sessions, so

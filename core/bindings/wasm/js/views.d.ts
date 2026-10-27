@@ -1055,6 +1055,11 @@ export interface SessionView {
   live_answer?: string
   /** "<name> is working": his word was the last, a short while ago. */
   answering?: Text
+  /** "<name> waits on 4 helpers": its turn is over and helpers it started still run (the calm chat draws it where
+   *  the face stands, still); none while it works itself or no helper runs. */
+  waits_on_helpers?: Text
+  /** What it is at, for its heading: "working", "waits on 4 helpers", "ready"; none while it is not connected. */
+  activity?: Text
   /** Its questions that wait for the person (decisions and approvals, never a card to read), as their card rows,
    *  in the order they came: what its page "Questions" lists as open. */
   waiting?: DeskRowView[]
@@ -1291,6 +1296,11 @@ export interface StatusLineView {
   helper?: string
   /** Who works on it, drawn in its own column before the label: the helper's name, else its agent's own name. */
   who: string
+  /** How long the helper it stands for runs ("running 50m", "just started"), or "finished" once it ended; drawn
+   *  after `detail`; none for a line no helper's trail stands for. */
+  ran?: Text
+  /** Its grey words: what the helper it stands for is at while it runs (its newest step's own description,
+   *  "Polling until the tests finish"), else what its agent wrote. */
   detail: string
   /** "working", "decision", "later", "done" (for ten minutes), "stale" (greyed and still, for a day). */
   state: string

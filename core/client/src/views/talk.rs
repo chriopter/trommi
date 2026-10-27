@@ -54,6 +54,19 @@ pub struct Entry {
     /// The card an event is of, or a comment is under.
     pub card_id: Option<String>,
     pub row: TalkRow,
+    /// A trail's row: its helpers, as the session's status lines take them.
+    pub helpers: Vec<HelperLive>,
+}
+
+/// What a trail says of one helper, for the status line that stands for it (`session.rs`): its name as the trail
+/// gives it, whether it runs, what it is at, when it started, the cards its start named.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HelperLive {
+    pub name: String,
+    pub running: bool,
+    pub now: String,
+    pub started_ms: Option<u64>,
+    pub cards: Vec<String>,
 }
 
 /// The label of an event's line, with who did it: `who` is the agent's name ("" names it "The agent"); what the
@@ -197,6 +210,7 @@ pub fn events_of(b: &Board, c: &Card) -> Vec<Entry> {
         half,
         side: Side::Event,
         card_id: Some(c.object_id.clone()),
+        helpers: Vec::new(),
         row: TalkRow {
             id: format!("v{n}{}{}", if half { ".5" } else { "" }, &kind[..1]),
             kind: "event".into(),
@@ -417,6 +431,7 @@ pub fn items_of(
             side,
             card_id: card.map(|c| c.object_id.clone()),
             row,
+            helpers: Vec::new(),
         };
         if newer {
             row.kind = "newer".into();
@@ -568,7 +583,7 @@ pub fn items_of(
         places,
     } in trails
     {
-        let work = fold_work(&envelopes, held);
+        let (work, helpers) = fold_work_live(&envelopes, held);
         let seqs: Vec<u64> = places.iter().map(|p| p.0).collect();
         if let Some((seq, id, ts)) =
             work_anchor(&seqs, &typed).and_then(|s| places.iter().find(|p| p.0 == s))
@@ -580,6 +595,7 @@ pub fn items_of(
             e.row.time_ms = *ts;
         }
         out[at].row.work = Some(work);
+        out[at].helpers = helpers;
     }
 }
 
@@ -639,6 +655,11 @@ struct Line {
     output: String,
     /// A step that read the team's knowledge (the connector marks `search_knowledge` and `read_knowledge`).
     knowledge: bool,
+    /// A helper: what it is at (its newest step's own description), when it started, and the cards its start named
+    /// (the connector's `now`, `at`, `cards`).
+    now: String,
+    at: Option<u64>,
+    cards: Vec<String>,
 }
 
 /// The envelopes of ONE turn as one block. They are applied in the order of their `seq`, whatever order they are
@@ -646,6 +667,11 @@ struct Line {
 /// it; the turn's state and times are those of the last envelope that says them.
 /// `held`: the knowledge entries the session's agent holds, for a step that read them ("reads team knowledge (12)").
 pub fn fold_work(envelopes: &[&Value], held: usize) -> WorkView {
+    fold_work_live(envelopes, held).0
+}
+
+/// `fold_work`, and the turn's helpers as the status lines take them.
+pub fn fold_work_live(envelopes: &[&Value], held: usize) -> (WorkView, Vec<HelperLive>) {
     let num = |v: Option<&Value>| {
         v.and_then(Value::as_f64)
             .filter(|n| n.is_finite() && *n >= 0.0)
@@ -717,6 +743,20 @@ pub fn fold_work(envelopes: &[&Value], held: usize) -> WorkView {
             }
             if x.get("knowledge") == Some(&Value::Bool(true)) && line.kind == "step" {
                 line.knowledge = true;
+            }
+            if line.kind == "helper" {
+                if let Some(s) = x.get("now").and_then(Value::as_str) {
+                    line.now = cut(s, 200);
+                }
+                line.at = line.at.or(num(x.get("at")));
+                if let Some(cards) = x.get("cards").and_then(Value::as_array) {
+                    line.cards = cards
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .take(8)
+                        .map(|c| cut(c, 64))
+                        .collect();
+                }
             }
             let s = str_of(x, "state");
             if matches!(s, "running" | "ok" | "failed" | "interrupted") {
@@ -886,7 +926,18 @@ pub fn fold_work(envelopes: &[&Value], held: usize) -> WorkView {
             }
         })
         .collect();
-    WorkView {
+    let helpers = lines
+        .iter()
+        .filter(|x| x.kind == "helper")
+        .map(|x| HelperLive {
+            name: x.tool.clone(),
+            running: x.state.is_empty() || x.state == "running",
+            now: x.now.clone(),
+            started_ms: x.at,
+            cards: x.cards.clone(),
+        })
+        .collect();
+    let view = WorkView {
         turn,
         state,
         head,
@@ -901,7 +952,8 @@ pub fn fold_work(envelopes: &[&Value], held: usize) -> WorkView {
             )
         }),
         steps,
-    }
+    };
+    (view, helpers)
 }
 
 /// Where a turn's block stands in its chat. `envelopes`: the places (envelope numbers) of the turn's envelopes;

@@ -318,8 +318,11 @@ fn calm(v: &mut SessionView, manual_face: bool) {
         .rfind(|r| r.kind == "work")
         .and_then(|r| r.work.clone())
         .filter(|w| w.state == "running");
+    // (with a trail its runs say when it works: a status line left on working, or one of a helper that runs while
+    //  the turn is over, is no work of its own; that is `waiting`)
+    let trailed = v.talk.iter().any(|r| r.kind == "work");
     let works = v.answering.is_some()
-        || (manual_face && v.status_lines.iter().any(|l| l.state == "working"));
+        || (manual_face && !trailed && v.status_lines.iter().any(|l| l.state == "working"));
     v.working = works.then(|| WorkingView {
         says: v.answering.clone().unwrap_or_else(|| {
             say(
@@ -530,6 +533,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
             half: false,
             side: Side::Event,
             card_id: Some(p.object_id.clone()),
+            helpers: Vec::new(),
             row: TalkRow {
                 id: format!("p{}", p.object_id),
                 kind: "event".into(),
@@ -597,6 +601,12 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         .is_some_and(|e| {
             e.side == Side::Work && e.row.work.as_ref().is_some_and(|w| w.state == "running")
         });
+    // (the helpers the trails name, the newest start last: what a status line that stands for one shows of it)
+    let mut helpers: Vec<super::talk::HelperLive> = entries
+        .iter()
+        .flat_map(|e| e.helpers.iter().cloned())
+        .collect();
+    helpers.sort_by_key(|h| h.started_ms.unwrap_or(0));
     let mine = entries
         .iter()
         .rfind(|e| e.side == Side::User && !e.row.terminal && e.seq != UNSENT)
@@ -831,6 +841,45 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         _ => None,
     };
 
+    // ---- what the session is at: its turn runs, it waits on its helpers, or it is ready ----
+    let running = if a.row.online && !gone && link_state != "cut" {
+        helpers.iter().filter(|h| h.running).count()
+    } else {
+        0
+    };
+    let r = running.to_string();
+    let waits_on_helpers = (answering.is_none() && running > 0).then(|| {
+        say(
+            "session.waiting_helpers",
+            format!(
+                "{name} waits on {}",
+                if running == 1 {
+                    "1 helper".to_string()
+                } else {
+                    format!("{r} helpers")
+                }
+            ),
+            &[("name", name), ("n", &r)],
+        )
+    });
+    let activity = (a.row.online && !gone && link_state != "cut" && !a.row.archived).then(|| {
+        if answering.is_some() {
+            say("session.activity.working", "working", &[])
+        } else if running > 0 {
+            say(
+                "session.activity.waiting",
+                if running == 1 {
+                    "waits on 1 helper".to_string()
+                } else {
+                    format!("waits on {r} helpers")
+                },
+                &[("n", &r)],
+            )
+        } else {
+            say("session.activity.ready", "ready", &[])
+        }
+    });
+
     // ---- the status lines ----
     let lines = s.map(|s| s.status_lines.as_slice()).unwrap_or(&[]);
     let state_of = |id: &str| a.row.lines.get(id).map(String::as_str).unwrap_or("");
@@ -893,12 +942,55 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
                 None if state == "working" && loose.is_some_and(|l| l.id == t.id) => with_it(),
                 None => None,
             };
+            // (the helper it stands for: the newest whose start named its card, else the newest of its helper's name)
+            let card_id = card.map(|c| c.object_id.clone());
+            let live = helpers
+                .iter()
+                .rev()
+                .find(|h| card_id.as_ref().is_some_and(|c| h.cards.contains(c)))
+                .or_else(|| {
+                    t.helper.as_deref().and_then(|n| {
+                        helpers
+                            .iter()
+                            .rev()
+                            .find(|h| h.name.to_lowercase() == n.to_lowercase())
+                    })
+                })
+                .filter(|_| matches!(state, "working" | "done" | "stale"));
+            let running = live.is_some_and(|h| h.running) && a.row.online;
+            let (doing, ran) = match live {
+                Some(h) if running => {
+                    let since = h.started_ms.unwrap_or(t.updated_at);
+                    let (span, next) = age_short(since, now);
+                    b.wake_at(Some(next));
+                    let ran = if span.key == "age.now" {
+                        say("line.helper.started", "just started", &[])
+                    } else {
+                        say(
+                            "line.helper.running",
+                            format!("running {}", span.en),
+                            &[("for", &span.en)],
+                        )
+                    };
+                    (h.now.clone(), Some(ran))
+                }
+                Some(_) => (
+                    String::new(),
+                    Some(say("line.helper.finished", "finished", &[])),
+                ),
+                None => (String::new(), None),
+            };
             Some(StatusLineView {
+                ran,
                 id: t.id.clone(),
                 who: t.helper.clone().unwrap_or_else(|| name.to_string()),
                 helper: t.helper.clone(),
                 label: t.label.as_str().unwrap_or("").to_string(),
-                detail: t.detail.as_str().unwrap_or("").to_string(),
+                detail: if doing.is_empty() {
+                    t.detail.as_str().unwrap_or("").to_string()
+                } else {
+                    doing
+                },
                 state: state.into(),
                 says,
                 updated_ms: t.updated_at,
@@ -1021,6 +1113,8 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         compose,
         live_answer: String::new(),
         answering,
+        waits_on_helpers,
+        activity,
         open,
         open_word: (open > 0).then(|| say("session.open", format!("{n} open"), &[("n", &n)])),
         open_says: (open > 0).then(|| {
@@ -2557,6 +2651,76 @@ mod tests {
         r.say("b", None, 20, "me", 40 * MIN, msg("Run the tests."));
         r.say("b", None, 21, "b", 39 * MIN, step(1, "running", "running"));
         assert_eq!(view(&r, "b").answering, None);
+    }
+
+    /// A helper that runs after its caller's turn ended: the session waits on it, it does not work itself (no face);
+    /// the status line whose card the helper's start named says what it is at (in its detail's place) and how long it
+    /// runs, a line of a
+    /// helper's name whose helper ended says "finished"; once no helper runs, the session is ready. A status line
+    /// left on working in a chat with a trail is no face either.
+    #[test]
+    fn a_session_waits_on_its_helpers_and_their_lines_say_what_they_are_at() {
+        let mut r = Room::default();
+        r.session("a", None, true)["status_lines"] = json!([
+            { "id": "l1", "label": "Live helpers", "detail": "Connector first", "state": "working", "helper": "Connector", "object_id": "task", "updated_at": NOW - 50 * MIN },
+            { "id": "l2", "label": "Count files", "state": "working", "helper": "explore", "updated_at": NOW - 45 * MIN },
+            { "id": "l3", "label": "Own work", "state": "working", "updated_at": NOW - 44 * MIN },
+        ]);
+        r.card("task", "a", "info", "normal")["versions"] = json!([{ "object_version": 1, "envelope_number": 30, "sent_at": NOW - 50 * MIN, "object_state": "open", "content": { "title": "Working on: live helpers" } }]);
+        let work = |seq: u64, a1: Value| {
+            json!({ "terminal": "work", "work": { "turn": "t1", "seq": seq, "state": "done", "started_at": NOW - 52 * MIN, "ended_at": NOW - 49 * MIN, "items": [
+            a1,
+            { "id": "agent:a2", "kind": "helper", "tool": "Explore", "state": "ok", "at": NOW - 45 * MIN, "ms": 60_000, "steps": 4 },
+        ] } })
+        };
+        let running = json!({ "id": "agent:a1", "kind": "helper", "tool": "general-purpose", "state": "running", "at": NOW - 50 * MIN, "steps": 12, "cards": ["task"], "now": "Polling until the tests finish", "now_at": NOW - MIN });
+        r.say("a", None, 20, "me", 53 * MIN, msg("Build it."));
+        r.say("a", None, 31, "a", 50 * MIN, work(1, running.clone()));
+        r.say("a", None, 32, "a", 49 * MIN, msg("Started two helpers."));
+        let calm = Lens {
+            calm: true,
+            ..Default::default()
+        };
+        let m = r.model(NOW);
+        let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+        assert!(
+            v.working.is_none() && v.answering.is_none(),
+            "it works on nothing itself"
+        );
+        assert_eq!(
+            (en(&v.waits_on_helpers), en(&v.activity)),
+            ("a waits on 1 helper", "waits on 1 helper")
+        );
+        let line = |v: &SessionView, id: &str| {
+            let l = v.status_lines.iter().find(|l| l.id == id).unwrap().clone();
+            (l.detail, l.ran.map(|t| t.en))
+        };
+        assert_eq!(
+            line(&v, "l1"),
+            (
+                "Polling until the tests finish".into(),
+                Some("running 50m".into())
+            )
+        );
+        assert_eq!(line(&v, "l2"), (String::new(), Some("finished".into())));
+        assert_eq!(
+            line(&v, "l3"),
+            (String::new(), None),
+            "no helper stands for the agent's own line"
+        );
+        // (the helper ended: nothing runs, the session is ready)
+        let mut ended = running.clone();
+        ended["state"] = json!("ok");
+        r.say("a", None, 33, "a", MIN / 2, work(2, ended));
+        let m = r.model(NOW);
+        let v = session(&Board::new(&m, &calm, NOW), &dev("a")).unwrap();
+        assert!(v.working.is_none() && v.waits_on_helpers.is_none());
+        assert_eq!(en(&v.activity), "ready");
+        assert_eq!(
+            line(&v, "l1"),
+            ("Connector first".into(), Some("finished".into())),
+            "what its agent wrote again"
+        );
     }
 
     /// A card a working line stands for has no chip in the calm talk: the line says it, in the details.
