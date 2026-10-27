@@ -3483,16 +3483,18 @@ public enum CoreView {
     public var blocked: Bool
     /// Talk rows, newest last.
     public var talk: [TalkRow]
-    /// The lines that show, the one its agent set last first: the first `status_shown` stand open (the calm chat:
-    /// a row each under "… is working"; else the first beside the working dots), and `status_more` for the rest,
-    /// which a tap opens.
+    /// The lines that show: what waits on him first, then what is worked on, put off, done and quiet, each the one
+    /// its agent set last first. The first `status_shown` stand open (the calm chat: a row each under "… is
+    /// working"; else the first beside the working dots), and `status_more` for the rest, which a tap opens.
     public var statusLines: [StatusLineView]
     /// How many of `status_lines` stand open, from the first: the calm chat up to three, else one.
     public var statusShown: UInt32
-    /// "+N": how many lines stand behind the open ones; none when all stand open.
+    /// How many lines stand behind the open ones ("4 more" in the calm chat, else "+4"); none when all stand open.
     public var statusMore: Text?
-    /// The chat's quiet line of its next wakeup ("Wakes at 09:00 · check the tests"); none without one.
-    public var wakeLine: Text?
+    /// "Show fewer": the word that folds the rest away again once open; with `status_more` in the calm chat.
+    public var statusLess: Text?
+    /// The chat's quiet line of its next wakeup ("21:12" · "check the tests"); none without one.
+    public var wakeLine: WakeLineView?
     /// The calm chat (`Focus.calm`): the agent at work, drawn at the chat's end as its face drawing itself; a tap
     /// opens the details (the step it is at, its lines, the turn's trail). None while it does not work.
     public var working: WorkingView?
@@ -3568,7 +3570,7 @@ public enum CoreView {
     /// "helpers" and "files" where it has some.
     public var tabs: [PanelTabView]
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusShown: UInt32 = 0, statusMore: Text? = nil, wakeLine: Text? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", moveTo: [TeamPlaceView] = [], main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), liveAnswer: String = "", answering: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], statusShown: UInt32 = 0, statusMore: Text? = nil, statusLess: Text? = nil, wakeLine: WakeLineView? = nil, working: WorkingView? = nil, questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", teamId: String = "", moveTo: [TeamPlaceView] = [], main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), liveAnswer: String = "", answering: Text? = nil, waiting: [DeskRowView] = [], pinned: [DeskRowView] = [], open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil, usage: UsageView? = nil, helpers: HelperListView? = nil, archived: Bool = false, tabs: [PanelTabView] = []) {
       self.id = id
       self.name = name
       self.link = link
@@ -3577,6 +3579,7 @@ public enum CoreView {
       self.statusLines = statusLines
       self.statusShown = statusShown
       self.statusMore = statusMore
+      self.statusLess = statusLess
       self.wakeLine = wakeLine
       self.working = working
       self.questions = questions
@@ -3622,6 +3625,7 @@ public enum CoreView {
       case statusLines = "status_lines"
       case statusShown = "status_shown"
       case statusMore = "status_more"
+      case statusLess = "status_less"
       case wakeLine = "wake_line"
       case working = "working"
       case questions = "questions"
@@ -3668,7 +3672,8 @@ public enum CoreView {
       self.statusLines = try c.decode([StatusLineView].self, forKey: .statusLines)
       self.statusShown = try c.decodeIfPresent(UInt32.self, forKey: .statusShown) ?? 0
       self.statusMore = try c.decodeIfPresent(Text.self, forKey: .statusMore)
-      self.wakeLine = try c.decodeIfPresent(Text.self, forKey: .wakeLine)
+      self.statusLess = try c.decodeIfPresent(Text.self, forKey: .statusLess)
+      self.wakeLine = try c.decodeIfPresent(WakeLineView.self, forKey: .wakeLine)
       self.working = try c.decodeIfPresent(WorkingView.self, forKey: .working)
       self.questions = try c.decodeIfPresent([CardRefView].self, forKey: .questions) ?? []
       self.files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
@@ -3714,6 +3719,7 @@ public enum CoreView {
       try c.encode(statusLines, forKey: .statusLines)
       try c.encode(statusShown, forKey: .statusShown)
       try c.encodeIfPresent(statusMore, forKey: .statusMore)
+      try c.encodeIfPresent(statusLess, forKey: .statusLess)
       try c.encodeIfPresent(wakeLine, forKey: .wakeLine)
       try c.encodeIfPresent(working, forKey: .working)
       if !questions.isEmpty { try c.encode(questions, forKey: .questions) }
@@ -4462,8 +4468,10 @@ public enum CoreView {
   public struct StatusLineView: Codable, Hashable, Sendable {
     public var id: String
     public var label: String
-    /// The helper (its agent's subagent) whose line it is, drawn before its label; none for the agent's own.
+    /// The helper (its agent's subagent) whose line it is; none for the agent's own.
     public var helper: String?
+    /// Who works on it, drawn in its own column before the label: the helper's name, else its agent's own name.
+    public var who: String
     public var detail: String
     /// "working", "decision", "later", "done" (for ten minutes), "stale" (greyed and still, for a day).
     public var state: String
@@ -4478,10 +4486,11 @@ public enum CoreView {
     /// "Card": the word of the way to `card`; none without one.
     public var link: Text?
 
-    public init(id: String = "", label: String = "", helper: String? = nil, detail: String = "", state: String = "", says: Text = Text(), updatedMs: UInt64 = 0, age: Text = Text(), card: CardRefView? = nil, link: Text? = nil) {
+    public init(id: String = "", label: String = "", helper: String? = nil, who: String = "", detail: String = "", state: String = "", says: Text = Text(), updatedMs: UInt64 = 0, age: Text = Text(), card: CardRefView? = nil, link: Text? = nil) {
       self.id = id
       self.label = label
       self.helper = helper
+      self.who = who
       self.detail = detail
       self.state = state
       self.says = says
@@ -4495,6 +4504,7 @@ public enum CoreView {
       case id = "id"
       case label = "label"
       case helper = "helper"
+      case who = "who"
       case detail = "detail"
       case state = "state"
       case says = "says"
@@ -4509,6 +4519,7 @@ public enum CoreView {
       self.id = try c.decode(String.self, forKey: .id)
       self.label = try c.decode(String.self, forKey: .label)
       self.helper = try c.decodeIfPresent(String.self, forKey: .helper)
+      self.who = try c.decodeIfPresent(String.self, forKey: .who) ?? ""
       self.detail = try c.decode(String.self, forKey: .detail)
       self.state = try c.decode(String.self, forKey: .state)
       self.says = try c.decodeIfPresent(Text.self, forKey: .says) ?? Text()
@@ -4523,6 +4534,7 @@ public enum CoreView {
       try c.encode(id, forKey: .id)
       try c.encode(label, forKey: .label)
       try c.encodeIfPresent(helper, forKey: .helper)
+      try c.encode(who, forKey: .who)
       try c.encode(detail, forKey: .detail)
       try c.encode(state, forKey: .state)
       try c.encode(says, forKey: .says)
@@ -4530,6 +4542,49 @@ public enum CoreView {
       try c.encode(age, forKey: .age)
       try c.encodeIfPresent(card, forKey: .card)
       try c.encodeIfPresent(link, forKey: .link)
+    }
+  }
+
+  /// The chat's quiet line of its session's next wakeup (`SessionView.wake_line`): when, short, in its own column, and
+  /// its note beside it; a tap opens the page Wakeups.
+  public struct WakeLineView: Codable, Hashable, Sendable {
+    /// "21:12" today, "Tue 07:00" within the week, else "3 Nov 07:00".
+    public var at: Text
+    /// What its agent wrote it for.
+    public var note: String
+    /// "and 2 more" when more wakeups wait behind it; none for one alone.
+    public var more: Text?
+    /// The whole line in words, for a screen reader: "Wakes at 21:12 · check the tests, and 2 more".
+    public var says: Text
+
+    public init(at: Text = Text(), note: String = "", more: Text? = nil, says: Text = Text()) {
+      self.at = at
+      self.note = note
+      self.more = more
+      self.says = says
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case at = "at"
+      case note = "note"
+      case more = "more"
+      case says = "says"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.at = try c.decode(Text.self, forKey: .at)
+      self.note = try c.decode(String.self, forKey: .note)
+      self.more = try c.decodeIfPresent(Text.self, forKey: .more)
+      self.says = try c.decode(Text.self, forKey: .says)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(at, forKey: .at)
+      try c.encode(note, forKey: .note)
+      try c.encodeIfPresent(more, forKey: .more)
+      try c.encode(says, forKey: .says)
     }
   }
 

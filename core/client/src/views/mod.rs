@@ -1426,19 +1426,22 @@ pub struct SessionView {
     pub blocked: bool,
     /// Talk rows, newest last.
     pub talk: Vec<TalkRow>,
-    /// The lines that show, the one its agent set last first: the first `status_shown` stand open (the calm chat:
-    /// a row each under "… is working"; else the first beside the working dots), and `status_more` for the rest,
-    /// which a tap opens.
+    /// The lines that show: what waits on him first, then what is worked on, put off, done and quiet, each the one
+    /// its agent set last first. The first `status_shown` stand open (the calm chat: a row each under "… is
+    /// working"; else the first beside the working dots), and `status_more` for the rest, which a tap opens.
     pub status_lines: Vec<StatusLineView>,
     /// How many of `status_lines` stand open, from the first: the calm chat up to three, else one.
     #[serde(default)]
     pub status_shown: u32,
-    /// "+N": how many lines stand behind the open ones; none when all stand open.
+    /// How many lines stand behind the open ones ("4 more" in the calm chat, else "+4"); none when all stand open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_more: Option<Text>,
-    /// The chat's quiet line of its next wakeup ("Wakes at 09:00 · check the tests"); none without one.
+    /// "Show fewer": the word that folds the rest away again once open; with `status_more` in the calm chat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wake_line: Option<Text>,
+    pub status_less: Option<Text>,
+    /// The chat's quiet line of its next wakeup ("21:12" · "check the tests"); none without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wake_line: Option<WakeLineView>,
     /// The calm chat (`Focus.calm`): the agent at work, drawn at the chat's end as its face drawing itself; a tap
     /// opens the details (the step it is at, its lines, the turn's trail). None while it does not work.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1813,9 +1816,12 @@ pub struct WorkLineView {
 pub struct StatusLineView {
     pub id: String,
     pub label: String,
-    /// The helper (its agent's subagent) whose line it is, drawn before its label; none for the agent's own.
+    /// The helper (its agent's subagent) whose line it is; none for the agent's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub helper: Option<String>,
+    /// Who works on it, drawn in its own column before the label: the helper's name, else its agent's own name.
+    #[serde(default)]
+    pub who: String,
     pub detail: String,
     /// "working", "decision", "later", "done" (for ten minutes), "stale" (greyed and still, for a day).
     pub state: String,
@@ -1834,6 +1840,21 @@ pub struct StatusLineView {
     /// "Card": the word of the way to `card`; none without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<Text>,
+}
+
+/// The chat's quiet line of its session's next wakeup (`SessionView.wake_line`): when, short, in its own column, and
+/// its note beside it; a tap opens the page Wakeups.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WakeLineView {
+    /// "21:12" today, "Tue 07:00" within the week, else "3 Nov 07:00".
+    pub at: Text,
+    /// What its agent wrote it for.
+    pub note: String,
+    /// "and 2 more" when more wakeups wait behind it; none for one alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub more: Option<Text>,
+    /// The whole line in words, for a screen reader: "Wakes at 21:12 · check the tests, and 2 more".
+    pub says: Text,
 }
 
 /// One card's page (a question, something to read, a request for approval): who it comes from, its words, its

@@ -1,11 +1,11 @@
 //! The page Wakeups of the team in view (`Screen::Wakeups`): every wakeup its sessions' agents set themselves, the
 //! next first, with the note, how often, who set it, its last run, and what the person asked of it (cancel, another
-//! time) while that is on its way. And the chat's quiet line "Wakes at 09:00 · …". The rules are `crate::wakeups`'s.
+//! time) while that is on its way. And the chat's quiet line "09:00 · …". The rules are `crate::wakeups`'s.
 
 use super::board::Board;
 use super::session::day_label;
-use super::words::{clock, say};
-use super::{Text, WakeupRowView, WakeupWordsView, WakeupsView};
+use super::words::{clock, local, say};
+use super::{WakeLineView, WakeupRowView, WakeupWordsView, WakeupsView};
 use crate::wakeups::{every_words, of, Edit, Wakeup, EDIT_PREFIX};
 
 /// "Today 09:00", "Tomorrow 07:00", "Thursday 22 October 09:00".
@@ -187,33 +187,51 @@ pub fn page(b: &Board) -> WakeupsView {
     }
 }
 
-/// The chat's quiet line of a session: its next wakeup ("Wakes at 09:00 · check the tests", "Wakes Thursday 22
-/// October 09:00 · …, and 2 more"); none without one.
-pub fn line(b: &Board, key: &str) -> Option<Text> {
+/// The chat's quiet line of a session: its next wakeup, when short ("09:00", "Thu 09:00") and its note beside it,
+/// "and 2 more" behind; none without one.
+pub fn line(b: &Board, key: &str) -> Option<WakeLineView> {
     let list = of_session(b, key);
     let (w, _) = list
         .iter()
         .find(|(_, e)| !matches!(e, Some(Edit::Cancel)))?;
     let zone = b.lens.utc_offset_min;
-    let at = if day_label(w.at, b.now, zone).key == "day.today" {
+    let today = day_label(w.at, b.now, zone).key == "day.today";
+    let at = if today {
         clock(w.at, w.at, zone)
     } else {
         when(b, w.at)
     };
+    // (short for its column: the time today, the weekday within the week, else the date)
+    let days = local(w.at, zone).days - local(b.now, zone).days;
+    let short = if today {
+        at.clone()
+    } else if (1..7).contains(&days) {
+        super::off::weekday_time(w.at, zone)
+    } else {
+        clock(w.at, b.now, zone)
+    };
     b.wake_at(Some(w.at));
     let more = list.len() - 1;
+    let n = more.to_string();
     let tail = if more > 0 {
         format!(", and {more} more")
     } else {
         String::new()
     };
-    Some(say(
-        "wakeups.line",
-        format!("Wakes at {at} · {}{tail}", w.note),
-        &[
-            ("when", &at),
-            ("note", &w.note),
-            ("more", &more.to_string()),
-        ],
-    ))
+    Some(WakeLineView {
+        at: say("wakeups.line.at", short.clone(), &[("when", &short)]),
+        note: w.note.clone(),
+        more: (more > 0).then(|| {
+            say(
+                "wakeups.line.more",
+                format!("and {more} more"),
+                &[("n", &n)],
+            )
+        }),
+        says: say(
+            "wakeups.line",
+            format!("Wakes at {at} · {}{tail}", w.note),
+            &[("when", &at), ("note", &w.note), ("more", &n)],
+        ),
+    })
 }

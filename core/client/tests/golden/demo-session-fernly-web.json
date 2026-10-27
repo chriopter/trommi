@@ -1658,54 +1658,9 @@
   ],
   "status_lines": [
     {
-      "id": "checklist",
-      "label": "Launch checklist",
-      "detail": "14 of 19 done",
-      "state": "working",
-      "says": {
-        "key": "line.working",
-        "en": "working"
-      },
-      "updated_ms": 1791469560000,
-      "age": {
-        "key": "age.m",
-        "args": {
-          "n": "4"
-        },
-        "en": "4m"
-      },
-      "card": {
-        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
-        "number": 41,
-        "title": "Social card for the launch: photo or illustration?"
-      },
-      "link": {
-        "key": "line.card",
-        "en": "Card"
-      }
-    },
-    {
-      "id": "e2e-tests-suite",
-      "label": "Test suite",
-      "helper": "Testing",
-      "detail": "41 of 44 green, Safari flaky",
-      "state": "working",
-      "says": {
-        "key": "line.working",
-        "en": "working"
-      },
-      "updated_ms": 1791469440000,
-      "age": {
-        "key": "age.m",
-        "args": {
-          "n": "6"
-        },
-        "en": "6m"
-      }
-    },
-    {
       "id": "launch",
       "label": "Launch Monday",
+      "who": "Fernly Website",
       "detail": "Monday 09:00 or Tuesday? On your Desk",
       "state": "decision",
       "says": {
@@ -1734,6 +1689,7 @@
       "id": "landing-page-hero",
       "label": "Hero",
       "helper": "Landing Page",
+      "who": "Landing Page",
       "detail": "Centered or split?",
       "state": "decision",
       "says": {
@@ -1759,28 +1715,10 @@
       }
     },
     {
-      "id": "seo-og",
-      "label": "Social card",
-      "helper": "Search & Social",
-      "detail": "Reworking: the app on a phone",
-      "state": "working",
-      "says": {
-        "key": "line.working",
-        "en": "working"
-      },
-      "updated_ms": 1791468000000,
-      "age": {
-        "key": "age.m",
-        "args": {
-          "n": "30"
-        },
-        "en": "30m"
-      }
-    },
-    {
       "id": "copy-button",
       "label": "Sign-up button",
       "helper": "Copywriting",
+      "who": "Copywriting",
       "detail": "Two versions on your Desk",
       "state": "decision",
       "says": {
@@ -1808,6 +1746,7 @@
     {
       "id": "email",
       "label": "Sunday e-mail",
+      "who": "Fernly Website",
       "detail": "Waiting for your yes",
       "state": "decision",
       "says": {
@@ -1836,6 +1775,7 @@
       "id": "onboarding-ask",
       "label": "Notifications",
       "helper": "Onboarding",
+      "who": "Onboarding",
       "detail": "When to ask",
       "state": "decision",
       "says": {
@@ -1859,6 +1799,74 @@
         "key": "line.card",
         "en": "Card"
       }
+    },
+    {
+      "id": "checklist",
+      "label": "Launch checklist",
+      "who": "Fernly Website",
+      "detail": "14 of 19 done",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469560000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "4"
+        },
+        "en": "4m"
+      },
+      "card": {
+        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        "number": 41,
+        "title": "Social card for the launch: photo or illustration?"
+      },
+      "link": {
+        "key": "line.card",
+        "en": "Card"
+      }
+    },
+    {
+      "id": "e2e-tests-suite",
+      "label": "Test suite",
+      "helper": "Testing",
+      "who": "Testing",
+      "detail": "41 of 44 green, Safari flaky",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469440000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "6"
+        },
+        "en": "6m"
+      }
+    },
+    {
+      "id": "seo-og",
+      "label": "Social card",
+      "helper": "Search & Social",
+      "who": "Search & Social",
+      "detail": "Reworking: the app on a phone",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791468000000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "30"
+        },
+        "en": "30m"
+      }
     }
   ],
   "status_shown": 1,
@@ -1870,13 +1878,30 @@
     "en": "+7"
   },
   "wake_line": {
-    "key": "wakeups.line",
-    "args": {
-      "more": "1",
-      "note": "Run the Safari checkout test 12 times again and post the result",
-      "when": "16:52"
+    "at": {
+      "key": "wakeups.line.at",
+      "args": {
+        "when": "16:52"
+      },
+      "en": "16:52"
     },
-    "en": "Wakes at 16:52 · Run the Safari checkout test 12 times again and post the result, and 1 more"
+    "note": "Run the Safari checkout test 12 times again and post the result",
+    "more": {
+      "key": "wakeups.line.more",
+      "args": {
+        "n": "1"
+      },
+      "en": "and 1 more"
+    },
+    "says": {
+      "key": "wakeups.line",
+      "args": {
+        "more": "1",
+        "note": "Run the Safari checkout test 12 times again and post the result",
+        "when": "16:52"
+      },
+      "en": "Wakes at 16:52 · Run the Safari checkout test 12 times again and post the result, and 1 more"
+    }
   },
   "questions": [
     {

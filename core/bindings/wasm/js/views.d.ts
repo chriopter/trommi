@@ -996,16 +996,18 @@ export interface SessionView {
   blocked: boolean
   /** Talk rows, newest last. */
   talk: TalkRow[]
-  /** The lines that show, the one its agent set last first: the first `status_shown` stand open (the calm chat:
-   *  a row each under "… is working"; else the first beside the working dots), and `status_more` for the rest,
-   *  which a tap opens. */
+  /** The lines that show: what waits on him first, then what is worked on, put off, done and quiet, each the one
+   *  its agent set last first. The first `status_shown` stand open (the calm chat: a row each under "… is
+   *  working"; else the first beside the working dots), and `status_more` for the rest, which a tap opens. */
   status_lines: StatusLineView[]
   /** How many of `status_lines` stand open, from the first: the calm chat up to three, else one. */
   status_shown: number
-  /** "+N": how many lines stand behind the open ones; none when all stand open. */
+  /** How many lines stand behind the open ones ("4 more" in the calm chat, else "+4"); none when all stand open. */
   status_more?: Text
-  /** The chat's quiet line of its next wakeup ("Wakes at 09:00 · check the tests"); none without one. */
-  wake_line?: Text
+  /** "Show fewer": the word that folds the rest away again once open; with `status_more` in the calm chat. */
+  status_less?: Text
+  /** The chat's quiet line of its next wakeup ("21:12" · "check the tests"); none without one. */
+  wake_line?: WakeLineView
   /** The calm chat (`Focus.calm`): the agent at work, drawn at the chat's end as its face drawing itself; a tap
    *  opens the details (the step it is at, its lines, the turn's trail). None while it does not work. */
   working?: WorkingView
@@ -1285,8 +1287,10 @@ export interface WorkLineView {
 export interface StatusLineView {
   id: string
   label: string
-  /** The helper (its agent's subagent) whose line it is, drawn before its label; none for the agent's own. */
+  /** The helper (its agent's subagent) whose line it is; none for the agent's own. */
   helper?: string
+  /** Who works on it, drawn in its own column before the label: the helper's name, else its agent's own name. */
+  who: string
   detail: string
   /** "working", "decision", "later", "done" (for ten minutes), "stale" (greyed and still, for a day). */
   state: string
@@ -1300,6 +1304,19 @@ export interface StatusLineView {
   card?: CardRefView
   /** "Card": the word of the way to `card`; none without one. */
   link?: Text
+}
+
+/** The chat's quiet line of its session's next wakeup (`SessionView.wake_line`): when, short, in its own column, and
+ *  its note beside it; a tap opens the page Wakeups. */
+export interface WakeLineView {
+  /** "21:12" today, "Tue 07:00" within the week, else "3 Nov 07:00". */
+  at: Text
+  /** What its agent wrote it for. */
+  note: string
+  /** "and 2 more" when more wakeups wait behind it; none for one alone. */
+  more?: Text
+  /** The whole line in words, for a screen reader: "Wakes at 21:12 · check the tests, and 2 more". */
+  says: Text
 }
 
 /** One card's page (a question, something to read, a request for approval): who it comes from, its words, its

@@ -940,45 +940,9 @@
   ],
   "status_lines": [
     {
-      "id": "load",
-      "label": "Load test",
-      "detail": "Waiting for your OK to run k6",
-      "state": "working",
-      "says": {
-        "key": "line.working",
-        "en": "working"
-      },
-      "updated_ms": 1791469620000,
-      "age": {
-        "key": "age.m",
-        "args": {
-          "n": "3"
-        },
-        "en": "3m"
-      }
-    },
-    {
-      "id": "load-test-k6",
-      "label": "k6 run",
-      "helper": "Load Testing",
-      "detail": "Asks to run 400 users for 10 min",
-      "state": "working",
-      "says": {
-        "key": "line.working",
-        "en": "working"
-      },
-      "updated_ms": 1791469620000,
-      "age": {
-        "key": "age.m",
-        "args": {
-          "n": "3"
-        },
-        "en": "3m"
-      }
-    },
-    {
       "id": "checkout",
       "label": "Checkout",
+      "who": "Payments",
       "detail": "Sheet or page? Needed by Thursday",
       "state": "decision",
       "says": {
@@ -1007,6 +971,7 @@
       "id": "checkout-variant",
       "label": "Sheet or page",
       "helper": "Checkout",
+      "who": "Checkout",
       "detail": "Both built, on your Desk",
       "state": "decision",
       "says": {
@@ -1035,6 +1000,7 @@
       "id": "invoices-edit",
       "label": "Editable fields",
       "helper": "Invoices",
+      "who": "Invoices",
       "detail": "Which ones?",
       "state": "decision",
       "says": {
@@ -1063,6 +1029,7 @@
       "id": "tax-prices",
       "label": "Prices",
       "helper": "Tax & VAT",
+      "who": "Tax & VAT",
       "detail": "VAT included everywhere?",
       "state": "decision",
       "says": {
@@ -1085,6 +1052,45 @@
       "link": {
         "key": "line.card",
         "en": "Card"
+      }
+    },
+    {
+      "id": "load",
+      "label": "Load test",
+      "who": "Payments",
+      "detail": "Waiting for your OK to run k6",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469620000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "3"
+        },
+        "en": "3m"
+      }
+    },
+    {
+      "id": "load-test-k6",
+      "label": "k6 run",
+      "helper": "Load Testing",
+      "who": "Load Testing",
+      "detail": "Asks to run 400 users for 10 min",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469620000,
+      "age": {
+        "key": "age.m",
+        "args": {
+          "n": "3"
+        },
+        "en": "3m"
       }
     }
   ],

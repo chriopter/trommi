@@ -303,13 +303,13 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
     Some(v)
 }
 
-/// How many status lines the calm chat shows open, a row each; "+N" from the fourth.
+/// How many status lines the calm chat shows open, a row each; "N more" from the fourth.
 const CALM_LINES: usize = 3;
 
 /// The calm chat (`Focus.calm`: the iPhone, the web): only the words and what waits; the agent at work is `working`
 /// (its face), its trail and the cards its lines stand for are not in the talk. A run of card events becomes one row of chips (`kind` "events";
 /// an echo of what the asked line already says is left out), the helper list stays off the page (their status lines
-/// name them), and the working lines stand a row each, three at most, the rest "+N".
+/// name them), and the working lines stand a row each, three at most, the rest "N more".
 fn calm(v: &mut SessionView, manual_face: bool) {
     // The agent at work: only its face at the chat's end; its turn's trail goes into the details, not the talk.
     let trail = v
@@ -411,16 +411,20 @@ fn calm(v: &mut SessionView, manual_face: bool) {
     v.talk = talk;
     v.helpers = None;
     v.tabs.retain(|t| t.key != "helpers");
-    // (a row each for the first three lines, "+N" only from the fourth)
+    // (a row each for the first three lines, "4 more" only from the fourth, "Show fewer" to fold them again)
     v.status_shown = v.status_lines.len().min(CALM_LINES) as u32;
     let behind = v.status_lines.len().saturating_sub(CALM_LINES).to_string();
     v.status_more = (v.status_lines.len() > CALM_LINES).then(|| {
         say(
             "session.status_more.calm",
-            format!("+{behind}"),
+            format!("{behind} more"),
             &[("n", behind.as_str())],
         )
     });
+    v.status_less = v
+        .status_more
+        .is_some()
+        .then(|| say("session.status_less", "Show fewer", &[]));
     // (its open questions pinned above the field, the newest first; their rows where they were asked leave the talk)
     let reads = std::mem::take(&mut v.pinned);
     v.pinned = v
@@ -891,6 +895,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
             };
             Some(StatusLineView {
                 id: t.id.clone(),
+                who: t.helper.clone().unwrap_or_else(|| name.to_string()),
                 helper: t.helper.clone(),
                 label: t.label.as_str().unwrap_or("").to_string(),
                 detail: t.detail.as_str().unwrap_or("").to_string(),
@@ -903,9 +908,16 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
             })
         })
         .collect();
-    // (the line set last first: the foot shows it alone; a sort that keeps the agent's order between equal times)
+    // (what waits on him first, then what is worked on, put off, done, quiet; in each the line set last first: the
+    //  foot shows the first alone; a stable sort that keeps the agent's order between equal times)
     let mut status_lines = status_lines;
-    status_lines.sort_by_key(|l| std::cmp::Reverse(l.updated_ms));
+    let rank = |state: &str| match state {
+        "decision" => 0,
+        "working" => 1,
+        "later" => 2,
+        _ => 3,
+    };
+    status_lines.sort_by_key(|l| (rank(&l.state), std::cmp::Reverse(l.updated_ms)));
     let behind = status_lines.len().saturating_sub(1).to_string();
     let status_more = (status_lines.len() > 1).then(|| {
         say(
@@ -973,6 +985,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         status_shown: status_lines.len().min(1) as u32,
         status_lines,
         status_more,
+        status_less: None,
         wake_line: super::wakeups::line(b, &a.row.key),
         working: None,
         // (the calm chat: its cards to read; calm() puts its questions before them)
@@ -1753,6 +1766,15 @@ mod tests {
             "the lines still name the helpers"
         );
         assert_eq!(
+            v.status_lines
+                .iter()
+                .map(|l| l.who.as_str())
+                .collect::<Vec<_>>(),
+            ["iOS", "CI", v.name.en.as_str()],
+            "the agent's own line names the agent"
+        );
+        assert!(v.status_less.is_none(), "nothing to fold");
+        assert_eq!(
             (v.status_shown, v.status_more.as_ref()),
             (3, None),
             "three lines: all open, no \"+N\""
@@ -1765,10 +1787,28 @@ mod tests {
         ]);
         let m = r.model(NOW);
         let v = session(&Board::new(&m, &lens, NOW), &dev("a")).unwrap();
-        let more = v.status_more.expect("two behind the three open");
+        let more = v.status_more.clone().expect("two behind the three open");
         assert_eq!(
             (v.status_shown, more.key.as_str(), more.en.as_str()),
-            (3, "session.status_more.calm", "+2")
+            (3, "session.status_more.calm", "2 more")
+        );
+        assert_eq!(
+            v.status_less.as_ref().map(|t| t.en.as_str()),
+            Some("Show fewer")
+        );
+        assert_eq!(
+            v.status_lines
+                .iter()
+                .map(|l| (l.state.as_str(), l.age.en.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("decision", "5m"),
+                ("working", "1m"),
+                ("working", "2m"),
+                ("working", "3m"),
+                ("working", "4m")
+            ],
+            "what waits on him first, then the newest first"
         );
         assert_eq!(
             view(&r, "a").status_shown,
@@ -2716,22 +2756,23 @@ mod tests {
         assert_eq!(
             l,
             [
-                // (the line set last first; lines of the same moment in the agent's order)
+                // (what waits on him first, then working, put off, done and quiet; in each the line set last first,
+                //  lines of the same moment in the agent's order)
                 // (the newest working line that names no card stands for the card with the session that no line names)
+                ("ask", "decision", "waits on you", None),
                 ("w-new", "working", "working", Some("q-loose")),
                 ("w-named", "working", "working", Some("q-named")),
-                ("ask", "decision", "waits on you", None),
+                ("w-old", "working", "working", None),
                 ("put-off", "later", "put off", Some("q-later")),
                 ("done-new", "done", "done", None),
-                ("w-old", "working", "working", None),
                 ("stale", "stale", "no news for a while", None),
             ]
         );
         assert_eq!(
             (
-                v.status_lines[1].label.as_str(),
-                v.status_lines[1].detail.as_str(),
-                v.status_lines[1].updated_ms
+                v.status_lines[2].label.as_str(),
+                v.status_lines[2].detail.as_str(),
+                v.status_lines[2].updated_ms
             ),
             ("L w-named", "d", NOW - 5 * MIN)
         );

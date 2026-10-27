@@ -2564,10 +2564,20 @@ fn the_person_sees_the_agents_wakeups_and_cancels_or_moves_them() {
         .clone()
         .expect("the chat's wake line");
     assert!(
-        line.en.starts_with("Wakes at ") && line.en.contains("the daily report, and 1 more"),
+        line.says.en.starts_with("Wakes at ")
+            && line.says.en.contains("the daily report, and 1 more"),
         "{}",
-        line.en
+        line.says.en
     );
+    assert_eq!(
+        (
+            line.note.as_str(),
+            line.more.as_ref().map(|t| t.en.as_str())
+        ),
+        ("the daily report", Some("and 1 more")),
+        "the note and the rest stand apart from its time"
+    );
+    assert!(!line.at.en.starts_with("Wakes"), "{}", line.at.en);
 
     // he cancels one and moves the other: shown as pending, written as his word with its mark
     act(
