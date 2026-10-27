@@ -118,7 +118,7 @@ test('the forms become the core\'s actions; a Desk row gets a toast with Undo, t
   const later = await b.post(`/cards/${card.id}/snooze`, { page: '1' })
   assert.match(later.stream, new RegExp(`action="visit" target="/card/${card.place.next}"`))
   await b.post(`/cards/${card.id}/what`, { page: '1' })
-  assert.deepEqual(b.acts.at(-1), { do: 'hand_back', card_id: card.id, rework: false, marks: [] })
+  assert.deepEqual(b.acts.at(-1), { do: 'hand_back', card_id: card.id, rework: false })
   // What?? in Blitz goes on to the next question, as the reverse card and Later do; outside Blitz back where it was opened
   const walked = await b.post(`/cards/${card.id}/what`, { page: '1', walk: '1' })
   assert.match(walked.stream, new RegExp(`action="visit" target="/card/${card.place.next}\\?walk=1"`))
@@ -128,4 +128,24 @@ test('the forms become the core\'s actions; a Desk row gets a toast with Undo, t
   assert.deepEqual(b.acts.at(-1), { do: 'show_more', of: { list: 'comments', card: card.id } })
   const empty = await b.post(`/cards/${card.id}/message`, { note: ' ', stay: '1' })
   assert.equal(empty.code, 422, 'nothing to send')
+})
+
+test('What?? and the reverse card take what is written under the card along: the field goes as the draft, then a bare hand back', async () => {
+  const vm = vmOf(43), card = cardOf(vm), b = board(vm)
+  const mark = { id: 'm1', anchor: { kind: 'card' }, text: 'here' }
+  const field = { page: '1', note: 'Which one is cheaper?', marks: JSON.stringify([mark]), 'note-centered': 'warmer' }
+  for (const [way, rework] of [['what', false], ['revise', true]]) {
+    const from = b.acts.length
+    await b.post(`/cards/${card.id}/${way}`, field)
+    assert.deepEqual(b.acts.slice(from), [
+      { do: 'draft', place: card.id, text: 'Which one is cheaper?', keys: [], notes: { centered: 'warmer' }, marks: [mark] },
+      { do: 'hand_back', card_id: card.id, rework },
+    ], way)
+  }
+  // From a row or the long press's sheet there is no field: the bare hand back, the core takes the draft kept before
+  for (const [way, rework] of [['what', false], ['revise', true]]) {
+    const from = b.acts.length
+    await b.post(`/cards/${card.id}/${way}`, { stay: '1' })
+    assert.deepEqual(b.acts.slice(from), [{ do: 'hand_back', card_id: card.id, rework }], way)
+  }
 })

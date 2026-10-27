@@ -1539,8 +1539,10 @@ controller('card', class extends Controller {
   sent() { clearTimeout(this.timer) }
   // A message sent with Send stays on the page (the comment comes in live under the card): the field, the files and
   // the marks that went along are emptied here. (Ticks and notes on options stay: they belong to the answer.)
+  // Handed back (the reverse card, What??): the draft went along and is spent; the drawing kept on this device too.
   done(event) {
     const { formSubmission, success } = event.detail ?? {}
+    if (success && /\/(revise|what)$/.test(formSubmission?.submitter?.formAction ?? '')) { try { localStorage.removeItem(this.hereKey()) } catch {} }
     if (!success || !formSubmission?.submitter?.classList.contains('tc-send')) return
     if (this.hasFieldTarget) { this.fieldTarget.value = ''; this.grow() }
     if (this.hasFilesTarget) { this.filesTarget.value = ''; this.files() }
@@ -1727,6 +1729,8 @@ export const ANSWERS = new Set(['decide', 'verdict', 'trust', 'close', 'shred'])
 const one = x => (x ? [x] : [])
 /** After a message or a hand-back from the card's field, its draft keeps no words and no drawing. */
 const forget = card => (card?.draft ? [{ do: 'draft', place: card.id, text: '', marks: [] }] : [])
+/** A hand back (rework) or What?? (explain), the draft first when the card's field was sent along. */
+const handBack = (a, rework) => [...(a.f.has('note') ? WAYS.draft(a) : []), { do: 'hand_back', card_id: a.id, rework, ...(a.attachments.length ? { attachments: a.attachments } : {}) }]
 /** The core's actions for one way of answering (a list; an Error says what is missing). */
 const WAYS = {
   decide({ id, card, f, note, notes, marks, attachments }) {
@@ -1746,9 +1750,11 @@ const WAYS = {
   shred: ({ id, note, marks, attachments }) => [{ do: 'shred', card_id: id, ...(note ? { note } : {}), attachments, marks }],
   reopen: ({ id }) => [{ do: 'decide_again', card_id: id }],
   takeback: ({ id }) => [{ do: 'take_back', card_id: id }],
-  // (HandBack carries no files: what was attached, the drawing's picture too, goes as a comment just before it)
-  revise: ({ id, card, note, marks, attachments }) => [{ do: 'hand_back', card_id: id, ...(note ? { note } : {}), rework: true, marks, ...(attachments.length ? { attachments } : {}) }, ...forget(card)],
-  what: ({ id, marks }) => [{ do: 'hand_back', card_id: id, rework: false, marks }],
+  // The reverse card and What??: a bare hand back, and the core takes the card's draft along (its words, its drawing,
+  // its notes on options) and spends it. From the card's own field what stands there is kept as the draft first; a row
+  // or the sheet has no field, the draft kept before goes along. (the files attached go with it)
+  revise: a => handBack(a, true),
+  what: a => handBack(a, false),
   message({ id, card, note, marks, attachments }) {
     if (!note && !attachments.length && !marks.length) throw new Error('Write something first.')
     if (!card?.session_id) throw new Error('This question is not on the board any more.')

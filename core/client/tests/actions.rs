@@ -1361,6 +1361,56 @@ fn a_bare_hand_back_takes_the_cards_draft_along() {
     assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
 }
 
+/// The shells' What?? and reverse card: what stands in the card's field is kept as its draft, then a bare hand back
+/// goes; the agent reads the field's words, an explain stays an explain, and the draft is spent. A field emptied
+/// before the press leaves nothing: the core's words.
+#[test]
+fn what_from_the_field_goes_as_the_draft_then_a_bare_hand_back() {
+    use trommi_client_core::views::talk::EXPLAIN_TEXT;
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    let key = format!("draft/{card}");
+    let field = |text: &str| Action::Draft {
+        place: card.clone(),
+        text: text.into(),
+        keys: Some(vec![]),
+        notes: Some(serde_json::Map::new()),
+        marks: Some(vec![]),
+    };
+    let what = || Action::HandBack {
+        card_id: card.clone(),
+        note: None,
+        rework: false,
+        marks: vec![],
+        attachments: vec![],
+    };
+    let last = |sim: &Sim| -> serde_json::Value {
+        sim.app.board().model.timelines[&format!("chat:card/{card}")]
+            .items
+            .values()
+            .map(|i| i["content"].clone())
+            .filter(|c| c["explain"] == json!(true))
+            .next_back()
+            .expect("the explain")
+    };
+    act(&mut sim, field("What does the second option cost?"));
+    act(&mut sim, what());
+    let back = last(&sim);
+    assert_eq!(back["text"], json!("What does the second option cost?"));
+    assert!(
+        back.get("hand_back").is_none(),
+        "an explain, no rework: {back}"
+    );
+    assert!(human(&sim, &key).is_none_or(|d| d.0.is_null()), "spent");
+
+    act(&mut sim, field("never mind"));
+    act(&mut sim, field("  "));
+    act(&mut sim, what());
+    assert_eq!(last(&sim)["text"], json!(EXPLAIN_TEXT));
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+}
+
 #[test]
 fn deleting_a_session_shreds_its_cards_and_archives_it() {
     let mut world = World::new();
