@@ -44,7 +44,7 @@ agent-mode lease/command/removal rules.
 | `src/files.rs`, `src/scribble/` | File lifecycle and encryption requests; board items, packed strokes and snapshots |
 | `src/account/`, `src/machines.rs`, `src/selfjoin.rs`, `src/seats.rs`, `src/team_delete.rs` | Account authority, computer approval and hash-bound activation, session founding and resumable team deletion |
 | `src/status.rs`, `src/sessions.rs`, `src/off_mind.rs` | Shared status, session and card-placement rules used by views |
-| `src/knowledge.rs`, `src/views/knowledge.rs` | Team knowledge (spec/v1.md 9.3.7): entries, their kinds and limits, the history of each change and the way back, what is new to the person, the order, the full-text index, the digest an agent reads, an agent's write applied by the person's devices (`apply`), the upkeep (forgotten entries after 30 days, ten changes kept), the copies into a team's sessions (`Doing::sync_knowledge`), the page Knowledge and the Desk's tile; the connector uses the same module |
+| `src/knowledge.rs`, `src/views/knowledge.rs` | Team knowledge (spec/v1.md 9.3.7): entries, their kinds and limits, the history of each change and the way back, what is new to the person, the order, the full-text index, the digest an agent reads, an agent's write applied by the person's devices (`apply`), the upkeep (forgotten entries after 30 days, ten changes kept), the copies into a team's sessions (`Doing::sync_knowledge`), the page Knowledge and the count in the group's ⋯ menu; the connector uses the same module |
 | `src/faces.rs` | The 24 agent faces (names, words, topics), the symbols of before mapped to faces, and which face a session wears |
 
 Code sign-in starts from the room state authenticated by the recovery code when it is current. It joins the
@@ -99,13 +99,26 @@ For an open stream, the cap bounds a non-200 body and the core bounds/parses eac
 I/O ids are unique within an App. A closed/replaced App drops late results. A refused platform capability is an
 ordinary result, not an app decision in the shell.
 
+### The group page
+
+The app is chats in groups (teams); there is no Desk and no page of every group. `ViewModel.group`
+(`src/views/group.rs`, `GroupView`) is the page of the group in view (`Focus.team`; `none` is the chats on no team
+while there are any, `SidebarView.no_team`): its head (name, faces, the ⋯ menu with Knowledge, Wakeups, Scribble
+Board and Rename), one chip per chat (`chips`: "All" first, the chats that need the person in front, `chips_shown`
+of them in the row, the rest behind `more`), and its open cards in one list, `questions` (decisions and requests)
+then `reads`, in the core's order; `stack` is both, in order, and a card's page opened from the page walks on in it.
+`Focus.group_chat` (a session key or short id) keeps only that chat's cards and gives its chip `open_chat`.
+`blitz` (as `SidebarView.global_blitz`) walks every group's open cards: a card's page with `Focus.walk_all` walks on
+through them. `Focus.rail_folded` tells the core the wide sidebar is a rail: its rows and stacks then carry no counts
+and no sign but `signal` "waiting" or "stopped", one quiet dot. Grey counts count cards, never messages.
+
 ### Windows
 
 One App can serve several windows (the browser's tabs of one profile share one core in a SharedWorker; iOS and
 Linux have one window). An event's JSON names its window beside its `type` (`"window": 2`; left out: window 0), and
 `App::handle_in` takes it. `Focus`, `Action`, `Foreground`, `Background` and `WindowOpened` are that window's; I/O,
 the clock and the platform are the device's. Each window has its own lens and its own parts of the view model
-(sidebar, Desk, the session and card in view, the board, the pages' lists) and gets its own `Render` (`window` on the
+(sidebar, group page, the session and card in view, the board, the pages' lists) and gets its own `Render` (`window` on the
 effect, left out for 0), whole at its first. The phase and status line, account, settings, files, dictation and
 toasts are the device's, the same in every window. A step stays the window's that started it through its I/O: its
 `Platform` (a passkey or push prompt), `SaveFile` and `OpenUrl` name that window (`window`, left out for 0), even when

@@ -97,15 +97,18 @@ device. If the disk refuses deletion, extension keys are still cleared and the c
 
 Settings → Data reads authenticated counts and sizes through `AccountAction::ReadUsage`; labels, values and errors come from the core. Signing out clears that view.
 
-The generated `CoreView.ViewModel` supplies the Desk, cards, sessions, Notes, Off your mind, Settings, Artifacts
+The generated `CoreView.ViewModel` supplies the group page (`group`), cards, sessions, Notes, Off your mind, Settings, Artifacts
 and Scribble Board. Swift uses the core's order, labels, action modes, status lines, history and attachment ids.
 Editors keep only unsent UI input. Pen paths, hit testing, image drawing and theme preferences remain native;
 stroke encoding is `Action::DrawStroke` in Rust. Goals are edited through `SetGoal` and folded through
 `FoldGoals`; the teams whose goals are folded are a local UI preference. The team in view is the core's
 (`sidebar.team`); the shell only remembers the last team chosen on this device (`trommi-team` in UserDefaults) and
 sends it as `Focus.team` after a start, and the core falls back to the first team when it is gone. A session's
-helpers are a line of dots under its name (`helpers`). The Desk's duck for all and Blitz draw `desk.duck` (sent back as `Batch` "sweep") and
-`desk.blitz`; the Chat list draws each row's `last` (teaser and time), grey while not `online`, and says `signal` to VoiceOver only
+helpers are a line of dots under its name (`helpers`). The group page draws `group.questions`, then `group.reads`, under the core's
+headings, its chips (`group.chips`: a tap sends `Focus.group_chat`, the chosen one opens its chat) and its ⋯ menu
+(`group.head.menu`; Rename sends `RenameTeam`); its duck for all and Blitz draw `group.duck` (sent back as `Batch`
+"sweep") and `group.blitz` (every group's open cards, `Focus.walk_all`). The iPhone's look is being redesigned on its
+own; until then the group page uses the components there were; the Chat list draws each row's `last` (teaser and time), grey while not `online`, and says `signal` to VoiceOver only
 (no dots); Settings has a page per `Screen.settings(page:)`; the Artifacts filter is `Screen.artifacts(kind:)` with
 the words of `view.gallery`; the note saves itself with `KeepNote` a moment after typing and when it is left; the
 start screen shows `account.notice` (logged out, removed, account deleted).
@@ -115,7 +118,7 @@ inviting an agent, answering self-join requests, changing password/e-mail/kit, r
 removing devices and deleting an account. Core account flows check membership history and keep incomplete joins
 durable. Passkeys remain off (`Config.can.passkeys = false`); the native shell holds no parallel passkey flow.
 
-On a Mac the same sources draw a window with a sidebar and a menu-bar list of the core's Desk rows. Closing the
+On a Mac the same sources draw a window with a sidebar and a menu-bar list of the core's open questions (`group.questions`). Closing the
 window leaves the process in the menu bar. The Mac has APNs through AppKit but no share, notification-service or
 Live Activity extension. File selection and the Scribble canvas are available on both platforms; QR scanning is
 iPhone-only.
@@ -166,10 +169,9 @@ Search. Desk's bell carries its own dot while questions wait (never a red count)
 list (`sidebar.stacks`, as the wide sidebar's), each team's name a quiet section title; a tap on it folds the team to a
 row of its faces (`Focus.open_teams`, kept on the device; every team open until one is folded). Search filters that
 list in the core (`Focus.chats_query`, `sidebar.found`). Cards, conversations and settings push onto the tab's
-navigation stack (the bar hides there), so Back and swipe-back return to the list. The note opens from the Desk's top
-row. Starred and running cards stand at the head of Off your mind on the Desk, as on the web. The place pill (iPhone
-Desk) and the top of the sidebar (iPad, Mac) switch the team of the Desk: a menu of the core's `sidebar.teams`, each
-with its open questions.
+navigation stack (the bar hides there), so Back and swipe-back return to the list. The note opens from the group page's top
+row. The place pill and the top of the sidebar (iPad, Mac) switch the group in view: a menu of the core's
+`sidebar.teams` (and "No team", `sidebar.no_team`, while chats stand on none), each with its open cards.
 
 An iPhone sends `Focus.calm` (the web too), and a chat is then calm, as Grok's: the core folds a run of card events into one row of
 chips (`TalkRow.kind` "events", `events`, a tap opens the card), leaves the helper list out (their status lines name

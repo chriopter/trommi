@@ -102,7 +102,7 @@ page's list of tools: `connector/tools.json` and `connector/prompt.md`.
 4. A file is split only when it passes about 3000 lines.
 5. The views are `.mjs`, the core is strict TypeScript (`app/web/tsconfig.json`). Importing a module
    does nothing; `app.mjs` boots the page.
-6. A view other than the Desk's (desk, sidebar, notes) is loaded on demand: `app.mjs` `LAZY` names the addresses each
+6. A view other than the group page's (desk, sidebar, notes) is loaded on demand: `app.mjs` `LAZY` names the addresses each
    answers; the router loads it before the first such address, and all of them once the first page is idle. A view
    that adds a page adds its addresses there.
 7. **No `<style>` elements and no inline scripts** in what a view renders: the CSP refuses them (`style-src 'self'`,
@@ -164,9 +164,23 @@ node app/web/dev/verify.mjs                           # or --app <url>: builds h
 The service worker: a new deploy takes over at once and the page reloads (a field with unsent words: a quiet "Reload"
 instead); files come network first, the cache only offline. On the dev server (`VERSION "dev"`) there is none.
 
-## The Desk
+## The group page
 
-- **Goals:** under the greeting, the team's own checklist (at most 20 lines of 200 characters: `GOALS_LINES`,
+The app is chats in groups (teams). `/` is the page of the group in view (`vm.group`, `desk.mjs` `deskMain`); there is
+no page of every group: Blitz (`/blitz`, `G B`) walks every group's open cards (`?walk=1` on the card's page sends
+`Focus.walk_all`).
+
+- **Head:** the group's name (`group.head`), its chats' faces, and a ⋯ menu: Knowledge, Wakeups, Scribble Board, each
+  with the core's count, and Rename group (the name turns into a field: Enter keeps, `RenameTeam`). Blitz with its count
+  and "all groups", and the duck for all of the page's cards, at the right.
+- **Chips:** "All" with the group's open cards, then one chip per chat (`group.chips`, the core's order: the chats that
+  need you first, a quiet dot on them), `chips_shown` in the row and the rest behind "+n" (a tap shows them). A chip is
+  `/?chat=<slug>` (`Focus.group_chat`): only that chat's cards; the chosen chip says "Open chat ›"; All clears it.
+- **Two parts:** the questions (decisions, approval requests) under "Waits for you", as rows with their answers; below,
+  smaller, what is only to read under "To read", one line each with its time and "Read" (`/cards/batch` way read).
+- **No team:** while chats stand on no team, they are a group of their own (`/?team=none`, `sidebar.no_team`), with a
+  head over them in the sidebar.
+- **Goals:** under the group's name, the team's own checklist (at most 20 lines of 200 characters: `GOALS_LINES`,
   `GOALS_LINE_MAX` are editor limits; Rust `actions::run::clean_goals` validates the text), written in place with a click; empty only a faint "Goals…". One toggle, a chevron beside them, folds them to their first line and opens them again (folded or
   not is kept per team in `localStorage` `trommi-goals-folded`), so a long list need not push the cards off the screen. A line that starts with an emoji or a tick box has its sign in a
   column of its own: the words of such lines start under each other. The field grows with its words to twelve rows,
@@ -174,48 +188,41 @@ instead); files come network first, the cache only offline. On the dev server (`
   page is hidden or left, and when the field is found to be no longer the active element (a document without focus, a
   background tab, sends no `blur`). Kept in the desk's register (`desk/<id>`, `goals`), so every device of the account sees
   it; the agents on the desk are told them.
-- **Rows:** every open card is one row in the hub's order, blocking first, then knocks; infos stand among them (What?? and
-  ✓ instead of answers). A row: the session's drawing as a stamp before the title, the urgency sign, the title, square
-  answer tiles; under the pointer the teaser and, at the left, a ring that selects it (Shift: a range). Rows of one session
-  that follow each other stand in one run, held by a pen curly bracket at the far left (two or more). A row that leaves
-  glides out while the rows below move up (`app.mjs` `flipOut`, transform only).
+- **Rows:** every open question is one row in the core's order, blocking first, then knocks. A row: the session's
+  drawing as a stamp before the title, the urgency sign, the title with its chat's name under it, square answer tiles;
+  at the left a ring that selects it (Shift: a range). A row that leaves glides out while the rows below move up
+  (`app.mjs` `flipOut`, transform only).
 - **Tips:** one tip in the app's look for every element that says something under the pointer (`app.mjs` "tips",
   `app.css` `.tip`): `data-tip`, and any `title` (taken over when the pointer comes, so the browser's own tooltip never
   shows). A row's title says its number, session and whole title.
 - **Selection bar:** while rows are selected, Later (the pull-tag: the rows go down into Off your mind), Egal, Read (with
   infos), Shred; one POST `/cards/batch`, one toast with Undo.
 - **With the agents:** answered cards whose session is still at it, and an info its agent is still working on
-  (`working`, from `start_task`: never on the Desk until its "Done: …" version), one line each, below the open ones. A card answered
-  with a final option (a small pen tick on its tile) never lies here: the answer settles it, it goes to "Off the desk"
-  at once ("settled by your answer"), and Take back opens it again.
-- **Foot:** two stacks docked at the bottom of the Desk (`desk.mjs deskDock`, in the Desk's layer, so not on a card's
-  page): the starred cards and the cards still running, each a small tab at the window's lower edge (a phone: a pill
-  above the tab pill) with its sign, its word and its count, no card at rest; a tap fans it upward as small cards,
-  the running one ends in the way to the complete list. The section
-  Off your mind (`offHint`) is a short hinted list of what is put off and closed, beside Artifacts on a wide window;
-  its heading opens `/stacks/off`, every card with a search. Which card lies where is the core's `DeskView` and `OffListView` (`core/client/src/off_mind.rs`): a card has one home, a starred card lies in the starred stack
-  only. The note stays in its corner (a phone: in the tab pill). Artifacts (the newest four;
-  its heading "Artifacts N" is the link that opens `/artifacts`: Media and Pages together, the newest first, the filter
-  All · Media · Pages, compact tiles in a soft frame with Open and, on a page, Share as small icons; 25 tiles made at once,
-  the rest as they come near).
+  (`working`, from `start_task`: never on a group page until its "Done: …" version) lie under Off your mind
+  (`/stacks/off`, the sidebar's Search: every card with a search, the core's `OffListView`). A card answered with a
+  final option (a small pen tick on its tile) is settled by the answer at once, and Take back opens it again.
+  Artifacts (`/artifacts`, the menu's Artifacts: Media and Pages together, the newest first, the filter All · Media ·
+  Pages, compact tiles in a soft frame with Open and, on a page, Share as small icons; 25 tiles made at once, the rest
+  as they come near).
 - **Note:** one drawn yellow note at the window's bottom-right; it unfolds there to write, takes attachments, sends to the crown of the team in view; a square sheet on a wide window (`sidebar.mjs` `cornerNote`).
-- **Sidebar:** on a wide screen one calm list (`sidebar.mjs` `sidebarRows`, `teamStack`). At its top the bell (home:
-  one Desk of every team, `Focus.desk_all`), Search and + (Add agent, Add team, Scribble). Then every team as a stack
-  (`TeamStackView`): its head card with a group picture of its agents' marks (`faces`) and what waits (a click opens
-  the team's Desk); a click on the stack fans its chats out under it, held by a pen bracket, and a click on the bracket
+- **Sidebar:** on a wide screen one calm list (`sidebar.mjs` `sidebarRows`, `teamStack`). At its top the bell (the group
+  page of the group in view), Search and + (Add agent, Add team, Scribble). Then every team as a stack
+  (`TeamStackView`): its head card with a group picture of its agents' marks (`faces`) and its open cards (a click opens
+  the team's group page); a click on the stack fans its chats out under it, held by a pen bracket, and a click on the bracket
   folds them back (`Focus.open_teams`, kept per device). A chat is a calm row (drawing, name, one grey line, one sign:
   `SessionRowView.signal`). Chats stand newest first, so a chat has no place of its own to be dragged to in its list
   (`SessionRowView.group` empty); a team's chat is dragged out onto "No team" at the top, and Move to Team… takes it
   to another team. A team's head is dragged among the other heads with its chats (Alt+↑/↓ on a focused one; `order`
   controller: `OrderTeams`, kept in the encrypted team registers on every device). The sidebar's right edge is dragged to resize it (`side-resize`, kept per device); dragged
-  narrow it becomes the rail (the key [ folds and opens it too). At the foot the account mark and a chevron open the
-  menu: Settings, What's new, Demo, Log out, and one row of push, theme and help. A phone keeps the Desk box with the team in view (its chevron opens the menu,
+  narrow it becomes the rail (the key [ folds and opens it too); folded it tells the core (`Focus.rail_folded`), which
+  then sends no counters at all, only one quiet dot on a chat that waits for you or is stopped. At the foot the account mark and a chevron open the
+  menu: Settings, What's new, Demo, Log out, and one row of push, theme and help. A phone keeps the group box with the team in view (its chevron opens the menu,
   the teams at its top) and the sessions of that team. Then "New agent" and
   the Trommi menu at its foot. One sidebar, two presentations (`sidebar.css` "A phone"): beside the page on a wide
   screen (foldable to a rail), a drawer up to 860px that a finger from the left edge slides in over the dimmed page (a
   tap beside it, a push back, Esc or a choice closes it). A phone's top line is the pill (the desk's drawing and name;
   it opens the menu, `sidebar.mjs` `phoneBar`), in a chat the way back to the chats; at its foot a glass capsule Chat ·
-  Desk · Note (`tabBar`).
+  Group · Note (`tabBar`).
 - **A chat** is calm, as Grok's (`Focus.calm`, as on the iPhone): the agent's words in grey bubbles with no face, name
   or time beside them (the time on hover; a helper's name above its words), a run of card events as small chips that
   open their card (`TalkRow` kind "events"), no helper list and no trail. While the agent works (`SessionView.working`)
@@ -227,11 +234,11 @@ instead); files come network first, the cache only offline. On the dev server (`
 
 ## The Scribble Board
 
-Drawing is the back of the Desk: its top-right corner is a small dog-ear that lifts as the pointer comes near and
+Drawing is the back of the group page: its top-right corner is a small dog-ear that lifts as the pointer comes near and
 follows it freely when held; a tap, a pull past a third of the way, a fling or `P` turns the page to the
 **Scribble Board** (`/scribble-board`; the same corner, Esc or `P` turns back; `ui.mjs` controller `curl`). Under the
 lifted sheet lies the other page itself: the board is the frame's part `pad`, mounted once when the corner is first
-approached and kept under the Desk (`app.mjs` `keepPad`); the Desk under the board is rendered from the model
+approached and kept under the group page (`app.mjs` `keepPad`); the group page under the board is rendered from the model
 (`peek`). The page is
 the pad (`whiteboard.mjs` mountPad) as large as the main area; select or frame something and **Send to…** a session.
 One drawing on it is a scribble.
@@ -283,7 +290,7 @@ The app says **account**, never "room" (inside, the core founds and joins a room
 
 ### Addresses
 
-`/` the Desk · `/team/:id` and `/?team=<id>` switch team · `/blitz` Blitz · `/artifacts` Artifacts (`?kind=media`, `?kind=pages`) · `/scribble-board` the Scribble Board · `/card/:nr` a card (`?v=n` an older version, `/picture/:n` a picture) · `/chat/:session` a session (`/files`, `/files/:n`, `/artifact/:id` one of its Artifacts) · `/chat/:session/card/:nr` a card from its session · `/chats` the list of chats · `/artifact/:share` a Share link's page · `/settings` Settings: one list (Invite a Device and Invite an Agent side by side, the device's code in place, `?pair=<invite>`; a row per page) · `/settings/agents` the agents (a program on a computer) with their sessions as a tree (`/settings/sessions` leads there) · `/settings/teams` every team as a card with its board small and its counts; the bin deletes a team with everything on it (held to confirm; client core `team_delete.rs`, finished on the next start when broken off) · `/settings/devices` your devices (phones, tablets, browsers) and Push (`/:device_id` one device: its fingerprint, Rename or Remove; `/removed` the removed ones) · `/settings/account` the account (`/password`, `/passkeys`, `/kit`, `/email`: each way in on its page, a change asks "Confirm it is you") · `/settings/theme` · `/settings/keys` · `/pair/:invite_id` an invite · `/join#v1.<hub>.<room>.<secret>` joining (the secret never reaches a server and leaves the address bar once read). The addresses of before, `/s/…` and `/a/…`, move to `/chat/…` and `/artifact/…` (a 301 of `worker.js`, and the router in the page: `public/paths.mjs`).
+`/` the group page (`?chat=<slug>` one chat's cards) · `/team/:id` and `/?team=<id>` switch group (`none`: the chats on no team) · `/blitz` Blitz · `/artifacts` Artifacts (`?kind=media`, `?kind=pages`) · `/scribble-board` the Scribble Board · `/card/:nr` a card (`?v=n` an older version, `/picture/:n` a picture) · `/chat/:session` a session (`/files`, `/files/:n`, `/artifact/:id` one of its Artifacts) · `/chat/:session/card/:nr` a card from its session · `/chats` the list of chats · `/artifact/:share` a Share link's page · `/settings` Settings: one list (Invite a Device and Invite an Agent side by side, the device's code in place, `?pair=<invite>`; a row per page) · `/settings/agents` the agents (a program on a computer) with their sessions as a tree (`/settings/sessions` leads there) · `/settings/teams` every team as a card with its board small and its counts; the bin deletes a team with everything on it (held to confirm; client core `team_delete.rs`, finished on the next start when broken off) · `/settings/devices` your devices (phones, tablets, browsers) and Push (`/:device_id` one device: its fingerprint, Rename or Remove; `/removed` the removed ones) · `/settings/account` the account (`/password`, `/passkeys`, `/kit`, `/email`: each way in on its page, a change asks "Confirm it is you") · `/settings/theme` · `/settings/keys` · `/pair/:invite_id` an invite · `/join#v1.<hub>.<room>.<secret>` joining (the secret never reaches a server and leaves the address bar once read). The addresses of before, `/s/…` and `/a/…`, move to `/chat/…` and `/artifact/…` (a 301 of `worker.js`, and the router in the page: `public/paths.mjs`).
 
 ### IndexedDB
 
@@ -293,7 +300,7 @@ The core owns what it stores: the device's state in the database `trommi` (the b
 
 - **Local first**: first paint from the view model the core made from IndexedDB; the network only adds what is new.
 - **Morph only**: after a render, the page is drawn again and only nodes whose markup changed are touched; the body is kept per part (a navigation keeps the topbar and sidebar if their markup is the same).
-- **Windowed**: conversations are timelines loaded newest page first (50), older pages on "Earlier"; a session page loads its cards' threads lazily; Desk rows and log messages out of sight are skipped by layout and paint (`content-visibility: auto`).
+- **Windowed**: conversations are timelines loaded newest page first (50), older pages on "Earlier"; a session page loads its cards' threads lazily; group page rows and log messages out of sight are skipped by layout and paint (`content-visibility: auto`).
 - **Lazy decrypt**: attachments are rendered as `/att/<id>` with `loading="lazy"`; the service worker asks the page, which fetches and decrypts only that file, only when it is shown or opened.
 - **No framework, one stylesheet, a small first load**: one minified bundle; a cold start fetches the entry, the page's
   side of the core worker and their shared chunks (preloaded at once) and the core worker, every other view comes when it is first needed or once the page is idle;
@@ -307,7 +314,7 @@ optimistic echoes entirely in memory, with no account store or hub. `public/demo
 and the UI clicks named by `?state=`. Bundled demo files supply its pictures. The fixture and the list of states
 live in [demo/](../../demo/README.md); no second demo model lives in JavaScript.
 
-Decrypted file URLs live only while the painted page or the Scribble canvas references them; leaving those views revokes them. Published-page text previews keep at most eight documents of at most 1 Mi characters each. The encrypted picture cache remains separate. Giving the device to another tab closes its WASM core and worker, clears decrypted file URLs and drops late I/O results. `tests/web/views/file-memory.browser.mjs` checks file release in an isolated browser without an account or hub. The ownership browser check uses weak references and a real collection cycle to verify that leaving the actual Desk releases its observed offscreen rows. The bounded demo sample had zero detached survivors from 39 observations even before cleanup. The unused generic deferred-list helper and its mutation observer were removed. These checks do not establish the cause of a long-open renderer reaching 12.8 GB; long-run RSS validation remains separate.
+Decrypted file URLs live only while the painted page or the Scribble canvas references them; leaving those views revokes them. Published-page text previews keep at most eight documents of at most 1 Mi characters each. The encrypted picture cache remains separate. Giving the device to another tab closes its WASM core and worker, clears decrypted file URLs and drops late I/O results. `tests/web/views/file-memory.browser.mjs` checks file release in an isolated browser without an account or hub. The ownership browser check uses weak references and a real collection cycle to verify that leaving the actual group page releases its observed offscreen rows. The bounded demo sample had zero detached survivors from 39 observations even before cleanup. The unused generic deferred-list helper and its mutation observer were removed. These checks do not establish the cause of a long-open renderer reaching 12.8 GB; long-run RSS validation remains separate.
 
 Keyed DOM updates keep the cursor on the replacement when a row at that cursor changes element type. The
 ownership browser gate exercises replacing the first row while adding a second; real-account updates must
@@ -319,10 +326,10 @@ page. A holder answers a probe through its page; after one second without an ans
 the lock. Explicit “Use it here” also requests takeover. The binding fences the revoked store and aborts its
 unfinished writes before notifying its worker to stop. Page exit terminates its worker; a restored back/forward
 page reloads before using the device. No stored device, keys or cache are deleted to recover ownership.
-**The start.** Until the core has something of the room to draw, `index.html` shows a quiet outline of the Desk
+**The start.** Until the core has something of the room to draw, `index.html` shows a quiet outline of the page
 (`#trommi-opening`: the sidebar's paper with three piles, the greeting "Opening *Trommi.*" in the display face with
 the pen underline, faint rows). Its one line is the core's own (`ViewModel.status` while it starts and opens:
-"Unlocking this device", "Loading your Desk", "Catching up: 120 of 480", "Almost there", with `args` step of steps
+"Unlocking this device", "Loading your cards", "Catching up: 120 of 480", "Almost there", with `args` step of steps
 and done of total; `core/client/src/app/start.rs`); before the core runs it says "Loading the app". One thin bar
 under it shows how far along the start is (a slow stroke to and fro until the core names a step). The outline goes
 once the core is past its start and the board this device kept is read (`app.mjs` `startDone`); while the room still

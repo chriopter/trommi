@@ -2,7 +2,7 @@
 
 **Your agents ring. Answer anywhere.**
 
-<img src="site/public/images/hero-light.png" width="880" alt="Trommi on a laptop and an iPhone: the Desk of the web app with the questions agents wait on, and one yes/no question on the phone">
+<img src="site/public/images/hero-light.png" width="880" alt="Trommi on a laptop and an iPhone: the web app with the questions agents wait on, and one yes/no question on the phone">
 
 Your Claude Code and Codex sessions ask, you answer: chat, decision cards and a Scribble Board, on the web and on
 the iPhone. Everything is encrypted on the devices with MLS (RFC 9420); the server only passes sealed messages on.
@@ -11,7 +11,8 @@ One Rust app core runs the web, iPhone, Mac, Linux and connector; the platform s
 - 💬 **Chat** with every agent session, the terminal mirrored
 - 🃏 **Decision cards**: the agent asks, you tap an answer
 - ✏️ **Scribble Board**: draw, write, stick notes, send them to an agent
-- 🗂 **Teams** to sort your agents, one dropdown switches between them; an agent's helpers show inside its session
+- 🗂 **Groups** (teams) to sort your agents: a group's page lists its open cards, questions first, with a chip per
+  chat; Blitz walks every group's open cards; an agent's helpers show inside its session
 - 🔒 **End-to-end encrypted**: the server never holds a key or reads content
 
 <img src=".github/readme/gallery-light.png" width="880" alt="The iPhone app: the Desk, a decision card with pictures, a chat with an agent, the Scribble Board">
@@ -59,6 +60,11 @@ The computer-approval release changes the MCP tool contract and needs one client
   message, a card, a file or a key.
 - **Dictation:** the chat field's microphone records, your device checks a Tinfoil enclave's attestation and seals
   the recording to it; the hub relays ciphertext only ([spec/v1.md](spec/v1.md) section 18, [SECURITY.md](SECURITY.md)).
+- **Groups:** your chats stand in groups (teams). A group's page lists its open cards in one list: the questions
+  under "Waits for you", what is only to read below under "To read"; a chip per chat (those that need you first, the
+  rest behind "+n") shows one chat's cards and opens it; the ⋯ beside the name holds Knowledge, Wakeups, the Scribble
+  Board and Rename. There is no page of every group: Blitz walks every group's open cards. The folded sidebar shows no
+  counters, only a quiet dot on a chat that waits for you or is stopped; the grey counters count cards, never messages.
 - **Connector:** one signed program that joins a Claude Code, Codex or Hermes Agent session to your room.
   What the agent is told: [connector/prompt.md](connector/prompt.md).
 
@@ -310,7 +316,7 @@ and does the desktop's services. It is a Cargo workspace of its own, so the main
 no Qt.
 
 ```text
-qml/              the window: View*.qml draw ViewModel (sign-in, sidebar, Desk, a session, a card); a tap is an
+qml/              the window: View*.qml draw ViewModel (sign-in, sidebar, group page, a session, a card); a tap is an
                   Event::Action, a page an Event::Focus
 src/shell.rs      the shell over the app core: the fold of every Render, the person's events, the slot's folders
 src/platform.rs   what the core asks of the desktop: files for drawing, saving, links, notifications
@@ -346,7 +352,7 @@ quits: the smoke test. Pictures over the real hub: `TROMMI_LINUX_SHOTS=<dir> car
 
 Each team has its knowledge: short entries (a title, at most 600 characters of text, a kind: rule, decision, fact or
 where, pinned or not, when it was last confirmed) that every agent of the team reads and keeps up to date on its own,
-such as where the deploy runs or how releases go. The Knowledge page of a team (its tile on the Desk; on the iPhone
+such as where the deploy runs or how releases go. The Knowledge page of a team (the ⋯ menu of its group page; on the iPhone
 also the pill's menu) lists them, pinned first then the newest, with a search and the filters New, Pinned and
 Forgotten; it marks what agents changed since you last looked, opens an entry with its history and an Undo for each
 change, and brings a forgotten entry back for 30 days. You add, edit, pin and forget entries there too; only you pin.
@@ -383,8 +389,9 @@ sequenceDiagram
   from before this rule may, and a chat whose placement has not reached this device yet), and for a chat whose team
   was deleted. Every agent invite and approved computer now writes its chat's team, or null. A chat on no team gets no
   team's goals or knowledge: your devices take the copies it held out of its session, and refuse its agent's writes
-  (`no_team`), until a team that is there is named for it. Its open cards are on the Desk of every team and the bolt,
-  not on a team's count. What its agent read while it was on a team it may still know, as when a chat moves from one
+  (`no_team`), until a team that is there is named for it. While there are such chats they are a group of their own,
+  "No team" (`Focus.team` `none`): its page lists their open cards, and the bolt walks them with every group's; they are
+  on no team's count. What its agent read while it was on a team it may still know, as when a chat moves from one
   team to another. Chats of one Hermes still share their Trommi tools, as above: a Hermes chat on no team can use the
   tools of that Hermes's chats on a team. One rule decides a chat's team for every part of the app
   (`sessions::team_of`).
@@ -399,8 +406,8 @@ connector keeps the clock on the computer the agent runs on: when one is due it 
 the session was closed it starts the agent's program again on that conversation (Claude Code `-p --resume`, Codex
 `exec resume`). Limits: 5 open per session, 2 that repeat, 12 runs a day, nothing from 22:00 to 07:00, a woken run
 at most 30 minutes (in Claude Code also 30 turns), a pause while the subscription's five-hour window is 80% used. Claude Code's asks
-for permission in a woken run come to you as yes/no cards. The Wakeups page of a team (the chat's title menu, the
-sidebar's menu; on the iPhone the pill's menu) lists them, the next first, with how often, who set it and how its last
+for permission in a woken run come to you as yes/no cards. The Wakeups page of a team (the ⋯ menu of its group page, the chat's
+title menu, the sidebar's menu; on the iPhone the pill's menu) lists them, the next first, with how often, who set it and how its last
 run went; you cancel one or give it another time there. The chat shows the next one as "Wakes at 09:00".
 
 - **Stored** as encrypted registers in the agent's session: `wakeup/<id>` (written by its connector) and your word on
