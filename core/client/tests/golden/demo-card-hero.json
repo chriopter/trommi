@@ -219,6 +219,21 @@
       ]
     }
   ],
+  "after": {
+    "next": {
+      "id": "29e26860adecd0578df14c491915b27a",
+      "number": 44,
+      "title": "Hold 1.2 for the widget crash fix in build 419?"
+    },
+    "says": {
+      "key": "card.next",
+      "en": "Next question"
+    },
+    "go": {
+      "key": "card.next.go",
+      "en": "Next"
+    }
+  },
   "words": {
     "recommended": {
       "key": "card.recommended",

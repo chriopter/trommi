@@ -50,6 +50,7 @@ fn the_demo_room_runs_without_a_hub() {
     let action = if card.fields.get("card_type").as_str() == Some("info") {
         Action::Read {
             card_id: row.id.clone(),
+            onward: false,
         }
     } else {
         Action::Shred {

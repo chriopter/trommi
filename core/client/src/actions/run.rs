@@ -143,6 +143,7 @@ impl Doing<'_> {
                 option_notes,
                 trusted,
                 marks,
+                onward,
             } => {
                 let files = self.files_of(attachments)?;
                 self.answer(
@@ -155,19 +156,34 @@ impl Doing<'_> {
                     *trusted,
                     files,
                     marks,
-                )
+                )?;
+                if *onward {
+                    let text = if *trusted {
+                        Text::new("card.onward.duck", "Left to the agent")
+                    } else {
+                        Text::new("card.onward.answered", "Answered")
+                    };
+                    self.onward(card_id, text);
+                }
+                Ok(())
             }
-            Action::Read { card_id } => self.answer(
-                action,
-                card_id,
-                "read",
-                &[],
-                None,
-                &Map::new(),
-                false,
-                Vec::new(),
-                &[],
-            ),
+            Action::Read { card_id, onward } => {
+                self.answer(
+                    action,
+                    card_id,
+                    "read",
+                    &[],
+                    None,
+                    &Map::new(),
+                    false,
+                    Vec::new(),
+                    &[],
+                )?;
+                if *onward {
+                    self.onward(card_id, Text::new("card.onward.read", "Read"));
+                }
+                Ok(())
+            }
             Action::Shred {
                 card_id,
                 note,
@@ -1483,6 +1499,24 @@ impl Doing<'_> {
 
     /// An answer of any kind ("answer", "read", "shred"): the card in the state the answer leaves it, at once.
     #[allow(clippy::too_many_arguments)]
+    /// The card's page went on after an answer: the toast that says it, the card's title, Undo taking it back.
+    fn onward(&mut self, card_id: &str, text: Text) {
+        let title = self
+            .model
+            .cards
+            .get(card_id)
+            .and_then(|c| c.field("title").as_str().map(str::to_string))
+            .filter(|t| !t.is_empty());
+        self.sent.undo_toast(
+            self.toasts,
+            text,
+            title.map(|t| Text::new("card.onward.title", &t)),
+            Action::DecideAgain {
+                card_id: card_id.to_string(),
+            },
+        );
+    }
+
     fn answer(
         &mut self,
         action: &Action,

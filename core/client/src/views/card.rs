@@ -675,10 +675,11 @@ fn thread(c: &Card, mut talk: Vec<TalkRow>) -> Vec<TalkRow> {
     talk
 }
 
-/// The way on once a card is settled: the next open question in the walk's order after the place it had (the core's
-/// walk, `next_open_after`, kept to the team in view), else the first that waits (the web's `nextOpen`).
+/// The way on: the next open question in the walk's order after the card's place (the core's walk,
+/// `next_open_after`, kept to the team in view), else the first that waits. Open, it is where the page goes once the
+/// card is answered there (the shells go on at once, before the answer comes back); settled, what follows it.
 fn after_of(b: &Board, v: &CardView, walk: &[String]) -> Option<AfterView> {
-    if v.status == "open" || v.status == "catching" || v.status.is_empty() {
+    if v.status == "catching" || v.status.is_empty() {
         return None;
     }
     let here: Vec<String> = b
@@ -2062,8 +2063,10 @@ mod tests {
             ),
             (Some("q1"), "Next question", "Next")
         );
-        // an open card offers none: the shell shows it right after an answer only
-        assert!(view(&r, "q1").after.is_none());
+        // open, the card where its page goes once answered there: the next after it, else the first that waits
+        let next = |id: &str| view(&r, id).after.and_then(|a| a.next).map(|n| n.id);
+        assert_eq!(next("q1").as_deref(), Some("q2"));
+        assert_eq!(next("q2").as_deref(), Some("q1"));
         r.cards.retain(|c| c["object_id"] == "done");
         let after = view(&r, "done").after.unwrap();
         assert_eq!(

@@ -1941,8 +1941,8 @@ pub struct CardView {
     /// (`Lens::comments_window`, `MoreOf::Comments`); none when it shows everything there is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub earlier: Option<MoreView>,
-    /// Once it is settled (not open, not catching up): the way on that the page offers right after the person
-    /// answered here (the shell shows it then): the next open question of the team in view, or that there is none.
+    /// The way on (not while catching up): the next open question of the team in view, or that there is none. Open,
+    /// where its page goes at once when the person answers there (`Action::Answer.onward`, the toast with Undo).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<AfterView>,
     /// The page's small fixed words (`CardWordsView`).

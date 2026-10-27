@@ -35,10 +35,16 @@ pub enum Action {
         /// Marks drawn on the card's pictures (`{picture, x, y, w, h, note?}` as the card's body has them).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         marks: Vec<serde_json::Value>,
+        /// Answered on the card's page, which goes on at once to the next card (`CardView.after`): what was done is
+        /// said in a toast whose Undo takes the answer back (`DecideAgain`).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        onward: bool,
     },
-    /// An info card read: closed.
+    /// An info card read: closed. `onward`: as `Answer`'s.
     Read {
         card_id: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        onward: bool,
     },
     /// Thrown away: closed without a choice.
     Shred {

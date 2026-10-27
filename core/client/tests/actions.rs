@@ -40,6 +40,7 @@ fn yes(card: &str) -> Action {
         option_notes: Default::default(),
         trusted: false,
         marks: vec![],
+        onward: false,
     }
 }
 
@@ -142,6 +143,7 @@ fn what_cannot_be_done_is_said_and_changes_nothing() {
         option_notes: Default::default(),
         trusted: false,
         marks: vec![],
+        onward: false,
     };
     act(&mut sim, wrong);
     assert_eq!(sim.view.toasts.len(), 1);
@@ -1408,6 +1410,43 @@ fn what_from_the_field_goes_as_the_draft_then_a_bare_hand_back() {
     act(&mut sim, field("  "));
     act(&mut sim, what());
     assert_eq!(last(&sim)["text"], json!(EXPLAIN_TEXT));
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+}
+
+/// Answered on a card's page that goes on at once (`onward`, the iPhone): the core says what was done in a toast with
+/// the card's title, and its Undo takes the answer back; without it (a row, the web's page) no toast of the core's.
+#[test]
+fn an_answer_that_goes_on_says_so_with_undo() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    let mut answer = yes(&card);
+    if let Action::Answer { onward, .. } = &mut answer {
+        *onward = true;
+    }
+    act(&mut sim, answer);
+    world.stream(&mut sim);
+    let state = |sim: &Sim| sim.app.board().model.cards[&card].object_state.clone();
+    assert_ne!(state(&sim), "open", "answered");
+    let toast = sim.view.toasts.last().expect("the toast").clone();
+    assert_eq!(toast.text.en, "Answered");
+    assert_eq!(toast.line.map(|l| l.en).as_deref(), Some("Ship it?"));
+    assert!(!toast.alert);
+    let undo = toast.action.expect("its Undo");
+    assert_eq!(
+        undo,
+        Action::DecideAgain {
+            card_id: card.clone()
+        }
+    );
+    sim.send(Event::Action {
+        action: Action::Dismiss { toast_id: toast.id },
+    });
+    act(&mut sim, undo);
+    world.stream(&mut sim);
+    assert_eq!(state(&sim), "open", "taken back");
+
+    act(&mut sim, yes(&card));
     assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
 }
 

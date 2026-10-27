@@ -19,8 +19,12 @@ fn one(way: &str, kind: &str, card_id: &str) -> Option<Action> {
             option_notes: Default::default(),
             trusted: true,
             marks: Vec::new(),
+            onward: false,
         },
-        ("sweep", "info") | ("read", "info") => Action::Read { card_id },
+        ("sweep", "info") | ("read", "info") => Action::Read {
+            card_id,
+            onward: false,
+        },
         ("later", _) => Action::Snooze {
             card_id,
             until_ms: None,

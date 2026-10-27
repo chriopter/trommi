@@ -143,6 +143,7 @@ fn the_snapshot_follows_the_board_and_is_not_sent_again_unchanged() {
             option_notes: Default::default(),
             trusted: false,
             marks: vec![],
+            onward: false,
         },
     });
     let sent = snapshots(&sim, from);
