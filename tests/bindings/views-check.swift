@@ -24,7 +24,7 @@ struct ViewsCheck {
       let data = try Data(contentsOf: URL(fileURLWithPath: "\(dir)/\(name)"))
       let same: Bool
       if name.hasPrefix("demo-sidebar") { same = try roundTrip(CoreView.SidebarView.self, data, name) }
-      else if name.hasPrefix("demo-desk") { same = try roundTrip(CoreView.DeskView.self, data, name) }
+      else if name.hasPrefix("demo-group") { same = try roundTrip(CoreView.GroupView.self, data, name) }
       else if name.hasPrefix("demo-session") { same = try roundTrip(CoreView.SessionView.self, data, name) }
       else if name.hasPrefix("demo-card") { same = try roundTrip(CoreView.CardView.self, data, name) }
       else { print("\(name): which view is it?"); exit(1) }

@@ -1,32 +1,21 @@
-//! Off your mind, of the team in view: the two stacks docked at the Desk's foot, the short hinted list under the Desk,
-//! and the page with every card off the Desk. Which card lies where, in what order, and how many are closed is the
-//! core's `off_mind` (crate::off_mind); here it is kept to the team in view and said.
+//! Off your mind, of the team in view: the page with every open card that is with its agent or put off, and the
+//! closed ones. Which card lies where, in what order, and how many are closed is the core's `off_mind`
+//! (crate::off_mind); here it is kept to the team in view and said.
 //!
-//! The rules are the web's of before (`desk.mjs` `offMind`, `deskDock`, `offHint`, `endList`, `restRow`; iOS
-//! `DeskDock`, `OffHint`, `OffList`):
+//! The rules are the web's of before (`desk.mjs` `offMind`, `endList`, `restRow`; iOS `OffList`):
 //! - a card counts where its session stands now; a card of a session the list does not show is in none;
-//! - the starred stack: the last starred first; the running stack: the one that moved last first, starred ones left
-//!   out (a card has one home);
-//! - the hint: the running stack's first three cards at its head ("2 more running" beyond them), then the put-off cards, then the
-//!   closed ones the newest first, the first three; "2 put off · 14 done";
 //! - the page: every card with its agent (starred ones too, each in its place by time), then the put-off cards, then
 //!   every closed card (done and thrown away merged, the newest first); a search keeps the cards whose title, session
 //!   name (and, for one with its agent, status line) hold every word.
 
 use super::board::{key_of, Board, Lens, OFF_PAGE};
-use super::desk::{from_of, short_title, shown_title};
+use super::group::{from_of, shown_title};
 use super::words::{local, say};
-use super::{
-    DeskView, DockRowView, DockView, FromView, MoreView, OffGroupView, OffHintView, OffListView,
-    OffRowView, OffWorkView, Screen, Text,
-};
+use super::{FromView, MoreView, OffGroupView, OffListView, OffRowView, OffWorkView, Text};
 use crate::model::types::Card;
-use crate::off_mind::{closed_at, off_mind, OffMind, Running};
+use crate::off_mind::{closed_at, off_mind, OffMind};
 use crate::status::card_place;
 use serde_json::Value;
-
-/// How many rows the hint under the Desk shows.
-pub const HINT_ROWS: usize = 3;
 
 const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -95,197 +84,6 @@ pub fn rest_row(b: &Board, c: &Card, place: &str, at: u64) -> OffRowView {
         until,
         says: say(&format!("off.place.{}", mark), word, &[]),
     }
-}
-
-fn dock_row(b: &Board, r: &Running, c: &Card, agent: usize) -> DockRowView {
-    let from = from(b, agent, c);
-    let name = from.name.clone();
-    let line = if r.label.is_empty() {
-        say(
-            "dock.line.on_it",
-            format!("{name} · on it"),
-            &[("name", &name)],
-        )
-    } else {
-        say(
-            "dock.line.label",
-            format!("{name} · {}", r.label),
-            &[("name", &name), ("label", &r.label)],
-        )
-    };
-    let title = shown_title(c);
-    DockRowView {
-        id: c.object_id.clone(),
-        short: short_title(&title),
-        title,
-        from,
-        line,
-        running: true,
-        at_ms: r.at,
-    }
-}
-
-fn count_says(key: &str, n: usize, word: &str) -> Text {
-    let n = n.to_string();
-    say(key, format!("{n} {word}"), &[("n", &n)])
-}
-
-/// Fills the Desk's Off your mind: the ids, the two docked stacks, the hint.
-pub fn fill_desk(b: &Board, off: &OffMind, desk: &mut DeskView) {
-    // ---- the stacks ----
-    let star_rows: Vec<DockRowView> = off
-        .starred
-        .iter()
-        .filter_map(|s| here(b, &s.object_id).map(|(c, a)| (s, c, a)))
-        .map(|(s, c, agent)| {
-            let from = from(b, agent, c);
-            let name = from.name.clone();
-            let line = if s.running {
-                say(
-                    "dock.line.starred_running",
-                    format!("{name} · running"),
-                    &[("name", &name)],
-                )
-            } else {
-                say("dock.line.starred", name.as_str(), &[("name", &name)])
-            };
-            let title = shown_title(c);
-            DockRowView {
-                id: c.object_id.clone(),
-                short: short_title(&title),
-                title,
-                from,
-                line,
-                running: s.running,
-                at_ms: s.at,
-            }
-        })
-        .collect();
-    let run_rows: Vec<DockRowView> = off
-        .running
-        .iter()
-        .filter_map(|r| here(b, &r.object_id).map(|(c, a)| dock_row(b, r, c, a)))
-        .collect();
-    desk.starred = (!star_rows.is_empty()).then(|| DockView {
-        key: "star".into(),
-        count: star_rows.len() as u32,
-        says: count_says("dock.star.says", star_rows.len(), "starred"),
-        rows: star_rows,
-        all: None,
-    });
-    desk.running = (!run_rows.is_empty()).then(|| DockView {
-        key: "run".into(),
-        count: run_rows.len() as u32,
-        says: count_says("dock.run.says", run_rows.len(), "running"),
-        rows: run_rows,
-        all: Some(say("dock.all", "All running and done", &[])),
-    });
-
-    // ---- the lists by id ----
-    desk.off_your_mind = off
-        .with_agents
-        .iter()
-        .filter(|r| here(b, &r.object_id).is_some())
-        .map(|r| r.object_id.clone())
-        .collect();
-    desk.later = off
-        .put_off
-        .iter()
-        .filter(|id| here(b, id).is_some())
-        .cloned()
-        .collect();
-    let recent: Vec<(&Card, &str, u64)> = off
-        .recent
-        .iter()
-        .filter_map(|r| here(b, &r.object_id).map(|(c, _)| (c, r.place.as_str(), r.at)))
-        .collect();
-    desk.done = recent.iter().map(|(c, _, _)| c.object_id.clone()).collect();
-
-    // ---- the hint ----
-    let closed: u64 = b
-        .agents
-        .iter()
-        .filter(|a| a.on_team)
-        .filter_map(|a| off.closed.get(&a.row.key))
-        .sum();
-    let put_off = desk.later.len();
-    let running: Vec<DockRowView> = desk
-        .running
-        .as_ref()
-        .map(|d| d.rows.iter().take(HINT_ROWS).cloned().collect())
-        .unwrap_or_default();
-    let more = desk
-        .running
-        .as_ref()
-        .map_or(0, |d| d.rows.len().saturating_sub(running.len()));
-    let running_more =
-        (more > 0).then(|| count_says("off.hint.running_more", more, "more running"));
-    let running_all = desk.running.as_ref().map_or(0, |d| d.rows.len());
-    desk.off = (put_off > 0 || closed > 0 || !running.is_empty()).then(|| {
-        let rows = desk
-            .later
-            .iter()
-            .filter_map(|id| b.model.cards.get(id).map(|c| rest_row(b, c, "later", 0)))
-            .chain(
-                recent
-                    .iter()
-                    .map(|(c, place, at)| rest_row(b, c, place, *at)),
-            )
-            .take(HINT_ROWS)
-            .collect();
-        let (p, d) = (put_off.to_string(), closed.to_string());
-        let says = match (put_off > 0, closed > 0) {
-            (true, true) => say(
-                "off.hint.both",
-                format!("{p} put off · {d} done"),
-                &[("put_off", &p), ("done", &d)],
-            ),
-            (true, false) => say(
-                "off.hint.put_off",
-                format!("{p} put off"),
-                &[("put_off", &p)],
-            ),
-            (false, true) => say("off.hint.done", format!("{d} done"), &[("done", &d)]),
-            (false, false) => say("off.hint.none", "Nothing done yet", &[]),
-        };
-        let line = hint_line(running_all, put_off, closed);
-        OffHintView {
-            running,
-            running_more,
-            rows,
-            says,
-            put_off: put_off as u32,
-            closed: closed as u32,
-            line,
-            opens: Screen::Off {
-                query: String::new(),
-            },
-        }
-    });
-}
-
-/// The hint in one line: what runs, what is put off, what is done, each only when there is some ("2 running · 14 done").
-fn hint_line(running: usize, put_off: usize, closed: u64) -> Text {
-    let (r, p, d) = (running.to_string(), put_off.to_string(), closed.to_string());
-    let parts: Vec<String> = [
-        (running > 0, format!("{r} running")),
-        (put_off > 0, format!("{p} put off")),
-        (closed > 0, format!("{d} done")),
-    ]
-    .into_iter()
-    .filter_map(|(on, part)| on.then_some(part))
-    .collect();
-    let key = format!(
-        "off.hint.line.{}{}{}",
-        u8::from(running > 0),
-        u8::from(put_off > 0),
-        u8::from(closed > 0)
-    );
-    say(
-        &key,
-        parts.join(" \u{b7} "),
-        &[("running", &r), ("put_off", &p), ("done", &d)],
-    )
 }
 
 /// The page Off your mind for the search's words `query`.
@@ -458,14 +256,11 @@ mod tests {
     use crate::views::Lens;
     use serde_json::json;
 
-    fn render(r: &Room, lens: &Lens) -> (DeskView, Option<OffListView>) {
+    fn render(r: &Room, lens: &Lens) -> Option<OffListView> {
         let m = r.model(NOW);
         let b = Board::new(&m, lens, NOW);
-        let mut desk = DeskView::default();
         let off = of_board(&b);
-        fill_desk(&b, &off, &mut desk);
-        let list = lens.off.as_deref().map(|q| off_list(&b, &off, q));
-        (desk, list)
+        lens.off.as_deref().map(|q| off_list(&b, &off, q))
     }
     fn ids<T>(l: &[T], id: impl Fn(&T) -> &str) -> Vec<String> {
         l.iter().map(|x| id(x).to_string()).collect()
@@ -508,141 +303,13 @@ mod tests {
     }
 
     #[test]
-    fn the_two_stacks_of_the_desk_in_view_a_starred_card_in_one_only() {
-        let main = Lens {
-            team: Some("main".into()),
-            ..Default::default()
-        };
-        let (d, _) = render(&room(), &main);
-        let star = d.starred.as_ref().unwrap();
-        assert_eq!(
-            (star.key.as_str(), star.count, star.says.en.as_str()),
-            ("star", 2, "2 starred")
-        );
-        assert_eq!(
-            ids(&star.rows, |r| &r.id),
-            ["run-star", "on-desk-star"],
-            "the last starred on top"
-        );
-        assert_eq!(
-            (
-                star.rows[0].line.en.as_str(),
-                star.rows[0].running,
-                star.rows[1].line.en.as_str()
-            ),
-            ("a · running", true, "a")
-        );
-        let run = d.running.as_ref().unwrap();
-        assert_eq!(
-            ids(&run.rows, |r| &r.id),
-            ["run-new", "run-old"],
-            "the one that moved last on top, no starred card, no other team's"
-        );
-        assert_eq!(
-            (
-                run.count,
-                run.says.en.as_str(),
-                run.rows[0].line.en.as_str()
-            ),
-            (2, "2 running", "b · on it")
-        );
-        assert_eq!(
-            run.all.as_ref().map(|t| t.en.as_str()),
-            Some("All running and done")
-        );
-        assert_eq!(
-            d.off_your_mind,
-            ["run-new", "run-star", "run-old"],
-            "the complete list holds the starred one in its place by time"
-        );
-        // the other team: its own running card only
-        let (d, _) = render(
-            &room(),
-            &Lens {
-                team: Some("lab".into()),
-                ..Default::default()
-            },
-        );
-        assert!(d.starred.is_none());
-        assert_eq!(ids(&d.running.unwrap().rows, |r| &r.id), ["lab-run"]);
-        // (what runs stands in the hint too, so the iPhone needs no stack over the Desk)
-        let h = d.off.unwrap();
-        assert_eq!(ids(&h.running, |r| &r.id), ["lab-run"]);
-        assert_eq!(
-            (h.running_more, h.says.en.as_str(), h.rows.len()),
-            (None, "Nothing done yet", 0)
-        );
-        assert_eq!(
-            (h.line.en.as_str(), h.line.key.as_str()),
-            ("1 running", "off.hint.line.100")
-        );
-    }
-
-    #[test]
-    fn the_hint_put_off_first_then_closed_and_how_many() {
-        let (d, _) = render(&room(), &Lens::default());
-        assert_eq!(d.later, ["later-2", "later-1"]);
-        assert_eq!(d.done, ["shredded", "done-1"]);
-        let h = d.off.unwrap();
-        assert_eq!(
-            (h.says.en.as_str(), h.put_off, h.closed),
-            ("2 put off · 2 done", 2, 2)
-        );
-        assert_eq!(
-            ids(&h.running, |r| &r.id),
-            ["run-new", "run-old"],
-            "the running stack's cards head the hint, no starred one"
-        );
-        assert!(h.running_more.is_none(), "all of them shown");
-        assert_eq!(
-            h.line.en, "2 running \u{b7} 2 put off \u{b7} 2 done",
-            "the calm Desk's one line"
-        );
-        assert_eq!(
-            h.opens,
-            Screen::Off {
-                query: String::new()
-            },
-            "it opens the complete list"
-        );
-        assert_eq!(
-            h.rows
-                .iter()
-                .map(|r| (r.id.as_str(), r.mark.as_str(), r.says.en.as_str()))
-                .collect::<Vec<_>>(),
-            [
-                ("later-2", "snooze", "Later"),
-                ("later-1", "snooze", "Later"),
-                ("shredded", "shred", "Shredded")
-            ]
-        );
-        // (put off until the next morning, in the person's zone: NOW is Tue 13 Oct 2026 14:05 UTC)
-        let (d, _) = render(
-            &room(),
-            &Lens {
-                utc_offset_min: 120,
-                ..Default::default()
-            },
-        );
-        assert_eq!(
-            d.off.unwrap().rows[1].until.as_ref().unwrap().en,
-            "until Wed 07:05"
-        );
-        // nothing put off or closed: no hint
-        let mut r = Room::default();
-        r.session("a", None, true);
-        let (d, _) = render(&r, &Lens::default());
-        assert!(d.off.is_none() && d.starred.is_none() && d.running.is_none());
-    }
-
-    #[test]
     fn the_complete_list_and_its_search() {
         let lens = |q: &str| Lens {
             off: Some(q.into()),
             team: Some("main".into()),
             ..Default::default()
         };
-        let (_, l) = render(&room(), &lens(""));
+        let l = render(&room(), &lens(""));
         let l = l.unwrap();
         assert_eq!(ids(&l.works, |w| &w.id), ["run-new", "run-star", "run-old"]);
         assert!(l.works[1].starred && !l.works[0].starred);
@@ -684,7 +351,7 @@ mod tests {
             ]
         );
         // every word, in the title or the session's name, any case
-        let (_, l) = render(&room(), &lens("LATER b"));
+        let l = render(&room(), &lens("LATER b"));
         let l = l.unwrap();
         assert_eq!(
             (ids(&l.works, |w| &w.id), ids(&l.rest, |r| &r.id)),
@@ -695,12 +362,12 @@ mod tests {
             ["later"],
             "an empty group is not there"
         );
-        let (_, l) = render(&room(), &lens("nothing-like-this"));
+        let l = render(&room(), &lens("nothing-like-this"));
         assert_eq!(l.unwrap().none.unwrap().en, "Nothing here has these words.");
         let mut r = Room::default();
         r.session("a", None, true);
         assert_eq!(
-            render(&r, &lens("")).1.unwrap().none.unwrap().en,
+            render(&r, &lens("")).unwrap().none.unwrap().en,
             "Nothing yet."
         );
     }
@@ -712,15 +379,13 @@ mod tests {
         for i in 0..(crate::off_mind::RECENT as u64 + 30) {
             r.answered(&format!("k{i:03}"), "a", NOW - 7 * 60 * MIN - i, 10 + i);
         }
-        let (d, l) = render(
+        let l = render(
             &r,
             &Lens {
                 off: Some(String::new()),
                 ..Default::default()
             },
         );
-        assert_eq!(d.done.len(), crate::off_mind::RECENT);
-        assert_eq!(d.off.unwrap().closed as usize, crate::off_mind::RECENT + 30);
         // (all of them, through the window's pages)
         let l = l.unwrap();
         assert_eq!(
@@ -741,7 +406,7 @@ mod tests {
             off: Some(String::new()),
             ..Default::default()
         };
-        let (_, list) = render(&r, &lens);
+        let list = render(&r, &lens);
         let list = list.unwrap();
         assert_eq!(list.rest.len(), OFF_PAGE);
         assert_eq!(list.rest[0].id, "d000");
@@ -759,11 +424,11 @@ mod tests {
         lens.show_more(crate::views::MoreOf::Off {
             query: String::new(),
         });
-        let (_, list) = render(&r, &lens);
+        let list = render(&r, &lens);
         let list = list.unwrap();
         assert_eq!((list.rest.len(), list.more), (OFF_PAGE + 30, None));
         // a search has its own window
         lens.off = Some("d0".into());
-        assert!(render(&r, &lens).1.unwrap().rest.len() <= OFF_PAGE);
+        assert!(render(&r, &lens).unwrap().rest.len() <= OFF_PAGE);
     }
 }

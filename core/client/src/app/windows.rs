@@ -3,7 +3,7 @@
 //! window never names one and is window 0.
 //!
 //! What is a window's: its lens (team, page, search, the pages of a list shown), its parts of the view model
-//! (`WindowParts`: sidebar, Desk, the session and card in view, the board, …), what it was rendered last, the note
+//! (`WindowParts`: sidebar, group page, the session and card in view, the board, …), what it was rendered last, the note
 //! it is writing, whether it is in front. Everything else is the device's and the same in every window: the room, the phase and its line,
 //! the account's steps, settings, files, dictation, the toasts.
 //!

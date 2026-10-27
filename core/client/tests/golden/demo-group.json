@@ -1,8 +1,6 @@
 {
   "stack": [
     "0bfe44d41f866466dc1f6246fabac244",
-    "185b315a758472a6fc1faed37e49f875",
-    "e77e5a529e1d3a4bd3046ce602a34c1e",
     "8b91e8761d15b3933a6412af44da7851",
     "de6f89dc61b5db9b5ad8cd2eaf14abce",
     "177482f5593de33230dfeb8e72506993",
@@ -15,234 +13,98 @@
     "9c9f4031e513b80e68c67139a12e408b",
     "e3eb869558332fec907b2752f54a608a",
     "58f19345f724a39460db70a4377995c8",
-    "76ab0cafab45f8b2011853527a3dc10e"
+    "76ab0cafab45f8b2011853527a3dc10e",
+    "185b315a758472a6fc1faed37e49f875",
+    "e77e5a529e1d3a4bd3046ce602a34c1e"
   ],
-  "off_your_mind": [
-    "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
-    "d86df7a1fc5ebcd07e11d5e7693160eb"
-  ],
-  "later": [],
-  "done": [
-    "97e50f22901b42df1695b8b83fe0b69f",
-    "b4df3dafbbefb36d523cf4e80f9f5402",
-    "cac2dd6c8c804cbff53f50e0bf8c239e",
-    "b03faad45844fc7f92107d3ae1e5b9c3",
-    "fa55e71001ede5adfb858626449dd757",
-    "e43f3b8e342d703dba381ecb7317e670",
-    "e3245eb6a15862875ad911755de9e171",
-    "ecf4dce02716faba82fe8b6d05c7ecf2",
-    "80365f43d5c42ae69a91233c0c7e345d",
-    "006373ba27def50d7e29577e42cdac36"
-  ],
-  "running": {
-    "key": "run",
-    "count": 2,
-    "says": {
-      "key": "dock.run.says",
-      "args": {
-        "n": "2"
-      },
-      "en": "2 running"
+  "mode": "group",
+  "head": {
+    "team_id": "main",
+    "name": {
+      "key": "team.name",
+      "en": "Fernly"
     },
-    "rows": [
+    "faces": [
       {
-        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
-        "title": "Social card for the launch: photo or illustration?",
-        "short": "Social card for the launch: photo or illustration?",
-        "from": {
-          "session_id": "54ddca7af4029f0526984da1e346d833",
-          "name": "Fernly Website",
-          "mark": "draw:leaf",
-          "path": [
-            "Fernly",
-            "Fernly Website"
-          ],
-          "helper": {
-            "key": "from.helper",
-            "args": {
-              "name": "Search & Social"
-            },
-            "en": "Helper Search & Social"
-          }
-        },
-        "line": {
-          "key": "dock.line.label",
-          "args": {
-            "label": "Launch checklist",
-            "name": "Fernly Website"
-          },
-          "en": "Fernly Website · Launch checklist"
-        },
-        "running": true,
-        "at_ms": 1791469560000
+        "id": "54ddca7af4029f0526984da1e346d833",
+        "mark": "draw:leaf"
       },
       {
-        "id": "d86df7a1fc5ebcd07e11d5e7693160eb",
-        "title": "Rename the colour “clay” to “due” in the tokens?",
-        "short": "Rename the colour “clay” to “due” in the tokens?",
-        "from": {
-          "session_id": "9aa575fae2c64ece4ae4ab1b783673da",
-          "name": "Design System",
-          "mark": "draw:gem",
-          "path": [
-            "Fernly",
-            "Design System"
-          ],
-          "helper": {
-            "key": "from.helper",
-            "args": {
-              "name": "Design Tokens"
-            },
-            "en": "Helper Design Tokens"
-          }
-        },
-        "line": {
-          "key": "dock.line.label",
-          "args": {
-            "label": "Names",
-            "name": "Design System"
-          },
-          "en": "Design System · Names"
-        },
-        "running": true,
-        "at_ms": 1791469200000
+        "id": "4abc388943bda4956b58dc2d5eb3e7e1",
+        "mark": "draw:ghost"
+      },
+      {
+        "id": "9aa575fae2c64ece4ae4ab1b783673da",
+        "mark": "draw:gem"
       }
     ],
-    "all": {
-      "key": "dock.all",
-      "en": "All running and done"
+    "menu": [
+      {
+        "key": "knowledge",
+        "label": {
+          "key": "group.menu.knowledge",
+          "en": "Knowledge"
+        },
+        "count": {
+          "key": "group.menu.knowledge.fresh",
+          "args": {
+            "n": "8",
+            "new": "2"
+          },
+          "en": "8 entries · 2 new"
+        },
+        "opens": {
+          "screen": "knowledge",
+          "filter": "new"
+        },
+        "apart": false
+      },
+      {
+        "key": "wakeups",
+        "label": {
+          "key": "group.menu.wakeups",
+          "en": "Wakeups"
+        },
+        "count": {
+          "key": "group.menu.wakeups.count",
+          "args": {
+            "n": "3"
+          },
+          "en": "3 set"
+        },
+        "opens": {
+          "screen": "wakeups"
+        },
+        "apart": false
+      },
+      {
+        "key": "board",
+        "label": {
+          "key": "group.menu.board",
+          "en": "Scribble Board"
+        },
+        "opens": {
+          "screen": "scribble",
+          "board_id": "desk/6d61696e000000000000000000000004"
+        },
+        "apart": false
+      },
+      {
+        "key": "rename",
+        "label": {
+          "key": "group.menu.rename",
+          "en": "Rename group"
+        },
+        "apart": true
+      }
+    ],
+    "menu_says": {
+      "key": "group.menu.says",
+      "args": {
+        "name": "Fernly"
+      },
+      "en": "More of Fernly"
     }
-  },
-  "off": {
-    "running": [
-      {
-        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
-        "title": "Social card for the launch: photo or illustration?",
-        "short": "Social card for the launch: photo or illustration?",
-        "from": {
-          "session_id": "54ddca7af4029f0526984da1e346d833",
-          "name": "Fernly Website",
-          "mark": "draw:leaf",
-          "path": [
-            "Fernly",
-            "Fernly Website"
-          ],
-          "helper": {
-            "key": "from.helper",
-            "args": {
-              "name": "Search & Social"
-            },
-            "en": "Helper Search & Social"
-          }
-        },
-        "line": {
-          "key": "dock.line.label",
-          "args": {
-            "label": "Launch checklist",
-            "name": "Fernly Website"
-          },
-          "en": "Fernly Website · Launch checklist"
-        },
-        "running": true,
-        "at_ms": 1791469560000
-      },
-      {
-        "id": "d86df7a1fc5ebcd07e11d5e7693160eb",
-        "title": "Rename the colour “clay” to “due” in the tokens?",
-        "short": "Rename the colour “clay” to “due” in the tokens?",
-        "from": {
-          "session_id": "9aa575fae2c64ece4ae4ab1b783673da",
-          "name": "Design System",
-          "mark": "draw:gem",
-          "path": [
-            "Fernly",
-            "Design System"
-          ],
-          "helper": {
-            "key": "from.helper",
-            "args": {
-              "name": "Design Tokens"
-            },
-            "en": "Helper Design Tokens"
-          }
-        },
-        "line": {
-          "key": "dock.line.label",
-          "args": {
-            "label": "Names",
-            "name": "Design System"
-          },
-          "en": "Design System · Names"
-        },
-        "running": true,
-        "at_ms": 1791469200000
-      }
-    ],
-    "rows": [
-      {
-        "id": "97e50f22901b42df1695b8b83fe0b69f",
-        "place": "done",
-        "mark": "tick",
-        "title": "TestFlight: build 418 is out to 1,240 testers",
-        "starred": false,
-        "at_ms": 1791456000000,
-        "says": {
-          "key": "off.place.tick",
-          "en": "Done"
-        }
-      },
-      {
-        "id": "b4df3dafbbefb36d523cf4e80f9f5402",
-        "place": "done",
-        "mark": "tick",
-        "title": "One tokens file for web and iOS?",
-        "starred": false,
-        "at_ms": 1791392400000,
-        "says": {
-          "key": "off.place.tick",
-          "en": "Done"
-        }
-      },
-      {
-        "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
-        "place": "done",
-        "mark": "tick",
-        "title": "Remind in the morning or in the evening?",
-        "starred": false,
-        "at_ms": 1791380400000,
-        "says": {
-          "key": "off.place.tick",
-          "en": "Done"
-        }
-      }
-    ],
-    "says": {
-      "key": "off.hint.done",
-      "args": {
-        "done": "10"
-      },
-      "en": "10 done"
-    },
-    "put_off": 0,
-    "closed": 10,
-    "line": {
-      "key": "off.hint.line.101",
-      "args": {
-        "done": "10",
-        "put_off": "0",
-        "running": "2"
-      },
-      "en": "2 running · 10 done"
-    },
-    "opens": {
-      "screen": "off",
-      "query": ""
-    }
-  },
-  "mode": "desk",
-  "hello": {
-    "key": "desk.hello.greeting.0",
-    "en": "Welcome back."
   },
   "goals": {
     "team_id": "main",
@@ -254,7 +116,7 @@
     ],
     "foldable": true,
     "show_all": {
-      "key": "desk.goals.show_all",
+      "key": "group.goals.show_all",
       "args": {
         "n": "4"
       },
@@ -262,33 +124,97 @@
     },
     "folded": false,
     "toggle": {
-      "key": "desk.goals.fold",
+      "key": "group.goals.fold",
       "en": "Show the first goal only"
     }
   },
-  "knowledge": {
-    "team_id": "main",
-    "label": {
-      "key": "knowledge.chip",
-      "en": "Knowledge"
-    },
-    "count": 8,
-    "says": {
-      "key": "knowledge.chip.says",
-      "args": {
-        "n": "8"
+  "chips": [
+    {
+      "session_id": "",
+      "slug": "",
+      "name": {
+        "key": "group.chip.all",
+        "en": "All"
       },
-      "en": "Team knowledge: 8 entries"
+      "mark": "",
+      "count": 16,
+      "needs": false,
+      "selected": true,
+      "says": {
+        "key": "group.chip.all.says",
+        "args": {
+          "n": "16"
+        },
+        "en": "All: 16 open cards"
+      }
     },
-    "first": [
-      "Launch time",
-      "Release branches",
-      "TestFlight builds",
-      "Checkout in Safari"
-    ],
-    "fresh": 2
+    {
+      "session_id": "54ddca7af4029f0526984da1e346d833",
+      "slug": "fernly-web",
+      "name": {
+        "key": "session.name",
+        "en": "Fernly Website"
+      },
+      "mark": "draw:leaf",
+      "count": 0,
+      "needs": true,
+      "selected": false,
+      "says": {
+        "key": "group.chip.waits",
+        "args": {
+          "name": "Fernly Website"
+        },
+        "en": "Fernly Website: waits for you"
+      }
+    },
+    {
+      "session_id": "4abc388943bda4956b58dc2d5eb3e7e1",
+      "slug": "fernly-ios",
+      "name": {
+        "key": "session.name",
+        "en": "Fernly App"
+      },
+      "mark": "draw:ghost",
+      "count": 0,
+      "needs": true,
+      "selected": false,
+      "says": {
+        "key": "group.chip.waits",
+        "args": {
+          "name": "Fernly App"
+        },
+        "en": "Fernly App: waits for you"
+      }
+    },
+    {
+      "session_id": "9aa575fae2c64ece4ae4ab1b783673da",
+      "slug": "design-system",
+      "name": {
+        "key": "session.name",
+        "en": "Design System"
+      },
+      "mark": "draw:gem",
+      "count": 0,
+      "needs": true,
+      "selected": false,
+      "says": {
+        "key": "group.chip.waits",
+        "args": {
+          "name": "Design System"
+        },
+        "en": "Design System: waits for you"
+      }
+    }
+  ],
+  "chips_shown": 4,
+  "questions_says": {
+    "key": "group.questions",
+    "args": {
+      "n": "14"
+    },
+    "en": "Waits for you"
   },
-  "rows": [
+  "questions": [
     {
       "id": "0bfe44d41f866466dc1f6246fabac244",
       "kind": "decision",
@@ -320,7 +246,7 @@
           "en": "Helper Icons"
         }
       },
-      "run": 1,
+      "run": 0,
       "media": [
         {
           "file_id": "687c43924ea28cd664ca7bab4736cdc1",
@@ -385,88 +311,6 @@
       ]
     },
     {
-      "id": "185b315a758472a6fc1faed37e49f875",
-      "kind": "info",
-      "loading": false,
-      "newer": false,
-      "title": "Landing page: 1.4 s on a mid-range phone over 4G",
-      "words": "Was 3.1 s. The plant library now loads on the first keystroke in search.",
-      "urgency": "low",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791459000000,
-      "from": {
-        "session_id": "54ddca7af4029f0526984da1e346d833",
-        "name": "Fernly Website",
-        "mark": "draw:leaf",
-        "path": [
-          "Fernly",
-          "Fernly Website"
-        ],
-        "helper": {
-          "key": "from.helper",
-          "args": {
-            "name": "Page Speed"
-          },
-          "en": "Helper Page Speed"
-        }
-      },
-      "run": 2,
-      "tiles": {
-        "kind": "read",
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "shred"
-      ]
-    },
-    {
-      "id": "e77e5a529e1d3a4bd3046ce602a34c1e",
-      "kind": "info",
-      "loading": false,
-      "newer": false,
-      "title": "Done: onboarding in three steps is on staging",
-      "words": "Name, first plant, reminder time. 48 seconds on average in the hallway test.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791460200000,
-      "from": {
-        "session_id": "54ddca7af4029f0526984da1e346d833",
-        "name": "Fernly Website",
-        "mark": "draw:leaf",
-        "path": [
-          "Fernly",
-          "Fernly Website"
-        ]
-      },
-      "run": 0,
-      "media": [
-        {
-          "file_id": "c11ba9616d097302b2a8b1c9b19b3e4b",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "args": {
-          "n": "1"
-        },
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "read",
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "shred"
-      ]
-    },
-    {
       "id": "8b91e8761d15b3933a6412af44da7851",
       "kind": "decision",
       "loading": false,
@@ -497,7 +341,7 @@
           "en": "Helper Dark Mode"
         }
       },
-      "run": 1,
+      "run": 0,
       "media": [
         {
           "file_id": "5ca5dedf9050f8b9e4680a003b3c62a2",
@@ -595,7 +439,7 @@
           "en": "Helper App Store"
         }
       },
-      "run": 2,
+      "run": 0,
       "media": [
         {
           "file_id": "a9870901f141a7a66f944f082a3c95b9",
@@ -752,7 +596,7 @@
           "en": "Helper Onboarding"
         }
       },
-      "run": 4,
+      "run": 0,
       "tiles": {
         "kind": "pair",
         "tiles": [
@@ -1100,7 +944,7 @@
           "Fernly App"
         ]
       },
-      "run": 1,
+      "run": 0,
       "media": [
         {
           "file_id": "329cc1959463d795c114da54649fc6f1",
@@ -1187,7 +1031,7 @@
           "Fernly Website"
         ]
       },
-      "run": 2,
+      "run": 0,
       "tiles": {
         "kind": "pair",
         "tiles": [
@@ -1349,7 +1193,7 @@
           "en": "Helper Design Tokens"
         }
       },
-      "run": 1,
+      "run": 0,
       "media": [
         {
           "file_id": "ee41edd7dcc3f396c12066b3aff8e0b6",
@@ -1440,7 +1284,7 @@
           "en": "Helper Onboarding"
         }
       },
-      "run": 2,
+      "run": 0,
       "media": [
         {
           "file_id": "574e8196f2e02ec8f2f70e688e486e9d",
@@ -1610,19 +1454,115 @@
       ]
     }
   ],
+  "reads_says": {
+    "key": "group.reads",
+    "args": {
+      "n": "2"
+    },
+    "en": "To read"
+  },
+  "reads": [
+    {
+      "id": "185b315a758472a6fc1faed37e49f875",
+      "kind": "info",
+      "loading": false,
+      "newer": false,
+      "title": "Landing page: 1.4 s on a mid-range phone over 4G",
+      "words": "Was 3.1 s. The plant library now loads on the first keystroke in search.",
+      "urgency": "low",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791459000000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Page Speed"
+          },
+          "en": "Helper Page Speed"
+        }
+      },
+      "run": 0,
+      "tiles": {
+        "kind": "read",
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "shred"
+      ]
+    },
+    {
+      "id": "e77e5a529e1d3a4bd3046ce602a34c1e",
+      "kind": "info",
+      "loading": false,
+      "newer": false,
+      "title": "Done: onboarding in three steps is on staging",
+      "words": "Name, first plant, reminder time. 48 seconds on average in the hallway test.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791460200000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ]
+      },
+      "run": 0,
+      "media": [
+        {
+          "file_id": "c11ba9616d097302b2a8b1c9b19b3e4b",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "read",
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "shred"
+      ]
+    }
+  ],
   "waiting": 14,
   "blitz": {
-    "key": "desk.blitz",
-    "args": {
-      "n": "16"
+    "card": "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
+    "says": {
+      "key": "blitz",
+      "args": {
+        "n": "29"
+      },
+      "en": "Blitz: 29 open cards"
     },
-    "en": "Blitz: 16 open cards"
+    "scope": {
+      "key": "blitz.scope",
+      "en": "all groups"
+    }
   },
   "duck": {
     "card_ids": [
       "0bfe44d41f866466dc1f6246fabac244",
-      "185b315a758472a6fc1faed37e49f875",
-      "e77e5a529e1d3a4bd3046ce602a34c1e",
       "8b91e8761d15b3933a6412af44da7851",
       "de6f89dc61b5db9b5ad8cd2eaf14abce",
       "177482f5593de33230dfeb8e72506993",
@@ -1635,10 +1575,12 @@
       "9c9f4031e513b80e68c67139a12e408b",
       "e3eb869558332fec907b2752f54a608a",
       "58f19345f724a39460db70a4377995c8",
-      "76ab0cafab45f8b2011853527a3dc10e"
+      "76ab0cafab45f8b2011853527a3dc10e",
+      "185b315a758472a6fc1faed37e49f875",
+      "e77e5a529e1d3a4bd3046ce602a34c1e"
     ],
     "tip": {
-      "key": "desk.duck.tip.all",
+      "key": "duck.tip.all",
       "args": {
         "decisions": "14",
         "n": "16",
@@ -1647,11 +1589,11 @@
       "en": "I don’t give a duck: for all 16 open cards"
     },
     "short": {
-      "key": "desk.duck.short",
+      "key": "duck.short",
       "en": "IDGAD"
     },
     "what": {
-      "key": "desk.duck.what",
+      "key": "duck.what",
       "args": {
         "decisions": "14",
         "n": "16",
@@ -1660,7 +1602,7 @@
       "en": "14 decisions go to the agents, 2 cards to read are closed"
     },
     "ask": {
-      "key": "desk.duck.ask",
+      "key": "duck.ask",
       "args": {
         "decisions": "14",
         "n": "16",
@@ -1669,7 +1611,7 @@
       "en": "Duck all 16?"
     },
     "yes": {
-      "key": "desk.duck.yes",
+      "key": "duck.yes",
       "args": {
         "decisions": "14",
         "n": "16",
@@ -1678,7 +1620,7 @@
       "en": "Yes, duck them all"
     },
     "no": {
-      "key": "desk.duck.no",
+      "key": "duck.no",
       "en": "Cancel"
     }
   }

@@ -108,7 +108,7 @@ fn a_start_with_a_filled_cache_draws_the_desk_before_the_hub_answers() {
     let mut sim = world.sim();
     sim.send(start());
     assert_eq!(sim.view.phase, Phase::Live);
-    assert_eq!(sim.view.desk.rows.len(), 2);
+    assert_eq!(sim.view.group.rows().len(), 2);
     let before = board(&sim);
     assert!(
         items(&before) >= 3,
@@ -131,8 +131,8 @@ fn a_start_with_a_filled_cache_draws_the_desk_before_the_hub_answers() {
     );
     let titles: Vec<&str> = sim
         .view
-        .desk
-        .rows
+        .group
+        .rows()
         .iter()
         .map(|r| r.title.as_str())
         .collect();
@@ -230,8 +230,8 @@ fn a_cache_behind_the_device_keeps_the_cards_and_drops_the_lines_it_may_lack() {
     sim.send(start());
     let titles: Vec<&str> = sim
         .view
-        .desk
-        .rows
+        .group
+        .rows()
         .iter()
         .map(|r| r.title.as_str())
         .collect();
@@ -327,7 +327,7 @@ fn a_cache_not_whole_or_not_this_devices_is_never_shown_and_is_built_again() {
         sim.hold = true;
         sim.send(start());
         assert!(
-            sim.view.desk.rows.iter().all(|r| r.title != "Not here"),
+            sim.view.group.rows().iter().all(|r| r.title != "Not here"),
             "{why}: never shown"
         );
         assert!(

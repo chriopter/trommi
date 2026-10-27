@@ -3,9 +3,9 @@
 //! The core sends it as [`ViewDelta`]s inside `Effect::Render`. A shell keeps one [`ViewModel`] and folds each delta
 //! into it with [`ViewModel::apply`] (or its own copy of the same rule, which the conformance scripts check).
 //!
-//! **Units.** A delta replaces whole units: the phase, the sidebar, the Desk, one session, one card, the notes,
+//! **Units.** A delta replaces whole units: the phase, the sidebar, the group page, one session, one card, the notes,
 //! the settings, the toasts. A unit is keyed where there are many (sessions and cards by id); `None` removes one.
-//! A list that can be long (the Desk's stack, a session's talk) may later travel as [`Rows`] edits instead of
+//! A list that can be long (the group page's stack, a session's talk) may later travel as [`Rows`] edits instead of
 //! whole; folding gives the same model either way.
 //!
 //! **Texts.** Every word a screen shows that depends on state is a [`Text`]: a key, its arguments, and the
@@ -15,7 +15,7 @@
 //! W4 fills the screen types; their fields here are the contract's first cut.
 //!
 //! **Who makes it.** [`board::Board`] reads the board model once per render (the session list, the teams, what
-//! waits where), and each screen's module makes its unit from it: [`sidebar`], [`desk`], [`session`] and [`card`] (the pages in view;
+//! waits where), and each screen's module makes its unit from it: [`sidebar`], [`group`], [`session`] and [`card`] (the pages in view;
 //! its conversation's rows come from [`talk`]), [`notes`] and [`settings`]. The rules are the web app's of
 //! before (`app/web/public/app.mjs` `boardModel`), now here and nowhere else; [`words`] holds every sentence.
 //! What this device alone chooses (the team in view, the zone) comes in as a [`Lens`].
@@ -23,8 +23,8 @@
 pub mod board;
 pub mod card;
 pub mod demo;
-pub mod desk;
 pub mod files_seen;
+pub mod group;
 pub mod knowledge;
 pub mod links;
 pub mod notes;
@@ -71,7 +71,7 @@ pub enum Phase {
     Starting,
     /// No room on this device: the sign-in and join screens.
     SignedOut,
-    /// A room is open; the Desk is being read for the first time on this device.
+    /// A room is open; its open cards are being read for the first time on this device.
     Opening,
     /// Open and current, the live stream runs.
     Live,
@@ -91,14 +91,18 @@ pub struct Focus {
     /// The team in view: a team's id; none when none was chosen, or one that is gone: the first team.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team: Option<String>,
-    /// The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a team's id or "all" for that
+    /// The Scribble Board shown beside the screen (the group page's): `desk/<32 hex>`, or a team's id or "all" for that
     /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
-    /// The Desk in view is home, every team's (the bell at the top), not the team in view's (a team's head).
-    /// This device's: the shell keeps it.
+    /// The chat chip chosen on the group page (its session key or short id): the page shows only that chat's cards
+    /// (`GroupView.chips`); none, or a chat that is not in the group: all of them. This window's: the shell keeps it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_chat: Option<String>,
+    /// The wide sidebar is folded to a rail (this device's, the shell keeps it): its rows carry no counts and no
+    /// signs but one quiet dot on a chat that needs the person (`SessionRowView.signal`).
     #[serde(default)]
-    pub desk_all: bool,
+    pub rail_folded: bool,
     /// The teams unfolded in the wide sidebar, their chats under their stack (`TeamStackView.open`). This device's:
     /// the shell keeps them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -113,9 +117,14 @@ pub struct Focus {
     #[serde(default)]
     pub calm: bool,
     /// A card's page is a step of one chat's Blitz (its session key or short id): its way on goes only through that
-    /// chat's open cards (`SessionView.pinned`'s order), and when none is left back to the chat. None: the Desk's.
+    /// chat's open cards (`SessionView.pinned`'s order), and when none is left back to the chat. None: the group
+    /// page's (or, with `walk_all`, every group's).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub walk_chat: Option<String>,
+    /// A card's page is a step of Blitz over every group (`GroupView.blitz`, `SidebarView.global_blitz`): its way on
+    /// goes through every group's open cards in their order, not only the group page's.
+    #[serde(default)]
+    pub walk_all: bool,
 }
 
 fn yes() -> bool {
@@ -125,8 +134,10 @@ fn yes() -> bool {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "screen", rename_all = "snake_case")]
 pub enum Screen {
+    /// The page of the group in view (`ViewModel.group`). (`desk` is its name of before.)
     #[default]
-    Desk,
+    #[serde(alias = "desk")]
+    Group,
     Session {
         session_id: String,
     },
@@ -178,7 +189,7 @@ pub struct ViewModel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<Text>,
     pub sidebar: SidebarView,
-    pub desk: DeskView,
+    pub group: GroupView,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sessions: BTreeMap<String, SessionView>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -197,7 +208,7 @@ pub struct ViewModel {
     /// The Scribble Board in view (`Focus.board`, `Screen::Scribble`); none when no board is shown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<BoardView>,
-    /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`, and on the Desk, whose foot shows the newest), the newest first.
+    /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`), the newest first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<Vec<ArtifactView>>,
     /// The gallery's filter and its words, while `Screen::Artifacts` is in view (`artifacts` then holds what the
@@ -243,8 +254,8 @@ pub enum ViewPart {
     Sidebar {
         view: SidebarView,
     },
-    Desk {
-        view: DeskView,
+    Group {
+        view: GroupView,
     },
     Session {
         id: String,
@@ -304,7 +315,7 @@ pub enum ViewPart {
     },
 }
 
-/// Edits of a long list, by position: at `at`, `gone` rows leave and `rows` come (the Desk's stack ops today).
+/// Edits of a long list, by position: at `at`, `gone` rows leave and `rows` come.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RowEdit<T> {
     pub at: u32,
@@ -349,14 +360,10 @@ pub struct SidebarView {
     /// left, the sidebar's foot); empty until the account is read: the shell draws a plain figure.
     #[serde(default)]
     pub me: String,
-    /// Home in the menu, above the teams: the Desk of every team ("All teams", `Focus.desk_all`), with what waits on
-    /// all of them; `selected` while it is the Desk in view. Its `id` is empty.
-    #[serde(default)]
-    pub home: TeamTab,
     /// The sessions of the team in view, one row each, in drawing order: a main, then its helpers.
     pub sessions: Vec<SessionRowView>,
-    /// The number on the app icon and the tab: the open questions of the Desk in view, the team's or on home every
-    /// team's (no infos, nothing that is with its agent). Never drawn red.
+    /// The number on the app icon and the tab: the open questions of the group in view (no infos, nothing that is
+    /// with its agent). Never drawn red.
     pub badge: u32,
     /// The team in view: its id.
     #[serde(default)]
@@ -364,8 +371,7 @@ pub struct SidebarView {
     /// Where the person is, for the head and the team switch: the team's name.
     #[serde(default)]
     pub place: Text,
-    /// The open questions of the Desk in view, the team's or on home every team's (its lamp is lit while there are
-    /// some).
+    /// The open questions of the group in view (its lamp is lit while there are some).
     #[serde(default)]
     pub waiting: u32,
     /// How many of them knock.
@@ -384,9 +390,14 @@ pub struct SidebarView {
     /// card edges; open, its chats under it. The phone draws `sessions` instead.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stacks: Vec<TeamStackView>,
-    /// The Desk in view is every team's (home, `Focus.desk_all`): no team's head is marked.
+    /// The chats on no team as a group of their own ("No team"), while there are any: its page (`Focus.team`
+    /// [`NO_TEAM`]) shows their open cards; `selected` while it is the group in view. Drawn as the head over `root`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_team: Option<TeamTab>,
+    /// The sidebar is folded to a rail (`Focus.rail_folded`): its rows and stacks carry no counts and no signs but
+    /// one quiet dot (`SessionRowView.signal` "waiting" or "stopped").
     #[serde(default)]
-    pub desk_all: bool,
+    pub folded: bool,
     /// Under a search (`Focus.chats_query`): every team with a chat whose name or teaser has the words, with those
     /// chats, in the menu's order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -422,14 +433,20 @@ pub struct TeamPlaceView {
     pub chosen: bool,
 }
 
-/// Blitz over every team (`SidebarView.global_blitz`): pressed, the shell shows the Desk of every team
-/// (`Focus.desk_all`) from its first card on; the card's page walks on in that Desk's order.
+/// The group page's `Focus.team` for the chats on no team (`SidebarView.no_team`).
+pub const NO_TEAM: &str = "none";
+
+/// Blitz over every group (`SidebarView.global_blitz`, `GroupView.blitz`): the only view of everything. Pressed, the
+/// shell opens its first card with `Focus.walk_all`; the card's page walks on through every group's open cards.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GlobalBlitzView {
-    /// The first card (or request) of every team's Desk, in its order.
+    /// The first open card (or request) of every group, in their order.
     pub card: String,
-    /// What it walks: "Blitz: 3 open cards", with `n`, as the Desk's own Blitz says it.
+    /// What it walks: "Blitz: 3 open cards", with `n`.
     pub says: Text,
+    /// Where it walks, small beside its number: "all groups".
+    #[serde(default)]
+    pub scope: Text,
 }
 
 /// A team in the search's list of chats: its name as a plain section title over the chats found.
@@ -441,19 +458,19 @@ pub struct ChatGroupView {
     pub rows: Vec<SessionRowView>,
 }
 
-/// A team in the wide sidebar: its head (a click opens its Desk) over its sessions, folded to a stack or open.
+/// A team in the wide sidebar: its head (a click opens its group page) over its sessions, folded to a stack or open.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamStackView {
     pub id: String,
     pub name: Text,
-    /// The team in view and its Desk is the Desk (not on home, `desk_all`).
+    /// The group in view.
     pub selected: bool,
     /// Open on this device (`Focus.open_teams`): its chats stand under its head; folded, they lie as its stack.
     #[serde(default)]
     pub open: bool,
     /// The open questions of the team's sessions.
     pub waiting: u32,
-    /// Its open cards, infos too, and its requests: what Blitz walks on its Desk. The calm grey count.
+    /// Its open cards, infos too, and its requests: what its group page lists. The calm grey count (0 on the rail).
     pub cards: u32,
     /// One of them knocks.
     #[serde(default)]
@@ -491,9 +508,9 @@ pub struct TeamTab {
     pub name: Text,
     /// The open questions of the team's sessions.
     pub waiting: u32,
-    /// Its open cards, infos too, and its requests: what Blitz walks on its Desk.
+    /// Its open cards, infos too, and its requests: what its group page lists.
     pub cards: u32,
-    /// It is the Desk in view: the team in view, unless home (`desk_all`) is.
+    /// It is the group in view.
     pub selected: bool,
     /// One of them knocks.
     #[serde(default)]
@@ -536,7 +553,7 @@ pub struct SessionRowView {
     /// Its helpers (its agent's subagents), small under its name: "3 helpers" with a dot each; none without.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub helpers: Option<HelperDotsView>,
-    /// Its open questions: what waits for the person on the Desk (no infos, nothing that is with its agent).
+    /// Its open questions: what waits for the person on its group page (no infos, nothing that is with its agent).
     #[serde(default)]
     pub open: u32,
     /// Its open cards, infos too, and its requests: what Blitz walks of it. The calm grey count beside its name.
@@ -663,120 +680,146 @@ pub struct FixView {
     pub code: String,
 }
 
-/// The Desk of the team in view: its head, and the stack of what waits for the person as rows.
+/// The page of the group in view (a team, or the chats on no team, [`NO_TEAM`]): its head, one chip per chat to
+/// filter by, and its open cards in one list: the questions first ("Waits for you"), then what is only to read
+/// ("To read"). There is no page of every group: Blitz (`blitz`) is the only view of everything.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DeskView {
-    /// Card and request ids, in the Desk's order: the ids of `rows`.
+pub struct GroupView {
+    /// Card and request ids in the page's order (the chip's filter applied): `questions`, then `reads`. A card's page
+    /// opened from here walks on in this order.
     pub stack: Vec<String>,
-    /// Off your mind, of the team in view (`off.rs`, from the core's `off_mind`): the cards with their agents,
-    /// starred ones too, the one that moved last first (the complete list's top part).
-    pub off_your_mind: Vec<String>,
-    /// The put-off cards, the last put off first.
-    pub later: Vec<String>,
-    /// The cards closed last (done, withdrawn, shredded), the newest first: the core's window of them
-    /// (`off_mind::RECENT` for the whole room), not every closed card; the complete list has them all.
-    pub done: Vec<String>,
-    /// The two stacks docked at the Desk's foot; none while a stack is empty. A card has one home: a starred card
-    /// is in `starred` only, also while it is being worked on.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub starred: Option<DockView>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub running: Option<DockView>,
-    /// The section Off your mind under the Desk: its first rows and how many; none while nothing is put off or
-    /// closed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub off: Option<OffHintView>,
     /// What stands in the list's place when nothing is open at all ("Questions land here.").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<Text>,
     /// "invite" (no session stands here yet: invite the first agent), "reading" (none yet, and the room is still
-    /// being read), "team".
+    /// being read), "group".
     #[serde(default)]
     pub mode: String,
-    /// The one big line at the top; none for "invite".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hello: Option<Text>,
     /// How far the reading of the room's past is ("Reading your history: 12,400 of 27,000"), while it is read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reading: Option<Text>,
-    /// The team's goals; none on All teams.
+    /// The group's name, its faces and its ⋯ menu; none in a room without teams and chats (a new account).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head: Option<GroupHeadView>,
+    /// The team's goals under the head; none for the chats on no team.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goals: Option<GoalsView>,
-    /// The chip that opens the team's page Knowledge; none on All teams, as the goals.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub knowledge: Option<KnowledgeChipView>,
-    /// What waits, in the Desk's order: the questions and what is only to read.
+    /// The filter row: "All" first, then one chip per chat of the group, the ones that need the person first. Only
+    /// one is `selected`. Empty while the group has no chat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub rows: Vec<DeskRowView>,
-    /// The open questions (no infos): the number in the window's title.
+    pub chips: Vec<ChipView>,
+    /// How many of `chips` stand in the row ("All" included); the rest wait behind `more`.
+    #[serde(default)]
+    pub chips_shown: u32,
+    /// "+4": the chips behind it, unfolded by a tap (the shell's); none when every chip stands in the row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub more: Option<Text>,
+    /// The questions' heading, "Waits for you", with how many as `n` (drawn beside it); none while there are none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub questions_says: Option<Text>,
+    /// The questions and approval requests, in the walk's order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<DeskRowView>,
+    /// The heading of what is only to read, "To read", with how many as `n`; none while there is nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reads_says: Option<Text>,
+    /// What is only to read (infos, a card not read here yet, one of a newer Trommi), drawn smaller, below.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<DeskRowView>,
+    /// The open questions of the group (no infos, the chip's filter not applied): the number in the window's title.
     #[serde(default)]
     pub waiting: u32,
-    /// What Blitz walks through and the duck closes ("Blitz: 3 open cards"); none when nothing waits.
+    /// Blitz over every group's open cards ("Blitz: 14 open cards", "all groups"); none while nothing is open
+    /// anywhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub blitz: Option<Text>,
-    /// The duck for all beside Blitz: what one press leaves to the agents (a decision) or reads (an info) at once,
-    /// after one question; none when nothing of that waits.
+    pub blitz: Option<GlobalBlitzView>,
+    /// The duck for all beside Blitz: what one press leaves to the agents (a decision) or reads (an info) of the
+    /// cards on this page, after one question; none when nothing of that waits here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duck: Option<DuckAllView>,
-    /// The sessions that are cut off, above the questions: one line each, with the step in its terminal.
+    /// The sessions of the group that are cut off, above the list: one line each, with the step in its terminal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub slip: Vec<SlipView>,
-    /// Under the questions, calm tiles, in this order: "work" (Working / Done: what runs and what is done, it opens
-    /// Off your mind), "artifacts" (what the agents published), "board" (the team's Scribble Board), "knowledge"
-    /// (the team's Knowledge; not on All teams).
-    /// Empty while the Desk is not in view.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tiles: Vec<DeskTileView>,
 }
 
-/// One tile under the Desk's questions.
+impl GroupView {
+    /// Every row of the page in its order: the questions, then what is only to read (the ids of `stack`).
+    pub fn rows(&self) -> Vec<&DeskRowView> {
+        self.questions.iter().chain(self.reads.iter()).collect()
+    }
+}
+
+/// The head of a group page: its name, up to three of its chats' faces, and its ⋯ menu.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DeskTileView {
-    /// "work", "artifacts", "board" or "knowledge".
+pub struct GroupHeadView {
+    /// The team's id; [`NO_TEAM`] for the chats on no team.
+    pub team_id: String,
+    pub name: Text,
+    /// Its picture: up to three of its chats' marks, the crowned one first (as `TeamStackView.faces`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub faces: Vec<StackEdgeView>,
+    /// The ⋯ menu, in order: "knowledge", "wakeups", "board" (the Scribble Board), then "rename". Empty for the chats
+    /// on no team: no ⋯ then.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub menu: Vec<GroupMenuItem>,
+    /// What the ⋯ says to a screen reader: "Fernly: knowledge, wakeups, Scribble Board, rename".
+    #[serde(default)]
+    pub menu_says: Text,
+}
+
+/// One entry of a group's ⋯ menu.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupMenuItem {
+    /// "knowledge", "wakeups", "board" or "rename".
     pub key: String,
-    /// Its name: "Working / Done", "Artifacts", "Scribble Board", "Knowledge".
-    pub title: Text,
-    /// What it holds in a few words: "2 running · 10 done", "14 artifacts", "27 elements", "7 entries"; "Nothing
-    /// yet" when empty.
-    pub line: Text,
-    /// How many (artifacts, elements on the board, entries); none where the line says it ("work").
+    /// Its words: "Knowledge", "Wakeups", "Scribble Board", "Rename group".
+    pub label: Text,
+    /// How many, small at its end: "7 entries", "7 entries · 2 new", "3 set"; none where there is nothing to count.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub count: Option<u32>,
-    /// Where a click goes: `Screen::Off`, `Screen::Artifacts`, `Screen::Scribble`.
-    pub opens: Screen,
-    /// What it shows small, in order: the running cards (ids of `DeskView.off.running`) for "work", the newest
-    /// artifacts (ids of `ViewModel.artifacts`, at most four) for "artifacts"; empty for "board". Always sent, also
-    /// empty: a shell maps over it.
-    #[serde(default)]
-    pub items: Vec<String>,
-    /// What it shows as short lines, always sent: the first entries' titles for "knowledge" (pinned first, as its
-    /// page); empty for the others.
-    #[serde(default)]
-    pub names: Vec<String>,
-    /// How much room it takes in the Desk's bento: "wide" (two of three columns: Working / Done, the Scribble Board),
-    /// "narrow" (one: Artifacts, Knowledge), "full" (all three: the board when there is no Knowledge tile).
-    #[serde(default)]
-    pub size: String,
-    /// It holds nothing yet: the shell draws it small and quiet, with its line only.
-    #[serde(default)]
-    pub empty: bool,
-    /// Its numbers in short beside the title where its rows show below (a phone): "2 · 10" (running · done) for
-    /// "work"; none for the others and while nothing runs or is done.
+    pub count: Option<Text>,
+    /// Where it goes: `Screen::Knowledge`, `Screen::Wakeups`, `Screen::Scribble`; none for "rename" (the shell asks
+    /// for the new name and sends `Action::RenameTeam`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub brief: Option<Text>,
-    /// Its row on a phone (two columns): two "narrow" tiles share one row, side by side in the tiles' order; every
-    /// other tile, and a narrow one left alone, takes a row to itself. Rows are drawn by this number.
+    pub opens: Option<Screen>,
+    /// Below a line of its own (the last group of entries: "rename").
     #[serde(default)]
-    pub phone_row: u32,
-    /// "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams.
+    pub apart: bool,
+}
+
+/// A chip of a group page's filter row: "All", or one chat of the group.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChipView {
+    /// The chat's session key (`Focus.group_chat`); empty for "All" (no filter).
+    #[serde(default)]
+    pub session_id: String,
+    /// The chat's short id, for its address (`/chat/<slug>`); empty for "All".
+    #[serde(default)]
+    pub slug: String,
+    /// "All", or the chat's name.
+    pub name: Text,
+    /// What draws the chat (`SessionRowView.mark`); empty for "All".
+    #[serde(default)]
+    pub mark: String,
+    /// "All": the group's open cards, the calm grey count; 0 on a chat's chip (its dot says what matters).
+    #[serde(default)]
+    pub count: u32,
+    /// The chat needs the person (a question waits for him, or it is stopped): one quiet dot.
+    #[serde(default)]
+    pub needs: bool,
+    /// The chip in force (one at a time; "All" when no chat is chosen).
+    #[serde(default)]
+    pub selected: bool,
+    /// On the chosen chat's chip: "Open chat ›", its way into the chat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub team_id: Option<String>,
+    pub open_chat: Option<Text>,
+    /// What it says to a screen reader: "Fernly Website: waits for you", "All: 8 open cards".
+    pub says: Text,
 }
 
 /// The duck for all: the cards it clears (`Action::Batch` with way "sweep") and its words (the web's `duckAll`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DuckAllView {
-    /// The cards it clears, in the Desk's order: the open decisions (left to their agents) and what is only to
+    /// The cards it clears, in the page's order: the open decisions (left to their agents) and what is only to
     /// read (closed as read); never a request, nothing not read on this device yet.
     pub card_ids: Vec<String>,
     /// The button's name: "I don’t give a duck: for all 3 open cards".
@@ -825,70 +868,6 @@ pub struct GalleryKindView {
     pub on: bool,
 }
 
-/// One of the two stacks docked at the Desk's foot (the owner's pick of 13 October 2026: two small tabs, the
-/// titles shown only when a stack is fanned out).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DockView {
-    /// "star" or "run".
-    pub key: String,
-    /// How many cards it holds: the number on its tab (`rows.len()`).
-    pub count: u32,
-    /// What the tab says to a screen reader ("3 starred", "1 running").
-    pub says: Text,
-    /// Its cards in order, fanned out: the first is the top card, the one the tab shows.
-    pub rows: Vec<DockRowView>,
-    /// The way on to the complete list at the end of the fan ("All running and done"); the running stack only.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub all: Option<Text>,
-}
-
-/// A small card of a docked stack.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DockRowView {
-    /// The card (`Screen::Card`).
-    pub id: String,
-    pub title: String,
-    /// The title without a status word in front ("Working on: ", "Arbeite an: ", "Paused: "…): what a one-line row
-    /// shows beside the agent's face; the title itself when it has none.
-    #[serde(default)]
-    pub short: String,
-    pub from: FromView,
-    /// The quiet line under the title: "Fernly · running" (a starred card being worked on), "Fernly", "Fernly ·
-    /// Reworking the copy" (its status line), "Fernly · on it".
-    pub line: Text,
-    /// It is being worked on (the drawing's ring turns).
-    pub running: bool,
-    /// When it last moved (its status line's update, else when it went to its agent); when it was starred, for a
-    /// starred card.
-    pub at_ms: u64,
-}
-
-/// The section Off your mind under the Desk: a short hinted list that opens the complete list (`Screen::Off`).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OffHintView {
-    /// The cards being worked on, the one that moved last first (at most three): on the iPhone they stand here, at
-    /// the head of the section, instead of a docked stack over the Desk. A starred card is not among them (it lies
-    /// in the starred stack).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub running: Vec<DockRowView>,
-    /// "2 more running": how many run beyond those shown, leading to the complete list; none while all are shown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub running_more: Option<Text>,
-    /// The first rows, put off first, then the closed ones, the newest first (at most three; the shell fades them).
-    pub rows: Vec<OffRowView>,
-    /// "2 put off · 14 done".
-    pub says: Text,
-    pub put_off: u32,
-    /// Every closed card of the team in view, counted (not only the ones named).
-    pub closed: u32,
-    /// All of it in one quiet line under the questions (the iPhone's calm Desk): "2 running · 1 put off · 14 done".
-    #[serde(default)]
-    pub line: Text,
-    /// Where a tap on the hint or its line goes: the complete list.
-    #[serde(default)]
-    pub opens: Screen,
-}
-
 /// A put-off or closed card, one small quiet row.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OffRowView {
@@ -911,7 +890,7 @@ pub struct OffRowView {
     pub says: Text,
 }
 
-/// The page Off your mind: every card off the Desk of the team in view. What runs as live cards, the one that moved
+/// The page Off your mind: every open card that is not waiting on the group page of the team in view, and the ones closed. What runs as live cards, the one that moved
 /// last first; then what is put off, the last put off first; then what is closed, the newest first. Each card in its
 /// place by time, none lifted. Kept to the search's words.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1049,25 +1028,6 @@ pub struct WakeupWordsView {
     pub save: Text,
     pub back: Text,
     pub cancel_ask: Text,
-}
-
-/// The chip on a team's Desk that opens its page Knowledge.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct KnowledgeChipView {
-    pub team_id: String,
-    /// "Knowledge".
-    pub label: Text,
-    /// How many entries the team holds.
-    #[serde(default)]
-    pub count: u32,
-    /// The chip in a sentence ("Team knowledge: 12 entries"), for a screen reader and a tooltip.
-    pub says: Text,
-    /// The first entries' titles, pinned first as on its page (at most four), always sent: the Desk's tile shows them.
-    #[serde(default)]
-    pub first: Vec<String>,
-    /// How many an agent changed since the person last looked.
-    #[serde(default)]
-    pub fresh: u32,
 }
 
 /// Sealed dictation (spec/v1.md 18): what the chat field's microphone shows. While the field is empty its send
@@ -1313,7 +1273,7 @@ pub struct GoalsView {
     pub toggle: Option<Text>,
 }
 
-/// A session that is cut off, as the Desk says it.
+/// A session that is cut off, as its group page says it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SlipView {
     pub session_id: String,
@@ -1321,7 +1281,7 @@ pub struct SlipView {
     pub fix: FixView,
 }
 
-/// One row of the Desk: a question, a request for approval, or something to read.
+/// One card row (a group page's, a chat's): a question, a request for approval, or something to read.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeskRowView {
     pub id: String,
@@ -1540,7 +1500,7 @@ pub struct SessionView {
     /// "<name> is working": his word was the last, a short while ago.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answering: Option<Text>,
-    /// Its questions that wait for the person (decisions and approvals, never a card to read), as their Desk rows,
+    /// Its questions that wait for the person (decisions and approvals, never a card to read), as their card rows,
     /// in the order they came: what its page "Questions" lists as open.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub waiting: Vec<DeskRowView>,
@@ -1918,7 +1878,7 @@ pub struct CardView {
     /// When it was asked, or last revised.
     #[serde(default)]
     pub asked_ms: u64,
-    /// Its place among what waits on the Desk in view ("3 of 7"), with its neighbours.
+    /// Its place in the walk it is a step of ("3 of 7": the group page's, a chat's or Blitz's), with its neighbours.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place: Option<PlaceView>,
     /// Small words of the quiet line: "replaces 2 questions", "revised", "3 messages below".
@@ -1998,9 +1958,9 @@ pub struct CardView {
     pub paper: String,
 }
 
-/// One entry of a card's ⋯ menu. The shell draws it by its key: `prev`, `next` (the questions before and after it on
-/// the Desk), `draw` (the pen on the card), `focus` (the page alone in the window), `chat` (its session's
-/// conversation), `copy` (the card as one line), `wake` (back on the Desk now), `shred` (thrown away unanswered).
+/// One entry of a card's ⋯ menu. The shell draws it by its key: `prev`, `next` (the questions before and after it in
+/// its walk), `draw` (the pen on the card), `focus` (the page alone in the window), `chat` (its session's
+/// conversation), `copy` (the card as one line), `wake` (back among the open cards now), `shred` (thrown away unanswered).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CardMenuItem {
     pub key: String,
@@ -2046,7 +2006,7 @@ pub struct PictureView {
 /// The way on after an answer on a card's page.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AfterView {
-    /// The next open question: the next in the Desk's order after this card's place, else the first that waits.
+    /// The next open question: the next in the walk's order after this card's place, else the first that waits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<CardRefView>,
     /// "Next question", or "That was the last open question."
@@ -2135,7 +2095,7 @@ pub struct CardWorkView {
     pub at_ms: u64,
 }
 
-/// A card's place among what waits on the Desk in view.
+/// A card's place in the walk it is a step of.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlaceView {
     pub at: u32,
@@ -3116,7 +3076,7 @@ pub struct OutOfOrder {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WindowParts {
     sidebar: SidebarView,
-    desk: DeskView,
+    group: GroupView,
     sessions: BTreeMap<String, SessionView>,
     cards: BTreeMap<String, CardView>,
     off: Option<OffListView>,
@@ -3135,7 +3095,7 @@ impl ViewModel {
         use std::mem::take;
         WindowParts {
             sidebar: take(&mut self.sidebar),
-            desk: take(&mut self.desk),
+            group: take(&mut self.group),
             sessions: take(&mut self.sessions),
             cards: take(&mut self.cards),
             off: take(&mut self.off),
@@ -3152,7 +3112,7 @@ impl ViewModel {
     /// Puts one window's parts in.
     pub fn put_window_parts(&mut self, p: WindowParts) {
         self.sidebar = p.sidebar;
-        self.desk = p.desk;
+        self.group = p.group;
         self.sessions = p.sessions;
         self.cards = p.cards;
         self.off = p.off;
@@ -3187,7 +3147,7 @@ impl ViewModel {
                     self.status = status.clone();
                 }
                 ViewPart::Sidebar { view } => self.sidebar = view.clone(),
-                ViewPart::Desk { view } => self.desk = view.clone(),
+                ViewPart::Group { view } => self.group = view.clone(),
                 ViewPart::Session { id, view } => match view {
                     Some(v) => {
                         self.sessions.insert(id.clone(), v.clone());
@@ -3245,9 +3205,9 @@ impl ViewModel {
                 view: next.sidebar.clone(),
             });
         }
-        if self.desk != next.desk {
-            parts.push(ViewPart::Desk {
-                view: next.desk.clone(),
+        if self.group != next.group {
+            parts.push(ViewPart::Group {
+                view: next.group.clone(),
             });
         }
         for id in self
@@ -3372,7 +3332,7 @@ mod tests {
         let a = ViewModel::default();
         let mut b = a.clone();
         b.phase = Phase::Live;
-        b.desk.stack = vec!["c1".into(), "c2".into()];
+        b.group.stack = vec!["c1".into(), "c2".into()];
         b.cards.insert(
             "c1".into(),
             CardView {

@@ -15,7 +15,7 @@
 //!   the receipt of his answer: on its way, with the session, or not picked up for two minutes.
 
 use super::board::{is_loading, key_of, reads_as_info, Board, Lens, COMMENTS_PAGE};
-use super::desk::{from_of, shown_title, NEEDS_NEWER};
+use super::group::{from_of, shown_title, NEEDS_NEWER};
 use super::links::{plain, titled};
 use super::session::{link_note, unheard_fix};
 use super::sidebar::link_of;
@@ -360,7 +360,7 @@ fn slug(text: &str) -> String {
 pub fn pictures_of(
     attachments: &[Value],
     sections: &[Value],
-    options: &[super::desk::Opt],
+    options: &[super::group::Opt],
 ) -> Vec<PictureView> {
     let s = |a: &Value, k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     for a in attachments {
@@ -405,7 +405,7 @@ pub fn pictures_of(
                 _ => file.as_str(),
             };
             let name = format!("-{}-", slug(stem));
-            let mut hits: Vec<&super::desk::Opt> = options
+            let mut hits: Vec<&super::group::Opt> = options
                 .iter()
                 .filter(|o| {
                     [slug(&o.key), slug(&o.label)]
@@ -675,7 +675,7 @@ fn thread(c: &Card, mut talk: Vec<TalkRow>) -> Vec<TalkRow> {
     talk
 }
 
-/// The way on once a card is settled: the next open question in the Desk's order after the place it had (the core's
+/// The way on once a card is settled: the next open question in the walk's order after the place it had (the core's
 /// walk, `next_open_after`, kept to the team in view), else the first that waits (the web's `nextOpen`).
 fn after_of(b: &Board, v: &CardView, walk: &[String]) -> Option<AfterView> {
     if v.status == "open" || v.status == "catching" || v.status.is_empty() {
@@ -749,7 +749,7 @@ fn words_of(talk: usize) -> super::CardWordsView {
 }
 
 /// The page of the card or request `id` (its id, or its number of the address); none when this device does not
-/// hold it. `walk`: what waits on the Desk in view, in its order (`DeskView::stack`).
+/// hold it. `walk`: the walk it is a step of, in its order (`GroupView::stack`, a chat's, or Blitz's).
 pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
     let mut v = page(b, id, walk)?;
     // (the words as the page draws them: an Artifact link by its title)
@@ -1078,7 +1078,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
             label: Some(say("card.working", "Being worked on", &[])),
             detail: Some(say(
                 "card.working.detail",
-                format!("{its} is on it; it comes to your Desk when it is done."),
+                format!("{its} is on it; it comes back to you when it is done."),
                 &[("name", &its)],
             )),
             ..Default::default()
@@ -1243,7 +1243,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
                             .cloned()
                             .unwrap_or_default();
                         let opts =
-                            super::desk::options_of(o.get("options").unwrap_or(&Value::Null));
+                            super::group::options_of(o.get("options").unwrap_or(&Value::Null));
                         pictures_of(
                             attachments.as_array().map(Vec::as_slice).unwrap_or(&[]),
                             &sections,
@@ -1361,7 +1361,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
                     .map(Vec::as_slice)
                     .unwrap_or(&[]),
                 &sections,
-                &super::desk::options_of(&c.field("options")),
+                &super::group::options_of(&c.field("options")),
             )
         },
         number,
@@ -1565,7 +1565,7 @@ fn request(b: &Board, p: &PermissionRequest, number: u32, nr: Text, walk: &[Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::views::desk;
+    use crate::views::group;
     use crate::views::testroom::{Room, MIN, NOW};
     use crate::views::Lens;
     use serde_json::json;
@@ -1574,7 +1574,7 @@ mod tests {
         let m = r.model(now);
         let lens = Lens::default();
         let b = Board::new(&m, &lens, now);
-        let walk = desk::desk(&b).stack;
+        let walk = group::group(&b).stack;
         let v = card(&b, id, &walk).expect("the card is held");
         (v, b.wake())
     }
@@ -1606,7 +1606,7 @@ mod tests {
         let at = |lens: &Lens| {
             let m = r.model(NOW);
             let b = Board::new(&m, lens, NOW);
-            let walk = desk::desk(&b).stack;
+            let walk = group::group(&b).stack;
             card(&b, "q", &walk).unwrap()
         };
         let mut lens = Lens::default();
@@ -1717,7 +1717,7 @@ mod tests {
         let m = r.model(NOW);
         let lens = Lens::default();
         let b = Board::new(&m, &lens, NOW);
-        let walk = desk::desk(&b).stack;
+        let walk = group::group(&b).stack;
         let v = card(&b, "perm", &walk).expect("held");
         let keys = menu(&v);
         assert!(
@@ -1762,7 +1762,7 @@ mod tests {
     /// The web's `pictureKeys`, case by case.
     #[test]
     fn pictures_find_their_options() {
-        let opt = |k: &str, l: &str| crate::views::desk::Opt {
+        let opt = |k: &str, l: &str| crate::views::group::Opt {
             key: k.into(),
             label: l.into(),
             ..Default::default()
@@ -1813,7 +1813,7 @@ mod tests {
     /// The viewer's line under a picture: its caption, else its option's label, else its file name.
     #[test]
     fn pictures_say_their_caption() {
-        let opt = |k: &str, l: &str| crate::views::desk::Opt {
+        let opt = |k: &str, l: &str| crate::views::group::Opt {
             key: k.into(),
             label: l.into(),
             ..Default::default()
@@ -2126,8 +2126,8 @@ mod tests {
         );
         let m = r.model(NOW);
         let lens = Lens::default();
-        let row = desk::desk(&Board::new(&m, &lens, NOW))
-            .rows
+        let row = group::group(&Board::new(&m, &lens, NOW))
+            .questions
             .into_iter()
             .find(|x| x.id == "q")
             .unwrap();
@@ -2278,7 +2278,7 @@ mod tests {
             notes(&v),
             ["replaces 2 questions", "revised", "2 messages below"]
         );
-        // (what blocks stands first on the Desk: its place among what waits, with its neighbours)
+        // (what blocks stands first on the group page: its place among what waits, with its neighbours)
         let p = v.place.as_ref().unwrap();
         assert_eq!(
             (
@@ -2560,7 +2560,7 @@ mod tests {
             (w.says.en.as_str(), w.words.en.as_str(), w.at_ms),
             ("a is working on it", "Reworking the card", NOW - 2 * MIN)
         );
-        assert!(v.place.is_none(), "with its agent: not on the Desk");
+        assert!(v.place.is_none(), "with its agent: in no walk");
         r.sessions[0]["status_lines"] = json!([{ "id": "l1", "label": "Rework", "state": "working", "detail": "half way", "object_id": "q-back", "updated_at": NOW - MIN, "envelope_number": 1 }]);
         let w = view(&r, "q-back").work.unwrap();
         assert_eq!(
@@ -2575,7 +2575,7 @@ mod tests {
             (
                 "working",
                 "Being worked on",
-                "a is on it; it comes to your Desk when it is done."
+                "a is on it; it comes back to you when it is done."
             )
         );
         r.card("q-info", "a", "info", "normal");

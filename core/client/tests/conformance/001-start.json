@@ -7,7 +7,7 @@
     { "at": 1001, "event": { "type": "store", "id": 2,
                              "result": { "ok": { "answer": "device", "revision": 0, "entries": [] } } } },
     { "expect_effects": [] },
-    { "expect_view": { "rev": 2, "phase": "signed_out", "desk": { "stack": [] } } },
+    { "expect_view": { "rev": 2, "phase": "signed_out", "group": { "stack": [] } } },
     { "at": 1002, "event": { "type": "store", "id": 2,
                              "result": { "ok": { "answer": "device", "revision": 0, "entries": [] } } } },
     { "expect_effects": [ { "type": "log", "level": "warn" } ] },

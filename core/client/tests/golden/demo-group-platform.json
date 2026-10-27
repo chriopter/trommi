@@ -1,9 +1,6 @@
 {
   "stack": [
     "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
-    "6deb90374cb873045fe03e39c3ab0348",
-    "a67da9b30d2f07d256c6b646e8c34f36",
-    "0d9331a1172e43e9157fbd722d87bf1a",
     "41bc4fad4b14457d7f16a660d518d474",
     "a2706545530be0dce3b13417c2728966",
     "cf5922f1d3baa4cf7dd0d9b573716bfb",
@@ -12,171 +9,97 @@
     "9abad6a52b4b6dc3d096f87bff346aa9",
     "43a72b8f7d9de1aac4aeeae1367076c0",
     "992640bed603743781e3241f6a2de105",
-    "8b26d4c112fa4617ad968fe6f311704e"
+    "8b26d4c112fa4617ad968fe6f311704e",
+    "6deb90374cb873045fe03e39c3ab0348",
+    "a67da9b30d2f07d256c6b646e8c34f36",
+    "0d9331a1172e43e9157fbd722d87bf1a"
   ],
-  "off_your_mind": [
-    "f35bf13aea8cdbfd193cfddc38f543fb"
-  ],
-  "later": [],
-  "done": [
-    "8547d0c56048b3ffa6fba14aafcf43a1",
-    "accb659455b97459f9fd89621496696a",
-    "a7043d48862eac8c164c419182dbd0c7",
-    "d1f39fc0c47d8d8e8bbfa0a34c41269d",
-    "5c8d5717eb0331231e72aa5220774ead",
-    "aaef4af6b38e79001f510e100a5a67da",
-    "13552895ad6558b518427f8b32606e9a",
-    "351c951e79a7a862fc6fbd6d499f66e9",
-    "246ebea0994ccda03d8cc8bbf724b2ff",
-    "ec2f5263fac9174007a1f17b148b8314"
-  ],
-  "running": {
-    "key": "run",
-    "count": 1,
-    "says": {
-      "key": "dock.run.says",
-      "args": {
-        "n": "1"
-      },
-      "en": "1 running"
+  "mode": "group",
+  "head": {
+    "team_id": "platform",
+    "name": {
+      "key": "team.name",
+      "en": "Platform"
     },
-    "rows": [
+    "faces": [
       {
-        "id": "f35bf13aea8cdbfd193cfddc38f543fb",
-        "title": "Promote the replica in a failover drill on Friday?",
-        "short": "Promote the replica in a failover drill on Friday?",
-        "from": {
-          "session_id": "5ef619647e0e8185fef0e3be40ff4809",
-          "name": "Infrastructure",
-          "mark": "draw:peak",
-          "path": [
-            "Platform",
-            "Infrastructure"
-          ],
-          "helper": {
-            "key": "from.helper",
-            "args": {
-              "name": "Database Replica"
-            },
-            "en": "Helper Database Replica"
-          }
+        "id": "9ace71aadae23ea1f467d62b83b1d604",
+        "mark": "draw:pebble"
+      },
+      {
+        "id": "5ef619647e0e8185fef0e3be40ff4809",
+        "mark": "draw:peak"
+      },
+      {
+        "id": "eeb9fe76ad84d2405625d15419ce6083",
+        "mark": "draw:bean"
+      }
+    ],
+    "menu": [
+      {
+        "key": "knowledge",
+        "label": {
+          "key": "group.menu.knowledge",
+          "en": "Knowledge"
         },
-        "line": {
-          "key": "dock.line.label",
+        "count": {
+          "key": "group.menu.knowledge.count",
           "args": {
-            "label": "us-east",
-            "name": "Infrastructure"
+            "n": "3"
           },
-          "en": "Infrastructure · us-east"
+          "en": "3 entries"
         },
-        "running": true,
-        "at_ms": 1791468960000
-      }
-    ],
-    "all": {
-      "key": "dock.all",
-      "en": "All running and done"
-    }
-  },
-  "off": {
-    "running": [
+        "opens": {
+          "screen": "knowledge"
+        },
+        "apart": false
+      },
       {
-        "id": "f35bf13aea8cdbfd193cfddc38f543fb",
-        "title": "Promote the replica in a failover drill on Friday?",
-        "short": "Promote the replica in a failover drill on Friday?",
-        "from": {
-          "session_id": "5ef619647e0e8185fef0e3be40ff4809",
-          "name": "Infrastructure",
-          "mark": "draw:peak",
-          "path": [
-            "Platform",
-            "Infrastructure"
-          ],
-          "helper": {
-            "key": "from.helper",
-            "args": {
-              "name": "Database Replica"
-            },
-            "en": "Helper Database Replica"
-          }
+        "key": "wakeups",
+        "label": {
+          "key": "group.menu.wakeups",
+          "en": "Wakeups"
         },
-        "line": {
-          "key": "dock.line.label",
+        "count": {
+          "key": "group.menu.wakeups.count",
           "args": {
-            "label": "us-east",
-            "name": "Infrastructure"
+            "n": "1"
           },
-          "en": "Infrastructure · us-east"
+          "en": "1 set"
         },
-        "running": true,
-        "at_ms": 1791468960000
+        "opens": {
+          "screen": "wakeups"
+        },
+        "apart": false
+      },
+      {
+        "key": "board",
+        "label": {
+          "key": "group.menu.board",
+          "en": "Scribble Board"
+        },
+        "opens": {
+          "screen": "scribble",
+          "board_id": "desk/706c6174666f726d0000000000000008"
+        },
+        "apart": false
+      },
+      {
+        "key": "rename",
+        "label": {
+          "key": "group.menu.rename",
+          "en": "Rename group"
+        },
+        "apart": true
       }
     ],
-    "rows": [
-      {
-        "id": "8547d0c56048b3ffa6fba14aafcf43a1",
-        "place": "trash",
-        "mark": "withdraw",
-        "title": "Keep the CDC sync on its old schedule?",
-        "starred": false,
-        "at_ms": 1791433800000,
-        "says": {
-          "key": "off.place.withdraw",
-          "en": "Withdrawn"
-        }
-      },
-      {
-        "id": "accb659455b97459f9fd89621496696a",
-        "place": "done",
-        "mark": "tick",
-        "title": "Search: a hosted service or an index built at deploy?",
-        "starred": false,
-        "at_ms": 1791425400000,
-        "says": {
-          "key": "off.place.tick",
-          "en": "Done"
-        }
-      },
-      {
-        "id": "a7043d48862eac8c164c419182dbd0c7",
-        "place": "done",
-        "mark": "tick",
-        "title": "Smart retries: failed renewals down from 4.1% to 1.3%",
-        "starred": false,
-        "at_ms": 1791417000000,
-        "says": {
-          "key": "off.place.tick",
-          "en": "Done"
-        }
-      }
-    ],
-    "says": {
-      "key": "off.hint.done",
+    "menu_says": {
+      "key": "group.menu.says",
       "args": {
-        "done": "10"
+        "name": "Platform"
       },
-      "en": "10 done"
-    },
-    "put_off": 0,
-    "closed": 10,
-    "line": {
-      "key": "off.hint.line.101",
-      "args": {
-        "done": "10",
-        "put_off": "0",
-        "running": "1"
-      },
-      "en": "1 running · 10 done"
-    },
-    "opens": {
-      "screen": "off",
-      "query": ""
+      "en": "More of Platform"
     }
-  },
-  "mode": "desk",
-  "hello": {
-    "key": "desk.hello.greeting.0",
-    "en": "Welcome back."
   },
   "goals": {
     "team_id": "platform",
@@ -188,7 +111,7 @@
     ],
     "foldable": true,
     "show_all": {
-      "key": "desk.goals.show_all",
+      "key": "group.goals.show_all",
       "args": {
         "n": "4"
       },
@@ -196,32 +119,116 @@
     },
     "folded": false,
     "toggle": {
-      "key": "desk.goals.fold",
+      "key": "group.goals.fold",
       "en": "Show the first goal only"
     }
   },
-  "knowledge": {
-    "team_id": "platform",
-    "label": {
-      "key": "knowledge.chip",
-      "en": "Knowledge"
-    },
-    "count": 3,
-    "says": {
-      "key": "knowledge.chip.says",
-      "args": {
-        "n": "3"
+  "chips": [
+    {
+      "session_id": "",
+      "slug": "",
+      "name": {
+        "key": "group.chip.all",
+        "en": "All"
       },
-      "en": "Team knowledge: 3 entries"
+      "mark": "",
+      "count": 13,
+      "needs": false,
+      "selected": true,
+      "says": {
+        "key": "group.chip.all.says",
+        "args": {
+          "n": "13"
+        },
+        "en": "All: 13 open cards"
+      }
     },
-    "first": [
-      "Cloud budget",
-      "us-east",
-      "API examples"
-    ],
-    "fresh": 0
+    {
+      "session_id": "5ef619647e0e8185fef0e3be40ff4809",
+      "slug": "infra",
+      "name": {
+        "key": "session.name",
+        "en": "Infrastructure"
+      },
+      "mark": "draw:peak",
+      "count": 0,
+      "needs": true,
+      "selected": false,
+      "says": {
+        "key": "group.chip.stopped",
+        "args": {
+          "name": "Infrastructure"
+        },
+        "en": "Infrastructure: stopped"
+      }
+    },
+    {
+      "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+      "slug": "payments-service",
+      "name": {
+        "key": "session.name",
+        "en": "Payments"
+      },
+      "mark": "draw:pebble",
+      "count": 0,
+      "needs": true,
+      "selected": false,
+      "says": {
+        "key": "group.chip.waits",
+        "args": {
+          "name": "Payments"
+        },
+        "en": "Payments: waits for you"
+      }
+    },
+    {
+      "session_id": "eeb9fe76ad84d2405625d15419ce6083",
+      "slug": "docs-site",
+      "name": {
+        "key": "session.name",
+        "en": "Docs"
+      },
+      "mark": "draw:bean",
+      "count": 0,
+      "needs": true,
+      "selected": false,
+      "says": {
+        "key": "group.chip.waits",
+        "args": {
+          "name": "Docs"
+        },
+        "en": "Docs: waits for you"
+      }
+    },
+    {
+      "session_id": "f14180d4caac441522269c631a745866",
+      "slug": "data-pipeline",
+      "name": {
+        "key": "session.name",
+        "en": "Data Pipeline"
+      },
+      "mark": "draw:pill",
+      "count": 0,
+      "needs": true,
+      "selected": false,
+      "says": {
+        "key": "group.chip.waits",
+        "args": {
+          "name": "Data Pipeline"
+        },
+        "en": "Data Pipeline: waits for you"
+      }
+    }
+  ],
+  "chips_shown": 5,
+  "questions_says": {
+    "key": "group.questions",
+    "args": {
+      "n": "10"
+    },
+    "en": "Waits for you"
   },
-  "rows": [
+  "questions": [
     {
       "id": "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
       "kind": "decision",
@@ -246,7 +253,7 @@
           "Infrastructure"
         ]
       },
-      "run": 1,
+      "run": 0,
       "media": [
         {
           "file_id": "4fb6d89d3c1a4cfa56a6636af32f3490",
@@ -314,146 +321,6 @@
       ]
     },
     {
-      "id": "6deb90374cb873045fe03e39c3ab0348",
-      "kind": "info",
-      "loading": false,
-      "newer": false,
-      "title": "Load test: checkout holds 400 requests a second",
-      "words": "p95 under 180 ms up to 400 rps; at 520 rps the database pool runs out.",
-      "urgency": "low",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791458400000,
-      "from": {
-        "session_id": "9ace71aadae23ea1f467d62b83b1d604",
-        "name": "Payments",
-        "mark": "draw:pebble",
-        "path": [
-          "Platform",
-          "Payments"
-        ],
-        "helper": {
-          "key": "from.helper",
-          "args": {
-            "name": "Load Testing"
-          },
-          "en": "Helper Load Testing"
-        }
-      },
-      "run": 1,
-      "tiles": {
-        "kind": "read",
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "shred"
-      ]
-    },
-    {
-      "id": "a67da9b30d2f07d256c6b646e8c34f36",
-      "kind": "info",
-      "loading": false,
-      "newer": false,
-      "title": "API p95 latency down to 138 ms after the Postgres upgrade",
-      "words": "Was 210 ms. The 13:40 spike was the backfill job, not users.",
-      "urgency": "low",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791457800000,
-      "from": {
-        "session_id": "5ef619647e0e8185fef0e3be40ff4809",
-        "name": "Infrastructure",
-        "mark": "draw:peak",
-        "path": [
-          "Platform",
-          "Infrastructure"
-        ],
-        "helper": {
-          "key": "from.helper",
-          "args": {
-            "name": "Monitoring"
-          },
-          "en": "Helper Monitoring"
-        }
-      },
-      "run": 2,
-      "media": [
-        {
-          "file_id": "61f9ea1d8c58b7bce8ca8f54b4ef2db2",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "args": {
-          "n": "1"
-        },
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "read",
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "shred"
-      ]
-    },
-    {
-      "id": "0d9331a1172e43e9157fbd722d87bf1a",
-      "kind": "info",
-      "loading": false,
-      "newer": false,
-      "title": "Cloud bill: €2,380 a month less from December",
-      "words": "Reserved instances, one NAT per region, plant photos through the CDN.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791451800000,
-      "from": {
-        "session_id": "5ef619647e0e8185fef0e3be40ff4809",
-        "name": "Infrastructure",
-        "mark": "draw:peak",
-        "path": [
-          "Platform",
-          "Infrastructure"
-        ],
-        "helper": {
-          "key": "from.helper",
-          "args": {
-            "name": "Cloud Costs"
-          },
-          "en": "Helper Cloud Costs"
-        }
-      },
-      "run": 0,
-      "media": [
-        {
-          "file_id": "b9d7464f359973927b3dcbe4e28b9141",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "args": {
-          "n": "1"
-        },
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "read",
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "shred"
-      ]
-    },
-    {
       "id": "41bc4fad4b14457d7f16a660d518d474",
       "kind": "decision",
       "loading": false,
@@ -484,7 +351,7 @@
           "en": "Helper API Reference"
         }
       },
-      "run": 1,
+      "run": 0,
       "tiles": {
         "kind": "pair",
         "tiles": [
@@ -569,7 +436,7 @@
           "en": "Helper Tax & VAT"
         }
       },
-      "run": 2,
+      "run": 0,
       "tiles": {
         "kind": "pair",
         "tiles": [
@@ -696,7 +563,7 @@
           "en": "Helper Kubernetes"
         }
       },
-      "run": 1,
+      "run": 0,
       "tiles": {
         "kind": "pair",
         "tiles": [
@@ -774,7 +641,7 @@
           "Docs"
         ]
       },
-      "run": 1,
+      "run": 0,
       "media": [
         {
           "file_id": "98a54f675570449c8836f202ae2a3b80",
@@ -874,7 +741,7 @@
           "Data Pipeline"
         ]
       },
-      "run": 2,
+      "run": 0,
       "media": [
         {
           "file_id": "70d771d464c0d437ecab1f509b47e5e5",
@@ -1051,7 +918,7 @@
           "en": "Helper Checkout"
         }
       },
-      "run": 1,
+      "run": 0,
       "media": [
         {
           "file_id": "4d062f8ab1e0e84eef827262aa82a3bd",
@@ -1149,7 +1016,7 @@
           "en": "Helper Terraform"
         }
       },
-      "run": 1,
+      "run": 0,
       "media": [
         {
           "file_id": "14ee0604905a1e2a022f2b67708f8abd",
@@ -1217,20 +1084,173 @@
       ]
     }
   ],
+  "reads_says": {
+    "key": "group.reads",
+    "args": {
+      "n": "3"
+    },
+    "en": "To read"
+  },
+  "reads": [
+    {
+      "id": "6deb90374cb873045fe03e39c3ab0348",
+      "kind": "info",
+      "loading": false,
+      "newer": false,
+      "title": "Load test: checkout holds 400 requests a second",
+      "words": "p95 under 180 ms up to 400 rps; at 520 rps the database pool runs out.",
+      "urgency": "low",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791458400000,
+      "from": {
+        "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+        "name": "Payments",
+        "mark": "draw:pebble",
+        "path": [
+          "Platform",
+          "Payments"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Load Testing"
+          },
+          "en": "Helper Load Testing"
+        }
+      },
+      "run": 0,
+      "tiles": {
+        "kind": "read",
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "shred"
+      ]
+    },
+    {
+      "id": "a67da9b30d2f07d256c6b646e8c34f36",
+      "kind": "info",
+      "loading": false,
+      "newer": false,
+      "title": "API p95 latency down to 138 ms after the Postgres upgrade",
+      "words": "Was 210 ms. The 13:40 spike was the backfill job, not users.",
+      "urgency": "low",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791457800000,
+      "from": {
+        "session_id": "5ef619647e0e8185fef0e3be40ff4809",
+        "name": "Infrastructure",
+        "mark": "draw:peak",
+        "path": [
+          "Platform",
+          "Infrastructure"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Monitoring"
+          },
+          "en": "Helper Monitoring"
+        }
+      },
+      "run": 0,
+      "media": [
+        {
+          "file_id": "61f9ea1d8c58b7bce8ca8f54b4ef2db2",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "read",
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "shred"
+      ]
+    },
+    {
+      "id": "0d9331a1172e43e9157fbd722d87bf1a",
+      "kind": "info",
+      "loading": false,
+      "newer": false,
+      "title": "Cloud bill: €2,380 a month less from December",
+      "words": "Reserved instances, one NAT per region, plant photos through the CDN.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791451800000,
+      "from": {
+        "session_id": "5ef619647e0e8185fef0e3be40ff4809",
+        "name": "Infrastructure",
+        "mark": "draw:peak",
+        "path": [
+          "Platform",
+          "Infrastructure"
+        ],
+        "helper": {
+          "key": "from.helper",
+          "args": {
+            "name": "Cloud Costs"
+          },
+          "en": "Helper Cloud Costs"
+        }
+      },
+      "run": 0,
+      "media": [
+        {
+          "file_id": "b9d7464f359973927b3dcbe4e28b9141",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "read",
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "shred"
+      ]
+    }
+  ],
   "waiting": 10,
   "blitz": {
-    "key": "desk.blitz",
-    "args": {
-      "n": "13"
+    "card": "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
+    "says": {
+      "key": "blitz",
+      "args": {
+        "n": "29"
+      },
+      "en": "Blitz: 29 open cards"
     },
-    "en": "Blitz: 13 open cards"
+    "scope": {
+      "key": "blitz.scope",
+      "en": "all groups"
+    }
   },
   "duck": {
     "card_ids": [
       "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
-      "6deb90374cb873045fe03e39c3ab0348",
-      "a67da9b30d2f07d256c6b646e8c34f36",
-      "0d9331a1172e43e9157fbd722d87bf1a",
       "41bc4fad4b14457d7f16a660d518d474",
       "a2706545530be0dce3b13417c2728966",
       "cf5922f1d3baa4cf7dd0d9b573716bfb",
@@ -1239,10 +1259,13 @@
       "9abad6a52b4b6dc3d096f87bff346aa9",
       "43a72b8f7d9de1aac4aeeae1367076c0",
       "992640bed603743781e3241f6a2de105",
-      "8b26d4c112fa4617ad968fe6f311704e"
+      "8b26d4c112fa4617ad968fe6f311704e",
+      "6deb90374cb873045fe03e39c3ab0348",
+      "a67da9b30d2f07d256c6b646e8c34f36",
+      "0d9331a1172e43e9157fbd722d87bf1a"
     ],
     "tip": {
-      "key": "desk.duck.tip.all",
+      "key": "duck.tip.all",
       "args": {
         "decisions": "10",
         "n": "13",
@@ -1251,11 +1274,11 @@
       "en": "I don’t give a duck: for all 13 open cards"
     },
     "short": {
-      "key": "desk.duck.short",
+      "key": "duck.short",
       "en": "IDGAD"
     },
     "what": {
-      "key": "desk.duck.what",
+      "key": "duck.what",
       "args": {
         "decisions": "10",
         "n": "13",
@@ -1264,7 +1287,7 @@
       "en": "10 decisions go to the agents, 3 cards to read are closed"
     },
     "ask": {
-      "key": "desk.duck.ask",
+      "key": "duck.ask",
       "args": {
         "decisions": "10",
         "n": "13",
@@ -1273,7 +1296,7 @@
       "en": "Duck all 13?"
     },
     "yes": {
-      "key": "desk.duck.yes",
+      "key": "duck.yes",
       "args": {
         "decisions": "10",
         "n": "13",
@@ -1282,7 +1305,7 @@
       "en": "Yes, duck them all"
     },
     "no": {
-      "key": "desk.duck.no",
+      "key": "duck.no",
       "en": "Cancel"
     }
   }

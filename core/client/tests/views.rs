@@ -6,7 +6,9 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use trommi_client_core::model::Model;
-use trommi_client_core::views::{card, demo, desk, notes, session, settings, sidebar, Board, Lens};
+use trommi_client_core::views::{
+    card, demo, group, notes, session, settings, sidebar, Board, Lens,
+};
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -70,15 +72,15 @@ fn the_demo_rooms_sidebar() {
 }
 
 #[test]
-fn the_demo_rooms_desk() {
+fn the_demo_rooms_group_page() {
     let (m, now) = demo_room();
     for (file, team) in [
-        ("demo-desk.json", None),
-        ("demo-desk-platform.json", Some("platform")),
+        ("demo-group.json", None),
+        ("demo-group-platform.json", Some("platform")),
     ] {
         let lens = lens(team);
         let b = Board::new(&m, &lens, now);
-        golden(file, &desk::desk(&b));
+        golden(file, &group::group(&b));
     }
 }
 
@@ -100,7 +102,7 @@ fn the_demo_rooms_cards() {
     let (m, now) = demo_room();
     let lens = lens(None);
     let b = Board::new(&m, &lens, now);
-    let walk = desk::desk(&b).stack;
+    let walk = group::group(&b).stack;
     for (file, id) in [
         ("demo-card-hero.json", "a38afef6dbdd056db8042980f2b83336"),
         (
@@ -206,20 +208,20 @@ fn edit(
         }
         1 => v.status = (r.below(2) == 0).then(|| Text::new("status", &r.word())),
         2 => v.sidebar = other.sidebar.clone(),
-        3 => v.desk = other.desk.clone(),
-        4 if !v.desk.rows.is_empty() => {
-            let at = r.below(v.desk.rows.len());
+        3 => v.group = other.group.clone(),
+        4 if !v.group.questions.is_empty() => {
+            let at = r.below(v.group.questions.len());
             match r.below(3) {
                 0 => {
-                    v.desk.rows.remove(at);
+                    v.group.questions.remove(at);
                 }
                 1 => {
-                    let to = r.below(v.desk.rows.len());
-                    v.desk.rows.swap(at, to);
+                    let to = r.below(v.group.questions.len());
+                    v.group.questions.swap(at, to);
                 }
-                _ => v.desk.rows[at].title = r.word(),
+                _ => v.group.questions[at].title = r.word(),
             }
-            v.desk.stack = v.desk.rows.iter().map(|x| x.id.clone()).collect();
+            v.group.stack = v.group.rows().iter().map(|x| x.id.clone()).collect();
         }
         5 if !v.sidebar.sessions.is_empty() => {
             let at = r.below(v.sidebar.sessions.len());
@@ -302,7 +304,7 @@ fn edit(
 fn diff_then_apply_is_the_next_model() {
     use trommi_client_core::views::ViewModel;
     let (m, now) = demo_room();
-    // (real units to draw from: the demo room's sidebar and Desk on each team)
+    // (real units to draw from: the demo room's sidebar and group page on each team)
     let pool: Vec<ViewModel> = [None, Some("platform")]
         .into_iter()
         .map(|d| {
@@ -310,7 +312,7 @@ fn diff_then_apply_is_the_next_model() {
             let b = Board::new(&m, &lens, now);
             ViewModel {
                 sidebar: sidebar::sidebar(&b),
-                desk: desk::desk(&b),
+                group: group::group(&b),
                 ..Default::default()
             }
         })
@@ -357,8 +359,8 @@ fn render_makes_the_boards_units_and_keeps_the_rest() {
     let wake = render(&m, &lens, now, &mut view);
     let b = Board::new(&m, &lens, now);
     assert_eq!(
-        (&view.sidebar, &view.desk, view.phase),
-        (&sidebar::sidebar(&b), &desk::desk(&b), Phase::Live)
+        (&view.sidebar, &view.group, view.phase),
+        (&sidebar::sidebar(&b), &group::group(&b), Phase::Live)
     );
     assert!(
         view.sessions.is_empty(),
@@ -475,10 +477,10 @@ fn render_cost_on_a_large_room() {
         let _ = sidebar::sidebar(&b);
         let t_side = t.elapsed();
         let t = std::time::Instant::now();
-        let off = trommi_client_core::views::off::of_board(&b);
+        let _ = trommi_client_core::views::off::of_board(&b);
         let t_off = t.elapsed();
         let t = std::time::Instant::now();
-        let _ = desk::desk_with(&b, &off);
+        let _ = group::group(&b);
         let t_desk = t.elapsed();
         let t = std::time::Instant::now();
         let _ = notes::notes(&b);

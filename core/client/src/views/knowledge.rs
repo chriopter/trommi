@@ -1,15 +1,15 @@
 //! The page Knowledge of the team in view (`Screen::Knowledge`): its entries in the order everyone shows (pinned
 //! first, then the one changed last), the search, the filter All / New / Pinned / Forgotten, what is new to the
 //! person, the history of the entry he opened with the way back from each change, and every word the page says. The
-//! chip on a team's Desk that leads there, and the words of the work line "reads team knowledge (12)" are here too.
+//! counts of the group's ⋯ menu entry that leads there, and the words of the work line "reads team knowledge (12)" are here too.
 //! The entries and their rules are `crate::knowledge`'s.
 
 use super::board::Board;
 use super::session::day_label;
 use super::words::{next_midnight, say};
 use super::{
-    KnowledgeChipView, KnowledgeFilterView, KnowledgeKindView, KnowledgeLogView, KnowledgeRowView,
-    KnowledgeView, KnowledgeWordsView, Text,
+    KnowledgeFilterView, KnowledgeKindView, KnowledgeLogView, KnowledgeRowView, KnowledgeView,
+    KnowledgeWordsView, Text,
 };
 use crate::knowledge::{
     forgotten_of_team, is_new, logs_of, of_team, seen_of, Entry, Index, Log, ENTRIES_MAX,
@@ -261,30 +261,14 @@ pub fn page(b: &Board, ask: &Ask) -> KnowledgeView {
     }
 }
 
-/// The chip on a team's Desk that opens its page: "Knowledge" and how many entries.
-pub fn chip(b: &Board) -> KnowledgeChipView {
+/// How many entries the team in view holds, and how many of them an agent changed since the person last looked: the
+/// group's ⋯ menu says them ("7 entries · 2 new").
+pub fn counts(b: &Board) -> (u32, u32) {
     let team = team(b);
     let entries = of_team(b.model, &team);
-    let n = entries.len();
     let seen = seen_of(b.model, &team);
     let fresh = entries.iter().filter(|e| is_new(e, seen)).count() as u32;
-    let first = Index::new(entries)
-        .search("", 4)
-        .into_iter()
-        .map(|e| e.title.clone())
-        .collect();
-    KnowledgeChipView {
-        first,
-        fresh,
-        count: n as u32,
-        label: say("knowledge.chip", "Knowledge", &[]),
-        says: say(
-            "knowledge.chip.says",
-            format!("Team knowledge: {}", count_words(n)),
-            &[("n", &n.to_string())],
-        ),
-        team_id: team,
-    }
+    (entries.len() as u32, fresh)
 }
 
 /// The work line of an agent's step that read its team's knowledge: "reads team knowledge (12)", with what it

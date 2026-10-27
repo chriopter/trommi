@@ -378,7 +378,7 @@ fn a_desk_is_deleted_with_its_sessions_cards_and_board() {
     sim.send(start());
     world.agent_asks("Ship it?");
     world.stream(&mut sim);
-    let card = sim.view.desk.rows[0].id.clone();
+    let card = sim.view.group.rows()[0].id.clone();
     let session = sim.view.sidebar.sessions[0].id.clone();
     sim.send(Event::Action {
         action: Action::AddTeam {
@@ -536,17 +536,9 @@ fn settings_show_every_desks_board_small() {
         "counted once read"
     );
     look(&mut sim, None);
-    let left = sim
-        .view
-        .thumbs
-        .clone()
-        .expect("the Desk keeps its own team's board small, for its tile");
     assert_eq!(
-        left.iter()
-            .map(|t| (t.team_id.as_str(), t.count))
-            .collect::<Vec<_>>(),
-        [("main", 1)],
-        "left Settings: only the Desk's team"
+        sim.view.thumbs, None,
+        "left Settings: the group page shows no board small"
     );
     sim.send(Event::Focus {
         focus: Focus {

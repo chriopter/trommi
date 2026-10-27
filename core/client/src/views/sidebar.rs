@@ -7,7 +7,7 @@
 //! - a row per session that is not archived and stands on the team in view;
 //! - chat rows follow newest actual message first, with immutable admission time for empty chats and the
 //!   session list's manual/id order for ties; connection state only changes the row's presentation;
-//! - a row's open questions are those of its session on the Desk now (its helpers' too: they write into it);
+//! - a row's open questions are those of its session waiting for the person now (its helpers' too: they write into it);
 //! - a session's helpers (its agent's subagents, `helpers.rs`) have no row: its row says how many there are, with
 //!   a dot each that is filled while that helper works ([`HelperDotsView`]).
 
@@ -17,9 +17,9 @@ use super::words::{
     badge_words, hand_words, link_words, local, next_midnight, say, unheard_words, LinkSubject,
 };
 use super::{
-    CapView, ChatGroupView, GlobalBlitzView, HandView, HelperDotsView, LastSaidView, LinkWords,
-    NewChatView, SessionRowView, SidebarView, StackEdgeView, TeamPlaceView, TeamStackView, TeamTab,
-    Text, STACK_EDGES,
+    CapView, ChatGroupView, HandView, HelperDotsView, LastSaidView, LinkWords, NewChatView,
+    SessionRowView, SidebarView, StackEdgeView, TeamPlaceView, TeamStackView, TeamTab, Text,
+    STACK_EDGES,
 };
 use crate::model::Model;
 use serde_json::Value;
@@ -113,7 +113,7 @@ pub fn chat_when(ts: u64, now: u64, zone: i32) -> Text {
 }
 
 /// The newest question each session put to the person (its time and title), by index of `Board::agents`.
-fn asked_last(b: &Board) -> HashMap<usize, (u64, String)> {
+pub(super) fn asked_last(b: &Board) -> HashMap<usize, (u64, String)> {
     let mut out: HashMap<usize, (u64, String)> = HashMap::new();
     for c in b.model.cards.values() {
         let Some(&i) = b.by_key.get(key_of(&c.session_id, &c.agent_device_id)) else {
@@ -229,7 +229,7 @@ pub fn hand_of(b: &Board, agent: usize) -> Option<HandView> {
     Some(hand)
 }
 
-fn team_name(name: &str) -> Text {
+pub(super) fn team_name(name: &str) -> Text {
     if name.trim().is_empty() || name == "Personal" {
         say("team.personal", "Personal", &[])
     } else {
@@ -237,18 +237,13 @@ fn team_name(name: &str) -> Text {
     }
 }
 
-/// The units of the team in view: one per session that is not archived and stands on it, in the list's order.
+/// The units of the group in view: one per session that is not archived and stands on it, in the list's order.
 pub(super) fn units_of(b: &Board) -> Vec<Unit> {
     units_where(b, |a| a.on_team)
 }
 
 /// So many of a team's sessions make its picture.
 const TEAM_FACES: usize = 3;
-
-/// The units of every team's sessions that are not archived (home's Desk).
-pub(super) fn units_all(b: &Board) -> Vec<Unit> {
-    units_where(b, |_| true)
-}
 
 /// The units of the sessions that are not archived and pass `on`, in the list's order.
 fn units_where(b: &Board, on: impl Fn(&super::board::Agent) -> bool) -> Vec<Unit> {
@@ -299,8 +294,8 @@ pub fn sidebar(b: &Board) -> SidebarView {
             .collect()
     };
     let first = teams[0].0.clone();
-    // (what waits on a chat on no team counts on no team: on home, and on the bolt over every team; what belongs to a
-    //  session the list does not show counts nowhere)
+    // (what waits on a chat on no team counts on no team: on the group "No team", and on the bolt over every group;
+    //  what belongs to a session the list does not show counts nowhere)
     let team_of = |agent: Option<usize>| match agent {
         Some(i) if b.agents[i].root => None,
         Some(_) => Some(b.team_of(agent).unwrap_or(first.as_str())),
@@ -329,29 +324,32 @@ pub fn sidebar(b: &Board) -> SidebarView {
                 name: team_name(name),
                 waiting,
                 cards: cards_on(id),
-                selected: *id == in_view && !b.lens.desk_all,
+                selected: *id == in_view && !b.no_team,
                 knocks,
             }
         })
         .collect();
-    // The tab's number: the open questions of the team in view, never red (the owner, 13 October 2026, card
+    // The tab's number: the open questions of the group in view, never red (the owner, 13 October 2026, card
     // c628976b: "Nur der Desk im Blick"; the web counted every team and showed red on a knock). What waits on the
     // other teams stands in the menu, team by team.
-    // On home the Desk in view is every team's, and so are its numbers.
-    let on_desk = || b.all_fresh.iter().filter(|f| b.on_desk(f.agent));
-    let badge = on_desk().count() as u32;
-    // (home: what every row shows, so not what belongs to a session the list does not show)
-    let shown_fresh = || b.all_fresh.iter().filter(|f| f.agent.is_some());
-    let home = TeamTab {
-        id: String::new(),
-        name: say("team.all", "All teams", &[]),
-        waiting: shown_fresh().count() as u32,
-        cards: b.all_cards.len() as u32,
-        selected: b.lens.desk_all,
-        knocks: shown_fresh().any(|f| f.knocks),
-    };
-    let place = if b.lens.desk_all {
-        say("team.all", "All teams", &[])
+    let on_page = || b.all_fresh.iter().filter(|f| b.on_page(f.agent));
+    let badge = on_page().count() as u32;
+    // (the chats on no team as a group of their own, while there are any)
+    let root_here = b.agents.iter().any(|a| a.root && !a.row.archived);
+    let no_team = root_here.then(|| {
+        let root_of = |agent: Option<usize>| agent.is_some_and(|i| b.agents[i].root);
+        let mine = || b.all_fresh.iter().filter(|f| root_of(f.agent));
+        TeamTab {
+            id: super::NO_TEAM.into(),
+            name: say("place.none", "No team", &[]),
+            waiting: mine().count() as u32,
+            cards: b.all_cards.iter().filter(|f| root_of(f.agent)).count() as u32,
+            selected: b.no_team,
+            knocks: mine().any(|f| f.knocks),
+        }
+    });
+    let place = if b.no_team {
+        say("place.none", "No team", &[])
     } else {
         team_name(
             teams
@@ -370,7 +368,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
     let stacks: Vec<TeamStackView> = tabs
         .iter()
         .map(|t| {
-            let sessions = if t.id == in_view {
+            let sessions = if t.id == in_view && !b.no_team {
                 rows.clone()
             } else {
                 // (in a room without teams there is one, and it is in view)
@@ -449,17 +447,8 @@ pub fn sidebar(b: &Board) -> SidebarView {
             )
         });
 
-    // ---- the bolt over every team (the phone's top right): the walk of every team's Desk, whatever team is in view;
-    // its first card is the first of that Desk's rows (one whose session the list shows) ----
-    let all = super::desk::walk_of(b, |_| true);
-    let shown = |id: &str| {
-        b.all_cards.iter().any(|f| f.id == id)
-            && (b.model.cards.contains_key(id) || b.model.permissions.contains_key(id))
-    };
-    let global_blitz = all.iter().find(|id| shown(id)).map(|id| GlobalBlitzView {
-        card: id.to_string(),
-        says: super::desk::blitz_words(all.len() as u32),
-    });
+    // ---- the bolt over every group (the phone's top right), whatever group is in view ----
+    let global_blitz = super::group::blitz(b);
 
     // (a teaser's "14:05" turns into "Yesterday" at midnight)
     if stacks
@@ -499,7 +488,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
             })
         })
         .collect();
-    SidebarView {
+    let mut view = SidebarView {
         places: places(b),
         root,
         me: String::new(),
@@ -508,18 +497,51 @@ pub fn sidebar(b: &Board) -> SidebarView {
         found_none,
         global_blitz,
         stacks,
-        desk_all: b.lens.desk_all,
+        no_team,
+        folded: b.lens.rail_folded,
         teams: tabs,
-        home,
         sessions: rows,
         badge,
         team: in_view,
         place,
         waiting: badge,
-        knocking: on_desk().filter(|f| f.knocks).count() as u32,
+        knocking: on_page().filter(|f| f.knocks).count() as u32,
         stopped: units.iter().filter(|u| u.hand.is_some()).count() as u32,
         working: units.iter().filter(|u| u.working).count() as u32,
         unheard: units.iter().map(|u| u.unheard).sum(),
+    };
+    if view.folded {
+        quiet(&mut view);
+    }
+    view
+}
+
+/// The rail (`Focus.rail_folded`, the owner, 27 October 2026): no counters at all, and on a chat only one quiet dot
+/// while it needs the person (a question waits for him, or it is stopped: `signal` "waiting" or "stopped").
+fn quiet(view: &mut SidebarView) {
+    let row = |r: &mut SessionRowView| {
+        r.cards = 0;
+        r.open = 0;
+        r.knocks = false;
+        r.unheard = 0;
+        r.unread = false;
+        r.says = None;
+        if r.signal == "unread" {
+            r.signal.clear();
+        }
+    };
+    view.sessions.iter_mut().for_each(row);
+    view.root.iter_mut().for_each(row);
+    for s in &mut view.stacks {
+        s.cards = 0;
+        s.waiting = 0;
+        s.knocks = false;
+        s.sessions.iter_mut().for_each(row);
+    }
+    if let Some(t) = view.no_team.as_mut() {
+        t.cards = 0;
+        t.waiting = 0;
+        t.knocks = false;
     }
 }
 
@@ -581,7 +603,7 @@ fn message_time(b: &Board, agent: usize) -> u64 {
 /// Every chat surface takes the same message-recency order. Existing manual order breaks equal timestamps;
 /// online/offline is only presentation and never moves a chat on a lease or clock tick. Newest first leaves a chat
 /// no place of its own to be dragged to within its list (`group` empty); it still moves to another team or to none.
-fn rows_of(
+pub(super) fn rows_of(
     b: &Board,
     units: &[Unit],
     asked: &HashMap<usize, (u64, String)>,
@@ -1162,7 +1184,7 @@ mod tests {
     }
 
     /// The wide sidebar: every team as a stack of its sessions' card edges with what waits on it, open where this
-    /// device unfolded it; on home (`desk_all`) no team is marked.
+    /// device unfolded it; while the chats on no team are the group in view no team is marked.
     #[test]
     fn every_team_is_a_stack_open_where_unfolded() {
         let mut r = Room {
@@ -1221,13 +1243,13 @@ mod tests {
             "the phone's rows: the team in view alone"
         );
         lens.open_teams = vec!["lab".into(), "empty".into()];
-        lens.desk_all = true;
+        lens.team = Some("lab".into());
         let v = sidebar(&Board::new(&m, &lens, NOW));
         assert_eq!(
             st(&v)[..2],
             [
                 ("main".into(), false, false, 0, false, 1),
-                ("lab".into(), false, true, 2, true, 2)
+                ("lab".into(), true, true, 2, true, 2)
             ]
         );
         assert!(
@@ -1235,7 +1257,23 @@ mod tests {
             "an empty team never opens and has no faces"
         );
         assert_eq!(v.stacks[1].faces.len(), 2);
-        assert_eq!((v.desk_all, v.place.en.as_str()), (true, "All teams"));
+        assert_eq!(v.place.en, "Lab");
+        // the rail: no counts, one quiet dot on a chat that needs him
+        lens.rail_folded = true;
+        let v = sidebar(&Board::new(&m, &lens, NOW));
+        assert!(v.folded);
+        assert!(v
+            .stacks
+            .iter()
+            .all(|s| s.cards == 0 && s.waiting == 0 && !s.knocks));
+        assert_eq!(
+            v.stacks[1]
+                .sessions
+                .iter()
+                .map(|r| (r.slug.as_str(), r.signal.as_str(), r.cards, r.open))
+                .collect::<Vec<_>>(),
+            [("b-lab", "", 0, 0), ("d-lab", "waiting", 0, 0)]
+        );
     }
 
     /// The person's picture: the e-mail's first letter; nothing known, nothing drawn but a figure.
@@ -1249,10 +1287,10 @@ mod tests {
         assert_eq!(super::initial_of(None), "");
     }
 
-    /// Home in the menu (the phone's place pill): "All teams" above the teams with what waits on all of them, marked
-    /// while it is the Desk in view; then no team is marked, and the tab and the lamp count every team's questions.
+    /// The tab and the lamp count the questions of the group in view; no "All teams" any more (the owner, 27 October
+    /// 2026): Blitz is the only view of everything.
     #[test]
-    fn home_stands_above_the_teams_and_counts_them_all() {
+    fn the_numbers_are_the_group_in_views() {
         let mut r = Room {
             teams: two_teams(),
             ..Default::default()
@@ -1270,40 +1308,24 @@ mod tests {
         };
         let marks = |v: &SidebarView| v.teams.iter().map(|d| d.selected).collect::<Vec<_>>();
         let v = sidebar(&Board::new(&m, &lens, NOW));
-        assert_eq!(
-            (
-                v.home.id.as_str(),
-                v.home.name.en.as_str(),
-                v.home.name.key.as_str()
-            ),
-            ("", "All teams", "team.all")
-        );
-        assert_eq!(
-            (v.home.waiting, v.home.knocks, v.home.selected),
-            (3, true, false)
-        );
         assert_eq!(marks(&v), [true, false]);
         assert_eq!(
             (v.badge, v.waiting, v.knocking),
             (1, 1, 0),
-            "a team's Desk counts that team alone"
+            "a group's page counts that group alone"
         );
-        lens.desk_all = true;
+        assert!(v.no_team.is_none(), "no chat on no team: no such group");
+        lens.team = Some("lab".into());
         let v = sidebar(&Board::new(&m, &lens, NOW));
-        assert!(v.home.selected);
-        assert_eq!(marks(&v), [false, false], "on home no team is marked");
-        assert_eq!(
-            (v.badge, v.waiting, v.knocking),
-            (3, 3, 1),
-            "home counts every team's questions"
-        );
-        assert_eq!(slugs(&v), ["a-work"], "the chats stay the team in view's");
+        assert_eq!(marks(&v), [false, true]);
+        assert_eq!((v.badge, v.waiting, v.knocking), (2, 2, 1));
+        assert_eq!(slugs(&v), ["b-lab"]);
     }
 
-    /// The bolt at the phone's top right walks every team's Desk whatever team is in view: its first card is that
-    /// Desk's first row and it says that Desk's Blitz; it follows the core's order; with nothing open it is none.
+    /// The bolt at the phone's top right walks every group's open cards whatever group is in view: its first card is
+    /// the first of that walk; it follows the core's order; with nothing open it is none.
     #[test]
-    fn the_global_blitz_is_every_teams_desk_from_any_team() {
+    fn the_global_blitz_is_every_groups_walk_from_any_group() {
         let mut r = Room {
             teams: two_teams(),
             ..Default::default()
@@ -1331,54 +1353,42 @@ mod tests {
         r.card("i3", "b-lab", "info", "normal");
         let mut m = r.model(NOW);
         let lenses = |team: &str| {
-            [
-                Lens {
-                    team: Some(team.into()),
-                    ..Default::default()
-                },
-                Lens {
-                    team: Some(team.into()),
-                    desk_all: true,
-                    ..Default::default()
-                },
-            ]
+            [Lens {
+                team: Some(team.into()),
+                ..Default::default()
+            }]
         };
-        let home = |m: &Model| super::super::desk::desk(&Board::new(m, &lenses("main")[1], NOW));
         let check = |m: &Model| {
-            let all = home(m);
-            assert_eq!(all.rows.len(), 3, "every team's Desk");
+            let all = super::super::group::walk_all(&Board::new(m, &lenses("main")[0], NOW));
+            assert_eq!(all.len(), 3, "every group's open cards");
             for lens in lenses("main").into_iter().chain(lenses("lab")) {
-                let g = sidebar(&Board::new(m, &lens, NOW))
-                    .global_blitz
-                    .expect("open cards: a bolt");
+                let b = Board::new(m, &lens, NOW);
+                let g = sidebar(&b).global_blitz.expect("open cards: a bolt");
+                assert_eq!(g.card, all[0], "the first of every group's, from {lens:?}");
                 assert_eq!(
-                    g.card, all.rows[0].id,
-                    "the first of every team's Desk, from {lens:?}"
+                    Some(&g),
+                    super::super::group::group(&b).blitz.as_ref(),
+                    "the group page's Blitz is the same"
                 );
-                assert_eq!(Some(&g.says), all.blitz.as_ref());
                 assert_eq!(
                     (g.says.key.as_str(), g.says.en.as_str()),
-                    ("desk.blitz", "Blitz: 3 open cards")
+                    ("blitz", "Blitz: 3 open cards")
                 );
             }
-            all.rows[0].id.clone()
+            all[0].clone()
         };
         check(&m);
         // the core's order leads, and from a team's chats the bolt starts on another team's card
         m.desk_order = ["q2", "i3", "q1"].map(String::from).to_vec();
         assert_eq!(check(&m), "q2");
-        let main = super::super::desk::desk(&Board::new(&m, &lenses("main")[0], NOW));
-        assert_eq!(
-            main.rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-            ["q1"],
-            "the team's own Desk is the team's"
-        );
+        let main = super::super::group::group(&Board::new(&m, &lenses("main")[0], NOW));
+        assert_eq!(main.stack, ["q1"], "the team's own page is the team's");
         m.desk_order = ["q1", "q2", "i3"].map(String::from).to_vec();
         assert_eq!(check(&m), "q1");
     }
 
     /// A chat on no team stands at the top, alongside the teams, from whichever team is in view: in no team's stack
-    /// or rows, with no team's id; its questions count on home and on the bolt, on no team; the search finds it first;
+    /// or rows, with no team's id; its questions count on the group "No team" and on the bolt, on no team; the search finds it first;
     /// the places offer "No team" first and the team in view chosen; its page moves it onto a team.
     #[test]
     fn a_chat_on_no_team_stands_at_the_top_alongside_the_teams() {
@@ -1417,9 +1427,14 @@ mod tests {
             );
             assert!(!slugs(&v).contains(&"c-root".to_string()));
             assert_eq!(
-                (v.home.waiting, v.badge),
-                (1, 0),
-                "home counts it, the team's Desk does not"
+                (
+                    v.no_team
+                        .as_ref()
+                        .map(|t| (t.id.as_str(), t.waiting, t.selected)),
+                    v.badge
+                ),
+                (Some(("none", 1, false)), 0),
+                "the group No team counts it, the team's page does not"
             );
             assert_eq!(v.global_blitz.as_ref().map(|g| g.card.as_str()), Some("q1"));
             let places: Vec<(Option<&str>, bool)> = v
@@ -1636,7 +1651,7 @@ mod tests {
     }
 
     /// The calm grey counts (a row's, a team's, the Chats list's) count every open card, infos too, and the
-    /// requests: what the Desk's rows and Blitz walk, from the one list (`Board::all_cards`). A team whose session
+    /// requests: what the group pages list and Blitz walks, from the one list (`Board::all_cards`). A team whose session
     /// has only infos open showed no number although Blitz said "3 open cards" (the owner, 23 October 2026).
     #[test]
     fn the_grey_counts_are_what_blitz_walks() {
@@ -1664,16 +1679,17 @@ mod tests {
                 ..Default::default()
             };
             let b = Board::new(&m, &lens, NOW);
-            let d = super::super::desk::desk(&b);
-            (d.stack.len() as u32, d.blitz.map(|t| t.en))
+            let d = super::super::group::group(&b);
+            (d.stack.len() as u32, d.blitz.map(|t| t.says.en))
         };
-        assert_eq!(blitz(&r, "lab"), (3, Some("Blitz: 3 open cards".into())));
-        assert_eq!(blitz(&r, "main"), (3, Some("Blitz: 3 open cards".into())));
+        // (each page lists its group's three; Blitz walks every group's six)
+        assert_eq!(blitz(&r, "lab"), (3, Some("Blitz: 6 open cards".into())));
+        assert_eq!(blitz(&r, "main"), (3, Some("Blitz: 6 open cards".into())));
         for team in ["main", "lab"] {
             let v = view(&r, Some(team));
             let tab = |id: &str| v.teams.iter().find(|t| t.id == id).unwrap().cards;
             let stack = |id: &str| v.stacks.iter().find(|t| t.id == id).unwrap().cards;
-            assert_eq!((tab("main"), tab("lab"), v.home.cards), (3, 3, 6));
+            assert_eq!((tab("main"), tab("lab")), (3, 3));
             assert_eq!((stack("main"), stack("lab")), (3, 3));
             let rows: Vec<(String, u32)> = v
                 .stacks
@@ -1991,7 +2007,7 @@ mod tests {
             };
             let b = Board::new(&m, &lens, NOW);
             let v = sidebar(&b);
-            let d = super::super::desk::desk(&b);
+            let d = super::super::group::group(&b);
             let tabs: Vec<u32> = v.teams.iter().map(|t| t.cards).collect();
             let stacks: Vec<u32> = v.stacks.iter().map(|t| t.cards).collect();
             let rows: Vec<u32> = v
@@ -2004,20 +2020,19 @@ mod tests {
                 tabs,
                 stacks,
                 rows,
-                v.home.cards,
                 d.stack.len(),
-                d.blitz.map(|t| t.en),
+                d.blitz.map(|t| t.says.en),
                 v.global_blitz.map(|g| g.card),
             )
         };
         for team in ["main", "lab"] {
             assert_eq!(
                 counts(&r, team),
-                (vec![0, 0], vec![0, 0], vec![0, 0], 0, 0, None, None),
+                (vec![0, 0], vec![0, 0], vec![0, 0], 0, None, None),
                 "nothing to count in {team}"
             );
         }
-        // (once it is done, the card comes to the Desk and counts where its chat stands, as Blitz walks it)
+        // (once it is done, the card comes to its group page and counts where its chat stands, as Blitz walks it)
         r.cards
             .iter_mut()
             .find(|c| c["object_id"] == "w2")
@@ -2032,7 +2047,6 @@ mod tests {
                 vec![0, 1],
                 vec![0, 1],
                 1,
-                1,
                 Some("Blitz: 1 open card".into()),
                 Some("w2".into())
             )
@@ -2040,6 +2054,7 @@ mod tests {
     }
     /// The red counts as the grey: a question or a request of a session the list does not show waited on the first
     /// team (its menu row, the tab's badge, home and the Desk's head) though no row shows it; it waits nowhere now.
+    /// (Blitz walks it neither.)
     #[test]
     fn a_question_of_an_unknown_session_waits_nowhere() {
         let mut r = Room {
@@ -2056,11 +2071,10 @@ mod tests {
             let m = r.model(NOW);
             let b = Board::new(&m, &lens, NOW);
             let v = sidebar(&b);
-            let d = super::super::desk::desk(&b);
+            let d = super::super::group::group(&b);
             let tabs: Vec<(u32, bool)> = v.teams.iter().map(|t| (t.waiting, t.knocks)).collect();
             (
                 tabs,
-                (v.home.waiting, v.home.knocks),
                 (v.badge, v.waiting, v.knocking),
                 d.waiting,
                 d.empty.map(|t| t.en),
@@ -2074,25 +2088,16 @@ mod tests {
             team: Some("lab".into()),
             ..Default::default()
         };
-        let home = Lens {
-            desk_all: true,
-            ..Default::default()
-        };
         let tabs = vec![(0, false), (1, false)];
         assert_eq!(
             counts(&r, main),
             (
                 tabs.clone(),
-                (1, false),
                 (0, 0, 0),
                 0,
                 Some("Questions land here.".into())
             )
         );
-        assert_eq!(
-            counts(&r, lab),
-            (tabs.clone(), (1, false), (1, 1, 0), 1, None)
-        );
-        assert_eq!(counts(&r, home), (tabs, (1, false), (1, 1, 0), 1, None));
+        assert_eq!(counts(&r, lab), (tabs, (1, 1, 0), 1, None));
     }
 }

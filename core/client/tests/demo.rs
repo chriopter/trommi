@@ -27,7 +27,7 @@ fn the_demo_room_runs_without_a_hub() {
         },
     });
     assert_eq!(sim.view.phase, Phase::Live);
-    assert!(!sim.view.desk.rows.is_empty(), "the Desk of the demo");
+    assert!(!sim.view.group.rows().is_empty(), "the Desk of the demo");
     assert!(
         sim.log.iter().all(|e| !matches!(
             e,
@@ -36,7 +36,7 @@ fn the_demo_room_runs_without_a_hub() {
         "no I/O"
     );
     // a card opened, answered: off the Desk, nothing pending
-    let row = sim.view.desk.rows[0].clone();
+    let row = sim.view.group.rows()[0].clone();
     sim.send(Event::Focus {
         focus: Focus {
             screen: Screen::Card {
@@ -62,7 +62,7 @@ fn the_demo_room_runs_without_a_hub() {
     sim.send(Event::Action { action });
     assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
     assert!(
-        !sim.view.desk.rows.iter().any(|r| r.id == row.id),
+        !sim.view.group.rows().iter().any(|r| r.id == row.id),
         "done with: off the Desk"
     );
     assert!(sim.app.board().model.cards[&row.id]
@@ -94,12 +94,12 @@ fn the_demo_opens_its_files_by_their_address_and_keeps_what_is_attached() {
     });
     let row = sim
         .view
-        .desk
-        .rows
+        .group
+        .rows()
         .iter()
         .find(|r| !r.media.is_empty())
-        .expect("a row with a picture")
-        .clone();
+        .map(|r| (*r).clone())
+        .expect("a row with a picture");
     let file = row.media[0].file_id.clone();
     sim.send(Event::Action {
         action: Action::OpenFile {
@@ -202,10 +202,10 @@ fn the_demo_shows_its_scribble_boards_folds_goals_and_adds_a_team_with_undo() {
             ..Default::default()
         },
     });
-    // the Desk's board beside it: the demo's shapes, its pictures openable
+    // the group page's board beside it: the demo's shapes, its pictures openable
     sim.send(Event::Focus {
         focus: Focus {
-            screen: Screen::Desk,
+            screen: Screen::Group,
             team: Some("main".into()),
             board: Some("main".into()),
             ..Default::default()
@@ -240,28 +240,10 @@ fn the_demo_shows_its_scribble_boards_folds_goals_and_adds_a_team_with_undo() {
     let now = sim.view.board.clone().unwrap();
     assert_eq!(now.shapes.len(), board.shapes.len() - 1);
     assert!(!now.shapes.iter().any(|s| s.id == first));
-    // the Desk shows its own team's board small, for its board tile, counted
-    let thumbs = sim.view.thumbs.clone().expect("the Desk's board small");
-    assert_eq!(
-        thumbs
-            .iter()
-            .map(|t| (t.team_id.as_str(), t.count as usize))
-            .collect::<Vec<_>>(),
-        [("main", now.shapes.len())]
-    );
-    let tile = sim
-        .view
-        .desk
-        .tiles
-        .iter()
-        .find(|t| t.key == "board")
-        .expect("the board tile");
-    assert_eq!(
-        (tile.count, tile.line.en.clone()),
-        (
-            Some(now.shapes.len() as u32),
-            format!("{} elements", now.shapes.len())
-        )
+    // the group page draws no board small (its ⋯ menu opens the board)
+    assert!(
+        sim.view.thumbs.is_none(),
+        "no boards small on the group page"
     );
 
     // Settings: every team's board small, counted, without what only drawing it large needs
@@ -291,12 +273,12 @@ fn the_demo_shows_its_scribble_boards_folds_goals_and_adds_a_team_with_undo() {
     // the goals fold on this device
     sim.send(Event::Focus {
         focus: Focus {
-            screen: Screen::Desk,
+            screen: Screen::Group,
             team: Some("main".into()),
             ..Default::default()
         },
     });
-    let goals = |sim: &Sim| sim.view.desk.goals.clone().expect("the team's goals");
+    let goals = |sim: &Sim| sim.view.group.goals.clone().expect("the team's goals");
     assert!(goals(&sim).foldable && !goals(&sim).folded);
     sim.send(Event::Action {
         action: Action::FoldGoals {

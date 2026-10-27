@@ -105,6 +105,16 @@ fn row(
     }
 }
 
+/// How many wakeups the agents of the team in view set (as many as its page lists): the group's ⋯ menu says it.
+pub fn count(b: &Board) -> usize {
+    let team = super::knowledge::team(b);
+    b.agents
+        .iter()
+        .filter(|a| a.team.as_deref().is_none_or(|t| t == team) && !a.row.archived)
+        .map(|a| of_session(b, &a.row.key).len())
+        .sum()
+}
+
 /// The page.
 pub fn page(b: &Board) -> WakeupsView {
     let team = super::knowledge::team(b);

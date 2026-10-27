@@ -1,10 +1,10 @@
 //! The board as the views read it, worked out once per render from the board model: the sessions with their team
 //! and crown, the teams, the team in view, the open questions and where they wait, the answers a session has not
-//! picked up. Every screen's unit is made from this, so that the sidebar, the Desk, a session and a card never
+//! picked up. Every screen's unit is made from this, so that the sidebar, the group page, a session and a card never
 //! disagree. The rules are the web app's `boardModel` of before (app/web/public/app.mjs).
 //!
 //! What is decided elsewhere in this crate is taken, not derived again: the session list with each session's link,
-//! red hand and status lines (`sessions.rs`, `status.rs`), the Desk's stack and its order (`desk.rs`, the model's
+//! red hand and status lines (`sessions.rs`, `status.rs`), the open cards and their order (`group.rs`, the model's
 //! `stack`, `open_permission_ids`, `desk_order`).
 
 use super::words::earliest;
@@ -32,8 +32,6 @@ pub struct Lens {
     pub reading: bool,
     /// How far the reading of the room's past is: done, of how many.
     pub reading_progress: Option<(u64, u64)>,
-    /// Picks the Desk's greeting, once per run of the app (from `Config.seed`).
-    pub dice: u32,
     /// The page Off your mind: a page of settled cards is being read from the hub, and the hub holds more below
     /// the ones read (`app::past`).
     pub off_reading: bool,
@@ -45,21 +43,23 @@ pub struct Lens {
     pub session: Option<String>,
     /// The card whose page is in view: its unit is made.
     pub card: Option<String>,
-    /// That card's page is a step of this chat's Blitz (`Focus.walk_chat`), not of the Desk's.
+    /// That card's page is a step of this chat's Blitz (`Focus.walk_chat`), not of the group page's.
     pub walk_chat: Option<String>,
+    /// That card's page is a step of Blitz over every group (`Focus.walk_all`).
+    pub walk_all: bool,
+    /// The chat chip chosen on the group page (`Focus.group_chat`): its session key or short id.
+    pub group_chat: Option<String>,
+    /// The wide sidebar is folded to a rail (`Focus.rail_folded`).
+    pub rail_folded: bool,
     /// The page Off your mind is in view, with the search's words: its unit is made.
     pub off: Option<String>,
     /// The gallery of Artifacts is in view.
     pub artifacts: bool,
-    /// A page shows every team's board small (Settings, the boards of All teams): they are read, `ViewModel.thumbs`.
+    /// A page shows every team's board small (Settings): they are read, `ViewModel.thumbs`.
     pub thumbs: bool,
-    /// Only the board of the team in view small (the Desk's board tile); else every team's (Settings).
-    pub thumbs_desk: bool,
     /// The teams whose goals are folded to their first line on this device (web localStorage
     /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
     pub goals_folded: Vec<String>,
-    /// The Desk is home: every team's questions, not the team in view's (`Focus.desk_all`).
-    pub desk_all: bool,
     /// The teams unfolded in the wide sidebar (`Focus.open_teams`).
     pub open_teams: Vec<String>,
     /// The words searched for among every team's chats (`Focus.chats_query`), trimmed; none when empty.
@@ -106,13 +106,12 @@ pub enum MoreOf {
 
 impl Lens {
     /// What of the lens is the device's and not a window's (`app::windows`): the clock's zone, the room's reading,
-    /// the greeting's dice, the read marks, the past's settled pages, the folded goals. A window that comes into
+    /// the read marks, the past's settled pages, the folded goals. A window that comes into
     /// view takes these from the one before.
     pub fn carry_device(&mut self, from: &Lens) {
         self.utc_offset_min = from.utc_offset_min;
         self.reading = from.reading;
         self.reading_progress = from.reading_progress;
-        self.dice = from.dice;
         self.seen.clone_from(&from.seen);
         self.off_reading = from.off_reading;
         self.off_hub_more = from.off_hub_more;
@@ -164,11 +163,12 @@ pub struct Agent {
     pub team: Option<String>,
     /// The crowned session of its team (one per team, never one for all; never one on no team).
     pub crowned: bool,
-    /// It stands on the team in view (archived or not); never one on no team.
+    /// It stands on the group in view (archived or not): the team in view's, or, while the chats on no team are the
+    /// group in view (`Board::no_team`), one of them.
     pub on_team: bool,
     /// On no team that is there (`desk` null, none set, a team that is gone), in a room with teams: it stands at the
-    /// top of the list, alongside the teams, on no team's Desk but on the Desk of every team, with no team's goals or
-    /// knowledge.
+    /// top of the list, alongside the teams, on no team's page but on the group "No team" and in Blitz, with no
+    /// team's goals or knowledge.
     pub root: bool,
     /// Its device says platform "codex".
     pub codex: bool,
@@ -176,8 +176,8 @@ pub struct Agent {
     pub said_goodbye: bool,
 }
 
-/// An open question: a card or an approval request that waits for the person on the Desk now (no info, nothing
-/// that is with its agent).
+/// An open question: a card or an approval request that waits for the person now (no info, nothing that is with
+/// its agent).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fresh {
     pub id: String,
@@ -205,13 +205,16 @@ pub struct Board<'a> {
     pub by_id: HashMap<String, usize>,
     /// The teams in the menu's order; empty in a room without teams.
     pub teams: Vec<DeskFacts>,
-    /// The team in view: an id of `teams`, or none in a room without teams.
+    /// The team in view: an id of `teams`, or none in a room without teams. While the chats on no team are the group
+    /// in view (`no_team`), the first team: what is a team's (its board, its crown) stays that team's.
     pub team: Option<String>,
+    /// The group in view is the chats on no team (`Focus.team` [`super::NO_TEAM`], while there are any).
+    pub no_team: bool,
     /// The open questions of the whole board, in the stack's order, the approval requests last.
     pub all_fresh: Vec<Fresh>,
-    /// Every open card of the whole board, infos too, and every open approval request: what the Desk's rows and
-    /// Blitz walk, in the stack's order, the requests last. The calm grey counts count these (one source for the
-    /// Desk, Blitz, the sidebar and the Chats list). An info its agent still works on is not here (the Desk's stack
+    /// Every open card of the whole board, infos too, and every open approval request: what the group pages list and
+    /// Blitz walks, in the stack's order, the requests last. The calm grey counts count these (one source for the
+    /// group pages, Blitz, the sidebar and the Chats list). An info its agent still works on is not here (the stack
     /// leaves it out: Off your mind holds it), nor is what belongs to a session the list does not show: no row shows
     /// it, so no count does either.
     pub all_cards: Vec<Fresh>,
@@ -271,6 +274,10 @@ impl<'a> Board<'a> {
             _ => first.id.clone(),
         });
         let (rows, legacy_rows) = session_list_and_helpers(model, lens.reading);
+        // (the chats on no team as the group in view: only while there are any)
+        let no_team = !teams.is_empty()
+            && lens.team.as_deref() == Some(super::NO_TEAM)
+            && rows.iter().any(|r| !r.archived && !has(&r.team));
         let agents: Vec<Agent> = rows
             .into_iter()
             .map(|row| {
@@ -304,7 +311,7 @@ impl<'a> Board<'a> {
                 };
                 let session = model.sessions.get(&row.key);
                 Agent {
-                    on_team: teams.is_empty() || (!root && own == team),
+                    on_team: teams.is_empty() || if no_team { root } else { !root && own == team },
                     root,
                     codex: row
                         .agent_device_id
@@ -414,6 +421,7 @@ impl<'a> Board<'a> {
             by_id,
             teams,
             team,
+            no_team,
             all_fresh,
             all_cards,
             unheard: HashMap::new(),
@@ -426,17 +434,17 @@ impl<'a> Board<'a> {
         board
     }
 
-    /// Whether what belongs to this session shows on the team in view. What belongs to a session the list does not
-    /// show stands on no team: no row shows it, so it waits on none (it stood on the first team, the owner,
+    /// Whether what belongs to this session shows on the group in view. What belongs to a session the list does not
+    /// show stands on no group: no row shows it, so it waits on none (it stood on the first team, the owner,
     /// 27 October 2026).
     pub fn in_view(&self, agent: Option<usize>) -> bool {
         agent.is_some_and(|i| self.agents[i].on_team)
     }
 
-    /// Whether what belongs to this session stands on the Desk in view: home holds every team's, else the team in
-    /// view's. What belongs to a session the list does not show stands on none, home's either.
-    pub fn on_desk(&self, agent: Option<usize>) -> bool {
-        agent.is_some() && (self.lens.desk_all || self.in_view(agent))
+    /// Whether what belongs to this session stands on the group page in view. What belongs to a session the list
+    /// does not show stands on none.
+    pub fn on_page(&self, agent: Option<usize>) -> bool {
+        self.in_view(agent)
     }
 
     /// The team a card of this session counts on, in a room with teams; none for a session on no team and for one
@@ -700,7 +708,7 @@ pub fn clean_goals(text: &str) -> String {
         .join("\n")
 }
 
-/// Makes the board's units of `view` again from the model: the sidebar, the Desk, the pages in view, the notes and
+/// Makes the board's units of `view` again from the model: the sidebar, the group page, the pages in view, the notes and
 /// the settings.
 /// What the engine and the account own (`phase`, `status`, `account`, `files`, `toasts`) is left as it is. Returns
 /// when to call again by the clock alone (a count of minutes, an answer that turns late), if ever. The App calls
@@ -728,24 +736,14 @@ pub fn render_with_files(
 fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> Option<u64> {
     let b = Board::new(model, lens, now);
     view.sidebar = super::sidebar::sidebar(&b);
-    let off = super::off::of_board(&b);
-    view.desk = super::desk::desk_with(&b, &off);
+    view.group = super::group::group(&b);
     view.off = lens
         .off
         .as_deref()
-        .map(|q| super::off::off_list(&b, &off, q));
+        .map(|q| super::off::off_list(&b, &super::off::of_board(&b), q));
     view.artifacts = lens.artifacts.then(|| super::session::artifacts(&b));
-    view.desk.tiles = if lens.artifacts && view.desk.mode != "invite" {
-        super::desk::desk_tiles(
-            &view.desk,
-            view.artifacts.as_deref().unwrap_or_default(),
-            b.team.as_deref().filter(|_| !lens.desk_all),
-        )
-    } else {
-        Vec::new()
-    };
     view.gallery = None;
-    // (the gallery filters what it lists; the Desk's foot keeps every one)
+    // (the gallery filters what it lists)
     if let Some(kind) = lens.gallery.as_deref() {
         let (gallery, shown) =
             super::session::gallery(&b, kind, view.artifacts.take().unwrap_or_default());
@@ -783,12 +781,18 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
         view.sessions.insert(s.id.clone(), s);
     }
     view.cards.clear();
-    // (a step of one chat's Blitz walks that chat's open cards, else the Desk's)
+    // (a step of one chat's Blitz walks that chat's open cards, a step of Blitz every group's, else the group page's)
     let walk = lens
         .walk_chat
         .as_deref()
         .and_then(|s| super::session::walk_of(&b, s))
-        .unwrap_or_else(|| view.desk.stack.clone());
+        .unwrap_or_else(|| {
+            if lens.walk_all {
+                super::group::walk_all(&b)
+            } else {
+                view.group.stack.clone()
+            }
+        });
     if let Some(c) = lens
         .card
         .as_deref()

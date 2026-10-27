@@ -21,7 +21,7 @@ extension CoreView.ViewModel {
       case .whole(let model): self = model
       case .phase(let phase, let status): self.phase = phase; self.status = status
       case .sidebar(let view): sidebar = view
-      case .desk(let view): desk = view
+      case .group(let view): group = view
       case .session(let id, let view): sessions[id] = view
       case .card(let id, let view): cards[id] = view
       case .off(let view): off = view

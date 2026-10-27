@@ -24,17 +24,6 @@
     }
   ],
   "me": "",
-  "home": {
-    "id": "",
-    "name": {
-      "key": "team.all",
-      "en": "All teams"
-    },
-    "waiting": 24,
-    "cards": 29,
-    "selected": false,
-    "knocks": true
-  },
   "sessions": [
     {
       "id": "5ef619647e0e8185fef0e3be40ff4809",
@@ -788,15 +777,19 @@
       ]
     }
   ],
-  "desk_all": false,
+  "folded": false,
   "global_blitz": {
     "card": "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
     "says": {
-      "key": "desk.blitz",
+      "key": "blitz",
       "args": {
         "n": "29"
       },
       "en": "Blitz: 29 open cards"
+    },
+    "scope": {
+      "key": "blitz.scope",
+      "en": "all groups"
     }
   },
   "places": [

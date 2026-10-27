@@ -96,7 +96,7 @@ fn the_snapshot_follows_the_board_and_is_not_sent_again_unchanged() {
         (
             "Ship it?",
             "decision",
-            sim.view.desk.rows[0].urgency.as_str()
+            sim.view.group.rows()[0].urgency.as_str()
         )
     );
     assert_eq!(
@@ -195,7 +195,7 @@ fn a_notice_only_for_a_card_that_newly_waits_while_the_app_is_in_the_back() {
     let from = sim.log.len();
     world.agent_asks("Seen in front");
     assert!(world.stream(&mut sim));
-    assert_eq!(sim.view.desk.rows.len(), 2);
+    assert_eq!(sim.view.group.rows().len(), 2);
     assert!(notices(&sim, from).is_empty());
 
     // in the back, a push: the new card rings, the ones before do not
@@ -209,8 +209,8 @@ fn a_notice_only_for_a_card_that_newly_waits_while_the_app_is_in_the_back() {
     assert_eq!(rung.len(), 1, "{rung:?}");
     let card = sim
         .view
-        .desk
-        .rows
+        .group
+        .rows()
         .iter()
         .find(|r| r.title == "Came while away")
         .expect("on the team")
@@ -671,7 +671,7 @@ fn a_failed_sign_out_wipe_still_drops_plaintext_and_extension_keys_and_reports_t
     assert_eq!(sim.view.status.as_ref().unwrap().key, "account.wipe_failed");
     assert_eq!(sim.device, stored, "the disk refused deletion");
     assert!(
-        sim.app.engine().is_none() && sim.view.cards.is_empty() && sim.view.desk.rows.is_empty()
+        sim.app.engine().is_none() && sim.view.cards.is_empty() && sim.view.group.rows().is_empty()
     );
     assert!(contexts(&sim, from).contains(&None));
     assert!(sim

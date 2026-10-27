@@ -94,7 +94,7 @@ pub(crate) fn snapshot_of(model: &crate::model::Model, now: u64) -> WidgetSnapsh
             };
             cards.push(WaitingCard {
                 id: fresh.id.clone(),
-                title: crate::views::desk::shown_title(c),
+                title: crate::views::group::shown_title(c),
                 session: session(fresh.agent),
                 kind: c
                     .field("card_type")
@@ -108,7 +108,7 @@ pub(crate) fn snapshot_of(model: &crate::model::Model, now: u64) -> WidgetSnapsh
                     c.urgency.clone()
                 },
                 created_ms: c.created_at,
-                options: crate::views::desk::options_of(&c.field("options"))
+                options: crate::views::group::options_of(&c.field("options"))
                     .into_iter()
                     .map(|o| WaitingOption {
                         key: o.key,

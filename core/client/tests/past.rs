@@ -18,11 +18,13 @@ fn focus(screen: Screen) -> Event {
             visible: true,
             team: None,
             board: None,
-            desk_all: false,
             open_teams: Vec::new(),
             chats_query: None,
             calm: false,
             walk_chat: None,
+            group_chat: None,
+            rail_folded: false,
+            walk_all: false,
         },
     }
 }
@@ -87,7 +89,7 @@ fn an_opened_session_reads_its_history_and_shows_no_welcome_while_it_comes() {
     );
 
     // asked once a run: opened again, nothing more is read
-    sim.send(focus(Screen::Desk));
+    sim.send(focus(Screen::Group));
     sim.send(focus(Screen::Session {
         session_id: session.clone(),
     }));
@@ -171,20 +173,19 @@ fn a_starred_card_this_device_does_not_hold_is_read_for_the_starred_stack() {
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
     world.founder_sets(&format!("star/{id}"), r#"{"at":1}"#);
-    let sim = without_past(&world);
-    let starred = sim
-        .view
-        .desk
-        .starred
-        .as_ref()
-        .expect("the starred stack stands at the start");
+    let mut sim = without_past(&world);
+    sim.send(focus(Screen::Off {
+        query: String::new(),
+    }));
+    let off = sim.view.off.as_ref().expect("Off your mind");
     assert_eq!(
-        starred
-            .rows
+        off.rest
             .iter()
+            .filter(|r| r.starred)
             .map(|r| r.title.as_str())
             .collect::<Vec<_>>(),
-        ["Kept for later"]
+        ["Kept for later"],
+        "the starred card stands at the start"
     );
 }
 
@@ -196,9 +197,17 @@ fn the_done_count_is_the_hubs_for_cards_this_device_never_read() {
         world.founder_answers(card, "yes");
     }
     world.agent_asks("Still open");
-    let sim = without_past(&world);
-    let off = sim.view.desk.off.as_ref().expect("Off your mind's line");
-    assert_eq!((off.closed, off.says.en.as_str()), (3, "3 done"));
+    let mut sim = without_past(&world);
+    sim.send(focus(Screen::Off {
+        query: String::new(),
+    }));
+    let off = sim.view.off.as_ref().expect("Off your mind");
+    let done = off
+        .groups
+        .iter()
+        .find(|g| g.key == "done")
+        .expect("its done");
+    assert_eq!(done.count, 3);
 }
 
 #[test]
@@ -208,7 +217,7 @@ fn an_idle_desk_asks_the_hub_almost_nothing() {
     let mut sim = world.sim();
     sim.send(start());
     assert_eq!(sim.view.phase, Phase::Live);
-    sim.send(focus(Screen::Desk));
+    sim.send(focus(Screen::Group));
     let from = sim.log.len();
     // ten minutes on the Desk, the window in front: the page says what it says once more now and then
     for minute in 0..10 {
@@ -222,7 +231,7 @@ fn an_idle_desk_asks_the_hub_almost_nothing() {
                 });
             }
         }
-        sim.send(focus(Screen::Desk));
+        sim.send(focus(Screen::Group));
         if minute % 3 == 0 {
             sim.send(Event::Foreground);
             sim.send(Event::Net { online: true });
@@ -288,7 +297,7 @@ fn the_page_off_your_mind_reads_the_settled_cards_page_by_page() {
     assert_eq!((list.rest.len(), list.more.is_none()), (105, true));
     assert_eq!(world.hub.borrow().settled_reads.len(), 2);
     // (each one answered after its version: its answer read too, so none stands on the Desk as open)
-    assert!(sim.view.desk.rows.is_empty());
+    assert!(sim.view.group.rows().is_empty());
 }
 
 fn revised_closed_card(world: &mut World) -> String {

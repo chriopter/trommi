@@ -22,7 +22,7 @@ export function foldView(view, delta) {
       case 'whole': v = structuredClone(p.model); break
       case 'phase': v.phase = p.phase; if (p.status == null) delete v.status; else v.status = p.status; break
       case 'sidebar': v.sidebar = p.view; break
-      case 'desk': v.desk = p.view; break
+      case 'group': v.group = p.view; break
       case 'session': keyed('sessions', p.id, p.view); break
       case 'card': keyed('cards', p.id, p.view); break
       case 'off': if (p.view == null) delete v.off; else v.off = p.view; break

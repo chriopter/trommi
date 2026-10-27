@@ -21,8 +21,8 @@ fn with_card(world: &mut World, sim: &mut Sim) -> String {
     assert_eq!(sim.view.phase, Phase::Live);
     world.agent_asks("Ship it?");
     assert!(world.stream(sim));
-    assert_eq!(sim.view.desk.rows.len(), 1);
-    sim.view.desk.rows[0].id.clone()
+    assert_eq!(sim.view.group.rows().len(), 1);
+    sim.view.group.rows()[0].id.clone()
 }
 
 fn act(sim: &mut Sim, action: Action) -> Vec<Effect> {
@@ -87,7 +87,7 @@ fn an_answer_shows_at_once_and_the_hubs_copy_replaces_it() {
         .position(|e| matches!(e, Effect::Http { .. }))
         .is_none_or(|post| post > store));
     assert!(
-        sim.view.desk.rows.is_empty(),
+        sim.view.group.rows().is_empty(),
         "answered: off the Desk at once"
     );
     assert_eq!(answer_of(&sim, &card), Some(("answered".into(), true)));
@@ -97,7 +97,7 @@ fn an_answer_shows_at_once_and_the_hubs_copy_replaces_it() {
     serve(&world, &mut sim);
     world.stream(&mut sim);
     assert_eq!(answer_of(&sim, &card), Some(("answered".into(), false)));
-    assert!(sim.view.desk.rows.is_empty() && sim.view.toasts.is_empty());
+    assert!(sim.view.group.rows().is_empty() && sim.view.toasts.is_empty());
     assert!(sim.app.engine().unwrap().device().outbox().is_empty());
     assert_eq!(sim.app.board().model.cards[&card].answers.len(), 1);
 }
@@ -150,7 +150,7 @@ fn what_cannot_be_done_is_said_and_changes_nothing() {
         sim.view.toasts[0].action, None,
         "a check is not offered again"
     );
-    assert_eq!(sim.view.desk.rows.len(), 1);
+    assert_eq!(sim.view.group.rows().len(), 1);
     act(&mut sim, yes("00112233445566778899aabbccddeeff"));
     assert_eq!(sim.view.toasts[1].text.key, "action.not_found");
     assert_eq!(envelope_posts(&world), posts, "nothing was sent");
@@ -179,7 +179,7 @@ fn a_refusal_rolls_the_answer_back_with_a_toast_that_answers_again() {
     act(&mut sim, yes(&card));
     // (the hub keeps the void record under the refused number)
     world.hub.borrow_mut().void_next(world.group, world.me);
-    assert_eq!(sim.view.desk.rows.len(), 1, "back on the Desk");
+    assert_eq!(sim.view.group.rows().len(), 1, "back on the Desk");
     let card_now = &sim.app.board().model.cards[&card];
     assert_eq!(
         (card_now.object_state.as_str(), card_now.answer.is_none()),
@@ -199,7 +199,7 @@ fn a_refusal_rolls_the_answer_back_with_a_toast_that_answers_again() {
     // stand-in hub keeps no void record in its order, so the App waits for the refused number before it.)
     act(&mut sim, toast.action.unwrap());
     assert_eq!(answer_of(&sim, &card), Some(("answered".into(), true)));
-    assert!(sim.view.desk.rows.is_empty());
+    assert!(sim.view.group.rows().is_empty());
     assert!(
         sim.app.engine().unwrap().device().outbox().is_empty(),
         "taken"
@@ -221,10 +221,9 @@ fn snoozing_puts_the_card_off_at_once_until_the_next_morning_and_waking_brings_i
         },
     );
     assert!(
-        sim.view.desk.rows.is_empty(),
+        sim.view.group.rows().is_empty(),
         "put off: off the Desk at once"
     );
-    assert_eq!(sim.view.desk.later, std::slice::from_ref(&card));
     let until = sim.app.board().model.human[&format!("snooze/{card}")].value["until"]
         .as_u64()
         .unwrap();
@@ -238,7 +237,6 @@ fn snoozing_puts_the_card_off_at_once_until_the_next_morning_and_waking_brings_i
         !reg.pending && reg.envelope_number.is_some(),
         "the hub's copy"
     );
-    assert_eq!(sim.view.desk.later, std::slice::from_ref(&card));
     // woken by hand: back on the Desk at once
     act(
         &mut sim,
@@ -246,8 +244,7 @@ fn snoozing_puts_the_card_off_at_once_until_the_next_morning_and_waking_brings_i
             card_id: card.clone(),
         },
     );
-    assert_eq!(sim.view.desk.rows.len(), 1);
-    assert!(sim.view.desk.later.is_empty());
+    assert_eq!(sim.view.group.rows().len(), 1);
 }
 
 #[test]
@@ -388,7 +385,7 @@ fn deciding_again_opens_the_card_and_keeps_what_was_taken_back_as_its_draft() {
     );
     world.stream(&mut sim);
     assert_eq!(sim.app.board().model.cards[&card].object_state, "open");
-    assert_eq!(sim.view.desk.rows.len(), 1, "back on the Desk");
+    assert_eq!(sim.view.group.rows().len(), 1, "back on the Desk");
     let draft = human(&sim, &format!("draft/{card}")).expect("the draft").0;
     assert_eq!(draft["keys"], json!(["yes"]));
     assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
@@ -1493,7 +1490,7 @@ fn the_duck_for_all_clears_the_desk_with_one_toast_whose_undo_takes_all_back() {
     with_card(&mut world, &mut sim);
     world.agent_asks("Merge it?");
     assert!(world.stream(&mut sim));
-    let duck = sim.view.desk.duck.clone().expect("the duck beside Blitz");
+    let duck = sim.view.group.duck.clone().expect("the duck beside Blitz");
     assert_eq!(
         (duck.card_ids.len(), duck.ask.en.as_str()),
         (2, "Duck all 2?")
@@ -1506,7 +1503,7 @@ fn the_duck_for_all_clears_the_desk_with_one_toast_whose_undo_takes_all_back() {
         },
     );
     assert!(
-        sim.view.desk.rows.is_empty() && sim.view.desk.duck.is_none(),
+        sim.view.group.rows().is_empty() && sim.view.group.duck.is_none(),
         "cleared at once"
     );
     for id in &duck.card_ids {
@@ -1546,7 +1543,7 @@ fn the_duck_for_all_clears_the_desk_with_one_toast_whose_undo_takes_all_back() {
     world.stream(&mut sim);
     act(&mut sim, undo);
     world.stream(&mut sim);
-    assert_eq!(sim.view.desk.rows.len(), 2, "both back on the Desk");
+    assert_eq!(sim.view.group.rows().len(), 2, "both back on the Desk");
     assert_eq!(
         sim.view.toasts.len(),
         1,
@@ -1684,7 +1681,7 @@ fn an_agents_write_is_kept_on_its_own_with_its_history_and_the_way_back() {
         },
     );
     world.stream(&mut sim);
-    let rows = sim.view.desk.rows.len();
+    let rows = sim.view.group.rows().len();
     let w1 = agent_writes(
         &mut world,
         &sim,
@@ -1694,7 +1691,11 @@ fn an_agents_write_is_kept_on_its_own_with_its_history_and_the_way_back() {
     for _ in 0..3 {
         world.stream(&mut sim);
     }
-    assert_eq!(sim.view.desk.rows.len(), rows, "no card: nothing to answer");
+    assert_eq!(
+        sim.view.group.rows().len(),
+        rows,
+        "no card: nothing to answer"
+    );
     let v = entry(&sim, &w1);
     assert_eq!(
         (
@@ -2249,7 +2250,7 @@ fn leave_page(sim: &mut Sim) {
     use trommi_client_core::views::{Focus, Screen};
     sim.send(Event::Focus {
         focus: Focus {
-            screen: Screen::Desk,
+            screen: Screen::Group,
             visible: true,
             ..Default::default()
         },
@@ -2383,30 +2384,24 @@ fn the_person_writes_entries_on_the_page_and_finds_them() {
             .collect::<Vec<_>>(),
         ["rule", "decision", "fact", "where"]
     );
-    // the chip on the team's Desk counts them
+    // the group's ⋯ menu counts them
     use trommi_client_core::views::{Focus, Screen};
     sim.send(Event::Focus {
         focus: Focus {
-            screen: Screen::Desk,
+            screen: Screen::Group,
             visible: true,
             ..Default::default()
         },
     });
     assert!(sim.view.knowledge.is_none(), "the page is left");
+    let menu = &sim.view.group.head.as_ref().expect("the group's head").menu;
     assert_eq!(
-        sim.view
-            .desk
-            .knowledge
-            .as_ref()
-            .map(|k| (k.count, k.label.en.as_str())),
-        Some((2, "Knowledge"))
+        menu.iter()
+            .find(|m| m.key == "knowledge")
+            .map(|m| (m.label.en.as_str(), m.count.as_ref().map(|c| c.en.as_str()))),
+        Some(("Knowledge", Some("2 entries")))
     );
-    // its tile shows the first titles, the pinned one first, as the page
-    let page_titles: Vec<String> = page.rows.iter().map(|r| r.title.clone()).collect();
-    assert_eq!(
-        sim.view.desk.knowledge.as_ref().map(|k| k.first.clone()),
-        Some(page_titles)
-    );
+    let _ = page;
 }
 
 fn wakeups_page(sim: &mut Sim) -> trommi_client_core::views::WakeupsView {

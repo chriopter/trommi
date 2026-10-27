@@ -30,7 +30,7 @@ fn each_window_has_its_own_page_and_the_room_moves_in_all() {
     world.agent_says("hello");
     let mut sim = world.sim();
     sim.send(start());
-    sim.send(looking_at(Screen::Desk, true));
+    sim.send(looking_at(Screen::Group, true));
     let session = sim.view.sidebar.sessions[0].id.clone();
     let streams = opens(&sim.log);
     let writes = sim.device.0;
@@ -86,8 +86,8 @@ fn each_window_has_its_own_page_and_the_room_moves_in_all() {
     assert!(world.stream(&mut sim));
     assert_eq!(
         sim.view
-            .desk
-            .rows
+            .group
+            .rows()
             .iter()
             .map(|r| r.title.as_str())
             .collect::<Vec<_>>(),
@@ -95,8 +95,8 @@ fn each_window_has_its_own_page_and_the_room_moves_in_all() {
     );
     let w1 = sim.window_view(1).unwrap();
     assert_eq!(
-        w1.desk
-            .rows
+        w1.group
+            .rows()
             .iter()
             .map(|r| r.title.as_str())
             .collect::<Vec<_>>(),
@@ -121,9 +121,9 @@ fn a_chat_in_view_in_any_window_is_read_in_every_window() {
     world.agent_says("hello there");
     let mut sim = world.sim();
     sim.send(start());
-    sim.send(looking_at(Screen::Desk, true));
+    sim.send(looking_at(Screen::Group, true));
     let session = sim.view.sidebar.sessions[0].id.clone();
-    sim.send_in(1, looking_at(Screen::Desk, true));
+    sim.send_in(1, looking_at(Screen::Group, true));
     world.agent_says("news");
     assert!(world.stream(&mut sim));
     assert!(
@@ -157,8 +157,8 @@ fn the_stream_stays_open_while_one_window_is_in_front() {
     let world = World::new();
     let mut sim = world.sim();
     sim.send(start());
-    sim.send(looking_at(Screen::Desk, true));
-    sim.send_in(1, looking_at(Screen::Desk, true));
+    sim.send(looking_at(Screen::Group, true));
+    sim.send_in(1, looking_at(Screen::Group, true));
     let cancels = |sim: &trommi_client_core::app::sim::Sim| {
         sim.log
             .iter()
@@ -190,7 +190,7 @@ fn a_closed_window_is_forgotten_and_gets_no_more_renders() {
     let mut world = World::new();
     let mut sim = world.sim();
     sim.send(start());
-    sim.send_in(1, looking_at(Screen::Desk, true));
+    sim.send_in(1, looking_at(Screen::Group, true));
     sim.send_in(2, looking_at(Screen::Notes, true));
     assert_eq!(sim.app.windows(), [0, 1, 2]);
     sim.send_in(1, Event::WindowClosed);
@@ -217,7 +217,7 @@ fn a_closed_window_is_forgotten_and_gets_no_more_renders() {
     sim.send_in(0, Event::WindowClosed);
     assert_eq!(sim.app.windows(), [0]);
     assert_eq!(
-        sim.window_view(2).map(|v| v.desk.rows.len()),
+        sim.window_view(2).map(|v| v.group.rows().len()),
         Some(1),
         "window 2 had what came before it closed"
     );
@@ -347,7 +347,7 @@ fn a_prompt_goes_to_the_window_whose_step_led_to_it_even_when_another_acted_mean
         })
         .expect("the hub is asked for a challenge");
     // window 0 acts while the hub answers
-    sim.send_in(0, looking_at(Screen::Desk, true));
+    sim.send_in(0, looking_at(Screen::Group, true));
     let b64 = trommi_core::ids::base64url_encode;
     let body = format!(
         r#"{{"challenge":"{}","account":"0f0f0f0f-0f0f-0f0f-0f0f-0f0f0f0f0f0f","user_handle":"{}"}}"#,

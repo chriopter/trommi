@@ -18,12 +18,15 @@ export interface Focus {
   visible: boolean
   /** The team in view: a team's id; none when none was chosen, or one that is gone: the first team. */
   team?: string
-  /** The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a team's id or "all" for that
+  /** The Scribble Board shown beside the screen (the group page's): `desk/<32 hex>`, or a team's id or "all" for that
    *  team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`. */
   board?: string
-  /** The Desk in view is home, every team's (the bell at the top), not the team in view's (a team's head).
-   *  This device's: the shell keeps it. */
-  desk_all: boolean
+  /** The chat chip chosen on the group page (its session key or short id): the page shows only that chat's cards
+   *  (`GroupView.chips`); none, or a chat that is not in the group: all of them. This window's: the shell keeps it. */
+  group_chat?: string
+  /** The wide sidebar is folded to a rail (this device's, the shell keeps it): its rows carry no counts and no
+   *  signs but one quiet dot on a chat that needs the person (`SessionRowView.signal`). */
+  rail_folded: boolean
   /** The teams unfolded in the wide sidebar, their chats under their stack (`TeamStackView.open`). This device's:
    *  the shell keeps them. */
   open_teams?: string[]
@@ -35,12 +38,17 @@ export interface Focus {
    *  that draws the full talk (Linux) leaves it false. */
   calm: boolean
   /** A card's page is a step of one chat's Blitz (its session key or short id): its way on goes only through that
-   *  chat's open cards (`SessionView.pinned`'s order), and when none is left back to the chat. None: the Desk's. */
+   *  chat's open cards (`SessionView.pinned`'s order), and when none is left back to the chat. None: the group
+   *  page's (or, with `walk_all`, every group's). */
   walk_chat?: string
+  /** A card's page is a step of Blitz over every group (`GroupView.blitz`, `SidebarView.global_blitz`): its way on
+   *  goes through every group's open cards in their order, not only the group page's. */
+  walk_all: boolean
 }
 
 export type Screen =
-  | { screen: 'desk' }
+  /** The page of the group in view (`ViewModel.group`). (`desk` is its name of before.) */
+  | { screen: 'group' }
   | { screen: 'session'; session_id: string }
   | { screen: 'card'; card_id: string }
   | { screen: 'notes' }
@@ -67,7 +75,7 @@ export interface ViewModel {
   /** One line on where the app stands when it is not plainly live ("Catching up", "Offline: retry in 30 s"). */
   status?: Text
   sidebar: SidebarView
-  desk: DeskView
+  group: GroupView
   sessions?: Record<string, SessionView>
   cards?: Record<string, CardView>
   /** The page Off your mind, while it is in view (`Screen::Off`). */
@@ -81,7 +89,7 @@ export interface ViewModel {
   files?: Record<string, FileView>
   /** The Scribble Board in view (`Focus.board`, `Screen::Scribble`); none when no board is shown. */
   board?: BoardView
-  /** The gallery of Artifacts, while it is in view (`Screen::Artifacts`, and on the Desk, whose foot shows the newest), the newest first. */
+  /** The gallery of Artifacts, while it is in view (`Screen::Artifacts`), the newest first. */
   artifacts?: ArtifactView[]
   /** The gallery's filter and its words, while `Screen::Artifacts` is in view (`artifacts` then holds what the
    *  filter lets through); none else. */
@@ -109,7 +117,7 @@ export type ViewPart =
   | { part: 'whole'; model: ViewModel }
   | { part: 'phase'; phase: Phase; status: Text | null }
   | { part: 'sidebar'; view: SidebarView }
-  | { part: 'desk'; view: DeskView }
+  | { part: 'group'; view: GroupView }
   | { part: 'session'; id: string; view: SessionView | null }
   | { part: 'card'; id: string; view: CardView | null }
   /** The page Off your mind; none when it is left. */
@@ -134,7 +142,7 @@ export type ViewPart =
   | { part: 'dictation'; view: DictationView }
   | { part: 'toasts'; toasts: Toast[] }
 
-/** Edits of a long list, by position: at `at`, `gone` rows leave and `rows` come (the Desk's stack ops today). */
+/** Edits of a long list, by position: at `at`, `gone` rows leave and `rows` come. */
 export interface RowEdit<T> {
   at: number
   gone: number
@@ -156,20 +164,16 @@ export interface SidebarView {
   /** The person's picture where none is uploaded: the account e-mail's first letter, upper case (the phone's top
    *  left, the sidebar's foot); empty until the account is read: the shell draws a plain figure. */
   me: string
-  /** Home in the menu, above the teams: the Desk of every team ("All teams", `Focus.desk_all`), with what waits on
-   *  all of them; `selected` while it is the Desk in view. Its `id` is empty. */
-  home: TeamTab
   /** The sessions of the team in view, one row each, in drawing order: a main, then its helpers. */
   sessions: SessionRowView[]
-  /** The number on the app icon and the tab: the open questions of the Desk in view, the team's or on home every
-   *  team's (no infos, nothing that is with its agent). Never drawn red. */
+  /** The number on the app icon and the tab: the open questions of the group in view (no infos, nothing that is
+   *  with its agent). Never drawn red. */
   badge: number
   /** The team in view: its id. */
   team: string
   /** Where the person is, for the head and the team switch: the team's name. */
   place: Text
-  /** The open questions of the Desk in view, the team's or on home every team's (its lamp is lit while there are
-   *  some). */
+  /** The open questions of the group in view (its lamp is lit while there are some). */
   waiting: number
   /** How many of them knock. */
   knocking: number
@@ -182,8 +186,12 @@ export interface SidebarView {
   /** Every team as a stack, in the menu's order (the wide sidebar): folded, its head over a fan of its sessions'
    *  card edges; open, its chats under it. The phone draws `sessions` instead. */
   stacks?: TeamStackView[]
-  /** The Desk in view is every team's (home, `Focus.desk_all`): no team's head is marked. */
-  desk_all: boolean
+  /** The chats on no team as a group of their own ("No team"), while there are any: its page (`Focus.team`
+   *  [`NO_TEAM`]) shows their open cards; `selected` while it is the group in view. Drawn as the head over `root`. */
+  no_team?: TeamTab
+  /** The sidebar is folded to a rail (`Focus.rail_folded`): its rows and stacks carry no counts and no signs but
+   *  one quiet dot (`SessionRowView.signal` "waiting" or "stopped"). */
+  folded: boolean
   /** Under a search (`Focus.chats_query`): every team with a chat whose name or teaser has the words, with those
    *  chats, in the menu's order. */
   found?: ChatGroupView[]
@@ -211,13 +219,15 @@ export interface TeamPlaceView {
   chosen: boolean
 }
 
-/** Blitz over every team (`SidebarView.global_blitz`): pressed, the shell shows the Desk of every team
- *  (`Focus.desk_all`) from its first card on; the card's page walks on in that Desk's order. */
+/** Blitz over every group (`SidebarView.global_blitz`, `GroupView.blitz`): the only view of everything. Pressed, the
+ *  shell opens its first card with `Focus.walk_all`; the card's page walks on through every group's open cards. */
 export interface GlobalBlitzView {
-  /** The first card (or request) of every team's Desk, in its order. */
+  /** The first open card (or request) of every group, in their order. */
   card: string
-  /** What it walks: "Blitz: 3 open cards", with `n`, as the Desk's own Blitz says it. */
+  /** What it walks: "Blitz: 3 open cards", with `n`. */
   says: Text
+  /** Where it walks, small beside its number: "all groups". */
+  scope: Text
 }
 
 /** A team in the search's list of chats: its name as a plain section title over the chats found. */
@@ -228,17 +238,17 @@ export interface ChatGroupView {
   rows: SessionRowView[]
 }
 
-/** A team in the wide sidebar: its head (a click opens its Desk) over its sessions, folded to a stack or open. */
+/** A team in the wide sidebar: its head (a click opens its group page) over its sessions, folded to a stack or open. */
 export interface TeamStackView {
   id: string
   name: Text
-  /** The team in view and its Desk is the Desk (not on home, `desk_all`). */
+  /** The group in view. */
   selected: boolean
   /** Open on this device (`Focus.open_teams`): its chats stand under its head; folded, they lie as its stack. */
   open: boolean
   /** The open questions of the team's sessions. */
   waiting: number
-  /** Its open cards, infos too, and its requests: what Blitz walks on its Desk. The calm grey count. */
+  /** Its open cards, infos too, and its requests: what its group page lists. The calm grey count (0 on the rail). */
   cards: number
   /** One of them knocks. */
   knocks: boolean
@@ -267,9 +277,9 @@ export interface TeamTab {
   name: Text
   /** The open questions of the team's sessions. */
   waiting: number
-  /** Its open cards, infos too, and its requests: what Blitz walks on its Desk. */
+  /** Its open cards, infos too, and its requests: what its group page lists. */
   cards: number
-  /** It is the Desk in view: the team in view, unless home (`desk_all`) is. */
+  /** It is the group in view. */
   selected: boolean
   /** One of them knocks. */
   knocks: boolean
@@ -302,7 +312,7 @@ export interface SessionRowView {
   crowned: boolean
   /** Its helpers (its agent's subagents), small under its name: "3 helpers" with a dot each; none without. */
   helpers?: HelperDotsView
-  /** Its open questions: what waits for the person on the Desk (no infos, nothing that is with its agent). */
+  /** Its open questions: what waits for the person on its group page (no infos, nothing that is with its agent). */
   open: number
   /** Its open cards, infos too, and its requests: what Blitz walks of it. The calm grey count beside its name. */
   cards: number
@@ -404,94 +414,105 @@ export interface FixView {
   code: string
 }
 
-/** The Desk of the team in view: its head, and the stack of what waits for the person as rows. */
-export interface DeskView {
-  /** Card and request ids, in the Desk's order: the ids of `rows`. */
+/** The page of the group in view (a team, or the chats on no team, [`NO_TEAM`]): its head, one chip per chat to
+ *  filter by, and its open cards in one list: the questions first ("Waits for you"), then what is only to read
+ *  ("To read"). There is no page of every group: Blitz (`blitz`) is the only view of everything. */
+export interface GroupView {
+  /** Card and request ids in the page's order (the chip's filter applied): `questions`, then `reads`. A card's page
+   *  opened from here walks on in this order. */
   stack: string[]
-  /** Off your mind, of the team in view (`off.rs`, from the core's `off_mind`): the cards with their agents,
-   *  starred ones too, the one that moved last first (the complete list's top part). */
-  off_your_mind: string[]
-  /** The put-off cards, the last put off first. */
-  later: string[]
-  /** The cards closed last (done, withdrawn, shredded), the newest first: the core's window of them
-   *  (`off_mind::RECENT` for the whole room), not every closed card; the complete list has them all. */
-  done: string[]
-  /** The two stacks docked at the Desk's foot; none while a stack is empty. A card has one home: a starred card
-   *  is in `starred` only, also while it is being worked on. */
-  starred?: DockView
-  running?: DockView
-  /** The section Off your mind under the Desk: its first rows and how many; none while nothing is put off or
-   *  closed. */
-  off?: OffHintView
   /** What stands in the list's place when nothing is open at all ("Questions land here."). */
   empty?: Text
   /** "invite" (no session stands here yet: invite the first agent), "reading" (none yet, and the room is still
-   *  being read), "team". */
+   *  being read), "group". */
   mode: string
-  /** The one big line at the top; none for "invite". */
-  hello?: Text
   /** How far the reading of the room's past is ("Reading your history: 12,400 of 27,000"), while it is read. */
   reading?: Text
-  /** The team's goals; none on All teams. */
+  /** The group's name, its faces and its ⋯ menu; none in a room without teams and chats (a new account). */
+  head?: GroupHeadView
+  /** The team's goals under the head; none for the chats on no team. */
   goals?: GoalsView
-  /** The chip that opens the team's page Knowledge; none on All teams, as the goals. */
-  knowledge?: KnowledgeChipView
-  /** What waits, in the Desk's order: the questions and what is only to read. */
-  rows?: DeskRowView[]
-  /** The open questions (no infos): the number in the window's title. */
+  /** The filter row: "All" first, then one chip per chat of the group, the ones that need the person first. Only
+   *  one is `selected`. Empty while the group has no chat. */
+  chips?: ChipView[]
+  /** How many of `chips` stand in the row ("All" included); the rest wait behind `more`. */
+  chips_shown: number
+  /** "+4": the chips behind it, unfolded by a tap (the shell's); none when every chip stands in the row. */
+  more?: Text
+  /** The questions' heading, "Waits for you", with how many as `n` (drawn beside it); none while there are none. */
+  questions_says?: Text
+  /** The questions and approval requests, in the walk's order. */
+  questions?: DeskRowView[]
+  /** The heading of what is only to read, "To read", with how many as `n`; none while there is nothing. */
+  reads_says?: Text
+  /** What is only to read (infos, a card not read here yet, one of a newer Trommi), drawn smaller, below. */
+  reads?: DeskRowView[]
+  /** The open questions of the group (no infos, the chip's filter not applied): the number in the window's title. */
   waiting: number
-  /** What Blitz walks through and the duck closes ("Blitz: 3 open cards"); none when nothing waits. */
-  blitz?: Text
-  /** The duck for all beside Blitz: what one press leaves to the agents (a decision) or reads (an info) at once,
-   *  after one question; none when nothing of that waits. */
+  /** Blitz over every group's open cards ("Blitz: 14 open cards", "all groups"); none while nothing is open
+   *  anywhere. */
+  blitz?: GlobalBlitzView
+  /** The duck for all beside Blitz: what one press leaves to the agents (a decision) or reads (an info) of the
+   *  cards on this page, after one question; none when nothing of that waits here. */
   duck?: DuckAllView
-  /** The sessions that are cut off, above the questions: one line each, with the step in its terminal. */
+  /** The sessions of the group that are cut off, above the list: one line each, with the step in its terminal. */
   slip?: SlipView[]
-  /** Under the questions, calm tiles, in this order: "work" (Working / Done: what runs and what is done, it opens
-   *  Off your mind), "artifacts" (what the agents published), "board" (the team's Scribble Board), "knowledge"
-   *  (the team's Knowledge; not on All teams).
-   *  Empty while the Desk is not in view. */
-  tiles?: DeskTileView[]
 }
 
-/** One tile under the Desk's questions. */
-export interface DeskTileView {
-  /** "work", "artifacts", "board" or "knowledge". */
+/** The head of a group page: its name, up to three of its chats' faces, and its ⋯ menu. */
+export interface GroupHeadView {
+  /** The team's id; [`NO_TEAM`] for the chats on no team. */
+  team_id: string
+  name: Text
+  /** Its picture: up to three of its chats' marks, the crowned one first (as `TeamStackView.faces`). */
+  faces?: StackEdgeView[]
+  /** The ⋯ menu, in order: "knowledge", "wakeups", "board" (the Scribble Board), then "rename". Empty for the chats
+   *  on no team: no ⋯ then. */
+  menu?: GroupMenuItem[]
+  /** What the ⋯ says to a screen reader: "Fernly: knowledge, wakeups, Scribble Board, rename". */
+  menu_says: Text
+}
+
+/** One entry of a group's ⋯ menu. */
+export interface GroupMenuItem {
+  /** "knowledge", "wakeups", "board" or "rename". */
   key: string
-  /** Its name: "Working / Done", "Artifacts", "Scribble Board", "Knowledge". */
-  title: Text
-  /** What it holds in a few words: "2 running · 10 done", "14 artifacts", "27 elements", "7 entries"; "Nothing
-   *  yet" when empty. */
-  line: Text
-  /** How many (artifacts, elements on the board, entries); none where the line says it ("work"). */
-  count?: number
-  /** Where a click goes: `Screen::Off`, `Screen::Artifacts`, `Screen::Scribble`. */
-  opens: Screen
-  /** What it shows small, in order: the running cards (ids of `DeskView.off.running`) for "work", the newest
-   *  artifacts (ids of `ViewModel.artifacts`, at most four) for "artifacts"; empty for "board". Always sent, also
-   *  empty: a shell maps over it. */
-  items: string[]
-  /** What it shows as short lines, always sent: the first entries' titles for "knowledge" (pinned first, as its
-   *  page); empty for the others. */
-  names: string[]
-  /** How much room it takes in the Desk's bento: "wide" (two of three columns: Working / Done, the Scribble Board),
-   *  "narrow" (one: Artifacts, Knowledge), "full" (all three: the board when there is no Knowledge tile). */
-  size: string
-  /** It holds nothing yet: the shell draws it small and quiet, with its line only. */
-  empty: boolean
-  /** Its numbers in short beside the title where its rows show below (a phone): "2 · 10" (running · done) for
-   *  "work"; none for the others and while nothing runs or is done. */
-  brief?: Text
-  /** Its row on a phone (two columns): two "narrow" tiles share one row, side by side in the tiles' order; every
-   *  other tile, and a narrow one left alone, takes a row to itself. Rows are drawn by this number. */
-  phone_row: number
-  /** "board": the team whose board it shows small (a `ThumbView.team_id`); "knowledge": its team. None on All teams. */
-  team_id?: string
+  /** Its words: "Knowledge", "Wakeups", "Scribble Board", "Rename group". */
+  label: Text
+  /** How many, small at its end: "7 entries", "7 entries · 2 new", "3 set"; none where there is nothing to count. */
+  count?: Text
+  /** Where it goes: `Screen::Knowledge`, `Screen::Wakeups`, `Screen::Scribble`; none for "rename" (the shell asks
+   *  for the new name and sends `Action::RenameTeam`). */
+  opens?: Screen
+  /** Below a line of its own (the last group of entries: "rename"). */
+  apart: boolean
+}
+
+/** A chip of a group page's filter row: "All", or one chat of the group. */
+export interface ChipView {
+  /** The chat's session key (`Focus.group_chat`); empty for "All" (no filter). */
+  session_id: string
+  /** The chat's short id, for its address (`/chat/<slug>`); empty for "All". */
+  slug: string
+  /** "All", or the chat's name. */
+  name: Text
+  /** What draws the chat (`SessionRowView.mark`); empty for "All". */
+  mark: string
+  /** "All": the group's open cards, the calm grey count; 0 on a chat's chip (its dot says what matters). */
+  count: number
+  /** The chat needs the person (a question waits for him, or it is stopped): one quiet dot. */
+  needs: boolean
+  /** The chip in force (one at a time; "All" when no chat is chosen). */
+  selected: boolean
+  /** On the chosen chat's chip: "Open chat ›", its way into the chat. */
+  open_chat?: Text
+  /** What it says to a screen reader: "Fernly Website: waits for you", "All: 8 open cards". */
+  says: Text
 }
 
 /** The duck for all: the cards it clears (`Action::Batch` with way "sweep") and its words (the web's `duckAll`). */
 export interface DuckAllView {
-  /** The cards it clears, in the Desk's order: the open decisions (left to their agents) and what is only to
+  /** The cards it clears, in the page's order: the open decisions (left to their agents) and what is only to
    *  read (closed as read); never a request, nothing not read on this device yet. */
   card_ids: string[]
   /** The button's name: "I don’t give a duck: for all 3 open cards". */
@@ -531,61 +552,6 @@ export interface GalleryKindView {
   on: boolean
 }
 
-/** One of the two stacks docked at the Desk's foot (the owner's pick of 13 October 2026: two small tabs, the
- *  titles shown only when a stack is fanned out). */
-export interface DockView {
-  /** "star" or "run". */
-  key: string
-  /** How many cards it holds: the number on its tab (`rows.len()`). */
-  count: number
-  /** What the tab says to a screen reader ("3 starred", "1 running"). */
-  says: Text
-  /** Its cards in order, fanned out: the first is the top card, the one the tab shows. */
-  rows: DockRowView[]
-  /** The way on to the complete list at the end of the fan ("All running and done"); the running stack only. */
-  all?: Text
-}
-
-/** A small card of a docked stack. */
-export interface DockRowView {
-  /** The card (`Screen::Card`). */
-  id: string
-  title: string
-  /** The title without a status word in front ("Working on: ", "Arbeite an: ", "Paused: "…): what a one-line row
-   *  shows beside the agent's face; the title itself when it has none. */
-  short: string
-  from: FromView
-  /** The quiet line under the title: "Fernly · running" (a starred card being worked on), "Fernly", "Fernly ·
-   *  Reworking the copy" (its status line), "Fernly · on it". */
-  line: Text
-  /** It is being worked on (the drawing's ring turns). */
-  running: boolean
-  /** When it last moved (its status line's update, else when it went to its agent); when it was starred, for a
-   *  starred card. */
-  at_ms: number
-}
-
-/** The section Off your mind under the Desk: a short hinted list that opens the complete list (`Screen::Off`). */
-export interface OffHintView {
-  /** The cards being worked on, the one that moved last first (at most three): on the iPhone they stand here, at
-   *  the head of the section, instead of a docked stack over the Desk. A starred card is not among them (it lies
-   *  in the starred stack). */
-  running?: DockRowView[]
-  /** "2 more running": how many run beyond those shown, leading to the complete list; none while all are shown. */
-  running_more?: Text
-  /** The first rows, put off first, then the closed ones, the newest first (at most three; the shell fades them). */
-  rows: OffRowView[]
-  /** "2 put off · 14 done". */
-  says: Text
-  put_off: number
-  /** Every closed card of the team in view, counted (not only the ones named). */
-  closed: number
-  /** All of it in one quiet line under the questions (the iPhone's calm Desk): "2 running · 1 put off · 14 done". */
-  line: Text
-  /** Where a tap on the hint or its line goes: the complete list. */
-  opens: Screen
-}
-
 /** A put-off or closed card, one small quiet row. */
 export interface OffRowView {
   id: string
@@ -604,7 +570,7 @@ export interface OffRowView {
   says: Text
 }
 
-/** The page Off your mind: every card off the Desk of the team in view. What runs as live cards, the one that moved
+/** The page Off your mind: every open card that is not waiting on the group page of the team in view, and the ones closed. What runs as live cards, the one that moved
  *  last first; then what is put off, the last put off first; then what is closed, the newest first. Each card in its
  *  place by time, none lifted. Kept to the search's words. */
 export interface OffListView {
@@ -716,21 +682,6 @@ export interface WakeupWordsView {
   save: Text
   back: Text
   cancel_ask: Text
-}
-
-/** The chip on a team's Desk that opens its page Knowledge. */
-export interface KnowledgeChipView {
-  team_id: string
-  /** "Knowledge". */
-  label: Text
-  /** How many entries the team holds. */
-  count: number
-  /** The chip in a sentence ("Team knowledge: 12 entries"), for a screen reader and a tooltip. */
-  says: Text
-  /** The first entries' titles, pinned first as on its page (at most four), always sent: the Desk's tile shows them. */
-  first: string[]
-  /** How many an agent changed since the person last looked. */
-  fresh: number
 }
 
 /** Sealed dictation (spec/v1.md 18): what the chat field's microphone shows. While the field is empty its send
@@ -919,14 +870,14 @@ export interface GoalsView {
   toggle?: Text
 }
 
-/** A session that is cut off, as the Desk says it. */
+/** A session that is cut off, as its group page says it. */
 export interface SlipView {
   session_id: string
   text: Text
   fix: FixView
 }
 
-/** One row of the Desk: a question, a request for approval, or something to read. */
+/** One card row (a group page's, a chat's): a question, a request for approval, or something to read. */
 export interface DeskRowView {
   id: string
   /** "decision", "info" (to read: also a card not read here yet, and one of a newer Trommi), "request". */
@@ -1097,7 +1048,7 @@ export interface SessionView {
   live_answer?: string
   /** "<name> is working": his word was the last, a short while ago. */
   answering?: Text
-  /** Its questions that wait for the person (decisions and approvals, never a card to read), as their Desk rows,
+  /** Its questions that wait for the person (decisions and approvals, never a card to read), as their card rows,
    *  in the order they came: what its page "Questions" lists as open. */
   waiting?: DeskRowView[]
   /** The calm chat (`Focus.calm`): its open cards pinned right above the field: its questions, the newest first, then
@@ -1384,7 +1335,7 @@ export interface CardView {
   work?: CardWorkView
   /** When it was asked, or last revised. */
   asked_ms: number
-  /** Its place among what waits on the Desk in view ("3 of 7"), with its neighbours. */
+  /** Its place in the walk it is a step of ("3 of 7": the group page's, a chat's or Blitz's), with its neighbours. */
   place?: PlaceView
   /** Small words of the quiet line: "replaces 2 questions", "revised", "3 messages below". */
   notes?: Text[]
@@ -1440,9 +1391,9 @@ export interface CardView {
   paper: string
 }
 
-/** One entry of a card's ⋯ menu. The shell draws it by its key: `prev`, `next` (the questions before and after it on
- *  the Desk), `draw` (the pen on the card), `focus` (the page alone in the window), `chat` (its session's
- *  conversation), `copy` (the card as one line), `wake` (back on the Desk now), `shred` (thrown away unanswered). */
+/** One entry of a card's ⋯ menu. The shell draws it by its key: `prev`, `next` (the questions before and after it in
+ *  its walk), `draw` (the pen on the card), `focus` (the page alone in the window), `chat` (its session's
+ *  conversation), `copy` (the card as one line), `wake` (back among the open cards now), `shred` (thrown away unanswered). */
 export interface CardMenuItem {
   key: string
   label: Text
@@ -1476,7 +1427,7 @@ export interface PictureView {
 
 /** The way on after an answer on a card's page. */
 export interface AfterView {
-  /** The next open question: the next in the Desk's order after this card's place, else the first that waits. */
+  /** The next open question: the next in the walk's order after this card's place, else the first that waits. */
   next?: CardRefView
   /** "Next question", or "That was the last open question." */
   says: Text
@@ -1549,7 +1500,7 @@ export interface CardWorkView {
   at_ms: number
 }
 
-/** A card's place among what waits on the Desk in view. */
+/** A card's place in the walk it is a step of. */
 export interface PlaceView {
   at: number
   of: number

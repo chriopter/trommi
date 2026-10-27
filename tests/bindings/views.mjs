@@ -387,7 +387,7 @@ function swiftFile(decls) {
   body += CORE_JSON
   // (inside one namespace: a view type never meets SwiftUI's Text or an app's own Toast)
   const inner = body.trimEnd().split('\n').map(l => (l ? `  ${l}` : l)).join('\n')
-  return `// Written by tests/bindings/views.mjs from ${SOURCE}: do not edit. The view model the core sends (Effect::Render)\n// and the parts of it a shell sends back (Event::Focus), as Codable types: a field the core may leave out decodes to\n// its default. Every type is inside \`CoreView\` (\`CoreView.DeskView\`), so none meets a name of SwiftUI or of an app.\nimport Foundation\n\npublic enum CoreView {\n${inner}\n}\n`
+  return `// Written by tests/bindings/views.mjs from ${SOURCE}: do not edit. The view model the core sends (Effect::Render)\n// and the parts of it a shell sends back (Event::Focus), as Codable types: a field the core may leave out decodes to\n// its default. Every type is inside \`CoreView\` (\`CoreView.GroupView\`), so none meets a name of SwiftUI or of an app.\nimport Foundation\n\npublic enum CoreView {\n${inner}\n}\n`
 }
 
 // ---- the golden views, read strictly --------------------------------------------------------------------------------
@@ -424,7 +424,7 @@ function check(value, t, at, decls, bind = {}) {
   }
 }
 
-const GOLDEN_TYPES = [[/^demo-sidebar/, 'SidebarView'], [/^demo-desk/, 'DeskView'], [/^demo-session/, 'SessionView'], [/^demo-card/, 'CardView'], [/^demo-notes/, 'NotesView'], [/^demo-settings/, 'SettingsView']]
+const GOLDEN_TYPES = [[/^demo-sidebar/, 'SidebarView'], [/^demo-group/, 'GroupView'], [/^demo-session/, 'SessionView'], [/^demo-card/, 'CardView'], [/^demo-notes/, 'NotesView'], [/^demo-settings/, 'SettingsView']]
 
 // ---- the run ------------------------------------------------------------------------------------------------------------
 

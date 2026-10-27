@@ -9,14 +9,6 @@
               "kit_due": false,
               "step": ""
             },
-            "desk": {
-              "done": [],
-              "later": [],
-              "mode": "",
-              "off_your_mind": [],
-              "stack": [],
-              "waiting": 0
-            },
             "dictation": {
               "available": false,
               "max_ms": 300000,
@@ -30,6 +22,12 @@
               },
               "status_kind": "off",
               "test_state": "idle"
+            },
+            "group": {
+              "chips_shown": 0,
+              "mode": "",
+              "stack": [],
+              "waiting": 0
             },
             "notes": {
               "notes": [],
@@ -104,18 +102,7 @@
             },
             "sidebar": {
               "badge": 0,
-              "desk_all": false,
-              "home": {
-                "cards": 0,
-                "id": "",
-                "knocks": false,
-                "name": {
-                  "en": "",
-                  "key": ""
-                },
-                "selected": false,
-                "waiting": 0
-              },
+              "folded": false,
               "knocking": 0,
               "me": "",
               "place": {
@@ -154,7 +141,7 @@
               "step": "2",
               "steps": "4"
             },
-            "en": "Loading your Desk",
+            "en": "Loading your cards",
             "key": "start.desk"
           }
         },
@@ -162,18 +149,7 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
-            "desk_all": false,
-            "home": {
-              "cards": 0,
-              "id": "",
-              "knocks": false,
-              "name": {
-                "en": "All teams",
-                "key": "team.all"
-              },
-              "selected": false,
-              "waiting": 0
-            },
+            "folded": false,
             "knocking": 0,
             "me": "",
             "place": {
@@ -232,20 +208,14 @@
           }
         },
         {
-          "part": "desk",
+          "part": "group",
           "view": {
-            "done": [],
+            "chips_shown": 0,
             "empty": {
               "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
-              "key": "desk.empty.reading"
+              "key": "group.empty.reading"
             },
-            "hello": {
-              "en": "Catching up…",
-              "key": "desk.hello.catching_up"
-            },
-            "later": [],
             "mode": "reading",
-            "off_your_mind": [],
             "stack": [],
             "waiting": 0
           }
@@ -514,18 +484,7 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
-            "desk_all": false,
-            "home": {
-              "cards": 0,
-              "id": "",
-              "knocks": false,
-              "name": {
-                "en": "All teams",
-                "key": "team.all"
-              },
-              "selected": false,
-              "waiting": 0
-            },
+            "folded": false,
             "knocking": 0,
             "me": "",
             "place": {
@@ -693,12 +652,52 @@
           }
         },
         {
-          "part": "desk",
+          "part": "group",
           "view": {
-            "done": [],
+            "chips": [
+              {
+                "count": 0,
+                "mark": "",
+                "name": {
+                  "en": "All",
+                  "key": "group.chip.all"
+                },
+                "needs": false,
+                "says": {
+                  "args": {
+                    "n": "0"
+                  },
+                  "en": "All: 0 open cards",
+                  "key": "group.chip.all.says"
+                },
+                "selected": true,
+                "session_id": "",
+                "slug": ""
+              },
+              {
+                "count": 0,
+                "mark": "draw:(face)",
+                "name": {
+                  "en": "Loading …",
+                  "key": "session.name"
+                },
+                "needs": false,
+                "says": {
+                  "args": {
+                    "name": "Loading …"
+                  },
+                  "en": "Loading …",
+                  "key": "group.chip"
+                },
+                "selected": false,
+                "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                "slug": "00000002eeee"
+              }
+            ],
+            "chips_shown": 2,
             "empty": {
               "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
-              "key": "desk.empty.reading"
+              "key": "group.empty.reading"
             },
             "goals": {
               "foldable": false,
@@ -706,30 +705,63 @@
               "lines": [],
               "team_id": "main"
             },
-            "hello": {
-              "en": "Catching up…",
-              "key": "desk.hello.catching_up"
-            },
-            "knowledge": {
-              "count": 0,
-              "first": [],
-              "fresh": 0,
-              "label": {
-                "en": "Knowledge",
-                "key": "knowledge.chip"
-              },
-              "says": {
-                "args": {
-                  "n": "0"
+            "head": {
+              "faces": [
+                {
+                  "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                  "mark": "draw:(face)"
+                }
+              ],
+              "menu": [
+                {
+                  "apart": false,
+                  "key": "knowledge",
+                  "label": {
+                    "en": "Knowledge",
+                    "key": "group.menu.knowledge"
+                  },
+                  "opens": {
+                    "screen": "knowledge"
+                  }
                 },
-                "en": "Team knowledge: 0 entries",
-                "key": "knowledge.chip.says"
+                {
+                  "apart": false,
+                  "key": "wakeups",
+                  "label": {
+                    "en": "Wakeups",
+                    "key": "group.menu.wakeups"
+                  },
+                  "opens": {
+                    "screen": "wakeups"
+                  }
+                },
+                {
+                  "apart": false,
+                  "key": "board",
+                  "label": {
+                    "en": "Scribble Board",
+                    "key": "group.menu.board"
+                  },
+                  "opens": {
+                    "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
+                    "screen": "scribble"
+                  }
+                }
+              ],
+              "menu_says": {
+                "args": {
+                  "name": "Personal"
+                },
+                "en": "More of Personal",
+                "key": "group.menu.says"
+              },
+              "name": {
+                "en": "Personal",
+                "key": "team.personal"
               },
               "team_id": "main"
             },
-            "later": [],
-            "mode": "desk",
-            "off_your_mind": [],
+            "mode": "group",
             "stack": [],
             "waiting": 0
           }
@@ -748,7 +780,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -825,7 +857,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -840,7 +872,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -998,7 +1030,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -1020,7 +1052,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -1125,7 +1157,7 @@
               }
             },
             "unfinished": [
-              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -1138,18 +1170,7 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
-            "desk_all": false,
-            "home": {
-              "cards": 0,
-              "id": "",
-              "knocks": false,
-              "name": {
-                "en": "All teams",
-                "key": "team.all"
-              },
-              "selected": false,
-              "waiting": 0
-            },
+            "folded": false,
             "knocking": 0,
             "me": "",
             "place": {
@@ -1317,12 +1338,52 @@
           }
         },
         {
-          "part": "desk",
+          "part": "group",
           "view": {
-            "done": [],
+            "chips": [
+              {
+                "count": 0,
+                "mark": "",
+                "name": {
+                  "en": "All",
+                  "key": "group.chip.all"
+                },
+                "needs": false,
+                "says": {
+                  "args": {
+                    "n": "0"
+                  },
+                  "en": "All: 0 open cards",
+                  "key": "group.chip.all.says"
+                },
+                "selected": true,
+                "session_id": "",
+                "slug": ""
+              },
+              {
+                "count": 0,
+                "mark": "draw:(face)",
+                "name": {
+                  "en": "00000002eeee",
+                  "key": "session.name"
+                },
+                "needs": false,
+                "says": {
+                  "args": {
+                    "name": "00000002eeee"
+                  },
+                  "en": "00000002eeee",
+                  "key": "group.chip"
+                },
+                "selected": false,
+                "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                "slug": "00000002eeee"
+              }
+            ],
+            "chips_shown": 2,
             "empty": {
               "en": "Questions land here.",
-              "key": "desk.empty"
+              "key": "group.empty"
             },
             "goals": {
               "foldable": false,
@@ -1330,30 +1391,63 @@
               "lines": [],
               "team_id": "main"
             },
-            "hello": {
-              "en": "All quiet.",
-              "key": "desk.hello.calm.0"
-            },
-            "knowledge": {
-              "count": 0,
-              "first": [],
-              "fresh": 0,
-              "label": {
-                "en": "Knowledge",
-                "key": "knowledge.chip"
-              },
-              "says": {
-                "args": {
-                  "n": "0"
+            "head": {
+              "faces": [
+                {
+                  "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                  "mark": "draw:(face)"
+                }
+              ],
+              "menu": [
+                {
+                  "apart": false,
+                  "key": "knowledge",
+                  "label": {
+                    "en": "Knowledge",
+                    "key": "group.menu.knowledge"
+                  },
+                  "opens": {
+                    "screen": "knowledge"
+                  }
                 },
-                "en": "Team knowledge: 0 entries",
-                "key": "knowledge.chip.says"
+                {
+                  "apart": false,
+                  "key": "wakeups",
+                  "label": {
+                    "en": "Wakeups",
+                    "key": "group.menu.wakeups"
+                  },
+                  "opens": {
+                    "screen": "wakeups"
+                  }
+                },
+                {
+                  "apart": false,
+                  "key": "board",
+                  "label": {
+                    "en": "Scribble Board",
+                    "key": "group.menu.board"
+                  },
+                  "opens": {
+                    "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
+                    "screen": "scribble"
+                  }
+                }
+              ],
+              "menu_says": {
+                "args": {
+                  "name": "Personal"
+                },
+                "en": "More of Personal",
+                "key": "group.menu.says"
+              },
+              "name": {
+                "en": "Personal",
+                "key": "team.personal"
               },
               "team_id": "main"
             },
-            "later": [],
-            "mode": "desk",
-            "off_your_mind": [],
+            "mode": "group",
             "stack": [],
             "waiting": 0
           }
@@ -1372,7 +1466,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -1449,7 +1543,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -1464,7 +1558,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -1622,7 +1716,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -1644,7 +1738,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -1749,7 +1843,7 @@
               }
             },
             "unfinished": [
-              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -1789,27 +1883,20 @@
           "part": "sidebar",
           "view": {
             "badge": 1,
-            "desk_all": false,
+            "folded": false,
             "global_blitz": {
-              "card": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
+              "card": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
               "says": {
                 "args": {
                   "n": "1"
                 },
                 "en": "Blitz: 1 open card",
-                "key": "desk.blitz.one"
-              }
-            },
-            "home": {
-              "cards": 1,
-              "id": "",
-              "knocks": false,
-              "name": {
-                "en": "All teams",
-                "key": "team.all"
+                "key": "blitz.one"
               },
-              "selected": false,
-              "waiting": 1
+              "scope": {
+                "en": "all groups",
+                "key": "blitz.scope"
+              }
             },
             "knocking": 0,
             "me": "",
@@ -2015,16 +2102,63 @@
           }
         },
         {
-          "part": "desk",
+          "part": "group",
           "view": {
             "blitz": {
-              "args": {
-                "n": "1"
+              "card": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
+              "says": {
+                "args": {
+                  "n": "1"
+                },
+                "en": "Blitz: 1 open card",
+                "key": "blitz.one"
               },
-              "en": "Blitz: 1 open card",
-              "key": "desk.blitz.one"
+              "scope": {
+                "en": "all groups",
+                "key": "blitz.scope"
+              }
             },
-            "done": [],
+            "chips": [
+              {
+                "count": 1,
+                "mark": "",
+                "name": {
+                  "en": "All",
+                  "key": "group.chip.all"
+                },
+                "needs": false,
+                "says": {
+                  "args": {
+                    "n": "1"
+                  },
+                  "en": "All: 1 open card",
+                  "key": "group.chip.all.one"
+                },
+                "selected": true,
+                "session_id": "",
+                "slug": ""
+              },
+              {
+                "count": 0,
+                "mark": "draw:(face)",
+                "name": {
+                  "en": "00000002eeee",
+                  "key": "session.name"
+                },
+                "needs": true,
+                "says": {
+                  "args": {
+                    "name": "00000002eeee"
+                  },
+                  "en": "00000002eeee: waits for you",
+                  "key": "group.chip.waits"
+                },
+                "selected": false,
+                "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                "slug": "00000002eeee"
+              }
+            ],
+            "chips_shown": 2,
             "duck": {
               "ask": {
                 "args": {
@@ -2033,18 +2167,18 @@
                   "reads": "0"
                 },
                 "en": "Duck it?",
-                "key": "desk.duck.ask.one"
+                "key": "duck.ask.one"
               },
               "card_ids": [
-                "00000006eeeeeeeeeeeeeeeeeeeeeeee"
+                "00000007eeeeeeeeeeeeeeeeeeeeeeee"
               ],
               "no": {
                 "en": "Cancel",
-                "key": "desk.duck.no"
+                "key": "duck.no"
               },
               "short": {
                 "en": "IDGAD",
-                "key": "desk.duck.short"
+                "key": "duck.short"
               },
               "tip": {
                 "args": {
@@ -2053,7 +2187,7 @@
                   "reads": "0"
                 },
                 "en": "I don’t give a duck: for the one open decision",
-                "key": "desk.duck.tip.one"
+                "key": "duck.tip.one"
               },
               "what": {
                 "args": {
@@ -2062,7 +2196,7 @@
                   "reads": "0"
                 },
                 "en": "1 decision goes to the agents",
-                "key": "desk.duck.what.go"
+                "key": "duck.what.go"
               },
               "yes": {
                 "args": {
@@ -2071,7 +2205,7 @@
                   "reads": "0"
                 },
                 "en": "Yes, duck it",
-                "key": "desk.duck.yes.one"
+                "key": "duck.yes.one"
               }
             },
             "goals": {
@@ -2080,31 +2214,64 @@
               "lines": [],
               "team_id": "main"
             },
-            "hello": {
-              "en": "Welcome back.",
-              "key": "desk.hello.greeting.0"
-            },
-            "knowledge": {
-              "count": 0,
-              "first": [],
-              "fresh": 0,
-              "label": {
-                "en": "Knowledge",
-                "key": "knowledge.chip"
-              },
-              "says": {
-                "args": {
-                  "n": "0"
+            "head": {
+              "faces": [
+                {
+                  "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                  "mark": "draw:(face)"
+                }
+              ],
+              "menu": [
+                {
+                  "apart": false,
+                  "key": "knowledge",
+                  "label": {
+                    "en": "Knowledge",
+                    "key": "group.menu.knowledge"
+                  },
+                  "opens": {
+                    "screen": "knowledge"
+                  }
                 },
-                "en": "Team knowledge: 0 entries",
-                "key": "knowledge.chip.says"
+                {
+                  "apart": false,
+                  "key": "wakeups",
+                  "label": {
+                    "en": "Wakeups",
+                    "key": "group.menu.wakeups"
+                  },
+                  "opens": {
+                    "screen": "wakeups"
+                  }
+                },
+                {
+                  "apart": false,
+                  "key": "board",
+                  "label": {
+                    "en": "Scribble Board",
+                    "key": "group.menu.board"
+                  },
+                  "opens": {
+                    "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
+                    "screen": "scribble"
+                  }
+                }
+              ],
+              "menu_says": {
+                "args": {
+                  "name": "Personal"
+                },
+                "en": "More of Personal",
+                "key": "group.menu.says"
+              },
+              "name": {
+                "en": "Personal",
+                "key": "team.personal"
               },
               "team_id": "main"
             },
-            "later": [],
-            "mode": "desk",
-            "off_your_mind": [],
-            "rows": [
+            "mode": "group",
+            "questions": [
               {
                 "created_ms": 1791900300010,
                 "from": {
@@ -2115,11 +2282,11 @@
                   ],
                   "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee"
                 },
-                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
                 "kind": "decision",
                 "loading": false,
                 "newer": false,
-                "run": 1,
+                "run": 0,
                 "sign": "whenever",
                 "sign_says": {
                   "en": "Whenever",
@@ -2179,8 +2346,15 @@
                 "words": ""
               }
             ],
+            "questions_says": {
+              "args": {
+                "n": "1"
+              },
+              "en": "Waits for you",
+              "key": "group.questions"
+            },
             "stack": [
-              "00000006eeeeeeeeeeeeeeeeeeeeeeee"
+              "00000007eeeeeeeeeeeeeeeeeeeeeeee"
             ],
             "waiting": 1
           }
@@ -2199,7 +2373,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -2276,7 +2450,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -2291,7 +2465,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -2449,7 +2623,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -2471,7 +2645,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -2576,7 +2750,7 @@
               }
             },
             "unfinished": [
-              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -2589,15 +2763,76 @@
       "kit_due": false,
       "step": ""
     },
-    "desk": {
-      "blitz": {
-        "args": {
-          "n": "1"
-        },
-        "en": "Blitz: 1 open card",
-        "key": "desk.blitz.one"
+    "dictation": {
+      "available": false,
+      "max_ms": 300000,
+      "on": true,
+      "session": "",
+      "since_ms": 0,
+      "state": "off",
+      "status": {
+        "en": "Not available on this device",
+        "key": "dictate.status.unavailable"
       },
-      "done": [],
+      "status_kind": "off",
+      "test_state": "idle"
+    },
+    "group": {
+      "blitz": {
+        "card": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
+        "says": {
+          "args": {
+            "n": "1"
+          },
+          "en": "Blitz: 1 open card",
+          "key": "blitz.one"
+        },
+        "scope": {
+          "en": "all groups",
+          "key": "blitz.scope"
+        }
+      },
+      "chips": [
+        {
+          "count": 1,
+          "mark": "",
+          "name": {
+            "en": "All",
+            "key": "group.chip.all"
+          },
+          "needs": false,
+          "says": {
+            "args": {
+              "n": "1"
+            },
+            "en": "All: 1 open card",
+            "key": "group.chip.all.one"
+          },
+          "selected": true,
+          "session_id": "",
+          "slug": ""
+        },
+        {
+          "count": 0,
+          "mark": "draw:(face)",
+          "name": {
+            "en": "00000002eeee",
+            "key": "session.name"
+          },
+          "needs": true,
+          "says": {
+            "args": {
+              "name": "00000002eeee"
+            },
+            "en": "00000002eeee: waits for you",
+            "key": "group.chip.waits"
+          },
+          "selected": false,
+          "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+          "slug": "00000002eeee"
+        }
+      ],
+      "chips_shown": 2,
       "duck": {
         "ask": {
           "args": {
@@ -2606,18 +2841,18 @@
             "reads": "0"
           },
           "en": "Duck it?",
-          "key": "desk.duck.ask.one"
+          "key": "duck.ask.one"
         },
         "card_ids": [
-          "00000006eeeeeeeeeeeeeeeeeeeeeeee"
+          "00000007eeeeeeeeeeeeeeeeeeeeeeee"
         ],
         "no": {
           "en": "Cancel",
-          "key": "desk.duck.no"
+          "key": "duck.no"
         },
         "short": {
           "en": "IDGAD",
-          "key": "desk.duck.short"
+          "key": "duck.short"
         },
         "tip": {
           "args": {
@@ -2626,7 +2861,7 @@
             "reads": "0"
           },
           "en": "I don’t give a duck: for the one open decision",
-          "key": "desk.duck.tip.one"
+          "key": "duck.tip.one"
         },
         "what": {
           "args": {
@@ -2635,7 +2870,7 @@
             "reads": "0"
           },
           "en": "1 decision goes to the agents",
-          "key": "desk.duck.what.go"
+          "key": "duck.what.go"
         },
         "yes": {
           "args": {
@@ -2644,7 +2879,7 @@
             "reads": "0"
           },
           "en": "Yes, duck it",
-          "key": "desk.duck.yes.one"
+          "key": "duck.yes.one"
         }
       },
       "goals": {
@@ -2653,31 +2888,64 @@
         "lines": [],
         "team_id": "main"
       },
-      "hello": {
-        "en": "Welcome back.",
-        "key": "desk.hello.greeting.0"
-      },
-      "knowledge": {
-        "count": 0,
-        "first": [],
-        "fresh": 0,
-        "label": {
-          "en": "Knowledge",
-          "key": "knowledge.chip"
-        },
-        "says": {
-          "args": {
-            "n": "0"
+      "head": {
+        "faces": [
+          {
+            "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+            "mark": "draw:(face)"
+          }
+        ],
+        "menu": [
+          {
+            "apart": false,
+            "key": "knowledge",
+            "label": {
+              "en": "Knowledge",
+              "key": "group.menu.knowledge"
+            },
+            "opens": {
+              "screen": "knowledge"
+            }
           },
-          "en": "Team knowledge: 0 entries",
-          "key": "knowledge.chip.says"
+          {
+            "apart": false,
+            "key": "wakeups",
+            "label": {
+              "en": "Wakeups",
+              "key": "group.menu.wakeups"
+            },
+            "opens": {
+              "screen": "wakeups"
+            }
+          },
+          {
+            "apart": false,
+            "key": "board",
+            "label": {
+              "en": "Scribble Board",
+              "key": "group.menu.board"
+            },
+            "opens": {
+              "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
+              "screen": "scribble"
+            }
+          }
+        ],
+        "menu_says": {
+          "args": {
+            "name": "Personal"
+          },
+          "en": "More of Personal",
+          "key": "group.menu.says"
+        },
+        "name": {
+          "en": "Personal",
+          "key": "team.personal"
         },
         "team_id": "main"
       },
-      "later": [],
-      "mode": "desk",
-      "off_your_mind": [],
-      "rows": [
+      "mode": "group",
+      "questions": [
         {
           "created_ms": 1791900300010,
           "from": {
@@ -2688,11 +2956,11 @@
             ],
             "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee"
           },
-          "id": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
           "kind": "decision",
           "loading": false,
           "newer": false,
-          "run": 1,
+          "run": 0,
           "sign": "whenever",
           "sign_says": {
             "en": "Whenever",
@@ -2752,24 +3020,17 @@
           "words": ""
         }
       ],
+      "questions_says": {
+        "args": {
+          "n": "1"
+        },
+        "en": "Waits for you",
+        "key": "group.questions"
+      },
       "stack": [
-        "00000006eeeeeeeeeeeeeeeeeeeeeeee"
+        "00000007eeeeeeeeeeeeeeeeeeeeeeee"
       ],
       "waiting": 1
-    },
-    "dictation": {
-      "available": false,
-      "max_ms": 300000,
-      "on": true,
-      "session": "",
-      "since_ms": 0,
-      "state": "off",
-      "status": {
-        "en": "Not available on this device",
-        "key": "dictate.status.unavailable"
-      },
-      "status_kind": "off",
-      "test_state": "idle"
     },
     "notes": {
       "no_crown": {
@@ -2797,7 +3058,7 @@
             "key": "agents.count"
           },
           "devices": [
-            "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
           ],
           "host": "",
           "key": "Agent · ",
@@ -2874,7 +3135,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": true,
           "role": "human",
@@ -2889,7 +3150,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": false,
           "role": "human",
@@ -3047,7 +3308,7 @@
                 },
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "mark": {
                   "en": "this device",
                   "key": "security.this_device"
@@ -3069,7 +3330,7 @@
                 },
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "open": "device",
                 "says": {
                   "en": "everything",
@@ -3174,32 +3435,25 @@
         }
       },
       "unfinished": [
-        "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       ]
     },
     "sidebar": {
       "badge": 1,
-      "desk_all": false,
+      "folded": false,
       "global_blitz": {
-        "card": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
+        "card": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
         "says": {
           "args": {
             "n": "1"
           },
           "en": "Blitz: 1 open card",
-          "key": "desk.blitz.one"
-        }
-      },
-      "home": {
-        "cards": 1,
-        "id": "",
-        "knocks": false,
-        "name": {
-          "en": "All teams",
-          "key": "team.all"
+          "key": "blitz.one"
         },
-        "selected": false,
-        "waiting": 1
+        "scope": {
+          "en": "all groups",
+          "key": "blitz.scope"
+        }
       },
       "knocking": 0,
       "me": "",

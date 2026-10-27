@@ -67,7 +67,7 @@ fn a_start_says_each_step_in_order_and_how_far_the_catching_up_is() {
 }
 
 #[test]
-fn a_device_that_does_not_load_says_it_stopped_instead_of_showing_an_empty_desk() {
+fn a_device_that_does_not_load_says_it_stopped_instead_of_showing_an_empty_group_page() {
     let world = World::new();
     let mut sim = world.sim();
     sim.load_fails = u32::MAX;

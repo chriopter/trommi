@@ -9,7 +9,12 @@ use trommi_client_core::app::sim::Sim;
 use trommi_client_core::views::Phase;
 
 fn titles(sim: &Sim) -> Vec<String> {
-    sim.view.desk.rows.iter().map(|r| r.title.clone()).collect()
+    sim.view
+        .group
+        .rows()
+        .iter()
+        .map(|r| r.title.clone())
+        .collect()
 }
 
 fn release(world: &World, sim: &mut Sim) {

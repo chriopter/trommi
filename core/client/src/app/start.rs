@@ -3,7 +3,7 @@
 //!
 //! The steps, in order (`args.step` of `args.steps`, so a shell can draw how far along it is without knowing them):
 //! 1. `start.device` "Unlocking this device": the stored device is read and opened.
-//! 2. `start.desk` "Loading your Desk": the board this device kept is read back.
+//! 2. `start.desk` "Loading your cards": the board this device kept is read back.
 //! 3. `start.catching_up` "Catching up: 120 of 480": the hub's order is read up to its end (`args.done`, `args.total`
 //!    once the hub named its head; plain "Catching up" before).
 //! 4. `start.almost` "Almost there": the order is read, the live stream is being opened.
@@ -53,7 +53,7 @@ pub fn line(
             &[],
         )),
         Phase::Opening if !board_read => {
-            Some(step("2", "start.desk", "Loading your Desk".into(), &[]))
+            Some(step("2", "start.desk", "Loading your cards".into(), &[]))
         }
         Phase::Opening if caught_up => Some(step("4", "start.almost", "Almost there".into(), &[])),
         Phase::Opening => match pass.flatten() {
@@ -131,7 +131,7 @@ mod tests {
         );
         assert_eq!(
             en(line(Phase::Opening, false, None, false)),
-            "Loading your Desk"
+            "Loading your cards"
         );
         assert_eq!(en(line(Phase::Opening, true, None, false)), "Catching up");
         assert_eq!(

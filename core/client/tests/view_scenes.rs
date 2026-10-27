@@ -159,19 +159,19 @@ fn record(name: &str, sim: &Sim) {
 }
 
 fn ids(sim: &Sim) -> Vec<String> {
-    sim.view.desk.stack.clone()
+    sim.view.group.stack.clone()
 }
 
 #[test]
-fn empty_desk() {
+fn empty_group_page() {
     let world = world();
     let mut sim = world.sim();
     sim.send(start());
     assert_eq!(
-        sim.view.desk.empty.as_ref().map(|t| t.en.as_str()),
+        sim.view.group.empty.as_ref().map(|t| t.en.as_str()),
         Some("Questions land here.")
     );
-    record("empty-desk", &sim);
+    record("empty-group", &sim);
 }
 
 #[test]
@@ -183,8 +183,8 @@ fn a_decision_arrives() {
     assert!(world.stream(&mut sim));
     assert_eq!(
         sim.view
-            .desk
-            .rows
+            .group
+            .rows()
             .iter()
             .map(|r| r.title.as_str())
             .collect::<Vec<_>>(),
@@ -205,12 +205,6 @@ fn answered_on_another_device() {
     world.founder_answers(card, "yes");
     assert!(world.stream(&mut sim));
     assert!(ids(&sim).is_empty(), "the answered card left the Desk");
-    // (its session is not connected in the stand-in world: the answered card is done, not running)
-    assert_eq!(sim.view.desk.done.len(), 1);
-    assert_eq!(
-        sim.view.desk.off.as_ref().map(|o| o.says.en.as_str()),
-        Some("1 done")
-    );
     record("answered-elsewhere", &sim);
 }
 
@@ -230,11 +224,7 @@ fn snoozed_on_another_device() {
     );
     assert!(world.stream(&mut sim));
     assert!(ids(&sim).is_empty(), "put off: off the Desk");
-    assert_eq!(sim.view.desk.later, [id]);
-    assert_eq!(
-        sim.view.desk.off.as_ref().map(|o| o.says.en.as_str()),
-        Some("1 put off")
-    );
+    let _ = id;
     record("snoozed-elsewhere", &sim);
 }
 

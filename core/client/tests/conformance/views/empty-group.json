@@ -9,14 +9,6 @@
               "kit_due": false,
               "step": ""
             },
-            "desk": {
-              "done": [],
-              "later": [],
-              "mode": "",
-              "off_your_mind": [],
-              "stack": [],
-              "waiting": 0
-            },
             "dictation": {
               "available": false,
               "max_ms": 300000,
@@ -30,6 +22,12 @@
               },
               "status_kind": "off",
               "test_state": "idle"
+            },
+            "group": {
+              "chips_shown": 0,
+              "mode": "",
+              "stack": [],
+              "waiting": 0
             },
             "notes": {
               "notes": [],
@@ -104,18 +102,7 @@
             },
             "sidebar": {
               "badge": 0,
-              "desk_all": false,
-              "home": {
-                "cards": 0,
-                "id": "",
-                "knocks": false,
-                "name": {
-                  "en": "",
-                  "key": ""
-                },
-                "selected": false,
-                "waiting": 0
-              },
+              "folded": false,
               "knocking": 0,
               "me": "",
               "place": {
@@ -154,7 +141,7 @@
               "step": "2",
               "steps": "4"
             },
-            "en": "Loading your Desk",
+            "en": "Loading your cards",
             "key": "start.desk"
           }
         },
@@ -162,18 +149,7 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
-            "desk_all": false,
-            "home": {
-              "cards": 0,
-              "id": "",
-              "knocks": false,
-              "name": {
-                "en": "All teams",
-                "key": "team.all"
-              },
-              "selected": false,
-              "waiting": 0
-            },
+            "folded": false,
             "knocking": 0,
             "me": "",
             "place": {
@@ -232,20 +208,14 @@
           }
         },
         {
-          "part": "desk",
+          "part": "group",
           "view": {
-            "done": [],
+            "chips_shown": 0,
             "empty": {
               "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
-              "key": "desk.empty.reading"
+              "key": "group.empty.reading"
             },
-            "hello": {
-              "en": "Catching up…",
-              "key": "desk.hello.catching_up"
-            },
-            "later": [],
             "mode": "reading",
-            "off_your_mind": [],
             "stack": [],
             "waiting": 0
           }
@@ -514,18 +484,7 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
-            "desk_all": false,
-            "home": {
-              "cards": 0,
-              "id": "",
-              "knocks": false,
-              "name": {
-                "en": "All teams",
-                "key": "team.all"
-              },
-              "selected": false,
-              "waiting": 0
-            },
+            "folded": false,
             "knocking": 0,
             "me": "",
             "place": {
@@ -693,12 +652,52 @@
           }
         },
         {
-          "part": "desk",
+          "part": "group",
           "view": {
-            "done": [],
+            "chips": [
+              {
+                "count": 0,
+                "mark": "",
+                "name": {
+                  "en": "All",
+                  "key": "group.chip.all"
+                },
+                "needs": false,
+                "says": {
+                  "args": {
+                    "n": "0"
+                  },
+                  "en": "All: 0 open cards",
+                  "key": "group.chip.all.says"
+                },
+                "selected": true,
+                "session_id": "",
+                "slug": ""
+              },
+              {
+                "count": 0,
+                "mark": "draw:(face)",
+                "name": {
+                  "en": "Loading …",
+                  "key": "session.name"
+                },
+                "needs": false,
+                "says": {
+                  "args": {
+                    "name": "Loading …"
+                  },
+                  "en": "Loading …",
+                  "key": "group.chip"
+                },
+                "selected": false,
+                "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                "slug": "00000002eeee"
+              }
+            ],
+            "chips_shown": 2,
             "empty": {
               "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
-              "key": "desk.empty.reading"
+              "key": "group.empty.reading"
             },
             "goals": {
               "foldable": false,
@@ -706,30 +705,63 @@
               "lines": [],
               "team_id": "main"
             },
-            "hello": {
-              "en": "Catching up…",
-              "key": "desk.hello.catching_up"
-            },
-            "knowledge": {
-              "count": 0,
-              "first": [],
-              "fresh": 0,
-              "label": {
-                "en": "Knowledge",
-                "key": "knowledge.chip"
-              },
-              "says": {
-                "args": {
-                  "n": "0"
+            "head": {
+              "faces": [
+                {
+                  "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                  "mark": "draw:(face)"
+                }
+              ],
+              "menu": [
+                {
+                  "apart": false,
+                  "key": "knowledge",
+                  "label": {
+                    "en": "Knowledge",
+                    "key": "group.menu.knowledge"
+                  },
+                  "opens": {
+                    "screen": "knowledge"
+                  }
                 },
-                "en": "Team knowledge: 0 entries",
-                "key": "knowledge.chip.says"
+                {
+                  "apart": false,
+                  "key": "wakeups",
+                  "label": {
+                    "en": "Wakeups",
+                    "key": "group.menu.wakeups"
+                  },
+                  "opens": {
+                    "screen": "wakeups"
+                  }
+                },
+                {
+                  "apart": false,
+                  "key": "board",
+                  "label": {
+                    "en": "Scribble Board",
+                    "key": "group.menu.board"
+                  },
+                  "opens": {
+                    "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
+                    "screen": "scribble"
+                  }
+                }
+              ],
+              "menu_says": {
+                "args": {
+                  "name": "Personal"
+                },
+                "en": "More of Personal",
+                "key": "group.menu.says"
+              },
+              "name": {
+                "en": "Personal",
+                "key": "team.personal"
               },
               "team_id": "main"
             },
-            "later": [],
-            "mode": "desk",
-            "off_your_mind": [],
+            "mode": "group",
             "stack": [],
             "waiting": 0
           }
@@ -748,7 +780,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -825,7 +857,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -840,7 +872,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -998,7 +1030,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -1020,7 +1052,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -1125,7 +1157,7 @@
               }
             },
             "unfinished": [
-              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -1138,18 +1170,7 @@
           "part": "sidebar",
           "view": {
             "badge": 0,
-            "desk_all": false,
-            "home": {
-              "cards": 0,
-              "id": "",
-              "knocks": false,
-              "name": {
-                "en": "All teams",
-                "key": "team.all"
-              },
-              "selected": false,
-              "waiting": 0
-            },
+            "folded": false,
             "knocking": 0,
             "me": "",
             "place": {
@@ -1317,12 +1338,52 @@
           }
         },
         {
-          "part": "desk",
+          "part": "group",
           "view": {
-            "done": [],
+            "chips": [
+              {
+                "count": 0,
+                "mark": "",
+                "name": {
+                  "en": "All",
+                  "key": "group.chip.all"
+                },
+                "needs": false,
+                "says": {
+                  "args": {
+                    "n": "0"
+                  },
+                  "en": "All: 0 open cards",
+                  "key": "group.chip.all.says"
+                },
+                "selected": true,
+                "session_id": "",
+                "slug": ""
+              },
+              {
+                "count": 0,
+                "mark": "draw:(face)",
+                "name": {
+                  "en": "00000002eeee",
+                  "key": "session.name"
+                },
+                "needs": false,
+                "says": {
+                  "args": {
+                    "name": "00000002eeee"
+                  },
+                  "en": "00000002eeee",
+                  "key": "group.chip"
+                },
+                "selected": false,
+                "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                "slug": "00000002eeee"
+              }
+            ],
+            "chips_shown": 2,
             "empty": {
               "en": "Questions land here.",
-              "key": "desk.empty"
+              "key": "group.empty"
             },
             "goals": {
               "foldable": false,
@@ -1330,30 +1391,63 @@
               "lines": [],
               "team_id": "main"
             },
-            "hello": {
-              "en": "All quiet.",
-              "key": "desk.hello.calm.0"
-            },
-            "knowledge": {
-              "count": 0,
-              "first": [],
-              "fresh": 0,
-              "label": {
-                "en": "Knowledge",
-                "key": "knowledge.chip"
-              },
-              "says": {
-                "args": {
-                  "n": "0"
+            "head": {
+              "faces": [
+                {
+                  "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                  "mark": "draw:(face)"
+                }
+              ],
+              "menu": [
+                {
+                  "apart": false,
+                  "key": "knowledge",
+                  "label": {
+                    "en": "Knowledge",
+                    "key": "group.menu.knowledge"
+                  },
+                  "opens": {
+                    "screen": "knowledge"
+                  }
                 },
-                "en": "Team knowledge: 0 entries",
-                "key": "knowledge.chip.says"
+                {
+                  "apart": false,
+                  "key": "wakeups",
+                  "label": {
+                    "en": "Wakeups",
+                    "key": "group.menu.wakeups"
+                  },
+                  "opens": {
+                    "screen": "wakeups"
+                  }
+                },
+                {
+                  "apart": false,
+                  "key": "board",
+                  "label": {
+                    "en": "Scribble Board",
+                    "key": "group.menu.board"
+                  },
+                  "opens": {
+                    "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
+                    "screen": "scribble"
+                  }
+                }
+              ],
+              "menu_says": {
+                "args": {
+                  "name": "Personal"
+                },
+                "en": "More of Personal",
+                "key": "group.menu.says"
+              },
+              "name": {
+                "en": "Personal",
+                "key": "team.personal"
               },
               "team_id": "main"
             },
-            "later": [],
-            "mode": "desk",
-            "off_your_mind": [],
+            "mode": "group",
             "stack": [],
             "waiting": 0
           }
@@ -1372,7 +1466,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -1449,7 +1543,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -1464,7 +1558,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -1622,7 +1716,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -1644,7 +1738,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -1749,7 +1843,7 @@
               }
             },
             "unfinished": [
-              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -1783,50 +1877,11 @@
       ]
     }
   ],
-  "scene": "empty-desk",
+  "scene": "empty-group",
   "view": {
     "account": {
       "kit_due": false,
       "step": ""
-    },
-    "desk": {
-      "done": [],
-      "empty": {
-        "en": "Questions land here.",
-        "key": "desk.empty"
-      },
-      "goals": {
-        "foldable": false,
-        "folded": false,
-        "lines": [],
-        "team_id": "main"
-      },
-      "hello": {
-        "en": "All quiet.",
-        "key": "desk.hello.calm.0"
-      },
-      "knowledge": {
-        "count": 0,
-        "first": [],
-        "fresh": 0,
-        "label": {
-          "en": "Knowledge",
-          "key": "knowledge.chip"
-        },
-        "says": {
-          "args": {
-            "n": "0"
-          },
-          "en": "Team knowledge: 0 entries",
-          "key": "knowledge.chip.says"
-        },
-        "team_id": "main"
-      },
-      "later": [],
-      "mode": "desk",
-      "off_your_mind": [],
-      "stack": [],
-      "waiting": 0
     },
     "dictation": {
       "available": false,
@@ -1841,6 +1896,118 @@
       },
       "status_kind": "off",
       "test_state": "idle"
+    },
+    "group": {
+      "chips": [
+        {
+          "count": 0,
+          "mark": "",
+          "name": {
+            "en": "All",
+            "key": "group.chip.all"
+          },
+          "needs": false,
+          "says": {
+            "args": {
+              "n": "0"
+            },
+            "en": "All: 0 open cards",
+            "key": "group.chip.all.says"
+          },
+          "selected": true,
+          "session_id": "",
+          "slug": ""
+        },
+        {
+          "count": 0,
+          "mark": "draw:(face)",
+          "name": {
+            "en": "00000002eeee",
+            "key": "session.name"
+          },
+          "needs": false,
+          "says": {
+            "args": {
+              "name": "00000002eeee"
+            },
+            "en": "00000002eeee",
+            "key": "group.chip"
+          },
+          "selected": false,
+          "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+          "slug": "00000002eeee"
+        }
+      ],
+      "chips_shown": 2,
+      "empty": {
+        "en": "Questions land here.",
+        "key": "group.empty"
+      },
+      "goals": {
+        "foldable": false,
+        "folded": false,
+        "lines": [],
+        "team_id": "main"
+      },
+      "head": {
+        "faces": [
+          {
+            "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+            "mark": "draw:(face)"
+          }
+        ],
+        "menu": [
+          {
+            "apart": false,
+            "key": "knowledge",
+            "label": {
+              "en": "Knowledge",
+              "key": "group.menu.knowledge"
+            },
+            "opens": {
+              "screen": "knowledge"
+            }
+          },
+          {
+            "apart": false,
+            "key": "wakeups",
+            "label": {
+              "en": "Wakeups",
+              "key": "group.menu.wakeups"
+            },
+            "opens": {
+              "screen": "wakeups"
+            }
+          },
+          {
+            "apart": false,
+            "key": "board",
+            "label": {
+              "en": "Scribble Board",
+              "key": "group.menu.board"
+            },
+            "opens": {
+              "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
+              "screen": "scribble"
+            }
+          }
+        ],
+        "menu_says": {
+          "args": {
+            "name": "Personal"
+          },
+          "en": "More of Personal",
+          "key": "group.menu.says"
+        },
+        "name": {
+          "en": "Personal",
+          "key": "team.personal"
+        },
+        "team_id": "main"
+      },
+      "mode": "group",
+      "stack": [],
+      "waiting": 0
     },
     "notes": {
       "no_crown": {
@@ -1868,7 +2035,7 @@
             "key": "agents.count"
           },
           "devices": [
-            "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
           ],
           "host": "",
           "key": "Agent · ",
@@ -1945,7 +2112,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": true,
           "role": "human",
@@ -1960,7 +2127,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": false,
           "role": "human",
@@ -2118,7 +2285,7 @@
                 },
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "mark": {
                   "en": "this device",
                   "key": "security.this_device"
@@ -2140,7 +2307,7 @@
                 },
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "open": "device",
                 "says": {
                   "en": "everything",
@@ -2245,23 +2412,12 @@
         }
       },
       "unfinished": [
-        "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       ]
     },
     "sidebar": {
       "badge": 0,
-      "desk_all": false,
-      "home": {
-        "cards": 0,
-        "id": "",
-        "knocks": false,
-        "name": {
-          "en": "All teams",
-          "key": "team.all"
-        },
-        "selected": false,
-        "waiting": 0
-      },
+      "folded": false,
       "knocking": 0,
       "me": "",
       "place": {

@@ -1,9 +1,14 @@
-//! The Desk: its head (the greeting, the goals, the sessions that are cut off) and the stack of what waits for the
-//! person as rows, each with the answers it offers. A shell draws the rows one after the other and decides nothing.
+//! The group page: the page of one group (a team, or the chats on no team) with its head (the name, the faces, the ⋯
+//! menu), one chip per chat to filter by, and its open cards in one list, the questions first, then what is only to
+//! read. There is no page of every group: Blitz walks every group's open cards and is the only view of everything.
+//! A shell draws the rows one after the other and decides nothing.
 //!
-//! The rules are the web's of before (`desk.mjs` `deskHead`, `deskList`, `runs`; `ui.mjs` `deskRow`, `tiles`):
-//! - the rows are the walk: the Desk's stack less what is with its agent, and the open approval requests, of the
-//!   team in view, in the core's order (`Model::desk_order`); what the order does not name yet stands last;
+//! The rules (the owner, 27 October 2026, the Desk taken away):
+//! - the rows are the walk: the stack's cards that are not with their agent, and the open approval requests, of the
+//!   group in view, in the core's order (`Model::desk_order`); what the order does not name yet stands last; the
+//!   questions (decisions, requests) stand first under "Waits for you", what is only to read below under "To read";
+//! - a chip per chat of the group, "All" first: the chats that need the person (a question waits, or it is stopped)
+//!   stand in front, the rest behind "+n"; one chip at a time filters the list to that chat (`Focus.group_chat`);
 //! - a card not read on this device yet and a card of a newer Trommi stand as something to read, with nothing to
 //!   answer;
 //! - a row offers its answers itself when they are two (a yes and a no as thumbs, two named ways as tiles), or
@@ -12,18 +17,25 @@
 use super::board::{is_loading, key_of, reads_as_info, Board, DEFAULT_TEAM};
 use super::links::plain;
 use super::sidebar::units_of;
-use super::words::{say, CALM, GREETINGS};
+use super::words::say;
 use super::{
-    DeskRowView, DeskView, FromView, GoalsView, MediaView, SlipView, Text, TileView, TilesView,
+    ChipView, DeskRowView, FromView, GlobalBlitzView, GoalsView, GroupHeadView, GroupMenuItem,
+    GroupView, MediaView, Screen, SessionRowView, SlipView, StackEdgeView, Text, TileView,
+    TilesView,
 };
 use crate::model::types::{Card, PermissionRequest};
 use serde_json::Value;
 
 pub const NEEDS_NEWER: &str = "This needs a newer version of Trommi. Update Trommi to see it.";
 
-/// The walk of a Desk: what waits on it (the stack's cards that are not with their agent, and the open requests, of
-/// the sessions `on` takes), in the core's order; a card it does not name yet, between two projections, stands last
-/// until it does. The Desk's rows and Blitz, and the bolt over every team (`SidebarView.global_blitz`), walk this.
+/// So many chats' chips stand in the row at least (when the group has them), beside the ones that need him.
+pub const CHIPS_SHOWN: usize = 3;
+/// So many of a group's chats make its picture.
+const GROUP_FACES: usize = 3;
+
+/// The walk of the sessions `on` takes: what waits there (the stack's cards that are not with their agent, and the
+/// open requests), in the core's order; a card it does not name yet, between two projections, stands last until it
+/// does. The group page's rows, a chat's Blitz and Blitz over every group (`walk_all`) walk this.
 pub(super) fn walk_of<'b>(b: &'b Board, on: impl Fn(Option<usize>) -> bool) -> Vec<&'b str> {
     let mut waiting: Vec<&str> = b
         .all_cards
@@ -41,36 +53,55 @@ pub(super) fn walk_of<'b>(b: &'b Board, on: impl Fn(Option<usize>) -> bool) -> V
     walk
 }
 
+/// Blitz over every group: every group's open cards in their order (a card's page walks on in it, `Focus.walk_all`).
+pub fn walk_all(b: &Board) -> Vec<String> {
+    walk_of(b, |_| true).into_iter().map(String::from).collect()
+}
+
 /// What Blitz walks: "Blitz: 3 open cards".
 pub(super) fn blitz_words(n: u32) -> Text {
     if n == 1 {
-        say("desk.blitz.one", "Blitz: 1 open card", &[("n", "1")])
+        say("blitz.one", "Blitz: 1 open card", &[("n", "1")])
     } else {
         let n = n.to_string();
-        say("desk.blitz", format!("Blitz: {n} open cards"), &[("n", &n)])
+        say("blitz", format!("Blitz: {n} open cards"), &[("n", &n)])
     }
 }
 
-pub fn desk(b: &Board) -> DeskView {
-    desk_with(b, &super::off::of_board(b))
+/// Blitz over every group, whatever group is in view: its first card is the first of the walk that this device
+/// holds; none while nothing is open anywhere.
+pub(super) fn blitz(b: &Board) -> Option<GlobalBlitzView> {
+    let all = walk_of(b, |_| true);
+    let held = |id: &str| b.model.cards.contains_key(id) || b.model.permissions.contains_key(id);
+    all.iter().find(|id| held(id)).map(|id| GlobalBlitzView {
+        card: id.to_string(),
+        says: blitz_words(all.len() as u32),
+        scope: say("blitz.scope", "all groups", &[]),
+    })
 }
 
-/// The Desk, with what has left it as the core's `off_mind` says (made once per render).
-pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
+/// A chat needs the person: a question of it waits for him, or it is stopped (the red hand).
+pub(super) fn needs(r: &SessionRowView) -> bool {
+    r.open > 0 || r.blocked
+}
+
+/// The group page of the group in view.
+pub fn group(b: &Board) -> GroupView {
     let m = b.model;
-    // (home holds every team's sessions; else the team in view's)
-    let units = if b.lens.desk_all {
-        super::sidebar::units_all(b)
-    } else {
-        units_of(b)
-    };
+    let units = units_of(b);
     let agent_of =
         |session: &Option<String>, device: &str| b.by_key.get(key_of(session, device)).copied();
+    let chats = super::sidebar::rows_of(b, &units, &super::sidebar::asked_last(b));
+    // (the chip chosen: a chat of this group, by its key or its short id; else All)
+    let chosen: Option<&SessionRowView> = b.lens.group_chat.as_deref().and_then(|k| {
+        chats
+            .iter()
+            .find(|r| r.id == k || (!r.slug.is_empty() && r.slug == k))
+    });
 
     // ---- the rows ----
-    let walk = walk_of(b, |agent| b.on_desk(agent));
-    let walk_len = walk.len() as u32;
-    let mut rows: Vec<DeskRowView> = walk
+    let walk = walk_of(b, |agent| b.on_page(agent));
+    let rows: Vec<DeskRowView> = walk
         .iter()
         .filter_map(|id| match (m.cards.get(*id), m.permissions.get(*id)) {
             (Some(c), _) => Some(card_row(b, c, agent_of(&c.session_id, &c.agent_device_id))),
@@ -81,22 +112,17 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
             )),
             _ => None,
         })
-        // (a row whose session the list does not show has no place among the runs)
+        // (a row whose session the list does not show has no place on a page)
         .filter(|r| r.from.is_some())
         .collect();
-    let mut at = 0;
-    while at < rows.len() {
-        let sender = rows[at].from.as_ref().map(|f| f.session_id.clone());
-        let n = rows[at..]
-            .iter()
-            .take_while(|r| r.from.as_ref().map(|f| &f.session_id) == sender.as_ref())
-            .count();
-        rows[at].run = n as u32;
-        at += n;
-    }
+    let all_open = rows.len() as u32;
+    let (questions, reads): (Vec<DeskRowView>, Vec<DeskRowView>) = rows
+        .into_iter()
+        .filter(|r| chosen.is_none_or(|c| r.from.as_ref().is_some_and(|f| f.session_id == c.id)))
+        .partition(|r| r.kind != "info");
 
     // ---- the head ----
-    let questions = b.all_fresh.iter().filter(|f| b.on_desk(f.agent)).count() as u32;
+    let waiting = b.all_fresh.iter().filter(|f| b.on_page(f.agent)).count() as u32;
     let cut: Vec<SlipView> = units
         .iter()
         .filter_map(|u| u.link.as_ref().filter(|l| l.state == "cut").map(|l| (u, l)))
@@ -116,7 +142,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
             SlipView {
                 session_id: a.row.key.clone(),
                 text: say(
-                    "desk.slip.cut",
+                    "group.slip.cut",
                     format!(
                         "{} is cut off{since}: it cannot hear you and cannot write to you.",
                         a.row.name
@@ -127,7 +153,6 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
             }
         })
         .collect();
-    let unheard: u32 = units.iter().map(|u| u.unheard).sum();
     let reading = b.lens.reading;
     let progress = b
         .lens
@@ -136,132 +161,312 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         .map(|(done, total)| {
             let (d, t) = (grouped(done), grouped(total));
             say(
-                "desk.reading",
+                "group.reading",
                 format!("Reading your history: {d} of {t}"),
                 &[("done", &d), ("total", &t)],
             )
         });
-    let (mode, hello) = if units.is_empty() {
-        if reading {
-            (
-                "reading",
-                Some(say("desk.hello.catching_up", "Catching up…", &[])),
-            )
-        } else {
-            ("invite", None)
-        }
-    } else {
-        // (still reading the room: no "all quiet" while questions may yet come in)
-        let unquiet = match (cut.len(), unheard) {
-            (1, _) => Some(say(
-                "desk.hello.cut_one",
-                "One can’t hear you.",
-                &[("n", "1")],
-            )),
-            (n, _) if n > 1 => Some(say("desk.hello.cut_some", "Some can’t hear you.", &[])),
-            (_, 1) => Some(say(
-                "desk.hello.unheard_one",
-                "An answer waits.",
-                &[("n", "1")],
-            )),
-            (_, n) if n > 1 => Some(say("desk.hello.unheard_some", "Answers wait.", &[])),
-            _ => None,
-        };
-        let hello = if questions == 0 && reading {
-            say("desk.hello.catching_up", "Catching up…", &[])
-        } else if let Some(u) = unquiet.filter(|_| questions == 0) {
-            u
-        } else {
-            // (calm while no question waits, with only something to read open too: the owner, 13 October 2026,
-            // card b4a26358 item 3, the iPhone's rule; the web greeted as for a question)
-            greeting(questions == 0, b.lens.dice)
-        };
-        ("desk", Some(hello))
+    // (no chat stands here yet: invite the first agent; the head stays while there is a group to name)
+    let mode = match (units.is_empty(), reading) {
+        (true, true) => "reading",
+        (true, false) => "invite",
+        _ => "group",
     };
-    // (goals are a team's: home shows none)
-    let goals = (!units.is_empty() && !b.lens.desk_all).then(|| {
-        let team = b.team.clone().unwrap_or_else(|| DEFAULT_TEAM.into());
-        let text = b
-            .teams
-            .iter()
-            .find(|d| d.id == team)
-            .map(|d| d.goals.as_str())
-            .unwrap_or("");
-        let lines: Vec<String> = if text.is_empty() {
-            Vec::new()
-        } else {
-            text.split('\n').map(String::from).collect()
-        };
-        let n = lines.len().to_string();
-        let foldable = lines.len() > 1;
-        let folded = foldable && b.lens.goals_folded.contains(&team);
-        let show_all = foldable.then(|| {
-            say(
-                "desk.goals.show_all",
-                format!("Show all {n} goals"),
-                &[("n", &n)],
-            )
-        });
-        GoalsView {
-            toggle: if folded {
-                show_all.clone()
-            } else {
-                foldable.then(|| say("desk.goals.fold", "Show the first goal only", &[]))
-            },
-            team_id: team,
-            foldable,
-            show_all,
-            folded,
-            lines,
-        }
-    });
-    // (a team's knowledge, as its goals: home shows none)
-    let knowledge = (!units.is_empty() && !b.lens.desk_all).then(|| super::knowledge::chip(b));
+    let team = b.team.clone().unwrap_or_else(|| DEFAULT_TEAM.into());
+    let head = (!units.is_empty() || !b.teams.is_empty()).then(|| head(b, &team, &chats));
+    // (goals are a team's: the chats on no team have none)
+    let goals = (!units.is_empty() && !b.no_team).then(|| goals_of(b, &team));
     // Nothing is open at all (what is with an agent counts as open): the list's place says so.
-    let any_open = walk_len > 0
+    let any_open = all_open > 0
         || m.cards.values().any(|c| {
             let agent = agent_of(&c.session_id, &c.agent_device_id);
-            // (an info its agent still works on is with the agent from the start, never on the Desk's stack)
+            // (an info its agent still works on is with the agent from the start, never on the stack)
             let works = c.field("working") == Value::Bool(true)
                 && c.snoozed_until.is_none()
                 && !agent.is_some_and(|i| b.agents[i].row.archived);
             c.object_state == "open"
                 && !c.catching_up
-                && b.on_desk(agent)
+                && b.on_page(agent)
                 && (m.stack.contains(&c.object_id) || works)
         });
-    let empty = (!any_open).then(|| {
-        if reading {
-            say("desk.empty.reading", "Catching up: reading your sessions on this device. Their open questions show here as they are read.", &[])
+    let empty = if !any_open {
+        Some(if reading {
+            say("group.empty.reading", "Catching up: reading your sessions on this device. Their open questions show here as they are read.", &[])
         } else {
-            say("desk.empty", "Questions land here.", &[])
-        }
-    });
-    let mut view = DeskView {
-        stack: rows.iter().map(|r| r.id.clone()).collect(),
+            say("group.empty", "Questions land here.", &[])
+        })
+    } else if chosen.is_some() && questions.is_empty() && reads.is_empty() {
+        Some(say("group.empty.chat", "Nothing open in this chat.", &[]))
+    } else {
+        None
+    };
+    let (chips, chips_shown, more) = chips_of(b, &chats, chosen.map(|c| c.id.as_str()), all_open);
+    let count = |key: &str, word: &str, n: usize| {
+        let s = n.to_string();
+        (n > 0).then(|| say(key, word, &[("n", &s)]))
+    };
+    let mut view = GroupView {
+        stack: questions
+            .iter()
+            .chain(reads.iter())
+            .map(|r| r.id.clone())
+            .collect(),
         empty,
         mode: mode.into(),
-        hello,
         reading: progress.filter(|_| reading),
+        head,
         goals,
-        knowledge,
-        rows,
-        waiting: questions,
-        blitz: (walk_len > 0 && !units.is_empty()).then(|| blitz_words(walk_len)),
+        chips,
+        chips_shown,
+        more,
+        questions_says: count("group.questions", "Waits for you", questions.len()),
+        reads_says: count("group.reads", "To read", reads.len()),
+        questions,
+        reads,
+        waiting,
+        blitz: blitz(b),
         slip: cut,
-        ..Default::default()
+        duck: None,
     };
-    // (beside Blitz, as on the web: where Blitz shows)
-    view.duck = view.blitz.as_ref().and_then(|_| duck_all(&view.rows));
-    super::off::fill_desk(b, off, &mut view);
+    view.duck = duck_all(view.questions.iter().chain(view.reads.iter()));
     view
 }
 
-/// The duck for all over the Desk's rows: a decision goes to its agent, a card to read is closed; a request, and a
-/// card not read here yet, are never touched (the web's `duckAll`, the iPhone's `DeskTools`).
-fn duck_all(rows: &[DeskRowView]) -> Option<super::DuckAllView> {
+/// The head of the group in view: its name, its faces, its ⋯ menu (a team's: the chats on no team have none).
+fn head(b: &Board, team: &str, chats: &[SessionRowView]) -> GroupHeadView {
+    let name = if b.no_team {
+        say("place.none", "No team", &[])
+    } else {
+        super::sidebar::team_name(
+            b.teams
+                .iter()
+                .find(|d| d.id == team)
+                .map(|d| d.name.as_str())
+                .unwrap_or(""),
+        )
+    };
+    let faces = chats
+        .iter()
+        .filter(|r| r.crowned)
+        .chain(chats.iter().filter(|r| !r.crowned))
+        .take(GROUP_FACES)
+        .map(|r| StackEdgeView {
+            id: r.id.clone(),
+            mark: r.mark.clone(),
+        })
+        .collect();
+    let mut menu = Vec::new();
+    if !b.no_team {
+        let (n, fresh) = super::knowledge::counts(b);
+        let entries = |n: u32| if n == 1 { "entry" } else { "entries" };
+        let (ns, fs) = (n.to_string(), fresh.to_string());
+        menu.push(GroupMenuItem {
+            key: "knowledge".into(),
+            label: say("group.menu.knowledge", "Knowledge", &[]),
+            count: match (n, fresh) {
+                (0, _) => None,
+                (_, 0) => Some(say(
+                    "group.menu.knowledge.count",
+                    format!("{ns} {}", entries(n)),
+                    &[("n", &ns)],
+                )),
+                _ => Some(say(
+                    "group.menu.knowledge.fresh",
+                    format!("{ns} {} · {fs} new", entries(n)),
+                    &[("n", &ns), ("new", &fs)],
+                )),
+            },
+            opens: Some(Screen::Knowledge {
+                query: String::new(),
+                filter: if fresh > 0 {
+                    "new".into()
+                } else {
+                    String::new()
+                },
+                open: String::new(),
+            }),
+            apart: false,
+        });
+        let w = super::wakeups::count(b).to_string();
+        menu.push(GroupMenuItem {
+            key: "wakeups".into(),
+            label: say("group.menu.wakeups", "Wakeups", &[]),
+            count: (w != "0")
+                .then(|| say("group.menu.wakeups.count", format!("{w} set"), &[("n", &w)])),
+            opens: Some(Screen::Wakeups),
+            apart: false,
+        });
+        menu.push(GroupMenuItem {
+            key: "board".into(),
+            label: say("group.menu.board", "Scribble Board", &[]),
+            count: None,
+            opens: Some(Screen::Scribble {
+                board_id: crate::scribble::team_board(team),
+            }),
+            apart: false,
+        });
+        // (a room without teams has its one list, no team to rename)
+        if !b.teams.is_empty() {
+            menu.push(GroupMenuItem {
+                key: "rename".into(),
+                label: say("group.menu.rename", "Rename group", &[]),
+                count: None,
+                opens: None,
+                apart: true,
+            });
+        }
+    }
+    let menu_says = say(
+        "group.menu.says",
+        format!("More of {}", name.en),
+        &[("name", &name.en)],
+    );
+    GroupHeadView {
+        team_id: if b.no_team {
+            super::NO_TEAM.into()
+        } else {
+            team.into()
+        },
+        name,
+        faces,
+        menu,
+        menu_says,
+    }
+}
+
+/// The filter row: "All", then the chats (the ones that need him first, then the ones with open cards, then the
+/// rest, each part in the list's order); how many stand in the row, and the "+n" for the rest. `chosen`: the chosen
+/// chat's key. `open`: the group's open cards.
+fn chips_of(
+    b: &Board,
+    chats: &[SessionRowView],
+    chosen: Option<&str>,
+    open: u32,
+) -> (Vec<ChipView>, u32, Option<Text>) {
+    if chats.is_empty() {
+        return (Vec::new(), 0, None);
+    }
+    let _ = b;
+    let rank = |r: &SessionRowView| {
+        if needs(r) {
+            0
+        } else if r.cards > 0 {
+            1
+        } else {
+            2
+        }
+    };
+    let mut order: Vec<&SessionRowView> = chats.iter().collect();
+    order.sort_by_key(|r| rank(r));
+    // (in front: every chat that needs him, at least CHIPS_SHOWN; the chosen one always)
+    let mut front = order
+        .iter()
+        .filter(|r| needs(r))
+        .count()
+        .max(CHIPS_SHOWN)
+        .min(order.len());
+    if let Some(at) = order.iter().position(|r| Some(r.id.as_str()) == chosen) {
+        if at >= front {
+            let r = order.remove(at);
+            order.insert(front, r);
+            front += 1;
+        }
+    }
+    let n = open.to_string();
+    let mut chips = vec![ChipView {
+        name: say("group.chip.all", "All", &[]),
+        count: open,
+        selected: chosen.is_none(),
+        says: if open == 1 {
+            say("group.chip.all.one", "All: 1 open card", &[("n", "1")])
+        } else {
+            say(
+                "group.chip.all.says",
+                format!("All: {n} open cards"),
+                &[("n", &n)],
+            )
+        },
+        ..Default::default()
+    }];
+    for r in &order {
+        let selected = Some(r.id.as_str()) == chosen;
+        let name = r.name.en.clone();
+        chips.push(ChipView {
+            session_id: r.id.clone(),
+            slug: r.slug.clone(),
+            name: r.name.clone(),
+            mark: r.mark.clone(),
+            count: 0,
+            needs: needs(r),
+            selected,
+            open_chat: selected.then(|| say("group.chip.open", "Open chat ›", &[])),
+            says: if r.blocked {
+                say(
+                    "group.chip.stopped",
+                    format!("{name}: stopped"),
+                    &[("name", &name)],
+                )
+            } else if r.open > 0 {
+                say(
+                    "group.chip.waits",
+                    format!("{name}: waits for you"),
+                    &[("name", &name)],
+                )
+            } else {
+                say("group.chip", name.as_str(), &[("name", &name)])
+            },
+        });
+    }
+    let rest = order.len() - front;
+    let more = (rest > 0).then(|| {
+        let s = rest.to_string();
+        say("group.chips.more", format!("+{s}"), &[("n", &s)])
+    });
+    (chips, front as u32 + 1, more)
+}
+
+/// A team's goals, foldable to their first line on this device.
+fn goals_of(b: &Board, team: &str) -> GoalsView {
+    let text = b
+        .teams
+        .iter()
+        .find(|d| d.id == team)
+        .map(|d| d.goals.as_str())
+        .unwrap_or("");
+    let lines: Vec<String> = if text.is_empty() {
+        Vec::new()
+    } else {
+        text.split('\n').map(String::from).collect()
+    };
+    let n = lines.len().to_string();
+    let foldable = lines.len() > 1;
+    let folded = foldable && b.lens.goals_folded.iter().any(|t| t == team);
+    let show_all = foldable.then(|| {
+        say(
+            "group.goals.show_all",
+            format!("Show all {n} goals"),
+            &[("n", &n)],
+        )
+    });
+    GoalsView {
+        toggle: if folded {
+            show_all.clone()
+        } else {
+            foldable.then(|| say("group.goals.fold", "Show the first goal only", &[]))
+        },
+        team_id: team.into(),
+        foldable,
+        show_all,
+        folded,
+        lines,
+    }
+}
+
+/// The duck for all over the page's rows: a decision goes to its agent, a card to read is closed; a request, and a
+/// card not read here yet, are never touched (the web's `duckAll`, the iPhone's `DeskWays`).
+fn duck_all<'r>(rows: impl Iterator<Item = &'r DeskRowView> + Clone) -> Option<super::DuckAllView> {
     let mine = |kind: &str| {
-        rows.iter()
+        rows.clone()
             .filter(|r| r.kind == kind && !r.loading && !r.newer)
             .count()
     };
@@ -271,7 +476,7 @@ fn duck_all(rows: &[DeskRowView]) -> Option<super::DuckAllView> {
         return None;
     }
     let card_ids = rows
-        .iter()
+        .clone()
         .filter(|r| matches!(r.kind.as_str(), "decision" | "info") && !r.loading && !r.newer)
         .map(|r| r.id.clone())
         .collect();
@@ -289,65 +494,61 @@ fn duck_all(rows: &[DeskRowView]) -> Option<super::DuckAllView> {
     };
     let (ask, yes) = match (asks > 0, n == 1) {
         (true, true) => (
-            say("desk.duck.ask.one", "Duck it?", args),
-            say("desk.duck.yes.one", "Yes, duck it", args),
+            say("duck.ask.one", "Duck it?", args),
+            say("duck.yes.one", "Yes, duck it", args),
         ),
         (true, false) => (
-            say("desk.duck.ask", format!("Duck all {n}?"), args),
-            say("desk.duck.yes", "Yes, duck them all", args),
+            say("duck.ask", format!("Duck all {n}?"), args),
+            say("duck.yes", "Yes, duck them all", args),
         ),
         (false, true) => (
-            say("desk.duck.ask.read_one", "Close it as read?", args),
-            say("desk.duck.yes.read_one", "Yes, read", args),
+            say("duck.ask.read_one", "Close it as read?", args),
+            say("duck.yes.read_one", "Yes, read", args),
         ),
         (false, false) => (
-            say(
-                "desk.duck.ask.read",
-                format!("Close all {n} as read?"),
-                args,
-            ),
-            say("desk.duck.yes.read", "Yes, all read", args),
+            say("duck.ask.read", format!("Close all {n} as read?"), args),
+            say("duck.yes.read", "Yes, all read", args),
         ),
     };
     let what = if reads == 0 {
-        say("desk.duck.what.go", format!("{goes} to the agents"), args)
+        say("duck.what.go", format!("{goes} to the agents"), args)
     } else if asks == 0 {
-        say("desk.duck.what.read", format!("{closed} closed"), args)
+        say("duck.what.read", format!("{closed} closed"), args)
     } else {
         say(
-            "desk.duck.what",
+            "duck.what",
             format!("{goes} to the agents, {closed} closed"),
             args,
         )
     };
     let tip = match (reads == 0, asks == 0, n == 1) {
         (true, _, true) => say(
-            "desk.duck.tip.one",
+            "duck.tip.one",
             "I don’t give a duck: for the one open decision",
             args,
         ),
         (true, _, false) => say(
-            "desk.duck.tip",
+            "duck.tip",
             format!("I don’t give a duck: for all {n} open decisions"),
             args,
         ),
         (false, true, true) => say(
-            "desk.duck.tip.read_one",
+            "duck.tip.read_one",
             "I don’t give a duck: close the one card to read",
             args,
         ),
         (false, true, false) => say(
-            "desk.duck.tip.read",
+            "duck.tip.read",
             format!("I don’t give a duck: close all {n} cards to read"),
             args,
         ),
         _ => say(
-            "desk.duck.tip.all",
+            "duck.tip.all",
             format!("I don’t give a duck: for all {n} open cards"),
             args,
         ),
     };
-    let short = say("desk.duck.short", "IDGAD", &[]);
+    let short = say("duck.short", "IDGAD", &[]);
     Some(super::DuckAllView {
         card_ids,
         tip,
@@ -355,214 +556,11 @@ fn duck_all(rows: &[DeskRowView]) -> Option<super::DuckAllView> {
         what,
         ask,
         yes,
-        no: say("desk.duck.no", "Cancel", &[]),
+        no: say("duck.no", "Cancel", &[]),
     })
 }
 
-/// The tiles under the Desk's questions (`DeskView.tiles`): what runs and is done (from `desk.off`), what the agents
-/// published (`all`, the newest first), the team's Scribble Board (`team`: none on All teams), and the team's
-/// Knowledge (from `desk.knowledge`; not on All teams). The board's
-/// line and count come with its small picture ([`board_tile`]).
-pub fn desk_tiles(
-    desk: &DeskView,
-    all: &[super::ArtifactView],
-    team: Option<&str>,
-) -> Vec<super::DeskTileView> {
-    let none = || say("desk.tile.none", "Nothing yet", &[]);
-    let work = super::DeskTileView {
-        key: "work".into(),
-        title: say("desk.tile.work", "Working / Done", &[]),
-        line: desk
-            .off
-            .as_ref()
-            .map(|o| o.line.clone())
-            .filter(|l| !l.en.is_empty())
-            .unwrap_or_else(none),
-        count: None,
-        opens: super::Screen::Off {
-            query: String::new(),
-        },
-        items: desk
-            .off
-            .as_ref()
-            .map(|o| o.running.iter().map(|r| r.id.clone()).collect())
-            .unwrap_or_default(),
-        team_id: None,
-        names: Vec::new(),
-        size: "wide".into(),
-        empty: desk.off.is_none(),
-        phone_row: 0,
-        brief: desk.off.as_ref().and_then(|o| {
-            let running = desk.running.as_ref().map_or(0, |d| d.count);
-            (running > 0 || o.closed > 0).then(|| {
-                let (r, d) = (running.to_string(), o.closed.to_string());
-                say(
-                    "desk.tile.work.brief",
-                    format!("{r} \u{b7} {d}"),
-                    &[("running", &r), ("done", &d)],
-                )
-            })
-        }),
-    };
-    let n = all.len();
-    let artifacts = super::DeskTileView {
-        key: "artifacts".into(),
-        title: say("desk.tile.artifacts", "Artifacts", &[]),
-        line: match n {
-            0 => none(),
-            1 => say("desk.tile.artifacts.one", "1 artifact", &[]),
-            _ => {
-                let s = n.to_string();
-                say(
-                    "desk.tile.artifacts.many",
-                    format!("{s} artifacts"),
-                    &[("n", &s)],
-                )
-            }
-        },
-        count: Some(n as u32),
-        opens: super::Screen::Artifacts {
-            kind: String::new(),
-        },
-        items: all.iter().take(4).map(|a| a.id.clone()).collect(),
-        team_id: None,
-        names: Vec::new(),
-        size: "narrow".into(),
-        empty: n == 0,
-        phone_row: 0,
-        brief: None,
-    };
-    let board = super::DeskTileView {
-        key: "board".into(),
-        title: say("desk.tile.board", "Scribble Board", &[]),
-        line: say("desk.tile.board.open", "Draw and think together", &[]),
-        count: None,
-        opens: super::Screen::Scribble {
-            board_id: team.map(crate::scribble::team_board).unwrap_or_default(),
-        },
-        items: Vec::new(),
-        team_id: team.map(String::from),
-        names: Vec::new(),
-        size: if desk.knowledge.is_some() {
-            "wide"
-        } else {
-            "full"
-        }
-        .into(),
-        empty: false,
-        phone_row: 0,
-        brief: None,
-    };
-    let knowledge = desk.knowledge.as_ref().map(|k| {
-        let n = k.count;
-        super::DeskTileView {
-            key: "knowledge".into(),
-            title: k.label.clone(),
-            line: match (n, k.fresh) {
-                (0, _) => none(),
-                (1, 0) => say("desk.tile.knowledge.one", "1 entry", &[]),
-                (_, 0) => {
-                    let s = n.to_string();
-                    say(
-                        "desk.tile.knowledge.many",
-                        format!("{s} entries"),
-                        &[("n", &s)],
-                    )
-                }
-                (_, f) => {
-                    let (s, f) = (n.to_string(), f.to_string());
-                    say(
-                        "desk.tile.knowledge.fresh",
-                        format!("{s} {} · {f} new", if n == 1 { "entry" } else { "entries" }),
-                        &[("n", &s), ("new", &f)],
-                    )
-                }
-            },
-            count: Some(n),
-            opens: super::Screen::Knowledge {
-                query: String::new(),
-                filter: if k.fresh > 0 {
-                    "new".into()
-                } else {
-                    String::new()
-                },
-                open: String::new(),
-            },
-            items: Vec::new(),
-            team_id: Some(k.team_id.clone()),
-            names: k.first.clone(),
-            size: "narrow".into(),
-            empty: n == 0,
-            phone_row: 0,
-            brief: None,
-        }
-    });
-    let mut tiles: Vec<super::DeskTileView> = [Some(work), Some(artifacts), Some(board), knowledge]
-        .into_iter()
-        .flatten()
-        .collect();
-    phone_rows(&mut tiles);
-    tiles
-}
-
-/// The phone's rows (`DeskTileView.phone_row`): a narrow tile waits for the next narrow one to share its row; any other
-/// tile takes the next row of its own.
-fn phone_rows(tiles: &mut [super::DeskTileView]) {
-    let (mut next, mut open) = (0u32, None::<u32>);
-    for t in tiles.iter_mut() {
-        if t.size == "narrow" {
-            if let Some(row) = open.take() {
-                t.phone_row = row;
-                continue;
-            }
-            open = Some(next);
-        }
-        t.phone_row = next;
-        next += 1;
-    }
-}
-
-/// The board tile once the team's board is read small (`ViewModel.thumbs`): how many elements it holds.
-pub fn board_tile(desk: &mut DeskView, thumbs: Option<&[super::ThumbView]>) {
-    let Some(tile) = desk.tiles.iter_mut().find(|t| t.key == "board") else {
-        return;
-    };
-    let Some(thumb) = thumbs
-        .unwrap_or_default()
-        .iter()
-        .find(|t| Some(&t.team_id) == tile.team_id.as_ref())
-    else {
-        return;
-    };
-    if thumb.state == "loading" {
-        return;
-    }
-    let n = thumb.count;
-    tile.count = Some(n as u32);
-    tile.empty = n == 0;
-    tile.line = match n {
-        0 => say("desk.tile.board.empty", "Empty", &[]),
-        1 => say("desk.tile.board.one", "1 element", &[]),
-        _ => {
-            let s = n.to_string();
-            say(
-                "desk.tile.board.many",
-                format!("{s} elements"),
-                &[("n", &s)],
-            )
-        }
-    };
-}
-
-/// One of the greetings, the same for a whole run of the app; a calm one when no question waits.
-pub fn greeting(calm: bool, dice: u32) -> Text {
-    let set: &[&str] = if calm { &CALM } else { &GREETINGS };
-    let at = ((dice as u64 * set.len() as u64) >> 32) as usize;
-    let key = format!("desk.hello.{}.{at}", if calm { "calm" } else { "greeting" });
-    say(&key, set[at], &[])
-}
-
-/// A count with a comma between the thousands, as the Desk writes it: 12,400.
+/// A count with a comma between the thousands, as the group page writes it: 12,400.
 fn grouped(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::new();
@@ -1107,368 +1105,16 @@ pub fn tiles(options: &[Opt], advised: &[String], multiple: bool, request: bool)
 
 #[cfg(test)]
 mod tests {
-    /// The tiles as the shells get them, for rooms like a real one: nothing at all, a team where nothing runs and nothing
-    /// is published, and many teams. Every tile always carries its list (`items`, also empty): a Desk without it did
-    /// not load on the web (17 October 2026).
-    #[test]
-    fn the_tiles_of_a_quiet_room_an_empty_team_and_many_teams() {
-        let shown = |r: &Room, team: Option<&str>| {
-            let m = r.model(NOW);
-            let mut vm = crate::views::ViewModel::default();
-            crate::views::render(
-                &m,
-                &Lens {
-                    artifacts: true,
-                    team: team.map(String::from),
-                    ..Default::default()
-                },
-                NOW,
-                &mut vm,
-            );
-            serde_json::to_value(&vm.desk).unwrap()["tiles"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-        };
-        let keys = |t: &[serde_json::Value]| {
-            t.iter()
-                .map(|t| t["key"].as_str().unwrap_or("").to_string())
-                .collect::<Vec<_>>()
-        };
-        let whole = |t: &[serde_json::Value]| {
-            t.iter().all(|t| {
-                t["items"].is_array()
-                    && t["names"].is_array()
-                    && t["size"].is_string()
-                    && t["empty"].is_boolean()
-                    && t["title"]["en"].is_string()
-                    && t["line"]["en"].is_string()
-            })
-        };
-        // nothing at all: the Desk invites the first agent, no tiles
-        assert!(shown(&Room::default(), None).is_empty());
-        // an empty team beside one with an agent: it invites its first agent too, no tiles
-        let mut r = Room {
-            teams: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } }),
-            ..Default::default()
-        };
-        r.session("a", None, true);
-        assert!(shown(&r, Some("lab")).is_empty());
-        // an agent's team where nothing has happened yet: its tiles, whole, saying there is nothing yet
-        let t = shown(&r, Some("main"));
-        assert!(
-            keys(&t).starts_with(&["work".into(), "artifacts".into(), "board".into()]),
-            "{t:?}"
-        );
-        assert!(whole(&t), "{t:?}");
-        assert_eq!(t[0]["line"]["en"], "Nothing yet");
-        assert_eq!(t[0]["items"], json!([]));
-        // many teams: each team in view has its tiles, whole
-        let mut r = Room::default();
-        let teams: serde_json::Map<String, serde_json::Value> = (0..12)
-            .map(|i| {
-                (
-                    format!("t{i}"),
-                    json!({ "name": format!("Team {i}"), "created_at": i + 1 }),
-                )
-            })
-            .collect();
-        r.teams = serde_json::Value::Object(teams);
-        for i in 0..12 {
-            let name = format!("s{i}");
-            r.session(&name, None, i % 2 == 0);
-            r.on_team(&name, &format!("t{i}"));
-        }
-        for i in [0, 5, 11] {
-            let t = shown(&r, Some(&format!("t{i}")));
-            assert!(whole(&t) && t.len() >= 3, "team t{i}: {t:?}");
-        }
-    }
-
-    #[test]
-    fn three_tiles_under_the_questions() {
-        use super::{board_tile, desk_tiles as tiles};
-        use crate::views::{ArtifactView, DeskView, OffHintView, Screen, ThumbView};
-        let mut desk = DeskView::default();
-        let t = tiles(&desk, &[], None);
-        assert_eq!(
-            t.iter()
-                .map(|t| (t.key.as_str(), t.title.en.as_str(), t.line.en.as_str()))
-                .collect::<Vec<_>>(),
-            [
-                ("work", "Working / Done", "Nothing yet"),
-                ("artifacts", "Artifacts", "Nothing yet"),
-                ("board", "Scribble Board", "Draw and think together"),
-            ]
-        );
-        assert_eq!(
-            (t[0].opens.clone(), t[1].opens.clone()),
-            (
-                Screen::Off {
-                    query: String::new()
-                },
-                Screen::Artifacts {
-                    kind: String::new()
-                }
-            )
-        );
-        desk.off = Some(OffHintView {
-            line: crate::views::words::say("x", "2 running \u{b7} 10 done", &[]),
-            ..Default::default()
-        });
-        let all: Vec<ArtifactView> = (0..6)
-            .map(|i| ArtifactView {
-                id: format!("a{i}"),
-                ..Default::default()
-            })
-            .collect();
-        desk.tiles = tiles(&desk, &all, Some("main"));
-        assert_eq!(desk.tiles[0].line.en, "2 running \u{b7} 10 done");
-        assert_eq!(
-            (
-                desk.tiles[1].line.en.as_str(),
-                desk.tiles[1].count,
-                desk.tiles[1].items.len()
-            ),
-            ("6 artifacts", Some(6), 4),
-            "the newest four shown"
-        );
-        assert_eq!(
-            (desk.tiles[2].team_id.as_deref(), &desk.tiles[2].opens),
-            (
-                Some("main"),
-                &Screen::Scribble {
-                    board_id: crate::scribble::team_board("main")
-                }
-            )
-        );
-        // the board's count once it is read small; another team's picture changes nothing
-        board_tile(
-            &mut desk,
-            Some(&[ThumbView {
-                team_id: "lab".into(),
-                state: "ready".into(),
-                count: 3,
-                ..Default::default()
-            }]),
-        );
-        assert_eq!(desk.tiles[2].count, None);
-        board_tile(
-            &mut desk,
-            Some(&[ThumbView {
-                team_id: "main".into(),
-                state: "ready".into(),
-                count: 27,
-                ..Default::default()
-            }]),
-        );
-        assert_eq!(
-            (desk.tiles[2].line.en.as_str(), desk.tiles[2].count),
-            ("27 elements", Some(27))
-        );
-        // a team's Knowledge is the fourth, counted
-        desk.knowledge = Some(crate::views::KnowledgeChipView {
-            team_id: "main".into(),
-            label: crate::views::words::say("knowledge.chip", "Knowledge", &[]),
-            count: 7,
-            ..Default::default()
-        });
-        let t = tiles(&desk, &all, Some("main"));
-        assert_eq!(
-            (
-                t.len(),
-                t[3].key.as_str(),
-                t[3].title.en.as_str(),
-                t[3].line.en.as_str(),
-                t[3].count
-            ),
-            (4, "knowledge", "Knowledge", "7 entries", Some(7))
-        );
-        assert_eq!(
-            t[3].opens,
-            Screen::Knowledge {
-                query: String::new(),
-                filter: String::new(),
-                open: String::new()
-            }
-        );
-        // the bento: sizes and quiet tiles from the core
-        assert_eq!(
-            t.iter()
-                .map(|t| (t.key.as_str(), t.size.as_str(), t.empty))
-                .collect::<Vec<_>>(),
-            [
-                ("work", "wide", false),
-                ("artifacts", "narrow", false),
-                ("board", "wide", false),
-                ("knowledge", "narrow", false)
-            ]
-        );
-        let mut quiet = DeskView {
-            knowledge: Some(crate::views::KnowledgeChipView {
-                team_id: "main".into(),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let q = tiles(&quiet, &[], Some("main"));
-        assert_eq!(
-            q.iter().map(|t| t.empty).collect::<Vec<_>>(),
-            [true, true, false, true],
-            "nothing runs, nothing published, no entries: quiet"
-        );
-        quiet.knowledge = None;
-        assert_eq!(
-            tiles(&quiet, &[], None)
-                .iter()
-                .map(|t| t.size.as_str())
-                .collect::<Vec<_>>(),
-            ["wide", "narrow", "full"],
-            "no Knowledge tile: the board takes the row"
-        );
-        let mut d2 = DeskView {
-            tiles: tiles(&quiet, &[], Some("main")),
-            ..Default::default()
-        };
-        board_tile(
-            &mut d2,
-            Some(&[ThumbView {
-                team_id: "main".into(),
-                state: "ready".into(),
-                count: 0,
-                ..Default::default()
-            }]),
-        );
-        assert!(d2.tiles[2].empty, "an empty board is quiet too");
-    }
-
-    /// A running card's row beside its agent's face: the title without its status word, nothing lost otherwise.
-    #[test]
-    fn a_short_title_drops_the_status_word_only() {
-        for (t, short) in [
-            (
-                "Arbeite an: kombinierte Netze (Reflexes, Cortex)",
-                "kombinierte Netze (Reflexes, Cortex)",
-            ),
-            (
-                "Working on: iPhone-Desk über alle Teams",
-                "iPhone-Desk über alle Teams",
-            ),
-            ("Pausiert: Coach-Ziele auf Grün", "Coach-Ziele auf Grün"),
-            (
-                "Kombinierte Netze: Aufzeichnung dafür heute starten?",
-                "Kombinierte Netze: Aufzeichnung dafür heute starten?",
-            ),
-            ("Done:", "Done:"),
-            ("", ""),
-            ("No colon at all", "No colon at all"),
-        ] {
-            assert_eq!(short_title(t), short, "{t}");
-        }
-    }
-
-    /// Working / Done says its numbers in short where its rows stand below: running · done; nothing while neither.
-    #[test]
-    fn the_work_tile_says_its_numbers_in_short() {
-        use super::desk_tiles as tiles;
-        use crate::views::{DeskView, DockView, OffHintView};
-        assert!(
-            tiles(&DeskView::default(), &[], None)[0].brief.is_none(),
-            "no hint: no numbers"
-        );
-        let quiet = DeskView {
-            off: Some(OffHintView::default()),
-            ..Default::default()
-        };
-        assert!(
-            tiles(&quiet, &[], None)[0].brief.is_none(),
-            "nothing runs or is done"
-        );
-        let busy = DeskView {
-            off: Some(OffHintView {
-                closed: 10,
-                ..Default::default()
-            }),
-            running: Some(DockView {
-                count: 2,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let t = tiles(&busy, &[], None);
-        assert_eq!(
-            t[0].brief.as_ref().map(|b| (b.en.as_str(), b.key.as_str())),
-            Some(("2 \u{b7} 10", "desk.tile.work.brief"))
-        );
-        assert!(t[1..].iter().all(|t| t.brief.is_none()));
-    }
-
-    /// The phone's two columns: Artifacts and Knowledge share a row; on All teams (no Knowledge) Artifacts stands
-    /// alone; an idle or empty team keeps the same rows, quiet.
-    #[test]
-    fn the_phone_pairs_the_narrow_tiles() {
-        use super::desk_tiles as tiles;
-        use crate::views::{DeskView, KnowledgeChipView};
-        fn rows(t: &[crate::views::DeskTileView]) -> Vec<(&str, u32)> {
-            t.iter().map(|t| (t.key.as_str(), t.phone_row)).collect()
-        }
-        let team = DeskView {
-            knowledge: Some(KnowledgeChipView {
-                team_id: "main".into(),
-                count: 3,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        assert_eq!(
-            rows(&tiles(&team, &[], Some("main"))),
-            [
-                ("work", 0),
-                ("artifacts", 1),
-                ("board", 2),
-                ("knowledge", 1)
-            ]
-        );
-        // All teams: no Knowledge, the board takes the whole width, Artifacts its own row
-        assert_eq!(
-            rows(&tiles(&DeskView::default(), &[], None)),
-            [("work", 0), ("artifacts", 1), ("board", 2)]
-        );
-        // an idle team (nothing runs, nothing published, no entries): the same rows, every tile quiet but the board
-        let idle = DeskView {
-            knowledge: Some(KnowledgeChipView {
-                team_id: "main".into(),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let t = tiles(&idle, &[], Some("main"));
-        assert_eq!(
-            rows(&t),
-            [
-                ("work", 0),
-                ("artifacts", 1),
-                ("board", 2),
-                ("knowledge", 1)
-            ]
-        );
-        assert!(
-            t.iter()
-                .all(|t| t.items.is_empty() && (t.key == "board" || t.empty)),
-            "{t:?}"
-        );
-    }
-
     use super::*;
     use crate::views::testroom::{dev, Room, MIN, NOW};
     use crate::views::Lens;
     use serde_json::json;
 
-    fn view_with(r: &Room, lens: &Lens) -> DeskView {
+    fn view_with(r: &Room, lens: &Lens) -> GroupView {
         let m = r.model(NOW);
-        desk(&Board::new(&m, lens, NOW))
+        group(&Board::new(&m, lens, NOW))
     }
-    fn view(r: &Room, team: Option<&str>) -> DeskView {
+    fn view(r: &Room, team: Option<&str>) -> GroupView {
         view_with(
             r,
             &Lens {
@@ -1493,11 +1139,18 @@ mod tests {
     fn en(t: &Option<Text>) -> &str {
         t.as_ref().map(|t| t.en.as_str()).unwrap_or("")
     }
+    /// Every row of the page, the questions first.
+    fn rows(v: &GroupView) -> Vec<&DeskRowView> {
+        v.questions.iter().chain(v.reads.iter()).collect()
+    }
+    fn blitz_en(v: &GroupView) -> &str {
+        v.blitz.as_ref().map(|b| b.says.en.as_str()).unwrap_or("")
+    }
 
-    /// A card that arrives in an archived session stays off the Desk (web and iPhone: the core's stack); a main whose
+    /// A card that arrives in an archived session stays off the group page (web and iPhone: the core's stack); a main whose
     /// agent connects again is no longer archived, and its card stands there.
     #[test]
-    fn a_card_of_an_archived_session_stays_off_the_desk() {
+    fn a_card_of_an_archived_session_stays_off_the_page() {
         let mut r = Room::default();
         r.session("main", None, false);
         r.session("helper", Some("main"), false);
@@ -1655,7 +1308,7 @@ mod tests {
     }
 
     #[test]
-    fn the_rows_are_the_walk_of_the_desk_in_view() {
+    fn the_rows_are_the_walk_of_the_group_in_view_the_questions_first() {
         let mut r = Room {
             teams: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "Lab", "created_at": 2 } }),
             ..Default::default()
@@ -1672,37 +1325,171 @@ mod tests {
         r.card("q-lab", "b-lab", "decision", "high");
         r.request("p1", "a", "ok");
         let v = view(&r, Some("main"));
-        // (what blocks first, then what is to read, then the questions, the oldest first: the core's order)
-        assert_eq!(v.stack, ["q-block", "p1", "q-read", "q-old", "q-new"]);
+        // (the questions in the core's order, what blocks first, the oldest first; then what is only to read)
+        assert_eq!(v.stack, ["q-block", "p1", "q-old", "q-new", "q-read"]);
         assert_eq!(
-            v.rows.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
+            rows(&v).iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
             v.stack
         );
-        assert_eq!((v.waiting, en(&v.blitz)), (4, "Blitz: 5 open cards"));
         assert_eq!(
-            v.rows.iter().map(|x| x.run).collect::<Vec<_>>(),
-            [5, 0, 0, 0, 0]
+            (en(&v.questions_says), en(&v.reads_says)),
+            ("Waits for you", "To read")
         );
-        assert!(v
-            .rows
+        assert_eq!(v.questions_says.as_ref().unwrap().args["n"], "4");
+        // (Blitz is every group's: the other team's question too)
+        assert_eq!((v.waiting, blitz_en(&v)), (4, "Blitz: 6 open cards"));
+        assert_eq!(
+            v.blitz
+                .as_ref()
+                .map(|b| (b.card.as_str(), b.scope.en.as_str())),
+            Some(("q-block", "all groups"))
+        );
+        assert!(rows(&v)
             .iter()
-            .all(|x| x.from.as_ref().is_some_and(|f| f.path == ["Work", "a"])));
-        // one team at a time: the other team's question stands on its own team only ("all" is no team: the first)
+            .all(|x| x.run == 0 && x.from.as_ref().is_some_and(|f| f.path == ["Work", "a"])));
+        // one group at a time: the other team's question stands on its own page only ("all" is no team: the first)
         assert_eq!(view(&r, Some("lab")).stack, ["q-lab"]);
         assert_eq!(view(&r, Some("all")).stack, v.stack);
         assert_eq!(view(&r, None).stack, v.stack);
-        // home: every team's questions on one Desk, in the core's order, and no team's goals
-        let home = view_with(
-            &r,
-            &Lens {
-                team: Some("main".into()),
-                desk_all: true,
-                ..Default::default()
-            },
+        assert_eq!(
+            walk_all(&Board::new(&r.model(NOW), &Lens::default(), NOW)).len(),
+            6
         );
-        assert!(home.stack.contains(&"q-lab".to_string()) && home.stack.len() == v.stack.len() + 1);
-        assert_eq!(home.waiting, v.waiting + 1);
-        assert!(home.goals.is_none());
+    }
+
+    /// The filter row: All first, the chats that need him in front, the rest behind "+n"; one chip filters the list.
+    #[test]
+    fn a_chip_per_chat_the_ones_that_need_him_in_front() {
+        let mut r = Room::default();
+        for name in ["a", "b", "c", "d", "e", "f"] {
+            r.session(name, None, true);
+        }
+        r.card("q-b", "b", "decision", "normal");
+        r.card("q-e", "e", "decision", "normal");
+        r.card("i-f", "f", "info", "normal");
+        r.card("q-d", "d", "decision", "high");
+        r.card("i-d", "d", "info", "normal");
+        r.settings.insert(dev("c"), json!({ "desk": "main" }));
+        let v = view(&r, None);
+        let names = |v: &GroupView| {
+            v.chips
+                .iter()
+                .map(|c| c.name.en.clone())
+                .collect::<Vec<_>>()
+        };
+        let n = names(&v);
+        assert_eq!(n[0], "All");
+        // (in front: the three that need him, then the one with a card to read; the rest behind "+2")
+        let mut front: Vec<String> = n[1..4].to_vec();
+        front.sort();
+        assert_eq!(front, ["b", "d", "e"]);
+        assert_eq!(n[4], "f");
+        assert_eq!((v.chips_shown, en(&v.more)), (4, "+3"));
+        assert!(v.chips[1..4].iter().all(|c| c.needs) && !v.chips[4].needs);
+        assert_eq!((v.chips[0].count, v.chips[0].selected), (5, true));
+        assert_eq!(v.chips[0].says.en, "All: 5 open cards");
+        assert!(v.chips.iter().all(|c| c.open_chat.is_none()));
+        // a chip chosen: only that chat's cards, and its way into the chat; it stands in front, also from behind "+n"
+        let lens = |chat: &str| Lens {
+            group_chat: Some(chat.into()),
+            ..Default::default()
+        };
+        let d = view_with(&r, &lens(&dev("d")));
+        assert_eq!(d.stack, ["q-d", "i-d"]);
+        assert_eq!(d.waiting, 3, "the title's number is the group's");
+        let chosen: Vec<&ChipView> = d.chips.iter().filter(|c| c.selected).collect();
+        assert_eq!(chosen.len(), 1);
+        assert_eq!(
+            (chosen[0].session_id.as_str(), en(&chosen[0].open_chat)),
+            (dev("d").as_str(), "Open chat ›")
+        );
+        let a = view_with(&r, &lens(&dev("a")));
+        assert!(a.stack.is_empty() && en(&a.empty) == "Nothing open in this chat.");
+        assert_eq!((a.chips_shown, en(&a.more)), (5, "+2"));
+        assert!(a.chips[..5].iter().any(|c| c.selected && c.name.en == "a"));
+        // (a chat by its short id, as the address names it; one that is not in the group: All)
+        let slug = view(&r, None).chips[1].slug.clone();
+        assert!(view_with(&r, &lens(&slug)).chips[1].selected);
+        let gone = view_with(&r, &lens("nobody"));
+        assert!(gone.chips[0].selected && gone.stack.len() == 5);
+        // (a group without chats has no chips)
+        assert!(view(&Room::default(), None).chips.is_empty());
+    }
+
+    /// The chats on no team are a group of their own while there are any ("No team"): their cards stand there and in
+    /// Blitz, and their page has no goals and no ⋯ menu.
+    #[test]
+    fn the_chats_on_no_team_are_a_group_of_their_own() {
+        let mut r = Room {
+            teams: json!({ "main": { "name": "Work", "created_at": 1 } }),
+            ..Default::default()
+        };
+        r.session("a", None, true);
+        r.session("loose", None, true);
+        r.settings.insert(dev("loose"), json!({ "desk": null }));
+        r.card("q-a", "a", "decision", "normal");
+        r.card("q-loose", "loose", "decision", "normal");
+        let work = view(&r, Some("main"));
+        assert_eq!(work.stack, ["q-a"]);
+        assert_eq!(blitz_en(&work), "Blitz: 2 open cards");
+        let none = view(&r, Some(crate::views::NO_TEAM));
+        assert_eq!(none.stack, ["q-loose"]);
+        let head = none.head.as_ref().unwrap();
+        assert_eq!(
+            (
+                head.team_id.as_str(),
+                head.name.en.as_str(),
+                head.menu.len()
+            ),
+            ("none", "No team", 0)
+        );
+        assert!(none.goals.is_none());
+        // (without such chats it is no group: the first team's page)
+        r.settings.insert(dev("loose"), json!({ "desk": "main" }));
+        assert_eq!(view(&r, Some(crate::views::NO_TEAM)).stack.len(), 2);
+    }
+
+    /// The head: the team's name, its faces, and the ⋯ menu that holds what the Desk's tiles held.
+    #[test]
+    fn the_head_names_the_group_and_its_menu() {
+        let mut r = Room {
+            teams: json!({ "main": { "name": "Fernly", "created_at": 1 } }),
+            ..Default::default()
+        };
+        for name in ["a", "b", "c", "d"] {
+            r.session(name, None, true);
+        }
+        let v = view(&r, None);
+        let head = v.head.unwrap();
+        assert_eq!(
+            (head.team_id.as_str(), head.name.en.as_str()),
+            ("main", "Fernly")
+        );
+        assert_eq!(head.faces.len(), 3);
+        assert_eq!(
+            head.menu
+                .iter()
+                .map(|m| (m.key.as_str(), m.label.en.as_str(), en(&m.count), m.apart))
+                .collect::<Vec<_>>(),
+            [
+                ("knowledge", "Knowledge", "", false),
+                ("wakeups", "Wakeups", "", false),
+                ("board", "Scribble Board", "", false),
+                ("rename", "Rename group", "", true)
+            ]
+        );
+        assert!(matches!(head.menu[0].opens, Some(Screen::Knowledge { .. })));
+        assert_eq!(head.menu[1].opens, Some(Screen::Wakeups));
+        assert!(matches!(head.menu[2].opens, Some(Screen::Scribble { .. })));
+        assert_eq!(head.menu[3].opens, None);
+        // (a room without teams: its one list has no team to rename)
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let head = view(&r, None).head.unwrap();
+        assert_eq!(head.name.en, "Personal");
+        assert!(head.menu.iter().all(|m| m.key != "rename"));
+        // (a new account: no group to name yet)
+        assert!(view(&Room::default(), None).head.is_none());
     }
 
     #[test]
@@ -1726,7 +1513,8 @@ mod tests {
         r.card("q4", "a", "info", "low");
         r.stars = json!({ "q3": { "at": 5 } });
         let v = view(&r, None);
-        let row = |id: &str| v.rows.iter().find(|x| x.id == id).unwrap();
+        let all = rows(&v);
+        let row = |id: &str| *all.iter().find(|x| x.id == id).unwrap();
         let q1 = row("q1");
         assert_eq!(
             (q1.sign.as_str(), en(&q1.sign_says), q1.words.as_str()),
@@ -1798,7 +1586,8 @@ mod tests {
         r.request("p-unread", "a", "header");
         r.request("p-read", "a", "ok");
         let v = view(&r, None);
-        let row = |id: &str| v.rows.iter().find(|x| x.id == id).unwrap();
+        let all = rows(&v);
+        let row = |id: &str| *all.iter().find(|x| x.id == id).unwrap();
         let l = row("q-loading");
         assert_eq!(
             (
@@ -1877,17 +1666,12 @@ mod tests {
     }
 
     #[test]
-    fn the_head_greets_and_says_what_is_not_quiet() {
+    fn the_page_invites_reads_and_says_who_is_cut_off() {
         let empty = Room::default();
         let v = view(&empty, None);
         assert_eq!(
-            (
-                v.mode.as_str(),
-                v.hello.is_none(),
-                en(&v.empty),
-                v.goals.is_none()
-            ),
-            ("invite", true, "Questions land here.", true)
+            (v.mode.as_str(), en(&v.empty), v.goals.is_none()),
+            ("invite", "Questions land here.", true)
         );
         let v = view_with(
             &empty,
@@ -1898,59 +1682,18 @@ mod tests {
             },
         );
         assert_eq!(
-            (v.mode.as_str(), en(&v.hello), en(&v.reading)),
-            (
-                "reading",
-                "Catching up…",
-                "Reading your history: 12,400 of 27,000"
-            )
+            (v.mode.as_str(), en(&v.reading)),
+            ("reading", "Reading your history: 12,400 of 27,000")
         );
         assert_eq!(en(&v.empty), "Catching up: reading your sessions on this device. Their open questions show here as they are read.");
 
         let mut r = Room::default();
         r.session("a", None, true)["heard_up_to"] = json!(40);
-        // nothing waits: a calm line, the same for the whole run
-        let calm = |dice: u32| {
-            en(&view_with(
-                &r,
-                &Lens {
-                    dice,
-                    ..Default::default()
-                },
-            )
-            .hello)
-            .to_string()
-        };
-        assert_eq!(
-            (calm(0), calm(u32::MAX), calm(u32::MAX / 2 + 1)),
-            (
-                "All quiet.".into(),
-                "Go outside.".into(),
-                "Carry on.".into()
-            )
-        );
+        assert_eq!(view(&r, None).mode, "group");
         assert_eq!(view(&r, None).blitz, None);
-        // still reading: no "all quiet" while questions may yet come in
-        assert_eq!(
-            en(&view_with(
-                &r,
-                &Lens {
-                    reading: true,
-                    ..Default::default()
-                }
-            )
-            .hello),
-            "Catching up…"
-        );
-        // an answer its session has not picked up
-        r.answered("late", "a", NOW - 5 * MIN, 50);
-        assert_eq!(en(&view(&r, None).hello), "An answer waits.");
-        r.answered("late2", "a", NOW - 5 * MIN, 51);
-        assert_eq!(en(&view(&r, None).hello), "Answers wait.");
-        // a session that is cut off says more, and has its line above the questions
+        // a session that is cut off has its line above the questions
         r.session("b", None, false)["link"] = json!({ "hears": "live", "attached": true, "exit": { "reason": "stdin", "claude": "alive" } });
         let v = view(&r, None);
-        assert_eq!(en(&v.hello), "One can’t hear you.");
         assert_eq!(
             v.slip
                 .iter()
@@ -1968,34 +1711,17 @@ mod tests {
                 "/mcp → trommi → Reconnect"
             )]
         );
-        // something to read is no question: Blitz walks it, the greeting stays calm
+        // something to read is no question: Blitz walks it
         r.card("q-read", "a", "info", "normal");
         let v = view(&r, None);
         assert_eq!(
-            (en(&v.hello), v.waiting, en(&v.blitz), v.empty.is_none()),
-            ("One can’t hear you.", 0, "Blitz: 1 open card", true)
-        );
-        let mut calm_room = Room::default();
-        calm_room.session("a", None, true);
-        calm_room.card("q-read", "a", "info", "normal");
-        let v = view(&calm_room, None);
-        assert_eq!(
-            (en(&v.hello), en(&v.blitz)),
-            ("All quiet.", "Blitz: 1 open card")
-        );
-        // a question waits: one of the greetings
-        r.card("q1", "a", "decision", "normal");
-        assert_eq!(en(&view(&r, None).hello), "Welcome back.");
-        assert_eq!(
-            en(&view_with(
-                &r,
-                &Lens {
-                    dice: u32::MAX,
-                    ..Default::default()
-                }
-            )
-            .hello),
-            "Ready when you are."
+            (
+                v.waiting,
+                blitz_en(&v),
+                v.empty.is_none(),
+                v.questions_says.is_none()
+            ),
+            (0, "Blitz: 1 open card", true, true)
         );
     }
 
@@ -2008,7 +1734,7 @@ mod tests {
         r.card("q-back", "a", "decision", "normal")["in_revision"] =
             json!({ "by": "me", "envelope_number": 500 });
         let v = view(&r, None);
-        assert_eq!((v.empty.is_none(), v.rows.len()), (true, 0));
+        assert_eq!((v.empty.is_none(), rows(&v).len()), (true, 0));
         let mut r = Room::default();
         r.session("a", None, true);
         r.card("q-works", "a", "info", "normal")["working"] = json!(true);
@@ -2027,10 +1753,10 @@ mod tests {
         let mut r = Room::default();
         r.session("a", None, true);
         r.card("q", "a", "decision", "normal");
-        let blitz = view(&r, None).blitz.unwrap();
+        let blitz = view(&r, None).blitz.unwrap().says;
         assert_eq!(
             (blitz.key.as_str(), blitz.args.get("n").map(String::as_str)),
-            ("desk.blitz.one", Some("1"))
+            ("blitz.one", Some("1"))
         );
     }
 
@@ -2110,7 +1836,7 @@ mod tests {
         );
         assert_eq!(
             (d.short.en.as_str(), d.short.key.as_str()),
-            ("IDGAD", "desk.duck.short"),
+            ("IDGAD", "duck.short"),
             "the short name, the question follows"
         );
         r.card("i1", "a", "info", "normal");

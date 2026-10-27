@@ -6,7 +6,7 @@
 //! `sessionDot`, `sessionStatus`, `sessionOpen`, `sessionLink`, `composeWords`; `app.mjs` `lineCard`):
 //! - the conversation is the session's chat, its cards' comments and what happened to its cards, in the hub's order;
 //!   an approval it waits for stands at the end;
-//! - a question stands where it was last put: open and waiting, as its Desk row with its answers; else one quiet
+//! - a question stands where it was last put: open and waiting, as its card row with its answers; else one quiet
 //!   line that says what became of it (answered, done, shredded, with the agent, put off);
 //! - rows of one side that follow each other within five minutes of the same day are a run; a new day gets a line;
 //! - a status line shows while it is working, waits on him or is put off with its card; a done one for ten minutes;
@@ -20,7 +20,7 @@
 //!   no way into a chat of their own; a status line of a helper names it (`StatusLineView::helper`).
 
 use super::board::{key_of, reads_as_info, Board, Lens, TALK_PAGE, UNHEARD_MS};
-use super::desk::{card_row, request_row, shown_title};
+use super::group::{card_row, request_row, shown_title};
 use super::sidebar::{hand_of, link_of};
 use super::talk::{
     card_ref, choices_of, count, event_label_by, events_of, in_order, items_of, Entry, Side, UNSENT,
@@ -119,7 +119,7 @@ pub fn link_note(link: &LinkWords, receipt: Option<Text>) -> LinkNoteView {
     }
 }
 
-/// A card that waits on the Desk now: open, read or not, and neither put off nor with its agent.
+/// A card that waits for the person now: open, read or not, and neither put off nor with its agent.
 fn waits(c: &Card, on_stack: &HashSet<&str>) -> bool {
     c.object_state == "open"
         && !c.catching_up
@@ -216,7 +216,7 @@ fn outcome(c: &Card) -> (&'static str, String) {
 }
 
 /// The page of the session `id` (its key, or its short id of the address); none when it is not on the board.
-/// A chat's cards to read that wait on the Desk, the newest first, never a task it still works on.
+/// A chat's cards to read that wait for the person, the newest first, never a task it still works on.
 fn to_read<'c>(cards: &[&'c Card], on_stack: &HashSet<&str>) -> Vec<&'c Card> {
     let mut reads: Vec<&Card> = cards
         .iter()
@@ -513,7 +513,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         }
     }
     in_order(&mut entries);
-    // An approval it waits for stands at the end of the conversation, as its Desk row (it has no thread of its own).
+    // An approval it waits for stands at the end of the conversation, as its card row (it has no thread of its own).
     let asks: Vec<&str> = b
         .all_fresh
         .iter()
@@ -627,7 +627,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
             let id = card_id.as_deref().unwrap_or("");
             let here = ask_at.get(id) == Some(&row.id);
             if here && fresh.contains(&id) {
-                // Open and waiting for him: its Desk row (the tiles answer, the words open the card's page).
+                // Open and waiting for him: its card row (the tiles answer, the words open the card's page).
                 let desk_row = match (m.cards.get(id), m.permissions.get(id)) {
                     (Some(c), _) => Some(card_row(b, c, Some(idx))),
                     (None, Some(p)) => Some(request_row(b, p, Some(idx))),
@@ -1607,7 +1607,7 @@ mod tests {
                 ("pp1", "ask")
             ]
         );
-        // (open and waiting: its Desk row, with its answers)
+        // (open and waiting: its card row, with its answers)
         let ask = v.talk[1].row.as_ref().unwrap();
         assert_eq!(
             (
@@ -2401,7 +2401,7 @@ mod tests {
         );
         assert_eq!(
             (v.talk[4].text.as_str(), v.talk[5].text.as_str()),
-            (crate::views::desk::NEEDS_NEWER, "(removed after 30 days)")
+            (crate::views::group::NEEDS_NEWER, "(removed after 30 days)")
         );
         assert_eq!(
             (v.talk[6].pending, v.talk[6].number, v.talk[6].text.as_str()),

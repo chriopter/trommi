@@ -17,7 +17,7 @@
 //! left out, and a block lists at most [`WORK_ITEMS_MAX`] lines.
 
 use super::board::Board;
-use super::desk::{shown_title, NEEDS_NEWER};
+use super::group::{shown_title, NEEDS_NEWER};
 use super::links::titled;
 use super::words::say;
 use super::{CardRefView, EventView, TalkRow, Text, WorkLineView, WorkView};
