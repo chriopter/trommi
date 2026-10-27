@@ -269,13 +269,50 @@ impl Doing<'_> {
             } => {
                 let files = self.files_of(attachments)?;
                 let mut content = Map::new();
-                let said = note.as_deref().map(str::trim).filter(|n| !n.is_empty());
+                let mut said = note
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|n| !n.is_empty())
+                    .map(str::to_string);
+                let mut marks = marks.clone();
+                // Handed back with nothing written (a Desk row, a sheet, another device): what the card's draft
+                // holds goes along, its words, its marks and its notes on options, and the draft is spent.
+                let draft_key = format!("draft/{card_id}");
+                let draft = (said.is_none() && marks.is_empty())
+                    .then(|| self.model.human.get(&draft_key))
+                    .flatten()
+                    .and_then(|r| r.value.as_object().cloned());
+                let spent = draft.is_some();
+                if let Some(d) = draft {
+                    said = d
+                        .get("note")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|n| !n.is_empty())
+                        .map(str::to_string);
+                    marks = d
+                        .get("marks")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    // (a note on an option reads as a mark on that option, as the card's own notes do)
+                    for (key, n) in d
+                        .get("notes")
+                        .and_then(Value::as_object)
+                        .into_iter()
+                        .flatten()
+                    {
+                        if let Some(n) = n.as_str().map(str::trim).filter(|n| !n.is_empty()) {
+                            marks.push(json!({ "id": format!("note-{key}"), "anchor": { "kind": "option", "key": key }, "text": n }));
+                        }
+                    }
+                }
                 let bare = if *rework {
                     crate::views::talk::HAND_BACK_TEXT
                 } else {
                     crate::views::talk::EXPLAIN_TEXT
                 };
-                content.insert("text".into(), json!(said.unwrap_or(bare)));
+                content.insert("text".into(), json!(said.as_deref().unwrap_or(bare)));
                 if !files.is_empty() {
                     content.insert("attachments".into(), Value::Array(files));
                 }
@@ -284,9 +321,12 @@ impl Doing<'_> {
                     json!(true),
                 );
                 if !marks.is_empty() {
-                    content.insert("marks".into(), Value::Array(marks.clone()));
+                    content.insert("marks".into(), Value::Array(marks));
                 }
                 self.write(action, None, Some(card_id), content)?;
+                if spent {
+                    let _ = self.registers(action, &[(draft_key, Value::Null)]);
+                }
                 self.wake(card_id);
                 Ok(())
             }

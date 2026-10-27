@@ -1285,6 +1285,85 @@ fn a_bare_hand_back_says_the_cores_words_and_takes_files_along() {
     assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
 }
 
+/// Handed back with nothing written (a Desk row, a sheet, another device), the card's draft goes along: its words as
+/// the hand-back's text, its marks and its notes on options as marks; the draft is spent. What the hand back carries
+/// itself leaves the draft alone.
+#[test]
+fn a_bare_hand_back_takes_the_cards_draft_along() {
+    use trommi_client_core::views::talk::HAND_BACK_TEXT;
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    let key = format!("draft/{card}");
+    let mark =
+        json!({ "id": "m1", "anchor": { "kind": "text", "quote": "Ship" }, "text": "too vague" });
+    let mut notes = serde_json::Map::new();
+    notes.insert("yes".into(), json!("only after the review"));
+    act(
+        &mut sim,
+        Action::Draft {
+            place: card.clone(),
+            text: "  Shorter, please.  ".into(),
+            keys: None,
+            notes: Some(notes),
+            marks: Some(vec![mark.clone()]),
+        },
+    );
+    assert!(human(&sim, &key).is_some(), "the draft is kept");
+    let hand_back = |note: Option<&str>| Action::HandBack {
+        card_id: card.clone(),
+        note: note.map(str::to_string),
+        rework: true,
+        marks: vec![],
+        attachments: vec![],
+    };
+    act(&mut sim, hand_back(None));
+    let backs = |sim: &Sim| -> Vec<serde_json::Value> {
+        sim.app.board().model.timelines[&format!("chat:card/{card}")]
+            .items
+            .values()
+            .map(|i| i["content"].clone())
+            .filter(|c| c["hand_back"] == json!(true))
+            .collect()
+    };
+    let back = backs(&sim).pop().expect("the hand-back");
+    assert_eq!(back["text"], json!("Shorter, please."), "{back}");
+    assert_eq!(
+        back["marks"],
+        json!([mark, { "id": "note-yes", "anchor": { "kind": "option", "key": "yes" }, "text": "only after the review" }]),
+        "{back}"
+    );
+    assert!(
+        human(&sim, &key).is_none_or(|d| d.0.is_null()),
+        "the draft is spent"
+    );
+
+    // Nothing in the draft any more: the core's words; words of its own leave a draft written since alone.
+    act(&mut sim, hand_back(None));
+    assert_eq!(backs(&sim).last().unwrap()["text"], json!(HAND_BACK_TEXT));
+    act(
+        &mut sim,
+        Action::Draft {
+            place: card.clone(),
+            text: "later".into(),
+            keys: None,
+            notes: None,
+            marks: None,
+        },
+    );
+    act(&mut sim, hand_back(Some("Again, with numbers.")));
+    let back = backs(&sim).pop().unwrap();
+    assert_eq!(
+        (back["text"].clone(), back.get("marks").cloned()),
+        (json!("Again, with numbers."), None)
+    );
+    assert_eq!(
+        human(&sim, &key).expect("the draft").0["note"],
+        json!("later")
+    );
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+}
+
 #[test]
 fn deleting_a_session_shreds_its_cards_and_archives_it() {
     let mut world = World::new();
