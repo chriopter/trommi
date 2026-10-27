@@ -211,7 +211,9 @@ pub struct Board<'a> {
     pub all_fresh: Vec<Fresh>,
     /// Every open card of the whole board, infos too, and every open approval request: what the Desk's rows and
     /// Blitz walk, in the stack's order, the requests last. The calm grey counts count these (one source for the
-    /// Desk, Blitz, the sidebar and the Chats list).
+    /// Desk, Blitz, the sidebar and the Chats list). An info its agent still works on is not here (the Desk's stack
+    /// leaves it out: Off your mind holds it), nor is what belongs to a session the list does not show: no row shows
+    /// it, so no count does either.
     pub all_cards: Vec<Fresh>,
     /// How many of his answers each session has not picked up for [`UNHEARD_MS`], by index of `agents`.
     pub unheard: HashMap<usize, u32>,
@@ -331,13 +333,19 @@ impl<'a> Board<'a> {
             if !reads_as_info(c) {
                 all_fresh.push(fresh.clone());
             }
-            all_cards.push(fresh);
+            // (of a session the list does not show: the Desk draws no row of it, so it counts on no team, not on the
+            //  first one, and not on home or Blitz either; the owner, 27 October 2026: a "2" on Personal and on none
+            //  of its chats)
+            if fresh.agent.is_some() {
+                all_cards.push(fresh);
+            }
         }
         for p in model.open_permission_ids.iter().filter_map(|id| model.permissions.get(id)) {
-            if p.permission_state == "pending" && !p.catching_up {
+            let agent = by_key.get(key_of(&p.session_id, &p.agent_device_id)).copied();
+            if p.permission_state == "pending" && !p.catching_up && agent.is_some() {
                 all_cards.push(Fresh {
                     id: p.object_id.clone(),
-                    agent: by_key.get(key_of(&p.session_id, &p.agent_device_id)).copied(),
+                    agent,
                     knocks: true,
                     permission: true,
                 });

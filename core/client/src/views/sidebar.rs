@@ -333,7 +333,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
     // ---- the bolt over every team (the phone's top right): the walk of every team's Desk, whatever team is in view;
     // its first card is the first of that Desk's rows (one whose session the list shows) ----
     let all = super::desk::walk_of(b, |_| true);
-    let shown = |id: &str| b.all_cards.iter().any(|f| f.id == id && f.agent.is_some()) && (b.model.cards.contains_key(id) || b.model.permissions.contains_key(id));
+    let shown = |id: &str| b.all_cards.iter().any(|f| f.id == id) && (b.model.cards.contains_key(id) || b.model.permissions.contains_key(id));
     let global_blitz = all.iter().find(|id| shown(id)).map(|id| GlobalBlitzView { card: id.to_string(), says: super::desk::blitz_words(all.len() as u32) });
 
     // (a teaser's "14:05" turns into "Yesterday" at midnight)
@@ -1129,5 +1129,40 @@ mod tests {
         let m2 = r2.model(NOW);
         let lens = Lens { seen: Some(Default::default()), ..Default::default() };
         assert!(!row(&sidebar(&Board::new(&m2, &lens, NOW)), "a").unread);
+    }
+    /// The grey counts leave out what no row shows (the owner, 27 October 2026: "kein unread badge hier in der gruppe
+    /// personal mehr. der ist für karten vorbehalten"; Personal showed a 2 and none of its chats a number): an info its
+    /// agent still works on (`start_task`) lies under Off your mind, not on the Desk, and counts nowhere; a card of a
+    /// session the list does not show counted on the first team and on home, though no row and no Blitz shows it.
+    #[test]
+    fn the_grey_counts_leave_out_work_in_progress_and_unknown_sessions() {
+        let mut r = Room { teams: two_teams(), ..Default::default() };
+        r.session("valiido", None, true);
+        r.session("bravo", None, true);
+        r.on_team("bravo", "lab");
+        r.card("w1", "valiido", "info", "low")["working"] = json!(true);
+        r.card("w2", "bravo", "info", "low")["working"] = json!(true);
+        r.card("ghost", "nobody", "info", "normal");
+        r.request("p-ghost", "nobody", "ok");
+        let counts = |r: &Room, team: &str| {
+            let m = r.model(NOW);
+            let lens = Lens { team: Some(team.into()), ..Default::default() };
+            let b = Board::new(&m, &lens, NOW);
+            let v = sidebar(&b);
+            let d = super::super::desk::desk(&b);
+            let tabs: Vec<u32> = v.teams.iter().map(|t| t.cards).collect();
+            let stacks: Vec<u32> = v.stacks.iter().map(|t| t.cards).collect();
+            let rows: Vec<u32> = v.stacks.iter().flat_map(|s| s.sessions.iter()).map(|x| x.cards).collect();
+            (tabs, stacks, rows, v.home.cards, d.stack.len(), d.blitz.map(|t| t.en), v.global_blitz.map(|g| g.card))
+        };
+        for team in ["main", "lab"] {
+            assert_eq!(counts(&r, team), (vec![0, 0], vec![0, 0], vec![0, 0], 0, 0, None, None), "nothing to count in {team}");
+        }
+        // (once it is done, the card comes to the Desk and counts where its chat stands, as Blitz walks it)
+        r.cards.iter_mut().find(|c| c["object_id"] == "w2").unwrap().as_object_mut().unwrap().remove("working");
+        assert_eq!(
+            counts(&r, "lab"),
+            (vec![0, 1], vec![0, 1], vec![0, 1], 1, 1, Some("Blitz: 1 open card".into()), Some("w2".into()))
+        );
     }
 }
