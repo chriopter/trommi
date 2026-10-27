@@ -29,9 +29,23 @@ test('the core opens the first lines, the shell draws them a row each and the re
 
 test('a row: sign, who, label, detail, the core age; the row is the way to its card', () => {
   const src = read('session.mjs')
-  assert.match(src, /\$\{lineMark\(l\)\}<span class="status-who">\$\{l\.who\}<\/span><span class="status-line"><b class="status-label">\$\{l\.label\}<\/b>\$\{l\.detail \? html`<span class="status-detail">\$\{l\.detail\}<\/span>` : ''\}<\/span>/)
+  assert.match(src, /\$\{lineMark\(l\)\}<span class="status-who">\$\{l\.who\}<\/span><span class="status-line"><b class="status-label">\$\{l\.label\}<\/b>\$\{l\.detail \? html`<span class="status-detail">\$\{l\.detail\}<\/span>` : ''\}\$\{l\.ran \? html`<span class="status-ran">\$\{l\.ran\.en\}<\/span>` : ''\}<\/span>/)
   assert.match(src, /<span class="status-age" aria-hidden="true">\$\{l\.age\.en\}<i>\$\{l\.card \? '›' : ''\}<\/i><\/span>\$\{agoSpan\(l\.updated_ms, 'offscreen'\)\}/)
   assert.match(src, /<div class="status-item" role="listitem">\$\{l\.card \? html`<a class="status-row" data-state="\$\{l\.state\}" data-nav href="\$\{cardPath\(l\.card, s, base\)\}">/)
+})
+
+test('a helper\'s line: what it is at in the detail\'s place and the core\'s "running 50m" / "finished" after it; waiting on helpers, the face is still', () => {
+  const src = read('session.mjs'), css = read('session.css'), rs = core()
+  assert.match(src, /\$\{l\.ran \? html`<span class="status-ran">\$\{l\.ran\.en\}<\/span>` : ''\}/)
+  assert.match(css, /\.status-ran \{ flex: none;[^}]*white-space: nowrap; \}/, 'never cut')
+  assert.match(rs, /"line\.helper\.running",\s+format!\("running \{\}", span\.en\)/)
+  assert.match(rs, /say\("line\.helper\.finished", "finished", &\[\]\)/)
+  // (the turn is over, helpers run: the core's words where the face stands, no dots, the rows under it as ever)
+  assert.match(src, /const waits = !s\.working && s\.waits_on_helpers/)
+  assert.match(src, /const w = s\.working \?\? \{ says: s\.waits_on_helpers \}/)
+  assert.match(src, /\$\{waits \? '' : html`<span class="dots" aria-hidden="true">/)
+  assert.match(src, /avatar\(\{ \.\.\.whoOf\(s\), online: true \}, \{ working: !waits \}\)/)
+  assert.match(rs, /"session\.waiting_helpers"/)
 })
 
 test('the wakeup in the rows\' columns: the core\'s short time, its note, "and 2 more"; no sentence made here', () => {

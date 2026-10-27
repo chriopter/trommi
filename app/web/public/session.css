@@ -632,6 +632,11 @@ a.status-row:hover, a.status-row:focus-visible { background: var(--sunken); }
 .status-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font: 500 var(--t-md)/1.3 var(--font); }
 .status-detail { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--faint); }
 .status-detail::before { content: "·"; margin: 0 .55em; }
+/* how long its helper runs ("running 50m", "finished"): after the detail, never cut */
+.status-ran { flex: none; color: var(--faint); white-space: nowrap; }
+.status-ran::before { content: "·"; margin: 0 .55em; }
+/* waiting on its helpers: the face still, no dots */
+.working-face[data-waits] .working-says { color: var(--muted); }
 .status-row[data-state="decision"] .status-label, .status-row[data-state="decision"] .status-mark { color: var(--urg-critical); }
 .status-row[data-state="working"] .status-mark { color: var(--accent); }
 .status-row:is([data-state="later"], [data-state="done"], [data-state="stale"]) .status-label { color: var(--muted); }

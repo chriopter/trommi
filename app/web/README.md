@@ -229,7 +229,11 @@ no page of every group: Blitz (`/blitz`, `G B`) walks every group's open cards (
   its face draws itself at the chat's end beside "… is working", with the core's "12 steps ›" at the right (a click
   shows the trail), and under it one row per status line, no box, in columns: sign, who works on it (the helper, else
   the agent), the label and the grey detail in what is left, age; the row opens its card. What waits on you comes
-  first; three stand open, the core's "4 more" from the fourth and "Show fewer" again. The next wakeup stands in the
+  first; three stand open, the core's "4 more" from the fourth and "Show fewer" again. A line a helper's trail stands
+  for says in its detail's place what the helper is at, and the core's "running 50m" or "finished" after it. When
+  the turn is over and its helpers still run (`SessionView.waits_on_helpers`), the face stands still, without dots,
+  beside the core's "… waits on 4 helpers", with the same rows under it; the side panel's "Now" says the core's
+  `activity` ("working", "waits on 4 helpers", "ready"). The next wakeup stands in the
   same columns under a hairline: its short time and its note.
   The title pill holds only the face, the name and a small chevron, grey while its agent is not connected; a click
   opens the chat's menu (Details opens the side panel, Questions Only, Files, Move to Team, Copy Invite Link, Delete).
