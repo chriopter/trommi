@@ -283,6 +283,7 @@ impl<C: Core, S: Shell> Loop<C, S> {
                 | Effect::Snapshot { .. }
                 | Effect::ShareInbox { .. }
                 | Effect::ForgetShared
+                | Effect::ForgetLocal
                 | Effect::NotifyContext { .. }
                 | Effect::SaveFile { .. }
                 | Effect::OpenUrl { .. }

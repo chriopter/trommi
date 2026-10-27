@@ -179,7 +179,7 @@ impl Sim {
             }
             self.log.push(effect.clone());
             match effect {
-                Effect::ShareInbox { .. } | Effect::ForgetShared => {}
+                Effect::ShareInbox { .. } | Effect::ForgetShared | Effect::ForgetLocal => {}
                 Effect::Render { delta, window: 0 } => {
                     self.view.apply(&delta).expect("renders come in order")
                 }

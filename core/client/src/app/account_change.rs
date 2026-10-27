@@ -430,8 +430,7 @@ impl App {
                         })
                         .collect(),
                 });
-                self.next_view.settings.logout =
-                    crate::views::settings::logout(&self.next_view.settings, self.demo);
+                self.next_view.settings.logout = self.logout_view();
                 let flow = self.changes.flow.as_mut().expect("a change");
                 if let Some(at) = flow.replace_at {
                     // the account read once more before a replacement: unchanged since the way in was set

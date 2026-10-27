@@ -686,3 +686,136 @@ fn logout_preserves_unread_public_notices_when_the_initial_notice_scan_failed() 
         "the exceptional path first validates the unread records"
     );
 }
+
+fn forgot(sim: &trommi_client_core::app::sim::Sim) -> usize {
+    sim.log
+        .iter()
+        .filter(|e| matches!(e, trommi_client_core::app::Effect::ForgetLocal))
+        .count()
+}
+
+/// A sign-out tells the shell to erase the rest of what the app keeps here (`Effect::ForgetLocal`) once, and only
+/// after the core's own erasing is through and the hub heard the sign-out and the public notice: a shell that
+/// starts anew at once cuts nothing off that the room needs.
+#[test]
+fn a_sign_out_hands_the_rest_of_the_erasing_to_the_shell_once_the_hub_heard_it() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    assert_eq!(forgot(&sim), 0, "a start forgets nothing");
+    sim.hold = true;
+    sim.send(Event::Action {
+        action: Action::Account {
+            action: AccountAction::SignOut,
+        },
+    });
+    assert_eq!(sim.view.phase, Phase::SignedOut);
+    assert!(
+        sim.device.1.is_empty(),
+        "the device's state is gone at once"
+    );
+    assert_eq!(
+        forgot(&sim),
+        0,
+        "not while the sign-out and the notice wait for the hub"
+    );
+    // the hub answers one request after the other: the shell hears it only after the last
+    let mut rounds = 0;
+    while let Some((id, request)) = sim.held.pop_front() {
+        assert_eq!(forgot(&sim), 0, "still waiting for {}", request.url);
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, got);
+        rounds += 1;
+        assert!(rounds < 50);
+    }
+    assert!(rounds >= 2, "the sign-out and the notice: {rounds}");
+    assert_eq!(forgot(&sim), 1, "once");
+    assert!(world.hub.borrow().departures.contains_key(&world.me));
+    assert!(
+        sim.cache.is_empty(),
+        "the notice was delivered: nothing is kept"
+    );
+    // nothing more of it later, and none at a new start over the wiped slot
+    sim.advance(60_000);
+    sim.restart();
+    sim.send(start());
+    assert_eq!(forgot(&sim), 1);
+}
+
+/// Offline, the shell is told as soon as the sign-out and the notice failed once: the notice stays in the cache
+/// space for the next start, which delivers it.
+#[test]
+fn an_offline_sign_out_hands_over_at_once_and_keeps_only_the_notice() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    let hub = sim.hub.take();
+    sim.send(Event::Action {
+        action: Action::Account {
+            action: AccountAction::SignOut,
+        },
+    });
+    assert_eq!(forgot(&sim), 1);
+    assert!(sim.device.1.is_empty());
+    assert!(
+        !sim.cache.is_empty() && sim.cache.keys().all(|k| k.starts_with("public-departure/")),
+        "only the notice is kept: {:?}",
+        sim.cache.keys().collect::<Vec<_>>()
+    );
+    sim.hub = hub;
+    sim.restart();
+    sim.send(start());
+    for _ in 0..10 {
+        sim.advance(120_000);
+    }
+    assert!(world.hub.borrow().departures.contains_key(&world.me));
+    assert!(
+        sim.cache.is_empty(),
+        "delivered on the next start, then gone"
+    );
+}
+
+/// The log out page says what this device has not sent yet: it would go unsent with the device.
+#[test]
+fn the_log_out_page_names_what_is_not_sent_yet() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    world.agent_asks("Ship it?");
+    assert!(world.stream(&mut sim));
+    let card = sim.view.group.rows()[0].id.clone();
+    assert!(sim.view.settings.logout.unsent.is_none(), "nothing waits");
+    sim.hold = true;
+    sim.send(Event::Action {
+        action: Action::Answer {
+            card_id: card,
+            choices: vec!["yes".into()],
+            note: None,
+            attachments: vec![],
+            option_notes: Default::default(),
+            trusted: false,
+            marks: vec![],
+        },
+    });
+    let unsent = sim
+        .view
+        .settings
+        .logout
+        .unsent
+        .clone()
+        .expect("the answer waits");
+    assert_eq!(unsent.key, "logout.unsent.one", "{}", unsent.en);
+    assert!(
+        unsent.en.contains("Logging out deletes it"),
+        "{}",
+        unsent.en
+    );
+    while let Some((id, request)) = sim.held.pop_front() {
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, got);
+    }
+    assert!(
+        sim.view.settings.logout.unsent.is_none(),
+        "sent: nothing to warn of"
+    );
+}

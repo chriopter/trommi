@@ -6288,16 +6288,20 @@ public enum CoreView {
     public var ask: Text
     /// "This is your only device. …", or the demo's line; none otherwise.
     public var note: Text?
+    /// "Not sent yet: 3 changes from this device …": what is still in this device's outbox and goes with it;
+    /// none when nothing waits.
+    public var unsent: Text?
     /// "Everything Trommi keeps on this device is deleted here; …"
     public var meta: Text
     /// "Log Out" (the button).
     public var go: Text
     public var cancel: Text
 
-    public init(title: Text = Text(), ask: Text = Text(), note: Text? = nil, meta: Text = Text(), go: Text = Text(), cancel: Text = Text()) {
+    public init(title: Text = Text(), ask: Text = Text(), note: Text? = nil, unsent: Text? = nil, meta: Text = Text(), go: Text = Text(), cancel: Text = Text()) {
       self.title = title
       self.ask = ask
       self.note = note
+      self.unsent = unsent
       self.meta = meta
       self.go = go
       self.cancel = cancel
@@ -6307,6 +6311,7 @@ public enum CoreView {
       case title = "title"
       case ask = "ask"
       case note = "note"
+      case unsent = "unsent"
       case meta = "meta"
       case go = "go"
       case cancel = "cancel"
@@ -6317,6 +6322,7 @@ public enum CoreView {
       self.title = try c.decode(Text.self, forKey: .title)
       self.ask = try c.decode(Text.self, forKey: .ask)
       self.note = try c.decodeIfPresent(Text.self, forKey: .note)
+      self.unsent = try c.decodeIfPresent(Text.self, forKey: .unsent)
       self.meta = try c.decode(Text.self, forKey: .meta)
       self.go = try c.decode(Text.self, forKey: .go)
       self.cancel = try c.decode(Text.self, forKey: .cancel)
@@ -6327,6 +6333,7 @@ public enum CoreView {
       try c.encode(title, forKey: .title)
       try c.encode(ask, forKey: .ask)
       try c.encodeIfPresent(note, forKey: .note)
+      try c.encodeIfPresent(unsent, forKey: .unsent)
       try c.encode(meta, forKey: .meta)
       try c.encode(go, forKey: .go)
       try c.encode(cancel, forKey: .cancel)

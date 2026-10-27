@@ -89,6 +89,7 @@ the typed events directly. There is no serialization of private protocol state t
 | `NotifyContext` | Replace the notification extension's read-only context/key copy, or clear both |
 | `ShareInbox` | Finish or release a native sealed-inbox claim after the preceding durable write |
 | `ForgetShared` | Erase the native shared inbox/key after account deletion or verified signed removal |
+| `ForgetLocal` | The device was forgotten and the core's erasing is through: erase everything else the app keeps on this device (browser storage, Cache Storage, service workers, other databases; a desktop's files), keep the cache space while it holds logout notices, start anew |
 | `Log` | Diagnostics without content, credentials, keys or tokens |
 
 A request's route, authentication, retry policy and caps come from the core. The executor disables implicit
@@ -177,7 +178,10 @@ Sign-out drops plaintext model/file/account buffers, ends the token and wipes th
 erased for removal only after the protocol checked its signed removal. A hub claim alone leaves state intact.
 Extension key clearing precedes erasure writes so a full disk cannot leave a stale key copy; failed erasure remains
 visible. `ForgetShared` is reserved for verified removal/account deletion, so launching an empty slot cannot erase
-legitimate shares waiting to be imported. See [Security](../../SECURITY.md).
+legitimate shares waiting to be imported. `ForgetLocal` follows every forgetting (sign-out, account deletion,
+verified removal) once the slot's deletion is written, the cache emptied, the sign-out answered and each public
+logout notice stored and tried once; a notice still undelivered stays in the cache space for the next start. The
+log out page names what the outbox still holds of this device's own sends (`LogoutView.unsent`): it goes unsent. See [Security](../../SECURITY.md).
 
 ## Native integrations
 

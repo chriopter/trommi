@@ -100,6 +100,14 @@ pub enum Effect {
     },
     /// The account was deleted or this device verified its removal: erase the native share inbox and its key.
     ForgetShared,
+    /// This device was forgotten (an explicit sign-out, the account deleted, a removal it checked itself) and the
+    /// core's own erasing is through: the slot's state is gone, the cache space holds nothing but the public logout
+    /// notices still to deliver, and the hub heard the sign-out and the first try of each notice. The shell now
+    /// erases everything else the app keeps on this device, outside the two stores (in a browser: local and session
+    /// storage, Cache Storage, service workers, every other database of the app; on a desktop: its leftover files),
+    /// and starts anew on a clean first screen. The cache space it leaves to the core; once it holds nothing, the
+    /// shell may delete it too. Sent once per forgetting.
+    ForgetLocal,
     /// Offer these bytes to the person as a file (download, share sheet, save dialog).
     SaveFile {
         name: String,

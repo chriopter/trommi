@@ -149,6 +149,9 @@ pub struct App {
     engine: Option<Engine>,
     departures: departures::Departures,
     logout_requested: bool,
+    /// A forgetting of this device whose erasing is under way: the I/O it still waits for before
+    /// `Effect::ForgetLocal` (`account_steps::forget_done`).
+    forgetting: Option<Vec<IoId>>,
     /// The timer the shell holds.
     timer: Option<u64>,
     /// What the engine reported for the person (until the views show them: W4).
@@ -263,6 +266,7 @@ impl App {
             engine: None,
             departures: Default::default(),
             logout_requested: false,
+            forgetting: None,
             timer: None,
             alerts: Vec::new(),
             sessions_not_joined: None,
@@ -1690,6 +1694,7 @@ impl App {
         self.dictation_tick(now_ms, &mut out);
         self.resume_departure(now_ms, &mut out);
         self.drive_departures(now_ms, &mut out);
+        self.forget_done(&mut out);
         if self.demo {
             if self.view_wake.is_some_and(|at| now_ms >= at) {
                 self.stale_views = true;
@@ -1998,8 +2003,7 @@ impl App {
                 &self.next_view.settings,
                 self.lens.utc_offset_min,
             );
-            self.next_view.settings.logout =
-                crate::views::settings::logout(&self.next_view.settings, self.demo);
+            self.next_view.settings.logout = self.logout_view();
             self.next_view.settings.team_counts = self.team_counts();
             self.show_team_deletes();
             (wake, std::mem::take(&mut shown))

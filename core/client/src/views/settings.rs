@@ -577,9 +577,22 @@ pub fn logout(s: &SettingsView, demo: bool) -> LogoutView {
         title: say("logout.title", "Log out", &[]),
         ask: say(again_key, format!("Log out of this device? You can log in again with {again}."), &[]),
         note,
+        unsent: None,
         meta: say("logout.meta", "Everything Trommi keeps on this device is deleted here; your account and your other devices stay as they are.", &[]),
         go: say("logout.go", "Log Out", &[]),
         cancel: say("logout.cancel", "Cancel", &[]),
+    }
+}
+
+/// The log out page's warning while `count` changes of this device still wait in its outbox (the messages and stored
+/// items it wrote: answers, chat lines, notes, and what the app writes on its own, such as read marks): logging out
+/// deletes them unsent. None while nothing waits.
+pub fn logout_unsent(count: usize) -> Option<Text> {
+    let n = count.to_string();
+    match count {
+        0 => None,
+        1 => Some(say("logout.unsent.one", "Not sent yet: 1 change from this device (an answer, a message or the like). Logging out deletes it.", &[("count", &n)])),
+        _ => Some(say("logout.unsent", format!("Not sent yet: {n} changes from this device (answers, messages and the like). Logging out deletes them."), &[("count", &n)])),
     }
 }
 
@@ -1134,6 +1147,27 @@ mod tests {
         assert_eq!(
             v.sections[2].rows[0].detail.as_ref().unwrap().en,
             "2 agents · 7 sessions: each with its own key"
+        );
+    }
+
+    #[test]
+    fn logout_counts_what_is_not_sent_yet() {
+        assert!(logout_unsent(0).is_none());
+        let one = logout_unsent(1).unwrap();
+        assert_eq!(
+            (one.key.as_str(), one.args["count"].as_str()),
+            ("logout.unsent.one", "1")
+        );
+        let more = logout_unsent(3).unwrap();
+        assert_eq!(more.key, "logout.unsent");
+        assert!(
+            more.en.starts_with("Not sent yet: 3 changes"),
+            "{}",
+            more.en
+        );
+        assert!(
+            logout(&SettingsView::default(), false).unsent.is_none(),
+            "the words alone know of no outbox"
         );
     }
 

@@ -2469,6 +2469,813 @@
       "base": 6,
       "parts": [
         {
+          "part": "settings",
+          "view": {
+            "account": null,
+            "agent_list": [
+              {
+                "count": {
+                  "args": {
+                    "sessions": "1"
+                  },
+                  "en": "1 session",
+                  "key": "agents.count"
+                },
+                "devices": [
+                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                ],
+                "host": "",
+                "key": "Agent · ",
+                "name": {
+                  "args": {
+                    "host": "an unnamed computer",
+                    "program": "Agent"
+                  },
+                  "en": "Agent on an unnamed computer",
+                  "key": "agents.name"
+                },
+                "online": false,
+                "program": "Agent",
+                "remove": {
+                  "args": {
+                    "host": "this computer",
+                    "n": "1",
+                    "program": "Agent"
+                  },
+                  "en": "Agent on this computer and its 1 session can read nothing new after this. The others get a new key; the history stays.",
+                  "key": "agents.remove"
+                },
+                "seen_ms": 1791900300010,
+                "sessions": [
+                  {
+                    "helpers": 0,
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "draw:(face)",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": false,
+                    "slug": "00000002eeee",
+                    "state": {
+                      "en": "away",
+                      "key": "agents.away"
+                    },
+                    "team": {
+                      "args": {
+                        "team": "Personal"
+                      },
+                      "en": "Personal team",
+                      "key": "agents.team"
+                    }
+                  }
+                ],
+                "state": {
+                  "en": "away · last seen",
+                  "key": "agents.seen"
+                },
+                "total": 1
+              }
+            ],
+            "agents": {
+              "args": {
+                "agents": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent · 1 session",
+              "key": "settings.agents"
+            },
+            "agents_lead": {
+              "args": {
+                "agents": "1",
+                "computers": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent on 1 computer · 1 session",
+              "key": "agents.lead"
+            },
+            "devices": [
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": true,
+                "role": "human",
+                "says": {
+                  "en": "this device",
+                  "key": "device.this_device"
+                },
+                "state": "this_device",
+                "this_device": true
+              },
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": false,
+                "role": "human",
+                "says": {
+                  "en": "never finished signing in",
+                  "key": "device.unfinished"
+                },
+                "state": "unfinished",
+                "this_device": false
+              }
+            ],
+            "devices_says": {
+              "args": {
+                "n": "2"
+              },
+              "en": "2 devices",
+              "key": "settings.devices"
+            },
+            "hub": "https://hub.example",
+            "key_epoch": 2,
+            "logout": {
+              "ask": {
+                "en": "Log out of this device? You can log in again with email and password.",
+                "key": "logout.ask.password"
+              },
+              "cancel": {
+                "en": "Cancel",
+                "key": "logout.cancel"
+              },
+              "go": {
+                "en": "Log Out",
+                "key": "logout.go"
+              },
+              "meta": {
+                "en": "Everything Trommi keeps on this device is deleted here; your account and your other devices stay as they are.",
+                "key": "logout.meta"
+              },
+              "title": {
+                "en": "Log out",
+                "key": "logout.title"
+              },
+              "unsent": {
+                "args": {
+                  "count": "1"
+                },
+                "en": "Not sent yet: 1 change from this device (an answer, a message or the like). Logging out deletes it.",
+                "key": "logout.unsent.one"
+              }
+            },
+            "push_choices": [
+              {
+                "detail": {
+                  "en": "every card",
+                  "key": "push.all.detail"
+                },
+                "icon": "bell",
+                "level": "all",
+                "title": {
+                  "en": "Yes",
+                  "key": "push.all"
+                }
+              },
+              {
+                "detail": {
+                  "en": "high, critical, a lost session",
+                  "key": "push.knocking.detail"
+                },
+                "icon": "knock",
+                "level": "knocking",
+                "title": {
+                  "en": "Only knocking",
+                  "key": "push.knocking"
+                }
+              },
+              {
+                "icon": "snooze",
+                "level": "off",
+                "title": {
+                  "en": "No",
+                  "key": "push.off"
+                }
+              }
+            ],
+            "remove_unfinished": {
+              "args": {
+                "n": "1"
+              },
+              "en": "Remove the device that never finished signing in",
+              "key": "settings.remove_unfinished.one"
+            },
+            "room": "00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "security": {
+              "lead": {
+                "en": "Every key that opens your data, and the self test.",
+                "key": "security.lead"
+              },
+              "sections": [
+                {
+                  "id": "key",
+                  "label": {
+                    "en": "Account key",
+                    "key": "security.key.label"
+                  },
+                  "notes": [
+                    {
+                      "en": "Opens everything; it is also your recovery key. The hub keeps it only sealed: a way in of your account opens it on a new device.",
+                      "key": "security.key.note"
+                    }
+                  ],
+                  "rows": [
+                    {
+                      "detail": {
+                        "args": {
+                          "epoch": "2",
+                          "hub": "https://hub.example"
+                        },
+                        "en": "key epoch 2 · https://hub.example",
+                        "key": "security.key.detail_hub"
+                      },
+                      "fingerprint": "(fingerprint)",
+                      "icon": "key",
+                      "id": "key",
+                      "open": "",
+                      "says": {
+                        "en": "everything",
+                        "key": "security.everything"
+                      },
+                      "title": {
+                        "en": "Account key",
+                        "key": "security.key"
+                      }
+                    },
+                    {
+                      "fingerprint": "(fingerprint)",
+                      "icon": "page",
+                      "id": "kit",
+                      "open": "kit",
+                      "title": {
+                        "en": "Emergency Kit",
+                        "key": "security.kit"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "devices",
+                  "label": {
+                    "en": "Authorized devices",
+                    "key": "security.devices.label"
+                  },
+                  "notes": [
+                    {
+                      "en": "Each of your devices reads everything, also what came before it was added.",
+                      "key": "security.devices.note"
+                    }
+                  ],
+                  "rows": [
+                    {
+                      "detail": {
+                        "en": "added: unknown",
+                        "key": "security.added_unknown"
+                      },
+                      "fingerprint": "(fingerprint)",
+                      "icon": "laptop",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "mark": {
+                        "en": "this device",
+                        "key": "security.this_device"
+                      },
+                      "open": "device",
+                      "says": {
+                        "en": "everything",
+                        "key": "security.everything"
+                      },
+                      "title": {
+                        "en": "Device",
+                        "key": ""
+                      }
+                    },
+                    {
+                      "detail": {
+                        "en": "added: unknown",
+                        "key": "security.added_unknown"
+                      },
+                      "fingerprint": "(fingerprint)",
+                      "icon": "laptop",
+                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "open": "device",
+                      "says": {
+                        "en": "everything",
+                        "key": "security.everything"
+                      },
+                      "title": {
+                        "en": "Device",
+                        "key": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "agents",
+                  "label": {
+                    "en": "Agents",
+                    "key": "security.agents.label"
+                  },
+                  "notes": [
+                    {
+                      "en": "An agent reads only its own session and the helper sessions it starts; a helper reads only its own.",
+                      "key": "security.agents.note"
+                    }
+                  ],
+                  "rows": [
+                    {
+                      "detail": {
+                        "args": {
+                          "agents": "1 agent · 1 session"
+                        },
+                        "en": "1 agent · 1 session: each with its own key",
+                        "key": "security.agents.detail"
+                      },
+                      "fingerprint": "(fingerprint)",
+                      "icon": "terminal",
+                      "id": "agents",
+                      "open": "agents",
+                      "says": {
+                        "en": "own session",
+                        "key": "security.own_session"
+                      },
+                      "title": {
+                        "en": "Agents",
+                        "key": "security.agents"
+                      }
+                    }
+                  ],
+                  "strong": {
+                    "en": "Nobody else, not the hub either: it sees which device is in which group, when, and how much.",
+                    "key": "security.hub"
+                  }
+                },
+                {
+                  "id": "check",
+                  "label": {
+                    "en": "Check",
+                    "key": "security.check.label"
+                  },
+                  "rows": [
+                    {
+                      "fingerprint": "(fingerprint)",
+                      "icon": "tick",
+                      "id": "proof",
+                      "open": "proof",
+                      "says": {
+                        "en": "runs on this device",
+                        "key": "security.proof.where"
+                      },
+                      "title": {
+                        "en": "Self Test",
+                        "key": "security.proof"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "team_delete": {
+              "cancel": {
+                "en": "Cancel",
+                "key": "team_delete.cancel"
+              },
+              "deleting": {
+                "en": "Deleting…",
+                "key": "team_delete.deleting"
+              },
+              "empty": {
+                "en": "Nothing stands on this team: only its name goes.",
+                "key": "team_delete.empty"
+              },
+              "hold": {
+                "en": "Hold to Delete",
+                "key": "team_delete.hold"
+              },
+              "lead": {
+                "en": "This goes for good, on every device:",
+                "key": "team_delete.lead"
+              },
+              "small": {
+                "en": "The server drops the encrypted data within 30 days. Your agents' computers keep nothing of it they can still open. This cannot be undone.",
+                "key": "team_delete.small"
+              }
+            },
+            "unfinished": [
+              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "base": 7,
+      "parts": [
+        {
+          "part": "settings",
+          "view": {
+            "account": null,
+            "agent_list": [
+              {
+                "count": {
+                  "args": {
+                    "sessions": "1"
+                  },
+                  "en": "1 session",
+                  "key": "agents.count"
+                },
+                "devices": [
+                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                ],
+                "host": "",
+                "key": "Agent · ",
+                "name": {
+                  "args": {
+                    "host": "an unnamed computer",
+                    "program": "Agent"
+                  },
+                  "en": "Agent on an unnamed computer",
+                  "key": "agents.name"
+                },
+                "online": false,
+                "program": "Agent",
+                "remove": {
+                  "args": {
+                    "host": "this computer",
+                    "n": "1",
+                    "program": "Agent"
+                  },
+                  "en": "Agent on this computer and its 1 session can read nothing new after this. The others get a new key; the history stays.",
+                  "key": "agents.remove"
+                },
+                "seen_ms": 1791900300010,
+                "sessions": [
+                  {
+                    "helpers": 0,
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "draw:(face)",
+                    "name": {
+                      "en": "00000002eeee",
+                      "key": "session.name"
+                    },
+                    "online": false,
+                    "slug": "00000002eeee",
+                    "state": {
+                      "en": "away",
+                      "key": "agents.away"
+                    },
+                    "team": {
+                      "args": {
+                        "team": "Personal"
+                      },
+                      "en": "Personal team",
+                      "key": "agents.team"
+                    }
+                  }
+                ],
+                "state": {
+                  "en": "away · last seen",
+                  "key": "agents.seen"
+                },
+                "total": 1
+              }
+            ],
+            "agents": {
+              "args": {
+                "agents": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent · 1 session",
+              "key": "settings.agents"
+            },
+            "agents_lead": {
+              "args": {
+                "agents": "1",
+                "computers": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent on 1 computer · 1 session",
+              "key": "agents.lead"
+            },
+            "devices": [
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": true,
+                "role": "human",
+                "says": {
+                  "en": "this device",
+                  "key": "device.this_device"
+                },
+                "state": "this_device",
+                "this_device": true
+              },
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": false,
+                "role": "human",
+                "says": {
+                  "en": "never finished signing in",
+                  "key": "device.unfinished"
+                },
+                "state": "unfinished",
+                "this_device": false
+              }
+            ],
+            "devices_says": {
+              "args": {
+                "n": "2"
+              },
+              "en": "2 devices",
+              "key": "settings.devices"
+            },
+            "hub": "https://hub.example",
+            "key_epoch": 2,
+            "logout": {
+              "ask": {
+                "en": "Log out of this device? You can log in again with email and password.",
+                "key": "logout.ask.password"
+              },
+              "cancel": {
+                "en": "Cancel",
+                "key": "logout.cancel"
+              },
+              "go": {
+                "en": "Log Out",
+                "key": "logout.go"
+              },
+              "meta": {
+                "en": "Everything Trommi keeps on this device is deleted here; your account and your other devices stay as they are.",
+                "key": "logout.meta"
+              },
+              "title": {
+                "en": "Log out",
+                "key": "logout.title"
+              }
+            },
+            "push_choices": [
+              {
+                "detail": {
+                  "en": "every card",
+                  "key": "push.all.detail"
+                },
+                "icon": "bell",
+                "level": "all",
+                "title": {
+                  "en": "Yes",
+                  "key": "push.all"
+                }
+              },
+              {
+                "detail": {
+                  "en": "high, critical, a lost session",
+                  "key": "push.knocking.detail"
+                },
+                "icon": "knock",
+                "level": "knocking",
+                "title": {
+                  "en": "Only knocking",
+                  "key": "push.knocking"
+                }
+              },
+              {
+                "icon": "snooze",
+                "level": "off",
+                "title": {
+                  "en": "No",
+                  "key": "push.off"
+                }
+              }
+            ],
+            "remove_unfinished": {
+              "args": {
+                "n": "1"
+              },
+              "en": "Remove the device that never finished signing in",
+              "key": "settings.remove_unfinished.one"
+            },
+            "room": "00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "security": {
+              "lead": {
+                "en": "Every key that opens your data, and the self test.",
+                "key": "security.lead"
+              },
+              "sections": [
+                {
+                  "id": "key",
+                  "label": {
+                    "en": "Account key",
+                    "key": "security.key.label"
+                  },
+                  "notes": [
+                    {
+                      "en": "Opens everything; it is also your recovery key. The hub keeps it only sealed: a way in of your account opens it on a new device.",
+                      "key": "security.key.note"
+                    }
+                  ],
+                  "rows": [
+                    {
+                      "detail": {
+                        "args": {
+                          "epoch": "2",
+                          "hub": "https://hub.example"
+                        },
+                        "en": "key epoch 2 · https://hub.example",
+                        "key": "security.key.detail_hub"
+                      },
+                      "fingerprint": "(fingerprint)",
+                      "icon": "key",
+                      "id": "key",
+                      "open": "",
+                      "says": {
+                        "en": "everything",
+                        "key": "security.everything"
+                      },
+                      "title": {
+                        "en": "Account key",
+                        "key": "security.key"
+                      }
+                    },
+                    {
+                      "fingerprint": "(fingerprint)",
+                      "icon": "page",
+                      "id": "kit",
+                      "open": "kit",
+                      "title": {
+                        "en": "Emergency Kit",
+                        "key": "security.kit"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "devices",
+                  "label": {
+                    "en": "Authorized devices",
+                    "key": "security.devices.label"
+                  },
+                  "notes": [
+                    {
+                      "en": "Each of your devices reads everything, also what came before it was added.",
+                      "key": "security.devices.note"
+                    }
+                  ],
+                  "rows": [
+                    {
+                      "detail": {
+                        "en": "added: unknown",
+                        "key": "security.added_unknown"
+                      },
+                      "fingerprint": "(fingerprint)",
+                      "icon": "laptop",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "mark": {
+                        "en": "this device",
+                        "key": "security.this_device"
+                      },
+                      "open": "device",
+                      "says": {
+                        "en": "everything",
+                        "key": "security.everything"
+                      },
+                      "title": {
+                        "en": "Device",
+                        "key": ""
+                      }
+                    },
+                    {
+                      "detail": {
+                        "en": "added: unknown",
+                        "key": "security.added_unknown"
+                      },
+                      "fingerprint": "(fingerprint)",
+                      "icon": "laptop",
+                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "open": "device",
+                      "says": {
+                        "en": "everything",
+                        "key": "security.everything"
+                      },
+                      "title": {
+                        "en": "Device",
+                        "key": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "agents",
+                  "label": {
+                    "en": "Agents",
+                    "key": "security.agents.label"
+                  },
+                  "notes": [
+                    {
+                      "en": "An agent reads only its own session and the helper sessions it starts; a helper reads only its own.",
+                      "key": "security.agents.note"
+                    }
+                  ],
+                  "rows": [
+                    {
+                      "detail": {
+                        "args": {
+                          "agents": "1 agent · 1 session"
+                        },
+                        "en": "1 agent · 1 session: each with its own key",
+                        "key": "security.agents.detail"
+                      },
+                      "fingerprint": "(fingerprint)",
+                      "icon": "terminal",
+                      "id": "agents",
+                      "open": "agents",
+                      "says": {
+                        "en": "own session",
+                        "key": "security.own_session"
+                      },
+                      "title": {
+                        "en": "Agents",
+                        "key": "security.agents"
+                      }
+                    }
+                  ],
+                  "strong": {
+                    "en": "Nobody else, not the hub either: it sees which device is in which group, when, and how much.",
+                    "key": "security.hub"
+                  }
+                },
+                {
+                  "id": "check",
+                  "label": {
+                    "en": "Check",
+                    "key": "security.check.label"
+                  },
+                  "rows": [
+                    {
+                      "fingerprint": "(fingerprint)",
+                      "icon": "tick",
+                      "id": "proof",
+                      "open": "proof",
+                      "says": {
+                        "en": "runs on this device",
+                        "key": "security.proof.where"
+                      },
+                      "title": {
+                        "en": "Self Test",
+                        "key": "security.proof"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "team_delete": {
+              "cancel": {
+                "en": "Cancel",
+                "key": "team_delete.cancel"
+              },
+              "deleting": {
+                "en": "Deleting…",
+                "key": "team_delete.deleting"
+              },
+              "empty": {
+                "en": "Nothing stands on this team: only its name goes.",
+                "key": "team_delete.empty"
+              },
+              "hold": {
+                "en": "Hold to Delete",
+                "key": "team_delete.hold"
+              },
+              "lead": {
+                "en": "This goes for good, on every device:",
+                "key": "team_delete.lead"
+              },
+              "small": {
+                "en": "The server drops the encrypted data within 30 days. Your agents' computers keep nothing of it they can still open. This cannot be undone.",
+                "key": "team_delete.small"
+              }
+            },
+            "unfinished": [
+              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "base": 8,
+      "parts": [
+        {
           "part": "sidebar",
           "view": {
             "badge": 0,
@@ -3319,7 +4126,7 @@
       "written": false
     },
     "phase": "live",
-    "rev": 7,
+    "rev": 9,
     "settings": {
       "account": null,
       "agent_list": [

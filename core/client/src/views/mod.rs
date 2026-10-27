@@ -2492,6 +2492,10 @@ pub struct LogoutView {
     /// "This is your only device. …", or the demo's line; none otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<Text>,
+    /// "Not sent yet: 3 changes from this device …": what is still in this device's outbox and goes with it;
+    /// none when nothing waits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unsent: Option<Text>,
     /// "Everything Trommi keeps on this device is deleted here; …"
     pub meta: Text,
     /// "Log Out" (the button).

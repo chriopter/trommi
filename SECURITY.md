@@ -48,6 +48,11 @@ stores and relays encrypted data; the web app is served separately, at app.tromm
   and commits the normal removal; the hub cannot forge that authority. Offline logout retries after a restart.
   The hub briefly holds bounded requests for an own join still in flight, so cancelling an unfinished sign-in
   does not leave an unremovable unnamed key. Activity times and missing profiles never authorize cleanup.
+  Once that is written and the hub heard the sign-out and the notice (or could not be reached), the web app deletes
+  everything else it keeps in this browser too: local and session storage, its Cache Storage, its service worker
+  and every other database of the app; every open tab starts anew on the first screen. Only a notice the hub has not
+  acknowledged yet stays, until a later start delivers it. The Linux app deletes its files for drawing. The log out
+  page says how many of this device's own changes (answers, messages and the like) are not sent yet: they go with it.
 - A removed device loses access at once.
 - A device deletes its data only after checking the signed removal itself, never on the hub's word alone.
 - A new device starts from the hub's list of what is open and reads what is new. Older entries are fetched when

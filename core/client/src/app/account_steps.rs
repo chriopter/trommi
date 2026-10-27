@@ -206,6 +206,23 @@ impl App {
         }
     }
 
+    /// The log out page: its words, and what this device has not sent yet (the outbox's messages and stored items,
+    /// which go unsent with it; the MLS bookkeeping beside them is not counted).
+    pub(super) fn logout_view(&self) -> crate::views::LogoutView {
+        use trommi_core::store::OutboxKind;
+        let mut view = crate::views::settings::logout(&self.next_view.settings, self.demo);
+        let unsent = self.engine.as_ref().map_or(0, |engine| {
+            engine
+                .device()
+                .outbox()
+                .iter()
+                .filter(|e| matches!(e.kind, OutboxKind::Message | OutboxKind::Envelope))
+                .count()
+        });
+        view.unsent = crate::views::settings::logout_unsent(unsent);
+        view
+    }
+
     /// Signs out: the token ends at the hub, and everything this slot stored goes.
     pub(super) fn sign_out(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
         if self.engine.is_none() {
@@ -298,6 +315,15 @@ impl App {
         if let Some(engine) = self.engine.as_mut() {
             old.extend(engine.forget());
         }
+        // (the sign-out's own request: the shell's erasing waits for its answer, so it is not cut off)
+        let mut waits: Vec<IoId> = self
+            .steps
+            .asked
+            .iter()
+            .filter(|(_, step)| matches!(step, Step::SignOut))
+            .map(|(id, _)| *id)
+            .collect();
+        waits.extend(self.forgetting.take().unwrap_or_default());
         let departures = std::mem::take(&mut self.departures);
         let public_pending: Vec<_> = self
             .pending
@@ -348,6 +374,27 @@ impl App {
         };
         let id = self.io(pending);
         out.push(Effect::Store { id, op });
+        waits.push(id);
+        self.forgetting = Some(waits);
+    }
+
+    /// `Effect::ForgetLocal` once a forgetting's erasing is through: the slot's deletion written, the cache space
+    /// read and emptied, the sign-out heard by the hub, each public logout notice stored and tried once (one that
+    /// failed waits for its retry in the cache space, which the shell keeps). Each request ends: the shell's own
+    /// timeouts bound the wait.
+    pub(super) fn forget_done(&mut self, out: &mut Vec<Effect>) {
+        let Some(waits) = self.forgetting.as_ref() else {
+            return;
+        };
+        let busy = waits.iter().any(|id| self.pending.contains_key(id))
+            || self.pending.values().any(|p| {
+                p.is_departure()
+                    || matches!(p, Pending::ForgetWrite | Pending::Wipe | Pending::WipeKeys)
+            });
+        if !busy {
+            self.forgetting = None;
+            out.push(Effect::ForgetLocal);
+        }
     }
 
     /// The keys the cache space holds, all to go.
@@ -367,6 +414,9 @@ impl App {
                 delete: keys,
             },
         });
+        if let Some(waits) = self.forgetting.as_mut() {
+            waits.push(id);
+        }
     }
 
     pub(super) fn step_answered(

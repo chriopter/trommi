@@ -1807,6 +1807,9 @@ export interface LogoutView {
   ask: Text
   /** "This is your only device. …", or the demo's line; none otherwise. */
   note?: Text
+  /** "Not sent yet: 3 changes from this device …": what is still in this device's outbox and goes with it;
+   *  none when nothing waits. */
+  unsent?: Text
   /** "Everything Trommi keeps on this device is deleted here; …" */
   meta: Text
   /** "Log Out" (the button). */
