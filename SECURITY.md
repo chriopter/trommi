@@ -154,7 +154,7 @@ stores and relays encrypted data; the web app is served separately, at app.tromm
   your device runs (in the browser loaded from app.trommi.com, like the rest of the web app; see Known limits).
 
 ## Signing
-- Releases are built locally by the maintainer and published by hand; there is no CI and no automatic delivery.
+- Releases are built locally by the maintainer and published by hand; there is no automatic delivery.
 - The connector has its own signed release series (`connector-v<N>`): a list of its files with their hashes, signed
   with Ed25519. A connector is released only after its tests and the core's passed locally for that commit.
 - Public key: `release/public-key.pem`, compiled into the connector and held by `install.sh`. The private key stays
@@ -185,8 +185,9 @@ stores and relays encrypted data; the web app is served separately, at app.tromm
 - The hub's logs contain no personal data (no e-mail or IP addresses, no tokens).
 
 ## Repository
-- Changes are made on branches and merged into `main` by the maintainer, with the tests passing locally. Nothing is
-  built, signed or deployed from this repository by a machine.
+- Changes are made on branches and merged into `main` by the maintainer, with the tests passing locally. One GitHub check
+  (`.github/workflows/check.yml`) checks pushes to `main` and pull requests: read-only, no secret. Nothing is
+  signed, released or deployed from this repository by a machine.
 - No secrets, keys or private e-mail addresses are committed.
 - Toolchain and dependency versions are pinned (lockfiles).
 

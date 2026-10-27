@@ -251,8 +251,8 @@ xcodebuild build -project Trommi.xcodeproj -scheme TrommiMac -destination 'platf
   CODE_SIGNING_ALLOWED=NO -jobs 4
 ```
 
-Signed builds need the existing Apple team configuration; no secret belongs in the repository. There is no CI:
-releases are built by hand on a Mac.
+Signed builds need the existing Apple team configuration; no secret belongs in the repository. No machine
+builds releases: they are built by hand on a Mac.
 
 - `TrommiApp/AppStore/ship-local.sh [REF]`: TestFlight from a clean worktree of the ref; `--dry-run` validates
   without uploading. It requires the owner's preconfigured distribution environment. `TrommiApp/AppStore/asc.py`

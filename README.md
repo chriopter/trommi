@@ -239,7 +239,7 @@ flowchart LR
 <details>
 <summary><b>Releases</b> · built and released by hand</summary>
 
-There is no CI. The maintainer builds, checks and releases each part by hand on their own machines, when needed:
+No machine builds or releases anything. The maintainer builds, checks and releases each part by hand on their own machines, when needed:
 
 - **Before a release:** the tests of the part and of the core pass locally (see Build and tests).
 - **The connector** gets a signed release series, `connector-v<N>`: one `manifest.json` (each file's size and
@@ -500,8 +500,9 @@ The whole list, with everything that is in place: [SECURITY.md](SECURITY.md).
 
 ## Development
 
-Work happens on branches; finished work is merged into `main` by hand, with the tests green locally. There is no CI:
-builds and releases are made by hand (see Releases above).
+Work happens on branches; finished work is merged into `main` by hand, with the tests green locally. One GitHub check
+(`.github/workflows/check.yml`: cargo check, rustfmt, the web app's typecheck and light tests) gives pushes to `main` and
+pull requests their tick; it reads no secret and ships nothing. Builds and releases are made by hand (see Releases above).
 
 The hub shares one read scope for full and brief Desks and settled objects. Group membership and archive
 filters are unchanged; membership tests use a sorted lookup set, and unfiltered reads do not load the archive
