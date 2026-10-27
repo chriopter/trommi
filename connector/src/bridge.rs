@@ -3054,6 +3054,19 @@ impl Bridge {
                 };
                 let mut lines = vec![first];
                 lines.extend(marks_block(card.as_ref(), &marks));
+                // (a hand back or "What??" says "take the comments under the card into account": they come along,
+                //  the agent has no other way to read the card's thread)
+                if let Some(k) = card.as_ref().filter(|_| {
+                    about_card.is_some()
+                        && (c.get("hand_back").is_some_and(truthy)
+                            || c.get("explain").is_some_and(truthy))
+                }) {
+                    lines.extend(comments_block(
+                        &self.client.lock().model(),
+                        k,
+                        cmd.envelope_number,
+                    ));
+                }
                 for k in &copied {
                     lines.push(String::new());
                     lines.push(match k {
@@ -3602,6 +3615,86 @@ fn brief(said: &str, max: usize) -> String {
         line
     }
 }
+/// The human's comments in a card's thread that a hand back (or "What??", envelope `now`) refers to: those written
+/// after the card's current version and after the hand back before this one, oldest first, each with its pinned
+/// notes and the names of its files. Nothing when there are none.
+fn comments_block(m: &trommi_client_core::model::Model, card: &Card, now: u64) -> Vec<String> {
+    let Some(t) = m.timelines.get(&format!("chat:card/{}", card.object_id)) else {
+        return vec![];
+    };
+    let number = |i: &Value| {
+        i.get("envelope_number")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+    };
+    let human = |i: &Value| {
+        let recipient = i.get("recipient_device_id").and_then(Value::as_str);
+        m.is_human(&s(i.get("sender_device_id")), recipient)
+    };
+    let items: Vec<(u64, &Map<String, Value>)> = t
+        .items
+        .values()
+        .filter_map(|i| {
+            let item = Value::Object(i.clone());
+            let n = number(&item);
+            let content = i.get("content").and_then(Value::as_object)?;
+            (n > 0 && n < now && human(&item)).then_some((n, content))
+        })
+        .collect();
+    let flag = |c: &Map<String, Value>, k: &str| c.get(k).is_some_and(truthy);
+    let since = items
+        .iter()
+        .filter(|(_, c)| flag(c, "hand_back") || flag(c, "explain"))
+        .map(|(n, _)| *n)
+        .fold(card.envelope_number, u64::max);
+    let mut out = vec![];
+    for (_, c) in items.iter().filter(|(n, _)| *n > since) {
+        if c.get("content_type")
+            .and_then(Value::as_str)
+            .is_some_and(|t| t != "message")
+        {
+            continue;
+        }
+        let text = trim(&s(c.get("text")));
+        let marks = list_arg(c.get("marks"), "marks").unwrap_or_default();
+        let files: Vec<String> = list_arg(c.get("attachments"), "attachments")
+            .unwrap_or_default()
+            .iter()
+            .map(|r| s(r.get("file_name")))
+            .filter(|n| !n.is_empty())
+            .collect();
+        let pinned = marks_block(Some(card), &marks);
+        if text.is_empty() && pinned.is_empty() && files.is_empty() {
+            continue;
+        }
+        let mut line = format!(
+            "- {}",
+            if text.is_empty() {
+                "(no words)".to_string()
+            } else {
+                text.replace('\n', "\n  ")
+            }
+        );
+        if !files.is_empty() {
+            line.push_str(&format!(" [files: {}]", files.join(", ")));
+        }
+        out.push(line);
+        out.extend(pinned.into_iter().skip(2).map(|l| format!("  {l}")));
+    }
+    if out.is_empty() {
+        return out;
+    }
+    let mut block = vec![
+        String::new(),
+        format!(
+            "Comments under the card since version {}:",
+            card.object_version
+        ),
+    ];
+    block.extend(out);
+    block
+}
+
 /// The marks as the agent reads them: one line each, saying what it is pinned to.
 fn marks_block(card: Option<&Card>, marks: &[Value]) -> Vec<String> {
     let ws = regex::Regex::new(r"\s*\n\s*").unwrap();

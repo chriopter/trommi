@@ -265,6 +265,114 @@ async fn the_tools_write_to_the_board_and_answers_come_back() {
     mcp.close().await;
 }
 
+/// A hand back or "What??" asks the agent to take the comments under the card into account: they come with it, those
+/// since the card's current version and the hand back before, with their pinned notes; the agent has no other way to
+/// read the card's thread (the owner, 27 October 2026: the comments never reached the agent).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hand_back_brings_the_comments_under_the_card() {
+    let (_hub, mut human, _seat, mut mcp, _group) = seated().await;
+    let made = mcp
+        .ok(
+            "create_decision",
+            json!({ "title": "Which look?", "body": "Every screen as before.",
+                "options": [{ "key": "a", "label": "Native" }, { "key": "b", "label": "Web" }] }),
+        )
+        .await;
+    let card = made
+        .split_whitespace()
+        .nth(1)
+        .expect("the card's id")
+        .to_string();
+    human.sync().await;
+    let say = |text: &str| json!({ "content_type": "message", "text": text });
+    human
+        .card_say(&card, say("Schon nativer SwiftUI look, please."))
+        .await
+        .expect("the hub takes it");
+    mcp.event("chat").await;
+    let mut noted = say("And the colours:");
+    noted["marks"] = json!([{ "id": "m1", "anchor": { "kind": "text", "quote": "Every screen" }, "text": "too vague" }]);
+    human
+        .card_say(&card, noted)
+        .await
+        .expect("the hub takes it");
+    mcp.event("chat").await;
+    let back = "Back to you: please rework this question and present it again. Take the comments under the card into account.";
+    human
+        .card_say(
+            &card,
+            json!({ "content_type": "message", "text": back, "hand_back": true }),
+        )
+        .await
+        .expect("the hub takes the hand back");
+    let event = mcp.event("chat").await;
+    let content = event["content"].as_str().unwrap_or("");
+    assert_eq!(event["meta"]["handback"], "1", "{event}");
+    assert!(content.starts_with(back), "{content}");
+    let block = content
+        .split("Comments under the card since version 1:")
+        .nth(1)
+        .unwrap_or_else(|| panic!("{content}"));
+    assert!(
+        block.contains("- Schon nativer SwiftUI look, please."),
+        "{content}"
+    );
+    assert!(
+        block.contains("- And the colours:") && block.contains("too vague"),
+        "{content}"
+    );
+    assert!(
+        !block.contains(back),
+        "the hand back itself is not a comment: {content}"
+    );
+
+    // Reworked: what was said before the new version is not said again; "What??" brings only what came after.
+    let revised = mcp
+        .ok(
+            "revise_card",
+            json!({ "card_id": card, "body": "Native everywhere." }),
+        )
+        .await;
+    assert!(revised.contains("now version 2"), "{revised}");
+    human.sync().await;
+    human
+        .card_say(&card, say("Better. Why native?"))
+        .await
+        .expect("the hub takes it");
+    mcp.event("chat").await;
+    human
+        .card_say(
+            &card,
+            json!({ "content_type": "message", "text": "Explain this question.", "explain": true }),
+        )
+        .await
+        .expect("the hub takes the explain");
+    let event = mcp.event("chat").await;
+    let content = event["content"].as_str().unwrap_or("");
+    assert_eq!(event["meta"]["explain"], "1", "{event}");
+    let block = content
+        .split("Comments under the card since version 2:")
+        .nth(1)
+        .unwrap_or_else(|| panic!("{content}"));
+    assert!(
+        block.contains("- Better. Why native?") && !block.contains("Schon nativer"),
+        "{content}"
+    );
+
+    // A hand back with nothing written under the card since says only itself.
+    human
+        .card_say(
+            &card,
+            json!({ "content_type": "message", "text": back, "hand_back": true }),
+        )
+        .await
+        .expect("the hub takes the hand back");
+    let event = mcp.event("chat").await;
+    let content = event["content"].as_str().unwrap_or("");
+    assert_eq!(content, back, "{event}");
+    mcp.close().await;
+}
+
 /// Helpers live in their agent's session (README "Helpers and their events"): what a tool writes for a helper
 /// (`helper`, or `session` as older tools name it) goes into the agent's own session group with the helper's name,
 /// no group is founded for it, and the human's answer to a helper's card comes to the agent with that name.
