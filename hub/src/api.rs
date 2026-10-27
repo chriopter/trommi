@@ -16,7 +16,7 @@ use crate::delivery::{self, CommitBody, Founding, Scope};
 use crate::error::{refuse, Refused, Res};
 use crate::http::{self, Answer, Body, Conn, ReqBody};
 use crate::store::{self, Auth, Who};
-use crate::util::{b64, now, unb64, unhex};
+use crate::util::{b64, now, short, unb64, unhex};
 use crate::{accounts, files, invites, live};
 
 /// What a route needs of a request, once its body is read.
@@ -913,13 +913,20 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             let message = rq.bytes("message")?;
             let relay = rq.body["relay"].as_bool().unwrap_or(false);
             let auth = read_auth()?;
-            if relay {
-                // 16: stroke pieces, 20 per second per device
-                limited(app.limits.pieces.check(&[&auth.room[..], &auth.device[..]].concat(), t, true))?;
-            } else {
-                limited(app.limits.envelopes.take(&[&auth.room[..], &auth.device[..]].concat(), 1.0, t))?;
+            let posted = (|| {
+                if relay {
+                    // 16: stroke pieces, 20 per second per device
+                    limited(app.limits.pieces.check(&[&auth.room[..], &auth.device[..]].concat(), t, true))?;
+                } else {
+                    limited(app.limits.envelopes.take(&[&auth.room[..], &auth.device[..]].concat(), 1.0, t))?;
+                }
+                app.write_as(&auth, rq.lease, |x, fx| delivery::message(x, &auth, &group, epoch, &message, relay, fx))
+            })();
+            // (a stroke piece refused is dropped by its sender: only a message's refusal is worth a line)
+            if !relay {
+                log_refused("message_refused", &auth, Some(&group), &posted);
             }
-            app.write_as(&auth, rq.lease, |x, fx| delivery::message(x, &auth, &group, epoch, &message, relay, fx))
+            posted
         }
         // What joining several groups from outside needs, in one request (a sign-in's sessions, 8.5): per group its
         // current GroupInfo, its founding one and the first page of its Commits, as `GET /v1/groups/{group}/info`,
@@ -1158,11 +1165,15 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
         ("POST", ["envelopes"]) => {
             let envelope = rq.bytes("envelope")?;
             let auth = read_auth()?;
-            limited(app.limits.envelopes.take(&[&auth.room[..], &auth.device[..]].concat(), 1.0, t))?;
-            match app.write_as(&auth, rq.lease, |x, fx| content::post_envelope(x, &auth, &envelope, fx))? {
-                Posted::Stored { change } => Ok(json!({ "change": change })),
-                Posted::Voided(refusal) => Err(refusal),
-            }
+            let posted = (|| {
+                limited(app.limits.envelopes.take(&[&auth.room[..], &auth.device[..]].concat(), 1.0, t))?;
+                match app.write_as(&auth, rq.lease, |x, fx| content::post_envelope(x, &auth, &envelope, fx))? {
+                    Posted::Stored { change } => Ok(json!({ "change": change })),
+                    Posted::Voided(refusal) => Err(refusal),
+                }
+            })();
+            log_refused("envelope_refused", &auth, None, &posted);
+            posted
         }
         ("GET", ["desk"]) => match (rq.q("brief"), rq.q_int("since")?, only(rq, false)?) {
             (None, None, only) => app.read(|x| content::desk(x.c, &rq.auth(app, x.c)?, &only)),
@@ -2125,4 +2136,47 @@ async fn upload(
         200,
         &json!({ "file_id": b64(&file), "size": size, "sha256": b64(&sha256) }),
     ))
+}
+
+/// Refusals a sender meets in the normal run (the group moved on, a repeat, a wait): a line at info. Any other
+/// refusal of a message or an envelope is a warning: a device's outbox may halt on it, and nothing else of the hub
+/// would say so.
+const EXPECTED_REFUSALS: [&str; 6] = [
+    "wrong-epoch",
+    "epoch-taken",
+    "stale-session",
+    "group-behind",
+    "room-behind",
+    "rate-limited",
+];
+
+/// One line for a refused post of a message or an envelope (`event`), at info or warn by [`refusal_line`].
+pub(crate) fn log_refused(event: &str, auth: &Auth, group: Option<&[u8]>, posted: &Res<Value>) {
+    let Err(r) = posted else { return };
+    match refusal_line(&auth.room, &auth.device, group, r) {
+        Some((false, fields)) => crate::log::info(event, fields),
+        Some((true, fields)) => crate::log::warn(event, fields),
+        None => {}
+    }
+}
+
+/// The fields of a refusal's log line and whether it is a warning: the short ids of the room, the device and the
+/// group, the refusal's code and whether it left a void record. Never its message, the bytes or a full id. None for
+/// `internal` (logged as internal_error where it is answered).
+pub fn refusal_line(
+    room: &[u8],
+    device: &[u8],
+    group: Option<&[u8]>,
+    r: &Refused,
+) -> Option<(bool, Value)> {
+    if r.code == "internal" {
+        return None;
+    }
+    let voided = r.extra.as_ref().is_some_and(|e| e["voided"] == true);
+    let mut fields =
+        json!({ "room": short(room), "device": short(device), "code": r.code, "voided": voided });
+    if let Some(group) = group {
+        fields["group"] = json!(short(group));
+    }
+    Some((!EXPECTED_REFUSALS.contains(&r.code), fields))
 }

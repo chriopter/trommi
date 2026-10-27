@@ -2771,3 +2771,58 @@ mod device_seen_tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+/// A refused post of a message or an envelope leaves a log line: short ids and the code, nothing of the refusal's
+/// words; a refusal of the normal run (the group moved on, a wait) at info, any other a warning.
+mod refusal_lines {
+    use serde_json::json;
+    use trommi_hub::api::refusal_line;
+    use trommi_hub::error::refuse;
+
+    #[test]
+    fn a_refusal_names_short_ids_and_its_code_only() {
+        let r = refuse(
+            "not-member",
+            "only a leaf of the group sends in it (secret words)",
+        );
+        let (warn, fields) = refusal_line(
+            &[0xaa; 32],
+            &[0x40, 0x05, 0xa2, 0xab, 9, 9],
+            Some(&[0x5f; 48]),
+            &r,
+        )
+        .unwrap();
+        assert!(warn);
+        assert_eq!(
+            fields,
+            json!({ "room": "aaaaaaaa", "device": "4005a2ab", "group": "5f5f5f5f", "code": "not-member", "voided": false })
+        );
+        assert!(!fields.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn the_normal_run_is_info_a_void_record_is_said() {
+        let (warn, fields) = refusal_line(
+            &[1; 32],
+            &[2; 32],
+            None,
+            &refuse("wrong-epoch", "x").with(json!({ "epoch": 4 })),
+        )
+        .unwrap();
+        assert!(!warn);
+        assert!(fields.get("group").is_none());
+        let (warn, fields) = refusal_line(
+            &[1; 32],
+            &[2; 32],
+            None,
+            &refuse("gap", "x").with(json!({ "voided": true })),
+        )
+        .unwrap();
+        assert!(warn);
+        assert_eq!(fields["voided"], true);
+        assert_eq!(
+            refusal_line(&[1; 32], &[2; 32], None, &refuse("internal", "db")),
+            None
+        );
+    }
+}
