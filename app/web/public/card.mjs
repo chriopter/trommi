@@ -353,7 +353,7 @@ ${large ? html`<a class="tc-rail tc-full is-leave" data-nav href="${here}?pic=${
     : html`<a class="tc-rail tc-full${focus ? ' is-leave' : ''}" data-nav href="${focusAt(`${here}?${shownPic > 1 ? `pic=${shownPic}` : ''}${query}`, !focus)}" data-turbo-action="replace" data-action="card#focus" role="button" aria-pressed="${String(focus)}" title="${FOCUS_WORDS[focus]}" aria-label="${FOCUS_WORDS[focus]}">${FULL}${LESS}</a>`}
 ${canDraw ? html`<button type="button" class="tc-rail tc-draw" data-action="card#trace" aria-pressed="false" title="Draw" aria-label="Draw on the card">${DRAW}</button>` : ''}
 <details class="tc-more" data-controller="pops"><summary class="tc-rail tc-more-open" title="More" aria-label="More for this question">${DOTS}</summary><div class="tc-more-list" role="menu">
-${open && card.kind !== 'request' && card.snoozed_until ? more('', 'wake', WORDS.wake, `${WORDS.wake}: back on the Desk now`, 'wake') : ''}
+${open && card.kind !== 'request' && card.snoozed_until ? more('', 'wake', WORDS.wake, `${WORDS.wake}: back among the open cards now`, 'wake') : ''}
 ${copyButton(card)}
 ${answering ? more('is-shred', 'bin', WORDS.shred, WORDS.shred, 'shred') : ''}
 </div></details>
@@ -370,7 +370,7 @@ ${answering ? more('is-shred', 'bin', WORDS.shred, WORDS.shred, 'shred') : ''}
       case 'focus': return html`<a class="tc-more-item tc-full${focus ? ' is-leave' : ''}" role="menuitem" data-nav href="${focusAt(`${here}?${shownPic > 1 ? `pic=${shownPic}` : ''}${query}`, !focus)}" data-turbo-action="replace" data-action="card#focus" aria-pressed="${String(focus)}">${FULL}${LESS}<span>${FOCUS_WORDS[focus]}</span></a>`
       case 'chat': { const sid = card.from?.session_id ?? card.session_id; return sid ? html`<a class="tc-more-item" role="menuitem" data-nav href="${self}/chat/${encodeURIComponent(sid)}">${sk('bubble')}${words}</a>` : '' }
       case 'copy': return copyButton(card)
-      case 'wake': return more('', 'wake', m.label?.en ?? WORDS.wake, `${WORDS.wake}: back on the Desk now`, 'wake')
+      case 'wake': return more('', 'wake', m.label?.en ?? WORDS.wake, `${WORDS.wake}: back among the open cards now`, 'wake')
       case 'shred': return more('is-shred', 'bin', m.label?.en ?? WORDS.shred, WORDS.shred, 'shred')
       default: return ''
     }
@@ -1737,7 +1737,7 @@ const WAYS = {
   },
   verdict: ({ id, f }) => [{ do: 'verdict', request_id: id, allow: f.get('key') === 'allow' }],
   // (the agent still chooses; its recommendation goes as the choices: the card's in view, else the Desk row's tile)
-  trust: ({ id, vm, card, note }) => [{ do: 'answer', card_id: id, choices: card ? (card.options ?? []).filter(o => o.recommended).map(o => o.key) : (vm.desk.rows?.find(r => r.id === id)?.tiles.tiles ?? []).filter(x => x.advised).map(x => x.key), trusted: true, ...(note ? { note } : {}) }],
+  trust: ({ id, vm, card, note }) => [{ do: 'answer', card_id: id, choices: card ? (card.options ?? []).filter(o => o.recommended).map(o => o.key) : ([...(vm.group?.questions ?? []), ...(vm.group?.reads ?? [])].find(r => r.id === id)?.tiles.tiles ?? []).filter(x => x.advised).map(x => x.key), trusted: true, ...(note ? { note } : {}) }],
   close: ({ id }) => [{ do: 'read', card_id: id }],
   snooze: ({ id }) => [{ do: 'snooze', card_id: id }],
   wake: ({ id }) => [{ do: 'unsnooze', card_id: id }],
@@ -1826,7 +1826,7 @@ export function register(t) {
     // Undone from a toast: back to that card, unless its page is in view already.
     if (f.has('undo')) return /\/card\/[^/]+$/.test(new URL(String(req.headers?.referer ?? '/'), 'http://x').pathname) ? t.done(res) : t.sendStream(req, res, stream('visit', cardPath(card ?? id)))
     const said = !f.has('quiet') && SAID[what]
-    const toast = said ? t.toast({ head: said.head, line: card?.title ?? vm.desk.rows?.find(r => r.id === id)?.title ?? '', undo: said.back ? { action: `/cards/${id}/${said.back}` } : null }) : ''
+    const toast = said ? t.toast({ head: said.head, line: card?.title ?? [...(vm.group?.questions ?? []), ...(vm.group?.reads ?? [])].find(r => r.id === id)?.title ?? '', undo: said.back ? { action: `/cards/${id}/${said.back}` } : null }) : ''
     let to = null
     if (f.has('page')) {
       const back = String(f.get('back') ?? ''), home = /^\/chat\/[^/?#]+$/.test(back) ? back : '/', self = home === '/' ? '' : home

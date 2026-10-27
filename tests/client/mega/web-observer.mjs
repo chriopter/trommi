@@ -116,8 +116,10 @@ let spaces = null
 let core = null
 let shell = null
 let view = emptyView()
-/** The page's focus between commands: the Desk of every desk (the sidebar then lists every session). */
-const DESK = { type: 'focus', focus: { screen: { screen: 'desk' }, visible: true, desk: 'all' } }
+/** The page's focus between commands: the group page of the team in view. */
+const DESK = { type: 'focus', focus: { screen: { screen: 'group' }, visible: true } }
+/** The page Off your mind as it was read last (offPage): what is with its agent, put off and closed. */
+let lastOff = {}
 /** Every store operation's time, for a trace. */
 function tracedSpaces(s) {
   const timed = (name, f) => async (...a) => { const t = performance.now(); try { return await f(...a) } finally { span('cache', name, t, performance.now()) } }
@@ -195,13 +197,22 @@ async function deed(action) {
 // ---- what this device shows
 /** One card's or request's page (`Screen::Card`): the core renders the card in view only. */
 function page(id) {
-  shell.send({ type: 'focus', focus: { screen: { screen: 'card', card_id: id }, visible: true, desk: 'all' } })
+  shell.send({ type: 'focus', focus: { screen: { screen: 'card', card_id: id }, visible: true } })
   return view.cards?.[id] ?? null
 }
 function ofSession(id) {
-  shell.send({ type: 'focus', focus: { screen: { screen: 'session', session_id: id }, visible: true, desk: 'all' } })
+  shell.send({ type: 'focus', focus: { screen: { screen: 'session', session_id: id }, visible: true } })
   return view.sessions?.[id] ?? null
 }
+/** The page Off your mind (`Screen::Off`): what is with its agent (`works`), put off and closed (`rest`, by `place`). */
+async function offPage() {
+  shell.send({ type: 'focus', focus: { screen: { screen: 'off', query: '' }, visible: true } })
+  await until(() => flying === 0 && Date.now() - lastNet >= 100, 'the page Off your mind read')
+  lastOff = view.off ?? {}
+  return lastOff
+}
+/** Every row of the group page: the questions, then what is only to read. */
+const groupRows = () => [...(view.group?.questions ?? []), ...(view.group?.reads ?? [])]
 /** The answer that stands, as the agents hold it (`answer_action` and the choices), from the card's page. */
 function answerOf(c) {
   if (c.state === 'open' || c.status === 'catching') return null
@@ -224,9 +235,10 @@ function requestState(c) {
 }
 
 async function snapshot(given) {
-  const d = view.desk ?? {}
-  const rowKind = new Map((d.rows ?? []).map(r => [r.id, r.kind]))
-  const ids = new Set([...(d.stack ?? []), ...(d.off_your_mind ?? []), ...(d.later ?? []), ...(d.done ?? []), ...(d.starred?.rows ?? []).map(r => r.id), ...(d.running?.rows ?? []).map(r => r.id), ...given])
+  const d = view.group ?? {}
+  const rowKind = new Map(groupRows().map(r => [r.id, r.kind]))
+  const off = await offPage()
+  const ids = new Set([...(d.stack ?? []), ...(off.works ?? []).map(w => w.id), ...(off.rest ?? []).map(r => r.id), ...given])
   for (const r of view.sidebar?.sessions ?? []) {
     ofSession(r.id)
     await until(() => flying === 0 && Date.now() - lastNet >= 100, 'the session page read')
@@ -258,25 +270,26 @@ async function snapshot(given) {
   const sessions = {}
   for (const r of view.sidebar?.sessions ?? []) sessions[r.id] = { agent_name: r.name?.en ?? null, parent: null }
   return {
-    desk: [...(view.desk?.stack ?? [])], permissions_open: (view.desk?.rows ?? []).filter(r => r.kind === 'request').map(r => r.id),
-    cards, permissions: perms, sessions, snoozed: [...(view.desk?.later ?? [])].sort(), snooze_values,
+    desk: [...(view.group?.stack ?? [])], permissions_open: groupRows().filter(r => r.kind === 'request').map(r => r.id),
+    cards, permissions: perms, sessions, snoozed: (off.rest ?? []).filter(r => r.place === 'later').map(r => r.id).sort(), snooze_values,
     debug: { phase: view.phase, status: view.status?.en ?? null, toasts: (view.toasts ?? []).map(t => t.text?.en ?? '') },
   }
 }
 const shown = () => (view.sidebar?.sessions ?? []).map(r => ({ session: r.id, name: r.name?.en ?? null, online: !!r.online, agent: null, parent: null }))
 const myDevice = () => (view.settings?.devices ?? []).find(d => d.this_device)?.id ?? null
 
-/** What the person would see now, for a trace: the Desk, Off your mind, the sessions, the agents online. */
+/** What the person would see now, for a trace: the group page, Off your mind (as read last), the sessions, the agents
+ *  online. */
 function seen() {
   if (!shell) return null
-  const d = view.desk ?? {}
+  const d = view.group ?? {}, rowsNow = groupRows(), rest = lastOff.rest ?? [], closed = (lastOff.groups ?? []).find(g => g.key === 'done')?.count ?? 0
   const rows = view.sidebar?.sessions ?? []
   let order = 0
   for (const id of d.stack ?? []) for (let i = 0; i < 8; i++) order = (Math.imul(order, 31) + id.charCodeAt(i)) >>> 0
   return {
-    desk: (d.rows ?? []).filter(r => !r.loading).length, stack: d.stack?.length ?? 0, order, held: (d.rows ?? []).filter(r => r.loading).length,
-    off: (d.off_your_mind?.length ?? 0) + (d.later?.length ?? 0) + (d.off?.closed ?? 0), closed: d.off?.closed ?? 0, working: d.running?.count ?? 0,
-    snoozed: d.later?.length ?? 0, artifacts: view.artifacts?.length ?? 0, sessions_live: rows.length,
+    desk: rowsNow.filter(r => !r.loading).length, stack: d.stack?.length ?? 0, order, held: rowsNow.filter(r => r.loading).length,
+    off: (lastOff.works?.length ?? 0) + rest.filter(r => r.place === 'later').length + closed, closed, working: lastOff.works?.length ?? 0,
+    snoozed: rest.filter(r => r.place === 'later').length, artifacts: view.artifacts?.length ?? 0, sessions_live: rows.length,
     sessions_named: rows.filter(r => r.name?.en !== 'Loading …').length, online: rows.filter(r => r.online).length, reading: !!d.reading,
   }
 }
@@ -289,11 +302,11 @@ function startTrace() {
 function stopTrace() {
   clearInterval(sampler)
   trace.on = false
-  // each card's state at the end, as far as the Desk names it: on the Desk (open), with its agent, closed
+  // each card's state at the end, as far as the pages name it: on the group page (open), with its agent, closed
   const finalState = {}
-  for (const id of view.desk?.done ?? []) finalState[id] = 'closed'
-  for (const id of view.desk?.off_your_mind ?? []) finalState[id] = 'working'
-  for (const id of view.desk?.stack ?? []) finalState[id] = 'open'
+  for (const r of lastOff.rest ?? []) if (r.place !== 'later') finalState[r.id] = 'closed'
+  for (const w of lastOff.works ?? []) finalState[w.id] = 'working'
+  for (const id of view.group?.stack ?? []) finalState[id] = 'open'
   return { platform: 'web', t0: trace.t0, spans: trace.spans, samples: trace.samples, events: [], final_state: finalState, groups: {}, final: seen(), requests: Object.fromEntries(asked) }
 }
 
@@ -354,8 +367,8 @@ async function run(cmd) {
     case 'stats': {
       const requests = Object.fromEntries([...asked].sort())
       if (cmd.reset) asked.clear()
-      const d = view.desk ?? {}
-      return { rss: process.memoryUsage().rss, heap: process.memoryUsage().heapUsed, desk: d.stack?.length ?? 0, cards: (d.stack?.length ?? 0) + (d.off_your_mind?.length ?? 0) + (d.later?.length ?? 0) + (d.off?.closed ?? 0), requests }
+      const d = view.group ?? {}, closed = (lastOff.groups ?? []).find(g => g.key === 'done')?.count ?? 0
+      return { rss: process.memoryUsage().rss, heap: process.memoryUsage().heapUsed, desk: d.stack?.length ?? 0, cards: (d.stack?.length ?? 0) + (lastOff.works?.length ?? 0) + (lastOff.rest ?? []).filter(r => r.place === 'later').length + closed, requests }
     }
     case 'shown': return shown()
     case 'unsettled': return unsettled()

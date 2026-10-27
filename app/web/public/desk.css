@@ -1008,47 +1008,73 @@ body > main#inbox { contain: strict; }
 }
 
 
-/* ---- under the questions: the calm tiles (desk.mjs deskTiles), two by two; a phone one under the other ---- */
-.desk-chev { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.inbox-groups > .desk-tiles { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: row dense; gap: 14px; margin: var(--s-8) 0 96px; text-align: left; }
-.inbox-groups > .desk-tiles[hidden] { display: none; }
-/* (the bento: DeskTileView.size; a tile with nothing yet stays its row's height but quiet) */
-.desk-tile.is-wide { grid-column: span 2; }
-.desk-tile.is-narrow { grid-column: span 1; }
-.desk-tile.is-full { grid-column: 1 / -1; }
-.desk-tile { text-align: left; align-items: stretch; display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 168px; padding: 14px 16px 16px; box-sizing: border-box; border-radius: 16px; background: color-mix(in srgb, var(--fg) 4%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); text-decoration: none; overflow: hidden; }
-@media (any-hover: hover) { .desk-tile:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 24%, transparent); } }
-.desk-tile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.desk-tile.is-empty { min-height: 0; background: transparent; box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 7%, transparent); }
-.desk-tile.is-empty .dt-head { color: var(--muted); }
-/* (the head: the tile's name small, what it holds beside it; the content below says what it is) */
-.dt-head { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); }
-.dt-head .sketch { flex: none; width: 17px; height: 17px; }
-.dt-head b { flex: none; font: 600 var(--t-xs)/1 var(--font); letter-spacing: .06em; text-transform: uppercase; }
-.dt-head i { min-width: 0; margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 var(--t-sm)/1 var(--font); font-style: normal; color: var(--faint); font-variant-numeric: tabular-nums; }
-.dt-head .desk-chev { flex: none; color: var(--muted); }
-.dt-runs { display: grid; gap: 12px; }
-.dt-run { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 10px; min-width: 0; }
-.dt-run .agent-avatar { width: 34px; height: 34px; }
-.dt-run b, .dt-run small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.dt-run b { font: 600 var(--t-md)/1.3 var(--font); }
-.dt-run small { color: var(--muted); font: 500 var(--t-sm)/1.25 var(--font); }
-.dt-pages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.dt-page { display: grid; align-content: start; gap: 4px; aspect-ratio: 4 / 3; padding: 7px; box-sizing: border-box; overflow: hidden; border-radius: 6px; background: #fffdf6; box-shadow: 0 0 0 1px var(--line-strong); }
-.dt-page b { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 700 10px/1.2 var(--font); color: #222; }
-.dt-page i { height: 3px; border-radius: 2px; background: #ddd8c8; }
-.dt-page.is-picture { padding: 0; background: var(--sunken); }
-.dt-page img { width: 100%; height: 100%; object-fit: cover; object-position: top left; display: block; }
-.dt-board { display: block; flex: 1; border-radius: 10px; overflow: hidden; background: var(--sunken); }
-.dt-board canvas { display: block; width: 100%; height: auto; aspect-ratio: 12 / 5; }
-.is-full .dt-board canvas { aspect-ratio: 4 / 1; }
-.dt-names { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
-.dt-names li { display: flex; align-items: baseline; gap: 9px; min-width: 0; font: 500 var(--t-md)/1.3 var(--font); }
-.dt-names li::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); translate: 0 -2px; }
+/* ---- the group page (desk.mjs groupHead, chipsRow, deskList): the name with its faces and ⋯, the chips, two parts ---- */
+#inbox .group-head { grid-template-columns: minmax(0, 1fr) auto; margin-bottom: var(--s-6); }
+.group-title { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 14px; min-width: 0; }
+.group-name { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 clamp(2.1rem, 3.6vw, 2.75rem)/1.05 var(--display); letter-spacing: -.025em; color: var(--fg); }
+.group-name-field { width: min(100%, 14ch); margin: 0; padding: 0 6px; border: 0; border-radius: 8px; background: var(--sunken); color: var(--fg); font: inherit; letter-spacing: inherit; outline: 2px solid var(--focus-ring); }
+.group-faces { display: flex; flex: none; }
+.group-faces .agent-avatar { width: 34px; height: 34px; border-radius: 50%; background: color-mix(in oklch, oklch(.62 .09 var(--hue)) 14%, var(--surface)); box-shadow: 0 0 0 2px var(--bg); }
+.group-faces .agent-avatar + .agent-avatar { margin-left: -8px; }
+.group-faces .agent-avatar svg { width: 22px; height: 22px; }
+.group-menu { position: relative; flex: none; }
+.group-menu-open { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; color: var(--muted); box-shadow: 0 0 0 1px var(--line); cursor: pointer; list-style: none; }
+.group-menu-open::-webkit-details-marker { display: none; }
+.group-menu-open svg { width: 20px; height: 20px; fill: currentColor; }
+.group-menu[open] > .group-menu-open { background: var(--sunken); color: var(--fg); }
+@media (any-hover: hover) { .group-menu-open:hover { background: var(--sunken); color: var(--fg); } }
+.group-menu-open:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.group-menu-list { position: absolute; z-index: 30; top: calc(100% + 8px); left: 0; display: grid; width: 240px; padding: 6px; box-sizing: border-box; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong), 0 24px 48px -16px rgb(20 30 25 / .28); }
+.group-menu-list hr { height: 1px; margin: 4px 6px; border: 0; background: var(--line); }
+.group-menu-item { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--fg); font: 500 var(--t-md)/1.2 var(--font); text-align: left; text-decoration: none; cursor: pointer; }
+.group-menu-item .sketch { flex: none; width: 17px; height: 17px; color: var(--muted); }
+.group-menu-item i { margin-left: auto; font-style: normal; color: var(--faint); font-size: var(--t-sm); white-space: nowrap; }
+@media (any-hover: hover) { .group-menu-item:hover { background: var(--sunken); } }
+.group-menu-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.desk-blitz-scope { font: 500 var(--t-sm)/1 var(--font); color: var(--muted); padding-right: 4px; }
+/* (the chips: one row; behind "+n" the rest, there once it was tapped) */
+.group-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: var(--s-4); }
+.group-chip { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px 0 6px; box-sizing: border-box; border: 0; border-radius: 99px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--fg); font: 600 13.5px/1 var(--font); white-space: nowrap; text-decoration: none; cursor: pointer; }
+.group-chip b { font-weight: 600; }
+.group-chip .agent-avatar { width: 26px; height: 26px; }
+.group-chip .agent-avatar svg { width: 20px; height: 20px; }
+.group-chip.is-all, .group-chip.is-more { padding: 0 14px; font-weight: 700; }
+.group-chip.is-all b { font-weight: 700; }
+.group-chip > i:not(.group-chip-dot), .group-chip.is-all i { font-style: normal; color: var(--muted); font-weight: 600; }
+.group-chip-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.group-chip.is-behind { display: none; }
+.group-chips.is-open .group-chip.is-behind { display: inline-flex; }
+.group-chip.is-on { background: var(--fg); color: var(--bg); box-shadow: none; }
+.group-chip.is-on .agent-avatar { color: var(--bg); }
+.group-chip.is-on i { color: color-mix(in srgb, var(--bg) 70%, transparent); }
+.group-chip.is-on .group-chip-dot { background: var(--bg); }
+span.group-chip.is-on { gap: 8px; padding-right: 12px; }
+.group-chip-name { display: inline-flex; align-items: center; gap: 7px; color: inherit; text-decoration: none; }
+.group-chip-go { padding-left: 8px; border-left: 1px solid color-mix(in srgb, var(--bg) 40%, transparent); color: inherit; font-weight: 700; text-decoration: none; }
+@media (any-hover: hover) { a.group-chip:not(.is-on):hover, .group-chip.is-more:hover { background: var(--sunken); } .group-chip-go:hover { text-decoration: underline; } }
+.group-chip:focus-visible, .group-chip-name:focus-visible, .group-chip-go:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* (the two parts: the questions large, what is to read below, small and quiet) */
+.group-part { grid-column: 1 / -1; display: grid; gap: inherit; }
+.group-part.is-reads { gap: 6px; margin-top: var(--s-4); }
+.group-sec { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 2px; font: 700 12px/1.2 var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.group-sec span { font-weight: 500; letter-spacing: 0; color: var(--faint); }
+:is(#inbox, #session) .inbox-groups .inbox-row .row-chat { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 12px/1.2 var(--font); color: var(--muted); letter-spacing: 0; }
+#inbox .inbox-groups .inbox-row.group-read { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 14px; border-radius: 8px; background: color-mix(in srgb, var(--fg) 3%, var(--bg)); box-shadow: 0 0 0 1px var(--line); font: 500 var(--t-md)/1.3 var(--font); }
+.group-read .agent-avatar { flex: none; width: 22px; height: 22px; }
+.group-read .agent-avatar svg { width: 18px; height: 18px; }
+.group-read-title { flex: 1 1 auto; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); text-decoration: none; }
+.group-read-title small { margin-left: 8px; color: var(--faint); font-size: var(--t-sm); }
+@media (any-hover: hover) { .group-read-title:hover { text-decoration: underline; } }
+.group-read-ago { flex: none; color: var(--faint); font-size: 12px; white-space: nowrap; }
+.group-read form { display: contents; }
+.group-read-go { flex: none; padding: 4px 2px; border: 0; background: none; color: var(--accent); font: 600 13px/1 var(--font); cursor: pointer; }
+.group-read-go:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
 @media (max-width: 860px) {
-  .inbox-groups > .desk-tiles { grid-template-columns: minmax(0, 1fr); gap: 10px; margin: var(--s-6) 0 72px; }
-  .desk-tile.is-wide, .desk-tile.is-narrow, .desk-tile.is-full { grid-column: 1 / -1; }
-  .desk-tile { min-height: 0; }
+  .group-title { flex-wrap: wrap; gap: 10px; }
+  .group-name { font-size: clamp(1.7rem, 8vw, 2.1rem); }
+  .group-chips { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding: 2px 16px; scrollbar-width: none; }
+  .group-chips::-webkit-scrollbar { display: none; }
+  .group-read-title small { display: none; }
 }
 
 /* ---- the page /stacks/off (desk.mjs offMain): its groups, one line per card ---- */

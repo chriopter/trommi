@@ -1127,6 +1127,9 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
   #agents .agent-signal { display: block; flex: none; width: 9px; height: 9px; margin-left: var(--s-2); border-radius: 50%; background: var(--accent); }
   #agents .agent-signal[data-signal="stopped"], #agents .agent-signal[data-signal="waiting"] { background: var(--urg-critical); }
   html[data-rail="folded"] #agents .agent-teaser { display: none; }
+  /* (the rail: one quiet dot at a face's shoulder on a chat that needs him; the core sends no counts here) */
+  html[data-rail="folded"] #agents .agent-row .agent-entry { position: relative; }
+  html[data-rail="folded"] #agents .agent-signal { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; margin: 0; background: var(--accent); }
   html[data-rail="folded"] #agents .agent-row[data-team-of] { margin-left: 0; }
   html[data-rail="folded"] #agents .team-head { margin-bottom: calc(var(--n) * 5px + 12px); }
   html[data-rail="folded"] #agents .team-go { justify-content: center; padding: 0; }

@@ -615,7 +615,7 @@ export const starMark = () => html`<span class="row-star" role="img" title="Star
 // ---- the board's words (one place) ----
 export const WORDS = {
   later: 'Later', duck: 'Duck it', wake: 'Wake up', ack: 'Got it', what: 'What??', trust: 'I don’t give a duck', revise: 'Reverse',
-  revising: 'In revision', shred: 'Shred', walk: 'Blitz', desk: 'Desk', takeBack: 'Take back',
+  revising: 'In revision', shred: 'Shred', walk: 'Blitz', desk: 'the group', takeBack: 'Take back',
 }
 /** What a bare hand-back says to the session (the machine's words: a conversation shows a quiet line instead). */
 export const HAND_BACK_TEXT = 'Back to you: please rework this question and present it again. Take the comments under the card into account.'
@@ -2219,7 +2219,7 @@ const crownControl = (agent, base, { stay = false, back = '' } = {}) => html`<fo
  *  needs: listed and taken only where the page has it ('sidebar': the sessions' list; 'teams': the menu's teams,
  *  and not on the Agents page, where D is a line's drawing). native: listed, handled where it lives (the key is left alone). verb: the longer wording for the sheet. */
 export const LAYOUT = [
-  { scope: 'desk', title: 'On the Desk', keys: [
+  { scope: 'desk', title: 'On the group page', keys: [
     { id: 'list.next', keys: ['j', 'ArrowDown'], does: 'next question; after the last, an opened stack below', repeat: true },
     { id: 'list.prev', keys: ['k', 'ArrowUp'], does: 'previous question', repeat: true },
     { id: 'list.first', keys: ['Home'], does: 'first question' },
@@ -2245,7 +2245,7 @@ export const LAYOUT = [
     { id: 'card.pic.prev', keys: ['ArrowLeft'], does: 'previous picture', repeat: true },
     { id: 'card.next', keys: ['Shift+ArrowDown'], does: 'next question, without answering', repeat: true },
     { id: 'card.prev', keys: ['Shift+ArrowUp'], does: 'previous question', repeat: true },
-    { id: 'card.leave', keys: ['Escape'], does: 'leave a field, focus or the large picture, then back to the Desk', typing: true },
+    { id: 'card.leave', keys: ['Escape'], does: 'leave a field, focus or the large picture, then back to the group page', typing: true },
   ] },
   { scope: 'picture', title: 'A picture', keys: [
     { id: 'ans.down', keys: ['ArrowDown'], does: 'through the answers beside the picture', repeat: true },
@@ -2258,7 +2258,7 @@ export const LAYOUT = [
   { scope: 'app', title: 'Anywhere', keys: [
     { id: 'help', keys: ['?'], does: 'this list' },
     { id: 'note.new', keys: ['n'], does: 'a new note' },
-    { id: 'go.desk', keys: ['g d', 'g i'], does: 'Desk', verb: 'go to the Desk' },
+    { id: 'go.desk', keys: ['g d', 'g i'], does: 'Group', verb: 'go to the group page' },
     { id: 'go.agents', keys: ['g a'], does: 'Agents', verb: 'go to Settings · Agents' },
     { id: 'go.jump', keys: ['Mod+k', 'g j'], does: 'menu', verb: 'open the Trommi menu: teams and places' },
     { id: 'go.walk', keys: ['g b'], does: 'Blitz', verb: 'Blitz: every open card, one after the other' },
@@ -2268,7 +2268,7 @@ export const LAYOUT = [
     { id: 'team.switch', keys: ['1…9'], does: 'team 1 to 9', verb: 'switch to that team of the menu', needs: 'teams' },
     { id: 'session.next', keys: ['.'], does: 'next session', needs: 'sidebar' },
     { id: 'session.prev', keys: [','], does: 'previous session', needs: 'sidebar' },
-    { id: 'pen', keys: ['p'], does: 'turn the page: the Scribble Board on the back of the Desk, and back' },
+    { id: 'pen', keys: ['p'], does: 'turn the page: the Scribble Board on the back of the group page, and back' },
     { id: 'rail', keys: ['['], does: 'fold the sidebar to a rail, or open it', needs: 'sidebar' },
     { id: 'back', keys: ['u', 'Backspace'], does: 'undo: the newest toast\'s Undo' },
     { id: 'theme', keys: ['t'], does: 'light or dark' },
@@ -2281,9 +2281,9 @@ export const LAYOUT = [
 export const SHORT = [
   { id: 'move', keys: ['ArrowUp', 'ArrowDown'], does: 'move: the next or the previous question; on a card its answers (Shift ↑ ↓ there: the questions, ← →: the pictures)' },
   { id: 'open', keys: ['Enter'], does: 'open; on a card: take the marked answer' },
-  { id: 'back', keys: ['Escape'], does: 'back: leave a field, close, back to the Desk' },
+  { id: 'back', keys: ['Escape'], does: 'back: leave a field, close, back to the group page' },
   { id: 'note.new', keys: ['n'], does: 'a new note' },
-  { id: 'later', keys: ['l'], does: 'Later: put the question off (on the Desk; on a card a letter goes into the field)' },
+  { id: 'later', keys: ['l'], does: 'Later: put the question off (on the group page; on a card a letter goes into the field)' },
   { id: 'help', keys: ['?'], does: 'this list' },
 ]
 
@@ -2706,10 +2706,10 @@ export const sideWays = ({ later = true, duck = true, shred = true, many = false
 /** The look of a session for its marks: { id, mark, crowned, online, working } from a row of the sidebar
  *  (SessionRowView), a card's sender (FromView: session_id) or a session's page (SessionView). */
 export const whoOf = s => (s ? { id: s.id ?? s.session_id, mark: s.mark, name: s.name?.en ?? s.name ?? '', crowned: Boolean(s.crowned), online: s.online !== false, working: Boolean(s.working), hue: hueFor({ mark: s.mark, id: s.id ?? s.session_id }) } : null)
-/** One row of the Desk as the core made it (views.d.ts DeskRowView): a question, a request, something to read.
- *  error: what went wrong with the last answer. slim: the Desk's own row (no session mark, name line or byline:
- *  a big room has hundreds of rows). */
-export function deskRow(row, base, { error = '', slim = false } = {}) {
+/** One card row as the core made it (views.d.ts DeskRowView): a question, a request, something to read.
+ *  error: what went wrong with the last answer. slim: the group page's own row (no session mark, name line or byline:
+ *  a big room has hundreds of rows). named: under a slim row's title, its chat's name (the group page). */
+export function deskRow(row, base, { error = '', slim = false, named = false } = {}) {
   const from = whoOf(row.from)
   const about = (row.notes ?? []).map(n => n.en).join(' · ')
   const words = row.words
@@ -2726,7 +2726,7 @@ ${from && !slim ? html`<a class="inbox-gutter" data-nav href="${base}/chat/${enc
 <div class="inbox-content">
 <header class="inbox-row-head"></header>
 ${media.length ? html`<a class="inbox-fan" data-nav href="${href}${media.some(m => m.kind === 'image') ? '/picture/1' : ''}" aria-label="${row.media_says?.en ?? 'Look at the pictures'}">${media.slice(0, 3).map(m => { const url = fileSrc(m.file_id); return m.kind === 'image' ? html`<img${url ? html` src="${url}"` : ''} alt="" loading="lazy" decoding="async" width="56" height="42">` : html`<video${url ? html` src="${url}#t=0.001"` : ''} muted playsinline preload="metadata"></video>` })}</a>` : ''}
-${from ? html`<button class="row-mark" type="button" style="--hue:${from.hue}" data-tip="Select" aria-label="Select: ${row.title}" aria-pressed="false" data-select>${markArt(from)}<span class="row-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.4 12.6Q8.8 15.1 10.4 17Q14 11.4 18.2 7.2"/></svg></span></button>` : ''}<a class="inbox-text${from ? ' has-sender' : ''}" data-nav href="${href}" data-tip="${row.title}">${from && !slim ? html`<span class="inbox-from-mark inbox-who" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt(from)}</span>` : ''}<strong class="inbox-question" data-controller="fit">${slim && from ? html`<span class="row-stamp" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt({ ...from, crowned: false })}</span>` : ''}${knock ? html`<span class="row-urg is-${row.sign}" role="img" title="${row.sign_says?.en ?? ''}" aria-label="${row.sign_says?.en ?? ''}">${row.sign === 'block' ? raw(handSvg()) : sk('knock')}</span>` : row.sign === 'whenever' && !info ? html`<span class="row-urg is-whenever" role="img" title="Whenever" aria-label="Whenever">${sk('whenever')}</span>` : ''}${row.starred ? starMark() : ''}${row.title}</strong>${from && !slim ? html`<span class="row-meta"><span class="row-meta-mark">${raw(doodleSvg(from.mark))}</span><span class="row-meta-who">${from.name}</span>${row.from?.helper ? html`<span class="row-meta-dot">·</span><span class="row-meta-helper">${row.from.helper.en}</span>` : ''}<span class="row-meta-dot">·</span>${agoSpan(row.created_ms, 'row-meta-ago')}</span>` : ''}${about || words ? html`<span class="inbox-body">${about ? html`<span class="inbox-body-about">${about}</span>` : ''}${words ? html`<span class="inbox-body-text">${about ? ` · ${words}` : words}</span>` : ''}</span>` : ''}</a>
+${from ? html`<button class="row-mark" type="button" style="--hue:${from.hue}" data-tip="Select" aria-label="Select: ${row.title}" aria-pressed="false" data-select>${markArt(from)}<span class="row-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.4 12.6Q8.8 15.1 10.4 17Q14 11.4 18.2 7.2"/></svg></span></button>` : ''}<a class="inbox-text${from ? ' has-sender' : ''}" data-nav href="${href}" data-tip="${row.title}">${from && !slim ? html`<span class="inbox-from-mark inbox-who" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt(from)}</span>` : ''}<strong class="inbox-question" data-controller="fit">${slim && from ? html`<span class="row-stamp" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt({ ...from, crowned: false })}</span>` : ''}${knock ? html`<span class="row-urg is-${row.sign}" role="img" title="${row.sign_says?.en ?? ''}" aria-label="${row.sign_says?.en ?? ''}">${row.sign === 'block' ? raw(handSvg()) : sk('knock')}</span>` : row.sign === 'whenever' && !info ? html`<span class="row-urg is-whenever" role="img" title="Whenever" aria-label="Whenever">${sk('whenever')}</span>` : ''}${row.starred ? starMark() : ''}${row.title}</strong>${slim && named && from ? html`<span class="row-chat">${from.name}${row.from?.helper ? html` · ${row.from.helper.en}` : ''}</span>` : ''}${from && !slim ? html`<span class="row-meta"><span class="row-meta-mark">${raw(doodleSvg(from.mark))}</span><span class="row-meta-who">${from.name}</span>${row.from?.helper ? html`<span class="row-meta-dot">·</span><span class="row-meta-helper">${row.from.helper.en}</span>` : ''}<span class="row-meta-dot">·</span>${agoSpan(row.created_ms, 'row-meta-ago')}</span>` : ''}${about || words ? html`<span class="inbox-body">${about ? html`<span class="inbox-body-about">${about}</span>` : ''}${words ? html`<span class="inbox-body-text">${about ? ` · ${words}` : words}</span>` : ''}</span>` : ''}</a>
 <span class="inbox-when" title="${ago(row.created_ms)}"><form class="inbox-tabs" method="post" action="${act('snooze')}"><input type="hidden" name="stay" value="1">
 ${ways.has('later') ? html`<button class="inbox-tab-act inbox-later is-tag" type="submit" formaction="${act('snooze')}" aria-label="${WORDS.later}: put this question off; it waits for you below" title="${WORDS.later}">${LATER_TAG}</button>` : ''}
 ${ways.has('reverse') ? tab('inbox-revise', 'reverse', WORDS.revise, WORDS.revise, act('revise'), true) : ''}

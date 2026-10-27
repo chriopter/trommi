@@ -222,7 +222,7 @@ export async function demoState(name, { now = false } = {}) {
     inside: () => { const l = $('.tc-card > .tc-left'); if (l) l.scrollTop = 900 },
     strip: () => { const m = $('#cardpage'); if (m) m.scrollTop = 2600 },
     more: () => click('.tc-more-open'),
-    'with-agent': () => { const id = window.trommi.vm().desk?.off_your_mind?.[0]; if (id) window.trommi.router.visit(`/card/${id}`) },
+    'with-agent': () => window.trommi.router.visit('/card/0b48fb2a02a4fcc2a22da6f5a3b7bb49'),   // (the demo's card with its agent: core/client/tests/golden/demo-card-with-agent.json)
     'session-more': () => click('.t-head-more'),
     trail: () => { const d = $('.msg-work details.work'); if (d) { d.open = true; d.scrollIntoView({ block: 'center' }) } },
     pair: () => click('#settings-pair'),

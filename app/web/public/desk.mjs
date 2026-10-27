@@ -1,19 +1,78 @@
-// The Desk: every open question as a row, in the app core's order (vm.desk, views.d.ts DeskView), and under them the
-// calm tiles (DeskView.tiles: Working / Done, Artifacts, Scribble Board, Knowledge); the page /stacks/off (vm.off) in
-// its groups. The markup is the one app.css and desk.css
-// style. A row never unfolds: its text is a link to the card's own page, its tiles are forms that answer with one tap
-// (the card's routes, card.mjs). Nothing here decides what stands where: the core does; the page draws and acts.
-import { flipOut, viewModule } from './app.mjs'
-import { Controller, PLUS, WORDS, agoSpan, avatar, controller, deskRow, fileSrc, html, lastUndo, linkSlip, mq, raw, ringSvg, runSection, sideWays, sk, starMark, undoLast, whoOf } from './ui.mjs'
+// The group page: the group's head (its name, its chats' faces, its ⋯ menu), a chip per chat to filter by, and its
+// open cards in one list: the questions under "Waits for you", what is only to read below, smaller, under "To read"
+// (vm.group, views.d.ts GroupView); the page /stacks/off (vm.off) in its groups. The markup is the one app.css and
+// desk.css style. A row never unfolds: its text is a link to the card's own page, its tiles are forms that answer with
+// one tap (the card's routes, card.mjs). Nothing here decides what stands where: the core does; the page draws and acts.
+import { flipOut } from './app.mjs'
+import { Controller, PLUS, WORDS, agoSpan, avatar, controller, deskRow, html, lastUndo, linkSlip, mq, raw, ringSvg, sideWays, sk, starMark, undoLast, whoOf } from './ui.mjs'
 
-// ---- the head: the big line, the goals, Blitz and the duck ----
-function deskHead(d, base) {
-  if (d.mode === 'invite') return deskInvite()
-  const words = (d.hello?.en ?? '').split(' '), last = words.pop()
-  return html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="${d.waiting}"><h2 class="desk-hello">${words.join(' ')} <em>${last}</em></h2>${d.reading ? html`<p class="desk-reading" role="status">${d.reading.en}</p>` : ''}${deskGoals(d.goals)}${d.blitz ? html`<div class="desk-tools" id="desk-tools">${duckAll(d, base)}${nextPlease(d, base)}</div>` : ''}</header>`
+// ---- the head: the group's name, its faces, its ⋯ menu, Blitz and the duck; the goals under it ----
+const faces = list => html`<span class="group-faces team-faces" data-n="${list.length}" aria-hidden="true">${list.map(f => avatar({ ...whoOf(f), online: true }, { crown: false }))}</span>`
+/** Where a ⋯ entry goes (GroupMenuItem.opens, the core's Screen): its address here. */
+const MENU_PATH = { knowledge: s => `/knowledge${s.filter ? `?filter=${encodeURIComponent(s.filter)}` : ''}`, wakeups: () => '/wakeups', scribble: () => '/scribble-board' }
+const MENU_ICON = { knowledge: 'book', wakeups: 'snooze', board: 'pen', rename: 'pen' }
+function groupMenu(h, base) {
+  const menu = h.menu ?? []
+  if (!menu.length) return ''
+  const item = m => {
+    const inner = html`${sk(MENU_ICON[m.key] ?? 'page')}<span>${m.label.en}</span>${m.count ? html`<i>${m.count.en}</i>` : ''}`
+    if (m.key === 'rename') return html`<button type="button" role="menuitem" class="group-menu-item" data-action="group-name#rename" data-pop-close>${inner}</button>`
+    const to = m.opens && MENU_PATH[m.opens.screen]?.(m.opens)
+    return to ? html`<a role="menuitem" class="group-menu-item" data-nav href="${base}${to}">${inner}</a>` : ''
+  }
+  return html`<details class="t-pick group-menu" data-controller="pops"><summary class="group-menu-open" title="More" aria-label="${h.menu_says?.en ?? 'More'}">${raw('<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg>')}</summary>
+<div class="group-menu-list" role="menu">${menu.filter(m => !m.apart).map(item)}${menu.some(m => m.apart) ? html`<hr>${menu.filter(m => m.apart).map(item)}` : ''}</div></details>`
+}
+function groupHead(d, base) {
+  const h = d.head
+  const top = h ? html`<div class="group-title" data-controller="group-name" data-group-name-team-value="${h.team_id}" data-group-name-name-value="${h.name.en}"><h2 class="group-name" data-group-name-target="name">${h.name.en}</h2>${faces(h.faces ?? [])}${groupMenu(h, base)}</div>` : ''
+  const tools = d.blitz ? html`<div class="desk-tools" id="desk-tools">${duckAll(d, base)}${nextPlease(d, base)}</div>` : ''
+  return html`<header class="inbox-head desk-top group-head" id="desk-head" data-controller="title" data-title-count-value="${d.waiting}">${top}${tools}${d.reading ? html`<p class="desk-reading" role="status">${d.reading.en}</p>` : ''}${deskGoals(d.goals)}${chipsRow(d, base)}</header>${d.mode === 'invite' ? deskInvite() : ''}`
 }
 
-const CHEV = raw('<svg class="desk-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>')
+// ---- the chips: All, then one per chat; the ones behind "+n" come forth with a tap ----
+function chipsRow(d, base) {
+  const chips = d.chips ?? []
+  if (!chips.length) return ''
+  const shown = d.chips_shown || chips.length
+  const chip = (c, i) => {
+    const behind = i >= shown ? ' is-behind' : ''
+    if (!c.session_id) return html`<a class="group-chip is-all${c.selected ? ' is-on' : ''}${behind}" data-nav href="${base}/" aria-label="${c.says.en}"${c.selected ? raw(' aria-current="true"') : ''}><b>${c.name.en}</b>${c.count ? html`<i>${c.count}</i>` : ''}</a>`
+    const who = whoOf({ ...c, id: c.session_id, online: true })
+    const mark = html`${avatar(who, { crown: false })}<b>${c.name.en}</b>${c.needs ? html`<i class="group-chip-dot" aria-hidden="true"></i>` : ''}`
+    if (c.selected) return html`<span class="group-chip is-on${behind}" style="--hue:${who.hue}"><a class="group-chip-name" data-nav href="${base}/" aria-label="${c.says.en}: show all chats" aria-current="true">${mark}</a>${c.open_chat ? html`<a class="group-chip-go" data-nav href="${base}/chat/${encodeURIComponent(c.slug || c.session_id)}">${c.open_chat.en}</a>` : ''}</span>`
+    return html`<a class="group-chip${behind}" data-nav href="${base}/?chat=${encodeURIComponent(c.slug || c.session_id)}" style="--hue:${who.hue}" aria-label="${c.says.en}">${mark}</a>`
+  }
+  return html`<nav class="group-chips" id="group-chips" aria-label="Chats" data-controller="chips">${chips.map(chip)}${d.more ? html`<button type="button" class="group-chip is-more" data-action="chips#more" aria-label="${d.more.en}: show every chat">${d.more.en}</button>` : ''}</nav>`
+}
+controller('chips', class extends Controller {
+  // (a phone scrolls the row: the chosen chip in sight)
+  connect() { const on = this.element.querySelector('.group-chip.is-on'); if (on && this.element.scrollWidth > this.element.clientWidth) this.element.scrollLeft = Math.max(0, on.offsetLeft - this.element.offsetLeft - 16) }
+  more(e) { this.element.classList.add('is-open'); e.currentTarget.hidden = true }
+})
+/** The group's name written in place: "Rename group" of the ⋯ menu puts a field there (Enter keeps:
+ *  Action::RenameTeam; Escape leaves it). */
+controller('group-name', class extends Controller {
+  static targets = ['name']
+  static values = { team: String, name: String }
+  rename() {
+    const h = this.nameTarget
+    if (h.querySelector('input')) return
+    const field = Object.assign(document.createElement('input'), { className: 'group-name-field', value: this.nameValue, maxLength: 40, autocomplete: 'off', enterKeyHint: 'done' })
+    field.setAttribute('aria-label', `New name of the group ${this.nameValue}`)
+    const was = h.textContent
+    h.textContent = ''; h.append(field); field.focus(); field.select()
+    const done = keep => {
+      if (!field.isConnected) return
+      const name = field.value.trim()
+      field.remove(); h.textContent = keep && name ? name : was
+      if (keep && name && name !== this.nameValue) deskAct?.({ do: 'rename_team', team_id: this.teamValue, name })
+    }
+    field.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); done(true) } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false) } })
+    field.addEventListener('blur', () => done(true))
+  }
+})
+
 /** The team's goals (GoalsView): a checklist of his own under the greeting; a click on the words writes in place
  *  (controller "goals": Action::SetGoal). One toggle folds them to the first line (Action::FoldGoals: GoalsView.folded);
  *  folded is this device's: the teams are kept in localStorage and sent to the core again at the start. */
@@ -48,13 +107,13 @@ ${sk('heads', 'desk-invite-art')}<h2 id="desk-invite-title">Approve your compute
 // A drawn button into the walk through every open card: a small lightning bolt in the pen's line, the word, the count
 // in an ink disc (desk.css .desk-blitz). /blitz goes to the first row; a card in the walk carries ?walk=1.
 const BOLT = raw('<svg class="blitz-bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.9 2.9 Q10.2 8.2 6.3 13.4 Q9.4 13 12.2 13.2 Q10.8 17.2 9.7 21.2 Q14 15.7 18 10.2 Q14.8 10.7 11.9 10.6 Q13.1 6.7 13.9 2.9 Z"/></svg>')
-const nextPlease = (d, base) => html`<a class="desk-blitz" data-nav href="${base}/blitz" title="${WORDS.walk} (G B)" aria-label="${d.blitz.en}" aria-keyshortcuts="G B">${BOLT}<span>${WORDS.walk}</span><b class="desk-blitz-n">${d.blitz.args?.n ?? ''}</b></a>`
+const nextPlease = (d, base) => html`<a class="desk-blitz" data-nav href="${base}/blitz" title="${WORDS.walk} (G B)" aria-label="${d.blitz.says.en}, ${d.blitz.scope?.en ?? ''}" aria-keyshortcuts="G B">${BOLT}<span>${WORDS.walk}</span><b class="desk-blitz-n">${d.blitz.says.args?.n ?? ''}</b>${d.blitz.scope?.en ? html`<small class="desk-blitz-scope">${d.blitz.scope.en}</small>` : ''}</a>`
 
 // ---- the duck for all ----
 // Left of Blitz, smaller and quieter: one press asks in a small sheet; "Yes" clears every open decision and what is
 // only to read at once (POST /cards/batch, way "sweep": one toast whose Undo takes all back). Never a request.
 function duckAll(d, base) {
-  const ids = (d.rows ?? []).filter(r => r.kind !== 'request').map(r => r.id), n = ids.length
+  const ids = rowsOf(d).filter(r => r.kind !== 'request').map(r => r.id), n = ids.length
   if (!n) return ''
   return html`<details class="t-pick desk-duck" data-controller="pops"><summary class="desk-duck-open" title="${n === 1 ? 'Duck it' : `Duck all ${n}`}" aria-label="${n === 1 ? 'I don’t give a duck: for the one open card' : `I don’t give a duck: for all ${n} open cards`}">${sk('duck')}</summary>
 <form class="desk-duck-ask" method="post" action="${base}/cards/batch" aria-label="Clear everything open"><input type="hidden" name="way" value="sweep"><input type="hidden" name="ids" value="${ids.join(',')}">
@@ -83,54 +142,30 @@ ${way('snooze', 'snooze', WORDS.later)}${way('revise', 'reverse', WORDS.revise)}
 const WINDOW = globalThis.TROMMI_DESK_WINDOW ?? 16
 const filled = new Set()
 const emptyRow = r => raw(`<article class="inbox-row" id="row-${r.id}" data-later data-id="${r.id}"${r.sign === 'knock' || r.sign === 'block' ? ' data-knock' : ''}></article>`)
-/** A run of rows of one session (DeskRowView.run on its first row: how many), as one section with an id of its own. */
-const run = (first, rows, n) => raw(String(runSection(whoOf(first.from), rows, n)).replace('<section ', `<section id="run-${first.id}" `))
-function deskList(d, base) {
-  const rows = d.rows ?? [], out = []
-  rows.forEach((r, i) => { if (r.run || i === 0) out.push({ first: r, rows: [] }); out.at(-1).rows.push(i < WINDOW || filled.has(r.id) ? deskRow(r, base, { slim: true }) : emptyRow(r)) })
-  return html`${linkSlip(d.slip ?? [], base)}${out.map(x => (x.first.from ? run(x.first, x.rows, x.rows.length) : x.rows))}
-${d.empty ? html`<div class="inbox-empty${d.mode === 'reading' ? ' is-reading' : ''}" id="desk-empty"${d.mode === 'reading' ? raw(' role="status"') : ''}>${sk('desk')}<p>${d.empty.en}</p></div>` : ''}
-<section id="desk-ip" class="tail" hidden></section>
-${deskTiles(d, base)}`
+/** Every row of the page, in its order: the questions, then what is only to read. */
+const rowsOf = d => [...(d?.questions ?? []), ...(d?.reads ?? [])]
+/** Something to read, one quiet line: its chat's mark, the title (to the card), how long ago, "Read". */
+const readRow = (r, base) => {
+  const who = whoOf(r.from)
+  return html`<article class="inbox-row group-read" id="row-${r.id}" data-id="${r.id}" data-kind="info"${r.loading ? raw(' data-loading') : ''}${who ? html` style="--hue:${who.hue}"` : ''}>${who ? avatar(who, { crown: false }) : ''}<a class="group-read-title" data-nav href="${base}/card/${encodeURIComponent(r.id)}">${r.starred ? starMark() : ''}${r.title}${who ? html`<small>${who.name}</small>` : ''}</a>${agoSpan(r.created_ms, 'ago group-read-ago')}${r.tiles?.kind === 'read' ? html`<form method="post" action="${base}/cards/batch"><input type="hidden" name="way" value="read"><input type="hidden" name="ids" value="${r.id}"><button type="submit" class="group-read-go">Read</button></form>` : ''}</article>`
 }
-
-/** Under the questions, the calm tiles (DeskView.tiles, in the core's order), each a link to its page: what runs and is
- *  done with the running cards (DeskTileView.items: ids of DeskView.off.running), the newest artifacts small (items:
- *  ids of vm.artifacts), the team's Scribble Board small (ViewModel.thumbs, painted by whiteboard.mjs's controller
- *  "thumbs"), the team's Knowledge. */
-const TILE = { work: ['/stacks/off', 'tick'], artifacts: ['/artifacts', 'picture'], board: ['/scribble-board', 'pen'], knowledge: ['/knowledge', 'book'] }
-const SIZES = new Set(['wide', 'narrow', 'full'])
-export function deskTiles(d, base) {
-  const tiles = (d?.tiles ?? []).filter(t => t && TILE[t.key])
-  if (!tiles.length) return html`<nav class="desk-tiles" id="desk-end" hidden></nav>`
-  const vm = deskVm?.() ?? {}
-  const running = new Map((d.off?.running ?? []).map(r => [r.id, r])), arts = new Map((vm.artifacts ?? []).map(a => [a.id, a]))
-  const runRow = r => { const who = whoOf(r.from); return html`<span class="dt-run" style="--hue:${who.hue}">${avatar(who, { crown: false, working: r.running })}<span><b>${r.title}</b><small>${r.line?.en ?? ''}</small></span></span>` }
-  const page = a => {
-    const id = a.files?.[0], f = id ? vm.files?.[id] : null, type = f?.media_type ?? ''
-    if (type.startsWith('image/')) return html`<span class="dt-page is-picture"><img src="${fileSrc(id)}" alt="" loading="lazy" decoding="async"></span>`
-    return html`<span class="dt-page"><b>${a.title}</b><i></i><i></i><i></i></span>`
-  }
-  const inside = t => {
-    if (t.empty) return ''
-    const items = t.items ?? [], names = t.names ?? []
-    if (t.key === 'work') { const rows = items.map(id => running.get(id)).filter(Boolean); return rows.length ? html`<span class="dt-runs">${rows.map(runRow)}</span>` : '' }
-    if (t.key === 'artifacts') { const pages = items.map(id => arts.get(id)).filter(Boolean); return pages.length ? html`<span class="dt-pages">${pages.map(page)}</span>` : '' }
-    if (t.key === 'board' && t.team_id) return html`<span class="dt-board"><canvas width="720" height="300" data-thumb="${t.team_id}" aria-hidden="true"></canvas></span>`
-    if (t.key === 'knowledge') return names.length ? html`<ul class="dt-names">${names.map(n => html`<li>${n}</li>`)}</ul>` : ''
-    return ''
-  }
-  if (tiles.some(t => t.key === 'board' && t.team_id)) viewModule('whiteboard').catch(() => {})   // (its controller paints the board small)
-  // The bento: each tile takes the room the core gives it (DeskTileView.size); one with nothing yet is small and quiet.
-  return html`<nav class="desk-tiles" id="desk-end" aria-label="${tiles.map(t => t.title?.en ?? '').join(', ')}">${tiles.map(t => html`<a class="desk-tile is-${SIZES.has(t.size) ? t.size : 'narrow'}${t.empty ? ' is-empty' : ''}" id="tile-${t.key}" data-tile="${t.key}" data-nav href="${base}${TILE[t.key][0]}${t.opens?.filter ? `?filter=${encodeURIComponent(t.opens.filter)}` : ''}"${t.key === 'board' ? raw(' data-controller="thumbs"') : ''} aria-label="${t.title?.en ?? ''}: ${t.line?.en ?? ''}"><span class="dt-head">${sk(TILE[t.key][1])}<b>${t.title?.en ?? ''}</b><i>${t.line?.en ?? ''}</i>${CHEV}</span>${inside(t)}</a>`)}</nav>`
+/** A section's heading: its words and, beside them, how many (GroupView.questions_says, reads_says). */
+const sectionHead = (t, id) => (t ? html`<h3 class="group-sec" id="${id}">${t.en}<span>${t.args?.n ?? ''}</span></h3>` : '')
+function deskList(d, base) {
+  const questions = d.questions ?? [], reads = d.reads ?? []
+  return html`${linkSlip(d.slip ?? [], base)}
+${questions.length ? html`<section class="group-part is-questions" aria-labelledby="sec-questions">${sectionHead(d.questions_says, 'sec-questions')}${questions.map((r, i) => (i < WINDOW || filled.has(r.id) ? deskRow(r, base, { slim: true, named: true }) : emptyRow(r)))}</section>` : ''}
+${reads.length ? html`<section class="group-part is-reads" aria-labelledby="sec-reads">${sectionHead(d.reads_says, 'sec-reads')}${reads.map(r => readRow(r, base))}</section>` : ''}
+${d.empty ? html`<div class="inbox-empty${d.mode === 'reading' ? ' is-reading' : ''}" id="desk-empty"${d.mode === 'reading' ? raw(' role="status"') : ''}>${sk('desk')}<p>${d.empty.en}</p></div>` : ''}
+<section id="desk-ip" class="tail" hidden></section>`
 }
 
 let deskVm = null, deskAct = null
 
 /** The Desk's <main>, and beside it its layer: the selection bar, the knock strips (fixed things
  *  inside <main> would keep it from being a layout boundary). */
-const deskMain = (d, base) => html`<main id="inbox" aria-label="Desk" data-controller="desk">
-${deskHead(d, base)}
+export const deskMain = (d, base) => html`<main id="inbox" class="group-page" aria-label="${d.head?.name?.en ?? 'Group'}" data-controller="desk">
+${groupHead(d, base)}
 <div class="inbox-news-at"><button class="inbox-news" type="button" data-desk-target="news" data-action="desk#toNew" hidden></button></div>
 <div class="inbox-groups" id="desk-list" data-desk-target="list">${deskList(d, base)}</div>
 </main>
@@ -149,7 +184,7 @@ function offMain(o, base) {
   const q = o?.query ?? ''
   const works = new Map((o?.works ?? []).map(w => [w.id, w])), rest = new Map((o?.rest ?? []).map(r => [r.id, r]))
   const group = g => html`<section class="off-group" id="off-${g.key}" aria-label="${g.says.en}"><h3>${g.says.en} <b>${g.count}</b></h3>${(g.ids ?? []).map(id => (g.key === 'running' ? works.has(id) && workRow(works.get(id), base) : rest.has(id) && restRow(rest.get(id), base)) || '')}</section>`
-  return html`<main id="inbox" class="off-page" aria-label="Off your mind"><header class="inbox-head desk-top"><h2 class="desk-hello"><a class="off-back" data-nav href="${base}/" aria-label="Back to the Desk">←</a> Off your <em>mind</em></h2><form class="end-search" method="get" action="${base}/stacks/off" role="search"><label><span class="offscreen">Search</span><input type="search" name="q" value="${q}" placeholder="Search the list" autocomplete="off"></label></form></header>
+  return html`<main id="inbox" class="off-page" aria-label="Off your mind"><header class="inbox-head desk-top"><h2 class="desk-hello"><a class="off-back" data-nav href="${base}/" aria-label="Back to the group">←</a> Off your <em>mind</em></h2><form class="end-search" method="get" action="${base}/stacks/off" role="search"><label><span class="offscreen">Search</span><input type="search" name="q" value="${q}" placeholder="Search the list" autocomplete="off"></label></form></header>
 <div class="inbox-groups" id="off-list"><div class="off-groups" id="off-end">${(o?.groups ?? []).map(group)}${o?.none ? html`<p class="end-none">${o.none.en}</p>` : ''}
 ${o?.more ? html`<form class="end-more" method="post" action="${base}/stacks/off/more"><input type="hidden" name="q" value="${q}"><button type="submit" class="end-more-go">${o.more.says.en}</button></form>` : ''}${o?.loading ? html`<p class="end-none" role="status">Loading…</p>` : ''}</div></div></main>`
 }
@@ -560,15 +595,16 @@ export function register(t) {
   deskAct = t.act
   // (the teams whose goals are folded on this device: the core holds them for its run)
   for (const team_id of goalsFolded()) t.act({ do: 'fold_goals', team_id, folded: true })
-  const desk = () => t.vm().desk
-  const place = () => t.vm().sidebar?.place?.en ?? 'Desk'
+  const desk = () => t.vm().group
+  const place = () => t.vm().sidebar?.place?.en ?? 'Trommi'
   t.get(/^\/$/, ({ req, res }) => {
     const d = desk()
     t.page(req, res, { title: d.waiting ? `(${d.waiting}) ${place()} · Trommi` : `${place()} · Trommi`, view: 'desk', main: deskMain(d, t.BASE) })
   })
   t.get(/^\/blitz$/, ({ res }) => {
-    const first = desk().rows?.[0]
-    t.redirect(res, first ? `${cardPath(first.id, t.BASE)}?walk=1` : `${t.BASE}/`)
+    // (Blitz walks every group's open cards: its first, and the card's page walks on through them, Focus.walk_all)
+    const first = desk().blitz?.card ?? t.vm().sidebar?.global_blitz?.card
+    t.redirect(res, first ? `${cardPath(first, t.BASE)}?walk=1` : `${t.BASE}/`)
   })
   // The complete list with its search (Screen::Off, the query from ?q=: app.mjs screenOf); "Show more" grows its window.
   t.get(/^\/stacks\/off$/, ({ req, res }) => t.page(req, res, { title: `Off your mind · ${place()} · Trommi`, view: 'off', main: offMain(t.vm().off, t.BASE) }))
@@ -577,11 +613,11 @@ export function register(t) {
   t.post(/^\/cards\/batch$/, ({ req, res, form }) => {
     const way = String(form.get('way') ?? '')
     if (!Object.hasOwn(WAY, way)) { res.code = 400; return }
-    const rows = new Map((desk().rows ?? []).map(r => [r.id, r]))
+    const rows = new Map(rowsOf(desk()).map(r => [r.id, r]))
     const ids = [...new Set(String(form.get('ids') ?? '').split(',').filter(id => /^[0-9a-f]+$/.test(id)))]
     const done = [], used = new Set()
     for (const id of ids) { const w = WAY[way](rows.get(id)?.kind ?? 'decision'); if (w) { t.act(BATCH[w](id)); done.push(id); used.add(w) } }
-    // From a card's own page (from: that card): back to its session, or on to the next row of the Desk
+    // From a card's own page (from: that card): back to its session, or on to the next row of the group page
     if (form.has('from')) {
       const back = String(form.get('back') ?? '')
       if (back.startsWith(`${t.BASE}/chat/`) && /^[\w\-/%+.]+$/.test(back)) return t.redirect(res, back)
@@ -602,5 +638,5 @@ export function register(t) {
   })
 
   // Rows beyond the first ones stand empty until they come near (startDeskWindow): their markup is made then.
-  if (typeof IntersectionObserver === 'function') startDeskWindow(id => { const r = desk().rows?.find(x => x.id === id); if (!r) return ''; filled.add(id); return String(deskRow(r, t.BASE, { slim: true })) })
+  if (typeof IntersectionObserver === 'function') startDeskWindow(id => { const r = desk().questions?.find(x => x.id === id); if (!r) return ''; filled.add(id); return String(deskRow(r, t.BASE, { slim: true, named: true })) })
 }

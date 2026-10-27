@@ -121,9 +121,8 @@ const write = (k, v) => { try { if (v == null) localStorage.removeItem(k); else 
 /** The team in view on this browser (kept per device, sent as Focus.team): a team's id, or null (the core's first). */
 const TEAM_KEY = 'trommi-team'
 let teamInView = read(TEAM_KEY)
-/** Home: the Desk of every team (the bell at the sidebar's top; sent as Focus.desk_all), kept per browser. */
-const HOME_KEY = 'trommi-desk-all'
-let deskAll = read(HOME_KEY) === '1'
+// (the Desk of every team is gone, the owner, 27 October 2026: Blitz is the only view of everything)
+write('trommi-desk-all', null)
 /** The teams unfolded in the wide sidebar on this browser (sent as Focus.open_teams). */
 const OPEN_KEY = 'trommi-teams-open'
 let openTeams = (() => { try { const v = JSON.parse(read(OPEN_KEY, '[]')); return Array.isArray(v) ? v.map(String).slice(0, 50) : [] } catch { return [] } })()
@@ -139,7 +138,7 @@ function createBoard({ views }) {
     end(body = '') { if (this.kind === 'none' && body) { this.kind = 'html'; this.body = String(body) } },
   })
   const redirect = (res, to) => { res.kind = 'redirect'; res.to = to; res.code = 303 }
-  const notFoundMain = what => html`<main id="inbox" aria-label="Not found"><header class="inbox-head"><div class="inbox-title"><h2>${what}</h2><p><a href="${BASE}/" data-nav>Back to the Desk</a></p></div></header></main>`
+  const notFoundMain = what => html`<main id="inbox" aria-label="Not found"><header class="inbox-head"><div class="inbox-title"><h2>${what}</h2><p><a href="${BASE}/" data-nav>Back to the group</a></p></div></header></main>`
 
   // ---- the toolkit the page modules get ----
   const gets = [], posts = []
@@ -157,9 +156,7 @@ function createBoard({ views }) {
     saveFile: core.saveFile,
     /** The team in view: its id, or null for the core's first. */
     team: () => teamInView,
-    setTeam(d) { teamInView = d || null; write(TEAM_KEY, teamInView); deskAll = false; write(HOME_KEY, null); sendFocus() },
-    /** Home: the Desk of every team. */
-    setHome() { deskAll = true; write(HOME_KEY, '1'); sendFocus() },
+    setTeam(d) { teamInView = d || null; write(TEAM_KEY, teamInView); sendFocus() },
     /** The teams unfolded in the wide sidebar. */
     openTeams: () => openTeams,
     setOpenTeams(ids) { openTeams = [...new Set(ids.map(String))].slice(0, 50); write(OPEN_KEY, JSON.stringify(openTeams)); sendFocus() },
@@ -206,14 +203,22 @@ function createBoard({ views }) {
 }
 
 // ---- focus: what the person looks at, for the core ----
-let screenInView = { screen: 'desk' }
+let screenInView = { screen: 'group' }
 /** A card's page that is a step of one chat's Blitz (/chat/<slug>/card/<n>?walk=1): that chat (Focus.walk_chat). */
 let walkChatInView = null
 const walkChatOf = (pathname, search = '') => { const m = /^\/chat\/([^/]+)\/card\//.exec(pathname); return m && new URLSearchParams(search).has('walk') ? decodeURIComponent(m[1]) : null }
+/** A card's page that is a step of Blitz over every group (/card/<n>?walk=1, from /blitz): Focus.walk_all. */
+let walkAllInView = false
+const walkAllOf = (pathname, search = '') => /^\/card\//.test(pathname) && new URLSearchParams(search).has('walk')
+/** The chat chip chosen on the group page (/?chat=<slug>): Focus.group_chat. */
+let groupChatInView = null
+const groupChatOf = (pathname, search = '') => (pathname === '/' ? new URLSearchParams(search).get('chat') || null : null)
+/** The wide sidebar folded to a rail (sidebar.mjs, html[data-rail]): Focus.rail_folded, so the core leaves its counts out. */
+const railFolded = () => document.documentElement.dataset.rail === 'folded'
 let boardInView = null
 /** The core hears what is in view: the page's screen, the team, the Scribble Board beside it, whether the window is seen. */
 function sendFocus() {
-  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(deskAll ? { desk_all: true } : {}), ...(openTeams.length ? { open_teams: openTeams } : {}), ...(walkChatInView ? { walk_chat: walkChatInView } : {}), calm: true })
+  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(groupChatInView ? { group_chat: groupChatInView } : {}), ...(railFolded() ? { rail_folded: true } : {}), ...(openTeams.length ? { open_teams: openTeams } : {}), ...(walkChatInView ? { walk_chat: walkChatInView } : {}), ...(walkAllInView ? { walk_all: true } : {}), calm: true })
 }
 /** The core's Screen for an address (before the page is drawn: its unit is then in the model). */
 export function screenOf(pathname, search = '') {
@@ -226,14 +231,16 @@ export function screenOf(pathname, search = '') {
   if (pathname === '/knowledge') { const p = new URLSearchParams(search), f = p.get('filter') ?? ''; return { screen: 'knowledge', query: (p.get('q') ?? '').trim(), filter: ['new', 'pinned', 'forgotten'].includes(f) ? f : '', open: /^[0-9a-f]{32}$/.test(p.get('open') ?? '') ? p.get('open') : '' } }
   if (pathname === '/scribble-board') return { screen: 'scribble', board_id: teamBoard() }
   if (/^\/(?:settings|devices|pair|sessions)(?:\/|$)/.test(pathname)) return { screen: 'settings' }
-  return { screen: 'desk' }
+  return { screen: 'group' }
 }
 /** The page shows its screen's unit once the core sent it: a visit waits a moment for that render. */
 function focusFor(url) {
-  const s = screenOf(url.pathname, url.search), walk = walkChatOf(url.pathname, url.search)
-  const same = JSON.stringify(s) === JSON.stringify(screenInView) && walk === walkChatInView
+  const s = screenOf(url.pathname, url.search), walk = walkChatOf(url.pathname, url.search), all = walkAllOf(url.pathname, url.search), chat = groupChatOf(url.pathname, url.search)
+  const same = JSON.stringify(s) === JSON.stringify(screenInView) && walk === walkChatInView && all === walkAllInView && chat === groupChatInView
   screenInView = s
   walkChatInView = walk
+  walkAllInView = all
+  groupChatInView = chat
   if (same) return Promise.resolve()
   sendFocus()
   return new Promise(done => { const stop = core.on('render', () => { stop(); clearTimeout(t); done() }); const t = setTimeout(() => { stop(); done() }, 250) })
@@ -909,10 +916,11 @@ const appView = { register(t) {
     t.act({ do: 'dismiss', toast_id: id })
     t.done(res)
   })
-  // The menu's "switch team" (/?team=<id>) and /team/<id>: the team is this browser's; the address is the Desk's again.
+  // The menu's "switch team" (/?team=<id>, "none": the chats on no team) and /team/<id>: the group is this browser's;
+  // the address is the group page's again.
   t.get(/^\/$/, ({ res, url }) => {
-    // (home: the bell at the sidebar's top, the Desk of every team)
-    if (url.searchParams.has('home')) { t.setHome(); return t.redirect(res, '/') }
+    // (home, the Desk of every team, is gone: its address of before is the group page)
+    if (url.searchParams.has('home')) return t.redirect(res, '/')
     const d = url.searchParams.get('team'); if (d == null) return false; t.setTeam(d); t.redirect(res, '/')
   })
   t.get(/^\/team\/([\w-]+)$/, ({ res, match }) => { t.setTeam(match[1]); t.redirect(res, '/') })
@@ -1028,8 +1036,13 @@ async function start({ take = false } = {}) {
   if (demo) fixture = await fetch('/demo/fixture.json').then(r => r.json()).catch(() => null)
   screenInView = screenOf(location.pathname, location.search)
   walkChatInView = walkChatOf(location.pathname, location.search)
+  walkAllInView = walkAllOf(location.pathname, location.search)
+  groupChatInView = groupChatOf(location.pathname, location.search)
   await core.startCore(configOf(fixture), { take })
   sendFocus()
+  // (the rail folded or opened: the core leaves the sidebar's counts out, or puts them back)
+  let railWas = railFolded()
+  new MutationObserver(() => { if (railFolded() !== railWas) { railWas = railFolded(); sendFocus() } }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-rail'] })
   // A cold worker on a slow line can take long. Never draw an incomplete model; the start screen shows the core's
   // steps meanwhile. After 30 s a quiet note offers a reload, and the start goes on.
   if (!startDone(core.vm()) && !stopped) await new Promise(done => {
