@@ -869,6 +869,132 @@ fn helpers_are_a_line_in_their_callers_trail() {
             || e.work.to_string().contains("set_status")));
 }
 
+/// A helper's start names the cards its task names, by their ids alone: never the task's words. Once it runs, the
+/// Agent step's end names it.
+#[test]
+fn a_helpers_start_names_its_cards_by_id_and_never_its_task() {
+    let card = "0123456789abcdef0123456789abcdef";
+    let prompt = format!("You are helper \"Connector\". Card {card}. SECRET plan, see 0123456789abcdef0123456789abcdef01 and {card}.");
+    let pre_ = json!({ "hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_use_id": "t1", "prompt_id": "p",
+        "tool_input": { "description": "Compare views", "prompt": prompt, "subagent_type": "general-purpose" } });
+    let r = line(&pre_, Level::Full);
+    assert_eq!(
+        r["refs"],
+        json!([card]),
+        "only whole card-shaped ids, once each"
+    );
+    assert_eq!(r["title"].as_str(), Some("Compare views"));
+    // (at the level steps; the level full shows a helper's task, as it did)
+    let r = line(&pre_, Level::Steps);
+    assert!(!has(&r, "SECRET") && !has(&r, "Connector"), "{r}");
+    let mut post = pre_.clone();
+    post["hook_event_name"] = json!("PostToolUse");
+    post["tool_response"] = json!({ "isAsync": true, "status": "async_launched", "agentId": "a77", "description": "Compare views" });
+    let r = line(&post, Level::Steps);
+    assert_eq!(
+        (r["spawned"].as_str(), r["refs"].clone()),
+        (Some("a77"), json!([card]))
+    );
+    // a helper's own helper, and any other tool, names nothing
+    let mut inner = pre_.clone();
+    inner["agent_id"] = json!("a77");
+    assert!(line(&inner, Level::Steps).get("refs").is_none());
+    let bash = pre(
+        "t2",
+        "Bash",
+        json!({ "command": format!("echo {card}"), "description": "Echo" }),
+    );
+    assert!(line(&bash, Level::Full).get("refs").is_none());
+}
+
+/// A helper's line says what it is at (its newest step's description, else the tool; never the subject), carries
+/// the cards its start named, and says nothing more once it ended. The session works while its turn runs or a
+/// helper runs; after Stop with helpers running it still works, and is idle once they ended.
+#[test]
+fn a_helpers_line_says_what_it_is_at_and_the_session_works_while_helpers_run() {
+    let card = "0123456789abcdef0123456789abcdef";
+    let mut t = Trail::default();
+    assert!(!t.busy(1_000) && !t.heard());
+    t.prompt("p", 1_000);
+    assert!(t.heard());
+    assert!(t.busy(1_000) && t.turn_runs(1_000));
+    assert!(
+        !t.turn_runs(1_000 + PROMPTED_MS),
+        "a prompt no step followed does not run for ever"
+    );
+    t.event(&ev(json!({ "ev": "pre", "id": "s1", "tool": "Agent", "title": "Compare views", "refs": [card], "prompt": "p" })), 1_100);
+    t.event(&ev(json!({ "ev": "agent_start", "agent": "a1", "agent_type": "general-purpose", "title": "Compare views", "prompt": "p" })), 1_120);
+    t.event(&ev(json!({ "ev": "post", "id": "s1", "tool": "Agent", "spawned": "a1", "refs": [card], "prompt": "p" })), 1_130);
+    // a second one, started without a card
+    t.event(
+        &ev(json!({ "ev": "pre", "id": "s2", "tool": "Agent", "title": "Other", "prompt": "p" })),
+        1_140,
+    );
+    t.event(&ev(json!({ "ev": "agent_start", "agent": "a2", "agent_type": "Explore", "title": "Other", "prompt": "p" })), 1_150);
+    t.answer("p", Some("Started."), 1_200);
+    assert!(!t.turn_runs(1_200) && t.busy(1_200) && t.helpers_running() == 2);
+    t.event(&ev(json!({ "ev": "pre", "id": "h1", "tool": "Bash", "title": "Polling until tests finish", "agent": "a1", "prompt": "p" })), 2_000);
+    t.event(&ev(json!({ "ev": "pre", "id": "h2", "tool": "Read", "subject": "src/secret.rs", "agent": "a2", "prompt": "p" })), 2_100);
+    let sent = t.flush();
+    let turns = folded_turns(&sent);
+    let items = turns[0].1["items"].as_array().unwrap().clone();
+    let a1 = items.iter().find(|i| i["id"] == "agent:a1").unwrap();
+    let a2 = items.iter().find(|i| i["id"] == "agent:a2").unwrap();
+    assert_eq!(
+        (
+            a1["now"].as_str(),
+            a1["now_at"].as_u64(),
+            a1["cards"].clone(),
+            a1["state"].as_str()
+        ),
+        (
+            Some("Polling until tests finish"),
+            Some(2_000),
+            json!([card]),
+            Some("running")
+        )
+    );
+    assert_eq!((a2["now"].as_str(), a2.get("cards")), (Some("Read"), None));
+    assert!(!sent
+        .iter()
+        .any(|e| e.work.to_string().contains("secret.rs")));
+    t.event(&ev(json!({ "ev": "agent_stop", "agent": "a1" })), 9_000);
+    assert!(t.busy(9_000) && t.helpers_running() == 1);
+    t.event(&ev(json!({ "ev": "agent_stop", "agent": "a2" })), 9_100);
+    assert!(!t.busy(9_100));
+    let mut all = sent;
+    all.extend(t.flush());
+    let turns = folded_turns(&all);
+    let a1 = turns[0].1["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == "agent:a1")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (a1["state"].as_str(), a1.get("now"), a1["cards"].clone()),
+        (Some("ok"), None, json!([card]))
+    );
+}
+
+/// The session's end ends its helpers' lines too: nothing of it runs on.
+#[test]
+fn the_sessions_end_ends_its_helpers() {
+    let mut t = Trail::default();
+    t.prompt("p", 1_000);
+    t.event(&ev(json!({ "ev": "agent_start", "agent": "a1", "agent_type": "Explore", "title": "X", "prompt": "p" })), 1_100);
+    t.answer("p", Some("ok"), 1_200);
+    assert!(t.busy(1_300));
+    t.event(&ev(json!({ "ev": "end" })), 1_400);
+    assert!(!t.busy(1_400));
+    let turns = folded_turns(&t.flush());
+    assert_eq!(
+        turns[0].1["items"][0]["state"].as_str(),
+        Some("interrupted")
+    );
+}
+
 #[test]
 fn a_trail_has_its_limits() {
     let mut t = Trail::default();

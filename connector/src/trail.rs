@@ -109,6 +109,28 @@ pub fn subject(tool: &str, input: &Value, cwd: &str) -> String {
     }
 }
 
+/// The most card ids a helper's start names (`refs`).
+pub const REFS_MAX: usize = 8;
+/// A card id as the board writes it: 16 bytes in lowercase hex.
+fn card_ids_in(text: &str) -> Vec<String> {
+    let re = Regex::new(r"\b[0-9a-f]{32}\b").unwrap();
+    let mut out: Vec<String> = vec![];
+    for m in re.find_iter(text) {
+        let id = m.as_str().to_string();
+        if !out.contains(&id) {
+            out.push(id);
+            if out.len() >= REFS_MAX {
+                break;
+            }
+        }
+    }
+    out
+}
+/// Whether a tool starts a helper (Claude Code's `Agent`, `Task` before it).
+pub fn starts_helper(tool: &str) -> bool {
+    tool == "Agent" || tool == "Task"
+}
+
 /// What looks like a secret taken out of a text, for the level `full`. Exactly this, and no more (README):
 /// private-key blocks; the value of the headers Authorization, Proxy-Authorization, X-Api-Key, X-Auth-Token, Cookie
 /// and Set-Cookie to the end of the line; a `Bearer` or `Basic` token; the user and password in a URL; the value
@@ -357,9 +379,26 @@ pub fn hook_request(input: &Value, ancestors: &[u32], level: Level) -> Option<Va
         }
         Some(())
     };
+    // A helper's start in the session's own turn: the card ids its task names (the card it works on, which a
+    // status line names), and once it runs its id. Only ids of the shape a card has; never the task's words.
+    let spawn = |put: &mut dyn FnMut(&str, Value)| {
+        if starts_helper(tool) && str_of(input, "agent_id").is_empty() {
+            let refs = card_ids_in(str_of(args, "prompt"));
+            if !refs.is_empty() {
+                put("refs", json!(refs));
+            }
+            let spawned = input
+                .get("tool_response")
+                .and_then(|r| r.get("agentId"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            put("spawned", json!(one_line(spawned, 64)));
+        }
+    };
     let ev = match str_of(input, "hook_event_name") {
         "PreToolUse" => {
             step(&mut put)?;
+            spawn(&mut put);
             if full && !is_board_tool(tool) {
                 put("input", json!(full_input(tool, args)));
             }
@@ -367,6 +406,7 @@ pub fn hook_request(input: &Value, ancestors: &[u32], level: Level) -> Option<Va
         }
         "PostToolUse" => {
             step(&mut put)?;
+            spawn(&mut put);
             if full && !is_board_tool(tool) {
                 put(
                     "output",
@@ -560,6 +600,18 @@ struct Helper {
     /// The turn its line stands in.
     turn: String,
 }
+/// A helper the session's turn started (its `Agent` step), until its own hooks name it: its step's id, its title
+/// (the task's description, which its SubagentStart repeats), the card ids its task names, its id once known.
+struct Spawn {
+    step: String,
+    title: String,
+    refs: Vec<Value>,
+    agent: String,
+}
+/// How long a prompt that no step followed counts as a running turn.
+pub const PROMPTED_MS: u64 = 10 * 60_000;
+/// The most helper starts a `Trail` remembers.
+const SPAWNS_KEPT: usize = 16;
 
 /// One envelope of a trail: the message's `work`, for the session's chat.
 pub struct Envelope {
@@ -575,6 +627,9 @@ pub struct Trail {
     pub turns: Vec<Turn>,
     main: Option<String>,
     helpers: HashMap<String, Helper>,
+    spawns: Vec<Spawn>,
+    /// Whether any hook of the trail came: without them (hooks not run, not trusted) nothing here says what runs.
+    heard: bool,
     says: HashMap<String, String>,
     /// The prompt no step followed yet: its `prompt_id` and when it came (the turn's start).
     prompted: Option<(String, u64)>,
@@ -685,6 +740,7 @@ impl Trail {
     /// A prompt with another id while a turn is open says that turn was broken off: a turn that ends by itself
     /// fires Stop first, and Esc fires nothing. Without an id on either side nothing is called broken off.
     pub fn prompt(&mut self, prompt: &str, now: u64) -> bool {
+        self.heard = true;
         if let Some(id) = self.open_main() {
             if !Self::other(&self.turn(&id).unwrap().prompt, prompt) {
                 return true;
@@ -702,6 +758,7 @@ impl Trail {
     }
     /// The turn ended with `answer` (Stop): its last words are the answer, which goes as a message of its own.
     pub fn answer(&mut self, prompt: &str, answer: Option<&str>, now: u64) {
+        self.heard = true;
         self.answered = answer.map(folded);
         if self
             .prompted
@@ -740,8 +797,53 @@ impl Trail {
         }
         self.n = n;
     }
+    /// Whether a hook of the trail (a prompt, a Stop, a step) came at all.
+    pub fn heard(&self) -> bool {
+        self.heard
+    }
+    /// Whether the session works at `now`: its turn runs, or a helper it started still runs.
+    pub fn busy(&self, now: u64) -> bool {
+        self.turn_runs(now) || !self.helpers.is_empty()
+    }
+    /// Whether the session's own turn runs at `now`: its trail is open, or a prompt came that no step followed yet
+    /// (for PROMPTED_MS at most: a prompt broken off before its first step fires no hook).
+    pub fn turn_runs(&self, now: u64) -> bool {
+        self.open_main().is_some()
+            || self
+                .prompted
+                .as_ref()
+                .is_some_and(|(_, at)| now.saturating_sub(*at) < PROMPTED_MS)
+    }
+    /// How many helpers run now.
+    pub fn helpers_running(&self) -> usize {
+        self.helpers.len()
+    }
+    /// The cards a helper's start named go onto its line (`cards`), so that the status line that names one of them
+    /// shows what the helper is at.
+    fn bind(&mut self, agent: &str) {
+        let Some(sp) = self.spawns.iter().find(|s| s.agent == agent) else {
+            return;
+        };
+        let refs = sp.refs.clone();
+        let Some(h) = self.helpers.get(agent) else {
+            return;
+        };
+        let (turn, key) = (h.turn.clone(), format!("agent:{agent}"));
+        if refs.is_empty() {
+            return;
+        }
+        if let Some(t) = self.turn(&turn) {
+            if let Some(i) = t.index.get(&key).copied() {
+                if t.items[i].get("cards") != Some(&json!(refs)) {
+                    t.items[i].insert("cards".into(), json!(refs));
+                    t.dirty.insert(i);
+                }
+            }
+        }
+    }
     /// A line of a trail hook.
     pub fn event(&mut self, req: &Value, now: u64) {
+        self.heard = true;
         let ev = str_of(req, "ev");
         let agent = str_of(req, "agent").to_string();
         let prompt = str_of(req, "prompt").to_string();
@@ -777,6 +879,44 @@ impl Trail {
             }
             "pre" | "post" | "fail" => {
                 let id = str_of(req, "id").to_string();
+                if agent.is_empty() && starts_helper(str_of(req, "tool")) {
+                    let spawned = str_of(req, "spawned").to_string();
+                    let refs: Vec<Value> = req
+                        .get("refs")
+                        .and_then(|v| v.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter(|x| x.is_string())
+                                .take(REFS_MAX)
+                                .cloned()
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    match self.spawns.iter_mut().find(|s| s.step == id) {
+                        Some(s) => {
+                            if !refs.is_empty() {
+                                s.refs = refs;
+                            }
+                            if !spawned.is_empty() {
+                                s.agent = spawned.clone();
+                            }
+                        }
+                        None => {
+                            self.spawns.push(Spawn {
+                                step: id.clone(),
+                                title: str_of(req, "title").to_string(),
+                                refs,
+                                agent: spawned.clone(),
+                            });
+                            if self.spawns.len() > SPAWNS_KEPT {
+                                self.spawns.remove(0);
+                            }
+                        }
+                    }
+                    if !spawned.is_empty() {
+                        self.bind(&spawned);
+                    }
+                }
                 let board = req.get("board") == Some(&Value::Bool(true));
                 let named = str_of(req, "helper").to_string();
                 let turn_id = if agent.is_empty() {
@@ -814,6 +954,16 @@ impl Trail {
                                     .unwrap_or(0)
                                     + 1;
                                 t.items[i].insert("steps".into(), json!(steps));
+                                // what it is at: its step's own description, else the tool (never the subject)
+                                let at = [str_of(req, "title"), str_of(req, "tool")]
+                                    .into_iter()
+                                    .find(|x| !x.is_empty())
+                                    .unwrap_or("")
+                                    .to_string();
+                                if !at.is_empty() {
+                                    t.items[i].insert("now".into(), json!(at));
+                                    t.items[i].insert("now_at".into(), json!(now));
+                                }
                                 t.dirty.insert(i);
                             }
                         }
@@ -899,15 +1049,30 @@ impl Trail {
                 let t = self.turn(&turn).unwrap();
                 t.say(&mut n, now);
                 t.add(&key, item);
-                self.helpers.insert(agent, Helper { turn });
+                self.helpers.insert(agent.clone(), Helper { turn });
+                // (the start it belongs to: the one Claude Code named it in, else the one with its title)
+                if !self.spawns.iter().any(|s| s.agent == agent) {
+                    let title = str_of(req, "title");
+                    if let Some(s) = self
+                        .spawns
+                        .iter_mut()
+                        .find(|s| s.agent.is_empty() && !title.is_empty() && s.title == title)
+                    {
+                        s.agent = agent.clone();
+                    }
+                }
+                self.bind(&agent);
             }
             "agent_stop" => {
+                self.spawns.retain(|s| s.agent != agent);
                 if let Some(h) = self.helpers.remove(&agent) {
                     let key = format!("agent:{agent}");
                     if let Some(t) = self.turn(&h.turn) {
                         if let Some(i) = t.index.get(&key).copied() {
                             let it = &mut t.items[i];
                             it.insert("state".into(), json!("ok"));
+                            it.remove("now");
+                            it.remove("now_at");
                             it.insert(
                                 "ms".into(),
                                 json!(now.saturating_sub(
@@ -925,10 +1090,28 @@ impl Trail {
             "end" | "error" => {
                 let state = if ev == "end" { "interrupted" } else { "failed" };
                 let open: Vec<String> = self.main.take().into_iter().collect();
+                self.prompted = None;
                 for id in open {
                     if let Some(t) = self.turn(&id) {
                         t.say(&mut n, now);
                         t.close(state, Some(now));
+                    }
+                }
+                // (the session is over: no helper of it runs on)
+                if ev == "end" {
+                    self.spawns.clear();
+                    for (agent, h) in std::mem::take(&mut self.helpers) {
+                        if let Some(t) = self.turn(&h.turn) {
+                            if let Some(i) = t.index.get(&format!("agent:{agent}")).copied() {
+                                let it = &mut t.items[i];
+                                if it.get("state").and_then(|s| s.as_str()) == Some("running") {
+                                    it.insert("state".into(), json!("interrupted"));
+                                    it.remove("now");
+                                    it.remove("now_at");
+                                    t.dirty.insert(i);
+                                }
+                            }
+                        }
                     }
                 }
             }

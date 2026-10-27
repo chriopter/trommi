@@ -752,6 +752,14 @@ impl Conn {
         if crate::host::is_hermes() || turn_on {
             return turn_on;
         }
+        // With the trail (the hooks of the level steps, once one came) the session works while its turn runs or a
+        // helper it started still runs: a status line left on working is the agent's word, not work going on.
+        if mirror::level() >= mirror::Level::Steps {
+            let t = self.trail.lock().unwrap();
+            if t.heard() {
+                return t.busy(now_ms());
+            }
+        }
         let Some(c) = self.member.client() else {
             return false;
         };
@@ -1680,15 +1688,37 @@ impl Conn {
             if !steps {
                 return json!({ "ok": true, "queued": false, "why": "off" });
             }
-            let (now_dirty, closed) = {
+            // (a helper's start names only cards of this board: what else looks like a card id stays here)
+            let mut req = req.clone();
+            if let Some(refs) = req.get("refs").and_then(|v| v.as_array()).cloned() {
+                let known: Vec<Value> = match self.member.client() {
+                    Some(c) => {
+                        let core = c.lock();
+                        let cards = &core.model().cards;
+                        refs.into_iter()
+                            .filter(|r| r.as_str().is_some_and(|id| cards.contains_key(id)))
+                            .collect()
+                    }
+                    None => vec![],
+                };
+                req["refs"] = json!(known);
+            }
+            let req = &req;
+            let (now_dirty, closed, moved) = {
                 let mut t = self.trail.lock().unwrap();
+                let was = t.busy(now_ms());
                 t.event(req, now_ms());
                 (
                     t.dirty(),
                     ["end", "error", "agent_stop"]
                         .contains(&req.get("ev").and_then(|v| v.as_str()).unwrap_or("")),
+                    was != t.busy(now_ms()),
                 )
             };
+            if moved {
+                let c = self.arc();
+                tokio::spawn(async move { c.sync_link().await });
+            }
             if closed {
                 self.flush_trail();
             } else if now_dirty && !self.trail_timer.swap(true, Ordering::SeqCst) {
@@ -1708,15 +1738,21 @@ impl Conn {
         let mut same_turn = false;
         if steps && ["input", "answer"].contains(&kind) {
             let prompt = req.get("prompt_id").and_then(|v| v.as_str()).unwrap_or("");
-            {
+            let moved = {
                 let mut t = self.trail.lock().unwrap();
+                let was = t.busy(now_ms());
                 if kind == "input" {
                     same_turn = t.prompt(prompt, now_ms())
                 } else {
                     t.answer(prompt, req.get("text").and_then(|v| v.as_str()), now_ms())
                 }
-            }
+                was != t.busy(now_ms())
+            };
             self.flush_trail();
+            if moved {
+                let c = self.arc();
+                tokio::spawn(async move { c.sync_link().await });
+            }
         }
         let a = self.mirror.accept(req, same_turn);
         if a["queued"] == Value::Bool(true) {

@@ -167,6 +167,16 @@ the coordinator files its "Working on" card with `start_task` and `helper`, and 
 revises that card to "Done: …" at its end. A tool call that names a helper gets no board events with its result,
 and `inbox` with a helper says there are none for it: every event stays the coordinator's.
 
+What a helper is at comes from the work trail's hooks, without the agent saying it: its line in the trail
+(`kind: "helper"`) carries `now` (its newest step's own description, else the tool; never the step's subject or
+input) and `now_at`, and loses both when SubagentStop ends it. The cards its start names go onto that line as
+`cards`: the hook of the `Agent` step takes from the task only what has the shape of a card id (32 lowercase hex),
+never its words, and the connector keeps those that are cards of the board. A status line that names one of them
+(as `start_task` links its line to its card) is the helper's line, and the app shows there what it is at. With the
+trail (the level `steps` and up) the session reports itself working to the hub while its turn runs or a helper it
+started runs, not while a status line merely says working; below that level, or while no hook came yet (a Codex
+whose hooks are not trusted yet), the status lines decide, as before.
+
 Before 16 October 2026 a helper had a session group of its own (spec/v1.md 5.2.3), opened with `open_session`.
 For agents that still hold the tools they were started with: `session: "<name>"` means `helper: "<name>"`,
 `open_session` and `close_session` answer what changed and do nothing, `say --session` is `say --helper`. The
