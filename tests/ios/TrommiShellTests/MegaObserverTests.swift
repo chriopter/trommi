@@ -32,7 +32,7 @@ private actor ObserverState {
   var traceStart = 0.0
   var samples: [[Any]] = []
   func beginTrace() { tracing = true; traceStart = Double(Spent.now) / 1e6; samples = []; Spent.traceStart() }
-  func counts() -> [String: Any] { ["desk": view.desk.stack.count, "cards": view.desk.stack.count + view.desk.done.count + view.desk.later.count, "sessions": view.sidebar.sessions.count, "online": view.sidebar.sessions.filter(\.online).count, "reading": view.phase != .live] }
+  func counts() -> [String: Any] { ["desk": view.group.stack.count, "cards": view.group.stack.count + (view.off?.rest.count ?? 0), "sessions": view.sidebar.sessions.count, "online": view.sidebar.sessions.filter(\.online).count, "reading": view.phase != .live] }
   func trace() -> [String: Any] {
     tracing = false
     let spans: [[Any]] = Spent.traceTake().map { ["step", $0.0, Double($0.1) / 1e6, Double($0.2) / 1e6] }
@@ -77,7 +77,7 @@ private actor ObserverState {
     #else
     getrusage(RUSAGE_SELF, &usage); let rss = Int(usage.ru_maxrss)
     #endif
-    let out: [String: Any] = ["rss": rss, "requests": requests, "bytes": bytes, "flying": flying, "quiet_ms": now() - lastNet, "desk": view.desk.stack.count, "cards": view.desk.stack.count + view.desk.done.count + view.desk.later.count, "phase": view.phase.rawValue]
+    let out: [String: Any] = ["rss": rss, "requests": requests, "bytes": bytes, "flying": flying, "quiet_ms": now() - lastNet, "desk": view.group.stack.count, "cards": view.group.stack.count + (view.off?.rest.count ?? 0), "phase": view.phase.rawValue]
     if reset { requests = [:]; bytes = 0 }; return out
   }
 }
@@ -113,8 +113,12 @@ private final class NativeObserver {
   }
   func settle() async throws { await send(["type": "foreground"]); try await wait("live", timeout: 180_000) { $0.phase == .live }; try await quiet() }
   func snapshot(_ given: [String]) async throws -> [String: Any] {
-    let initial = await state.model(); let desk = initial.desk
-    var ids = Set(desk.stack + desk.offYourMind + desk.later + desk.done + given + (desk.starred?.rows.map(\.id) ?? []) + (desk.running?.rows.map(\.id) ?? []))
+    let initial = await state.model()
+    // (what is with its agent, put off and closed: the page Off your mind)
+    await focus(["screen": "off", "query": ""]); try await quiet()
+    let off = (await state.model()).off
+    let later = (off?.rest ?? []).filter { $0.place == "later" }.map(\.id)
+    var ids = Set(initial.group.stack + (off?.works.map(\.id) ?? []) + (off?.rest.map(\.id) ?? []) + given)
     for row in initial.sidebar.sessions {
       await focus(["screen": "session", "session_id": row.id]); try await quiet()
       for question in (await state.model()).sessions[row.id]?.questions ?? [] { ids.insert(question.id) }
@@ -140,10 +144,10 @@ private final class NativeObserver {
         if let until = card.snoozedUntil { snooze[id] = until }
       }
     }
-    await focus(["screen": "desk"])
+    await focus(["screen": "group"])
     let view = await state.model(); var sessions: [String: Any] = [:]
     for row in view.sidebar.sessions { sessions[row.id] = ["agent_name": row.name.en, "parent": null] }
-    return ["desk": view.desk.stack, "permissions_open": view.desk.rows.filter { $0.kind == "request" }.map(\.id), "cards": cards, "permissions": permissions, "sessions": sessions, "snoozed": view.desk.later.sorted(), "snooze_values": snooze, "debug": ["phase": view.phase.rawValue, "toasts": view.toasts.map { $0.text.en }]]
+    return ["desk": view.group.stack, "permissions_open": (view.group.questions + view.group.reads).filter { $0.kind == "request" }.map(\.id), "cards": cards, "permissions": permissions, "sessions": sessions, "snoozed": later.sorted(), "snooze_values": snooze, "debug": ["phase": view.phase.rawValue, "toasts": view.toasts.map { $0.text.en }]]
   }
   func run(_ cmd: [String: Any]) async throws -> Any {
     let op = cmd["op"] as? String ?? ""

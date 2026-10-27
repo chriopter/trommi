@@ -23,7 +23,7 @@ import TrommiClient
     #if os(macOS)
     window.defaultSize(width: 1180, height: 780)
     MenuBarExtra("Trommi", systemImage: "bell") {
-      ForEach(shell.view.desk.rows, id: \.id) { row in Button(row.title) { shell.focus(.card(cardId: row.id)); NSApplication.shared.activate() } }
+      ForEach(shell.view.group.questions, id: \.id) { row in Button(row.title) { shell.focus(.card(cardId: row.id)); NSApplication.shared.activate() } }
     }
     #else
     window

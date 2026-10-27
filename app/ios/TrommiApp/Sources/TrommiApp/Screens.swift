@@ -52,7 +52,7 @@ struct RootView: View {
         .navigationDestination(for: CoreView.Screen.self) { screen in page(screen).toolbarBackground(.hidden, for: .navigationBar) }
     }
     .onChange(of: shell.path) { _, path in
-      let screen = path.last ?? (shell.noteOpen ? .notes : .desk)
+      let screen = path.last ?? (shell.noteOpen ? .notes : .group)
       if shell.screen != screen { shell.show(screen) }
     }
   }
@@ -65,7 +65,7 @@ struct CorePage: View {
   let screen: CoreView.Screen
   var body: some View {
     switch screen {
-    case .desk: DeskScreen()
+    case .group: DeskScreen()
     case .card(let id): if let card = shell.view.cards[id] { CardScreen(card: card).id(id) } else { Loading() }
     case .session(let id): if let page = shell.view.sessions[id] { SessionScreen(page: page).id(id) } else { Loading() }
     case .notes: NotesScreen()
@@ -163,7 +163,7 @@ struct PlacePill: View {
     let side = shell.view.sidebar
     Menu {
       Section("Teams") {
-        HomeItem(home: side.home) { shell.pick(.desk); shell.home() }
+        if let none = side.noTeam { HomeItem(home: none) { shell.pick(.desk); shell.focus(.group, team: none.id) } }
         ForEach(side.teams, id: \.id) { teamItem($0) }
       }
     } label: {
@@ -192,7 +192,7 @@ struct PlacePill: View {
     .accessibilityIdentifier("place-pill")
   }
   private func teamItem(_ team: CoreView.TeamTab) -> some View {
-    Button { shell.pick(.desk); shell.focus(.desk, team: team.id) } label: {
+    Button { shell.pick(.desk); shell.focus(.group, team: team.id) } label: {
       Label { Text(team.cards > 0 ? "\(team.name.en) · \(team.cards)" : team.name.en) } icon: { if team.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: team.waiting > 0) } }
     }
     .accessibilityLabel(team.cards > 0 ? "\(team.name.en), \(team.cards) open" : team.name.en)
@@ -210,7 +210,7 @@ struct Sidebar: View {
     VStack(spacing: 0) {
       // The top: only the switch of the team in view, a menu of the teams, each with its open questions.
       Menu {
-        HomeItem(home: side.home) { shell.home() }
+        if let none = side.noTeam { HomeItem(home: none) { shell.focus(.group, team: none.id) } }
         ForEach(side.teams, id: \.id) { teamItem($0) }
       } label: {
         HStack(spacing: 12) {
@@ -266,14 +266,14 @@ struct Sidebar: View {
     .background(Ink.bg)
   }
   private func teamItem(_ team: CoreView.TeamTab) -> some View {
-    Button { shell.focus(.desk, team: team.id) } label: {
+    Button { shell.focus(.group, team: team.id) } label: {
       Label { Text(team.cards > 0 ? "\(team.name.en) · \(team.cards)" : team.name.en) } icon: { if team.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: team.waiting > 0) } }
     }
     .accessibilityLabel(team.cards > 0 ? "\(team.name.en), \(team.cards) open" : team.name.en)
   }
 }
 
-/** Home in the team menu, above the teams: "All teams", the Desk of every team, with what waits on all of them. */
+/** The chats on no team in the team menu, above the teams (`sidebar.no_team`, while there are any): their group page. */
 struct HomeItem: View {
   let home: CoreView.TeamTab
   let pick: () -> Void
@@ -326,30 +326,35 @@ struct SessionRow: View {
   }
 }
 
-// ---- the Desk ----------------------------------------------------------------------------------------------------
+// ---- the group page ------------------------------------------------------------------------------------------------
 
+/** The group page (`view.group`): the group's name, a chip per chat, the questions, then what is only to read. The
+ *  iPhone's look is being redrawn on its own; this draws the core's GroupView with the components there are. */
 struct DeskScreen: View {
   @EnvironmentObject var shell: AppShell
   @Environment(\.horizontalSizeClass) private var hSize
   @State private var speedReport: String?
   var body: some View {
-    let desk = shell.view.desk
-    // (the iPhone's Desk is calm: only the questions, then one quiet line; no greeting, goals or hint)
+    let desk = shell.view.group
+    // (the iPhone's page is calm: no name (the bar says it) nor goals)
     let calm = hSize == .compact
     ScrollView {
       LazyVStack(alignment: .leading, spacing: calm ? 16 : 12) {
         if desk.mode == "invite" { FirstAgent() }
         else if calm { Color.clear.frame(height: 4) }
-        else if let hello = desk.hello {
+        else if let head = desk.head {
           VStack(alignment: .leading, spacing: 0) {
-            Greeting(text: hello.en)
+            Greeting(text: head.name.en)
             if let goals = desk.goals { GoalsDrawing(goals: goals).id(goals.teamId) }
-            if let know = desk.knowledge { KnowledgeChip(chip: know) }
           }.padding(.top, 18).padding(.bottom, 6)
         }
+        if !desk.chips.isEmpty { GroupChips(chips: desk.chips) }
         if let reading = desk.reading { Text(reading.en).font(Face.text(14)).foregroundStyle(Ink.muted).accessibilityIdentifier("reading-history") }
         if !desk.slip.isEmpty { CutSlip(slips: desk.slip) }
-        ForEach(desk.rows, id: \.id) { row in DeskRow(row: row) }
+        if let says = desk.questionsSays { GroupPart(says: says) }
+        ForEach(desk.questions, id: \.id) { row in DeskRow(row: row) }
+        if let says = desk.readsSays { GroupPart(says: says) }
+        ForEach(desk.reads, id: \.id) { row in DeskRow(row: row) }
         if calm, let empty = desk.empty {
           ContentUnavailableView(empty.en, systemImage: "checkmark.circle").frame(maxWidth: .infinity).padding(.vertical, 40)
         } else if let empty = desk.empty {
@@ -358,16 +363,13 @@ struct DeskScreen: View {
             Text(empty.en).font(Face.text(15)).foregroundStyle(Ink.muted).multilineTextAlignment(.center)
           }.frame(maxWidth: .infinity).padding(.vertical, 28)
         }
-        if calm, !desk.tiles.isEmpty { DeskTiles(tiles: desk.tiles).padding(.top, 8) }
-        else if calm { if let off = desk.off { OffLine(off: off).padding(.top, 8) } }
-        else if desk.off != nil || desk.starred != nil { OffHint(off: desk.off, starred: desk.starred) }
       }
       .padding(.horizontal, 16).padding(.bottom, 120)
       .frame(maxWidth: 760).frame(maxWidth: .infinity)
     }
     .accessibilityIdentifier("desk-content")
-    .accessibilityValue(speedReport ?? String(desk.rows.count))
-    .onAppear { speedReport = NativeDemo.ready(rows: desk.rows.count) }
+    .accessibilityValue(speedReport ?? String(desk.stack.count))
+    .onAppear { speedReport = NativeDemo.ready(rows: desk.stack.count) }
     .refreshable { shell.act(["do": "retry"]) }
     .background(Ink.bg)
     .modifier(DeskTop(regular: hSize == .regular))
@@ -431,7 +433,7 @@ struct MePicture: View {
       if let account = shell.view.settings.account { Text(account) }
       Section {
         if AppShell.phone {
-          Button { shell.teamPage = nil; shell.path = [.desk]; shell.show(.desk) } label: { Label("Desk", systemImage: "tray") }
+          Button { shell.teamPage = nil; shell.path = [.group]; shell.show(.group) } label: { Label("Group", systemImage: "tray") }
             .accessibilityIdentifier("phone-open-desk")
         }
         Button { go(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
@@ -475,7 +477,7 @@ struct PlusMenu: View {
   let desk: Bool
   @State private var asking = false
   var body: some View {
-    let d = shell.view.desk
+    let d = shell.view.group
     Menu {
       // (a chat agent such as Hermes starts a new chat when asked: `SidebarView.newChat`)
       if !shell.view.sidebar.newChat.isEmpty {
@@ -500,8 +502,8 @@ struct PlusMenu: View {
             Button { asking = true } label: { Label { Text(duck.short.en) } icon: { PenImage.duck } }
               .accessibilityLabel(duck.tip.en).accessibilityHint(duck.what.en).accessibilityIdentifier("desk-duck")
           }
-          if let blitz = d.blitz, let first = d.rows.first {
-            Button { shell.focus(.card(cardId: first.id)) } label: { Label(blitz.en, systemImage: "bolt") }.accessibilityIdentifier("desk-blitz")
+          if let blitz = d.blitz {
+            Button { shell.blitzAll() } label: { Label("\(blitz.says.en), \(blitz.scope.en)", systemImage: "bolt") }.accessibilityIdentifier("desk-blitz")
           }
         }
       }
@@ -526,8 +528,9 @@ struct DeskWays: View {
   @EnvironmentObject var shell: AppShell
   @State private var asking = false
   var body: some View {
-    let desk = shell.view.desk
+    let desk = shell.view.group
     HStack(spacing: 10) {
+      if let head = desk.head, !head.menu.isEmpty { GroupMenu(head: head) }
       if let duck = desk.duck {
         Button { asking = true } label: {
           PenMark("sketch:duck", color: Ink.fg, duck: false).frame(width: 24, height: 20).pillCircle()
@@ -540,18 +543,88 @@ struct DeskWays: View {
             .keyboardShortcut(.defaultAction).accessibilityHint(duck.what.en)
         } message: { Text(duck.what.en) }
       }
-      if let blitz = desk.blitz, let first = desk.rows.first {
-        Button { shell.focus(.card(cardId: first.id)) } label: {
+      if let blitz = desk.blitz {
+        Button { shell.blitzAll() } label: {
           PenMark("desk:BOLT").frame(width: 20, height: 20).pillCircle()
             .overlay(alignment: .topTrailing) {
-              Text(blitz.args["n"] ?? "").font(Face.text(10, .bold)).foregroundStyle(Ink.bg).monospacedDigit()
+              Text(blitz.says.args["n"] ?? "").font(Face.text(10, .bold)).foregroundStyle(Ink.bg).monospacedDigit()
                 .padding(.horizontal, 4).frame(minWidth: 17, minHeight: 17).background(Capsule().fill(Ink.fg)).offset(x: 3, y: -2)
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(blitz.en).accessibilityIdentifier("desk-blitz")
+        .accessibilityLabel("\(blitz.says.en), \(blitz.scope.en)").accessibilityIdentifier("desk-blitz")
       }
     }
+  }
+}
+
+/** The group's ⋯ menu (`GroupHeadView.menu`): Knowledge, Wakeups, Scribble Board, each with its count; Rename asks for
+ *  the new name. */
+struct GroupMenu: View {
+  @EnvironmentObject var shell: AppShell
+  let head: CoreView.GroupHeadView
+  @State private var renaming = false
+  @State private var name = ""
+  var body: some View {
+    Menu {
+      ForEach(head.menu, id: \.key) { item in
+        if let to = item.opens {
+          Button { shell.focus(to) } label: { Text(item.count.map { "\(item.label.en) · \($0.en)" } ?? item.label.en) }
+        } else if item.key == "rename" {
+          Button { name = head.name.en; renaming = true } label: { Text(item.label.en) }
+        }
+      }
+    } label: { Image(systemName: "ellipsis").frame(width: 20, height: 20).pillCircle() }
+    .accessibilityLabel(head.menuSays.en).accessibilityIdentifier("group-menu")
+    .alert(head.menu.first { $0.key == "rename" }?.label.en ?? "", isPresented: $renaming) {
+      TextField(head.name.en, text: $name)
+      Button("Cancel", role: .cancel) {}
+      Button("Save") { let n = name.trimmingCharacters(in: .whitespaces); if !n.isEmpty, n != head.name.en { shell.act(["do": "rename_team", "team_id": head.teamId, "name": n]) } }
+    }
+  }
+}
+
+/** The chips of the group page (`GroupView.chips`): "All" first, then each chat; a tap shows only that chat's cards,
+ *  the chosen one opens its chat. The core orders them; every one is drawn (the row scrolls). */
+struct GroupChips: View {
+  @EnvironmentObject var shell: AppShell
+  let chips: [CoreView.ChipView]
+  var body: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 8) {
+        ForEach(chips, id: \.sessionId) { chip in
+          Button {
+            if chip.selected, !chip.sessionId.isEmpty { shell.focus(.session(sessionId: chip.sessionId)) }
+            else { shell.chip(chip.sessionId.isEmpty ? nil : chip.sessionId) }
+          } label: {
+            HStack(spacing: 6) {
+              Text(chip.name.en).font(Face.text(14, .semibold)).lineLimit(1)
+              if chip.count > 0 { Text("\(chip.count)").font(Face.text(14)).foregroundStyle(chip.selected ? Ink.bg : Ink.muted) }
+              if chip.needs { Circle().fill(chip.selected ? Ink.bg : Ink.accent).frame(width: 7, height: 7) }
+              if let go = chip.openChat { Text(go.en).font(Face.text(14, .bold)) }
+            }
+            .foregroundStyle(chip.selected ? Ink.bg : Ink.fg)
+            .padding(.horizontal, 12).frame(height: 34)
+            .background(Capsule().fill(chip.selected ? Ink.fg : Ink.surface))
+            .overlay(Capsule().stroke(Ink.line, lineWidth: chip.selected ? 0 : 1))
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(chip.says.en)
+        }
+      }
+    }
+    .accessibilityIdentifier("group-chips")
+  }
+}
+
+/** A part's heading on the group page: "Waits for you", "To read", with how many. */
+struct GroupPart: View {
+  let says: CoreView.Text
+  var body: some View {
+    HStack(spacing: 6) {
+      Text(says.en.uppercased()).font(Face.text(12, .bold)).foregroundStyle(Ink.muted)
+      Text(says.args["n"] ?? "").font(Face.text(12)).foregroundStyle(Ink.faint)
+    }.padding(.top, 6)
   }
 }
 
@@ -735,215 +808,7 @@ struct CardWays: View {
   }
 }
 
-// ---- under the stack ---------------------------------------------------------------------------------------------
-
-/** The section Off your mind on the Desk: what runs at its head (each card with its agent and status line, no stack
- *  floating over the Desk), then the first rows put off or closed, fading, and how many there are; it opens the
- *  whole list. */
-struct OffHint: View {
-  @EnvironmentObject var shell: AppShell
-  let off: CoreView.OffHintView?
-  /** His starred cards: at the head of Off your mind, above the running ones (one design with the web's Desk). */
-  var starred: CoreView.DockView? = nil
-  var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      EndDivider(title: "Off your mind", more: { shell.focus(.off(query: "")) }).padding(.bottom, 4)
-      if let starred, !starred.rows.isEmpty {
-        VStack(alignment: .leading, spacing: 2) {
-          ForEach(starred.rows, id: \.id) { r in headRow(r, star: true) }
-        }
-        .padding(.bottom, 6)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(starred.says.en)
-        .accessibilityIdentifier("off-starred")
-      }
-      if let off, !off.running.isEmpty {
-        VStack(alignment: .leading, spacing: 2) {
-          ForEach(off.running, id: \.id) { r in headRow(r, star: false) }
-          if let more = off.runningMore {
-            Button { shell.focus(.off(query: "")) } label: {
-              Text(more.en).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted).frame(minHeight: 32).contentShape(Rectangle())
-            }.buttonStyle(.plain).padding(.leading, 36)
-          }
-        }
-        .padding(.bottom, off.rows.isEmpty ? 0 : 10)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("off-running")
-      }
-      if let off, !off.rows.isEmpty || off.putOff > 0 || off.closed > 0 {
-      Button { shell.focus(.off(query: "")) } label: {
-        VStack(alignment: .leading, spacing: 4) {
-          ForEach(Array(off.rows.enumerated()), id: \.element.id) { i, r in
-            HStack(spacing: 8) {
-              OffMark(mark: r.mark).frame(width: 12, height: 12)
-              Text(r.title).font(Face.text(13, .medium)).foregroundStyle(Ink.muted).lineLimit(1).strikethrough(r.mark == "shred")
-            }.opacity(i == 0 ? 1 : i == 1 ? 0.7 : 0.4)
-          }
-          Text(off.says.en).font(Face.text(13, .semibold)).foregroundStyle(Ink.fg).underline(true, color: Ink.accent).padding(.top, 3)
-        }
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Off your mind: \(off.says.en)")
-      }
-    }.padding(.top, 8)
-  }
-  /** A starred card or one its agent works on: the agent's drawing (in its turning ring while it runs), the title
-   *  (a star before a starred one's), who and what (its status line). */
-  private func headRow(_ r: CoreView.DockRowView, star: Bool) -> some View {
-    Button { shell.focus(.card(cardId: r.id)) } label: {
-      HStack(spacing: 10) {
-        AgentMark(from: r.from, size: 18)
-          .frame(width: 26, height: 26)
-          .overlay { if r.running { WorkingRing(working: true, color: Ink.accent).frame(width: 28, height: 28) } }
-        VStack(alignment: .leading, spacing: 1) {
-          HStack(spacing: 5) {
-            if star { StarMark().frame(width: 13, height: 13) }
-            Text(r.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
-          }
-          Text(r.line.en).font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1)
-        }
-        Spacer(minLength: 0)
-      }
-      .frame(minHeight: 44).contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel("\(r.title), \(r.line.en)")
-    .accessibilityIdentifier((star ? "off-starred-" : "off-running-") + r.id)
-  }
-}
-/**
- * The iPhone Desk's tiles under the questions (`desk.tiles`, the core's: order, words, what each opens, which share a
- * row on a phone): Liquid Glass, SF Symbols, black. A tile that holds nothing yet is quiet, its line only.
- */
-struct DeskTiles: View {
-  @EnvironmentObject var shell: AppShell
-  let tiles: [CoreView.DeskTileView]
-  var body: some View {
-    let rows = Dictionary(grouping: tiles, by: \.phoneRow).sorted { $0.key < $1.key }
-    VStack(spacing: 12) {
-      ForEach(rows, id: \.key) { row in
-        HStack(alignment: .top, spacing: 12) { ForEach(row.value, id: \.key) { DeskTile(tile: $0) } }
-      }
-    }
-  }
-}
-struct DeskTile: View {
-  @EnvironmentObject var shell: AppShell
-  let tile: CoreView.DeskTileView
-  private static let symbols = ["work": "tray.full", "artifacts": "photo.on.rectangle", "board": "scribble.variable", "knowledge": "book.closed"]
-  var body: some View {
-    if tile.key == "work", !tile.empty, !runningRows.isEmpty { work } else { plain }
-  }
-  /** Working / Done with its running cards: its name and numbers in short, then a line each, the agent's face beside the
-   *  title without its status word (`short`). */
-  private var work: some View {
-    Button { shell.focus(tile.opens) } label: {
-      VStack(alignment: .leading, spacing: 10) {
-        HStack(spacing: 8) {
-          Text(tile.title.en).font(.subheadline.weight(.semibold)).lineLimit(1)
-          Spacer(minLength: 0)
-          if let brief = tile.brief { Text(brief.en).font(.subheadline).foregroundStyle(.secondary).monospacedDigit() }
-          Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-        }
-        ForEach(runningRows.prefix(3), id: \.id) { r in
-          HStack(spacing: 10) {
-            AgentMark(from: r.from, size: 18).frame(width: 22, height: 22)
-            Text(r.short.isEmpty ? r.title : r.short).font(.subheadline).lineLimit(1)
-          }
-        }
-      }
-      .foregroundStyle(.primary)
-      .padding(14).frame(maxWidth: .infinity, alignment: .topLeading)
-      .glass(RoundedRectangle(cornerRadius: 22, style: .continuous), interactive: true)
-    }
-    .buttonStyle(.plain)
-    .accessibilityElement(children: .combine)
-    .accessibilityIdentifier("desk-tile-" + tile.key)
-  }
-  /** The running cards it names, by id; one no longer running is left out. */
-  private var runningRows: [CoreView.DockRowView] { tile.items.compactMap { id in shell.view.desk.off?.running.first { $0.id == id } } }
-  private var plain: some View {
-    Button { shell.focus(tile.opens) } label: {
-      VStack(alignment: .leading, spacing: 6) {
-        HStack(spacing: 8) {
-          Image(systemName: Self.symbols[tile.key] ?? "square").font(.body)
-          Text(tile.title.en).font(.subheadline.weight(.semibold)).lineLimit(1)
-          Spacer(minLength: 0)
-          Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-        }.foregroundStyle(.primary)
-        Text(tile.line.en).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
-        if !tile.empty {
-          ForEach(Array(lines.prefix(3).enumerated()), id: \.offset) { _, line in
-            HStack(spacing: 6) {
-              if tile.key == "work" { Circle().fill(Color.primary.opacity(0.6)).frame(width: 5, height: 5) }
-              Text(line).font(.footnote).foregroundStyle(.primary).lineLimit(1)
-            }
-          }
-        }
-      }
-      .padding(14).frame(maxWidth: .infinity, alignment: .topLeading)
-      .glass(RoundedRectangle(cornerRadius: 22, style: .continuous), interactive: true)
-      .opacity(tile.empty ? 0.7 : 1)
-    }
-    .buttonStyle(.plain)
-    .accessibilityElement(children: .combine)
-    .accessibilityIdentifier("desk-tile-" + tile.key)
-  }
-  /** What it shows small: the running cards' and the newest artifacts' titles by their ids (one that is gone is left
-   *  out), the Knowledge entries' names. */
-  private var lines: [String] {
-    switch tile.key {
-    case "work": return tile.items.compactMap { id in shell.view.desk.off?.running.first { $0.id == id }?.title }
-    case "artifacts": return tile.items.compactMap { id in shell.view.artifacts?.first { $0.id == id }?.title }
-    default: return tile.names
-    }
-  }
-}
-
-/** The iPhone's calm Desk ends in one quiet row: what runs, is put off and is done (`off.line`), opening the list. */
-struct OffLine: View {
-  @EnvironmentObject var shell: AppShell
-  let off: CoreView.OffHintView
-  var body: some View {
-    Button { shell.focus(off.opens) } label: {
-      HStack(spacing: 10) {
-        Image(systemName: "tray").font(.body).foregroundStyle(.secondary)
-        Text(off.line.en).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-        Spacer(minLength: 4)
-        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-      }
-      .padding(.horizontal, 16).frame(minHeight: 48).contentShape(Rectangle())
-      .glass(RoundedRectangle(cornerRadius: 24, style: .continuous), interactive: true)
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel("Off your mind: \(off.line.en)")
-    .accessibilityIdentifier("off-line")
-  }
-}
 /** The team's goals under the greeting: a quiet line or a few; a tap writes in place; one toggle folds them. */
-/** The chip under a team's goals that opens its page Knowledge (`DeskView.knowledge`): "Knowledge" and how many. */
-struct KnowledgeChip: View {
-  @EnvironmentObject var shell: AppShell
-  let chip: CoreView.KnowledgeChipView
-  var body: some View {
-    Button { shell.focus(.knowledge(query: "", filter: "", open: "")) } label: {
-      HStack(spacing: 6) {
-        Sketch("book", color: Ink.muted).frame(width: 15, height: 15)
-        Text(chip.label.en).font(Face.text(13, .semibold)).foregroundStyle(Ink.muted)
-        Text("\(chip.count)").font(Face.text(13, .bold)).foregroundStyle(Ink.fg).monospacedDigit()
-      }
-      .padding(.horizontal, 10).frame(minHeight: 30)
-      .background(Capsule().stroke(Ink.line, lineWidth: 1))
-      .contentShape(Capsule())
-    }
-    .buttonStyle(.plain)
-    .padding(.top, 6)
-    .accessibilityLabel(chip.says.en)
-    .accessibilityIdentifier("desk-knowledge")
-  }
-}
-
 struct GoalsDrawing: View {
   @EnvironmentObject var shell: AppShell
   let goals: CoreView.GoalsView

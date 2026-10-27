@@ -50,7 +50,7 @@ enum NativeDemo {
   @MainActor static func route(_ id: String, shell: AppShell) {
     if id == "desk--corner-note-open" { shell.focus(.notes); return }
     // (the iPhone's teams, its first page, which has no address of its own)
-    if id == "chats" { shell.focus(.desk); return }
+    if id == "chats" { shell.focus(.group); return }
     let data = try? Data(contentsOf: url("screens.json"))
     let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     let rows = json?["states"] as? [[String: Any]] ?? []
@@ -72,7 +72,7 @@ enum NativeDemo {
     case "wakeups":
       let team = URLComponents(string: path)?.queryItems?.first { $0.name == "team" }?.value
       shell.focus(.wakeups, team: team)
-    default: shell.focus(.desk)
+    default: shell.focus(.group)
     }
   }
 }

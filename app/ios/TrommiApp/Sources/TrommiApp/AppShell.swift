@@ -13,7 +13,7 @@ enum NativeTab: Hashable { case chat, desk, search }
 @MainActor final class AppShell: ObservableObject {
   static let shared = AppShell()
   @Published var view = CoreView.ViewModel()
-  @Published var screen = CoreView.Screen.desk
+  @Published var screen = CoreView.Screen.group
   @Published var path: [CoreView.Screen] = []
   @Published var tab = NativeTab.desk
   /** The words in the iPhone's search (sent as `Focus.chats_query`; the core filters the chats). */
@@ -57,9 +57,8 @@ enum NativeTab: Hashable { case chat, desk, search }
           await session?.send(NativePacket(["type": "action", "action": ["do": "fold_goals", "team_id": id, "folded": true]]))
         }
       }
-      // (the team chosen last on this device; launched in the back by a push, the Desk is not in view)
-      deskAll = preview ? true : Self.storedDeskAll
-      if !preview, let data = try? JSONEncoder().encode(CoreView.Focus(screen: .desk, visible: Self.launchedInFront, team: Self.lastTeam, deskAll: deskAll, openTeams: Self.storedOpenTeams ?? [], calm: Self.phone)),
+      // (the team chosen last on this device; launched in the back by a push, the group page is not in view)
+      if !preview, let data = try? JSONEncoder().encode(CoreView.Focus(screen: .group, visible: Self.launchedInFront, team: Self.lastTeam, openTeams: Self.storedOpenTeams ?? [], calm: Self.phone)),
          let focus = try? JSONSerialization.jsonObject(with: data) {
         await session?.send(NativePacket(["type": "focus", "focus": focus]))
       }
@@ -68,10 +67,10 @@ enum NativeTab: Hashable { case chat, desk, search }
     } catch { platformError = "The encrypted device store could not be opened." }
   }
   func enterDemo() {
-    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; path = []; tab = .desk; noteOpen = false; await start(demo: true) }
+    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .group; path = []; tab = .desk; noteOpen = false; await start(demo: true) }
   }
   func leaveDemo() {
-    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .desk; path = []; tab = .desk; noteOpen = false; await start() }
+    Task { await tail?.value; await session?.close(); session = nil; started = false; screen = .group; path = []; tab = .desk; noteOpen = false; await start() }
   }
   /** The teams whose chats stand open under their title (`Focus.open_teams`), kept on this device; until he folds
    *  one, every team is open (the list of all chats). */
@@ -90,21 +89,25 @@ enum NativeTab: Hashable { case chat, desk, search }
   @Published var teamPage: String?
   /** The iPhone: a team's folder was tapped: its chats on a page of their own, that team in view. */
   func openTeam(_ id: String) {
-    closeNote(); teamPage = id; path = [.desk]
-    show(.desk, team: id)
+    closeNote(); teamPage = id; path = [.group]
+    show(.group, team: id)
   }
-  /** The bolt at the iPhone's top right: Blitz over every team (`sidebar.global_blitz`) from wherever he is, through
-   *  the Desk of every team (`Focus.desk_all`); back comes to where he pressed it. */
+  /** The bolt: Blitz over every group (`sidebar.global_blitz`) from wherever he is, through every group's open cards
+   *  (`Focus.walk_all`); back comes to where he pressed it. */
   func blitzAll() {
     guard let card = view.sidebar.globalBlitz?.card else { return }
-    deskAll = true; walkChat = nil
+    walkAll = true; walkChat = nil
     focus(.card(cardId: card))
   }
+  /** The chat chip chosen on the group page (`Focus.group_chat`); none: All. */
+  private(set) var groupChat: String?
+  /** A chip of the group page was tapped: only that chat's cards (none: All). */
+  func chip(_ session: String?) { groupChat = session; show(.group) }
   /** A tab of the iPhone's bar was chosen: its root, the note put away, the search's words left with its tab. */
   func pick(_ next: NativeTab) {
     closeNote(); path = []
     if next != .search { chatsQuery = "" }
-    tab = next; show(.desk)
+    tab = next; show(.group)
   }
   /** An iPhone: sends `Focus.calm` (the core makes the calm chat); its drawing leaves out faces and times. */
   static let phone: Bool = {
@@ -127,16 +130,8 @@ enum NativeTab: Hashable { case chat, desk, search }
     let before = tail
     tail = Task { await before?.value; await session.send(event) }
   }
-  /** Home: the Desk of every team (sent as `Focus.desk_all`), kept on this device; until he picks a team, home. */
-  static let deskAllKey = "trommi-desk-all"
-  static var storedDeskAll: Bool { UserDefaults.standard.object(forKey: deskAllKey) as? Bool ?? true }
-  private(set) var deskAll = true
-  /** Home was chosen (the menu's "All teams"): the Desk of every team. */
-  func home() {
-    deskAll = true
-    if !isDemo { UserDefaults.standard.set(true, forKey: Self.deskAllKey) }
-    focus(.desk)
-  }
+  /** The card in view is a step of Blitz over every group (`Focus.walk_all`). */
+  private(set) var walkAll = false
   /** The team last chosen on this device (sent as `Focus.team` at the start; the core falls back when it is gone). */
   static let teamKey = "trommi-team"
   static var lastTeam: String? { UserDefaults.standard.string(forKey: teamKey) }
@@ -159,26 +154,26 @@ enum NativeTab: Hashable { case chat, desk, search }
   }
   func account(_ action: [String: Any]) { act(["do": "account", "action": action]) }
   func focus(_ screen: CoreView.Screen, team: String? = nil) {
-    if screen != .desk { searchOpen = false }
+    if screen != .group { searchOpen = false }
     if screen == .notes { path = []; noteOpen = true; show(screen, team: team); return }
     noteOpen = false
-    if screen == .desk { path = []; tab = .desk }
+    if screen == .group { path = []; tab = .desk }
     else if path.last != screen { path.append(screen) }
     show(screen, team: team)
   }
-  /** The chat whose Blitz the card in view is a step of (`Focus.walk_chat`); none: the Desk's. */
+  /** The chat whose Blitz the card in view is a step of (`Focus.walk_chat`); none: the group page's. */
   private(set) var walkChat: String?
   /** A chat's stack tapped: its first card, and on through that chat's open cards only, then back to the chat. */
   func walk(chat: String, from cardId: String) { walkChat = chat; focus(.card(cardId: cardId)) }
-  func closeNote() { guard noteOpen else { return }; noteOpen = false; show(path.last ?? .desk) }
+  func closeNote() { guard noteOpen else { return }; noteOpen = false; show(path.last ?? .group) }
   func show(_ screen: CoreView.Screen, team: String? = nil) {
     self.screen = screen
-    if case .card = screen {} else { walkChat = nil }
-    // (a team chosen: its Desk, no longer home)
-    if let team { deskAll = false; if !isDemo { UserDefaults.standard.set(team, forKey: Self.teamKey); UserDefaults.standard.set(false, forKey: Self.deskAllKey) } }
+    if case .card = screen {} else { walkChat = nil; walkAll = false }
+    // (a team chosen: its group page, every chat of it)
+    if let team { groupChat = nil; if !isDemo { UserDefaults.standard.set(team, forKey: Self.teamKey) } }
     let inView = view.sidebar.team.isEmpty ? (isDemo ? nil : Self.lastTeam) : view.sidebar.team
     let query = chatsQuery.trimmingCharacters(in: .whitespaces)
-    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, deskAll: deskAll, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query, calm: Self.phone, walkChat: walkChat)
+    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, groupChat: groupChat, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query, calm: Self.phone, walkChat: walkChat, walkAll: walkAll)
     if let data = try? JSONEncoder().encode(focus), let json = try? JSONSerialization.jsonObject(with: data) { send(["type": "focus", "focus": json]) }
   }
   func scene(_ active: Bool) { send(["type": active ? "foreground" : "background"]); if !isDemo { NativeServices.shared.foreground(active) } }
@@ -205,7 +200,7 @@ enum NativeTab: Hashable { case chat, desk, search }
         let delta = try Spent.time("view.decode") { try JSONDecoder().decode(CoreView.ViewDelta.self, from: JSONSerialization.data(withJSONObject: e["delta"]!)) }
         try Spent.time("view.fold") { try view.apply(delta) }
         if NativeDemo.measuring { NativeDemo.foldedAt = (ProcessInfo.processInfo.systemUptime - NativeDemo.launchStart) * 1000 }
-        if view.phase == .signedOut { files = [:]; saved = nil; screen = .desk; path = []; tab = .desk; noteOpen = false }
+        if view.phase == .signedOut { files = [:]; saved = nil; screen = .group; path = []; tab = .desk; noteOpen = false }
         if !isDemo { NativeServices.shared.draw(view) }
         // (the first picture names the teams: every one is open until he folds one)
         if !sentTeams, !view.sidebar.teams.isEmpty { sentTeams = true; show(screen) }

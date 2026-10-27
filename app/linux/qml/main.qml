@@ -56,8 +56,8 @@ ApplicationWindow {
 
     // the app core's view model, as the shell folded it (shell.rs)
     property var view: { try { return JSON.parse(trommi.view_json) } catch (e) { return ({}) } }
-    /** The page in view, as last sent to the core (`Event::Focus`): { screen: "desk" | "session" | "card", … }. */
-    property var place: ({ screen: "desk" })
+    /** The page in view, as last sent to the core (`Event::Focus`): { screen: "group" | "session" | "card", … }. */
+    property var place: ({ screen: "group" })
     function go(screen) {
         window.place = screen
         const focus = { screen: screen, visible: window.active }
@@ -86,7 +86,7 @@ ApplicationWindow {
         function onOpen_requestChanged() {
             const id = trommi.open_request
             if (id === "") return
-            window.go(id === "desk" ? { screen: "desk" } : { screen: "card", card_id: id })
+            window.go(id === "desk" ? { screen: "group" } : { screen: "card", card_id: id })
             window.show(); window.raise(); window.requestActivate()
         }
     }
@@ -115,7 +115,7 @@ ApplicationWindow {
             const scene = trommi.scene
             if (step === 0 && ["card", "session", "answer"].indexOf(scene) >= 0) {
                 step = 1
-                const rows = (window.view.desk || {}).rows || []
+                const rows = ((window.view.group || {}).questions || []).concat((window.view.group || {}).reads || [])
                 const sessions = (window.view.sidebar || {}).sessions || []
                 if (scene === "card" && rows.length) window.go({ screen: "card", card_id: rows[0].id })
                 if (scene === "session" && sessions.length) window.go({ screen: "session", session_id: sessions[0].id })
@@ -184,7 +184,7 @@ ApplicationWindow {
                     anchors.fill: parent
                     visible: !window.placeSession && !window.placeCard
                     theme: theme
-                    desk: window.view.desk || ({})
+                    desk: window.view.group || ({})
                     sidebar: window.view.sidebar || ({})
                     onAct: (action) => window.act(action)
                     onGo: (screen) => window.go(screen)

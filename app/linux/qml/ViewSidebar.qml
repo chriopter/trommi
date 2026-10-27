@@ -43,7 +43,7 @@ Rectangle {
         // the drawing opens the Desk
         PenMark {
             Layout.preferredWidth: 34; Layout.preferredHeight: 34; svg: Pen.sketchSvg("desk"); ink: theme.fg; lineWidth: 1.7
-            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.go({ screen: "desk" }) }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.go({ screen: "group" }) }
         }
         Item {
             Layout.fillWidth: true

@@ -38,7 +38,7 @@ final class CoreSessionTests: XCTestCase {
     await session.send(NativePacket(["type": "start", "config": ["platform": "test", "version": "0", "seed": 7, "demo": fixture]]))
     let view = await drawn.value()
     XCTAssertEqual(view.phase, .live)
-    XCTAssertFalse(view.desk.rows.isEmpty)
+    XCTAssertFalse(view.group.questions.isEmpty && view.group.reads.isEmpty)
     let failed = await drawn.failed(); XCTAssertFalse(failed)
     await session.close()
   }

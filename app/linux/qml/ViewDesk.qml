@@ -3,13 +3,13 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "pen.mjs" as Pen
 
-// The Desk, drawn from the app core's view model alone (ViewModel.desk): the big line the core says, Blitz with the
+// The group page, drawn from the app core's view model alone (ViewModel.group, GroupView): the big line the core says, Blitz with the
 // core's words, the team's goals, the sessions that are cut off, and what waits as rows in the order given. The
 // only state of this file's own is whether the goals are folded.
 Item {
     id: root
     required property var theme
-    /** ViewModel.desk */
+    /** ViewModel.group */
     required property var desk
     /** ViewModel.sidebar: a row's sender is drawn in its session's hue. */
     property var sidebar: ({})
@@ -29,8 +29,9 @@ Item {
     }
 
     property bool goalsFolded: true
-    readonly property var rows: desk.rows || []
-    readonly property var words: desk.hello ? desk.hello.en.split(" ") : []
+    // (the questions, then what is only to read; the head's name is the big line)
+    readonly property var rows: (desk.questions || []).concat(desk.reads || [])
+    readonly property var words: desk.head ? desk.head.name.en.split(" ") : []
     readonly property var goals: desk.goals || null
     readonly property var slugs: { const m = {}; for (const s of (sidebar.sessions || [])) m[s.id] = s.slug; return m }
 
@@ -82,7 +83,7 @@ Item {
                     rotation: -0.6
                     color: theme.surface
                     border.color: theme.fg; border.width: 1.6
-                    Accessible.name: root.desk.blitz ? root.desk.blitz.en : ""
+                    Accessible.name: root.desk.blitz ? root.desk.blitz.says.en : ""
                     Rectangle { z: -1; x: 2; y: 3; width: parent.width; height: parent.height; radius: 10; color: theme.withAlpha(theme.fg, 0.85) }
                     Row {
                         id: blitzRow
@@ -94,7 +95,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             width: Math.max(26, n.implicitWidth + 12); height: 26; radius: 13
                             color: theme.fg
-                            Label { id: n; anchors.centerIn: parent; text: root.desk.blitz && root.desk.blitz.args ? root.desk.blitz.args.n : ""; color: theme.bg; font.pixelSize: 12; font.weight: Font.Bold }
+                            Label { id: n; anchors.centerIn: parent; text: root.desk.blitz && root.desk.blitz.says.args ? root.desk.blitz.says.args.n : ""; color: theme.bg; font.pixelSize: 12; font.weight: Font.Bold }
                         }
                     }
                 }

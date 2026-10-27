@@ -160,12 +160,12 @@ fn wait_for(drawn: &mpsc::Receiver<String>, what: &str, want: impl Fn(&Value) ->
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
-    panic!("no view with {what}; the last: phase {} account {} desk {}", last["phase"], last["account"], last["desk"]);
+    panic!("no view with {what}; the last: phase {} account {} desk {}", last["phase"], last["account"], last["group"]);
 }
 
 /// The titles of the Desk's rows, in the order given.
 fn desk_titles(view: &Value) -> Vec<String> {
-    view["desk"]["rows"]
+    view["group"]["questions"]
         .as_array()
         .map(|rows| rows.iter().filter_map(|r| r["title"].as_str().map(String::from)).collect())
         .unwrap_or_default()
@@ -204,7 +204,7 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
     // the sidebar names the agent's session, and the card's row says who sent it
     let sessions = view["sidebar"]["sessions"].as_array().cloned().unwrap_or_default();
     assert_eq!(sessions.len(), 1, "one session: {sessions:?}");
-    let row = &view["desk"]["rows"][0];
+    let row = &view["group"]["questions"][0];
     assert_eq!(row["from"]["session_id"], sessions[0]["id"], "{row}");
     if view["phase"] != "live" {
         wait_for(&drawn, "the phase live", |v| v["phase"] == "live");
@@ -226,7 +226,7 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
     let page = &view["sessions"][&session];
     assert!(page["talk"].as_array().is_some_and(|t| t.iter().any(|r| r["kind"] == "ask" || r["card"]["id"] == card.as_str())), "the question stands where it was asked: {page}");
     assert!(view["cards"].as_object().is_none_or(|c| c.is_empty()), "the card's page is gone with its focus");
-    send(json!({ "type": "focus", "focus": { "screen": { "screen": "desk" } } }));
+    send(json!({ "type": "focus", "focus": { "screen": { "screen": "group" } } }));
     wait_for(&drawn, "the Desk alone", |v| v["sessions"].as_object().is_none_or(|s| s.is_empty()));
 
     // the app ends and starts again over the same folders: the same Desk
@@ -256,7 +256,7 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
     drop(handle);
     let (handle, drawn) = start(&app, &room.hub.url);
     let view = wait_for(&drawn, "the Desk after the second restart", |v| v["phase"] == "live");
-    assert!(!desk_titles(&view).iter().any(|t| t == "Blue or green?"), "the answered card stays off the Desk: {}", view["desk"]);
+    assert!(!desk_titles(&view).iter().any(|t| t == "Blue or green?"), "the answered card stays off the Desk: {}", view["group"]);
     std::thread::sleep(Duration::from_secs(2));
     let again = scenario.block_on(async {
         while let Ok(event) = room.events.try_recv() {

@@ -14,8 +14,8 @@ struct PhoneFrame: View {
     NavigationStack(path: $shell.path) {
       NativeRoot()
         .navigationDestination(for: CoreView.Screen.self) { screen in
-          // (`.desk` pushed is a team's page, its chats: the phone draws no Desk of its own)
-          if screen == .desk, shell.teamPage != nil { NativeTeamChats() } else { CorePage(screen: screen) }
+          // (`.group` pushed is a team's page, its chats: the phone draws its group page there)
+          if screen == .group, shell.teamPage != nil { NativeTeamChats() } else { CorePage(screen: screen) }
         }
     }
     .tint(Ink.accent)
@@ -32,15 +32,15 @@ struct PhoneFrame: View {
     .animation(.snappy, value: shell.noteOpen)
     .onChange(of: shell.path) { _, path in
       if path.isEmpty { shell.teamPage = nil }
-      // (back on a team's page from every team's Blitz: that team in view again)
-      if path.last == .desk, let team = shell.teamPage, shell.deskAll { shell.show(.desk, team: team); return }
-      let screen = path.last ?? (shell.noteOpen ? .notes : .desk)
+      // (back on a team's page from Blitz over every group: that team in view again)
+      if path.last == .group, let team = shell.teamPage, shell.walkAll { shell.show(.group, team: team); return }
+      let screen = path.last ?? (shell.noteOpen ? .notes : .group)
       if shell.screen != screen { shell.show(screen) }
     }
   }
 }
 
-/** The bolt at the bottom of the chat lists: Blitz over every team's open cards (`sidebar.global_blitz`), with its
+/** The bolt at the bottom of the chat lists: Blitz over every group's open cards (`sidebar.global_blitz`), with its
  *  count; off while nothing is open. The card's page walks on to the next. */
 struct BlitzAllButton: View {
   @EnvironmentObject var shell: AppShell
