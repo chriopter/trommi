@@ -877,8 +877,11 @@ public enum CoreView {
     public var faces: [StackEdgeView]
     /// Its sessions, one row each, in drawing order (connected first); drawn while open.
     public var sessions: [SessionRowView]
+    /// What was said last in any of its chats, that chat's name before it ("Fernly Website: Only the Safari test is
+    /// left."): the phone's line under the team's name. None while this device holds nothing said there.
+    public var last: LastSaidView?
 
-    public init(id: String = "", name: Text = Text(), selected: Bool = false, open: Bool = false, waiting: UInt32 = 0, cards: UInt32 = 0, knocks: Bool = false, says: Text = Text(), edges: [StackEdgeView] = [], faces: [StackEdgeView] = [], sessions: [SessionRowView] = []) {
+    public init(id: String = "", name: Text = Text(), selected: Bool = false, open: Bool = false, waiting: UInt32 = 0, cards: UInt32 = 0, knocks: Bool = false, says: Text = Text(), edges: [StackEdgeView] = [], faces: [StackEdgeView] = [], sessions: [SessionRowView] = [], last: LastSaidView? = nil) {
       self.id = id
       self.name = name
       self.selected = selected
@@ -890,6 +893,7 @@ public enum CoreView {
       self.edges = edges
       self.faces = faces
       self.sessions = sessions
+      self.last = last
     }
 
     enum CodingKeys: String, CodingKey {
@@ -904,6 +908,7 @@ public enum CoreView {
       case edges = "edges"
       case faces = "faces"
       case sessions = "sessions"
+      case last = "last"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -919,6 +924,7 @@ public enum CoreView {
       self.edges = try c.decodeIfPresent([StackEdgeView].self, forKey: .edges) ?? []
       self.faces = try c.decodeIfPresent([StackEdgeView].self, forKey: .faces) ?? []
       self.sessions = try c.decodeIfPresent([SessionRowView].self, forKey: .sessions) ?? []
+      self.last = try c.decodeIfPresent(LastSaidView.self, forKey: .last)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -934,6 +940,7 @@ public enum CoreView {
       if !edges.isEmpty { try c.encode(edges, forKey: .edges) }
       if !faces.isEmpty { try c.encode(faces, forKey: .faces) }
       if !sessions.isEmpty { try c.encode(sessions, forKey: .sessions) }
+      try c.encodeIfPresent(last, forKey: .last)
     }
   }
 
@@ -3119,6 +3126,8 @@ public enum CoreView {
     public var starred: Bool
     /// When it was asked.
     public var createdMs: UInt64
+    /// How long ago, short ("12m", "3h"), on the group page: the small line above the title beside who asked.
+    public var age: Text?
     /// Who asked; none for a session the list does not show.
     public var from: FromView?
     /// On the first row of a run (rows of one session that follow each other): how many rows it has. Else 0.
@@ -3132,7 +3141,7 @@ public enum CoreView {
     /// The ways to put it aside that apply, in order: "later", "reverse", "duck", "shred".
     public var ways: [String]
 
-    public init(id: String = "", kind: String = "", loading: Bool = false, newer: Bool = false, title: String = "", words: String = "", notes: [Text] = [], urgency: String = "", sign: String = "", signSays: Text? = nil, starred: Bool = false, createdMs: UInt64 = 0, from: FromView? = nil, run: UInt32 = 0, media: [MediaView] = [], mediaSays: Text? = nil, tiles: TilesView = TilesView(), ways: [String] = []) {
+    public init(id: String = "", kind: String = "", loading: Bool = false, newer: Bool = false, title: String = "", words: String = "", notes: [Text] = [], urgency: String = "", sign: String = "", signSays: Text? = nil, starred: Bool = false, createdMs: UInt64 = 0, age: Text? = nil, from: FromView? = nil, run: UInt32 = 0, media: [MediaView] = [], mediaSays: Text? = nil, tiles: TilesView = TilesView(), ways: [String] = []) {
       self.id = id
       self.kind = kind
       self.loading = loading
@@ -3145,6 +3154,7 @@ public enum CoreView {
       self.signSays = signSays
       self.starred = starred
       self.createdMs = createdMs
+      self.age = age
       self.from = from
       self.run = run
       self.media = media
@@ -3166,6 +3176,7 @@ public enum CoreView {
       case signSays = "sign_says"
       case starred = "starred"
       case createdMs = "created_ms"
+      case age = "age"
       case from = "from"
       case run = "run"
       case media = "media"
@@ -3188,6 +3199,7 @@ public enum CoreView {
       self.signSays = try c.decodeIfPresent(Text.self, forKey: .signSays)
       self.starred = try c.decodeIfPresent(Bool.self, forKey: .starred) ?? false
       self.createdMs = try c.decode(UInt64.self, forKey: .createdMs)
+      self.age = try c.decodeIfPresent(Text.self, forKey: .age)
       self.from = try c.decodeIfPresent(FromView.self, forKey: .from)
       self.run = try c.decodeIfPresent(UInt32.self, forKey: .run) ?? 0
       self.media = try c.decodeIfPresent([MediaView].self, forKey: .media) ?? []
@@ -3210,6 +3222,7 @@ public enum CoreView {
       try c.encodeIfPresent(signSays, forKey: .signSays)
       try c.encode(starred, forKey: .starred)
       try c.encode(createdMs, forKey: .createdMs)
+      try c.encodeIfPresent(age, forKey: .age)
       try c.encodeIfPresent(from, forKey: .from)
       try c.encode(run, forKey: .run)
       if !media.isEmpty { try c.encode(media, forKey: .media) }

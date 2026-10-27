@@ -430,7 +430,18 @@
           "unread": false,
           "signal": "waiting"
         }
-      ]
+      ],
+      "last": {
+        "text": "Fernly Website: 41 of 44 green; the Safari checkout test fails 2 of 12 runs, always on the iframe. Question on your Desk.",
+        "at_ms": 1791469440000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:24"
+          },
+          "en": "16:24"
+        }
+      }
     },
     {
       "id": "platform",
@@ -715,7 +726,18 @@
           "unread": false,
           "signal": "waiting"
         }
-      ]
+      ],
+      "last": {
+        "text": "Infrastructure: The primary disk is at 91%. Critical card on your Desk.",
+        "at_ms": 1791469680000,
+        "when": {
+          "key": "chat.when.today",
+          "args": {
+            "time": "16:28"
+          },
+          "en": "16:28"
+        }
+      }
     }
   ],
   "folded": false,

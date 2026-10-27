@@ -403,6 +403,16 @@ pub fn sidebar(b: &Board) -> SidebarView {
                         mark: r.mark.clone(),
                     })
                     .collect(),
+                // (the newest of its chats' last words, that chat's name before them)
+                last: sessions
+                    .iter()
+                    .filter_map(|r| r.last.as_ref().map(|l| (r, l)))
+                    .max_by_key(|(_, l)| l.at_ms)
+                    .map(|(r, l)| LastSaidView {
+                        text: format!("{}: {}", r.name.en, l.text),
+                        at_ms: l.at_ms,
+                        when: l.when.clone(),
+                    }),
                 sessions,
             }
         })

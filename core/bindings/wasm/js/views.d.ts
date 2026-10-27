@@ -262,6 +262,9 @@ export interface TeamStackView {
   faces?: StackEdgeView[]
   /** Its sessions, one row each, in drawing order (connected first); drawn while open. */
   sessions?: SessionRowView[]
+  /** What was said last in any of its chats, that chat's name before it ("Fernly Website: Only the Safari test is
+   *  left."): the phone's line under the team's name. None while this device holds nothing said there. */
+  last?: LastSaidView
 }
 
 /** A session in a team's stack: its card edge, or its face in the team's picture. */
@@ -900,6 +903,8 @@ export interface DeskRowView {
   starred: boolean
   /** When it was asked. */
   created_ms: number
+  /** How long ago, short ("12m", "3h"), on the group page: the small line above the title beside who asked. */
+  age?: Text
   /** Who asked; none for a session the list does not show. */
   from?: FromView
   /** On the first row of a run (rows of one session that follow each other): how many rows it has. Else 0. */

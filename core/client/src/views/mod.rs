@@ -488,6 +488,10 @@ pub struct TeamStackView {
     /// Its sessions, one row each, in drawing order (connected first); drawn while open.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sessions: Vec<SessionRowView>,
+    /// What was said last in any of its chats, that chat's name before it ("Fernly Website: Only the Safari test is
+    /// left."): the phone's line under the team's name. None while this device holds nothing said there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last: Option<LastSaidView>,
 }
 
 /// So many sessions have a card edge of their own in a folded team's stack.
@@ -1312,6 +1316,9 @@ pub struct DeskRowView {
     pub starred: bool,
     /// When it was asked.
     pub created_ms: u64,
+    /// How long ago, short ("12m", "3h"), on the group page: the small line above the title beside who asked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub age: Option<Text>,
     /// Who asked; none for a session the list does not show.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<FromView>,

@@ -17,7 +17,7 @@
 use super::board::{is_loading, key_of, reads_as_info, Board, DEFAULT_TEAM};
 use super::links::plain;
 use super::sidebar::units_of;
-use super::words::say;
+use super::words::{age_short, say};
 use super::{
     ChipView, DeskRowView, FromView, GlobalBlitzView, GoalsView, GroupHeadView, GroupMenuItem,
     GroupView, MediaView, Screen, SessionRowView, SlipView, StackEdgeView, Text, TileView,
@@ -114,6 +114,13 @@ pub fn group(b: &Board) -> GroupView {
         })
         // (a row whose session the list does not show has no place on a page)
         .filter(|r| r.from.is_some())
+        // (how long ago, beside who asked; the page is made again when it reads otherwise)
+        .map(|mut r| {
+            let (age, next) = age_short(r.created_ms, b.now);
+            b.wake_at(Some(next));
+            r.age = Some(age);
+            r
+        })
         .collect();
     let all_open = rows.len() as u32;
     let (questions, reads): (Vec<DeskRowView>, Vec<DeskRowView>) = rows
@@ -802,6 +809,7 @@ pub(super) fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView
         sign_says,
         starred,
         created_ms: c.created_at,
+        age: None,
         from: from_of(b, agent, Some(c)),
         run: 0,
         media_says,
