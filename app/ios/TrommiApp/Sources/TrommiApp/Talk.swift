@@ -271,9 +271,10 @@ struct ChatRow: View {
 
 /**
  * A card's page, calm (owner's pick of 17 October): who and when in one quiet line, the title and the text in the
- * system's face, the answers as plain rows, the three side ways as one small row, the talk open (it folds by its row). Once answered here
- * the way on stands where the answers stood: one glass button "Next" with the next card's title, the answer that
- * stands quietly under it with Undo. Every word comes from the core (`card.words`, `card.after`).
+ * system's face, the answers as plain rows, the three side ways as one small row, the talk open (it folds by its row). Answered here
+ * (an option, the duck, Got it, Allow or Deny), the page goes on at once to the next card (`card.after`), or back to
+ * the list when none waits (owner, 27 October); the core's toast says what was done, with Undo. Every word comes from
+ * the core (`card.words`, the toast).
  */
 struct CardScreen: View {
   @EnvironmentObject var shell: AppShell
@@ -285,6 +286,8 @@ struct CardScreen: View {
    *  frame as the answer (no frame without it, so nothing jumps). Open again (Undo), the answers are back. */
   @State private var sawOpen = false
   private var answeredHere: Bool { sawOpen && card.status != "open" }
+  /** Answered on this page: once the card is no longer open it goes on (`goOn`). */
+  @State private var goesOn = false
   /** The card's talk unfolded: open at first (owner, 23 October), its row folds it. */
   @State private var showTalk = true
   /** How tall the answers stood while the card was open: once answered here the way on keeps that room, so nothing
@@ -348,7 +351,9 @@ struct CardScreen: View {
     }
     .pushedPills { titlePill } trailing: { EmptyView() }
     .onAppear { if card.status == "open" { sawOpen = true }; note = card.draft; choices = Set(card.options.filter(\.chosen).map(\.key)) }
-    .onChange(of: card.status) { _, now in if now == "open" { sawOpen = true } }
+    .onChange(of: card.status) { _, now in
+      if now == "open" { sawOpen = true } else if goesOn { goesOn = false; goOn() }
+    }
     .onChange(of: note) { _, value in shell.act(["do": "draft", "place": card.id, "text": value]) }
   }
 
@@ -454,7 +459,7 @@ struct CardScreen: View {
         }
         if card.kind == "decision" { sideWays(duck: true).padding(.top, 2) }
       case "read":
-        row(w.gotIt.en, prominent: true) { shell.act(["do": "read", "card_id": card.id]) }
+        row(w.gotIt.en, prominent: true) { goesOn = true; shell.act(["do": "read", "card_id": card.id, "onward": true]) }
         sideWays(duck: false).padding(.top, 2)
       case "request":
         HStack(spacing: 8) {
@@ -462,11 +467,10 @@ struct CardScreen: View {
           Button { verdict(true) } label: { Text("Allow").font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 56) }.buttonStyle(TileStyle(lead: true, urgency: urgency))
         }
       case "said":
-        // the answer, the way on directly under it (as on the web; Undo stays in the row: no toast here)
+        // the answer as it stands, Undo at its end (answered here, the page has gone on: the toast's Undo)
         said(a)
         // (AnswerView.notSent: the answer is still on this device, the outbox halts on the hub's refusal)
         if let notSent = a.notSent { Text(notSent.en).font(.footnote.weight(.semibold)).foregroundStyle(Ink.urgCritical) }
-        if answeredHere, let after = card.after { nextButton(after) }
         ForEach(Array(a.optionNotes.enumerated()), id: \.offset) { _, n in still(n.label, n.note.en) }
         if let settled = a.settled { still("✓ Settled by your answer", settled.en) }
         if !a.summary.isEmpty { still("Done by the agent", a.summary) }
@@ -520,7 +524,7 @@ struct CardScreen: View {
       if duck {
         sideCapsule(label: {
           HStack(spacing: 6) { PenMark(doc: PenStore.doc("sketch:duck"), inks: PenInks(stroke: Ink.fg, duck: true, water: Ink.fg)).frame(width: 24, height: 20); Text(w.duck.en) }
-        }) { shell.act(["do": "answer", "card_id": card.id, "choices": card.options.filter(\.recommended).map(\.key), "trusted": true, "note": note]) }
+        }) { goesOn = true; shell.act(["do": "answer", "card_id": card.id, "choices": card.options.filter(\.recommended).map(\.key), "trusted": true, "note": note, "onward": true]) }
       }
       sideCapsule(label: { Text(w.what.en) }) { handBack(rework: false) }
       sideCapsule(label: { HStack(spacing: 6) { Image(systemName: "arrow.uturn.left"); Text(w.rework.en) } }) { handBack(rework: true) }
@@ -583,28 +587,10 @@ struct CardScreen: View {
     .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(calmFill))
     .accessibilityElement(children: .combine)
   }
-  /** The way on: one glass button in the accent, "Next" and the next card's title; "All done" when none waits. */
-  private func nextButton(_ after: CoreView.AfterView) -> some View {
-    Button {
-      if !shell.path.isEmpty { shell.path.removeLast() }
-      if let n = after.next { shell.focus(.card(cardId: n.id)) }
-    } label: {
-      HStack(spacing: 12) {
-        VStack(alignment: .leading, spacing: 2) {
-          Text(after.go.en).font(.headline)
-          if let n = after.next { Text(n.title).font(.subheadline).opacity(0.78).lineLimit(1) }
-        }
-        Spacer(minLength: 8)
-        Image(systemName: after.next != nil ? "chevron.right" : "checkmark").font(.system(size: 17, weight: .semibold))
-      }
-      .foregroundStyle(Ink.accentFg)
-      .padding(.horizontal, 22).frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
-      .glass(Capsule(), interactive: true, tint: Ink.accent)
-      .contentShape(Capsule())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(after.next.map { "\(after.says.en): \($0.title)" } ?? after.says.en)
-    .accessibilityIdentifier("card-next")
+  /** On to the next card in the walk's order (`card.after.next`), or back where the card was opened when none waits. */
+  private func goOn() {
+    if !shell.path.isEmpty { shell.path.removeLast() }
+    if let n = card.after?.next { shell.focus(.card(cardId: n.id)) }
   }
 
   // ---- the card's own talk, open under one quiet row that folds it ----
@@ -648,8 +634,11 @@ struct CardScreen: View {
       .padding(.top, 6)
     }
   }
-  private func answer(_ keys: [String]) { shell.act(["do": "answer", "card_id": card.id, "choices": keys, "note": note, "attachments": attachments]) }
-  private func verdict(_ allow: Bool) { shell.act(["do": "verdict", "request_id": card.id, "allow": allow]) }
+  private func answer(_ keys: [String]) {
+    goesOn = true
+    shell.act(["do": "answer", "card_id": card.id, "choices": keys, "note": note, "attachments": attachments, "onward": true])
+  }
+  private func verdict(_ allow: Bool) { goesOn = true; shell.act(["do": "verdict", "request_id": card.id, "allow": allow]) }
 }
 
 /** The strip above a card's title while its session works on it: the drawing in its working ring, who, what. */
