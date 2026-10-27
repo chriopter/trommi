@@ -61,7 +61,7 @@ fn base64(text: &str) -> Vec<u8> {
 
 /// What `src/update.rs` holds a release against, written to OUT_DIR/release.rs: the release public key from
 /// release/public-key.pem (the last 32 bytes of its SubjectPublicKeyInfo are the Ed25519 key), the target this
-/// binary is built for, and the release number CI builds it as (TROMMI_RELEASE_VERSION; 0 for any other build).
+/// binary is built for, and the release number a release build gives it (TROMMI_RELEASE_VERSION; 0 for any other build).
 fn release_constants(dir: &std::path::Path) {
     let pem_file = dir.join("../release/public-key.pem");
     println!("cargo:rerun-if-changed={}", pem_file.display());

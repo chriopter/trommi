@@ -76,8 +76,8 @@ pub struct App {
     served: std::sync::OnceLock<()>,
 }
 
-/// The mark beside the database that it has served a request (hub/deploy/hub-restore.sh reads it: data that
-/// served is never put back to the copy made before).
+/// The mark beside the database that it has served a request (data that served is never put back to a copy made
+/// before).
 pub const SERVED_MARK: &str = "hub.served";
 
 /// A 32-byte secret of the hub's own, kept beside the database (mode 0600), made on first start.

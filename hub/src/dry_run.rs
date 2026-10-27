@@ -1,6 +1,5 @@
 //! `trommi-hub dry-run <data> <scratch>`: a new release tried on a copy of the live data before it replaces the
-//! running hub (hub/deploy/hub-dryrun.sh runs it as the hub's user, without network and with the live data
-//! read-only; the updater asks for it before every swap).
+//! running hub (run it as the hub's user, without network and with the live data read-only, before a swap).
 //!
 //! 1. A consistent copy of the database while the running hub goes on writing (`VACUUM INTO` from a read-only
 //!    connection), and of the hub's own keys (`*.key`), into `<scratch>`. Uploaded files are not copied.

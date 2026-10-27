@@ -19,7 +19,7 @@ const ASSETS = {
 }
 const ask = (path, init) => worker.fetch(new Request(`https://app.trommi.com${path}`, init), { ASSETS })
 
-test('the old release addresses are gone: no release route, no connect script, no R2 binding in wrangler.jsonc', async () => {
+test('the old release addresses are gone: no release route, no connect script, no release binding in the worker', async () => {
   // a file address that is not in public/ is a 404; any other address is the app's page, never a release file
   const json = await ask('/plugins/marketplace.json')
   assert.equal(json.status, 404)
@@ -28,6 +28,4 @@ test('the old release addresses are gone: no release route, no connect script, n
   assert.equal(await (await ask('/connect')).text(), PAGE, '/connect is the app\'s page, no script')
   const source = await readFile(new URL('../worker.js', PUBLIC), 'utf8')
   assert.doesNotMatch(source, /RELEASES|releaseKey|connect\.sh/)
-  const config = await readFile(new URL('../wrangler.jsonc', PUBLIC), 'utf8')
-  assert.doesNotMatch(config, /r2_buckets|RELEASES/)
 })

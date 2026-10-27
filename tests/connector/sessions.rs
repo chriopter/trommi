@@ -14,7 +14,7 @@
 //! call's `_meta` and nothing in the environment. Codex's app server runs every thread under one process: its
 //! threads share a parent.
 //!
-//! Pull requests and main run the cases marked fast; `TROMMI_TESTS_FULL=1` (nightly.yml) runs every case.
+//! A default run takes the cases marked fast; `TROMMI_TESTS_FULL=1` runs every case.
 mod common;
 
 use common::process::{codex_hello, codex_meta, Mcp, Seat};

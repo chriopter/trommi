@@ -1,7 +1,7 @@
 # Security
 
 How Trommi protects your content, its releases, its servers and this repository. The hub is the server that
-stores and relays encrypted data; the web app is delivered separately, by Cloudflare at app.trommi.com.
+stores and relays encrypted data; the web app is served separately, at app.trommi.com.
 
 ## App / E2E
 - Encryption is MLS (RFC 9420, with OpenMLS `=0.9.1`), in one Rust core shared by web, iOS, connector and hub.
@@ -154,97 +154,41 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   your device runs (in the browser loaded from app.trommi.com, like the rest of the web app; see Known limits).
 
 ## Signing
-- The hub and the connector each have their own signed release series (`hub-v<N>`, `connector-v<N>`): a list of the
-  part's files with their hashes, signed with Ed25519, one key for both. A part is released only when its own checks
-  and the core's checks passed for that commit.
-- Public key: `release/public-key.pem`, also pinned on the hub server. The private key stays in 1Password.
-- Our hub image has a separate standard ECDSA P-256 Cosign key, pinned in `release/hub-cosign-public.pem` and
-  independently on the server. The binary manifest still uses the existing Ed25519 key and includes that public
-  container key as an asset. The image private key stays in 1Password as `SIGN_IMAGE_KEY`; CI imports it with a random
-  runtime password into an ephemeral Cosign key. The server holds only its public key. YoloDeploy verifies Cosign and
-  the digest before replacing the app, then runs the exact verified local image ID. Normal updates refuse older
-  signed release-sequence labels and changed app images with the same sequence; health-failure recovery may
-  return to the actual previous image. CI promotes the deployment tag only after checks and signature verification
-  and refuses promotion past a newer published release. Legacy binary updaters keep their signed manifest checks.
-- The connector's `install.sh` and `trommi-connector update` check the same signature, with the key built in.
-- Release files and web app files carry GitHub build attestations: a public record of which build made them.
-- The web app is delivered as soon as its own checks and the core's checks passed; after each delivery CI checks from
-  outside that app.trommi.com serves exactly that build, and puts the build before back when it does not.
-- Each web delivery is also published as a release `web-v<N>` (web.tar.gz, signed and attested like the others) as
-  the record of what went out; browsers do not check it.
+- Releases are built locally by the maintainer and published by hand; there is no CI and no automatic delivery.
+- The connector has its own signed release series (`connector-v<N>`): a list of its files with their hashes, signed
+  with Ed25519. A connector is released only after its tests and the core's passed locally for that commit.
+- Public key: `release/public-key.pem`, compiled into the connector and held by `install.sh`. The private key stays
+  in 1Password, never in this repository.
+- The connector's `install.sh` and `trommi-connector update` check that signature, with the key built in.
 - The iOS app is signed by Apple and ships through TestFlight.
-- The Mac app for direct download (`Trommi-macOS.dmg`, `main.yml`) is signed with the team's Developer ID certificate
-  with the hardened runtime, notarized by Apple and stapled; macOS checks that before its first start. It is built when
-  the core's checks passed for its commit and the app's inputs differ from those of the newest Mac app, and never
-  without the certificate and notarization (the job is skipped instead); it is published as its own release
-  `mac-v<N>` with a GitHub build attestation (macOS checks Apple's signature and notarization itself; the .dmg is not
-  in a manifest signed with the release key). Only the job that builds it sees the certificate, in an environment of
-  its own (`mac`).
+- The Mac app for direct download (`Trommi-macOS.dmg`, releases `mac-v<N>`) is signed with the team's Developer ID
+  certificate with the hardened runtime, notarized by Apple and stapled; macOS checks that before its first start. It
+  is never published unsigned or un-notarized. It is in no manifest signed with the release key.
 - iOS uses only standard algorithms and is declared exempt from export paperwork.
 
 ## Deployment
-- Secrets live in 1Password and are read only by the step that needs them.
-- Pull requests get no secrets and deploy nothing.
-- CI never logs into the hub server. It publishes the checked signed image and sends one empty HTTPS POST to
-  YoloDeploy through Cloudflare Access with an app-specific token; that token chooses a fixed server-owned target,
-  never a command, repository or path from the request. CI then verifies public health and the expected commit.
-- YoloDeploy pulls and verifies the image signature before replacing the hub and waits for its Docker healthcheck.
-  Failed startup/health returns to the previous image on the current data; no data is restored or discarded by
-  deployment. CI checks that the actual released predecessors still start on data the new binary migrated, even
-  across declared data-epoch changes. Migrations must remain compatible with the previous image. A killed deploy
-  or power failure requires inspecting the recovery journal manually.
-- A separate nightly job takes a consistent private copy of hub data/configuration during a short pause, under
-  the same operation lock as deployment. It resumes that container, normalizes the copied SQLite DB/WAL through
-  SQLite's backup API, checks and syncs a private archive and checksum, and retains its archives for 14 days.
-  Its interruption marker and service cleanup resume only the container it paused. No production restore test is
-  deliberately broken: isolated fixtures verify WAL/data restoration and image-only rollback preserving writes.
-- A failed hub or web delivery opens a GitHub issue; the next good one closes it.
-- After each web delivery CI asks app.trommi.com from outside whether it serves exactly that build (the start page and
-  every file it loads, by SHA-256, with its security headers); when not, the version before is put back at once.
-- The hub runs as a non-root container with a read-only root filesystem, dropped capabilities, no Docker socket
-  and no published host ports. Its data is writable; configuration is mounted read-only. Cloudflared reaches its
-  port 8080 on the private Docker network. YoloDeploy has the Docker socket and therefore broad host rights; the
-  old separate systemd hub/updater services are disabled on our hosting. Other fixed targets are not controlled by
-  the Trommi request token. Cloudflare service credentials are shared across apps, so Access is not app isolation.
-- Public traffic reaches the hub only through a Cloudflare tunnel. Cloudflare ends TLS for the hub, the web app and
-  the website: in transit it sees what the hub sees, including sign-in data (your e-mail and the login key derived
-  from your password, which signs in but opens no content), tokens and the metadata above. Content stays
-  end-to-end encrypted.
-- CI deploys the web app (app.trommi.com) and the website (trommi.com) to Cloudflare with a token from 1Password.
+- The hub, the web app (app.trommi.com) and the website (trommi.com) run as containers on the maintainer's own server.
+  A release is built locally, copied to the server and restarted by hand. How that server is set up is kept on the
+  server, not in this repository.
+- Secrets live in 1Password and on that server, never in this repository.
+- Public traffic reaches the hub, the web app and the website only through a Cloudflare tunnel. Cloudflare ends TLS
+  for them: in transit it sees what the hub sees, including sign-in data (your e-mail and the login key derived from
+  your password, which signs in but opens no content), tokens and the metadata above. Content stays end-to-end
+  encrypted.
 - The web app and the website tell browsers to use only HTTPS, for a year, for their name and every name under it
   (HSTS, no preload); the website's covers hub.trommi.com too. The hub sends the same on every answer once
   `HUB_HSTS=on` is set on its server.
 - The web app and the website keep their windows and files to themselves: no other site's window keeps a handle on
   them (COOP), and no other site may embed their files (CORP). Both have a strict Content-Security-Policy.
-- Local recovery archives have no off-server backup configured. UFW is inactive. The tunnel token and the Trommi
-  deploy token exposed during setup need rotation by the owner.
-- Server logs are kept 30 days and contain no personal data (no e-mail or IP addresses, no tokens).
+- The web app's build is reproducible: `app/web/dev/verify.mjs` checks that app.trommi.com serves exactly the files a
+  given commit builds.
+- The hub's logs contain no personal data (no e-mail or IP addresses, no tokens).
 
 ## Repository
-- How a change reaches `main`:
-  1. Any feature branch: no rules, anything goes.
-  2. A frozen `release/<date>-<n>` branch: one finished change, or a bundle per topic.
-  3. Its pull request into `main`: CI checks it (`pr-check.yml`), and it merges by auto-merge with "Squash and merge"
-     once all required checks are green. Builds, TestFlight and deliveries come only from `main`.
-- A pull request runs quick checks only (clippy, every test but the slow ones, the web app's build, the apps
-  compiled), without secrets. One `main.yml` workflow checks each affected part once and the shared core once,
-  then each part independently builds, signs, publishes and delivers; a part that fails opens an issue and is not
-  delivered, while the other passing parts still can be. Signing jobs that hold the release key execute no built
-  app or connector. Artifact names alone are not a release gate: the actual producing job must have passed and
-  the bytes must match the digest exported by that job, including across retries. The iPhone and Mac apps go to
-  TestFlight only after their checks and the core's passed for that commit and their inputs differ from those
-  last delivered there. The Mac download does not wait for TestFlight processing. Manual recovery still verifies
-  the original main build and its checks; the App Store gate remains manual. The slowest tests, fuzzing and the
-  torture run with 100 iPhones run every night (`nightly.yml`); a failing night opens an issue.
-- `main` is protected: only signed commits, linear history, no force-push, no deletion, changes only through pull requests.
-  The squash merge is signed by GitHub, so every commit on `main` is verified. The history before 11 October 2026 was re-signed once by the owner.
-- GitHub secret scanning is on and blocks pushes that contain secrets.
-- Only `main` can deploy: the environments of the web app, the website, the hub, the connector, the iOS and the Mac
-  app allow the branch `main` and nothing else.
-- Workflows start with no permissions, outside actions are pinned to exact commits, and the 1Password CLI they
-  install to an exact version.
+- Changes are made on branches and merged into `main` by the maintainer, with the tests passing locally. Nothing is
+  built, signed or deployed from this repository by a machine.
+- No secrets, keys or private e-mail addresses are committed.
 - Toolchain and dependency versions are pinned (lockfiles).
-- Rust dependencies are checked daily against RustSec, the list of known vulnerabilities.
 
 ## Known limits and planned
 - Cloudflare terminates TLS (see Deployment): whoever controls our Cloudflare account could read sign-in data and
@@ -252,12 +196,11 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   then rests only on your password's slow key derivation.
 - The connector checks signatures when it installs or updates, not each time it starts: whoever can write to
   your home folder could replace it.
-- In the browser, the app's code is loaded from Cloudflare (app.trommi.com) each time; whoever controls that
-  delivery (our Cloudflare account or the deploy pipeline) could ship code that reads your keys. The hub cannot.
+- In the browser, the app's code is loaded from app.trommi.com each time; whoever controls that delivery (our server
+  or our Cloudflare account) could ship code that reads your keys. The hub cannot.
   The iOS app and the connector do not have this risk: they are installed signed releases.
-- Container rollback keeps current data. It cannot make an incompatible migration reversible: the predecessor
-  binary must keep working, and the migration gate refuses a release when it does not. Backups are separate.
-- Rulesets (signed commits, no force push, protected tags): being turned on.
+- Releases are built and delivered by hand: no public build record ties a served file or binary to a commit (the
+  web app can be checked by rebuilding it, see Deployment), and nothing rolls a failed release back on its own.
 - iOS: account recovery and replacing the recovery code are tested only against a stand-in hub, not a real one.
 - Dictation is as private as Tinfoil's attestation holds: AMD's hardware and keys, Tinfoil's published builds and
   Sigstore's log; in the browser the verifier comes with the app's code (above). On the iPhone the same verifier

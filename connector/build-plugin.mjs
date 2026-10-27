@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // build-plugin.mjs: the connector's release files: one static binary per target. Nothing of this is committed, and
-// nothing here signs: releases are built and signed in CI (release/manifest.sh, release/sign.sh), and whoever
+// nothing here signs: releases are signed by hand (release/manifest.sh, release/sign.sh), and whoever
 // takes a release checks it against the release key (install.sh, connector/src/update.rs).
 //
 //   node connector/build-plugin.mjs [dir] [--targets <t>,<t>,…] [--no-build]

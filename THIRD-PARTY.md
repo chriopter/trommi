@@ -4,8 +4,8 @@ Every crate of `Cargo.lock` that is a dependency of a client library on a target
 (`core/bindings/wasm`, wasm32-unknown-unknown), the iOS app (`core/bindings/swift`, aarch64-apple-ios and its simulator) and the
 connector (`core`, Linux musl and macOS, both architectures). The tables are what `cargo tree` reports per package
 and target (`-e normal,no-proc-macro` for what is linked; `-e normal,build` minus that for what only runs at build
-time), with the licence each crate declares. The tables are written by `node .github/scripts/third_party.mjs`; the
-build checks that they are current. The web app's own third-party material:
+time), with the licence each crate declares. The tables are written by `node dev/third_party.mjs`
+(`--check` says whether they are current). The web app's own third-party material:
 [`app/web/THIRD-PARTY.md`](app/web/THIRD-PARTY.md).
 
 ## MPL-2.0

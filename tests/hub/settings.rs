@@ -1,4 +1,4 @@
-//! The hub's settings that the deploy path relies on: the push credentials under their names in the 1Password
+//! The hub's settings a release relies on: the push credentials under their names in the 1Password
 //! Environment, a key whose line breaks were lost on the way, the switch for HSTS.
 
 use std::collections::HashMap;

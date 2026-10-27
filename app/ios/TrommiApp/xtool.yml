@@ -1,6 +1,6 @@
 version: 1
 # The App Store bundle id (the app record's); xtool prefixes it with XTL-<team> for its development builds.
-# AppStore/project.yml names it again for the TestFlight builds (.github/workflows/ios-beta.yml).
+# AppStore/project.yml names it again for the TestFlight builds (AppStore/ship-local.sh).
 bundleID: com.trommi.ios
 product: TrommiApp
 infoPath: Info.plist

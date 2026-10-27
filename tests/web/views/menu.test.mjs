@@ -52,9 +52,7 @@ test('the menu stays as it was: what runs here is on the What\'s new page, not u
   assert.match(news, /<p class="news-build" id="news-build">\$\{runningLine\(\)\}<\/p>/, 'a small line at the top of What\'s new')
 })
 
-test('the release script writes what runs there beside the build, outside the build\'s manifest', async () => {
-  const src = readFileSync(new URL('../../../.github/scripts/web_release.mjs', import.meta.url), 'utf8')
-  assert.match(src, /'public', 'gen', 'release\.json'\)[\s\S]*version, commit, released/, 'gen/release.json: number, commit, time')
+test('the app asks for the release\'s gen/release.json, else for the build\'s commit', async () => {
   const app = readFileSync(new URL('../../../app/web/public/app.mjs', import.meta.url), 'utf8')
   assert.match(app, /fetch\('\/gen\/release\.json'[\s\S]*fetch\('\/gen\/build\.txt'/, 'the app asks for it, else for the build\'s commit')
 })

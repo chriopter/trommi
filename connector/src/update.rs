@@ -5,7 +5,7 @@
 //! (`launch.rs`) without a reconnect; where that cannot be, it is announced to the agent once and runs after a
 //! reconnect of the MCP server.
 //!
-//! **Release signatures.** Releases are built and signed in CI (`.github/workflows/release.yml`), in the
+//! **Release signatures.** Releases are built and signed by hand by the maintainer, in the
 //! form every signed part of the repository uses (`release/manifest.sh`, `release/sign.sh`): one `manifest.json`
 //! for all files of a release, and `manifest.json.sig`, an Ed25519 signature (64 raw bytes) over the exact bytes
 //! of the manifest. The public key is `release/public-key.pem` of this repository, compiled in ([`RELEASE_KEY`]):

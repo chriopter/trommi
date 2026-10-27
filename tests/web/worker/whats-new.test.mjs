@@ -7,7 +7,6 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import worker from '../../../app/web/worker.js'
 import { buildDays, changelogHead, forget, parseNotes, parseSummaries, readReleases, whatsNew } from '../../../app/web/whats-new.mjs'
-import { notes } from '../../../.github/scripts/release_notes.mjs'
 
 const PUBLIC = new URL('../../../app/web/public/', import.meta.url)
 const ASSETS = {
@@ -16,10 +15,17 @@ const ASSETS = {
     return bytes ? new Response(bytes) : new Response('not found', { status: 404 })
   },
 }
+// A release's notes in the form What's new reads (parseNotes): **New**, **Better**, **Fixed**, each line "- <text> (#<n>)",
+// "<", ">" and "&" escaped. Here from stand-ins { number, title: '<Kind>: <text>' }.
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const notes = prs => ['New', 'Better', 'Fixed'].flatMap(kind => {
+  const lines = prs.filter(p => p.title.startsWith(`${kind}: `)).map(p => [p.title.slice(kind.length + 2), p.number]).map(([t, n]) => `- ${esc(t[0].toUpperCase() + t.slice(1))} (#${n})`)
+  return lines.length ? [`**${kind}**`, ...lines, ''] : []
+}).join('\n') || 'Nothing you can see changed: internal work only.\n'
 const rel = (tag, at, prs) => ({ tag_name: tag, published_at: at, draft: false, body: `${notes(prs)}\n---\n\nThe part of commit x.` })
 
-test('the notes the release script writes read back line by line, escaping undone', () => {
-  const body = notes([{ number: 3, title: 'x', body: '## What\'s new\n- Fixed: a <b> & c\n- New: Web: a row\n' }, { number: 4, title: 'Better: faster', body: '' }])
+test('a release\'s notes read back line by line, escaping undone', () => {
+  const body = notes([{ number: 3, title: 'New: Web: a row' }, { number: 4, title: 'Better: faster' }, { number: 3, title: 'Fixed: a <b> & c' }])
   assert.deepEqual(parseNotes(`${body}\n---\n\n**New**\n- not this\n`), [
     { kind: 'New', text: 'Web: a row', pr: 3 },
     { kind: 'Better', text: 'Faster', pr: 4 },

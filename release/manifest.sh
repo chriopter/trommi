@@ -7,7 +7,7 @@
 # only grows. With $PARTS set (the release of every part), the manifest also says per part what its build read and
 # whether that changed since the release before: $PARTS is lines of `<part> <inputs sha256> <true|false>`. Every file is named with its size and SHA-256; the name in
 # the manifest is the file's name without its folder, which is also its name as a release asset. With $DATA_EPOCH set
-# (the number in hub/data-epoch), the manifest says it as "data_epoch" (hub/deploy/README.md, "Migrations").
+# (the number in hub/data-epoch), the manifest says it as "data_epoch".
 # The repository is $GITHUB_REPOSITORY (default chriopter/trommi).
 set -eu
 [ $# -ge 4 ] || { echo "usage: $0 <product> <version> <commit> <file>..." >&2; exit 2; }

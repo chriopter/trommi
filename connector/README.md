@@ -324,11 +324,11 @@ fingerprint. When either differs, or the session runs without a launcher, the up
 host-specific restart instruction: /mcp → Reconnect in Claude Code, quit and resume in Codex. A
 `tools/list_changed` notification alone cannot refresh a client's cached initialization instructions.
 
-Releases are built and signed in CI: the releases `connector-v<N>` of `chriopter/trommi` (the connector's own series;
+Releases are built and signed by hand by the maintainer: the releases `connector-v<N>` of `chriopter/trommi` (the connector's own series;
 before 13 October 2026 `v<N>`, a release of every part) hold the four binaries, `manifest.json` and `manifest.json.sig` (`release/manifest.sh`, `release/sign.sh`: Ed25519 over
 the manifest's exact bytes). The connector holds the public key (`release/public-key.pem`, compiled in by
 `build.rs`) and checks a binary against a manifest that lies beside it (`src/update.rs`): the signature, then
-product, repository, tag and version (never older than the one running; CI compiles the release number in with
+product, repository, tag and version (never older than the one running; a release build compiles its number in with
 `TROMMI_RELEASE_VERSION`), then the binary's size and SHA-256 under its release name. `--version` says where a
 binary stands: verified with its release, not verified (no manifest beside it), or refused. A refused binary is
 never announced as an update.

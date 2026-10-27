@@ -355,8 +355,8 @@ fn a_device_catches_up_on_two_hundred_commits() {
 }
 
 /// Full size (78 rounds, over 1000 changes, handovers of several messages; 2-3 minutes) only with
-/// TROMMI_TESTS_FULL=1, as the nightly run (.github/workflows/nightly.yml) has it; otherwise (pull requests, main, a
-/// local run) the same steps for 12 rounds.
+/// TROMMI_TESTS_FULL=1, for a full local run; otherwise (a default
+/// run) the same steps for 12 rounds.
 #[test]
 fn a_device_catches_up_across_twenty_groups_in_the_hubs_order_only() {
     const SESSIONS: usize = 19;

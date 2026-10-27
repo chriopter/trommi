@@ -251,8 +251,8 @@ async fn the_largest_attachment_and_asset_go_through() {
 
 /// An agent with 100 helpers: each gets its "Working on" card and status line in the agent's own session, named,
 /// and no group is founded for any of them.
-/// All 100 (1-2 minutes) only with TROMMI_TESTS_FULL=1, as the nightly run (.github/workflows/nightly.yml) has it;
-/// otherwise (pull requests, main, a local run) ten.
+/// All 100 (1-2 minutes) only with TROMMI_TESTS_FULL=1, for a full local run;
+/// otherwise (a default run) ten.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_hundred_helpers_live_in_one_session() {
     let full = std::env::var_os("TROMMI_TESTS_FULL").is_some_and(|v| v == "1");

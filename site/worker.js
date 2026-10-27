@@ -1,7 +1,7 @@
-// The site's worker (wrangler.jsonc: it runs before the static assets of public/).
+// The site's worker: it runs before the static assets of public/.
 //   - plain http goes to https;
 //   - www.trommi.com goes to trommi.com (one address for the site);
-//   - /beta goes to the public TestFlight link of the iPhone app (vars.TESTFLIGHT_URL in wrangler.jsonc), or to the
+//   - /beta goes to the public TestFlight link of the iPhone app (the setting TESTFLIGHT_URL), or to the
 //     install steps on GitHub while none is set;
 //   - everything else is the static site.
 

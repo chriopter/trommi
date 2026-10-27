@@ -1,4 +1,4 @@
-# cargo-nextest: how CI runs the scenario tests (tests/), each test a process of its own, as many at once as the
+# cargo-nextest: a way to run the scenario tests (tests/), each test a process of its own, as many at once as the
 # machine has cores. `cargo test` still works the same and is what the READMEs name for a local run.
 [profile.default]
 
@@ -12,12 +12,12 @@ retries = 0
 # the output of a failing test right where it failed, and the list of failures again at the end
 failure-output = "immediate-final"
 
-# The longest scenario tests start first (measured in CI, October 2026). Each part's test step lasts at least as long as
+# The longest scenario tests start first (measured October 2026). Each part's test step lasts at least as long as
 # its longest test; started last, it ran on after all others had finished (a minute more per job). Started first, the
 # others run beside it. A test missing here only starts in the usual order; a name that no longer exists matches
 # nothing.
 [[profile.ci.overrides]]
-# 2-3 minutes each at full size (nightly.yml, TROMMI_TESTS_FULL=1); seconds otherwise
+# 2-3 minutes each at full size (TROMMI_TESTS_FULL=1); seconds otherwise
 filter = """
 test(=a_device_catches_up_across_twenty_groups_in_the_hubs_order_only)
 | test(=a_hundred_helpers_live_in_one_session)
@@ -46,9 +46,9 @@ test(=a_room_grows_to_a_hundred_human_devices)
 """
 priority = 50
 
-# Pull requests (pr-check.yml, the fast tier): every scenario test but the slow ones (1.5 s and more in CI, October
-# 2026), about a minute in all. Each part's ship-*.yml runs them all (profile ci) before it delivers; a test that becomes
-# slow later only makes pull requests a little slower until it is named here.
+# The fast tier: every scenario test but the slow ones (1.5 s and more, October 2026), about a minute in all. Before a
+# release run them all (profile ci); a test that becomes slow later only makes this tier a little slower until it is
+# named here.
 [profile.fast]
 fail-fast = false
 retries = 0

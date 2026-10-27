@@ -24,9 +24,7 @@ trommi-client-core = { path = "../core/client" }
 # the hub and what its test clients need (tests/hub/…), and the structs the hub parses (core/wire)
 trommi-wire = { path = "../core/wire", features = ["layout"] }
 trommi-hub = { path = "../hub", features = ["fuzz"] }
-# the hub's updater and what its tests sign with (tests/deploy/…); ed25519-dalek also makes the throwaway release
-# key of tests/connector/update.rs
-trommi-hub-updater = { path = "../hub/updater" }
+# the throwaway release key of tests/connector/update.rs
 ed25519-dalek = "=2.2.0"
 tokio = { version = "=1.53.2", features = ["rt-multi-thread", "net", "sync", "time", "macros", "process", "io-util"] }
 rusqlite = { version = "=0.32.1", features = ["bundled"] }
@@ -324,20 +322,12 @@ name = "connector_swap"
 path = "connector/swap.rs"
 
 [[test]]
-name = "deploy_updater"
-path = "deploy/updater.rs"
+name = "hub_settings"
+path = "hub/settings.rs"
 
 [[test]]
-name = "deploy_rights"
-path = "deploy/rights.rs"
-
-[[test]]
-name = "deploy_hub_settings"
-path = "deploy/hub_settings.rs"
-
-[[test]]
-name = "deploy_dry_run"
-path = "deploy/dry_run.rs"
+name = "hub_dry_run"
+path = "hub/dry_run.rs"
 
 [[test]]
 name = "core_device_content"

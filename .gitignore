@@ -6,13 +6,10 @@ app/web/public/gen/
 app/web/public/demo/fixture.json
 app/web/public/demo/files/
 
-# Wrangler's local state.
-.wrangler/
-
 # Rust build output.
 /target/
 
-# What the release steps of .github/workflows/build.yml write when they are run by hand.
+# What a release built by hand writes (release files before they are signed and published).
 /out/
 
 # Python byte code (the iOS tools and their tests).
@@ -22,3 +19,9 @@ __pycache__/
 /app/linux/target/
 /app/linux/smoke.png
 /app/linux/.qmlls.ini
+
+# Local files that never belong in the repository: macOS folder data, environment files, agent settings.
+.DS_Store
+.env
+.env.*
+.claude/

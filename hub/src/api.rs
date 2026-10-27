@@ -286,8 +286,8 @@ async fn respond(app: Arc<App>, req: Request<Incoming>, conn: Conn) -> Answer {
             &json!({ "ok": ok, "commit": app.cfg.commit, "protocol_version": 1, "served": app.served() }),
         );
     }
-    // from here on a request may change the data: the updater no longer puts it back to the copy made before this
-    // release started (hub/deploy/README.md, "When a new hub fails")
+    // from here on a request may change the data: it is no longer safe to put it back to a copy made before this
+    // release started
     app.mark_served();
     if segs.first() != Some(&"v1") {
         return http::refusal(&refuse("not-found", "every route is under /v1/"));

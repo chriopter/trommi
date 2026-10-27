@@ -775,8 +775,8 @@ fn expensive_requests_of_one_device() {
 /// them; a Commit of the room group at that size and the founding of a main session that adds all of them in one
 /// request (a JSON body above 1 MiB, within 1.5 MiB) are taken; the 1001st human leaf is `too-many`. What it
 /// weighs and what verifying a Commit at 1000 leaves costs is printed (`--nocapture`).
-/// Full size (2.5 minutes) only with TROMMI_TESTS_FULL=1, as the nightly run (.github/workflows/nightly.yml) has it;
-/// otherwise (pull requests, main, a local run) the same steps at 100 with HUB_LIMIT_HUMANS=100, without the
+/// Full size (2.5 minutes) only with TROMMI_TESTS_FULL=1, for a full local run;
+/// otherwise (a default run) the same steps at 100 with HUB_LIMIT_HUMANS=100, without the
 /// size bounds of the founding, which only hold at 1000.
 #[test]
 fn a_room_of_a_thousand_human_devices() {

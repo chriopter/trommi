@@ -54,7 +54,7 @@ fn main() {
             return;
         }
         Some("dry-run") => {
-            // trommi-hub dry-run <live data> <scratch> [seconds]: hub/deploy/hub-dryrun.sh (see dry_run.rs)
+            // trommi-hub dry-run <live data> <scratch> [seconds]: a new release tried on a copy (see dry_run.rs)
             let args: Vec<String> = std::env::args().skip(2).collect();
             let (Some(source), Some(scratch)) = (args.first(), args.get(1)) else {
                 eprintln!("usage: trommi-hub dry-run <data folder> <scratch folder> [seconds]");

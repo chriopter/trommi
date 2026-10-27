@@ -1,7 +1,7 @@
 // Writes the tables of THIRD-PARTY.md from what cargo reports, or checks that they are current.
 //
-//   node .github/scripts/third_party.mjs           rewrites the tables in THIRD-PARTY.md
-//   node .github/scripts/third_party.mjs --check   exit 1, with the difference, when the file is not what would be written
+//   node dev/third_party.mjs           rewrites the tables in THIRD-PARTY.md
+//   node dev/third_party.mjs --check   exit 1, with the difference, when the file is not what would be written
 //
 // What counts (the head of THIRD-PARTY.md says the same): every crate of Cargo.lock that is a dependency of a client
 // library on a target it ships for. "Linked" is `cargo tree -e normal,no-proc-macro`; "only while building" is
@@ -81,7 +81,7 @@ if (process.argv.includes('--check')) {
   const a = new Set(now.split('\n')), b = new Set(out)
   for (const l of a) if (!b.has(l)) console.error(`- ${l.slice(0, 200)}`)
   for (const l of b) if (!a.has(l)) console.error(`+ ${l.slice(0, 200)}`)
-  console.error(`\n${FILE} is not current: run node .github/scripts/third_party.mjs and commit the result`)
+  console.error(`\n${FILE} is not current: run node dev/third_party.mjs and commit the result`)
   process.exit(1)
 }
 writeFileSync(FILE, text)

@@ -20,8 +20,8 @@ the share sheet. There is no second Swift account, sync or board implementation.
 | `TrommiClient/Sources/ShareInbox/` | Share Extension's encrypted local inbox, intake and App Group access |
 | `TrommiClient/Sources/PushNotify/` | Read-only notification/widget payloads, private key-copy storage and extension I/O |
 | `TrommiClient/Sources/NotifyCoreLive/` | The notification/widget extension's narrow calls into the Rust binding |
-| `dev/verifier.mjs` | Writes `Resources/tinfoil-verifier.js` from the web's vendored verifier; `--check` in CI |
-| `dev/pen.mjs` | Writes the faces of `Resources/pen.json` from the web's pen (`app/web/public/ui.mjs`); `--check` in CI |
+| `dev/verifier.mjs` | Writes `Resources/tinfoil-verifier.js` from the web's vendored verifier; `--check` says whether it is current |
+| `dev/pen.mjs` | Writes the faces of `Resources/pen.json` from the web's pen (`app/web/public/ui.mjs`); `--check` says whether it is current |
 | `TrommiApp/AppStore/` | XcodeGen project, entitlements, metadata, screenshots and shipping tools |
 | `../../core/bindings/swift/` | UniFFI facade, generated Swift types/fold, static libraries and a proof app |
 | `../../tests/ios/` | Native executor/store/transport tests, isolated extension tests and opt-in core observers |
@@ -60,8 +60,8 @@ nice -n 19 ionice -c3 swift build --build-system native --package-path app/ios/T
   --swift-sdk darwin --triple arm64-apple-macosx -j 4
 ```
 
-These are module checks, not an Xcode archive or a device run. CI's unsigned Xcode app job compiles both platforms;
-`main.yml` builds the libraries, archives, signs and delivers from main after its checks passed. The shell's
+These are module checks, not an Xcode archive or a device run; an unsigned Xcode build of both platforms is below,
+signed releases are made by hand (`TrommiApp/AppStore/ship-local.sh`). The shell's
 small real-hub observer is `TrommiShellTests.MegaObserverTests`; the fleet is opt-in and is skipped by ordinary
 `swift test`. See the root README for client conformance and correctness runs.
 
@@ -251,19 +251,12 @@ xcodebuild build -project Trommi.xcodeproj -scheme TrommiMac -destination 'platf
   CODE_SIGNING_ALLOWED=NO -jobs 4
 ```
 
-Signed builds need the existing Apple team configuration; no secret belongs in the repository. The main pipeline
-is `.github/workflows/main.yml`: independent iOS/Mac TestFlight and Developer ID direct-download Mac destinations.
-The manual App Store gate and replay of checked TestFlight artifacts remain in `ship-apple.yml`.
-It delivers only after checks passed and its inputs differ from the last delivery. PRs have no secrets and
-publish nothing. Apple certificates/profiles and export/notarization checks remain in the shipping scripts.
+Signed builds need the existing Apple team configuration; no secret belongs in the repository. There is no CI:
+releases are built by hand on a Mac.
 
-- `.github/scripts/ios_archive.sh`, `ios_testflight.sh`, `ios_entitlements.py`: ad hoc archive, cloud-managed
-  distribution export, validation, upload and processing. `TrommiApp/AppStore/asc.py` handles App Store Connect.
-- `TrommiApp/AppStore/ship-local.sh [REF]`: a separate local TestFlight path from a clean worktree of the ref;
-  `--dry-run` validates without uploading. It requires the owner's preconfigured distribution environment.
-- `.github/scripts/mac_testflight.sh`: Mac App Store/TestFlight export and validation.
-- `.github/scripts/mac_direct.sh`: Developer ID signing, hardened runtime, notarization, stapling and a signed
-  DMG (`mac-v<N>`). It fails closed when signing/notarization configuration is unavailable. See the root README.
+- `TrommiApp/AppStore/ship-local.sh [REF]`: TestFlight from a clean worktree of the ref; `--dry-run` validates
+  without uploading. It requires the owner's preconfigured distribution environment. `TrommiApp/AppStore/asc.py`
+  handles App Store Connect.
 - `TrommiApp/AppStore/store.sh`: metadata and screenshots, status, explicit App Review submission and release.
   `metadata/` contains the locale texts and privacy answers. App records/platforms and App Privacy still need
   their existing manual App Store Connect setup.

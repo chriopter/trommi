@@ -29,7 +29,7 @@ const check = (ok, what, got) => { if (!ok) failed++; console.log(`${ok ? 'ok  '
 /** Every file under dir, as paths relative to it; what a tool leaves behind is not the site. */
 function walk(dir, rel = '') {
   return fs.readdirSync(path.join(dir, rel), { withFileTypes: true }).flatMap(e => {
-    if (['.git', '.shots', '.wrangler', 'node_modules'].includes(e.name)) return []
+    if (['.git', '.shots', 'node_modules'].includes(e.name)) return []
     const at = path.posix.join(rel, e.name)
     return e.isDirectory() ? walk(dir, at) : [at]
   })
@@ -179,9 +179,6 @@ const betas = [
 ]
 const wrongBeta = betas.filter(([link, to]) => betaOf(link) !== to).map(([link]) => `${link} -> ${betaOf(link)}`)
 check(wrongBeta.length === 0 && fileOf(BETA) === null, 'worker: /beta goes to a TestFlight link or the install steps, and is no file', wrongBeta)
-const wrangler = fs.readFileSync(path.join(site, 'wrangler.jsonc'), 'utf8')
-const link = wrangler.match(/"TESTFLIGHT_URL":\s*"([^"]*)"/)
-check(link && (link[1] === '' || betaOf(link[1]) === link[1]), 'wrangler.jsonc: TESTFLIGHT_URL is empty or a TestFlight public link', link?.[1])
 
 console.log(failed ? `${failed} check(s) failed` : 'all checks passed')
 process.exit(failed ? 3 : 0)

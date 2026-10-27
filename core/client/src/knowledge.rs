@@ -828,7 +828,7 @@ mod tests {
     #[test]
     fn the_search_finds_word_beginnings_in_every_word_asked() {
         let idx = Index::new(vec![
-            entry("a", "Hub deploy", "runs on YoloDeploy, container trommi", false, 3),
+            entry("a", "Hub deploy", "runs in a container on our server", false, 3),
             entry("b", "Release branches", "every change on release/<date>-<n>, PR with auto-merge", true, 2),
             entry("c", "OpenMLS", "version 0.9.1, one fixed cipher suite; deploy notes in the README", false, 1),
         ]);

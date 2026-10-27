@@ -1,7 +1,7 @@
 // What's new as data, served by the worker at /whats-new.json (worker.js) for the web app's page (public/news.mjs)
 // and the iPhone's (WhatsNew.swift). Three sources, newest day first:
-//   - the GitHub releases of every part (web-v, hub-v, connector-v, ios-v, mac-v): their notes list the merged pull requests'
-//     "What's new" lines (.github/scripts/release_notes.mjs writes them, parseNotes reads them back). A line counts on
+//   - the GitHub releases of every part (web-v, hub-v, connector-v, ios-v, mac-v): their notes list "What's new" lines
+//     under **New**, **Better** and **Fixed**, one "- <line> (#<n>)" each (parseNotes reads them). A line counts on
 //     the day (Europe/Berlin) of the first release that lists it; later releases of other parts only add their tag.
 //   - public/changelog/CHANGELOG.md: one short summary per day and at most one picture (written by hand, once a day).
 //   - public/changelog/history.json: the days before the releases had notes (the old CHANGELOG.md, frozen).

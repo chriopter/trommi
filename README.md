@@ -28,8 +28,7 @@ retries after a restart; contact times and missing profiles never authorize remo
 ## Install
 
 1. **The app:** [app.trommi.com](https://app.trommi.com) in any browser. On an iPhone: the public beta on
-   TestFlight, [trommi.com/beta](https://trommi.com/beta) (every release of main; the App Store gets reviewed versions
-   less often).
+   TestFlight, [trommi.com/beta](https://trommi.com/beta) (the App Store gets reviewed versions less often).
 2. **An agent**, on a Linux or macOS computer with Claude Code, Codex or Hermes Agent (for Hermes the app gives one
    line that does all of this, see Hermes below). The Trommi connector, once per machine:
 
@@ -238,138 +237,39 @@ flowchart LR
 </details>
 
 <details>
-<summary><b>Signed releases and deployment</b> · each part on its own</summary>
+<summary><b>Releases</b> · built and released by hand</summary>
 
-```mermaid
-flowchart LR
-  commit["Commit on main"] --> plan["main.yml: shared checks once"]
-  plan --> parts["Affected parts: check and build once"]
-  parts --> web["Web: sign, deliver, smoke, publish"]
-  parts --> hub["Hub: sign and publish, then the server pulls and checks"]
-  parts --> connector["Connector: sign, then publish after the hub"]
-  parts --> apple["Independent iPhone, Mac TestFlight and Mac download pipelines"]
-  parts --> linux["Linux: tests and window smoke"]
-  parts --> site["Site: deliver and check from outside"]
-```
+There is no CI. The maintainer builds, checks and releases each part by hand on their own machines, when needed:
 
-- **One workflow on main** ([`main.yml`](.github/workflows/main.yml)) plans affected parts, runs the shared core's
-  checks once, and uses the same `check-*` actions as pull requests. Each releasing part has its own
-  [`main-part.yml`](.github/workflows/main-part.yml) check/build job and independent delivery destinations in
-  [`main-delivery.yml`](.github/workflows/main-delivery.yml). One part failing does not prevent another passing
-  part from delivering. The direct Mac download does not wait for TestFlight processing.
-- Delivery compares each part with what it actually has out there, so an earlier failed delivery is retried.
-  Check baselines also advance per part as soon as its checks pass, even while another delivery is still running.
-  README edits are not build inputs. Native bindings reuse the host static archive already built for UniFFI.
-- Release-key commands run in jobs that never execute a built app or connector. Before signing or publishing,
-  the gates verify actual GitHub job conclusions and artifact digests exported through the producing jobs' outputs;
-  an artifact with the right name alone is insufficient. Per-part publication/delivery locks, signatures,
-  attestations, rollback, outside smoke and TestFlight processing/groups remain in force.
-- Graph examples, with releases needed and no earlier undelivered parts: web-only **11 → 6 checks**;
-  shared core **54 → 19 checks**. Only affected part rows expand. When all parts need only checks or all need
-  delivery, GitHub shows one skipped aggregate for the empty class; a shared-core change uses both classes.
-- **Manual recovery:** `ship-web.yml` still replays a checked web artifact, and `ship-apple.yml` retains TestFlight replay and the manual App Store gate. Both old `ship-*` runs and
-  new `main` runs are accepted only after their source and checks are verified. The connector, Linux and site
-  manual entry points dispatch `main` with that part selected. Hub recovery reruns its checked `main` delivery. `main` itself can also be run manually.
-- The new release number is `2000 + main's run number`, above all earlier series when introduced; retries keep
-  their number. TestFlight continues to allocate its build numbers through App Store Connect.
-- The hub and the connector have **their own signed release series**, `hub-v<N>` and `connector-v<N>`: one
-  `manifest.json` each (each file's size and SHA-256), signed with Ed25519. Public key:
-  [`release/public-key.pem`](release/public-key.pem); the private key lives in 1Password. A connector release waits
-  until the server runs the hub of the same commit, when that commit delivers both.
-- **The web app** gets a release `web-v<N>` too, once it is delivered: its release notes and `web.tar.gz` as it went
-  out, signed and attested (the record of what went out and a build to put back; no browser checks it).
-- **Release notes** come from the pull requests: each PR's section "What's new" (`.github/pull_request_template.md`,
-  lines starting `New:`, `Better:` or `Fixed:`; empty for internal work), else its title. A part's release lists the
-  PRs merged since its release before that touch its paths (`.github/scripts/release_notes.mjs`,
-  `inputs.sh paths <part>`). What's new on the web and the iPhone is read from these notes: the web app's worker
-  serves `/whats-new.json` (`app/web/whats-new.mjs`) from GitHub's public releases API, unauthenticated (a token
-  only if the secret `GITHUB_RELEASES_TOKEN` happens to be set), fresh for ten minutes in Cloudflare's cache and the
-  last good list served on any GitHub error or rate limit; beside it the one summary a day (and at most one picture)
-  in `app/web/public/changelog/CHANGELOG.md`, and the days before in `history.json` there (frozen).
-- **The iPhone and Mac apps** (`main.yml`) go to TestFlight when their checks passed and their inputs differ
-  from those last delivered there; then `ios-v<N>` records what changed for them (notes and the TestFlight build, no
-  file). The Mac app for direct download is `mac-v<N>`.
-- **The hub:** checked binaries become an image signed with a separate Cosign ECDSA key; binary manifests keep their Ed25519 key. Only then
-  does CI promote its deployment tag and send an empty authenticated POST to YoloDeploy. The fixed target verifies
-  the digest, waits for Docker health. A failed start returns to the previous image on current data; migrations must stay
-  compatible, and regular verified backups run separately. CI also verifies the public hub's exact
-  commit. See [the container flow, self-hosting and recovery](hub/container/README.md).
-- **The web app** cannot be signed for a browser: every file it serves carries a GitHub build attestation.
-- Pull requests get no secrets and deploy nothing.
+- **Before a release:** the tests of the part and of the core pass locally (see Build and tests).
+- **The connector** gets a signed release series, `connector-v<N>`: one `manifest.json` (each file's size and
+  SHA-256, `release/manifest.sh`), signed with Ed25519 (`release/sign.sh`). Public key:
+  [`release/public-key.pem`](release/public-key.pem), compiled into the connector and held by `install.sh`; the
+  private key stays with the maintainer. Connectors and `install.sh` take only a release signed with it.
+- **The hub, the web app (app.trommi.com) and the website (trommi.com)** run as containers on the maintainer's own
+  server, reached only through a Cloudflare tunnel. A release: build locally, copy it to the server, restart. How
+  that server is set up is kept on the server, not in this repository.
+- **The iPhone and Mac apps** go to TestFlight from a Mac
+  ([`app/ios/TrommiApp/AppStore/ship-local.sh`](app/ios/TrommiApp/AppStore/ship-local.sh)), signed by Apple. The
+  Mac download outside the store (`Trommi-macOS.dmg`, releases `mac-v<N>`) is made on a Mac when needed: signed with
+  the team's Developer ID, notarized and stapled, which macOS checks before its first start.
+- **What's new** on the web and the iPhone reads the notes of the GitHub releases: lines under `**New**`,
+  `**Better**` and `**Fixed**`, one `- <line> (#<n>)` each (`app/web/whats-new.mjs`, `parseNotes`), written with
+  the release. The web app's worker serves them as `/whats-new.json` from GitHub's public releases API,
+  unauthenticated (a token only if `GITHUB_RELEASES_TOKEN` happens to be set), fresh for ten minutes and the last good
+  list served on any GitHub error or rate limit; beside it the one summary a day (and at most one picture) in
+  `app/web/public/changelog/CHANGELOG.md`, and the days before in `history.json` there (frozen).
 
-Check a release, and a file the web app serves:
+Check a connector release:
 
 ```sh
 release/sign.sh verify manifest.json   # the signature
 release/sign.sh files manifest.json    # each file against the manifest
-
-curl -fsS https://app.trommi.com/index.html -o index.html
-gh attestation verify index.html --repo chriopter/trommi
 ```
 
-The current container flow and its limits: [hub/container/README.md](hub/container/README.md). The older binary
-updater and data layout remain documented in [hub/deploy/README.md](hub/deploy/README.md).
-
-</details>
-
-<details>
-<summary><b>Mac app (direct download)</b> · Developer ID, notarized, on every release</summary>
-
-The Mac app (the target `TrommiMac`, [app/ios/README.md](app/ios/README.md) "Xcode, TestFlight and releases") ships two ways: TestFlight
-and the Mac App Store as before (the manual gate in `ship-apple.yml`), and as **`Trommi-macOS.dmg`** on the GitHub release, outside the
-store. The newest is always at
-[releases/latest/download/Trommi-macOS.dmg](https://github.com/chriopter/trommi/releases/latest/download/Trommi-macOS.dmg)
-(Apple silicon, macOS 26).
-
-[`.github/workflows/main-delivery.yml`](.github/workflows/main-delivery.yml) (the `mac-direct` destination), on a
-push to main that changed the apps:
-
-1. **Whether it builds** (`.github/scripts/mac_release.sh check`): the commit's iOS inputs (the Mac app is built from
-   the same paths as the iOS app) differ from those of the newest Mac app released; and the checks passed.
-2. **Built:** on a Mac runner the Rust core for the Mac, then
-   [`.github/scripts/mac_direct.sh`](.github/scripts/mac_direct.sh): archive (build number = the build's number N),
-   export with method `developer-id` (the team's Developer ID Application certificate, hardened runtime, Xcode's
-   Developer ID profile for push and associated domains), checked (authority, the very certificate, runtime, secure
-   timestamp, entitlements of `TrommiMac.entitlements`, no `get-task-allow`), notarized with `notarytool`, stapled,
-   accepted by Gatekeeper; then the `.dmg` (the app and a link to Applications), itself signed, notarized, stapled.
-3. **Released** as `mac-v<N>`, marked latest: `Trommi-macOS.dmg`, `Trommi-macOS.dmg.sha256` and `Trommi-macOS.json`
-   (release, commit, iOS inputs, SHA-256, size), each with a GitHub build attestation. A file already released is
-   never replaced.
-4. A failed build or release opens the issue "iOS build <N> failed" (the run's report).
-
-The `.dmg` is in no `manifest.json` signed with the release key. What vouches
-for it: Apple's Developer ID signature and notarization, which macOS checks before the first start, and the build
-attestation. Check a download:
-
-```sh
-shasum -a 256 -c Trommi-macOS.dmg.sha256
-gh attestation verify Trommi-macOS.dmg --repo chriopter/trommi
-spctl --assess --type open --context context:primary-signature -v Trommi-macOS.dmg   # source=Notarized Developer ID
-```
-
-**Fails closed.** Without the environment `mac`, or without the certificate or the App Store Connect key in its
-1Password Environment, the job ends green with a notice and nothing is attached; no unsigned or un-notarized app is
-ever published. A build on any Mac without secrets (signed ad hoc, the same checks, Gatekeeper must refuse it):
-`core/bindings/swift/build.sh macos`, then `.github/scripts/mac_direct.sh adhoc`.
-
-**Set up once** (owner):
-
-1. Apple Developer → Certificates → **+** → **Developer ID Application** (G2 Sub-CA), with a CSR from Keychain Access
-   on a Mac (only the Account Holder may create it). Install it, then in Keychain Access export the certificate
-   **with its private key** as a `.p12` with a strong password.
-2. A 1Password Environment for the Mac (not the `ios` one, so only this job sees the certificate) with:
-   `APPLE_DEVID_P12` (the `.p12` in base64: `base64 -i DeveloperID.p12 | tr -d '\n'`), `APPLE_DEVID_P12_PASSWORD`,
-   and the App Store Connect key as for TestFlight: `APPLE_ASC_KEY`, `APPLE_ASC_KEY_ID`, `APPLE_ASC_ISSUER_ID`,
-   `APPLE_TEAM_ID`. The key's role (Admin) is enough for `notarytool`; no app-specific password is needed.
-3. The Developer ID profile (push and associated domains need one): CI fetches it with the App Store Connect key and
-   makes it when it is missing (`asc.py devid-profile`). Should Apple refuse that, make it once by hand:
-   developer.apple.com/account/resources/profiles/add → Developer ID → App ID `com.trommi.ios` → the certificate of
-   step 1 → name "Trommi Mac Direct" → Generate; nothing to download or store, the next run finds it.
-4. GitHub → Settings → Environments → **New environment `mac`**, deployment branches: `main` only, with the secrets
-   `OP_SERVICE_ACCOUNT_TOKEN` (a service account that can read that 1Password Environment) and `OP_ENVIRONMENT_ID`.
-5. Delete the `.p12` file. The next push to main that changes the apps builds it (`main.yml`, the `mac-direct` destination).
-
-No update feed yet: the app does not update itself (no Sparkle); a new version is a new download.
+**Run your own hub:** `cargo build --release -p trommi-hub`, then `HUB_DATA=<folder> HUB_HOST=127.0.0.1
+HUB_PORT=8790 target/release/trommi-hub`, behind a TLS proxy (`HUB_HSTS=on` once it serves only HTTPS). The web
+app is static files: `node app/web/dev/build.mjs`, then serve `app/web/public/` (`app/web/README.md`).
 
 </details>
 
@@ -407,8 +307,7 @@ cd app/linux && cargo run --release
 (`<dir>/default/device` holds device and cache namespaces in one journal; `<dir>/default/cache` is imported once from older builds). `cargo test` runs the conformance
 scripts through the app's fold, and the app against the real hub (`tests/hub.rs`, which builds `trommi-hub`).
 `TROMMI_LINUX_SHOT=<file.png>` (with `QT_QPA_PLATFORM=offscreen`) draws the window once, writes the picture and
-quits: CI's smoke test (`.github/workflows/pr-check.yml` on a pull request, `main.yml` on main, only when the
-app or what it is built from changed). Pictures over the real hub: `TROMMI_LINUX_SHOTS=<dir> cargo test --test hub
+quits: the smoke test. Pictures over the real hub: `TROMMI_LINUX_SHOTS=<dir> cargo test --test hub
 -- --ignored pictures` (`TROMMI_LINUX_SCENE=card|session`).
 
 </details>
@@ -588,8 +487,8 @@ The code follows the specification, not the other way round. More: [`spec/README
 
 - No forward secrecy for history (see Encryption).
 - The hub sees who is in which group and when anyone writes.
-- In the browser, the app's code is loaded from Cloudflare (app.trommi.com) each time; whoever controls that
-  delivery (our Cloudflare account or the deploy pipeline) could ship code that reads your keys. The hub cannot.
+- In the browser, the app's code is loaded from app.trommi.com each time; whoever controls that delivery (our
+  server, our Cloudflare account) could ship code that reads your keys. The hub cannot.
   The iOS app and the connector do not have this risk: they are installed signed releases.
 - The connector checks its updates, not its own start.
 - A hub rollback does not roll back the database.
@@ -601,37 +500,8 @@ The whole list, with everything that is in place: [SECURITY.md](SECURITY.md).
 
 ## Development
 
-```text
-feature branch           one change, or a bundle of changes per topic
-   │
-   ▼
-release/<date>-<n>       frozen; each one is its own pull request
-   │
-   ▼
-pull request ─────────── pr-check.yml: the fast tier of the changed parts (clippy,
-   │                     every test but the slow ones, the web app's build, the
-   │                     apps compiled), the required checks green, auto-merge,
-   │                     squash
-   ▼
-main ─────────────────── main.yml: shared checks once, affected parts checked and
-                         built once; independent signed publication and delivery
-                           web        app.trommi.com, web-v<N>, rollback and smoke
-                           hub        signed hub-v<N>, the server pulls and checks
-                           connector  signed connector-v<N>, after the matching hub
-                           iOS, Mac   independent TestFlight destinations and
-                                      mac-v<N> (Developer ID, notarized)
-                           Linux      tests and window smoke (no release yet)
-                           site       trommi.com, checked from outside
-nightly ──────────────── nightly.yml: the giant tests, fuzzing, every client
-                         against each other, the torture run with 100 iPhones,
-                         the connector under load, RustSec, TestFlight's crashes
-```
-
-The connector's main build caches only the pinned `cargo-zigbuild` executable, keyed by OS, architecture,
-version and Rust toolchain. Both restored and newly installed tools must report the pinned version. The Zig
-archive still has its SHA-256 checked; every target is still built and checked, and release signing and delivery
-keep their existing gates. On the measured previous delivery, installing cargo-zigbuild cost 32 seconds of a
-51-second compiler-setup step; the cache's actual saving is checked on subsequent main deliveries.
+Work happens on branches; finished work is merged into `main` by hand, with the tests green locally. There is no CI:
+builds and releases are made by hand (see Releases above).
 
 The hub shares one read scope for full and brief Desks and settled objects. Group membership and archive
 filters are unchanged; membership tests use a sorted lookup set, and unfiltered reads do not load the archive
@@ -649,7 +519,7 @@ same-profile debug-build route-function measurements, not production HTTP latenc
 | `core/client/` | the app core: accounts, sync, history, model, cache, actions, notifications and ViewModel, shared by every app and connector |
 | `core/io/` | native Rust executor: HTTP, streams, stores, timer and write barrier |
 | `core/wire/` | what the hub and the app core read the same way: refusal codes, the limits of the hub's routes, the formats of spec/v1.md |
-| `hub/` | the hub (the server) and its updater; `hub/container/` runs hosting and self-hosting; `hub/deploy/` keeps the legacy installer |
+| `hub/` | the hub (the server) |
 | `app/web/` | the web app |
 | `app/ios/` | iPhone and Mac SwiftUI shells and isolated iOS extensions |
 | `app/linux/` | Qt/QML shell over the core and native executor |
@@ -657,9 +527,9 @@ same-profile debug-build route-function measurements, not production HTTP latenc
 | `demo/` | the demo room, built into the web app and the iOS app |
 | `tests/` | every part's tests, one folder per part; `tests/tools/`: `seed_account.rs`, which fills an account from the demo room (the App Store review account) |
 | `spec/` | the protocol, the hub's API, the test vectors |
-| `release/` | the signed release: manifest, signature, public key |
+| `release/` | the connector's signed release: manifest, signature, public key |
 | `site/` | the website trommi.com |
-| `.github/` | the workflows and their scripts |
+| `dev/` | tools for by hand: fuzz campaigns, the tables of THIRD-PARTY.md |
 
 Each part has its own README with the details.
 
@@ -674,7 +544,7 @@ Rust is pinned in `rust-toolchain.toml`, Node in `.node-version`.
 # Core, hub, connector
 cargo test --locked -p trommi-core
 cargo test --locked -p trommi-client-core   # the whole app core
-cargo test --locked -p trommi-tests          # core, hub, connector and deploy tests
+cargo test --locked -p trommi-tests          # core, hub and connector tests
 cargo build --release -p trommi-hub -p trommi-connector
 
 # Web app (its package.json is in app/web)
@@ -689,16 +559,15 @@ core/bindings/swift/build.sh                           # the core for Swift
 ```
 
 The three scale tests (a room of 1000 human devices, a catch-up across twenty groups, 100 helpers in one session) run
-small by default and at full size with `TROMMI_TESTS_FULL=1`, as CI does every night (`.github/workflows/nightly.yml`;
-a failing night opens an issue labelled nightly-failed).
+small by default and at full size with `TROMMI_TESTS_FULL=1`.
 
 The session matrix (`tests/connector/sessions.rs`, test `connector_sessions`): many Claude Code and Codex sessions on
 one machine, two Trommi accounts, one folder and several, resume, /mcp restart, a killed connector, a stale key, a
-explicit computer activation beside a link join. Each case ends with every session on its account's board with a key of its own. Pull
-requests run its fast cases, `TROMMI_TESTS_FULL=1` (nightly) all; `TROMMI_MATRIX_LOGS=<folder>` keeps each
+explicit computer activation beside a link join. Each case ends with every session on its account's board with a key of its own. A default
+run takes its fast cases, `TROMMI_TESTS_FULL=1` all; `TROMMI_MATRIX_LOGS=<folder>` keeps each
 connector's log.
 
-All clients against each other (nightly in CI, `.github/workflows/nightly.yml`): the web app (the app core in its
+All clients against each other: the web app (the app core in its
 executor), the native Swift AppCore executor and the connector, each twice, in one room on a real hub, through one
 long seeded random timeline; it fails where two devices show anything different. Then their speed with 1,000 cards.
 
@@ -714,7 +583,7 @@ More: [`app/web/README.md`](app/web/README.md), [`app/ios/README.md`](app/ios/RE
 </details>
 
 <details>
-<summary><b>Fuzzing</b> · libFuzzer targets, property tests, nightly</summary>
+<summary><b>Fuzzing</b> · libFuzzer targets, property tests</summary>
 
 The harnesses are in `tests/src/fuzz/`, one `run(bytes)` each; the libFuzzer targets in `tests/fuzz/` (a cargo-fuzz
 crate of its own) are one line each. Every run checks properties, not only "no panic":
@@ -730,7 +599,7 @@ crate of its own) are one line each. Every run checks properties, not only "no p
 | `connector_text` | board text in channel tags, received file names, invite links | no tag can be closed or opened; no hidden characters; files stay in the cache |
 
 ```sh
-# in CI and locally: every kept reproducer and seed, then random inputs (FUZZ_CASES, default 64)
+# every kept reproducer and seed, then random inputs (FUZZ_CASES, default 64)
 cargo test --locked -p trommi-tests --test core_fuzz_props
 FUZZ_TARGET=devices FUZZ_FILE=crash-… FUZZ_DEBUG=1 cargo test -p trommi-tests --test core_fuzz_props one_input -- --ignored --nocapture
 
@@ -745,7 +614,7 @@ FUZZ_MCP_CASES=5000 cargo test -p trommi-tests --test connector_fuzz_mcp -- --no
 
 A crash is minimized (`cargo fuzz tmin`), kept under `tests/fuzz/regress/<target>/` (replayed by `fuzz_props`), and
 fixed. Seeds: `tests/fuzz/seeds/` (`cargo test -p trommi-tests --test core_fuzz_props write_seeds -- --ignored`); the
-growing corpus stays out of git. Nightly in CI: `.github/workflows/nightly.yml`, every target for a few minutes.
+growing corpus stays out of git.
 
 </details>
 

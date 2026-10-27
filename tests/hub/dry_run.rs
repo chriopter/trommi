@@ -1,6 +1,6 @@
 //! The hub's own side of a safe deploy, with the real binary: `trommi-hub dry-run` (a new release tried on a copy
 //! of the live data while the live hub runs, the live data never written), and the mark `hub.served` that tells
-//! hub/deploy/hub-restore.sh whether data may still go back to the copy made before a release started.
+//! whether data may still go back to the copy made before a release started.
 
 use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};

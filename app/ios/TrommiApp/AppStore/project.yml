@@ -1,4 +1,4 @@
-# The App Store build of TrommiApp for Xcode: .github/workflows/ios-beta.yml generates Trommi.xcodeproj from this with
+# The App Store build of TrommiApp for Xcode: ship-local.sh generates Trommi.xcodeproj from this with
 # XcodeGen (`xcodegen generate --spec project.yml`; the project is not checked in) and archives it with the official
 # Xcode. The app itself is the SwiftPM package one folder up (the same one `xtool dev` builds on Linux); this target
 # only links its library product and adds what a store build needs: the app icon, the production push entitlement and
