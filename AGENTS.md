@@ -2,7 +2,7 @@
 
 - Read SECURITY.md before you change anything. Do not regress anything it promises, unless the owner clearly agreed first; then update SECURITY.md in the same change.
 - No push without asking first.
-- Work on a branch; never commit to `main` directly. There is no CI: builds and releases are made by hand.
+- Work on a branch; never commit to `main` directly. The one machine check is `.github/workflows/check.yml` (cargo check, rustfmt, web tests); builds and releases are made by hand.
 - Before handing over: the tests of what you changed run green locally, and `git diff --stat main...HEAD` lists only your files.
 - Commit messages are lists: `New: …` / `Updated: …` / `Fixed: …`. No AI attribution anywhere.
 - Never commit secrets, keys or private e-mail addresses. Docs go into README.md.
