@@ -249,16 +249,14 @@ There is no CI. The maintainer builds, checks and releases each part by hand on 
 - **The hub, the web app (app.trommi.com) and the website (trommi.com)** run as containers on the maintainer's own
   server, reached only through a Cloudflare tunnel. A release: build locally, copy it to the server, restart. How
   that server is set up is kept on the server, not in this repository.
-- **The iPhone and Mac apps** go to TestFlight from a Mac
-  ([`app/ios/TrommiApp/AppStore/ship-local.sh`](app/ios/TrommiApp/AppStore/ship-local.sh)), signed by Apple. The
-  Mac download outside the store (`Trommi-macOS.dmg`, releases `mac-v<N>`) is made on a Mac when needed: signed with
-  the team's Developer ID, notarized and stapled, which macOS checks before its first start.
-- **What's new** on the web and the iPhone reads the notes of the GitHub releases: lines under `**New**`,
-  `**Better**` and `**Fixed**`, one `- <line> (#<n>)` each (`app/web/whats-new.mjs`, `parseNotes`), written with
-  the release. The web app's worker serves them as `/whats-new.json` from GitHub's public releases API,
-  unauthenticated (a token only if `GITHUB_RELEASES_TOKEN` happens to be set), fresh for ten minutes and the last good
-  list served on any GitHub error or rate limit; beside it the one summary a day (and at most one picture) in
-  `app/web/public/changelog/CHANGELOG.md`, and the days before in `history.json` there (frozen).
+- **The iPhone app** goes to TestFlight from a Linux machine, no Mac in the loop
+  ([`app/ios/TrommiApp/AppStore/ship-local.sh`](app/ios/TrommiApp/AppStore/ship-local.sh): xtool, the darwin SDK,
+  rcodesign), signed with the team's Apple Distribution identity. The Mac download outside the store
+  (`Trommi-macOS.dmg`, releases `mac-v<N>`) is made on a Mac when needed: signed with the team's Developer ID,
+  notarized and stapled, which macOS checks before its first start.
+- **What's new** on the web and the iPhone is a static `/whats-new.json`, written when the web app is released, from
+  the one summary a day (and at most one picture) in `app/web/public/changelog/CHANGELOG.md` and the days before in
+  `history.json` there (frozen); `app/web/whats-new.mjs` reads both.
 
 Check a connector release:
 
@@ -266,6 +264,37 @@ Check a connector release:
 release/sign.sh verify manifest.json   # the signature
 release/sign.sh files manifest.json    # each file against the manifest
 ```
+
+**A release round, step by step.** On the release machine (Linux, x86_64): Rust from `rust-toolchain.toml` with its
+targets, zig 0.14.1 and `cargo-zigbuild` (macOS connectors, the static hub), `wasm-bindgen-cli` of the version
+`core/bindings/wasm/Cargo.toml` pins, Node of `.node-version`; for the iPhone app the toolchain of
+[omarchy-apple-dev](https://github.com/joshuaswarren/omarchy-apple-dev) (`install-toolchain.sh --user-only`, the
+darwin SDK of the Xcode whose Swift matches) and `~/.config/trommi/ios.env` (`ship-local.sh`'s head). Heavy builds one
+at a time; tests per part. Every step builds the commit that is released (`git archive <commit>` into an empty
+folder where a step builds outside the checkout).
+
+1. **Connector** `connector-v<N>`, N above the last one:
+   - `cargo test --locked -p trommi-core`, then `cargo test --locked -p trommi-tests --test connector_e2e --test connector_sessions`;
+   - `TROMMI_RELEASE_VERSION=<N> node connector/build-plugin.mjs <dir>` (all four targets, the macOS ones by zig);
+   - `release/manifest.sh trommi-connector <N> <commit> <dir>/trommi-connector-* > <dir>/manifest.json`, then
+     `SIGN_RELEASE_KEY=… release/sign.sh sign <dir>/manifest.json` (it verifies what it signed), `release/sign.sh files`;
+   - `install.sh --from <dir>` in an empty `HOME` must say "signature verified" before anything is published;
+   - `gh release create connector-v<N> --target <commit> <dir>/manifest.json <dir>/manifest.json.sig <dir>/trommi-connector-*`;
+   - check: `curl -fsSL …/install.sh | sh` in an empty `HOME`, `trommi-connector --version` ("release <N>, signature
+     verified"), `trommi-connector update --check`, `trommi-connector setup claude` installs the plugin.
+2. **Hub:** `cargo test --locked -p trommi-tests --test 'hub_*'`; build
+   `TROMMI_COMMIT=<commit> cargo zigbuild --release --locked -p trommi-hub --target x86_64-unknown-linux-musl`; on the
+   server first `trommi-hub dry-run` of the new binary on a copy of the live data (it must say `"ok":true`), then
+   swap it in keeping the old one; `https://hub.trommi.com/healthz` names the commit.
+3. **Web app:** `core/bindings/wasm/build.sh`, in `app/web` `npm ci && npm test`, then
+   `GITHUB_SHA=<commit> node dev/build.mjs --write`; copy `public/` to the server and restart; `/gen/build.txt` names
+   the commit, and `node app/web/dev/verify.mjs` **from a fresh tree of that commit** (not the one `--write` changed)
+   says every built file is served as built.
+4. **Website:** `node tests/site/check.mjs`, copy `site/public/` to the server and restart; check `/`, `/beta` (the
+   TestFlight link), `www` and a missing page (404 with the site's headers).
+5. **iPhone:** `ship-local.sh --dry-run` (every offline check passes, App Intents metadata of the `TrommiClient`
+   package in the app, `TrommiLive` and `TrommiNotify`), then `ship-local.sh`; it uploads, waits for `VALID` and puts
+   the build into the group Intern. Check on a phone: it installs, signs in, and a new card arrives as a push.
 
 **Run your own hub:** `cargo build --release -p trommi-hub`, then `HUB_DATA=<folder> HUB_HOST=127.0.0.1
 HUB_PORT=8790 target/release/trommi-hub`, behind a TLS proxy (`HUB_HSTS=on` once it serves only HTTPS). The web

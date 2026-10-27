@@ -107,7 +107,61 @@ PYEOF
 "$PY" "$TOOLS/asc.py" stamp "$app" "$build"
 "$PY" "$TOOLS/asc.py" frameworks "$app"
 
-echo "== 5. Distribution identity and signature =="
+echo "== 5. App Intents metadata =="
+# Xcode's ExtractAppIntentsMetadata: the .swiftconstvalues swift-build writes become Metadata.appintents/
+# (omarchy-apple-dev tools/appintentsmeta.py). The intents live in the TrommiClient package (PushNotify's
+# AnswerCardIntent, the Live Activity's answer button; without its metadata the phone does not find it): as Xcode
+# does, each package module's metadata is made once and goes into every bundle whose binary holds its intents
+# (the app, TrommiLive, TrommiNotify). Then each target's own, which has none today. The tool skips a bundle that
+# does not load AppIntents.framework and stops on anything it cannot reproduce exactly.
+sdk_root="$DARWIN_SDK/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk"
+stamp=$(git -C "$src" log -1 --format=%ct)
+xcbuild=$("$PY" -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb")).get("DTXcodeBuild",""))' "$app/Info.plist")
+app_exe=$("$PY" -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleExecutable"])' "$app/Info.plist")
+for dir in .build/out/Intermediates.noindex/TrommiClient.build/Release-iphoneos/*-t.build; do
+  module=$(basename "$dir" -t.build)
+  mapfile -t constvals < <(find "$dir/Objects-normal/arm64" -name '*.swiftconstvalues' 2>/dev/null | sort)
+  [ "${#constvals[@]}" != 0 ] || continue
+  out="$work/appintents/$module.bundle"
+  mkdir -p "$out"
+  "$PY" "$TOOLS/appintentsmeta.py" --module-name "$module" --bundle-identifier "$BUNDLE_ID" --output "$out" \
+    --binary-file "$app/$app_exe" --sdk-root "$sdk_root" --xcode-version "$xcbuild" --timestamp "$stamp" \
+    --const-values "${constvals[@]}"
+  [ -d "$out/Metadata.appintents" ] || continue
+  mapfile -t mangled < <("$PY" -c 'import json,sys; [print(a["mangledTypeName"]) for a in json.load(open(sys.argv[1]))["actions"].values()]' \
+    "$out/Metadata.appintents/extract.actionsdata")
+  for bundle in "$app" "$app"/PlugIns/*.appex; do
+    exe=$("$PY" -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleExecutable"])' "$bundle/Info.plist")
+    for name in "${mangled[@]}"; do
+      if grep -qaF "$name" "$bundle/$exe"; then
+        [ ! -e "$bundle/Metadata.appintents" ] || { echo "$bundle has App Intents metadata already ($module too)" >&2; exit 1; }
+        cp -R "$out/Metadata.appintents" "$bundle/"
+        echo "$(basename "$bundle"): App Intents of $module"
+        break
+      fi
+    done
+  done
+done
+for bundle in "$app" "$app"/PlugIns/*.appex; do
+  IFS=$'\t' read -r exe module bid xcbuild < <("$PY" -c 'import plistlib,re,sys; d=plistlib.load(open(sys.argv[1],"rb"))
+e = d["CFBundleExecutable"]; m = re.sub(r"\W", "_", e, flags=re.A); m = "_" + m if m[0].isdigit() else m
+print(e, m, d["CFBundleIdentifier"], d.get("DTXcodeBuild", ""), sep="\t")' "$bundle/Info.plist")
+  mapfile -t constvals < <(find .build/out/Intermediates.noindex \
+    -path "*/Release-iphoneos/$exe-t.build/Objects-normal/arm64/*.swiftconstvalues" 2>/dev/null | sort)
+  cv_args=()
+  [ "${#constvals[@]}" = 0 ] || cv_args=(--const-values "${constvals[@]}")
+  out="$work/appintents/target-$exe"
+  mkdir -p "$out"
+  "$PY" "$TOOLS/appintentsmeta.py" --module-name "$module" --bundle-identifier "$bid" \
+    --output "$out" --binary-file "$bundle/$exe" --sdk-root "$sdk_root" \
+    --xcode-version "$xcbuild" --timestamp "$stamp" "${cv_args[@]}"
+  [ -d "$out/Metadata.appintents" ] || continue
+  # one Metadata.appintents per bundle: merging a target's own with a package's is not done here
+  [ ! -e "$bundle/Metadata.appintents" ] || { echo "$bundle: own and package App Intents metadata" >&2; exit 1; }
+  cp -R "$out/Metadata.appintents" "$bundle/"
+done
+
+echo "== 6. Distribution identity and signature =="
 sign_dir="$work/signing"
 # App Store profiles for the app and every PlugIns/*.appex (APP_GROUPS: the group the profiles must carry)
 APP_GROUPS=group.com.trommi.ios "$PY" "$TOOLS/asc.py" identity "$app" "$sign_dir"
@@ -169,7 +223,7 @@ for x in "${appexes[@]}"; do
 done
 rcodesign sign "${sign_args[@]}" --entitlements-xml-file "$sign_dir/entitlements.plist" "$app"
 
-echo "== 6. Package and offline validation =="
+echo "== 7. Package and offline validation =="
 ipa="$work/Trommi-$version-$build.ipa"
 mkdir "$work/Payload"
 cp -a "$app" "$work/Payload/"
@@ -181,10 +235,10 @@ if [ "$dry" = 1 ]; then
   exit 0
 fi
 
-echo "== 7. Upload (Build Uploads API) =="
+echo "== 8. Upload (Build Uploads API) =="
 "$PY" "$TOOLS/asc.py" upload "$ipa"
 
-echo "== 8. Processing, group Intern, What to Test =="
+echo "== 9. Processing, group Intern, What to Test =="
 out="$work/wait.out"
 GITHUB_OUTPUT="$out" asc wait "$version" "$build"
 build_id=$(sed -n 's/^build_id=//p' "$out")
