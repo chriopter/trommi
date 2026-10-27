@@ -1780,7 +1780,8 @@ impl<S: Storage> Device<S> {
             }
             match this.process_message(batch, group, message)? {
                 super::Processed::Message(
-                    piece @ (super::Received::StrokePiece { .. } | super::Received::AnswerPreview { .. }),
+                    piece @ (super::Received::StrokePiece { .. }
+                    | super::Received::AnswerPreview { .. }),
                 ) => Ok(Some(piece)),
                 super::Processed::Message(_) => Err(Error::BadFormat),
                 _ => Ok(None),

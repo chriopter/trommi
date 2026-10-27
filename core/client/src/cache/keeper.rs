@@ -78,7 +78,10 @@ pub enum Read {
     /// The cache was not this device's or not whole: deleted, the board starts empty.
     Dropped,
     /// The board is the cached one; `behind`: the device stored more since, the timelines' items were dropped.
-    Loaded { behind: bool, listing: Option<Listing> },
+    Loaded {
+        behind: bool,
+        listing: Option<Listing>,
+    },
 }
 
 /// Whose a store answer was.
@@ -145,7 +148,13 @@ fn key(room: &str, tail: &str) -> String {
 
 impl Keeper {
     /// Asks the store for the room's cache; the App starts the engine once [`Keeper::on_store`] says it is read.
-    pub fn open(room: &str, device: &str, revision: u64, next_id: &mut u64, out: &mut Vec<Effect>) -> Keeper {
+    pub fn open(
+        room: &str,
+        device: &str,
+        revision: u64,
+        next_id: &mut u64,
+        out: &mut Vec<Effect>,
+    ) -> Keeper {
         let mut id = || {
             let id = IoId(*next_id);
             *next_id += 1;
@@ -155,7 +164,10 @@ impl Keeper {
         out.push(Effect::Store {
             id: meta,
             op: StoreOp::Get {
-                keys: vec![super::key(room, super::part::META, None), super::key(room, super::part::DESK, None)],
+                keys: vec![
+                    super::key(room, super::part::META, None),
+                    super::key(room, super::part::DESK, None),
+                ],
             },
         });
         out.push(Effect::Store {
@@ -167,7 +179,13 @@ impl Keeper {
         Keeper {
             room: room.to_string(),
             device: device.to_string(),
-            state: State::Reading { meta, scan, values: None, entries: None, failed: false },
+            state: State::Reading {
+                meta,
+                scan,
+                values: None,
+                entries: None,
+                failed: false,
+            },
             rev: revision,
             stored: None,
             dirty: BTreeSet::new(),
@@ -198,24 +216,53 @@ impl Keeper {
 
     /// An answer to a store op: whether it was one of the cache's, and once the start's read is through what it gave
     /// (the model then holds it).
-    pub fn on_store(&mut self, id: IoId, result: &IoResult<StoreAnswer>, model: &mut Model, now: u64, next_id: &mut u64, out: &mut Vec<Effect>) -> Took {
-        if let State::Reading { meta, scan, values, entries, failed } = &mut self.state {
+    pub fn on_store(
+        &mut self,
+        id: IoId,
+        result: &IoResult<StoreAnswer>,
+        model: &mut Model,
+        now: u64,
+        next_id: &mut u64,
+        out: &mut Vec<Effect>,
+    ) -> Took {
+        if let State::Reading {
+            meta,
+            scan,
+            values,
+            entries,
+            failed,
+        } = &mut self.state
+        {
             if id == *meta || id == *scan {
                 match (result, id == *meta) {
-                    (IoResult::Ok(StoreAnswer::Values { values: got }), true) if got.len() == 2 => *values = Some(got.clone()),
-                    (IoResult::Ok(StoreAnswer::Entries { entries: got }), false) => *entries = Some(got.clone()),
+                    (IoResult::Ok(StoreAnswer::Values { values: got }), true) if got.len() == 2 => {
+                        *values = Some(got.clone())
+                    }
+                    (IoResult::Ok(StoreAnswer::Entries { entries: got }), false) => {
+                        *entries = Some(got.clone())
+                    }
                     _ => *failed = true,
                 }
                 let through = *failed || (values.is_some() && entries.is_some());
                 if through {
-                    let State::Reading { values, entries, failed, .. } = std::mem::replace(&mut self.state, State::Open) else {
+                    let State::Reading {
+                        values,
+                        entries,
+                        failed,
+                        ..
+                    } = std::mem::replace(&mut self.state, State::Open)
+                    else {
                         unreachable!()
                     };
                     return Took::Read(if failed {
                         self.state = State::Off;
                         Read::Empty
                     } else {
-                        self.take(values.unwrap_or_default(), entries.unwrap_or_default(), model)
+                        self.take(
+                            values.unwrap_or_default(),
+                            entries.unwrap_or_default(),
+                            model,
+                        )
                     });
                 }
                 return Took::Mine;
@@ -264,9 +311,19 @@ impl Keeper {
     /// The start's read, into the model.
     fn take(&mut self, values: Vec<Option<Bytes>>, entries: Vec<Entry>, model: &mut Model) -> Read {
         let prefix = key(&self.room, "");
-        let meta: Option<Meta> = values.first().cloned().flatten().and_then(|b| serde_json::from_slice(&b.0).ok());
-        let listing: Option<Listing> = values.get(1).cloned().flatten().and_then(|b| serde_json::from_slice(&b.0).ok());
-        let usable = meta.as_ref().is_some_and(|m| m.v == VERSION && m.device == self.device && !m.writing && m.rev <= self.rev);
+        let meta: Option<Meta> = values
+            .first()
+            .cloned()
+            .flatten()
+            .and_then(|b| serde_json::from_slice(&b.0).ok());
+        let listing: Option<Listing> = values
+            .get(1)
+            .cloned()
+            .flatten()
+            .and_then(|b| serde_json::from_slice(&b.0).ok());
+        let usable = meta.as_ref().is_some_and(|m| {
+            m.v == VERSION && m.device == self.device && !m.writing && m.rev <= self.rev
+        });
         let mut records = Vec::with_capacity(entries.len());
         let mut unknown = false;
         for e in &entries {
@@ -275,21 +332,27 @@ impl Keeper {
                 None => unknown = true,
             }
         }
-        let loaded = usable && !unknown && layout::snapshot_text(&records).is_some_and(|text| model.load_text(&text).is_ok());
+        let loaded = usable
+            && !unknown
+            && layout::snapshot_text(&records).is_some_and(|text| model.load_text(&text).is_ok());
         if !loaded {
             if meta.is_none() && entries.is_empty() {
                 return Read::Empty;
             }
             // (the App starts the board anew: what the read put into it goes with the cache)
             self.drops.extend(entries.into_iter().map(|e| e.key));
-            self.drops.insert(super::key(&self.room, super::part::DESK, None));
+            self.drops
+                .insert(super::key(&self.room, super::part::DESK, None));
             return Read::Dropped;
         }
         let meta = meta.expect("a usable cache has its meta");
         let behind = meta.rev < self.rev;
         for (rec, _) in &records {
             if let Rec::Item(timeline, item) = rec {
-                self.written.entry(timeline.clone()).or_default().insert(item.clone());
+                self.written
+                    .entry(timeline.clone())
+                    .or_default()
+                    .insert(item.clone());
             }
         }
         if behind {
@@ -342,9 +405,16 @@ impl Keeper {
     /// The effects the App hands out now: a device write moves the revision the board stands at.
     pub fn saw(&mut self, effects: &[Effect]) {
         for e in effects {
-            if let Effect::Store { op: StoreOp::DeviceApply { expected_revision, .. }, .. } = e {
+            if let Effect::Store {
+                op:
+                    StoreOp::DeviceApply {
+                        expected_revision, ..
+                    },
+                ..
+            } = e
+            {
                 self.rev = self.rev.max(expected_revision + 1);
-                    }
+            }
         }
     }
 
@@ -353,7 +423,7 @@ impl Keeper {
         if self.listing.as_ref() != Some(&listing) {
             self.listing = Some(listing);
             self.listing_due = true;
-            }
+        }
     }
 
     /// The device stopped (a write failed, another owner): what the board holds may not be stored, so the cache is
@@ -382,7 +452,11 @@ impl Keeper {
         }
         self.due = None;
         let id = io(next_id);
-        if self.dirty.is_empty() && self.drops.is_empty() && !self.listing_due && self.windows.is_empty() {
+        if self.dirty.is_empty()
+            && self.drops.is_empty()
+            && !self.listing_due
+            && self.windows.is_empty()
+        {
             // only the revision moved: the records stand as they are
             out.push(self.meta_put(id, self.rev, false));
             self.flight = Flight::Stamp(id, self.rev);
@@ -393,7 +467,11 @@ impl Keeper {
     }
 
     fn pending(&self) -> bool {
-        !self.dirty.is_empty() || !self.drops.is_empty() || self.listing_due || !self.windows.is_empty() || self.stored != Some(self.rev)
+        !self.dirty.is_empty()
+            || !self.drops.is_empty()
+            || self.listing_due
+            || !self.windows.is_empty()
+            || self.stored != Some(self.rev)
     }
 
     fn failed(&mut self, now: u64) {
@@ -401,7 +479,12 @@ impl Keeper {
     }
 
     fn meta_put(&self, id: IoId, rev: u64, writing: bool) -> Effect {
-        let meta = Meta { v: VERSION, device: self.device.clone(), rev, writing };
+        let meta = Meta {
+            v: VERSION,
+            device: self.device.clone(),
+            rev,
+            writing,
+        };
         Effect::Store {
             id,
             op: StoreOp::Put {
@@ -421,13 +504,26 @@ impl Keeper {
             match model.timelines.get(&timeline) {
                 Some(t) => {
                     if let Some(held) = held {
-                        self.dirty.extend(held.iter().filter(|k| !t.items.contains_key(*k)).map(|k| Rec::Item(timeline.clone(), k.clone())));
+                        self.dirty.extend(
+                            held.iter()
+                                .filter(|k| !t.items.contains_key(*k))
+                                .map(|k| Rec::Item(timeline.clone(), k.clone())),
+                        );
                     }
-                    self.dirty.extend(t.items.keys().filter(|k| held.is_none_or(|h| !h.contains(*k))).map(|k| Rec::Item(timeline.clone(), k.clone())));
+                    self.dirty.extend(
+                        t.items
+                            .keys()
+                            .filter(|k| held.is_none_or(|h| !h.contains(*k)))
+                            .map(|k| Rec::Item(timeline.clone(), k.clone())),
+                    );
                 }
                 None => {
                     self.dirty.insert(Rec::Timeline(timeline.clone()));
-                    self.dirty.extend(held.into_iter().flatten().map(|k| Rec::Item(timeline.clone(), k.clone())));
+                    self.dirty.extend(
+                        held.into_iter()
+                            .flatten()
+                            .map(|k| Rec::Item(timeline.clone(), k.clone())),
+                    );
                 }
             }
         }
@@ -447,7 +543,10 @@ impl Keeper {
                 }
             }
             match value {
-                Some(value) => put.push(Entry { key: k, value: value.into() }),
+                Some(value) => put.push(Entry {
+                    key: k,
+                    value: value.into(),
+                }),
                 None => delete.push(k),
             }
         }
@@ -462,8 +561,19 @@ impl Keeper {
             }
         }
         let id = io(next_id);
-        out.push(Effect::Store { id, op: StoreOp::Put { put, delete } });
-        self.flight = Flight::Records(id, Batch { recs, drops, listing, rev: self.rev });
+        out.push(Effect::Store {
+            id,
+            op: StoreOp::Put { put, delete },
+        });
+        self.flight = Flight::Records(
+            id,
+            Batch {
+                recs,
+                drops,
+                listing,
+                rev: self.rev,
+            },
+        );
     }
 }
 
@@ -486,9 +596,21 @@ mod tests {
     /// cache space is atomic per key only.
     fn run(store: &mut Store, op: &StoreOp, keys: Option<usize>) -> IoResult<StoreAnswer> {
         match op {
-            StoreOp::Get { keys } => IoResult::Ok(StoreAnswer::Values { values: keys.iter().map(|k| store.get(k).map(|v| v.clone().into())).collect() }),
+            StoreOp::Get { keys } => IoResult::Ok(StoreAnswer::Values {
+                values: keys
+                    .iter()
+                    .map(|k| store.get(k).map(|v| v.clone().into()))
+                    .collect(),
+            }),
             StoreOp::Scan { prefix } => IoResult::Ok(StoreAnswer::Entries {
-                entries: store.iter().filter(|(k, _)| k.starts_with(prefix.as_str())).map(|(k, v)| Entry { key: k.clone(), value: v.clone().into() }).collect(),
+                entries: store
+                    .iter()
+                    .filter(|(k, _)| k.starts_with(prefix.as_str()))
+                    .map(|(k, v)| Entry {
+                        key: k.clone(),
+                        value: v.clone().into(),
+                    })
+                    .collect(),
             }),
             StoreOp::Put { put, delete } => {
                 let mut left = keys.unwrap_or(usize::MAX);
@@ -530,12 +652,18 @@ mod tests {
     }
 
     fn card(m: &mut Model, c: &mut Change, id: &str, title: &str) {
-        m.cards.insert(id.into(), serde_json::from_value(json!({ "object_id": id, "title": title })).unwrap());
+        m.cards.insert(
+            id.into(),
+            serde_json::from_value(json!({ "object_id": id, "title": title })).unwrap(),
+        );
         c.cards.insert(id.into());
     }
 
     fn line(m: &mut Model, c: &mut Change, n: u64) {
-        let item = json!({ "envelope_number": n, "content": format!("line {n}") }).as_object().unwrap().clone();
+        let item = json!({ "envelope_number": n, "content": format!("line {n}") })
+            .as_object()
+            .unwrap()
+            .clone();
         let t = m.timelines.entry("chat:s".into()).or_default();
         t.item_count += 1;
         t.newest_envelope_number = n;
@@ -546,7 +674,11 @@ mod tests {
 
     /// A run of batches; the store dies inside the `kill`th `Put` after `keys` of its keys. Returns the snapshot of
     /// every state a write ended at (with its revision), and whether the store died.
-    fn batches(store: &mut Store, kill: usize, keys: usize) -> (Vec<(u64, serde_json::Value)>, bool) {
+    fn batches(
+        store: &mut Store,
+        kill: usize,
+        keys: usize,
+    ) -> (Vec<(u64, serde_json::Value)>, bool) {
         let (_, mut m, mut keeper, mut next) = open(store, 1);
         let mut stamped = vec![(1, m.snapshot())];
         let mut puts = 0;
@@ -563,7 +695,14 @@ mod tests {
             }
             keeper.note(&c);
             let rev = 2 + step;
-            let mut out = vec![Effect::Store { id: IoId(999), op: StoreOp::DeviceApply { expected_revision: rev - 1, put: vec![], delete: vec![] } }];
+            let mut out = vec![Effect::Store {
+                id: IoId(999),
+                op: StoreOp::DeviceApply {
+                    expected_revision: rev - 1,
+                    put: vec![],
+                    delete: vec![],
+                },
+            }];
             keeper.saw(&out);
             out.clear();
             keeper.step(0, &mut next, &mut out);
@@ -574,14 +713,20 @@ mod tests {
                 if dies {
                     // (a stamp that landed before the death is a state the cache stands at)
                     if let StoreOp::Put { put, .. } = &op {
-                        let meta = put.first().filter(|e| keys > 0 && e.key.ends_with("/meta")).and_then(|e| serde_json::from_slice::<Meta>(&e.value.0).ok());
+                        let meta = put
+                            .first()
+                            .filter(|e| keys > 0 && e.key.ends_with("/meta"))
+                            .and_then(|e| serde_json::from_slice::<Meta>(&e.value.0).ok());
                         if let Some(meta) = meta.filter(|m| !m.writing) {
                             stamped.push((meta.rev, m.snapshot()));
                         }
                     }
                     return (stamped, true);
                 }
-                assert_eq!(keeper.on_store(id, &answer, &mut m, 0, &mut next, &mut out), Took::Mine);
+                assert_eq!(
+                    keeper.on_store(id, &answer, &mut m, 0, &mut next, &mut out),
+                    Took::Mine
+                );
                 if keeper.stored() == Some(rev) && !stamped.iter().any(|(r, _)| *r == rev) {
                     stamped.push((rev, m.snapshot()));
                 }
@@ -600,7 +745,9 @@ mod tests {
                 let device = stamped.last().unwrap().0 + 1;
                 let (read, m, ..) = open(&mut store, device);
                 match read {
-                    Read::Loaded { behind: false, .. } => panic!("the device is ahead of every stamp"),
+                    Read::Loaded { behind: false, .. } => {
+                        panic!("the device is ahead of every stamp")
+                    }
                     Read::Loaded { behind: true, .. } => {
                         // a stamped state, its lines dropped
                         let strip = |v: &serde_json::Value| {
@@ -613,7 +760,13 @@ mod tests {
                             }
                             v
                         };
-                        assert!(stamped.iter().any(|(_, s)| strip(s) == strip(&m.snapshot())), "kill {kill}/{keys}: {}", m.snapshot());
+                        assert!(
+                            stamped
+                                .iter()
+                                .any(|(_, s)| strip(s) == strip(&m.snapshot())),
+                            "kill {kill}/{keys}: {}",
+                            m.snapshot()
+                        );
                     }
                     Read::Dropped | Read::Empty => {}
                 }
@@ -621,7 +774,10 @@ mod tests {
                 let (rev, _) = stamped.last().unwrap();
                 let (read, m, ..) = open(&mut store, *rev);
                 if let Read::Loaded { behind: false, .. } = read {
-                    assert!(stamped.iter().any(|(r, s)| r == rev && *s == m.snapshot()), "kill {kill}/{keys}");
+                    assert!(
+                        stamped.iter().any(|(r, s)| r == rev && *s == m.snapshot()),
+                        "kill {kill}/{keys}"
+                    );
                     ran += 1;
                 }
                 if !died {

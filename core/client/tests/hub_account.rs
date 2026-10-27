@@ -170,7 +170,11 @@ fn logging_in() {
         (1, RoomId::new([1; 32]), copy(7), [8; 32])
     );
     assert_eq!(
-        (login.account.as_str(), login.email.as_deref(), login.kdf.clone()),
+        (
+            login.account.as_str(),
+            login.email.as_deref(),
+            login.kdf.clone()
+        ),
         (ID, Some("ada@example.com"), Some(kdf()))
     );
     // an account without e-mail and without a password

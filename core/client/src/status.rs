@@ -52,7 +52,12 @@ pub const ACTING_MS: u64 = 6 * 60 * 60_000;
 /// not heard the answer), `done`, `trash` (shredded, or closed without his answer), or None (open on the Desk, or an
 /// answered card without his answer). `runs`: its session is online or cut off (it still runs); `heard_up_to`: the
 /// session's receipt mark. With the moment the place changes by the clock, if it will.
-pub fn card_place(c: &Card, runs: bool, heard_up_to: Option<u64>, now: u64) -> (Option<&'static str>, Option<u64>) {
+pub fn card_place(
+    c: &Card,
+    runs: bool,
+    heard_up_to: Option<u64>,
+    now: u64,
+) -> (Option<&'static str>, Option<u64>) {
     let info = c.field("card_type").as_str() == Some("info") || c.is_unsupported();
     let a = c.answer.as_ref();
     let answered_by = a.is_some_and(|a| {
@@ -67,7 +72,10 @@ pub fn card_place(c: &Card, runs: bool, heard_up_to: Option<u64>, now: u64) -> (
             return (Some("later"), None);
         }
         let working = info && c.field("working") == Value::Bool(true);
-        return ((c.in_revision.is_some() || working).then_some("works"), None);
+        return (
+            (c.in_revision.is_some() || working).then_some("works"),
+            None,
+        );
     }
     if c.closed_how.as_deref() == Some("shredded") {
         return (Some("trash"), None);
@@ -167,7 +175,10 @@ pub fn link_state(
             .and_then(|l| l.exit.as_ref())
             .map(|e| e.reason.as_str())
             .unwrap_or("");
-        return (view(if alive { "cut" } else { "gone" }, offline_since, reason), None);
+        return (
+            view(if alive { "cut" } else { "gone" }, offline_since, reason),
+            None,
+        );
     }
     let Some(l) = link else {
         return (view("live", None, ""), None);
@@ -267,17 +278,30 @@ fn earliest(a: Option<u64>, b: Option<u64>) -> Option<u64> {
 /// Hermes has an automatic turn lifecycle; other hosts still use their established trail/task rules.
 /// The existing encrypted device label names the actual connector preset (not its display name or chat capability).
 pub fn automatic_turns(m: &Model, s: &Session) -> bool {
-    s.agent_device_id.as_ref().and_then(|id| m.members.get(id)).is_some_and(|d| d.platform.as_str() == Some("hermes"))
+    s.agent_device_id
+        .as_ref()
+        .and_then(|id| m.members.get(id))
+        .is_some_and(|d| d.platform.as_str() == Some("hermes"))
 }
 
 /// The Hermes connector's current-turn report, independent of manual tasks.
 /// None means no automatic activity report is available; false is an explicit idle report.
 /// Once the model receives offline/lease-expiry presence, automatic work is no longer shown.
-pub fn reported_work(m: &Model, s: &Session, archived: bool, removed: bool, online: bool) -> Option<bool> {
+pub fn reported_work(
+    m: &Model,
+    s: &Session,
+    archived: bool,
+    removed: bool,
+    online: bool,
+) -> Option<bool> {
     if !automatic_turns(m, s) {
         return None;
     }
-    s.link.as_ref().and_then(|l| l.working.map(|working| online && !archived && !removed && l.attached && l.cut_since.is_none() && working))
+    s.link.as_ref().and_then(|l| {
+        l.working.map(|working| {
+            online && !archived && !removed && l.attached && l.cut_since.is_none() && working
+        })
+    })
 }
 
 /// The status of a session as listed (`archived`, `removed`, `online` as the session list decided).
@@ -317,7 +341,8 @@ pub fn status_of(
         }
         lines.insert(t.id.clone(), shown);
     }
-    let working = !working_lines.is_empty() || reported_work(m, s, archived, removed, online) == Some(true);
+    let working =
+        !working_lines.is_empty() || reported_work(m, s, archived, removed, online) == Some(true);
     let device_active = s
         .agent_device_id
         .as_deref()
@@ -365,7 +390,12 @@ pub fn status_of(
                 .iter()
                 // (a card whose body is not read here yet stands on the Desk as a quiet "Loading …": no hand for it
                 //  until it is read; the owner, 13 October 2026: "Still, ohne Hand und Knöpfe")
-                .any(|id| m.cards.get(*id).is_some_and(|c| c.urgency == "critical" && !matches!(c.content_state.as_str(), "undecryptable" | "header")))
+                .any(|id| {
+                    m.cards.get(*id).is_some_and(|c| {
+                        c.urgency == "critical"
+                            && !matches!(c.content_state.as_str(), "undecryptable" | "header")
+                    })
+                })
             {
                 blocked = Some(Blocked {
                     why: "blocking".into(),
@@ -373,7 +403,10 @@ pub fn status_of(
                 });
             }
             if !working_lines.is_empty() {
-                let last = working_lines.iter().copied().fold(s.last_activity_at, u64::max);
+                let last = working_lines
+                    .iter()
+                    .copied()
+                    .fold(s.last_activity_at, u64::max);
                 if now.saturating_sub(last) >= QUIET_MS {
                     quiet_since = Some(last);
                 } else {
@@ -460,11 +493,20 @@ mod tests {
         let mut m = room(true);
         m.members.get_mut(D0).unwrap().platform = json!("hermes");
         m.sessions.get_mut(S0).unwrap().link = Some(crate::model::types::Link {
-            hears: "live".into(), attached: true, working: Some(true), ..Default::default()
+            hears: "live".into(),
+            attached: true,
+            working: Some(true),
+            ..Default::default()
         });
         let r = at(&mut m, 100_000, false);
-        assert!(r.working, "the live lease reports work, even before any text or tool");
-        assert!(r.lines.is_empty(), "automatic activity must not create task lines");
+        assert!(
+            r.working,
+            "the live lease reports work, even before any text or tool"
+        );
+        assert!(
+            r.lines.is_empty(),
+            "automatic activity must not create task lines"
+        );
     }
 
     #[test]
@@ -472,14 +514,33 @@ mod tests {
         let mut m = room(true);
         m.members.get_mut(D0).unwrap().platform = json!("hermes");
         m.sessions.get_mut(S0).unwrap().link = Some(crate::model::types::Link {
-            hears: "live".into(), attached: true, working: Some(true), ..Default::default()
+            hears: "live".into(),
+            attached: true,
+            working: Some(true),
+            ..Default::default()
         });
         assert!(at(&mut m, 100_000, false).working);
-        m.sessions.get_mut(S0).unwrap().link.as_mut().unwrap().working = Some(false);
-        assert!(!at(&mut m, 100_001, false).working, "normal end/cancel/error stops automatic work");
-        m.sessions.get_mut(S0).unwrap().status_lines.push(StatusLine {
-            id: "manual".into(), state: json!("working"), updated_at: 100_000, ..Default::default()
-        });
+        m.sessions
+            .get_mut(S0)
+            .unwrap()
+            .link
+            .as_mut()
+            .unwrap()
+            .working = Some(false);
+        assert!(
+            !at(&mut m, 100_001, false).working,
+            "normal end/cancel/error stops automatic work"
+        );
+        m.sessions
+            .get_mut(S0)
+            .unwrap()
+            .status_lines
+            .push(StatusLine {
+                id: "manual".into(),
+                state: json!("working"),
+                updated_at: 100_000,
+                ..Default::default()
+            });
         let r = at(&mut m, 100_002, false);
         assert!(r.working, "a manual task can outlive the turn");
         assert_eq!(r.lines["manual"], "working");
@@ -487,8 +548,17 @@ mod tests {
         let r = at(&mut m, 100_003, false);
         assert!(!r.working);
         assert_eq!(r.lines["manual"], "done");
-        m.sessions.get_mut(S0).unwrap().link.as_mut().unwrap().working = Some(true);
-        assert!(at(&mut m, 100_004, false).working, "fresh activity can restart");
+        m.sessions
+            .get_mut(S0)
+            .unwrap()
+            .link
+            .as_mut()
+            .unwrap()
+            .working = Some(true);
+        assert!(
+            at(&mut m, 100_004, false).working,
+            "fresh activity can restart"
+        );
     }
 
     #[test]
@@ -496,18 +566,48 @@ mod tests {
         let mut m = room(true);
         m.members.get_mut(D0).unwrap().platform = json!("hermes");
         m.sessions.get_mut(S0).unwrap().link = Some(crate::model::types::Link {
-            hears: "live".into(), attached: true, working: Some(true), ..Default::default()
+            hears: "live".into(),
+            attached: true,
+            working: Some(true),
+            ..Default::default()
         });
         let status = |m: &Model, archived, removed, online| {
-            super::status_of(&super::Context::new(m, 100_000), &m.sessions[S0], archived, removed, online)
+            super::status_of(
+                &super::Context::new(m, 100_000),
+                &m.sessions[S0],
+                archived,
+                removed,
+                online,
+            )
         };
-        assert!(!status(&m, false, false, false).working, "offline/expired lease is not active work");
+        assert!(
+            !status(&m, false, false, false).working,
+            "offline/expired lease is not active work"
+        );
         assert!(!status(&m, true, false, true).working);
         assert!(!status(&m, false, true, true).working);
-        m.sessions.get_mut(S0).unwrap().link.as_mut().unwrap().attached = false;
+        m.sessions
+            .get_mut(S0)
+            .unwrap()
+            .link
+            .as_mut()
+            .unwrap()
+            .attached = false;
         assert!(!status(&m, false, false, true).working);
-        m.sessions.get_mut(S0).unwrap().link.as_mut().unwrap().attached = true;
-        m.sessions.get_mut(S0).unwrap().link.as_mut().unwrap().cut_since = Some(50_000);
+        m.sessions
+            .get_mut(S0)
+            .unwrap()
+            .link
+            .as_mut()
+            .unwrap()
+            .attached = true;
+        m.sessions
+            .get_mut(S0)
+            .unwrap()
+            .link
+            .as_mut()
+            .unwrap()
+            .cut_since = Some(50_000);
         assert!(!status(&m, false, false, true).working);
     }
 
@@ -516,19 +616,32 @@ mod tests {
         let mut m = room(true);
         m.members.get_mut(D0).unwrap().platform = json!("hermes");
         m.sessions.get_mut(S0).unwrap().link = Some(crate::model::types::Link {
-            hears: "live".into(), attached: true, working: Some(true), ..Default::default()
+            hears: "live".into(),
+            attached: true,
+            working: Some(true),
+            ..Default::default()
         });
         let r = at(&mut m, 2 * super::QUIET_MS, false);
-        assert!(r.working, "thinking and long tools do not expire by the old user-text window");
-        assert_eq!(r.quiet_since, None, "quiet is a manual task hint, not a lack of draft tokens");
+        assert!(
+            r.working,
+            "thinking and long tools do not expire by the old user-text window"
+        );
+        assert_eq!(
+            r.quiet_since, None,
+            "quiet is a manual task hint, not a lack of draft tokens"
+        );
     }
 
     #[test]
     fn automatic_work_does_not_treat_an_omitted_report_as_a_stop() {
         let mut m = room(true);
         m.members.get_mut(D0).unwrap().platform = json!("hermes");
-        m.sessions.get_mut(S0).unwrap().link = crate::model::groups::clean_link(&json!({ "hears": "live", "attached": true }));
-        assert_eq!(super::reported_work(&m, &m.sessions[S0], false, false, true), None);
+        m.sessions.get_mut(S0).unwrap().link =
+            crate::model::groups::clean_link(&json!({ "hears": "live", "attached": true }));
+        assert_eq!(
+            super::reported_work(&m, &m.sessions[S0], false, false, true),
+            None
+        );
     }
 
     /// The red hand stands exactly while the blocking question stands on the Desk: put off (Later), it goes; a newer
@@ -577,17 +690,25 @@ mod tests {
     #[test]
     fn offline_while_working_after_the_grace() {
         let mut m = room(false);
-        m.sessions.get_mut(S0).unwrap().status_lines.push(StatusLine {
-            id: "t".into(),
-            state: json!("working"),
-            updated_at: 500,
-            ..Default::default()
-        });
+        m.sessions
+            .get_mut(S0)
+            .unwrap()
+            .status_lines
+            .push(StatusLine {
+                id: "t".into(),
+                state: json!("working"),
+                updated_at: 500,
+                ..Default::default()
+            });
         let mut c = Change::new();
         m.project(&mut c, 30_000);
         let r = session_list(&m, false).remove(0);
         assert_eq!(why(&r), None);
-        assert_eq!(r.recheck_at, Some(90_000), "a minute after this run started");
+        assert_eq!(
+            r.recheck_at,
+            Some(90_000),
+            "a minute after this run started"
+        );
         let mut c = Change::new();
         m.project(&mut c, 90_000);
         let r = session_list(&m, false).remove(0);
@@ -608,12 +729,16 @@ mod tests {
             session_list(m, false).remove(0)
         };
         let mut m = room(false);
-        m.sessions.get_mut(S0).unwrap().status_lines.push(StatusLine {
-            id: "t".into(),
-            state: json!("working"),
-            updated_at: 500,
-            ..Default::default()
-        });
+        m.sessions
+            .get_mut(S0)
+            .unwrap()
+            .status_lines
+            .push(StatusLine {
+                id: "t".into(),
+                state: json!("working"),
+                updated_at: 500,
+                ..Default::default()
+            });
         // (this run started long ago: past the grace, a working line raises the hand)
         all(&mut m, 1_000);
         assert_eq!(why(&all(&mut m, stale)), None);
@@ -630,13 +755,17 @@ mod tests {
     fn the_chip_follows_the_line() {
         let mut m = room(true);
         card(&mut m, "normal", 1);
-        m.sessions.get_mut(S0).unwrap().status_lines.push(StatusLine {
-            id: "t".into(),
-            state: json!("working"),
-            object_id: json!(C0),
-            updated_at: 1_000,
-            ..Default::default()
-        });
+        m.sessions
+            .get_mut(S0)
+            .unwrap()
+            .status_lines
+            .push(StatusLine {
+                id: "t".into(),
+                state: json!("working"),
+                object_id: json!(C0),
+                updated_at: 1_000,
+                ..Default::default()
+            });
         let all = |m: &mut Model| {
             let mut c = Change::new();
             c.cards.insert(C0.into());
@@ -659,7 +788,12 @@ mod tests {
             let c = m.cards.get_mut(C0).unwrap();
             c.object_state = "answered".into();
             c.closed_how = Some("answered".into());
-            c.answer = Some(serde_json::from_value(json!({ "answer_action": "answer", "choices": ["a"], "answered_at": 1_500 })).unwrap());
+            c.answer = Some(
+                serde_json::from_value(
+                    json!({ "answer_action": "answer", "choices": ["a"], "answered_at": 1_500 }),
+                )
+                .unwrap(),
+            );
         }
         let r = all(&mut m);
         assert_eq!(r.lines["t"], "working");
@@ -683,9 +817,15 @@ mod tests {
         assert_eq!(r.link.as_ref().unwrap().state, "oncall");
         assert_eq!(r.recheck_at, Some(1_000 + super::ASLEEP_MS));
         m.project(&mut Change::new(), 1_000 + super::ASLEEP_MS);
-        assert_eq!(session_list(&m, false)[0].link.as_ref().unwrap().state, "asleep");
+        assert_eq!(
+            session_list(&m, false)[0].link.as_ref().unwrap().state,
+            "asleep"
+        );
         m.members.get_mut(D0).unwrap().platform = json!("codex");
-        assert_eq!(session_list(&m, false)[0].link.as_ref().unwrap().state, "oncall");
+        assert_eq!(
+            session_list(&m, false)[0].link.as_ref().unwrap().state,
+            "oncall"
+        );
     }
 
     /// The patch sends the list again when the clock passes a status change, with nothing else changed.
@@ -720,16 +860,31 @@ mod tests {
 
         const NOW: u64 = 100 * 3_600_000;
         fn line(state: &str, updated: u64) -> StatusLine {
-            StatusLine { id: "t".into(), state: json!(state), updated_at: updated, ..Default::default() }
+            StatusLine {
+                id: "t".into(),
+                state: json!(state),
+                updated_at: updated,
+                ..Default::default()
+            }
         }
         fn open() -> Card {
-            Card { object_id: "c".into(), object_state: "open".into(), ..Default::default() }
+            Card {
+                object_id: "c".into(),
+                object_state: "open".into(),
+                ..Default::default()
+            }
         }
         fn answered(at: u64) -> Card {
             Card {
                 object_state: "answered".into(),
                 closed_how: Some("answered".into()),
-                answer: Some(Answer { answer_action: "answer".into(), choices: json!(["a"]), answered_at: at, envelope_number: Some(9), ..Default::default() }),
+                answer: Some(Answer {
+                    answer_action: "answer".into(),
+                    choices: json!(["a"]),
+                    answered_at: at,
+                    envelope_number: Some(9),
+                    ..Default::default()
+                }),
                 ..open()
             }
         }
@@ -744,39 +899,129 @@ mod tests {
 
         #[test]
         fn a_line_whose_card_is_put_off_is_later() {
-            let put_off = Card { snoozed_until: Some(NOW + 3_600_000), ..open() };
-            assert_eq!(shown(&line("decision", NOW - 60_000), false, Some(&put_off)), "later");
-            assert_eq!(shown(&line("working", NOW - 60_000), false, Some(&put_off)), "later");
+            let put_off = Card {
+                snoozed_until: Some(NOW + 3_600_000),
+                ..open()
+            };
+            assert_eq!(
+                shown(&line("decision", NOW - 60_000), false, Some(&put_off)),
+                "later"
+            );
+            assert_eq!(
+                shown(&line("working", NOW - 60_000), false, Some(&put_off)),
+                "later"
+            );
         }
 
         #[test]
         fn an_open_card_holds_its_line_as_set_however_old() {
-            assert_eq!(shown(&line("decision", NOW - 50 * 3_600_000), false, Some(&open())), "decision");
-            let handed = Card { in_revision: Some(InRevision { envelope_number: 3, ..Default::default() }), ..open() };
-            assert_eq!(shown(&line("working", NOW - 50 * 3_600_000), false, Some(&handed)), "working");
+            assert_eq!(
+                shown(
+                    &line("decision", NOW - 50 * 3_600_000),
+                    false,
+                    Some(&open())
+                ),
+                "decision"
+            );
+            let handed = Card {
+                in_revision: Some(InRevision {
+                    envelope_number: 3,
+                    ..Default::default()
+                }),
+                ..open()
+            };
+            assert_eq!(
+                shown(&line("working", NOW - 50 * 3_600_000), false, Some(&handed)),
+                "working"
+            );
         }
 
         #[test]
         fn answered_working_while_its_session_is_at_it_then_done() {
             let a = answered(NOW - 60_000);
-            assert_eq!(shown(&line("decision", NOW - 60_000), false, Some(&a)), "working");
-            assert_eq!(shown(&line("working", NOW - 60_000), false, Some(&a)), "working");
+            assert_eq!(
+                shown(&line("decision", NOW - 60_000), false, Some(&a)),
+                "working"
+            );
+            assert_eq!(
+                shown(&line("working", NOW - 60_000), false, Some(&a)),
+                "working"
+            );
             // (and it says when that ends)
-            assert_eq!(line_state(&line("working", NOW - 60_000), false, Some(&a), true, None, NOW).1, Some(NOW - 60_000 + ACTING_MS));
-            assert_eq!(shown(&line("working", NOW - 60_000), false, Some(&answered(NOW - ACTING_MS - 1))), "done");
-            let shredded = Card { object_state: "closed".into(), closed_how: Some("shredded".into()), ..open() };
-            assert_eq!(shown(&line("working", NOW - 60_000), false, Some(&shredded)), "done");
+            assert_eq!(
+                line_state(
+                    &line("working", NOW - 60_000),
+                    false,
+                    Some(&a),
+                    true,
+                    None,
+                    NOW
+                )
+                .1,
+                Some(NOW - 60_000 + ACTING_MS)
+            );
+            assert_eq!(
+                shown(
+                    &line("working", NOW - 60_000),
+                    false,
+                    Some(&answered(NOW - ACTING_MS - 1))
+                ),
+                "done"
+            );
+            let shredded = Card {
+                object_state: "closed".into(),
+                closed_how: Some("shredded".into()),
+                ..open()
+            };
+            assert_eq!(
+                shown(&line("working", NOW - 60_000), false, Some(&shredded)),
+                "done"
+            );
             // a session that is gone: done, unless it has not heard the answer yet
-            assert_eq!(line_state(&line("working", NOW - 60_000), false, Some(&a), false, Some(9), NOW).0, "done");
-            assert_eq!(line_state(&line("working", NOW - 60_000), false, Some(&a), false, Some(8), NOW).0, "working");
+            assert_eq!(
+                line_state(
+                    &line("working", NOW - 60_000),
+                    false,
+                    Some(&a),
+                    false,
+                    Some(9),
+                    NOW
+                )
+                .0,
+                "done"
+            );
+            assert_eq!(
+                line_state(
+                    &line("working", NOW - 60_000),
+                    false,
+                    Some(&a),
+                    false,
+                    Some(8),
+                    NOW
+                )
+                .0,
+                "working"
+            );
         }
 
         #[test]
         fn an_unlinked_line_nobody_updated_is_stale_and_done_stays_done() {
-            assert_eq!(shown(&line("working", NOW - LINE_STALE_MS + 1000), false, None), "working");
-            assert_eq!(shown(&line("working", NOW - LINE_STALE_MS - 1000), false, None), "stale");
-            assert_eq!(shown(&line("decision", NOW - LINE_STALE_MS - 1000), false, None), "stale");
-            assert_eq!(shown(&line("done", NOW - LINE_STALE_MS - 1000), false, None), "done");
+            assert_eq!(
+                shown(&line("working", NOW - LINE_STALE_MS + 1000), false, None),
+                "working"
+            );
+            assert_eq!(
+                shown(&line("working", NOW - LINE_STALE_MS - 1000), false, None),
+                "stale"
+            );
+            assert_eq!(
+                shown(&line("decision", NOW - LINE_STALE_MS - 1000), false, None),
+                "stale"
+            );
+            assert_eq!(
+                shown(&line("done", NOW - LINE_STALE_MS - 1000), false, None),
+                "done"
+            );
         }
     }
 }

@@ -459,7 +459,9 @@ impl DeskState {
                 .then_with(|| a.object_id.cmp(&b.object_id))
         });
         for r in pending {
-            if !self.in_archived(r.session_id.as_deref()) && self.held_by_list(&r.object_id, r.newest.max(r.envelope_number)) {
+            if !self.in_archived(r.session_id.as_deref())
+                && self.held_by_list(&r.object_id, r.newest.max(r.envelope_number))
+            {
                 held.push(r.object_id.clone());
                 continue;
             }
@@ -729,7 +731,11 @@ fn band(c: &WalkCard) -> u8 {
 }
 
 fn walk_key(c: &WalkCard) -> WalkKey {
-    let time = if c.info { u64::MAX - c.first_change } else { c.first_change };
+    let time = if c.info {
+        u64::MAX - c.first_change
+    } else {
+        c.first_change
+    };
     (Reverse(band(c)), !c.info, time, c.object_id.clone())
 }
 
@@ -908,7 +914,11 @@ mod tests {
         assert!(d.projection(1_000).stack.is_empty());
         d.set_snooze("a", serde_json::json!({ "until": 9_000 }), 7);
         let p = d.project(1_000);
-        assert_eq!(p.stack, ["a"], "version 8 is newer than the snooze written at 7");
+        assert_eq!(
+            p.stack,
+            ["a"],
+            "version 8 is newer than the snooze written at 7"
+        );
         assert_eq!(p.next_wake, 0);
     }
 

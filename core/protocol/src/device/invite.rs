@@ -1137,7 +1137,9 @@ impl<S: Storage> Device<S> {
     /// The receiver must verify that this exact key is a human member before committing its removal.
     pub fn sign_departure_for(&self, room: &RoomId) -> Result<Vec<u8>, Error> {
         self.owner()?;
-        if self.room().is_some_and(|known| known != *room) { return Err(Error::WrongRoom); }
+        if self.room().is_some_and(|known| known != *room) {
+            return Err(Error::WrongRoom);
+        }
         hub_auth::sign_departure(&self.key, room)
     }
 }

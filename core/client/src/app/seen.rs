@@ -33,21 +33,34 @@ impl App {
     /// The room's cache opened: its marks are read.
     pub(super) fn seen_open(&mut self, room_hex: &str, out: &mut Vec<Effect>) {
         let key = crate::cache::key(room_hex, crate::cache::part::SEEN, None);
-        self.seen = super::seen::Seen { key: Some(key.clone()), looking: self.seen.looking, ..Default::default() };
+        self.seen = super::seen::Seen {
+            key: Some(key.clone()),
+            looking: self.seen.looking,
+            ..Default::default()
+        };
         self.lens.seen = None;
         let id = self.io(Pending::SeenRead);
-        out.push(Effect::Store { id, op: StoreOp::Get { keys: vec![key] } });
+        out.push(Effect::Store {
+            id,
+            op: StoreOp::Get { keys: vec![key] },
+        });
     }
 
     /// The demo room: nothing is kept, nothing counts as read before it is looked at.
     pub(super) fn seen_demo(&mut self) {
-        self.seen = super::seen::Seen { looking: self.seen.looking, ..Default::default() };
+        self.seen = super::seen::Seen {
+            looking: self.seen.looking,
+            ..Default::default()
+        };
         self.lens.seen = Some(BTreeMap::new());
     }
 
     pub(super) fn seen_read(&mut self, result: &IoResult<StoreAnswer>) {
         let kept: Option<Stored> = match result {
-            IoResult::Ok(StoreAnswer::Values { values }) => values.first().and_then(Option::as_ref).and_then(|v| serde_json::from_slice(&v.0).ok()),
+            IoResult::Ok(StoreAnswer::Values { values }) => values
+                .first()
+                .and_then(Option::as_ref)
+                .and_then(|v| serde_json::from_slice(&v.0).ok()),
             _ => None,
         };
         let kept = kept.filter(|k| k.v == 1);
@@ -58,7 +71,12 @@ impl App {
         self.stale_views = true;
     }
 
-    pub(super) fn seen_written(&mut self, id: IoId, result: &IoResult<StoreAnswer>, out: &mut Vec<Effect>) {
+    pub(super) fn seen_written(
+        &mut self,
+        id: IoId,
+        result: &IoResult<StoreAnswer>,
+        out: &mut Vec<Effect>,
+    ) {
         let _ = id;
         self.seen.writing = false;
         if !matches!(result, IoResult::Ok(StoreAnswer::Done)) {
@@ -74,10 +92,22 @@ impl App {
     pub(super) fn seen_tend(&mut self, out: &mut Vec<Effect>) {
         // (the chats in view of every window that shows its page)
         let current = self.window;
-        let looked: Vec<String> = self.seen.looking.then(|| self.lens.session.clone()).flatten().into_iter()
-            .chain(self.windows.iter().filter(|(id, w)| **id != current && w.looking).filter_map(|(_, w)| w.lens().session.clone()))
+        let looked: Vec<String> = self
+            .seen
+            .looking
+            .then(|| self.lens.session.clone())
+            .flatten()
+            .into_iter()
+            .chain(
+                self.windows
+                    .iter()
+                    .filter(|(id, w)| **id != current && w.looking)
+                    .filter_map(|(_, w)| w.lens().session.clone()),
+            )
             .collect();
-        let Some(marks) = self.lens.seen.as_mut() else { return };
+        let Some(marks) = self.lens.seen.as_mut() else {
+            return;
+        };
         let model = &self.board.model;
         let mut moved = false;
         if self.seen.baseline && self.next_view.phase == Phase::Live && !model.reading {
@@ -88,9 +118,17 @@ impl App {
         }
         for shown in looked.iter().map(String::as_str) {
             // (the page's address may name the session by its short id)
-            let key = model.sessions.keys().find(|k| *k == shown).cloned().or_else(|| {
-                crate::sessions::session_list(model, false).into_iter().find(|r| r.id == shown).map(|r| r.key)
-            });
+            let key = model
+                .sessions
+                .keys()
+                .find(|k| *k == shown)
+                .cloned()
+                .or_else(|| {
+                    crate::sessions::session_list(model, false)
+                        .into_iter()
+                        .find(|r| r.id == shown)
+                        .map(|r| r.key)
+                });
             if let Some(key) = key {
                 if let Some(n) = crate::views::sidebar::newest_word(model, &key) {
                     if marks.get(&key).is_none_or(|m| *m < n) {
@@ -109,15 +147,31 @@ impl App {
     }
 
     fn seen_write(&mut self, out: &mut Vec<Effect>) {
-        let (Some(key), Some(marks)) = (self.seen.key.clone(), self.lens.seen.clone()) else { return };
+        let (Some(key), Some(marks)) = (self.seen.key.clone(), self.lens.seen.clone()) else {
+            return;
+        };
         if self.seen.writing {
             self.seen.again = true;
             return;
         }
-        let Ok(value) = serde_json::to_vec(&Stored { v: 1, marks: marks.clone() }) else { return };
+        let Ok(value) = serde_json::to_vec(&Stored {
+            v: 1,
+            marks: marks.clone(),
+        }) else {
+            return;
+        };
         self.seen.writing = true;
         self.seen.stored = marks;
         let id = self.io(Pending::SeenWrite);
-        out.push(Effect::Store { id, op: StoreOp::Put { put: vec![Entry { key, value: super::Bytes(value) }], delete: Vec::new() } });
+        out.push(Effect::Store {
+            id,
+            op: StoreOp::Put {
+                put: vec![Entry {
+                    key,
+                    value: super::Bytes(value),
+                }],
+                delete: Vec::new(),
+            },
+        });
     }
 }

@@ -41,9 +41,9 @@ mod files;
 mod groups;
 mod invites;
 mod items;
-mod link;
 mod json;
 pub mod limits;
+mod link;
 mod outbox;
 mod push;
 mod refusal;
@@ -55,11 +55,11 @@ mod types;
 
 pub use account::{account_copies_body, new_account_body};
 pub use codec::{Codec, Expect};
+pub(crate) use groups::{archive_answer, archive_request};
 pub use refusal::{refusal, status_of, Refusal};
 pub use request::TIMEOUT_MS;
 pub use stream::{Fed, StreamReader};
 pub use types::*;
-pub(crate) use groups::{archive_answer, archive_request};
 
 use crate::app::io::{HttpResponse, IoError, IoErrorKind};
 
@@ -95,7 +95,10 @@ pub fn classify(response: &HttpResponse) -> Result<(), Failure> {
         // Capacity is a refusal of this request; retrying it cannot free a helper's place. Only a checked
         // protocol code under its own status is final: throttling and proxy responses still wait and retry.
         if status == 429 && refusal(response).is_some_and(|r| r.code == "too-many") {
-            return Err(Failure::Refused { status, code: Some("too-many".into()) });
+            return Err(Failure::Refused {
+                status,
+                code: Some("too-many".into()),
+            });
         }
         // (the header; without one, the wait the hub's own refusal names in its body)
         let retry_after_ms = match response.header("retry-after") {
@@ -150,10 +153,33 @@ mod tests {
 
     #[test]
     fn a_named_capacity_refusal_is_final_while_throttling_is_retried() {
-        assert_eq!(classify(&answer(429, &[], r#"{"error":"too-many","message":"at the limit"}"#)),
-            Err(Failure::Refused { status: 429, code: Some("too-many".into()) }));
-        assert!(matches!(classify(&answer(429, &[], r#"{"error":"rate-limited","message":"wait"}"#)), Err(Failure::NotNow { .. })));
-        assert!(matches!(classify(&answer(503, &[], r#"{"error":"too-many","message":"wrong status"}"#)), Err(Failure::NotNow { .. })));
+        assert_eq!(
+            classify(&answer(
+                429,
+                &[],
+                r#"{"error":"too-many","message":"at the limit"}"#
+            )),
+            Err(Failure::Refused {
+                status: 429,
+                code: Some("too-many".into())
+            })
+        );
+        assert!(matches!(
+            classify(&answer(
+                429,
+                &[],
+                r#"{"error":"rate-limited","message":"wait"}"#
+            )),
+            Err(Failure::NotNow { .. })
+        ));
+        assert!(matches!(
+            classify(&answer(
+                503,
+                &[],
+                r#"{"error":"too-many","message":"wrong status"}"#
+            )),
+            Err(Failure::NotNow { .. })
+        ));
     }
 
     #[test]

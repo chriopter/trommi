@@ -155,25 +155,67 @@ mod tests {
 
     #[test]
     fn commands_are_as_before() {
-        let fill = Fill { prompt: "P", resume: "abc", max_turns: "30", ask_tool: "mcp__trommi__ask_permission" };
+        let fill = Fill {
+            prompt: "P",
+            resume: "abc",
+            max_turns: "30",
+            ask_tool: "mcp__trommi__ask_permission",
+        };
         assert_eq!(
             render(CLAUDE.woken_run.unwrap(), &fill).join(" "),
             "-p P --resume abc --max-turns 30 --permission-prompt-tool mcp__trommi__ask_permission"
         );
-        assert_eq!(render(CLAUDE.woken_run.unwrap(), &Fill { ask_tool: "", ..fill.clone() }).join(" "), "-p P --resume abc --max-turns 30");
-        assert_eq!(render(CODEX.woken_run.unwrap(), &fill), ["exec", "resume", "abc", "P"]);
-        let Live::Command(queue) = CODEX.live else { panic!() };
-        assert_eq!(render(queue, &fill), ["queue", "--thread", "abc", "--message", "P"]);
+        assert_eq!(
+            render(
+                CLAUDE.woken_run.unwrap(),
+                &Fill {
+                    ask_tool: "",
+                    ..fill.clone()
+                }
+            )
+            .join(" "),
+            "-p P --resume abc --max-turns 30"
+        );
+        assert_eq!(
+            render(CODEX.woken_run.unwrap(), &fill),
+            ["exec", "resume", "abc", "P"]
+        );
+        let Live::Command(queue) = CODEX.live else {
+            panic!()
+        };
+        assert_eq!(
+            render(queue, &fill),
+            ["queue", "--thread", "abc", "--message", "P"]
+        );
         // (a required argument stays, even empty)
-        assert_eq!(render(queue, &Fill { prompt: "", ..fill.clone() }), ["queue", "--thread", "abc", "--message", ""]);
-        assert!(CLAUDE.woken_command(&Fill { resume: "", ..fill }).is_none(), "nothing to resume, no run");
+        assert_eq!(
+            render(
+                queue,
+                &Fill {
+                    prompt: "",
+                    ..fill.clone()
+                }
+            ),
+            ["queue", "--thread", "abc", "--message", ""]
+        );
+        assert!(
+            CLAUDE.woken_command(&Fill { resume: "", ..fill }).is_none(),
+            "nothing to resume, no run"
+        );
         assert_eq!(by_id("codex").map(|p| p.name), Some("Codex"));
         assert!(by_id("sh").is_none());
     }
 
     #[test]
     fn a_value_stays_one_argument() {
-        let fill = Fill { prompt: "--dangerous; rm -rf ~", resume: "id", ..Default::default() };
-        assert_eq!(render(CODEX.woken_run.unwrap(), &fill), ["exec", "resume", "id", "--dangerous; rm -rf ~"]);
+        let fill = Fill {
+            prompt: "--dangerous; rm -rf ~",
+            resume: "id",
+            ..Default::default()
+        };
+        assert_eq!(
+            render(CODEX.woken_run.unwrap(), &fill),
+            ["exec", "resume", "id", "--dangerous; rm -rf ~"]
+        );
     }
 }

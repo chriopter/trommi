@@ -92,7 +92,10 @@ fn id<const N: usize>(text: &str) -> Res<[u8; N]> {
 }
 
 // `POST /v1/commits`: at most MAX_COMMITS_AT_ONCE Commits in one request, verified on so many threads at once.
-use trommi_wire::limits::{LOG_PAGE, MAX_AT_ONCE as MAX_COMMITS_AT_ONCE, MAX_GROUPS_PAGE, MAX_LEAVES, MAX_LOG, MAX_SEALED_KEYS};
+use trommi_wire::limits::{
+    LOG_PAGE, MAX_AT_ONCE as MAX_COMMITS_AT_ONCE, MAX_GROUPS_PAGE, MAX_LEAVES, MAX_LOG,
+    MAX_SEALED_KEYS,
+};
 const PREPARE_THREADS: usize = 4;
 
 fn group_id(text: &str) -> Res<Vec<u8>> {
@@ -118,11 +121,22 @@ fn only(rq: &Rq, with_group: bool) -> Res<content::Only> {
             None => None,
         },
     };
-    if [only.active, only.archived, only.group.is_some()].iter().filter(|x| **x).count() > 1 {
-        return Err(refuse("bad-format", "active, archived and group: one at most"));
+    if [only.active, only.archived, only.group.is_some()]
+        .iter()
+        .filter(|x| **x)
+        .count()
+        > 1
+    {
+        return Err(refuse(
+            "bad-format",
+            "active, archived and group: one at most",
+        ));
     }
     if only.archived && with_group {
-        return Err(refuse("bad-format", "archived: a catch-up takes group= instead"));
+        return Err(refuse(
+            "bad-format",
+            "archived: a catch-up takes group= instead",
+        ));
     }
     Ok(only)
 }
@@ -485,7 +499,8 @@ pub fn fuzz_route(
     ticket: Option<String>,
     body: Value,
 ) -> Res<String> {
-    let method = Method::from_bytes(method.as_bytes()).map_err(|_| refuse("bad-format", "method"))?;
+    let method =
+        Method::from_bytes(method.as_bytes()).map_err(|_| refuse("bad-format", "method"))?;
     let path: Vec<String> = path
         .split('/')
         .filter(|s| !s.is_empty())
@@ -1318,14 +1333,25 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
 /// revision as the proof was read: the change is made only if both are the same in its transaction (`unchanged`).
 fn proved(app: &Arc<App>, rq: &Rq, auth: &Auth, proof: &Value, t: u64) -> Res<(i64, i64)> {
     if !proof.is_object() {
-        return Err(refuse("bad-format", "proof: the way in proved once more (password, kit or passkey)"));
+        return Err(refuse(
+            "bad-format",
+            "proof: the way in proved once more (password, kit or passkey)",
+        ));
     }
     limited(app.limits.logins.check(rq.ip.as_bytes(), t, true))?;
-    limited(app.limits.logins.check(&[&b"account-proof:"[..], &auth.room[..]].concat(), t, true))?;
+    limited(
+        app.limits
+            .logins
+            .check(&[&b"account-proof:"[..], &auth.room[..]].concat(), t, true),
+    )?;
     let (account, revision, proof) = app.read(|x| {
         let account = accounts::account_of(x.c, &auth.room)?;
         let revision = accounts::revision_of(x.c, account)?;
-        Ok::<_, crate::error::Refused>((account, revision, app.accounts.proof(x.c, account, proof, x.now)?))
+        Ok::<_, crate::error::Refused>((
+            account,
+            revision,
+            app.accounts.proof(x.c, account, proof, x.now)?,
+        ))
     })?;
     let throttle_key = format!("proof:{account}");
     let source = crate::push::source_hash(&app.ticket_key, &rq.ip);
@@ -1335,13 +1361,25 @@ fn proved(app: &Arc<App>, rq: &Rq, auth: &Auth, proof: &Value, t: u64) -> Res<(i
             return Ok(app.accounts.proven(proof));
         }
         let key = throttle_key.as_bytes();
-        let attempt = match app.db.write(|c| throttle::admit(c, key, &source, true, now(), t))? {
+        let attempt = match app
+            .db
+            .write(|c| throttle::admit(c, key, &source, true, now(), t))?
+        {
             Verdict::Own(wait) | Verdict::Line { wait, early: None } => {
                 return Err(refuse("rate-limited", "too many requests").retry(wait))
             }
-            Verdict::Line { early: Some(attempt), .. } | Verdict::Check { attempt } => attempt,
+            Verdict::Line {
+                early: Some(attempt),
+                ..
+            }
+            | Verdict::Check { attempt } => attempt,
         };
-        let mut checking = Checking { app, account: key, source: &source, attempt: Some(attempt) };
+        let mut checking = Checking {
+            app,
+            account: key,
+            source: &source,
+            attempt: Some(attempt),
+        };
         let ok = app.accounts.proven(proof);
         app.db.write(|c| {
             if ok {
@@ -1354,7 +1392,10 @@ fn proved(app: &Arc<App>, rq: &Rq, auth: &Auth, proof: &Value, t: u64) -> Res<(i
         Ok(ok)
     })??;
     if !proven {
-        return Err(refuse("wrong-login", "the password, kit or passkey is wrong"));
+        return Err(refuse(
+            "wrong-login",
+            "the password, kit or passkey is wrong",
+        ));
     }
     Ok((account, revision))
 }
@@ -1362,8 +1403,13 @@ fn proved(app: &Arc<App>, rq: &Rq, auth: &Auth, proof: &Value, t: u64) -> Res<(i
 /// In the change's transaction: the account the proof was read for, at the same revision (a change made meanwhile,
 /// on another device, is not overwritten with a proof of the way in before it).
 fn unchanged(c: &rusqlite::Connection, auth: &Auth, account: i64, revision: i64) -> Res<()> {
-    if accounts::account_of(c, &auth.room)? != account || accounts::revision_of(c, account)? != revision {
-        return Err(refuse("account-changed", "the account changed meanwhile: read it again"));
+    if accounts::account_of(c, &auth.room)? != account
+        || accounts::revision_of(c, account)? != revision
+    {
+        return Err(refuse(
+            "account-changed",
+            "the account changed meanwhile: read it again",
+        ));
     }
     Ok(())
 }

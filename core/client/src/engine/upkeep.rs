@@ -60,11 +60,17 @@ const SAID_MAX: usize = 1024;
 pub enum Job {
     /// 12.1.6, 5.2.2: an agent device's main session is founded. `invite`: a step of that invite, whose KeyPackage
     /// of the agent is used; none: a seat, and one is claimed.
-    Found { agent: DeviceId, invite: Option<InviteId> },
+    Found {
+        agent: DeviceId,
+        invite: Option<InviteId>,
+    },
     /// 5.3.1: a session is taken over in this group (the invite's step says with which Cuts and which agent).
     TakeOver { invite: InviteId, group: GroupId },
     /// 5.3.1 (c): the hub's list of the helper sessions under a session that was taken over.
-    Check { invite: InviteId, session: SessionId },
+    Check {
+        invite: InviteId,
+        session: SessionId,
+    },
     /// The hub's list of who sits in a session, for the agents the seat rule holds due.
     Seat { candidates: Vec<String> },
     /// The hub's list of the room's groups, for the sessions it archived before this device held them (5.2.10).
@@ -116,7 +122,11 @@ impl Tending {
     pub(super) fn new() -> Self {
         // (and the hub's list is read once per run for sessions archived while this device was away: the stream
         //  says so only to who is connected then)
-        Tending { want: true, archived: true, ..Default::default() }
+        Tending {
+            want: true,
+            archived: true,
+            ..Default::default()
+        }
     }
     /// A Commit of this device was refused for good: whatever builds it again waits first.
     pub(super) fn refused(&mut self) {
@@ -174,10 +184,19 @@ impl Tending {
 impl Engine {
     pub(super) fn drive_tending(&mut self, ctx: &mut Ctx<'_>) {
         // Repairs can introduce roles and must not judge them against an incomplete revocation past.
-        if self.anchored_past_missing() { return; }
+        if self.anchored_past_missing() {
+            return;
+        }
         // (the core judges a session against the room states this device holds: the order first; and a sign-in's
         //  own joins of its sessions come before anybody adds it by Welcome)
-        if self.joining.is_some() || !self.caught_up || self.pass || !self.todo.is_empty() || self.repair.is_some() || self.tending.asked.is_some() || self.tending.unmerged {
+        if self.joining.is_some()
+            || !self.caught_up
+            || self.pass
+            || !self.todo.is_empty()
+            || self.repair.is_some()
+            || self.tending.asked.is_some()
+            || self.tending.unmerged
+        {
             return;
         }
         if self.tending.recheck.is_some_and(|at| ctx.now >= at) {
@@ -192,10 +211,13 @@ impl Engine {
             self.tending.looking = true;
             let outbox = self.device.outbox().len();
             self.look(ctx);
-            self.tending.did = !self.tending.jobs.is_empty() || self.device.outbox().len() != outbox;
+            self.tending.did =
+                !self.tending.jobs.is_empty() || self.device.outbox().len() != outbox;
         }
         while self.tending.asked.is_none() && self.stopped.is_none() {
-            let Some(job) = self.tending.jobs.pop_front() else { break };
+            let Some(job) = self.tending.jobs.pop_front() else {
+                break;
+            };
             self.tend(ctx, job);
         }
         if self.tending.asked.is_none() && self.tending.looking {
@@ -203,7 +225,9 @@ impl Engine {
             self.tending.looking = false;
             if std::mem::take(&mut self.tending.owing) {
                 let retry_after = self.tending.retry_after.take();
-                self.tending.retry.fail(ctx.now, retry_after, &mut self.jitter);
+                self.tending
+                    .retry
+                    .fail(ctx.now, retry_after, &mut self.jitter);
                 self.tending.want = true;
             } else if !self.tending.did {
                 // (a look that found nothing to do: only then is what failed before forgotten, since a Commit
@@ -216,13 +240,26 @@ impl Engine {
     /// Reads the groups and lists what is to mend.
     fn look(&mut self, ctx: &mut Ctx<'_>) {
         self.tell_findings(ctx);
-        if std::mem::take(&mut self.tending.archived) && self.device.groups().unwrap_or_default().iter().any(|g| g.session.is_some() && !g.archived) {
+        if std::mem::take(&mut self.tending.archived)
+            && self
+                .device
+                .groups()
+                .unwrap_or_default()
+                .iter()
+                .any(|g| g.session.is_some() && !g.archived)
+        {
             self.tending.jobs.push_back(Job::Archived);
         }
         if self.stopped.is_some() || !self.device.is_human() {
             return;
         }
-        let Some(humans) = self.device.room_history().map(|history| history.newest().humans.clone()) else { return };
+        let Some(humans) = self
+            .device
+            .room_history()
+            .map(|history| history.newest().humans.clone())
+        else {
+            return;
+        };
         let me = self.device.id();
         let groups = match self.device.groups() {
             Ok(groups) => groups,
@@ -230,14 +267,35 @@ impl Engine {
         };
         if !self.tending.departures.is_empty() {
             let room = GroupId::room(self.room());
-            if groups.iter().find(|g| g.group == room).is_some_and(|g| g.pending) { return; }
-            if let Some(history) = self.device.room_history() {
-                self.tending.departures.retain(|d| !history.knows(d) || history.newest().is_human(d));
+            if groups
+                .iter()
+                .find(|g| g.group == room)
+                .is_some_and(|g| g.pending)
+            {
+                return;
             }
-            let leaving: Vec<DeviceId> = self.tending.departures.iter().filter(|d| **d != me && humans.contains(d)).copied().collect();
+            if let Some(history) = self.device.room_history() {
+                self.tending
+                    .departures
+                    .retain(|d| !history.knows(d) || history.newest().is_human(d));
+            }
+            let leaving: Vec<DeviceId> = self
+                .tending
+                .departures
+                .iter()
+                .filter(|d| **d != me && humans.contains(d))
+                .copied()
+                .collect();
             if !leaving.is_empty() {
-                let cuts = leaving.iter().map(|d| self.device.cut_of(&room, d)).collect::<Result<Vec<_>, _>>();
-                if let Err(e) = cuts.and_then(|cuts| self.device.remove_human_devices(&cuts, ctx.now)) { self.failed(ctx, &e); }
+                let cuts = leaving
+                    .iter()
+                    .map(|d| self.device.cut_of(&room, d))
+                    .collect::<Result<Vec<_>, _>>();
+                if let Err(e) =
+                    cuts.and_then(|cuts| self.device.remove_human_devices(&cuts, ctx.now))
+                {
+                    self.failed(ctx, &e);
+                }
                 return;
             }
         }
@@ -270,7 +328,10 @@ impl Engine {
                 }
                 InviteStep::FoundSession { agent, .. } => {
                     coming.insert(agent);
-                    self.tending.jobs.push_back(Job::Found { agent, invite: Some(invite) });
+                    self.tending.jobs.push_back(Job::Found {
+                        agent,
+                        invite: Some(invite),
+                    });
                     Ok(())
                 }
                 InviteStep::TakeOver { group, agent, .. } => {
@@ -293,33 +354,56 @@ impl Engine {
         }
         // (a takeover's session and its helper sessions keep the old leaf until the new one takes the seat)
         let covered = |group: &trommi_core::device::GroupSummary| {
-            taken.contains(&group.group) || group.session.is_some_and(|s| s.parent != SessionId::ZERO && taken.contains(&GroupId::session(s.room_id, s.parent)))
+            taken.contains(&group.group)
+                || group.session.is_some_and(|s| {
+                    s.parent != SessionId::ZERO
+                        && taken.contains(&GroupId::session(s.room_id, s.parent))
+                })
         };
         let mut seated: BTreeSet<String> = BTreeSet::new();
         let mut founding_pending = false;
         for group in groups {
-            let Some(session) = group.session else { continue };
+            let Some(session) = group.session else {
+                continue;
+            };
             seated.extend(group.leaves.iter().map(DeviceId::to_base64url));
-            founding_pending |= session.parent == SessionId::ZERO && group.pending && group.epoch == 0;
+            founding_pending |=
+                session.parent == SessionId::ZERO && group.pending && group.epoch == 0;
             if group.archived || !group.leaves.contains(&me) || covered(&group) {
                 continue;
             }
             if group.is_stale() {
-                self.tending.jobs.push_back(Job::Clean { group: group.group });
+                self.tending
+                    .jobs
+                    .push_back(Job::Clean { group: group.group });
                 continue;
             }
-            for device in humans.iter().filter(|device| **device != me && !coming.contains(device) && !group.leaves.contains(device)) {
-                self.tending.jobs.push_back(Job::Add { group: group.group, device: *device });
+            for device in humans.iter().filter(|device| {
+                **device != me && !coming.contains(device) && !group.leaves.contains(device)
+            }) {
+                self.tending.jobs.push_back(Job::Add {
+                    group: group.group,
+                    device: *device,
+                });
             }
         }
         // the agents without a session: who is due is the seat rule's
-        let agents = self.device.room_history().map(|history| history.newest().room.agents.clone()).unwrap_or_default();
+        let agents = self
+            .device
+            .room_history()
+            .map(|history| history.newest().room.agents.clone())
+            .unwrap_or_default();
         let known = Known {
             agents: agents.iter().map(DeviceId::to_base64url).collect(),
             seated,
             coming: coming.iter().map(DeviceId::to_base64url).collect(),
             founding_pending,
-            online: self.tending.online.iter().map(DeviceId::to_base64url).collect(),
+            online: self
+                .tending
+                .online
+                .iter()
+                .map(DeviceId::to_base64url)
+                .collect(),
             now_ms: ctx.now,
         };
         match self.tending.seats.plan(&known) {
@@ -330,26 +414,48 @@ impl Engine {
 
     /// A step the core does not take now (`busy`, an epoch that was lost), or cannot: with the next look.
     fn failed(&mut self, ctx: &mut Ctx<'_>, error: &Error) {
-        ctx.log(crate::app::LogLevel::Info, format!("upkeep: a step waits ({})", error.code()));
+        ctx.log(
+            crate::app::LogLevel::Info,
+            format!("upkeep: a step waits ({})", error.code()),
+        );
         self.local(ctx, error);
         self.tending.owing = true;
     }
 
     /// The step of an invite that a job was listed for, as it stands now.
-    fn step(&mut self, invite: &InviteId, which: impl Fn(&InviteStep) -> bool) -> Option<InviteStep> {
-        self.device.invite_steps().ok()?.into_iter().find(|(of, step)| of == invite && which(step)).map(|(_, step)| step)
+    fn step(
+        &mut self,
+        invite: &InviteId,
+        which: impl Fn(&InviteStep) -> bool,
+    ) -> Option<InviteStep> {
+        self.device
+            .invite_steps()
+            .ok()?
+            .into_iter()
+            .find(|(of, step)| of == invite && which(step))
+            .map(|(_, step)| step)
     }
 
     /// Whether a founding of this device with `agent` in it waits for the hub's answer or its place in the log.
     fn founding(&self, agent: &DeviceId) -> bool {
-        self.device.groups().unwrap_or_default().iter().any(|g| g.session.is_some_and(|s| s.parent == SessionId::ZERO) && g.pending && g.epoch == 0 && g.leaves.contains(agent))
+        self.device.groups().unwrap_or_default().iter().any(|g| {
+            g.session.is_some_and(|s| s.parent == SessionId::ZERO)
+                && g.pending
+                && g.epoch == 0
+                && g.leaves.contains(agent)
+        })
     }
 
     /// 5.2.9: a human device renews its leaf where the core says it is due (an empty Commit). The room group first
     /// and alone: a session's Commit names the room's epoch, so one built beside a Commit of the room group would be
     /// `room-behind` once that is taken. False: the sessions are still to look at.
-    fn renew_leaves(&mut self, ctx: &mut Ctx<'_>, groups: &[trommi_core::device::GroupSummary]) -> bool {
-        let live = |group: &&trommi_core::device::GroupSummary| !group.archived && !group.is_stale();
+    fn renew_leaves(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        groups: &[trommi_core::device::GroupSummary],
+    ) -> bool {
+        let live =
+            |group: &&trommi_core::device::GroupSummary| !group.archived && !group.is_stale();
         if let Some(room) = groups.iter().find(|group| group.group.is_room()) {
             if room.pending {
                 return false;
@@ -360,7 +466,11 @@ impl Engine {
                 Err(e) => self.local(ctx, &e),
             }
         }
-        for group in groups.iter().filter(live).filter(|group| !group.group.is_room() && !group.pending) {
+        for group in groups
+            .iter()
+            .filter(live)
+            .filter(|group| !group.group.is_room() && !group.pending)
+        {
             if let Err(e) = self.device.update(&group.group, false, ctx.now) {
                 self.local(ctx, &e);
             }
@@ -377,7 +487,9 @@ impl Engine {
         let mut partial = false;
         let devices: Vec<DeviceId> = match &job {
             Job::Clean { group } => {
-                let Some(opener) = self.to_clean(group) else { return };
+                let Some(opener) = self.to_clean(group) else {
+                    return;
+                };
                 match opener {
                     Some(opener) => vec![opener],
                     None => return self.clean(ctx, *group, None),
@@ -398,7 +510,18 @@ impl Engine {
                 // One of every other human device the hub has one of (a partial claim: one left out is added
                 // later, 5.2.7); for a seat, the agent's own with them.
                 let me = self.device.id();
-                let mut devices: Vec<DeviceId> = self.device.room_history().map(|h| h.newest().humans.iter().copied().filter(|d| *d != me).collect()).unwrap_or_default();
+                let mut devices: Vec<DeviceId> = self
+                    .device
+                    .room_history()
+                    .map(|h| {
+                        h.newest()
+                            .humans
+                            .iter()
+                            .copied()
+                            .filter(|d| *d != me)
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 if invite.is_none() {
                     devices.insert(0, *agent);
                 }
@@ -409,11 +532,27 @@ impl Engine {
                 devices
             }
             Job::TakeOver { invite, group } => {
-                let Some(InviteStep::TakeOver { cuts, agent, key_package, .. }) = self.step(invite, |s| matches!(s, InviteStep::TakeOver { group: of, .. } if of == group)) else { return };
+                let Some(InviteStep::TakeOver {
+                    cuts,
+                    agent,
+                    key_package,
+                    ..
+                }) = self.step(
+                    invite,
+                    |s| matches!(s, InviteStep::TakeOver { group: of, .. } if of == group),
+                )
+                else {
+                    return;
+                };
                 match key_package {
                     // (the main session: with the KeyPackage of the confirmed Request)
                     Some(key_package) => {
-                        if let Err(e) = self.device.clean_session(group, &cuts, Some((&agent, &key_package)), ctx.now) {
+                        if let Err(e) = self.device.clean_session(
+                            group,
+                            &cuts,
+                            Some((&agent, &key_package)),
+                            ctx.now,
+                        ) {
                             self.failed(ctx, &e);
                         }
                         return;
@@ -427,7 +566,15 @@ impl Engine {
                 return self.ask_groups(ctx, job, 0);
             }
         };
-        self.tending.asked = self.ask(ctx, Route::ClaimKeyPackages { devices: &devices, partial }, true, |expect| Asked::Claim { expect, job });
+        self.tending.asked = self.ask(
+            ctx,
+            Route::ClaimKeyPackages {
+                devices: &devices,
+                partial,
+            },
+            true,
+            |expect| Asked::Claim { expect, job },
+        );
         if self.tending.asked.is_none() {
             self.tending.owing = true;
         }
@@ -442,11 +589,27 @@ impl Engine {
 
     fn to_add(&self, group: &GroupId, device: &DeviceId) -> bool {
         let me = self.device.id();
-        let human = self.device.room_history().is_some_and(|history| history.newest().is_human(device));
-        self.device.group(group).is_ok_and(|held| human && !held.pending && !held.archived && !held.is_stale() && held.leaves.contains(&me) && !held.leaves.contains(device))
+        let human = self
+            .device
+            .room_history()
+            .is_some_and(|history| history.newest().is_human(device));
+        self.device.group(group).is_ok_and(|held| {
+            human
+                && !held.pending
+                && !held.archived
+                && !held.is_stale()
+                && held.leaves.contains(&me)
+                && !held.leaves.contains(device)
+        })
     }
 
-    pub(super) fn on_claimed(&mut self, ctx: &mut Ctx<'_>, job: Job, answer: Result<Answer, Failure>, unauthorised: bool) {
+    pub(super) fn on_claimed(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        job: Job,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
         self.tending.asked = None;
         let key_packages = match answer {
             Ok(Answer::Claimed { key_packages, .. }) => key_packages,
@@ -455,7 +618,10 @@ impl Engine {
             // none at the hub yet (a device let in a moment ago), or the hub was not reached: with the next look
             Ok(_) | Err(_) => {
                 if let Err(Failure::BadAnswer { why }) = &answer {
-                    ctx.log(crate::app::LogLevel::Warn, format!("upkeep: an answer the protocol does not allow ({why})"));
+                    ctx.log(
+                        crate::app::LogLevel::Warn,
+                        format!("upkeep: an answer the protocol does not allow ({why})"),
+                    );
                 }
                 if let Err(Failure::NotNow { retry_after_ms, .. }) = answer {
                     self.tending.retry_after = self.tending.retry_after.max(retry_after_ms);
@@ -470,9 +636,14 @@ impl Engine {
             Job::Found { agent, invite } => return self.found(ctx, *agent, *invite, key_packages),
             Job::TakeOver { invite, group } => {
                 let step = self.step(invite, |s| matches!(s, InviteStep::TakeOver { group: of, key_package: None, .. } if of == group));
-                let Some(InviteStep::TakeOver { cuts, agent, .. }) = step else { return };
+                let Some(InviteStep::TakeOver { cuts, agent, .. }) = step else {
+                    return;
+                };
                 let made = match key_packages.iter().find(|(device, _)| *device == agent) {
-                    Some((_, key_package)) => self.device.clean_session(group, &cuts, Some((&agent, key_package)), ctx.now).map(drop),
+                    Some((_, key_package)) => self
+                        .device
+                        .clean_session(group, &cuts, Some((&agent, key_package)), ctx.now)
+                        .map(drop),
                     None => Err(Error::NotFound),
                 };
                 if let Err(e) = made {
@@ -482,7 +653,10 @@ impl Engine {
             }
             Job::Check { .. } | Job::Seat { .. } | Job::Archived => return,
         };
-        let Some((device, key_package)) = key_packages.into_iter().find(|(device, _)| Some(*device) == wanted) else {
+        let Some((device, key_package)) = key_packages
+            .into_iter()
+            .find(|(device, _)| Some(*device) == wanted)
+        else {
             // (not the device asked for, or the group moved on meanwhile: the next look says what is left)
             self.tending.owing = true;
             return;
@@ -493,7 +667,10 @@ impl Engine {
                 if !self.to_add(&group, &device) {
                     return;
                 }
-                if let Err(e) = self.device.add_to_session(&group, &device, &key_package, ctx.now) {
+                if let Err(e) = self
+                    .device
+                    .add_to_session(&group, &device, &key_package, ctx.now)
+                {
                     self.local(ctx, &e);
                     self.tending.owing = true;
                 }
@@ -505,7 +682,13 @@ impl Engine {
 
     /// Founds the main session of `agent` with the KeyPackages claimed: the agent's own from the invite's step, or
     /// (a seat) from the claim.
-    fn found(&mut self, ctx: &mut Ctx<'_>, agent: DeviceId, invite: Option<InviteId>, claimed: Vec<(DeviceId, Vec<u8>)>) {
+    fn found(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        agent: DeviceId,
+        invite: Option<InviteId>,
+        claimed: Vec<(DeviceId, Vec<u8>)>,
+    ) {
         let name = agent.to_base64url();
         let mut own = None;
         let mut packages = Vec::new();
@@ -517,7 +700,10 @@ impl Engine {
             }
         }
         if let Some(invite) = &invite {
-            own = match self.step(invite, |s| matches!(s, InviteStep::FoundSession { agent: of, .. } if *of == agent)) {
+            own = match self.step(
+                invite,
+                |s| matches!(s, InviteStep::FoundSession { agent: of, .. } if *of == agent),
+            ) {
                 Some(InviteStep::FoundSession { key_package, .. }) => Some(key_package),
                 _ => return, // (the step is gone: founded meanwhile)
             };
@@ -525,7 +711,9 @@ impl Engine {
         let made = match own {
             Some(own) if !self.founding(&agent) => {
                 packages.push(own);
-                self.device.found_session(&agent, &packages, ctx.now).map(drop)
+                self.device
+                    .found_session(&agent, &packages, ctx.now)
+                    .map(drop)
             }
             Some(_) => return,
             None => Err(Error::NotFound), // (the agent has no KeyPackage at the hub yet)
@@ -546,14 +734,29 @@ impl Engine {
 
     fn ask_groups(&mut self, ctx: &mut Ctx<'_>, job: Job, after: u64) {
         let room = self.room;
-        self.tending.asked = self.ask(ctx, Route::RoomGroups { room: &room, after, limit: GROUPS_PAGE }, true, |expect| Asked::RoomGroups { expect, job });
+        self.tending.asked = self.ask(
+            ctx,
+            Route::RoomGroups {
+                room: &room,
+                after,
+                limit: GROUPS_PAGE,
+            },
+            true,
+            |expect| Asked::RoomGroups { expect, job },
+        );
         if self.tending.asked.is_none() {
             self.tending.owing = true;
         }
     }
 
     /// A page of the hub's list of the room's groups, for a takeover's check or a seat.
-    pub(super) fn on_room_groups(&mut self, ctx: &mut Ctx<'_>, job: Job, answer: Result<Answer, Failure>, unauthorised: bool) {
+    pub(super) fn on_room_groups(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        job: Job,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
         self.tending.asked = None;
         let (items, more, after) = match answer {
             Ok(Answer::RoomGroups { items, more, after }) => (items, more, after),
@@ -562,7 +765,10 @@ impl Engine {
                 // (the list is read again with the next look)
                 self.tending.archived |= job == Job::Archived;
                 if let Err(Failure::BadAnswer { why }) = &answer {
-                    ctx.log(crate::app::LogLevel::Warn, format!("upkeep: an answer the protocol does not allow ({why})"));
+                    ctx.log(
+                        crate::app::LogLevel::Warn,
+                        format!("upkeep: an answer the protocol does not allow ({why})"),
+                    );
                 }
                 if let Err(Failure::NotNow { retry_after_ms, .. }) = answer {
                     self.tending.retry_after = self.tending.retry_after.max(retry_after_ms);
@@ -585,30 +791,50 @@ impl Engine {
         }
         match job {
             Job::Check { invite, session } => {
-                let helpers: Vec<GroupId> = rows.iter().filter(|g| g.live && g.kind == GroupRowKind::Helper && g.parent == Some(session)).map(|g| g.group).collect();
+                let helpers: Vec<GroupId> = rows
+                    .iter()
+                    .filter(|g| {
+                        g.live && g.kind == GroupRowKind::Helper && g.parent == Some(session)
+                    })
+                    .map(|g| g.group)
+                    .collect();
                 match self.device.invite_checked(&invite, &helpers) {
                     Ok(()) => self.tending.want = true, // (the next look finishes the invite)
                     Err(e) => {
                         // a helper session this device does not hold yet: its Welcome waits, and is read now
                         if e == Error::GroupBehind && self.repair.is_none() {
                             self.welcomes_idle = None;
-                            self.repair = Some(super::Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+                            self.repair = Some(super::Repair::Welcomes {
+                                after: self.welcomes_after,
+                                joined: Vec::new(),
+                                asked: false,
+                            });
                         }
                         self.failed(ctx, &e);
                     }
                 }
             }
             Job::Seat { candidates } => {
-                let seated: BTreeSet<String> = rows.iter().filter(|g| g.kind != GroupRowKind::Room).flat_map(|g| g.leaves.iter().map(DeviceId::to_base64url)).collect();
+                let seated: BTreeSet<String> = rows
+                    .iter()
+                    .filter(|g| g.kind != GroupRowKind::Room)
+                    .flat_map(|g| g.leaves.iter().map(DeviceId::to_base64url))
+                    .collect();
                 if let Some(name) = self.tending.seats.after_hub(&candidates, &seated) {
                     if let Ok(agent) = DeviceId::from_base64url(&name) {
-                        self.tending.jobs.push_front(Job::Found { agent, invite: None });
+                        self.tending.jobs.push_front(Job::Found {
+                            agent,
+                            invite: None,
+                        });
                     }
                 }
             }
             Job::Archived => {
                 let mut any = false;
-                for row in rows.iter().filter(|g| !g.live && g.kind != GroupRowKind::Room) {
+                for row in rows
+                    .iter()
+                    .filter(|g| !g.live && g.kind != GroupRowKind::Room)
+                {
                     any |= self.archive_held(ctx, &row.group);
                     if self.stopped.is_some() {
                         return;
@@ -626,14 +852,32 @@ impl Engine {
     /// The Commit that removes a session group's leaves the room no longer allows, each with its Cut, and adds the
     /// opener it lacks.
     fn clean(&mut self, ctx: &mut Ctx<'_>, group: GroupId, opener: Option<(DeviceId, Vec<u8>)>) {
-        let Ok(held) = self.device.group(&group) else { return };
-        if held.pending || !held.is_stale() || held.missing_opener != opener.as_ref().map(|(device, _)| *device) {
+        let Ok(held) = self.device.group(&group) else {
+            return;
+        };
+        if held.pending
+            || !held.is_stale()
+            || held.missing_opener != opener.as_ref().map(|(device, _)| *device)
+        {
             // (it moved on: the next look says what is left)
             self.tending.want = true;
             return;
         }
-        let cuts: Result<Vec<Cut>, Error> = held.disallowed.iter().map(|gone| self.device.cut_of(&group, gone)).collect();
-        let made = cuts.and_then(|cuts| self.device.clean_session(&group, &cuts, opener.as_ref().map(|(device, key_package)| (device, key_package.as_slice())), ctx.now));
+        let cuts: Result<Vec<Cut>, Error> = held
+            .disallowed
+            .iter()
+            .map(|gone| self.device.cut_of(&group, gone))
+            .collect();
+        let made = cuts.and_then(|cuts| {
+            self.device.clean_session(
+                &group,
+                &cuts,
+                opener
+                    .as_ref()
+                    .map(|(device, key_package)| (device, key_package.as_slice())),
+                ctx.now,
+            )
+        });
         if let Err(e) = made {
             self.local(ctx, &e);
             if self.stopped.is_some() {
@@ -642,7 +886,10 @@ impl Engine {
             // Nothing is written in the group until it is repaired: said once per group and reason.
             self.tending.owing = true;
             if self.tending.said.len() < SAID_MAX && self.tending.said.insert((group, e.code())) {
-                self.report(Report::Alert(Alert::Unrepaired { group, code: e.code() }));
+                self.report(Report::Alert(Alert::Unrepaired {
+                    group,
+                    code: e.code(),
+                }));
             }
         }
     }
@@ -657,7 +904,11 @@ impl Engine {
             return;
         }
         for finding in found {
-            self.report(Report::Alert(Alert::Finding { group: finding.group, sender: finding.sender, code: finding.code.code() }));
+            self.report(Report::Alert(Alert::Finding {
+                group: finding.group,
+                sender: finding.sender,
+                code: finding.code.code(),
+            }));
         }
         if let Err(e) = self.device.findings_read() {
             self.local(ctx, &e);

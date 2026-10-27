@@ -21,11 +21,21 @@ fn owned_by(name: &str, role: Role, sender: &DeviceId) -> Option<bool> {
         Some(true)
     } else if let Some(device) = name.strip_prefix("device/") {
         (device == sender.to_base64url()).then_some(false)
-    } else if name == "goals" || ["knowledge/", "knowledge_done/"].iter().any(|p| name.strip_prefix(p).is_some_and(|id| !id.is_empty())) {
+    } else if name == "goals"
+        || ["knowledge/", "knowledge_done/"]
+            .iter()
+            .any(|p| name.strip_prefix(p).is_some_and(|id| !id.is_empty()))
+    {
         (!agent).then_some(false)
-    } else if name.strip_prefix("wakeup_edit/").is_some_and(|id| !id.is_empty()) {
+    } else if name
+        .strip_prefix("wakeup_edit/")
+        .is_some_and(|id| !id.is_empty())
+    {
         (!agent).then_some(false)
-    } else if ["knowledge_ask/", "wakeup/"].iter().any(|p| name.strip_prefix(p).is_some_and(|id| !id.is_empty())) {
+    } else if ["knowledge_ask/", "wakeup/"]
+        .iter()
+        .any(|p| name.strip_prefix(p).is_some_and(|id| !id.is_empty()))
+    {
         agent.then_some(false)
     } else if name == "profile"
         || name == "heard"
@@ -1064,12 +1074,23 @@ fn a_knowledge_entry_keeps_to_its_title_and_text() {
         Value::parse(payload.as_bytes()).map(|_| ())
     };
     let written = |value: &str| {
-        Value { name: "knowledge/abc".into(), value: Some(value.into()), lamport: 1 }.payload().map(|_| ())
+        Value {
+            name: "knowledge/abc".into(),
+            value: Some(value.into()),
+            lamport: 1,
+        }
+        .payload()
+        .map(|_| ())
     };
-    let entry = |title: &str, text: &str| json!({ "desk": "main", "title": title, "text": text, "pinned": true }).to_string();
+    let entry = |title: &str, text: &str| {
+        json!({ "desk": "main", "title": title, "text": text, "pinned": true }).to_string()
+    };
     for fits in [
         entry("Hub deploy", "runs as the Docker container trommi"),
-        entry(&"ä".repeat(MAX_KNOWLEDGE_TITLE_LEN), &"ö".repeat(MAX_KNOWLEDGE_TEXT_LEN)),
+        entry(
+            &"ä".repeat(MAX_KNOWLEDGE_TITLE_LEN),
+            &"ö".repeat(MAX_KNOWLEDGE_TEXT_LEN),
+        ),
         entry("T", ""),
         "null".to_owned(),
     ] {
@@ -1098,15 +1119,27 @@ fn a_knowledge_entry_keeps_to_its_title_and_text() {
     }
     // (a change of an entry and an agent's write keep the same limits, a missing title or text included)
     for name in ["knowledge_log/abc", "knowledge_ask/abc"] {
-        let read = |value: &str| Value::parse(format!(r#"{{"name":"{name}","value":{value},"lamport":1}}"#).as_bytes()).map(|_| ());
+        let read = |value: &str| {
+            Value::parse(format!(r#"{{"name":"{name}","value":{value},"lamport":1}}"#).as_bytes())
+                .map(|_| ())
+        };
         assert_eq!(read(r#"{"op":"forget","entry":"x"}"#), Ok(()));
-        assert_eq!(read(&json!({ "title": "x".repeat(MAX_KNOWLEDGE_TITLE_LEN + 1) }).to_string()), Err(Error::TooLarge));
-        assert_eq!(read(&json!({ "text": "y".repeat(MAX_KNOWLEDGE_TEXT_LEN + 1) }).to_string()), Err(Error::TooLarge));
+        assert_eq!(
+            read(&json!({ "title": "x".repeat(MAX_KNOWLEDGE_TITLE_LEN + 1) }).to_string()),
+            Err(Error::TooLarge)
+        );
+        assert_eq!(
+            read(&json!({ "text": "y".repeat(MAX_KNOWLEDGE_TEXT_LEN + 1) }).to_string()),
+            Err(Error::TooLarge)
+        );
         assert_eq!(read(r#"{"title":"a\nb"}"#), Err(Error::BadFormat));
         assert_eq!(read(r#""add""#), Err(Error::BadFormat));
     }
     // (only `knowledge/` is held to it: the same value under another name passes)
-    let other = format!(r#"{{"name":"profile","value":{},"lamport":1}}"#, entry(&"a".repeat(200), "x"));
+    let other = format!(
+        r#"{{"name":"profile","value":{},"lamport":1}}"#,
+        entry(&"a".repeat(200), "x")
+    );
     assert!(Value::parse(other.as_bytes()).is_ok());
 }
 
@@ -1114,7 +1147,14 @@ fn a_knowledge_entry_keeps_to_its_title_and_text() {
 /// is the value it read (serde_json's float_roundtrip; found by fuzzing).
 #[test]
 fn a_register_number_is_written_again_as_it_was_read() {
-    for number in ["186e23", "0.1", "3e159", "7777777777743.479497", "113264344455190055908", "-2.2250738585072014e-308"] {
+    for number in [
+        "186e23",
+        "0.1",
+        "3e159",
+        "7777777777743.479497",
+        "113264344455190055908",
+        "-2.2250738585072014e-308",
+    ] {
         let payload = format!(r#"{{"name":"desk/a","value":{{"x":{number}}},"lamport":1}}"#);
         let value = trommi_core::registers::Value::parse(payload.as_bytes()).unwrap();
         let again = trommi_core::registers::Value::parse(&value.payload().unwrap()).unwrap();
@@ -1125,11 +1165,28 @@ fn a_register_number_is_written_again_as_it_was_read() {
 #[test]
 fn a_wakeup_keeps_to_its_note_and_names_its_time() {
     use trommi_core::registers::MAX_WAKEUP_NOTE_LEN;
-    let read = |value: &str| Value::parse(format!(r#"{{"name":"wakeup/abc","value":{value},"lamport":1}}"#).as_bytes()).map(|_| ());
-    assert_eq!(read(r#"{"at":1790000000000,"note":"check the tests","every":3600000}"#), Ok(()));
+    let read = |value: &str| {
+        Value::parse(format!(r#"{{"name":"wakeup/abc","value":{value},"lamport":1}}"#).as_bytes())
+            .map(|_| ())
+    };
+    assert_eq!(
+        read(r#"{"at":1790000000000,"note":"check the tests","every":3600000}"#),
+        Ok(())
+    );
     assert_eq!(read("null"), Ok(()));
-    assert_eq!(read(&serde_json::json!({ "at": 1, "note": "x".repeat(MAX_WAKEUP_NOTE_LEN + 1) }).to_string()), Err(Error::TooLarge));
-    for odd in [r#"{"note":"x"}"#, r#"{"at":"soon","note":"x"}"#, r#"{"at":1}"#, r#""wake""#] {
+    assert_eq!(
+        read(
+            &serde_json::json!({ "at": 1, "note": "x".repeat(MAX_WAKEUP_NOTE_LEN + 1) })
+                .to_string()
+        ),
+        Err(Error::TooLarge)
+    );
+    for odd in [
+        r#"{"note":"x"}"#,
+        r#"{"at":"soon","note":"x"}"#,
+        r#"{"at":1}"#,
+        r#""wake""#,
+    ] {
         assert_eq!(read(odd), Err(Error::BadFormat), "{odd}");
     }
 }

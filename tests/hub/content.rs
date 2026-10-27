@@ -794,15 +794,25 @@ fn the_brief_desk_lists_ids_and_versions_and_since_a_change_only_what_changed() 
     };
     let whole = s.bea.get(hub, "/v1/desk?brief=1").ok();
     // the full Desk's open cards, in its order, with no envelope
-    assert_eq!(ids(&whole["cards"]), vec![b64(&high), b64(&answered), b64(&low)]);
-    assert!(whole["cards"].as_array().unwrap().iter().all(|c| c.get("version").is_none()
-        && c["version_change"].as_i64().unwrap() > 0
-        && c["head_change"].as_i64().unwrap() >= c["version_change"].as_i64().unwrap()));
+    assert_eq!(
+        ids(&whole["cards"]),
+        vec![b64(&high), b64(&answered), b64(&low)]
+    );
+    assert!(whole["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|c| c.get("version").is_none()
+            && c["version_change"].as_i64().unwrap() > 0
+            && c["head_change"].as_i64().unwrap() >= c["version_change"].as_i64().unwrap()));
     assert!(whole.get("registers").is_none() && whole.get("settled").is_none());
     let at = whole["change"].as_i64().unwrap();
     // nothing changed since: an empty delta
     let none = s.bea.get(hub, &format!("/v1/desk?brief=1&since={at}")).ok();
-    assert_eq!((none["cards"].clone(), none["settled"].clone()), (json!([]), json!([])));
+    assert_eq!(
+        (none["cards"].clone(), none["settled"].clone()),
+        (json!([]), json!([]))
+    );
     // one answered, one new: the answered one is settled, the new one listed, the rest not repeated
     s.bea
         .send(
@@ -826,9 +836,19 @@ fn the_brief_desk_lists_ids_and_versions_and_since_a_change_only_what_changed() 
     assert_eq!(delta["settled"], json!([b64(&answered)]));
     assert!(delta["change"].as_i64().unwrap() > at);
     // the full Desk is unchanged by the new form; a wrong form is refused
-    assert_eq!(s.bea.get(hub, "/v1/desk").ok()["cards"].as_array().unwrap().len(), 3);
-    s.bea.get(hub, "/v1/desk?brief=2").refused(400, "bad-format");
-    s.bea.get(hub, "/v1/desk?since=1").refused(400, "bad-format");
+    assert_eq!(
+        s.bea.get(hub, "/v1/desk").ok()["cards"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    s.bea
+        .get(hub, "/v1/desk?brief=2")
+        .refused(400, "bad-format");
+    s.bea
+        .get(hub, "/v1/desk?since=1")
+        .refused(400, "bad-format");
 }
 
 #[test]
@@ -841,11 +861,27 @@ fn the_desk_counts_objects_per_group_and_settled_ones_come_newest_first_page_by_
     // two answered by him, two closed by their agent, one stays open
     let hub = &s.w.hub;
     for (id, v) in &cards[..2] {
-        let answer = object(wire::KIND_ANSWER, *id, wire::TYPE_CARD, wire::STATE_ANSWERED, 0, *v, s.agent.id());
+        let answer = object(
+            wire::KIND_ANSWER,
+            *id,
+            wire::TYPE_CARD,
+            wire::STATE_ANSWERED,
+            0,
+            *v,
+            s.agent.id(),
+        );
         s.bea.send(hub, &s.group, &answer).ok();
     }
     for (id, v) in &cards[2..4] {
-        let close = object(wire::KIND_VERSION, *id, wire::TYPE_CARD, wire::STATE_CLOSED, 0, *v, ZERO32);
+        let close = object(
+            wire::KIND_VERSION,
+            *id,
+            wire::TYPE_CARD,
+            wire::STATE_CLOSED,
+            0,
+            *v,
+            ZERO32,
+        );
         s.agent.send(hub, &s.group, &close).ok();
     }
     // another agent's session with one settled card: the first agent never sees it
@@ -855,46 +891,138 @@ fn the_desk_counts_objects_per_group_and_settled_ones_come_newest_first_page_by_
     let (_, other_group) = s.w.found_main(&mut [&mut s.bea], Some(&mut other));
     let hub = &s.w.hub;
     let theirs = enc::object_id(&other_group, &other.id(), other.chain(&other_group).0 + 1);
-    other.send(hub, &other_group, &object(wire::KIND_VERSION, theirs, wire::TYPE_CARD, wire::STATE_OPEN, 0, ZERO32, ZERO32)).ok();
+    other
+        .send(
+            hub,
+            &other_group,
+            &object(
+                wire::KIND_VERSION,
+                theirs,
+                wire::TYPE_CARD,
+                wire::STATE_OPEN,
+                0,
+                ZERO32,
+                ZERO32,
+            ),
+        )
+        .ok();
     let v = other.chain(&other_group).1;
-    other.send(hub, &other_group, &object(wire::KIND_VERSION, theirs, wire::TYPE_CARD, wire::STATE_CLOSED, 0, v, ZERO32)).ok();
+    other
+        .send(
+            hub,
+            &other_group,
+            &object(
+                wire::KIND_VERSION,
+                theirs,
+                wire::TYPE_CARD,
+                wire::STATE_CLOSED,
+                0,
+                v,
+                ZERO32,
+            ),
+        )
+        .ok();
 
     // the counts: per group and kind, open, answered and closed, of every group the asker sees
     let counted = |desk: &Value, group: &[u8]| -> Value {
         let rows = desk["counts"].as_array().unwrap();
-        rows.iter().find(|r| r["group_id"] == b64(group)).cloned().unwrap_or(Value::Null)
+        rows.iter()
+            .find(|r| r["group_id"] == b64(group))
+            .cloned()
+            .unwrap_or(Value::Null)
     };
     let desk = s.bea.get(hub, "/v1/desk").ok();
-    assert_eq!(counted(&desk, &s.group)["cards"], json!({ "open": 1, "answered": 2, "closed": 2 }));
-    assert_eq!(counted(&desk, &s.group)["notes"], json!({ "open": 0, "answered": 0, "closed": 0 }));
-    assert_eq!(counted(&desk, &other_group)["cards"], json!({ "open": 0, "answered": 0, "closed": 1 }));
-    let groups: Vec<&str> = desk["counts"].as_array().unwrap().iter().map(|r| r["group_id"].as_str().unwrap()).collect();
+    assert_eq!(
+        counted(&desk, &s.group)["cards"],
+        json!({ "open": 1, "answered": 2, "closed": 2 })
+    );
+    assert_eq!(
+        counted(&desk, &s.group)["notes"],
+        json!({ "open": 0, "answered": 0, "closed": 0 })
+    );
+    assert_eq!(
+        counted(&desk, &other_group)["cards"],
+        json!({ "open": 0, "answered": 0, "closed": 1 })
+    );
+    let groups: Vec<&str> = desk["counts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["group_id"].as_str().unwrap())
+        .collect();
     let mut sorted: Vec<Vec<u8>> = groups.iter().map(|g| unb64(g).unwrap()).collect();
     sorted.sort();
-    assert_eq!(groups, sorted.iter().map(|g| b64(g)).collect::<Vec<_>>(), "ascending by group id");
+    assert_eq!(
+        groups,
+        sorted.iter().map(|g| b64(g)).collect::<Vec<_>>(),
+        "ascending by group id"
+    );
     let agents = s.agent.get(hub, "/v1/desk").ok();
-    assert_eq!(agents["counts"].as_array().unwrap().len(), 1, "an agent counts only its own groups");
+    assert_eq!(
+        agents["counts"].as_array().unwrap().len(),
+        1,
+        "an agent counts only its own groups"
+    );
     assert_eq!(counted(&agents, &other_group), Value::Null);
 
     // the settled objects, newest first: the human sees all five, page by page
-    let page = |dev: &Dev, query: &str| dev.get(&s.w.hub, &format!("/v1/objects?state=settled{query}")).ok();
+    let page = |dev: &Dev, query: &str| {
+        dev.get(&s.w.hub, &format!("/v1/objects?state=settled{query}"))
+            .ok()
+    };
     let ids = |page: &Value| -> Vec<String> {
-        page["items"].as_array().unwrap().iter().map(|i| i["object_id"].as_str().unwrap().to_string()).collect()
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["object_id"].as_str().unwrap().to_string())
+            .collect()
     };
     let whole = page(&s.bea, "");
-    let heads: Vec<i64> = whole["items"].as_array().unwrap().iter().map(|i| i["head_change"].as_i64().unwrap()).collect();
-    assert!(heads.windows(2).all(|w| w[0] > w[1]), "newest first: {heads:?}");
+    let heads: Vec<i64> = whole["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["head_change"].as_i64().unwrap())
+        .collect();
+    assert!(
+        heads.windows(2).all(|w| w[0] > w[1]),
+        "newest first: {heads:?}"
+    );
     assert_eq!(ids(&whole)[0], b64(&theirs));
     assert_eq!(ids(&whole).len(), 5);
     for (id, _) in &cards[..2] {
-        let row = whole["items"].as_array().unwrap().iter().find(|row| row["object_id"] == b64(id)).unwrap();
-        assert_eq!(row["state"], wire::STATE_ANSWERED, "settled keeps answered distinct from closed");
+        let row = whole["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["object_id"] == b64(id))
+            .unwrap();
+        assert_eq!(
+            row["state"],
+            wire::STATE_ANSWERED,
+            "settled keeps answered distinct from closed"
+        );
     }
-    assert_eq!((whole["more"].as_bool(), whole["before"].as_i64()), (Some(false), Some(0)));
+    assert_eq!(
+        (whole["more"].as_bool(), whole["before"].as_i64()),
+        (Some(false), Some(0))
+    );
     let first = &whole["items"][1];
-    assert_eq!((first["kind"].as_str(), first["state"].as_i64(), first["group_id"].as_str()), (Some("cards"), Some(3), Some(b64(&s.group).as_str())));
+    assert_eq!(
+        (
+            first["kind"].as_str(),
+            first["state"].as_i64(),
+            first["group_id"].as_str()
+        ),
+        (Some("cards"), Some(3), Some(b64(&s.group).as_str()))
+    );
     assert!(first["first_change"].as_i64().unwrap() < first["head_change"].as_i64().unwrap());
-    assert_eq!(envelope_of(&first["version"]).header.group_id, s.group, "the current version, whole");
+    assert_eq!(
+        envelope_of(&first["version"]).header.group_id,
+        s.group,
+        "the current version, whole"
+    );
     assert_eq!(first["version"]["change"], first["head_change"]);
     let (mut seen, mut before) = (vec![], None::<i64>);
     loop {
@@ -906,26 +1034,50 @@ fn the_desk_counts_objects_per_group_and_settled_ones_come_newest_first_page_by_
             break;
         }
         before = p["before"].as_i64();
-        assert_eq!(before, p["items"].as_array().unwrap().last().unwrap()["head_change"].as_i64());
+        assert_eq!(
+            before,
+            p["items"].as_array().unwrap().last().unwrap()["head_change"].as_i64()
+        );
     }
     assert_eq!(seen, ids(&whole), "the pages make up the whole list");
     // one group, one kind; an agent sees its own group's only, also when it names another
-    assert_eq!(ids(&page(&s.bea, &format!("&group={}", b64(&other_group)))), vec![b64(&theirs)]);
+    assert_eq!(
+        ids(&page(&s.bea, &format!("&group={}", b64(&other_group)))),
+        vec![b64(&theirs)]
+    );
     assert_eq!(ids(&page(&s.bea, "&kind=notes")), Vec::<String>::new());
     assert_eq!(ids(&page(&s.bea, "&active=1")).len(), 5);
     assert_eq!(ids(&page(&s.agent, "")).len(), 4);
     assert!(!ids(&page(&s.agent, "")).contains(&b64(&theirs)));
-    assert_eq!(ids(&page(&s.agent, &format!("&group={}", b64(&other_group)))), Vec::<String>::new());
+    assert_eq!(
+        ids(&page(&s.agent, &format!("&group={}", b64(&other_group)))),
+        Vec::<String>::new()
+    );
     // nor do the cursor and `more` tell of rows it may not read: the other agent's one row is its whole list
     let theirs_only = page(&other, "&limit=1");
     assert_eq!(ids(&theirs_only), vec![b64(&theirs)]);
-    assert_eq!((theirs_only["more"].as_bool(), theirs_only["before"].as_i64()), (Some(false), Some(0)));
+    assert_eq!(
+        (
+            theirs_only["more"].as_bool(),
+            theirs_only["before"].as_i64()
+        ),
+        (Some(false), Some(0))
+    );
     // the open list carries each row's first change
     let brief = s.bea.get(&s.w.hub, "/v1/desk?brief=1").ok();
-    assert_eq!(brief["cards"][0]["first_change"], desk["cards"][0]["first_change"]);
+    assert_eq!(
+        brief["cards"][0]["first_change"],
+        desk["cards"][0]["first_change"]
+    );
     // wrong forms
-    for query in ["/v1/objects", "/v1/objects?state=open", "/v1/objects?state=settled&kind=boards", "/v1/objects?state=settled&before=x",
-        "/v1/objects?state=settled&archived=1", "/v1/objects?state=settled&active=1&group=AAAA"] {
+    for query in [
+        "/v1/objects",
+        "/v1/objects?state=open",
+        "/v1/objects?state=settled&kind=boards",
+        "/v1/objects?state=settled&before=x",
+        "/v1/objects?state=settled&archived=1",
+        "/v1/objects?state=settled&active=1&group=AAAA",
+    ] {
         s.bea.get(&s.w.hub, query).refused(400, "bad-format");
     }
 }
@@ -1282,12 +1434,33 @@ fn accepted_content_arrives_live_and_a_stream_resumes_by_change_number() {
     // a session group relays from its agent (7.5, an answer preview): passed to the human devices, not in its log;
     // a human device relays only in the room group
     let session_path = format!("/v1/groups/{}/log", b64(&s.group));
-    let session_before = s.bea.get(hub, &session_path).ok()["items"].as_array().unwrap().len();
+    let session_before = s.bea.get(hub, &session_path).ok()["items"]
+        .as_array()
+        .unwrap()
+        .len();
     s.agent.post_message(hub, &s.group, b"preview", true).ok();
     let relay = human.until("relay");
-    assert_eq!((relay.data["sender"].as_str(), relay.data["group_id"].as_str()), (Some(b64(&s.agent.id()).as_str()), Some(b64(&s.group).as_str())));
-    assert_eq!(s.bea.get(hub, &session_path).ok()["items"].as_array().unwrap().len(), session_before, "a preview is not stored");
-    s.bea.post_message(hub, &s.group, b"piece", true).refused(403, "forbidden");
+    assert_eq!(
+        (
+            relay.data["sender"].as_str(),
+            relay.data["group_id"].as_str()
+        ),
+        (
+            Some(b64(&s.agent.id()).as_str()),
+            Some(b64(&s.group).as_str())
+        )
+    );
+    assert_eq!(
+        s.bea.get(hub, &session_path).ok()["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        session_before,
+        "a preview is not stored"
+    );
+    s.bea
+        .post_message(hub, &s.group, b"piece", true)
+        .refused(403, "forbidden");
     // a work trail step is stored in the session's log and reaches its leaves
     s.agent.post_message(hub, &s.group, b"step 1", false).ok();
     let e = human.until("log");

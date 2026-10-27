@@ -101,7 +101,11 @@ pub trait Server: Send + Sync + 'static {
     fn notification(self: Arc<Self>, method: String, params: Value);
     /// A request of a method of this server's own (not MCP's): its result, or an error's text; None for a method it
     /// does not know.
-    fn request(self: Arc<Self>, _method: String, _params: Value) -> crate::driver::BoxFut<'static, Option<Result<Value, String>>> {
+    fn request(
+        self: Arc<Self>,
+        _method: String,
+        _params: Value,
+    ) -> crate::driver::BoxFut<'static, Option<Result<Value, String>>> {
         Box::pin(async { None })
     }
     fn closed(self: Arc<Self>, why: &'static str);

@@ -1,9 +1,9 @@
 //! Founding a room and a session, adding a second human device, and the keys they share.
 
 use trommi_core::device::{Processed, WelcomeExpectation};
-use trommi_core::Error;
 use trommi_core::ids::GroupId;
 use trommi_core::invite::Role;
+use trommi_core::Error;
 use trommi_tests::hub::Hub;
 use trommi_tests::{
     enrol, join_invited, new_device, now, post_ok, publish_key_packages, sync_ok, test_keys,

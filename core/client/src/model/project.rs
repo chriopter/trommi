@@ -363,7 +363,10 @@ impl Model {
             .collect();
         for id in ids {
             let (mut until, mut at, mut woken) = (None, None, None);
-            let open = self.cards.get(&id).is_some_and(|c| c.object_state == "open");
+            let open = self
+                .cards
+                .get(&id)
+                .is_some_and(|c| c.object_state == "open");
             if let (true, Some(d), Some((value, _))) =
                 (open, self.desk.card(&id), self.desk.snooze_of(&id))
             {
@@ -514,9 +517,13 @@ mod tests {
         assert_eq!(m.cards["c"].first_envelope_number, 4);
         assert_eq!(m.stack, ["c", "a", "b"]);
         // a card whose first version the device holds stands by that version's number, whatever a row says
-        let held: CardVersion = serde_json::from_value(json!({ "version_hash": "v1", "envelope_number": 6 })).unwrap();
+        let held: CardVersion =
+            serde_json::from_value(json!({ "version_hash": "v1", "envelope_number": 6 })).unwrap();
         m.cards.get_mut("b").unwrap().versions.push(held);
-        m.set_desk_rows(Some((10, vec![("a".into(), 5, 5), ("b".into(), 6, 1), ("c".into(), 7, 4)])));
+        m.set_desk_rows(Some((
+            10,
+            vec![("a".into(), 5, 5), ("b".into(), 6, 1), ("c".into(), 7, 4)],
+        )));
         m.project(&mut Change::default(), 1_002);
         assert_eq!(m.cards["b"].first_envelope_number, 6);
         assert_eq!(m.stack, ["c", "a", "b"]);

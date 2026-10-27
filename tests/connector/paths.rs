@@ -35,7 +35,10 @@ async fn joined_with_group(hub: &HubProc) -> (Human, Seat, GroupId) {
     let ((joined, log), group) = tokio::join!(join, admit);
     assert!(joined, "the join failed:\n{log}");
     // what to do next, for either program
-    assert!(log.contains("/mcp") && log.contains("codex resume"), "{log}");
+    assert!(
+        log.contains("/mcp") && log.contains("codex resume"),
+        "{log}"
+    );
     (human, seat, group)
 }
 
@@ -91,7 +94,10 @@ async fn a_key_of_a_room_the_hub_no_longer_knows_gives_way_to_a_new_invite() {
 async fn the_update_and_usage_hints_name_commands_that_exist() {
     let line = trommi_connector::host::update_line();
     assert!(line.contains("trommi-connector update"), "{line}");
-    assert!(!line.contains("connect script") && !line.contains("plugin"), "{line}");
+    assert!(
+        !line.contains("connect script") && !line.contains("plugin"),
+        "{line}"
+    );
 
     let seat = Seat::new("http://127.0.0.1:9");
     let output = seat
@@ -102,7 +108,12 @@ async fn the_update_and_usage_hints_name_commands_that_exist() {
         .expect("connect runs");
     let told = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{told}");
-    assert!(told.contains("computer-required") && told.contains("Approve a computer") && told.contains("connect"), "{told}");
+    assert!(
+        told.contains("computer-required")
+            && told.contains("Approve a computer")
+            && told.contains("connect"),
+        "{told}"
+    );
 }
 
 /// The update card is filed in the human's language: no German words are put into the agent's mouth.
@@ -127,11 +138,8 @@ async fn online_within(human: &Human, device: &str, ms: u64) -> bool {
             continue;
         };
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(400);
-        while let Ok(Ok(Some(event))) = tokio::time::timeout_at(
-            deadline,
-            stream.next(std::time::Duration::from_secs(5)),
-        )
-        .await
+        while let Ok(Ok(Some(event))) =
+            tokio::time::timeout_at(deadline, stream.next(std::time::Duration::from_secs(5))).await
         {
             if event.name == "presence" && event.data["device"] == device {
                 online = event.data["online"] == Value::Bool(true);
@@ -146,9 +154,13 @@ async fn online_within(human: &Human, device: &str, ms: u64) -> bool {
 
 async fn test_switch(hub: &HubProc, what: &str, body: Value) {
     let test = common::hub::Hub::new(&hub.url, None, None).unwrap();
-    test.open_call(reqwest::Method::POST, &format!("/v1/__test/{what}"), Some(&body))
-        .await
-        .expect("the switch");
+    test.open_call(
+        reqwest::Method::POST,
+        &format!("/v1/__test/{what}"),
+        Some(&body),
+    )
+    .await
+    .expect("the switch");
 }
 
 fn signal(pid: u32, sig: &str) {
@@ -168,18 +180,28 @@ async fn after_a_sleep_past_the_lease_the_session_is_back_by_itself() {
     let (mut human, seat, group) = joined_with_group(&hub).await;
     let mut mcp = seat.serve_plain().await;
     mcp.ready().await;
-    let device = human.seat(&group).await.expect("the agent's seat").to_base64url();
+    let device = human
+        .seat(&group)
+        .await
+        .expect("the agent's seat")
+        .to_base64url();
     assert!(online_within(&human, &device, 5000).await, "online before");
     let pid = mcp.child.id().expect("a pid");
     signal(pid, "-STOP");
     test_switch(&hub, "clock", json!({ "advance_ms": 10 * 60_000 })).await;
     test_switch(&hub, "sweep", json!({})).await;
     human
-        .say(&group, json!({ "content_type": "message", "text": "Written while you slept" }))
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Written while you slept" }),
+        )
         .await
         .expect("the human writes");
     signal(pid, "-CONT");
-    assert!(online_within(&human, &device, 30_000).await, "online again after the sleep");
+    assert!(
+        online_within(&human, &device, 30_000).await,
+        "online again after the sleep"
+    );
     let mut heard = String::new();
     for _ in 0..100 {
         heard.push_str(&mcp.ok("inbox", json!({})).await);
@@ -189,7 +211,10 @@ async fn after_a_sleep_past_the_lease_the_session_is_back_by_itself() {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
     assert!(heard.contains("Written while you slept"), "{heard}");
-    assert!(mcp.ok("reply", json!({ "text": "Awake." })).await.starts_with("sent"));
+    assert!(mcp
+        .ok("reply", json!({ "text": "Awake." }))
+        .await
+        .starts_with("sent"));
     mcp.close().await;
 }
 
@@ -235,17 +260,31 @@ async fn the_largest_attachment_and_asset_go_through() {
     }
     std::fs::write(&big, &bytes).expect("written");
     let said = mcp
-        .ok("reply", json!({ "text": "the log", "attachments": [big.display().to_string()] }))
+        .ok(
+            "reply",
+            json!({ "text": "the log", "attachments": [big.display().to_string()] }),
+        )
         .await;
     assert!(said.starts_with("sent"), "{said}");
-    let said = mcp.ok("publish_asset", json!({ "path": big.display().to_string() })).await;
+    let said = mcp
+        .ok(
+            "publish_asset",
+            json!({ "path": big.display().to_string() }),
+        )
+        .await;
     assert!(!said.is_empty(), "{said}");
     bytes.push(0);
     std::fs::write(&big, &bytes).expect("written");
     let (said, failed) = mcp
-        .call("reply", json!({ "text": "too big", "attachments": [big.display().to_string()] }))
+        .call(
+            "reply",
+            json!({ "text": "too big", "attachments": [big.display().to_string()] }),
+        )
         .await;
-    assert!(failed && said.contains("67108864 bytes") && said.contains("64 MiB"), "{said}");
+    assert!(
+        failed && said.contains("67108864 bytes") && said.contains("64 MiB"),
+        "{said}"
+    );
     mcp.close().await;
 }
 
@@ -267,7 +306,10 @@ async fn a_hundred_helpers_live_in_one_session() {
         let said = mcp
             .ok("start_task", json!({ "helper": format!("H{i}"), "title": format!("Task {i}"), "id": format!("h{i}") }))
             .await;
-        assert!(said.contains(&format!("status \"h{i}\" is working")), "helper {i}: {said}");
+        assert!(
+            said.contains(&format!("status \"h{i}\" is working")),
+            "helper {i}: {said}"
+        );
     }
     let listed: serde_json::Value =
         serde_json::from_str(&mcp.ok("list_cards", json!({ "helper": "H7" })).await).expect("JSON");
@@ -336,7 +378,9 @@ async fn a_capped_computer_activation_can_connect_by_a_direct_invite() {
     let hub = HubProc::start().await;
     let (mut human, seat, _) = joined_with_group(&hub).await;
     let computer = seat.approve_computer(&mut human).await;
-    let mut second = seat.serve_with(&[("TROMMI_SESSION_KEY", "test-capped")]).await;
+    let mut second = seat
+        .serve_with(&[("TROMMI_SESSION_KEY", "test-capped")])
+        .await;
     let activation = second.call("connect", json!({}));
     let refuse = human.refuse_activation(&computer, "cap");
     let ((said, failed), _) = tokio::join!(activation, refuse);

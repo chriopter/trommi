@@ -14,7 +14,11 @@
 
 use super::board::Board;
 use super::words::say;
-use super::{AgentSessionView, AgentView, DeviceRow, LogoutView, MeterView, PushChoice, SecurityRow, TeamCountsView, TeamDeleteLine, TeamDeleteWords, SecuritySection, SecurityView, SettingsView, Text, UsageView};
+use super::{
+    AgentSessionView, AgentView, DeviceRow, LogoutView, MeterView, PushChoice, SecurityRow,
+    SecuritySection, SecurityView, SettingsView, TeamCountsView, TeamDeleteLine, TeamDeleteWords,
+    Text, UsageView,
+};
 use crate::model::types::Member;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,7 +39,10 @@ fn fingerprint_of(d: &Member) -> String {
         return d.fingerprint.clone();
     }
     let head: Vec<char> = d.device_id.chars().take(16).collect();
-    head.chunks(4).map(|c| c.iter().collect::<String>()).collect::<Vec<_>>().join(" ")
+    head.chunks(4)
+        .map(|c| c.iter().collect::<String>())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn unfinished(d: &Member) -> bool {
@@ -46,8 +53,12 @@ fn icon_of(d: &Member) -> &'static str {
     if d.device_role != "human" {
         return "terminal";
     }
-    let words = format!("{} {}", d.device_name, d.platform.as_str().unwrap_or("")).to_ascii_lowercase();
-    if ["phone", "ipad", "ios", "android"].iter().any(|w| words.contains(w)) {
+    let words =
+        format!("{} {}", d.device_name, d.platform.as_str().unwrap_or("")).to_ascii_lowercase();
+    if ["phone", "ipad", "ios", "android"]
+        .iter()
+        .any(|w| words.contains(w))
+    {
         "phone"
     } else {
         "laptop"
@@ -85,7 +96,11 @@ fn row_of(d: &Member) -> DeviceRow {
 
 fn counted(key: &str, n: usize, one: &str, many: &str) -> Text {
     let n_s = n.to_string();
-    say(key, format!("{n} {}", if n == 1 { one } else { many }), &[("n", &n_s)])
+    say(
+        key,
+        format!("{n} {}", if n == 1 { one } else { many }),
+        &[("n", &n_s)],
+    )
 }
 
 /// The program a session runs in: its device's platform, else what its model's name says.
@@ -126,10 +141,21 @@ fn plural(n: usize, one: &str, many: &str) -> String {
 pub fn agents_page(b: &Board) -> Vec<AgentView> {
     let m = b.model;
     let me = m.my_device_id.as_deref();
-    let member_of = |i: usize| b.agents[i].row.agent_device_id.as_deref().and_then(|d| m.members.get(d));
+    let member_of = |i: usize| {
+        b.agents[i]
+            .row
+            .agent_device_id
+            .as_deref()
+            .and_then(|d| m.members.get(d))
+    };
     let text = |v: &Value| v.as_str().unwrap_or("").to_string();
     let mut groups: Vec<(String, &'static str, String, Vec<usize>)> = Vec::new();
-    for (i, a) in b.agents.iter().enumerate().filter(|(_, a)| !a.row.archived && !a.row.removed && !a.row.own) {
+    for (i, a) in b
+        .agents
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| !a.row.archived && !a.row.removed && !a.row.own)
+    {
         let member = member_of(i);
         let program = program_of(b, &a.row.key, member);
         let host = member.map(|d| text(&d.host)).unwrap_or_default();
@@ -219,12 +245,25 @@ pub fn agents_page(b: &Board) -> Vec<AgentView> {
         })
         .collect();
     out.sort_by(|x, y| {
-        y.total.cmp(&x.total).then_with(|| x.program.cmp(&y.program)).then_with(|| x.host.cmp(&y.host))
+        y.total
+            .cmp(&x.total)
+            .then_with(|| x.program.cmp(&y.program))
+            .then_with(|| x.host.cmp(&y.host))
     });
     out
 }
 
-const PLANS: [(&str, &str); 9] = [("pro", "Pro"), ("max", "Max"), ("team", "Team"), ("enterprise", "Enterprise"), ("free", "Free"), ("plus", "Plus"), ("prolite", "Pro Lite"), ("business", "Business"), ("edu", "Edu")];
+const PLANS: [(&str, &str); 9] = [
+    ("pro", "Pro"),
+    ("max", "Max"),
+    ("team", "Team"),
+    ("enterprise", "Enterprise"),
+    ("free", "Free"),
+    ("plus", "Plus"),
+    ("prolite", "Pro Lite"),
+    ("business", "Business"),
+    ("edu", "Edu"),
+];
 
 /// An agent's account as the page shows it (the web's `usageFull`, `usagePlan`, `usageMeters`); none without a plan
 /// or an e-mail.
@@ -238,26 +277,56 @@ pub fn usage_of(acc: &Value, now: u64) -> Option<UsageView> {
     if plan.is_empty() && email.is_empty() {
         return None;
     }
-    let maker = if s("kind") == "codex" { "ChatGPT" } else { "Claude" };
-    let named = PLANS.iter().find(|(k, _)| *k == plan.to_lowercase()).map(|(_, v)| v.to_string()).unwrap_or_else(|| {
-        let mut c = plan.chars();
-        c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
-    });
-    let meters = [("five_hour", "5 h", "5-hour window"), ("weekly", "week", "This week")]
+    let maker = if s("kind") == "codex" {
+        "ChatGPT"
+    } else {
+        "Claude"
+    };
+    let named = PLANS
         .iter()
-        .filter_map(|(key, label, long)| {
-            let w = acc.get(*key)?;
-            let used = w.get("used").and_then(Value::as_f64).filter(|u| u.is_finite())?;
-            let at = w.get("resets_at").and_then(Value::as_f64).filter(|a| a.is_finite() && *a > 0.0);
-            if at.is_some_and(|a| a <= now as f64) {
-                return None;
-            }
-            let used = used.clamp(0.0, 100.0).round() as u32;
-            Some(MeterView { key: (*key).into(), label: (*label).into(), long: (*long).into(), used, hot: used >= 80, reset_ms: at.map(|a| a as u64) })
+        .find(|(k, _)| *k == plan.to_lowercase())
+        .map(|(_, v)| v.to_string())
+        .unwrap_or_else(|| {
+            let mut c = plan.chars();
+            c.next()
+                .map(|f| f.to_uppercase().chain(c).collect())
+                .unwrap_or_default()
+        });
+    let meters = [
+        ("five_hour", "5 h", "5-hour window"),
+        ("weekly", "week", "This week"),
+    ]
+    .iter()
+    .filter_map(|(key, label, long)| {
+        let w = acc.get(*key)?;
+        let used = w
+            .get("used")
+            .and_then(Value::as_f64)
+            .filter(|u| u.is_finite())?;
+        let at = w
+            .get("resets_at")
+            .and_then(Value::as_f64)
+            .filter(|a| a.is_finite() && *a > 0.0);
+        if at.is_some_and(|a| a <= now as f64) {
+            return None;
+        }
+        let used = used.clamp(0.0, 100.0).round() as u32;
+        Some(MeterView {
+            key: (*key).into(),
+            label: (*label).into(),
+            long: (*long).into(),
+            used,
+            hot: used >= 80,
+            reset_ms: at.map(|a| a as u64),
         })
-        .collect();
+    })
+    .collect();
     let mut facts = Vec::new();
-    if let Some(c) = acc.get("credits").and_then(Value::as_f64).filter(|c| c.is_finite()) {
+    if let Some(c) = acc
+        .get("credits")
+        .and_then(Value::as_f64)
+        .filter(|c| c.is_finite())
+    {
         let n = c.round().max(0.0) as u64;
         let mut grouped = String::new();
         let digits = n.to_string();
@@ -267,14 +336,26 @@ pub fn usage_of(acc: &Value, now: u64) -> Option<UsageView> {
             }
             grouped.push(ch);
         }
-        facts.push(say("usage.credits", format!("{grouped} {}", if n == 1 { "credit" } else { "credits" }), &[("n", &grouped)]));
+        facts.push(say(
+            "usage.credits",
+            format!("{grouped} {}", if n == 1 { "credit" } else { "credits" }),
+            &[("n", &grouped)],
+        ));
     }
     if let Some(r) = acc.get("full_resets").and_then(Value::as_u64) {
         let n = r.to_string();
-        facts.push(say("usage.full_resets", format!("{r} full {}", if r == 1 { "reset" } else { "resets" }), &[("n", &n)]));
+        facts.push(say(
+            "usage.full_resets",
+            format!("{r} full {}", if r == 1 { "reset" } else { "resets" }),
+            &[("n", &n)],
+        ));
     }
     Some(UsageView {
-        plan: if plan.is_empty() { String::new() } else { format!("{maker} {named}").trim().to_string() },
+        plan: if plan.is_empty() {
+            String::new()
+        } else {
+            format!("{maker} {named}").trim().to_string()
+        },
         email,
         meters,
         facts,
@@ -289,42 +370,90 @@ pub fn settings(b: &Board) -> SettingsView {
 }
 
 fn settings_rows(b: &Board) -> SettingsView {
-    let computers: BTreeMap<&str, &str> = b.model.sessions.keys()
+    let computers: BTreeMap<&str, &str> = b
+        .model
+        .sessions
+        .keys()
         .filter(|s| crate::machines::is_computer(b.model, s))
-        .filter_map(|s| crate::machines::granted_device(b.model, s).map(|d| (d, s.as_str()))).collect();
-    let mut people: Vec<&Member> = b.model.members.values().filter(|d| d.device_role == "human" || computers.contains_key(d.device_id.as_str())).collect();
+        .filter_map(|s| crate::machines::granted_device(b.model, s).map(|d| (d, s.as_str())))
+        .collect();
+    let mut people: Vec<&Member> = b
+        .model
+        .members
+        .values()
+        .filter(|d| d.device_role == "human" || computers.contains_key(d.device_id.as_str()))
+        .collect();
     // (of two with the same number, which a hub does not give, this device first, then by id: the same on every run)
     people.sort_by_key(|d| (d.added_entry_number, !d.is_me, d.device_id.clone()));
     let device_row = |d: &Member| {
         let mut row = row_of(d);
         row.seen = d.last_seen_ms.filter(|_| !row.online).map(|t| {
             let at = super::words::local(t, b.lens.utc_offset_min);
-            let when = format!("{:04}-{:02}-{:02} {:02}:{:02}", at.year, at.month, at.day, at.hour, at.minute);
-            say("device.last_seen", format!("last seen {when}"), &[("when", &when)])
+            let when = format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}",
+                at.year, at.month, at.day, at.hour, at.minute
+            );
+            say(
+                "device.last_seen",
+                format!("last seen {when}"),
+                &[("when", &when)],
+            )
         });
         if computers.contains_key(d.device_id.as_str()) {
             let host = d.host.as_str().filter(|s| !s.is_empty());
-            row.name = host.map_or_else(|| "This computer".into(), |h| format!("This computer: {h}"));
-            if d.is_active { row.says = say("device.approved_computer", "approved computer", &[]); }
+            row.name =
+                host.map_or_else(|| "This computer".into(), |h| format!("This computer: {h}"));
+            if d.is_active {
+                row.says = say("device.approved_computer", "approved computer", &[]);
+            }
         }
         row
     };
-    let devices: Vec<DeviceRow> = people.iter().copied().filter(|d| d.is_active).map(&device_row).collect();
-    let removed: Vec<DeviceRow> = people.iter().copied().filter(|d| !d.is_active).map(device_row).collect();
-    let stuck: Vec<String> = devices.iter().filter(|d| d.state == "unfinished").map(|d| d.id.clone()).collect();
+    let devices: Vec<DeviceRow> = people
+        .iter()
+        .copied()
+        .filter(|d| d.is_active)
+        .map(&device_row)
+        .collect();
+    let removed: Vec<DeviceRow> = people
+        .iter()
+        .copied()
+        .filter(|d| !d.is_active)
+        .map(device_row)
+        .collect();
+    let stuck: Vec<String> = devices
+        .iter()
+        .filter(|d| d.state == "unfinished")
+        .map(|d| d.id.clone())
+        .collect();
 
     // Agents: the sessions grouped by program and computer.
     let mut groups = BTreeSet::new();
     let mut sessions = 0;
-    for a in b.agents.iter().filter(|a| !a.row.archived && !a.row.removed && !a.row.own) {
-        let member = a.row.agent_device_id.as_deref().and_then(|d| b.model.members.get(d));
-        let host = member.and_then(|m| m.host.as_str()).unwrap_or("").to_string();
+    for a in b
+        .agents
+        .iter()
+        .filter(|a| !a.row.archived && !a.row.removed && !a.row.own)
+    {
+        let member = a
+            .row
+            .agent_device_id
+            .as_deref()
+            .and_then(|d| b.model.members.get(d));
+        let host = member
+            .and_then(|m| m.host.as_str())
+            .unwrap_or("")
+            .to_string();
         groups.insert((program_of(b, &a.row.key, member), host));
         sessions += 1;
     }
     let agents = (!groups.is_empty()).then(|| {
         let (g, s) = (groups.len().to_string(), sessions.to_string());
-        let en = format!("{} · {}", counted("", groups.len(), "agent", "agents").en, counted("", sessions, "session", "sessions").en);
+        let en = format!(
+            "{} · {}",
+            counted("", groups.len(), "agent", "agents").en,
+            counted("", sessions, "session", "sessions").en
+        );
         say("settings.agents", en, &[("agents", &g), ("sessions", &s)])
     });
 
@@ -332,14 +461,22 @@ fn settings_rows(b: &Board) -> SettingsView {
     let agents_lead = (!agent_list.is_empty()).then(|| {
         let computers: BTreeSet<&str> = agent_list.iter().map(|g| g.host.as_str()).collect();
         let n: usize = agent_list.iter().map(|g| g.total as usize).sum();
-        let (a, c, n_s) = (agent_list.len().to_string(), computers.len().to_string(), n.to_string());
+        let (a, c, n_s) = (
+            agent_list.len().to_string(),
+            computers.len().to_string(),
+            n.to_string(),
+        );
         let en = format!(
             "{} on {} · {}",
             counted("", agent_list.len(), "agent", "agents").en,
             counted("", computers.len(), "computer", "computers").en,
             counted("", n, "session", "sessions").en
         );
-        say("agents.lead", en, &[("agents", &a), ("computers", &c), ("sessions", &n_s)])
+        say(
+            "agents.lead",
+            en,
+            &[("agents", &a), ("computers", &c), ("sessions", &n_s)],
+        )
     });
 
     SettingsView {
@@ -358,14 +495,24 @@ fn settings_rows(b: &Board) -> SettingsView {
         agent_list,
         agents_lead,
         agents,
-        teams: (!b.teams.is_empty()).then(|| counted("settings.teams", b.teams.len(), "team", "teams")),
-        devices_says: (!devices.is_empty()).then(|| counted("settings.devices", devices.len(), "device", "devices")),
+        teams: (!b.teams.is_empty())
+            .then(|| counted("settings.teams", b.teams.len(), "team", "teams")),
+        devices_says: (!devices.is_empty())
+            .then(|| counted("settings.devices", devices.len(), "device", "devices")),
         remove_unfinished: (!stuck.is_empty()).then(|| {
             if stuck.len() == 1 {
-                say("settings.remove_unfinished.one", "Remove the device that never finished signing in", &[("n", "1")])
+                say(
+                    "settings.remove_unfinished.one",
+                    "Remove the device that never finished signing in",
+                    &[("n", "1")],
+                )
             } else {
                 let n = stuck.len().to_string();
-                say("settings.remove_unfinished", format!("Remove the {n} devices that never finished signing in"), &[("n", &n)])
+                say(
+                    "settings.remove_unfinished",
+                    format!("Remove the {n} devices that never finished signing in"),
+                    &[("n", &n)],
+                )
             }
         }),
         unfinished: stuck,
@@ -385,7 +532,12 @@ pub fn push_choices() -> Vec<PushChoice> {
     };
     vec![
         c("all", "Yes", Some("every card"), "bell"),
-        c("knocking", "Only knocking", Some("high, critical, a lost session"), "knock"),
+        c(
+            "knocking",
+            "Only knocking",
+            Some("high, critical, a lost session"),
+            "knock",
+        ),
         c("off", "No", None, "snooze"),
     ]
 }
@@ -401,13 +553,20 @@ pub fn logout(s: &SettingsView, demo: bool) -> LogoutView {
         _ => ("logout.ask.password", "email and password"),
     };
     let (ways_key, ways) = match (pk, pw) {
-        (true, true) => ("logout.only.both", "your passkey, or your email and password"),
+        (true, true) => (
+            "logout.only.both",
+            "your passkey, or your email and password",
+        ),
         (true, false) => ("logout.only.passkey", "your passkey"),
         _ => ("logout.only.password", "your email and password"),
     };
     let others = s.devices.iter().any(|d| d.active && !d.this_device);
     let note = if demo {
-        Some(say("logout.demo", "The demo keeps nothing; this only ends it.", &[]))
+        Some(say(
+            "logout.demo",
+            "The demo keeps nothing; this only ends it.",
+            &[],
+        ))
     } else if others {
         None
     } else {
@@ -441,30 +600,99 @@ type Row<'a> = (&'a str, Option<u64>, &'a str, &'a str, Option<&'a str>);
 
 /// A team's confirm: its title and a line per kind it holds (none of a kind, or not yet counted, is left out).
 pub fn team_delete_ask(c: &mut TeamCountsView, name: &str) {
-    let name = if name.trim().is_empty() { "Personal" } else { name.trim() };
-    c.title = say("team_delete.title", format!("Delete {name}?"), &[("name", name)]);
+    let name = if name.trim().is_empty() {
+        "Personal"
+    } else {
+        name.trim()
+    };
+    c.title = say(
+        "team_delete.title",
+        format!("Delete {name}?"),
+        &[("name", name)],
+    );
     // (key, how many, one, many, what happens to them)
     let rows: [Row; 10] = [
-        ("sessions", Some(c.sessions), "session", "sessions", Some("archived")),
-        ("helpers", Some(c.helpers), "helper", "helpers", Some("archived")),
-        ("archived", Some(c.archived), "archived session", "archived sessions", None),
-        ("agents", Some(c.agents), "agent removed from your account", "agents removed from your account", Some("their keys stop working")),
-        ("open_cards", Some(c.open_cards), "open card", "open cards", Some("shredded")),
-        ("done_cards", Some(c.done_cards), "done card", "done cards", None),
-        ("board", c.board, "thing on the Scribble Board", "things on the Scribble Board", None),
-        ("files", Some(c.files), "file", "files", Some("pictures, Artifacts and share links, deleted at once")),
+        (
+            "sessions",
+            Some(c.sessions),
+            "session",
+            "sessions",
+            Some("archived"),
+        ),
+        (
+            "helpers",
+            Some(c.helpers),
+            "helper",
+            "helpers",
+            Some("archived"),
+        ),
+        (
+            "archived",
+            Some(c.archived),
+            "archived session",
+            "archived sessions",
+            None,
+        ),
+        (
+            "agents",
+            Some(c.agents),
+            "agent removed from your account",
+            "agents removed from your account",
+            Some("their keys stop working"),
+        ),
+        (
+            "open_cards",
+            Some(c.open_cards),
+            "open card",
+            "open cards",
+            Some("shredded"),
+        ),
+        (
+            "done_cards",
+            Some(c.done_cards),
+            "done card",
+            "done cards",
+            None,
+        ),
+        (
+            "board",
+            c.board,
+            "thing on the Scribble Board",
+            "things on the Scribble Board",
+            None,
+        ),
+        (
+            "files",
+            Some(c.files),
+            "file",
+            "files",
+            Some("pictures, Artifacts and share links, deleted at once"),
+        ),
         ("goals", Some(c.goals), "goal", "goals", None),
-        ("knowledge", Some(c.knowledge), "entry of its knowledge", "entries of its knowledge", None),
+        (
+            "knowledge",
+            Some(c.knowledge),
+            "entry of its knowledge",
+            "entries of its knowledge",
+            None,
+        ),
     ];
-    c.lines = rows.iter().filter_map(|(key, n, one, many, rest)| {
-        let n = n.filter(|n| *n > 0)?;
-        Some(TeamDeleteLine {
-            key: (*key).into(),
-            n,
-            word: say(&format!("team_delete.{key}"), if n == 1 { *one } else { *many }, &[("n", &n.to_string())]),
-            rest: rest.map(|r| say(&format!("team_delete.{key}.rest"), r, &[])),
+    c.lines = rows
+        .iter()
+        .filter_map(|(key, n, one, many, rest)| {
+            let n = n.filter(|n| *n > 0)?;
+            Some(TeamDeleteLine {
+                key: (*key).into(),
+                n,
+                word: say(
+                    &format!("team_delete.{key}"),
+                    if n == 1 { *one } else { *many },
+                    &[("n", &n.to_string())],
+                ),
+                rest: rest.map(|r| say(&format!("team_delete.{key}.rest"), r, &[])),
+            })
         })
-    }).collect();
+        .collect();
 }
 
 /// Settings → Security from the rest of Settings (its devices, its Agents row, the room and hub the App adds): the
@@ -473,8 +701,16 @@ pub fn security(s: &SettingsView, utc_offset_min: i32) -> SecurityView {
     let everything = || Some(say("security.everything", "everything", &[]));
     let epoch = s.key_epoch.to_string();
     let key_detail = match s.hub.as_deref().filter(|h| !h.is_empty()) {
-        Some(hub) => say("security.key.detail_hub", format!("key epoch {epoch} · {hub}"), &[("epoch", &epoch), ("hub", hub)]),
-        None => say("security.key.detail", format!("key epoch {epoch}"), &[("epoch", &epoch)]),
+        Some(hub) => say(
+            "security.key.detail_hub",
+            format!("key epoch {epoch} · {hub}"),
+            &[("epoch", &epoch), ("hub", hub)],
+        ),
+        None => say(
+            "security.key.detail",
+            format!("key epoch {epoch}"),
+            &[("epoch", &epoch)],
+        ),
     };
     let key = SecuritySection {
         id: "key".into(),
@@ -497,23 +733,52 @@ pub fn security(s: &SettingsView, utc_offset_min: i32) -> SecurityView {
     let devices = SecuritySection {
         id: "devices".into(),
         label: say("security.devices.label", "Authorized devices", &[]),
-        rows: s.devices.iter().filter(|d| d.active).map(|d| SecurityRow {
-            id: d.id.clone(),
-            title: Text { key: String::new(), args: Default::default(), en: d.name.clone() },
-            mark: d.this_device.then(|| say("security.this_device", "this device", &[])),
-            fingerprint: d.fingerprint.clone(),
-            detail: Some(match d.added_ms {
-                Some(t) => { let when = super::words::date(t, utc_offset_min); say("security.added", format!("added {when}"), &[("when", &when)]) }
-                None => say("security.added_unknown", "added: unknown", &[]),
-            }),
-            says: everything(),
-            icon: if d.icon.is_empty() { "laptop".into() } else { d.icon.clone() },
-            open: "device".into(),
-        }).collect(),
-        notes: vec![say("security.devices.note", "Each of your devices reads everything, also what came before it was added.", &[])],
+        rows: s
+            .devices
+            .iter()
+            .filter(|d| d.active)
+            .map(|d| SecurityRow {
+                id: d.id.clone(),
+                title: Text {
+                    key: String::new(),
+                    args: Default::default(),
+                    en: d.name.clone(),
+                },
+                mark: d
+                    .this_device
+                    .then(|| say("security.this_device", "this device", &[])),
+                fingerprint: d.fingerprint.clone(),
+                detail: Some(match d.added_ms {
+                    Some(t) => {
+                        let when = super::words::date(t, utc_offset_min);
+                        say(
+                            "security.added",
+                            format!("added {when}"),
+                            &[("when", &when)],
+                        )
+                    }
+                    None => say("security.added_unknown", "added: unknown", &[]),
+                }),
+                says: everything(),
+                icon: if d.icon.is_empty() {
+                    "laptop".into()
+                } else {
+                    d.icon.clone()
+                },
+                open: "device".into(),
+            })
+            .collect(),
+        notes: vec![say(
+            "security.devices.note",
+            "Each of your devices reads everything, also what came before it was added.",
+            &[],
+        )],
         strong: None,
     };
-    let count = s.agents.as_ref().map_or_else(|| "none".to_string(), |t| t.en.clone());
+    let count = s
+        .agents
+        .as_ref()
+        .map_or_else(|| "none".to_string(), |t| t.en.clone());
     let agents = SecuritySection {
         id: "agents".into(),
         label: say("security.agents.label", "Agents", &[]),
@@ -544,7 +809,11 @@ pub fn security(s: &SettingsView, utc_offset_min: i32) -> SecurityView {
         strong: None,
     };
     SecurityView {
-        lead: say("security.lead", "Every key that opens your data, and the self test.", &[]),
+        lead: say(
+            "security.lead",
+            "Every key that opens your data, and the self test.",
+            &[],
+        ),
         sections: vec![key, devices, agents, check],
     }
 }
@@ -563,13 +832,32 @@ mod tests {
     #[test]
     fn computer_approval_has_a_devices_row_and_never_a_conversation() {
         let mut m = crate::model::Model::new();
-        m.members.insert("computer-device".into(), Member { device_id:"computer-device".into(), device_role:"agent".into(), is_active:true, host:json!("workstation"), ..Default::default() });
+        m.members.insert(
+            "computer-device".into(),
+            Member {
+                device_id: "computer-device".into(),
+                device_role: "agent".into(),
+                is_active: true,
+                host: json!("workstation"),
+                ..Default::default()
+            },
+        );
         let session = m.session_of("computer");
         session.agent_device_id = Some("computer-device".into());
         session.group_id = Some("held".into());
         session.settings = Some(json!({"machine":{"device":"computer-device"}}));
-        assert_eq!(crate::sessions::session_list(&m, false).len(), 1, "agent settings cannot hide a conversation");
-        m.human.insert("session/computer".into(), crate::model::types::HumanRegister { value:json!({"machine":{"device":"computer-device"}}), ..Default::default() });
+        assert_eq!(
+            crate::sessions::session_list(&m, false).len(),
+            1,
+            "agent settings cannot hide a conversation"
+        );
+        m.human.insert(
+            "session/computer".into(),
+            crate::model::types::HumanRegister {
+                value: json!({"machine":{"device":"computer-device"}}),
+                ..Default::default()
+            },
+        );
         assert!(crate::sessions::session_list(&m, false).is_empty());
         let lens = Lens::default();
         let v = settings(&Board::new(&m, &lens, NOW));
@@ -589,23 +877,46 @@ mod tests {
         phone["is_online"] = json!(true);
         let mut gone = member("g", "Old iPad", "human", 0);
         gone["is_active"] = json!(false);
-        r.members = vec![member("hung", "", "human", 3), phone, me, gone, member("agentdev", "fernly", "agent", 4)];
+        r.members = vec![
+            member("hung", "", "human", 3),
+            phone,
+            me,
+            gone,
+            member("agentdev", "fernly", "agent", 4),
+        ];
         r.session("a", None, true);
         r.session("b", None, true);
         let m = r.model(NOW);
         let lens = Lens::default();
         let v = settings(&Board::new(&m, &lens, NOW));
-        let rows: Vec<(&str, &str, &str, bool)> = v.devices.iter().map(|d| (d.name.as_str(), d.state.as_str(), d.icon.as_str(), d.online)).collect();
+        let rows: Vec<(&str, &str, &str, bool)> = v
+            .devices
+            .iter()
+            .map(|d| (d.name.as_str(), d.state.as_str(), d.icon.as_str(), d.online))
+            .collect();
         assert_eq!(
             rows,
-            [("Laptop", "this_device", "laptop", true), ("Phone", "online", "phone", true), ("Device", "unfinished", "laptop", false)]
+            [
+                ("Laptop", "this_device", "laptop", true),
+                ("Phone", "online", "phone", true),
+                ("Device", "unfinished", "laptop", false)
+            ]
         );
         assert_eq!(v.devices[0].fingerprint, "AB12 CD34");
         assert_eq!(v.devices[2].fingerprint, "hung");
         assert_eq!(v.devices[2].says.en, "never finished signing in");
-        assert_eq!(v.removed.iter().map(|d| (d.name.as_str(), d.state.as_str())).collect::<Vec<_>>(), [("Old iPad", "removed")]);
+        assert_eq!(
+            v.removed
+                .iter()
+                .map(|d| (d.name.as_str(), d.state.as_str()))
+                .collect::<Vec<_>>(),
+            [("Old iPad", "removed")]
+        );
         assert_eq!(v.unfinished, ["hung"]);
-        assert_eq!(v.remove_unfinished.unwrap().en, "Remove the device that never finished signing in");
+        assert_eq!(
+            v.remove_unfinished.unwrap().en,
+            "Remove the device that never finished signing in"
+        );
         assert_eq!(v.devices_says.unwrap().en, "3 devices");
         // two sessions of one program on one computer: one agent
         assert_eq!(v.agents.unwrap().en, "1 agent · 2 sessions");
@@ -629,42 +940,134 @@ mod tests {
             "five_hour": { "used": 81.6, "resets_at": NOW + 3_600_000 }, "weekly": { "used": 10, "resets_at": NOW - 1 } });
         r.sessions[0]["status_lines"] = json!([{ "id": "l", "label": "Icons", "state": "working", "helper": "Icons", "updated_at": NOW - 60_000 }]);
         r.session("b", None, false);
-        r.session("c", None, false)["profile"]["account"] = json!({ "kind": "codex", "plan": "prolite", "credits": 1234.4, "full_resets": 1 });
+        r.session("c", None, false)["profile"]["account"] =
+            json!({ "kind": "codex", "plan": "prolite", "credits": 1234.4, "full_resets": 1 });
         let m = r.model(NOW);
         let lens = Lens::default();
         let v = settings(&Board::new(&m, &lens, NOW));
-        let names: Vec<(&str, &str, &str, u32)> = v.agent_list.iter().map(|g| (g.name.en.as_str(), g.state.en.as_str(), g.count.en.as_str(), g.total)).collect();
-        assert_eq!(names, [("Claude Code on MacBook", "connected", "2 sessions, 1 helper", 2), ("Codex on an unnamed computer", "away · last seen", "1 session", 1)]);
-        assert_eq!(v.agents_lead.unwrap().en, "2 agents on 2 computers · 3 sessions");
+        let names: Vec<(&str, &str, &str, u32)> = v
+            .agent_list
+            .iter()
+            .map(|g| {
+                (
+                    g.name.en.as_str(),
+                    g.state.en.as_str(),
+                    g.count.en.as_str(),
+                    g.total,
+                )
+            })
+            .collect();
+        assert_eq!(
+            names,
+            [
+                (
+                    "Claude Code on MacBook",
+                    "connected",
+                    "2 sessions, 1 helper",
+                    2
+                ),
+                (
+                    "Codex on an unnamed computer",
+                    "away · last seen",
+                    "1 session",
+                    1
+                )
+            ]
+        );
+        assert_eq!(
+            v.agents_lead.unwrap().en,
+            "2 agents on 2 computers · 3 sessions"
+        );
         let g = &v.agent_list[0];
-        let rows: Vec<(&str, &str, &str, Option<&str>, &str)> =
-            g.sessions.iter().map(|s| (s.slug.as_str(), s.team.en.as_str(), s.folder.as_str(), s.helpers_says.as_ref().map(|t| t.en.as_str()), s.state.en.as_str())).collect();
-        assert_eq!(rows, [(g.sessions[0].slug.as_str(), "Personal team", "~/git/x", Some("+1 helper"), "connected"), (g.sessions[1].slug.as_str(), "Personal team", "", None, "away")]);
+        let rows: Vec<(&str, &str, &str, Option<&str>, &str)> = g
+            .sessions
+            .iter()
+            .map(|s| {
+                (
+                    s.slug.as_str(),
+                    s.team.en.as_str(),
+                    s.folder.as_str(),
+                    s.helpers_says.as_ref().map(|t| t.en.as_str()),
+                    s.state.en.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (
+                    g.sessions[0].slug.as_str(),
+                    "Personal team",
+                    "~/git/x",
+                    Some("+1 helper"),
+                    "connected"
+                ),
+                (
+                    g.sessions[1].slug.as_str(),
+                    "Personal team",
+                    "",
+                    None,
+                    "away"
+                )
+            ]
+        );
         assert_eq!(g.remove.as_ref().unwrap().en, "Claude Code on MacBook and its 2 sessions can read nothing new after this. The others get a new key; the history stays.");
         let u = g.usage.clone().unwrap();
         assert_eq!((u.plan.as_str(), u.email.as_str()), ("Claude Max", "x@y.z"));
-        assert_eq!(u.meters.iter().map(|m| (m.key.as_str(), m.used, m.hot, m.reset_ms)).collect::<Vec<_>>(), [("five_hour", 82, true, Some(NOW + 3_600_000))]);
+        assert_eq!(
+            u.meters
+                .iter()
+                .map(|m| (m.key.as_str(), m.used, m.hot, m.reset_ms))
+                .collect::<Vec<_>>(),
+            [("five_hour", 82, true, Some(NOW + 3_600_000))]
+        );
         let u = v.agent_list[1].usage.clone().unwrap();
-        assert_eq!((u.plan.as_str(), u.facts.iter().map(|t| t.en.as_str()).collect::<Vec<_>>()), ("ChatGPT Pro Lite", vec!["1,234 credits", "1 full reset"]));
+        assert_eq!(
+            (
+                u.plan.as_str(),
+                u.facts.iter().map(|t| t.en.as_str()).collect::<Vec<_>>()
+            ),
+            ("ChatGPT Pro Lite", vec!["1,234 credits", "1 full reset"])
+        );
     }
 
     #[test]
     fn a_fingerprint_without_one_is_the_ids_head_in_fours() {
-        let d: Member = serde_json::from_value(member("0123456789abcdefXYZ", "", "human", 0)).unwrap();
+        let d: Member =
+            serde_json::from_value(member("0123456789abcdefXYZ", "", "human", 0)).unwrap();
         assert_eq!(fingerprint_of(&d), "0123 4567 89ab cdef");
     }
 
     #[test]
     fn offline_contact_times_are_words_from_the_core_in_the_persons_zone() {
         let mut m = crate::model::Model::new();
-        m.members.insert("phone".into(), Member { device_id: "phone".into(), device_name: "Phone".into(), device_role: "human".into(), is_active: true, last_seen_ms: Some(60_000), ..Default::default() });
-        let lens = Lens { utc_offset_min: 120, ..Default::default() };
+        m.members.insert(
+            "phone".into(),
+            Member {
+                device_id: "phone".into(),
+                device_name: "Phone".into(),
+                device_role: "human".into(),
+                is_active: true,
+                last_seen_ms: Some(60_000),
+                ..Default::default()
+            },
+        );
+        let lens = Lens {
+            utc_offset_min: 120,
+            ..Default::default()
+        };
         let view = settings(&Board::new(&m, &lens, 100_000));
         assert_eq!(view.devices[0].last_seen_ms, Some(60_000));
-        assert_eq!(view.devices[0].seen.as_ref().unwrap().en, "last seen 1970-01-01 02:01");
+        assert_eq!(
+            view.devices[0].seen.as_ref().unwrap().en,
+            "last seen 1970-01-01 02:01"
+        );
         m.members.get_mut("phone").unwrap().is_online = true;
         let view = settings(&Board::new(&m, &lens, 100_000));
-        assert!(view.devices[0].seen.is_none(), "an online status does not show an old contact time");
+        assert!(
+            view.devices[0].seen.is_none(),
+            "an online status does not show an old contact time"
+        );
     }
 
     #[test]
@@ -674,62 +1077,140 @@ mod tests {
         let ids: Vec<&str> = v.sections.iter().map(|x| x.id.as_str()).collect();
         assert_eq!(ids, ["key", "devices", "agents", "check"]);
         assert_eq!(v.sections[0].rows[0].fingerprint, "unknown");
-        assert_eq!(v.sections[0].rows[0].detail.as_ref().unwrap().en, "key epoch 0");
+        assert_eq!(
+            v.sections[0].rows[0].detail.as_ref().unwrap().en,
+            "key epoch 0"
+        );
         assert!(v.sections[1].rows.is_empty(), "no device, no row");
-        assert_eq!(v.sections[2].rows[0].detail.as_ref().unwrap().en, "none: each with its own key");
+        assert_eq!(
+            v.sections[2].rows[0].detail.as_ref().unwrap().en,
+            "none: each with its own key"
+        );
         assert_eq!(v.sections[2].strong.as_ref().unwrap().en, "Nobody else, not the hub either: it sees which device is in which group, when, and how much.");
         assert_eq!(v.sections[3].rows[0].open, "proof");
     }
 
     #[test]
     fn security_lists_the_devices_that_are_in_with_fingerprint_and_day() {
-        let row = |id: &str, me: bool, active: bool, added: Option<u64>| DeviceRow { id: id.into(), name: id.into(), this_device: me, active, fingerprint: "ab12 cd34".into(), icon: "phone".into(), added_ms: added, ..Default::default() };
+        let row = |id: &str, me: bool, active: bool, added: Option<u64>| DeviceRow {
+            id: id.into(),
+            name: id.into(),
+            this_device: me,
+            active,
+            fingerprint: "ab12 cd34".into(),
+            icon: "phone".into(),
+            added_ms: added,
+            ..Default::default()
+        };
         let s = SettingsView {
             room: Some("e6e33dc6bdcdcdc23d9ce4fcf5028a78".into()),
             hub: Some("https://hub.trommi.com".into()),
             key_epoch: 88,
             agents: Some(say("settings.agents", "2 agents · 7 sessions", &[])),
-            devices: vec![row("Phone", true, true, Some(1_790_000_000_000)), row("Old", false, false, None), row("Mac", false, true, None)],
+            devices: vec![
+                row("Phone", true, true, Some(1_790_000_000_000)),
+                row("Old", false, false, None),
+                row("Mac", false, true, None),
+            ],
             ..Default::default()
         };
         let v = security(&s, 0);
         let key = &v.sections[0].rows[0];
         assert_eq!(key.fingerprint, "e6e33dc6bdcdcdc2…");
-        assert_eq!(key.detail.as_ref().unwrap().en, "key epoch 88 · https://hub.trommi.com");
+        assert_eq!(
+            key.detail.as_ref().unwrap().en,
+            "key epoch 88 · https://hub.trommi.com"
+        );
         let devices = &v.sections[1].rows;
-        assert_eq!(devices.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["Phone", "Mac"], "a removed device is not listed");
+        assert_eq!(
+            devices.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(),
+            ["Phone", "Mac"],
+            "a removed device is not listed"
+        );
         assert_eq!(devices[0].mark.as_ref().unwrap().en, "this device");
         assert!(devices[1].mark.is_none());
         assert_eq!(devices[0].detail.as_ref().unwrap().en, "added 21 Sep 2026");
         assert_eq!(devices[1].detail.as_ref().unwrap().en, "added: unknown");
-        assert_eq!(v.sections[2].rows[0].detail.as_ref().unwrap().en, "2 agents · 7 sessions: each with its own key");
+        assert_eq!(
+            v.sections[2].rows[0].detail.as_ref().unwrap().en,
+            "2 agents · 7 sessions: each with its own key"
+        );
     }
 
     #[test]
     fn logout_says_how_to_get_in_again_and_warns_on_the_only_device() {
-        let me = DeviceRow { id: "a".into(), this_device: true, active: true, ..Default::default() };
-        let mut s = SettingsView { devices: vec![me.clone()], ..Default::default() };
+        let me = DeviceRow {
+            id: "a".into(),
+            this_device: true,
+            active: true,
+            ..Default::default()
+        };
+        let mut s = SettingsView {
+            devices: vec![me.clone()],
+            ..Default::default()
+        };
         let v = logout(&s, false);
-        assert_eq!(v.ask.en, "Log out of this device? You can log in again with email and password.");
+        assert_eq!(
+            v.ask.en,
+            "Log out of this device? You can log in again with email and password."
+        );
         assert_eq!(v.note.unwrap().en, "This is your only device. After this, your email and password (or your Emergency Kit) open your account.");
-        s.devices.push(DeviceRow { id: "b".into(), active: true, ..Default::default() });
-        assert!(logout(&s, false).note.is_none(), "another device: no warning");
-        s.login = Some(crate::views::LoginView { has_password: false, passkeys: vec![Default::default()], ..Default::default() });
-        assert_eq!(logout(&s, false).ask.en, "Log out of this device? You can log in again with your passkey.");
-        assert_eq!(logout(&SettingsView::default(), true).note.unwrap().en, "The demo keeps nothing; this only ends it.");
+        s.devices.push(DeviceRow {
+            id: "b".into(),
+            active: true,
+            ..Default::default()
+        });
+        assert!(
+            logout(&s, false).note.is_none(),
+            "another device: no warning"
+        );
+        s.login = Some(crate::views::LoginView {
+            has_password: false,
+            passkeys: vec![Default::default()],
+            ..Default::default()
+        });
+        assert_eq!(
+            logout(&s, false).ask.en,
+            "Log out of this device? You can log in again with your passkey."
+        );
+        assert_eq!(
+            logout(&SettingsView::default(), true).note.unwrap().en,
+            "The demo keeps nothing; this only ends it."
+        );
     }
 
     #[test]
     fn a_team_delete_names_only_what_the_team_holds() {
-        let mut c = TeamCountsView { sessions: 1, open_cards: 3, board: None, ..Default::default() };
+        let mut c = TeamCountsView {
+            sessions: 1,
+            open_cards: 3,
+            board: None,
+            ..Default::default()
+        };
         team_delete_ask(&mut c, "Fernly");
         assert_eq!(c.title.en, "Delete Fernly?");
-        let lines: Vec<(String, u64, String)> = c.lines.iter().map(|l| (l.key.clone(), l.n, l.word.en.clone())).collect();
-        assert_eq!(lines, [("sessions".into(), 1, "session".into()), ("open_cards".into(), 3, "open cards".into())]);
+        let lines: Vec<(String, u64, String)> = c
+            .lines
+            .iter()
+            .map(|l| (l.key.clone(), l.n, l.word.en.clone()))
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                ("sessions".into(), 1, "session".into()),
+                ("open_cards".into(), 3, "open cards".into())
+            ]
+        );
         let mut empty = TeamCountsView::default();
         team_delete_ask(&mut empty, "");
         assert_eq!(empty.title.en, "Delete Personal?");
         assert!(empty.lines.is_empty());
-        assert_eq!(push_choices().iter().map(|c| c.level.as_str()).collect::<Vec<_>>(), ["all", "knocking", "off"]);
+        assert_eq!(
+            push_choices()
+                .iter()
+                .map(|c| c.level.as_str())
+                .collect::<Vec<_>>(),
+            ["all", "knocking", "off"]
+        );
     }
 }

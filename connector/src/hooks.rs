@@ -1,8 +1,8 @@
 //! The plugin's hooks (permission, notice, denied, resolved): the pieces, the hook process's request
 //! and output, and the connector's desk that answers them.
 use crate::bridge::Bridge;
-use crate::driver::BoxFut;
 use crate::door::Gone;
+use crate::driver::BoxFut;
 use crate::util::{js_string, now_ms};
 use regex::Regex;
 use serde_json::{json, Value};

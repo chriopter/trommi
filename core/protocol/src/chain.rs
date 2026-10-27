@@ -453,7 +453,12 @@ impl Chains {
         Self::from_entries(revision, heads, counts, starts)
     }
 
-    fn from_entries(revision: u64, heads: Vec<HeadEntry>, counts: Vec<CountEntry>, starts: Vec<StartEntry>) -> Result<Self, Error> {
+    fn from_entries(
+        revision: u64,
+        heads: Vec<HeadEntry>,
+        counts: Vec<CountEntry>,
+        starts: Vec<StartEntry>,
+    ) -> Result<Self, Error> {
         let mut chains = Self {
             revision,
             ..Self::new()

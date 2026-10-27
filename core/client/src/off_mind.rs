@@ -74,7 +74,8 @@ pub struct OffMind {
 }
 
 fn star_at(v: &Value) -> Option<u64> {
-    (!v.is_null() && v != &Value::Bool(false)).then(|| v.get("at").and_then(Value::as_u64).unwrap_or(0))
+    (!v.is_null() && v != &Value::Bool(false))
+        .then(|| v.get("at").and_then(Value::as_u64).unwrap_or(0))
 }
 
 /// When a card went to its agent: the hand-back's message, an info's start, his answer.
@@ -84,14 +85,19 @@ pub fn went_at(m: &Model, c: &Card) -> u64 {
             let said = m.timelines.get(&c.timeline_key).and_then(|t| {
                 t.items
                     .values()
-                    .find(|i| i.get("envelope_number").and_then(Value::as_u64) == Some(r.envelope_number))
+                    .find(|i| {
+                        i.get("envelope_number").and_then(Value::as_u64) == Some(r.envelope_number)
+                    })
                     .and_then(|i| i.get("sent_at").and_then(Value::as_u64))
             });
             return said.unwrap_or(c.updated_at);
         }
         return c.created_at;
     }
-    c.answer.as_ref().map(|a| a.answered_at).unwrap_or(c.updated_at)
+    c.answer
+        .as_ref()
+        .map(|a| a.answered_at)
+        .unwrap_or(c.updated_at)
 }
 
 /// When a closed card closed: his answer (a shredding is one), else its last change; a withdrawn one, when it came.
@@ -104,7 +110,11 @@ pub fn closed_at(c: &Card, place: &str) -> u64 {
 }
 
 /// Off your mind at `now`, for the sessions as listed (`rows`: sessions.rs `session_list`).
-pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, now: u64) -> OffMind {
+pub fn off_mind<'r>(
+    m: &Model,
+    rows: impl IntoIterator<Item = &'r SessionRow>,
+    now: u64,
+) -> OffMind {
     // (a card names its session, else its agent device: the list's row of either, as the apps pair them)
     let mut by_session: HashMap<&str, &SessionRow> = HashMap::new();
     let mut by_device: HashMap<&str, &SessionRow> = HashMap::new();
@@ -150,8 +160,12 @@ pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, n
         let (place, until) = card_place(c, runs, s.and_then(|s| s.heard_up_to), now);
         if let Some(at) = hub_at {
             match place {
-                Some("works") if c.object_state != "open" && c.state_envelope_number <= at => *works_settled.entry(row.key.as_str()).or_default() += 1,
-                Some("done" | "trash") if c.state_envelope_number > at => *closed_since.entry(row.key.as_str()).or_default() += 1,
+                Some("works") if c.object_state != "open" && c.state_envelope_number <= at => {
+                    *works_settled.entry(row.key.as_str()).or_default() += 1
+                }
+                Some("done" | "trash") if c.state_envelope_number > at => {
+                    *closed_since.entry(row.key.as_str()).or_default() += 1
+                }
                 _ => {}
             }
         }
@@ -165,34 +179,53 @@ pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, n
                 running_ids.insert(c.object_id.as_str());
                 // (its working line: the one that names it, else its session's newest working line naming no card;
                 //  of two equally new, the first, as the web's workLine and the session's and card's pages)
-                let working = s.into_iter().flat_map(|s| s.status_lines.iter()).filter(|t| {
-                    row.lines.get(&t.id).map(String::as_str) == Some("working")
-                });
-                let named = working.clone().find(|t| t.object_id.as_str() == Some(c.object_id.as_str()));
+                let working = s
+                    .into_iter()
+                    .flat_map(|s| s.status_lines.iter())
+                    .filter(|t| row.lines.get(&t.id).map(String::as_str) == Some("working"));
+                let named = working
+                    .clone()
+                    .find(|t| t.object_id.as_str() == Some(c.object_id.as_str()));
                 let line = named.or_else(|| {
                     working
                         .filter(|t| t.object_id.as_str().is_none_or(str::is_empty))
-                        .fold(None, |best: Option<&crate::model::types::StatusLine>, t| match best {
-                            Some(b) if b.updated_at >= t.updated_at => Some(b),
-                            _ => Some(t),
-                        })
+                        .fold(
+                            None,
+                            |best: Option<&crate::model::types::StatusLine>, t| match best {
+                                Some(b) if b.updated_at >= t.updated_at => Some(b),
+                                _ => Some(t),
+                            },
+                        )
                 });
                 out.with_agents.push(Running {
                     object_id: c.object_id.clone(),
                     at: line.map(|t| t.updated_at).unwrap_or_else(|| went_at(m, c)),
-                    label: line.and_then(|t| t.label.as_str()).unwrap_or("").to_string(),
+                    label: line
+                        .and_then(|t| t.label.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                 });
             }
             Some(p @ ("done" | "trash")) => {
                 *closed.entry(row.key.as_str()).or_default() += 1;
-                recent.push((closed_at(c, p), c.object_id.as_str(), if p == "done" { "done" } else { "trash" }));
+                recent.push((
+                    closed_at(c, p),
+                    c.object_id.as_str(),
+                    if p == "done" { "done" } else { "trash" },
+                ));
             }
             _ => {}
         }
     }
-    out.with_agents.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| a.object_id.cmp(&b.object_id)));
+    out.with_agents
+        .sort_by(|a, b| b.at.cmp(&a.at).then_with(|| a.object_id.cmp(&b.object_id)));
     // (a card has one home: a starred one lies in the starred stack only)
-    out.running = out.with_agents.iter().filter(|r| !stars.contains_key(r.object_id.as_str())).cloned().collect();
+    out.running = out
+        .with_agents
+        .iter()
+        .filter(|r| !stars.contains_key(r.object_id.as_str()))
+        .cloned()
+        .collect();
     put_off.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
     out.put_off = put_off.into_iter().map(|(_, id)| id.to_string()).collect();
     // The hub counts every settled card of a session (point 47), also those this device never read (a sign-in reads
@@ -204,28 +237,52 @@ pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, n
             if !seen.insert(row.key.as_str()) {
                 continue;
             }
-            let Some(n) = row.session_id.as_deref().and_then(|s| hub.get(s)).or_else(|| hub.get(&row.key)) else { continue };
+            let Some(n) = row
+                .session_id
+                .as_deref()
+                .and_then(|s| hub.get(s))
+                .or_else(|| hub.get(&row.key))
+            else {
+                continue;
+            };
             let key = row.key.as_str();
-            let n = n.saturating_sub(works_settled.get(key).copied().unwrap_or(0)) + closed_since.get(key).copied().unwrap_or(0);
+            let n = n.saturating_sub(works_settled.get(key).copied().unwrap_or(0))
+                + closed_since.get(key).copied().unwrap_or(0);
             let have = closed.entry(key).or_default();
             *have = (*have).max(n);
         }
         closed.retain(|_, n| *n > 0);
     }
-    out.closed = closed.into_iter().map(|(k, n)| (k.to_string(), n)).collect();
-    let newest = |a: &(u64, &str, &str), b: &(u64, &str, &str)| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1));
+    out.closed = closed
+        .into_iter()
+        .map(|(k, n)| (k.to_string(), n))
+        .collect();
+    let newest =
+        |a: &(u64, &str, &str), b: &(u64, &str, &str)| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1));
     if recent.len() > RECENT {
         recent.select_nth_unstable_by(RECENT, newest);
         recent.truncate(RECENT);
     }
     recent.sort_by(newest);
-    out.recent = recent.into_iter().map(|(at, id, place)| Closed { object_id: id.to_string(), place: place.into(), at }).collect();
+    out.recent = recent
+        .into_iter()
+        .map(|(at, id, place)| Closed {
+            object_id: id.to_string(),
+            place: place.into(),
+            at,
+        })
+        .collect();
     out.starred = stars
         .iter()
         .filter(|(id, _)| m.cards.contains_key(**id))
-        .map(|(id, at)| Starred { object_id: id.to_string(), at: *at, running: running_ids.contains(id) })
+        .map(|(id, at)| Starred {
+            object_id: id.to_string(),
+            at: *at,
+            running: running_ids.contains(id),
+        })
         .collect();
-    out.starred.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| a.object_id.cmp(&b.object_id)));
+    out.starred
+        .sort_by(|a, b| b.at.cmp(&a.at).then_with(|| a.object_id.cmp(&b.object_id)));
     out
 }
 
@@ -244,7 +301,14 @@ mod tests {
     fn session(m: &mut Model, sid: &str, dev: &str, online: bool) {
         m.members.insert(
             dev.into(),
-            Member { device_id: dev.into(), device_role: "agent".into(), is_active: true, is_online: online, added_entry_number: 1, ..Default::default() },
+            Member {
+                device_id: dev.into(),
+                device_role: "agent".into(),
+                is_active: true,
+                is_online: online,
+                added_entry_number: 1,
+                ..Default::default()
+            },
         );
         let s = m.session_of(sid);
         s.group_id = Some(format!("g{sid}"));
@@ -258,23 +322,50 @@ mod tests {
     fn card<'a>(m: &'a mut Model, id: &str, sid: &str, state: &str) -> &'a mut Card {
         m.cards.insert(
             id.into(),
-            Card { object_id: id.into(), session_id: Some(sid.into()), agent_device_id: "d1".into(), object_state: state.into(), ..Default::default() },
+            Card {
+                object_id: id.into(),
+                session_id: Some(sid.into()),
+                agent_device_id: "d1".into(),
+                object_state: state.into(),
+                ..Default::default()
+            },
         );
         m.cards.get_mut(id).unwrap()
     }
     /// A card handed back at `at`: with its agent.
     fn handed_back(m: &mut Model, id: &str, sid: &str, at: u64) {
         let c = card(m, id, sid, "open");
-        c.in_revision = Some(InRevision { by: "me".into(), envelope_number: 7 });
+        c.in_revision = Some(InRevision {
+            by: "me".into(),
+            envelope_number: 7,
+        });
         c.updated_at = at;
     }
     fn answered(m: &mut Model, id: &str, sid: &str, at: u64, state: &str) {
         let c = card(m, id, sid, state);
-        c.closed_how = Some(if state == "answered" { "answered" } else { "closed" }.into());
-        c.answer = Some(Answer { answer_action: "choose".into(), choices: json!(["a"]), answered_at: at, ..Default::default() });
+        c.closed_how = Some(
+            if state == "answered" {
+                "answered"
+            } else {
+                "closed"
+            }
+            .into(),
+        );
+        c.answer = Some(Answer {
+            answer_action: "choose".into(),
+            choices: json!(["a"]),
+            answered_at: at,
+            ..Default::default()
+        });
     }
     fn star(m: &mut Model, id: &str, v: Value) {
-        m.human.insert(format!("star/{id}"), HumanRegister { value: v, ..Default::default() });
+        m.human.insert(
+            format!("star/{id}"),
+            HumanRegister {
+                value: v,
+                ..Default::default()
+            },
+        );
     }
     fn model() -> Model {
         let mut m = Model::new();
@@ -300,7 +391,12 @@ mod tests {
         assert_eq!(ids(&o.running), ["new", "acting", "old"]);
         // a working status line that names a card moves it: the line's update counts, and its words are shown
         m.sessions.get_mut(S1).unwrap().status_lines = vec![StatusLine {
-            id: "l1".into(), label: json!("Reworking"), state: json!("working"), object_id: json!("old"), updated_at: NOW - 10, ..Default::default()
+            id: "l1".into(),
+            label: json!("Reworking"),
+            state: json!("working"),
+            object_id: json!("old"),
+            updated_at: NOW - 10,
+            ..Default::default()
         }];
         let o = off(&m);
         assert_eq!(ids(&o.running), ["old", "new", "acting"]);
@@ -312,10 +408,20 @@ mod tests {
     fn of_two_unnamed_working_lines_of_the_same_time_the_first_stands() {
         let mut m = model();
         handed_back(&mut m, "a", S1, NOW - 9_000);
-        let line = |id: &str, label: &str| StatusLine { id: id.into(), label: json!(label), state: json!("working"), updated_at: NOW - 10, ..Default::default() };
-        m.sessions.get_mut(S1).unwrap().status_lines = vec![line("l1", "First"), line("l2", "Second")];
+        let line = |id: &str, label: &str| StatusLine {
+            id: id.into(),
+            label: json!(label),
+            state: json!("working"),
+            updated_at: NOW - 10,
+            ..Default::default()
+        };
+        m.sessions.get_mut(S1).unwrap().status_lines =
+            vec![line("l1", "First"), line("l2", "Second")];
         let o = off(&m);
-        assert_eq!(o.running[0].label, "First", "as the web's workLine and the session's and card's pages");
+        assert_eq!(
+            o.running[0].label, "First",
+            "as the web's workLine and the session's and card's pages"
+        );
         assert_eq!(o.with_agents, o.running);
     }
 
@@ -329,12 +435,24 @@ mod tests {
         star(&mut m, "b", json!({ "at": 50 }));
         star(&mut m, "d", json!({ "at": 90 }));
         let o = off(&m);
-        assert_eq!(ids(&o.running), ["c", "a"], "the starred running card is not in the running stack");
+        assert_eq!(
+            ids(&o.running),
+            ["c", "a"],
+            "the starred running card is not in the running stack"
+        );
         assert_eq!(
             o.starred,
             [
-                Starred { object_id: "d".into(), at: 90, running: false },
-                Starred { object_id: "b".into(), at: 50, running: true },
+                Starred {
+                    object_id: "d".into(),
+                    at: 90,
+                    running: false
+                },
+                Starred {
+                    object_id: "b".into(),
+                    at: 50,
+                    running: true
+                },
             ]
         );
         // unstarred: it is back in the running stack, in its place by time
@@ -356,20 +474,40 @@ mod tests {
         star(&mut m, "c4", json!({ "at": 300 }));
         star(&mut m, "gone", json!({ "at": 999 }));
         let o = off(&m);
-        assert_eq!(o.starred.iter().map(|s| s.object_id.as_str()).collect::<Vec<_>>(), ["c2", "c4", "c1"]);
+        assert_eq!(
+            o.starred
+                .iter()
+                .map(|s| s.object_id.as_str())
+                .collect::<Vec<_>>(),
+            ["c2", "c4", "c1"]
+        );
         star(&mut m, "c3", json!(true));
-        assert_eq!(off(&m).starred.last().map(|s| (s.object_id.as_str(), s.at)), Some(("c3", 0)), "no time: last");
+        assert_eq!(
+            off(&m).starred.last().map(|s| (s.object_id.as_str(), s.at)),
+            Some(("c3", 0)),
+            "no time: last"
+        );
     }
 
     #[test]
     fn put_off_and_closed_are_counted_whole_per_session() {
         let mut m = model();
         for i in 0..150u64 {
-            answered(&mut m, &format!("k{i:03}"), if i % 3 == 0 { S2 } else { S1 }, 1_000 + i, "closed");
+            answered(
+                &mut m,
+                &format!("k{i:03}"),
+                if i % 3 == 0 { S2 } else { S1 },
+                1_000 + i,
+                "closed",
+            );
         }
         let c = card(&mut m, "shred", S1, "closed");
         c.closed_how = Some("shredded".into());
-        c.answer = Some(Answer { answer_action: "shred".into(), answered_at: 5_000, ..Default::default() });
+        c.answer = Some(Answer {
+            answer_action: "shred".into(),
+            answered_at: 5_000,
+            ..Default::default()
+        });
         let c = card(&mut m, "later1", S1, "open");
         c.snoozed_until = Some(NOW + 1);
         c.snoozed_at = Some(10);
@@ -378,10 +516,20 @@ mod tests {
         c.snoozed_at = Some(20);
         let o = off(&m);
         assert_eq!(o.put_off, ["later2", "later1"]);
-        assert_eq!((o.closed[S1], o.closed[S2]), (101, 50), "every closed card is counted, not only the ones named");
+        assert_eq!(
+            (o.closed[S1], o.closed[S2]),
+            (101, 50),
+            "every closed card is counted, not only the ones named"
+        );
         assert_eq!(o.recent.len(), RECENT);
-        assert_eq!((o.recent[0].object_id.as_str(), o.recent[0].place.as_str()), ("shred", "trash"));
-        assert_eq!((o.recent[1].object_id.as_str(), o.recent[1].place.as_str()), ("k149", "done"));
+        assert_eq!(
+            (o.recent[0].object_id.as_str(), o.recent[0].place.as_str()),
+            ("shred", "trash")
+        );
+        assert_eq!(
+            (o.recent[1].object_id.as_str(), o.recent[1].place.as_str()),
+            ("k149", "done")
+        );
         assert!(o.running.is_empty());
     }
 
@@ -405,11 +553,19 @@ mod tests {
         let mut m = model();
         handed_back(&mut m, "a", S1, NOW - 1);
         answered(&mut m, "z", S1, 5, "closed");
-        m.human.insert(format!("session/{S1}"), HumanRegister { value: json!({ "archived": true }), ..Default::default() });
+        m.human.insert(
+            format!("session/{S1}"),
+            HumanRegister {
+                value: json!({ "archived": true }),
+                ..Default::default()
+            },
+        );
         // (an archived session that is connected comes back by itself: this one is not)
         m.sessions.get_mut(S1).unwrap().is_online = false;
         m.members.get_mut("d1").unwrap().is_online = false;
-        assert!(session_list(&m, false).iter().any(|r| r.key == S1 && r.archived));
+        assert!(session_list(&m, false)
+            .iter()
+            .any(|r| r.key == S1 && r.archived));
         let o = off(&m);
         assert!(o.running.is_empty() && o.closed.is_empty() && o.recent.is_empty());
     }

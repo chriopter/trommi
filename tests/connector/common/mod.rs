@@ -4,17 +4,17 @@
 //! here, step by step.
 #![allow(dead_code)]
 
-pub mod process;
 pub mod hub;
+pub mod process;
 
+use hub::hub_for;
+use hub::{b64, unb64, Hub};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
-use hub::hub_for;
 use trommi_connector::error::{Fault, Result};
-use hub::{b64, unb64, Hub};
 use trommi_connector::keeper::Keeper;
 use trommi_connector::store::Journal;
 use trommi_connector::util::{hex, now_ms};
@@ -835,7 +835,14 @@ impl Human {
                             .v(move |v| {
                                 v.device
                                     .room_history()
-                                    .map(|h| h.newest().humans.iter().copied().filter(|d| *d != me).collect())
+                                    .map(|h| {
+                                        h.newest()
+                                            .humans
+                                            .iter()
+                                            .copied()
+                                            .filter(|d| *d != me)
+                                            .collect()
+                                    })
                                     .unwrap_or_default()
                             })
                             .await;
@@ -849,7 +856,10 @@ impl Human {
                         if !ids.is_empty() {
                             if let Ok(claimed) = self
                                 .hub
-                                .post("/v1/key-packages/claim", &json!({ "devices": ids, "partial": true }))
+                                .post(
+                                    "/v1/key-packages/claim",
+                                    &json!({ "devices": ids, "partial": true }),
+                                )
                                 .await
                             {
                                 for id in &ids {
@@ -936,14 +946,22 @@ impl Human {
                         let id = device.to_base64url();
                         let Ok(claimed) = self
                             .hub
-                            .post("/v1/key-packages/claim", &json!({ "devices": [id.clone()] }))
+                            .post(
+                                "/v1/key-packages/claim",
+                                &json!({ "devices": [id.clone()] }),
+                            )
                             .await
                         else {
                             continue;
                         };
-                        let Ok(kp) = unb64(&claimed["key_packages"], &id) else { continue };
+                        let Ok(kp) = unb64(&claimed["key_packages"], &id) else {
+                            continue;
+                        };
                         self.v(move |v| {
-                            if v.device.add_to_session(&group, &device, &kp, now_ms()).is_ok() {
+                            if v.device
+                                .add_to_session(&group, &device, &kp, now_ms())
+                                .is_ok()
+                            {
                                 let _ = v.device.send_handover(&group, &device);
                             }
                         })
@@ -1234,9 +1252,12 @@ impl Human {
     pub async fn remove_agent(&mut self, device: DeviceId) {
         self.sync().await;
         self.v(move |v| {
-            v.device.remove_agents(&[device], now_ms()).expect("the human removes the agent");
+            v.device
+                .remove_agents(&[device], now_ms())
+                .expect("the human removes the agent");
             v.commit().expect("stored");
-        }).await;
+        })
+        .await;
         self.post_all().await.expect("the removal is taken");
     }
 

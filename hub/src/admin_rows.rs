@@ -17,7 +17,10 @@ use rusqlite::types::Value;
 use rusqlite::Connection;
 
 use crate::admin::{esc, EYE, LOCK};
-use crate::admin_view::{columns, framed, is_time, blurred_email, side, table_named, when_exactly, SEALED, SHOW_ALL, TABLES};
+use crate::admin_view::{
+    blurred_email, columns, framed, is_time, side, table_named, when_exactly, SEALED, SHOW_ALL,
+    TABLES,
+};
 use crate::app::App;
 use crate::error::Refused;
 use crate::util::{hex, unhex};
@@ -48,65 +51,411 @@ pub enum Show {
 /// signed public MLS state, the hub's own keyed hashes of addresses, hashes of public data. A column that is not
 /// here (nor sealed, nor the e-mail address) is shown as a secret.
 pub const FULL: &[(&str, &[&str])] = &[
-    ("accounts", &["account_id", "created_at", "updated_at", "revision", "kit_form", "user_handle"]),
-    ("passkeys", &["credential_id", "account_id", "public_key", "algorithm", "sign_count", "transports", "created_at", "last_used_at"]),
+    (
+        "accounts",
+        &[
+            "account_id",
+            "created_at",
+            "updated_at",
+            "revision",
+            "kit_form",
+            "user_handle",
+        ],
+    ),
+    (
+        "passkeys",
+        &[
+            "credential_id",
+            "account_id",
+            "public_key",
+            "algorithm",
+            "sign_count",
+            "transports",
+            "created_at",
+            "last_used_at",
+        ],
+    ),
     ("account_rooms", &["account_id", "room_id", "position"]),
     ("account_sources", &["account_id", "source", "last_at"]),
-    ("login_sources", &["account", "source", "failures", "next_at", "checking", "over"]),
-    ("login_accounts", &["account", "budget_start", "budget_used", "next_turn"]),
+    (
+        "login_sources",
+        &[
+            "account", "source", "failures", "next_at", "checking", "over",
+        ],
+    ),
+    (
+        "login_accounts",
+        &["account", "budget_start", "budget_used", "next_turn"],
+    ),
     ("login_turns", &["account", "source", "turn", "good_until"]),
-    ("rooms", &["room_id", "founded_at", "change", "file_bytes", "file_count", "register_count", "void_count", "group_count", "device_count", "helper_count", "epoch", "room_state", "recovery_signature_key", "recovery_hpke_key"]),
-    ("devices", &["room_id", "device", "role", "added_epoch", "removed_epoch"]),
+    (
+        "rooms",
+        &[
+            "room_id",
+            "founded_at",
+            "change",
+            "file_bytes",
+            "file_count",
+            "register_count",
+            "void_count",
+            "group_count",
+            "device_count",
+            "helper_count",
+            "epoch",
+            "room_state",
+            "recovery_signature_key",
+            "recovery_hpke_key",
+        ],
+    ),
+    (
+        "devices",
+        &["room_id", "device", "role", "added_epoch", "removed_epoch"],
+    ),
     ("device_seen", &["room_id", "device", "at"]),
-    ("device_departures", &["room_id", "device", "signature", "at"]),
-    ("requests", &["id", "room_id", "device", "kind", "group_id", "committer", "key_package", "n", "at"]),
-    ("agent_leases", &["room_id", "device", "process", "generation", "expires_at", "hears", "working", "last_call_at", "lost_at"]),
-    ("groups", &["group_id", "room_id", "kind", "session_id", "parent", "founder", "epoch", "room_epoch", "epoch_at", "live", "archived_at", "log_n", "log_kept_from", "founded_change", "state"]),
-    ("group_members", &["group_id", "device", "added_epoch", "removed_epoch", "cut_seq", "cut_hash"]),
-    ("group_log", &["group_id", "n", "room_id", "epoch", "kind", "sender", "at", "change", "digest"]),
+    (
+        "device_departures",
+        &["room_id", "device", "signature", "at"],
+    ),
+    (
+        "requests",
+        &[
+            "id",
+            "room_id",
+            "device",
+            "kind",
+            "group_id",
+            "committer",
+            "key_package",
+            "n",
+            "at",
+        ],
+    ),
+    (
+        "agent_leases",
+        &[
+            "room_id",
+            "device",
+            "process",
+            "generation",
+            "expires_at",
+            "hears",
+            "working",
+            "last_call_at",
+            "lost_at",
+        ],
+    ),
+    (
+        "groups",
+        &[
+            "group_id",
+            "room_id",
+            "kind",
+            "session_id",
+            "parent",
+            "founder",
+            "epoch",
+            "room_epoch",
+            "epoch_at",
+            "live",
+            "archived_at",
+            "log_n",
+            "log_kept_from",
+            "founded_change",
+            "state",
+        ],
+    ),
+    (
+        "group_members",
+        &[
+            "group_id",
+            "device",
+            "added_epoch",
+            "removed_epoch",
+            "cut_seq",
+            "cut_hash",
+        ],
+    ),
+    (
+        "group_log",
+        &[
+            "group_id", "n", "room_id", "epoch", "kind", "sender", "at", "change", "digest",
+        ],
+    ),
     ("group_infos", &["group_id", "epoch", "hash", "bytes"]),
-    ("key_packages", &["id", "room_id", "device", "ref", "last_resort", "uploaded_at", "expires_at", "bytes"]),
+    (
+        "key_packages",
+        &[
+            "id",
+            "room_id",
+            "device",
+            "ref",
+            "last_resort",
+            "uploaded_at",
+            "expires_at",
+            "bytes",
+        ],
+    ),
     ("spent_key_packages", &["ref", "at"]),
-    ("welcomes", &["id", "room_id", "device", "group_id", "at", "epoch"]),
+    (
+        "welcomes",
+        &["id", "room_id", "device", "group_id", "at", "epoch"],
+    ),
     ("welcome_bytes", &["group_id", "epoch"]),
     ("welcome_ids", &["one", "last"]),
-    ("sealed_keys", &["room_id", "group_id", "epoch", "writer", "room_epoch", "recovery_hpke_key", "has_mac", "change"]),
-    ("recovery_links", &["room_id", "room_epoch", "recovery_hpke_key", "change"]),
+    (
+        "sealed_keys",
+        &[
+            "room_id",
+            "group_id",
+            "epoch",
+            "writer",
+            "room_epoch",
+            "recovery_hpke_key",
+            "has_mac",
+            "change",
+        ],
+    ),
+    (
+        "recovery_links",
+        &["room_id", "room_epoch", "recovery_hpke_key", "change"],
+    ),
     ("recovery_keys_held", &["room_id", "key"]),
-    ("recoveries", &["recovery_id", "room_id", "recovery_key", "opened_at", "expires_at", "finished_at", "finish_hash", "finish_answer", "parts", "bytes", "memo_bytes"]),
-    ("recovery_parts", &["recovery_id", "n", "group_id", "body", "body_hash", "commit_key"]),
+    (
+        "recoveries",
+        &[
+            "recovery_id",
+            "room_id",
+            "recovery_key",
+            "opened_at",
+            "expires_at",
+            "finished_at",
+            "finish_hash",
+            "finish_answer",
+            "parts",
+            "bytes",
+            "memo_bytes",
+        ],
+    ),
+    (
+        "recovery_parts",
+        &[
+            "recovery_id",
+            "n",
+            "group_id",
+            "body",
+            "body_hash",
+            "commit_key",
+        ],
+    ),
     ("recovery_memo", &["recovery_id", "key", "value"]),
-    ("envelopes", &["id", "room_id", "change", "group_id", "epoch", "sender", "seq", "prev", "hash", "recipient", "kind", "flags", "time", "received_at", "timeline", "object_id", "object_type", "object_state", "urgency", "answered_at", "object_ref", "register_id", "file_ids", "padded_size", "void_code", "cut", "header", "nonce", "body_hash", "signature"]),
+    (
+        "envelopes",
+        &[
+            "id",
+            "room_id",
+            "change",
+            "group_id",
+            "epoch",
+            "sender",
+            "seq",
+            "prev",
+            "hash",
+            "recipient",
+            "kind",
+            "flags",
+            "time",
+            "received_at",
+            "timeline",
+            "object_id",
+            "object_type",
+            "object_state",
+            "urgency",
+            "answered_at",
+            "object_ref",
+            "register_id",
+            "file_ids",
+            "padded_size",
+            "void_code",
+            "cut",
+            "header",
+            "nonce",
+            "body_hash",
+            "signature",
+        ],
+    ),
     ("epoch_counts", &["group_id", "epoch", "envelopes"]),
     ("cards", OBJECT_INDEX),
     ("permission_requests", OBJECT_INDEX),
     ("artifacts", OBJECT_INDEX),
     ("notes", OBJECT_INDEX),
-    ("chats", &["room_id", "timeline", "group_id", "item_count", "last_change"]),
-    ("boards", &["room_id", "timeline", "group_id", "item_count", "last_change"]),
-    ("registers", &["room_id", "group_id", "writer", "register_id", "head_change"]),
-    ("board_frontiers", &["room_id", "board", "device", "bound", "frontier", "files", "at", "snapshot_seq", "register_id", "counts", "waiting"]),
-    ("files", &["room_id", "file_id", "uploader", "group_id", "object_id", "size", "sha256", "stored_at", "referenced_at", "deleted_at"]),
-    ("shares", &["share_id", "room_id", "file_id", "expires_at", "created_by", "created_at"]),
-    ("invites", &["invite_id", "room_id", "inviter", "role", "offer", "offer_signature", "reveal", "reveal_signature", "revealed_request", "revealed_ref", "revealed_device", "created_at", "expires_at", "used_at", "burned_at"]),
-    ("invite_requests", &["invite_id", "request_hash", "request", "signature", "key_package_ref", "device", "at"]),
-    ("push_subscriptions", &["id", "room_id", "device", "kind", "environment", "topic", "level", "created_at"]),
-    ("live_activities", &["room_id", "device", "environment", "topic", "tag", "started_at", "sent_working", "sent_waiting", "sent_at", "created_at"]),
+    (
+        "chats",
+        &[
+            "room_id",
+            "timeline",
+            "group_id",
+            "item_count",
+            "last_change",
+        ],
+    ),
+    (
+        "boards",
+        &[
+            "room_id",
+            "timeline",
+            "group_id",
+            "item_count",
+            "last_change",
+        ],
+    ),
+    (
+        "registers",
+        &[
+            "room_id",
+            "group_id",
+            "writer",
+            "register_id",
+            "head_change",
+        ],
+    ),
+    (
+        "board_frontiers",
+        &[
+            "room_id",
+            "board",
+            "device",
+            "bound",
+            "frontier",
+            "files",
+            "at",
+            "snapshot_seq",
+            "register_id",
+            "counts",
+            "waiting",
+        ],
+    ),
+    (
+        "files",
+        &[
+            "room_id",
+            "file_id",
+            "uploader",
+            "group_id",
+            "object_id",
+            "size",
+            "sha256",
+            "stored_at",
+            "referenced_at",
+            "deleted_at",
+        ],
+    ),
+    (
+        "shares",
+        &[
+            "share_id",
+            "room_id",
+            "file_id",
+            "expires_at",
+            "created_by",
+            "created_at",
+        ],
+    ),
+    (
+        "invites",
+        &[
+            "invite_id",
+            "room_id",
+            "inviter",
+            "role",
+            "offer",
+            "offer_signature",
+            "reveal",
+            "reveal_signature",
+            "revealed_request",
+            "revealed_ref",
+            "revealed_device",
+            "created_at",
+            "expires_at",
+            "used_at",
+            "burned_at",
+        ],
+    ),
+    (
+        "invite_requests",
+        &[
+            "invite_id",
+            "request_hash",
+            "request",
+            "signature",
+            "key_package_ref",
+            "device",
+            "at",
+        ],
+    ),
+    (
+        "push_subscriptions",
+        &[
+            "id",
+            "room_id",
+            "device",
+            "kind",
+            "environment",
+            "topic",
+            "level",
+            "created_at",
+        ],
+    ),
+    (
+        "live_activities",
+        &[
+            "room_id",
+            "device",
+            "environment",
+            "topic",
+            "tag",
+            "started_at",
+            "sent_working",
+            "sent_waiting",
+            "sent_at",
+            "created_at",
+        ],
+    ),
 ];
 
-const OBJECT_INDEX: &[&str] = &["room_id", "object_id", "group_id", "state", "urgency", "answered_at", "owner", "first_change", "head_change", "version_hash", "version_change", "settled_at", "closed_at", "pruned_at"];
+const OBJECT_INDEX: &[&str] = &[
+    "room_id",
+    "object_id",
+    "group_id",
+    "state",
+    "urgency",
+    "answered_at",
+    "owner",
+    "first_change",
+    "head_change",
+    "version_hash",
+    "version_change",
+    "settled_at",
+    "closed_at",
+    "pruned_at",
+];
 
 /// The credentials, never shown: what a password or the code is checked against (salts, hashes, the KDF record),
 /// the MACs of a recovery and of an invite, the hash of a share's secret, push endpoints and their keys, Apple's
 /// device and Live Activity tokens. (Masked by being absent from `FULL`; named here so that every column of the
 /// schema is classified, which the tables page checks.)
 pub const SECRET: &[(&str, &[&str])] = &[
-    ("accounts", &["auth_salt", "auth_hash", "kdf", "kit_salt", "kit_hash"]),
+    (
+        "accounts",
+        &["auth_salt", "auth_hash", "kdf", "kit_salt", "kit_hash"],
+    ),
     ("group_log", &["recovery_auth"]),
     ("shares", &["secret_hash"]),
     ("invites", &["offer_mac"]),
     ("invite_requests", &["mac"]),
-    ("push_subscriptions", &["endpoint", "p256dh", "auth", "apns_key"]),
+    (
+        "push_subscriptions",
+        &["endpoint", "p256dh", "auth", "apns_key"],
+    ),
     ("live_activities", &["start_token", "activity_token"]),
 ];
 
@@ -131,7 +480,8 @@ const NEWEST: &[(&str, &str)] = &[
 ];
 
 fn listed(list: &[(&str, &[&str])], table: &str, column: &str) -> bool {
-    list.iter().any(|(t, cols)| *t == table && cols.contains(&column))
+    list.iter()
+        .any(|(t, cols)| *t == table && cols.contains(&column))
 }
 
 /// How a column's values appear on the rows pages.
@@ -203,7 +553,9 @@ impl Query {
         let (mut column, mut value) = (None, None);
         for pair in query.split('&').filter(|p| !p.is_empty()) {
             let (name, raw) = pair.split_once('=').unwrap_or((pair, ""));
-            let Some(text) = crate::admin::unescape(raw.as_bytes()).and_then(|b| String::from_utf8(b).ok()) else {
+            let Some(text) =
+                crate::admin::unescape(raw.as_bytes()).and_then(|b| String::from_utf8(b).ok())
+            else {
                 continue;
             };
             match name {
@@ -221,7 +573,14 @@ impl Query {
     }
 
     /// This question's link, sorted as given and starting where given.
-    fn href(&self, table: &str, sort: Option<&str>, asc: bool, after: Option<&str>, before: Option<&str>) -> String {
+    fn href(
+        &self,
+        table: &str,
+        sort: Option<&str>,
+        asc: bool,
+        after: Option<&str>,
+        before: Option<&str>,
+    ) -> String {
         let mut parts = Vec::new();
         if let Some((column, value)) = &self.filter {
             parts.push(format!("f={}", enc(column)));
@@ -281,7 +640,9 @@ fn parse_key(token: &str, parts: usize) -> Option<Vec<Value>> {
             if let Some(h) = part.strip_prefix('x') {
                 unhex(h).map(Value::Blob)
             } else if let Some(h) = part.strip_prefix('t') {
-                unhex(h).and_then(|b| String::from_utf8(b).ok()).map(Value::Text)
+                unhex(h)
+                    .and_then(|b| String::from_utf8(b).ok())
+                    .map(Value::Text)
             } else {
                 part.parse::<i64>().ok().map(Value::Integer)
             }
@@ -311,18 +672,30 @@ fn quote(name: &str) -> String {
 
 fn shape(c: &Connection, table: &'static str) -> rusqlite::Result<Shape> {
     let info = columns(c, table)?;
-    let sql: String = c.query_row("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1", [table], |r| r.get(0))?;
+    let sql: String = c.query_row(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        [table],
+        |r| r.get(0),
+    )?;
     let rowid = !sql.to_ascii_uppercase().contains("WITHOUT ROWID");
     let key = if rowid {
         vec!["rowid".to_string()]
     } else {
-        let mut pk: Vec<(i64, &str)> = info.iter().filter(|c| c.2 > 0).map(|c| (c.2, c.0.as_str())).collect();
+        let mut pk: Vec<(i64, &str)> = info
+            .iter()
+            .filter(|c| c.2 > 0)
+            .map(|c| (c.2, c.0.as_str()))
+            .collect();
         pk.sort();
         pk.into_iter().map(|(_, n)| quote(n)).collect()
     };
     let cols = info
         .into_iter()
-        .map(|(name, kind, _)| Col { show: show(table, &name), name, kind })
+        .map(|(name, kind, _)| Col {
+            show: show(table, &name),
+            name,
+            kind,
+        })
         .collect();
     Ok(Shape { cols, key, rowid })
 }
@@ -347,9 +720,14 @@ impl Shape {
 fn typed(kind: &str, text: &str) -> Result<Value, &'static str> {
     let text = text.trim();
     match kind.to_ascii_uppercase().as_str() {
-        "INTEGER" | "INT" => text.parse().map(Value::Integer).map_err(|_| "a whole number"),
+        "INTEGER" | "INT" => text
+            .parse()
+            .map(Value::Integer)
+            .map_err(|_| "a whole number"),
         "REAL" => text.parse().map(Value::Real).map_err(|_| "a number"),
-        "BLOB" => unhex(text.strip_prefix("0x").unwrap_or(text)).map(Value::Blob).ok_or("bytes in hex"),
+        "BLOB" => unhex(text.strip_prefix("0x").unwrap_or(text))
+            .map(Value::Blob)
+            .ok_or("bytes in hex"),
         _ => Ok(Value::Text(text.to_string())),
     }
 }
@@ -368,43 +746,81 @@ fn cell(col: &Col, value: &Value, whole: bool) -> String {
         return "<span class=\"faint\">null</span>".into();
     }
     match col.show {
-        Show::Secret => format!("<span class=\"secret\">•••• (secret, {} bytes)</span>", length(value)),
+        Show::Secret => format!(
+            "<span class=\"secret\">•••• (secret, {} bytes)</span>",
+            length(value)
+        ),
         Show::Sealed => match value {
             Value::Blob(b) => format!(
                 "<span class=\"cm cm-e2e\">{LOCK}<span>{} bytes{}</span></span>",
                 b.len(),
-                if b.is_empty() { String::new() } else { format!(" · <code>{}</code>{}", hex(&b[..b.len().min(BYTES_SHOWN)]), if b.len() > BYTES_SHOWN { "…" } else { "" }) }
+                if b.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        " · <code>{}</code>{}",
+                        hex(&b[..b.len().min(BYTES_SHOWN)]),
+                        if b.len() > BYTES_SHOWN { "…" } else { "" }
+                    )
+                }
             ),
-            other => format!("<span class=\"cm cm-e2e\">{LOCK}<span>{} bytes</span></span>", length(other)),
+            other => format!(
+                "<span class=\"cm cm-e2e\">{LOCK}<span>{} bytes</span></span>",
+                length(other)
+            ),
         },
         Show::Email => match value {
             Value::Text(t) => blurred_email(t),
-            other => format!("<span class=\"secret\">•••• ({} bytes)</span>", length(other)),
+            other => format!(
+                "<span class=\"secret\">•••• ({} bytes)</span>",
+                length(other)
+            ),
         },
         Show::Full => match value {
             Value::Null => unreachable!(),
-            Value::Integer(n) if is_time(&col.name) && (100_000_000_000..100_000_000_000_000).contains(n) => {
-                format!("<span class=\"t\">{} UTC</span> <span class=\"faint\">{n}</span>", when_exactly(*n))
+            Value::Integer(n)
+                if is_time(&col.name) && (100_000_000_000..100_000_000_000_000).contains(n) =>
+            {
+                format!(
+                    "<span class=\"t\">{} UTC</span> <span class=\"faint\">{n}</span>",
+                    when_exactly(*n)
+                )
             }
             Value::Integer(n) => n.to_string(),
             Value::Real(x) => x.to_string(),
             Value::Text(t) if whole => format!("<span class=\"text\">{}</span>", esc(t)),
             Value::Text(t) => {
                 let cut: String = t.chars().take(TEXT_SHOWN).collect();
-                format!("{}{}", esc(&cut), if cut.len() < t.len() { "<span class=\"faint\">…</span>" } else { "" })
+                format!(
+                    "{}{}",
+                    esc(&cut),
+                    if cut.len() < t.len() {
+                        "<span class=\"faint\">…</span>"
+                    } else {
+                        ""
+                    }
+                )
             }
             Value::Blob(b) if b.is_empty() => "<span class=\"faint\">0 bytes</span>".into(),
             Value::Blob(b) if whole => format!(
                 "<span class=\"faint\">{} bytes{}</span><code class=\"hex\">{}</code>",
                 b.len(),
-                if b.len() > BYTES_IN_FULL { format!(", the first {BYTES_IN_FULL} in hex") } else { String::new() },
+                if b.len() > BYTES_IN_FULL {
+                    format!(", the first {BYTES_IN_FULL} in hex")
+                } else {
+                    String::new()
+                },
                 hex(&b[..b.len().min(BYTES_IN_FULL)])
             ),
             Value::Blob(b) => format!(
                 "<span class=\"faint\">{} bytes</span> <code>{}</code>{}",
                 b.len(),
                 hex(&b[..b.len().min(BYTES_SHOWN)]),
-                if b.len() > BYTES_SHOWN { "<span class=\"faint\">…</span>" } else { "" }
+                if b.len() > BYTES_SHOWN {
+                    "<span class=\"faint\">…</span>"
+                } else {
+                    ""
+                }
             ),
         },
     }
@@ -430,12 +846,17 @@ fn head(table: &str, n: i64, extra: &str, shape: &Shape) -> String {
         shape.cols.len()
     ));
     for col in &shape.cols {
-        let name = if shape.key.contains(&quote(&col.name)) { format!("<b>{}</b>", esc(&col.name)) } else { esc(&col.name) };
+        let name = if shape.key.contains(&quote(&col.name)) {
+            format!("<b>{}</b>", esc(&col.name))
+        } else {
+            esc(&col.name)
+        };
         out.push_str(&format!(
             "<li>{}<code>{name}</code><span class=\"faint\">{}</span>{}</li>",
             match col.show {
                 Show::Sealed => format!("<span class=\"cm cm-e2e\" title=\"sealed\">{LOCK}</span>"),
-                Show::Secret => "<span class=\"secret\" title=\"credential: not shown\">••</span>".into(),
+                Show::Secret =>
+                    "<span class=\"secret\" title=\"credential: not shown\">••</span>".into(),
                 _ => String::new(),
             },
             esc(&col.kind.to_lowercase()),
@@ -449,11 +870,22 @@ fn head(table: &str, n: i64, extra: &str, shape: &Shape) -> String {
         if sealed.is_empty() { "nothing".into() } else { esc(sealed) }
     ));
     // which columns are not shown in full, in one line
-    let named = |show: Show| shape.cols.iter().filter(|c| c.show == show).map(|c| esc(&c.name)).collect::<Vec<_>>().join(", ");
+    let named = |show: Show| {
+        shape
+            .cols
+            .iter()
+            .filter(|c| c.show == show)
+            .map(|c| esc(&c.name))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     let mut masked = Vec::new();
     for (show, why) in [
         (Show::Secret, "credentials, shown by their length only"),
-        (Show::Sealed, "sealed, shown by their length and first bytes"),
+        (
+            Show::Sealed,
+            "sealed, shown by their length and first bytes",
+        ),
         (Show::Email, "blurred until double-clicked"),
     ] {
         let cols = named(show);
@@ -463,7 +895,11 @@ fn head(table: &str, n: i64, extra: &str, shape: &Shape) -> String {
     }
     out.push_str(&format!(
         "<p class=\"masked muted\">{}</p>",
-        if masked.is_empty() { "Every column is shown in full.".to_string() } else { format!("Not in full: {}.", masked.join(" · ")) }
+        if masked.is_empty() {
+            "Every column is shown in full.".to_string()
+        } else {
+            format!("Not in full: {}.", masked.join(" · "))
+        }
     ));
     out
 }
@@ -483,7 +919,13 @@ fn order_by(sort: Option<&str>, key: &[String], asc: bool) -> String {
 
 /// The rows beyond one row (`greater`: after it in ascending order, else before it), in an order by `sort` and
 /// then the key. SQLite sorts null first; the key is never null.
-fn beyond(shape: &Shape, sort: Option<&str>, greater: bool, at: &(Vec<Value>, Value), params: &mut Vec<Value>) -> String {
+fn beyond(
+    shape: &Shape,
+    sort: Option<&str>,
+    greater: bool,
+    at: &(Vec<Value>, Value),
+    params: &mut Vec<Value>,
+) -> String {
     let (k, marks) = shape.key_tuple();
     let op = if greater { ">" } else { "<" };
     match sort {
@@ -764,7 +1206,14 @@ pub fn path(rest: &str) -> Option<(&'static str, Option<&str>)> {
     };
     let table = table_named(name)?;
     match key {
-        Some(k) if k.is_empty() || !k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-') => None,
+        Some(k)
+            if k.is_empty()
+                || !k
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-') =>
+        {
+            None
+        }
         _ => Some((table, key)),
     }
 }

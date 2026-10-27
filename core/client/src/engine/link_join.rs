@@ -57,8 +57,17 @@ impl Engine {
     /// A new device in an empty slot that joins the room an invite link names. Refused: the protocol core's code
     /// (`bad-invite`, `invite-expired`, `room-exists`), `bad-hub`.
     #[allow(clippy::too_many_arguments)]
-    pub fn join_by_link(client: &str, seed: u64, revision: u64, entries: Vec<DeviceEntry>, link: &str, now_ms: u64, entropy: Box<dyn Entropy + Send>) -> Result<Self, &'static str> {
-        let entries: Vec<(Vec<u8>, Vec<u8>)> = entries.into_iter().map(|e| (e.key.0, e.value.0)).collect();
+    pub fn join_by_link(
+        client: &str,
+        seed: u64,
+        revision: u64,
+        entries: Vec<DeviceEntry>,
+        link: &str,
+        now_ms: u64,
+        entropy: Box<dyn Entropy + Send>,
+    ) -> Result<Self, &'static str> {
+        let entries: Vec<(Vec<u8>, Vec<u8>)> =
+            entries.into_iter().map(|e| (e.key.0, e.value.0)).collect();
         if revision != 0 && !entries.is_empty() {
             let (store, _) = memstore::store(revision, entries.clone());
             if Device::open(store, Box::new(SystemEntropy)).is_ok_and(|d| d.room().is_some()) {
@@ -72,7 +81,13 @@ impl Engine {
         let hub = named.hub.as_str().to_string();
         let address = HubAddress::parse(&hub).map_err(|_| "bad-hub")?;
         let mut engine = Self::over(device, writes, named.room_id, &hub, address, client, seed);
-        engine.link_join = Some(LinkJoin { link: link.to_string(), invite: named.invite_id, step: LinkStep::Offer, retry: Retry::default(), until: now_ms + WAIT_MS });
+        engine.link_join = Some(LinkJoin {
+            link: link.to_string(),
+            invite: named.invite_id,
+            step: LinkStep::Offer,
+            retry: Retry::default(),
+            until: now_ms + WAIT_MS,
+        });
         Ok(engine)
     }
 
@@ -83,21 +98,32 @@ impl Engine {
 
     pub(super) fn drive_link_join(&mut self, ctx: &mut Ctx<'_>) {
         self.flush(ctx);
-        let Some(j) = self.link_join.as_ref() else { return };
+        let Some(j) = self.link_join.as_ref() else {
+            return;
+        };
         if ctx.now > j.until {
             return self.link_failed(ctx, "invite-expired");
         }
-        if self.pending.values().any(|a| matches!(a, Asked::Link { .. })) || j.retry.waiting(ctx.now) {
+        if self
+            .pending
+            .values()
+            .any(|a| matches!(a, Asked::Link { .. }))
+            || j.retry.waiting(ctx.now)
+        {
             return;
         }
         let invite = j.invite;
         match j.step {
             LinkStep::Offer => {
-                self.ask(ctx, Route::GetInvite { invite: &invite }, false, |expect| Asked::Link { expect });
+                self.ask(ctx, Route::GetInvite { invite: &invite }, false, |expect| {
+                    Asked::Link { expect }
+                });
             }
             LinkStep::Request => {}
             LinkStep::Reveal => {
-                self.ask(ctx, Route::GetReveal { invite: &invite }, false, |expect| Asked::Link { expect });
+                self.ask(ctx, Route::GetReveal { invite: &invite }, false, |expect| {
+                    Asked::Link { expect }
+                });
             }
             LinkStep::SignIn => {
                 if self.signed_in(ctx) {
@@ -108,13 +134,17 @@ impl Engine {
                 }
             }
             LinkStep::Welcome => {
-                self.ask(ctx, Route::Welcomes { after: 0 }, true, |expect| Asked::Link { expect });
+                self.ask(ctx, Route::Welcomes { after: 0 }, true, |expect| {
+                    Asked::Link { expect }
+                });
             }
         }
     }
 
     pub(super) fn on_link_answer(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>) {
-        let Some(step) = self.link_join.as_ref().map(|j| j.step) else { return };
+        let Some(step) = self.link_join.as_ref().map(|j| j.step) else {
+            return;
+        };
         let wait = |e: &mut Engine, ctx: &mut Ctx<'_>, ms: Option<u64>| {
             if let Some(j) = e.link_join.as_mut() {
                 match ms {
@@ -124,14 +154,22 @@ impl Engine {
             }
         };
         let refused = |answer: &Result<Answer, Failure>| match answer {
-            Err(Failure::Refused { code: Some(code), .. }) => Some(Error::from_code(code).map_or("refused", |e| e.code())),
+            Err(Failure::Refused {
+                code: Some(code), ..
+            }) => Some(Error::from_code(code).map_or("refused", |e| e.code())),
             Err(Failure::Refused { .. }) => Some("refused"),
             _ => None,
         };
         match (step, answer) {
             (LinkStep::Offer, Ok(Answer::Invite(offer))) => {
-                let Some(link) = self.link_join.as_ref().map(|j| j.link.clone()) else { return };
-                let signed = trommi_core::invite::SignedOffer { offer: offer.offer, signature: offer.signature, mac: offer.mac.unwrap_or_default() };
+                let Some(link) = self.link_join.as_ref().map(|j| j.link.clone()) else {
+                    return;
+                };
+                let signed = trommi_core::invite::SignedOffer {
+                    offer: offer.offer,
+                    signature: offer.signature,
+                    mac: offer.mac.unwrap_or_default(),
+                };
                 match self.device.join_request(&link, &signed, ctx.now) {
                     Ok(request) => {
                         let invite = request.invite_id;
@@ -139,7 +177,17 @@ impl Engine {
                         if let Some(j) = self.link_join.as_mut() {
                             j.step = LinkStep::Request;
                         }
-                        self.ask(ctx, Route::PostInviteRequest { invite: &invite, request: &r.request, mac: &r.mac, signature: &r.signature }, false, |expect| Asked::Link { expect });
+                        self.ask(
+                            ctx,
+                            Route::PostInviteRequest {
+                                invite: &invite,
+                                request: &r.request,
+                                mac: &r.mac,
+                                signature: &r.signature,
+                            },
+                            false,
+                            |expect| Asked::Link { expect },
+                        );
                     }
                     Err(e) => self.link_failed(ctx, e.code()),
                 }
@@ -149,7 +197,10 @@ impl Engine {
                     j.step = LinkStep::Reveal;
                 }
             }
-            (LinkStep::Reveal, Ok(Answer::Reveal { reveal, signature })) => match self.device.join_reveal(&trommi_core::invite::SignedReveal { reveal, signature }) {
+            (LinkStep::Reveal, Ok(Answer::Reveal { reveal, signature })) => match self
+                .device
+                .join_reveal(&trommi_core::invite::SignedReveal { reveal, signature })
+            {
                 Ok(code) => {
                     if let Some(j) = self.link_join.as_mut() {
                         j.step = LinkStep::SignIn;
@@ -158,7 +209,12 @@ impl Engine {
                 }
                 Err(e) => self.link_failed(ctx, e.code()),
             },
-            (LinkStep::Reveal, Err(Failure::Refused { code: Some(code), .. })) if code == "not-found" => wait(self, ctx, Some(REVEAL_EVERY_MS)),
+            (
+                LinkStep::Reveal,
+                Err(Failure::Refused {
+                    code: Some(code), ..
+                }),
+            ) if code == "not-found" => wait(self, ctx, Some(REVEAL_EVERY_MS)),
             (LinkStep::Welcome, Ok(Answer::Welcomes(rows))) => {
                 let room = GroupId::room(self.room);
                 let mut joined = false;
@@ -195,7 +251,11 @@ impl Engine {
             self.pending.insert(id, Asked::DeviceWrite);
             ctx.out.push(Effect::Store {
                 id,
-                op: StoreOp::DeviceApply { expected_revision: write.expected_revision, put: Vec::new(), delete: write.delete.into_iter().map(Into::into).collect() },
+                op: StoreOp::DeviceApply {
+                    expected_revision: write.expected_revision,
+                    put: Vec::new(),
+                    delete: write.delete.into_iter().map(Into::into).collect(),
+                },
             });
         }
         ctx.log(LogLevel::Warn, format!("join by link: {code}"));

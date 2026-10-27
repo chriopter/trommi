@@ -85,12 +85,16 @@ pub(crate) fn is_time(column: &str) -> bool {
 /// (`admin.js`; a second double-click blurs it again). A page seen over a shoulder or in a screenshot does not
 /// give it away.
 pub fn blurred_email(email: &str) -> String {
-    format!("<code class=\"email\" title=\"Double-click to show\">{}</code>", crate::admin::esc(email))
+    format!(
+        "<code class=\"email\" title=\"Double-click to show\">{}</code>",
+        crate::admin::esc(email)
+    )
 }
 
 /// The button at the top of a page with blurred e-mail addresses: it shows all of them at once (`admin.js`, in the
 /// browser only; the page holds them already), and blurs them all again. Each still blurs by default.
-pub const SHOW_ALL: &str = "<button type=\"button\" class=\"showall\" aria-pressed=\"false\">Show all</button>";
+pub const SHOW_ALL: &str =
+    "<button type=\"button\" class=\"showall\" aria-pressed=\"false\">Show all</button>";
 
 pub fn when(ms: i64) -> String {
     when_exactly(ms)[..16].to_string()
@@ -179,7 +183,11 @@ pub fn graph(samples: &[Sample], series: Series, range_ms: u64, now: u64) -> Str
     const W: f64 = 300.0;
     const H: f64 = 48.0;
     let from = now.saturating_sub(range_ms);
-    let step = if range_ms <= metrics::FINE_MS { metrics::STEP_MS } else { metrics::COARSE_STEP_MS };
+    let step = if range_ms <= metrics::FINE_MS {
+        metrics::STEP_MS
+    } else {
+        metrics::COARSE_STEP_MS
+    };
     let points: Vec<(u64, f64)> = samples
         .iter()
         .filter(|s| s.at >= from && s.at <= now)
@@ -205,7 +213,10 @@ pub fn graph(samples: &[Sample], series: Series, range_ms: u64, now: u64) -> Str
     }
     let (mut line, mut area) = (String::new(), String::new());
     for run in &runs {
-        let path: Vec<String> = run.iter().map(|(px, py)| format!("{px:.1},{py:.1}")).collect();
+        let path: Vec<String> = run
+            .iter()
+            .map(|(px, py)| format!("{px:.1},{py:.1}"))
+            .collect();
         line.push_str(&format!("M{}", path.join("L")));
         if run.len() == 1 {
             line.push_str("h0.1");
@@ -217,7 +228,11 @@ pub fn graph(samples: &[Sample], series: Series, range_ms: u64, now: u64) -> Str
             run[run.len() - 1].0
         ));
     }
-    let span = if range_ms <= metrics::FINE_MS { "last hour" } else { "last 24 h" };
+    let span = if range_ms <= metrics::FINE_MS {
+        "last hour"
+    } else {
+        "last 24 h"
+    };
     let covered = match points.first() {
         None => "first sample within 10 s".to_string(),
         // (the history begins with the hub's start: a restart loses it)
@@ -623,7 +638,13 @@ pub fn table_named(name: &str) -> Option<&'static str> {
 /// name, declared type, position in the primary key (0: not in it)
 pub(crate) fn columns(c: &Connection, table: &str) -> rusqlite::Result<Vec<(String, String, i64)>> {
     let mut s = c.prepare(&format!("PRAGMA table_info({table})"))?;
-    let rows = s.query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(5)?)))?;
+    let rows = s.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(5)?,
+        ))
+    })?;
     rows.collect()
 }
 

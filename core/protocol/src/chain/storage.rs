@@ -25,19 +25,25 @@ fn read_part(key: &[u8], value: &[u8]) -> Result<Part, Error> {
         1 => {
             let sender: DeviceId = key.value()?;
             let entry: HeadEntry = codec::decode(value, value.len())?;
-            if entry.0 != sender { return Err(Error::BadFormat); }
+            if entry.0 != sender {
+                return Err(Error::BadFormat);
+            }
             Part::Head(entry)
         }
         2 => {
             let epoch = key.u64()?;
             let entry: CountEntry = codec::decode(value, value.len())?;
-            if entry.0 != epoch { return Err(Error::BadFormat); }
+            if entry.0 != epoch {
+                return Err(Error::BadFormat);
+            }
             Part::Count(entry)
         }
         3 => {
             let sender: DeviceId = key.value()?;
             let entry: StartEntry = codec::decode(value, value.len())?;
-            if entry.0 != sender { return Err(Error::BadFormat); }
+            if entry.0 != sender {
+                return Err(Error::BadFormat);
+            }
             Part::Start(entry)
         }
         _ => return Err(Error::BadFormat),
@@ -69,22 +75,32 @@ impl Chains {
     }
 
     pub(crate) fn from_storage_parts(parts: Parts) -> Result<Self, Error> {
-        if parts.is_empty() { return Ok(Self::new()); }
+        if parts.is_empty() {
+            return Ok(Self::new());
+        }
         if parts.iter().map(|(_, value)| value.len()).sum::<usize>() > super::MAX_STATE_LEN {
             return Err(corrupt(Error::TooLarge));
         }
-        let (mut revision, mut heads, mut counts, mut starts) = (None, Vec::new(), Vec::new(), Vec::new());
+        let (mut revision, mut heads, mut counts, mut starts) =
+            (None, Vec::new(), Vec::new(), Vec::new());
         for (key, value) in parts {
             match read_part(&key, &value).map_err(corrupt)? {
                 Part::Revision(n) => {
-                    if revision.replace(n).is_some() { return Err(corrupt(Error::BadFormat)); }
+                    if revision.replace(n).is_some() {
+                        return Err(corrupt(Error::BadFormat));
+                    }
                 }
                 Part::Head(entry) => heads.push(entry),
                 Part::Count(entry) => counts.push(entry),
                 Part::Start(entry) => starts.push(entry),
             }
         }
-        Self::from_entries(revision.ok_or_else(|| corrupt(Error::BadFormat))?, heads, counts, starts)
+        Self::from_entries(
+            revision.ok_or_else(|| corrupt(Error::BadFormat))?,
+            heads,
+            counts,
+            starts,
+        )
     }
 }
 
@@ -101,7 +117,13 @@ mod tests {
         for n in 1u16..=100 {
             let mut id = [0; 32];
             id.get_mut(..2).unwrap().copy_from_slice(&n.to_be_bytes());
-            chains.heads.insert(DeviceId::new(id), Head { seq: 1, hash: Hash32::new(id) });
+            chains.heads.insert(
+                DeviceId::new(id),
+                Head {
+                    seq: 1,
+                    hash: Hash32::new(id),
+                },
+            );
         }
         chains.counts.insert(0, 100);
         chains.revision = 100;
@@ -112,8 +134,14 @@ mod tests {
         chains.counts.insert(0, 101);
         chains.revision = 101;
         let parts = chains.storage_parts().unwrap();
-        let changed: Vec<_> = parts.iter().filter(|(key, value)| before.get(key) != Some(value)).collect();
-        let delta_bytes: usize = changed.iter().map(|(key, value)| key.len() + value.len()).sum();
+        let changed: Vec<_> = parts
+            .iter()
+            .filter(|(key, value)| before.get(key) != Some(value))
+            .collect();
+        let delta_bytes: usize = changed
+            .iter()
+            .map(|(key, value)| key.len() + value.len())
+            .sum();
         assert_eq!(changed.len(), 3);
         assert!(delta_bytes < 256, "{delta_bytes}");
         assert!(legacy_bytes > 7_000, "{legacy_bytes}");

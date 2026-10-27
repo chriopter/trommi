@@ -22,17 +22,19 @@
 pub mod gzip;
 
 use crate::app::io::{HttpRequest, IoId};
-use crate::team_delete::BoardKnown;
 use crate::engine::{Ctx, Engine};
 use crate::hub::{Answer, Codec, Expect, Failure, Route, Site};
 use crate::model::Model;
+use crate::team_delete::BoardKnown;
 use crate::views::{BoardShape, BoardView};
 use serde_json::{json, Map, Value};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use trommi_core::board::{ShapeId, ITEMS_BEFORE_SNAPSHOT};
-use trommi_core::board_items::{Applied, Board, Ink, ItemBody, Shape, ShapeKind, Unread, MAX_SNAPSHOT_LEN, QUANTUM};
+use trommi_core::board_items::{
+    Applied, Board, Ink, ItemBody, Shape, ShapeKind, Unread, MAX_SNAPSHOT_LEN, QUANTUM,
+};
 use trommi_core::chain::Head;
 use trommi_core::crypto::SecretBytes;
 use trommi_core::device::{Draft, EnvelopeOutcome, ReceivedEnvelope};
@@ -63,7 +65,10 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
     if !text.len().is_multiple_of(2) {
         return None;
     }
-    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok()).collect()
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
+        .collect()
 }
 
 /// The board a model id names: `desk/<32 hex>`.
@@ -83,7 +88,11 @@ pub fn team_board(team: &str) -> String {
     if team == "all" {
         return format!("desk/{}", hex(BoardId::ALL_DESKS.as_bytes()));
     }
-    if team.len() == 32 && team.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    if team.len() == 32
+        && team
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return format!("desk/{team}");
     }
     let name = if team.is_empty() { "main" } else { team };
@@ -123,18 +132,30 @@ fn put_ink(s: &mut BoardShape, ink: &Ink) {
         s.t.push(u64::from(p.t));
         s.f.push(force(p.force));
         if tilted {
-            s.az.get_or_insert_with(Vec::new).push(f64::from(p.azimuth) / 256.0 * std::f64::consts::TAU);
-            s.al.get_or_insert_with(Vec::new).push(f64::from(p.altitude) / 255.0 * std::f64::consts::FRAC_PI_2);
+            s.az.get_or_insert_with(Vec::new)
+                .push(f64::from(p.azimuth) / 256.0 * std::f64::consts::TAU);
+            s.al.get_or_insert_with(Vec::new)
+                .push(f64::from(p.altitude) / 255.0 * std::f64::consts::FRAC_PI_2);
         }
     }
     s.sim |= ink.simulated();
 }
 
 /// The reference (model spelling, with its key) of a file the protocol core names.
-fn reference_of(file: &FileRef, name: &str, media_type: &str, size: u64, width: Option<u32>, height: Option<u32>) -> Map<String, Value> {
+fn reference_of(
+    file: &FileRef,
+    name: &str,
+    media_type: &str,
+    size: u64,
+    width: Option<u32>,
+    height: Option<u32>,
+) -> Map<String, Value> {
     let mut r = Map::new();
     r.insert("attachment_id".into(), json!(hex(file.file_id.as_bytes())));
-    r.insert("file_key".into(), json!(trommi_core::ids::base64url_encode(file.file_key.expose())));
+    r.insert(
+        "file_key".into(),
+        json!(trommi_core::ids::base64url_encode(file.file_key.expose())),
+    );
     r.insert("sha256".into(), json!(file.sha256.to_base64url()));
     r.insert("file_name".into(), json!(name));
     r.insert("media_type".into(), json!(media_type));
@@ -151,12 +172,23 @@ fn reference_of(file: &FileRef, name: &str, media_type: &str, size: u64, width: 
 /// The protocol core's reference of a model one.
 fn file_ref(reference: &Map<String, Value>) -> Option<FileRef> {
     let id = FileId::from_slice(&unhex(reference.get("attachment_id")?.as_str()?)?).ok()?;
-    FileRef::from_base64url(&id.to_base64url(), reference.get("file_key")?.as_str()?, reference.get("sha256")?.as_str()?).ok()
+    FileRef::from_base64url(
+        &id.to_base64url(),
+        reference.get("file_key")?.as_str()?,
+        reference.get("sha256")?.as_str()?,
+    )
+    .ok()
 }
 
 /// One shape as the shell draws it, and the reference of its picture.
 fn view_of(id: String, by: String, shape: &Shape) -> (BoardShape, Option<Map<String, Value>>) {
-    let mut s = BoardShape { id, by, z: shape.z, group: shape.group.clone(), ..Default::default() };
+    let mut s = BoardShape {
+        id,
+        by,
+        z: shape.z,
+        group: shape.group.clone(),
+        ..Default::default()
+    };
     let mut reference = None;
     match &shape.kind {
         ShapeKind::Stroke(stroke) => {
@@ -190,7 +222,14 @@ fn view_of(id: String, by: String, shape: &Shape) -> (BoardShape, Option<Map<Str
             s.nh = Some(p.height.unwrap_or(0));
             s.mime = Some(p.media_type.clone());
             s.name = Some(p.file_name.clone());
-            reference = Some(reference_of(&p.file, &p.file_name, &p.media_type, p.total_size, p.width, p.height));
+            reference = Some(reference_of(
+                &p.file,
+                &p.file_name,
+                &p.media_type,
+                p.total_size,
+                p.width,
+                p.height,
+            ));
         }
     }
     (s, reference)
@@ -312,7 +351,12 @@ impl Pad {
 
     /// One item into the board.
     fn apply(&mut self, item: Held, now: u64) {
-        let Held { sender, seq, hash, got } = item;
+        let Held {
+            sender,
+            seq,
+            hash,
+            got,
+        } = item;
         if seq <= self.board.applied(&sender) {
             return;
         }
@@ -324,16 +368,23 @@ impl Pad {
                         for shape in shapes {
                             if let ShapeKind::Stroke(s) = &shape.kind {
                                 if let Some(live) = s.live {
-                                    finished.push(format!("live:{}/{}", hex(sender.as_bytes()), hex(&live)));
+                                    finished.push(format!(
+                                        "live:{}/{}",
+                                        hex(sender.as_bytes()),
+                                        hex(&live)
+                                    ));
                                 }
                             }
                         }
                     }
-                    let Ok(Applied::Changed(ids)) = self.board.apply(sender, seq, body) else { return };
+                    let Ok(Applied::Changed(ids)) = self.board.apply(sender, seq, body) else {
+                        return;
+                    };
                     for id in ids {
                         match self.board.shape(&id) {
                             Some(shape) => {
-                                let (view, reference) = view_of(shape_key(&id), hex(id.sender.as_bytes()), shape);
+                                let (view, reference) =
+                                    view_of(shape_key(&id), hex(id.sender.as_bytes()), shape);
                                 if let (Some(r), Some(a)) = (reference, view.attachment.clone()) {
                                     self.refs.insert(a, r);
                                 }
@@ -372,11 +423,31 @@ impl Pad {
 
 /// What a request in flight was for.
 enum Asked {
-    Snapshot { board: BoardId, file: FileRef, frontier: Vec<(DeviceId, Head)>, change: u64, expect: Expect },
-    Page { board: BoardId, expect: Expect },
-    Declare { board: BoardId, expect: Expect },
-    Upload { board: BoardId, sha256: [u8; 32], reference: Map<String, Value>, expect: Expect },
-    Bind { board: BoardId, expect: Expect },
+    Snapshot {
+        board: BoardId,
+        file: FileRef,
+        frontier: Vec<(DeviceId, Head)>,
+        change: u64,
+        expect: Expect,
+    },
+    Page {
+        board: BoardId,
+        expect: Expect,
+    },
+    Declare {
+        board: BoardId,
+        expect: Expect,
+    },
+    Upload {
+        board: BoardId,
+        sha256: [u8; 32],
+        reference: Map<String, Value>,
+        expect: Expect,
+    },
+    Bind {
+        board: BoardId,
+        expect: Expect,
+    },
 }
 
 /// The boards of one App.
@@ -398,7 +469,11 @@ pub struct Scribble {
 
 /// Sends a request built for a route through the engine (its token, its retries); the id and what the route
 /// expects, or none when the engine would not send it.
-fn ask(engine: &mut Engine, ctx: &mut Ctx<'_>, build: impl FnOnce(&Site<'_>) -> Result<(HttpRequest, Expect), Failure>) -> Option<(IoId, Expect)> {
+fn ask(
+    engine: &mut Engine,
+    ctx: &mut Ctx<'_>,
+    build: impl FnOnce(&Site<'_>) -> Result<(HttpRequest, Expect), Failure>,
+) -> Option<(IoId, Expect)> {
     let cell: Rc<RefCell<Option<Expect>>> = Rc::new(RefCell::new(None));
     let put = cell.clone();
     let id = engine
@@ -430,7 +505,12 @@ fn frontier_of(value: &Value) -> Option<Vec<(DeviceId, Head)>> {
 }
 
 fn frontier_value(frontier: &[(DeviceId, Head)]) -> Value {
-    Value::Object(frontier.iter().map(|(w, h)| (hex(w.as_bytes()), json!([h.seq, hex(h.hash.as_bytes())]))).collect())
+    Value::Object(
+        frontier
+            .iter()
+            .map(|(w, h)| (hex(w.as_bytes()), json!([h.seq, hex(h.hash.as_bytes())])))
+            .collect(),
+    )
 }
 
 impl Scribble {
@@ -476,9 +556,15 @@ impl Scribble {
     /// An envelope the engine reported: a board item of a board that is read is applied (or held while it is
     /// read).
     pub fn envelope(&mut self, r: &ReceivedEnvelope, now: u64) {
-        let Subject::Item(Timeline::Board(board)) = r.header.subject else { return };
-        let Some(pad) = self.pads.get_mut(&board) else { return };
-        if matches!(r.outcome, EnvelopeOutcome::Refused | EnvelopeOutcome::Void) || pad.step == Step::Waiting {
+        let Subject::Item(Timeline::Board(board)) = r.header.subject else {
+            return;
+        };
+        let Some(pad) = self.pads.get_mut(&board) else {
+            return;
+        };
+        if matches!(r.outcome, EnvelopeOutcome::Refused | EnvelopeOutcome::Void)
+            || pad.step == Step::Waiting
+        {
             return;
         }
         let got = match (&r.body, &r.code) {
@@ -486,7 +572,12 @@ impl Scribble {
             (None, Some(Error::NoKey)) => Got::Unread(Unread::NoKey),
             _ => return,
         };
-        let held = Held { sender: r.header.sender, seq: r.header.seq, hash: r.envelope_hash, got };
+        let held = Held {
+            sender: r.header.sender,
+            seq: r.header.seq,
+            hash: r.envelope_hash,
+            got,
+        };
         pad.newest_change = pad.newest_change.max(r.change);
         if pad.step == Step::Ready {
             pad.apply(held, now);
@@ -498,16 +589,33 @@ impl Scribble {
 
     /// A piece of a stroke someone is drawing (7.2).
     pub fn piece(&mut self, from: &DeviceId, board: &BoardId, piece: &[u8], now: u64) {
-        let Some(pad) = self.pads.get_mut(board) else { return };
-        let Some(p) = crate::codec::decode_piece(piece) else { return };
-        let Some(ink) = p.get("points").and_then(Value::as_str).and_then(|t| Ink::from_base64url(t).ok()) else { return };
+        let Some(pad) = self.pads.get_mut(board) else {
+            return;
+        };
+        let Some(p) = crate::codec::decode_piece(piece) else {
+            return;
+        };
+        let Some(ink) = p
+            .get("points")
+            .and_then(Value::as_str)
+            .and_then(|t| Ink::from_base64url(t).ok())
+        else {
+            return;
+        };
         let by = hex(from.as_bytes());
-        let id = format!("live:{by}/{}", p.get("stroke").and_then(Value::as_str).unwrap_or(""));
+        let id = format!(
+            "live:{by}/{}",
+            p.get("stroke").and_then(Value::as_str).unwrap_or("")
+        );
         let (shape, at) = pad.live.entry(id.clone()).or_insert_with(|| {
             let shape = BoardShape {
                 id,
                 by,
-                tool: p.get("tool").and_then(Value::as_str).unwrap_or("pen").into(),
+                tool: p
+                    .get("tool")
+                    .and_then(Value::as_str)
+                    .unwrap_or("pen")
+                    .into(),
                 color: p.get("color").and_then(Value::as_str).map(String::from),
                 width: p.get("width").and_then(Value::as_f64),
                 live: true,
@@ -526,22 +634,42 @@ impl Scribble {
     }
 
     /// The hub answered a request of the boards (or the engine gave up on it).
-    pub fn answered(&mut self, id: IoId, result: &Result<crate::app::io::HttpResponse, Failure>, engine: &mut Engine, ctx: &mut Ctx<'_>) {
-        let Some(asked) = self.asked.remove(&id) else { return };
+    pub fn answered(
+        &mut self,
+        id: IoId,
+        result: &Result<crate::app::io::HttpResponse, Failure>,
+        engine: &mut Engine,
+        ctx: &mut Ctx<'_>,
+    ) {
+        let Some(asked) = self.asked.remove(&id) else {
+            return;
+        };
         let answer = |expect: &Expect| match result {
             Ok(response) => Codec.answer(expect, response),
             Err(failure) => Err(failure.clone()),
         };
         match asked {
-            Asked::Snapshot { board, file, frontier, change, expect } => {
+            Asked::Snapshot {
+                board,
+                file,
+                frontier,
+                change,
+                expect,
+            } => {
                 let loaded = match answer(&expect) {
                     Ok(Answer::File(got)) => trommi_core::files::decrypt_file(&file, &got.bytes)
                         .map_err(|e| e.code().to_string())
-                        .and_then(|plain| gzip::gunzip(&plain, MAX_SNAPSHOT_LEN).map_err(|e| format!("{e:?}")))
-                        .and_then(|json| Board::from_snapshot(&json, &frontier).map_err(|e| e.code().to_string())),
+                        .and_then(|plain| {
+                            gzip::gunzip(&plain, MAX_SNAPSHOT_LEN).map_err(|e| format!("{e:?}"))
+                        })
+                        .and_then(|json| {
+                            Board::from_snapshot(&json, &frontier).map_err(|e| e.code().to_string())
+                        }),
                     other => Err(format!("{:?}", other.err())),
                 };
-                let Some(pad) = self.pads.get_mut(&board) else { return };
+                let Some(pad) = self.pads.get_mut(&board) else {
+                    return;
+                };
                 let after = match loaded {
                     Ok(b) => {
                         pad.snapshot_empty = b.shapes().next().is_none();
@@ -560,7 +688,9 @@ impl Scribble {
                 self.page(board, after, engine, ctx);
             }
             Asked::Page { board, expect } => {
-                let Some(pad) = self.pads.get_mut(&board) else { return };
+                let Some(pad) = self.pads.get_mut(&board) else {
+                    return;
+                };
                 pad.paging = false;
                 match answer(&expect) {
                     Ok(Answer::Envelopes { items, more }) => {
@@ -572,7 +702,10 @@ impl Scribble {
                         }
                     }
                     other => {
-                        self.notes.push(format!("scribble: a page of the board was not read ({:?})", other.err()));
+                        self.notes.push(format!(
+                            "scribble: a page of the board was not read ({:?})",
+                            other.err()
+                        ));
                         pad_done(Some(pad));
                     }
                 }
@@ -583,7 +716,12 @@ impl Scribble {
                     self.give_up(board, ctx.now);
                 }
             }
-            Asked::Upload { board, sha256, reference, expect } => {
+            Asked::Upload {
+                board,
+                sha256,
+                reference,
+                expect,
+            } => {
                 let ok = matches!(answer(&expect), Ok(Answer::FileStored { sha256: got, .. }) if got == sha256);
                 if !ok || !self.seal_register(board, reference, engine, ctx) {
                     self.give_up(board, ctx.now);
@@ -592,7 +730,9 @@ impl Scribble {
             Asked::Bind { board, expect } => {
                 // (not bound: the declaration keeps holding pruning back, and the next snapshot binds again)
                 if let Err(why) = answer(&expect) {
-                    self.notes.push(format!("scribble: the snapshot's frontier was not bound ({why:?})"));
+                    self.notes.push(format!(
+                        "scribble: the snapshot's frontier was not bound ({why:?})"
+                    ));
                 }
                 if let Some(pad) = self.pads.get_mut(&board) {
                     pad.snapping = None;
@@ -603,16 +743,39 @@ impl Scribble {
 
     /// The hub took an outbox entry: a snapshot's register binds its frontier now.
     pub fn accepted(&mut self, outbox_id: u64, engine: &mut Engine, ctx: &mut Ctx<'_>) {
-        let Some((board, pad)) = self.pads.iter_mut().find(|(_, p)| p.snapping.as_ref().and_then(|s| s.register).is_some_and(|r| r.0 == outbox_id)) else { return };
+        let Some((board, pad)) = self.pads.iter_mut().find(|(_, p)| {
+            p.snapping
+                .as_ref()
+                .and_then(|s| s.register)
+                .is_some_and(|r| r.0 == outbox_id)
+        }) else {
+            return;
+        };
         let board = *board;
-        let Some(snap) = pad.snapping.as_ref() else { return };
-        let Some((_, seq, hash)) = snap.register else { return };
+        let Some(snap) = pad.snapping.as_ref() else {
+            return;
+        };
+        let Some((_, seq, hash)) = snap.register else {
+            return;
+        };
         pad.applied = pad.applied.saturating_sub(snap.covers);
         pad.snapshot_empty = snap.empty && pad.applied == 0;
-        let frontier: Vec<(DeviceId, u64, Hash32)> = snap.frontier.iter().map(|(w, h)| (*w, h.seq, h.hash)).collect();
+        let frontier: Vec<(DeviceId, u64, Hash32)> = snap
+            .frontier
+            .iter()
+            .map(|(w, h)| (*w, h.seq, h.hash))
+            .collect();
         let files = snap.files.clone();
         let asked = ask(engine, ctx, move |site| {
-            Codec.request(site, &Route::BoardFrontier { board: &board, frontier: &frontier, files: &files, snapshot: Some((seq, hash)) })
+            Codec.request(
+                site,
+                &Route::BoardFrontier {
+                    board: &board,
+                    frontier: &frontier,
+                    files: &files,
+                    snapshot: Some((seq, hash)),
+                },
+            )
         });
         match asked {
             Some((id, expect)) => {
@@ -625,7 +788,12 @@ impl Scribble {
     /// The hub refused an outbox entry: a snapshot's register ends that snapshot.
     pub fn refused(&mut self, outbox_id: u64) {
         for pad in self.pads.values_mut() {
-            if pad.snapping.as_ref().and_then(|s| s.register).is_some_and(|r| r.0 == outbox_id) {
+            if pad
+                .snapping
+                .as_ref()
+                .and_then(|s| s.register)
+                .is_some_and(|r| r.0 == outbox_id)
+            {
                 pad.snapping = None;
             }
         }
@@ -634,7 +802,10 @@ impl Scribble {
     /// Writes a snapshot of `board` as soon as nothing of it is in flight, however few items it has: deleting a
     /// team writes the snapshot of its empty board (`team_delete::Step::WriteSnapshot`).
     pub fn snapshot_now(&mut self, board: BoardId) {
-        self.pads.entry(board).or_insert_with(|| Pad::new(board)).force = true;
+        self.pads
+            .entry(board)
+            .or_insert_with(|| Pad::new(board))
+            .force = true;
     }
 
     /// What this device knows of a board, for a team's delete; none until it was read.
@@ -643,22 +814,41 @@ impl Scribble {
         Some(BoardKnown {
             shapes: pad.shapes.keys().map(shape_key).collect(),
             files: pad.refs.keys().cloned().collect(),
-            notes: pad.shapes.values().filter(|s| matches!(s.tool.as_str(), "text" | "sticky" | "voice")).count() as u64,
+            notes: pad
+                .shapes
+                .values()
+                .filter(|s| matches!(s.tool.as_str(), "text" | "sticky" | "voice"))
+                .count() as u64,
             snapshot_empty: pad.snapshot_empty,
         })
     }
 
     /// The shapes on a board that is read, by their model ids (an erase of them all: a team's delete).
     pub fn shape_ids(&self, board: &BoardId) -> Vec<String> {
-        self.pads.get(board).map(|p| p.shapes.keys().map(shape_key).collect()).unwrap_or_default()
+        self.pads
+            .get(board)
+            .map(|p| p.shapes.keys().map(shape_key).collect())
+            .unwrap_or_default()
     }
 
     /// Reads, finishes and writes what is due: called after every event. `live`: the room is caught up and
     /// connected.
-    pub fn tend(&mut self, now: u64, live: bool, model: &Model, engine: &mut Engine, ctx: &mut Ctx<'_>) {
+    pub fn tend(
+        &mut self,
+        now: u64,
+        live: bool,
+        model: &Model,
+        engine: &mut Engine,
+        ctx: &mut Ctx<'_>,
+    ) {
         // a board is read once the room is live (its snapshot register is current then)
         if live {
-            let waiting: Vec<BoardId> = self.pads.iter().filter(|(_, p)| p.step == Step::Waiting).map(|(id, _)| *id).collect();
+            let waiting: Vec<BoardId> = self
+                .pads
+                .iter()
+                .filter(|(_, p)| p.step == Step::Waiting)
+                .map(|(id, _)| *id)
+                .collect();
             for board in waiting {
                 self.start(board, model, engine, ctx);
             }
@@ -669,11 +859,13 @@ impl Scribble {
                     pad.apply(item, now);
                 }
                 pad.step = Step::Ready;
-                self.dirty |= self.thumbs || (self.focus.as_ref() == Some(board) || self.others.contains(board));
+                self.dirty |= self.thumbs
+                    || (self.focus.as_ref() == Some(board) || self.others.contains(board));
             }
             let before = pad.live.len();
             pad.live.retain(|_, (_, at)| now < *at + LIVE_MS);
-            self.dirty |= before != pad.live.len() && (self.focus.as_ref() == Some(board) || self.others.contains(board));
+            self.dirty |= before != pad.live.len()
+                && (self.focus.as_ref() == Some(board) || self.others.contains(board));
         }
         if !live {
             return;
@@ -685,7 +877,8 @@ impl Scribble {
                 pad.step == Step::Ready
                     && pad.snapping.is_none()
                     && pad.board.unread().is_none()
-                    && (pad.force || (pad.applied >= SNAP_EVERY && now >= pad.last_at + SNAP_IDLE_MS))
+                    && (pad.force
+                        || (pad.applied >= SNAP_EVERY && now >= pad.last_at + SNAP_IDLE_MS))
                     && !own_in_flight(model, id)
             })
             .map(|(id, _)| *id)
@@ -700,7 +893,9 @@ impl Scribble {
         self.pads
             .values()
             .flat_map(|pad| {
-                let snap = (pad.step == Step::Ready && pad.snapping.is_none() && pad.applied >= SNAP_EVERY)
+                let snap = (pad.step == Step::Ready
+                    && pad.snapping.is_none()
+                    && pad.applied >= SNAP_EVERY)
                     .then_some(pad.last_at + SNAP_IDLE_MS)
                     .filter(|at| *at > now);
                 let live = pad.live.values().map(|(_, at)| at + LIVE_MS).min();
@@ -720,7 +915,11 @@ impl Scribble {
         // by layer, then as made (the sort keeps the order of equals)
         shapes.sort_by_key(|s| s.z);
         shapes.extend(pad.live.values().map(|(s, _)| s.clone()));
-        Some(BoardView { board_id: format!("desk/{}", pad.hex()), state: pad.state().into(), shapes })
+        Some(BoardView {
+            board_id: format!("desk/{}", pad.hex()),
+            state: pad.state().into(),
+            shapes,
+        })
     }
 
     /// The board in view, if any.
@@ -743,10 +942,17 @@ impl Scribble {
 
     /// The references of the pictures on the board in view (so that `OpenFile` opens them).
     pub fn pictures(&self, model: &Model) -> BTreeMap<String, Map<String, Value>> {
-        let Some(pad) = self.focus.and_then(|b| self.pads.get(&b)) else { return BTreeMap::new() };
+        let Some(pad) = self.focus.and_then(|b| self.pads.get(&b)) else {
+            return BTreeMap::new();
+        };
         let mut out = pad.refs.clone();
         for (_, _, content) in pending(model, pad) {
-            for shape in content.get("strokes").and_then(Value::as_array).into_iter().flatten() {
+            for shape in content
+                .get("strokes")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
                 if let Some(r) = shape.get("attachment").and_then(Value::as_object) {
                     if let Some(id) = r.get("attachment_id").and_then(Value::as_str) {
                         out.insert(id.to_string(), r.clone());
@@ -760,22 +966,49 @@ impl Scribble {
     // ---- reading
 
     fn start(&mut self, board: BoardId, model: &Model, engine: &mut Engine, ctx: &mut Ctx<'_>) {
-        let Some(pad) = self.pads.get_mut(&board) else { return };
+        let Some(pad) = self.pads.get_mut(&board) else {
+            return;
+        };
         let key = format!("scribble_snapshot/desk/{}", pad.hex());
-        let named = model.human.get(&key).map(|r| &r.value).filter(|v| !v.is_null()).and_then(|v| {
-            let file = file_ref(v.get("attachment")?.as_object()?)?;
-            let frontier = frontier_of(v.get("frontier")?)?;
-            let change = v.get("last_envelope_number").and_then(Value::as_u64).unwrap_or(0);
-            Some((file, frontier, change))
-        });
+        let named = model
+            .human
+            .get(&key)
+            .map(|r| &r.value)
+            .filter(|v| !v.is_null())
+            .and_then(|v| {
+                let file = file_ref(v.get("attachment")?.as_object()?)?;
+                let frontier = frontier_of(v.get("frontier")?)?;
+                let change = v
+                    .get("last_envelope_number")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                Some((file, frontier, change))
+            });
         pad.tail_done = false;
         pad.held.clear();
         self.dirty = true;
         if let Some((file, frontier, change)) = named {
             let file_id = file.file_id;
-            if let Some((id, expect)) = ask(engine, ctx, move |site| Codec.request(site, &Route::GetFile { file: &file_id, range: None })) {
+            if let Some((id, expect)) = ask(engine, ctx, move |site| {
+                Codec.request(
+                    site,
+                    &Route::GetFile {
+                        file: &file_id,
+                        range: None,
+                    },
+                )
+            }) {
                 pad.step = Step::Snapshot;
-                self.asked.insert(id, Asked::Snapshot { board, file, frontier, change, expect });
+                self.asked.insert(
+                    id,
+                    Asked::Snapshot {
+                        board,
+                        file,
+                        frontier,
+                        change,
+                        expect,
+                    },
+                );
                 return;
             }
         }
@@ -785,7 +1018,16 @@ impl Scribble {
     }
 
     fn page(&mut self, board: BoardId, after: u64, engine: &mut Engine, ctx: &mut Ctx<'_>) {
-        match ask(engine, ctx, move |site| Codec.request(site, &Route::Board { board: &board, after, limit: PAGE })) {
+        match ask(engine, ctx, move |site| {
+            Codec.request(
+                site,
+                &Route::Board {
+                    board: &board,
+                    after,
+                    limit: PAGE,
+                },
+            )
+        }) {
             Some((id, expect)) => {
                 if let Some(pad) = self.pads.get_mut(&board) {
                     pad.paging = true;
@@ -808,10 +1050,16 @@ impl Scribble {
 
     /// Step 1: the frontier is declared, so that the hub holds pruning back for it.
     fn declare(&mut self, board: BoardId, now: u64, engine: &mut Engine, ctx: &mut Ctx<'_>) {
-        let Some(pad) = self.pads.get_mut(&board) else { return };
+        let Some(pad) = self.pads.get_mut(&board) else {
+            return;
+        };
         pad.force = false;
         let frontier: Vec<(DeviceId, Head)> = pad.heads.iter().map(|(w, h)| (*w, *h)).collect();
-        let files: Vec<FileId> = pad.refs.keys().filter_map(|a| FileId::from_slice(&unhex(a)?).ok()).collect();
+        let files: Vec<FileId> = pad
+            .refs
+            .keys()
+            .filter_map(|a| FileId::from_slice(&unhex(a)?).ok())
+            .collect();
         let snapping = Snapping {
             frontier: frontier.clone(),
             files: files.clone(),
@@ -820,8 +1068,19 @@ impl Scribble {
             empty: pad.shapes.is_empty(),
             register: None,
         };
-        let wire: Vec<(DeviceId, u64, Hash32)> = frontier.iter().map(|(w, h)| (*w, h.seq, h.hash)).collect();
-        match ask(engine, ctx, move |site| Codec.request(site, &Route::BoardFrontier { board: &board, frontier: &wire, files: &files, snapshot: None })) {
+        let wire: Vec<(DeviceId, u64, Hash32)> =
+            frontier.iter().map(|(w, h)| (*w, h.seq, h.hash)).collect();
+        match ask(engine, ctx, move |site| {
+            Codec.request(
+                site,
+                &Route::BoardFrontier {
+                    board: &board,
+                    frontier: &wire,
+                    files: &files,
+                    snapshot: None,
+                },
+            )
+        }) {
             Some((id, expect)) => {
                 pad.snapping = Some(snapping);
                 self.asked.insert(id, Asked::Declare { board, expect });
@@ -832,23 +1091,57 @@ impl Scribble {
 
     /// Step 2: the file, packed and encrypted, to the hub.
     fn upload(&mut self, board: BoardId, engine: &mut Engine, ctx: &mut Ctx<'_>) -> bool {
-        let Some(pad) = self.pads.get_mut(&board) else { return false };
-        let Some(snap) = pad.snapping.as_ref() else { return false };
+        let Some(pad) = self.pads.get_mut(&board) else {
+            return false;
+        };
+        let Some(snap) = pad.snapping.as_ref() else {
+            return false;
+        };
         let json = match pad.board.snapshot(&snap.frontier) {
             Ok(json) => json,
             Err(e) => {
-                self.notes.push(format!("scribble: no snapshot of this board ({})", e.code()));
+                self.notes.push(format!(
+                    "scribble: no snapshot of this board ({})",
+                    e.code()
+                ));
                 return false;
             }
         };
         let packed = gzip::gzip(json.expose());
-        let Ok((stored, sealed)) = engine.with_entropy(|entropy| trommi_core::files::encrypt_file(&packed, entropy)) else { return false };
-        let reference = reference_of(&sealed.file, SNAPSHOT_FILE, SNAPSHOT_TYPE, sealed.plain_len, None, None);
+        let Ok((stored, sealed)) =
+            engine.with_entropy(|entropy| trommi_core::files::encrypt_file(&packed, entropy))
+        else {
+            return false;
+        };
+        let reference = reference_of(
+            &sealed.file,
+            SNAPSHOT_FILE,
+            SNAPSHOT_TYPE,
+            sealed.plain_len,
+            None,
+            None,
+        );
         let sha256 = *sealed.file.sha256.as_bytes();
         let file = sealed.file.file_id;
-        match ask(engine, ctx, move |site| Codec.request(site, &Route::PutFile { file: &file, bytes: &stored })) {
+        match ask(engine, ctx, move |site| {
+            Codec.request(
+                site,
+                &Route::PutFile {
+                    file: &file,
+                    bytes: &stored,
+                },
+            )
+        }) {
             Some((id, expect)) => {
-                self.asked.insert(id, Asked::Upload { board, sha256, reference, expect });
+                self.asked.insert(
+                    id,
+                    Asked::Upload {
+                        board,
+                        sha256,
+                        reference,
+                        expect,
+                    },
+                );
                 true
             }
             None => false,
@@ -856,14 +1149,34 @@ impl Scribble {
     }
 
     /// Step 3: the register names the new snapshot.
-    fn seal_register(&mut self, board: BoardId, reference: Map<String, Value>, engine: &mut Engine, ctx: &mut Ctx<'_>) -> bool {
-        let Some(pad) = self.pads.get_mut(&board) else { return false };
-        let Some(snap) = pad.snapping.as_mut() else { return false };
+    fn seal_register(
+        &mut self,
+        board: BoardId,
+        reference: Map<String, Value>,
+        engine: &mut Engine,
+        ctx: &mut Ctx<'_>,
+    ) -> bool {
+        let Some(pad) = self.pads.get_mut(&board) else {
+            return false;
+        };
+        let Some(snap) = pad.snapping.as_mut() else {
+            return false;
+        };
         let key = format!("scribble_snapshot/desk/{}", hex(board.as_bytes()));
-        let file = reference.get("attachment_id").and_then(Value::as_str).and_then(unhex).and_then(|b| FileId::from_slice(&b).ok());
+        let file = reference
+            .get("attachment_id")
+            .and_then(Value::as_str)
+            .and_then(unhex)
+            .and_then(|b| FileId::from_slice(&b).ok());
         let value = json!({ "attachment": reference, "frontier": frontier_value(&snap.frontier), "last_envelope_number": snap.newest_change });
-        let Ok((name, Some(wire))) = crate::codec::encode_register(&key, &value) else { return false };
-        let draft = Draft::Register { group: GroupId::room(engine.room()), name, value: Some(SecretBytes::new(wire.into_bytes())) };
+        let Ok((name, Some(wire))) = crate::codec::encode_register(&key, &value) else {
+            return false;
+        };
+        let draft = Draft::Register {
+            group: GroupId::room(engine.room()),
+            name,
+            value: Some(SecretBytes::new(wire.into_bytes())),
+        };
         let files: Vec<FileId> = file.into_iter().collect();
         match engine.act(ctx, |device, now| device.seal(&draft, None, &files, now)) {
             Ok(sealed) => {
@@ -871,7 +1184,10 @@ impl Scribble {
                 true
             }
             Err(e) => {
-                self.notes.push(format!("scribble: the snapshot's register was not sealed ({})", e.code()));
+                self.notes.push(format!(
+                    "scribble: the snapshot's register was not sealed ({})",
+                    e.code()
+                ));
                 false
             }
         }
@@ -889,8 +1205,14 @@ fn pad_done(pad: Option<&mut Pad>) {
 /// (the model's form), in the order they were sealed.
 fn pending<'m>(model: &'m Model, pad: &Pad) -> Vec<(u64, Option<&'m str>, &'m Map<String, Value>)> {
     let key = crate::model::timeline_key("scribble", &format!("desk/{}", pad.hex()));
-    let Some(timeline) = model.timelines.get(&key) else { return Vec::new() };
-    let me = model.my_device_id.as_deref().and_then(unhex).and_then(|b| DeviceId::from_slice(&b).ok());
+    let Some(timeline) = model.timelines.get(&key) else {
+        return Vec::new();
+    };
+    let me = model
+        .my_device_id
+        .as_deref()
+        .and_then(unhex)
+        .and_then(|b| DeviceId::from_slice(&b).ok());
     let applied = me.map_or(0, |me| pad.board.applied(&me));
     let mut out: Vec<_> = timeline
         .items
@@ -898,7 +1220,11 @@ fn pending<'m>(model: &'m Model, pad: &Pad) -> Vec<(u64, Option<&'m str>, &'m Ma
         .filter(|item| item.get("pending") == Some(&Value::Bool(true)))
         .filter_map(|item| {
             let seq = item.get("sender_sequence")?.as_u64()?;
-            Some((seq, item.get("local_id").and_then(Value::as_str), item.get("content")?.as_object()?))
+            Some((
+                seq,
+                item.get("local_id").and_then(Value::as_str),
+                item.get("content")?.as_object()?,
+            ))
         })
         .filter(|(seq, _, _)| *seq > applied)
         .collect();
@@ -909,26 +1235,47 @@ fn pending<'m>(model: &'m Model, pad: &Pad) -> Vec<(u64, Option<&'m str>, &'m Ma
 /// Whether an own item of the board is still on its way to the hub.
 fn own_in_flight(model: &Model, board: &BoardId) -> bool {
     let key = crate::model::timeline_key("scribble", &format!("desk/{}", hex(board.as_bytes())));
-    model.timelines.get(&key).is_some_and(|t| t.items.values().any(|i| i.get("pending") == Some(&Value::Bool(true))))
+    model.timelines.get(&key).is_some_and(|t| {
+        t.items
+            .values()
+            .any(|i| i.get("pending") == Some(&Value::Bool(true)))
+    })
 }
 
 /// Lays this device's pending items over the board's shapes, as the board will take them.
 fn overlay(shapes: &mut Vec<BoardShape>, pad: &Pad, model: &Model) {
     let me = model.my_device_id.clone().unwrap_or_default();
-    let Some(sender) = unhex(&me).and_then(|b| DeviceId::from_slice(&b).ok()) else { return };
+    let Some(sender) = unhex(&me).and_then(|b| DeviceId::from_slice(&b).ok()) else {
+        return;
+    };
     for (seq, local, content) in pending(model, pad) {
         lay(shapes, &mut BTreeMap::new(), sender, seq, local, content);
     }
 }
 
 /// One item (the model's form) laid onto `shapes` as the board takes it: a picture's reference into `refs`.
-fn lay(shapes: &mut Vec<BoardShape>, refs: &mut BTreeMap<String, Map<String, Value>>, sender: DeviceId, seq: u64, local: Option<&str>, content: &Map<String, Value>) {
-    let Ok(payload) = crate::codec::encode_body(crate::codec::BodyKind::BoardItem, content) else { return };
-    let Ok(body) = ItemBody::decode(payload.as_bytes()) else { return };
+fn lay(
+    shapes: &mut Vec<BoardShape>,
+    refs: &mut BTreeMap<String, Map<String, Value>>,
+    sender: DeviceId,
+    seq: u64,
+    local: Option<&str>,
+    content: &Map<String, Value>,
+) {
+    let Ok(payload) = crate::codec::encode_body(crate::codec::BodyKind::BoardItem, content) else {
+        return;
+    };
+    let Ok(body) = ItemBody::decode(payload.as_bytes()) else {
+        return;
+    };
     match body {
         ItemBody::Strokes(list) => {
             for (index, shape) in (0u32..).zip(&list) {
-                let (mut view, reference) = view_of(shape_key(&ShapeId { sender, seq, index }), hex(sender.as_bytes()), shape);
+                let (mut view, reference) = view_of(
+                    shape_key(&ShapeId { sender, seq, index }),
+                    hex(sender.as_bytes()),
+                    shape,
+                );
                 if let (Some(r), Some(a)) = (reference, view.attachment.clone()) {
                     refs.insert(a, r);
                 }
@@ -940,7 +1287,10 @@ fn lay(shapes: &mut Vec<BoardShape>, refs: &mut BTreeMap<String, Map<String, Val
             let gone: BTreeSet<String> = ids.iter().map(shape_key).collect();
             shapes.retain(|s| !gone.contains(&s.id));
         }
-        ItemBody::Move { shapes: ids, offset } => {
+        ItemBody::Move {
+            shapes: ids,
+            offset,
+        } => {
             let moved: BTreeSet<String> = ids.iter().map(shape_key).collect();
             let (dx, dy) = (units(offset[0]), units(offset[1]));
             for s in shapes.iter_mut().filter(|s| moved.contains(&s.id)) {
@@ -954,41 +1304,91 @@ fn lay(shapes: &mut Vec<BoardShape>, refs: &mut BTreeMap<String, Map<String, Val
 
 /// A board that lives in the model alone (the demo room: no hub, no snapshot): every item of its timeline
 /// `scribble:desk/<board>` in the order they were sent, ready to draw, and the references of its pictures.
-pub fn model_board(model: &Model, board: &BoardId) -> (BoardView, BTreeMap<String, Map<String, Value>>) {
+pub fn model_board(
+    model: &Model,
+    board: &BoardId,
+) -> (BoardView, BTreeMap<String, Map<String, Value>>) {
     let id = format!("desk/{}", hex(board.as_bytes()));
     let mut shapes = Vec::new();
     let mut refs = BTreeMap::new();
-    if let Some(t) = model.timelines.get(&crate::model::timeline_key("scribble", &id)) {
+    if let Some(t) = model
+        .timelines
+        .get(&crate::model::timeline_key("scribble", &id))
+    {
         let mut items: Vec<&Map<String, Value>> = t.items.values().collect();
         let n = |i: &Map<String, Value>, k: &str| i.get(k).and_then(Value::as_u64);
-        items.sort_by_key(|i| (n(i, "envelope_number").unwrap_or(u64::MAX), n(i, "sent_at").unwrap_or(0)));
+        items.sort_by_key(|i| {
+            (
+                n(i, "envelope_number").unwrap_or(u64::MAX),
+                n(i, "sent_at").unwrap_or(0),
+            )
+        });
         let me = model.my_device_id.clone().unwrap_or_default();
         for (at, item) in items.into_iter().enumerate() {
-            let by = item.get("sender_device_id").and_then(Value::as_str).unwrap_or(&me);
-            let Some(sender) = unhex(by).and_then(|b| DeviceId::from_slice(&b).ok()) else { continue };
-            let seq = n(item, "sender_sequence").or_else(|| n(item, "envelope_number")).unwrap_or(at as u64 + 1);
-            let Some(content) = item.get("content").and_then(Value::as_object) else { continue };
+            let by = item
+                .get("sender_device_id")
+                .and_then(Value::as_str)
+                .unwrap_or(&me);
+            let Some(sender) = unhex(by).and_then(|b| DeviceId::from_slice(&b).ok()) else {
+                continue;
+            };
+            let seq = n(item, "sender_sequence")
+                .or_else(|| n(item, "envelope_number"))
+                .unwrap_or(at as u64 + 1);
+            let Some(content) = item.get("content").and_then(Value::as_object) else {
+                continue;
+            };
             // (the demo's pictures are files by their address, without a key: a stand-in key lets them be read as
             //  items, and the reference shown is the demo's own)
             let mut content = content.clone();
-            for shape in content.get_mut("strokes").and_then(Value::as_array_mut).into_iter().flatten() {
-                let Some(a) = shape.get_mut("attachment").and_then(Value::as_object_mut) else { continue };
-                if a.get("file_key").and_then(Value::as_str).is_some_and(|k| !k.is_empty()) {
+            for shape in content
+                .get_mut("strokes")
+                .and_then(Value::as_array_mut)
+                .into_iter()
+                .flatten()
+            {
+                let Some(a) = shape.get_mut("attachment").and_then(Value::as_object_mut) else {
+                    continue;
+                };
+                if a.get("file_key")
+                    .and_then(Value::as_str)
+                    .is_some_and(|k| !k.is_empty())
+                {
                     continue;
                 }
                 if let Some(id) = a.get("attachment_id").and_then(Value::as_str) {
                     refs.insert(id.to_string(), a.clone());
                 }
-                a.insert("file_key".into(), json!(trommi_core::ids::base64url_encode(&[0u8; 32])));
-                a.insert("sha256".into(), json!(trommi_core::ids::base64url_encode(&[0u8; 32])));
+                a.insert(
+                    "file_key".into(),
+                    json!(trommi_core::ids::base64url_encode(&[0u8; 32])),
+                );
+                a.insert(
+                    "sha256".into(),
+                    json!(trommi_core::ids::base64url_encode(&[0u8; 32])),
+                );
             }
             let kept = refs.clone();
-            lay(&mut shapes, &mut refs, sender, seq, item.get("local_id").and_then(Value::as_str), &content);
+            lay(
+                &mut shapes,
+                &mut refs,
+                sender,
+                seq,
+                item.get("local_id").and_then(Value::as_str),
+                &content,
+            );
             refs.extend(kept);
         }
     }
     shapes.sort_by_key(|s| s.z);
-    (BoardView { board_id: id, state: "ready".into(), shapes }, refs)
+    (
+        BoardView {
+            board_id: id,
+            state: "ready".into(),
+            shapes,
+        },
+        refs,
+    )
 }
 
 /// A board small: its shapes without what only drawing it large needs (a stroke's times, force and tilt).

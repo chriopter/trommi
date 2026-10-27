@@ -31,8 +31,9 @@ fn noise(rng: &mut Rng, len: usize) -> Vec<u8> {
 }
 
 const WORDS: &[&str] = &[
-    "build", "release", "hub", "web", "iPhone", "login", "cache", "desk", "card", "session", "agent", "design", "fix",
-    "check", "deploy", "picture", "layout", "speed", "test", "server", "key", "change", "review", "branch",
+    "build", "release", "hub", "web", "iPhone", "login", "cache", "desk", "card", "session",
+    "agent", "design", "fix", "check", "deploy", "picture", "layout", "speed", "test", "server",
+    "key", "change", "review", "branch",
 ];
 
 fn words(rng: &mut Rng, n: usize) -> String {
@@ -45,7 +46,10 @@ fn words(rng: &mut Rng, n: usize) -> String {
 /** An upload, tried again while the room has its 16 uploads in progress (30 agents write at once). */
 async fn upload(client: &Client, bytes: Vec<u8>, meta: Value) -> Map<String, Value> {
     for _ in 0..600 {
-        match client.upload_attachment(bytes.clone(), fields(meta.clone())).await {
+        match client
+            .upload_attachment(bytes.clone(), fields(meta.clone()))
+            .await
+        {
             Ok(r) => return r,
             Err(e) if e.code == "too-many" => tokio::time::sleep(Duration::from_millis(200)).await,
             Err(e) => panic!("an upload: {e:?}"),
@@ -72,7 +76,11 @@ struct Plan {
 }
 
 /// Writes one agent's sessions, oldest first; returns the cards left open for the person to answer.
-async fn write_agent(client: Arc<Client>, plan: Plan, seed: u64) -> (Vec<String>, BTreeMap<String, usize>) {
+async fn write_agent(
+    client: Arc<Client>,
+    plan: Plan,
+    seed: u64,
+) -> (Vec<String>, BTreeMap<String, usize>) {
     let mut rng = Rng(seed);
     let mut to_answer = Vec::new();
     let mut still_open: Vec<String> = Vec::new();
@@ -83,7 +91,12 @@ async fn write_agent(client: Arc<Client>, plan: Plan, seed: u64) -> (Vec<String>
         for a in 0..artifacts {
             let len = 20_000 + rng.below(60_000);
             let bytes = noise(&mut rng, len);
-            let reference = upload(&client, bytes, json!({ "name": format!("shot-{a}.png"), "media_type": "image/png" })).await;
+            let reference = upload(
+                &client,
+                bytes,
+                json!({ "name": format!("shot-{a}.png"), "media_type": "image/png" }),
+            )
+            .await;
             client
                 .publish(
                     json!([reference]),
@@ -95,7 +108,11 @@ async fn write_agent(client: Arc<Client>, plan: Plan, seed: u64) -> (Vec<String>
                 .expect("an Artifact");
             *n.entry("artifacts".into()).or_default() += 1;
         }
-        let open_here = if *archived { 0 } else { plan.open + plan.answered };
+        let open_here = if *archived {
+            0
+        } else {
+            plan.open + plan.answered
+        };
         for i in 0..cards {
             let mut card = json!({
                 "card_type": if i % 3 == 0 { "info" } else { "decision" },
@@ -111,14 +128,20 @@ async fn write_agent(client: Arc<Client>, plan: Plan, seed: u64) -> (Vec<String>
             if i < pictures {
                 let len = 20_000 + rng.below(40_000);
                 let bytes = noise(&mut rng, len);
-                let reference = upload(&client, bytes, json!({ "name": format!("pic-{i}.png"), "media_type": "image/png" })).await;
+                let reference = upload(
+                    &client,
+                    bytes,
+                    json!({ "name": format!("pic-{i}.png"), "media_type": "image/png" }),
+                )
+                .await;
                 card["attachments"] = json!([reference]);
                 *n.entry("pictures".into()).or_default() += 1;
             }
             let last = i + open_here >= cards;
             if last {
                 card["card_type"] = json!("decision");
-                card["options"] = json!([{ "key": "a", "label": "Yes" }, { "key": "b", "label": "No" }]);
+                card["options"] =
+                    json!([{ "key": "a", "label": "Yes" }, { "key": "b", "label": "No" }]);
                 card["allows_multiple"] = json!(false);
             }
             let id = client
@@ -134,14 +157,24 @@ async fn write_agent(client: Arc<Client>, plan: Plan, seed: u64) -> (Vec<String>
                     still_open.push(id);
                 }
             } else if i % 7 == 6 {
-                client.withdraw(&id, "not needed any more").await.expect("withdrawn");
+                client
+                    .withdraw(&id, "not needed any more")
+                    .await
+                    .expect("withdrawn");
             } else {
-                client.close(&id, &format!("Done: {}", words(&mut rng, 6))).await.expect("closed");
+                client
+                    .close(&id, &format!("Done: {}", words(&mut rng, 6)))
+                    .await
+                    .expect("closed");
             }
             if i % 5 == 0 && chat > 0 {
                 for _ in 0..(chat * 5 / cards.max(1)).max(1) {
                     let _ = client
-                        .send_message(fields(json!({ "text": words(&mut rng, 12) })), None, Some(session.clone()))
+                        .send_message(
+                            fields(json!({ "text": words(&mut rng, 12) })),
+                            None,
+                            Some(session.clone()),
+                        )
                         .await;
                     *n.entry("chat".into()).or_default() += 1;
                 }
@@ -152,7 +185,11 @@ async fn write_agent(client: Arc<Client>, plan: Plan, seed: u64) -> (Vec<String>
         if num("FULL_REVISED", 0) > 0 {
             for id in still_open.drain(..) {
                 client
-                    .revise(&id, fields(json!({ "body": format!("Plainly: {}", words(&mut rng, 12)) })), None)
+                    .revise(
+                        &id,
+                        fields(json!({ "body": format!("Plainly: {}", words(&mut rng, 12)) })),
+                        None,
+                    )
                     .await
                     .expect("revised");
                 *n.entry("revised".into()).or_default() += 1;
@@ -187,7 +224,10 @@ async fn full_account_held() {
     let open_n = num("FULL_OPEN", 2);
     let answered_n = num("FULL_ANSWERED", 120);
     let out = PathBuf::from(env("MEGA_OUT").unwrap_or_else(|| {
-        std::env::temp_dir().join("trommi-mega-clients").display().to_string()
+        std::env::temp_dir()
+            .join("trommi-mega-clients")
+            .display()
+            .to_string()
     }))
     .join("full");
     let _ = std::fs::remove_dir_all(&out);
@@ -223,9 +263,15 @@ async fn full_account_held() {
         let group = human.found_session(&admitted).await;
         let main = trommi_connector::util::hex(group.session_id().unwrap().as_bytes());
         let a = client.clone();
-        common::eventually("the agent is in its session", || async { a.lock().session_id().is_some() }).await;
+        common::eventually("the agent is in its session", || async {
+            a.lock().session_id().is_some()
+        })
+        .await;
         let _ = client
-            .set_status(fields(json!({ "profile": { "agent_name": format!("project-{i}") } })), Some(main.clone()))
+            .set_status(
+                fields(json!({ "profile": { "agent_name": format!("project-{i}") } })),
+                Some(main.clone()),
+            )
             .await;
         agents.push((client, drain, dir, group, main));
     }
@@ -253,7 +299,11 @@ async fn full_account_held() {
                     cards: share(cards_n),
                     chat: share(chat_n),
                     pictures: share(pictures_n),
-                    artifacts: if is_main && live { artifacts_n / live_agents.max(1) } else { 0 },
+                    artifacts: if is_main && live {
+                        artifacts_n / live_agents.max(1)
+                    } else {
+                        0
+                    },
                 }
             })
             .collect();
@@ -263,7 +313,11 @@ async fn full_account_held() {
             answered: answered_per_session,
             working: true,
         };
-        jobs.push(tokio::spawn(write_agent(client.clone(), plan, 1000 + i as u64)));
+        jobs.push(tokio::spawn(write_agent(
+            client.clone(),
+            plan,
+            1000 + i as u64,
+        )));
     }
     let mut to_answer = Vec::new();
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
@@ -293,7 +347,12 @@ async fn full_account_held() {
     let mut answers = 0;
     for id in to_answer.iter().filter(|id| known.contains(*id)) {
         if human
-            .answer(id, json!({ "schema_version": 2, "answer_action": "answer", "choices": ["a"] }), &["a"], true)
+            .answer(
+                id,
+                json!({ "schema_version": 2, "answer_action": "answer", "choices": ["a"] }),
+                &["a"],
+                true,
+            )
             .await
             .is_ok()
         {
@@ -322,7 +381,11 @@ async fn full_account_held() {
         "hub": hub.url, "room_id": room_hex, "code": code_hex, "email": MEGA_EMAIL, "password": MEGA_PASSWORD, "counts": counts,
         "head": head.and_then(|h| h.get("head").cloned()), "built_s": t0.elapsed().as_secs(),
     });
-    std::fs::write(out.join("fixture.json"), serde_json::to_string_pretty(&fixture).unwrap()).unwrap();
+    std::fs::write(
+        out.join("fixture.json"),
+        serde_json::to_string_pretty(&fixture).unwrap(),
+    )
+    .unwrap();
     log(format!("HELD {fixture}"));
 
     // held: the founding device keeps up and answers key requests until released. A path written to

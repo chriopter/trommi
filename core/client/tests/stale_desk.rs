@@ -51,7 +51,11 @@ fn a_card_closed_while_the_cache_lagged_behind_leaves_the_desk() {
     sim.restart();
     sim.send(start());
     assert_eq!(sim.view.phase, Phase::Live);
-    assert_eq!(titles(&sim), ["Stays?"], "the hub's list leaves the closed card out");
+    assert_eq!(
+        titles(&sim),
+        ["Stays?"],
+        "the hub's list leaves the closed card out"
+    );
 }
 
 #[test]

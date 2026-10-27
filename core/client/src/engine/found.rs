@@ -37,7 +37,8 @@ impl Engine {
         if address.as_str() != hub {
             return Err("bad-hub");
         }
-        let entries: Vec<(Vec<u8>, Vec<u8>)> = entries.into_iter().map(|e| (e.key.0, e.value.0)).collect();
+        let entries: Vec<(Vec<u8>, Vec<u8>)> =
+            entries.into_iter().map(|e| (e.key.0, e.value.0)).collect();
         if revision != 0 && !entries.is_empty() {
             let (store, _) = memstore::store(revision, entries.clone());
             if Device::open(store, Box::new(SystemEntropy)).is_ok_and(|d| d.room().is_some()) {
@@ -68,23 +69,51 @@ impl Engine {
             return;
         }
         let entries = self.device.outbox();
-        let Some(entry) = entries.first().filter(|e| e.kind == OutboxKind::RoomFounding).cloned() else {
+        let Some(entry) = entries
+            .first()
+            .filter(|e| e.kind == OutboxKind::RoomFounding)
+            .cloned()
+        else {
             // (nothing to found: an older founding was taken already)
             self.founding = None;
             self.report(Report::Founded(None));
             return;
         };
-        let Some(extra) = self.founding.as_ref().map(|f| f.extra.clone()) else { return };
+        let Some(extra) = self.founding.as_ref().map(|f| f.extra.clone()) else {
+            return;
+        };
         let room = self.room;
         let (id, kind, group) = (entry.id, entry.kind, entry.group);
-        self.posting = self.ask(ctx, Route::Outbox { room: &room, entry: &entry, extra: Some(&extra) }, false, |expect| Asked::Post { expect, entry: id, kind, group });
+        self.posting = self.ask(
+            ctx,
+            Route::Outbox {
+                room: &room,
+                entry: &entry,
+                extra: Some(&extra),
+            },
+            false,
+            |expect| Asked::Post {
+                expect,
+                entry: id,
+                kind,
+                group,
+            },
+        );
         if self.posting.is_none() {
             self.founding_failed(ctx, "bad-format");
         }
     }
 
     /// The hub's answer to the founding.
-    pub(super) fn on_founding_posted(&mut self, ctx: &mut Ctx<'_>, entry: u64, kind: OutboxKind, group: Option<GroupId>, answer: Result<Answer, Failure>, refusal: Option<Refusal>) {
+    pub(super) fn on_founding_posted(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        entry: u64,
+        kind: OutboxKind,
+        group: Option<GroupId>,
+        answer: Result<Answer, Failure>,
+        refusal: Option<Refusal>,
+    ) {
         match answer {
             Ok(Answer::Outbox(taken)) => {
                 self.pump_retry.ok();
@@ -93,15 +122,21 @@ impl Engine {
                 self.report(Report::Founded(None));
                 self.drive(ctx);
             }
-            Err(Failure::Refused { code: Some(code), .. }) => {
+            Err(Failure::Refused {
+                code: Some(code), ..
+            }) => {
                 let code = Error::from_code(&code).map_or("refused", |e| e.code());
                 self.founding_failed(ctx, code);
             }
-            Err(Failure::Refused { code: None, status }) if status != 401 => self.founding_failed(ctx, "refused"),
+            Err(Failure::Refused { code: None, status }) if status != 401 => {
+                self.founding_failed(ctx, "refused")
+            }
             other => {
                 let failure = match other {
                     Err(f) => f,
-                    Ok(_) => Failure::BadAnswer { why: "a founding answer" },
+                    Ok(_) => Failure::BadAnswer {
+                        why: "a founding answer",
+                    },
                 };
                 let retry_after = match (&failure, refusal) {
                     (Failure::NotNow { retry_after_ms, .. }, _) => *retry_after_ms,
@@ -122,7 +157,11 @@ impl Engine {
             self.pending.insert(id, Asked::DeviceWrite);
             ctx.out.push(Effect::Store {
                 id,
-                op: StoreOp::DeviceApply { expected_revision: write.expected_revision, put: Vec::new(), delete: write.delete.into_iter().map(Into::into).collect() },
+                op: StoreOp::DeviceApply {
+                    expected_revision: write.expected_revision,
+                    put: Vec::new(),
+                    delete: write.delete.into_iter().map(Into::into).collect(),
+                },
             });
         }
         ctx.log(LogLevel::Warn, format!("founding: {code}"));

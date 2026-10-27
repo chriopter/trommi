@@ -45,7 +45,8 @@ pub fn is_board_tool(name: &str) -> bool {
 /// A board tool that reads the team's knowledge: its step shows ("reads team knowledge (12)"), unlike the board's
 /// other calls, whose work stands on the board already.
 pub fn is_knowledge_read(name: &str) -> bool {
-    is_board_tool(name) && (name.ends_with("__search_knowledge") || name.ends_with("__read_knowledge"))
+    is_board_tool(name)
+        && (name.ends_with("__search_knowledge") || name.ends_with("__read_knowledge"))
 }
 /// A tool's name as the trail shows it: `mcp__github__create_issue` is "github: create_issue".
 pub fn tool_label(name: &str) -> String {
@@ -335,11 +336,17 @@ pub fn hook_request(input: &Value, ancestors: &[u32], level: Level) -> Option<Va
         if is_knowledge_read(tool) {
             // (the words are the app's: the step only says it read the knowledge, and what it searched for)
             put("knowledge", json!(true));
-            put("subject", json!(one_line(&redact(str_of(args, "query")), SUBJECT_MAX)));
+            put(
+                "subject",
+                json!(one_line(&redact(str_of(args, "query")), SUBJECT_MAX)),
+            );
         } else if is_board_tool(tool) {
             put("board", json!(true));
             // (the helper a board call is for: `helper`, or `session` as older tools name it)
-            let helper = [str_of(args, "helper"), str_of(args, "session")].into_iter().find(|h| !h.trim().is_empty()).unwrap_or("");
+            let helper = [str_of(args, "helper"), str_of(args, "session")]
+                .into_iter()
+                .find(|h| !h.trim().is_empty())
+                .unwrap_or("");
             put("helper", json!(one_line(helper, 40)));
         } else {
             put(
@@ -792,12 +799,20 @@ impl Trail {
                     let (turn, key) = (self.helpers[&agent].turn.clone(), format!("agent:{agent}"));
                     if let Some(t) = self.turn(&turn) {
                         if let Some(i) = t.index.get(&key).copied() {
-                            if board && !named.is_empty() && t.items[i].get("tool").and_then(|v| v.as_str()) != Some(named.as_str()) {
+                            if board
+                                && !named.is_empty()
+                                && t.items[i].get("tool").and_then(|v| v.as_str())
+                                    != Some(named.as_str())
+                            {
                                 t.items[i].insert("tool".into(), json!(named));
                                 t.dirty.insert(i);
                             }
                             if ev == "pre" && !board {
-                                let steps = t.items[i].get("steps").and_then(|v| v.as_u64()).unwrap_or(0) + 1;
+                                let steps = t.items[i]
+                                    .get("steps")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    + 1;
                                 t.items[i].insert("steps".into(), json!(steps));
                                 t.dirty.insert(i);
                             }
@@ -961,7 +976,9 @@ impl Trail {
                 if t.more > 0 {
                     w.insert("more".into(), json!(t.more));
                 }
-                out.push(Envelope { work: Value::Object(w) });
+                out.push(Envelope {
+                    work: Value::Object(w),
+                });
             }
         }
         // closed turns leave, oldest first, but one a helper still works in stays

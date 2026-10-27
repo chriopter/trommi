@@ -131,7 +131,10 @@ pub fn run_cli(which: Option<&str>, flags: &[String]) -> i32 {
         Some("claude") => claude(),
         Some("codex") => codex(),
         Some("hermes") => hermes(flags),
-        _ => Err("use `setup claude`, `setup codex` or `setup hermes` (add --verbose for the details)".to_string()),
+        _ => Err(
+            "use `setup claude`, `setup codex` or `setup hermes` (add --verbose for the details)"
+                .to_string(),
+        ),
     };
     report(which.unwrap_or("claude"), flags, done, false)
 }
@@ -182,8 +185,16 @@ fn report(which: &str, flags: &[String], done: Result<Vec<String>, String>, remo
             }
             if !removed {
                 // (Hermes says its own: what it found decides it)
-                let own = lines.iter().rev().find_map(|l| l.strip_prefix(NEXT)).map(str::to_string);
-                println!("{} {}", paint(out, "1", "Next:"), own.as_deref().unwrap_or(next(which)));
+                let own = lines
+                    .iter()
+                    .rev()
+                    .find_map(|l| l.strip_prefix(NEXT))
+                    .map(str::to_string);
+                println!(
+                    "{} {}",
+                    paint(out, "1", "Next:"),
+                    own.as_deref().unwrap_or(next(which))
+                );
             }
             0
         }
@@ -490,12 +501,30 @@ pub const HERMES_ADDON: [(&str, &str); 9] = [
     ("plugin.yaml", include_str!("../hermes/plugin.yaml")),
     ("__init__.py", include_str!("../hermes/__init__.py")),
     ("README.md", include_str!("../hermes/README.md")),
-    ("trommi_platform/__init__.py", include_str!("../hermes/trommi_platform/__init__.py")),
-    ("trommi_platform/plugin.py", include_str!("../hermes/trommi_platform/plugin.py")),
-    ("trommi_platform/adapter.py", include_str!("../hermes/trommi_platform/adapter.py")),
-    ("trommi_platform/chats.py", include_str!("../hermes/trommi_platform/chats.py")),
-    ("trommi_platform/child.py", include_str!("../hermes/trommi_platform/child.py")),
-    ("trommi_platform/upkeep.py", include_str!("../hermes/trommi_platform/upkeep.py")),
+    (
+        "trommi_platform/__init__.py",
+        include_str!("../hermes/trommi_platform/__init__.py"),
+    ),
+    (
+        "trommi_platform/plugin.py",
+        include_str!("../hermes/trommi_platform/plugin.py"),
+    ),
+    (
+        "trommi_platform/adapter.py",
+        include_str!("../hermes/trommi_platform/adapter.py"),
+    ),
+    (
+        "trommi_platform/chats.py",
+        include_str!("../hermes/trommi_platform/chats.py"),
+    ),
+    (
+        "trommi_platform/child.py",
+        include_str!("../hermes/trommi_platform/child.py"),
+    ),
+    (
+        "trommi_platform/upkeep.py",
+        include_str!("../hermes/trommi_platform/upkeep.py"),
+    ),
 ];
 /// The add-on's folder name in Hermes' plugins.
 pub const HERMES_ADDON_DIR: &str = "trommi-platform";
@@ -513,8 +542,13 @@ pub fn write_hermes_addon(dir: &Path, force: bool) -> Result<bool, String> {
         .collect();
     // (whether to write: looked at again under the lock, where nobody writes meanwhile)
     let wanted = || {
-        let same = files.iter().all(|(rel, text)| std::fs::read_to_string(dir.join(rel)).is_ok_and(|now| now == *text));
-        let there = std::fs::read_to_string(dir.join(".release")).ok().and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(0);
+        let same = files.iter().all(|(rel, text)| {
+            std::fs::read_to_string(dir.join(rel)).is_ok_and(|now| now == *text)
+        });
+        let there = std::fs::read_to_string(dir.join(".release"))
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .unwrap_or(0);
         !same && (force || (ours != 0 && ours > there))
     };
     if !wanted() {
@@ -522,16 +556,32 @@ pub fn write_hermes_addon(dir: &Path, force: bool) -> Result<bool, String> {
     }
     let parent = dir.parent().ok_or("the add-on's folder has no parent")?;
     std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
-    let name = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
     let lock = parent.join(format!(".{name}.lock"));
-    if std::fs::OpenOptions::new().write(true).create_new(true).open(&lock).is_err() {
+    if std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock)
+        .is_err()
+    {
         // (another connector writes it now; one left by a crash a minute ago is taken away)
-        let old = std::fs::metadata(&lock).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age.as_secs() > 60);
+        let old = std::fs::metadata(&lock)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age.as_secs() > 60);
         if !old {
             return Ok(false);
         }
         let _ = std::fs::remove_file(&lock);
-        std::fs::OpenOptions::new().write(true).create_new(true).open(&lock).map_err(|e| format!("{}: {e}", lock.display()))?;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock)
+            .map_err(|e| format!("{}: {e}", lock.display()))?;
     }
     let done = (|| -> Result<bool, String> {
         if !wanted() {
@@ -567,14 +617,25 @@ pub fn write_hermes_addon(dir: &Path, force: bool) -> Result<bool, String> {
 /// When this connector runs for the Hermes add-on: the add-on in the Hermes home (`TROMMI_FOLDER`) is written again
 /// when this connector is a newer release than the one that wrote it. Hermes loads it at its next start.
 pub fn refresh_hermes_addon() {
-    let Some(home) = std::env::var_os("TROMMI_FOLDER").filter(|h| !h.is_empty()) else { return };
+    let Some(home) = std::env::var_os("TROMMI_FOLDER").filter(|h| !h.is_empty()) else {
+        return;
+    };
     let plugins = Path::new(&home).join("plugins");
     let dir = plugins.join(HERMES_ADDON_DIR);
     if !dir.is_dir() {
         // (a write that stopped between its two moves left the add-on beside its place: it goes back)
-        let left = std::fs::read_dir(&plugins).ok().into_iter().flatten().flatten().map(|e| e.path()).find(|p| {
-            p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(&format!(".{HERMES_ADDON_DIR}.old-")))
-        });
+        let left = std::fs::read_dir(&plugins)
+            .ok()
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name().is_some_and(|n| {
+                    n.to_string_lossy()
+                        .starts_with(&format!(".{HERMES_ADDON_DIR}.old-"))
+                })
+            });
         match left {
             Some(old) if std::fs::rename(&old, &dir).is_ok() => {}
             _ => return,
@@ -594,7 +655,10 @@ fn flag(flags: &[String], key: &str) -> Option<Option<String>> {
     let mut i = 0;
     while i < flags.len() {
         if matches!(flags[i].as_str(), "--name" | "--profile" | "--link") {
-            let value = flags.get(i + 1).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+            let value = flags
+                .get(i + 1)
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty());
             if flags[i] == key {
                 return Some(value);
             }
@@ -618,11 +682,17 @@ impl HermesInstance {
     pub fn of(flags: &[String]) -> Result<Self, String> {
         let get = |k: &str| flag(flags, k).flatten();
         let name = get("--name");
-        if name.as_ref().is_some_and(|n| n.chars().count() > 40 || n.chars().any(char::is_control)) {
+        if name
+            .as_ref()
+            .is_some_and(|n| n.chars().count() > 40 || n.chars().any(char::is_control))
+        {
             return Err("--name: at most 40 characters, one line".into());
         }
         let profile = get("--profile");
-        if profile.as_ref().is_some_and(|p| !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
+        if profile.as_ref().is_some_and(|p| {
+            !p.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        }) {
             return Err("--profile: letters, digits, - and _ only".into());
         }
         Ok(Self { name, profile })
@@ -630,7 +700,15 @@ impl HermesInstance {
     /// Its slug: the name's letters and digits, lower case; without a name its profile's (two profiles never share
     /// a key); "" for the one Hermes without either.
     pub fn slug(&self) -> String {
-        self.name.as_deref().or(self.profile.as_deref()).unwrap_or("").chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).take(32).collect()
+        self.name
+            .as_deref()
+            .or(self.profile.as_deref())
+            .unwrap_or("")
+            .chars()
+            .filter(char::is_ascii_alphanumeric)
+            .map(|c| c.to_ascii_lowercase())
+            .take(32)
+            .collect()
     }
     /// Its name on the board.
     pub fn shown(&self) -> String {
@@ -653,7 +731,10 @@ impl HermesInstance {
     }
     /// This Hermes' home: its profile's folder, or Hermes' own home.
     fn home(&self) -> Option<std::path::PathBuf> {
-        let root = std::env::var_os("HERMES_HOME").filter(|h| !h.is_empty()).map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".hermes")))?;
+        let root = std::env::var_os("HERMES_HOME")
+            .filter(|h| !h.is_empty())
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".hermes")))?;
         Some(match &self.profile {
             Some(p) => root.join("profiles").join(p),
             None => root,
@@ -663,7 +744,8 @@ impl HermesInstance {
     fn setting(&self, key: &str) -> Option<String> {
         let said = self.run(&["config", "get", key, "--json"]).ok()?;
         let line = said.lines().map(str::trim).find(|l| !l.is_empty())?;
-        let v = serde_json::from_str::<Value>(line).unwrap_or_else(|_| Value::String(line.to_string()));
+        let v =
+            serde_json::from_str::<Value>(line).unwrap_or_else(|_| Value::String(line.to_string()));
         let v = match v {
             Value::String(s) => s,
             Value::Null => return None,
@@ -681,16 +763,28 @@ pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
     let program = program()?;
     here("hermes")?;
     let me = HermesInstance::of(flags)?;
-    let link = match flag(flags, "--link") {
-        Some(None) => return Err("--link: the invite link of \"Approve a computer\" in the app, in single quotes".into()),
-        Some(Some(l)) => Some(l),
-        None => None,
-    };
+    let link =
+        match flag(flags, "--link") {
+            Some(None) => return Err(
+                "--link: the invite link of \"Approve a computer\" in the app, in single quotes"
+                    .into(),
+            ),
+            Some(Some(l)) => Some(l),
+            None => None,
+        };
     let home = me.home().ok_or("HOME is not set to a folder")?;
     let mut done = Vec::new();
     let dir = home.join("plugins").join(HERMES_ADDON_DIR);
     let changed = write_hermes_addon(&dir, true)?;
-    done.push(format!("Trommi add-on {} in {}", if changed { "written" } else { "there already, unchanged" }, dir.display()));
+    done.push(format!(
+        "Trommi add-on {} in {}",
+        if changed {
+            "written"
+        } else {
+            "there already, unchanged"
+        },
+        dir.display()
+    ));
     me.run(&["plugins", "enable", "trommi-platform"])?;
     done.push("Hermes plugin trommi-platform: on".to_string());
     let home_text = home.display().to_string();
@@ -705,7 +799,9 @@ pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
     ] {
         me.run(&["config", "set", "--force", key, value])?;
     }
-    done.push(format!("Hermes platform trommi: on, as \"{shown}\", starting {program}"));
+    done.push(format!(
+        "Hermes platform trommi: on, as \"{shown}\", starting {program}"
+    ));
     // (Trommi through Hermes' MCP servers, as an earlier setup made it: the add-on replaces it)
     if me.setting("mcp_servers.trommi").is_some() {
         let _ = run_answering("hermes", &me.args(&["mcp", "remove", "trommi"]), "y\n");
@@ -713,9 +809,19 @@ pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
     }
     // (live text: Hermes' streaming is one switch for all its platforms; turned on here, the others keep theirs off,
     //  as the add-on gives them that default when `quiet_others` says setup turned it on)
-    let (on, transport_off) = hermes_streams(me.setting("streaming.enabled"), me.setting("streaming.mode"), me.setting("streaming.transport"));
+    let (on, transport_off) = hermes_streams(
+        me.setting("streaming.enabled"),
+        me.setting("streaming.mode"),
+        me.setting("streaming.transport"),
+    );
     if !on || transport_off {
-        me.run(&["config", "set", "--force", "platforms.trommi.extra.quiet_others", "true"])?;
+        me.run(&[
+            "config",
+            "set",
+            "--force",
+            "platforms.trommi.extra.quiet_others",
+            "true",
+        ])?;
         me.run(&["config", "set", "--force", "streaming.enabled", "true"])?;
         if transport_off {
             me.run(&["config", "set", "--force", "streaming.transport", "auto"])?;
@@ -734,11 +840,15 @@ pub fn hermes(flags: &[String]) -> Result<Vec<String>, String> {
         if !status.success() {
             return Err("the add-on is set up, but this computer was not approved: make a new link in the app (Approve a computer, Hermes) and run this again".to_string());
         }
-        done.push(format!("this computer: approved; \"{shown}\" is on the board"));
+        done.push(format!(
+            "this computer: approved; \"{shown}\" is on the board"
+        ));
         match me.run(&["gateway", "restart"]) {
             Ok(_) => {
                 done.push("Hermes gateway: started again, with Trommi".to_string());
-                done.push(format!("{NEXT}write to \"{shown}\" in its chat on the board."));
+                done.push(format!(
+                    "{NEXT}write to \"{shown}\" in its chat on the board."
+                ));
             }
             Err(why) => {
                 done.push(format!("Hermes gateway: not started again ({why})"));
@@ -760,7 +870,10 @@ const NEXT: &str = "next: ";
 /// this runs in.
 fn as_first_chat(program: &str, me: &HermesInstance, folder: &str) -> Command {
     let mut command = Command::new(program);
-    command.env_clear().envs(std::env::vars_os().filter(|(k, _)| inherited(k))).envs(hermes_env(me, folder));
+    command
+        .env_clear()
+        .envs(std::env::vars_os().filter(|(k, _)| inherited(k)))
+        .envs(hermes_env(me, folder));
     command
 }
 
@@ -779,8 +892,15 @@ fn hermes_paired(program: &str, me: &HermesInstance, folder: &str) -> bool {
 
 /// Hermes' streaming as it reads its settings (gateway/config.py `StreamingConfig`): whether it is switched on
 /// (`enabled`, else a `mode` other than off), and whether its transport (or else that mode) is off.
-fn hermes_streams(enabled: Option<String>, mode: Option<String>, transport: Option<String>) -> (bool, bool) {
-    let off = |v: &Option<String>| v.as_deref().is_some_and(|v| v.eq_ignore_ascii_case("off") || v.eq_ignore_ascii_case("false"));
+fn hermes_streams(
+    enabled: Option<String>,
+    mode: Option<String>,
+    transport: Option<String>,
+) -> (bool, bool) {
+    let off = |v: &Option<String>| {
+        v.as_deref()
+            .is_some_and(|v| v.eq_ignore_ascii_case("off") || v.eq_ignore_ascii_case("false"))
+    };
     let on = match enabled {
         Some(e) => matches!(e.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on"),
         None => mode.is_some() && !off(&mode),
@@ -792,7 +912,15 @@ fn hermes_streams(enabled: Option<String>, mode: Option<String>, transport: Opti
 /// Whether a variable of this terminal goes on to the approving connector: not what names the agent session this runs
 /// in (a Claude Code's or Codex' with Trommi), which would make it that session's connector.
 fn inherited(key: &std::ffi::OsStr) -> bool {
-    const SESSION: [&str; 7] = ["TROMMI_SESSION_KEY", "TROMMI_HOST", "TROMMI_INSTANCE", "TROMMI_AGENT_NAME", "TROMMI_CHANNEL_EVENTS", "TROMMI_JOIN_OTHER", "TROMMI_SPARE"];
+    const SESSION: [&str; 7] = [
+        "TROMMI_SESSION_KEY",
+        "TROMMI_HOST",
+        "TROMMI_INSTANCE",
+        "TROMMI_AGENT_NAME",
+        "TROMMI_CHANNEL_EVENTS",
+        "TROMMI_JOIN_OTHER",
+        "TROMMI_SPARE",
+    ];
     let key = key.to_string_lossy();
     !(SESSION.contains(&key.as_ref()) || key.starts_with("CLAUDE") || key.starts_with("CODEX_"))
 }
@@ -800,7 +928,11 @@ fn inherited(key: &std::ffi::OsStr) -> bool {
 /// The environment the add-on gives the connector of this Hermes' first chat (trommi_platform/chats.py `env`).
 pub fn hermes_env(me: &HermesInstance, folder: &str) -> Vec<(&'static str, String)> {
     let slug = me.slug();
-    let key = if slug.is_empty() { "hermes".to_string() } else { format!("hermes-{slug}") };
+    let key = if slug.is_empty() {
+        "hermes".to_string()
+    } else {
+        format!("hermes-{slug}")
+    };
     vec![
         ("TROMMI_HOST", "hermes".into()),
         ("TROMMI_INSTANCE", slug),
@@ -815,27 +947,46 @@ pub fn remove_hermes(flags: &[String]) -> Result<Vec<String>, String> {
     let me = HermesInstance::of(flags)?;
     let mut done = Vec::new();
     // (streaming as it was before setup turned it on for Trommi)
-    if matches!(me.setting("platforms.trommi.extra.quiet_others").as_deref(), Some("true" | "True")) {
+    if matches!(
+        me.setting("platforms.trommi.extra.quiet_others").as_deref(),
+        Some("true" | "True")
+    ) {
         match me.run(&["config", "set", "--force", "streaming.enabled", "false"]) {
             Ok(_) => done.push("Hermes streaming: off again, as before Trommi".to_string()),
             Err(why) => done.push(format!("Hermes streaming: not turned off ({why})")),
         }
-        let _ = me.run(&["config", "set", "--force", "platforms.trommi.extra.quiet_others", "false"]);
+        let _ = me.run(&[
+            "config",
+            "set",
+            "--force",
+            "platforms.trommi.extra.quiet_others",
+            "false",
+        ]);
     }
-    match me.run(&["config", "set", "--force", "platforms.trommi.enabled", "false"]) {
+    match me.run(&[
+        "config",
+        "set",
+        "--force",
+        "platforms.trommi.enabled",
+        "false",
+    ]) {
         Ok(_) => done.push("Hermes platform trommi: off".to_string()),
         Err(why) => done.push(format!("Hermes platform trommi: not turned off ({why})")),
     }
     match me.run(&["plugins", "disable", "trommi-platform"]) {
         Ok(_) => done.push("Hermes plugin trommi-platform: off".to_string()),
-        Err(why) => done.push(format!("Hermes plugin trommi-platform: not turned off ({why})")),
+        Err(why) => done.push(format!(
+            "Hermes plugin trommi-platform: not turned off ({why})"
+        )),
     }
     if let Some(dir) = me.home().map(|h| h.join("plugins").join(HERMES_ADDON_DIR)) {
         if std::fs::remove_dir_all(&dir).is_ok() {
             done.push(format!("the add-on's folder removed ({})", dir.display()));
         }
     }
-    done.push("the Trommi chats of this Hermes stay on the board until you archive them".to_string());
+    done.push(
+        "the Trommi chats of this Hermes stay on the board until you archive them".to_string(),
+    );
     Ok(done)
 }
 
@@ -852,11 +1003,17 @@ fn run_answering(program: &str, args: &[&str], answers: &str) -> Result<String, 
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(answers.as_bytes());
     }
-    let output = child.wait_with_output().map_err(|error| format!("`{program}` did not end ({error})"))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("`{program}` did not end ({error})"))?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
-        Err(format!("`{program} {}` failed: {}", args.first().copied().unwrap_or(""), String::from_utf8_lossy(&output.stderr).trim()))
+        Err(format!(
+            "`{program} {}` failed: {}",
+            args.first().copied().unwrap_or(""),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
     }
 }
 
@@ -1092,15 +1249,33 @@ mod hermes_tests {
     fn a_hermes_has_a_name_profile_and_slug_of_its_own() {
         let f = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         let one = HermesInstance::of(&[]).unwrap();
-        assert_eq!((one.shown(), one.slug(), one.args(&["plugins"])), ("Hermes".to_string(), String::new(), vec!["plugins"]));
+        assert_eq!(
+            (one.shown(), one.slug(), one.args(&["plugins"])),
+            ("Hermes".to_string(), String::new(), vec!["plugins"])
+        );
         let two = HermesInstance::of(&f(&["--name", "Einkauf", "--profile", "einkauf"])).unwrap();
-        assert_eq!((two.shown(), two.slug(), two.args(&["plugins"])), ("Hermes Einkauf".to_string(), "einkauf".to_string(), vec!["-p", "einkauf", "plugins"]));
+        assert_eq!(
+            (two.shown(), two.slug(), two.args(&["plugins"])),
+            (
+                "Hermes Einkauf".to_string(),
+                "einkauf".to_string(),
+                vec!["-p", "einkauf", "plugins"]
+            )
+        );
         assert!(HermesInstance::of(&f(&["--profile", "../x"])).is_err());
         // (a profile without a name is a Hermes of its own all the same: its own key)
-        assert_eq!(HermesInstance::of(&f(&["--profile", "work_2"])).unwrap().slug(), "work2");
+        assert_eq!(
+            HermesInstance::of(&f(&["--profile", "work_2"]))
+                .unwrap()
+                .slug(),
+            "work2"
+        );
         // (a name that looks like an option is the name's)
         let odd = f(&["--name", "--link", "--link", "L"]);
-        assert_eq!(HermesInstance::of(&odd).unwrap().name.as_deref(), Some("--link"));
+        assert_eq!(
+            HermesInstance::of(&odd).unwrap().name.as_deref(),
+            Some("--link")
+        );
         assert_eq!(flag(&odd, "--link"), Some(Some("L".into())));
         assert_eq!(flag(&f(&["--link"]), "--link"), Some(None));
     }
@@ -1118,20 +1293,34 @@ mod hermes_tests {
 
     #[test]
     fn the_addon_is_written_whole_and_only_when_it_changed() {
-        let base = std::env::temp_dir().join(format!("trommi-addon-{}", crate::util::random_hex(6)));
+        let base =
+            std::env::temp_dir().join(format!("trommi-addon-{}", crate::util::random_hex(6)));
         let dir = base.join(HERMES_ADDON_DIR);
         assert!(write_hermes_addon(&dir, true).unwrap());
         for (rel, text) in HERMES_ADDON {
             assert_eq!(std::fs::read_to_string(dir.join(rel)).unwrap(), text);
         }
-        let spec: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("trommi.json")).unwrap()).unwrap();
-        assert!(spec["tools"].as_array().unwrap().iter().any(|t| t["name"] == "create_decision"));
-        assert!(!write_hermes_addon(&dir, true).unwrap(), "nothing new: nothing written");
+        let spec: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("trommi.json")).unwrap())
+                .unwrap();
+        assert!(spec["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == "create_decision"));
+        assert!(
+            !write_hermes_addon(&dir, true).unwrap(),
+            "nothing new: nothing written"
+        );
         std::fs::write(dir.join("trommi_platform/adapter.py"), "old").unwrap();
         // (a build that is no release never replaces it by itself; setup does)
         assert!(!write_hermes_addon(&dir, false).unwrap());
         assert!(write_hermes_addon(&dir, true).unwrap());
-        assert_eq!(std::fs::read_dir(&base).unwrap().count(), 1, "no stage, old folder or lock left");
+        assert_eq!(
+            std::fs::read_dir(&base).unwrap().count(),
+            1,
+            "no stage, old folder or lock left"
+        );
         let _ = std::fs::remove_dir_all(&base);
     }
 }

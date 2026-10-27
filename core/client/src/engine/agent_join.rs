@@ -53,7 +53,6 @@ pub(super) struct Way {
     pub(super) invite: Option<AgentInvite>,
     observe_asked: Option<IoId>,
     pub(super) observe_retry: Retry,
-
 }
 
 impl Way {
@@ -66,8 +65,23 @@ impl Engine {
     /// Opens an agent device's stored state as an agent's engine, with what the connector stored when it answered
     /// the invite. A device that answered the invite and follows no room yet opens too: it follows the room from
     /// the Offer's epoch first. `Device("wrong-room")` for a state of another room than the invite's.
-    pub fn open_agent(hub: &str, client: &str, seed: u64, revision: u64, entries: Vec<DeviceEntry>, invite: AgentInvite) -> Result<Self, OpenError> {
-        Self::open_agent_with(hub, client, seed, revision, entries, invite, Box::new(SystemEntropy))
+    pub fn open_agent(
+        hub: &str,
+        client: &str,
+        seed: u64,
+        revision: u64,
+        entries: Vec<DeviceEntry>,
+        invite: AgentInvite,
+    ) -> Result<Self, OpenError> {
+        Self::open_agent_with(
+            hub,
+            client,
+            seed,
+            revision,
+            entries,
+            invite,
+            Box::new(SystemEntropy),
+        )
     }
 
     pub fn open_agent_with(
@@ -83,7 +97,10 @@ impl Engine {
             return Err(OpenError::NoRoom);
         }
         let address = HubAddress::parse(hub).map_err(|_| OpenError::Hub)?;
-        let (store, writes) = super::memstore::store(revision, entries.into_iter().map(|e| (e.key.0, e.value.0)).collect());
+        let (store, writes) = super::memstore::store(
+            revision,
+            entries.into_iter().map(|e| (e.key.0, e.value.0)).collect(),
+        );
         let device = Device::open(store, entropy).map_err(|e| OpenError::Device(e.code()))?;
         let room = match device.room() {
             Some(room) if room != invite.room => return Err(OpenError::Device("wrong-room")),
@@ -93,7 +110,9 @@ impl Engine {
             None => invite.room,
         };
         let mut engine = Self::over(device, writes, room, hub, address, client, seed);
-        engine.become_agent().map_err(|e| OpenError::Device(e.code()))?;
+        engine
+            .become_agent()
+            .map_err(|e| OpenError::Device(e.code()))?;
         if let Some(agent) = engine.agent.as_mut() {
             agent.way.invite = Some(invite);
         }
@@ -112,17 +131,30 @@ impl Engine {
             return true;
         }
         let room = GroupId::room(self.room);
-        let Some(agent) = self.agent.as_mut() else { return true };
+        let Some(agent) = self.agent.as_mut() else {
+            return true;
+        };
         let Some(epoch) = agent.way.invite.as_ref().map(|i| i.room_epoch) else {
             // (a state that follows no room, opened without its invite: nothing to follow it from)
-            ctx.log(LogLevel::Error, "an agent device that follows no room was opened without its invite");
+            ctx.log(
+                LogLevel::Error,
+                "an agent device that follows no room was opened without its invite",
+            );
             self.stop(ctx, Stopped::NotMember);
             return false;
         };
         if agent.way.observe_asked.is_some() || agent.way.observe_retry.waiting(ctx.now) {
             return false;
         }
-        let asked = self.ask(ctx, Route::GroupInfo { group: &room, epoch: Some(epoch) }, true, |expect| Asked::ObserveRoom { expect });
+        let asked = self.ask(
+            ctx,
+            Route::GroupInfo {
+                group: &room,
+                epoch: Some(epoch),
+            },
+            true,
+            |expect| Asked::ObserveRoom { expect },
+        );
         if let Some(agent) = self.agent.as_mut() {
             agent.way.observe_asked = asked;
         }
@@ -130,19 +162,27 @@ impl Engine {
     }
 
     pub(super) fn on_observe(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>) {
-        let Some(agent) = self.agent.as_mut() else { return };
+        let Some(agent) = self.agent.as_mut() else {
+            return;
+        };
         agent.way.observe_asked = None;
         let info = match answer {
             Ok(Answer::GroupInfo { group_info, .. }) => group_info,
             Ok(_) | Err(_) => {
-                agent.way.observe_retry.fail(ctx.now, None, &mut self.jitter);
+                agent
+                    .way
+                    .observe_retry
+                    .fail(ctx.now, None, &mut self.jitter);
                 return;
             }
         };
         agent.way.observe_retry.ok();
         match self.device.join_observe(&info) {
             Ok(()) => {
-                ctx.log(LogLevel::Info, "the room is followed from the invite's epoch");
+                ctx.log(
+                    LogLevel::Info,
+                    "the room is followed from the invite's epoch",
+                );
                 self.report(super::Report::Groups);
             }
             Err(e) => {
@@ -169,14 +209,27 @@ impl Engine {
 
     /// A Welcome an agent device joined: whether it is one the device must not hold. `named`: the group the hub
     /// named; `had_main`: the device held a main session before this answer's Welcomes.
-    pub(super) fn agent_welcome_wrong(&self, named: &GroupId, joined: &Joined, had_main: bool) -> bool {
-        let Some(agent) = self.agent.as_ref() else { return false };
+    pub(super) fn agent_welcome_wrong(
+        &self,
+        named: &GroupId,
+        joined: &Joined,
+        had_main: bool,
+    ) -> bool {
+        let Some(agent) = self.agent.as_ref() else {
+            return false;
+        };
         if joined.group != *named || joined.group.is_room() {
             return true;
         }
         let invited = agent.way.invite.as_ref().and_then(|i| i.session);
-        let session = self.device.group(&joined.group).ok().and_then(|s| s.session);
-        session.is_some_and(|s| s.parent.is_zero() && !had_main && invited.is_some_and(|wanted| wanted != s.session_id))
+        let session = self
+            .device
+            .group(&joined.group)
+            .ok()
+            .and_then(|s| s.session);
+        session.is_some_and(|s| {
+            s.parent.is_zero() && !had_main && invited.is_some_and(|wanted| wanted != s.session_id)
+        })
     }
 
     /// A Welcome the device must not hold: nothing of this step is written, and the engine stops. The stored state
@@ -187,5 +240,4 @@ impl Engine {
         let _ = self.writes.take();
         self.stop(ctx, Stopped::BadWelcome);
     }
-
 }

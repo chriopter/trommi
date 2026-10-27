@@ -177,9 +177,12 @@ async fn exchange(cfg: &Cfg, room: &str, operation: Operation) -> Result<Option<
 /// The nonce of the person's ask for a new chat this session answers (`TROMMI_NEW_CHAT`, set by the Hermes add-on
 /// for a chat it started on that ask): lower-case hex, at most 64 characters; none otherwise.
 fn new_chat_nonce() -> Option<String> {
-    std::env::var("TROMMI_NEW_CHAT")
-        .ok()
-        .filter(|n| !n.is_empty() && n.len() <= 64 && n.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+    std::env::var("TROMMI_NEW_CHAT").ok().filter(|n| {
+        !n.is_empty()
+            && n.len() <= 64
+            && n.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
 }
 
 /// Whether this session's own key is no way back into the room: the hub refused it (`retired`), or it could not
@@ -187,7 +190,8 @@ fn new_chat_nonce() -> Option<String> {
 /// still ending, whose key is waited for). Never while the hub is not reachable (asleep with an error), a key is
 /// being opened or a join runs.
 fn own_key_gone(cfg: &Cfg, member: &Arc<Member>) -> bool {
-    ["retired", "needs-invite"].contains(&member.phase().as_str()) && member::own_keys_held(cfg).is_empty()
+    ["retired", "needs-invite"].contains(&member.phase().as_str())
+        && member::own_keys_held(cfg).is_empty()
 }
 
 /// Explicit per-session activation. Requests and polls briefly open the approved computer, then release it.
@@ -315,8 +319,15 @@ mod tests {
         std::fs::create_dir_all(&p.dir).unwrap();
         std::fs::write(&p.key_file, crate::slotstore::KEY_MARKER).unwrap();
         crate::slots::write_owner(&p, &crate::slots::owner_record("cc:test", None));
-        let mut holder = std::process::Command::new("sleep").arg("30").spawn().unwrap();
-        std::fs::write(format!("{}.{}", p.lock_file.display(), holder.id()), "ppid:1").unwrap();
+        let mut holder = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        std::fs::write(
+            format!("{}.{}", p.lock_file.display(), holder.id()),
+            "ppid:1",
+        )
+        .unwrap();
         assert!(!own_key_gone(&f.0, &member));
         // (also beside an old retirement mark: the held key is waited for)
         set("retired");

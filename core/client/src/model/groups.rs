@@ -448,14 +448,23 @@ impl Model {
         let empty: Vec<String> = self
             .sessions
             .values()
-            .filter(|s| s.group_id.is_some() && !live.contains(&s.session_id) && s.session_key_epoch == 0)
+            .filter(|s| {
+                s.group_id.is_some() && !live.contains(&s.session_id) && s.session_key_epoch == 0
+            })
             .filter(|s| s.card_ids.is_empty() && s.registers.is_empty())
-            .filter(|s| self.timelines.get(&s.timeline_key).is_none_or(|t| t.item_count == 0 && t.items.is_empty()))
+            .filter(|s| {
+                self.timelines
+                    .get(&s.timeline_key)
+                    .is_none_or(|t| t.item_count == 0 && t.items.is_empty())
+            })
             .map(|s| s.session_id.clone())
             .collect();
         for id in empty {
             self.sessions.remove(&id);
-            if let Some(t) = self.timelines.remove(&timeline_key("chat", &format!("session/{id}"))) {
+            if let Some(t) = self
+                .timelines
+                .remove(&timeline_key("chat", &format!("session/{id}")))
+            {
                 change.timelines.insert(t.timeline_key);
             }
             change.sessions.insert(id);
@@ -608,11 +617,24 @@ impl Model {
             let Some(m) = self.members.get_mut(&d.device_id) else {
                 // A device the groups have not named yet (a new stream tells who is here before this device has read
                 // its groups): its report waits for it (`member_of`), the newest one, its link kept as presence does.
-                if self.presence_held.len() < PRESENCE_HELD_MAX || self.presence_held.contains_key(&d.device_id) {
+                if self.presence_held.len() < PRESENCE_HELD_MAX
+                    || self.presence_held.contains_key(&d.device_id)
+                {
                     let mut r = d.clone();
-                    r.last_seen_ms = r.last_seen_ms.max(self.presence_held.get(&d.device_id).and_then(|h| h.last_seen_ms)).filter(|t| *t > 0).map(|t| t.min(now));
+                    r.last_seen_ms = r
+                        .last_seen_ms
+                        .max(
+                            self.presence_held
+                                .get(&d.device_id)
+                                .and_then(|h| h.last_seen_ms),
+                        )
+                        .filter(|t| *t > 0)
+                        .map(|t| t.min(now));
                     if r.link.is_none() && r.is_online {
-                        r.link = self.presence_held.get(&d.device_id).and_then(|h| h.link.clone());
+                        r.link = self
+                            .presence_held
+                            .get(&d.device_id)
+                            .and_then(|h| h.link.clone());
                     }
                     self.presence_held.insert(d.device_id.clone(), r);
                 }

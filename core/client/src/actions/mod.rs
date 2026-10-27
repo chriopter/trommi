@@ -107,7 +107,11 @@ pub enum Action {
     /// that agent's new chats always stood (its approved computer's team).
     NewChat {
         session_id: String,
-        #[serde(default, deserialize_with = "missing_or_null", skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "missing_or_null",
+            skip_serializing_if = "Option::is_none"
+        )]
         team_id: Option<Option<String>>,
     },
     /// A line to a session's agent (or to a card's chat).
@@ -267,12 +271,17 @@ pub enum Action {
     /// A sealed native share inbox item. Recipient selection and upload completion belong to the core.
     ImportShare {
         id: String,
-        #[serde(default)] room: Option<String>,
-        #[serde(default)] team: Option<String>,
-        #[serde(default)] to: Option<String>,
-        #[serde(default)] send: bool,
+        #[serde(default)]
+        room: Option<String>,
+        #[serde(default)]
+        team: Option<String>,
+        #[serde(default)]
+        to: Option<String>,
+        #[serde(default)]
+        send: bool,
         text: String,
-        #[serde(default)] files: Vec<SharedFile>,
+        #[serde(default)]
+        files: Vec<SharedFile>,
     },
     /// The note being written, kept as it stands (the note page saves by itself while he types and when he leaves
     /// it): `note_id` is the note the page shows (none: a new one). The core decides: a new note once there are
@@ -290,7 +299,12 @@ pub enum Action {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         to: Option<String>,
     },
-    WriteNoteFiles { #[serde(default)] note_id: Option<String>, text: String, attachments: Vec<String> },
+    WriteNoteFiles {
+        #[serde(default)]
+        note_id: Option<String>,
+        text: String,
+        attachments: Vec<String>,
+    },
     WriteNote {
         #[serde(default)]
         note_id: Option<String>,
@@ -316,7 +330,14 @@ pub enum Action {
     /// `nw?, nh?, mime?, name?`. Shown at once (`BoardShape.local` is `<local_id>/<index>`), taken back with a toast
     /// if the hub refuses it. `local_id`: the shell's own, unique per item.
     /// A native pen's uncompressed points in board units: x, y, elapsed ms, force 0..1. Packing is shared.
-    DrawStroke { board_id: String, local_id: String, points: Vec<serde_json::Value>, tool: String, color: String, width: u32 },
+    DrawStroke {
+        board_id: String,
+        local_id: String,
+        points: Vec<serde_json::Value>,
+        tool: String,
+        color: String,
+        width: u32,
+    },
     BoardItem {
         board_id: String,
         local_id: String,
@@ -397,10 +418,16 @@ pub fn nullable<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>
 
 /// A field that may be missing (none: as before) or null (`Some(None)`: no team), else a team's id
 /// (`AccountAction::InviteAgent.team`).
-pub fn missing_or_null<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<String>>, D::Error> {
+pub fn missing_or_null<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<Option<String>>, D::Error> {
     Option::<String>::deserialize(d).map(Some)
 }
 
 /// Bytes picked in a native share sheet; never logged.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SharedFile { pub name: String, pub media_type: String, pub bytes: Bytes }
+pub struct SharedFile {
+    pub name: String,
+    pub media_type: String,
+    pub bytes: Bytes,
+}

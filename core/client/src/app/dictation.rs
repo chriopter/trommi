@@ -81,7 +81,20 @@ impl App {
             self.dictation_run(now_ms, todo, out);
             if let Some(key) = self.dictation.key.clone() {
                 let id = self.io(super::Pending::DictationWrite);
-                let op = if on { StoreOp::Put { put: Vec::new(), delete: vec![key] } } else { StoreOp::Put { put: vec![Entry { key, value: Bytes(b"0".to_vec()) }], delete: Vec::new() } };
+                let op = if on {
+                    StoreOp::Put {
+                        put: Vec::new(),
+                        delete: vec![key],
+                    }
+                } else {
+                    StoreOp::Put {
+                        put: vec![Entry {
+                            key,
+                            value: Bytes(b"0".to_vec()),
+                        }],
+                        delete: Vec::new(),
+                    }
+                };
                 out.push(Effect::Store { id, op });
             }
             if on {
@@ -102,7 +115,9 @@ impl App {
         if self.demo {
             let d = &mut self.dictation.machine;
             match step {
-                DictateStep::Start { session } if !d.is_recording() => d.demo_recording(now_ms, &session),
+                DictateStep::Start { session } if !d.is_recording() => {
+                    d.demo_recording(now_ms, &session)
+                }
                 DictateStep::Stop if d.is_recording() => d.demo_done(DEMO_TEXT),
                 DictateStep::Cancel => {
                     d.cancel();
@@ -115,7 +130,11 @@ impl App {
         }
         let todo = match step {
             DictateStep::Start { session } => {
-                let locale = self.config.as_ref().map(|c| c.locale.clone()).unwrap_or_default();
+                let locale = self
+                    .config
+                    .as_ref()
+                    .map(|c| c.locale.clone())
+                    .unwrap_or_default();
                 self.dictation.machine.set_locale(&locale);
                 self.dictation.machine.start(now_ms, &session)
             }
@@ -151,7 +170,10 @@ impl App {
         let key = crate::cache::key(room_hex, crate::cache::part::DICTATION, None);
         self.dictation.key = Some(key.clone());
         let id = self.io(super::Pending::DictationRead);
-        out.push(Effect::Store { id, op: StoreOp::Get { keys: vec![key] } });
+        out.push(Effect::Store {
+            id,
+            op: StoreOp::Get { keys: vec![key] },
+        });
     }
 
     pub(super) fn dictation_read(&mut self, result: &IoResult<StoreAnswer>) {
@@ -183,21 +205,42 @@ impl App {
             match step {
                 Do::Record { max_ms } => {
                     let id = self.dictation_io(Io::Record);
-                    out.push(Effect::Platform { id, op: PlatformOp::RecordStart { max_ms }, window: 0 });
+                    out.push(Effect::Platform {
+                        id,
+                        op: PlatformOp::RecordStart { max_ms },
+                        window: 0,
+                    });
                 }
                 Do::Stop => {
                     let id = self.dictation_io(Io::Stop);
-                    out.push(Effect::Platform { id, op: PlatformOp::RecordStop, window: 0 });
+                    out.push(Effect::Platform {
+                        id,
+                        op: PlatformOp::RecordStop,
+                        window: 0,
+                    });
                 }
                 Do::Drop => {
                     // (what the recording still owes is dropped when it comes: a late recording never enters a new one)
-                    self.dictation.asked.retain(|_, io| !matches!(io, Io::Record | Io::Stop));
+                    self.dictation
+                        .asked
+                        .retain(|_, io| !matches!(io, Io::Record | Io::Stop));
                     let id = self.dictation_io(Io::Drop);
-                    out.push(Effect::Platform { id, op: PlatformOp::RecordCancel, window: 0 });
+                    out.push(Effect::Platform {
+                        id,
+                        op: PlatformOp::RecordCancel,
+                        window: 0,
+                    });
                 }
                 Do::Attest { bundle, repo } => {
                     let id = self.dictation_io(Io::Attest);
-                    out.push(Effect::Platform { id, op: PlatformOp::Attest { bundle: Bytes(bundle), repo: repo.to_string() }, window: 0 });
+                    out.push(Effect::Platform {
+                        id,
+                        op: PlatformOp::Attest {
+                            bundle: Bytes(bundle),
+                            repo: repo.to_string(),
+                        },
+                        window: 0,
+                    });
                 }
                 Do::FetchBundle => {
                     if !self.dictation_send(now_ms, out, Io::Bundle, None) {
@@ -217,7 +260,13 @@ impl App {
                     }
                 }
                 Do::CancelSend => {
-                    let sending: Vec<IoId> = self.dictation.asked.iter().filter(|(_, io)| **io == Io::Send).map(|(id, _)| *id).collect();
+                    let sending: Vec<IoId> = self
+                        .dictation
+                        .asked
+                        .iter()
+                        .filter(|(_, io)| **io == Io::Send)
+                        .map(|(id, _)| *id)
+                        .collect();
                     // (the engine's request runs out; its answer, owned by nobody now, is dropped)
                     for id in sending {
                         self.dictation.asked.remove(&id);
@@ -229,7 +278,13 @@ impl App {
     }
 
     /// A request through the engine (it adds the token and renews it); false when none could be made.
-    fn dictation_send(&mut self, now_ms: u64, out: &mut Vec<Effect>, io: Io, sealed: Option<crate::hub::stt::SttSealed>) -> bool {
+    fn dictation_send(
+        &mut self,
+        now_ms: u64,
+        out: &mut Vec<Effect>,
+        io: Io,
+        sealed: Option<crate::hub::stt::SttSealed>,
+    ) -> bool {
         let cell = std::rc::Rc::new(std::cell::RefCell::new(None));
         let put = cell.clone();
         let sent = self.with_engine(now_ms, out, move |engine, ctx| {
@@ -259,8 +314,16 @@ impl App {
     }
 
     /// The platform answered a dictation's op.
-    pub(super) fn dictation_platform(&mut self, now_ms: u64, id: IoId, result: IoResult<PlatformAnswer>, out: &mut Vec<Effect>) {
-        let Some(io) = self.dictation.asked.remove(&id) else { return };
+    pub(super) fn dictation_platform(
+        &mut self,
+        now_ms: u64,
+        id: IoId,
+        result: IoResult<PlatformAnswer>,
+        out: &mut Vec<Effect>,
+    ) {
+        let Some(io) = self.dictation.asked.remove(&id) else {
+            return;
+        };
         let d = &mut self.dictation.machine;
         let todo = match (io, result) {
             (Io::Record, IoResult::Ok(PlatformAnswer::Recording)) => {
@@ -271,15 +334,25 @@ impl App {
                 d.mic_refused();
                 Vec::new()
             }
-            (Io::Stop, IoResult::Ok(PlatformAnswer::Recorded { audio, ms })) => d.recorded(audio.0, ms),
+            (Io::Stop, IoResult::Ok(PlatformAnswer::Recorded { audio, ms })) => {
+                d.recorded(audio.0, ms)
+            }
             (Io::Stop, _) => d.recorded(Vec::new(), 0),
             (Io::Attest, IoResult::Ok(PlatformAnswer::Attested { hpke_key, domain })) => {
-                let verdict = <[u8; 32]>::try_from(&hpke_key.0[..]).ok().map(|hpke_key| Attested { hpke_key, domain });
+                let verdict = <[u8; 32]>::try_from(&hpke_key.0[..])
+                    .ok()
+                    .map(|hpke_key| Attested { hpke_key, domain });
                 d.attested(now_ms, verdict)
             }
             (Io::Attest, other) => {
                 if let IoResult::Ok(PlatformAnswer::NotAttested { reason }) = &other {
-                    out.push(log(LogLevel::Warn, &format!("dictation: the enclave's attestation failed: {}", reason.chars().take(200).collect::<String>())));
+                    out.push(log(
+                        LogLevel::Warn,
+                        &format!(
+                            "dictation: the enclave's attestation failed: {}",
+                            reason.chars().take(200).collect::<String>()
+                        ),
+                    ));
                 }
                 d.attested(now_ms, None)
             }
@@ -289,17 +362,31 @@ impl App {
     }
 
     /// The hub answered a dictation's request.
-    pub(super) fn dictation_answered(&mut self, now_ms: u64, id: IoId, result: &Result<crate::app::io::HttpResponse, Failure>, out: &mut Vec<Effect>) {
-        let Some(io) = self.dictation.asked.remove(&id) else { return };
-        let Some(expect) = self.dictation.expect.remove(&id) else { return };
+    pub(super) fn dictation_answered(
+        &mut self,
+        now_ms: u64,
+        id: IoId,
+        result: &Result<crate::app::io::HttpResponse, Failure>,
+        out: &mut Vec<Effect>,
+    ) {
+        let Some(io) = self.dictation.asked.remove(&id) else {
+            return;
+        };
+        let Some(expect) = self.dictation.expect.remove(&id) else {
+            return;
+        };
         let answer = match result {
             Ok(response) => Codec.answer(&expect, response),
             Err(failure) => Err(failure.clone()),
         };
         let sorted = |failure: &Failure| match failure {
             Failure::Offline => Sent::Offline,
-            Failure::Refused { code: Some(code), .. } if code == "rate-limited" || code == "too-many" => Sent::TooMany,
-            Failure::Refused { code: Some(code), .. } if code == "not-found" => Sent::Off,
+            Failure::Refused {
+                code: Some(code), ..
+            } if code == "rate-limited" || code == "too-many" => Sent::TooMany,
+            Failure::Refused {
+                code: Some(code), ..
+            } if code == "not-found" => Sent::Off,
             Failure::NotNow { status: 429, .. } => Sent::TooMany,
             Failure::NotNow { .. } => Sent::Upstream,
             _ => Sent::Failed,
@@ -313,7 +400,9 @@ impl App {
                 Sent::Offline => Problem::Offline,
                 _ => Problem::Failed,
             }),
-            (Io::Send, Ok(Answer::SttSealed { nonce, body })) => d.sent(Sent::Answered { nonce, body }),
+            (Io::Send, Ok(Answer::SttSealed { nonce, body })) => {
+                d.sent(Sent::Answered { nonce, body })
+            }
             (Io::Send, Err(failure)) => d.sent(sorted(&failure)),
             (Io::Test, Ok(Answer::SttSealed { nonce, body })) => {
                 d.test_sent(now_ms, Sent::Answered { nonce, body });
@@ -346,4 +435,3 @@ impl App {
         self.next_view.dictation = self.dictation.machine.view(available, self.dictation.now);
     }
 }
-

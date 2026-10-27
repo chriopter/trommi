@@ -193,10 +193,9 @@ pub fn make_room(x: &Ctx, room: &Room, extra: u64, fx: &mut Effects) -> Res<u64>
         if freed >= need {
             break;
         }
-        let shared = x
-            .c
-            .prepare_cached("SELECT 1 FROM shares WHERE room_id = ?1 AND file_id = ?2")?
-            .exists(params![&room[..], &id[..]])?;
+        let shared =
+            x.c.prepare_cached("SELECT 1 FROM shares WHERE room_id = ?1 AND file_id = ?2")?
+                .exists(params![&room[..], &id[..]])?;
         if shared || crate::prune::kept_by_board(x.c, room, &id)? {
             continue;
         }
@@ -395,7 +394,10 @@ pub fn sweep_deleted_rooms(db: &crate::db::Db, dir: &Path) -> usize {
         if matches!(exists, Ok(false)) {
             match std::fs::remove_dir_all(entry.path()) {
                 Ok(()) => removed += 1,
-                Err(e) => crate::log::warn("files", json!({ "deleted_room_folder_left": name, "error": e.to_string() })),
+                Err(e) => crate::log::warn(
+                    "files",
+                    json!({ "deleted_room_folder_left": name, "error": e.to_string() }),
+                ),
             }
         }
     }

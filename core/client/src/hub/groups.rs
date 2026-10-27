@@ -602,16 +602,22 @@ pub(crate) fn archive_request(site: &Site<'_>, group: &GroupId) -> Read<HttpRequ
     if group.is_room() {
         return bad("the request: the room group is never archived");
     }
-    Ok(begin(site, "POST", &group_path(group, "archive"), true, CAP_WRITE)?
-        .json(&json!({}))
-        .done())
+    Ok(
+        begin(site, "POST", &group_path(group, "archive"), true, CAP_WRITE)?
+            .json(&json!({}))
+            .done(),
+    )
 }
 
 /// The answer to [`archive_request`]: `{"archived": true}`, or the failure.
 pub(crate) fn archive_answer(response: &crate::app::io::HttpResponse) -> Read<()> {
     super::classify(response)?;
     let body = Json::parse(&response.body.0, CAP_WRITE)?;
-    if !body.obj("an archive answer: an object")?.need("archived").bool("archived")? {
+    if !body
+        .obj("an archive answer: an object")?
+        .need("archived")
+        .bool("archived")?
+    {
         return bad("archived");
     }
     Ok(())

@@ -124,8 +124,14 @@ fn the_hooks_read_claude_codes_inputs_at_the_level_steps() {
         "another tool's arguments never"
     );
     // the board's own tools are no steps; the helper they are for is read from them (`session` as older tools say)
-    for args in [json!({ "text": "SECRET", "helper": "Design" }), json!({ "text": "SECRET", "session": "Design" })] {
-        let r = line(&pre("t10", "mcp__plugin_trommi_trommi__reply", args), Level::Steps);
+    for args in [
+        json!({ "text": "SECRET", "helper": "Design" }),
+        json!({ "text": "SECRET", "session": "Design" }),
+    ] {
+        let r = line(
+            &pre("t10", "mcp__plugin_trommi_trommi__reply", args),
+            Level::Steps,
+        );
         assert!(r["board"] == json!(true) && r["helper"] == json!("Design") && !has(&r, "SECRET"));
     }
     // results: the state and the time, nothing of the output
@@ -845,7 +851,10 @@ fn helpers_are_a_line_in_their_callers_trail() {
     assert_eq!(turns.len(), 1, "one turn: a helper has no trail of its own");
     let main = &turns[0].1;
     assert_eq!(main["state"].as_str(), Some("done"));
-    assert_eq!(brief(main), ["step Agent ok", "helper Explore ok", "helper Design ok"]);
+    assert_eq!(
+        brief(main),
+        ["step Agent ok", "helper Explore ok", "helper Design ok"]
+    );
     assert_eq!(
         (
             main["items"][1]["steps"].as_u64(),
@@ -1604,15 +1613,44 @@ fn codex_tool_hooks_name_their_turn_and_thread() {
 /// keeps what it searched for (redacted), and the connector lists it, so the app says "reads team knowledge (12)".
 #[test]
 fn a_read_of_the_team_knowledge_is_a_step() {
-    let search = pre("k1", "mcp__plugin_trommi_trommi__search_knowledge", json!({ "query": "deploy token=SECRET123" }));
+    let search = pre(
+        "k1",
+        "mcp__plugin_trommi_trommi__search_knowledge",
+        json!({ "query": "deploy token=SECRET123" }),
+    );
     let r = line(&search, Level::Steps);
-    assert!(r["knowledge"] == json!(true) && r.get("board").is_none(), "{r}");
+    assert!(
+        r["knowledge"] == json!(true) && r.get("board").is_none(),
+        "{r}"
+    );
     assert!(has(&r, "deploy") && !has(&r, "SECRET123"), "{r}");
-    let read = line(&pre("k2", "mcp__trommi__read_knowledge", json!({ "id": "abcdef12" })), Level::Full);
-    assert!(read["knowledge"] == json!(true) && read.get("input").is_none() && read.get("subject").is_none(), "{read}");
+    let read = line(
+        &pre(
+            "k2",
+            "mcp__trommi__read_knowledge",
+            json!({ "id": "abcdef12" }),
+        ),
+        Level::Full,
+    );
+    assert!(
+        read["knowledge"] == json!(true)
+            && read.get("input").is_none()
+            && read.get("subject").is_none(),
+        "{read}"
+    );
     // (proposing is a card: a board call like the others)
-    let propose = line(&pre("k3", "mcp__trommi__propose_knowledge", json!({ "title": "T", "text": "x" })), Level::Steps);
-    assert!(propose["board"] == json!(true) && propose.get("knowledge").is_none(), "{propose}");
+    let propose = line(
+        &pre(
+            "k3",
+            "mcp__trommi__propose_knowledge",
+            json!({ "title": "T", "text": "x" }),
+        ),
+        Level::Steps,
+    );
+    assert!(
+        propose["board"] == json!(true) && propose.get("knowledge").is_none(),
+        "{propose}"
+    );
 
     let mut t = Trail::default();
     t.prompt("", 1_000);
@@ -1620,5 +1658,10 @@ fn a_read_of_the_team_knowledge_is_a_step() {
     t.event(&ev(json!({ "ev": "post", "id": "k1", "tool": "plugin_trommi_trommi: search_knowledge", "knowledge": true })), 1_200);
     let turns = folded_turns(&t.flush());
     let item = &turns[0].1["items"][0];
-    assert!(item["knowledge"] == json!(true) && item["subject"] == json!("deploy") && item["state"] == json!("ok"), "{item}");
+    assert!(
+        item["knowledge"] == json!(true)
+            && item["subject"] == json!("deploy")
+            && item["state"] == json!("ok"),
+        "{item}"
+    );
 }

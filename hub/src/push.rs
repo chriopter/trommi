@@ -472,7 +472,8 @@ impl Apns {
         now: u64,
     ) -> Option<PushRequest> {
         let t = now / 1000;
-        let mut state = json!({ "working": u64::from(working > 0), "waiting": u64::from(waiting > 0) });
+        let mut state =
+            json!({ "working": u64::from(working > 0), "waiting": u64::from(waiting > 0) });
         if let Some(key) = key {
             let mut counts = [0u8; 16];
             counts[..8].copy_from_slice(&working.to_be_bytes());
@@ -542,7 +543,10 @@ pub fn open_on_phone(key: &[u8; 32], sealed: &[u8]) -> Option<Vec<u8>> {
 pub fn open_live_on_phone(key: &[u8; 32], sealed: &[u8]) -> Option<(u64, u64)> {
     let plain = open_with(key, LIVE_AAD, sealed)?;
     let (working, waiting) = plain.split_first_chunk::<8>()?;
-    Some((u64::from_be_bytes(*working), u64::from_be_bytes(waiting.try_into().ok()?)))
+    Some((
+        u64::from_be_bytes(*working),
+        u64::from_be_bytes(waiting.try_into().ok()?),
+    ))
 }
 
 fn open_with(key: &[u8; 32], aad: &[u8], sealed: &[u8]) -> Option<Vec<u8>> {
@@ -550,7 +554,13 @@ fn open_with(key: &[u8; 32], aad: &[u8], sealed: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     ChaCha20Poly1305::new(key.into())
-        .decrypt(sealed[..12].into(), Payload { msg: &sealed[12..], aad })
+        .decrypt(
+            sealed[..12].into(),
+            Payload {
+                msg: &sealed[12..],
+                aad,
+            },
+        )
         .ok()
 }
 

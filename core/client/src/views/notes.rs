@@ -30,17 +30,28 @@ fn shows(n: &Note) -> bool {
     text_of(n, "object_state") != "closed"
         && !set(n, "removed")
         && !set(n, "held")
-        && !(set(n, "pending") && !id.is_empty() && n.get("local_id").and_then(Value::as_str) == Some(id))
+        && !(set(n, "pending")
+            && !id.is_empty()
+            && n.get("local_id").and_then(Value::as_str) == Some(id))
 }
 
 /// A file of a note: a picture shows as a small thumbnail, any other file by its name.
 fn file_of(a: &Value) -> NoteFileView {
     super::files_seen::saw(a);
     let s = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-    let name = a.get("file_name").and_then(Value::as_str).unwrap_or("file").to_string();
+    let name = a
+        .get("file_name")
+        .and_then(Value::as_str)
+        .unwrap_or("file")
+        .to_string();
     let media_type = s("media_type");
     let picture = crate::files::is_picture(&media_type, &name);
-    NoteFileView { file_id: s("attachment_id"), name, media_type, picture }
+    NoteFileView {
+        file_id: s("attachment_id"),
+        name,
+        media_type,
+        picture,
+    }
 }
 
 fn note_of(n: &Note) -> NoteView {
@@ -48,7 +59,11 @@ fn note_of(n: &Note) -> NoteView {
     NoteView {
         id: text_of(n, "object_id").to_string(),
         text: text_of(n, "text").to_string(),
-        files: n.get("attachments").and_then(Value::as_array).map(|l| l.iter().map(file_of).collect()).unwrap_or_default(),
+        files: n
+            .get("attachments")
+            .and_then(Value::as_array)
+            .map(|l| l.iter().map(file_of).collect())
+            .unwrap_or_default(),
         created_ms: num("created_at"),
         updated_ms: num("updated_at"),
         pending: set(n, "pending"),
@@ -57,20 +72,40 @@ fn note_of(n: &Note) -> NoteView {
 
 pub(crate) fn to_of(a: &Agent, b: &Board) -> NoteToView {
     let name = a.row.name.trim();
-    let team = a.team.as_deref().and_then(|d| b.teams.iter().find(|x| x.id == d));
+    let team = a
+        .team
+        .as_deref()
+        .and_then(|d| b.teams.iter().find(|x| x.id == d));
     NoteToView {
         session_id: a.row.key.clone(),
         // (never an empty word: a session without a name yet is the team's Main Session)
-        name: if name.is_empty() { "Main Session".into() } else { name.to_string() },
+        name: if name.is_empty() {
+            "Main Session".into()
+        } else {
+            name.to_string()
+        },
         mark: a.row.mark(),
         team_id: a.team.clone().unwrap_or_default(),
-        team: team.map(|d| if d.name.is_empty() { "Personal".to_string() } else { d.name.clone() }).unwrap_or_default(),
+        team: team
+            .map(|d| {
+                if d.name.is_empty() {
+                    "Personal".to_string()
+                } else {
+                    d.name.clone()
+                }
+            })
+            .unwrap_or_default(),
     }
 }
 
 /// The crowned session a team's note goes to (none without a crown on it).
 pub(crate) fn crown_on<'b>(b: &'b Board, team: Option<&str>) -> Option<&'b Agent> {
-    b.agents.iter().find(|a| a.crowned && !a.row.archived && !a.row.removed && (team.is_none() || a.team.as_deref() == team))
+    b.agents.iter().find(|a| {
+        a.crowned
+            && !a.row.archived
+            && !a.row.removed
+            && (team.is_none() || a.team.as_deref() == team)
+    })
 }
 
 pub fn notes(b: &Board) -> NotesView {
@@ -83,7 +118,11 @@ pub fn notes(b: &Board) -> NotesView {
     let rows: Vec<NoteView> = shown.into_iter().map(note_of).collect();
 
     // Whom it goes to.
-    let team = if b.teams.is_empty() { None } else { b.team.as_deref() };
+    let team = if b.teams.is_empty() {
+        None
+    } else {
+        b.team.as_deref()
+    };
     let to = crown_on(b, team).filter(|a| a.on_team);
     let to = to.map(|a| to_of(a, b));
     let first = rows.first();
@@ -92,9 +131,21 @@ pub fn notes(b: &Board) -> NotesView {
         notes: rows.iter().map(|n| n.id.clone()).collect(),
         corner: first.map(|n| n.id.clone()),
         written,
-        says: if written { say("note.open", "Your note: open it", &[]) } else { say("note.new", "New note", &[]) },
-        send_says: to.as_ref().map(|t| say("note.send_to", format!("Send to {}", t.name), &[("name", &t.name)])),
-        no_crown: to.is_none().then(|| say("note.no_crown", "Give a session the crown to send", &[])),
+        says: if written {
+            say("note.open", "Your note: open it", &[])
+        } else {
+            say("note.new", "New note", &[])
+        },
+        send_says: to.as_ref().map(|t| {
+            say(
+                "note.send_to",
+                format!("Send to {}", t.name),
+                &[("name", &t.name)],
+            )
+        }),
+        no_crown: to
+            .is_none()
+            .then(|| say("note.no_crown", "Give a session the crown to send", &[])),
         to,
         rows,
     }
@@ -115,7 +166,10 @@ mod tests {
         json!({ "object_id": id, "text": text, "object_state": "open", "created_at": NOW - 60 * MIN, "updated_at": updated, "envelope_number": 1 })
     }
     fn lens(team: Option<&str>) -> Lens {
-        Lens { team: team.map(String::from), ..Default::default() }
+        Lens {
+            team: team.map(String::from),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -147,12 +201,18 @@ mod tests {
         r.notes[0]["attachments"] = json!([{ "attachment_id": "p", "file_name": "shot.PNG", "media_type": "" }, { "attachment_id": "d", "file_name": "a.pdf", "media_type": "application/pdf" }]);
         let v = view(&r, &lens(None));
         assert!(v.written);
-        assert_eq!((v.rows[0].files[0].picture, v.rows[0].files[1].picture), (true, false));
+        assert_eq!(
+            (v.rows[0].files[0].picture, v.rows[0].files[1].picture),
+            (true, false)
+        );
     }
 
     #[test]
     fn it_goes_to_the_crown_of_the_desk_in_view() {
-        let mut r = Room { teams: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "", "created_at": 2 } }), ..Default::default() };
+        let mut r = Room {
+            teams: json!({ "main": { "name": "Work", "created_at": 1 }, "lab": { "name": "", "created_at": 2 } }),
+            ..Default::default()
+        };
         r.session("a", None, true);
         r.session("b", None, true);
         r.on_team("b", "lab");
@@ -166,9 +226,18 @@ mod tests {
         // the other team has no crown
         assert!(view(&r, &lens(Some("lab"))).to.is_none());
         // one team at a time: "all" is no team, the first one's crown
-        assert_eq!(view(&r, &lens(Some("all"))).to.as_ref().map(|t| t.name.as_str()), Some("a"));
+        assert_eq!(
+            view(&r, &lens(Some("all")))
+                .to
+                .as_ref()
+                .map(|t| t.name.as_str()),
+            Some("a")
+        );
         r.teams["lab"]["crown"] = json!({ "agent_device_id": dev("b") });
         let v = view(&r, &lens(Some("lab")));
-        assert_eq!(v.to.as_ref().map(|t| (t.team.as_str(), t.name.as_str())), Some(("Personal", "b")));
+        assert_eq!(
+            v.to.as_ref().map(|t| (t.team.as_str(), t.name.as_str())),
+            Some(("Personal", "b"))
+        );
     }
 }

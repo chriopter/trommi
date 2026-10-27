@@ -9,11 +9,19 @@ use trommi_client_core::app::{App, Effect, Event};
 use trommi_client_core::views::{Focus, Screen, ViewPart};
 
 fn looking_at(screen: Screen, visible: bool) -> Event {
-    Event::Focus { focus: Focus { screen, visible, ..Default::default() } }
+    Event::Focus {
+        focus: Focus {
+            screen,
+            visible,
+            ..Default::default()
+        },
+    }
 }
 
 fn opens(log: &[Effect]) -> usize {
-    log.iter().filter(|e| matches!(e, Effect::OpenStream { .. })).count()
+    log.iter()
+        .filter(|e| matches!(e, Effect::OpenStream { .. }))
+        .count()
 }
 
 #[test]
@@ -30,26 +38,75 @@ fn each_window_has_its_own_page_and_the_room_moves_in_all() {
     // a second window: its first render is whole, and it opens nothing of its own
     let from = sim.log.len();
     sim.send_in(1, Event::WindowOpened);
-    let first: Vec<_> = sim.log[from..].iter().filter_map(|e| if let Effect::Render { delta, window } = e { Some((*window, delta.parts.len(), matches!(delta.parts[0], ViewPart::Whole { .. }))) } else { None }).collect();
-    assert_eq!(first, [(1, 1, true)], "only the new window is rendered, whole");
+    let first: Vec<_> = sim.log[from..]
+        .iter()
+        .filter_map(|e| {
+            if let Effect::Render { delta, window } = e {
+                Some((
+                    *window,
+                    delta.parts.len(),
+                    matches!(delta.parts[0], ViewPart::Whole { .. }),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        first,
+        [(1, 1, true)],
+        "only the new window is rendered, whole"
+    );
     assert_eq!(sim.app.windows(), [0, 1]);
-    assert_eq!(sim.window_view(1).map(|v| v.sidebar.sessions.len()), Some(1));
+    assert_eq!(
+        sim.window_view(1).map(|v| v.sidebar.sessions.len()),
+        Some(1)
+    );
 
     // window 1 opens the session's page, window 0 stays on the Desk
-    sim.send_in(1, looking_at(Screen::Session { session_id: session.clone() }, true));
+    sim.send_in(
+        1,
+        looking_at(
+            Screen::Session {
+                session_id: session.clone(),
+            },
+            true,
+        ),
+    );
     assert!(sim.window_view(1).unwrap().sessions.contains_key(&session));
-    assert!(sim.view.sessions.is_empty(), "window 0 still shows its Desk");
+    assert!(
+        sim.view.sessions.is_empty(),
+        "window 0 still shows its Desk"
+    );
     assert_eq!(sim.app.window_view(0), Some(&sim.view));
     assert_eq!(sim.app.window_view(1), sim.window_view(1));
 
     // a question that comes stands on both Desks and in window 1's chat
     world.agent_asks("Ship it?");
     assert!(world.stream(&mut sim));
-    assert_eq!(sim.view.desk.rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(), ["Ship it?"]);
+    assert_eq!(
+        sim.view
+            .desk
+            .rows
+            .iter()
+            .map(|r| r.title.as_str())
+            .collect::<Vec<_>>(),
+        ["Ship it?"]
+    );
     let w1 = sim.window_view(1).unwrap();
-    assert_eq!(w1.desk.rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(), ["Ship it?"]);
+    assert_eq!(
+        w1.desk
+            .rows
+            .iter()
+            .map(|r| r.title.as_str())
+            .collect::<Vec<_>>(),
+        ["Ship it?"]
+    );
     assert!(w1.sessions[&session].talk.iter().any(|r| r.kind == "ask"));
-    assert_eq!((w1.phase, w1.sidebar.badge), (sim.view.phase, sim.view.sidebar.badge));
+    assert_eq!(
+        (w1.phase, w1.sidebar.badge),
+        (sim.view.phase, sim.view.sidebar.badge)
+    );
     // (one device, one stream: the second window wrote and opened nothing)
     assert_eq!(opens(&sim.log), streams, "no second stream");
     assert!(sim.device.0 >= writes);
@@ -69,10 +126,24 @@ fn a_chat_in_view_in_any_window_is_read_in_every_window() {
     sim.send_in(1, looking_at(Screen::Desk, true));
     world.agent_says("news");
     assert!(world.stream(&mut sim));
-    assert!(sim.view.sidebar.sessions[0].unread && sim.window_view(1).unwrap().sidebar.sessions[0].unread);
+    assert!(
+        sim.view.sidebar.sessions[0].unread
+            && sim.window_view(1).unwrap().sidebar.sessions[0].unread
+    );
     // window 1 shows the chat: read, in window 0's list too
-    sim.send_in(1, looking_at(Screen::Session { session_id: session.clone() }, true));
-    assert!(!sim.view.sidebar.sessions[0].unread, "read in window 0 as well");
+    sim.send_in(
+        1,
+        looking_at(
+            Screen::Session {
+                session_id: session.clone(),
+            },
+            true,
+        ),
+    );
+    assert!(
+        !sim.view.sidebar.sessions[0].unread,
+        "read in window 0 as well"
+    );
     assert!(!sim.window_view(1).unwrap().sidebar.sessions[0].unread);
     // window 1 hidden: what comes now stays unread, though window 0 is in front
     sim.send_in(1, Event::Background);
@@ -88,15 +159,30 @@ fn the_stream_stays_open_while_one_window_is_in_front() {
     sim.send(start());
     sim.send(looking_at(Screen::Desk, true));
     sim.send_in(1, looking_at(Screen::Desk, true));
-    let cancels = |sim: &trommi_client_core::app::sim::Sim| sim.log.iter().filter(|e| matches!(e, Effect::Cancel { .. })).count();
+    let cancels = |sim: &trommi_client_core::app::sim::Sim| {
+        sim.log
+            .iter()
+            .filter(|e| matches!(e, Effect::Cancel { .. }))
+            .count()
+    };
     let before = cancels(&sim);
     sim.send_in(0, Event::Background);
-    assert_eq!(cancels(&sim), before, "window 1 is still in front: the stream stays");
+    assert_eq!(
+        cancels(&sim),
+        before,
+        "window 1 is still in front: the stream stays"
+    );
     sim.send_in(1, Event::Background);
-    assert!(cancels(&sim) > before, "no window in front: the stream closes");
+    assert!(
+        cancels(&sim) > before,
+        "no window in front: the stream closes"
+    );
     let streams = opens(&sim.log);
     sim.send_in(1, Event::Foreground);
-    assert!(opens(&sim.log) > streams, "a window in front again opens it");
+    assert!(
+        opens(&sim.log) > streams,
+        "a window in front again opens it"
+    );
 }
 
 #[test]
@@ -112,27 +198,78 @@ fn a_closed_window_is_forgotten_and_gets_no_more_renders() {
     let from = sim.log.len();
     world.agent_asks("Still there?");
     assert!(world.stream(&mut sim));
-    let to: Vec<u32> = sim.log[from..].iter().filter_map(|e| if let Effect::Render { window, .. } = e { Some(*window) } else { None }).collect();
-    assert!(to.contains(&0) && to.contains(&2) && !to.contains(&1), "{to:?}");
+    let to: Vec<u32> = sim.log[from..]
+        .iter()
+        .filter_map(|e| {
+            if let Effect::Render { window, .. } = e {
+                Some(*window)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        to.contains(&0) && to.contains(&2) && !to.contains(&1),
+        "{to:?}"
+    );
     // the current window closed: another becomes current; the last is never forgotten
     sim.send_in(2, Event::WindowClosed);
     sim.send_in(0, Event::WindowClosed);
     assert_eq!(sim.app.windows(), [0]);
-    assert_eq!(sim.window_view(2).map(|v| v.desk.rows.len()), Some(1), "window 2 had what came before it closed");
+    assert_eq!(
+        sim.window_view(2).map(|v| v.desk.rows.len()),
+        Some(1),
+        "window 2 had what came before it closed"
+    );
 }
 
 #[test]
 fn the_edge_reads_the_window_beside_the_type_and_names_it_on_the_render() {
     let mut app = App::new();
     let start = r#"{"type":"start","config":{"platform":"test","version":"0","seed":1}}"#;
-    let out = handle(&mut app, 1, Packet { json: start.into(), blobs: Vec::new() }).expect("the start");
-    assert!(out.json.contains(r#""type":"render""#) && !out.json.contains(r#""window""#), "window 0 is left out: {}", &out.json[..out.json.len().min(200)]);
+    let out = handle(
+        &mut app,
+        1,
+        Packet {
+            json: start.into(),
+            blobs: Vec::new(),
+        },
+    )
+    .expect("the start");
+    assert!(
+        out.json.contains(r#""type":"render""#) && !out.json.contains(r#""window""#),
+        "window 0 is left out: {}",
+        &out.json[..out.json.len().min(200)]
+    );
     let focus = r#"{"type":"focus","window":3,"focus":{"screen":{"screen":"desk"}}}"#;
-    let out = handle(&mut app, 2, Packet { json: focus.into(), blobs: Vec::new() }).expect("the focus");
-    assert!(out.json.contains(r#""window":3"#), "{}", &out.json[..out.json.len().min(200)]);
+    let out = handle(
+        &mut app,
+        2,
+        Packet {
+            json: focus.into(),
+            blobs: Vec::new(),
+        },
+    )
+    .expect("the focus");
+    assert!(
+        out.json.contains(r#""window":3"#),
+        "{}",
+        &out.json[..out.json.len().min(200)]
+    );
     assert_eq!(app.windows(), [0, 3]);
     let wake = r#"{"type":"wake","window":3}"#;
-    assert!(handle(&mut app, 3, Packet { json: wake.into(), blobs: Vec::new() }).is_ok(), "a window beside any event is read");
+    assert!(
+        handle(
+            &mut app,
+            3,
+            Packet {
+                json: wake.into(),
+                blobs: Vec::new()
+            }
+        )
+        .is_ok(),
+        "a window beside any event is read"
+    );
 }
 
 #[test]
@@ -141,14 +278,39 @@ fn a_new_note_written_in_one_window_is_not_the_other_windows_note() {
     let world = World::new();
     let mut sim = world.sim();
     sim.send(start());
-    let keep = |text: &str| Event::Action { action: Action::KeepNote { note_id: None, text: text.into(), attachments: vec![], send: false, to: None } };
+    let keep = |text: &str| Event::Action {
+        action: Action::KeepNote {
+            note_id: None,
+            text: text.into(),
+            attachments: vec![],
+            send: false,
+            to: None,
+        },
+    };
     sim.send_in(0, keep("first window's words"));
     sim.send_in(1, keep("second window's words"));
     sim.send_in(0, keep("first window's words, more"));
-    let rows: Vec<String> = sim.view.notes.rows.iter().map(|r| format!("{r:?}")).collect();
-    assert_eq!(sim.view.notes.notes.len(), 2, "two notes, one per window: {rows:?}");
-    assert!(rows.iter().any(|r| r.contains("second window's words")), "{rows:?}");
-    assert!(rows.iter().any(|r| r.contains("first window's words, more")), "{rows:?}");
+    let rows: Vec<String> = sim
+        .view
+        .notes
+        .rows
+        .iter()
+        .map(|r| format!("{r:?}"))
+        .collect();
+    assert_eq!(
+        sim.view.notes.notes.len(),
+        2,
+        "two notes, one per window: {rows:?}"
+    );
+    assert!(
+        rows.iter().any(|r| r.contains("second window's words")),
+        "{rows:?}"
+    );
+    assert!(
+        rows.iter()
+            .any(|r| r.contains("first window's words, more")),
+        "{rows:?}"
+    );
 }
 
 #[test]
@@ -163,17 +325,57 @@ fn a_prompt_goes_to_the_window_whose_step_led_to_it_even_when_another_acted_mean
     sim.send_in(1, Event::WindowOpened);
     // window 1 signs in with a passkey: the hub's challenge first
     let from = sim.log.len();
-    sim.send_in(1, Event::Action { action: Action::Account { action: AccountAction::SignInWithPasskey { hub: None } } });
+    sim.send_in(
+        1,
+        Event::Action {
+            action: Action::Account {
+                action: AccountAction::SignInWithPasskey { hub: None },
+            },
+        },
+    );
     let asked = sim.log[from..]
         .iter()
-        .find_map(|e| if let Effect::Http { id, request } = e { request.url.ends_with("/v1/account/passkey/challenge").then_some(*id) } else { None })
+        .find_map(|e| {
+            if let Effect::Http { id, request } = e {
+                request
+                    .url
+                    .ends_with("/v1/account/passkey/challenge")
+                    .then_some(*id)
+            } else {
+                None
+            }
+        })
         .expect("the hub is asked for a challenge");
     // window 0 acts while the hub answers
     sim.send_in(0, looking_at(Screen::Desk, true));
     let b64 = trommi_core::ids::base64url_encode;
-    let body = format!(r#"{{"challenge":"{}","account":"0f0f0f0f-0f0f-0f0f-0f0f-0f0f0f0f0f0f","user_handle":"{}"}}"#, b64(&[7; 32]), b64(&[0x0f; 16]));
+    let body = format!(
+        r#"{{"challenge":"{}","account":"0f0f0f0f-0f0f-0f0f-0f0f-0f0f0f0f0f0f","user_handle":"{}"}}"#,
+        b64(&[7; 32]),
+        b64(&[0x0f; 16])
+    );
     let from = sim.log.len();
-    sim.answer(asked, Ok(HttpResponse { status: 200, headers: vec![], body: body.into_bytes().into() }));
-    let prompts: Vec<u32> = sim.log[from..].iter().filter_map(|e| if let Effect::Platform { window, .. } = e { Some(*window) } else { None }).collect();
-    assert_eq!(prompts, [1], "the passkey prompt shows in the window that signs in");
+    sim.answer(
+        asked,
+        Ok(HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: body.into_bytes().into(),
+        }),
+    );
+    let prompts: Vec<u32> = sim.log[from..]
+        .iter()
+        .filter_map(|e| {
+            if let Effect::Platform { window, .. } = e {
+                Some(*window)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        prompts,
+        [1],
+        "the passkey prompt shows in the window that signs in"
+    );
 }

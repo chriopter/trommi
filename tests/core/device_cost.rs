@@ -14,8 +14,8 @@ use trommi_core::crypto::SecretBytes;
 use trommi_core::device::{Draft, EnvelopeOutcome, Sealed};
 use trommi_core::envelope::Urgency;
 use trommi_core::ids::{GroupId, SessionId};
-use trommi_tests::hub::Hub;
 use trommi_tests::hub::content::Change;
+use trommi_tests::hub::Hub;
 use trommi_tests::{
     enrol, found_helper, found_main, found_room, json, new_device, new_device_on, post_ok,
     publish_some, sync_all, take_envelope, write, MemoryStorage, TestDevice,
@@ -324,7 +324,8 @@ fn a_full_account_is_read() {
                 },
             );
             sync_all(&hub, agent);
-            if at * quota.lines / quota.cards.max(1) != (at + 1) * quota.lines / quota.cards.max(1) {
+            if at * quota.lines / quota.cards.max(1) != (at + 1) * quota.lines / quota.cards.max(1)
+            {
                 written += 1;
                 write(
                     &mut hub,

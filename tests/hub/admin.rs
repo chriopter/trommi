@@ -101,15 +101,30 @@ fn the_admin_page_is_behind_its_password_and_shows_only_what_the_hub_sees() {
     assert!(csp.contains("default-src 'none'") && csp.contains("form-action 'self'"));
     // scripts only from the hub's own files: no inline script, no handler, nothing from elsewhere
     assert!(csp.contains("script-src 'self';"));
-    assert!(!csp.contains("unsafe-eval") && csp.matches("unsafe-inline").count() == 1 && csp.contains("style-src 'unsafe-inline'"));
+    assert!(
+        !csp.contains("unsafe-eval")
+            && csp.matches("unsafe-inline").count() == 1
+            && csp.contains("style-src 'unsafe-inline'")
+    );
     let js = request(admin, "GET", "/admin.js", &[], b"");
     assert_eq!(js.status, 200);
-    assert_eq!(js.header("content-type"), Some("text/javascript; charset=utf-8"));
+    assert_eq!(
+        js.header("content-type"),
+        Some("text/javascript; charset=utf-8")
+    );
     assert_eq!(js.header("x-content-type-options"), Some("nosniff"));
     let js = text(&js);
-    assert!(js.contains("'dblclick'") && js.contains("closest('.email')") && js.contains("toggle('shown')"));
+    assert!(
+        js.contains("'dblclick'")
+            && js.contains("closest('.email')")
+            && js.contains("toggle('shown')")
+    );
     // "Show all" shows every address on the page at once, and blurs them all again
-    assert!(js.contains("closest('.showall')") && js.contains("querySelectorAll('.email')") && js.contains("toggle('shown', on)"));
+    assert!(
+        js.contains("closest('.showall')")
+            && js.contains("querySelectorAll('.email')")
+            && js.contains("toggle('shown', on)")
+    );
     assert!(!js.contains("fetch") && !js.contains("http"));
     // a cookie the hub did not give, or one of no use, is no session
     for value in [b64(&[5u8; 32]), "x".into(), String::new()] {
@@ -240,9 +255,13 @@ fn the_admin_page_is_behind_its_password_and_shows_only_what_the_hub_sees() {
             && accounts.contains("href=\"/accounts\" class=\"on\"")
     );
     // the e-mail address in full but blurred, shown by a double-click
-    assert!(accounts.contains("<code class=\"email\" title=\"Double-click to show\">ada@example.org</code>"));
+    assert!(accounts
+        .contains("<code class=\"email\" title=\"Double-click to show\">ada@example.org</code>"));
     // and a "Show all" at the top, not pressed: each address stays blurred until asked for
-    assert_eq!(accounts.matches(trommi_hub::admin_view::SHOW_ALL).count(), 1);
+    assert_eq!(
+        accounts.matches(trommi_hub::admin_view::SHOW_ALL).count(),
+        1
+    );
     assert!(trommi_hub::admin_view::SHOW_ALL.contains("aria-pressed=\"false\">Show all<"));
     assert_eq!(
         trommi_hub::admin_view::blurred_email("a<b@example.com"),
@@ -333,7 +352,10 @@ fn the_admin_page_is_behind_its_password_and_shows_only_what_the_hub_sees() {
         // an address only ever blurred
         assert_eq!(
             page.matches("example.org").count(),
-            page.matches("<code class=\"email\" title=\"Double-click to show\">ada@example.org</code>").count()
+            page.matches(
+                "<code class=\"email\" title=\"Double-click to show\">ada@example.org</code>"
+            )
+            .count()
         );
         // the one script is the hub's own file
         assert_eq!(page.matches("<script").count(), 1);
@@ -523,39 +545,73 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
     assert_eq!(keys[0], "120");
     assert_eq!(keys[49], "71");
     assert!(first.contains("120 rows"));
-    assert!(!first.contains("secret-endpoint") && !first.contains("abababab") && !first.contains("cdcdcdcd"));
+    assert!(
+        !first.contains("secret-endpoint")
+            && !first.contains("abababab")
+            && !first.contains("cdcdcdcd")
+    );
     assert!(first.contains("•••• (secret, 65 bytes)") && first.contains("•••• (secret, 16 bytes)"));
     assert!(first.contains("2026-10-") && first.contains(" UTC</span>"));
     assert!(first.contains("<td>knocking</td>"));
     // the columns folded at the top, then what the hub reads, then which columns are not in full, then the rows
     let at = |what: &str| first.find(what).unwrap_or_else(|| panic!("{what}"));
     assert!(at("<details class=\"card cols-card\">") < at("The hub reads:"));
-    assert!(at("The hub reads:") < at("Not in full:") && at("Not in full:") < at("<table class=\"grid rows\">"));
+    assert!(
+        at("The hub reads:") < at("Not in full:")
+            && at("Not in full:") < at("<table class=\"grid rows\">")
+    );
     assert!(first.contains("Not in full: <code>endpoint, p256dh, auth, apns_key</code> (credentials, shown by their length only)."));
-    assert!(first.contains("<li><span class=\"secret\" title=\"credential: not shown\">••</span><code>endpoint</code>"));
+    assert!(first.contains(
+        "<li><span class=\"secret\" title=\"credential: not shown\">••</span><code>endpoint</code>"
+    ));
     // every column tagged by what the hub can read of it, under a legend at the top
     let read = "<span class=\"ctag ctag-read\" title=\"metadata in clear: the hub reads it\">Hub liest mit</span>";
     let secret = "<span class=\"ctag ctag-secret\" title=\"credential: never shown\">geheim</span>";
     let sealed = "<span class=\"ctag ctag-sealed\" title=\"sealed: the hub cannot read it\">verschlüsselt</span>";
     assert!(at("<p class=\"tags-legend muted\">") < at("<details class=\"card cols-card\">"));
-    assert!(first.contains(&format!("level</a>{read}</th>")) && first.contains(&format!("created_at</a>{read}</th>")));
+    assert!(
+        first.contains(&format!("level</a>{read}</th>"))
+            && first.contains(&format!("created_at</a>{read}</th>"))
+    );
     assert!(first.contains(&format!("<th class=\"muted\">endpoint{secret}</th>")));
     assert!(first.contains(&format!("<th class=\"muted\">apns_key{secret}</th>")));
-    assert!(first.contains(&format!("<code>endpoint</code><span class=\"faint\">text</span>{secret}</li>")));
+    assert!(first.contains(&format!(
+        "<code>endpoint</code><span class=\"faint\">text</span>{secret}</li>"
+    )));
     assert!(!first.contains(sealed));
     // the side list: names and counts only, each a link to its rows
     assert!(!first.contains("<ul class=\"cols-list") && !first.contains("Open push_subscriptions"));
     // no e-mail address on the page, no "Show all"
     assert!(!first.contains("class=\"showall\""));
-    assert!(first.contains("<a class=\"tbl on\" href=\"/tables/push_subscriptions\" aria-current=\"page\">"));
-    for group in ["Accounts and sign-in", "Rooms and devices", "Groups (MLS)", "Keys and recovery", "Content", "Files and shares", "Push", "Hub upkeep"] {
-        assert!(first.contains(&format!("<div class=\"grp\">{group}</div>")), "{group}");
+    assert!(first.contains(
+        "<a class=\"tbl on\" href=\"/tables/push_subscriptions\" aria-current=\"page\">"
+    ));
+    for group in [
+        "Accounts and sign-in",
+        "Rooms and devices",
+        "Groups (MLS)",
+        "Keys and recovery",
+        "Content",
+        "Files and shares",
+        "Push",
+        "Hub upkeep",
+    ] {
+        assert!(
+            first.contains(&format!("<div class=\"grp\">{group}</div>")),
+            "{group}"
+        );
     }
     let throttle = text(&get("/tables/login_accounts"));
     assert_eq!(row_keys(&throttle, "login_accounts").len(), 1);
-    assert!(throttle.contains("Every column is shown in full.") && throttle.contains(&trommi_hub::util::hex(&[0x42u8; 16])));
+    assert!(
+        throttle.contains("Every column is shown in full.")
+            && throttle.contains(&trommi_hub::util::hex(&[0x42u8; 16]))
+    );
     // a byte string by its length and first 16 bytes
-    assert!(first.contains(&format!("32 bytes</span> <code>{}</code>", trommi_hub::util::hex(&[9u8; 16]))));
+    assert!(first.contains(&format!(
+        "32 bytes</span> <code>{}</code>",
+        trommi_hub::util::hex(&[9u8; 16])
+    )));
     assert_eq!(link(&first, "← Previous"), None);
     // on, and back
     let second = text(&get(&link(&first, "Next →").unwrap()));
@@ -563,7 +619,10 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
     assert_eq!((keys2[0].as_str(), keys2[49].as_str()), ("70", "21"));
     let third = text(&get(&link(&second, "Next →").unwrap()));
     let keys3 = row_keys(&third, "push_subscriptions");
-    assert_eq!((keys3.len(), keys3[0].as_str(), keys3[19].as_str()), (20, "20", "1"));
+    assert_eq!(
+        (keys3.len(), keys3[0].as_str(), keys3[19].as_str()),
+        (20, "20", "1")
+    );
     assert_eq!(link(&third, "Next →"), None);
     let back = text(&get(&link(&third, "← Previous").unwrap()));
     assert_eq!(row_keys(&back, "push_subscriptions"), keys2);
@@ -578,16 +637,23 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
     assert_eq!((keys[0].as_str(), keys.len()), ("120", 50));
     let rest = text(&get(&link(&knocking, "Next →").unwrap()));
     assert_eq!(row_keys(&rest, "push_subscriptions").len(), 10);
-    let one = text(&get(&format!("/tables/push_subscriptions?f=device&v={}", trommi_hub::util::hex(&[5u8; 32]))));
+    let one = text(&get(&format!(
+        "/tables/push_subscriptions?f=device&v={}",
+        trommi_hub::util::hex(&[5u8; 32])
+    )));
     assert_eq!(row_keys(&one, "push_subscriptions"), ["5"]);
     assert!(text(&get("/tables/push_subscriptions?f=id&v=x")).contains("id takes a whole number."));
     // a secret column can be neither searched nor sorted by
-    let probe = text(&get("/tables/push_subscriptions?f=endpoint&v=https%3A%2F%2Fpush.example%2Fsecret-endpoint-5"));
+    let probe = text(&get(
+        "/tables/push_subscriptions?f=endpoint&v=https%3A%2F%2Fpush.example%2Fsecret-endpoint-5",
+    ));
     assert!(probe.contains("endpoint cannot be filtered by") && probe.contains("120 rows"));
     let sorted = text(&get("/tables/push_subscriptions?s=auth"));
     assert!(sorted.contains("Not sorted by auth"));
     assert_eq!(row_keys(&sorted, "push_subscriptions")[0], "120");
-    assert!(!probe.contains("<option>endpoint</option>") && probe.contains("<option>level</option>"));
+    assert!(
+        !probe.contains("<option>endpoint</option>") && probe.contains("<option>level</option>")
+    );
     // sorted by a column, the other way round
     let oldest = text(&get("/tables/push_subscriptions?s=created_at&d=asc"));
     assert_eq!(row_keys(&oldest, "push_subscriptions")[0], "1");
@@ -597,30 +663,66 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
     let row = get("/tables/push_subscriptions/5");
     assert_eq!(row.status, 200);
     let row = text(&row);
-    assert!(row.contains(&trommi_hub::util::hex(&[5u8; 32])) && row.contains("<span class=\"text\">all</span>"));
-    assert!(!row.contains("secret-endpoint") && !row.contains("abababab") && row.contains("•••• (secret, 65 bytes)"));
+    assert!(
+        row.contains(&trommi_hub::util::hex(&[5u8; 32]))
+            && row.contains("<span class=\"text\">all</span>")
+    );
+    assert!(
+        !row.contains("secret-endpoint")
+            && !row.contains("abababab")
+            && row.contains("•••• (secret, 65 bytes)")
+    );
     assert!(row.contains("rows with this value"));
-    for missing in ["/tables/push_subscriptions/999", "/tables/push_subscriptions/x1", "/tables/push_subscriptions/1;2", "/tables/push_subscriptions/", "/tables/nope", "/tables/nope/1"] {
+    for missing in [
+        "/tables/push_subscriptions/999",
+        "/tables/push_subscriptions/x1",
+        "/tables/push_subscriptions/1;2",
+        "/tables/push_subscriptions/",
+        "/tables/nope",
+        "/tables/nope/1",
+    ] {
         assert_eq!(get(missing).status, 404, "{missing}");
     }
 
     // the account: the e-mail blurred, the login hashes and the KDF record never shown, the sealed copy by its length
     for path in ["/tables/accounts", "/tables/accounts/7"] {
         let page = text(&get(path));
-        assert!(page.contains("<code class=\"email\" title=\"Double-click to show\">grace@example.net</code>"), "{path}");
-        assert_eq!(page.matches(trommi_hub::admin_view::SHOW_ALL).count(), 1, "{path}");
+        assert!(
+            page.contains(
+                "<code class=\"email\" title=\"Double-click to show\">grace@example.net</code>"
+            ),
+            "{path}"
+        );
+        assert_eq!(
+            page.matches(trommi_hub::admin_view::SHOW_ALL).count(),
+            1,
+            "{path}"
+        );
         assert_eq!(page.matches("grace").count(), 1, "{path}");
-        assert!(!page.contains("eeeeeeee") && !page.contains("5a5a5a5a") && !page.contains("argon2id"), "{path}");
+        assert!(
+            !page.contains("eeeeeeee") && !page.contains("5a5a5a5a") && !page.contains("argon2id"),
+            "{path}"
+        );
         assert!(page.contains("80 bytes · <code>77777777"), "{path}");
     }
     // the account's columns: the e-mail read by the hub, the sealed copies sealed, the login hashes secret
     let accounts = text(&get("/tables/accounts"));
-    assert!(accounts.contains(&format!("email</a>{read}</th>")) && accounts.contains(&format!("account_id</a>{read}</th>")));
+    assert!(
+        accounts.contains(&format!("email</a>{read}</th>"))
+            && accounts.contains(&format!("account_id</a>{read}</th>"))
+    );
     assert!(accounts.contains(&format!("<th class=\"muted\">password_copy{sealed}</th>")));
-    assert!(accounts.contains(&format!("<th class=\"muted\">auth_hash{secret}</th>")) && accounts.contains(&format!("<th class=\"muted\">kdf{secret}</th>")));
+    assert!(
+        accounts.contains(&format!("<th class=\"muted\">auth_hash{secret}</th>"))
+            && accounts.contains(&format!("<th class=\"muted\">kdf{secret}</th>"))
+    );
     let account = text(&get("/tables/accounts/7"));
-    assert!(account.contains(&format!("<code>password_copy</code><span class=\"faint\">blob</span>{sealed}</dt>")));
-    assert!(account.contains(&format!("<code>auth_salt</code><span class=\"faint\">blob</span>{secret}</dt>")));
+    assert!(account.contains(&format!(
+        "<code>password_copy</code><span class=\"faint\">blob</span>{sealed}</dt>"
+    )));
+    assert!(account.contains(&format!(
+        "<code>auth_salt</code><span class=\"faint\">blob</span>{secret}</dt>"
+    )));
 
     // a table without rowid: every row once, page by page, in either order, sorted by a column with nulls
     let walk = |start: &str, label: &str| {
@@ -637,7 +739,13 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
         }
         seen
     };
-    for sort in ["", "?s=referenced_at&d=asc", "?s=referenced_at", "?s=_row&d=asc", "?s=size"] {
+    for sort in [
+        "",
+        "?s=referenced_at&d=asc",
+        "?s=referenced_at",
+        "?s=_row&d=asc",
+        "?s=size",
+    ] {
         let down = walk(&format!("/tables/files{sort}"), "Next →");
         assert_eq!(down.len(), 60, "{sort}");
         let mut unique = down.clone();
@@ -659,7 +767,11 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
     if let Ok(dir) = std::env::var("TROMMI_ADMIN_PAGES") {
         // (the pages as files, for screenshots)
         std::fs::write(format!("{dir}/rows.html"), &first).unwrap();
-        std::fs::write(format!("{dir}/row.html"), text(&get("/tables/push_subscriptions/5"))).unwrap();
+        std::fs::write(
+            format!("{dir}/row.html"),
+            text(&get("/tables/push_subscriptions/5")),
+        )
+        .unwrap();
     }
     let key = row_keys(&text(&get("/tables/files")), "files")[0].clone();
     assert!(key.starts_with('x') && key.contains(".x"));

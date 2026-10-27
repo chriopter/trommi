@@ -1,47 +1,47 @@
 //! The engine itself: one state, driven by events, answering with effects. See [`super`] for the design.
 
-use crate::hub::{
-    Answer, ChangeItem, Codec, DeskOnly, EnvelopeItem, Expect, GroupRead, LogItem, ObjectRoute, Only, OutboxAnswer, Presence, Refusal, Role, Route, Site,
-    StreamEvent, StreamReader, WishKind,
-};
 use super::memstore::{self, Writes};
 use super::{Backoff, Jitter};
 use crate::app::io::{DeviceEntry, HttpResponse, IoId, IoResult, StoreAnswer, StoreOp, StreamItem};
 use crate::app::{Effect, LogLevel};
 use crate::hub::{classify_io, Failure};
+use crate::hub::{
+    Answer, ChangeItem, Codec, DeskOnly, EnvelopeItem, Expect, GroupRead, LogItem, ObjectRoute,
+    Only, OutboxAnswer, Presence, Refusal, Role, Route, Site, StreamEvent, StreamReader, WishKind,
+};
 
-#[path = "joins.rs"]
-pub mod joins;
-#[path = "upkeep.rs"]
-pub mod upkeep;
-#[path = "record.rs"]
-pub mod record;
+#[path = "agent.rs"]
+pub mod agent;
+#[path = "agent_join.rs"]
+pub mod agent_join;
+#[path = "agent_write.rs"]
+pub mod agent_write;
 #[path = "events.rs"]
 pub mod events;
-#[path = "room_join.rs"]
-pub mod room_join;
+#[path = "found.rs"]
+pub mod found;
+#[path = "joins.rs"]
+pub mod joins;
+#[path = "link_join.rs"]
+pub mod link_join;
+#[path = "past.rs"]
+mod past;
+#[path = "record.rs"]
+pub mod record;
 /// The recovery of the room with its code (8.7), inside the join.
 #[path = "recover.rs"]
 pub mod recover;
 #[path = "requests.rs"]
 pub mod requests;
-#[path = "found.rs"]
-pub mod found;
-#[path = "link_join.rs"]
-pub mod link_join;
-#[path = "agent.rs"]
-pub mod agent;
-#[path = "agent_join.rs"]
-pub mod agent_join;
-#[path = "past.rs"]
-mod past;
-#[path = "agent_write.rs"]
-pub mod agent_write;
+#[path = "room_join.rs"]
+pub mod room_join;
+#[path = "upkeep.rs"]
+pub mod upkeep;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
-    log_finding, Draft, refusal_is_passing, Accepted, Device, EnvelopeOutcome, LogEntry, LogFinding, LogKind, Processed, Received, ReceivedEnvelope,
-    WelcomeExpectation,
+    log_finding, refusal_is_passing, Accepted, Device, Draft, EnvelopeOutcome, LogEntry,
+    LogFinding, LogKind, Processed, Received, ReceivedEnvelope, WelcomeExpectation,
 };
 use trommi_core::hub_auth::HubAddress;
 use trommi_core::ids::{DeviceId, FileId, GroupId, InviteId, ObjectId, RoomId};
@@ -82,18 +82,32 @@ const REPORTS_MAX: usize = 4 * PAGE as usize;
 /// Refusals that end an envelope without a void record and without a hole that matters: the group is archived, or
 /// this device is out.
 fn is_dead(code: &Error) -> bool {
-    matches!(code, Error::Gone | Error::NotMember | Error::RemovedSender | Error::NoRoom)
+    matches!(
+        code,
+        Error::Gone | Error::NotMember | Error::RemovedSender | Error::NoRoom
+    )
 }
 
 /// Refusals that mean the group moved on under a Commit or message: the log is processed, and it is built again.
 fn has_moved(code: &Error) -> bool {
-    matches!(code, Error::EpochTaken | Error::RoomBehind | Error::WrongEpoch | Error::StaleSession | Error::GroupBehind)
+    matches!(
+        code,
+        Error::EpochTaken
+            | Error::RoomBehind
+            | Error::WrongEpoch
+            | Error::StaleSession
+            | Error::GroupBehind
+    )
 }
 
 fn carries_commit(kind: OutboxKind) -> bool {
     !matches!(
         kind,
-        OutboxKind::Message | OutboxKind::RelayMessage | OutboxKind::Envelope | OutboxKind::KeyPackages | OutboxKind::SealedKey
+        OutboxKind::Message
+            | OutboxKind::RelayMessage
+            | OutboxKind::Envelope
+            | OutboxKind::KeyPackages
+            | OutboxKind::SealedKey
     )
 }
 
@@ -111,7 +125,10 @@ impl Ctx<'_> {
         id
     }
     fn log(&mut self, level: LogLevel, text: impl Into<String>) {
-        self.out.push(Effect::Log { level, text: text.into() });
+        self.out.push(Effect::Log {
+            level,
+            text: text.into(),
+        });
     }
 }
 
@@ -171,9 +188,17 @@ impl Stopped {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Alert {
     /// The hub does not serve a part of a device's chain: what follows it is not shown (9.0.6).
-    Withheld { group: GroupId, sender: DeviceId, change: u64 },
+    Withheld {
+        group: GroupId,
+        sender: DeviceId,
+        change: u64,
+    },
     /// An entry of a group's log does not process: the group is kept as it was (13.4).
-    BadGroup { group: GroupId, change: u64, code: &'static str },
+    BadGroup {
+        group: GroupId,
+        change: u64,
+        code: &'static str,
+    },
     /// The hub served something that is no envelope.
     NotAnEnvelope { change: u64, code: &'static str },
     /// A Welcome was refused.
@@ -186,7 +211,12 @@ pub enum Alert {
     ClientTooOld,
     /// A leaf could not merge an accepted Commit (14.7): `from` refused the Commit numbered `n` in `group`, made by
     /// `committer` as the hub says. The person decides; remove the device that made it.
-    Rejected { group: GroupId, n: u64, from: DeviceId, committer: Option<DeviceId> },
+    Rejected {
+        group: GroupId,
+        n: u64,
+        from: DeviceId,
+        committer: Option<DeviceId>,
+    },
     /// The room was joined with the code, but the hub did not serve the link from an older code to this one: what
     /// was sealed under the older codes stays closed to this device.
     MissingLink,
@@ -196,7 +226,11 @@ pub enum Alert {
     Unrepaired { group: GroupId, code: &'static str },
     /// The core found something wrong in a sender's chain while it processed a Commit (`equivocation`: a Cut names
     /// another envelope than the one this device had accepted under that number).
-    Finding { group: GroupId, sender: DeviceId, code: &'static str },
+    Finding {
+        group: GroupId,
+        sender: DeviceId,
+        code: &'static str,
+    },
 }
 
 /// What the engine tells the App, in order. The App feeds the model from it (`Envelope`, `Log`, `Groups`).
@@ -208,35 +242,61 @@ pub enum Report {
     /// How a join by an invite link stands (`Engine::join_by_link`).
     LinkJoin(link_join::LinkJoinStatus),
     /// An envelope as the protocol core took it. `ordered`: in the hub's order; else read again (a repair).
-    Envelope { received: Box<ReceivedEnvelope>, ordered: bool },
+    Envelope {
+        received: Box<ReceivedEnvelope>,
+        ordered: bool,
+    },
     /// A log entry the device processed.
-    Log { change: u64, group: GroupId, processed: Box<Processed> },
+    Log {
+        change: u64,
+        group: GroupId,
+        processed: Box<Processed>,
+    },
     /// The device's groups may have changed: read `Engine::device().groups()` again.
     Groups,
     Alert(Alert),
     /// The hub's Desk: what it lists as open (the object, the change of its version) at which change. `truncated`:
     /// cut short, it decides nothing. The listed versions came before it as `Envelope`s (not ordered).
-    Desk { at: u64, open: Vec<(ObjectId, u64)>, truncated: bool },
+    Desk {
+        at: u64,
+        open: Vec<(ObjectId, u64)>,
+        truncated: bool,
+    },
     /// The Desk is complete: every listed card's version, and the first version of each card revised since it was
     /// asked, was read.
     DeskComplete,
     /// The hub's counts of the Desk (hub-api.md point 47), at the Desk's change: per group how many of its cards
     /// are no longer open (answered or closed). Only of a Desk not cut short.
-    Counts { at: u64, settled: Vec<(GroupId, u64)> },
+    Counts {
+        at: u64,
+        settled: Vec<(GroupId, u64)>,
+    },
     Presence(Presence),
     /// The stream opened (again): the hub's list of who is here comes first, ended by `Here`.
     StreamOpened,
     Here,
     Connection(Connection),
     /// The hub took an outbox entry.
-    Accepted { id: u64, kind: OutboxKind, change: Option<u64> },
+    Accepted {
+        id: u64,
+        kind: OutboxKind,
+        change: Option<u64>,
+    },
     /// The hub refused an outbox entry for good: what it echoed is rolled back.
-    Refused { id: u64, kind: OutboxKind, code: &'static str, voided: bool },
+    Refused {
+        id: u64,
+        kind: OutboxKind,
+        code: &'static str,
+        voided: bool,
+    },
     /// The pump halts on this entry (an envelope refused without a void record), or goes on again (`None`).
     Blocked(Option<(u64, &'static str)>),
     /// The session groups of a sign-in with the code are through: how many the hub took this device into, and the
     /// ones it is not in, each with the reason. Another human device of the person adds it to those (5.2.7).
-    SessionsJoined { joined: u32, not_joined: Vec<(GroupId, &'static str)> },
+    SessionsJoined {
+        joined: u32,
+        not_joined: Vec<(GroupId, &'static str)>,
+    },
     /// How the join of the room with the code stands (`room_join`).
     RoomJoin(room_join::RoomJoinStatus),
     /// An action's request was answered, or given up (`requests`).
@@ -244,9 +304,13 @@ pub enum Report {
     /// A piece the hub only passed on, as the protocol core opened it (a stroke still being drawn, 7.2).
     Relay(Box<Received>),
     /// A newcomer sent its Request for an invite of this room (12.1): the invite flow reads it.
-    InviteRequest { invite: InviteId },
+    InviteRequest {
+        invite: InviteId,
+    },
     /// The hub deleted a file (11.3): its cached bytes go.
-    FileEvicted { file: FileId },
+    FileEvicted {
+        file: FileId,
+    },
     Stopped(Stopped),
     /// An agent device: a human's command the gate let through, after the envelope's own report; or, after a
     /// restart, one kept from before that nobody said was done (`uncertain`).
@@ -255,7 +319,13 @@ pub enum Report {
     Lease(Option<u64>),
     /// An agent device: an envelope the hub voided for its epoch was sealed again (`agent_write`). `first`: the
     /// outbox id of the envelope the caller sealed; `voided`: the one the hub voided; `id`: the new one.
-    Resealed { first: u64, voided: u64, id: u64, envelope_hash: trommi_core::ids::Hash32, object_id: Option<ObjectId> },
+    Resealed {
+        first: u64,
+        voided: u64,
+        id: u64,
+        envelope_hash: trommi_core::ids::Hash32,
+        object_id: Option<ObjectId>,
+    },
 }
 
 /// A wait before the next try of something.
@@ -288,35 +358,76 @@ impl Retry {
 /// What a request in flight was for.
 enum Asked {
     /// A step of a join by link.
-    Link { expect: Expect },
+    Link {
+        expect: Expect,
+    },
     Challenge(Expect),
     Token(Expect),
     Page(Expect),
-    Post { expect: Expect, entry: u64, kind: OutboxKind, group: Option<GroupId> },
+    Post {
+        expect: Expect,
+        entry: u64,
+        kind: OutboxKind,
+        group: Option<GroupId>,
+    },
     Welcomes(Expect),
-    GroupLog { expect: Expect, group: GroupId, upto: u64 },
-    Chain { expect: Expect, group: GroupId, sender: DeviceId, before: u64 },
+    GroupLog {
+        expect: Expect,
+        group: GroupId,
+        upto: u64,
+    },
+    Chain {
+        expect: Expect,
+        group: GroupId,
+        sender: DeviceId,
+        before: u64,
+    },
     /// A report to the hub nothing waits for (`RejectCommit`).
     Told(Expect),
-    Mend { expect: Expect, mend: Mend },
+    Mend {
+        expect: Expect,
+        mend: Mend,
+    },
     KeyPackagesHeld(Expect),
     Desk(Expect),
     /// Joins of session groups from outside, posted together: each entry's id and group, in order.
-    Joins { expect: Expect, entries: Vec<(u64, Option<GroupId>)> },
+    Joins {
+        expect: Expect,
+        entries: Vec<(u64, Option<GroupId>)>,
+    },
     /// A read for the joins of a sign-in's sessions (`joins`).
-    JoinRead { expect: Expect, what: joins::Read },
+    JoinRead {
+        expect: Expect,
+        what: joins::Read,
+    },
     /// The first envelope of an open object.
-    First { expect: Expect, route: ObjectRoute, object: ObjectId, after: u64 },
+    First {
+        expect: Expect,
+        route: ObjectRoute,
+        object: ObjectId,
+        after: u64,
+    },
     /// A KeyPackage claimed for a job of tending the groups (`upkeep`).
-    Claim { expect: Expect, job: upkeep::Job },
+    Claim {
+        expect: Expect,
+        job: upkeep::Job,
+    },
     /// A page of the hub's list of the room's groups, for a job of tending (`upkeep`).
-    RoomGroups { expect: Expect, job: upkeep::Job },
+    RoomGroups {
+        expect: Expect,
+        job: upkeep::Job,
+    },
     /// The hub's list of wishes (`events`).
     Wishes(Expect),
     /// A read of the join of the room with the code (`room_join`).
-    RoomRead { expect: Expect, what: room_join::Read },
+    RoomRead {
+        expect: Expect,
+        what: room_join::Read,
+    },
     /// An action's request, by the id the action holds (`requests`).
-    Request { id: IoId },
+    Request {
+        id: IoId,
+    },
     /// The kept requests read at the start, and one written or deleted.
     KeptScan,
     KeptWrite,
@@ -327,20 +438,45 @@ enum Asked {
     /// An agent's lease (`agent`).
     Lease(Expect),
     /// The rollback guard's look at this device's own chain in a group, beyond its own head `own`.
-    Guard { expect: Expect, group: GroupId, own: u64 },
+    Guard {
+        expect: Expect,
+        group: GroupId,
+        own: u64,
+    },
     /// A page of what the hub still serves of a removal.
-    Removal { expect: Expect, group: GroupId },
+    Removal {
+        expect: Expect,
+        group: GroupId,
+    },
     /// A read of an agent's way in (`agent_join`).
-    ObserveRoom { expect: Expect },
-    Learn { expect: Expect, group: GroupId },
+    ObserveRoom {
+        expect: Expect,
+    },
+    Learn {
+        expect: Expect,
+        group: GroupId,
+    },
 }
 
 impl Asked {
     /// How the answer is to be read; none for a write to the store.
     fn expect(&self) -> Option<&Expect> {
         match self {
-            Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::Request { .. } | Asked::KeptScan | Asked::KeptWrite => None,
-            Asked::Challenge(e) | Asked::Lease(e) | Asked::Token(e) | Asked::Page(e) | Asked::Welcomes(e) | Asked::Told(e) | Asked::KeyPackagesHeld(e) | Asked::Desk(e) | Asked::Wishes(e) => Some(e),
+            Asked::DeviceWrite
+            | Asked::Record
+            | Asked::RecordWrite
+            | Asked::Request { .. }
+            | Asked::KeptScan
+            | Asked::KeptWrite => None,
+            Asked::Challenge(e)
+            | Asked::Lease(e)
+            | Asked::Token(e)
+            | Asked::Page(e)
+            | Asked::Welcomes(e)
+            | Asked::Told(e)
+            | Asked::KeyPackagesHeld(e)
+            | Asked::Desk(e)
+            | Asked::Wishes(e) => Some(e),
             Asked::Post { expect, .. }
             | Asked::Link { expect }
             | Asked::GroupLog { expect, .. }
@@ -379,7 +515,11 @@ struct DeskRead {
 enum Mend {
     /// One group's envelopes after `after`, up to `upto` (`GET /v1/changes?group=`): what the device could not take
     /// before (its group was behind) is taken, what it chained without a key is read back.
-    Group { group: GroupId, after: u64, upto: u64 },
+    Group {
+        group: GroupId,
+        after: u64,
+        upto: u64,
+    },
     /// A sender's chain from what this device holds: a stretch the hub withheld before.
     Chain { group: GroupId, sender: DeviceId },
 }
@@ -387,11 +527,25 @@ enum Mend {
 /// What the head of the order waits for before it is tried again.
 enum Repair {
     /// The hub's Welcomes for this device; `after`: the last row read.
-    Welcomes { after: u64, joined: Vec<GroupId>, asked: bool },
+    Welcomes {
+        after: u64,
+        joined: Vec<GroupId>,
+        asked: bool,
+    },
     /// The logs of groups joined late, one after another, up to the position.
-    Logs { groups: VecDeque<GroupId>, after: u64, asked: bool },
+    Logs {
+        groups: VecDeque<GroupId>,
+        after: u64,
+        asked: bool,
+    },
     /// A stretch of a sender's chain, from what this device holds to just before `before`.
-    Chain { group: GroupId, sender: DeviceId, after: u64, before: u64, asked: bool },
+    Chain {
+        group: GroupId,
+        sender: DeviceId,
+        after: u64,
+        before: u64,
+        asked: bool,
+    },
 }
 
 /// What was tried for the item at the head of the order.
@@ -559,8 +713,21 @@ pub enum OpenError {
 
 impl Engine {
     /// Opens the device the shell loaded and makes its engine. Nothing is asked of the hub yet (`drive`).
-    pub fn open(hub: &str, client: &str, seed: u64, revision: u64, entries: Vec<DeviceEntry>) -> Result<Self, OpenError> {
-        Self::open_with(hub, client, seed, revision, entries, Box::new(SystemEntropy))
+    pub fn open(
+        hub: &str,
+        client: &str,
+        seed: u64,
+        revision: u64,
+        entries: Vec<DeviceEntry>,
+    ) -> Result<Self, OpenError> {
+        Self::open_with(
+            hub,
+            client,
+            seed,
+            revision,
+            entries,
+            Box::new(SystemEntropy),
+        )
     }
 
     pub fn open_with(
@@ -575,17 +742,32 @@ impl Engine {
             return Err(OpenError::NoRoom);
         }
         let address = HubAddress::parse(hub).map_err(|_| OpenError::Hub)?;
-        let (store, writes) = memstore::store(revision, entries.into_iter().map(|e| (e.key.0, e.value.0)).collect());
+        let (store, writes) = memstore::store(
+            revision,
+            entries.into_iter().map(|e| (e.key.0, e.value.0)).collect(),
+        );
         let device = Device::open(store, entropy).map_err(|e| OpenError::Device(e.code()))?;
         let Some(room) = device.room() else {
             // (a join with the code was posted and its answer never read: only the code goes on with it)
-            return Err(if room_join::staged(&device).is_some() { OpenError::Interrupted } else { OpenError::NoRoom });
+            return Err(if room_join::staged(&device).is_some() {
+                OpenError::Interrupted
+            } else {
+                OpenError::NoRoom
+            });
         };
         Ok(Self::over(device, writes, room, hub, address, client, seed))
     }
 
     /// The engine over a device that was opened or made.
-    fn over(device: Device<memstore::MemStore>, writes: Writes, room: RoomId, hub: &str, address: HubAddress, client: &str, seed: u64) -> Self {
+    fn over(
+        device: Device<memstore::MemStore>,
+        writes: Writes,
+        room: RoomId,
+        hub: &str,
+        address: HubAddress,
+        client: &str,
+        seed: u64,
+    ) -> Self {
         let position = device.cursor();
         Engine {
             codec: Codec,
@@ -624,7 +806,10 @@ impl Engine {
             mends: VecDeque::new(),
             mending: None,
             reread_from: None,
-            desk: DeskRead { want: true, ..DeskRead::default() },
+            desk: DeskRead {
+                want: true,
+                ..DeskRead::default()
+            },
             stream: None,
             stream_retry: Retry::default(),
             head_hint: None,
@@ -674,9 +859,23 @@ impl Engine {
     pub fn departure_request(&self) -> Result<crate::app::io::HttpRequest, Error> {
         let signature = self.device.sign_departure_for(&self.room)?;
         let device = self.device.id();
-        let site = Site { url:&self.hub, token:None, client:&self.client, lease:None };
-        crate::hub::Codec.request(&site, &Route::Depart { room:&self.room, device:&device, signature:&signature })
-            .map(|(request, _)| request).map_err(|_| Error::BadFormat)
+        let site = Site {
+            url: &self.hub,
+            token: None,
+            client: &self.client,
+            lease: None,
+        };
+        crate::hub::Codec
+            .request(
+                &site,
+                &Route::Depart {
+                    room: &self.room,
+                    device: &device,
+                    signature: &signature,
+                },
+            )
+            .map(|(request, _)| request)
+            .map_err(|_| Error::BadFormat)
     }
     pub fn position(&self) -> u64 {
         self.position
@@ -695,7 +894,9 @@ impl Engine {
     /// how many up to that head.
     pub fn catch_up(&self) -> Option<(u64, u64)> {
         let began = self.began?;
-        let head = self.head_hint.filter(|head| !self.caught_up && *head > began)?;
+        let head = self
+            .head_hint
+            .filter(|head| !self.caught_up && *head > began)?;
         Some((self.position.clamp(began, head) - began, head - began))
     }
     /// From where the room's order is to be read once more, if it is (the seam to the reading of the past).
@@ -705,7 +906,12 @@ impl Engine {
     /// How much the engine passed over and still has to read: groups it waits for, groups whose keys it lacks,
     /// chains the hub withholds, mends queued.
     pub fn owes(&self) -> (usize, usize, usize, usize) {
-        (self.behind.len(), self.keyless.len(), self.withheld.len(), self.mends.len())
+        (
+            self.behind.len(),
+            self.keyless.len(),
+            self.withheld.len(),
+            self.mends.len(),
+        )
     }
     /// The next report, oldest first.
     pub fn next_report(&mut self) -> Option<Report> {
@@ -713,7 +919,11 @@ impl Engine {
     }
 
     /// An action on the device (seal, commit, answer): what it wrote is stored and the pump is woken.
-    pub fn act<T>(&mut self, ctx: &mut Ctx<'_>, action: impl FnOnce(&mut Device<memstore::MemStore>, u64) -> Result<T, Error>) -> Result<T, Error> {
+    pub fn act<T>(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        action: impl FnOnce(&mut Device<memstore::MemStore>, u64) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         if self.stopped.is_some() {
             return Err(Error::Storage("the device is closed".into()));
         }
@@ -773,7 +983,10 @@ impl Engine {
             }
             want(self.tending.wake());
             if self.caught_up && self.upkeep_asked.is_none() {
-                want(Some(self.upkeep_at.max(self.upkeep_retry.at.unwrap_or(0))).filter(|at| *at != 0));
+                want(
+                    Some(self.upkeep_at.max(self.upkeep_retry.at.unwrap_or(0)))
+                        .filter(|at| *at != 0),
+                );
             }
         }
         at
@@ -792,7 +1005,11 @@ impl Engine {
 
     pub fn on_wake(&mut self, ctx: &mut Ctx<'_>) {
         // a stream that went silent is cut and opened again
-        if self.stream.as_ref().is_some_and(|s| ctx.now >= s.heard_at + STREAM_SILENT_MS) {
+        if self
+            .stream
+            .as_ref()
+            .is_some_and(|s| ctx.now >= s.heard_at + STREAM_SILENT_MS)
+        {
             self.close_stream(ctx);
             self.pass = true;
         }
@@ -840,12 +1057,21 @@ impl Engine {
     }
 
     /// The result of a store effect of this engine. False: the id is not the engine's.
-    pub fn on_store(&mut self, ctx: &mut Ctx<'_>, id: IoId, result: &IoResult<StoreAnswer>) -> bool {
+    pub fn on_store(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        id: IoId,
+        result: &IoResult<StoreAnswer>,
+    ) -> bool {
         match self.pending.remove(&id) {
             Some(Asked::DeviceWrite) => {
                 if let IoResult::Err(e) = result {
                     ctx.log(LogLevel::Error, format!("device write: {:?}", e.kind));
-                    let why = if e.kind == crate::app::io::IoErrorKind::Conflict { Stopped::Store } else { Stopped::Write };
+                    let why = if e.kind == crate::app::io::IoErrorKind::Conflict {
+                        Stopped::Store
+                    } else {
+                        Stopped::Write
+                    };
                     self.stop(ctx, why);
                 }
                 true
@@ -864,14 +1090,20 @@ impl Engine {
             }
             Some(Asked::KeptWrite) => {
                 if let IoResult::Err(e) = result {
-                    ctx.log(LogLevel::Warn, format!("a kept request was not written: {:?}", e.kind));
+                    ctx.log(
+                        LogLevel::Warn,
+                        format!("a kept request was not written: {:?}", e.kind),
+                    );
                 }
                 true
             }
             Some(Asked::RecordWrite) => {
                 if let IoResult::Err(e) = result {
                     // (not kept: the next step writes it again; a restart before that reads a little more)
-                    ctx.log(LogLevel::Warn, format!("the engine's record was not written: {:?}", e.kind));
+                    ctx.log(
+                        LogLevel::Warn,
+                        format!("the engine's record was not written: {:?}", e.kind),
+                    );
                     self.written = None;
                 }
                 true
@@ -897,7 +1129,14 @@ impl Engine {
             self.drive(ctx);
             return true;
         }
-        if matches!(asked, Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::KeptScan | Asked::KeptWrite) {
+        if matches!(
+            asked,
+            Asked::DeviceWrite
+                | Asked::Record
+                | Asked::RecordWrite
+                | Asked::KeptScan
+                | Asked::KeptWrite
+        ) {
             return true;
         }
         let (expect, response) = match &result {
@@ -917,7 +1156,8 @@ impl Engine {
             (Err(Failure::Refused { .. }), Some(response)) => self.codec.refusal(response),
             _ => None,
         };
-        let unauthorised = refusal.as_ref().is_some_and(|r| r.code == "unauthorised") && !matches!(asked, Asked::Challenge(_) | Asked::Token(_));
+        let unauthorised = refusal.as_ref().is_some_and(|r| r.code == "unauthorised")
+            && !matches!(asked, Asked::Challenge(_) | Asked::Token(_));
         if unauthorised {
             self.token = None;
             self.unauthorised += 1;
@@ -927,7 +1167,10 @@ impl Engine {
         } else if answer.is_ok() && !matches!(asked, Asked::Challenge(_) | Asked::Token(_)) {
             self.unauthorised = 0;
         }
-        if let (Some(r), false) = (&refusal, matches!(asked, Asked::Guard { .. } | Asked::Removal { .. })) {
+        if let (Some(r), false) = (
+            &refusal,
+            matches!(asked, Asked::Guard { .. } | Asked::Removal { .. }),
+        ) {
             self.agent_refused(ctx, r.code);
         }
         let code = refusal.as_ref().map(|r| r.code);
@@ -936,7 +1179,12 @@ impl Engine {
             return true;
         }
         match asked {
-            Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::Request { .. } | Asked::KeptScan | Asked::KeptWrite => {}
+            Asked::DeviceWrite
+            | Asked::Record
+            | Asked::RecordWrite
+            | Asked::Request { .. }
+            | Asked::KeptScan
+            | Asked::KeptWrite => {}
             Asked::Lease(_) => self.on_lease(ctx, answer, code),
             Asked::Guard { group, own, .. } => self.on_guard(ctx, group, own, answer, code),
             Asked::Removal { group, .. } => self.on_removal(ctx, group, answer, code),
@@ -946,21 +1194,39 @@ impl Engine {
             Asked::Challenge(_) => self.on_challenge(ctx, answer),
             Asked::Token(_) => self.on_token(ctx, answer),
             Asked::Page(_) => self.on_page(ctx, answer, unauthorised, refusal),
-            Asked::Post { entry, kind, group, .. } => self.on_posted(ctx, entry, kind, group, answer, unauthorised, refusal),
+            Asked::Post {
+                entry, kind, group, ..
+            } => self.on_posted(ctx, entry, kind, group, answer, unauthorised, refusal),
             Asked::Welcomes(_) => self.on_welcomes(ctx, answer, unauthorised),
-            Asked::GroupLog { group, upto, .. } => self.on_group_log(ctx, group, upto, answer, unauthorised),
-            Asked::Chain { group, sender, before, .. } => self.on_chain(ctx, group, sender, before, answer, unauthorised),
+            Asked::GroupLog { group, upto, .. } => {
+                self.on_group_log(ctx, group, upto, answer, unauthorised)
+            }
+            Asked::Chain {
+                group,
+                sender,
+                before,
+                ..
+            } => self.on_chain(ctx, group, sender, before, answer, unauthorised),
             Asked::Told(_) => {}
             Asked::Mend { mend, .. } => self.on_mend(ctx, mend, answer, unauthorised),
             Asked::Desk(_) => self.on_team(ctx, answer, unauthorised),
             Asked::KeyPackagesHeld(_) => self.on_key_packages_held(ctx, answer, unauthorised),
-            Asked::First { route, object, after, .. } => self.on_first(ctx, route, object, after, answer, unauthorised),
-            Asked::Joins { entries, .. } => self.on_joins_posted(ctx, entries, answer, unauthorised),
+            Asked::First {
+                route,
+                object,
+                after,
+                ..
+            } => self.on_first(ctx, route, object, after, answer, unauthorised),
+            Asked::Joins { entries, .. } => {
+                self.on_joins_posted(ctx, entries, answer, unauthorised)
+            }
             Asked::JoinRead { what, .. } => self.on_join_read(ctx, what, answer, unauthorised),
             Asked::Claim { job, .. } => self.on_claimed(ctx, job, answer, unauthorised),
             Asked::RoomGroups { job, .. } => self.on_room_groups(ctx, job, answer, unauthorised),
             Asked::Wishes(_) => self.on_wishes(ctx, answer),
-            Asked::RoomRead { what, .. } => self.on_room_read(ctx, what, answer, unauthorised, refusal),
+            Asked::RoomRead { what, .. } => {
+                self.on_room_read(ctx, what, answer, unauthorised, refusal)
+            }
         }
         self.drive(ctx);
         true
@@ -990,13 +1256,19 @@ impl Engine {
             }
             StreamItem::Chunk { bytes } => {
                 let fed = conn.reader.chunk(&bytes);
-                conn.brought |= fed.events.iter().any(|e| matches!(e, StreamEvent::Change(_)));
+                conn.brought |= fed
+                    .events
+                    .iter()
+                    .any(|e| matches!(e, StreamEvent::Change(_)));
                 for event in fed.events {
                     self.on_stream_event(ctx, event);
                 }
                 if let Some(failure) = fed.failure {
                     // an event the protocol does not allow ends the connection; the next resumes after the position
-                    ctx.log(LogLevel::Warn, "stream: an event the protocol does not allow");
+                    ctx.log(
+                        LogLevel::Warn,
+                        "stream: an event the protocol does not allow",
+                    );
                     if let Failure::BadAnswer { why } = failure {
                         self.report(Report::Alert(Alert::BadAnswer { why }));
                     }
@@ -1017,14 +1289,17 @@ impl Engine {
                         self.token = None;
                         None
                     }
-                    Some(Failure::Refused { code: Some(code), .. }) => {
+                    Some(Failure::Refused {
+                        code: Some(code), ..
+                    }) => {
                         let code = code.clone();
                         self.agent_refused(ctx, &code);
                         None
                     }
                     _ => None,
                 };
-                self.stream_retry.fail(ctx.now, retry_after, &mut self.jitter);
+                self.stream_retry
+                    .fail(ctx.now, retry_after, &mut self.jitter);
                 // what came between this stream's end and the next one's start is read by a page
                 self.pass = true;
             }
@@ -1060,7 +1335,11 @@ impl Engine {
                 // a Welcome waits: read at the next item that needs one, and at once when nothing is being taken
                 self.welcomes_idle = None;
                 if self.repair.is_none() && self.todo.is_empty() {
-                    self.repair = Some(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+                    self.repair = Some(Repair::Welcomes {
+                        after: self.welcomes_after,
+                        joined: Vec::new(),
+                        asked: false,
+                    });
                 }
             }
             StreamEvent::Presence(p) => {
@@ -1068,14 +1347,23 @@ impl Engine {
                 self.report(Report::Presence(p))
             }
             StreamEvent::Departure { device, signature } => {
-                if device != self.device.id() && trommi_core::hub_auth::verify_departure(&self.room(), &device, &signature).is_ok()
-                    && (self.tending.departures.len() < 2000 || self.tending.departures.contains(&device)) {
+                if device != self.device.id()
+                    && trommi_core::hub_auth::verify_departure(&self.room(), &device, &signature)
+                        .is_ok()
+                    && (self.tending.departures.len() < 2000
+                        || self.tending.departures.contains(&device))
+                {
                     self.tending.departures.insert(device);
                     self.tending.want = true;
                 }
             }
             StreamEvent::Here => self.report(Report::Here),
-            StreamEvent::Relay { group, sender, message, .. } => self.on_relay(ctx, group, sender, &message),
+            StreamEvent::Relay {
+                group,
+                sender,
+                message,
+                ..
+            } => self.on_relay(ctx, group, sender, &message),
             StreamEvent::Wish(row) => self.on_wish(ctx, row),
             StreamEvent::InviteRequest { invite } => self.report(Report::InviteRequest { invite }),
             StreamEvent::Archived { group } => self.on_archived(ctx, group),
@@ -1157,7 +1445,14 @@ impl Engine {
                 id,
                 op: StoreOp::DeviceApply {
                     expected_revision: write.expected_revision,
-                    put: write.put.into_iter().map(|(k, v)| DeviceEntry { key: k.into(), value: v.into() }).collect(),
+                    put: write
+                        .put
+                        .into_iter()
+                        .map(|(k, v)| DeviceEntry {
+                            key: k.into(),
+                            value: v.into(),
+                        })
+                        .collect(),
                     delete: write.delete.into_iter().map(Into::into).collect(),
                 },
             });
@@ -1165,16 +1460,27 @@ impl Engine {
     }
 
     fn connect(&mut self, _ctx: &mut Ctx<'_>) {
-        let now = if self.stream.as_ref().is_some_and(|s| s.opened) && !self.pass && self.todo.is_empty() && self.caught_up {
+        let now = if self.stream.as_ref().is_some_and(|s| s.opened)
+            && !self.pass
+            && self.todo.is_empty()
+            && self.caught_up
+        {
             Connection::Live
         } else if self.token.is_some() && (self.page.is_some() || !self.todo.is_empty()) {
             Connection::CatchingUp
         } else if self.token.is_some() && self.caught_up && self.background && !self.pass {
             // (in the back, at the end of the order, without a stream: as live as it gets there)
             Connection::Live
-        } else if self.auth_retry.at.is_none() && self.order_retry.at.is_none() && self.stream_retry.at.is_none() {
+        } else if self.auth_retry.at.is_none()
+            && self.order_retry.at.is_none()
+            && self.stream_retry.at.is_none()
+        {
             // (on its way: no failure stands)
-            if self.caught_up { self.connection } else { Connection::CatchingUp }
+            if self.caught_up {
+                self.connection
+            } else {
+                Connection::CatchingUp
+            }
         } else {
             Connection::Offline
         };
@@ -1201,7 +1507,14 @@ impl Engine {
         self.joining = None;
         self.writes.lose();
         for (id, asked) in std::mem::take(&mut self.pending) {
-            if !matches!(asked, Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::KeptScan | Asked::KeptWrite) {
+            if !matches!(
+                asked,
+                Asked::DeviceWrite
+                    | Asked::Record
+                    | Asked::RecordWrite
+                    | Asked::KeptScan
+                    | Asked::KeptWrite
+            ) {
                 ctx.out.push(Effect::Cancel { id });
             }
         }
@@ -1213,16 +1526,37 @@ impl Engine {
 
     /// A failure of the device itself ends the engine: the shell opens the stored state again with a new App.
     fn local(&mut self, ctx: &mut Ctx<'_>, error: &Error) {
-        if matches!(error, Error::Storage(_) | Error::Entropy | Error::Internal(_)) || !self.device.is_owner() {
+        if matches!(
+            error,
+            Error::Storage(_) | Error::Entropy | Error::Internal(_)
+        ) || !self.device.is_owner()
+        {
             ctx.log(LogLevel::Error, format!("device: {}", error.code()));
-            self.stop(ctx, if self.device.is_owner() { Stopped::Device } else { Stopped::Store });
+            self.stop(
+                ctx,
+                if self.device.is_owner() {
+                    Stopped::Device
+                } else {
+                    Stopped::Store
+                },
+            );
         }
     }
 
-    fn ask(&mut self, ctx: &mut Ctx<'_>, route: Route<'_>, token: bool, asked: impl FnOnce(Expect) -> Asked) -> Option<IoId> {
+    fn ask(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        route: Route<'_>,
+        token: bool,
+        asked: impl FnOnce(Expect) -> Asked,
+    ) -> Option<IoId> {
         let site = Site {
             url: &self.hub,
-            token: if token { self.token.as_ref().map(|t| t.value.as_str()) } else { None },
+            token: if token {
+                self.token.as_ref().map(|t| t.value.as_str())
+            } else {
+                None
+            },
             client: &self.client,
             lease: self.lease_header(),
         };
@@ -1250,7 +1584,12 @@ impl Engine {
         }
         if self.signing.is_none() && !self.auth_retry.waiting(ctx.now) {
             let room = self.room;
-            self.signing = self.ask(ctx, Route::Challenge { room: &room }, false, Asked::Challenge);
+            self.signing = self.ask(
+                ctx,
+                Route::Challenge { room: &room },
+                false,
+                Asked::Challenge,
+            );
         }
         // (a token about to end still serves until the new one is there)
         self.token.is_some()
@@ -1259,10 +1598,22 @@ impl Engine {
     fn on_challenge(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>) {
         self.signing = None;
         match answer {
-            Ok(Answer::Challenge(challenge)) => match self.room_join.as_ref().map_or_else(|| self.device.hub_sign_in(&self.address, challenge), |j| j.sign_in(self.room, &self.address, challenge)) {
+            Ok(Answer::Challenge(challenge)) => match self.room_join.as_ref().map_or_else(
+                || self.device.hub_sign_in(&self.address, challenge),
+                |j| j.sign_in(self.room, &self.address, challenge),
+            ) {
                 Ok(signed) => {
                     let room = self.room;
-                    self.signing = self.ask(ctx, Route::Token { room: &room, auth: &signed.auth, signature: &signed.signature }, false, Asked::Token);
+                    self.signing = self.ask(
+                        ctx,
+                        Route::Token {
+                            room: &room,
+                            auth: &signed.auth,
+                            signature: &signed.signature,
+                        },
+                        false,
+                        Asked::Token,
+                    );
                 }
                 Err(e) => self.local(ctx, &e),
             },
@@ -1275,11 +1626,20 @@ impl Engine {
     fn on_token(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>) {
         self.signing = None;
         match answer {
-            Ok(Answer::Token { token, expires_at, role }) => {
+            Ok(Answer::Token {
+                token,
+                expires_at,
+                role,
+            }) => {
                 // The hub's clock is not this one's: the token is taken to live at least two renewal spans and at
                 // most ten minutes. One that ended earlier is found out by its 401.
-                let life = expires_at.saturating_sub(ctx.now).clamp(2 * TOKEN_RENEW_BEFORE_MS, TOKEN_MAX_MS);
-                self.token = Some(Token { value: token, renew_at: ctx.now + life - TOKEN_RENEW_BEFORE_MS });
+                let life = expires_at
+                    .saturating_sub(ctx.now)
+                    .clamp(2 * TOKEN_RENEW_BEFORE_MS, TOKEN_MAX_MS);
+                self.token = Some(Token {
+                    value: token,
+                    renew_at: ctx.now + life - TOKEN_RENEW_BEFORE_MS,
+                });
                 self.auth_retry.ok();
                 if role == Role::Removed {
                     // (the hub's word alone ends nothing: the device follows the room's Commits itself)
@@ -1310,13 +1670,20 @@ impl Engine {
                 if !self.order_retry.waiting(ctx.now) {
                     let after = *after;
                     *asked = true;
-                    if self.ask(ctx, Route::Welcomes { after }, true, Asked::Welcomes).is_none() {
+                    if self
+                        .ask(ctx, Route::Welcomes { after }, true, Asked::Welcomes)
+                        .is_none()
+                    {
                         self.repair = None;
                     }
                 }
                 return;
             }
-            Some(Repair::Logs { groups, after, asked }) if !*asked => {
+            Some(Repair::Logs {
+                groups,
+                after,
+                asked,
+            }) if !*asked => {
                 if !self.order_retry.waiting(ctx.now) {
                     let Some(group) = groups.front().copied() else {
                         self.repair = None;
@@ -1324,19 +1691,50 @@ impl Engine {
                     };
                     let (after, upto) = (*after, self.position);
                     *asked = true;
-                    let route = Route::GroupLog { group: &group, after, limit: LOG_PAGE, commits_only: false };
-                    if self.ask(ctx, route, true, |expect| Asked::GroupLog { expect, group, upto }).is_none() {
+                    let route = Route::GroupLog {
+                        group: &group,
+                        after,
+                        limit: LOG_PAGE,
+                        commits_only: false,
+                    };
+                    if self
+                        .ask(ctx, route, true, |expect| Asked::GroupLog {
+                            expect,
+                            group,
+                            upto,
+                        })
+                        .is_none()
+                    {
                         self.repair = None;
                     }
                 }
                 return;
             }
-            Some(Repair::Chain { group, sender, after, before, asked }) if !*asked => {
+            Some(Repair::Chain {
+                group,
+                sender,
+                after,
+                before,
+                asked,
+            }) if !*asked => {
                 if !self.order_retry.waiting(ctx.now) {
                     let (group, sender, after, before) = (*group, *sender, *after, *before);
                     *asked = true;
-                    let route = Route::Chain { group: &group, sender: &sender, after, limit: CHAIN_PAGE };
-                    if self.ask(ctx, route, true, |expect| Asked::Chain { expect, group, sender, before }).is_none() {
+                    let route = Route::Chain {
+                        group: &group,
+                        sender: &sender,
+                        after,
+                        limit: CHAIN_PAGE,
+                    };
+                    if self
+                        .ask(ctx, route, true, |expect| Asked::Chain {
+                            expect,
+                            group,
+                            sender,
+                            before,
+                        })
+                        .is_none()
+                    {
                         self.repair = None;
                     }
                 }
@@ -1355,10 +1753,25 @@ impl Engine {
         // Everything the device may see, archived sessions' envelopes too: the stream brings those as well, and a
         // read that left them out would let the position pass over one the stream handed to it.
         let limit = self.page_limit;
-        self.page = self.ask(ctx, Route::Changes { after, limit, only: Only::All }, true, Asked::Page);
+        self.page = self.ask(
+            ctx,
+            Route::Changes {
+                after,
+                limit,
+                only: Only::All,
+            },
+            true,
+            Asked::Page,
+        );
     }
 
-    fn on_page(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, unauthorised: bool, refusal: Option<Refusal>) {
+    fn on_page(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+        refusal: Option<Refusal>,
+    ) {
         self.page = None;
         match answer {
             Ok(Answer::Changes(page)) => {
@@ -1368,7 +1781,11 @@ impl Engine {
                 self.head_hint = page.head;
                 self.todo_upto = page.change;
                 self.todo_more = page.more;
-                self.todo = page.items.into_iter().filter(|i| i.change() > self.position).collect();
+                self.todo = page
+                    .items
+                    .into_iter()
+                    .filter(|i| i.change() > self.position)
+                    .collect();
                 self.tried = Tried::default();
                 if self.todo.is_empty() {
                     self.page_through(ctx);
@@ -1389,14 +1806,17 @@ impl Engine {
                     Failure::Refused { .. } => {
                         match refusal.as_ref().map(|r| r.code) {
                             Some("not-member") => self.report(Report::Alert(Alert::NotMember)),
-                            Some("client-too-old") => self.report(Report::Alert(Alert::ClientTooOld)),
+                            Some("client-too-old") => {
+                                self.report(Report::Alert(Alert::ClientTooOld))
+                            }
                             _ => {}
                         }
                         None
                     }
                     Failure::Offline => None,
                 };
-                self.order_retry.fail(ctx.now, retry_after, &mut self.jitter);
+                self.order_retry
+                    .fail(ctx.now, retry_after, &mut self.jitter);
             }
         }
     }
@@ -1436,7 +1856,11 @@ impl Engine {
             }
             if self.todo.is_empty() {
                 // the stream's changes continue the order only once no page is due or in flight
-                if self.pass || self.page.is_some() || self.live.is_empty() || self.order_retry.waiting(ctx.now) {
+                if self.pass
+                    || self.page.is_some()
+                    || self.live.is_empty()
+                    || self.order_retry.waiting(ctx.now)
+                {
                     break;
                 }
                 let Some(stream_from) = self.stream.as_ref().map(|s| s.from) else {
@@ -1447,7 +1871,10 @@ impl Engine {
                 if stream_from > self.position {
                     break;
                 }
-                self.todo = std::mem::take(&mut self.live).into_iter().filter(|i| i.change() > self.position).collect();
+                self.todo = std::mem::take(&mut self.live)
+                    .into_iter()
+                    .filter(|i| i.change() > self.position)
+                    .collect();
                 self.live_bytes = 0;
                 self.todo_upto = self.todo.back().map_or(self.position, ChangeItem::change);
                 self.todo_more = false;
@@ -1456,7 +1883,9 @@ impl Engine {
                     break;
                 }
             }
-            let Some(item) = self.todo.pop_front() else { break };
+            let Some(item) = self.todo.pop_front() else {
+                break;
+            };
             let change = item.change();
             match self.take_one(ctx, &item, &mut groups_changed) {
                 Taken::Done => {
@@ -1491,9 +1920,17 @@ impl Engine {
             self.groups_changed();
         }
         // a Welcome that came before the room Commit it builds on: read again now that the room moved
-        if self.welcome_waits == (true, true) && self.repair.is_none() && self.todo.is_empty() && self.stopped.is_none() {
+        if self.welcome_waits == (true, true)
+            && self.repair.is_none()
+            && self.todo.is_empty()
+            && self.stopped.is_none()
+        {
             self.welcome_waits = (false, false);
-            self.repair = Some(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+            self.repair = Some(Repair::Welcomes {
+                after: self.welcomes_after,
+                joined: Vec::new(),
+                asked: false,
+            });
         }
     }
 
@@ -1522,12 +1959,20 @@ impl Engine {
         let met: Vec<(GroupId, u64)> = self
             .behind
             .iter()
-            .filter(|(group, (_, epoch))| groups.iter().any(|g| g.group == **group && g.epoch >= *epoch))
+            .filter(|(group, (_, epoch))| {
+                groups
+                    .iter()
+                    .any(|g| g.group == **group && g.epoch >= *epoch)
+            })
             .map(|(group, (change, _))| (*group, *change))
             .collect();
         for (group, change) in met {
             self.behind.remove(&group);
-            self.queue(Mend::Group { group, after: change.saturating_sub(1), upto });
+            self.queue(Mend::Group {
+                group,
+                after: change.saturating_sub(1),
+                upto,
+            });
         }
         if chains {
             let withheld: Vec<(GroupId, DeviceId)> = self.withheld.keys().copied().collect();
@@ -1541,7 +1986,11 @@ impl Engine {
     pub(super) fn keys_came(&mut self) {
         let upto = self.position;
         for (group, change) in std::mem::take(&mut self.keyless) {
-            self.queue(Mend::Group { group, after: change.saturating_sub(1), upto });
+            self.queue(Mend::Group {
+                group,
+                after: change.saturating_sub(1),
+                upto,
+            });
         }
     }
 
@@ -1550,12 +1999,37 @@ impl Engine {
             return;
         }
         self.mendable(false);
-        let Some(mend) = self.mends.front().copied() else { return };
+        let Some(mend) = self.mends.front().copied() else {
+            return;
+        };
         self.mending = match mend {
-            Mend::Group { group, after, .. } => self.ask(ctx, Route::Changes { after, limit: PAGE, only: Only::Group(&group) }, true, |expect| Asked::Mend { expect, mend }),
+            Mend::Group { group, after, .. } => self.ask(
+                ctx,
+                Route::Changes {
+                    after,
+                    limit: PAGE,
+                    only: Only::Group(&group),
+                },
+                true,
+                |expect| Asked::Mend { expect, mend },
+            ),
             Mend::Chain { group, sender } => {
-                let after = self.device.chain_head(&group, &sender).map(|h| h.seq).unwrap_or(0);
-                self.ask(ctx, Route::Chain { group: &group, sender: &sender, after, limit: CHAIN_PAGE }, true, |expect| Asked::Mend { expect, mend })
+                let after = self
+                    .device
+                    .chain_head(&group, &sender)
+                    .map(|h| h.seq)
+                    .unwrap_or(0);
+                self.ask(
+                    ctx,
+                    Route::Chain {
+                        group: &group,
+                        sender: &sender,
+                        after,
+                        limit: CHAIN_PAGE,
+                    },
+                    true,
+                    |expect| Asked::Mend { expect, mend },
+                )
             }
         };
         if self.mending.is_none() {
@@ -1563,7 +2037,13 @@ impl Engine {
         }
     }
 
-    fn on_mend(&mut self, ctx: &mut Ctx<'_>, mend: Mend, answer: Result<Answer, Failure>, unauthorised: bool) {
+    fn on_mend(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        mend: Mend,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
         self.mending = None;
         let answer = match answer {
             Ok(answer) => answer,
@@ -1577,7 +2057,9 @@ impl Engine {
                     Failure::NotNow { retry_after_ms, .. } => retry_after_ms,
                     _ => None,
                 };
-                return self.order_retry.fail(ctx.now, retry_after, &mut self.jitter);
+                return self
+                    .order_retry
+                    .fail(ctx.now, retry_after, &mut self.jitter);
             }
         };
         self.order_retry.ok();
@@ -1585,7 +2067,9 @@ impl Engine {
         match (mend, answer) {
             (Mend::Group { group, upto, .. }, Answer::Changes(page)) => {
                 for item in &page.items {
-                    let ChangeItem::Envelope(e) = item else { continue };
+                    let ChangeItem::Envelope(e) = item else {
+                        continue;
+                    };
                     if e.change > upto {
                         return; // what lies after came, or comes, in the one order
                     }
@@ -1595,7 +2079,11 @@ impl Engine {
                     }
                 }
                 if page.more && page.change < upto {
-                    self.mends.push_front(Mend::Group { group, after: page.change, upto });
+                    self.mends.push_front(Mend::Group {
+                        group,
+                        after: page.change,
+                        upto,
+                    });
                 }
             }
             (Mend::Chain { group, sender }, Answer::Chain { items, more }) => {
@@ -1607,8 +2095,16 @@ impl Engine {
                         return;
                     }
                 }
-                let held = self.device.chain_head(&group, &sender).map(|h| h.seq).unwrap_or(0);
-                if self.withheld.get(&(group, sender)).is_some_and(|seq| held >= *seq) {
+                let held = self
+                    .device
+                    .chain_head(&group, &sender)
+                    .map(|h| h.seq)
+                    .unwrap_or(0);
+                if self
+                    .withheld
+                    .get(&(group, sender))
+                    .is_some_and(|seq| held >= *seq)
+                {
                     self.withheld.remove(&(group, sender));
                 } else if any && more {
                     self.mends.push_front(mend);
@@ -1622,13 +2118,25 @@ impl Engine {
     /// holds already is read back (its body, now that the key is there).
     fn take_again(&mut self, ctx: &mut Ctx<'_>, item: &EnvelopeItem) {
         let void = Self::void_code(item);
-        let mut received = match self.device.receive_envelope(&item.envelope, item.change, true, void.as_ref(), ctx.now) {
+        let mut received = match self.device.receive_envelope(
+            &item.envelope,
+            item.change,
+            true,
+            void.as_ref(),
+            ctx.now,
+        ) {
             Ok(received) => received,
             Err(e) => return self.local(ctx, &e),
         };
         if received.outcome == EnvelopeOutcome::Refused {
             match received.code {
-                Some(Error::Replay) => match self.device.receive_envelope(&item.envelope, item.change, false, void.as_ref(), ctx.now) {
+                Some(Error::Replay) => match self.device.receive_envelope(
+                    &item.envelope,
+                    item.change,
+                    false,
+                    void.as_ref(),
+                    ctx.now,
+                ) {
                     Ok(again) => received = again,
                     Err(e) => return self.local(ctx, &e),
                 },
@@ -1640,7 +2148,11 @@ impl Engine {
                     return;
                 }
                 Some(Error::Gap) => {
-                    let (group, sender, seq) = (received.header.group, received.header.sender, received.header.seq);
+                    let (group, sender, seq) = (
+                        received.header.group,
+                        received.header.sender,
+                        received.header.seq,
+                    );
                     self.note_withheld(group, sender, seq, item.change);
                     return;
                 }
@@ -1653,7 +2165,10 @@ impl Engine {
         if received.code == Some(Error::NoKey) {
             self.note_keyless(received.header.group, item.change);
         }
-        self.report(Report::Envelope { received: Box::new(received), ordered: false });
+        self.report(Report::Envelope {
+            received: Box::new(received),
+            ordered: false,
+        });
     }
 
     /// The hub withholds a part of a chain: said, in every phase, and asked for again when the order rests.
@@ -1662,10 +2177,15 @@ impl Engine {
         if known.is_none() && self.withheld.len() >= BEHIND_MAX {
             self.want_reread(change.saturating_sub(1));
         } else {
-            self.withheld.insert((group, sender), known.map_or(seq, |k| k.max(seq)));
+            self.withheld
+                .insert((group, sender), known.map_or(seq, |k| k.max(seq)));
         }
         if known.is_none() {
-            self.report(Report::Alert(Alert::Withheld { group, sender, change }));
+            self.report(Report::Alert(Alert::Withheld {
+                group,
+                sender,
+                change,
+            }));
         }
     }
 
@@ -1684,7 +2204,12 @@ impl Engine {
         self.reread_from = Some(self.reread_from.map_or(from, |f| f.min(from)));
     }
 
-    fn take_one(&mut self, ctx: &mut Ctx<'_>, item: &ChangeItem, groups_changed: &mut bool) -> Taken {
+    fn take_one(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        item: &ChangeItem,
+        groups_changed: &mut bool,
+    ) -> Taken {
         match item {
             ChangeItem::Envelope(e) => self.take_envelope(ctx, e),
             ChangeItem::Commit(l) => self.take_log(ctx, l, true, groups_changed),
@@ -1693,7 +2218,9 @@ impl Engine {
     }
 
     fn void_code(item: &EnvelopeItem) -> Option<Error> {
-        item.void_code.as_deref().map(|code| Error::from_code(code).unwrap_or(Error::HubVoidedOther))
+        item.void_code
+            .as_deref()
+            .map(|code| Error::from_code(code).unwrap_or(Error::HubVoidedOther))
     }
 
     fn take_envelope(&mut self, ctx: &mut Ctx<'_>, item: &EnvelopeItem) -> Taken {
@@ -1701,7 +2228,13 @@ impl Engine {
             return halt;
         }
         let void = Self::void_code(item);
-        let received = match self.device.receive_envelope(&item.envelope, item.change, true, void.as_ref(), ctx.now) {
+        let received = match self.device.receive_envelope(
+            &item.envelope,
+            item.change,
+            true,
+            void.as_ref(),
+            ctx.now,
+        ) {
             Ok(received) => received,
             Err(e) => {
                 self.local(ctx, &e);
@@ -1709,7 +2242,10 @@ impl Engine {
                     return Taken::Halt;
                 }
                 // not an envelope at all: nothing of it is taken
-                self.report(Report::Alert(Alert::NotAnEnvelope { change: item.change, code: e.code() }));
+                self.report(Report::Alert(Alert::NotAnEnvelope {
+                    change: item.change,
+                    code: e.code(),
+                }));
                 return Taken::Done;
             }
         };
@@ -1719,13 +2255,20 @@ impl Engine {
                     let group = received.header.group;
                     let held = self.device.group(&group).ok();
                     // A group this device holds far enough refuses only what lies before its own start there.
-                    if held.as_ref().is_some_and(|g| g.epoch >= received.header.epoch) {
+                    if held
+                        .as_ref()
+                        .is_some_and(|g| g.epoch >= received.header.epoch)
+                    {
                         return Taken::Done;
                     }
                     // A Welcome this device has not taken yet may be what it lacks.
                     if !self.tried.welcomes && self.welcomes_due() {
                         self.tried.welcomes = true;
-                        return Taken::Wait(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+                        return Taken::Wait(Repair::Welcomes {
+                            after: self.welcomes_after,
+                            joined: Vec::new(),
+                            asked: false,
+                        });
                     }
                     // Still behind: noted, and read again once the group is there. The position passes it; the
                     // device's own cursor does not (it stays for a group it is a leaf of).
@@ -1733,11 +2276,25 @@ impl Engine {
                     return Taken::Done;
                 }
                 Some(Error::Gap) => {
-                    let (group, sender, seq) = (received.header.group, received.header.sender, received.header.seq);
+                    let (group, sender, seq) = (
+                        received.header.group,
+                        received.header.sender,
+                        received.header.seq,
+                    );
                     if !self.tried.chain {
                         self.tried.chain = true;
-                        let after = self.device.chain_head(&group, &sender).map(|h| h.seq).unwrap_or(0);
-                        return Taken::Wait(Repair::Chain { group, sender, after, before: seq, asked: false });
+                        let after = self
+                            .device
+                            .chain_head(&group, &sender)
+                            .map(|h| h.seq)
+                            .unwrap_or(0);
+                        return Taken::Wait(Repair::Chain {
+                            group,
+                            sender,
+                            after,
+                            before: seq,
+                            asked: false,
+                        });
                     }
                     // The hub withholds a part of the chain. Said in every phase; the envelope stays out, and the
                     // chain is asked for again from what this device holds when the order next rests.
@@ -1752,7 +2309,10 @@ impl Engine {
             self.note_keyless(received.header.group, item.change);
         }
         let command = self.agent_gate(ctx, &received);
-        self.report(Report::Envelope { received: Box::new(received), ordered: true });
+        self.report(Report::Envelope {
+            received: Box::new(received),
+            ordered: true,
+        });
         if let Some(command) = command {
             self.report(Report::Command(Box::new(command)));
         }
@@ -1786,7 +2346,13 @@ impl Engine {
         }
     }
 
-    fn take_log(&mut self, ctx: &mut Ctx<'_>, item: &LogItem, commit: bool, groups_changed: &mut bool) -> Taken {
+    fn take_log(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        item: &LogItem,
+        commit: bool,
+        groups_changed: &mut bool,
+    ) -> Taken {
         if commit && self.need_anchored_past() {
             return Taken::Halt;
         }
@@ -1794,7 +2360,10 @@ impl Engine {
             change: item.change,
             group: item.group,
             kind: if commit {
-                LogKind::Commit { bytes: &item.bytes, recovery_auth: item.recovery_auth.as_deref() }
+                LogKind::Commit {
+                    bytes: &item.bytes,
+                    recovery_auth: item.recovery_auth.as_deref(),
+                }
             } else {
                 LogKind::Message { bytes: &item.bytes }
             },
@@ -1803,12 +2372,20 @@ impl Engine {
         match self.device.process_log_entry(&entry, ctx.now) {
             Ok(processed) => {
                 if self.agent_processed(ctx, item.group, &processed, before) {
-                    self.report(Report::Log { change: item.change, group: item.group, processed: Box::new(processed) });
+                    self.report(Report::Log {
+                        change: item.change,
+                        group: item.group,
+                        processed: Box::new(processed),
+                    });
                     return Taken::Halt;
                 }
                 // The founding of a group this device does not hold: if it was added there, its Welcome waits (the
                 // stream says so only to who is connected then). Read once the items at hand are through.
-                if commit && item.epoch == 0 && matches!(processed, Processed::Skipped) && (self.device.is_human() || self.agent.is_some()) {
+                if commit
+                    && item.epoch == 0
+                    && matches!(processed, Processed::Skipped)
+                    && (self.device.is_human() || self.agent.is_some())
+                {
                     self.welcome_waits = (true, true);
                 }
                 self.processed(ctx, item.change, item.group, processed, groups_changed);
@@ -1826,15 +2403,28 @@ impl Engine {
                     // for it: an entry that still comes early halts, and the next pass tries it again.
                     if !self.tried.welcomes {
                         self.tried.welcomes = true;
-                        return Taken::Wait(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+                        return Taken::Wait(Repair::Welcomes {
+                            after: self.welcomes_after,
+                            joined: Vec::new(),
+                            asked: false,
+                        });
                     }
                     Taken::Halt
                 }
                 LogFinding::BadGroup => {
-                    self.report(Report::Alert(Alert::BadGroup { group: item.group, change: item.change, code: e.code() }));
+                    self.report(Report::Alert(Alert::BadGroup {
+                        group: item.group,
+                        change: item.change,
+                        code: e.code(),
+                    }));
                     if commit {
                         let (group, n) = (item.group, item.n);
-                        self.ask(ctx, Route::RejectCommit { group: &group, n }, true, Asked::Told);
+                        self.ask(
+                            ctx,
+                            Route::RejectCommit { group: &group, n },
+                            true,
+                            Asked::Told,
+                        );
                     }
                     Taken::Halt
                 }
@@ -1842,7 +2432,14 @@ impl Engine {
         }
     }
 
-    fn processed(&mut self, ctx: &mut Ctx<'_>, change: u64, group: GroupId, processed: Processed, groups_changed: &mut bool) {
+    fn processed(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        change: u64,
+        group: GroupId,
+        processed: Processed,
+        groups_changed: &mut bool,
+    ) {
         match &processed {
             Processed::Commit { removed, facts, .. } => {
                 *groups_changed = true;
@@ -1851,20 +2448,32 @@ impl Engine {
                     self.note_readmit(ctx, &group, &adds, &removes);
                 }
                 if *removed && group.is_room() {
-                    self.report(Report::Log { change, group, processed: Box::new(processed) });
+                    self.report(Report::Log {
+                        change,
+                        group,
+                        processed: Box::new(processed),
+                    });
                     self.stop(ctx, Stopped::Removed);
                     return;
                 }
             }
-            Processed::OwnCommit | Processed::Observed(_) | Processed::JoinSuperseded { .. } => *groups_changed = true,
+            Processed::OwnCommit | Processed::Observed(_) | Processed::JoinSuperseded { .. } => {
+                *groups_changed = true
+            }
             Processed::Message(Received::Keys { taken, .. }) if *taken > 0 => {
                 // keys that open what was chained without them: those envelopes are read back, and no more
                 self.keys_came();
             }
-            Processed::Message(Received::NewerVersion { from }) => self.report(Report::Alert(Alert::NewerVersion { from: *from })),
+            Processed::Message(Received::NewerVersion { from }) => {
+                self.report(Report::Alert(Alert::NewerVersion { from: *from }))
+            }
             Processed::Message(_) | Processed::Skipped => {}
         }
-        self.report(Report::Log { change, group, processed: Box::new(processed) });
+        self.report(Report::Log {
+            change,
+            group,
+            processed: Box::new(processed),
+        });
     }
 
     // ---- repairs
@@ -1872,7 +2481,11 @@ impl Engine {
     fn repair_failed(&mut self, ctx: &mut Ctx<'_>, failure: Failure, unauthorised: bool) {
         // the same repair is asked again after a wait; the head of the order stays where it is
         match &mut self.repair {
-            Some(Repair::Welcomes { asked, .. } | Repair::Logs { asked, .. } | Repair::Chain { asked, .. }) => *asked = false,
+            Some(
+                Repair::Welcomes { asked, .. }
+                | Repair::Logs { asked, .. }
+                | Repair::Chain { asked, .. },
+            ) => *asked = false,
             None => {}
         }
         if unauthorised {
@@ -1882,18 +2495,34 @@ impl Engine {
             Failure::NotNow { retry_after_ms, .. } => retry_after_ms,
             _ => None,
         };
-        self.order_retry.fail(ctx.now, retry_after, &mut self.jitter);
+        self.order_retry
+            .fail(ctx.now, retry_after, &mut self.jitter);
     }
 
-    fn on_welcomes(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, unauthorised: bool) {
+    fn on_welcomes(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
         let rows = match answer {
             Ok(Answer::Welcomes(rows)) => rows,
             Ok(_) => return self.repair_failed(ctx, Failure::BadAnswer { why: "welcomes" }, false),
             Err(failure) => return self.repair_failed(ctx, failure, unauthorised),
         };
         self.order_retry.ok();
-        let Some(Repair::Welcomes { mut joined, mut after, .. }) = self.repair.take() else { return };
-        let expected = WelcomeExpectation { room: self.room, committer: None };
+        let Some(Repair::Welcomes {
+            mut joined,
+            mut after,
+            ..
+        }) = self.repair.take()
+        else {
+            return;
+        };
+        let expected = WelcomeExpectation {
+            room: self.room,
+            committer: None,
+        };
         let more = !rows.is_empty();
         // `welcomes_after` passes only what is settled: a Welcome read before the room Commit it builds on is read
         // again by the next look (the stream says a Welcome before the Commits ahead of it are taken)
@@ -1906,7 +2535,9 @@ impl Engine {
             //  agent device is never a leaf of the room group)
             if self.device.group(&row.group).is_err() && !self.agent_passes_welcome(&row.group) {
                 match self.device.join_welcome(&row.welcome, &expected, ctx.now) {
-                    Ok(j) if self.agent_welcome_wrong(&row.group, &j, had_main) => return self.bad_welcome(ctx),
+                    Ok(j) if self.agent_welcome_wrong(&row.group, &j, had_main) => {
+                        return self.bad_welcome(ctx)
+                    }
                     Ok(j) => {
                         if !j.offending.is_empty() {
                             ctx.log(LogLevel::Warn, format!("finding: a session this device was added to has {} leaf(s) the room does not allow: its content is not opened until a human device removes them", j.offending.len()));
@@ -1917,13 +2548,16 @@ impl Engine {
                     Err(Error::WrongEpoch | Error::RoomBehind) => {
                         self.need_anchored_past();
                         settled = false;
-                    },
+                    }
                     Err(e) => {
                         self.local(ctx, &e);
                         if self.stopped.is_some() {
                             return;
                         }
-                        self.report(Report::Alert(Alert::Welcome { group: row.group, code: e.code() }));
+                        self.report(Report::Alert(Alert::Welcome {
+                            group: row.group,
+                            code: e.code(),
+                        }));
                         // 3.7: a Welcome that does not open used up its KeyPackage: the device asks to be let in again
                         self.ask_readmit(ctx, row.group, &e);
                         if self.stopped.is_some() {
@@ -1941,7 +2575,11 @@ impl Engine {
         }
         if more {
             // an answer holds a bounded stretch: asked again after its last row until one is empty
-            self.repair = Some(Repair::Welcomes { after, joined, asked: false });
+            self.repair = Some(Repair::Welcomes {
+                after,
+                joined,
+                asked: false,
+            });
             return;
         }
         if joined.is_empty() {
@@ -1957,17 +2595,35 @@ impl Engine {
         self.agent_joined(&joined);
         // A group joined late: its log is handed again from its start up to the position, so the join has its
         // place in the hub's order. What lies after the position comes at its place in the one order.
-        self.repair = Some(Repair::Logs { groups: joined.into(), after: 0, asked: false });
+        self.repair = Some(Repair::Logs {
+            groups: joined.into(),
+            after: 0,
+            asked: false,
+        });
     }
 
-    fn on_group_log(&mut self, ctx: &mut Ctx<'_>, group: GroupId, upto: u64, answer: Result<Answer, Failure>, unauthorised: bool) {
+    fn on_group_log(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        group: GroupId,
+        upto: u64,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
         let (items, more) = match answer {
             Ok(Answer::GroupLog { items, more }) => (items, more),
             Ok(_) => return self.repair_failed(ctx, Failure::BadAnswer { why: "log" }, false),
             Err(failure) => return self.repair_failed(ctx, failure, unauthorised),
         };
         self.order_retry.ok();
-        let Some(Repair::Logs { mut groups, mut after, .. }) = self.repair.take() else { return };
+        let Some(Repair::Logs {
+            mut groups,
+            mut after,
+            ..
+        }) = self.repair.take()
+        else {
+            return;
+        };
         let mut through = !more || items.is_empty();
         let mut changed = false;
         for item in &items {
@@ -1985,7 +2641,10 @@ impl Engine {
                 change: log.change,
                 group,
                 kind: if commit {
-                    LogKind::Commit { bytes: &log.bytes, recovery_auth: log.recovery_auth.as_deref() }
+                    LogKind::Commit {
+                        bytes: &log.bytes,
+                        recovery_auth: log.recovery_auth.as_deref(),
+                    }
                 } else {
                     LogKind::Message { bytes: &log.bytes }
                 },
@@ -2017,11 +2676,23 @@ impl Engine {
             after = 0;
         }
         if !groups.is_empty() {
-            self.repair = Some(Repair::Logs { groups, after, asked: false });
+            self.repair = Some(Repair::Logs {
+                groups,
+                after,
+                asked: false,
+            });
         }
     }
 
-    fn on_chain(&mut self, ctx: &mut Ctx<'_>, group: GroupId, sender: DeviceId, before: u64, answer: Result<Answer, Failure>, unauthorised: bool) {
+    fn on_chain(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        group: GroupId,
+        sender: DeviceId,
+        before: u64,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
         let (items, more) = match answer {
             Ok(Answer::Chain { items, more }) => (items, more),
             Ok(_) => return self.repair_failed(ctx, Failure::BadAnswer { why: "chain" }, false),
@@ -2043,13 +2714,22 @@ impl Engine {
             }
             last = Some(link.seq);
             let void = Self::void_code(&link.item);
-            match self.device.receive_envelope(&link.item.envelope, link.item.change, true, void.as_ref(), ctx.now) {
+            match self.device.receive_envelope(
+                &link.item.envelope,
+                link.item.change,
+                true,
+                void.as_ref(),
+                ctx.now,
+            ) {
                 Ok(received) if received.outcome != EnvelopeOutcome::Refused => {
                     if received.code == Some(Error::NoKey) {
                         // (chained without its body, as on the order: read back once the key was handed over)
                         self.note_keyless(received.header.group, link.item.change);
                     }
-                    self.report(Report::Envelope { received: Box::new(received), ordered: false })
+                    self.report(Report::Envelope {
+                        received: Box::new(received),
+                        ordered: false,
+                    })
                 }
                 Ok(_) => {}
                 Err(e) => {
@@ -2062,7 +2742,13 @@ impl Engine {
         }
         if !reached {
             if let Some(after) = last {
-                self.repair = Some(Repair::Chain { group, sender, after, before, asked: false });
+                self.repair = Some(Repair::Chain {
+                    group,
+                    sender,
+                    after,
+                    before,
+                    asked: false,
+                });
             }
         }
         // (else the head is tried again: taken now, or still a gap, which is then said)
@@ -2075,14 +2761,38 @@ impl Engine {
             return;
         }
         if self.desk.want && self.desk.asked.is_none() {
-            self.desk.asked = self.ask(ctx, Route::Desk { only: DeskOnly::Active }, true, Asked::Desk);
+            self.desk.asked = self.ask(
+                ctx,
+                Route::Desk {
+                    only: DeskOnly::Active,
+                },
+                true,
+                Asked::Desk,
+            );
             if self.desk.asked.is_none() {
                 self.desk.want = false;
             }
         }
         while self.desk.flying < FIRSTS_AT_ONCE {
-            let Some((route, object, after)) = self.desk.firsts.pop_front() else { break };
-            let asked = self.ask(ctx, Route::Object { route, object: &object, after, limit: 1 }, true, |expect| Asked::First { expect, route, object, after });
+            let Some((route, object, after)) = self.desk.firsts.pop_front() else {
+                break;
+            };
+            let asked = self.ask(
+                ctx,
+                Route::Object {
+                    route,
+                    object: &object,
+                    after,
+                    limit: 1,
+                },
+                true,
+                |expect| Asked::First {
+                    expect,
+                    route,
+                    object,
+                    after,
+                },
+            );
             if asked.is_some() {
                 self.desk.flying += 1;
             }
@@ -2093,19 +2803,34 @@ impl Engine {
     /// provisional until its chain reaches it. Nothing of the chain moves.
     fn show(&mut self, ctx: &mut Ctx<'_>, item: &EnvelopeItem) {
         let void = Self::void_code(item);
-        match self.device.receive_envelope(&item.envelope, item.change, false, void.as_ref(), ctx.now) {
+        match self.device.receive_envelope(
+            &item.envelope,
+            item.change,
+            false,
+            void.as_ref(),
+            ctx.now,
+        ) {
             Ok(received) => {
-                if received.code == Some(Error::GroupBehind) && self.device.group(&received.header.group).is_ok() {
+                if received.code == Some(Error::GroupBehind)
+                    && self.device.group(&received.header.group).is_ok()
+                {
                     // A held session's older page needs the same verified backward walk as its room.
                     self.need_past(received.header.group);
                 }
                 if received.header.group.is_room()
-                    && matches!(received.code, Some(Error::NoKey | Error::GroupBehind | Error::RoomBehind)) {
+                    && matches!(
+                        received.code,
+                        Some(Error::NoKey | Error::GroupBehind | Error::RoomBehind)
+                    )
+                {
                     self.need_anchored_past();
                     self.note_room_key_need();
                 }
                 if received.outcome != EnvelopeOutcome::Refused {
-                    self.report(Report::Envelope { received: Box::new(received), ordered: false });
+                    self.report(Report::Envelope {
+                        received: Box::new(received),
+                        ordered: false,
+                    });
                 }
             }
             Err(e) => self.local(ctx, &e),
@@ -2148,16 +2873,25 @@ impl Engine {
             self.show(ctx, register);
         }
         let mut open = Vec::new();
-        for (route, objects) in [(ObjectRoute::Cards, &desk.cards), (ObjectRoute::PermissionRequests, &desk.permission_requests)] {
+        for (route, objects) in [
+            (ObjectRoute::Cards, &desk.cards),
+            (ObjectRoute::PermissionRequests, &desk.permission_requests),
+        ] {
             for object in objects {
-                let Some(version) = &object.version else { continue };
+                let Some(version) = &object.version else {
+                    continue;
+                };
                 self.show(ctx, version);
                 open.push((object.object, version.change));
                 // A card revised since it was asked: its first version says when it was asked, which the Desk's
                 // order goes by. Read now, so no card moves when the past is read. (`first_change` is the hub's
                 // word: a wrong one costs this read, the envelope is checked like any other.)
                 if route == ObjectRoute::Cards && object.first_change < version.change {
-                    self.desk.firsts.push_back((route, object.object, object.first_change.saturating_sub(1)));
+                    self.desk.firsts.push_back((
+                        route,
+                        object.object,
+                        object.first_change.saturating_sub(1),
+                    ));
                 }
                 if self.stopped.is_some() {
                     return;
@@ -2165,14 +2899,32 @@ impl Engine {
             }
         }
         if let (Some(counts), false) = (&desk.counts, desk.truncated) {
-            let settled = counts.iter().map(|c| (c.group, c.cards.answered.saturating_add(c.cards.closed))).collect();
-            self.report(Report::Counts { at: desk.change, settled });
+            let settled = counts
+                .iter()
+                .map(|c| (c.group, c.cards.answered.saturating_add(c.cards.closed)))
+                .collect();
+            self.report(Report::Counts {
+                at: desk.change,
+                settled,
+            });
         }
-        self.report(Report::Desk { at: desk.change, open, truncated: desk.truncated });
+        self.report(Report::Desk {
+            at: desk.change,
+            open,
+            truncated: desk.truncated,
+        });
         self.desk_through();
     }
 
-    fn on_first(&mut self, ctx: &mut Ctx<'_>, route: ObjectRoute, object: ObjectId, after: u64, answer: Result<Answer, Failure>, unauthorised: bool) {
+    fn on_first(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        route: ObjectRoute,
+        object: ObjectId,
+        after: u64,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
         self.desk.flying = self.desk.flying.saturating_sub(1);
         match answer {
             Ok(Answer::Object(got)) => {
@@ -2199,7 +2951,12 @@ impl Engine {
     }
 
     fn desk_through(&mut self) {
-        if !self.desk.complete && !self.desk.want && self.desk.asked.is_none() && self.desk.firsts.is_empty() && self.desk.flying == 0 {
+        if !self.desk.complete
+            && !self.desk.want
+            && self.desk.asked.is_none()
+            && self.desk.firsts.is_empty()
+            && self.desk.flying == 0
+        {
             self.desk.complete = true;
             self.report(Report::DeskComplete);
         }
@@ -2221,13 +2978,26 @@ impl Engine {
         } else {
             self.position
         };
-        let site = Site { url: &self.hub, token: self.token.as_ref().map(|t| t.value.as_str()), client: &self.client, lease: self.lease_header() };
+        let site = Site {
+            url: &self.hub,
+            token: self.token.as_ref().map(|t| t.value.as_str()),
+            client: &self.client,
+            lease: self.lease_header(),
+        };
         let Ok((request, _)) = self.codec.request(&site, &Route::Stream { after: from }) else {
             return;
         };
         self.flush(ctx);
         let id = ctx.id();
-        self.stream = Some(StreamConn { id, reader: StreamReader::new(from), opened: false, from, heard_at: ctx.now, since: ctx.now, brought: false });
+        self.stream = Some(StreamConn {
+            id,
+            reader: StreamReader::new(from),
+            opened: false,
+            from,
+            heard_at: ctx.now,
+            since: ctx.now,
+            brought: false,
+        });
         ctx.out.push(Effect::OpenStream { id, request });
     }
 
@@ -2243,7 +3013,14 @@ impl Engine {
     /// this device's unused KeyPackages.
     fn drive_upkeep(&mut self, ctx: &mut Ctx<'_>) {
         // (a sign-in's KeyPackages go up once its sessions are joined: a founding claims one of every human device)
-        if self.joining.is_some() || !self.caught_up || self.pass || !self.todo.is_empty() || self.upkeep_asked.is_some() || ctx.now < self.upkeep_at || self.upkeep_retry.waiting(ctx.now) {
+        if self.joining.is_some()
+            || !self.caught_up
+            || self.pass
+            || !self.todo.is_empty()
+            || self.upkeep_asked.is_some()
+            || ctx.now < self.upkeep_at
+            || self.upkeep_retry.waiting(ctx.now)
+        {
             return;
         }
         self.upkeep_asked = self.ask(ctx, Route::KeyPackagesHeld, true, Asked::KeyPackagesHeld);
@@ -2252,7 +3029,12 @@ impl Engine {
         }
     }
 
-    fn on_key_packages_held(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, unauthorised: bool) {
+    fn on_key_packages_held(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
         self.upkeep_asked = None;
         let unused = match answer {
             Ok(Answer::KeyPackagesHeld { unused }) => unused,
@@ -2262,7 +3044,9 @@ impl Engine {
                     Err(Failure::NotNow { retry_after_ms, .. }) => retry_after_ms,
                     _ => None,
                 };
-                return self.upkeep_retry.fail(ctx.now, retry_after, &mut self.jitter);
+                return self
+                    .upkeep_retry
+                    .fail(ctx.now, retry_after, &mut self.jitter);
             }
         };
         self.upkeep_retry.ok();
@@ -2282,7 +3066,11 @@ impl Engine {
             }
             match self.device.heads_due(&group.group, ctx.now) {
                 Ok(Some(value)) => {
-                    let draft = Draft::Register { group: group.group, name: "heads".into(), value: Some(SecretBytes::new(value)) };
+                    let draft = Draft::Register {
+                        group: group.group,
+                        name: "heads".into(),
+                        value: Some(SecretBytes::new(value)),
+                    };
                     if let Err(e) = self.device.seal(&draft, None, &[], ctx.now) {
                         self.local(ctx, &e);
                     }
@@ -2299,7 +3087,16 @@ impl Engine {
             Ok(requests) => {
                 for request in requests {
                     let group = request.group;
-                    self.ask(ctx, Route::Wish { kind: WishKind::Handover, group: Some(&group), key_package: None }, true, Asked::Told);
+                    self.ask(
+                        ctx,
+                        Route::Wish {
+                            kind: WishKind::Handover,
+                            group: Some(&group),
+                            key_package: None,
+                        },
+                        true,
+                        Asked::Told,
+                    );
                 }
             }
             Err(e) => self.local(ctx, &e),
@@ -2322,26 +3119,55 @@ impl Engine {
             return;
         };
         // a sign-in's joins of session groups from outside at the head: together, in one request
-        let together = if self.joins_alone { 0 } else { joins::joins_at(&entries) };
+        let together = if self.joins_alone {
+            0
+        } else {
+            joins::joins_at(&entries)
+        };
         if together > 1 {
             let joins = &entries[..together];
             let ids: Vec<(u64, Option<GroupId>)> = joins.iter().map(|e| (e.id, e.group)).collect();
-            self.posting = self.ask(ctx, Route::Joins { entries: joins }, true, |expect| Asked::Joins { expect, entries: ids });
+            self.posting = self.ask(ctx, Route::Joins { entries: joins }, true, |expect| {
+                Asked::Joins {
+                    expect,
+                    entries: ids,
+                }
+            });
             if self.posting.is_some() {
                 return;
             }
         }
         let room = self.room;
         let (id, kind, group) = (entry.id, entry.kind, entry.group);
-        self.posting = self.post(ctx, &room, entry, |expect| Asked::Post { expect, entry: id, kind, group });
+        self.posting = self.post(ctx, &room, entry, |expect| Asked::Post {
+            expect,
+            entry: id,
+            kind,
+            group,
+        });
         if self.posting.is_none() {
             // an entry this build cannot post (a founding or a recovery without its extra): the pump waits
             self.pump_retry.wait(ctx.now, BLOCKED_RETRY_MS);
         }
     }
 
-    fn post(&mut self, ctx: &mut Ctx<'_>, room: &RoomId, entry: &OutboxEntry, asked: impl FnOnce(Expect) -> Asked) -> Option<IoId> {
-        self.ask(ctx, Route::Outbox { room, entry, extra: None }, true, asked)
+    fn post(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        room: &RoomId,
+        entry: &OutboxEntry,
+        asked: impl FnOnce(Expect) -> Asked,
+    ) -> Option<IoId> {
+        self.ask(
+            ctx,
+            Route::Outbox {
+                room,
+                entry,
+                extra: None,
+            },
+            true,
+            asked,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2367,7 +3193,9 @@ impl Engine {
                 self.pump_retry.ok();
                 return self.accepted(ctx, entry, kind, group, taken);
             }
-            Ok(_) => Failure::BadAnswer { why: "an outbox answer" },
+            Ok(_) => Failure::BadAnswer {
+                why: "an outbox answer",
+            },
             Err(failure) => failure,
         };
         if unauthorised {
@@ -2379,14 +3207,26 @@ impl Engine {
     }
 
     /// The hub took an outbox entry.
-    fn accepted(&mut self, ctx: &mut Ctx<'_>, entry: u64, kind: OutboxKind, group: Option<GroupId>, taken: OutboxAnswer) {
+    fn accepted(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        entry: u64,
+        kind: OutboxKind,
+        group: Option<GroupId>,
+        taken: OutboxAnswer,
+    ) {
         if self.blocked.take().is_some() {
             self.report(Report::Blocked(None));
         }
         // (`not-found`: the stream brought this device's own Commit before the POST was answered, and the
         //  core merged it and dropped the entry then)
         self.agent_written(entry);
-        let merged = match self.device.outbox_accepted(entry, Accepted { change: taken.change }) {
+        let merged = match self.device.outbox_accepted(
+            entry,
+            Accepted {
+                change: taken.change,
+            },
+        ) {
             Ok(()) => false,
             Err(Error::NotFound) => true,
             Err(e) => return self.local(ctx, &e),
@@ -2394,7 +3234,11 @@ impl Engine {
         if kind == OutboxKind::KeyPackages {
             self.key_packages_at_hub = taken.unused.or(self.key_packages_at_hub);
         }
-        self.report(Report::Accepted { id: entry, kind, change: taken.change });
+        self.report(Report::Accepted {
+            id: entry,
+            kind,
+            change: taken.change,
+        });
         if carries_commit(kind) {
             // An accepted Commit is merged where the hub's order shows it. Without a stream that is the
             // next page.
@@ -2406,7 +3250,10 @@ impl Engine {
         } else if kind == OutboxKind::Message {
             // (a message of this device is a step of upkeep, a key handover say: the next step is looked for now)
             self.tending.want = true;
-        } else if kind == OutboxKind::Envelope && self.agent.is_some() && !self.stream.as_ref().is_some_and(|s| s.opened) {
+        } else if kind == OutboxKind::Envelope
+            && self.agent.is_some()
+            && !self.stream.as_ref().is_some_and(|s| s.opened)
+        {
             // (an agent's write is read back at its place at once, so its caller sees it on the board: without a
             //  stream that is the next page)
             self.pass = true;
@@ -2418,13 +3265,25 @@ impl Engine {
     /// the route does not allow, a refusal that is not the hub's own, a code this build does not know): the same
     /// entry again after a wait, never dropped, never reordered; inside, the hub's `Retry-After`. `None`: settled
     /// here (refused for good, or the pump halts on it and has set its own wait).
-    fn not_accepted(&mut self, ctx: &mut Ctx<'_>, entry: u64, kind: OutboxKind, group: Option<GroupId>, failure: Failure, refusal: Option<Refusal>) -> Option<Option<u64>> {
+    fn not_accepted(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        entry: u64,
+        kind: OutboxKind,
+        group: Option<GroupId>,
+        failure: Failure,
+        refusal: Option<Refusal>,
+    ) -> Option<Option<u64>> {
         // (`code` is set only for the hub's own refusal: a proxy's page never voids or rolls back)
         let named = match &failure {
-            Failure::Refused { code: Some(code), .. } => Some(code.as_str()),
+            Failure::Refused {
+                code: Some(code), ..
+            } => Some(code.as_str()),
             _ => None,
         };
-        let code = named.and_then(Error::from_code).filter(|code| !refusal_is_passing(code));
+        let code = named
+            .and_then(Error::from_code)
+            .filter(|code| !refusal_is_passing(code));
         let Some(code) = code else {
             let retry_after = match (&failure, refusal.as_ref()) {
                 (Failure::NotNow { retry_after_ms, .. }, _) => *retry_after_ms,
@@ -2471,7 +3330,12 @@ impl Engine {
             return None;
         }
         self.agent_written(entry);
-        self.report(Report::Refused { id: entry, kind, code: code.code(), voided });
+        self.report(Report::Refused {
+            id: entry,
+            kind,
+            code: code.code(),
+            voided,
+        });
         self.report(Report::Groups);
         // the group moved on under it: the log is processed, and whoever asked builds it again
         if has_moved(&code) {

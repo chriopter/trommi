@@ -120,7 +120,10 @@ fn a_founding_leaves_out_a_human_device_without_a_key_package_which_is_added_lat
     assert_eq!(hub.unused(&agent.id()), 2);
 
     // The agent device's KeyPackage is needed: without it nothing is built or stored.
-    assert_eq!(a.found_session(&agent.id(), &[], now()), Err(Error::Incomplete));
+    assert_eq!(
+        a.found_session(&agent.id(), &[], now()),
+        Err(Error::Incomplete)
+    );
     let of_agent = hub.claim(&[agent.id()]).unwrap();
     assert_eq!(hub.unused(&agent.id()), 1);
     // Two KeyPackages of one device are refused.

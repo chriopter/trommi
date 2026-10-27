@@ -130,10 +130,7 @@ fn page_with(status: StatusCode, body: &str, head: &str) -> Response<Full<Bytes>
         // (`same-origin`, not `no-referrer`: under that a browser names its form POSTs `Origin: null`)
         .header("referrer-policy", "same-origin")
         .header("cross-origin-resource-policy", "same-origin")
-        .header(
-            "content-security-policy",
-            CSP,
-        )
+        .header("content-security-policy", CSP)
         .body(Full::new(Bytes::from(html)))
         .expect("a valid response")
 }
@@ -543,8 +540,21 @@ pub async fn handle(app: Arc<App>, req: Request<Incoming>) -> Response<Full<Byte
         (Method::GET, "/") => match session {
             Some(_) => {
                 // the graphs' range: the last hour, or with `?range=24h` the last day
-                let day = req.uri().query().unwrap_or("").split('&').any(|p| p == "range=24h");
-                shown(app, Page::Overview(if day { crate::metrics::COARSE_MS } else { crate::metrics::FINE_MS })).await
+                let day = req
+                    .uri()
+                    .query()
+                    .unwrap_or("")
+                    .split('&')
+                    .any(|p| p == "range=24h");
+                shown(
+                    app,
+                    Page::Overview(if day {
+                        crate::metrics::COARSE_MS
+                    } else {
+                        crate::metrics::FINE_MS
+                    }),
+                )
+                .await
             }
             None => login(StatusCode::OK, ""),
         },
@@ -558,17 +568,31 @@ pub async fn handle(app: Arc<App>, req: Request<Incoming>) -> Response<Full<Byte
                 Some((table, key)) => {
                     // who looked at which table: never what was in it
                     crate::log::info(
-                        if key.is_some() { "admin_row_viewed" } else { "admin_table_viewed" },
+                        if key.is_some() {
+                            "admin_row_viewed"
+                        } else {
+                            "admin_table_viewed"
+                        },
                         serde_json::json!({ "user": "admin", "table": table }),
                     );
                     match key {
-                        None => shown(app, Page::Rows(table, crate::admin_rows::Query::parse(&query))).await,
+                        None => {
+                            shown(
+                                app,
+                                Page::Rows(table, crate::admin_rows::Query::parse(&query)),
+                            )
+                            .await
+                        }
                         Some(key) => shown(app, Page::Row(table, key.to_string())).await,
                     }
                 }
             }
         }
-        (Method::GET, path) if path == "/accounts" || path == "/tables" || path.starts_with("/tables/") => to_start(String::new()),
+        (Method::GET, path)
+            if path == "/accounts" || path == "/tables" || path.starts_with("/tables/") =>
+        {
+            to_start(String::new())
+        }
         (Method::POST, "/login") => {
             if !same_origin(&req) {
                 return notice(StatusCode::FORBIDDEN, "Sign in from the admin page itself.");

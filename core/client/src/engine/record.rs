@@ -45,8 +45,15 @@ const VERSION: u32 = 1;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Debug)]
 enum MendRecord {
-    Group { group: String, after: u64, upto: u64 },
-    Chain { group: String, sender: String },
+    Group {
+        group: String,
+        after: u64,
+        upto: u64,
+    },
+    Chain {
+        group: String,
+        sender: String,
+    },
 }
 
 // (ids are kept as their base64url text)
@@ -113,8 +120,21 @@ fn code_of(code: &str) -> &'static str {
 }
 
 impl JoinsRecord {
-    pub(super) fn new(waiting: impl Iterator<Item = GroupId>, joined: u32, not_joined: &[(GroupId, &'static str)], room_pending: bool) -> Self {
-        JoinsRecord { room_pending, waiting: waiting.map(|group| g(&group)).collect(), joined, not_joined: not_joined.iter().map(|(group, code)| (g(group), code.to_string())).collect() }
+    pub(super) fn new(
+        waiting: impl Iterator<Item = GroupId>,
+        joined: u32,
+        not_joined: &[(GroupId, &'static str)],
+        room_pending: bool,
+    ) -> Self {
+        JoinsRecord {
+            room_pending,
+            waiting: waiting.map(|group| g(&group)).collect(),
+            joined,
+            not_joined: not_joined
+                .iter()
+                .map(|(group, code)| (g(group), code.to_string()))
+                .collect(),
+        }
     }
 }
 
@@ -128,7 +148,12 @@ impl Engine {
         let id = ctx.id();
         self.pending.insert(id, Asked::Record);
         self.restoring = Some(id);
-        ctx.out.push(Effect::Store { id, op: StoreOp::Get { keys: vec![self.record_key()] } });
+        ctx.out.push(Effect::Store {
+            id,
+            op: StoreOp::Get {
+                keys: vec![self.record_key()],
+            },
+        });
     }
 
     /// The store's answer: a record that fits this device's stored state is taken, any other is left.
@@ -144,8 +169,14 @@ impl Engine {
             Ok(record) => record,
             Err(_) => return ctx.log(LogLevel::Warn, "the engine's record does not read: left"),
         };
-        if record.v != VERSION || record.device != self.device.id().to_base64url() || record.revision > self.writes.revision() {
-            return ctx.log(LogLevel::Warn, "the engine's record is not of this stored state: left");
+        if record.v != VERSION
+            || record.device != self.device.id().to_base64url()
+            || record.revision > self.writes.revision()
+        {
+            return ctx.log(
+                LogLevel::Warn,
+                "the engine's record is not of this stored state: left",
+            );
         }
         if self.take_record(&record).is_none() {
             return ctx.log(LogLevel::Warn, "the engine's record does not read: left");
@@ -156,17 +187,39 @@ impl Engine {
     /// Takes the record's content; none, and nothing taken, when one of its ids does not read.
     fn take_record(&mut self, record: &Record) -> Option<()> {
         let max = super::BEHIND_MAX;
-        let behind = record.behind.iter().take(max).map(|(group, change, epoch)| Some((ug(group)?, (*change, *epoch)))).collect::<Option<_>>()?;
-        let keyless = record.keyless.iter().take(max).map(|(group, change)| Some((ug(group)?, *change))).collect::<Option<_>>()?;
-        let withheld = record.withheld.iter().take(max).map(|(group, sender, seq)| Some(((ug(group)?, ud(sender)?), *seq))).collect::<Option<_>>()?;
+        let behind = record
+            .behind
+            .iter()
+            .take(max)
+            .map(|(group, change, epoch)| Some((ug(group)?, (*change, *epoch))))
+            .collect::<Option<_>>()?;
+        let keyless = record
+            .keyless
+            .iter()
+            .take(max)
+            .map(|(group, change)| Some((ug(group)?, *change)))
+            .collect::<Option<_>>()?;
+        let withheld = record
+            .withheld
+            .iter()
+            .take(max)
+            .map(|(group, sender, seq)| Some(((ug(group)?, ud(sender)?), *seq)))
+            .collect::<Option<_>>()?;
         let mends = record
             .mends
             .iter()
             .take(max)
             .map(|mend| {
                 Some(match mend {
-                    MendRecord::Group { group, after, upto } => Mend::Group { group: ug(group)?, after: *after, upto: *upto },
-                    MendRecord::Chain { group, sender } => Mend::Chain { group: ug(group)?, sender: ud(sender)? },
+                    MendRecord::Group { group, after, upto } => Mend::Group {
+                        group: ug(group)?,
+                        after: *after,
+                        upto: *upto,
+                    },
+                    MendRecord::Chain { group, sender } => Mend::Chain {
+                        group: ug(group)?,
+                        sender: ud(sender)?,
+                    },
                 })
             })
             .collect::<Option<_>>()?;
@@ -177,13 +230,24 @@ impl Engine {
                 let outbox = self.device.outbox();
                 let mut posted = BTreeSet::new();
                 let mut joined = joins.joined;
-                let mut not_joined: Vec<(GroupId, &'static str)> = joins.not_joined.iter().map(|(group, code)| Some((ug(group)?, code_of(code)))).collect::<Option<_>>()?;
-                let waiting: BTreeSet<GroupId> = joins.waiting.iter().map(|group| ug(group)).collect::<Option<_>>()?;
+                let mut not_joined: Vec<(GroupId, &'static str)> = joins
+                    .not_joined
+                    .iter()
+                    .map(|(group, code)| Some((ug(group)?, code_of(code))))
+                    .collect::<Option<_>>()?;
+                let waiting: BTreeSet<GroupId> = joins
+                    .waiting
+                    .iter()
+                    .map(|group| ug(group))
+                    .collect::<Option<_>>()?;
                 for group in waiting {
                     if not_joined.iter().any(|(named, _)| *named == group) {
                         continue;
                     }
-                    if outbox.iter().any(|e| e.kind == OutboxKind::ExternalCommit && e.group == Some(group)) {
+                    if outbox
+                        .iter()
+                        .any(|e| e.kind == OutboxKind::ExternalCommit && e.group == Some(group))
+                    {
                         posted.insert(group);
                     } else if self.device.group(&group).is_ok() {
                         joined += 1;
@@ -191,7 +255,12 @@ impl Engine {
                         not_joined.push((group, "interrupted"));
                     }
                 }
-                Some(joins::Joining::resumed(posted, joined, not_joined, joins.room_pending))
+                Some(joins::Joining::resumed(
+                    posted,
+                    joined,
+                    not_joined,
+                    joins.room_pending,
+                ))
             }
         };
         self.position = record.position;
@@ -202,10 +271,20 @@ impl Engine {
         self.joining = joining;
         self.wishes.restore(&record.answered);
         if let Some(agent) = self.agent.as_mut() {
-            agent.commands = record.commands.iter().take(super::agent::COMMANDS_MAX).cloned().collect();
+            agent.commands = record
+                .commands
+                .iter()
+                .take(super::agent::COMMANDS_MAX)
+                .cloned()
+                .collect();
             // (a note whose envelope the hub took before the record was written again goes)
             let outbox: Vec<u64> = self.device.outbox().iter().map(|e| e.id).collect();
-            agent.writes = record.writes.iter().filter(|(id, note)| note.owed(*id, &outbox)).cloned().collect();
+            agent.writes = record
+                .writes
+                .iter()
+                .filter(|(id, note)| note.owed(*id, &outbox))
+                .cloned()
+                .collect();
         }
         self.written = Some(record.clone());
         Some(())
@@ -218,22 +297,54 @@ impl Engine {
             revision: self.writes.revision(),
             position: self.position,
             floor: self.floor,
-            behind: self.behind.iter().map(|(group, (change, epoch))| (g(group), *change, *epoch)).collect(),
-            keyless: self.keyless.iter().map(|(group, change)| (g(group), *change)).collect(),
-            withheld: self.withheld.iter().map(|((group, sender), seq)| (g(group), sender.to_base64url(), *seq)).collect(),
+            behind: self
+                .behind
+                .iter()
+                .map(|(group, (change, epoch))| (g(group), *change, *epoch))
+                .collect(),
+            keyless: self
+                .keyless
+                .iter()
+                .map(|(group, change)| (g(group), *change))
+                .collect(),
+            withheld: self
+                .withheld
+                .iter()
+                .map(|((group, sender), seq)| (g(group), sender.to_base64url(), *seq))
+                .collect(),
             mends: self
                 .mends
                 .iter()
                 .map(|mend| match mend {
-                    Mend::Group { group, after, upto } => MendRecord::Group { group: g(group), after: *after, upto: *upto },
-                    Mend::Chain { group, sender } => MendRecord::Chain { group: g(group), sender: sender.to_base64url() },
+                    Mend::Group { group, after, upto } => MendRecord::Group {
+                        group: g(group),
+                        after: *after,
+                        upto: *upto,
+                    },
+                    Mend::Chain { group, sender } => MendRecord::Chain {
+                        group: g(group),
+                        sender: sender.to_base64url(),
+                    },
                 })
                 .collect(),
             reread_from: self.reread_from,
             joins: self.joining.as_ref().map(joins::Joining::record),
             answered: self.wishes.answered.iter().copied().collect(),
-            commands: self.agent.as_ref().map(|a| a.commands.clone()).unwrap_or_default(),
-            writes: self.agent.as_ref().map(|a| a.writes.iter().map(|(id, note)| (*id, note.clone())).collect()).unwrap_or_default(),
+            commands: self
+                .agent
+                .as_ref()
+                .map(|a| a.commands.clone())
+                .unwrap_or_default(),
+            writes: self
+                .agent
+                .as_ref()
+                .map(|a| {
+                    a.writes
+                        .iter()
+                        .map(|(id, note)| (*id, note.clone()))
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 
@@ -250,16 +361,38 @@ impl Engine {
                 return;
             }
             record.revision = self.writes.revision();
-        } else if record.position == self.device.cursor() && record.behind.is_empty() && record.keyless.is_empty() && record.withheld.is_empty() && record.mends.is_empty() && record.reread_from.is_none() && record.joins.is_none() && record.floor.is_none() && record.answered.is_empty() && record.commands.is_empty() && record.writes.is_empty() {
+        } else if record.position == self.device.cursor()
+            && record.behind.is_empty()
+            && record.keyless.is_empty()
+            && record.withheld.is_empty()
+            && record.mends.is_empty()
+            && record.reread_from.is_none()
+            && record.joins.is_none()
+            && record.floor.is_none()
+            && record.answered.is_empty()
+            && record.commands.is_empty()
+            && record.writes.is_empty()
+        {
             // (nothing the device's own cursor does not say)
             return;
         }
-        let Ok(value) = serde_json::to_vec(&record) else { return };
+        let Ok(value) = serde_json::to_vec(&record) else {
+            return;
+        };
         // (what the device wrote goes first: the record never names a state that is not stored)
         self.flush(ctx);
         let id = ctx.id();
         self.pending.insert(id, Asked::RecordWrite);
-        ctx.out.push(Effect::Store { id, op: StoreOp::Put { put: vec![Entry { key: self.record_key(), value: value.into() }], delete: Vec::new() } });
+        ctx.out.push(Effect::Store {
+            id,
+            op: StoreOp::Put {
+                put: vec![Entry {
+                    key: self.record_key(),
+                    value: value.into(),
+                }],
+                delete: Vec::new(),
+            },
+        });
         self.written = Some(record);
     }
 }

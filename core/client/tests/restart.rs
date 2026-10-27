@@ -14,8 +14,12 @@ use trommi_core::ids::{DeviceId, GroupId};
 
 fn news(world: &World, sim: &mut Sim, device: &DeviceId) {
     for _ in 0..16 {
-        let Some(bytes) = world.hub.borrow_mut().stream_news(device) else { return };
-        sim.stream(StreamItem::Chunk { bytes: bytes.into() });
+        let Some(bytes) = world.hub.borrow_mut().stream_news(device) else {
+            return;
+        };
+        sim.stream(StreamItem::Chunk {
+            bytes: bytes.into(),
+        });
     }
 }
 
@@ -39,8 +43,17 @@ struct End {
 
 /// What differs between two pictures of the board: in `a` alone, in `b` alone.
 fn differ(a: &[String], b: &[String]) -> String {
-    let only = |x: &[String], y: &[String]| x.iter().filter(|e| !y.contains(e)).cloned().collect::<Vec<_>>();
-    format!("only after the kill: {:?}\nonly in the whole run: {:?}", only(a, b), only(b, a))
+    let only = |x: &[String], y: &[String]| {
+        x.iter()
+            .filter(|e| !y.contains(e))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    format!(
+        "only after the kill: {:?}\nonly in the whole run: {:?}",
+        only(a, b),
+        only(b, a)
+    )
 }
 
 /// The strings of a value that a person reads (texts, titles, states, choices), in order; no id, hash or time.
@@ -49,8 +62,14 @@ fn words(v: &serde_json::Value, out: &mut Vec<String>) {
         serde_json::Value::Object(o) => {
             for (name, v) in o {
                 match (name.as_str(), v) {
-                    ("text" | "title" | "object_state" | "item_state" | "content_type" | "closed_how" | "key" | "urgency" | "card_type", serde_json::Value::String(s)) => out.push(format!("{name}={s}")),
-                    ("object_version" | "pending", v) if !v.is_null() => out.push(format!("{name}={v}")),
+                    (
+                        "text" | "title" | "object_state" | "item_state" | "content_type"
+                        | "closed_how" | "key" | "urgency" | "card_type",
+                        serde_json::Value::String(s),
+                    ) => out.push(format!("{name}={s}")),
+                    ("object_version" | "pending", v) if !v.is_null() => {
+                        out.push(format!("{name}={v}"))
+                    }
                     _ => words(v, out),
                 }
             }
@@ -74,10 +93,32 @@ fn picture(sim: &Sim) -> Vec<String> {
         words(&v, &mut out);
         out.join(" ")
     };
-    let mut desk: Vec<String> = m.stack.iter().map(|id| format!("team {}", m.cards.get(id).map_or("?".into(), |c| said(serde_json::to_value(c).unwrap_or_default())))).collect();
+    let mut desk: Vec<String> = m
+        .stack
+        .iter()
+        .map(|id| {
+            format!(
+                "team {}",
+                m.cards.get(id).map_or("?".into(), |c| said(
+                    serde_json::to_value(c).unwrap_or_default()
+                ))
+            )
+        })
+        .collect();
     let mut rest: Vec<String> = Vec::new();
-    rest.extend(m.cards.values().map(|c| format!("card {}", said(serde_json::to_value(c).unwrap_or_default()))));
-    rest.extend(m.sessions.values().map(|s| format!("session archived={} stale={} agents={}", s.group_archived, s.stale, s.agent_device_ids.len())));
+    rest.extend(
+        m.cards
+            .values()
+            .map(|c| format!("card {}", said(serde_json::to_value(c).unwrap_or_default()))),
+    );
+    rest.extend(m.sessions.values().map(|s| {
+        format!(
+            "session archived={} stale={} agents={}",
+            s.group_archived,
+            s.stale,
+            s.agent_device_ids.len()
+        )
+    }));
     rest.push(format!("members {}", m.members.len()));
     rest.sort();
     desk.extend(rest);
@@ -91,7 +132,16 @@ fn end(world: &World, sim: &Sim) -> End {
     let mut groups: Vec<(bool, usize)> = hub
         .session_groups()
         .iter()
-        .filter_map(|g| device.group(g).ok().map(|held| (hub.observer(g).and_then(|o| o.epoch().ok()) == Some(held.epoch) && !held.pending && !held.is_stale(), held.leaves.len())))
+        .filter_map(|g| {
+            device.group(g).ok().map(|held| {
+                (
+                    hub.observer(g).and_then(|o| o.epoch().ok()) == Some(held.epoch)
+                        && !held.pending
+                        && !held.is_stale(),
+                    held.leaves.len(),
+                )
+            })
+        })
         .collect();
     groups.sort();
     let stored = world.reopen_me(sim);
@@ -102,18 +152,32 @@ fn end(world: &World, sim: &Sim) -> End {
         owes: engine.owes(),
         groups,
         desk: sim.app.board().model.stack.len(),
-        stored_as_held: stored.cursor() == device.cursor() && stored.outbox().len() == device.outbox().len(),
+        stored_as_held: stored.cursor() == device.cursor()
+            && stored.outbox().len() == device.outbox().len(),
         board: picture(sim),
     }
 }
 
 /// Runs the App to rest; killed before its `die_in`th effect, it is started again once.
-fn run(world: &World, store: &common::TestStore, me: &DeviceId, die_in: Option<usize>, after_start: &dyn Fn(&mut Sim)) -> (Sim, bool) {
+fn run(
+    world: &World,
+    store: &common::TestStore,
+    me: &DeviceId,
+    die_in: Option<usize>,
+    after_start: &dyn Fn(&mut Sim),
+) -> (Sim, bool) {
     run_twice(world, store, me, die_in, None, after_start)
 }
 
 /// The same, and killed once more before the `again`th effect after the first restart.
-fn run_twice(world: &World, store: &common::TestStore, me: &DeviceId, die_in: Option<usize>, mut again: Option<usize>, after_start: &dyn Fn(&mut Sim)) -> (Sim, bool) {
+fn run_twice(
+    world: &World,
+    store: &common::TestStore,
+    me: &DeviceId,
+    die_in: Option<usize>,
+    mut again: Option<usize>,
+    after_start: &dyn Fn(&mut Sim),
+) -> (Sim, bool) {
     let mut sim = world.sim_of(store);
     sim.die_in = die_in;
     sim.send(start());
@@ -149,13 +213,25 @@ fn scene() -> World {
         let session = hub.observer(&second).unwrap().session().unwrap().session_id;
         let agent = world.others.last_mut().unwrap();
         sync(hub, agent);
-        agent.seal(&Draft::SessionChat { session, payload: text(r#"{"content_type":"message","text":"in the second"}"#) }, None, &[], now()).expect("seals");
+        agent
+            .seal(
+                &Draft::SessionChat {
+                    session,
+                    payload: text(r#"{"content_type":"message","text":"in the second"}"#),
+                },
+                None,
+                &[],
+                now(),
+            )
+            .expect("seals");
         assert!(post_all(hub, agent).is_empty());
     }
     // a new human device of the person, in no session, with KeyPackages at the hub: this device adds it
     let (store, _, _) = world.newcomer();
     let mut newcomer = Device::open(store, Box::new(SystemEntropy)).expect("opens");
-    newcomer.key_packages_to_upload(0, now()).expect("key packages");
+    newcomer
+        .key_packages_to_upload(0, now())
+        .expect("key packages");
     assert!(post_all(&mut world.hub.borrow_mut(), &mut newcomer).is_empty());
     // the person's other device writes three lines; the hub skips the second and withholds it from its chain: the
     // third is never shown, and the gap is said
@@ -184,13 +260,47 @@ fn killed_before_any_effect_the_app_ends_where_an_uninterrupted_run_ends() {
     let whole = end(&world, &sim);
     let effects = sim.log.len();
     assert_eq!(whole.phase, Phase::Live);
-    assert!(whole.at_head && whole.outbox == 0 && whole.owes == (0, 0, 1, 0) && whole.stored_as_held, "{whole:?} {:?}", sim.app.alerts());
-    assert!(sim.app.alerts().iter().any(|a| matches!(a, trommi_client_core::engine::Alert::Withheld { .. })), "the gap is said");
-    let lines: Vec<String> = sim.app.board().model.timelines.values().flat_map(|t| t.items.values()).filter_map(|i| i.get("content").and_then(|c| c.get("text")).and_then(|t| t.as_str()).map(str::to_string)).collect();
-    assert!(lines.iter().any(|l| l == "f1") && !lines.iter().any(|l| l.contains("after the gap")), "{lines:?}");
-    assert_eq!(whole.groups, vec![(true, 4), (true, 4)], "both sessions, the newcomer in each: {:?}", world.hub.borrow().refused);
+    assert!(
+        whole.at_head && whole.outbox == 0 && whole.owes == (0, 0, 1, 0) && whole.stored_as_held,
+        "{whole:?} {:?}",
+        sim.app.alerts()
+    );
+    assert!(
+        sim.app
+            .alerts()
+            .iter()
+            .any(|a| matches!(a, trommi_client_core::engine::Alert::Withheld { .. })),
+        "the gap is said"
+    );
+    let lines: Vec<String> = sim
+        .app
+        .board()
+        .model
+        .timelines
+        .values()
+        .flat_map(|t| t.items.values())
+        .filter_map(|i| {
+            i.get("content")
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .map(str::to_string)
+        })
+        .collect();
+    assert!(
+        lines.iter().any(|l| l == "f1") && !lines.iter().any(|l| l.contains("after the gap")),
+        "{lines:?}"
+    );
+    assert_eq!(
+        whole.groups,
+        vec![(true, 4), (true, 4)],
+        "both sessions, the newcomer in each: {:?}",
+        world.hub.borrow().refused
+    );
     assert_eq!(whole.desk, 2);
-    assert!(sim.cache.keys().any(|k| k.starts_with("engine/")), "the engine kept its record");
+    assert!(
+        sim.cache.keys().any(|k| k.starts_with("engine/")),
+        "the engine kept its record"
+    );
     // every point up to the end of what the uninterrupted run did
     let mut kills = 0;
     for at in 1..effects {
@@ -198,9 +308,16 @@ fn killed_before_any_effect_the_app_ends_where_an_uninterrupted_run_ends() {
         let (sim, died) = run(&world, &world.me_store, &world.me, Some(at), &|_| {});
         kills += usize::from(died);
         let got = end(&world, &sim);
-        assert!(got == whole, "killed before effect {at} of {effects}: {}\n{got:?}", differ(&got.board, &whole.board));
+        assert!(
+            got == whole,
+            "killed before effect {at} of {effects}: {}\n{got:?}",
+            differ(&got.board, &whole.board)
+        );
     }
-    assert!(kills > 40, "the kills fell inside the run: {kills} of {effects}");
+    assert!(
+        kills > 40,
+        "the kills fell inside the run: {kills} of {effects}"
+    );
 }
 
 #[test]
@@ -214,10 +331,21 @@ fn killed_twice_the_app_still_ends_where_an_uninterrupted_run_ends() {
         let world = scene();
         // the second death comes early in the restarted run: in its reading of the record, its sign-in, its first page
         let again = 1 + at % 11;
-        let (sim, died) = run_twice(&world, &world.me_store, &world.me, Some(at), Some(again), &|_| {});
+        let (sim, died) = run_twice(
+            &world,
+            &world.me_store,
+            &world.me,
+            Some(at),
+            Some(again),
+            &|_| {},
+        );
         twice += usize::from(died && sim.log.len() > at + again);
         let got = end(&world, &sim);
-        assert!(got == whole, "killed before effect {at} and then before {again} of the restart: {}", differ(&got.board, &whole.board));
+        assert!(
+            got == whole,
+            "killed before effect {at} and then before {again} of the restart: {}",
+            differ(&got.board, &whole.board)
+        );
     }
     assert!(twice > 10, "{twice} runs died twice");
 }
@@ -227,7 +355,12 @@ fn a_record_of_another_stored_state_is_left_and_one_that_lags_costs_a_second_rea
     let world = scene();
     let (sim, _) = run(&world, &world.me_store, &world.me, None, &|_| {});
     let whole = end(&world, &sim);
-    let key = sim.cache.keys().find(|k| k.starts_with("engine/")).expect("a record").clone();
+    let key = sim
+        .cache
+        .keys()
+        .find(|k| k.starts_with("engine/"))
+        .expect("a record")
+        .clone();
     let record = sim.cache[&key].clone();
     // the record of the end over the device's state of the start (a store put back from a copy): not taken
     let world = scene();
@@ -240,7 +373,11 @@ fn a_record_of_another_stored_state_is_left_and_one_that_lags_costs_a_second_rea
     }
     assert_eq!(end(&world, &again).owes, whole.owes);
     assert!(end(&world, &again).at_head);
-    assert_eq!(end(&world, &again).groups, whole.groups, "what the device had not taken was read, not skipped");
+    assert_eq!(
+        end(&world, &again).groups,
+        whole.groups,
+        "what the device had not taken was read, not skipped"
+    );
     // one that is no record
     let world = scene();
     let mut again = world.sim();
@@ -265,15 +402,24 @@ fn sign_in() -> (World, common::TestStore, DeviceId, Vec<GroupId>) {
 }
 
 fn keys() -> trommi_core::recovery::RecoveryKeys {
-    trommi_core::recovery::RecoveryKeys::from_code(trommi_core::crypto::Secret::new([0xC0; 32])).expect("the keys of the code")
+    trommi_core::recovery::RecoveryKeys::from_code(trommi_core::crypto::Secret::new([0xC0; 32]))
+        .expect("the keys of the code")
 }
 
 #[test]
-fn killed_in_the_middle_of_a_sign_ins_joins_the_app_says_which_are_left_and_the_code_finishes_them() {
+fn killed_in_the_middle_of_a_sign_ins_joins_the_app_says_which_are_left_and_the_code_finishes_them()
+{
     let join = |groups: &[GroupId]| {
         let groups = groups.to_vec();
         move |sim: &mut Sim| {
-            let effects = sim.app.join_sessions(sim.now_ms, SessionJoins { keys: keys(), later: None, groups: groups.clone() });
+            let effects = sim.app.join_sessions(
+                sim.now_ms,
+                SessionJoins {
+                    keys: keys(),
+                    later: None,
+                    groups: groups.clone(),
+                },
+            );
             sim.run(effects);
         }
     };
@@ -287,7 +433,9 @@ fn killed_in_the_middle_of_a_sign_ins_joins_the_app_says_which_are_left_and_the_
         let _ = (world, store, id, groups);
         let (world, store, id, groups) = sign_in();
         let (sim, _) = run(&world, &store, &id, None, &join(&groups));
-        assert!(groups.iter().all(|g| sim.app.engine().unwrap().device().group(g).is_ok()));
+        assert!(groups
+            .iter()
+            .all(|g| sim.app.engine().unwrap().device().group(g).is_ok()));
         assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
         let effects = sim.log.len();
         (world, store, id, groups, effects)
@@ -299,15 +447,26 @@ fn killed_in_the_middle_of_a_sign_ins_joins_the_app_says_which_are_left_and_the_
         let (mut sim, died) = run(&world, &store, &id, Some(at), &join(&groups));
         kills += usize::from(died);
         // what the engine could not finish without the code it says, and the code finishes it
-        let left: Vec<GroupId> = sim.app.sessions_not_joined().map(|left| left.iter().map(|(group, _)| *group).collect()).unwrap_or_default();
+        let left: Vec<GroupId> = sim
+            .app
+            .sessions_not_joined()
+            .map(|left| left.iter().map(|(group, _)| *group).collect())
+            .unwrap_or_default();
         let held = |sim: &Sim, g: &GroupId| sim.app.engine().unwrap().device().group(g).is_ok();
         if died && !groups.iter().all(|g| held(&sim, g)) {
-            assert!(!sim.app.engine().unwrap().joining_sessions(), "killed before effect {at}: the joins came to an end");
+            assert!(
+                !sim.app.engine().unwrap().joining_sessions(),
+                "killed before effect {at}: the joins came to an end"
+            );
             // (killed before the joins were kept at all, the App knows of none: the sign-in that was cut asks again
             //  for every session the device is not in)
             let known = sim.app.sessions_not_joined().is_some();
             unknown += usize::from(!known);
-            let left: Vec<GroupId> = if known { left } else { groups.iter().filter(|g| !held(&sim, g)).copied().collect() };
+            let left: Vec<GroupId> = if known {
+                left
+            } else {
+                groups.iter().filter(|g| !held(&sim, g)).copied().collect()
+            };
             for group in &groups {
                 assert!(held(&sim, group) || left.contains(group), "killed before effect {at}: a session neither joined nor named as left: {:?} outbox {:?} refused {:?} record {:?}", sim.app.sessions_not_joined().map(|l| l.len()), sim.app.engine().unwrap().device().outbox().iter().map(|e| e.kind).collect::<Vec<_>>(), world.hub.borrow().refused, sim.cache.iter().find(|(k, _)| k.starts_with("engine/")).map(|(_, v)| String::from_utf8_lossy(v).chars().take(600).collect::<String>()));
             }
@@ -318,10 +477,23 @@ fn killed_in_the_middle_of_a_sign_ins_joins_the_app_says_which_are_left_and_the_
                 sim.advance(5_000);
             }
         }
-        assert!(groups.iter().all(|g| held(&sim, g)), "killed before effect {at} of {effects}: {:?} {:?}", sim.app.sessions_not_joined(), world.hub.borrow().refused);
+        assert!(
+            groups.iter().all(|g| held(&sim, g)),
+            "killed before effect {at} of {effects}: {:?} {:?}",
+            sim.app.sessions_not_joined(),
+            world.hub.borrow().refused
+        );
         let device = sim.app.engine().unwrap().device();
-        assert!(device.outbox().is_empty() && sim.app.engine().unwrap().position() == world.hub.borrow().change, "killed before effect {at}");
-        assert_eq!(sim.app.board().model.stack.len(), 1, "killed before effect {at}: the joined session's card");
+        assert!(
+            device.outbox().is_empty()
+                && sim.app.engine().unwrap().position() == world.hub.borrow().change,
+            "killed before effect {at}"
+        );
+        assert_eq!(
+            sim.app.board().model.stack.len(),
+            1,
+            "killed before effect {at}: the joined session's card"
+        );
     }
     assert!(kills > 5 && asked_again > 0 && unknown <= 3, "{kills} kills, {asked_again} named as left, {unknown} not known, effects {before}..{effects}");
 }
@@ -333,14 +505,20 @@ fn keyless_scene() -> (World, common::TestStore, DeviceId) {
     let mut world = World::new();
     let (store, id, _) = world.newcomer();
     let mut newcomer = Device::open(store.clone(), Box::new(SystemEntropy)).expect("opens");
-    newcomer.key_packages_to_upload(0, now()).expect("key packages");
+    newcomer
+        .key_packages_to_upload(0, now())
+        .expect("key packages");
     assert!(post_all(&mut world.hub.borrow_mut(), &mut newcomer).is_empty());
     drop(newcomer);
     {
         let hub = &mut *world.hub.borrow_mut();
         sync(hub, &mut world.founder);
         // an epoch whose key the code did not open for the newcomer (it began after its join)
-        world.founder.update(&world.group, true, now()).expect("an update").expect("a Commit");
+        world
+            .founder
+            .update(&world.group, true, now())
+            .expect("an update")
+            .expect("a Commit");
         assert!(post_all(hub, &mut world.founder).is_empty());
     }
     world.founder_says("before the newcomer");
@@ -348,7 +526,10 @@ fn keyless_scene() -> (World, common::TestStore, DeviceId) {
         let hub = &mut *world.hub.borrow_mut();
         sync(hub, &mut world.founder);
         let package = hub.claim(&[id]).expect("a KeyPackage").remove(0);
-        world.founder.add_to_session(&world.group, &id, &package, now()).expect("added");
+        world
+            .founder
+            .add_to_session(&world.group, &id, &package, now())
+            .expect("added");
         assert!(post_all(hub, &mut world.founder).is_empty());
     }
     world.founder_says("after it");
@@ -358,11 +539,17 @@ fn keyless_scene() -> (World, common::TestStore, DeviceId) {
 /// The founder answers the newcomer's wishes for keys, as the person's other device does.
 fn hand_over(world: &mut World, id: &DeviceId) {
     let hub = &mut *world.hub.borrow_mut();
-    if !hub.wishes.iter().any(|(_, d, kind, ..)| d == id && kind == "handover") {
+    if !hub
+        .wishes
+        .iter()
+        .any(|(_, d, kind, ..)| d == id && kind == "handover")
+    {
         return;
     }
     sync(hub, &mut world.founder);
-    let _ = world.founder.answer_key_request(Some(&world.group), id, now());
+    let _ = world
+        .founder
+        .answer_key_request(Some(&world.group), id, now());
     let _ = world.founder.answer_key_request(None, id, now());
     post_all(hub, &mut world.founder);
 }
@@ -387,7 +574,20 @@ fn run_keyless(die_in: Option<usize>) -> (World, Sim, bool) {
 }
 
 fn lines(sim: &Sim) -> Vec<String> {
-    let mut lines: Vec<String> = sim.app.board().model.timelines.values().flat_map(|t| t.items.values()).filter_map(|i| i.get("content").and_then(|c| c.get("text")).and_then(|t| t.as_str()).map(str::to_string)).collect();
+    let mut lines: Vec<String> = sim
+        .app
+        .board()
+        .model
+        .timelines
+        .values()
+        .flat_map(|t| t.items.values())
+        .filter_map(|i| {
+            i.get("content")
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .map(str::to_string)
+        })
+        .collect();
     lines.sort();
     lines
 }
@@ -398,17 +598,45 @@ fn a_line_without_its_key_is_read_back_once_the_keys_come_also_across_a_restart(
     let (world, sim, died) = run_keyless(None);
     assert!(!died);
     let whole = end(&world, &sim);
-    assert!(lines(&sim).iter().any(|l| l == "before the newcomer"), "read back with the keys: {:?} {whole:?} {:?} {:?}", lines(&sim), sim.app.alerts(), world.hub.borrow().seen.iter().filter(|r| !r.contains("changes") && !r.contains("stream")).collect::<Vec<_>>());
+    assert!(
+        lines(&sim).iter().any(|l| l == "before the newcomer"),
+        "read back with the keys: {:?} {whole:?} {:?} {:?}",
+        lines(&sim),
+        sim.app.alerts(),
+        world
+            .hub
+            .borrow()
+            .seen
+            .iter()
+            .filter(|r| !r.contains("changes") && !r.contains("stream"))
+            .collect::<Vec<_>>()
+    );
     assert_eq!(whole.owes, (0, 0, 0, 0), "{whole:?}");
-    assert!(world.hub.borrow().seen.iter().any(|r| r.starts_with("POST /v1/requests")), "the keys were asked for");
+    assert!(
+        world
+            .hub
+            .borrow()
+            .seen
+            .iter()
+            .any(|r| r.starts_with("POST /v1/requests")),
+        "the keys were asked for"
+    );
     let effects = sim.log.len();
     let mut kills = 0;
     for at in (1..effects).step_by(3) {
         let (world, sim, died) = run_keyless(Some(at));
         kills += usize::from(died);
         let got = end(&world, &sim);
-        assert_eq!(lines(&sim), lines(&run_keyless(None).1), "killed before effect {at} of {effects}");
-        assert_eq!(got.owes, (0, 0, 0, 0), "killed before effect {at} of {effects}: {got:?}");
+        assert_eq!(
+            lines(&sim),
+            lines(&run_keyless(None).1),
+            "killed before effect {at} of {effects}"
+        );
+        assert_eq!(
+            got.owes,
+            (0, 0, 0, 0),
+            "killed before effect {at} of {effects}: {got:?}"
+        );
     }
     assert!(kills > 10, "the kills fell inside the run: {kills}");
 }
@@ -418,18 +646,34 @@ fn opening_a_late_joined_session_reads_its_older_lines() {
     let (mut world, store, id) = keyless_scene();
     let mut sim = world.sim_of(&store);
     sim.send(start());
-    let session_id = world.founder.group(&world.group).unwrap().session.unwrap().session_id.to_string();
-    sim.send(trommi_client_core::app::Event::Focus { focus: trommi_client_core::views::Focus {
-        screen: trommi_client_core::views::Screen::Session { session_id }, ..Default::default()
-    } });
+    let session_id = world
+        .founder
+        .group(&world.group)
+        .unwrap()
+        .session
+        .unwrap()
+        .session_id
+        .to_string();
+    sim.send(trommi_client_core::app::Event::Focus {
+        focus: trommi_client_core::views::Focus {
+            screen: trommi_client_core::views::Screen::Session { session_id },
+            ..Default::default()
+        },
+    });
     for _ in 0..30 {
         news(&world, &mut sim, &id);
         hand_over(&mut world, &id);
         sim.advance(5_000);
     }
-    assert!(lines(&sim).iter().any(|line| line == "before the newcomer"), "{:?}; {:?}; {:?}", lines(&sim), end(&world, &sim), sim.app.alerts());
+    assert!(
+        lines(&sim).iter().any(|line| line == "before the newcomer"),
+        "{:?}; {:?}; {:?}",
+        lines(&sim),
+        end(&world, &sim),
+        sim.app.alerts()
+    );
     assert!(lines(&sim).iter().any(|line| line == "after it"));
-    assert_eq!(end(&world, &sim).owes, (0,0,0,0));
+    assert_eq!(end(&world, &sim).owes, (0, 0, 0, 0));
 }
 
 #[test]
@@ -442,13 +686,36 @@ fn a_late_sessions_missing_history_recovers_after_network_failure_and_restart() 
     let failed = std::rc::Rc::new(std::cell::Cell::new(0));
     let intercepted = failed.clone();
     world.hub.borrow_mut().fault = Some(Box::new(move |_, request| {
-        request.url.contains("epoch=0").then(|| { intercepted.set(intercepted.get() + 1); Err(IoError::new(IoErrorKind::Offline)) })
+        request.url.contains("epoch=0").then(|| {
+            intercepted.set(intercepted.get() + 1);
+            Err(IoError::new(IoErrorKind::Offline))
+        })
     }));
-    let session_id = world.founder.group(&world.group).unwrap().session.unwrap().session_id.to_string();
-    let focus = || Event::Focus { focus:Focus { screen:Screen::Session { session_id:session_id.clone() }, ..Default::default() } };
+    let session_id = world
+        .founder
+        .group(&world.group)
+        .unwrap()
+        .session
+        .unwrap()
+        .session_id
+        .to_string();
+    let focus = || Event::Focus {
+        focus: Focus {
+            screen: Screen::Session {
+                session_id: session_id.clone(),
+            },
+            ..Default::default()
+        },
+    };
     sim.send(focus());
-    for _ in 0..30 { news(&world, &mut sim, &id); sim.advance(5_000); }
-    assert!(failed.get() > 0, "the history read really failed before connectivity returned");
+    for _ in 0..30 {
+        news(&world, &mut sim, &id);
+        sim.advance(5_000);
+    }
+    assert!(
+        failed.get() > 0,
+        "the history read really failed before connectivity returned"
+    );
     assert!(!lines(&sim).iter().any(|line| line == "before the newcomer"));
     world.hub.borrow_mut().fault = None;
     for _ in 0..30 {
@@ -460,10 +727,13 @@ fn a_late_sessions_missing_history_recovers_after_network_failure_and_restart() 
     sim.restart();
     sim.send(start());
     sim.send(focus());
-    for _ in 0..3 { news(&world, &mut sim, &id); sim.advance(5_000); }
+    for _ in 0..3 {
+        news(&world, &mut sim, &id);
+        sim.advance(5_000);
+    }
     assert!(lines(&sim).iter().any(|line| line == "before the newcomer"));
     assert!(lines(&sim).iter().any(|line| line == "after it"));
-    assert_eq!(end(&world, &sim).owes, (0,0,0,0));
+    assert_eq!(end(&world, &sim).owes, (0, 0, 0, 0));
 }
 
 #[test]
@@ -474,19 +744,66 @@ fn a_hub_cannot_supply_another_groups_history_for_a_late_sessions_older_lines() 
     let mut sim = world.sim_of(&store);
     sim.send(start());
     let wrong = world.hub.borrow().group_infos[&(GroupId::room(world.room.room_id()), 0)].clone();
-    let route = format!("/groups/{}/info?epoch=0", trommi_core::ids::base64url_encode(world.group.as_bytes()));
-    let body = serde_json::to_vec(&serde_json::json!({"epoch":0,"group_info":trommi_core::ids::base64url_encode(&wrong)})).unwrap();
+    let route = format!(
+        "/groups/{}/info?epoch=0",
+        trommi_core::ids::base64url_encode(world.group.as_bytes())
+    );
+    let body = serde_json::to_vec(
+        &serde_json::json!({"epoch":0,"group_info":trommi_core::ids::base64url_encode(&wrong)}),
+    )
+    .unwrap();
     let served = std::rc::Rc::new(std::cell::Cell::new(0));
     let intercepted = served.clone();
     world.hub.borrow_mut().fault = Some(Box::new(move |_, request| {
-        request.url.contains(&route).then(|| { intercepted.set(intercepted.get() + 1); Ok(HttpResponse { status:200, headers:vec![trommi_client_core::app::Header { name:"Content-Type".into(), value:"application/json".into() }], body:body.clone().into() }) })
+        request.url.contains(&route).then(|| {
+            intercepted.set(intercepted.get() + 1);
+            Ok(HttpResponse {
+                status: 200,
+                headers: vec![trommi_client_core::app::Header {
+                    name: "Content-Type".into(),
+                    value: "application/json".into(),
+                }],
+                body: body.clone().into(),
+            })
+        })
     }));
-    let session_id = world.founder.group(&world.group).unwrap().session.unwrap().session_id.to_string();
-    sim.send(Event::Focus { focus:Focus { screen:Screen::Session { session_id }, ..Default::default() } });
-    for _ in 0..30 { news(&world, &mut sim, &id); hand_over(&mut world, &id); sim.advance(5_000); }
+    let session_id = world
+        .founder
+        .group(&world.group)
+        .unwrap()
+        .session
+        .unwrap()
+        .session_id
+        .to_string();
+    sim.send(Event::Focus {
+        focus: Focus {
+            screen: Screen::Session { session_id },
+            ..Default::default()
+        },
+    });
+    for _ in 0..30 {
+        news(&world, &mut sim, &id);
+        hand_over(&mut world, &id);
+        sim.advance(5_000);
+    }
     assert!(!lines(&sim).iter().any(|line| line == "before the newcomer"));
-    assert!(!sim.app.engine().unwrap().device().group(&world.group).unwrap().past_learned);
+    assert!(
+        !sim.app
+            .engine()
+            .unwrap()
+            .device()
+            .group(&world.group)
+            .unwrap()
+            .past_learned
+    );
     assert!(served.get() > 0, "the hostile founding was actually served");
-    let logs:Vec<_> = sim.log.iter().filter_map(|e| match e { trommi_client_core::app::Effect::Log { text,.. } => Some(text), _ => None }).collect();
+    let logs: Vec<_> = sim
+        .log
+        .iter()
+        .filter_map(|e| match e {
+            trommi_client_core::app::Effect::Log { text, .. } => Some(text),
+            _ => None,
+        })
+        .collect();
     assert!(sim.app.alerts().iter().any(|alert| matches!(alert, trommi_client_core::engine::Alert::BadGroup { group,.. } if *group == world.group)), "{:?}; {logs:?}", sim.app.alerts());
 }

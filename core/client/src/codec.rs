@@ -539,8 +539,19 @@ fn plain_options(options: &[Value]) -> Value {
 /// into this list and needs nothing else. Written: base64url, always. Read: base64url, and the 32 hex digits an
 /// earlier iOS app wrote on the wire, which already are the model's key (it stays as it is).
 const ID_NAMES: [&str; 13] = [
-    "desk/", "session/", "draft/", "snooze/", "duck/", "star/", "knowledge/", "knowledge_log/", "knowledge_ask/", "knowledge_done/",
-    "knowledge_seen/", "wakeup/", "wakeup_edit/",
+    "desk/",
+    "session/",
+    "draft/",
+    "snooze/",
+    "duck/",
+    "star/",
+    "knowledge/",
+    "knowledge_log/",
+    "knowledge_ask/",
+    "knowledge_done/",
+    "knowledge_seen/",
+    "wakeup/",
+    "wakeup_edit/",
 ];
 const READ_SCOPES: [&str; 3] = ["read/session/", "read/card/", "read/desk/"];
 
@@ -644,7 +655,9 @@ fn register_value(key: &str, value: &Value, to_model: bool) -> Result<Value> {
     } else if key.starts_with("session/") || key.starts_with("knowledge/") {
         with_id(o, "desk", 16, id)
     } else if key.starts_with("knowledge_log/") {
-        let Value::Object(o) = with_id(o, "desk", 16, id) else { return Ok(value.clone()) };
+        let Value::Object(o) = with_id(o, "desk", 16, id) else {
+            return Ok(value.clone());
+        };
         with_id(&o, "entry", 16, id)
     } else if key.starts_with("knowledge_ask/") || key.starts_with("knowledge_done/") {
         with_id(o, "entry", 16, id)
@@ -1599,7 +1612,12 @@ fn numbers_doubtful(payload: &[u8]) -> bool {
                 return true;
             }
         } else {
-            if run > 0 && (*b == b'e' || *b == b'E') && payload.get(i + 1).is_some_and(|n| n.is_ascii_digit() || *n == b'+' || *n == b'-') {
+            if run > 0
+                && (*b == b'e' || *b == b'E')
+                && payload
+                    .get(i + 1)
+                    .is_some_and(|n| n.is_ascii_digit() || *n == b'+' || *n == b'-')
+            {
                 return true;
             }
             run = 0;

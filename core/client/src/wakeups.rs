@@ -68,7 +68,15 @@ pub struct Wakeup {
 
 /// A note as it is kept: one paragraph, at most [`NOTE_MAX`] characters.
 pub fn clean_note(note: &str) -> String {
-    note.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).take(NOTE_MAX).collect::<String>().trim_end().to_string()
+    note.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(NOTE_MAX)
+        .collect::<String>()
+        .trim_end()
+        .to_string()
 }
 
 impl Wakeup {
@@ -78,20 +86,39 @@ impl Wakeup {
         let at = o.get("at")?.as_u64()?;
         let last = o.get("last").and_then(Value::as_object).map(|l| LastRun {
             at: l.get("at").and_then(Value::as_u64).unwrap_or(0),
-            result: l.get("result").and_then(Value::as_str).unwrap_or("").chars().take(20).collect(),
-            detail: clean_note(l.get("detail").and_then(Value::as_str).unwrap_or("")).chars().take(120).collect(),
+            result: l
+                .get("result")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .chars()
+                .take(20)
+                .collect(),
+            detail: clean_note(l.get("detail").and_then(Value::as_str).unwrap_or(""))
+                .chars()
+                .take(120)
+                .collect(),
         });
         Some(Wakeup {
             id: id.to_string(),
             at,
             every: num("every"),
             note: clean_note(o.get("note")?.as_str()?),
-            helper: o.get("helper").and_then(Value::as_str).map(|h| h.chars().take(40).collect::<String>()).filter(|h| !h.trim().is_empty()),
+            helper: o
+                .get("helper")
+                .and_then(Value::as_str)
+                .map(|h| h.chars().take(40).collect::<String>())
+                .filter(|h| !h.trim().is_empty()),
             set_at: num("set_at"),
             last,
             day: num("day"),
             day_runs: num("day_runs") as u32,
-            edited: o.get("edited").and_then(Value::as_str).unwrap_or("").chars().take(40).collect(),
+            edited: o
+                .get("edited")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .chars()
+                .take(40)
+                .collect(),
         })
     }
 
@@ -107,7 +134,10 @@ impl Wakeup {
         }
         o.insert("set_at".into(), json!(self.set_at));
         if let Some(l) = &self.last {
-            o.insert("last".into(), json!({ "at": l.at, "result": l.result, "detail": l.detail }));
+            o.insert(
+                "last".into(),
+                json!({ "at": l.at, "result": l.result, "detail": l.detail }),
+            );
         }
         if self.day_runs > 0 {
             o.insert("day".into(), json!(self.day));
@@ -122,7 +152,9 @@ impl Wakeup {
 
 /// The wakeups among a session's registers (`wakeup/<id>`), the next first.
 pub fn of<'a>(registers: impl Iterator<Item = (&'a String, &'a Value)>) -> Vec<Wakeup> {
-    let mut list: Vec<Wakeup> = registers.filter_map(|(k, v)| k.strip_prefix(PREFIX).and_then(|id| Wakeup::read(id, v))).collect();
+    let mut list: Vec<Wakeup> = registers
+        .filter_map(|(k, v)| k.strip_prefix(PREFIX).and_then(|id| Wakeup::read(id, v)))
+        .collect();
     list.sort_by(|a, b| a.at.cmp(&b.at).then(a.id.cmp(&b.id)));
     list
 }
@@ -152,11 +184,15 @@ impl Edit {
 
 /// The mark of the person's word on a wakeup ("" for none).
 pub fn mark(v: &Value) -> String {
-    v.get("n").and_then(Value::as_str).unwrap_or("").chars().take(40).collect()
+    v.get("n")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .chars()
+        .take(40)
+        .collect()
 }
 
-impl Edit {
-}
+impl Edit {}
 
 // ---- times ---------------------------------------------------------------------------------------------------------
 
@@ -193,7 +229,11 @@ pub fn time(text: &str, now: u64, zone_min: i32) -> Option<u64> {
     let (date, rest) = t.split_at(t.find([' ', 'T'])?);
     let rest = &rest[1..];
     let mut p = date.split('-');
-    let (y, mo, d): (i64, i64, i64) = (p.next()?.parse().ok()?, p.next()?.parse().ok()?, p.next()?.parse().ok()?);
+    let (y, mo, d): (i64, i64, i64) = (
+        p.next()?.parse().ok()?,
+        p.next()?.parse().ok()?,
+        p.next()?.parse().ok()?,
+    );
     if p.next().is_some() || !(1..=12).contains(&mo) || !(1..=31).contains(&d) {
         return None;
     }
@@ -290,12 +330,25 @@ impl Refusal {
 /// A new wakeup checked against the guardrails: when (`at` or `in`), how often (`every`), the session's open ones.
 /// Its time is moved out of quiet hours. `zone_min`: the person's zone.
 #[allow(clippy::too_many_arguments)]
-pub fn set(id: &str, at: Option<&str>, in_: Option<&str>, every: Option<&str>, note: &str, helper: Option<&str>, open: &[Wakeup], now: u64, zone_min: i32) -> Result<Wakeup, Refusal> {
+pub fn set(
+    id: &str,
+    at: Option<&str>,
+    in_: Option<&str>,
+    every: Option<&str>,
+    note: &str,
+    helper: Option<&str>,
+    open: &[Wakeup],
+    now: u64,
+    zone_min: i32,
+) -> Result<Wakeup, Refusal> {
     let note = clean_note(note);
     if note.is_empty() {
         return Err(Refusal::NoNote);
     }
-    let at = match (at.filter(|a| !a.trim().is_empty()), in_.filter(|i| !i.trim().is_empty())) {
+    let at = match (
+        at.filter(|a| !a.trim().is_empty()),
+        in_.filter(|i| !i.trim().is_empty()),
+    ) {
         (Some(a), None) => time(a, now, zone_min).ok_or(Refusal::When)?,
         (None, Some(i)) => now.saturating_add(span(i).ok_or(Refusal::When)?),
         _ => return Err(Refusal::When),
@@ -308,7 +361,9 @@ pub fn set(id: &str, at: Option<&str>, in_: Option<&str>, every: Option<&str>, n
     }
     let every = match every.filter(|e| !e.trim().is_empty()) {
         None => 0,
-        Some(e) => span(e).filter(|ms| (MIN_EVERY_MS..=MAX_EVERY_MS).contains(ms)).ok_or(Refusal::Every)?,
+        Some(e) => span(e)
+            .filter(|ms| (MIN_EVERY_MS..=MAX_EVERY_MS).contains(ms))
+            .ok_or(Refusal::Every)?,
     };
     if open.len() >= PER_SESSION_MAX {
         return Err(Refusal::TooMany);
@@ -318,7 +373,17 @@ pub fn set(id: &str, at: Option<&str>, in_: Option<&str>, every: Option<&str>, n
     }
     // (it carries the session's count of runs today: a run that sets the next wakeup still counts)
     let runs = session_runs(open, now, zone_min);
-    Ok(Wakeup { id: id.to_string(), at: out_of_quiet(at, zone_min), every, note, helper: helper.map(str::to_string).filter(|h| !h.trim().is_empty()), set_at: now, day: if runs > 0 { day_of(now, zone_min) } else { 0 }, day_runs: runs, ..Default::default() })
+    Ok(Wakeup {
+        id: id.to_string(),
+        at: out_of_quiet(at, zone_min),
+        every,
+        note,
+        helper: helper.map(str::to_string).filter(|h| !h.trim().is_empty()),
+        set_at: now,
+        day: if runs > 0 { day_of(now, zone_min) } else { 0 },
+        day_runs: runs,
+        ..Default::default()
+    })
 }
 
 /// What happens to a wakeup that is due at `now`.
@@ -334,7 +399,11 @@ pub enum Due {
 /// The runs of a session today: each of its wakeups carries the session's count (the highest of today's).
 pub fn session_runs(open: &[Wakeup], now: u64, zone_min: i32) -> u32 {
     let today = day_of(now, zone_min);
-    open.iter().filter(|w| w.day == today).map(|w| w.day_runs).max().unwrap_or(0)
+    open.iter()
+        .filter(|w| w.day == today)
+        .map(|w| w.day_runs)
+        .max()
+        .unwrap_or(0)
 }
 
 /// A wakeup at `now`: run it, or let it wait. `usage`: the share of the subscription's five-hour window in use (none:
@@ -348,7 +417,11 @@ pub fn due(w: &Wakeup, now: u64, zone_min: i32, usage: Option<f64>, runs: u32) -
     let waits = |at: u64, why: &str| {
         let mut next = w.clone();
         next.at = at.max(now + 60_000);
-        next.last = Some(LastRun { at: now, result: "waited".into(), detail: why.into() });
+        next.last = Some(LastRun {
+            at: now,
+            result: "waited".into(),
+            detail: why.into(),
+        });
         Due::Wait(next)
     };
     let quiet = out_of_quiet(now, zone_min);
@@ -356,11 +429,17 @@ pub fn due(w: &Wakeup, now: u64, zone_min: i32, usage: Option<f64>, runs: u32) -
         return Some(waits(quiet, "quiet hours"));
     }
     if runs >= RUNS_PER_DAY {
-        let tomorrow = out_of_quiet((today + 1) * DAY_MS - (zone_min as i64 * 60_000) as u64, zone_min);
+        let tomorrow = out_of_quiet(
+            (today + 1) * DAY_MS - (zone_min as i64 * 60_000) as u64,
+            zone_min,
+        );
         return Some(waits(tomorrow, "the day's limit of runs"));
     }
     if usage.is_some_and(|u| u >= USAGE_PAUSE) {
-        return Some(waits(now + USAGE_WAIT_MS, "the subscription's window is almost used"));
+        return Some(waits(
+            now + USAGE_WAIT_MS,
+            "the subscription's window is almost used",
+        ));
     }
     let late = now.saturating_sub(w.at) > 15 * 60_000;
     let next = (w.every > 0).then(|| {
@@ -368,7 +447,17 @@ pub fn due(w: &Wakeup, now: u64, zone_min: i32, usage: Option<f64>, runs: u32) -
         while at <= now {
             at = at.saturating_add(w.every);
         }
-        Wakeup { at: out_of_quiet(at, zone_min), day: today, day_runs: runs + 1, last: Some(LastRun { at: now, result: if late { "late".into() } else { "ran".into() }, detail: String::new() }), ..w.clone() }
+        Wakeup {
+            at: out_of_quiet(at, zone_min),
+            day: today,
+            day_runs: runs + 1,
+            last: Some(LastRun {
+                at: now,
+                result: if late { "late".into() } else { "ran".into() },
+                detail: String::new(),
+            }),
+            ..w.clone()
+        }
     });
     Some(Due::Run { next, late })
 }
@@ -393,7 +482,11 @@ pub fn clock(at: u64, zone_min: i32) -> String {
 pub fn apply_edit(w: &Wakeup, edit: &Edit, mark: &str, now: u64, zone_min: i32) -> Option<Wakeup> {
     match edit {
         Edit::Cancel => None,
-        Edit::At(at) => Some(Wakeup { at: out_of_quiet((*at).clamp(now + 60_000, now + MAX_AHEAD_MS), zone_min), edited: mark.to_string(), ..w.clone() }),
+        Edit::At(at) => Some(Wakeup {
+            at: out_of_quiet((*at).clamp(now + 60_000, now + MAX_AHEAD_MS), zone_min),
+            edited: mark.to_string(),
+            ..w.clone()
+        }),
     }
 }
 
@@ -419,11 +512,22 @@ pub struct Tick {
 /// were its): run now, unless the person cancelled or moved it meanwhile. `counted`: the session's runs as its
 /// connector kept them (the day, how many), which no wakeup taken away resets.
 #[allow(clippy::too_many_arguments)]
-pub fn tick(open: &[Wakeup], edits: &[(String, Edit, String)], now: u64, zone_min: i32, usage: Option<f64>, running: Option<&str>, counted: (u64, u32)) -> Tick {
+pub fn tick(
+    open: &[Wakeup],
+    edits: &[(String, Edit, String)],
+    now: u64,
+    zone_min: i32,
+    usage: Option<f64>,
+    running: Option<&str>,
+    counted: (u64, u32),
+) -> Tick {
     let mut out = Tick::default();
     let mut list: Vec<Wakeup> = Vec::new();
     for w in open {
-        match edits.iter().find(|(id, _, mark)| *id == w.id && !edit_applied(Some(w), mark)) {
+        match edits
+            .iter()
+            .find(|(id, _, mark)| *id == w.id && !edit_applied(Some(w), mark))
+        {
             Some((_, edit, mark)) => match apply_edit(w, edit, mark, now, zone_min) {
                 Some(n) => {
                     out.writes.push((w.id.clone(), Some(n.clone())));
@@ -436,13 +540,30 @@ pub fn tick(open: &[Wakeup], edits: &[(String, Edit, String)], now: u64, zone_mi
     }
     list.sort_by(|a, b| a.at.cmp(&b.at).then(a.id.cmp(&b.id)));
     let today = day_of(now, zone_min);
-    let mut runs = session_runs(&list, now, zone_min).max(if counted.0 == today { counted.1 } else { 0 });
+    let mut runs =
+        session_runs(&list, now, zone_min).max(if counted.0 == today { counted.1 } else { 0 });
     let ran_before = runs;
     for w in &list {
         // (a word of his applied in this look wins over the waker's start)
         let edited = out.writes.iter().any(|(id, _)| *id == w.id);
         let started = running == Some(w.id.as_str()) && !edited && w.at <= now + MIN_AHEAD_MS;
-        let step = if started { due(&Wakeup { at: w.at.min(now), ..w.clone() }, now, zone_min, None, 0).filter(|d| matches!(d, Due::Run { .. })) } else if out.runs.is_empty() { due(w, now, zone_min, usage, runs) } else { None };
+        let step = if started {
+            due(
+                &Wakeup {
+                    at: w.at.min(now),
+                    ..w.clone()
+                },
+                now,
+                zone_min,
+                None,
+                0,
+            )
+            .filter(|d| matches!(d, Due::Run { .. }))
+        } else if out.runs.is_empty() {
+            due(w, now, zone_min, usage, runs)
+        } else {
+            None
+        };
         match step {
             None => {}
             Some(Due::Wait(n)) => {
@@ -451,7 +572,8 @@ pub fn tick(open: &[Wakeup], edits: &[(String, Edit, String)], now: u64, zone_mi
             }
             Some(Due::Run { next, late }) => {
                 runs += 1;
-                out.runs.push((w.id.clone(), prompt(w, late, &clock(w.at, zone_min))));
+                out.runs
+                    .push((w.id.clone(), prompt(w, late, &clock(w.at, zone_min))));
                 out.writes.retain(|(id, _)| *id != w.id);
                 out.writes.push((w.id.clone(), next));
             }
@@ -484,8 +606,20 @@ pub fn every_words(every: u64) -> String {
     match every {
         0 => "once".into(),
         e if e % (7 * DAY_MS) == 0 && e / (7 * DAY_MS) == 1 => "every week".into(),
-        e if e % DAY_MS == 0 => if e / DAY_MS == 1 { "every day".into() } else { format!("every {} days", e / DAY_MS) },
-        e if e % HOUR_MS == 0 => if e / HOUR_MS == 1 { "every hour".into() } else { format!("every {} hours", e / HOUR_MS) },
+        e if e % DAY_MS == 0 => {
+            if e / DAY_MS == 1 {
+                "every day".into()
+            } else {
+                format!("every {} days", e / DAY_MS)
+            }
+        }
+        e if e % HOUR_MS == 0 => {
+            if e / HOUR_MS == 1 {
+                "every hour".into()
+            } else {
+                format!("every {} hours", e / HOUR_MS)
+            }
+        }
         e => format!("every {} minutes", e / 60_000),
     }
 }
@@ -499,16 +633,40 @@ mod tests {
 
     #[test]
     fn spans_and_times_read_as_the_agent_writes_them() {
-        assert_eq!((span("30m"), span("2h"), span("1d"), span(" 1W "), span("90s")), (Some(1_800_000), Some(7_200_000), Some(DAY_MS), Some(7 * DAY_MS), Some(90_000)));
+        assert_eq!(
+            (
+                span("30m"),
+                span("2h"),
+                span("1d"),
+                span(" 1W "),
+                span("90s")
+            ),
+            (
+                Some(1_800_000),
+                Some(7_200_000),
+                Some(DAY_MS),
+                Some(7 * DAY_MS),
+                Some(90_000)
+            )
+        );
         for bad in ["", "m", "2x", "-3h", "0h", "1.5h"] {
             assert_eq!(span(bad), None, "{bad}");
         }
         // 12:00 local now; 09:00 is tomorrow, 13:00 today
         assert_eq!(time("13:00", NOW, ZONE), Some(NOW + 3_600_000));
         assert_eq!(time("09:00", NOW, ZONE), Some(NOW + 21 * 3_600_000));
-        assert_eq!(time("2026-10-21 09:00", NOW, ZONE), Some(NOW + 21 * 3_600_000));
-        assert_eq!(time("2026-10-21T07:00Z", NOW, ZONE), Some(NOW + 21 * 3_600_000));
-        assert_eq!(time("2026-10-21T09:00+02:00", NOW, ZONE), Some(NOW + 21 * 3_600_000));
+        assert_eq!(
+            time("2026-10-21 09:00", NOW, ZONE),
+            Some(NOW + 21 * 3_600_000)
+        );
+        assert_eq!(
+            time("2026-10-21T07:00Z", NOW, ZONE),
+            Some(NOW + 21 * 3_600_000)
+        );
+        assert_eq!(
+            time("2026-10-21T09:00+02:00", NOW, ZONE),
+            Some(NOW + 21 * 3_600_000)
+        );
         for bad in ["", "25:00", "tomorrow", "2026-13-01 09:00", "9"] {
             assert_eq!(time(bad, NOW, ZONE), None, "{bad}");
         }
@@ -525,19 +683,101 @@ mod tests {
 
     #[test]
     fn the_guardrails_hold() {
-        let w = set("a", None, Some("30m"), None, " check   the tests ", Some("Testing"), &[], NOW, ZONE).unwrap();
-        assert_eq!((w.at, w.every, w.note.as_str(), w.helper.as_deref()), (NOW + 1_800_000, 0, "check the tests", Some("Testing")));
-        assert_eq!(set("a", None, Some("1m"), None, "x", None, &[], NOW, ZONE), Err(Refusal::TooSoon));
-        assert_eq!(set("a", None, Some("90d"), None, "x", None, &[], NOW, ZONE), Err(Refusal::TooLate));
-        assert_eq!(set("a", Some("13:00"), Some("1h"), None, "x", None, &[], NOW, ZONE), Err(Refusal::When));
-        assert_eq!(set("a", None, None, None, "x", None, &[], NOW, ZONE), Err(Refusal::When));
-        assert_eq!(set("a", None, Some("1h"), Some("10m"), "x", None, &[], NOW, ZONE), Err(Refusal::Every));
-        assert_eq!(set("a", None, Some("1h"), None, "  ", None, &[], NOW, ZONE), Err(Refusal::NoNote));
-        let open: Vec<Wakeup> = (0..PER_SESSION_MAX).map(|i| Wakeup { id: i.to_string(), ..w.clone() }).collect();
-        assert_eq!(set("b", None, Some("1h"), None, "x", None, &open, NOW, ZONE), Err(Refusal::TooMany));
-        let rec: Vec<Wakeup> = (0..RECURRING_MAX).map(|i| Wakeup { id: i.to_string(), every: DAY_MS, ..w.clone() }).collect();
-        assert_eq!(set("b", None, Some("1h"), Some("1d"), "x", None, &rec, NOW, ZONE), Err(Refusal::TooManyRecurring));
-        assert!(set("b", None, Some("1h"), None, "x", None, &rec, NOW, ZONE).is_ok(), "a once next to them is fine");
+        let w = set(
+            "a",
+            None,
+            Some("30m"),
+            None,
+            " check   the tests ",
+            Some("Testing"),
+            &[],
+            NOW,
+            ZONE,
+        )
+        .unwrap();
+        assert_eq!(
+            (w.at, w.every, w.note.as_str(), w.helper.as_deref()),
+            (NOW + 1_800_000, 0, "check the tests", Some("Testing"))
+        );
+        assert_eq!(
+            set("a", None, Some("1m"), None, "x", None, &[], NOW, ZONE),
+            Err(Refusal::TooSoon)
+        );
+        assert_eq!(
+            set("a", None, Some("90d"), None, "x", None, &[], NOW, ZONE),
+            Err(Refusal::TooLate)
+        );
+        assert_eq!(
+            set(
+                "a",
+                Some("13:00"),
+                Some("1h"),
+                None,
+                "x",
+                None,
+                &[],
+                NOW,
+                ZONE
+            ),
+            Err(Refusal::When)
+        );
+        assert_eq!(
+            set("a", None, None, None, "x", None, &[], NOW, ZONE),
+            Err(Refusal::When)
+        );
+        assert_eq!(
+            set(
+                "a",
+                None,
+                Some("1h"),
+                Some("10m"),
+                "x",
+                None,
+                &[],
+                NOW,
+                ZONE
+            ),
+            Err(Refusal::Every)
+        );
+        assert_eq!(
+            set("a", None, Some("1h"), None, "  ", None, &[], NOW, ZONE),
+            Err(Refusal::NoNote)
+        );
+        let open: Vec<Wakeup> = (0..PER_SESSION_MAX)
+            .map(|i| Wakeup {
+                id: i.to_string(),
+                ..w.clone()
+            })
+            .collect();
+        assert_eq!(
+            set("b", None, Some("1h"), None, "x", None, &open, NOW, ZONE),
+            Err(Refusal::TooMany)
+        );
+        let rec: Vec<Wakeup> = (0..RECURRING_MAX)
+            .map(|i| Wakeup {
+                id: i.to_string(),
+                every: DAY_MS,
+                ..w.clone()
+            })
+            .collect();
+        assert_eq!(
+            set(
+                "b",
+                None,
+                Some("1h"),
+                Some("1d"),
+                "x",
+                None,
+                &rec,
+                NOW,
+                ZONE
+            ),
+            Err(Refusal::TooManyRecurring)
+        );
+        assert!(
+            set("b", None, Some("1h"), None, "x", None, &rec, NOW, ZONE).is_ok(),
+            "a once next to them is fine"
+        );
         // (one in quiet hours waits for their end)
         let night = set("c", Some("23:30"), None, None, "x", None, &[], NOW, ZONE).unwrap();
         assert_eq!(night.at, NOW + 19 * 3_600_000);
@@ -546,80 +786,312 @@ mod tests {
 
     #[test]
     fn a_due_wakeup_runs_or_waits_and_comes_again() {
-        let once = Wakeup { id: "a".into(), at: NOW, note: "x".into(), set_at: NOW - 1, ..Default::default() };
+        let once = Wakeup {
+            id: "a".into(),
+            at: NOW,
+            note: "x".into(),
+            set_at: NOW - 1,
+            ..Default::default()
+        };
         assert_eq!(due(&once, NOW - 1, ZONE, None, 0), None, "not yet");
-        assert_eq!(due(&once, NOW, ZONE, None, 0), Some(Due::Run { next: None, late: false }));
+        assert_eq!(
+            due(&once, NOW, ZONE, None, 0),
+            Some(Due::Run {
+                next: None,
+                late: false
+            })
+        );
         // every hour: the next one after now, missed ones not made up one by one; counted for the day
-        let hourly = Wakeup { every: 3_600_000, ..once.clone() };
-        let Some(Due::Run { next: Some(n), late }) = due(&hourly, NOW + 3 * 3_600_000 + 60_000, ZONE, None, 0) else { panic!() };
+        let hourly = Wakeup {
+            every: 3_600_000,
+            ..once.clone()
+        };
+        let Some(Due::Run {
+            next: Some(n),
+            late,
+        }) = due(&hourly, NOW + 3 * 3_600_000 + 60_000, ZONE, None, 0)
+        else {
+            panic!()
+        };
         assert!(late);
         assert_eq!((n.at, n.day_runs), (NOW + 4 * 3_600_000, 1));
         // the day's limit, the subscription's window, quiet hours: it waits
-        let Some(Due::Wait(w)) = due(&hourly, NOW, ZONE, None, RUNS_PER_DAY) else { panic!() };
+        let Some(Due::Wait(w)) = due(&hourly, NOW, ZONE, None, RUNS_PER_DAY) else {
+            panic!()
+        };
         assert_eq!(w.at, NOW + 19 * 3_600_000, "tomorrow 07:00");
-        let Some(Due::Wait(w)) = due(&hourly, NOW, ZONE, Some(0.9), 0) else { panic!() };
-        assert_eq!((w.at, w.last.unwrap().detail.as_str()), (NOW + USAGE_WAIT_MS, "the subscription's window is almost used"));
-        let Some(Due::Wait(w)) = due(&Wakeup { at: NOW + 11 * 3_600_000, ..hourly }, NOW + 11 * 3_600_000, ZONE, None, 0) else { panic!() };
+        let Some(Due::Wait(w)) = due(&hourly, NOW, ZONE, Some(0.9), 0) else {
+            panic!()
+        };
+        assert_eq!(
+            (w.at, w.last.unwrap().detail.as_str()),
+            (
+                NOW + USAGE_WAIT_MS,
+                "the subscription's window is almost used"
+            )
+        );
+        let Some(Due::Wait(w)) = due(
+            &Wakeup {
+                at: NOW + 11 * 3_600_000,
+                ..hourly
+            },
+            NOW + 11 * 3_600_000,
+            ZONE,
+            None,
+            0,
+        ) else {
+            panic!()
+        };
         assert_eq!(w.at, NOW + 19 * 3_600_000);
-        assert_eq!(of(std::iter::empty()), Vec::<Wakeup>::new(), "no registers, no wakeups");
+        assert_eq!(
+            of(std::iter::empty()),
+            Vec::<Wakeup>::new(),
+            "no registers, no wakeups"
+        );
     }
 
     #[test]
     fn the_words() {
-        assert_eq!([0, 3_600_000, 7_200_000, DAY_MS, 3 * DAY_MS, 7 * DAY_MS].map(every_words), ["once", "every hour", "every 2 hours", "every day", "every 3 days", "every week"]);
-        let w = Wakeup { note: "check the tests".into(), helper: Some("Testing".into()), ..Default::default() };
+        assert_eq!(
+            [0, 3_600_000, 7_200_000, DAY_MS, 3 * DAY_MS, 7 * DAY_MS].map(every_words),
+            [
+                "once",
+                "every hour",
+                "every 2 hours",
+                "every day",
+                "every 3 days",
+                "every week"
+            ]
+        );
+        let w = Wakeup {
+            note: "check the tests".into(),
+            helper: Some("Testing".into()),
+            ..Default::default()
+        };
         assert!(prompt(&w, true, "09:00").starts_with("[Trommi] Your wakeup for helper \"Testing\" (09:00, late: the computer was off): check the tests"));
-        assert_eq!((Edit::read(&Edit::At(5).value("m")), mark(&Edit::At(5).value("m"))), (Some(Edit::At(5)), "m".to_string()));
+        assert_eq!(
+            (
+                Edit::read(&Edit::At(5).value("m")),
+                mark(&Edit::At(5).value("m"))
+            ),
+            (Some(Edit::At(5)), "m".to_string())
+        );
         assert_eq!(Edit::read(&Edit::Cancel.value("m")), Some(Edit::Cancel));
         assert_eq!(Edit::read(&json!({})), None);
     }
 
     #[test]
     fn the_clock_runs_one_at_a_time_counts_for_the_session_and_takes_his_word() {
-        let a = Wakeup { id: "a".into(), at: NOW, note: "first".into(), every: DAY_MS, ..Default::default() };
-        let b = Wakeup { id: "b".into(), at: NOW - 60_000, note: "second".into(), ..Default::default() };
-        let c = Wakeup { id: "c".into(), at: NOW + 3_600_000, note: "later".into(), ..Default::default() };
-        let t = tick(&[a.clone(), b.clone(), c.clone()], &[], NOW, ZONE, None, None, (0, 0));
+        let a = Wakeup {
+            id: "a".into(),
+            at: NOW,
+            note: "first".into(),
+            every: DAY_MS,
+            ..Default::default()
+        };
+        let b = Wakeup {
+            id: "b".into(),
+            at: NOW - 60_000,
+            note: "second".into(),
+            ..Default::default()
+        };
+        let c = Wakeup {
+            id: "c".into(),
+            at: NOW + 3_600_000,
+            note: "later".into(),
+            ..Default::default()
+        };
+        let t = tick(
+            &[a.clone(), b.clone(), c.clone()],
+            &[],
+            NOW,
+            ZONE,
+            None,
+            None,
+            (0, 0),
+        );
         assert_eq!(t.runs.len(), 1, "one run per look");
         assert_eq!(t.runs[0].0, "b");
         assert!(t.runs[0].1.contains("(11:59): second"), "{}", t.runs[0].1);
         // b is done; a (still due) and c carry the session's count of one run today
         assert!(t.writes.contains(&("b".into(), None)));
-        let counts: Vec<(String, u32)> = t.writes.iter().filter_map(|(id, w)| w.as_ref().map(|w| (id.clone(), w.day_runs))).collect();
+        let counts: Vec<(String, u32)> = t
+            .writes
+            .iter()
+            .filter_map(|(id, w)| w.as_ref().map(|w| (id.clone(), w.day_runs)))
+            .collect();
         assert_eq!(counts, vec![("a".into(), 1), ("c".into(), 1)]);
         // nothing due, nothing written; no wakeups at all, nothing
-        assert_eq!(tick(std::slice::from_ref(&c), &[], NOW, ZONE, None, None, (0, 0)), Tick::default());
-        assert_eq!(tick(&[], &[], NOW, ZONE, None, None, (0, 0)), Tick::default());
+        assert_eq!(
+            tick(std::slice::from_ref(&c), &[], NOW, ZONE, None, None, (0, 0)),
+            Tick::default()
+        );
+        assert_eq!(
+            tick(&[], &[], NOW, ZONE, None, None, (0, 0)),
+            Tick::default()
+        );
         // the wakeup a waker woke the session for runs now, unless he cancelled it meanwhile
-        let soon = Wakeup { at: NOW + 60_000, ..c.clone() };
-        let t = tick(std::slice::from_ref(&soon), &[], NOW, ZONE, None, Some("c"), (0, 0));
-        assert_eq!((t.runs.len(), t.writes.clone()), (1, vec![("c".to_string(), None)]));
-        assert_eq!(tick(&[soon], &[("c".into(), Edit::Cancel, "7".into())], NOW, ZONE, None, Some("c"), (0, 0)).runs, vec![]);
-        assert!(tick(std::slice::from_ref(&c), &[], NOW, ZONE, None, Some("c"), (0, 0)).runs.is_empty(), "an hour ahead on the board: not yet");
+        let soon = Wakeup {
+            at: NOW + 60_000,
+            ..c.clone()
+        };
+        let t = tick(
+            std::slice::from_ref(&soon),
+            &[],
+            NOW,
+            ZONE,
+            None,
+            Some("c"),
+            (0, 0),
+        );
+        assert_eq!(
+            (t.runs.len(), t.writes.clone()),
+            (1, vec![("c".to_string(), None)])
+        );
+        assert_eq!(
+            tick(
+                &[soon],
+                &[("c".into(), Edit::Cancel, "7".into())],
+                NOW,
+                ZONE,
+                None,
+                Some("c"),
+                (0, 0)
+            )
+            .runs,
+            vec![]
+        );
+        assert!(
+            tick(
+                std::slice::from_ref(&c),
+                &[],
+                NOW,
+                ZONE,
+                None,
+                Some("c"),
+                (0, 0)
+            )
+            .runs
+            .is_empty(),
+            "an hour ahead on the board: not yet"
+        );
         // his word: cancelled, or moved (once: applied words are not applied again)
-        let t = tick(std::slice::from_ref(&c), &[("c".into(), Edit::Cancel, "7".into())], NOW, ZONE, None, None, (0, 0));
+        let t = tick(
+            std::slice::from_ref(&c),
+            &[("c".into(), Edit::Cancel, "7".into())],
+            NOW,
+            ZONE,
+            None,
+            None,
+            (0, 0),
+        );
         assert_eq!(t.writes, vec![("c".to_string(), None)]);
-        let t = tick(std::slice::from_ref(&c), &[("c".into(), Edit::At(NOW + 2 * 3_600_000), "7".into())], NOW, ZONE, None, None, (0, 0));
+        let t = tick(
+            std::slice::from_ref(&c),
+            &[("c".into(), Edit::At(NOW + 2 * 3_600_000), "7".into())],
+            NOW,
+            ZONE,
+            None,
+            None,
+            (0, 0),
+        );
         let moved = t.writes[0].1.clone().unwrap();
-        assert_eq!((moved.at, moved.edited.as_str()), (NOW + 2 * 3_600_000, "7"));
-        assert!(edit_applied(Some(&moved), "7") && edit_applied(None, "7") && !edit_applied(Some(&c), "7") && edit_applied(Some(&c), ""));
-        assert_eq!(tick(&[moved], &[("c".into(), Edit::At(NOW + 2 * 3_600_000), "7".into())], NOW, ZONE, None, None, (0, 0)), Tick::default());
+        assert_eq!(
+            (moved.at, moved.edited.as_str()),
+            (NOW + 2 * 3_600_000, "7")
+        );
+        assert!(
+            edit_applied(Some(&moved), "7")
+                && edit_applied(None, "7")
+                && !edit_applied(Some(&c), "7")
+                && edit_applied(Some(&c), "")
+        );
+        assert_eq!(
+            tick(
+                &[moved],
+                &[("c".into(), Edit::At(NOW + 2 * 3_600_000), "7".into())],
+                NOW,
+                ZONE,
+                None,
+                None,
+                (0, 0)
+            ),
+            Tick::default()
+        );
         assert_eq!(clock(NOW, ZONE), "12:00");
         // the count kept by the connector holds when no wakeup is left: the day's limit still stops a new one
-        let t = tick(std::slice::from_ref(&b), &[], NOW, ZONE, None, None, (day_of(NOW, ZONE), RUNS_PER_DAY));
-        assert!(t.runs.is_empty() && matches!(t.writes[0].1.as_ref().and_then(|w| w.last.clone()), Some(l) if l.result == "waited"));
-        let t = tick(std::slice::from_ref(&b), &[], NOW, ZONE, None, None, (day_of(NOW, ZONE) - 1, RUNS_PER_DAY));
-        assert_eq!((t.runs.len(), t.day_runs), (1, 1), "yesterday's count is gone");
+        let t = tick(
+            std::slice::from_ref(&b),
+            &[],
+            NOW,
+            ZONE,
+            None,
+            None,
+            (day_of(NOW, ZONE), RUNS_PER_DAY),
+        );
+        assert!(
+            t.runs.is_empty()
+                && matches!(t.writes[0].1.as_ref().and_then(|w| w.last.clone()), Some(l) if l.result == "waited")
+        );
+        let t = tick(
+            std::slice::from_ref(&b),
+            &[],
+            NOW,
+            ZONE,
+            None,
+            None,
+            (day_of(NOW, ZONE) - 1, RUNS_PER_DAY),
+        );
+        assert_eq!(
+            (t.runs.len(), t.day_runs),
+            (1, 1),
+            "yesterday's count is gone"
+        );
         // a wakeup the waker started but he moved meanwhile waits for his time
-        let t = tick(std::slice::from_ref(&b), &[("b".into(), Edit::At(NOW + 3_600_000), "8".into())], NOW, ZONE, None, Some("b"), (0, 0));
-        assert!(t.runs.is_empty() && t.writes[0].1.as_ref().is_some_and(|w| w.at == NOW + 3_600_000));
+        let t = tick(
+            std::slice::from_ref(&b),
+            &[("b".into(), Edit::At(NOW + 3_600_000), "8".into())],
+            NOW,
+            ZONE,
+            None,
+            Some("b"),
+            (0, 0),
+        );
+        assert!(
+            t.runs.is_empty()
+                && t.writes[0]
+                    .1
+                    .as_ref()
+                    .is_some_and(|w| w.at == NOW + 3_600_000)
+        );
     }
 
     #[test]
     fn a_new_wakeup_carries_the_days_runs() {
-        let busy = Wakeup { id: "a".into(), at: NOW + 3_600_000, note: "x".into(), day: day_of(NOW, ZONE), day_runs: 4, ..Default::default() };
-        let n = set("b", None, Some("1h"), None, "y", None, std::slice::from_ref(&busy), NOW, ZONE).unwrap();
-        assert_eq!((n.day_runs, session_runs(&[busy, n.clone()], NOW, ZONE)), (4, 4));
+        let busy = Wakeup {
+            id: "a".into(),
+            at: NOW + 3_600_000,
+            note: "x".into(),
+            day: day_of(NOW, ZONE),
+            day_runs: 4,
+            ..Default::default()
+        };
+        let n = set(
+            "b",
+            None,
+            Some("1h"),
+            None,
+            "y",
+            None,
+            std::slice::from_ref(&busy),
+            NOW,
+            ZONE,
+        )
+        .unwrap();
+        assert_eq!(
+            (n.day_runs, session_runs(&[busy, n.clone()], NOW, ZONE)),
+            (4, 4)
+        );
         assert_eq!(session_runs(&[], NOW, ZONE), 0);
     }
 }

@@ -173,8 +173,7 @@ fn password_and_kit_change_under_a_revision_and_only_by_a_human_device() {
     agent.put(&w.hub, "/v1/account/password", &json!({ "auth_key": b64(&random::<32>()), "sealed_copy": copy(1), "kdf": kdf(), "revision": 1, "proof": by_kit(&kit) })).refused(403, "forbidden");
     // a new password re-wraps the code and replaces the login key
     let new_auth: [u8; 32] = random();
-    let change =
-        json!({ "auth_key": b64(&new_auth), "sealed_copy": copy(5), "kdf": kdf(), "revision": 1, "proof": by_kit(&kit) });
+    let change = json!({ "auth_key": b64(&new_auth), "sealed_copy": copy(5), "kdf": kdf(), "revision": 1, "proof": by_kit(&kit) });
     assert_eq!(
         w.ada.put(&w.hub, "/v1/account/password", &change).ok()["revision"],
         2
@@ -688,8 +687,15 @@ fn replacing_the_code_replaces_the_accounts_copies_in_the_same_request() {
     let new_kit: [u8; 32] = random();
     // the copies name the account's revision they were made at: one of before is refused, with the Commit
     body["account"] = json!({ "kit": { "auth_key": b64(&new_kit), "sealed_copy": copy(4) }, "password": { "sealed_copy": copy(8) }, "revision": 0 });
-    w.ada.post(&w.hub, &path, &code_body(&body)).refused(409, "account-changed");
-    assert_eq!(w.ada.get(&w.hub, &format!("/v1/groups/{}/info", b64(&room))).ok()["epoch"], 0);
+    w.ada
+        .post(&w.hub, &path, &code_body(&body))
+        .refused(409, "account-changed");
+    assert_eq!(
+        w.ada
+            .get(&w.hub, &format!("/v1/groups/{}/info", b64(&room)))
+            .ok()["epoch"],
+        0
+    );
     body["account"]["revision"] = w.ada.get(&w.hub, "/v1/account").ok()["revision"].clone();
     w.ada.post(&w.hub, &path, &code_body(&body)).ok();
     w.ada.merge(&room);
@@ -947,15 +953,11 @@ fn an_account_with_a_passkey_needs_no_e_mail() {
     )
     .unwrap();
     w.ada
-        .post(
-            hub,
-            "/v1/account/passkeys",
-            &{
-                let mut r = registration(&second, &scoped, 4);
-                r["proof"] = by_kit(&kit);
-                r
-            },
-        )
+        .post(hub, "/v1/account/passkeys", &{
+            let mut r = registration(&second, &scoped, 4);
+            r["proof"] = by_kit(&kit);
+            r
+        })
         .ok();
     assert_eq!(
         sign_in(hub, &second, None).ok()["rooms"][0]["sealed_copy"],

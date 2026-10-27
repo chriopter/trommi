@@ -375,7 +375,11 @@ fn legacy_gate_verdicts_are_durable_before_the_aggregate_is_removed() {
     let before = store.entries();
     store.fail_apply(1);
     assert!(w.agent.command(&done.envelope_hash, now()).is_err());
-    assert_eq!(store.entries(), before, "a failed migration changes no receipt or aggregate");
+    assert_eq!(
+        store.entries(),
+        before,
+        "a failed migration changes no receipt or aggregate"
+    );
     drop(w.agent);
     w.agent = trommi_tests::reopen(store.handle()).unwrap();
     assert_eq!(
@@ -445,7 +449,11 @@ fn a_legacy_started_receipt_without_its_candidate_is_not_lost_on_upgrade() {
     );
     drop(w.agent);
     w.agent = trommi_tests::reopen(store.reopened()).unwrap();
-    assert!(w.agent.commands_uncertain().unwrap().contains(&started.envelope_hash));
+    assert!(w
+        .agent
+        .commands_uncertain()
+        .unwrap()
+        .contains(&started.envelope_hash));
     assert!(matches!(
         w.agent.command(&started.envelope_hash, now()),
         Err(Error::NotFound)

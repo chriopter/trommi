@@ -403,7 +403,10 @@ fn an_unsigned_build_in_place_of_the_installed_program_is_replaced_by_the_same_r
     );
     let held = installed_release(&public, TARGET, &dir);
     assert_eq!((held.version, held.program_is_release), (278, true));
-    assert!(!wanted(278, 0, &held), "the release that is in place is not fetched again");
+    assert!(
+        !wanted(278, 0, &held),
+        "the release that is in place is not fetched again"
+    );
     assert!(wanted(279, 0, &held), "a newer one is");
 
     // The human builds the connector and copies it over the installed one.
@@ -527,8 +530,17 @@ fn the_release_tags_are_read_from_githubs_feed_newest_first() {
 #[test]
 fn the_pinned_key_accepts_a_pre_transfer_release_without_changing_its_bytes() {
     let case = Case::new();
-    let bytes = String::from_utf8(case.good(7)).unwrap().replace("chriopter/trommi", trommi_connector::update::LEGACY_REPOSITORY).into_bytes();
+    let bytes = String::from_utf8(case.good(7))
+        .unwrap()
+        .replace(
+            "chriopter/trommi",
+            trommi_connector::update::LEGACY_REPOSITORY,
+        )
+        .into_bytes();
     assert_eq!(case.check(&bytes, &case.sign(&bytes), 0), Ok(7));
-    let wrong = String::from_utf8(bytes).unwrap().replace(trommi_connector::update::LEGACY_REPOSITORY, "somebody/else").into_bytes();
+    let wrong = String::from_utf8(bytes)
+        .unwrap()
+        .replace(trommi_connector::update::LEGACY_REPOSITORY, "somebody/else")
+        .into_bytes();
     assert!(case.check(&wrong, &case.sign(&wrong), 0).is_err());
 }

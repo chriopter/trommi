@@ -379,9 +379,15 @@ fn the_hub_and_the_app_core_check_an_e_mail_address_with_the_one_rule() {
 
 #[test]
 fn hub_and_member_require_the_same_integer_kdf_record() {
-    let vectors: Value = serde_json::from_str(include_str!("../../spec/account-vectors.json")).unwrap();
-    let mut records: Vec<Value> = vectors["kdf"]["accepted"].as_array().unwrap().iter()
-        .chain(vectors["kdf"]["refused"].as_array().unwrap()).cloned().collect();
+    let vectors: Value =
+        serde_json::from_str(include_str!("../../spec/account-vectors.json")).unwrap();
+    let mut records: Vec<Value> = vectors["kdf"]["accepted"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(vectors["kdf"]["refused"].as_array().unwrap())
+        .cloned()
+        .collect();
     for field in ["v", "m", "t", "p"] {
         let mut record = vectors["kdf"]["pinned"].clone();
         record[field] = serde_json::json!(record[field].as_u64().unwrap() as f64);

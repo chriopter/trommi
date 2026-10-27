@@ -59,7 +59,9 @@ fn fleet_live() -> bool {
 }
 
 fn budget(ms: u64) -> u64 {
-    let scale: f64 = env("MEGA_BUDGET_SCALE").and_then(|s| s.parse().ok()).unwrap_or(1.0);
+    let scale: f64 = env("MEGA_BUDGET_SCALE")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1.0);
     (ms as f64 * scale) as u64
 }
 
@@ -191,7 +193,11 @@ impl Torture {
     async fn add_web(&mut self) {
         let k = self.web_made;
         self.web_made += 1;
-        let tree = if k == 0 { "torture".to_string() } else { format!("torture{}", k + 1) };
+        let tree = if k == 0 {
+            "torture".to_string()
+        } else {
+            format!("torture{}", k + 1)
+        };
         let mut o = Observer::spawn("web", &tree, &self.root, &self.out, self.seed);
         let t = now();
         let r = o
@@ -211,11 +217,18 @@ impl Torture {
 
     async fn start_fleet(&mut self, n: usize) {
         // (MEGA_FLEET_RUNNER: a command that runs the fleet elsewhere and relays the command files, e.g. on a Mac)
-        let runner = env("MEGA_FLEET_RUNNER").map(PathBuf::from).unwrap_or_else(|| {
-            self.root.join("tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiShellTests-test-runner")
-        });
+        let runner = env("MEGA_FLEET_RUNNER")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                self.root.join(
+                    "tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiShellTests-test-runner",
+                )
+            });
         if !runner.is_file() {
-            self.say("no iOS test runner built: the fleet is left out (tests/client/mega/prepare.sh)".into());
+            self.say(
+                "no iOS test runner built: the fleet is left out (tests/client/mega/prepare.sh)"
+                    .into(),
+            );
             return;
         }
         let dir = self.out.join("fleet");
@@ -263,7 +276,10 @@ impl Torture {
 
     async fn pair_phone(&mut self, i: usize, by: usize, op: &str) {
         let t = now();
-        match self.phone(json!({ "op": op, "dev": i, "by": by, "live": fleet_live() })).await {
+        match self
+            .phone(json!({ "op": op, "dev": i, "by": by, "live": fleet_live() }))
+            .await
+        {
             Ok(v) => {
                 if i >= self.phones.len() {
                     self.phones.resize(i + 1, (false, false));
@@ -297,17 +313,28 @@ impl Torture {
     /// The connector's command on agent `k`'s machine, in its folder and session.
     fn cmd(&self, k: usize, args: &[&str]) -> tokio::process::Command {
         let a = &self.agents[k];
-        let seat = self.agents[a.host].seat.as_ref().expect("the machine's seat");
+        let seat = self.agents[a.host]
+            .seat
+            .as_ref()
+            .expect("the machine's seat");
         let mut c = seat.command(args);
-        c.env("TROMMI_FOLDER", &a.folder).env("TROMMI_SESSION_KEY", &a.key).current_dir(&a.folder);
+        c.env("TROMMI_FOLDER", &a.folder)
+            .env("TROMMI_SESSION_KEY", &a.key)
+            .current_dir(&a.folder);
         c
     }
 
     /// One of the plugin's hooks on agent `k`'s machine, with `input` on its stdin.
     async fn hook(&self, k: usize, kind: &str, input: &Value) {
-        let seat = self.agents[self.agents[k].host].seat.as_ref().expect("the seat");
+        let seat = self.agents[self.agents[k].host]
+            .seat
+            .as_ref()
+            .expect("the seat");
         let mut c = self.cmd(k, &[kind]);
-        c.env("CLAUDE_PLUGIN_ROOT", seat.home.path()).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null());
+        c.env("CLAUDE_PLUGIN_ROOT", seat.home.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         let Ok(mut child) = c.spawn() else { return };
         if let Some(mut stdin) = child.stdin.take() {
             use tokio::io::AsyncWriteExt;
@@ -324,7 +351,11 @@ impl Torture {
         // (its stderr, every server of the session after the other, in the run's output)
         let dir = self.out.join("agents");
         let _ = std::fs::create_dir_all(&dir);
-        let log = std::fs::OpenOptions::new().create(true).append(true).open(dir.join(format!("{}-{k}.log", self.agents[k].name))).ok();
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join(format!("{}-{k}.log", self.agents[k].name)))
+            .ok();
         Mcp::start_logged(c, json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "test", "version": "0" } }), log).await
     }
 
@@ -337,7 +368,10 @@ impl Torture {
     }
 
     /// An invite link made on `by`; with the stand-in, its invite to admit later.
-    async fn make_invite(&mut self, by: &HumanDev) -> Result<(String, Option<String>, Option<common::Invite>), String> {
+    async fn make_invite(
+        &mut self,
+        by: &HumanDev,
+    ) -> Result<(String, Option<String>, Option<common::Invite>), String> {
         match by {
             HumanDev::StandIn => {
                 let inv = self.human.invite(None).await;
@@ -345,17 +379,33 @@ impl Torture {
             }
             HumanDev::Web(i) => {
                 let v = self.web[*i].call(json!({ "op": "invite_agent" })).await?;
-                Ok((v["link"].as_str().unwrap_or("").to_string(), v["invite_id"].as_str().map(String::from), None))
+                Ok((
+                    v["link"].as_str().unwrap_or("").to_string(),
+                    v["invite_id"].as_str().map(String::from),
+                    None,
+                ))
             }
             HumanDev::Phone(i) => {
-                let v = self.phone(json!({ "op": "invite_agent", "dev": i })).await?;
-                Ok((v["link"].as_str().unwrap_or("").to_string(), v["invite_id"].as_str().map(String::from), None))
+                let v = self
+                    .phone(json!({ "op": "invite_agent", "dev": i }))
+                    .await?;
+                Ok((
+                    v["link"].as_str().unwrap_or("").to_string(),
+                    v["invite_id"].as_str().map(String::from),
+                    None,
+                ))
             }
         }
     }
 
     /// "They match" on `by`; `die`: the device is gone right after it.
-    async fn confirm(&mut self, by: &HumanDev, id: Option<String>, inv: Option<common::Invite>, die: bool) -> Result<Option<String>, String> {
+    async fn confirm(
+        &mut self,
+        by: &HumanDev,
+        id: Option<String>,
+        inv: Option<common::Invite>,
+        die: bool,
+    ) -> Result<Option<String>, String> {
         match by {
             HumanDev::StandIn => {
                 let mut inv = inv.expect("the stand-in's invite");
@@ -363,10 +413,14 @@ impl Torture {
                 if !die {
                     self.human.found_session(&admitted).await;
                 }
-                Ok(Some(trommi_connector::util::hex(admitted.device.as_bytes())))
+                Ok(Some(trommi_connector::util::hex(
+                    admitted.device.as_bytes(),
+                )))
             }
             HumanDev::Web(i) => {
-                let v = self.web[*i].call(json!({ "op": "confirm_invite", "invite_id": id, "die": die })).await?;
+                let v = self.web[*i]
+                    .call(json!({ "op": "confirm_invite", "invite_id": id, "die": die }))
+                    .await?;
                 if die {
                     let gone = self.web.remove(*i);
                     self.say(format!("{} closed right after \"They match\"", gone.name));
@@ -375,7 +429,9 @@ impl Torture {
                 Ok(v["agent"].as_str().map(String::from))
             }
             HumanDev::Phone(i) => {
-                let v = self.phone(json!({ "op": "confirm_invite", "dev": i, "invite_id": id, "die": die })).await?;
+                let v = self
+                    .phone(json!({ "op": "confirm_invite", "dev": i, "invite_id": id, "die": die }))
+                    .await?;
                 if die {
                     self.phones[*i].0 = false;
                     self.say(format!("iPhone {i} killed right after \"They match\""));
@@ -411,7 +467,9 @@ impl Torture {
         // the inviter, and whether it dies after "They match" (only when another device can take over the founding:
         // a second web device; the iOS app does not take over yet, see spec/v1.md 5.2.5)
         let mut by = self.pick_human();
-        let others_web = self.live_web().saturating_sub(if matches!(by, HumanDev::Web(_)) { 1 } else { 0 });
+        let others_web = self
+            .live_web()
+            .saturating_sub(if matches!(by, HumanDev::Web(_)) { 1 } else { 0 });
         let die = others_web > 0 && self.rng.chance(0.35);
         if matches!(by, HumanDev::Phone(_)) && self.fleet.is_none() {
             by = HumanDev::StandIn;
@@ -419,24 +477,50 @@ impl Torture {
         let made = self.make_invite(&by).await;
         let (link, id, inv) = match made {
             Ok(x) => x,
-            Err(e) => return self.fail(format!("{name}: invite on {} failed: {e}", self.dev_name(&by))),
+            Err(e) => {
+                return self.fail(format!(
+                    "{name}: invite on {} failed: {e}",
+                    self.dev_name(&by)
+                ))
+            }
         };
         let mut connect = self.cmd(k, &["connect", &link]);
         let t = now();
         let by_name = self.dev_name(&by);
-        self.say(format!("{name} joins by {way:?}, invited on {by_name}{}", if die { ", which dies after They match" } else { "" }));
+        self.say(format!(
+            "{name} joins by {way:?}, invited on {by_name}{}",
+            if die {
+                ", which dies after They match"
+            } else {
+                ""
+            }
+        ));
         let joining = async {
             match way {
                 Way::Tool => {
-                    let (said, failed) = tokio::time::timeout(Duration::from_secs(120), mcp.call("connect", json!({ "link": link })))
-                        .await
-                        .unwrap_or(("timed out".into(), true));
+                    let (said, failed) = tokio::time::timeout(
+                        Duration::from_secs(120),
+                        mcp.call("connect", json!({ "link": link })),
+                    )
+                    .await
+                    .unwrap_or(("timed out".into(), true));
                     (!failed, said)
                 }
                 _ => {
-                    let out = tokio::time::timeout(Duration::from_secs(120), connect.stdin(Stdio::null()).output()).await;
+                    let out = tokio::time::timeout(
+                        Duration::from_secs(120),
+                        connect.stdin(Stdio::null()).output(),
+                    )
+                    .await;
                     match out {
-                        Ok(Ok(o)) => (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))),
+                        Ok(Ok(o)) => (
+                            o.status.success(),
+                            format!(
+                                "{}{}",
+                                String::from_utf8_lossy(&o.stdout),
+                                String::from_utf8_lossy(&o.stderr)
+                            ),
+                        ),
                         Ok(Err(e)) => (false, e.to_string()),
                         Err(_) => (false, "timed out".into()),
                     }
@@ -471,27 +555,54 @@ impl Torture {
             }
         };
         if !ok {
-            self.fail(format!("{name}: the join by {way:?} failed: {}", tail(&said, 600)));
+            self.fail(format!(
+                "{name}: the join by {way:?} failed: {}",
+                tail(&said, 600)
+            ));
         } else {
-            self.log.push(format!("{name}: {way:?} said: {}", tail(&said, 400).replace('\n', " | ")));
+            self.log.push(format!(
+                "{name}: {way:?} said: {}",
+                tail(&said, 400).replace('\n', " | ")
+            ));
         }
         self.agents[k].mcp = Some(mcp);
         self.agents[k].device = device;
         self.agents[k].alive = ok;
         if ok {
-            self.await_online(k, t, if die { "join_after_dead_inviter_ms" } else { "join_online_ms" }).await;
+            self.await_online(
+                k,
+                t,
+                if die {
+                    "join_after_dead_inviter_ms"
+                } else {
+                    "join_online_ms"
+                },
+            )
+            .await;
         }
     }
 
     /// Waits until a human device shows agent `k`'s session online and named; notes the time from `t`.
     async fn await_online(&mut self, k: usize, t: u64, metric: &str) {
-        let limit = if metric == "join_after_dead_inviter_ms" { 60_000 } else { 20_000 };
+        let limit = if metric == "join_after_dead_inviter_ms" {
+            60_000
+        } else {
+            20_000
+        };
         let end = now() + budget(limit) + 10_000;
         let name = self.agents[k].name.clone();
-        let taken: BTreeSet<String> = self.agents.iter().filter_map(|a| a.session.clone()).collect();
+        let taken: BTreeSet<String> = self
+            .agents
+            .iter()
+            .filter_map(|a| a.session.clone())
+            .collect();
         while now() < end {
             if let Some(list) = self.any_shown().await {
-                if let Some(e) = list.iter().find(|e| e["name"] == name.as_str() && !taken.contains(e["session"].as_str().unwrap_or("")) && e["online"] == true) {
+                if let Some(e) = list.iter().find(|e| {
+                    e["name"] == name.as_str()
+                        && !taken.contains(e["session"].as_str().unwrap_or(""))
+                        && e["online"] == true
+                }) {
                     self.agents[k].session = e["session"].as_str().map(String::from);
                     self.metric(metric, now() - t, Some(limit));
                     return;
@@ -506,7 +617,11 @@ impl Torture {
             .await
             .unwrap_or_default()
             .into_iter()
-            .filter(|e| device.as_deref().is_some_and(|d| e["agent"].as_str() == Some(d)))
+            .filter(|e| {
+                device
+                    .as_deref()
+                    .is_some_and(|d| e["agent"].as_str() == Some(d))
+            })
             .collect();
         self.fail(format!("TRUTH {name}: never shown online under its folder's name within {} ms (its device: {})", end - t, short(&json!(seen))));
     }
@@ -518,7 +633,13 @@ impl Torture {
                 return v.as_array().cloned();
             }
         }
-        let alive: Vec<usize> = self.phones.iter().enumerate().filter(|(_, p)| p.0).map(|(i, _)| i).collect();
+        let alive: Vec<usize> = self
+            .phones
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.0)
+            .map(|(i, _)| i)
+            .collect();
         for i in alive {
             let _ = self.phone(json!({ "op": "sync", "dev": i })).await;
             if let Ok(v) = self.phone(json!({ "op": "shown", "dev": i })).await {
@@ -543,7 +664,9 @@ impl Torture {
             self.say("a self-join is left out: no human app runs to answer the ask".into());
             return;
         }
-        let Some(v) = self.pick_alive_agent() else { return };
+        let Some(v) = self.pick_alive_agent() else {
+            return;
+        };
         let k = self.agents.len();
         let host = self.agents[v].host;
         let (folder, name) = if same_folder {
@@ -551,7 +674,13 @@ impl Torture {
             (self.agents[v].folder.clone(), self.agents[v].name.clone())
         } else {
             let name = format!("agent-{k}");
-            let f = self.agents[host].seat.as_ref().unwrap().home.path().join(&name);
+            let f = self.agents[host]
+                .seat
+                .as_ref()
+                .unwrap()
+                .home
+                .path()
+                .join(&name);
             std::fs::create_dir_all(&f).unwrap();
             (f, name)
         };
@@ -563,7 +692,11 @@ impl Torture {
             folder,
             key: format!("torture-{k}"),
             mcp: None,
-            way: if same_folder { Way::SameFolder } else { Way::SelfJoin },
+            way: if same_folder {
+                Way::SameFolder
+            } else {
+                Way::SelfJoin
+            },
             session: None,
             device: None,
             alive: allow,
@@ -575,7 +708,9 @@ impl Torture {
         let mut mcp = self.serve(k, &[("TROMMI_SELF_JOIN_POLL_MS", "200")]).await;
         if same_folder {
             // a second connector in a folder whose own one runs sleeps until its session is used (a tool call)
-            let _ = tokio::time::timeout(Duration::from_secs(30), mcp.call("list_cards", json!({}))).await;
+            let _ =
+                tokio::time::timeout(Duration::from_secs(30), mcp.call("list_cards", json!({})))
+                    .await;
         }
         self.agents[k].mcp = Some(mcp);
         let mut by = self.pick_human();
@@ -588,15 +723,32 @@ impl Torture {
         let by_name = self.dev_name(&by);
         self.say(format!(
             "{name} (#{k}) asks to join on its own ({}), {} on {by_name}",
-            if same_folder { "same folder" } else { "folder without a key" },
+            if same_folder {
+                "same folder"
+            } else {
+                "folder without a key"
+            },
             if allow { "Allow" } else { "Deny" }
         ));
         let t = now();
         // (the ask names the folder as the connector shows it, `~/…`: its name is enough)
-        let folder = self.agents[k].folder.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let folder = self.agents[k]
+            .folder
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         let r = match &by {
-            HumanDev::Web(i) => self.web[*i].call(json!({ "op": "allow_join", "allow": allow, "folder": folder })).await,
-            HumanDev::Phone(i) => self.phone(json!({ "op": "allow_join", "dev": i, "allow": allow, "folder": folder })).await,
+            HumanDev::Web(i) => {
+                self.web[*i]
+                    .call(json!({ "op": "allow_join", "allow": allow, "folder": folder }))
+                    .await
+            }
+            HumanDev::Phone(i) => {
+                self.phone(
+                    json!({ "op": "allow_join", "dev": i, "allow": allow, "folder": folder }),
+                )
+                .await
+            }
             HumanDev::StandIn => unreachable!(),
         };
         if let Err(e) = r {
@@ -610,7 +762,13 @@ impl Torture {
     }
 
     fn pick_alive_agent(&mut self) -> Option<usize> {
-        let alive: Vec<usize> = self.agents.iter().enumerate().filter(|(_, a)| a.alive && a.mcp.is_some()).map(|(i, _)| i).collect();
+        let alive: Vec<usize> = self
+            .agents
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.alive && a.mcp.is_some())
+            .map(|(i, _)| i)
+            .collect();
         self.rng.pick(&alive).copied()
     }
 
@@ -629,11 +787,17 @@ impl Torture {
         let sid = self.agents[k].session.clone();
         loop {
             let list = self.any_shown().await.unwrap_or_default();
-            if list.iter().any(|e| e["session"].as_str() == sid.as_deref() && e["online"] == true) {
+            if list
+                .iter()
+                .any(|e| e["session"].as_str() == sid.as_deref() && e["online"] == true)
+            {
                 break;
             }
             if now() > end {
-                self.fail(format!("TRUTH {name}: not online again within {} ms of a /mcp restart", budget(10_000)));
+                self.fail(format!(
+                    "TRUTH {name}: not online again within {} ms of a /mcp restart",
+                    budget(10_000)
+                ));
                 break;
             }
             tokio::time::sleep(Duration::from_millis(150)).await;
@@ -651,14 +815,20 @@ impl Torture {
         self.agents[k].alive = false;
         self.agents[k].killed_at = Some(now());
         let name = self.agents[k].name.clone();
-        self.say(format!("{name}: its server is killed (SIGKILL), the lease runs out within a minute"));
+        self.say(format!(
+            "{name}: its server is killed (SIGKILL), the lease runs out within a minute"
+        ));
     }
 
     /// A subprocess of the session's machine runs and ends: a hook, `say`, `monitor`.
     async fn subprocess(&mut self, k: usize) {
         let what = self.rng.below(3);
         // (the ask names the folder as the connector shows it, `~/…`: its name is enough)
-        let folder = self.agents[k].folder.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let folder = self.agents[k]
+            .folder
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         let name = self.agents[k].name.clone();
         match what {
             0 => {
@@ -669,13 +839,23 @@ impl Torture {
                 self.say(format!("{name}: prompt and stop hooks ran"));
             }
             1 => {
-                let out = self.cmd(k, &["say", "from the shell"]).stdin(Stdio::null()).output().await;
+                let out = self
+                    .cmd(k, &["say", "from the shell"])
+                    .stdin(Stdio::null())
+                    .output()
+                    .await;
                 let ok = out.as_ref().map(|o| o.status.success()).unwrap_or(false);
-                self.say(format!("{name}: `say` ran ({})", if ok { "ok" } else { "failed" }));
+                self.say(format!(
+                    "{name}: `say` ran ({})",
+                    if ok { "ok" } else { "failed" }
+                ));
             }
             _ => {
                 let mut c = self.cmd(k, &["monitor"]);
-                c.env("CLAUDE_PID", std::process::id().to_string()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+                c.env("CLAUDE_PID", std::process::id().to_string())
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
                 if let Ok(mut child) = c.spawn() {
                     tokio::time::sleep(Duration::from_millis(1500)).await;
                     let _ = child.start_kill();
@@ -687,16 +867,28 @@ impl Torture {
     }
 
     async fn human_message(&mut self, k: usize) {
-        let Some(sid) = self.agents[k].session.clone() else { return };
+        let Some(sid) = self.agents[k].session.clone() else {
+            return;
+        };
         let by = self.pick_human();
         let text = format!("note {}", self.rng.next() % 10_000);
         let r = match &by {
-            HumanDev::Web(i) => self.web[*i].call(json!({ "op": "say", "session": sid, "text": text })).await.map(|_| ()),
-            HumanDev::Phone(i) => self.phone(json!({ "op": "say", "dev": i, "session": sid, "text": text })).await.map(|_| ()),
+            HumanDev::Web(i) => self.web[*i]
+                .call(json!({ "op": "say", "session": sid, "text": text }))
+                .await
+                .map(|_| ()),
+            HumanDev::Phone(i) => self
+                .phone(json!({ "op": "say", "dev": i, "session": sid, "text": text }))
+                .await
+                .map(|_| ()),
             HumanDev::StandIn => {
                 let g = self.group_of(&sid).await;
                 match g {
-                    Some(g) => self.human.say(&g, json!({ "content_type": "message", "text": text })).await.map_err(|e| format!("{e:?}")),
+                    Some(g) => self
+                        .human
+                        .say(&g, json!({ "content_type": "message", "text": text }))
+                        .await
+                        .map_err(|e| format!("{e:?}")),
                     None => Ok(()),
                 }
             }
@@ -704,7 +896,10 @@ impl Torture {
         let who = self.dev_name(&by);
         match r {
             Ok(()) => self.say(format!("{who} writes to {}", self.agents[k].name)),
-            Err(e) => self.say(format!("{who} could not write to {}: {e}", self.agents[k].name)),
+            Err(e) => self.say(format!(
+                "{who} could not write to {}: {e}",
+                self.agents[k].name
+            )),
         }
     }
 
@@ -714,22 +909,32 @@ impl Torture {
             .groups()
             .await
             .into_iter()
-            .find(|g| g.session.is_some_and(|s| trommi_connector::util::hex(s.session_id.as_bytes()) == sid))
+            .find(|g| {
+                g.session
+                    .is_some_and(|s| trommi_connector::util::hex(s.session_id.as_bytes()) == sid)
+            })
             .map(|g| g.group)
     }
 
     async fn cards(&mut self, k: usize, n: usize) {
         let name = self.agents[k].name.clone();
-        let Some(mcp) = self.agents[k].mcp.as_mut() else { return };
+        let Some(mcp) = self.agents[k].mcp.as_mut() else {
+            return;
+        };
         let mut made = 0;
         for i in 0..n {
             let (text, failed) = if i % 3 == 2 {
-                mcp.call("create_info", json!({ "title": format!("Report {i} of {name}"), "body": "Done." })).await
+                mcp.call(
+                    "create_info",
+                    json!({ "title": format!("Report {i} of {name}"), "body": "Done." }),
+                )
+                .await
             } else {
                 mcp.call("create_decision", json!({ "title": format!("Question {i} of {name}"), "options": [{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }] })).await
             };
             if failed {
-                self.log.push(format!("{name}: card refused: {}", tail(&text, 200)));
+                self.log
+                    .push(format!("{name}: card refused: {}", tail(&text, 200)));
             } else {
                 made += 1;
             }
@@ -739,45 +944,82 @@ impl Torture {
 
     async fn helpers(&mut self, k: usize, n: usize) {
         let name = self.agents[k].name.clone();
-        let Some(mcp) = self.agents[k].mcp.as_mut() else { return };
+        let Some(mcp) = self.agents[k].mcp.as_mut() else {
+            return;
+        };
         let mut started = Vec::new();
         for i in 0..n {
             let h = format!("H{i}");
-            let (text, failed) = mcp.call("start_task", json!({ "helper": h, "title": format!("Task of {h}") })).await;
+            let (text, failed) = mcp
+                .call(
+                    "start_task",
+                    json!({ "helper": h, "title": format!("Task of {h}") }),
+                )
+                .await;
             if failed {
-                self.log.push(format!("{name}: start_task for {h} refused: {}", tail(&text, 200)));
+                self.log.push(format!(
+                    "{name}: start_task for {h} refused: {}",
+                    tail(&text, 200)
+                ));
                 break;
             }
             started.push(h);
         }
         self.agents[k].helpers.extend(started.iter().cloned());
-        self.say(format!("{name} starts {} helpers in its session", started.len()));
+        self.say(format!(
+            "{name} starts {} helpers in its session",
+            started.len()
+        ));
     }
 
     async fn answer_some(&mut self) {
         // what the first web device shows open, answered from a random human device
         let snap = match self.web.first_mut() {
-            Some(o) => o.call(json!({ "op": "snapshot" })).await.unwrap_or(Value::Null),
+            Some(o) => o
+                .call(json!({ "op": "snapshot" }))
+                .await
+                .unwrap_or(Value::Null),
             None => return,
         };
         let open: Vec<String> = snap["cards"]
             .as_object()
             .into_iter()
             .flatten()
-            .filter(|(_, c)| c["state"] == "open" && c["title"].as_str().is_some_and(|t| t.starts_with("Question")))
+            .filter(|(_, c)| {
+                c["state"] == "open"
+                    && c["title"]
+                        .as_str()
+                        .is_some_and(|t| t.starts_with("Question"))
+            })
             .map(|(id, _)| id.clone())
             .collect();
         let n = (open.len() / 3).max(1).min(open.len());
         for _ in 0..n {
-            let Some(card) = self.rng.pick(&open).cloned() else { return };
+            let Some(card) = self.rng.pick(&open).cloned() else {
+                return;
+            };
             let choice = if self.rng.chance(0.5) { "a" } else { "b" };
             let by = self.pick_human();
             let r = match &by {
-                HumanDev::Web(i) => self.web[*i].call(json!({ "op": "answer", "card": card, "choices": [choice] })).await.map(|_| ()),
-                HumanDev::Phone(i) => self.phone(json!({ "op": "answer", "dev": i, "card": card, "choices": [choice] })).await.map(|_| ()),
+                HumanDev::Web(i) => self.web[*i]
+                    .call(json!({ "op": "answer", "card": card, "choices": [choice] }))
+                    .await
+                    .map(|_| ()),
+                HumanDev::Phone(i) => self
+                    .phone(json!({ "op": "answer", "dev": i, "card": card, "choices": [choice] }))
+                    .await
+                    .map(|_| ()),
                 HumanDev::StandIn => {
                     self.human.sync().await;
-                    self.human.answer(&card, json!({ "answer_action": "answer", "choices": [choice] }), &[choice], false).await.map_err(|e| format!("{e:?}"))
+                    self.human
+                        .answer(
+                            &card,
+                            json!({ "answer_action": "answer", "choices": [choice] }),
+                            &[choice],
+                            false,
+                        )
+                        .await
+                        .map_err(|e| format!("{e:?}"))
                 }
             };
             if let Err(e) = r {
@@ -788,8 +1030,21 @@ impl Torture {
     }
 
     async fn archive_dead(&mut self) {
-        let dead: Vec<usize> = self.agents.iter().enumerate().filter(|(_, a)| !a.alive && !a.denied && a.session.is_some() && a.killed_at.is_some_and(|t| now() > t + LEASE_GONE_MS)).map(|(i, _)| i).collect();
-        let Some(&k) = self.rng.pick(&dead) else { return };
+        let dead: Vec<usize> = self
+            .agents
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| {
+                !a.alive
+                    && !a.denied
+                    && a.session.is_some()
+                    && a.killed_at.is_some_and(|t| now() > t + LEASE_GONE_MS)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        let Some(&k) = self.rng.pick(&dead) else {
+            return;
+        };
         let sid = self.agents[k].session.clone().unwrap();
         let r = match self.web.first_mut() {
             Some(o) => o.call(json!({ "op": "archive", "session": sid })).await,
@@ -810,8 +1065,16 @@ impl Torture {
             return;
         }
         let i = 1 + self.rng.below(self.phones.len() - 1);
-        let alive: Vec<usize> = self.phones.iter().enumerate().filter(|(j, p)| p.0 && *j != i).map(|(j, _)| j).collect();
-        let Some(&by) = self.rng.pick(&alive) else { return };
+        let alive: Vec<usize> = self
+            .phones
+            .iter()
+            .enumerate()
+            .filter(|(j, p)| p.0 && *j != i)
+            .map(|(j, _)| j)
+            .collect();
+        let Some(&by) = self.rng.pick(&alive) else {
+            return;
+        };
         match (self.phones[i].0, self.rng.below(4)) {
             (false, _) => self.pair_phone(i, by, "reinstall").await,
             (true, 0) => {
@@ -821,9 +1084,16 @@ impl Torture {
             }
             (true, 1) => {
                 let t = now();
-                match self.phone(json!({ "op": "restart", "dev": i, "live": fleet_live() })).await {
+                match self
+                    .phone(json!({ "op": "restart", "dev": i, "live": fleet_live() }))
+                    .await
+                {
                     Ok(v) => {
-                        self.metric("phone_warm_open_ms", v["warm_ms"].as_u64().unwrap_or(0), Some(5_000));
+                        self.metric(
+                            "phone_warm_open_ms",
+                            v["warm_ms"].as_u64().unwrap_or(0),
+                            Some(5_000),
+                        );
                         self.metric("phone_restart_synced_ms", now() - t, Some(30_000));
                         self.say(format!("iPhone {i} restarted warm"));
                     }
@@ -831,7 +1101,9 @@ impl Torture {
                 }
             }
             (true, 2) => {
-                let _ = self.phone(json!({ "op": "live", "dev": i, "on": false })).await;
+                let _ = self
+                    .phone(json!({ "op": "live", "dev": i, "on": false }))
+                    .await;
                 self.say(format!("iPhone {i} offline for a while"));
                 // it comes back at the next checkpoint (sync of every device)
             }
@@ -847,7 +1119,10 @@ impl Torture {
         }
         // MEGA_CHAOS=latency,cut,dup,down,restart: only these kinds (to find which one a failure needs)
         let only = env("MEGA_CHAOS").filter(|v| v != "1");
-        let on = |kind: &str| only.as_deref().is_none_or(|o| o.split(',').any(|k| k == kind));
+        let on = |kind: &str| {
+            only.as_deref()
+                .is_none_or(|o| o.split(',').any(|k| k == kind))
+        };
         match self.rng.below(5) {
             0 | 1 => {
                 let mut k = Knobs::rough();
@@ -880,7 +1155,8 @@ impl Torture {
                 self.say("the hub restarts".into());
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 let url = self.proxy.url.clone();
-                self.hub = Some(HubProc::start_in_with(data, port, &[("HUB_URL", url.as_str())]).await);
+                self.hub =
+                    Some(HubProc::start_in_with(data, port, &[("HUB_URL", url.as_str())]).await);
             }
             _ => {}
         }
@@ -894,14 +1170,24 @@ impl Torture {
         self.proxy.set(Knobs::calm());
         self.proxy.set_down(false);
         let t = now();
-        let alive: Vec<usize> = self.phones.iter().enumerate().filter(|(_, p)| p.0).map(|(i, _)| i).collect();
+        let alive: Vec<usize> = self
+            .phones
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.0)
+            .map(|(i, _)| i)
+            .collect();
         for &i in &alive {
-            let _ = self.phone(json!({ "op": "live", "dev": i, "on": fleet_live() })).await;
+            let _ = self
+                .phone(json!({ "op": "live", "dev": i, "on": fleet_live() }))
+                .await;
         }
         tokio::time::sleep(Duration::from_millis(1500)).await;
         for a in self.agents.iter_mut().filter(|a| a.alive) {
             if let Some(m) = a.mcp.as_mut() {
-                let _ = tokio::time::timeout(Duration::from_secs(30), m.call("list_cards", json!({}))).await;
+                let _ =
+                    tokio::time::timeout(Duration::from_secs(30), m.call("list_cards", json!({})))
+                        .await;
             }
         }
         self.human.sync().await;
@@ -924,7 +1210,11 @@ impl Torture {
         // core shows one card at a time; the lists stay in the order web, iPhones)
         let mut phone_shown: Vec<(String, Value)> = Vec::new();
         for &i in &alive {
-            let name = if i == 0 { "ios@fleet".to_string() } else { format!("ios@fleet{i}") };
+            let name = if i == 0 {
+                "ios@fleet".to_string()
+            } else {
+                format!("ios@fleet{i}")
+            };
             if let Ok(v) = self.phone(json!({ "op": "snapshot", "dev": i })).await {
                 snaps.insert(name.clone(), v);
             }
@@ -935,7 +1225,13 @@ impl Torture {
         }
         let ids: BTreeSet<String> = snaps
             .values()
-            .flat_map(|v| ["cards", "permissions"].map(|k| v[k].as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default()))
+            .flat_map(|v| {
+                ["cards", "permissions"].map(|k| {
+                    v[k].as_object()
+                        .map(|o| o.keys().cloned().collect::<Vec<_>>())
+                        .unwrap_or_default()
+                })
+            })
             .flatten()
             .collect();
         for o in self.web.iter_mut() {
@@ -951,9 +1247,19 @@ impl Torture {
         let dir = self.out.join(label);
         std::fs::create_dir_all(&dir).unwrap();
         for (k, v) in &snaps {
-            let _ = std::fs::write(dir.join(format!("{}.json", k.replace('@', "-"))), serde_json::to_string_pretty(v).unwrap());
+            let _ = std::fs::write(
+                dir.join(format!("{}.json", k.replace('@', "-"))),
+                serde_json::to_string_pretty(v).unwrap(),
+            );
         }
-        let _ = std::fs::write(dir.join("shown.json"), serde_json::to_string_pretty(&json!(shown.iter().map(|(k, v)| json!({ k.clone(): v })).collect::<Vec<_>>())).unwrap());
+        let _ = std::fs::write(
+            dir.join("shown.json"),
+            serde_json::to_string_pretty(&json!(shown
+                .iter()
+                .map(|(k, v)| json!({ k.clone(): v }))
+                .collect::<Vec<_>>()))
+            .unwrap(),
+        );
 
         // SESSIONS: every device the same list
         if let Some((first, reference)) = shown.first().cloned() {
@@ -969,7 +1275,10 @@ impl Torture {
             };
             for (name, list) in &shown[1..] {
                 if unagented(list) != unagented(&reference) {
-                    self.fail(format!("{label} SESSIONS {first} vs {name}: {}", sessions_differ(&reference, list)));
+                    self.fail(format!(
+                        "{label} SESSIONS {first} vs {name}: {}",
+                        sessions_differ(&reference, list)
+                    ));
                 }
             }
             // TRUTH: the agents as they really are
@@ -977,14 +1286,31 @@ impl Torture {
             let at = now();
             let mut truths = Vec::new();
             // an agent shown only after its join's wait ran out (failed there): its session is taken from here on
-            let taken: BTreeSet<String> = self.agents.iter().filter_map(|a| a.session.clone()).collect();
-            for a in self.agents.iter_mut().filter(|a| a.alive && a.session.is_none()) {
-                if let Some(e) = list.iter().find(|e| e["name"] == a.name.as_str() && !taken.contains(e["session"].as_str().unwrap_or("")) && a.device.as_deref().is_none_or(|d| e["agent"].as_str() == Some(d))) {
+            let taken: BTreeSet<String> = self
+                .agents
+                .iter()
+                .filter_map(|a| a.session.clone())
+                .collect();
+            for a in self
+                .agents
+                .iter_mut()
+                .filter(|a| a.alive && a.session.is_none())
+            {
+                if let Some(e) = list.iter().find(|e| {
+                    e["name"] == a.name.as_str()
+                        && !taken.contains(e["session"].as_str().unwrap_or(""))
+                        && a.device
+                            .as_deref()
+                            .is_none_or(|d| e["agent"].as_str() == Some(d))
+                }) {
                     a.session = e["session"].as_str().map(String::from);
                 }
             }
             for a in &self.agents {
-                let entry = a.session.as_deref().and_then(|s| list.iter().find(|e| e["session"].as_str() == Some(s)));
+                let entry = a
+                    .session
+                    .as_deref()
+                    .and_then(|s| list.iter().find(|e| e["session"].as_str() == Some(s)));
                 if a.denied {
                     if let Some(s) = a.session.as_deref() {
                         if list.iter().any(|e| e["session"].as_str() == Some(s)) {
@@ -1008,9 +1334,16 @@ impl Torture {
                 } else if let (Some(t), Some(e)) = (a.killed_at, entry) {
                     // (a live session of the same folder, a second Claude Code session there, takes the folder's key
                     // and so the killed one's place: the agent of that session is alive again, and online rightly)
-                    let taken_over = self.agents.iter().any(|b| b.alive && b.folder == a.folder && b.host == a.host);
+                    let taken_over = self
+                        .agents
+                        .iter()
+                        .any(|b| b.alive && b.folder == a.folder && b.host == a.host);
                     if !taken_over && at > t + LEASE_GONE_MS && e["online"] == true {
-                        truths.push(format!("{} (killed {} s ago) is shown online", a.name, (at - t) / 1000));
+                        truths.push(format!(
+                            "{} (killed {} s ago) is shown online",
+                            a.name,
+                            (at - t) / 1000
+                        ));
                     }
                 }
             }
@@ -1023,16 +1356,33 @@ impl Torture {
         let mut flickers = Vec::new();
         let t0 = self.t0_ms();
         for o in self.web.iter_mut() {
-            let log = o.call(json!({ "op": "presence_log", "reset": true })).await.unwrap_or(Value::Null);
+            let log = o
+                .call(json!({ "op": "presence_log", "reset": true }))
+                .await
+                .unwrap_or(Value::Null);
             for e in log.as_array().into_iter().flatten() {
-                let (t, dev, on) = (e[0].as_u64().unwrap_or(0), e[1].as_str().unwrap_or(""), e[2] == true);
+                let (t, dev, on) = (
+                    e[0].as_u64().unwrap_or(0),
+                    e[1].as_str().unwrap_or(""),
+                    e[2] == true,
+                );
                 if on {
                     continue;
                 }
-                let Some(a) = self.agents.iter().find(|a| a.device.as_deref() == Some(dev) || a.session.as_deref() == Some(dev)) else { continue };
-                let really_away = !a.alive && a.killed_at.is_some_and(|k| t >= k) || a.away.iter().any(|(f, to)| t >= *f && t <= *to);
+                let Some(a) = self.agents.iter().find(|a| {
+                    a.device.as_deref() == Some(dev) || a.session.as_deref() == Some(dev)
+                }) else {
+                    continue;
+                };
+                let really_away = !a.alive && a.killed_at.is_some_and(|k| t >= k)
+                    || a.away.iter().any(|(f, to)| t >= *f && t <= *to);
                 if a.alive && !really_away && a.session.is_some() {
-                    flickers.push(format!("{} saw {} go offline at +{} ms while it ran", o.name, a.name, t.saturating_sub(t0)));
+                    flickers.push(format!(
+                        "{} saw {} go offline at +{} ms while it ran",
+                        o.name,
+                        a.name,
+                        t.saturating_sub(t0)
+                    ));
                 }
             }
         }
@@ -1041,49 +1391,68 @@ impl Torture {
         }
 
         // AGENT: each live connector's own cards (its list_cards) against the first human device
-        let reference = snaps.iter().find(|(k, _)| k.starts_with("web@")).or_else(|| snaps.iter().next()).map(|(_, v)| v.clone());
+        let reference = snaps
+            .iter()
+            .find(|(k, _)| k.starts_with("web@"))
+            .or_else(|| snaps.iter().next())
+            .map(|(_, v)| v.clone());
         if let Some(reference) = reference {
             let mut wrong = Vec::new();
             let mut tries = 0;
             loop {
-            wrong.clear();
-            for a in self.agents.iter_mut().filter(|a| a.alive) {
-                let Some(m) = a.mcp.as_mut() else { continue };
-                let text = match tokio::time::timeout(Duration::from_secs(30), m.call("list_cards", json!({}))).await {
-                    Ok((text, false)) => text,
-                    Ok((said, true)) => {
-                        wrong.push(format!("{}: list_cards failed: {}", a.name, tail(&said, 200)));
-                        continue;
-                    }
-                    Err(_) => {
-                        wrong.push(format!("{}: list_cards timed out", a.name));
-                        continue;
-                    }
-                };
-                let list: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
-                for c in list.as_array().into_iter().flatten() {
-                    let id = c["id"].as_str().unwrap_or("");
-                    let Some(h) = reference["cards"].get(id) else {
-                        wrong.push(format!("{}: card {id} the person's devices do not show", a.name));
-                        continue;
+                wrong.clear();
+                for a in self.agents.iter_mut().filter(|a| a.alive) {
+                    let Some(m) = a.mcp.as_mut() else { continue };
+                    let text = match tokio::time::timeout(
+                        Duration::from_secs(30),
+                        m.call("list_cards", json!({})),
+                    )
+                    .await
+                    {
+                        Ok((text, false)) => text,
+                        Ok((said, true)) => {
+                            wrong.push(format!(
+                                "{}: list_cards failed: {}",
+                                a.name,
+                                tail(&said, 200)
+                            ));
+                            continue;
+                        }
+                        Err(_) => {
+                            wrong.push(format!("{}: list_cards timed out", a.name));
+                            continue;
+                        }
                     };
-                    let theirs = match (h["state"].as_str(), h["closed_how"].as_str()) {
-                        (Some("open"), _) => "open",
-                        (Some("answered"), Some("answered")) => "decided",
-                        (_, Some("shredded")) => "shredded",
-                        _ => "done",
-                    };
-                    if c["status"].as_str() != Some(theirs) {
-                        wrong.push(format!("{}: card {id} is {} for the agent, {theirs} for the person", a.name, c["status"]));
+                    let list: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                    for c in list.as_array().into_iter().flatten() {
+                        let id = c["id"].as_str().unwrap_or("");
+                        let Some(h) = reference["cards"].get(id) else {
+                            wrong.push(format!(
+                                "{}: card {id} the person's devices do not show",
+                                a.name
+                            ));
+                            continue;
+                        };
+                        let theirs = match (h["state"].as_str(), h["closed_how"].as_str()) {
+                            (Some("open"), _) => "open",
+                            (Some("answered"), Some("answered")) => "decided",
+                            (_, Some("shredded")) => "shredded",
+                            _ => "done",
+                        };
+                        if c["status"].as_str() != Some(theirs) {
+                            wrong.push(format!(
+                                "{}: card {id} is {} for the agent, {theirs} for the person",
+                                a.name, c["status"]
+                            ));
+                        }
                     }
                 }
-            }
-            // (a connector takes what came a moment later than the person's devices: looked at again for 10 s)
-            tries += 1;
-            if wrong.is_empty() || tries >= 10 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+                // (a connector takes what came a moment later than the person's devices: looked at again for 10 s)
+                tries += 1;
+                if wrong.is_empty() || tries >= 10 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
             for w in wrong.into_iter().take(12) {
                 self.fail(format!("{label} AGENT {w}"));
@@ -1098,7 +1467,14 @@ impl Torture {
             self.fail(f);
         }
         self.proxy.set(knobs);
-        self.say(format!("{label}: {} devices compared, {} sessions shown", snaps.len(), shown.first().and_then(|(_, v)| v.as_array().map(|a| a.len())).unwrap_or(0)));
+        self.say(format!(
+            "{label}: {} devices compared, {} sessions shown",
+            snaps.len(),
+            shown
+                .first()
+                .and_then(|(_, v)| v.as_array().map(|a| a.len()))
+                .unwrap_or(0)
+        ));
     }
 
     fn t0_ms(&self) -> u64 {
@@ -1107,8 +1483,12 @@ impl Torture {
 
     /// Learns each agent's device (hex) from the session lists: the web shows the agent device of a session.
     async fn learn_devices(&mut self) {
-        let Some(o) = self.web.first_mut() else { return };
-        let Ok(v) = o.call(json!({ "op": "shown", "devices": true })).await else { return };
+        let Some(o) = self.web.first_mut() else {
+            return;
+        };
+        let Ok(v) = o.call(json!({ "op": "shown", "devices": true })).await else {
+            return;
+        };
         for e in v.as_array().into_iter().flatten() {
             if let (Some(s), Some(d)) = (e["session"].as_str(), e["agent"].as_str()) {
                 for a in self.agents.iter_mut() {
@@ -1125,23 +1505,43 @@ impl Torture {
 /// under the bug's name and does not fail the run (MEGA_STRICT=1 makes it fail). Each entry goes when its fix is
 /// merged; a failure that only looks like one of these is still listed, under its name, in every report.
 fn known_bug(what: &str) -> Option<&'static str> {
-    let parts = |w: &str| -> Vec<String> { w.split_once(": ").map(|(_, d)| d.split("; ").map(String::from).collect()).unwrap_or_default() };
+    let parts = |w: &str| -> Vec<String> {
+        w.split_once(": ")
+            .map(|(_, d)| d.split("; ").map(String::from).collect())
+            .unwrap_or_default()
+    };
     // iOS keeps closed helper sessions in its list (named after their main session); an iPhone paired after the
     // closing does not hold them
-    if what.contains(" SESSIONS ") && what.contains(" vs ios@") && parts(what).iter().all(|p| p.starts_with("only second shows")) {
+    if what.contains(" SESSIONS ")
+        && what.contains(" vs ios@")
+        && parts(what)
+            .iter()
+            .all(|p| p.starts_with("only second shows"))
+    {
         return Some("ios: closed helper sessions stay listed");
     }
-    if what.contains(" VARIANCE ios@") && what.contains("/sessions/") && what.contains("\"parent\":\"") && (what.ends_with(" vs null") || what.contains(": null vs {")) {
+    if what.contains(" VARIANCE ios@")
+        && what.contains("/sessions/")
+        && what.contains("\"parent\":\"")
+        && (what.ends_with(" vs null") || what.contains(": null vs {"))
+    {
         return Some("ios: closed helper sessions stay listed");
     }
     // web: a founding of a main session that the hub refused (another human device founded it first) stays in the
     // model's sessions (never shown)
-    if what.contains(" VARIANCE web@") && what.contains("/sessions/") && (what.ends_with(": {\"agent_name\":null,\"parent\":null} vs null") || what.ends_with(": null vs {\"agent_name\":null,\"parent\":null}")) {
+    if what.contains(" VARIANCE web@")
+        && what.contains("/sessions/")
+        && (what.ends_with(": {\"agent_name\":null,\"parent\":null} vs null")
+            || what.ends_with(": null vs {\"agent_name\":null,\"parent\":null}"))
+    {
         return Some("web: refused founding kept");
     }
     // web: a presence change missed while the stream was cut is never corrected (a new stream is told only who is
     // online)
-    if what.contains(" TRUTH web@") && what.contains(" (killed ") && what.ends_with(" is shown online") {
+    if what.contains(" TRUTH web@")
+        && what.contains(" (killed ")
+        && what.ends_with(" is shown online")
+    {
         return Some("web: presence after a cut stream");
     }
     if what.contains(" SESSIONS web@") && parts(what).iter().all(|p| p.contains(" online: ")) {
@@ -1154,7 +1554,13 @@ fn known_bug(what: &str) -> Option<&'static str> {
 fn sessions_differ(a: &Value, b: &Value) -> String {
     let rows = |v: &Value| -> Vec<Value> { v.as_array().cloned().unwrap_or_default() };
     let id = |e: &Value| e["session"].as_str().unwrap_or("").to_string();
-    let label = |e: &Value| format!("{} ({})", e["name"].as_str().unwrap_or("?"), &id(e)[..id(e).len().min(8)]);
+    let label = |e: &Value| {
+        format!(
+            "{} ({})",
+            e["name"].as_str().unwrap_or("?"),
+            &id(e)[..id(e).len().min(8)]
+        )
+    };
     let (ra, rb) = (rows(a), rows(b));
     if !a.is_array() || !b.is_array() {
         return format!("{} vs {}", short(a), short(b));
@@ -1166,7 +1572,12 @@ fn sessions_differ(a: &Value, b: &Value) -> String {
             Some(x) => {
                 for k in ["name", "online", "parent"] {
                     if e[k] != x[k] {
-                        out.push(format!("{} {k}: {} vs {}", label(e), short(&e[k]), short(&x[k])));
+                        out.push(format!(
+                            "{} {k}: {} vs {}",
+                            label(e),
+                            short(&e[k]),
+                            short(&x[k])
+                        ));
                     }
                 }
             }
@@ -1205,7 +1616,8 @@ async fn run_torture(seed: u64, root: &Path, out: &Path, report: &mut Report) {
         std::env::set_var(format!("MEGA_HUB_ENV_{k}"), v);
     }
     let proxy = Proxy::start(seed).await;
-    let hub = HubProc::start_in_with(TempDir::new("hub"), 0, &[("HUB_URL", proxy.url.as_str())]).await;
+    let hub =
+        HubProc::start_in_with(TempDir::new("hub"), 0, &[("HUB_URL", proxy.url.as_str())]).await;
     proxy.set_upstream(hub.port);
     let code: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
     let keep = code.clone();
@@ -1239,8 +1651,16 @@ async fn run_torture(seed: u64, root: &Path, out: &Path, report: &mut Report) {
     };
     // (the agents' logs carry ms since 1970: this is the timeline's +0)
     t.log.push(format!("+0 is {} ms since 1970", now()));
-    let webs = if env("MEGA_WEB").as_deref() == Some("0") { 0 } else { num("MEGA_WEB_DEVICES", 2) };
-    let fleet = if env("MEGA_IOS").as_deref() == Some("0") { 0 } else { num("MEGA_FLEET", 10) };
+    let webs = if env("MEGA_WEB").as_deref() == Some("0") {
+        0
+    } else {
+        num("MEGA_WEB_DEVICES", 2)
+    };
+    let fleet = if env("MEGA_IOS").as_deref() == Some("0") {
+        0
+    } else {
+        num("MEGA_FLEET", 10)
+    };
     let agents_n = num("MEGA_AGENTS", 8);
     let steps = num("MEGA_STEPS", 60);
     let cards = num("MEGA_CARDS", 200);
@@ -1257,7 +1677,13 @@ async fn run_torture(seed: u64, root: &Path, out: &Path, report: &mut Report) {
     t.join_by_link(Way::Cli).await;
     t.self_join(false).await;
     // the big room: cards from the first agents
-    let first: Vec<usize> = t.agents.iter().enumerate().filter(|(_, a)| a.alive).map(|(i, _)| i).collect();
+    let first: Vec<usize> = t
+        .agents
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.alive)
+        .map(|(i, _)| i)
+        .collect();
     for &k in &first {
         t.cards(k, cards / first.len().max(1)).await;
     }
@@ -1271,7 +1697,11 @@ async fn run_torture(seed: u64, root: &Path, out: &Path, report: &mut Report) {
         let live = t.agents.iter().filter(|a| a.alive).count();
         match roll {
             0..=11 if t.agents.len() < agents_n + 4 => {
-                let way = if t.rng.chance(0.5) { Way::Tool } else { Way::Cli };
+                let way = if t.rng.chance(0.5) {
+                    Way::Tool
+                } else {
+                    Way::Cli
+                };
                 t.join_by_link(way).await;
             }
             12..=17 if t.agents.len() < agents_n + 4 => {
@@ -1331,7 +1761,10 @@ async fn run_torture(seed: u64, root: &Path, out: &Path, report: &mut Report) {
     if let Some(last) = t.agents.iter().filter_map(|a| a.killed_at).max() {
         let wait = (last + LEASE_GONE_MS).saturating_sub(now());
         if wait > 0 {
-            t.say(format!("waiting {} s for the last killed lease", wait / 1000));
+            t.say(format!(
+                "waiting {} s for the last killed lease",
+                wait / 1000
+            ));
             tokio::time::sleep(Duration::from_millis(wait + 1000)).await;
         }
     }
@@ -1369,9 +1802,15 @@ async fn run_torture(seed: u64, root: &Path, out: &Path, report: &mut Report) {
         "failures": t.fails,
         "known": t.known,
     });
-    let _ = std::fs::write(out.join("summary.json"), serde_json::to_string_pretty(&summary).unwrap());
+    let _ = std::fs::write(
+        out.join("summary.json"),
+        serde_json::to_string_pretty(&summary).unwrap(),
+    );
     let _ = std::fs::write(out.join("timeline.txt"), t.log.join("\n"));
-    eprintln!("TORTURE seed {seed}: {}", serde_json::to_string(&summary["metrics"]).unwrap());
+    eprintln!(
+        "TORTURE seed {seed}: {}",
+        serde_json::to_string(&summary["metrics"]).unwrap()
+    );
     eprintln!("TORTURE seed {seed}: network {counts:?}");
     for o in t.web.iter_mut() {
         let _ = o.call(json!({ "op": "quit" })).await;
@@ -1395,7 +1834,12 @@ async fn torture() {
     let seeds: Vec<u64> = env("MEGA_SEEDS")
         .map(|s| s.split(',').filter_map(|x| x.trim().parse().ok()).collect())
         .unwrap_or_else(|| vec![now_ms() % 100_000]);
-    let out = PathBuf::from(env("MEGA_OUT").unwrap_or_else(|| std::env::temp_dir().join("trommi-mega").display().to_string()));
+    let out = PathBuf::from(env("MEGA_OUT").unwrap_or_else(|| {
+        std::env::temp_dir()
+            .join("trommi-mega")
+            .display()
+            .to_string()
+    }));
     let mut report = Report::default();
     for seed in &seeds {
         eprintln!("== torture seed {seed} (repeat: MEGA_SEEDS={seed})");
@@ -1405,7 +1849,10 @@ async fn torture() {
     if !report.known.is_empty() {
         let mut by: BTreeMap<String, usize> = BTreeMap::new();
         for k in &report.known {
-            let bug = k.split_once('[').and_then(|(_, r)| r.split_once(']')).map_or("?", |(b, _)| b);
+            let bug = k
+                .split_once('[')
+                .and_then(|(_, r)| r.split_once(']'))
+                .map_or("?", |(b, _)| b);
             *by.entry(bug.to_string()).or_default() += 1;
         }
         eprintln!("TORTURE known open bugs (not failing; MEGA_STRICT=1 fails on them): {by:?}");
@@ -1414,11 +1861,23 @@ async fn torture() {
     let failed: BTreeSet<u64> = report
         .failures
         .iter()
-        .filter_map(|f| f.strip_prefix("seed ")?.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok())
+        .filter_map(|f| {
+            f.strip_prefix("seed ")?
+                .split(|c: char| !c.is_ascii_digit())
+                .next()?
+                .parse()
+                .ok()
+        })
         .collect();
     if !failed.is_empty() {
-        let list = failed.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
-        eprintln!("TORTURE FAILED SEEDS: {list} (repeat: MEGA_SEEDS={list} with the same MEGA_* sizes)");
+        let list = failed
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        eprintln!(
+            "TORTURE FAILED SEEDS: {list} (repeat: MEGA_SEEDS={list} with the same MEGA_* sizes)"
+        );
     }
     assert!(
         report.failures.is_empty(),

@@ -64,14 +64,20 @@ fn rank(c: &WaitingCard) -> u8 {
 pub(crate) fn snapshot_of(model: &crate::model::Model, now: u64) -> WidgetSnapshot {
     let lens = Lens::default();
     let b = Board::new(model, &lens, now);
-    let shown = |agent: Option<usize>| agent.is_none_or(|i| !b.agents[i].row.archived && !b.agents[i].row.removed);
-    let session = |agent: Option<usize>| agent.map_or_else(|| "Agent".to_string(), |i| b.agents[i].row.name.clone());
+    let shown = |agent: Option<usize>| {
+        agent.is_none_or(|i| !b.agents[i].row.archived && !b.agents[i].row.removed)
+    };
+    let session = |agent: Option<usize>| {
+        agent.map_or_else(|| "Agent".to_string(), |i| b.agents[i].row.name.clone())
+    };
     let mut cards: Vec<WaitingCard> = Vec::new();
     let mut urgent = false;
     for fresh in b.all_fresh.iter().filter(|f| shown(f.agent)) {
         urgent |= fresh.knocks;
         if fresh.permission {
-            let Some(p) = model.permissions.get(&fresh.id) else { continue };
+            let Some(p) = model.permissions.get(&fresh.id) else {
+                continue;
+            };
             cards.push(WaitingCard {
                 id: fresh.id.clone(),
                 title: format!("Approval: {}", p.tool_name),
@@ -83,28 +89,75 @@ pub(crate) fn snapshot_of(model: &crate::model::Model, now: u64) -> WidgetSnapsh
                 multiple: false,
             });
         } else {
-            let Some(c) = model.cards.get(&fresh.id) else { continue };
+            let Some(c) = model.cards.get(&fresh.id) else {
+                continue;
+            };
             cards.push(WaitingCard {
                 id: fresh.id.clone(),
                 title: crate::views::desk::shown_title(c),
                 session: session(fresh.agent),
-                kind: c.field("card_type").as_str().filter(|t| !t.is_empty()).unwrap_or("decision").to_string(),
-                urgency: if c.urgency.is_empty() { "normal".into() } else { c.urgency.clone() },
+                kind: c
+                    .field("card_type")
+                    .as_str()
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or("decision")
+                    .to_string(),
+                urgency: if c.urgency.is_empty() {
+                    "normal".into()
+                } else {
+                    c.urgency.clone()
+                },
                 created_ms: c.created_at,
-                options: crate::views::desk::options_of(&c.field("options")).into_iter().map(|o| WaitingOption { key: o.key, label: o.label }).collect(),
+                options: crate::views::desk::options_of(&c.field("options"))
+                    .into_iter()
+                    .map(|o| WaitingOption {
+                        key: o.key,
+                        label: o.label,
+                    })
+                    .collect(),
                 multiple: c.field("allows_multiple") == serde_json::Value::Bool(true),
             });
         }
     }
-    cards.sort_by(|a, b| rank(b).cmp(&rank(a)).then(a.created_ms.cmp(&b.created_ms)).then_with(|| a.id.cmp(&b.id)));
+    cards.sort_by(|a, b| {
+        rank(b)
+            .cmp(&rank(a))
+            .then(a.created_ms.cmp(&b.created_ms))
+            .then_with(|| a.id.cmp(&b.id))
+    });
     let waiting = cards.len() as u32;
-    let working = b.agents.iter().filter(|a| a.row.online && a.row.working && !a.row.archived && !a.row.removed).count() as u32;
+    let working = b
+        .agents
+        .iter()
+        .filter(|a| a.row.online && a.row.working && !a.row.archived && !a.row.removed)
+        .count() as u32;
     let teams = if b.teams.is_empty() {
-        vec![super::effect::ShareTeam { id: String::new(), name: "Personal".into(), crown: crate::views::notes::crown_on(&b, None).map(|a| crate::views::notes::to_of(a, &b)) }]
+        vec![super::effect::ShareTeam {
+            id: String::new(),
+            name: "Personal".into(),
+            crown: crate::views::notes::crown_on(&b, None)
+                .map(|a| crate::views::notes::to_of(a, &b)),
+        }]
     } else {
-        b.teams.iter().map(|team| super::effect::ShareTeam { id: team.id.clone(), name: team.name.clone(), crown: crate::views::notes::crown_on(&b, Some(&team.id)).map(|a| crate::views::notes::to_of(a, &b)) }).collect()
+        b.teams
+            .iter()
+            .map(|team| super::effect::ShareTeam {
+                id: team.id.clone(),
+                name: team.name.clone(),
+                crown: crate::views::notes::crown_on(&b, Some(&team.id))
+                    .map(|a| crate::views::notes::to_of(a, &b)),
+            })
+            .collect()
     };
-    WidgetSnapshot { waiting, working, urgent, cards, teams, room: None, live_activity: None }
+    WidgetSnapshot {
+        waiting,
+        working,
+        urgent,
+        cards,
+        teams,
+        room: None,
+        live_activity: None,
+    }
 }
 
 impl App {
@@ -139,7 +192,12 @@ impl App {
             let id = IoId(self.next_id);
             self.next_id += 1;
             self.outside.key_read = Some(id);
-            out.push(Effect::Secret { id, op: SecretOp::Get { name: NOTIFY_KEY.into() } });
+            out.push(Effect::Secret {
+                id,
+                op: SecretOp::Get {
+                    name: NOTIFY_KEY.into(),
+                },
+            });
         }
     }
 
@@ -158,16 +216,28 @@ impl App {
     pub(super) fn outside_signed_out(&mut self, out: &mut Vec<Effect>) {
         let (snapshots, _, context) = self.can();
         if self.config.as_ref().is_some_and(|c| c.can.secrets) {
-            let id = super::io::IoId(self.next_id); self.next_id += 1;
-            out.push(Effect::Secret { id, op: super::SecretOp::Delete { name: super::push::NOTIFY_KEY.into() } });
+            let id = super::io::IoId(self.next_id);
+            self.next_id += 1;
+            out.push(Effect::Secret {
+                id,
+                op: super::SecretOp::Delete {
+                    name: super::push::NOTIFY_KEY.into(),
+                },
+            });
         }
         let front = self.outside.front;
-        self.outside = Outside { front, ..Default::default() };
+        self.outside = Outside {
+            front,
+            ..Default::default()
+        };
         if context {
             out.push(Effect::NotifyContext { context: None });
         }
         if snapshots {
-            let empty = WidgetSnapshot { live_activity: Some(false), ..Default::default() };
+            let empty = WidgetSnapshot {
+                live_activity: Some(false),
+                ..Default::default()
+            };
             self.outside.sent = Some(empty.clone());
             out.push(Effect::Snapshot { snapshot: empty });
         }
@@ -190,8 +260,15 @@ impl App {
             return;
         }
         let mut snapshot = snapshot_of(&self.board.model, now_ms);
-        snapshot.live_activity = self.config.as_ref().filter(|c| c.can.push == "apns").and_then(|_| self.push.level.map(|l| l != PushChoice::Off));
-        snapshot.room = self.engine.as_ref().map(|e| crate::engine::feed::hex(e.room().as_bytes()));
+        snapshot.live_activity = self
+            .config
+            .as_ref()
+            .filter(|c| c.can.push == "apns")
+            .and_then(|_| self.push.level.map(|l| l != PushChoice::Off));
+        snapshot.room = self
+            .engine
+            .as_ref()
+            .map(|e| crate::engine::feed::hex(e.room().as_bytes()));
         if notify {
             self.outside_notices(&snapshot, out);
         }
@@ -208,7 +285,9 @@ impl App {
             return;
         }
         let now: BTreeSet<String> = snapshot.cards.iter().map(|c| c.id.clone()).collect();
-        let Some(known) = self.outside.known.replace(now.clone()) else { return };
+        let Some(known) = self.outside.known.replace(now.clone()) else {
+            return;
+        };
         if self.outside.front != Some(false) {
             return;
         }
@@ -238,12 +317,18 @@ impl App {
     }
 
     fn outside_context(&mut self, out: &mut Vec<Effect>) {
-        let Some(engine) = self.engine.as_ref() else { return };
-        let (Some(level), Some(push_key)) = (self.push.level, self.push.notify_key) else { return };
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
+        let (Some(level), Some(push_key)) = (self.push.level, self.push.notify_key) else {
+            return;
+        };
         if std::mem::take(&mut self.outside.keys_due) {
             self.outside.keys = current_keys(engine.device());
         }
-        let Some(config) = self.config.as_ref() else { return };
+        let Some(config) = self.config.as_ref() else {
+            return;
+        };
         let position = engine.position();
         let mut next = NotifyContext {
             room: crate::engine::feed::hex(engine.room().as_bytes()),
@@ -251,14 +336,22 @@ impl App {
             client: format!("{}/{}", config.platform, config.version),
             cursor: self.outside.context.as_ref().map_or(position, |c| c.cursor),
             push_key: push_key.to_vec().into(),
-            keys: if level == PushChoice::Off { Vec::new() } else { self.outside.keys.clone() },
+            keys: if level == PushChoice::Off {
+                Vec::new()
+            } else {
+                self.outside.keys.clone()
+            },
         };
-        if std::mem::take(&mut self.outside.cursor_due) || self.outside.context.as_ref() != Some(&next) {
+        if std::mem::take(&mut self.outside.cursor_due)
+            || self.outside.context.as_ref() != Some(&next)
+        {
             next.cursor = position;
         }
         if self.outside.context.as_ref() != Some(&next) {
             self.outside.context = Some(next.clone());
-            out.push(Effect::NotifyContext { context: Some(next) });
+            out.push(Effect::NotifyContext {
+                context: Some(next),
+            });
         }
     }
 }
@@ -266,11 +359,17 @@ impl App {
 /// Of each session group the device is in, the content key of its current epoch (spec 15.2; the bindings'
 /// `notify_keys`): no room group, no older epoch, none of a group it does not trust.
 fn current_keys(device: &crate::engine::Device) -> Vec<NotifyKey> {
-    let Ok(groups) = device.groups() else { return Vec::new() };
+    let Ok(groups) = device.groups() else {
+        return Vec::new();
+    };
     let mut keys = Vec::new();
     for summary in groups.into_iter().filter(|s| s.session.is_some()) {
         if let Ok(key) = device.content_key(&summary.group, summary.epoch) {
-            keys.push(NotifyKey { group: crate::engine::feed::hex(summary.group.as_bytes()), epoch: summary.epoch, key: key.expose().to_vec().into() });
+            keys.push(NotifyKey {
+                group: crate::engine::feed::hex(summary.group.as_bytes()),
+                epoch: summary.epoch,
+                key: key.expose().to_vec().into(),
+            });
         }
     }
     keys

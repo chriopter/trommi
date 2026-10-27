@@ -571,17 +571,31 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
     // device, up to the change that rang, and no further
     let own = s.w.ada.get(hub, "/v1/changes?after=0").ok();
     let ahead_with = |ticket: &str, query: &str| {
-        common::request(hub.port, "GET", &format!("/v1/push-changes?{query}"), &[("trommi-ticket", ticket.to_string())], &[])
+        common::request(
+            hub.port,
+            "GET",
+            &format!("/v1/push-changes?{query}"),
+            &[("trommi-ticket", ticket.to_string())],
+            &[],
+        )
     };
     let ahead = ahead_with(ticket, "after=0").ok();
     let rang = opened["change"].as_i64().unwrap();
     let changes = |page: &Value| -> Vec<i64> {
-        page["items"].as_array().unwrap().iter().map(|i| i["change"].as_i64().unwrap()).collect()
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["change"].as_i64().unwrap())
+            .collect()
     };
     assert!(!changes(&ahead).is_empty());
     assert_eq!(*changes(&ahead).last().unwrap(), rang);
     assert_eq!(
-        changes(&own).into_iter().filter(|c| *c <= rang).collect::<Vec<_>>(),
+        changes(&own)
+            .into_iter()
+            .filter(|c| *c <= rang)
+            .collect::<Vec<_>>(),
         changes(&ahead)
     );
     assert_eq!(ahead["change"].as_i64(), Some(rang));
@@ -593,9 +607,11 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
     assert_eq!(changes(&page).len(), 1);
     assert_eq!(page["more"], true);
     ahead_with(&b64(&forged), "after=0").refused(401, "unauthorised");
-    hub.get("/v1/push-changes?after=0").refused(401, "unauthorised");
+    hub.get("/v1/push-changes?after=0")
+        .refused(401, "unauthorised");
     // the ticket is taken from its header only, never from the URL
-    hub.get(&format!("/v1/push-changes?ticket={ticket}&after=0")).refused(401, "unauthorised");
+    hub.get(&format!("/v1/push-changes?ticket={ticket}&after=0"))
+        .refused(401, "unauthorised");
     let ticket = ticket.to_string();
 
     // Live Activity: two marks (0 or 1) and a tag. Work begins: start; a mark changes: update
@@ -640,7 +656,9 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
     card(&mut s, 1, 0);
     let hub = &s.w.hub;
     hub.eventually("the sealed count of three", || {
-        live(hub, &"ef".repeat(32)).iter().any(|a| counts(a) == (1, 3))
+        live(hub, &"ef".repeat(32))
+            .iter()
+            .any(|a| counts(a) == (1, 3))
     });
     assert!(live(hub, &"ef".repeat(32))
         .iter()
@@ -686,21 +704,55 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
     // the push; the ticket's answer must not say how far (`head` is the room's newest change number).
     card(&mut s, 1, 0);
     let hub = &s.w.hub;
-    let later = common::request(hub.port, "GET", "/v1/push-changes?after=0", &[("trommi-ticket", ticket.clone())], &[]).ok();
+    let later = common::request(
+        hub.port,
+        "GET",
+        "/v1/push-changes?after=0",
+        &[("trommi-ticket", ticket.clone())],
+        &[],
+    )
+    .ok();
     assert!(
         later["head"].as_i64().is_none_or(|head| head <= rang),
         "a push ticket for change {rang} learns the room's head {}",
         later["head"]
     );
-    assert_eq!(later["head"].as_i64(), Some(rang), "as far as the ticket reads");
+    assert_eq!(
+        later["head"].as_i64(),
+        Some(rang),
+        "as far as the ticket reads"
+    );
     // `more` says that the room went on past the push, and no more than that: asked from beyond its change, the
     // ticket gets the same word wherever it asks from, never "the room's head lies below this number"
-    let room_head = s.w.ada.get(hub, "/v1/changes?after=0").ok()["head"].as_i64().unwrap();
+    let room_head = s.w.ada.get(hub, "/v1/changes?after=0").ok()["head"]
+        .as_i64()
+        .unwrap();
     assert!(room_head > rang + 1);
-    for after in [rang, rang + 1, room_head - 1, room_head, room_head + 5, 1 << 40] {
-        let page = common::request(hub.port, "GET", &format!("/v1/push-changes?after={after}"), &[("trommi-ticket", ticket.clone())], &[]).ok();
-        assert_eq!(page["items"], json!([]), "nothing beyond the ticket's change");
-        assert_eq!(page["more"], true, "asked after {after}: the same word as at the ticket's change");
+    for after in [
+        rang,
+        rang + 1,
+        room_head - 1,
+        room_head,
+        room_head + 5,
+        1 << 40,
+    ] {
+        let page = common::request(
+            hub.port,
+            "GET",
+            &format!("/v1/push-changes?after={after}"),
+            &[("trommi-ticket", ticket.clone())],
+            &[],
+        )
+        .ok();
+        assert_eq!(
+            page["items"],
+            json!([]),
+            "nothing beyond the ticket's change"
+        );
+        assert_eq!(
+            page["more"], true,
+            "asked after {after}: the same word as at the ticket's change"
+        );
         assert_eq!(page["head"].as_i64(), Some(rang));
     }
 }
@@ -770,7 +822,9 @@ fn the_live_activity_stays_while_an_agent_works_and_ends_when_all_is_quiet() {
     });
     std::thread::sleep(std::time::Duration::from_millis(200));
     assert!(
-        !live(&s.w.hub, &activity).iter().any(|a| marks(a).0 == "end"),
+        !live(&s.w.hub, &activity)
+            .iter()
+            .any(|a| marks(a).0 == "end"),
         "no end while an agent works"
     );
     // the agent stops: nothing waits and nobody works, the activity ends

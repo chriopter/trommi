@@ -357,7 +357,9 @@ impl StreamReader {
             }
             "request" => StreamEvent::Wish(wish_row(o)?),
             "departure" => StreamEvent::Departure {
-                device: o.need("device").id(DeviceId::from_slice, "departure: device")?,
+                device: o
+                    .need("device")
+                    .id(DeviceId::from_slice, "departure: device")?,
                 signature: o.need("signature").fixed("departure: 64-byte signature")?,
             },
             "presence" if matches!(o.need("archived"), Json::Bool(true)) => StreamEvent::Archived {
@@ -381,7 +383,10 @@ impl StreamReader {
                     .maybe("last_call_at")
                     .map(|v| v.int("presence: last_call_at"))
                     .transpose()?,
-                last_seen_ms: o.maybe("last_seen_ms").map(|v| v.int("presence: last_seen_ms")).transpose()?,
+                last_seen_ms: o
+                    .maybe("last_seen_ms")
+                    .map(|v| v.int("presence: last_seen_ms"))
+                    .transpose()?,
             }),
             _ => StreamEvent::Here,
         }))

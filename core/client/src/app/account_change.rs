@@ -21,8 +21,8 @@ use crate::account::{AccountAction, Secret, Unlock};
 use crate::app::bytes::Bytes;
 use crate::app::io::{IoId, IoResult, PlatformAnswer, PlatformOp};
 use crate::hub::{
-    AccountCopies, AccountProof, AccountView as Held, Answer, Codec, CopyOfWayIn, Expect, Failure, Kdf, KdfValue, KitForm, KitPart, NewPassword,
-    PasskeyAssertion, PasskeyRegistration, Route,
+    AccountCopies, AccountProof, AccountView as Held, Answer, Codec, CopyOfWayIn, Expect, Failure,
+    Kdf, KdfValue, KitForm, KitPart, NewPassword, PasskeyAssertion, PasskeyRegistration, Route,
 };
 use crate::views::{AccountView, LoginView, PasskeyView, Text};
 use std::collections::BTreeMap;
@@ -55,7 +55,10 @@ struct Opened {
 enum Owned {
     Password(Key<32>),
     Kit,
-    Passkey { credential_id: Vec<u8>, wrap_key: Key<32> },
+    Passkey {
+        credential_id: Vec<u8>,
+        wrap_key: Key<32>,
+    },
 }
 
 /// A passkey the platform made for `AddPasskey`, with its wrap key.
@@ -89,7 +92,9 @@ pub(super) struct Flow {
 pub(super) enum Ask {
     Read,
     /// A challenge for a passkey: to prove the way in (`create` false) or to make a new one.
-    Challenge { create: bool },
+    Challenge {
+        create: bool,
+    },
     Main,
 }
 
@@ -119,27 +124,58 @@ fn problem(key: &str, en: &str) -> Text {
 fn said(code: &str) -> Text {
     match code {
         "wrong-login" => problem("account.wrong_login", "That password is not right."),
-        "wrong-recovery" | "bad-recovery-words" => problem("account.wrong_kit", "Those are not the Emergency Kit's words."),
-        "weak-password" => problem("account.weak_password", &format!("The password needs at least {} characters.", account::PASSWORD_MIN)),
+        "wrong-recovery" | "bad-recovery-words" => problem(
+            "account.wrong_kit",
+            "Those are not the Emergency Kit's words.",
+        ),
+        "weak-password" => problem(
+            "account.weak_password",
+            &format!(
+                "The password needs at least {} characters.",
+                account::PASSWORD_MIN
+            ),
+        ),
         "bad-email" => problem("account.bad_email", "That is not an e-mail address."),
         "account-exists" => problem("account.exists", "An account with this e-mail exists."),
-        "epoch-taken" | "wrong-epoch" | "group-behind" => problem("account.room_moved", "The room changed meanwhile. Try again."),
-        "account-changed" => problem("account.changed", "The account changed meanwhile. Try again."),
-        "needs-email" => problem("account.needs_email", "A password needs an e-mail: give the account one first."),
+        "epoch-taken" | "wrong-epoch" | "group-behind" => problem(
+            "account.room_moved",
+            "The room changed meanwhile. Try again.",
+        ),
+        "account-changed" => problem(
+            "account.changed",
+            "The account changed meanwhile. Try again.",
+        ),
+        "needs-email" => problem(
+            "account.needs_email",
+            "A password needs an e-mail: give the account one first.",
+        ),
         "email-set" => problem("account.email_set", "This account has an e-mail already."),
         "no-password" => problem("account.no_password", "This account has no password."),
-        "last-way-in" => problem("account.last_way_in", "This is the account's last way in: add another first."),
-        "no-passkey" | "bad-passkey" | "no-prf" => problem("account.bad_passkey", "The passkey did not work here."),
+        "last-way-in" => problem(
+            "account.last_way_in",
+            "This is the account's last way in: add another first.",
+        ),
+        "no-passkey" | "bad-passkey" | "no-prf" => {
+            problem("account.bad_passkey", "The passkey did not work here.")
+        }
         "refused-by-person" => problem("account.passkey_refused", "No passkey was used."),
-        "rate-limited" | "throttled" => problem("account.throttled", "Too many tries. Wait a moment, then try again."),
+        "rate-limited" | "throttled" => problem(
+            "account.throttled",
+            "Too many tries. Wait a moment, then try again.",
+        ),
         "offline" => problem("account.offline", "The hub cannot be reached. Try again."),
-        code => Text::new("account.change_failed", &format!("That did not work ({code}).")),
+        code => Text::new(
+            "account.change_failed",
+            &format!("That did not work ({code})."),
+        ),
     }
 }
 
 fn failure_code(failure: &Failure) -> String {
     match failure {
-        Failure::Refused { code: Some(code), .. } => code.clone(),
+        Failure::Refused {
+            code: Some(code), ..
+        } => code.clone(),
         Failure::Refused { .. } => "refused".into(),
         Failure::NotNow { status: 429, .. } => "throttled".into(),
         Failure::NotNow { .. } | Failure::Offline => "offline".into(),
@@ -154,7 +190,9 @@ fn pinned_kdf() -> Kdf {
         o.iter()
             .filter_map(|(k, v)| match v {
                 serde_json::Value::String(s) => Some((k.clone(), KdfValue::Text(s.clone()))),
-                serde_json::Value::Number(n) => n.as_u64().map(|n| (k.clone(), KdfValue::Number(n))),
+                serde_json::Value::Number(n) => {
+                    n.as_u64().map(|n| (k.clone(), KdfValue::Number(n)))
+                }
                 _ => None,
             })
             .collect()
@@ -183,7 +221,8 @@ fn copy61(bytes: Vec<u8>) -> Result<[u8; 61], String> {
 
 /// A new kit for `held`'s account: its words and keys, made under its e-mail where it has one, else its id.
 fn new_kit(held: &Held) -> Result<(Vec<String>, account::KitKeys), String> {
-    let words = account::generate_kit_words(&mut SystemEntropy).map_err(|e| e.code().to_string())?;
+    let words =
+        account::generate_kit_words(&mut SystemEntropy).map_err(|e| e.code().to_string())?;
     let text = std::str::from_utf8(words.expose()).map_err(|_| "internal".to_string())?;
     let keys = kit_keys(held, text, None)?;
     Ok((text.split_whitespace().map(String::from).collect(), keys))
@@ -203,8 +242,12 @@ fn kit_keys(held: &Held, words: &str, email: Option<&str>) -> Result<account::Ki
 
 /// A kit's part of a body: its login key and `code` sealed under it.
 fn kit_part(keys: &account::KitKeys, room: &RoomId, code: &Key<32>) -> Result<KitPart, String> {
-    let sealed = account::seal_code(&keys.wrap_key, room, Way::Kit, code, &mut SystemEntropy).map_err(|e| e.code().to_string())?;
-    Ok(KitPart { auth_key: *keys.auth_key.expose(), sealed_copy: copy61(sealed)? })
+    let sealed = account::seal_code(&keys.wrap_key, room, Way::Kit, code, &mut SystemEntropy)
+        .map_err(|e| e.code().to_string())?;
+    Ok(KitPart {
+        auth_key: *keys.auth_key.expose(),
+        sealed_copy: copy61(sealed)?,
+    })
 }
 
 impl App {
@@ -214,47 +257,90 @@ impl App {
     }
 
     /// The account's changes: true when `action` was one of them.
-    pub(super) fn change_action(&mut self, now_ms: u64, action: &AccountAction, out: &mut Vec<Effect>) -> bool {
+    pub(super) fn change_action(
+        &mut self,
+        now_ms: u64,
+        action: &AccountAction,
+        out: &mut Vec<Effect>,
+    ) -> bool {
         let (change, unlock) = match action {
             AccountAction::ReadAccount => (Change::Read, None),
             AccountAction::CheckUnlock { unlock } => (Change::Check, Some(unlock.clone())),
             AccountAction::NewKit { unlock } => (Change::NewKit, Some(unlock.clone())),
-            AccountAction::SetPassword { unlock, next } => (Change::Password { next: next.clone() }, Some(unlock.clone())),
-            AccountAction::SetEmail { email, words } => (
-                Change::Email { email: email.clone(), words: words.clone() },
-                Some(Unlock::Words { words: words.clone() }),
+            AccountAction::SetPassword { unlock, next } => (
+                Change::Password { next: next.clone() },
+                Some(unlock.clone()),
             ),
-            AccountAction::ReplaceRecoveryCode { unlock } => (Change::ReplaceCode, Some(unlock.clone())),
+            AccountAction::SetEmail { email, words } => (
+                Change::Email {
+                    email: email.clone(),
+                    words: words.clone(),
+                },
+                Some(Unlock::Words {
+                    words: words.clone(),
+                }),
+            ),
+            AccountAction::ReplaceRecoveryCode { unlock } => {
+                (Change::ReplaceCode, Some(unlock.clone()))
+            }
             AccountAction::AddPasskey { unlock } => (Change::AddPasskey, Some(unlock.clone())),
-            AccountAction::RemovePasskey { credential_id, unlock } => match base64url_decode(credential_id) {
-                Ok(id) if !id.is_empty() => (Change::RemovePasskey { credential_id: id }, Some(unlock.clone())),
+            AccountAction::RemovePasskey {
+                credential_id,
+                unlock,
+            } => match base64url_decode(credential_id) {
+                Ok(id) if !id.is_empty() => (
+                    Change::RemovePasskey { credential_id: id },
+                    Some(unlock.clone()),
+                ),
                 _ => {
-                    out.push(log(LogLevel::Warn, "account: a passkey id that is not base64url"));
+                    out.push(log(
+                        LogLevel::Warn,
+                        "account: a passkey id that is not base64url",
+                    ));
                     return true;
                 }
             },
             _ => return false,
         };
         if self.engine.is_none() {
-            out.push(log(LogLevel::Warn, "account: a change of the account without a room"));
+            out.push(log(
+                LogLevel::Warn,
+                "account: a change of the account without a room",
+            ));
             return true;
         }
         if self.changes.flow.is_some() {
-            let text = Text::new("account.busy", "Another change of the account is still running.");
+            let text = Text::new(
+                "account.busy",
+                "Another change of the account is still running.",
+            );
             self.sent.toast(&mut self.next_view.toasts, text, None);
             return true;
         }
         if matches!(change, Change::ReplaceCode) && matches!(unlock, Some(Unlock::Words { .. })) {
             // (after the kit the code is replaced with the new way in: SetPassword or AddPasskey)
-            self.next_view.account = AccountView { step: "none".into(), problem: Some(said("wrong-recovery")), ..Default::default() };
+            self.next_view.account = AccountView {
+                step: "none".into(),
+                problem: Some(said("wrong-recovery")),
+                ..Default::default()
+            };
             return true;
         }
         let quiet = matches!(change, Change::Read);
-        self.changes.flow = Some(Flow { change, unlock, ..Flow::read() });
+        self.changes.flow = Some(Flow {
+            change,
+            unlock,
+            ..Flow::read()
+        });
         if !quiet {
-            self.next_view.account = AccountView { step: "working".into(), ..Default::default() };
+            self.next_view.account = AccountView {
+                step: "working".into(),
+                ..Default::default()
+            };
         }
-        self.change_send(now_ms, out, Ask::Read, |site| Codec.request(site, &Route::Account));
+        self.change_send(now_ms, out, Ask::Read, |site| {
+            Codec.request(site, &Route::Account)
+        });
         true
     }
 
@@ -263,7 +349,8 @@ impl App {
         now_ms: u64,
         out: &mut Vec<Effect>,
         ask: Ask,
-        build: impl FnOnce(&crate::hub::Site<'_>) -> Result<(crate::app::io::HttpRequest, Expect), Failure> + 'static,
+        build: impl FnOnce(&crate::hub::Site<'_>) -> Result<(crate::app::io::HttpRequest, Expect), Failure>
+            + 'static,
     ) {
         if !self.step_send(now_ms, out, build, move |expect| Step::Change(ask, expect)) {
             self.changes.flow = None;
@@ -272,18 +359,34 @@ impl App {
 
     fn change_failed(&mut self, code: &str) {
         let flow = self.changes.flow.take();
-        if flow.as_ref().is_some_and(|f| matches!(f.change, Change::Read)) {
+        if flow
+            .as_ref()
+            .is_some_and(|f| matches!(f.change, Change::Read))
+        {
             return;
         }
-        self.next_view.account = AccountView { step: "none".into(), problem: Some(said(code)), ..Default::default() };
+        self.next_view.account = AccountView {
+            step: "none".into(),
+            problem: Some(said(code)),
+            ..Default::default()
+        };
     }
 
     fn change_done(&mut self) {
-        let Some(flow) = self.changes.flow.take() else { return };
+        let Some(flow) = self.changes.flow.take() else {
+            return;
+        };
         if !flow.kit.is_empty() {
-            self.next_view.account = AccountView { step: "keep_kit".into(), kit: flow.kit, ..Default::default() };
+            self.next_view.account = AccountView {
+                step: "keep_kit".into(),
+                kit: flow.kit,
+                ..Default::default()
+            };
         } else {
-            self.next_view.account = AccountView { step: "none".into(), ..Default::default() };
+            self.next_view.account = AccountView {
+                step: "none".into(),
+                ..Default::default()
+            };
             if let Some(text) = flow.done {
                 self.sent.toast(&mut self.next_view.toasts, text, None);
             }
@@ -291,7 +394,13 @@ impl App {
     }
 
     /// The hub's answer to a change's request.
-    pub(super) fn change_answered(&mut self, now_ms: u64, ask: Ask, answer: Result<Answer, Failure>, out: &mut Vec<Effect>) {
+    pub(super) fn change_answered(
+        &mut self,
+        now_ms: u64,
+        ask: Ask,
+        answer: Result<Answer, Failure>,
+        out: &mut Vec<Effect>,
+    ) {
         if self.changes.flow.is_none() {
             return;
         }
@@ -314,10 +423,15 @@ impl App {
                     passkeys: held
                         .passkeys
                         .iter()
-                        .map(|p| PasskeyView { credential_id: base64url_encode(&p.credential_id), created_at: p.created_at, last_used_at: p.last_used_at })
+                        .map(|p| PasskeyView {
+                            credential_id: base64url_encode(&p.credential_id),
+                            created_at: p.created_at,
+                            last_used_at: p.last_used_at,
+                        })
                         .collect(),
                 });
-                self.next_view.settings.logout = crate::views::settings::logout(&self.next_view.settings, self.demo);
+                self.next_view.settings.logout =
+                    crate::views::settings::logout(&self.next_view.settings, self.demo);
                 let flow = self.changes.flow.as_mut().expect("a change");
                 if let Some(at) = flow.replace_at {
                     // the account read once more before a replacement: unchanged since the way in was set
@@ -332,7 +446,9 @@ impl App {
             }
             (Ask::Challenge { create }, Answer::PasskeyChallenge(challenge)) => {
                 let flow = self.changes.flow.as_ref().expect("a change");
-                let Some(held) = flow.held.as_ref() else { return self.change_failed("internal") };
+                let Some(held) = flow.held.as_ref() else {
+                    return self.change_failed("internal");
+                };
                 if challenge.account != held.account {
                     return self.change_failed("bad-passkey");
                 }
@@ -348,7 +464,11 @@ impl App {
                     PlatformOp::PasskeyGet {
                         rp_id: String::new(),
                         challenge: Bytes(challenge.challenge.to_vec()),
-                        credential_ids: held.passkeys.iter().map(|p| Bytes(p.credential_id.clone())).collect(),
+                        credential_ids: held
+                            .passkeys
+                            .iter()
+                            .map(|p| Bytes(p.credential_id.clone()))
+                            .collect(),
                         prf_input: Bytes(account::PASSKEY_PRF_INPUT.to_vec()),
                     }
                 };
@@ -359,15 +479,26 @@ impl App {
             }
             (Ask::Main, answer) => self.change_main_answered(now_ms, answer, out),
             (_, answer) => {
-                out.push(log(LogLevel::Warn, &format!("account: an answer the change did not ask for ({answer:?})")));
+                out.push(log(
+                    LogLevel::Warn,
+                    &format!("account: an answer the change did not ask for ({answer:?})"),
+                ));
                 self.change_failed("bad-format");
             }
         }
     }
 
     /// The platform's answer to a passkey ceremony.
-    pub(super) fn change_platform(&mut self, now_ms: u64, id: IoId, result: IoResult<PlatformAnswer>, out: &mut Vec<Effect>) {
-        let Some(create) = self.changes.platform.remove(&id) else { return };
+    pub(super) fn change_platform(
+        &mut self,
+        now_ms: u64,
+        id: IoId,
+        result: IoResult<PlatformAnswer>,
+        out: &mut Vec<Effect>,
+    ) {
+        let Some(create) = self.changes.platform.remove(&id) else {
+            return;
+        };
         if self.changes.flow.is_none() {
             return;
         }
@@ -376,20 +507,54 @@ impl App {
             None => return self.change_failed("internal"),
         };
         match (create, result) {
-            (false, IoResult::Ok(PlatformAnswer::PasskeyAsserted { credential_id, authenticator_data, client_data_json, signature, prf, .. })) => {
+            (
+                false,
+                IoResult::Ok(PlatformAnswer::PasskeyAsserted {
+                    credential_id,
+                    authenticator_data,
+                    client_data_json,
+                    signature,
+                    prf,
+                    ..
+                }),
+            ) => {
                 let flow = self.changes.flow.as_mut().expect("a change");
                 flow.asserted = Some((
-                    PasskeyAssertion { credential_id: credential_id.0, authenticator_data: authenticator_data.0, client_data_json: client_data_json.0, signature: signature.0, user_handle: None },
+                    PasskeyAssertion {
+                        credential_id: credential_id.0,
+                        authenticator_data: authenticator_data.0,
+                        client_data_json: client_data_json.0,
+                        signature: signature.0,
+                        user_handle: None,
+                    },
                     prf.0,
                 ));
                 self.change_next(now_ms, out);
             }
-            (true, IoResult::Ok(PlatformAnswer::PasskeyCreated { credential_id, attestation_object, client_data_json, prf })) => {
+            (
+                true,
+                IoResult::Ok(PlatformAnswer::PasskeyCreated {
+                    credential_id,
+                    attestation_object,
+                    client_data_json,
+                    prf,
+                }),
+            ) => {
                 let flow = self.changes.flow.as_mut().expect("a change");
-                let Some(opened) = flow.opened.as_ref() else { return self.change_failed("internal") };
+                let Some(opened) = flow.opened.as_ref() else {
+                    return self.change_failed("internal");
+                };
                 let made = account::passkey_wrap_key(&prf.0, &room, &credential_id.0)
                     .and_then(|wrap_key| {
-                        let sealed = account::seal_code(&wrap_key, &room, Way::Passkey { credential_id: &credential_id.0 }, &opened.code, &mut SystemEntropy)?;
+                        let sealed = account::seal_code(
+                            &wrap_key,
+                            &room,
+                            Way::Passkey {
+                                credential_id: &credential_id.0,
+                            },
+                            &opened.code,
+                            &mut SystemEntropy,
+                        )?;
                         Ok((wrap_key, sealed))
                     })
                     .map_err(|e| e.code().to_string())
@@ -398,7 +563,12 @@ impl App {
                     Ok((wrap_key, sealed_copy)) => {
                         flow.created = Some(Created {
                             credential_id: credential_id.0,
-                            registration: PasskeyRegistration { attestation_object: attestation_object.0, client_data_json: client_data_json.0, sealed_copy, transports: None },
+                            registration: PasskeyRegistration {
+                                attestation_object: attestation_object.0,
+                                client_data_json: client_data_json.0,
+                                sealed_copy,
+                                transports: None,
+                            },
                             wrap_key,
                         });
                         self.change_next(now_ms, out);
@@ -413,7 +583,9 @@ impl App {
 
     /// The next step of the change in progress, once an answer came.
     fn change_next(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
-        let Some(flow) = self.changes.flow.as_mut() else { return };
+        let Some(flow) = self.changes.flow.as_mut() else {
+            return;
+        };
         if matches!(flow.change, Change::Read) {
             self.changes.flow = None;
             return;
@@ -422,7 +594,9 @@ impl App {
             if flow.held.as_ref().is_some_and(|h| h.passkeys.is_empty()) {
                 return self.change_failed("no-passkey");
             }
-            return self.change_send(now_ms, out, Ask::Challenge { create: false }, |site| Codec.request(site, &Route::AccountPasskeyChallenge));
+            return self.change_send(now_ms, out, Ask::Challenge { create: false }, |site| {
+                Codec.request(site, &Route::AccountPasskeyChallenge)
+            });
         }
         if flow.opened.is_none() {
             match self.change_open() {
@@ -433,14 +607,19 @@ impl App {
         let flow = self.changes.flow.as_mut().expect("a change");
         if matches!(flow.change, Change::Check) {
             self.changes.flow = None;
-            self.next_view.account = AccountView { step: "unlocked".into(), ..Default::default() };
+            self.next_view.account = AccountView {
+                step: "unlocked".into(),
+                ..Default::default()
+            };
             return;
         }
         if flow.sent {
             return;
         }
         if matches!(flow.change, Change::AddPasskey) && flow.created.is_none() {
-            return self.change_send(now_ms, out, Ask::Challenge { create: true }, |site| Codec.request(site, &Route::AccountPasskeyChallenge));
+            return self.change_send(now_ms, out, Ask::Challenge { create: true }, |site| {
+                Codec.request(site, &Route::AccountPasskeyChallenge)
+            });
         }
         match self.change_request() {
             Ok(Some(request)) => {
@@ -461,36 +640,89 @@ impl App {
         let code = |e: account::AccountError| e.code().to_string();
         let (code_of, proof, way) = match flow.unlock.as_ref().ok_or("internal")? {
             Unlock::Password { password } => {
-                let (Some(email), Some(copy)) = (held.email.as_deref(), held.password_copy.as_ref()) else { return Err("no-password".into()) };
+                let (Some(email), Some(copy)) =
+                    (held.email.as_deref(), held.password_copy.as_ref())
+                else {
+                    return Err("no-password".into());
+                };
                 let kdf = held.kdf.as_ref().map(kdf_text);
-                let keys = account::password_keys(email, &password.0, kdf.as_deref()).map_err(code)?;
-                let opened = account::open_code(&keys.wrap_key, &room, Way::Password, copy).map_err(code)?;
-                (opened, AccountProof::Password { auth_key: *keys.auth_key.expose() }, Owned::Password(keys.wrap_key))
+                let keys =
+                    account::password_keys(email, &password.0, kdf.as_deref()).map_err(code)?;
+                let opened =
+                    account::open_code(&keys.wrap_key, &room, Way::Password, copy).map_err(code)?;
+                (
+                    opened,
+                    AccountProof::Password {
+                        auth_key: *keys.auth_key.expose(),
+                    },
+                    Owned::Password(keys.wrap_key),
+                )
             }
             Unlock::Words { words } => {
                 let keys = kit_keys(held, &words.0, None)?;
-                let opened = account::open_code(&keys.wrap_key, &room, Way::Kit, &held.kit_copy).map_err(code)?;
-                (opened, AccountProof::Kit { auth_key: *keys.auth_key.expose() }, Owned::Kit)
+                let opened = account::open_code(&keys.wrap_key, &room, Way::Kit, &held.kit_copy)
+                    .map_err(code)?;
+                (
+                    opened,
+                    AccountProof::Kit {
+                        auth_key: *keys.auth_key.expose(),
+                    },
+                    Owned::Kit,
+                )
             }
             Unlock::Passkey => {
                 let (assertion, prf) = flow.asserted.as_ref().ok_or("internal")?;
-                let row = held.passkeys.iter().find(|p| p.credential_id == assertion.credential_id).ok_or("wrong-login")?;
-                let wrap_key = account::passkey_wrap_key(prf, &room, &assertion.credential_id).map_err(code)?;
-                let opened = account::open_code(&wrap_key, &room, Way::Passkey { credential_id: &assertion.credential_id }, &row.sealed_copy).map_err(code)?;
-                let way = Owned::Passkey { credential_id: assertion.credential_id.clone(), wrap_key };
+                let row = held
+                    .passkeys
+                    .iter()
+                    .find(|p| p.credential_id == assertion.credential_id)
+                    .ok_or("wrong-login")?;
+                let wrap_key = account::passkey_wrap_key(prf, &room, &assertion.credential_id)
+                    .map_err(code)?;
+                let opened = account::open_code(
+                    &wrap_key,
+                    &room,
+                    Way::Passkey {
+                        credential_id: &assertion.credential_id,
+                    },
+                    &row.sealed_copy,
+                )
+                .map_err(code)?;
+                let way = Owned::Passkey {
+                    credential_id: assertion.credential_id.clone(),
+                    wrap_key,
+                };
                 (opened, AccountProof::Passkey(assertion.clone()), way)
             }
         };
         // (a hub can hand out an authentic old copy: only the code in force is used)
-        let keys = RecoveryKeys::from_code(code_of.duplicate()).map_err(|e| e.code().to_string())?;
+        let keys =
+            RecoveryKeys::from_code(code_of.duplicate()).map_err(|e| e.code().to_string())?;
         let history = engine.device().room_history().ok_or("internal")?;
-        keys.check_room(&history.newest().room).map_err(|_| "wrong-recovery".to_string())?;
-        Ok(Opened { code: code_of, proof, way })
+        keys.check_room(&history.newest().room)
+            .map_err(|_| "wrong-recovery".to_string())?;
+        Ok(Opened {
+            code: code_of,
+            proof,
+            way,
+        })
     }
 
     /// The change's own request; none for a replacement of the code alone (it goes by the outbox).
     #[allow(clippy::type_complexity)]
-    fn change_request(&mut self) -> Result<Option<Box<dyn FnOnce(&crate::hub::Site<'_>) -> Result<(crate::app::io::HttpRequest, Expect), Failure>>>, String> {
+    fn change_request(
+        &mut self,
+    ) -> Result<
+        Option<
+            Box<
+                dyn FnOnce(
+                    &crate::hub::Site<'_>,
+                )
+                    -> Result<(crate::app::io::HttpRequest, Expect), Failure>,
+            >,
+        >,
+        String,
+    > {
         let room = self.engine.as_ref().ok_or("internal")?.room();
         let flow = self.changes.flow.as_mut().ok_or("internal")?;
         let held = flow.held.as_ref().ok_or("internal")?;
@@ -507,45 +739,109 @@ impl App {
                 let (words, keys) = new_kit(held)?;
                 let kit = kit_part(&keys, &room, &opened.code)?;
                 flow.kit = words;
-                Box::new(move |site| Codec.request(site, &Route::PutKit { kit: &kit, revision, proof: &proof }))
+                Box::new(move |site| {
+                    Codec.request(
+                        site,
+                        &Route::PutKit {
+                            kit: &kit,
+                            revision,
+                            proof: &proof,
+                        },
+                    )
+                })
             }
             Change::Password { next } => {
                 account::check_password(&next.0).map_err(|e| e.code().to_string())?;
                 let email = held.email.clone().ok_or("needs-email")?;
-                let keys = account::password_keys(&email, &next.0, Some(account::KDF_RECORD)).map_err(|e| e.code().to_string())?;
-                let sealed = account::seal_code(&keys.wrap_key, &room, Way::Password, &opened.code, &mut SystemEntropy).map_err(|e| e.code().to_string())?;
-                let password = NewPassword { auth_key: *keys.auth_key.expose(), sealed_copy: copy61(sealed)?, kdf: pinned_kdf() };
+                let keys = account::password_keys(&email, &next.0, Some(account::KDF_RECORD))
+                    .map_err(|e| e.code().to_string())?;
+                let sealed = account::seal_code(
+                    &keys.wrap_key,
+                    &room,
+                    Way::Password,
+                    &opened.code,
+                    &mut SystemEntropy,
+                )
+                .map_err(|e| e.code().to_string())?;
+                let password = NewPassword {
+                    auth_key: *keys.auth_key.expose(),
+                    sealed_copy: copy61(sealed)?,
+                    kdf: pinned_kdf(),
+                };
                 // (after the kit's words the code is replaced under the new password)
                 if matches!(opened.way, Owned::Kit) {
                     flow.opened.as_mut().expect("opened").way = Owned::Password(keys.wrap_key);
                 }
                 flow.done = Some(Text::new("account.password_set", "The password is set."));
-                Box::new(move |site| Codec.request(site, &Route::PutPassword { password: &password, revision, proof: &proof }))
+                Box::new(move |site| {
+                    Codec.request(
+                        site,
+                        &Route::PutPassword {
+                            password: &password,
+                            revision,
+                            proof: &proof,
+                        },
+                    )
+                })
             }
             Change::Email { email, words } => {
                 if held.email.is_some() {
                     return Err("email-set".into());
                 }
-                let email = account::normalise_email(email.trim()).map_err(|e| e.code().to_string())?;
+                let email =
+                    account::normalise_email(email.trim()).map_err(|e| e.code().to_string())?;
                 let keys = kit_keys(held, &words.0, Some(&email))?;
                 let kit = kit_part(&keys, &room, &opened.code)?;
-                flow.kit = std::str::from_utf8(account::parse_kit_words(&words.0).map_err(|e| e.code().to_string())?.expose())
-                    .unwrap_or("")
-                    .split_whitespace()
-                    .map(String::from)
-                    .collect();
-                Box::new(move |site| Codec.request(site, &Route::PutEmail { email: &email, kit: &kit, revision, proof: &proof }))
+                flow.kit = std::str::from_utf8(
+                    account::parse_kit_words(&words.0)
+                        .map_err(|e| e.code().to_string())?
+                        .expose(),
+                )
+                .unwrap_or("")
+                .split_whitespace()
+                .map(String::from)
+                .collect();
+                Box::new(move |site| {
+                    Codec.request(
+                        site,
+                        &Route::PutEmail {
+                            email: &email,
+                            kit: &kit,
+                            revision,
+                            proof: &proof,
+                        },
+                    )
+                })
             }
             Change::AddPasskey => {
                 let created = flow.created.as_ref().ok_or("internal")?;
                 let passkey = created.registration.clone();
                 flow.done = Some(Text::new("account.passkey_added", "The passkey is added."));
-                Box::new(move |site| Codec.request(site, &Route::AddPasskey { passkey: &passkey, proof: &proof }))
+                Box::new(move |site| {
+                    Codec.request(
+                        site,
+                        &Route::AddPasskey {
+                            passkey: &passkey,
+                            proof: &proof,
+                        },
+                    )
+                })
             }
             Change::RemovePasskey { credential_id } => {
                 let id = credential_id.clone();
-                flow.done = Some(Text::new("account.passkey_removed", "The passkey is removed."));
-                Box::new(move |site| Codec.request(site, &Route::RemovePasskey { credential_id: &id, proof: &proof }))
+                flow.done = Some(Text::new(
+                    "account.passkey_removed",
+                    "The passkey is removed.",
+                ));
+                Box::new(move |site| {
+                    Codec.request(
+                        site,
+                        &Route::RemovePasskey {
+                            credential_id: &id,
+                            proof: &proof,
+                        },
+                    )
+                })
             }
         }))
     }
@@ -560,19 +856,39 @@ impl App {
                 self.change_reread(now_ms, out);
             }
             (Change::AddPasskey, Answer::PasskeyAdded { credential_id, .. }) => {
-                let made = flow.created.as_ref().map(|c| c.credential_id.clone()).unwrap_or_default();
+                let made = flow
+                    .created
+                    .as_ref()
+                    .map(|c| c.credential_id.clone())
+                    .unwrap_or_default();
                 if credential_id != made {
                     // (the hub read another id out of the attestation: the copy is not for it, it goes again)
                     let proof = flow.opened.as_ref().map(|o| o.proof.clone());
                     if let Some(proof) = proof {
-                        self.step_send(now_ms, out, move |site| Codec.request(site, &Route::RemovePasskey { credential_id: &credential_id, proof: &proof }), |_| Step::Quiet);
+                        self.step_send(
+                            now_ms,
+                            out,
+                            move |site| {
+                                Codec.request(
+                                    site,
+                                    &Route::RemovePasskey {
+                                        credential_id: &credential_id,
+                                        proof: &proof,
+                                    },
+                                )
+                            },
+                            |_| Step::Quiet,
+                        );
                     }
                     return self.change_failed("bad-passkey");
                 }
                 if after_kit {
                     let created = flow.created.take().expect("created");
                     if let Some(opened) = flow.opened.as_mut() {
-                        opened.way = Owned::Passkey { credential_id: created.credential_id, wrap_key: created.wrap_key };
+                        opened.way = Owned::Passkey {
+                            credential_id: created.credential_id,
+                            wrap_key: created.wrap_key,
+                        };
                     }
                     let revision = flow.held.as_ref().map_or(0, |h| h.revision) + 1;
                     flow.replace_at = Some(revision);
@@ -591,12 +907,16 @@ impl App {
     /// The page Account shows the account as it is after a change.
     fn change_refresh(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
         self.changes.flow = Some(Flow::read());
-        self.change_send(now_ms, out, Ask::Read, |site| Codec.request(site, &Route::Account));
+        self.change_send(now_ms, out, Ask::Read, |site| {
+            Codec.request(site, &Route::Account)
+        });
     }
 
     /// The account read once more before the code is replaced (`replace_at` is the revision it must have).
     fn change_reread(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
-        self.change_send(now_ms, out, Ask::Read, |site| Codec.request(site, &Route::Account));
+        self.change_send(now_ms, out, Ask::Read, |site| {
+            Codec.request(site, &Route::Account)
+        });
     }
 
     /// Replaces the code (8.6): a new code with its room Commit, link and the account's new copies, one entry.
@@ -606,13 +926,18 @@ impl App {
             Ok(made) => made,
             Err(code) => return self.change_failed(&code),
         };
-        let Some(engine) = self.engine.as_ref() else { return self.change_failed("internal") };
+        let Some(engine) = self.engine.as_ref() else {
+            return self.change_failed("internal");
+        };
         let room = engine.room();
         let done = self.with_engine(now_ms, out, |engine, ctx| {
             engine.act(ctx, |d, now| {
-                let history = d.room_history().ok_or(trommi_core::Error::Internal("no room history"))?;
+                let history = d
+                    .room_history()
+                    .ok_or(trommi_core::Error::Internal("no room history"))?;
                 let replacement = keys.replace(&mut SystemEntropy, &room, history)?;
-                let bytes = copies(&replacement.code).map_err(|_| trommi_core::Error::Internal("account copies"))?;
+                let bytes = copies(&replacement.code)
+                    .map_err(|_| trommi_core::Error::Internal("account copies"))?;
                 d.replace_code(&keys, &replacement, &bytes, now)
             })
         });
@@ -630,33 +955,69 @@ impl App {
     /// The keys of the code in force, and what seals a new code into the account's copies: the way in kept and a
     /// new kit (its words come back for the person).
     #[allow(clippy::type_complexity)]
-    fn change_copies(&mut self) -> Result<(RecoveryKeys, Box<dyn FnOnce(&Key<32>) -> Result<Vec<u8>, String>>, Vec<String>), String> {
+    fn change_copies(
+        &mut self,
+    ) -> Result<
+        (
+            RecoveryKeys,
+            Box<dyn FnOnce(&Key<32>) -> Result<Vec<u8>, String>>,
+            Vec<String>,
+        ),
+        String,
+    > {
         let room = self.engine.as_ref().ok_or("internal")?.room();
         let flow = self.changes.flow.as_mut().ok_or("internal")?;
         let held = flow.held.as_ref().ok_or("internal")?;
         let opened = flow.opened.take().ok_or("internal")?;
         let revision = flow.replace_at.ok_or("internal")?;
         let (words, kit) = new_kit(held)?;
-        let keys = RecoveryKeys::from_code(opened.code.duplicate()).map_err(|e| e.code().to_string())?;
+        let keys =
+            RecoveryKeys::from_code(opened.code.duplicate()).map_err(|e| e.code().to_string())?;
         let way = opened.way;
         let seal = move |code: &Key<32>| -> Result<Vec<u8>, String> {
             let e = |e: account::AccountError| e.code().to_string();
             let way_in = match &way {
-                Owned::Password(wrap) => CopyOfWayIn::Password { sealed_copy: copy61(account::seal_code(wrap, &room, Way::Password, code, &mut SystemEntropy).map_err(e)?)? },
-                Owned::Passkey { credential_id, wrap_key } => CopyOfWayIn::Passkey {
+                Owned::Password(wrap) => CopyOfWayIn::Password {
+                    sealed_copy: copy61(
+                        account::seal_code(wrap, &room, Way::Password, code, &mut SystemEntropy)
+                            .map_err(e)?,
+                    )?,
+                },
+                Owned::Passkey {
+                    credential_id,
+                    wrap_key,
+                } => CopyOfWayIn::Passkey {
                     credential_id: credential_id.clone(),
-                    sealed_copy: copy61(account::seal_code(wrap_key, &room, Way::Passkey { credential_id }, code, &mut SystemEntropy).map_err(e)?)?,
+                    sealed_copy: copy61(
+                        account::seal_code(
+                            wrap_key,
+                            &room,
+                            Way::Passkey { credential_id },
+                            code,
+                            &mut SystemEntropy,
+                        )
+                        .map_err(e)?,
+                    )?,
                 },
                 Owned::Kit => return Err("internal".into()),
             };
-            let copies = AccountCopies { kit: kit_part(&kit, &room, code)?, revision: Some(revision), way_in: Some(way_in) };
+            let copies = AccountCopies {
+                kit: kit_part(&kit, &room, code)?,
+                revision: Some(revision),
+                way_in: Some(way_in),
+            };
             crate::hub::account_copies_body(Some(&copies)).map_err(|f| failure_code(&f))
         };
         Ok((keys, Box::new(seal), words))
     }
 
     /// The hub took the replacement (`None`) or refused it.
-    pub(super) fn change_replaced(&mut self, now_ms: u64, refused: Option<&str>, out: &mut Vec<Effect>) {
+    pub(super) fn change_replaced(
+        &mut self,
+        now_ms: u64,
+        refused: Option<&str>,
+        out: &mut Vec<Effect>,
+    ) {
         match refused {
             None => {
                 self.change_done();

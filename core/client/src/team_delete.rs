@@ -149,7 +149,9 @@ fn files_in(v: &Value, out: &mut BTreeSet<String>) {
     match v {
         Value::Object(o) => {
             for (k, x) in o {
-                if (k == "attachment_id" || k == "poster_attachment_id") && x.as_str().is_some_and(is_hex32) {
+                if (k == "attachment_id" || k == "poster_attachment_id")
+                    && x.as_str().is_some_and(is_hex32)
+                {
                     out.insert(x.as_str().unwrap_or_default().to_ascii_lowercase());
                 } else {
                     files_in(x, out);
@@ -187,7 +189,8 @@ impl Model {
         let teams = teams_of(self);
         let register = register_of(team_id);
         let rows = self.rows_with_helpers();
-        let (left, units, work) = self.team_left(team_id, &rows, known.board.as_ref(), &known.files_gone);
+        let (left, units, work) =
+            self.team_left(team_id, &rows, known.board.as_ref(), &known.files_gone);
         let plan = |step: Step, total: u64| Plan {
             step,
             done: total.saturating_sub(units),
@@ -199,7 +202,9 @@ impl Model {
             let step = if self.human.contains_key(&register) {
                 Step::Done
             } else {
-                Step::Refused { code: "no-team".into() }
+                Step::Refused {
+                    code: "no-team".into(),
+                }
             };
             return Plan {
                 step,
@@ -220,35 +225,54 @@ impl Model {
         let Some(mark) = marked else {
             let mut v = (*value).clone();
             if let Some(o) = v.as_object_mut() {
-                o.insert("deleting".into(), json!({ "at": now, "by": by, "total": units }));
+                o.insert(
+                    "deleting".into(),
+                    json!({ "at": now, "by": by, "total": units }),
+                );
             }
             return plan(Step::Mark { register, value: v }, units);
         };
-        let total = mark.get("total").and_then(Value::as_u64).unwrap_or(units).max(units);
+        let total = mark
+            .get("total")
+            .and_then(Value::as_u64)
+            .unwrap_or(units)
+            .max(units);
         let step = if !work.shred.is_empty() {
-            Step::Shred { object_ids: work.shred }
+            Step::Shred {
+                object_ids: work.shred,
+            }
         } else if !work.devices.is_empty() {
             Step::RemoveDevices {
                 device_ids: work.devices,
             }
         } else if !work.archive.is_empty() {
-            Step::Archive { sessions: work.archive }
+            Step::Archive {
+                sessions: work.archive,
+            }
         } else if known.board.is_none() {
             Step::LoadBoard {
                 team_id: team_id.to_string(),
             }
         } else if known.board.as_ref().is_some_and(|b| !b.shapes.is_empty()) {
             Step::EraseBoard {
-                shape_ids: known.board.as_ref().map(|b| b.shapes.clone()).unwrap_or_default(),
+                shape_ids: known
+                    .board
+                    .as_ref()
+                    .map(|b| b.shapes.clone())
+                    .unwrap_or_default(),
             }
         } else if !work.files.is_empty() {
-            Step::DeleteFiles { file_ids: work.files }
+            Step::DeleteFiles {
+                file_ids: work.files,
+            }
         } else if !known.board.as_ref().is_some_and(|b| b.snapshot_empty) {
             Step::WriteSnapshot {
                 team_id: team_id.to_string(),
             }
         } else if !work.knowledge.is_empty() {
-            Step::ForgetKnowledge { entry_ids: work.knowledge }
+            Step::ForgetKnowledge {
+                entry_ids: work.knowledge,
+            }
         } else {
             Step::RemoveTeam { register }
         };
@@ -260,11 +284,16 @@ impl Model {
     fn rows_with_helpers(&self) -> Vec<SessionRow> {
         let (mut rows, legacy) = session_list_and_helpers(self, false);
         for h in legacy {
-            let Some(main) = rows.iter().find(|r| r.key == h.main) else { continue };
+            let Some(main) = rows.iter().find(|r| r.key == h.main) else {
+                continue;
+            };
             let row = SessionRow {
                 key: h.key.clone(),
                 session_id: Some(h.key.clone()),
-                agent_device_id: self.sessions.get(&h.key).and_then(|s| s.agent_device_id.clone()),
+                agent_device_id: self
+                    .sessions
+                    .get(&h.key)
+                    .and_then(|s| s.agent_device_id.clone()),
                 name: h.name.clone(),
                 team: main.team.clone(),
                 archived: h.archived,
@@ -288,7 +317,10 @@ impl Model {
             .filter(|r| r.team == team_id && !r.removed && !r.own)
             .collect();
         let keys: BTreeSet<&str> = here.iter().map(|r| r.key.as_str()).collect();
-        let sids: BTreeSet<&str> = here.iter().filter_map(|r| r.session_id.as_deref()).collect();
+        let sids: BTreeSet<&str> = here
+            .iter()
+            .filter_map(|r| r.session_id.as_deref())
+            .collect();
         let mains: BTreeSet<&str> = here
             .iter()
             .filter(|r| r.main)
@@ -309,7 +341,10 @@ impl Model {
             }
         }
         // (a session whose agent already left the room is archived too: the archive is the person's word on it)
-        for r in rows.iter().filter(|r| r.team == team_id && !r.own && !r.archived) {
+        for r in rows
+            .iter()
+            .filter(|r| r.team == team_id && !r.own && !r.archived)
+        {
             let group = r
                 .session_id
                 .as_deref()
@@ -391,7 +426,12 @@ impl Model {
             c.board = Some(b.shapes.len() as u64);
             c.pictures = Some(b.files.len() as u64);
             c.notes = Some(b.notes);
-            files.extend(b.files.iter().filter(|f| is_hex32(f)).map(|f| f.to_ascii_lowercase()));
+            files.extend(
+                b.files
+                    .iter()
+                    .filter(|f| is_hex32(f))
+                    .map(|f| f.to_ascii_lowercase()),
+            );
         }
         w.files = files.into_iter().filter(|f| !gone.contains(f)).collect();
         c.files = w.files.len() as u64;
@@ -399,15 +439,22 @@ impl Model {
             .get(team_id)
             .and_then(|v| v.get("goals"))
             .and_then(Value::as_str)
-            .map_or(0, |g| g.lines().filter(|l| !l.trim().is_empty()).count() as u64);
-        w.knowledge = crate::knowledge::of_team(self, team_id).into_iter().map(|e| e.id).collect();
+            .map_or(0, |g| {
+                g.lines().filter(|l| !l.trim().is_empty()).count() as u64
+            });
+        w.knowledge = crate::knowledge::of_team(self, team_id)
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
         c.knowledge = w.knowledge.len() as u64;
         // Units: one per card to shred, session to archive, device to remove, shape to erase, file to delete, entry
         // to forget, and one each for the snapshot and the register.
-        let units = (w.shred.len() + w.archive.len() + w.devices.len() + w.files.len() + w.knowledge.len()) as u64
-            + board.map_or(0, |b| b.shapes.len() as u64)
-            + u64::from(!board.is_some_and(|b| b.snapshot_empty))
-            + u64::from(teams_of(self).contains_key(team_id));
+        let units =
+            (w.shred.len() + w.archive.len() + w.devices.len() + w.files.len() + w.knowledge.len())
+                as u64
+                + board.map_or(0, |b| b.shapes.len() as u64)
+                + u64::from(!board.is_some_and(|b| b.snapshot_empty))
+                + u64::from(teams_of(self).contains_key(team_id));
         (c, units, w)
     }
 }
@@ -485,7 +532,8 @@ mod tests {
             ..Default::default()
         };
         if let Some(f) = file {
-            c.fields.insert("attachments", json!([{ "attachment_id": f }]));
+            c.fields
+                .insert("attachments", json!([{ "attachment_id": f }]));
         }
         m.cards.insert(id.into(), c);
     }
@@ -497,7 +545,11 @@ mod tests {
         for a in [A1, A2, A3] {
             member(&mut m, a, "agent");
         }
-        set(&mut m, "desk/main", json!({ "name": "Personal", "created_at": 1 }));
+        set(
+            &mut m,
+            "desk/main",
+            json!({ "name": "Personal", "created_at": 1 }),
+        );
         set(
             &mut m,
             "desk/lab",
@@ -558,7 +610,9 @@ mod tests {
         let mut m = room();
         assert_eq!(
             m.team_delete_plan("nope", &Known::default(), ME, 5).step,
-            Step::Refused { code: "no-team".into() }
+            Step::Refused {
+                code: "no-team".into()
+            }
         );
         m.human.remove("desk/lab");
         assert_eq!(
@@ -611,7 +665,9 @@ mod tests {
         }
         assert_eq!(
             m.team_delete_plan("lab", &k, ME, 9).step,
-            Step::LoadBoard { team_id: "lab".into() }
+            Step::LoadBoard {
+                team_id: "lab".into()
+            }
         );
         k.board = Some(board(3, false));
         assert_eq!(
@@ -635,7 +691,9 @@ mod tests {
         k.files_gone = [F1, F2, F3].map(String::from).into();
         assert_eq!(
             m.team_delete_plan("lab", &k, ME, 11).step,
-            Step::WriteSnapshot { team_id: "lab".into() }
+            Step::WriteSnapshot {
+                team_id: "lab".into()
+            }
         );
         k.board = Some(board(0, true));
         let p = m.team_delete_plan("lab", &k, ME, 12);
@@ -678,7 +736,13 @@ mod tests {
     fn an_agent_with_a_live_session_on_another_desk_stays() {
         let mut m = room();
         // A2 also runs a helper of S1 on "lab": it keeps its main session on "main", so it is not removed
-        session(&mut m, "54545454545454545454545454545454", A2, Some(S1), "lab");
+        session(
+            &mut m,
+            "54545454545454545454545454545454",
+            A2,
+            Some(S1),
+            "lab",
+        );
         let c = m.team_contents("lab", None);
         assert_eq!((c.helpers, c.agents), (2, 2));
         let p = m.team_delete_plan("lab", &Known::default(), ME, 1);
@@ -703,26 +767,47 @@ mod tests {
     #[test]
     fn a_teams_knowledge_goes_with_it_and_another_teams_stays() {
         let mut m = room();
-        set(&mut m, "desk/empty", json!({ "name": "Empty", "created_at": 3 }));
+        set(
+            &mut m,
+            "desk/empty",
+            json!({ "name": "Empty", "created_at": 3 }),
+        );
         let entry = |team: &str| json!({ "desk": team, "title": "T", "text": "x", "at": 1 });
         let (mine, other) = ("a".repeat(32), "b".repeat(32));
         set(&mut m, &format!("knowledge/{mine}"), entry("empty"));
         set(&mut m, &format!("knowledge/{other}"), entry("main"));
         assert_eq!(m.team_contents("empty", None).knowledge, 1);
-        let k = Known { board: Some(board(0, true)), ..Default::default() };
+        let k = Known {
+            board: Some(board(0, true)),
+            ..Default::default()
+        };
         let p = m.team_delete_plan("empty", &k, ME, 1);
         mark(&mut m, &p);
         let p = m.team_delete_plan("empty", &k, ME, 2);
-        assert_eq!(p.step, Step::ForgetKnowledge { entry_ids: vec![mine.clone()] });
+        assert_eq!(
+            p.step,
+            Step::ForgetKnowledge {
+                entry_ids: vec![mine.clone()]
+            }
+        );
         set(&mut m, &format!("knowledge/{mine}"), Value::Null);
-        assert_eq!(m.team_delete_plan("empty", &k, ME, 3).step, Step::RemoveTeam { register: "desk/empty".into() });
+        assert_eq!(
+            m.team_delete_plan("empty", &k, ME, 3).step,
+            Step::RemoveTeam {
+                register: "desk/empty".into()
+            }
+        );
         assert!(!m.human[&format!("knowledge/{other}")].value.is_null());
     }
 
     #[test]
     fn a_desk_with_nothing_on_it_needs_its_board_read_then_goes() {
         let mut m = room();
-        set(&mut m, "desk/empty", json!({ "name": "Empty", "created_at": 3 }));
+        set(
+            &mut m,
+            "desk/empty",
+            json!({ "name": "Empty", "created_at": 3 }),
+        );
         let k = Known {
             board: Some(board(0, true)),
             ..Default::default()

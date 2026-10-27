@@ -36,7 +36,9 @@ pub fn encode(text: &str) -> Vec<u8> {
         let bare = json!({ "text": words, "pad": "" }).to_string();
         if bare.len() <= PREVIEW_BYTES {
             let pad = " ".repeat(PREVIEW_BYTES - bare.len());
-            return json!({ "text": words, "pad": pad }).to_string().into_bytes();
+            return json!({ "text": words, "pad": pad })
+                .to_string()
+                .into_bytes();
         }
         let mut from = (bare.len() - PREVIEW_BYTES).max(words.len() / 10);
         while from < words.len() && !words.is_char_boundary(from) {
@@ -56,7 +58,8 @@ pub fn decode(bytes: &[u8]) -> Option<String> {
     let o = v.as_object()?;
     let text = o.get("text")?.as_str()?;
     let pad = o.get("pad")?.as_str()?;
-    (o.len() == 2 && text.len() <= TEXT_MAX && pad.bytes().all(|b| b == b' ')).then(|| text.to_string())
+    (o.len() == 2 && text.len() <= TEXT_MAX && pad.bytes().all(|b| b == b' '))
+        .then(|| text.to_string())
 }
 
 #[cfg(test)]
@@ -65,7 +68,12 @@ mod tests {
 
     #[test]
     fn every_preview_weighs_the_same() {
-        for text in ["", "Guten Tag", &"ä".repeat(5_000), &"x \"quoted\" \\ ".repeat(2_000)] {
+        for text in [
+            "",
+            "Guten Tag",
+            &"ä".repeat(5_000),
+            &"x \"quoted\" \\ ".repeat(2_000),
+        ] {
             let bytes = encode(text);
             assert_eq!(bytes.len(), PREVIEW_BYTES, "{}", text.len());
             let back = decode(&bytes).unwrap();
@@ -77,7 +85,10 @@ mod tests {
         let mut short = encode("Hallo");
         short.pop();
         assert_eq!(decode(&short), None);
-        let odd = format!("{{\"text\":\"x\",\"pad\":\"{}\"}}", "y".repeat(PREVIEW_BYTES - 21));
+        let odd = format!(
+            "{{\"text\":\"x\",\"pad\":\"{}\"}}",
+            "y".repeat(PREVIEW_BYTES - 21)
+        );
         assert_eq!((odd.len(), decode(odd.as_bytes())), (PREVIEW_BYTES, None));
     }
 }

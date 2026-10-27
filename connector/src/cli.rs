@@ -1,7 +1,7 @@
 //! The commands beside the MCP server: join, say, the plugin's hooks, the monitor, the witness, whoami.
 use crate::bridge::{About, Bridge};
-use crate::driver::BoxFut;
 use crate::door::{knock, ring};
+use crate::driver::BoxFut;
 use crate::error::{Fault, Result};
 use crate::hooks::{hook_output, hook_request};
 use crate::member::{self, command_slots, connector_config, paths_of, resolve_room, Member};
@@ -40,7 +40,9 @@ async fn join(link: String) -> Result<String> {
 }
 
 async fn finish_join(m: Arc<Member>) -> Result<String> {
-    let c = m.client().ok_or_else(|| Fault::plain("This session did not finish connecting"))?;
+    let c = m
+        .client()
+        .ok_or_else(|| Fault::plain("This session did not finish connecting"))?;
     let (room, sid) = {
         let core = c.lock();
         (c.room_id().to_base64url(), core.session_id())
@@ -94,8 +96,12 @@ async fn connect(argv: &[String]) -> Result<String> {
     crate::host::from_env();
     let computer = argv.iter().any(|a| a == "--computer");
     let args: Vec<_> = argv.iter().filter(|a| a.as_str() != "--computer").collect();
-    if args.len() > 1 { return Err(Fault::plain("usage: connect [--computer '<invite link>']")) }
-    if !computer && !args.is_empty() { return join(args[0].clone()).await }
+    if args.len() > 1 {
+        return Err(Fault::plain("usage: connect [--computer '<invite link>']"));
+    }
+    if !computer && !args.is_empty() {
+        return join(args[0].clone()).await;
+    }
     let cfg = connector_config(None, true);
     let member = Member::new(cfg.clone());
     let result = async {
@@ -111,7 +117,10 @@ async fn connect(argv: &[String]) -> Result<String> {
         member.open(false).await?;
         crate::machine::activate(&cfg, &member).await
     }.await;
-    if let Err(error) = result { member.release().await; return Err(error) }
+    if let Err(error) = result {
+        member.release().await;
+        return Err(error);
+    }
     finish_join(member).await
 }
 
@@ -398,7 +407,12 @@ pub async fn last_word(cfg: &member::Cfg, room_id: &str, t: &Value) -> bool {
     let p = if owner.is_empty() {
         paths_of(cfg, room_id, slot as u32)
     } else {
-        let Some((_, p)) = member::own_slots(cfg, owner).into_iter().find(|(r, p)| r == room_id && u64::from(p.slot) == slot) else { return false };
+        let Some((_, p)) = member::own_slots(cfg, owner)
+            .into_iter()
+            .find(|(r, p)| r == room_id && u64::from(p.slot) == slot)
+        else {
+            return false;
+        };
         p
     };
     if !p.key_file.exists() || !lock_slot(&p, &format!("witness:{}", pid())) {
@@ -472,7 +486,12 @@ pub async fn witness(session: Option<String>) {
 pub fn whoami() -> Result<String> {
     let cfg = connector_config(None, true);
     let room = resolve_room(&cfg)?;
-    let p = room.as_ref().map(|r| command_slots(&cfg, r).into_iter().next().unwrap_or_else(|| paths_of(&cfg, r, 1)));
+    let p = room.as_ref().map(|r| {
+        command_slots(&cfg, r)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| paths_of(&cfg, r, 1))
+    });
     Ok(serde_json::to_string_pretty(&json!({
         "room_id": room, "key_file": p.as_ref().map(|p| p.key_file.display().to_string()), "has_key": p.as_ref().is_some_and(|p| p.key_file.exists()),
         "folder": cfg.shown, "host": cfg.host,
@@ -662,7 +681,9 @@ pub async fn run(argv: &[String]) -> i32 {
 pub fn hermes_spec() -> String {
     crate::host::set_preset(&crate::preset::HERMES);
     let path = crate::server::self_path().display().to_string();
-    let tools: Value = serde_json::from_str(&crate::prompt::tools_list_json_with_connect(false, None)).unwrap_or(Value::Null);
+    let tools: Value =
+        serde_json::from_str(&crate::prompt::tools_list_json_with_connect(false, None))
+            .unwrap_or(Value::Null);
     json!({
         "version": crate::CLIENT,
         "instructions": crate::prompt::instructions().replacen("<connector>", &path, 1),

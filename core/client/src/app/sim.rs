@@ -104,7 +104,11 @@ impl Sim {
 
     /// A window's view model as its shell folded it (window 0: `view`).
     pub fn window_view(&self, window: u32) -> Option<&ViewModel> {
-        if window == 0 { Some(&self.view) } else { self.windows.get(&window) }
+        if window == 0 {
+            Some(&self.view)
+        } else {
+            self.windows.get(&window)
+        }
     }
 
     /// Runs effects the test got from the App by hand (`App::act`), and everything that follows from them.
@@ -175,9 +179,16 @@ impl Sim {
             }
             self.log.push(effect.clone());
             match effect {
-                Effect::ShareInbox { .. } | Effect::ForgetShared => {},
-                Effect::Render { delta, window: 0 } => self.view.apply(&delta).expect("renders come in order"),
-                Effect::Render { delta, window } => self.windows.entry(window).or_default().apply(&delta).expect("renders come in order"),
+                Effect::ShareInbox { .. } | Effect::ForgetShared => {}
+                Effect::Render { delta, window: 0 } => {
+                    self.view.apply(&delta).expect("renders come in order")
+                }
+                Effect::Render { delta, window } => self
+                    .windows
+                    .entry(window)
+                    .or_default()
+                    .apply(&delta)
+                    .expect("renders come in order"),
                 Effect::Store { id, op } => {
                     let failed = matches!(op, StoreOp::DeviceApply { .. });
                     let result = self.store(op);
@@ -232,7 +243,9 @@ impl Sim {
                     id,
                     result: match (self.secrets.as_mut(), op) {
                         (None, _) => IoResult::Err(IoError::new(IoErrorKind::Denied)),
-                        (Some(s), super::SecretOp::Get { name }) => IoResult::Ok(s.get(&name).cloned().map(Into::into)),
+                        (Some(s), super::SecretOp::Get { name }) => {
+                            IoResult::Ok(s.get(&name).cloned().map(Into::into))
+                        }
                         (Some(s), super::SecretOp::Put { name, value }) => {
                             s.insert(name, value.0);
                             IoResult::Ok(None)
@@ -283,7 +296,12 @@ impl Sim {
                     .collect(),
             }),
             StoreOp::Keys { prefix } => IoResult::Ok(StoreAnswer::Keys {
-                keys:self.cache.range(prefix.clone()..).take_while(|(key,_)| key.starts_with(&prefix)).map(|(key,_)| key.clone()).collect(),
+                keys: self
+                    .cache
+                    .range(prefix.clone()..)
+                    .take_while(|(key, _)| key.starts_with(&prefix))
+                    .map(|(key, _)| key.clone())
+                    .collect(),
             }),
             StoreOp::Put { put, delete } | StoreOp::PutDurable { put, delete } => {
                 for k in delete {
@@ -369,7 +387,14 @@ pub struct AgentSim {
 impl AgentSim {
     /// An engine over the device state in `io.device`, made an agent's; nothing is asked before [`AgentSim::start`].
     pub fn new(io: Sim, hub: &str) -> Self {
-        let mut sim = AgentSim { io, engine: None, reports: Vec::new(), hub: hub.to_string(), invite: None, next_id: 1 };
+        let mut sim = AgentSim {
+            io,
+            engine: None,
+            reports: Vec::new(),
+            hub: hub.to_string(),
+            invite: None,
+            next_id: 1,
+        };
         sim.open();
         sim
     }
@@ -377,7 +402,14 @@ impl AgentSim {
     /// An engine over the device state in `io.device` of a device that answered an invite, opened with what its
     /// connector stored ([`crate::engine::Engine::open_agent`]).
     pub fn invited(io: Sim, hub: &str, invite: crate::engine::AgentInvite) -> Self {
-        let mut sim = AgentSim { io, engine: None, reports: Vec::new(), hub: hub.to_string(), invite: Some(invite), next_id: 1 };
+        let mut sim = AgentSim {
+            io,
+            engine: None,
+            reports: Vec::new(),
+            hub: hub.to_string(),
+            invite: Some(invite),
+            next_id: 1,
+        };
         sim.open();
         sim
     }
@@ -392,11 +424,35 @@ impl AgentSim {
     }
 
     fn open(&mut self) {
-        let entries = self.io.device.1.iter().map(|(k, v)| DeviceEntry { key: k.clone().into(), value: v.clone().into() }).collect();
+        let entries = self
+            .io
+            .device
+            .1
+            .iter()
+            .map(|(k, v)| DeviceEntry {
+                key: k.clone().into(),
+                value: v.clone().into(),
+            })
+            .collect();
         let engine = match &self.invite {
-            Some(invite) => crate::engine::Engine::open_agent(&self.hub, "test/0.0.0", 7, self.io.device.0, entries, invite.clone()).expect("the stored device opens"),
+            Some(invite) => crate::engine::Engine::open_agent(
+                &self.hub,
+                "test/0.0.0",
+                7,
+                self.io.device.0,
+                entries,
+                invite.clone(),
+            )
+            .expect("the stored device opens"),
             None => {
-                let mut engine = crate::engine::Engine::open(&self.hub, "test/0.0.0", 7, self.io.device.0, entries).expect("the stored device opens");
+                let mut engine = crate::engine::Engine::open(
+                    &self.hub,
+                    "test/0.0.0",
+                    7,
+                    self.io.device.0,
+                    entries,
+                )
+                .expect("the stored device opens");
                 engine.become_agent().expect("an agent device");
                 engine
             }
@@ -409,10 +465,17 @@ impl AgentSim {
     }
 
     /// Calls the engine with a context and runs everything that follows.
-    pub fn with<T>(&mut self, call: impl FnOnce(&mut crate::engine::Engine, &mut crate::engine::Ctx<'_>) -> T) -> T {
+    pub fn with<T>(
+        &mut self,
+        call: impl FnOnce(&mut crate::engine::Engine, &mut crate::engine::Ctx<'_>) -> T,
+    ) -> T {
         let mut out = Vec::new();
         let result = {
-            let mut ctx = crate::engine::Ctx { now: self.io.now_ms, next_id: &mut self.next_id, out: &mut out };
+            let mut ctx = crate::engine::Ctx {
+                now: self.io.now_ms,
+                next_id: &mut self.next_id,
+                out: &mut out,
+            };
             call(self.engine.as_mut().expect("an engine"), &mut ctx)
         };
         self.run(out);
@@ -430,7 +493,11 @@ impl AgentSim {
             let mut out = Vec::new();
             {
                 let engine = self.engine.as_mut().expect("an engine");
-                let mut ctx = crate::engine::Ctx { now: self.io.now_ms, next_id: &mut self.next_id, out: &mut out };
+                let mut ctx = crate::engine::Ctx {
+                    now: self.io.now_ms,
+                    next_id: &mut self.next_id,
+                    out: &mut out,
+                };
                 match event {
                     Event::Http { id, result } => {
                         engine.on_http(&mut ctx, id, result);
@@ -471,7 +538,9 @@ impl AgentSim {
 
     /// Sends an item on the newest open stream, and runs what follows.
     pub fn stream(&mut self, item: StreamItem) -> bool {
-        let Some((id, _)) = self.io.streams.last().cloned() else { return false };
+        let Some((id, _)) = self.io.streams.last().cloned() else {
+            return false;
+        };
         if matches!(item, StreamItem::Ended | StreamItem::Failed { .. }) {
             self.io.streams.pop();
         }
@@ -482,9 +551,12 @@ impl AgentSim {
 
     /// The commands the engine reported, in order.
     pub fn commands(&self) -> Vec<crate::engine::AgentCommand> {
-        self.reports.iter().filter_map(|r| match r {
-            crate::engine::Report::Command(c) => Some((**c).clone()),
-            _ => None,
-        }).collect()
+        self.reports
+            .iter()
+            .filter_map(|r| match r {
+                crate::engine::Report::Command(c) => Some((**c).clone()),
+                _ => None,
+            })
+            .collect()
     }
 }

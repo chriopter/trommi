@@ -18,12 +18,14 @@
 //!    (`DELETE …/recovery/{id}`); the device's state changes only when the hub accepted the finish.
 
 use super::room_join::{Joiner, Read, RoomJoinError, RoomJoinStep};
-use crate::hub::OutboxExtra;
 use super::*;
+use crate::hub::OutboxExtra;
 use std::collections::BTreeMap;
 use trommi_core::crypto::Secret as Key;
 use trommi_core::device::ServedEnvelope;
-use trommi_core::recovery::{self, PlacedCommit, Replacement, RoomCheck, ServedCommit, ServedEnd, ServedStart};
+use trommi_core::recovery::{
+    self, PlacedCommit, Replacement, RoomCheck, ServedCommit, ServedEnd, ServedStart,
+};
 
 /// Seals the new code into the account's new copies (the body part of the finish); `room` is the room's.
 pub type Copies = Box<dyn FnOnce(&Key<32>, &RoomId) -> Result<Vec<u8>, &'static str> + Send>;
@@ -85,7 +87,6 @@ impl Recovering {
     pub(super) fn posting(&self) -> Option<u64> {
         self.posting
     }
-
 }
 
 fn of(e: &Error) -> RoomJoinError {
@@ -95,45 +96,108 @@ fn of(e: &Error) -> RoomJoinError {
 impl Engine {
     /// The recovery's next read or step, once the sealed keys, the room group's GroupInfos and the sessions are
     /// read.
-    pub(super) fn recover_next(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner, sessions: Vec<GroupId>, current: (u64, Vec<u8>), founding: Vec<u8>, anchor: Vec<u8>) -> Result<(), RoomJoinError> {
+    pub(super) fn recover_next(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        j: &mut Joiner,
+        sessions: Vec<GroupId>,
+        current: (u64, Vec<u8>),
+        founding: Vec<u8>,
+        anchor: Vec<u8>,
+    ) -> Result<(), RoomJoinError> {
         let room = self.room;
         let room_group = GroupId::room(room);
-        let r = j.recover.as_mut().ok_or(RoomJoinError::Device("internal"))?;
+        let r = j
+            .recover
+            .as_mut()
+            .ok_or(RoomJoinError::Device("internal"))?;
         // 2. the session groups' GroupInfos, and every group's Commits
         for group in &sessions {
             if !r.founding.contains_key(group) {
                 let group = *group;
-                return self.room_ask(ctx, j, Route::GroupInfo { group: &group, epoch: Some(0) }, Read::Session(group, true));
+                return self.room_ask(
+                    ctx,
+                    j,
+                    Route::GroupInfo {
+                        group: &group,
+                        epoch: Some(0),
+                    },
+                    Read::Session(group, true),
+                );
             }
             if !r.current.contains_key(group) {
                 let group = *group;
-                return self.room_ask(ctx, j, Route::GroupInfo { group: &group, epoch: None }, Read::Session(group, false));
+                return self.room_ask(
+                    ctx,
+                    j,
+                    Route::GroupInfo {
+                        group: &group,
+                        epoch: None,
+                    },
+                    Read::Session(group, false),
+                );
             }
         }
         for group in std::iter::once(&room_group).chain(&sessions) {
             let (after, done) = r.logs.get(group).copied().unwrap_or((0, false));
             if !done {
                 let group = *group;
-                return self.room_ask(ctx, j, Route::GroupLog { group: &group, after, limit: LOG_PAGE, commits_only: true }, Read::SessionLog(group));
+                return self.room_ask(
+                    ctx,
+                    j,
+                    Route::GroupLog {
+                        group: &group,
+                        after,
+                        limit: LOG_PAGE,
+                        commits_only: true,
+                    },
+                    Read::SessionLog(group),
+                );
             }
         }
         // 3. both walks, in the hub's order
-        let foundings: Vec<Vec<u8>> = sessions.iter().map(|g| r.founding.get(g).cloned().unwrap_or_default()).collect();
-        let currents: Vec<Vec<u8>> = sessions.iter().map(|g| r.current.get(g).map(|(_, c)| c.clone()).unwrap_or_default()).collect();
+        let foundings: Vec<Vec<u8>> = sessions
+            .iter()
+            .map(|g| r.founding.get(g).cloned().unwrap_or_default())
+            .collect();
+        let currents: Vec<Vec<u8>> = sessions
+            .iter()
+            .map(|g| r.current.get(g).map(|(_, c)| c.clone()).unwrap_or_default())
+            .collect();
         let founding_refs: Vec<&[u8]> = foundings.iter().map(Vec::as_slice).collect();
         let current_refs: Vec<&[u8]> = currents.iter().map(Vec::as_slice).collect();
-        let end = ServedEnd { current: &current.1, sessions: &current_refs, rows: &j.rows, links: &j.links };
+        let end = ServedEnd {
+            current: &current.1,
+            sessions: &current_refs,
+            rows: &j.rows,
+            links: &j.links,
+        };
         if !r.checked {
             j.step = RoomJoinStep::Checking;
-            let start = ServedStart { room, founding: &founding, anchor: &anchor, rows: &j.rows, sessions: &founding_refs };
-            self.device.code_check_start(&j.keys, &start).map_err(|e| of(&e))?;
+            let start = ServedStart {
+                room,
+                founding: &founding,
+                anchor: &anchor,
+                rows: &j.rows,
+                sessions: &founding_refs,
+            };
+            self.device
+                .code_check_start(&j.keys, &start)
+                .map_err(|e| of(&e))?;
             let mut plan = RoomCheck::start(&j.keys, &start).map_err(|e| of(&e))?;
             r.commits.sort_by_key(|c| c.change);
             let (mut at, mut size) = (0, SLICE);
             while at < r.commits.len() {
                 let slice: Vec<PlacedCommit<'_>> = r.commits[at..(at + size).min(r.commits.len())]
                     .iter()
-                    .map(|c| PlacedCommit { group: c.group, commit: ServedCommit { change: c.change, commit: &c.bytes, recovery_auth: c.recovery_auth.as_deref() } })
+                    .map(|c| PlacedCommit {
+                        group: c.group,
+                        commit: ServedCommit {
+                            change: c.change,
+                            commit: &c.bytes,
+                            recovery_auth: c.recovery_auth.as_deref(),
+                        },
+                    })
                     .collect();
                 let device = self.device.code_check_slice(&slice);
                 match device.and_then(|()| plan.slice(&slice)) {
@@ -143,8 +207,14 @@ impl Engine {
                 }
             }
             let checked = plan.finish(&j.keys, &end).map_err(|e| of(&e))?;
-            let history = checked.observer.history().ok_or(RoomJoinError::Device("internal"))?;
-            let replacement = j.keys.replace(&mut SystemEntropy, &room, history).map_err(|e| of(&e))?;
+            let history = checked
+                .observer
+                .history()
+                .ok_or(RoomJoinError::Device("internal"))?;
+            let replacement = j
+                .keys
+                .replace(&mut SystemEntropy, &room, history)
+                .map_err(|e| of(&e))?;
             r.removals = recovery::removals(&checked).map_err(|e| of(&e))?;
             r.replacement = Some(replacement);
             r.commits = Vec::new();
@@ -153,13 +223,25 @@ impl Engine {
         // 4. the chains of the devices that go
         loop {
             let (removal, device, after) = r.chain_at;
-            let Some((group, devices)) = r.removals.get(removal) else { break };
+            let Some((group, devices)) = r.removals.get(removal) else {
+                break;
+            };
             let Some(sender) = devices.get(device) else {
                 r.chain_at = (removal + 1, 0, 0);
                 continue;
             };
             let (group, sender) = (*group, *sender);
-            return self.room_ask(ctx, j, Route::Chain { group: &group, sender: &sender, after, limit: CHAIN_PAGE }, Read::Chain);
+            return self.room_ask(
+                ctx,
+                j,
+                Route::Chain {
+                    group: &group,
+                    sender: &sender,
+                    after,
+                    limit: CHAIN_PAGE,
+                },
+                Read::Chain,
+            );
         }
         // 5. the account's copies, then 6. the recovery opened
         if r.recovery_id.is_none() {
@@ -168,17 +250,37 @@ impl Engine {
         if r.entries.is_empty() && !r.finished {
             j.step = RoomJoinStep::Joining;
             self.room_status(j);
-            let r = j.recover.as_mut().ok_or(RoomJoinError::Device("internal"))?;
-            let replacement = r.replacement.as_ref().ok_or(RoomJoinError::Device("internal"))?;
+            let r = j
+                .recover
+                .as_mut()
+                .ok_or(RoomJoinError::Device("internal"))?;
+            let replacement = r
+                .replacement
+                .as_ref()
+                .ok_or(RoomJoinError::Device("internal"))?;
             let copies = r.copies.take().ok_or(RoomJoinError::Device("internal"))?;
             let account = copies(&replacement.code, &room).map_err(RoomJoinError::Device)?;
             r.chains.sort_by_key(|(change, _, _)| *change);
-            let chains: Vec<ServedEnvelope<'_>> = r.chains.iter().map(|(change, bytes, void)| ServedEnvelope { bytes, change: *change, void_code: void.as_ref() }).collect();
-            let built = self.device.recover_checked(&j.keys, &end, replacement, &chains, &account, ctx.now).map_err(|e| of(&e))?;
+            let chains: Vec<ServedEnvelope<'_>> = r
+                .chains
+                .iter()
+                .map(|(change, bytes, void)| ServedEnvelope {
+                    bytes,
+                    change: *change,
+                    void_code: void.as_ref(),
+                })
+                .collect();
+            let built = self
+                .device
+                .recover_checked(&j.keys, &end, replacement, &chains, &account, ctx.now)
+                .map_err(|e| of(&e))?;
             if built.missing_link.is_some() {
                 self.report(Report::Alert(Alert::MissingLink));
             }
-            let r = j.recover.as_mut().ok_or(RoomJoinError::Device("internal"))?;
+            let r = j
+                .recover
+                .as_mut()
+                .ok_or(RoomJoinError::Device("internal"))?;
             r.entries = built.outbox;
             r.chains = Vec::new();
             if r.entries.is_empty() {
@@ -191,28 +293,67 @@ impl Engine {
     /// Posts the next entry of the recovery, with the recovery's id.
     fn recover_post(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner) -> Result<(), RoomJoinError> {
         let room = self.room;
-        let r = j.recover.as_mut().ok_or(RoomJoinError::Device("internal"))?;
-        let Some(&id) = r.entries.first() else { return Ok(()) };
+        let r = j
+            .recover
+            .as_mut()
+            .ok_or(RoomJoinError::Device("internal"))?;
+        let Some(&id) = r.entries.first() else {
+            return Ok(());
+        };
         let Some(entry) = self.device.outbox().into_iter().find(|e| e.id == id) else {
             return Err(RoomJoinError::Device("internal"));
         };
-        let extra = OutboxExtra { recovery_id: r.recovery_id.map(|i| i.to_vec()), ..Default::default() };
+        let extra = OutboxExtra {
+            recovery_id: r.recovery_id.map(|i| i.to_vec()),
+            ..Default::default()
+        };
         let (kind, group) = (entry.kind, entry.group);
-        self.posting = self.ask(ctx, Route::Outbox { room: &room, entry: &entry, extra: Some(&extra) }, true, |expect| Asked::Post { expect, entry: id, kind, group });
+        self.posting = self.ask(
+            ctx,
+            Route::Outbox {
+                room: &room,
+                entry: &entry,
+                extra: Some(&extra),
+            },
+            true,
+            |expect| Asked::Post {
+                expect,
+                entry: id,
+                kind,
+                group,
+            },
+        );
         j.asked = self.posting;
         r.posting = Some(id);
         j.posted = true;
-        j.asked.map(|_| ()).ok_or(RoomJoinError::Device("bad-format"))
+        j.asked
+            .map(|_| ())
+            .ok_or(RoomJoinError::Device("bad-format"))
     }
 
     /// The hub's answer to an entry of the recovery.
-    pub(super) fn recover_posted(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner, entry: u64, answer: Result<Answer, Failure>, unauthorised: bool) -> Result<(), RoomJoinError> {
-        let r = j.recover.as_mut().ok_or(RoomJoinError::Device("internal"))?;
+    pub(super) fn recover_posted(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        j: &mut Joiner,
+        entry: u64,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) -> Result<(), RoomJoinError> {
+        let r = j
+            .recover
+            .as_mut()
+            .ok_or(RoomJoinError::Device("internal"))?;
         r.posting = None;
         match answer {
             Ok(Answer::Outbox(taken)) => {
                 j.retry.ok();
-                match self.device.outbox_accepted(entry, trommi_core::device::Accepted { change: taken.change }) {
+                match self.device.outbox_accepted(
+                    entry,
+                    trommi_core::device::Accepted {
+                        change: taken.change,
+                    },
+                ) {
                     Ok(()) | Err(Error::NotFound) => {}
                     Err(e) => return Err(of(&e)),
                 }
@@ -224,7 +365,9 @@ impl Engine {
                 self.recover_post(ctx, j)
             }
             Err(_) if unauthorised => Ok(()),
-            Err(Failure::Refused { code: Some(code), .. }) => {
+            Err(Failure::Refused {
+                code: Some(code), ..
+            }) => {
                 let code = Error::from_code(&code).unwrap_or(Error::BadFormat);
                 let _ = self.device.outbox_refused(entry, &code);
                 Err(RoomJoinError::Refused(code.code()))
@@ -238,8 +381,16 @@ impl Engine {
     }
 
     /// A read of the recovery answered (`Session`, `SessionLog`, `Chain`, `Open`).
-    pub(super) fn recover_read(&mut self, j: &mut Joiner, what: Read, answer: Answer) -> Result<(), RoomJoinError> {
-        let r = j.recover.as_mut().ok_or(RoomJoinError::Device("internal"))?;
+    pub(super) fn recover_read(
+        &mut self,
+        j: &mut Joiner,
+        what: Read,
+        answer: Answer,
+    ) -> Result<(), RoomJoinError> {
+        let r = j
+            .recover
+            .as_mut()
+            .ok_or(RoomJoinError::Device("internal"))?;
         match (what, answer) {
             (Read::Session(group, true), Answer::GroupInfo { group_info, .. }) => {
                 r.founding.insert(group, group_info);
@@ -249,10 +400,16 @@ impl Engine {
             }
             (Read::SessionLog(group), Answer::GroupLog { items, more }) => {
                 let (after, _) = r.logs.get(&group).copied().unwrap_or((0, false));
-                let upto = if group.is_room() { j.current.as_ref().map_or(0, |(e, _)| *e) } else { r.current.get(&group).map_or(0, |(e, _)| *e) };
+                let upto = if group.is_room() {
+                    j.current.as_ref().map_or(0, |(e, _)| *e)
+                } else {
+                    r.current.get(&group).map_or(0, |(e, _)| *e)
+                };
                 let mut last = after;
                 for item in items {
-                    let ChangeItem::Commit(c) = item else { continue };
+                    let ChangeItem::Commit(c) = item else {
+                        continue;
+                    };
                     last = last.max(c.n);
                     if c.n > after && c.epoch < upto && c.group == group {
                         r.bytes += c.bytes.len();
@@ -270,13 +427,21 @@ impl Engine {
                 for link in items {
                     last = last.max(link.seq);
                     r.bytes += link.item.envelope.len();
-                    let void = link.item.void_code.as_deref().map(|c| Error::from_code(c).unwrap_or(Error::HubVoidedOther));
+                    let void = link
+                        .item
+                        .void_code
+                        .as_deref()
+                        .map(|c| Error::from_code(c).unwrap_or(Error::HubVoidedOther));
                     r.chains.push((link.item.change, link.item.envelope, void));
                 }
                 if r.bytes > BYTES_MAX {
                     return Err(RoomJoinError::Refused("too-large"));
                 }
-                r.chain_at = if more && last > after { (removal, device, last) } else { (removal, device + 1, 0) };
+                r.chain_at = if more && last > after {
+                    (removal, device, last)
+                } else {
+                    (removal, device + 1, 0)
+                };
             }
             (Read::Open, Answer::Recovery { id, .. }) => r.recovery_id = Some(id),
             _ => return Err(RoomJoinError::Refused("bad-format")),
@@ -287,8 +452,18 @@ impl Engine {
     /// Gives the room back after a recovery that was opened and not finished (best effort, nothing waits).
     pub(super) fn recover_drop(&mut self, ctx: &mut Ctx<'_>, j: &Joiner) {
         let Some(r) = j.recover.as_ref() else { return };
-        let (Some(id), false) = (r.recovery_id, r.finished) else { return };
+        let (Some(id), false) = (r.recovery_id, r.finished) else {
+            return;
+        };
         let room = self.room;
-        let _ = self.ask(ctx, Route::DropRecovery { room: &room, recovery: &id }, true, Asked::Told);
+        let _ = self.ask(
+            ctx,
+            Route::DropRecovery {
+                room: &room,
+                recovery: &id,
+            },
+            true,
+            Asked::Told,
+        );
     }
 }

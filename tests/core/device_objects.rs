@@ -12,8 +12,8 @@ use trommi_core::Error;
 use trommi_tests::hub::content::Change;
 use trommi_tests::hub::Hub;
 use trommi_tests::{
-    add_human, enrol, found_main, found_room, join_room, json, new_device_on, post_ok, publish_some,
-    reopen, sync_all, take_envelope, test_keys, write, MemoryStorage, TestDevice,
+    add_human, enrol, found_main, found_room, join_room, json, new_device_on, post_ok,
+    publish_some, reopen, sync_all, take_envelope, test_keys, write, MemoryStorage, TestDevice,
 };
 
 const ZERO_HASH: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -239,7 +239,10 @@ impl World {
 }
 
 /// What a device says of the objects of `group`.
-fn said(device: &TestDevice, group: &GroupId) -> Vec<(ObjectId, ObjectState, Option<trommi_core::ids::DeviceId>)> {
+fn said(
+    device: &TestDevice,
+    group: &GroupId,
+) -> Vec<(ObjectId, ObjectState, Option<trommi_core::ids::DeviceId>)> {
     device
         .objects(group)
         .unwrap()
@@ -261,11 +264,19 @@ fn the_objects_are_stored_one_entry_each() {
             .count()
     };
     assert_eq!(
-        (count(&w.group, WHOLE), count(&w.group, OBJECT), count(&w.group, NOTE_VERSION)),
+        (
+            count(&w.group, WHOLE),
+            count(&w.group, OBJECT),
+            count(&w.group, NOTE_VERSION)
+        ),
         (0, 3, 0)
     );
     assert_eq!(
-        (count(&w.room, WHOLE), count(&w.room, OBJECT), count(&w.room, NOTE_VERSION)),
+        (
+            count(&w.room, WHOLE),
+            count(&w.room, OBJECT),
+            count(&w.room, NOTE_VERSION)
+        ),
         (0, 1, 2)
     );
     // The count of transitions: three first versions, a closing version, an answer; a Note and its version.
@@ -278,7 +289,10 @@ fn the_objects_are_stored_one_entry_each() {
         Some(2u64.to_be_bytes().to_vec())
     );
     assert_eq!(said(&w.human, &w.group).len(), 3);
-    assert_eq!(w.human.objects(&w.group).unwrap(), w.agent.objects(&w.group).unwrap());
+    assert_eq!(
+        w.human.objects(&w.group).unwrap(),
+        w.agent.objects(&w.group).unwrap()
+    );
     // What a restart reads is what was held.
     let again = reopen(w.store.reopened()).unwrap();
     assert_eq!(said(&again, &w.group), said(&w.human, &w.group));
@@ -343,7 +357,10 @@ fn an_envelope_that_changes_no_object_turns_the_record_into_entries_too() {
     );
     let stored = w.newest();
     take_envelope(&mut w.human, &stored);
-    assert_eq!(take_envelope(&mut before, &stored).outcome, EnvelopeOutcome::Applied);
+    assert_eq!(
+        take_envelope(&mut before, &stored).outcome,
+        EnvelopeOutcome::Applied
+    );
     assert_eq!(objects_of(&store, &w.group), objects_of(&w.store, &w.group));
     assert_eq!(said(&before, &w.group), said(&w.human, &w.group));
 }
@@ -374,11 +391,17 @@ fn a_write_that_fails_or_is_cut_off_leaves_the_record_of_before_whole() {
     let mut again = reopen(restarted.handle()).unwrap();
     take_envelope(&mut w.human, &stored);
     for device in [&mut before, &mut again] {
-        assert_eq!(take_envelope(device, &stored).outcome, EnvelopeOutcome::Applied);
+        assert_eq!(
+            take_envelope(device, &stored).outcome,
+            EnvelopeOutcome::Applied
+        );
         assert_eq!(said(device, &w.group), said(&w.human, &w.group));
     }
     assert_eq!(objects_of(&store, &w.group), objects_of(&w.store, &w.group));
-    assert_eq!(objects_of(&restarted, &w.group), objects_of(&w.store, &w.group));
+    assert_eq!(
+        objects_of(&restarted, &w.group),
+        objects_of(&w.store, &w.group)
+    );
 }
 
 #[test]
@@ -403,7 +426,11 @@ fn a_device_of_before_writes_against_its_record_and_an_envelope_behind_builds_th
             trommi_tests::now(),
         )
         .expect("it seals against the record");
-    assert_eq!(objects_of(&store, &w.group).len(), 1, "sealing changes no object");
+    assert_eq!(
+        objects_of(&store, &w.group).len(),
+        1,
+        "sealing changes no object"
+    );
     post_ok(&mut w.hub, &mut agent);
     let got = sync_all(&w.hub, &mut agent);
     assert_eq!(got[0].envelope_hash, sealed.envelope_hash);
@@ -416,9 +443,11 @@ fn a_device_of_before_writes_against_its_record_and_an_envelope_behind_builds_th
         ObjectState::Closed
     );
     sync_all(&w.hub, &mut w.human);
-    assert_eq!(agent.objects(&w.group).unwrap(), w.human.objects(&w.group).unwrap());
+    assert_eq!(
+        agent.objects(&w.group).unwrap(),
+        w.human.objects(&w.group).unwrap()
+    );
     assert_eq!(objects_of(&store, &w.group), objects_of(&w.store, &w.group));
-
 }
 
 #[test]
@@ -475,7 +504,10 @@ fn an_envelope_behind_later_ones_builds_the_entries_from_the_record_of_before() 
         assert_eq!(late.object_after.unwrap().1.state, ObjectState::Answered);
     }
     assert_eq!(said(&before, &w.group), said(&w.other, &w.group));
-    assert_eq!(objects_of(&store, &w.group), objects_of(&w.other_store, &w.group));
+    assert_eq!(
+        objects_of(&store, &w.group),
+        objects_of(&w.other_store, &w.group)
+    );
     assert_eq!(
         w.other.objects(&w.group).unwrap(),
         w.hub
@@ -521,11 +553,18 @@ fn objects_that_contradict_each_other_do_not_open() {
     for (key, value) in [
         (objects_key(4, &w.group, &[]), vec![1]),
         (objects_key(OBJECT, &w.group, &[0; 17]), vec![0; 98]),
-        (objects_key(OBJECT, &w.group, card_id.as_bytes()), vec![0; 97]),
+        (
+            objects_key(OBJECT, &w.group, card_id.as_bytes()),
+            vec![0; 97],
+        ),
         (objects_key(REVISION, &w.group, &[]), vec![0; 7]),
         (objects_key(REVISION, &w.group, &[1]), vec![0; 8]),
         (
-            objects_key(NOTE_VERSION, &w.room, &[&note_id.as_bytes()[..], w.note.envelope_hash.as_bytes()].concat()),
+            objects_key(
+                NOTE_VERSION,
+                &w.room,
+                &[&note_id.as_bytes()[..], w.note.envelope_hash.as_bytes()].concat(),
+            ),
             vec![2],
         ),
         (objects_key(WHOLE, &w.room, &[]), vec![0; 3]),

@@ -18,7 +18,7 @@ fn the_history_keeps_an_hour_at_ten_seconds_and_a_day_by_the_minute() {
     let mut h = History::default();
     assert!(h.is_empty());
     let start: u64 = 1_800_000_000_000; // already a whole minute
-    // two days of samples every 10 s
+                                        // two days of samples every 10 s
     let end = start + 2 * COARSE_MS;
     let mut at = start;
     while at < end {
@@ -41,7 +41,10 @@ fn the_history_keeps_an_hour_at_ten_seconds_and_a_day_by_the_minute() {
     let m = day[10];
     assert_eq!(m.at % 60_000, 0);
     assert_eq!(m.get(Series::Cpu), (m.at / 60_000 % 100) as f64);
-    let streams: f64 = (0..6).map(|k| ((m.at + k * STEP_MS) / STEP_MS % 7) as f64).sum::<f64>() / 6.0;
+    let streams: f64 = (0..6)
+        .map(|k| ((m.at + k * STEP_MS) / STEP_MS % 7) as f64)
+        .sum::<f64>()
+        / 6.0;
     assert!((m.get(Series::Streams) - streams).abs() < 1e-9);
     // a value never read stays unknown in the average
     assert!(m.get(Series::Mem).is_nan());
@@ -68,7 +71,10 @@ fn the_overview_draws_the_history_as_graphs() {
         let mut v = [f64::NAN; SERIES];
         v[Series::Cpu as usize] = 20.0 + (k % 9) as f64;
         v[Series::Rps as usize] = 3.5;
-        hub.app.metrics.push(Sample { at: now - (k + 3) * STEP_MS, v });
+        hub.app.metrics.push(Sample {
+            at: now - (k + 3) * STEP_MS,
+            v,
+        });
     }
     hub.app.metrics.sample(&hub.app);
     hub.app.metrics.sample(&hub.app);
@@ -83,31 +89,58 @@ fn the_overview_draws_the_history_as_graphs() {
         "/login",
         &[
             ("origin", "http://127.0.0.1".to_string()),
-            ("content-type", "application/x-www-form-urlencoded".to_string()),
+            (
+                "content-type",
+                "application/x-www-form-urlencoded".to_string(),
+            ),
         ],
         b"username=admin&password=graphs+please",
     );
     assert_eq!(signed.status, 303);
     let cookie = vec![(
         "cookie",
-        signed.header("set-cookie").unwrap().split(';').next().unwrap().to_string(),
+        signed
+            .header("set-cookie")
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string(),
     )];
     let page = request(admin, "GET", "/", &cookie, b"");
     assert_eq!(page.status, 200);
     let html = text(&page);
     assert!(html.contains("<meta http-equiv=\"refresh\" content=\"10\">"));
     assert!(html.contains("<a href=\"/\" class=\"on\" aria-current=\"true\">1 h</a>"));
-    assert!(html.matches("<svg class=\"spark\"").count() >= 7, "a graph in each tile that has one");
+    assert!(
+        html.matches("<svg class=\"spark\"").count() >= 7,
+        "a graph in each tile that has one"
+    );
     // the CPU graph: a line through the samples, its peak, and "since start" (the hub is younger than an hour)
     let cpu = &html[html.find(">CPU<").unwrap()..];
     let cpu = &cpu[..cpu.find("</div></div>").unwrap()];
-    let line = cpu.split("class=\"line\" d=\"").nth(1).unwrap().split('"').next().unwrap();
-    assert!(line.starts_with('M') && line.matches('L').count() >= 200, "{line}");
+    let line = cpu
+        .split("class=\"line\" d=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    assert!(
+        line.starts_with('M') && line.matches('L').count() >= 200,
+        "{line}"
+    );
     assert!(cpu.contains("max ") && cpu.contains("since start"));
     // a day: the minute averages
     let day = text(&request(admin, "GET", "/?range=24h", &cookie, b""));
     assert!(day.contains("<a href=\"/?range=24h\" class=\"on\" aria-current=\"true\">24 h</a>"));
     let cpu = &day[day.find(">CPU<").unwrap()..];
-    let line = cpu.split("class=\"line\" d=\"").nth(1).unwrap().split('"').next().unwrap();
+    let line = cpu
+        .split("class=\"line\" d=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
     assert!((30..=60).contains(&line.matches('L').count()), "{line}");
 }

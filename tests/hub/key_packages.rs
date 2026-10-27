@@ -57,7 +57,13 @@ fn a_session_is_founded_without_a_human_device_the_hub_holds_no_key_package_of()
         },
         now,
     );
-    let key = w.ada.sealed_key(&group, out.epoch + 1, &out.group_info, now.0, &w.recovery.hpke_public, true);
+    let key = w.ada.sealed_key(
+        &group,
+        out.epoch + 1,
+        &out.group_info,
+        now.0,
+        &w.recovery.hpke_public,
+        true,
+    );
     w.ada.post_commit(&w.hub, &out, &key).ok();
 }
-

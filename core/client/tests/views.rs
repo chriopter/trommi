@@ -14,22 +14,30 @@ fn root() -> PathBuf {
 
 /// The demo room at the moment it was made (no time moved), and that moment.
 fn demo_room() -> (Model, u64) {
-    let text = std::fs::read_to_string(root().join("demo/data/fixture.json")).expect("demo/data/fixture.json");
+    let text = std::fs::read_to_string(root().join("demo/data/fixture.json"))
+        .expect("demo/data/fixture.json");
     let fixture: serde_json::Value = serde_json::from_str(&text).unwrap();
     let now = fixture["made_at"].as_u64().unwrap();
     (demo::model_of(&fixture, now).unwrap(), now)
 }
 
 fn golden(name: &str, view: &impl Serialize) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(name);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden")
+        .join(name);
     let got = serde_json::to_string_pretty(view).unwrap() + "\n";
     if std::env::var("TROMMI_GOLDEN").as_deref() == Ok("write") {
         std::fs::write(&path, &got).unwrap();
         return;
     }
-    let want = std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("{} is missing: see this file's head", path.display()));
+    let want = std::fs::read_to_string(&path)
+        .unwrap_or_else(|_| panic!("{} is missing: see this file's head", path.display()));
     if want != got {
-        let at = want.lines().zip(got.lines()).position(|(a, b)| a != b).unwrap_or(0);
+        let at = want
+            .lines()
+            .zip(got.lines())
+            .position(|(a, b)| a != b)
+            .unwrap_or(0);
         panic!(
             "{name} differs from line {}:\n  golden: {}\n  now:    {}",
             at + 1,
@@ -51,7 +59,10 @@ fn lens(team: Option<&str>) -> Lens {
 #[test]
 fn the_demo_rooms_sidebar() {
     let (m, now) = demo_room();
-    for (file, team) in [("demo-sidebar.json", None), ("demo-sidebar-platform.json", Some("platform"))] {
+    for (file, team) in [
+        ("demo-sidebar.json", None),
+        ("demo-sidebar-platform.json", Some("platform")),
+    ] {
         let lens = lens(team);
         let b = Board::new(&m, &lens, now);
         golden(file, &sidebar::sidebar(&b));
@@ -61,7 +72,10 @@ fn the_demo_rooms_sidebar() {
 #[test]
 fn the_demo_rooms_desk() {
     let (m, now) = demo_room();
-    for (file, team) in [("demo-desk.json", None), ("demo-desk-platform.json", Some("platform"))] {
+    for (file, team) in [
+        ("demo-desk.json", None),
+        ("demo-desk-platform.json", Some("platform")),
+    ] {
         let lens = lens(team);
         let b = Board::new(&m, &lens, now);
         golden(file, &desk::desk(&b));
@@ -87,7 +101,17 @@ fn the_demo_rooms_cards() {
     let lens = lens(None);
     let b = Board::new(&m, &lens, now);
     let walk = desk::desk(&b).stack;
-    for (file, id) in [("demo-card-hero.json", "a38afef6dbdd056db8042980f2b83336"), ("demo-card-answered.json", "cac2dd6c8c804cbff53f50e0bf8c239e"), ("demo-card-with-agent.json", "0b48fb2a02a4fcc2a22da6f5a3b7bb49")] {
+    for (file, id) in [
+        ("demo-card-hero.json", "a38afef6dbdd056db8042980f2b83336"),
+        (
+            "demo-card-answered.json",
+            "cac2dd6c8c804cbff53f50e0bf8c239e",
+        ),
+        (
+            "demo-card-with-agent.json",
+            "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        ),
+    ] {
         let view = card::card(&b, id, &walk).unwrap_or_else(|| panic!("no card {id}"));
         golden(file, &view);
     }
@@ -98,9 +122,15 @@ fn the_demo_rooms_cards() {
 #[test]
 fn the_demo_rooms_notes_and_settings() {
     let (m, now) = demo_room();
-    golden("demo-notes.json", &notes::notes(&Board::new(&m, &lens(None), now)));
+    golden(
+        "demo-notes.json",
+        &notes::notes(&Board::new(&m, &lens(None), now)),
+    );
     let lens = lens(None);
-    golden("demo-settings.json", &settings::settings(&Board::new(&m, &lens, now)));
+    golden(
+        "demo-settings.json",
+        &settings::settings(&Board::new(&m, &lens, now)),
+    );
 }
 
 /// Every text of one in the demo's views carries its number (`args.n`), as the texts of many do.
@@ -112,7 +142,13 @@ fn texts_of_one_carry_their_number() {
                 if let (Some(key), Some(_)) = (o.get("key").and_then(|k| k.as_str()), o.get("en")) {
                     let one = key.ends_with(".one") || key.ends_with("_one");
                     // (not a count: "One tap answers")
-                    if one && key != "card.answer.one" && o.get("args").and_then(|a| a.get("n")).and_then(|n| n.as_str()) != Some("1") {
+                    if one
+                        && key != "card.answer.one"
+                        && o.get("args")
+                            .and_then(|a| a.get("n"))
+                            .and_then(|n| n.as_str())
+                            != Some("1")
+                    {
                         bad.push(key.to_string());
                     }
                 }
@@ -123,8 +159,10 @@ fn texts_of_one_carry_their_number() {
         }
     }
     let mut bad = Vec::new();
-    for e in std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")).unwrap() {
-        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(e.unwrap().path()).unwrap()).unwrap();
+    for e in std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")).unwrap()
+    {
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(e.unwrap().path()).unwrap()).unwrap();
         walk(&v, &mut bad);
     }
     assert!(bad.is_empty(), "texts of one without args.n: {bad:?}");
@@ -148,11 +186,24 @@ impl Rng {
 }
 
 /// One random edit of a view model: any unit may change, appear or go; long lists gain, lose and swap rows.
-fn edit(v: &mut trommi_client_core::views::ViewModel, pool: &[trommi_client_core::views::ViewModel], r: &mut Rng) {
+fn edit(
+    v: &mut trommi_client_core::views::ViewModel,
+    pool: &[trommi_client_core::views::ViewModel],
+    r: &mut Rng,
+) {
     use trommi_client_core::views::*;
     let other = &pool[r.below(pool.len())];
     match r.below(14) {
-        0 => v.phase = [Phase::Starting, Phase::SignedOut, Phase::Opening, Phase::Live, Phase::Offline, Phase::Stopped][r.below(6)],
+        0 => {
+            v.phase = [
+                Phase::Starting,
+                Phase::SignedOut,
+                Phase::Opening,
+                Phase::Live,
+                Phase::Offline,
+                Phase::Stopped,
+            ][r.below(6)]
+        }
         1 => v.status = (r.below(2) == 0).then(|| Text::new("status", &r.word())),
         2 => v.sidebar = other.sidebar.clone(),
         3 => v.desk = other.desk.clone(),
@@ -177,7 +228,15 @@ fn edit(v: &mut trommi_client_core::views::ViewModel, pool: &[trommi_client_core
         }
         6 => {
             let id = r.word();
-            v.sessions.insert(id.clone(), SessionView { id, has_more: r.below(2) == 0, link: r.word(), ..Default::default() });
+            v.sessions.insert(
+                id.clone(),
+                SessionView {
+                    id,
+                    has_more: r.below(2) == 0,
+                    link: r.word(),
+                    ..Default::default()
+                },
+            );
         }
         7 => {
             let id = r.word();
@@ -185,7 +244,15 @@ fn edit(v: &mut trommi_client_core::views::ViewModel, pool: &[trommi_client_core
         }
         8 => {
             let id = r.word();
-            v.cards.insert(id.clone(), CardView { id, title: r.word(), history: r.below(4) as u32, ..Default::default() });
+            v.cards.insert(
+                id.clone(),
+                CardView {
+                    id,
+                    title: r.word(),
+                    history: r.below(4) as u32,
+                    ..Default::default()
+                },
+            );
         }
         9 => {
             let id = r.word();
@@ -197,19 +264,30 @@ fn edit(v: &mut trommi_client_core::views::ViewModel, pool: &[trommi_client_core
             if r.below(3) == 0 {
                 v.files.remove(&id);
             } else {
-                v.files.insert(id, FileView { name: r.word(), percent: Some(r.below(100) as u8), ..Default::default() });
+                v.files.insert(
+                    id,
+                    FileView {
+                        name: r.word(),
+                        percent: Some(r.below(100) as u8),
+                        ..Default::default()
+                    },
+                );
             }
         }
-        12 => v.toasts = (0..r.below(3)).map(|i| Toast {
-                id: format!("t{i}"),
-                text: Text::new("toast", &r.word()),
-                action: None,
-                line: (r.below(2) == 0).then(|| Text::new("toast.line", &r.word())),
-                label: None,
-                alert: r.below(2) == 0,
-                ms: (r.below(2) == 0).then(|| r.below(9000) as u64),
-                go: None,
-            }).collect(),
+        12 => {
+            v.toasts = (0..r.below(3))
+                .map(|i| Toast {
+                    id: format!("t{i}"),
+                    text: Text::new("toast", &r.word()),
+                    action: None,
+                    line: (r.below(2) == 0).then(|| Text::new("toast.line", &r.word())),
+                    label: None,
+                    alert: r.below(2) == 0,
+                    ms: (r.below(2) == 0).then(|| r.below(9000) as u64),
+                    go: None,
+                })
+                .collect()
+        }
         13 => {
             v.settings.account = (r.below(2) == 0).then(|| r.word());
             v.account.step = r.word();
@@ -230,7 +308,11 @@ fn diff_then_apply_is_the_next_model() {
         .map(|d| {
             let lens = lens(d);
             let b = Board::new(&m, &lens, now);
-            ViewModel { sidebar: sidebar::sidebar(&b), desk: desk::desk(&b), ..Default::default() }
+            ViewModel {
+                sidebar: sidebar::sidebar(&b),
+                desk: desk::desk(&b),
+                ..Default::default()
+            }
         })
         .collect();
     for seed in 1..=40u64 {
@@ -244,11 +326,17 @@ fn diff_then_apply_is_the_next_model() {
             match shell.diff(&core) {
                 Some(delta) => {
                     // (across the edge: a delta is what its JSON says)
-                    let wire: trommi_client_core::views::ViewDelta = serde_json::from_str(&serde_json::to_string(&delta).unwrap()).unwrap();
-                    shell.apply(&wire).unwrap_or_else(|e| panic!("seed {seed} step {step}: {e:?}"));
+                    let wire: trommi_client_core::views::ViewDelta =
+                        serde_json::from_str(&serde_json::to_string(&delta).unwrap()).unwrap();
+                    shell
+                        .apply(&wire)
+                        .unwrap_or_else(|e| panic!("seed {seed} step {step}: {e:?}"));
                     core.rev = shell.rev;
                 }
-                None => assert_eq!(shell, core, "seed {seed} step {step}: nothing sent, so nothing changed"),
+                None => assert_eq!(
+                    shell, core,
+                    "seed {seed} step {step}: nothing sent, so nothing changed"
+                ),
             }
             assert_eq!(shell, core, "seed {seed} step {step}");
             assert!(shell.diff(&core).is_none());
@@ -262,26 +350,50 @@ fn render_makes_the_boards_units_and_keeps_the_rest() {
     use trommi_client_core::views::{render, Phase, ViewModel};
     let (m, now) = demo_room();
     let lens = lens(None);
-    let mut view = ViewModel { phase: Phase::Live, ..Default::default() };
+    let mut view = ViewModel {
+        phase: Phase::Live,
+        ..Default::default()
+    };
     let wake = render(&m, &lens, now, &mut view);
     let b = Board::new(&m, &lens, now);
-    assert_eq!((&view.sidebar, &view.desk, view.phase), (&sidebar::sidebar(&b), &desk::desk(&b), Phase::Live));
-    assert!(view.sessions.is_empty(), "no page in view: no session's unit");
+    assert_eq!(
+        (&view.sidebar, &view.desk, view.phase),
+        (&sidebar::sidebar(&b), &desk::desk(&b), Phase::Live)
+    );
+    assert!(
+        view.sessions.is_empty(),
+        "no page in view: no session's unit"
+    );
     // the session in view (by the short id of its address) is the one unit made; leaving it takes it away
-    let on = Lens { session: Some("fernly-web".into()), ..lens.clone() };
+    let on = Lens {
+        session: Some("fernly-web".into()),
+        ..lens.clone()
+    };
     render(&m, &on, now, &mut view);
     let b = Board::new(&m, &on, now);
     let page = session::session(&b, "fernly-web").unwrap();
     assert_eq!(view.sessions.get(&page.id), Some(&page));
     assert_eq!(view.sessions.len(), 1);
     // the card in view, by its number of the address
-    let on = Lens { card: Some("46".into()), ..lens.clone() };
+    let on = Lens {
+        card: Some("46".into()),
+        ..lens.clone()
+    };
     render(&m, &on, now, &mut view);
-    assert_eq!(view.cards.values().map(|c| (c.number, c.title.as_str())).collect::<Vec<_>>(), [(46, "Launch on Monday at 09:00, or on Tuesday?")]);
+    assert_eq!(
+        view.cards
+            .values()
+            .map(|c| (c.number, c.title.as_str()))
+            .collect::<Vec<_>>(),
+        [(46, "Launch on Monday at 09:00, or on Tuesday?")]
+    );
     assert!(view.sessions.is_empty());
     render(&m, &lens, now, &mut view);
     assert!(view.sessions.is_empty() && view.cards.is_empty());
-    assert!(wake.is_none_or(|w| w > now), "a wake lies ahead: {wake:?} at {now}");
+    assert!(
+        wake.is_none_or(|w| w > now),
+        "a wake lies ahead: {wake:?} at {now}"
+    );
 }
 
 /// What one render costs on a large room: the demo grown to the mega account's size (21,500 cards, most of them
@@ -301,7 +413,10 @@ fn render_cost_on_a_large_room() {
     let id = |n: usize| format!("{n:032x}");
     // (more sessions: copies of the demo's, archived, as the mega account's 120 archived ones)
     let mut grown_sessions = sessions.clone();
-    let mut settings = f["human"]["session_settings"].as_object().cloned().unwrap_or_default();
+    let mut settings = f["human"]["session_settings"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
     for n in 0..(150 - sessions.len()) {
         let mut s = sessions[n % sessions.len()].clone();
         let dev = format!("{:064x}", 0xdead_0000_u64 + n as u64);
@@ -349,7 +464,10 @@ fn render_cost_on_a_large_room() {
         times
     };
     {
-        let lens = Lens { utc_offset_min: 120, ..Default::default() };
+        let lens = Lens {
+            utc_offset_min: 120,
+            ..Default::default()
+        };
         let t = std::time::Instant::now();
         let b = Board::new(&m, &lens, now);
         let t_board = t.elapsed();
@@ -368,12 +486,40 @@ fn render_cost_on_a_large_room() {
         println!("render_cost: board {t_board:?}, sidebar {t_side:?}, off_mind {t_off:?}, team {t_desk:?}, notes+settings {:?}", t.elapsed());
     }
     let mut view = ViewModel::default();
-    let desk_only = median(&Lens { utc_offset_min: 120, ..Default::default() }, &mut view);
-    let off = median(&Lens { utc_offset_min: 120, off: Some(String::new()), ..Default::default() }, &mut view);
-    println!("render_cost: the Desk alone {:?}; with the page Off your mind {:?} ({} KB)", desk_only[7], off[7], serde_json::to_string(&view.off).unwrap().len() / 1024);
-    let lens = Lens { utc_offset_min: 120, session: Some("fernly-web".into()), card: Some("a38afef6dbdd056db8042980f2b83336".into()), ..Default::default() };
+    let desk_only = median(
+        &Lens {
+            utc_offset_min: 120,
+            ..Default::default()
+        },
+        &mut view,
+    );
+    let off = median(
+        &Lens {
+            utc_offset_min: 120,
+            off: Some(String::new()),
+            ..Default::default()
+        },
+        &mut view,
+    );
+    println!(
+        "render_cost: the Desk alone {:?}; with the page Off your mind {:?} ({} KB)",
+        desk_only[7],
+        off[7],
+        serde_json::to_string(&view.off).unwrap().len() / 1024
+    );
+    let lens = Lens {
+        utc_offset_min: 120,
+        session: Some("fernly-web".into()),
+        card: Some("a38afef6dbdd056db8042980f2b83336".into()),
+        ..Default::default()
+    };
     let times = median(&lens, &mut view);
-    let talk_len = view.sessions.values().next().map(|s| s.talk.len()).unwrap_or(0);
+    let talk_len = view
+        .sessions
+        .values()
+        .next()
+        .map(|s| s.talk.len())
+        .unwrap_or(0);
     let json = serde_json::to_string(&view).unwrap().len();
     println!(
         "render_cost: {} cards, {} sessions, talk {talk_len} rows; model built in {built:?}; render median {:?} (min {:?}, max {:?}); view {} KB as JSON",
@@ -393,17 +539,40 @@ fn render_cost_on_a_large_room() {
 fn a_session_shows_the_answer_its_agent_is_writing() {
     use trommi_client_core::live_answer::{encode, SHOWN_MS};
     let (mut m, now) = demo_room();
-    let lens = Lens { session: Some("fernly-web".into()), ..lens(None) };
-    let id = session::session(&Board::new(&m, &lens, now), "fernly-web").unwrap().id;
-    let agent = m.sessions.get(&id).and_then(|s| s.agent_device_id.clone().or_else(|| s.agent_device_ids.first().cloned())).expect("the agent");
+    let lens = Lens {
+        session: Some("fernly-web".into()),
+        ..lens(None)
+    };
+    let id = session::session(&Board::new(&m, &lens, now), "fernly-web")
+        .unwrap()
+        .id;
+    let agent = m
+        .sessions
+        .get(&id)
+        .and_then(|s| {
+            s.agent_device_id
+                .clone()
+                .or_else(|| s.agent_device_ids.first().cloned())
+        })
+        .expect("the agent");
     let mut change = trommi_client_core::model::change::Change::default();
     assert!(m.apply_answer_preview(&agent, "t1", 2, &encode("Sonnig, 21"), now, &mut change));
-    assert!(!m.apply_answer_preview(&agent, "t1", 1, &encode("Son"), now, &mut change), "an older one changes nothing");
+    assert!(
+        !m.apply_answer_preview(&agent, "t1", 1, &encode("Son"), now, &mut change),
+        "an older one changes nothing"
+    );
     assert!(!m.apply_answer_preview("00", "t1", 3, &encode("not its agent"), now, &mut change));
-    let page = |m: &Model, at: u64| session::session(&Board::new(m, &lens, at), "fernly-web").unwrap().live_answer;
+    let page = |m: &Model, at: u64| {
+        session::session(&Board::new(m, &lens, at), "fernly-web")
+            .unwrap()
+            .live_answer
+    };
     assert_eq!(page(&m, now + 1_000), "Sonnig, 21");
     assert_eq!(page(&m, now + SHOWN_MS), "", "stale");
-    assert!(m.apply_answer_preview(&agent, "t2", 1, &encode(""), now, &mut change), "another turn replaces it");
+    assert!(
+        m.apply_answer_preview(&agent, "t2", 1, &encode(""), now, &mut change),
+        "another turn replaces it"
+    );
     assert_eq!(page(&m, now), "");
     // a late preview of a turn whose answer came shows nothing
     m.live_settled.push_back("t9".into());

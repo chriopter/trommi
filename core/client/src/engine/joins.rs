@@ -115,7 +115,12 @@ pub(super) fn joins_at(entries: &[OutboxEntry]) -> usize {
     let mut seen = BTreeSet::new();
     let mut bytes = 0usize;
     for (at, entry) in entries.iter().enumerate() {
-        let Some(group) = entry.group.filter(|g| entry.kind == OutboxKind::ExternalCommit && !g.is_room()) else { return at };
+        let Some(group) = entry
+            .group
+            .filter(|g| entry.kind == OutboxKind::ExternalCommit && !g.is_room())
+        else {
+            return at;
+        };
         let size = entry.parts.iter().map(Vec::len).sum::<usize>() / 3 * 4 + 200;
         if at >= JOINS_AT_ONCE || (at > 0 && bytes + size > JOINS_BYTES) || !seen.insert(group) {
             return at;
@@ -128,14 +133,21 @@ pub(super) fn joins_at(entries: &[OutboxEntry]) -> usize {
 /// A refusal's code as this build names it; one it does not know is `refused`.
 fn code_of(failure: &Failure) -> &'static str {
     match failure {
-        Failure::Refused { code: Some(code), .. } => Error::from_code(code).map_or("refused", |e| e.code()),
+        Failure::Refused {
+            code: Some(code), ..
+        } => Error::from_code(code).map_or("refused", |e| e.code()),
         _ => "refused",
     }
 }
 
 impl Joining {
     /// After a restart: the joins that were built wait for the hub's answer; nothing more is read.
-    pub(super) fn resumed(posted: BTreeSet<GroupId>, joined: u32, not_joined: Vec<(GroupId, &'static str)>, room_pending: bool) -> Self {
+    pub(super) fn resumed(
+        posted: BTreeSet<GroupId>,
+        joined: u32,
+        not_joined: Vec<(GroupId, &'static str)>,
+        room_pending: bool,
+    ) -> Self {
         Joining {
             keys: None,
             later: None,
@@ -158,8 +170,21 @@ impl Joining {
 
     /// What a restart needs of it: the groups still to join, and how the others ended.
     pub(super) fn record(&self) -> super::record::JoinsRecord {
-        let waiting = self.together.iter().chain(&self.alone).copied().chain(self.rows.iter().map(|row| row.group)).chain(self.one.iter().map(|one| one.group)).chain(self.posted.iter().copied()).chain(self.reading.iter().copied());
-        super::record::JoinsRecord::new(waiting, self.joined, &self.not_joined, self.room_pending && !self.room_keys_recovered)
+        let waiting = self
+            .together
+            .iter()
+            .chain(&self.alone)
+            .copied()
+            .chain(self.rows.iter().map(|row| row.group))
+            .chain(self.one.iter().map(|one| one.group))
+            .chain(self.posted.iter().copied())
+            .chain(self.reading.iter().copied());
+        super::record::JoinsRecord::new(
+            waiting,
+            self.joined,
+            &self.not_joined,
+            self.room_pending && !self.room_keys_recovered,
+        )
     }
 }
 
@@ -178,7 +203,9 @@ impl Engine {
                 joining.room_keys_recovered = false;
                 joining.room_pending = room_pending;
                 joining.reported = false;
-                joining.not_joined.retain(|(_, code)| *code != "interrupted");
+                joining
+                    .not_joined
+                    .retain(|(_, code)| *code != "interrupted");
                 joining
             }
             None => Joining {
@@ -201,7 +228,12 @@ impl Engine {
             },
         };
         for group in joins.groups {
-            if !group.is_room() && self.device.group(&group).is_err() && !joining.together.contains(&group) && !joining.alone.contains(&group) && !joining.posted.contains(&group) {
+            if !group.is_room()
+                && self.device.group(&group).is_err()
+                && !joining.together.contains(&group)
+                && !joining.alone.contains(&group)
+                && !joining.posted.contains(&group)
+            {
                 joining.together.push_back(group);
             }
         }
@@ -212,7 +244,11 @@ impl Engine {
     /// The first Desk needs old room keys but a restart lost the in-memory code.
     pub(super) fn note_room_key_need(&mut self) {
         let room = GroupId::room(self.room);
-        if let Some(j) = self.joining.as_mut().filter(|j| j.room_pending && j.keys.is_none()) {
+        if let Some(j) = self
+            .joining
+            .as_mut()
+            .filter(|j| j.room_pending && j.keys.is_none())
+        {
             if !j.not_joined.iter().any(|(g, _)| *g == room) {
                 j.not_joined.push((room, "interrupted"));
             }
@@ -229,8 +265,13 @@ impl Engine {
         if !self.caught_up || self.pass || !self.todo.is_empty() || self.repair.is_some() {
             return;
         }
-        let Some(mut j) = self.joining.take() else { return };
-        if j.reported { self.joining = Some(j); return; }
+        let Some(mut j) = self.joining.take() else {
+            return;
+        };
+        if j.reported {
+            self.joining = Some(j);
+            return;
+        }
         if j.asked.is_none() && !j.retry.waiting(ctx.now) {
             self.joins_step(ctx, &mut j);
         }
@@ -240,7 +281,16 @@ impl Engine {
         // A join that left the outbox without its answer being read (the stream brought the Commit and the core
         // merged it, then the answer was lost): settled by what the device holds, or nobody would ever say it.
         let outbox = self.device.outbox();
-        let gone: Vec<GroupId> = j.posted.iter().filter(|g| !outbox.iter().any(|e| e.kind == OutboxKind::ExternalCommit && e.group == Some(**g))).copied().collect();
+        let gone: Vec<GroupId> = j
+            .posted
+            .iter()
+            .filter(|g| {
+                !outbox
+                    .iter()
+                    .any(|e| e.kind == OutboxKind::ExternalCommit && e.group == Some(**g))
+            })
+            .copied()
+            .collect();
         for group in gone {
             j.posted.remove(&group);
             if self.device.group(&group).is_ok() {
@@ -252,7 +302,13 @@ impl Engine {
         }
         let room_waits = j.room_pending && !j.room_keys_recovered && !self.desk.complete
             || j.keys.is_some() && self.anchored_past_missing() && self.room_past_pending();
-        let through = !room_waits && j.asked.is_none() && j.one.is_none() && j.rows.is_empty() && j.together.is_empty() && j.alone.is_empty() && j.posted.is_empty();
+        let through = !room_waits
+            && j.asked.is_none()
+            && j.one.is_none()
+            && j.rows.is_empty()
+            && j.together.is_empty()
+            && j.alone.is_empty()
+            && j.posted.is_empty();
         if through {
             // every session's keys are at hand now: the Desk of the joined groups, and what came without its key
             // since the sign-in is read back group by group, from the first such envelope. The room's order is
@@ -262,8 +318,14 @@ impl Engine {
             self.keys_came();
             self.report(Report::Groups);
             let interrupted = j.not_joined.iter().any(|(_, code)| *code == "interrupted");
-            self.report(Report::SessionsJoined { joined: j.joined, not_joined: j.not_joined.clone() });
-            if interrupted { j.reported = true; self.joining = Some(j); }
+            self.report(Report::SessionsJoined {
+                joined: j.joined,
+                not_joined: j.not_joined.clone(),
+            });
+            if interrupted {
+                j.reported = true;
+                self.joining = Some(j);
+            }
             return self.drive_all(ctx);
         }
         self.joining = Some(j);
@@ -274,27 +336,49 @@ impl Engine {
         // Keep the code until the first Desk has revealed whether old room registers need it.
         // An empty Desk does not trigger history; an old room envelope does.
         if j.room_pending && !j.room_keys_recovered && !self.desk.complete
-            || j.keys.is_some() && j.together.is_empty() && j.alone.is_empty() && j.rows.is_empty() && j.one.is_none()
-                && self.anchored_past_missing() && self.room_past_pending() {
+            || j.keys.is_some()
+                && j.together.is_empty()
+                && j.alone.is_empty()
+                && j.rows.is_empty()
+                && j.one.is_none()
+                && self.anchored_past_missing()
+                && self.room_past_pending()
+        {
             return;
         }
         if self.past_failed(&room) {
-            let waiting: Vec<_> = j.together.drain(..).chain(j.alone.drain(..))
-                .chain(j.rows.drain(..).map(|row| row.group)).chain(j.one.take().map(|one| one.group)).collect();
-            j.not_joined.extend(waiting.into_iter().map(|g| (g, "bad-group")));
+            let waiting: Vec<_> = j
+                .together
+                .drain(..)
+                .chain(j.alone.drain(..))
+                .chain(j.rows.drain(..).map(|row| row.group))
+                .chain(j.one.take().map(|one| one.group))
+                .collect();
+            j.not_joined
+                .extend(waiting.into_iter().map(|g| (g, "bad-group")));
             return;
         }
-        if (!j.together.is_empty() || !j.alone.is_empty() || !j.rows.is_empty() || j.one.is_some()) && self.need_past(room) {
+        if (!j.together.is_empty() || !j.alone.is_empty() || !j.rows.is_empty() || j.one.is_some())
+            && self.need_past(room)
+        {
             return;
         }
         if !j.room_keys_recovered && self.learned(&room) {
             if let (Some(keys), Some(later)) = (&j.keys, &j.later) {
-                match self.device.recover_room_keys_after_history(keys, &later.rows, &later.links) {
+                match self
+                    .device
+                    .recover_room_keys_after_history(keys, &later.rows, &later.links)
+                {
                     Ok(missing) => {
-                        if missing.is_some() { self.report(Report::Alert(Alert::MissingLink)); }
+                        if missing.is_some() {
+                            self.report(Report::Alert(Alert::MissingLink));
+                        }
                         j.room_keys_recovered = true;
                     }
-                    Err(e) => { self.local(ctx, &e); return; }
+                    Err(e) => {
+                        self.local(ctx, &e);
+                        return;
+                    }
                 }
             }
         }
@@ -305,11 +389,31 @@ impl Engine {
             if let Some(one) = &j.one {
                 let group = one.group;
                 let (route, what) = if !one.started {
-                    (Route::GroupInfo { group: &group, epoch: Some(0) }, Read::Founding(group))
+                    (
+                        Route::GroupInfo {
+                            group: &group,
+                            epoch: Some(0),
+                        },
+                        Read::Founding(group),
+                    )
                 } else if one.current.is_none() {
-                    (Route::GroupInfo { group: &group, epoch: None }, Read::Current(group))
+                    (
+                        Route::GroupInfo {
+                            group: &group,
+                            epoch: None,
+                        },
+                        Read::Current(group),
+                    )
                 } else {
-                    (Route::GroupLog { group: &group, after: one.after, limit: LOG_PAGE, commits_only: true }, Read::Log(group))
+                    (
+                        Route::GroupLog {
+                            group: &group,
+                            after: one.after,
+                            limit: LOG_PAGE,
+                            commits_only: true,
+                        },
+                        Read::Log(group),
+                    )
                 };
                 j.asked = self.ask(ctx, route, true, |expect| Asked::JoinRead { expect, what });
                 if j.asked.is_none() {
@@ -325,7 +429,12 @@ impl Engine {
             }
             if !j.together.is_empty() {
                 let groups: Vec<GroupId> = j.together.iter().take(READ_AT_ONCE).copied().collect();
-                j.asked = self.ask(ctx, Route::GroupsRead { groups: &groups }, true, |expect| Asked::JoinRead { expect, what: Read::Together(groups.clone()) });
+                j.asked = self.ask(ctx, Route::GroupsRead { groups: &groups }, true, |expect| {
+                    Asked::JoinRead {
+                        expect,
+                        what: Read::Together(groups.clone()),
+                    }
+                });
                 if j.asked.is_some() {
                     j.together.drain(..groups.len());
                     j.reading = groups;
@@ -335,11 +444,19 @@ impl Engine {
                 j.alone.extend(j.together.drain(..));
                 continue;
             }
-            let Some(group) = j.alone.pop_front() else { return };
+            let Some(group) = j.alone.pop_front() else {
+                return;
+            };
             if self.device.group(&group).is_ok() {
                 continue; // a Welcome came first
             }
-            j.one = Some(One { group, started: false, current: None, after: 0, reached: 0 });
+            j.one = Some(One {
+                group,
+                started: false,
+                current: None,
+                after: 0,
+                reached: 0,
+            });
         }
     }
 
@@ -348,7 +465,8 @@ impl Engine {
         self.local(ctx, error);
         let tries = j.tries.entry(group).or_default();
         *tries += 1;
-        let moved = has_moved(error) || matches!(error, Error::Busy | Error::BadGroup | Error::NotFound);
+        let moved =
+            has_moved(error) || matches!(error, Error::Busy | Error::BadGroup | Error::NotFound);
         if moved && *tries < JOIN_TRIES {
             j.alone.push_back(group);
         } else {
@@ -360,13 +478,20 @@ impl Engine {
     /// reached that epoch.
     fn join_slices(&mut self, one: &mut One, log: &[LogItem]) -> Result<bool, Error> {
         let upto = one.current.as_ref().map_or(0, |(_, epoch)| *epoch);
-        let commits: Vec<&LogItem> = log.iter().filter(|c| c.n > one.after && c.epoch < upto).collect();
+        let commits: Vec<&LogItem> = log
+            .iter()
+            .filter(|c| c.n > one.after && c.epoch < upto)
+            .collect();
         let mut at = 0;
         let mut size = SLICE;
         while at < commits.len() {
             let slice: Vec<ServedCommit<'_>> = commits[at..(at + size).min(commits.len())]
                 .iter()
-                .map(|c| ServedCommit { change: c.change, commit: &c.bytes, recovery_auth: c.recovery_auth.as_deref() })
+                .map(|c| ServedCommit {
+                    change: c.change,
+                    commit: &c.bytes,
+                    recovery_auth: c.recovery_auth.as_deref(),
+                })
                 .collect();
             match self.device.session_check_slice(&one.group, &slice) {
                 Ok(()) => {
@@ -383,12 +508,25 @@ impl Engine {
 
     /// The check is through: the join is built on the GroupInfo served as current, and waits in the outbox.
     fn join_build(&mut self, ctx: &mut Ctx<'_>, j: &mut Joining, one: One) {
-        let Some((current, _)) = &one.current else { return };
+        let Some((current, _)) = &one.current else {
+            return;
+        };
         // (after a restart the code's keys are gone: nothing is read then, so nothing comes here)
-        let Some(keys) = &j.keys else { return j.not_joined.push((one.group, "interrupted")) };
+        let Some(keys) = &j.keys else {
+            return j.not_joined.push((one.group, "interrupted"));
+        };
         let built = match &j.later {
-            Some(later) => self.device.join_session_checked_keys(keys, &one.group, current, &later.rows, &later.links, ctx.now),
-            None => self.device.join_session_checked(keys, &one.group, current, ctx.now),
+            Some(later) => self.device.join_session_checked_keys(
+                keys,
+                &one.group,
+                current,
+                &later.rows,
+                &later.links,
+                ctx.now,
+            ),
+            None => self
+                .device
+                .join_session_checked(keys, &one.group, current, ctx.now),
         };
         match built {
             Ok(_) => {
@@ -411,7 +549,13 @@ impl Engine {
             Ok(_) => return self.join_failed(ctx, j, group, &Error::BadGroup),
             Err(e) => return self.join_failed(ctx, j, group, &e),
         }
-        let mut one = One { group, started: true, current: Some((row.info, row.epoch)), after: 0, reached: 0 };
+        let mut one = One {
+            group,
+            started: true,
+            current: Some((row.info, row.epoch)),
+            after: 0,
+            reached: 0,
+        };
         match self.join_slices(&mut one, &row.log) {
             Ok(true) => self.join_build(ctx, j, one),
             Ok(false) if !row.complete => j.one = Some(one),
@@ -421,8 +565,16 @@ impl Engine {
         }
     }
 
-    pub(super) fn on_join_read(&mut self, ctx: &mut Ctx<'_>, what: Read, answer: Result<Answer, Failure>, unauthorised: bool) {
-        let Some(mut j) = self.joining.take() else { return };
+    pub(super) fn on_join_read(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        what: Read,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
+        let Some(mut j) = self.joining.take() else {
+            return;
+        };
         j.asked = None;
         j.reading.clear();
         self.join_read(ctx, &mut j, what, answer, unauthorised);
@@ -431,7 +583,14 @@ impl Engine {
         }
     }
 
-    fn join_read(&mut self, ctx: &mut Ctx<'_>, j: &mut Joining, what: Read, answer: Result<Answer, Failure>, unauthorised: bool) {
+    fn join_read(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        j: &mut Joining,
+        what: Read,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
         let answer = match answer {
             Ok(answer) => answer,
             Err(failure) => {
@@ -473,14 +632,20 @@ impl Engine {
                         Ok(read) if read.group == group => j.rows.push_back(read),
                         Ok(_) => j.not_joined.push((group, "bad-group")),
                         // it did not fit the answer, or the hub could not serve it now: alone
-                        Err(Failure::Refused { code: Some(code), .. }) if code == "too-large" => j.alone.push_back(group),
-                        Err(failure @ Failure::Refused { .. }) => j.not_joined.push((group, code_of(&failure))),
+                        Err(Failure::Refused {
+                            code: Some(code), ..
+                        }) if code == "too-large" => j.alone.push_back(group),
+                        Err(failure @ Failure::Refused { .. }) => {
+                            j.not_joined.push((group, code_of(&failure)))
+                        }
                         Err(_) => j.alone.push_back(group),
                     }
                 }
             }
             (Read::Founding(group), Answer::GroupInfo { group_info, .. }) => {
-                let Some(mut one) = j.one.take().filter(|o| o.group == group) else { return };
+                let Some(mut one) = j.one.take().filter(|o| o.group == group) else {
+                    return;
+                };
                 match self.device.session_check_start(&group_info) {
                     Ok(checked) if checked == group => {
                         one.started = true;
@@ -491,7 +656,9 @@ impl Engine {
                 }
             }
             (Read::Current(group), Answer::GroupInfo { epoch, group_info }) => {
-                let Some(mut one) = j.one.take().filter(|o| o.group == group) else { return };
+                let Some(mut one) = j.one.take().filter(|o| o.group == group) else {
+                    return;
+                };
                 one.current = Some((group_info, epoch));
                 if epoch == 0 {
                     self.join_build(ctx, j, one);
@@ -500,8 +667,19 @@ impl Engine {
                 }
             }
             (Read::Log(group), Answer::GroupLog { items, more }) => {
-                let Some(mut one) = j.one.take().filter(|o| o.group == group) else { return };
-                let log: Vec<LogItem> = items.into_iter().filter_map(|i| if let ChangeItem::Commit(l) = i { Some(l) } else { None }).collect();
+                let Some(mut one) = j.one.take().filter(|o| o.group == group) else {
+                    return;
+                };
+                let log: Vec<LogItem> = items
+                    .into_iter()
+                    .filter_map(|i| {
+                        if let ChangeItem::Commit(l) = i {
+                            Some(l)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
                 let before = one.after;
                 match self.join_slices(&mut one, &log) {
                     Ok(true) => self.join_build(ctx, j, one),
@@ -520,8 +698,15 @@ impl Engine {
     }
 
     /// The hub answered a posted join of a session group: taken (`refused` none), or refused for good.
-    pub(super) fn join_answered(&mut self, kind: OutboxKind, group: Option<GroupId>, refused: Option<&Error>) {
-        let (Some(j), Some(group)) = (self.joining.as_mut(), group) else { return };
+    pub(super) fn join_answered(
+        &mut self,
+        kind: OutboxKind,
+        group: Option<GroupId>,
+        refused: Option<&Error>,
+    ) {
+        let (Some(j), Some(group)) = (self.joining.as_mut(), group) else {
+            return;
+        };
         if kind != OutboxKind::ExternalCommit || !j.posted.remove(&group) {
             return;
         }
@@ -544,7 +729,13 @@ impl Engine {
     }
 
     /// The answer to joins posted together: each row is taken as the answer to its entry posted alone.
-    pub(super) fn on_joins_posted(&mut self, ctx: &mut Ctx<'_>, entries: Vec<(u64, Option<GroupId>)>, answer: Result<Answer, Failure>, unauthorised: bool) {
+    pub(super) fn on_joins_posted(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        entries: Vec<(u64, Option<GroupId>)>,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) {
         self.posting = None;
         let rows = match answer {
             Ok(Answer::Joins(rows)) if rows.len() == entries.len() => rows,
@@ -571,7 +762,14 @@ impl Engine {
                 Ok(taken) => self.accepted(ctx, entry, OutboxKind::ExternalCommit, group, taken),
                 // (a row's refusal names its code alone: no void record, no wait of its own)
                 Err(failure) => {
-                    if let Some(retry_after) = self.not_accepted(ctx, entry, OutboxKind::ExternalCommit, group, failure, None) {
+                    if let Some(retry_after) = self.not_accepted(
+                        ctx,
+                        entry,
+                        OutboxKind::ExternalCommit,
+                        group,
+                        failure,
+                        None,
+                    ) {
                         wait = Some(wait.flatten().max(retry_after));
                     }
                 }
@@ -594,7 +792,13 @@ mod tests {
 
     fn join(n: u8, bytes: usize) -> OutboxEntry {
         let group = GroupId::session(RoomId::new([1; 32]), SessionId::new([n; 16]));
-        OutboxEntry { id: u64::from(n), kind: OutboxKind::ExternalCommit, group: Some(group), epoch: 1, parts: vec![vec![0; bytes]] }
+        OutboxEntry {
+            id: u64::from(n),
+            kind: OutboxKind::ExternalCommit,
+            group: Some(group),
+            epoch: 1,
+            parts: vec![vec![0; bytes]],
+        }
     }
 
     #[test]

@@ -15,7 +15,10 @@ use trommi_core::ids::{DeviceId, GroupId};
 /// What an account step's request was.
 pub(super) enum Step {
     /// `GET /v1/account` of a deletion: its e-mail derives the password's key.
-    ReadAccount { password: crate::account::Secret, expect: Expect },
+    ReadAccount {
+        password: crate::account::Secret,
+        expect: Expect,
+    },
     Delete(Expect),
     Usage(Expect),
     SignOut,
@@ -26,7 +29,11 @@ pub(super) enum Step {
     /// A request of push (`app::push`).
     Push(super::push::Ask, Expect),
     /// A file of a team being deleted (`app::teams`).
-    TeamFile { team: String, file: String, expect: Expect },
+    TeamFile {
+        team: String,
+        file: String,
+        expect: Expect,
+    },
 }
 
 #[derive(Default)]
@@ -47,24 +54,62 @@ fn unhex32(text: &str) -> Option<[u8; 32]> {
 
 impl App {
     /// `RemoveDevices`, `SignOut`, `DeleteAccount`: true when `action` was one of them.
-    pub(super) fn account_step(&mut self, now_ms: u64, action: &AccountAction, out: &mut Vec<Effect>) -> bool {
+    pub(super) fn account_step(
+        &mut self,
+        now_ms: u64,
+        action: &AccountAction,
+        out: &mut Vec<Effect>,
+    ) -> bool {
         match action {
             AccountAction::ReadUsage => {
-                if self.steps.asked.values().any(|step| matches!(step, Step::Usage(_))) { return true; }
-                let sent = !self.demo && self.step_send(now_ms, out, |site| Codec.request(site, &Route::AccountUsage), Step::Usage);
+                if self
+                    .steps
+                    .asked
+                    .values()
+                    .any(|step| matches!(step, Step::Usage(_)))
+                {
+                    return true;
+                }
+                let sent = !self.demo
+                    && self.step_send(
+                        now_ms,
+                        out,
+                        |site| Codec.request(site, &Route::AccountUsage),
+                        Step::Usage,
+                    );
                 self.next_view.settings.data = Some(crate::views::DataView {
                     state: if sent { "loading" } else { "failed" }.into(),
                     rows: Vec::new(),
-                    says: Some(Text::new(if sent { "data.loading" } else { "data.unavailable" },
-                        if sent { "Reading hub data…" } else { "Hub data is available after signing in." })),
+                    says: Some(Text::new(
+                        if sent {
+                            "data.loading"
+                        } else {
+                            "data.unavailable"
+                        },
+                        if sent {
+                            "Reading hub data…"
+                        } else {
+                            "Hub data is available after signing in."
+                        },
+                    )),
                 });
             }
-            AccountAction::RemoveDevices { device_ids } => self.remove_devices(now_ms, device_ids, out),
+            AccountAction::RemoveDevices { device_ids } => {
+                self.remove_devices(now_ms, device_ids, out)
+            }
             AccountAction::SignOut => self.sign_out(now_ms, out),
             AccountAction::DeleteAccount { password } => {
                 let password = password.clone();
-                self.step_send(now_ms, out, |site| Codec.request(site, &Route::Account), move |expect| Step::ReadAccount { password, expect });
-                self.next_view.account = AccountView { step: "working".into(), ..Default::default() };
+                self.step_send(
+                    now_ms,
+                    out,
+                    |site| Codec.request(site, &Route::Account),
+                    move |expect| Step::ReadAccount { password, expect },
+                );
+                self.next_view.account = AccountView {
+                    step: "working".into(),
+                    ..Default::default()
+                };
             }
             _ => return false,
         }
@@ -75,7 +120,8 @@ impl App {
         &mut self,
         now_ms: u64,
         out: &mut Vec<Effect>,
-        build: impl FnOnce(&crate::hub::Site<'_>) -> Result<(crate::app::io::HttpRequest, Expect), Failure> + 'static,
+        build: impl FnOnce(&crate::hub::Site<'_>) -> Result<(crate::app::io::HttpRequest, Expect), Failure>
+            + 'static,
         step: impl FnOnce(Expect) -> Step,
     ) -> bool {
         let cell = std::rc::Rc::new(std::cell::RefCell::new(None));
@@ -98,7 +144,14 @@ impl App {
                 true
             }
             _ => {
-                self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.not_sent", "That could not be sent. Try again.")), ..Default::default() };
+                self.next_view.account = AccountView {
+                    step: "none".into(),
+                    problem: Some(Text::new(
+                        "account.not_sent",
+                        "That could not be sent. Try again.",
+                    )),
+                    ..Default::default()
+                };
                 false
             }
         }
@@ -106,18 +159,30 @@ impl App {
 
     fn remove_devices(&mut self, now_ms: u64, device_ids: &[String], out: &mut Vec<Effect>) {
         let device_ids = crate::machines::removal_targets(&self.board.model, device_ids);
-        let Some(engine) = self.engine.as_ref() else { return };
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
         let (humans, agents) = engine.roles();
         let me = engine.device().id();
-        let ids: Vec<DeviceId> = device_ids.iter().filter_map(|d| unhex32(d)).map(DeviceId::new).filter(|d| *d != me).collect();
-        let cut_humans: Vec<DeviceId> = ids.iter().filter(|d| humans.contains(d)).copied().collect();
-        let gone_agents: Vec<DeviceId> = ids.iter().filter(|d| agents.contains(d)).copied().collect();
+        let ids: Vec<DeviceId> = device_ids
+            .iter()
+            .filter_map(|d| unhex32(d))
+            .map(DeviceId::new)
+            .filter(|d| *d != me)
+            .collect();
+        let cut_humans: Vec<DeviceId> =
+            ids.iter().filter(|d| humans.contains(d)).copied().collect();
+        let gone_agents: Vec<DeviceId> =
+            ids.iter().filter(|d| agents.contains(d)).copied().collect();
         let room = GroupId::room(engine.room());
         let mut failed = None;
         if !cut_humans.is_empty() {
             let done = self.with_engine(now_ms, out, |engine, ctx| {
                 engine.act(ctx, |d, now| {
-                    let cuts = cut_humans.iter().map(|h| d.cut_of(&room, h)).collect::<Result<Vec<_>, _>>()?;
+                    let cuts = cut_humans
+                        .iter()
+                        .map(|h| d.cut_of(&room, h))
+                        .collect::<Result<Vec<_>, _>>()?;
                     d.remove_human_devices(&cuts, now)
                 })
             });
@@ -126,12 +191,17 @@ impl App {
             }
         }
         if failed.is_none() && !gone_agents.is_empty() {
-            if let Some(Err(e)) = self.with_engine(now_ms, out, |engine, ctx| engine.act(ctx, |d, now| d.remove_agents(&gone_agents, now))) {
+            if let Some(Err(e)) = self.with_engine(now_ms, out, |engine, ctx| {
+                engine.act(ctx, |d, now| d.remove_agents(&gone_agents, now))
+            }) {
                 failed = Some(e.code());
             }
         }
         if let Some(code) = failed {
-            let text = Text::new("devices.not_removed", &format!("The device was not removed ({code})."));
+            let text = Text::new(
+                "devices.not_removed",
+                &format!("The device was not removed ({code})."),
+            );
             self.sent.toast(&mut self.next_view.toasts, text, None);
         }
     }
@@ -140,31 +210,57 @@ impl App {
     pub(super) fn sign_out(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
         if self.engine.is_none() {
             self.logout_requested = true;
-            self.signing_in = None; self.founding = None; self.linking = None; self.room_join_wait = None;
+            self.signing_in = None;
+            self.founding = None;
+            self.linking = None;
+            self.room_join_wait = None;
             for pending in self.pending.values_mut() {
                 match pending {
-                    Pending::JoinLoad | Pending::FoundLoad | Pending::LinkLoad => *pending = Pending::DeviceLoad,
-                    Pending::DeviceLoad | Pending::RoomKey | Pending::RoomKeyWrite | Pending::ForgetWrite => {},
-                    p if p.is_departure() => {},
+                    Pending::JoinLoad | Pending::FoundLoad | Pending::LinkLoad => {
+                        *pending = Pending::DeviceLoad
+                    }
+                    Pending::DeviceLoad
+                    | Pending::RoomKey
+                    | Pending::RoomKeyWrite
+                    | Pending::ForgetWrite => {}
+                    p if p.is_departure() => {}
                     other => *other = Pending::Dropped,
                 }
             }
-            if !self.pending.values().any(|p| matches!(p, Pending::DeviceLoad | Pending::RoomKey)) {
+            if !self
+                .pending
+                .values()
+                .any(|p| matches!(p, Pending::DeviceLoad | Pending::RoomKey))
+            {
                 let id = self.io(Pending::DeviceLoad);
-                out.push(Effect::Store { id, op:StoreOp::DeviceLoad });
+                out.push(Effect::Store {
+                    id,
+                    op: StoreOp::DeviceLoad,
+                });
             }
             self.next_view.phase = Phase::Starting;
-            self.next_view.account = AccountView { step:"working".into(), ..Default::default() };
+            self.next_view.account = AccountView {
+                step: "working".into(),
+                ..Default::default()
+            };
             return;
         }
         self.logout_requested = false;
-        let departure = self.engine.as_ref().and_then(|e| e.departure_request().ok());
+        let departure = self
+            .engine
+            .as_ref()
+            .and_then(|e| e.departure_request().ok());
         if let Some(request) = departure {
             // Public signed intent survives revocation of the bearer below. The receiving human app,
             // not the hub, checks it and commits the actual MLS removal.
             self.departure_enqueue(&request, now_ms, out);
         }
-        self.step_send(now_ms, out, |site| Codec.request(site, &Route::SignOut), |_| Step::SignOut);
+        self.step_send(
+            now_ms,
+            out,
+            |site| Codec.request(site, &Route::SignOut),
+            |_| Step::SignOut,
+        );
         self.forget_local_device(now_ms, out);
         self.next_view.account.notice = Some(logged_out());
     }
@@ -177,36 +273,78 @@ impl App {
         self.outside_signed_out(&mut privacy);
         // (a recording running or asked for ends with the account: the microphone off, nothing of it kept)
         self.dictation_signed_out(now_ms, &mut privacy);
-        for id in self.next_view.files.keys() { privacy.push(Effect::FileGone { file_id: id.clone() }); }
+        for id in self.next_view.files.keys() {
+            privacy.push(Effect::FileGone {
+                file_id: id.clone(),
+            });
+        }
         let before = out.len();
         let had_engine = self.engine.is_some();
         let wiped = self.with_engine(now_ms, out, |engine, ctx| engine.wipe(ctx));
-        if had_engine && wiped != Some(true) { out.push(log(LogLevel::Warn, "the stored device could not be erased")); }
-        let writes: Vec<_> = out[before..].iter().filter_map(|e| match e { Effect::Store { id, op: StoreOp::DeviceApply { .. } } => Some(*id), _ => None }).collect();
+        if had_engine && wiped != Some(true) {
+            out.push(log(LogLevel::Warn, "the stored device could not be erased"));
+        }
+        let writes: Vec<_> = out[before..]
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Store {
+                    id,
+                    op: StoreOp::DeviceApply { .. },
+                } => Some(*id),
+                _ => None,
+            })
+            .collect();
         let mut old: Vec<_> = self.pending.keys().copied().collect();
-        if let Some(engine) = self.engine.as_mut() { old.extend(engine.forget()); }
+        if let Some(engine) = self.engine.as_mut() {
+            old.extend(engine.forget());
+        }
         let departures = std::mem::take(&mut self.departures);
-        let public_pending: Vec<_> = self.pending.iter().filter(|(_, p)| p.is_departure()).map(|(id,p)| (*id,p.clone())).collect();
+        let public_pending: Vec<_> = self
+            .pending
+            .iter()
+            .filter(|(_, p)| p.is_departure())
+            .map(|(id, p)| (*id, p.clone()))
+            .collect();
         let config = self.config.take();
         let view = std::mem::take(&mut self.view);
         let rendered = self.rendered_once;
         let next = self.next_id;
         // In-flight account steps and plaintext file buffers must not survive into another account.
         *self = App::new();
-        self.config = config; self.view = view; self.rendered_once = rendered; self.next_id = next;
+        self.config = config;
+        self.view = view;
+        self.rendered_once = rendered;
+        self.next_id = next;
         self.departures = departures;
-        for id in old { self.pending.insert(id, Pending::Dropped); }
-        for id in writes { self.pending.insert(id, Pending::ForgetWrite); }
+        for id in old {
+            self.pending.insert(id, Pending::Dropped);
+        }
+        for id in writes {
+            self.pending.insert(id, Pending::ForgetWrite);
+        }
         self.pending.extend(public_pending);
         self.next_view.phase = Phase::SignedOut;
-        self.next_view.account = AccountView { step: "sign_in".into(), ..Default::default() };
+        self.next_view.account = AccountView {
+            step: "sign_in".into(),
+            ..Default::default()
+        };
         out.splice(0..0, privacy);
         out.push(Effect::Timer { at_ms: None });
         let (pending, op) = if self.departures.loaded() {
-            (Pending::WipeKeys, StoreOp::Keys { prefix:String::new() })
+            (
+                Pending::WipeKeys,
+                StoreOp::Keys {
+                    prefix: String::new(),
+                },
+            )
         } else {
             // A failed startup notice read must not erase a valid queued retirement from disk.
-            (Pending::Wipe, StoreOp::Scan { prefix:String::new() })
+            (
+                Pending::Wipe,
+                StoreOp::Scan {
+                    prefix: String::new(),
+                },
+            )
         };
         let id = self.io(pending);
         out.push(Effect::Store { id, op });
@@ -214,16 +352,33 @@ impl App {
 
     /// The keys the cache space holds, all to go.
     pub(super) fn wipe_cache(&mut self, keys: Vec<String>, out: &mut Vec<Effect>) {
-        let keys: Vec<String> = keys.into_iter().filter(|key| !self.departures.keeps(key)).collect();
+        let keys: Vec<String> = keys
+            .into_iter()
+            .filter(|key| !self.departures.keeps(key))
+            .collect();
         if keys.is_empty() {
             return;
         }
         let id = self.io(Pending::CacheDelete);
-        out.push(Effect::Store { id, op: StoreOp::Put { put: Vec::new(), delete: keys } });
+        out.push(Effect::Store {
+            id,
+            op: StoreOp::Put {
+                put: Vec::new(),
+                delete: keys,
+            },
+        });
     }
 
-    pub(super) fn step_answered(&mut self, now_ms: u64, id: IoId, result: &Result<crate::app::io::HttpResponse, Failure>, out: &mut Vec<Effect>) {
-        let Some(step) = self.steps.asked.remove(&id) else { return };
+    pub(super) fn step_answered(
+        &mut self,
+        now_ms: u64,
+        id: IoId,
+        result: &Result<crate::app::io::HttpResponse, Failure>,
+        out: &mut Vec<Effect>,
+    ) {
+        let Some(step) = self.steps.asked.remove(&id) else {
+            return;
+        };
         let answer = |expect: &Expect| match result {
             Ok(response) => Codec.answer(expect, response),
             Err(failure) => Err(failure.clone()),
@@ -233,8 +388,14 @@ impl App {
             Step::Usage(expect) => {
                 self.next_view.settings.data = Some(match answer(&expect) {
                     Ok(Answer::Usage(usage)) => usage_view(usage),
-                    _ => crate::views::DataView { state: "failed".into(), rows: Vec::new(),
-                        says: Some(Text::new("data.failed", "Hub data could not be read. Try again.")) },
+                    _ => crate::views::DataView {
+                        state: "failed".into(),
+                        rows: Vec::new(),
+                        says: Some(Text::new(
+                            "data.failed",
+                            "Hub data could not be read. Try again.",
+                        )),
+                    },
                 });
             }
             Step::Push(ask, expect) => {
@@ -244,7 +405,9 @@ impl App {
             Step::TeamFile { team, file, expect } => {
                 let gone = match answer(&expect) {
                     Ok(_) => true,
-                    Err(Failure::Refused { code: Some(code), .. }) => code == "not-found",
+                    Err(Failure::Refused {
+                        code: Some(code), ..
+                    }) => code == "not-found",
                     Err(_) => false,
                 };
                 self.team_file_gone(&team, file, gone);
@@ -262,25 +425,66 @@ impl App {
                     self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.no_email", "This account has no e-mail and password: delete it on a device with its passkey.")), ..Default::default() };
                     return;
                 };
-                let Ok(keys) = trommi_core::account::password_keys(&email, &password.0, Some(trommi_core::account::KDF_RECORD)) else {
-                    self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.wrong_login", "The e-mail or the password is wrong.")), ..Default::default() };
+                let Ok(keys) = trommi_core::account::password_keys(
+                    &email,
+                    &password.0,
+                    Some(trommi_core::account::KDF_RECORD),
+                ) else {
+                    self.next_view.account = AccountView {
+                        step: "none".into(),
+                        problem: Some(Text::new(
+                            "account.wrong_login",
+                            "The e-mail or the password is wrong.",
+                        )),
+                        ..Default::default()
+                    };
                     return;
                 };
-                let proof = AccountProof::Password { auth_key: *keys.auth_key.expose() };
+                let proof = AccountProof::Password {
+                    auth_key: *keys.auth_key.expose(),
+                };
                 drop(keys);
-                self.step_send(now_ms, out, move |site| Codec.request(site, &Route::DeleteAccount { proof: &proof }), Step::Delete);
+                self.step_send(
+                    now_ms,
+                    out,
+                    move |site| Codec.request(site, &Route::DeleteAccount { proof: &proof }),
+                    Step::Delete,
+                );
             }
             Step::Delete(expect) => match answer(&expect) {
                 Ok(_) => {
                     self.sign_out(now_ms, out);
                     out.insert(0, Effect::ForgetShared);
-                    self.next_view.account = AccountView { step: "found".into(), notice: Some(Text::new("account.notice.deleted", "Your account was deleted.")), ..Default::default() };
+                    self.next_view.account = AccountView {
+                        step: "found".into(),
+                        notice: Some(Text::new(
+                            "account.notice.deleted",
+                            "Your account was deleted.",
+                        )),
+                        ..Default::default()
+                    };
                 }
-                Err(Failure::Refused { code: Some(code), .. }) if code == "wrong-login" => {
-                    self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.wrong_login", "The e-mail or the password is wrong.")), ..Default::default() };
+                Err(Failure::Refused {
+                    code: Some(code), ..
+                }) if code == "wrong-login" => {
+                    self.next_view.account = AccountView {
+                        step: "none".into(),
+                        problem: Some(Text::new(
+                            "account.wrong_login",
+                            "The e-mail or the password is wrong.",
+                        )),
+                        ..Default::default()
+                    };
                 }
                 Err(_) => {
-                    self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.not_deleted", "The account was not deleted. Try again.")), ..Default::default() };
+                    self.next_view.account = AccountView {
+                        step: "none".into(),
+                        problem: Some(Text::new(
+                            "account.not_deleted",
+                            "The account was not deleted. Try again.",
+                        )),
+                        ..Default::default()
+                    };
                 }
             },
         }
@@ -290,21 +494,47 @@ impl App {
 fn usage_view(u: crate::hub::AccountUsage) -> crate::views::DataView {
     use crate::views::{DataRow, DataView};
     let counts = [
-        ("rooms", "Rooms", u.rooms, false), ("groups", "Groups", u.groups, false),
-        ("live_groups", "Live groups", u.live_groups, false), ("devices", "Devices", u.devices, false),
-        ("commits", "Commits", u.commits, false), ("messages", "Messages", u.messages, false),
-        ("envelopes", "Envelopes", u.envelopes, false), ("cards", "Cards", u.cards, false),
-        ("open_cards", "Open cards", u.open_cards, false), ("files", "Files", u.files, false),
-        ("file_bytes", "Files stored", u.file_bytes, true), ("log_bytes", "Log stored", u.log_bytes, true),
-        ("envelope_bytes", "Envelopes stored", u.envelope_bytes, true), ("total_bytes", "Total stored", u.total_bytes, true),
+        ("rooms", "Rooms", u.rooms, false),
+        ("groups", "Groups", u.groups, false),
+        ("live_groups", "Live groups", u.live_groups, false),
+        ("devices", "Devices", u.devices, false),
+        ("commits", "Commits", u.commits, false),
+        ("messages", "Messages", u.messages, false),
+        ("envelopes", "Envelopes", u.envelopes, false),
+        ("cards", "Cards", u.cards, false),
+        ("open_cards", "Open cards", u.open_cards, false),
+        ("files", "Files", u.files, false),
+        ("file_bytes", "Files stored", u.file_bytes, true),
+        ("log_bytes", "Log stored", u.log_bytes, true),
+        ("envelope_bytes", "Envelopes stored", u.envelope_bytes, true),
+        ("total_bytes", "Total stored", u.total_bytes, true),
     ];
-    DataView { state: "ready".into(), says: Some(Text::new("data.privacy", "Counts and sizes only, for your own account.")),
-        rows: counts.into_iter().map(|(id, label, n, bytes)| {
-            let n = n.to_string();
-            DataRow { id: id.into(), label: Text::new(&format!("data.{id}"), label),
-                value: crate::views::words::say(if bytes { "data.bytes" } else { "data.count" },
-                    if bytes { format!("{n} bytes") } else { n.clone() }, &[("n", &n)]) }
-        }).collect() }
+    DataView {
+        state: "ready".into(),
+        says: Some(Text::new(
+            "data.privacy",
+            "Counts and sizes only, for your own account.",
+        )),
+        rows: counts
+            .into_iter()
+            .map(|(id, label, n, bytes)| {
+                let n = n.to_string();
+                DataRow {
+                    id: id.into(),
+                    label: Text::new(&format!("data.{id}"), label),
+                    value: crate::views::words::say(
+                        if bytes { "data.bytes" } else { "data.count" },
+                        if bytes {
+                            format!("{n} bytes")
+                        } else {
+                            n.clone()
+                        },
+                        &[("n", &n)],
+                    ),
+                }
+            })
+            .collect(),
+    }
 }
 
 /// The start screen's word after the person's own sign-out.
@@ -314,5 +544,8 @@ pub(super) fn logged_out() -> crate::views::Text {
 
 /// The start screen's word after another device removed this one (a removal this device checked itself).
 pub(super) fn removed() -> crate::views::Text {
-    crate::views::Text::new("account.notice.removed", "This device was removed from your account by another device. Nothing of it is left here.")
+    crate::views::Text::new(
+        "account.notice.removed",
+        "This device was removed from your account by another device. Nothing of it is left here.",
+    )
 }

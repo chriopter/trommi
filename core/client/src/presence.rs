@@ -79,7 +79,12 @@ impl Model {
 
     /// One `presence` event. Returns whether an agent device came online (a human device then looks whether it waits
     /// for its main session: the seat rule).
-    pub fn apply_presence_event(&mut self, e: &PresenceEvent, change: &mut Change, now: u64) -> bool {
+    pub fn apply_presence_event(
+        &mut self,
+        e: &PresenceEvent,
+        change: &mut Change,
+        now: u64,
+    ) -> bool {
         let Some(id) = device_hex(&e.device) else {
             return false;
         };
@@ -101,14 +106,34 @@ impl Model {
         let report = DeviceReport {
             device_id: id.clone(),
             is_online: e.online,
-            offline_since: if e.online { None } else { Some(e.offline_since.or(e.last_seen_ms).filter(|t| *t > 0).map_or(now, |t| t.min(now))) },
+            offline_since: if e.online {
+                None
+            } else {
+                Some(
+                    e.offline_since
+                        .or(e.last_seen_ms)
+                        .filter(|t| *t > 0)
+                        .map_or(now, |t| t.min(now)),
+                )
+            },
             last_seen_ms: e.last_seen_ms,
             link,
         };
-        let was = self.members.get(&id).map(|m| (m.is_online, m.device_role == "agent"));
+        let was = self
+            .members
+            .get(&id)
+            .map(|m| (m.is_online, m.device_role == "agent"));
         self.apply_presence(std::slice::from_ref(&report), change, now);
         if e.lost {
-            self.push_alert(change, "agent-lost", "An agent lost its connection.", None, Some(id.clone()), "local", now);
+            self.push_alert(
+                change,
+                "agent-lost",
+                "An agent lost its connection.",
+                None,
+                Some(id.clone()),
+                "local",
+                now,
+            );
         }
         matches!(was, Some((false, true))) && e.online
     }
@@ -182,12 +207,26 @@ mod tests {
     fn a_stream_event_without_hears_keeps_the_link() {
         let mut m = room();
         let mut c = Change::new();
-        assert!(m.apply_presence_event(&ev(D0, true, Some(false)), &mut c, 10), "an agent came online");
-        assert_eq!(m.members[D0].link.as_ref().map(|l| l.hears.as_str()), Some("oncall"));
+        assert!(
+            m.apply_presence_event(&ev(D0, true, Some(false)), &mut c, 10),
+            "an agent came online"
+        );
+        assert_eq!(
+            m.members[D0].link.as_ref().map(|l| l.hears.as_str()),
+            Some("oncall")
+        );
         assert!(!m.apply_presence_event(&ev(D0, true, None), &mut c, 20));
-        assert_eq!(m.members[D0].link.as_ref().map(|l| l.hears.as_str()), Some("oncall"), "kept");
+        assert_eq!(
+            m.members[D0].link.as_ref().map(|l| l.hears.as_str()),
+            Some("oncall"),
+            "kept"
+        );
         m.apply_presence_event(&ev(D0, false, None), &mut c, 30);
-        assert_eq!(m.members[D0].offline_since, Some(30), "offline as of the event");
+        assert_eq!(
+            m.members[D0].offline_since,
+            Some(30),
+            "offline as of the event"
+        );
         assert_eq!(m.members[D0].link, None::<Link>);
     }
 
@@ -246,12 +285,31 @@ mod tests {
         m.apply_presence_event(&event, &mut c, 10);
         m.apply_presence_event(&ev(D0, true, None), &mut c, 11);
         assert!(!m.members.contains_key(D0));
-        let room = GroupIn { group: "r".into(), session: None, leaves: vec![], disallowed: 0, archived: false, epoch: 1 };
-        let roles = RolesIn { epoch: 1, humans: vec![], agents: vec![D0.into()], recovery_fingerprint: None };
+        let room = GroupIn {
+            group: "r".into(),
+            session: None,
+            leaves: vec![],
+            disallowed: 0,
+            archived: false,
+            epoch: 1,
+        };
+        let roles = RolesIn {
+            epoch: 1,
+            humans: vec![],
+            agents: vec![D0.into()],
+            recovery_fingerprint: None,
+        };
         m.apply_groups(&[room], Some(&roles), &mut c);
         assert!(m.members[D0].is_online, "online as the stream said");
-        assert_eq!(m.members[D0].link.as_ref().map(|l| l.hears.as_str()), Some("live"));
-        assert_eq!(m.members[D0].last_seen_ms, Some(8), "the complete snapshot's later link row keeps contact metadata");
+        assert_eq!(
+            m.members[D0].link.as_ref().map(|l| l.hears.as_str()),
+            Some("live")
+        );
+        assert_eq!(
+            m.members[D0].last_seen_ms,
+            Some(8),
+            "the complete snapshot's later link row keeps contact metadata"
+        );
     }
 
     #[test]
@@ -267,10 +325,17 @@ mod tests {
         assert_eq!(m.members[D0].last_seen_ms, Some(50));
         event.last_seen_ms = Some(u64::MAX);
         m.apply_presence_event(&event, &mut c, 120);
-        assert_eq!(m.members[D0].last_seen_ms, Some(120), "a hub cannot put the display's contact time in the future");
+        assert_eq!(
+            m.members[D0].last_seen_ms,
+            Some(120),
+            "a hub cannot put the display's contact time in the future"
+        );
         assert!(m.members[D0].is_active);
         let mut unknown = Model::new();
         unknown.apply_presence_event(&event, &mut c, 130);
-        assert!(unknown.members.is_empty(), "only verified groups create members");
+        assert!(
+            unknown.members.is_empty(),
+            "only verified groups create members"
+        );
     }
 }

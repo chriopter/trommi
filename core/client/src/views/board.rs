@@ -8,10 +8,10 @@
 //! `stack`, `open_permission_ids`, `desk_order`).
 
 use super::words::earliest;
+use crate::helpers::Helper;
 use crate::model::types::{Card, PermissionRequest};
 use crate::model::Model;
-use crate::helpers::Helper;
-use crate::sessions::{teams_in_order, session_list_and_helpers, SessionRow};
+use crate::sessions::{session_list_and_helpers, teams_in_order, SessionRow};
 use serde_json::Value;
 use std::cell::{Cell, OnceCell};
 use std::collections::HashMap;
@@ -252,7 +252,11 @@ impl<'a> Board<'a> {
             .map(|(id, name)| {
                 let v = model.human.get(&format!("desk/{id}")).map(|r| &r.value);
                 DeskFacts {
-                    goals: v.and_then(|v| v.get("goals")).and_then(Value::as_str).map(clean_goals).unwrap_or_default(),
+                    goals: v
+                        .and_then(|v| v.get("goals"))
+                        .and_then(Value::as_str)
+                        .map(clean_goals)
+                        .unwrap_or_default(),
                     crown: v.and_then(|v| v.get("crown")).cloned(),
                     id,
                     name,
@@ -276,13 +280,24 @@ impl<'a> Board<'a> {
                 let own = (!root && !teams.is_empty()).then(|| row.team.clone());
                 // The crown: a team's own (its register `desk/<id>`, `crown`) decides on that team; a team without
                 // one keeps the room's single crown, if that session stands on it.
-                let crowned = match own.as_ref().and_then(|d| teams.iter().find(|x| &x.id == d)).and_then(|d| d.crown.as_ref()) {
+                let crowned = match own
+                    .as_ref()
+                    .and_then(|d| teams.iter().find(|x| &x.id == d))
+                    .and_then(|d| d.crown.as_ref())
+                {
                     None if root => false,
                     None => row.starred,
-                    Some(c) => match c.get("session_id").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+                    Some(c) => match c
+                        .get("session_id")
+                        .and_then(Value::as_str)
+                        .filter(|s| !s.is_empty())
+                    {
                         Some(s) => row.session_id.as_deref() == Some(s),
                         None => {
-                            let dev = c.get("agent_device_id").and_then(Value::as_str).filter(|s| !s.is_empty());
+                            let dev = c
+                                .get("agent_device_id")
+                                .and_then(Value::as_str)
+                                .filter(|s| !s.is_empty());
                             dev.is_some() && dev == row.agent_device_id.as_deref()
                         }
                     },
@@ -296,14 +311,20 @@ impl<'a> Board<'a> {
                         .as_deref()
                         .and_then(|d| model.members.get(d))
                         .is_some_and(|d| d.platform.as_str() == Some("codex")),
-                    said_goodbye: session.and_then(|s| s.link.as_ref()).is_some_and(|l| l.exit.is_some()),
+                    said_goodbye: session
+                        .and_then(|s| s.link.as_ref())
+                        .is_some_and(|l| l.exit.is_some()),
                     team: own,
                     crowned,
                     row,
                 }
             })
             .collect();
-        let mut by_key: HashMap<String, usize> = agents.iter().enumerate().map(|(i, a)| (a.row.key.clone(), i)).collect();
+        let mut by_key: HashMap<String, usize> = agents
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.row.key.clone(), i))
+            .collect();
         // (a helper session of before has no entry: its cards count under its main)
         let mut legacy = std::collections::BTreeMap::new();
         let mut legacy_archived = std::collections::BTreeSet::new();
@@ -316,7 +337,11 @@ impl<'a> Board<'a> {
                 by_key.insert(h.key, i);
             }
         }
-        let by_id: HashMap<String, usize> = agents.iter().enumerate().map(|(i, a)| (a.row.id.clone(), i)).collect();
+        let by_id: HashMap<String, usize> = agents
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.row.id.clone(), i))
+            .collect();
 
         let mut all_fresh = Vec::new();
         let mut all_cards = Vec::new();
@@ -326,7 +351,9 @@ impl<'a> Board<'a> {
             }
             let fresh = Fresh {
                 id: c.object_id.clone(),
-                agent: by_key.get(key_of(&c.session_id, &c.agent_device_id)).copied(),
+                agent: by_key
+                    .get(key_of(&c.session_id, &c.agent_device_id))
+                    .copied(),
                 knocks: matches!(c.urgency.as_str(), "high" | "critical"),
                 permission: false,
             };
@@ -340,8 +367,14 @@ impl<'a> Board<'a> {
                 all_cards.push(fresh);
             }
         }
-        for p in model.open_permission_ids.iter().filter_map(|id| model.permissions.get(id)) {
-            let agent = by_key.get(key_of(&p.session_id, &p.agent_device_id)).copied();
+        for p in model
+            .open_permission_ids
+            .iter()
+            .filter_map(|id| model.permissions.get(id))
+        {
+            let agent = by_key
+                .get(key_of(&p.session_id, &p.agent_device_id))
+                .copied();
             if p.permission_state == "pending" && !p.catching_up && agent.is_some() {
                 all_cards.push(Fresh {
                     id: p.object_id.clone(),
@@ -352,13 +385,19 @@ impl<'a> Board<'a> {
             }
         }
         // (a request not read here yet says nothing of what it asks to run: it waits quietly, as a card does)
-        for p in model.open_permission_ids.iter().filter_map(|id| model.permissions.get(id)) {
+        for p in model
+            .open_permission_ids
+            .iter()
+            .filter_map(|id| model.permissions.get(id))
+        {
             if p.permission_state != "pending" || p.catching_up || !request_is_read(p) {
                 continue;
             }
             all_fresh.push(Fresh {
                 id: p.object_id.clone(),
-                agent: by_key.get(key_of(&p.session_id, &p.agent_device_id)).copied(),
+                agent: by_key
+                    .get(key_of(&p.session_id, &p.agent_device_id))
+                    .copied(),
                 knocks: true,
                 permission: true,
             });
@@ -411,11 +450,23 @@ impl<'a> Board<'a> {
     pub fn number_of(&self, id: &str) -> u32 {
         let all = self.numbers.get_or_init(|| {
             let m = self.model;
-            let mut filed: Vec<(u64, &str)> = m.cards.values().map(|c| (c.first_envelope_number, c.object_id.as_str())).collect();
-            filed.extend(m.permissions.values().map(|p| (p.envelope_number, p.object_id.as_str())));
+            let mut filed: Vec<(u64, &str)> = m
+                .cards
+                .values()
+                .map(|c| (c.first_envelope_number, c.object_id.as_str()))
+                .collect();
+            filed.extend(
+                m.permissions
+                    .values()
+                    .map(|p| (p.envelope_number, p.object_id.as_str())),
+            );
             // (a stable sort: of two filed in the same envelope, a card stands before a request)
             filed.sort_by_key(|(n, _)| *n);
-            filed.into_iter().enumerate().map(|(i, (_, id))| (id.to_string(), i as u32 + 1)).collect()
+            filed
+                .into_iter()
+                .enumerate()
+                .map(|(i, (_, id))| (id.to_string(), i as u32 + 1))
+                .collect()
         });
         all.get(id).copied().unwrap_or(0)
     }
@@ -429,16 +480,35 @@ impl<'a> Board<'a> {
     pub fn helpers(&self, agent: usize) -> &[Helper] {
         let all = self.helpers.get_or_init(|| {
             let m = self.model;
-            let fresh: std::collections::HashSet<&str> = self.all_fresh.iter().map(|f| f.id.as_str()).collect();
+            let fresh: std::collections::HashSet<&str> =
+                self.all_fresh.iter().map(|f| f.id.as_str()).collect();
             let mut cards: HashMap<usize, Vec<crate::helpers::HelperCard>> = HashMap::new();
-            for c in m.cards.values().filter(|c| c.object_state != "closed" && !c.session_id.as_ref().is_some_and(|s| self.legacy_archived.contains(s))) {
-                let Some(name) = self.helper_of(c) else { continue };
-                let Some(&i) = self.by_key.get(key_of(&c.session_id, &c.agent_device_id)) else { continue };
-                cards.entry(i).or_default().push((c, Some(name), fresh.contains(c.object_id.as_str())));
+            for c in m.cards.values().filter(|c| {
+                c.object_state != "closed"
+                    && !c
+                        .session_id
+                        .as_ref()
+                        .is_some_and(|s| self.legacy_archived.contains(s))
+            }) {
+                let Some(name) = self.helper_of(c) else {
+                    continue;
+                };
+                let Some(&i) = self.by_key.get(key_of(&c.session_id, &c.agent_device_id)) else {
+                    continue;
+                };
+                cards.entry(i).or_default().push((
+                    c,
+                    Some(name),
+                    fresh.contains(c.object_id.as_str()),
+                ));
             }
             let mut out = HashMap::new();
             for (i, a) in self.agents.iter().enumerate() {
-                let lines = m.sessions.get(&a.row.key).map(|s| s.status_lines.as_slice()).unwrap_or(&[]);
+                let lines = m
+                    .sessions
+                    .get(&a.row.key)
+                    .map(|s| s.status_lines.as_slice())
+                    .unwrap_or(&[]);
                 let now = self.now;
                 let shown = |t: &crate::model::types::StatusLine| -> Option<&str> {
                     let state = a.row.lines.get(&t.id)?.as_str();
@@ -452,7 +522,8 @@ impl<'a> Board<'a> {
                         _ => None,
                     }
                 };
-                let list = crate::helpers::helpers_of(lines, shown, cards.remove(&i).unwrap_or_default());
+                let list =
+                    crate::helpers::helpers_of(lines, shown, cards.remove(&i).unwrap_or_default());
                 if !list.is_empty() {
                     out.insert(i, list);
                 }
@@ -464,7 +535,8 @@ impl<'a> Board<'a> {
 
     /// The board's Artifacts, for naming the links to them.
     pub fn assets(&self) -> &super::links::Assets {
-        self.assets.get_or_init(|| super::links::Assets::of(self.model))
+        self.assets
+            .get_or_init(|| super::links::Assets::of(self.model))
     }
 
     /// Where a card stands: "catching" (settled elsewhere, its outcome on the way), "open", "shredded", "decided"
@@ -519,7 +591,10 @@ impl<'a> Board<'a> {
             self.model
                 .timelines
                 .get(&c.timeline_key)
-                .and_then(|t| t.items.get(&crate::model::types::ItemKey::Number(r.envelope_number)))
+                .and_then(|t| {
+                    t.items
+                        .get(&crate::model::types::ItemKey::Number(r.envelope_number))
+                })
                 .and_then(|i| i.get("sent_at"))
                 .and_then(Value::as_u64)
                 .unwrap_or(c.updated_at)
@@ -531,13 +606,25 @@ impl<'a> Board<'a> {
         if at == 0 || a.is_some_and(|a| a.pending) {
             return None;
         }
-        let said = if open { c.in_revision.as_ref().map(|r| r.envelope_number) } else { a.and_then(|a| a.envelope_number) };
-        let mark = self.model.sessions.get(key_of(&c.session_id, &c.agent_device_id)).and_then(|s| s.heard_up_to);
+        let said = if open {
+            c.in_revision.as_ref().map(|r| r.envelope_number)
+        } else {
+            a.and_then(|a| a.envelope_number)
+        };
+        let mark = self
+            .model
+            .sessions
+            .get(key_of(&c.session_id, &c.agent_device_id))
+            .and_then(|s| s.heard_up_to);
         let heard = match (said, mark) {
             (Some(said), Some(mark)) => Some(said <= mark),
             _ => None,
         };
-        let waiting = if heard == Some(true) { 0 } else { self.now.saturating_sub(at) };
+        let waiting = if heard == Some(true) {
+            0
+        } else {
+            self.now.saturating_sub(at)
+        };
         Some(Heard {
             heard,
             waiting,
@@ -551,12 +638,17 @@ impl<'a> Board<'a> {
         for c in self.model.cards.values() {
             // (only a card with his word on it can wait to be heard: one handed back, or decided; the rest, most of a
             //  large room, are passed over before any lookup)
-            let decided = c.object_state == "answered" && c.closed_how.as_deref() == Some("answered");
-            if c.catching_up || !(decided || (c.object_state == "open" && c.in_revision.is_some())) {
+            let decided =
+                c.object_state == "answered" && c.closed_how.as_deref() == Some("answered");
+            if c.catching_up || !(decided || (c.object_state == "open" && c.in_revision.is_some()))
+            {
                 continue;
             }
             // (every team's: the wide sidebar shows them all; the Desk's and the tab's sums keep to the team in view)
-            let agent = self.by_key.get(key_of(&c.session_id, &c.agent_device_id)).copied();
+            let agent = self
+                .by_key
+                .get(key_of(&c.session_id, &c.agent_device_id))
+                .copied();
             let Some(h) = self.heard_of(c) else { continue };
             self.wake_at(h.late_at);
             if let (true, Some(i)) = (h.late, agent) {
@@ -591,11 +683,21 @@ pub fn clean_goals(text: &str) -> String {
         .map(|l| {
             let l = l.trim_end();
             let mut units = 0;
-            l.chars().take_while(|c| { units += c.len_utf16(); units <= GOALS_LINE_MAX }).collect()
+            l.chars()
+                .take_while(|c| {
+                    units += c.len_utf16();
+                    units <= GOALS_LINE_MAX
+                })
+                .collect()
         })
         .collect();
     let joined = lines.join("\n");
-    joined.trim_matches('\n').split('\n').take(GOALS_LINES).collect::<Vec<_>>().join("\n")
+    joined
+        .trim_matches('\n')
+        .split('\n')
+        .take(GOALS_LINES)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Makes the board's units of `view` again from the model: the sidebar, the Desk, the pages in view, the notes and
@@ -609,7 +711,15 @@ pub fn render(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel)
 
 /// [`render`], and the files the units show with their references (`views::files_seen`): what the App lets the
 /// person open and share. `view.files` is the App's to fill from them.
-pub fn render_with_files(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> (Option<u64>, std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>) {
+pub fn render_with_files(
+    model: &Model,
+    lens: &Lens,
+    now: u64,
+    view: &mut super::ViewModel,
+) -> (
+    Option<u64>,
+    std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
+) {
     super::files_seen::begin();
     let wake = render_units(model, lens, now, view);
     (wake, super::files_seen::take())
@@ -620,17 +730,32 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     view.sidebar = super::sidebar::sidebar(&b);
     let off = super::off::of_board(&b);
     view.desk = super::desk::desk_with(&b, &off);
-    view.off = lens.off.as_deref().map(|q| super::off::off_list(&b, &off, q));
+    view.off = lens
+        .off
+        .as_deref()
+        .map(|q| super::off::off_list(&b, &off, q));
     view.artifacts = lens.artifacts.then(|| super::session::artifacts(&b));
-    view.desk.tiles = if lens.artifacts && view.desk.mode != "invite" { super::desk::desk_tiles(&view.desk, view.artifacts.as_deref().unwrap_or_default(), b.team.as_deref().filter(|_| !lens.desk_all)) } else { Vec::new() };
+    view.desk.tiles = if lens.artifacts && view.desk.mode != "invite" {
+        super::desk::desk_tiles(
+            &view.desk,
+            view.artifacts.as_deref().unwrap_or_default(),
+            b.team.as_deref().filter(|_| !lens.desk_all),
+        )
+    } else {
+        Vec::new()
+    };
     view.gallery = None;
     // (the gallery filters what it lists; the Desk's foot keeps every one)
     if let Some(kind) = lens.gallery.as_deref() {
-        let (gallery, shown) = super::session::gallery(&b, kind, view.artifacts.take().unwrap_or_default());
+        let (gallery, shown) =
+            super::session::gallery(&b, kind, view.artifacts.take().unwrap_or_default());
         view.gallery = Some(gallery);
         view.artifacts = Some(shown);
     }
-    view.knowledge = lens.knowledge.as_ref().map(|ask| super::knowledge::page(&b, ask));
+    view.knowledge = lens
+        .knowledge
+        .as_ref()
+        .map(|ask| super::knowledge::page(&b, ask));
     view.wakeups = lens.wakeups.then(|| super::wakeups::page(&b));
     view.notes = super::notes::notes(&b);
     // (what the account read keeps: the e-mail is the account's, W3)
@@ -650,13 +775,25 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     view.settings.logout = super::settings::logout(&view.settings, false);
     // The pages in view: one session, one card. A page that is left is taken away.
     view.sessions.clear();
-    if let Some(s) = lens.session.as_deref().and_then(|id| super::session::session(&b, id)) {
+    if let Some(s) = lens
+        .session
+        .as_deref()
+        .and_then(|id| super::session::session(&b, id))
+    {
         view.sessions.insert(s.id.clone(), s);
     }
     view.cards.clear();
     // (a step of one chat's Blitz walks that chat's open cards, else the Desk's)
-    let walk = lens.walk_chat.as_deref().and_then(|s| super::session::walk_of(&b, s)).unwrap_or_else(|| view.desk.stack.clone());
-    if let Some(c) = lens.card.as_deref().and_then(|id| super::card::card(&b, id, &walk)) {
+    let walk = lens
+        .walk_chat
+        .as_deref()
+        .and_then(|s| super::session::walk_of(&b, s))
+        .unwrap_or_else(|| view.desk.stack.clone());
+    if let Some(c) = lens
+        .card
+        .as_deref()
+        .and_then(|id| super::card::card(&b, id, &walk))
+    {
         view.cards.insert(c.id.clone(), c);
     }
     // (and when a session's link, red hand or status line changes by the clock: status.rs `recheck_at`)

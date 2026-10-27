@@ -276,16 +276,28 @@ async fn helpers_write_into_their_agents_session_and_assets() {
     let groups_before = human.groups().await.len();
 
     let (said, failed) = mcp
-        .call("open_session", json!({ "name": "Design", "task": "drawing the logo" }))
+        .call(
+            "open_session",
+            json!({ "name": "Design", "task": "drawing the logo" }),
+        )
         .await;
-    assert!(!failed && said.contains("no longer get a session"), "{said}");
+    assert!(
+        !failed && said.contains("no longer get a session"),
+        "{said}"
+    );
     assert!(mcp
-        .ok("reply", json!({ "helper": "Design", "text": "Three drafts ready." }))
+        .ok(
+            "reply",
+            json!({ "helper": "Design", "text": "Three drafts ready." })
+        )
         .await
         .starts_with("sent"));
     // (an older call: `session` names the helper)
     assert!(mcp
-        .ok("reply", json!({ "session": "Design", "text": "Said the old way." }))
+        .ok(
+            "reply",
+            json!({ "session": "Design", "text": "Said the old way." })
+        )
         .await
         .starts_with("sent"));
     mcp.ok(
@@ -312,8 +324,14 @@ async fn helpers_write_into_their_agents_session_and_assets() {
     human.sync().await;
     assert!(human.findings.is_empty(), "{:?}", human.findings);
     let groups = human.groups().await;
-    assert_eq!(groups.len(), groups_before, "no group is founded for a helper");
-    assert!(!groups.iter().any(|g| g.session.is_some_and(|s| !s.parent.is_zero())));
+    assert_eq!(
+        groups.len(),
+        groups_before,
+        "no group is founded for a helper"
+    );
+    assert!(!groups
+        .iter()
+        .any(|g| g.session.is_some_and(|s| !s.parent.is_zero())));
     let said: Vec<&Value> = payloads(&human, "text")
         .into_iter()
         .filter(|p| p["helper"] == "Design")
@@ -325,10 +343,16 @@ async fn helpers_write_into_their_agents_session_and_assets() {
         .expect("the card");
     assert_eq!(asked["helper"], "Design", "{asked}");
     let listed: Value =
-        serde_json::from_str(&mcp.ok("list_cards", json!({ "helper": "design" })).await).expect("JSON");
-    assert_eq!((listed[0]["id"].as_str(), listed[0]["helper"].as_str()), (Some(card.as_str()), Some("Design")), "{listed}");
+        serde_json::from_str(&mcp.ok("list_cards", json!({ "helper": "design" })).await)
+            .expect("JSON");
+    assert_eq!(
+        (listed[0]["id"].as_str(), listed[0]["helper"].as_str()),
+        (Some(card.as_str()), Some("Design")),
+        "{listed}"
+    );
     let none: Value =
-        serde_json::from_str(&mcp.ok("list_cards", json!({ "helper": "Other" })).await).expect("JSON");
+        serde_json::from_str(&mcp.ok("list_cards", json!({ "helper": "Other" })).await)
+            .expect("JSON");
     assert_eq!(none, json!([]));
 
     // The human's answer to the helper's card arrives with its name, for the coordinator to forward.
@@ -351,7 +375,10 @@ async fn helpers_write_into_their_agents_session_and_assets() {
     let event = mcp.event("decision_reopened").await;
     assert_eq!(event["meta"]["helper"], "Design", "{event}");
     let (closed, failed) = mcp
-        .call("close_session", json!({ "name": "Design", "summary": "Draft B it is." }))
+        .call(
+            "close_session",
+            json!({ "name": "Design", "summary": "Draft B it is." }),
+        )
         .await;
     assert!(!failed && closed.contains("nothing to close"), "{closed}");
 
@@ -909,9 +936,17 @@ async fn a_helpers_calls_take_no_board_events() {
     let mut mcp = seat.serve_plain().await;
     mcp.ready().await;
     mcp.ok("reply", json!({ "text": "I am here." })).await;
-    human.say(&group, json!({ "content_type": "message", "text": "Hello?" })).await.expect("said");
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Hello?" }),
+        )
+        .await
+        .expect("said");
     for _ in 0..30 {
-        let helper = mcp.ok("reply", json!({ "helper": "Design", "text": "on it" })).await;
+        let helper = mcp
+            .ok("reply", json!({ "helper": "Design", "text": "on it" }))
+            .await;
         assert!(!helper.contains("Hello?"), "{helper}");
         let (said, _) = mcp.call("inbox", json!({ "helper": "Design" })).await;
         assert!(said.contains("No board events for a helper"), "{said}");
@@ -1193,7 +1228,11 @@ async fn an_unconnected_session_connects_by_the_connect_tool_without_a_restart()
         String::from_utf8_lossy(&output.stderr)
     );
     // Anonymous clients inspect only legacy folder slots; identified session keys are never theirs.
-    std::fs::write(keys.join(&room).join(format!("{}-1.key", base.trim())), trommi_connector::slotstore::KEY_MARKER).expect("a legacy folder key");
+    std::fs::write(
+        keys.join(&room).join(format!("{}-1.key", base.trim())),
+        trommi_connector::slotstore::KEY_MARKER,
+    )
+    .expect("a legacy folder key");
     // a client without a session id, which has no key of its own to go by, is told which rooms there are
     let output = seat
         .command(&["whoami"])
@@ -1366,7 +1405,10 @@ async fn a_status_line_follows_its_question_to_the_answer() {
     // (the helper's line stands in the agent's own session, named)
     let helper = group;
     let line = human
-        .register(&helper, &format!("status_line/{}", line_key(Some("Design"), "uno")))
+        .register(
+            &helper,
+            &format!("status_line/{}", line_key(Some("Design"), "uno")),
+        )
         .await
         .expect("the line");
     assert_eq!(line["state"], "decision", "{line}");
@@ -1387,7 +1429,10 @@ async fn a_status_line_follows_its_question_to_the_answer() {
     for _ in 0..300 {
         human.sync().await;
         line = human
-            .register(&helper, &format!("status_line/{}", line_key(Some("Design"), "uno")))
+            .register(
+                &helper,
+                &format!("status_line/{}", line_key(Some("Design"), "uno")),
+            )
             .await
             .unwrap_or(Value::Null);
         if line["state"] == "working" {
@@ -1406,8 +1451,26 @@ async fn a_status_line_follows_its_question_to_the_answer() {
     )
     .await;
     human.sync().await;
-    assert_eq!(human.register(&helper, &format!("status_line/{}", line_key(Some("Other"), "uno"))).await.expect("its line")["label"], "Other");
-    assert_eq!(human.register(&helper, &format!("status_line/{}", line_key(Some("Design"), "uno"))).await.expect("the line")["label"], "UNO-Kachel");
+    assert_eq!(
+        human
+            .register(
+                &helper,
+                &format!("status_line/{}", line_key(Some("Other"), "uno"))
+            )
+            .await
+            .expect("its line")["label"],
+        "Other"
+    );
+    assert_eq!(
+        human
+            .register(
+                &helper,
+                &format!("status_line/{}", line_key(Some("Design"), "uno"))
+            )
+            .await
+            .expect("the line")["label"],
+        "UNO-Kachel"
+    );
 
     // The agent's own question, with no line of its own (the helper's working line is not its): the connector makes one for the card; the answer turns it to working,
     // and close_card takes it away.
@@ -1589,7 +1652,10 @@ async fn start_task_files_its_card_and_line_and_done_flips_the_line() {
         versions.iter().any(|p| p.get("working").is_none() && p["title"].as_str().unwrap().starts_with("Done")),
         "{versions:?}"
     );
-    assert!(versions.iter().all(|p| p["helper"] == "Release"), "every version keeps its helper: {versions:?}");
+    assert!(
+        versions.iter().all(|p| p["helper"] == "Release"),
+        "every version keeps its helper: {versions:?}"
+    );
 
     // A title that already says it ("Arbeite an: …") is kept, the id is given.
     let said = mcp
@@ -1650,9 +1716,7 @@ async fn two_sessions_in_one_folder_never_share_a_key() {
 
     // A fresh session never takes the first session's key, even while that connector is idle.
     let mut second = seat
-        .serve_with(&[
-            ("TROMMI_SESSION_KEY", "test-other"),
-        ])
+        .serve_with(&[("TROMMI_SESSION_KEY", "test-other")])
         .await;
     let (said, failed) = second
         .call("reply", json!({ "text": "from the second session" }))
@@ -1785,7 +1849,6 @@ async fn a_fresh_session_offers_connect_and_never_asks_ordinary_agents_to_join()
     first.close().await;
 }
 
-
 // ---- a new agent is online and named at once -------------------------------------------------------------------
 
 /// Whether the human's stream says the device is online, within `ms`: the presence events of a stream opened now
@@ -1799,11 +1862,8 @@ async fn online_within(human: &Human, device: &str, ms: u64) -> bool {
             continue;
         };
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(400);
-        while let Ok(Ok(Some(event))) = tokio::time::timeout_at(
-            deadline,
-            stream.next(std::time::Duration::from_secs(5)),
-        )
-        .await
+        while let Ok(Ok(Some(event))) =
+            tokio::time::timeout_at(deadline, stream.next(std::time::Duration::from_secs(5))).await
         {
             if event.name == "presence" && event.data["device"] == device {
                 online = event.data["online"] == Value::Bool(true);
@@ -1873,7 +1933,10 @@ async fn a_session_joined_by_the_cli_is_online_and_named_at_once() {
         "after a reconnect the new server is online without a tool call"
     );
     human
-        .say(&group, json!({ "content_type": "message", "text": "Still there?" }))
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Still there?" }),
+        )
         .await
         .expect("the human writes");
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
@@ -1928,7 +1991,10 @@ async fn a_session_joined_by_the_connect_tool_stays_online_across_a_reconnect() 
     let reg = reg.expect("the device register is written");
     assert_eq!(reg["device_name"], "project", "{reg}");
     human
-        .say(&group, json!({ "content_type": "message", "text": "Still there?" }))
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Still there?" }),
+        )
         .await
         .expect("the human writes");
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
@@ -1948,15 +2014,25 @@ async fn a_human_message_keeps_a_live_session_online_and_reaches_inbox() {
     let (_hub, mut human, seat, group) = joined().await;
     let mut mcp = seat.serve_plain().await;
     mcp.ready().await;
-    let device = human.seat(&group).await.expect("the agent's seat").to_base64url();
+    let device = human
+        .seat(&group)
+        .await
+        .expect("the agent's seat")
+        .to_base64url();
     assert!(online_within(&human, &device, 3000).await, "online before");
     for n in 0..3 {
         human
-            .say(&group, json!({ "content_type": "message", "text": format!("Message {n}") }))
+            .say(
+                &group,
+                json!({ "content_type": "message", "text": format!("Message {n}") }),
+            )
             .await
             .expect("the human writes");
         tokio::time::sleep(std::time::Duration::from_millis(700)).await;
-        assert!(online_within(&human, &device, 1000).await, "online after message {n}");
+        assert!(
+            online_within(&human, &device, 1000).await,
+            "online after message {n}"
+        );
     }
     let mut heard = String::new();
     for _ in 0..50 {
@@ -1966,7 +2042,10 @@ async fn a_human_message_keeps_a_live_session_online_and_reaches_inbox() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    assert!(heard.contains("Message 0") && heard.contains("Message 2"), "{heard}");
+    assert!(
+        heard.contains("Message 0") && heard.contains("Message 2"),
+        "{heard}"
+    );
     mcp.close().await;
 }
 
@@ -1983,15 +2062,35 @@ async fn symbols_are_listed_by_name_and_checked() {
             .iter()
             .find(|t| t["name"] == tool)
             .unwrap_or_else(|| panic!("{tool}"));
-        let d = t["inputSchema"]["properties"]["icon"]["description"].as_str().unwrap();
-        assert!(d.contains("drop (release)") && d.contains("leaf (git)") && !d.contains("{drawings}"), "{tool}: {d}");
+        let d = t["inputSchema"]["properties"]["icon"]["description"]
+            .as_str()
+            .unwrap();
+        assert!(
+            d.contains("drop (release)") && d.contains("leaf (git)") && !d.contains("{drawings}"),
+            "{tool}: {d}"
+        );
     }
-    let (said, bad) = mcp.call("introduce", json!({ "model": "m", "icon": "spaceship" })).await;
-    assert!(bad && said.contains("spaceship") && said.contains("drop (release)"), "{said}");
-    let (said, bad) = mcp.call("introduce", json!({ "model": "m", "icon": "nope" })).await;
+    let (said, bad) = mcp
+        .call("introduce", json!({ "model": "m", "icon": "spaceship" }))
+        .await;
+    assert!(
+        bad && said.contains("spaceship") && said.contains("drop (release)"),
+        "{said}"
+    );
+    let (said, bad) = mcp
+        .call("introduce", json!({ "model": "m", "icon": "nope" }))
+        .await;
     assert!(bad && said.contains("blob (general)"), "{said}");
-    assert_eq!(mcp.ok("introduce", json!({ "model": "m", "icon": "draw:bell" })).await, "noted");
-    assert_eq!(mcp.ok("introduce", json!({ "model": "m", "icon": "rocket" })).await, "noted");
+    assert_eq!(
+        mcp.ok("introduce", json!({ "model": "m", "icon": "draw:bell" }))
+            .await,
+        "noted"
+    );
+    assert_eq!(
+        mcp.ok("introduce", json!({ "model": "m", "icon": "rocket" }))
+            .await,
+        "noted"
+    );
     mcp.close().await;
 }
 
@@ -2005,11 +2104,28 @@ async fn the_team_knowledge_is_read_and_written_without_asking() {
     let (_hub, mut human, _seat, mut mcp, group) = seated().await;
     let listed = mcp.request("tools/list", json!({})).await;
     let names = tool_names(&listed);
-    for tool in ["search_knowledge", "read_knowledge", "add_knowledge", "update_knowledge", "forget_knowledge"] {
-        assert!(names.iter().any(|n| n == tool), "{tool} is listed: {names:?}");
+    for tool in [
+        "search_knowledge",
+        "read_knowledge",
+        "add_knowledge",
+        "update_knowledge",
+        "forget_knowledge",
+    ] {
+        assert!(
+            names.iter().any(|n| n == tool),
+            "{tool} is listed: {names:?}"
+        );
     }
-    assert!(!names.iter().any(|n| n == "propose_knowledge" || n == "correct_knowledge"), "{names:?}");
-    assert!(mcp.ok("search_knowledge", json!({})).await.contains("empty"));
+    assert!(
+        !names
+            .iter()
+            .any(|n| n == "propose_knowledge" || n == "correct_knowledge"),
+        "{names:?}"
+    );
+    assert!(mcp
+        .ok("search_knowledge", json!({}))
+        .await
+        .contains("empty"));
 
     let (deploy, rule) = ([1u8; 16], [2u8; 16]);
     let wire = |id: &[u8; 16]| trommi_core::ids::base64url_encode(id);
@@ -2029,48 +2145,141 @@ async fn the_team_knowledge_is_read_and_written_without_asking() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    assert!(told.contains("2 entries") && told.contains("Pinned:\n- Hub deploy") && told.contains("without asking"), "{told}");
+    assert!(
+        told.contains("2 entries")
+            && told.contains("Pinned:\n- Hub deploy")
+            && told.contains("without asking"),
+        "{told}"
+    );
 
-    let found = mcp.ok("search_knowledge", json!({ "query": "docker" })).await;
-    assert!(found.contains("1 of 2 entries match") && found.contains(&hex(&deploy)) && !found.contains("Release"), "{found}");
-    let read = mcp.ok("read_knowledge", json!({ "id": &hex(&deploy)[..8] })).await;
-    assert!(read.contains("runs as the Docker container trommi") && read.contains("written by Codex: radl") && read.contains("last confirmed 1970-01-01"), "{read}");
-    let (missing, failed) = mcp.call("read_knowledge", json!({ "id": "ffffffff" })).await;
+    let found = mcp
+        .ok("search_knowledge", json!({ "query": "docker" }))
+        .await;
+    assert!(
+        found.contains("1 of 2 entries match")
+            && found.contains(&hex(&deploy))
+            && !found.contains("Release"),
+        "{found}"
+    );
+    let read = mcp
+        .ok("read_knowledge", json!({ "id": &hex(&deploy)[..8] }))
+        .await;
+    assert!(
+        read.contains("runs as the Docker container trommi")
+            && read.contains("written by Codex: radl")
+            && read.contains("last confirmed 1970-01-01"),
+        "{read}"
+    );
+    let (missing, failed) = mcp
+        .call("read_knowledge", json!({ "id": "ffffffff" }))
+        .await;
     assert!(failed && missing.contains("no entry"), "{missing}");
 
     // writes: into the agent's own session, no card
     let made = mcp.ok("add_knowledge", json!({ "title": "Staging", "text": "there is none: PRs go to main", "kind": "rule", "pinned": true })).await;
-    assert!(made.contains("\"Staging\" written") && made.contains("undo"), "{made}");
-    let (long, failed) = mcp.call("add_knowledge", json!({ "title": "x".repeat(81), "text": "y" })).await;
+    assert!(
+        made.contains("\"Staging\" written") && made.contains("undo"),
+        "{made}"
+    );
+    let (long, failed) = mcp
+        .call(
+            "add_knowledge",
+            json!({ "title": "x".repeat(81), "text": "y" }),
+        )
+        .await;
     assert!(failed && long.contains("at most 80"), "{long}");
-    let (twice, failed) = mcp.call("add_knowledge", json!({ "title": "hub deploy", "text": "y" })).await;
+    let (twice, failed) = mcp
+        .call(
+            "add_knowledge",
+            json!({ "title": "hub deploy", "text": "y" }),
+        )
+        .await;
     assert!(failed && twice.contains("update_knowledge"), "{twice}");
-    mcp.ok("update_knowledge", json!({ "id": hex(&rule), "text": "every change on release/<date>-<n>, squash merge" })).await;
-    let (kind, failed) = mcp.call("add_knowledge", json!({ "title": "Gossip", "text": "x", "kind": "gossip" })).await;
-    assert!(failed && kind.contains("rule, decision, fact, where"), "{kind}");
-    mcp.ok("forget_knowledge", json!({ "id": hex(&deploy) })).await;
+    mcp.ok(
+        "update_knowledge",
+        json!({ "id": hex(&rule), "text": "every change on release/<date>-<n>, squash merge" }),
+    )
+    .await;
+    let (kind, failed) = mcp
+        .call(
+            "add_knowledge",
+            json!({ "title": "Gossip", "text": "x", "kind": "gossip" }),
+        )
+        .await;
+    assert!(
+        failed && kind.contains("rule, decision, fact, where"),
+        "{kind}"
+    );
+    mcp.ok("forget_knowledge", json!({ "id": hex(&deploy) }))
+        .await;
     human.sync().await;
     assert!(human.findings.is_empty(), "{:?}", human.findings);
-    assert!(payloads(&human, "card_type").iter().all(|p| !p["title"].as_str().unwrap_or("").contains("team knowledge")), "no card");
+    assert!(
+        payloads(&human, "card_type")
+            .iter()
+            .all(|p| !p["title"].as_str().unwrap_or("").contains("team knowledge")),
+        "no card"
+    );
     let writes: Vec<(String, Value)> = payloads(&human, "name")
         .iter()
-        .filter(|p| p["name"].as_str().is_some_and(|n| n.starts_with("knowledge_ask/")))
+        .filter(|p| {
+            p["name"]
+                .as_str()
+                .is_some_and(|n| n.starts_with("knowledge_ask/"))
+        })
         .map(|p| (p["name"].as_str().unwrap().to_string(), p["value"].clone()))
         .collect();
-    let ops: Vec<(Value, Value, Value, Value)> = writes.iter().map(|(_, v)| (v["op"].clone(), v["entry"].clone(), v["was"].clone(), v["pinned"].clone())).collect();
+    let ops: Vec<(Value, Value, Value, Value)> = writes
+        .iter()
+        .map(|(_, v)| {
+            (
+                v["op"].clone(),
+                v["entry"].clone(),
+                v["was"].clone(),
+                v["pinned"].clone(),
+            )
+        })
+        .collect();
     assert_eq!(writes[0].1["kind"], json!("rule"));
     assert_eq!(
         ops,
         [
             (json!("add"), Value::Null, Value::Null, Value::Null),
-            (json!("update"), json!(wire(&rule)), json!("Release branches"), Value::Null),
-            (json!("forget"), json!(wire(&deploy)), json!("Hub deploy"), Value::Null),
+            (
+                json!("update"),
+                json!(wire(&rule)),
+                json!("Release branches"),
+                Value::Null
+            ),
+            (
+                json!("forget"),
+                json!(wire(&deploy)),
+                json!("Hub deploy"),
+                Value::Null
+            ),
         ]
     );
     // the person's device answers: the update was refused; the agent is told once, and every answered write goes
-    let names: Vec<String> = writes.iter().map(|(n, _)| n.trim_start_matches("knowledge_ask/").to_string()).collect();
-    human.set_register(&group, &format!("knowledge_done/{}", names[0]), Some(json!({ "ok": true }))).await.expect("taken");
-    human.set_register(&group, &format!("knowledge_done/{}", names[1]), Some(json!({ "ok": false, "why": "changed" }))).await.expect("taken");
+    let names: Vec<String> = writes
+        .iter()
+        .map(|(n, _)| n.trim_start_matches("knowledge_ask/").to_string())
+        .collect();
+    human
+        .set_register(
+            &group,
+            &format!("knowledge_done/{}", names[0]),
+            Some(json!({ "ok": true })),
+        )
+        .await
+        .expect("taken");
+    human
+        .set_register(
+            &group,
+            &format!("knowledge_done/{}", names[1]),
+            Some(json!({ "ok": false, "why": "changed" })),
+        )
+        .await
+        .expect("taken");
     let mut said = String::new();
     for _ in 0..600 {
         said = mcp.ok("reply", json!({ "text": "Next." })).await;
@@ -2079,11 +2288,31 @@ async fn the_team_knowledge_is_read_and_written_without_asking() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    assert!(said.contains("\"Release branches\": that entry changed since you read it"), "{said}");
-    assert!(!mcp.ok("reply", json!({ "text": "Again." })).await.contains("did not take"), "told once");
+    assert!(
+        said.contains("\"Release branches\": that entry changed since you read it"),
+        "{said}"
+    );
+    assert!(
+        !mcp.ok("reply", json!({ "text": "Again." }))
+            .await
+            .contains("did not take"),
+        "told once"
+    );
     human.sync().await;
-    let cleared: Vec<&Value> = payloads(&human, "name").into_iter().filter(|p| p["value"].is_null() && p["name"].as_str().is_some_and(|n| n.starts_with("knowledge_ask/"))).collect();
-    assert_eq!(cleared.len(), 2, "the two answered writes are taken away, the third waits");
+    let cleared: Vec<&Value> = payloads(&human, "name")
+        .into_iter()
+        .filter(|p| {
+            p["value"].is_null()
+                && p["name"]
+                    .as_str()
+                    .is_some_and(|n| n.starts_with("knowledge_ask/"))
+        })
+        .collect();
+    assert_eq!(
+        cleared.len(),
+        2,
+        "the two answered writes are taken away, the third waits"
+    );
     mcp.close().await;
 }
 
@@ -2096,35 +2325,89 @@ async fn an_agent_wakes_itself_and_the_person_can_move_or_cancel_it() {
     // (the person's clock at noon, so that no quiet hour gets in the way whenever this runs)
     let utc_minutes = (trommi_connector::util::now_ms() / 60_000 % 1440) as i64;
     let zone = (720 - utc_minutes).to_string();
-    let mut mcp = seat.serve_plain_with(&[("TROMMI_WAKE_TICK_MS", "200"), ("TROMMI_ZONE_MIN", zone.as_str())]).await;
+    let mut mcp = seat
+        .serve_plain_with(&[
+            ("TROMMI_WAKE_TICK_MS", "200"),
+            ("TROMMI_ZONE_MIN", zone.as_str()),
+        ])
+        .await;
     mcp.ready().await;
     let names = tool_names(&mcp.request("tools/list", json!({})).await);
     for tool in ["wake_me", "list_wakeups", "cancel_wakeup"] {
-        assert!(names.iter().any(|n| n == tool), "{tool} is listed: {names:?}");
+        assert!(
+            names.iter().any(|n| n == tool),
+            "{tool} is listed: {names:?}"
+        );
     }
-    assert!(mcp.ok("list_wakeups", json!({})).await.contains("No wakeups"), "none yet: the empty list is said");
+    assert!(
+        mcp.ok("list_wakeups", json!({}))
+            .await
+            .contains("No wakeups"),
+        "none yet: the empty list is said"
+    );
     // (ask_permission is a woken run's alone: any other call is told no at once)
-    let asked = mcp.ok("ask_permission", json!({ "tool_name": "Bash", "input": { "command": "ls" } })).await;
-    assert!(asked.contains("\"behavior\":\"deny\"") && asked.contains("only a run a wakeup started"), "{asked}");
-    let (soon, failed) = mcp.call("wake_me", json!({ "in": "1m", "note": "x" })).await;
+    let asked = mcp
+        .ok(
+            "ask_permission",
+            json!({ "tool_name": "Bash", "input": { "command": "ls" } }),
+        )
+        .await;
+    assert!(
+        asked.contains("\"behavior\":\"deny\"") && asked.contains("only a run a wakeup started"),
+        "{asked}"
+    );
+    let (soon, failed) = mcp
+        .call("wake_me", json!({ "in": "1m", "note": "x" }))
+        .await;
     assert!(failed && soon.contains("at least 5 minutes"), "{soon}");
     let (no_note, failed) = mcp.call("wake_me", json!({ "in": "1h" })).await;
     assert!(failed && no_note.contains("note"), "{no_note}");
-    let set = mcp.ok("wake_me", json!({ "in": "2h", "note": "check the deploy", "helper": "Testing" })).await;
+    let set = mcp
+        .ok(
+            "wake_me",
+            json!({ "in": "2h", "note": "check the deploy", "helper": "Testing" }),
+        )
+        .await;
     assert!(set.starts_with("Wakeup set: "), "{set}");
-    let daily = mcp.ok("wake_me", json!({ "in": "30m", "every": "1d", "note": "the daily report" })).await;
-    let id_of = |said: &str| said.trim_start_matches("Wakeup set: ").split(' ').next().unwrap().to_string();
+    let daily = mcp
+        .ok(
+            "wake_me",
+            json!({ "in": "30m", "every": "1d", "note": "the daily report" }),
+        )
+        .await;
+    let id_of = |said: &str| {
+        said.trim_start_matches("Wakeup set: ")
+            .split(' ')
+            .next()
+            .unwrap()
+            .to_string()
+    };
     let (deploy, report) = (id_of(&set), id_of(&daily));
     let listed = mcp.ok("list_wakeups", json!({})).await;
-    assert!(listed.starts_with("2 wakeup(s)") && listed.find(&report) < listed.find(&deploy), "the next first: {listed}");
-    assert!(listed.contains("every day") && listed.contains("for helper \"Testing\": check the deploy"), "{listed}");
+    assert!(
+        listed.starts_with("2 wakeup(s)") && listed.find(&report) < listed.find(&deploy),
+        "the next first: {listed}"
+    );
+    assert!(
+        listed.contains("every day") && listed.contains("for helper \"Testing\": check the deploy"),
+        "{listed}"
+    );
     let cancelled = mcp.ok("cancel_wakeup", json!({ "id": report })).await;
     assert!(cancelled.contains("the daily report"), "{cancelled}");
     let (gone, failed) = mcp.call("cancel_wakeup", json!({ "id": report })).await;
     assert!(failed && gone.contains("list_wakeups"), "{gone}");
     // the person moves the other one to now: the clock applies it (a minute ahead at the soonest) and wakes the agent
-    let wire = |hex: &str| trommi_core::ids::base64url_encode(&trommi_connector::util::unhex(hex).unwrap());
-    human.set_register(&group, &format!("wakeup_edit/{}", wire(&deploy)), Some(json!({ "at": 1, "n": "his-word" }))).await.expect("taken");
+    let wire = |hex: &str| {
+        trommi_core::ids::base64url_encode(&trommi_connector::util::unhex(hex).unwrap())
+    };
+    human
+        .set_register(
+            &group,
+            &format!("wakeup_edit/{}", wire(&deploy)),
+            Some(json!({ "at": 1, "n": "his-word" })),
+        )
+        .await
+        .expect("taken");
     let before = mcp.ok("list_wakeups", json!({})).await;
     let mut moved = before.clone();
     for _ in 0..100 {
@@ -2134,7 +2417,10 @@ async fn an_agent_wakes_itself_and_the_person_can_move_or_cancel_it() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    assert!(moved != before && moved.contains("check the deploy"), "his word is applied at the clock's next look: {before} / {moved}");
+    assert!(
+        moved != before && moved.contains("check the deploy"),
+        "his word is applied at the clock's next look: {before} / {moved}"
+    );
     let mut said = String::new();
     for _ in 0..400 {
         said = mcp.ok("inbox", json!({})).await;
@@ -2143,8 +2429,17 @@ async fn an_agent_wakes_itself_and_the_person_can_move_or_cancel_it() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
-    assert!(said.contains("[Trommi] Your wakeup for helper \"Testing\"") && said.contains("check the deploy"), "{said}");
-    assert!(mcp.ok("list_wakeups", json!({})).await.contains("No wakeups"), "a wakeup that ran once is done");
+    assert!(
+        said.contains("[Trommi] Your wakeup for helper \"Testing\"")
+            && said.contains("check the deploy"),
+        "{said}"
+    );
+    assert!(
+        mcp.ok("list_wakeups", json!({}))
+            .await
+            .contains("No wakeups"),
+        "a wakeup that ran once is done"
+    );
     human.sync().await;
     assert!(human.findings.is_empty(), "{:?}", human.findings);
     let written: Vec<(String, Value)> = payloads(&human, "name")
@@ -2152,10 +2447,23 @@ async fn an_agent_wakes_itself_and_the_person_can_move_or_cancel_it() {
         .filter(|p| p["name"].as_str().is_some_and(|n| n.starts_with("wakeup/")))
         .map(|p| (p["name"].as_str().unwrap().to_string(), p["value"].clone()))
         .collect();
-    let of = |id: &str| written.iter().filter(|(n, _)| *n == format!("wakeup/{}", wire(id))).map(|(_, v)| v.clone()).collect::<Vec<_>>();
+    let of = |id: &str| {
+        written
+            .iter()
+            .filter(|(n, _)| *n == format!("wakeup/{}", wire(id)))
+            .map(|(_, v)| v.clone())
+            .collect::<Vec<_>>()
+    };
     let deploy_writes = of(&deploy);
-    assert_eq!(deploy_writes.first().and_then(|v| v["note"].as_str()), Some("check the deploy"));
+    assert_eq!(
+        deploy_writes.first().and_then(|v| v["note"].as_str()),
+        Some("check the deploy")
+    );
     assert_eq!(deploy_writes.last(), Some(&Value::Null), "and then it ran");
-    assert_eq!(of(&report).last(), Some(&Value::Null), "the cancelled one is gone");
+    assert_eq!(
+        of(&report).last(),
+        Some(&Value::Null),
+        "the cancelled one is gone"
+    );
     mcp.close().await;
 }

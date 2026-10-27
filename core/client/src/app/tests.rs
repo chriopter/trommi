@@ -26,7 +26,10 @@ fn an_empty_device_starts_signed_out() {
     );
     assert!(sim.log.iter().skip(1).any(|effect| matches!(
         effect,
-        Effect::Store { op: StoreOp::DeviceLoad, .. }
+        Effect::Store {
+            op: StoreOp::DeviceLoad,
+            ..
+        }
     )));
     assert!(sim.log.iter().skip(1).any(|effect| matches!(
         effect,
@@ -34,7 +37,13 @@ fn an_empty_device_starts_signed_out() {
             if prefix == "public-departure/"
     )));
     // (an empty slot needs no hub: nothing more is read)
-    assert!(!sim.log.iter().any(|e| matches!(e, Effect::Store { op: StoreOp::Get { .. }, .. })));
+    assert!(!sim.log.iter().any(|e| matches!(
+        e,
+        Effect::Store {
+            op: StoreOp::Get { .. },
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -44,7 +53,10 @@ fn a_stored_state_that_is_no_device_stops() {
     sim.device = (3, [(b"k".to_vec(), b"v".to_vec())].into_iter().collect());
     sim.send(start());
     assert_eq!(sim.view.phase, Phase::Stopped);
-    assert!(!sim.log.iter().any(|e| matches!(e, Effect::Http { .. } | Effect::OpenStream { .. })));
+    assert!(!sim
+        .log
+        .iter()
+        .any(|e| matches!(e, Effect::Http { .. } | Effect::OpenStream { .. })));
 }
 
 #[test]
@@ -184,7 +196,8 @@ fn debug_never_shows_secrets() {
 #[test]
 fn a_request_without_a_cap_gets_the_small_one() {
     let request: HttpRequest =
-        serde_json::from_str(r#"{"method":"GET","url":"https://hub.example/x","timeout_ms":1}"#).unwrap();
+        serde_json::from_str(r#"{"method":"GET","url":"https://hub.example/x","timeout_ms":1}"#)
+            .unwrap();
     assert_eq!(request.max_answer, 64 << 10);
     let text = serde_json::to_string(&request).unwrap();
     assert!(text.contains(r#""max_answer":65536"#), "{text}");

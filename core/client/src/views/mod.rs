@@ -23,10 +23,9 @@
 pub mod board;
 pub mod card;
 pub mod demo;
-pub mod files_seen;
 pub mod desk;
+pub mod files_seen;
 pub mod knowledge;
-pub mod wakeups;
 pub mod links;
 pub mod notes;
 pub mod off;
@@ -36,6 +35,7 @@ pub mod sidebar;
 pub mod talk;
 #[cfg(test)]
 mod testroom;
+pub mod wakeups;
 pub mod words;
 
 pub use board::{render, render_with_files, Board, Lens, MoreOf};
@@ -2814,8 +2814,14 @@ impl std::fmt::Debug for AccountView {
             .field("step", &self.step)
             .field("invite_id", &self.invite_id)
             .field("link", &self.link.as_ref().map(|_| "<redacted>"))
-            .field("connect_prompt", &self.connect_prompt.as_ref().map(|_| "<redacted>"))
-            .field("connect_command", &self.connect_command.as_ref().map(|_| "<redacted>"))
+            .field(
+                "connect_prompt",
+                &self.connect_prompt.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "connect_command",
+                &self.connect_command.as_ref().map(|_| "<redacted>"),
+            )
             .field("ways", &format_args!("<{} ways redacted>", self.ways.len()))
             .field("emoji", &self.emoji)
             .field("kit", &format_args!("<{} words redacted>", self.kit.len()))
@@ -3392,13 +3398,41 @@ mod tests {
     #[test]
     fn a_settings_page_and_a_gallery_filter_travel_only_when_set() {
         let plain = |s: &Screen| serde_json::to_value(s).unwrap();
-        assert_eq!(plain(&Screen::Settings { page: String::new() }), serde_json::json!({ "screen": "settings" }));
-        assert_eq!(plain(&Screen::Settings { page: "devices".into() }), serde_json::json!({ "screen": "settings", "page": "devices" }));
-        assert_eq!(plain(&Screen::Artifacts { kind: "pages".into() }), serde_json::json!({ "screen": "artifacts", "kind": "pages" }));
-        let read: Screen = serde_json::from_value(serde_json::json!({ "screen": "artifacts" })).unwrap();
-        assert_eq!(read, Screen::Artifacts { kind: String::new() });
-        let read: Screen = serde_json::from_value(serde_json::json!({ "screen": "settings", "page": "account" })).unwrap();
-        assert_eq!(read, Screen::Settings { page: "account".into() });
+        assert_eq!(
+            plain(&Screen::Settings {
+                page: String::new()
+            }),
+            serde_json::json!({ "screen": "settings" })
+        );
+        assert_eq!(
+            plain(&Screen::Settings {
+                page: "devices".into()
+            }),
+            serde_json::json!({ "screen": "settings", "page": "devices" })
+        );
+        assert_eq!(
+            plain(&Screen::Artifacts {
+                kind: "pages".into()
+            }),
+            serde_json::json!({ "screen": "artifacts", "kind": "pages" })
+        );
+        let read: Screen =
+            serde_json::from_value(serde_json::json!({ "screen": "artifacts" })).unwrap();
+        assert_eq!(
+            read,
+            Screen::Artifacts {
+                kind: String::new()
+            }
+        );
+        let read: Screen =
+            serde_json::from_value(serde_json::json!({ "screen": "settings", "page": "account" }))
+                .unwrap();
+        assert_eq!(
+            read,
+            Screen::Settings {
+                page: "account".into()
+            }
+        );
     }
 
     #[test]

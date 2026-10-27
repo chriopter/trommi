@@ -94,7 +94,10 @@ pub enum Effect {
     },
     /// Native share inbox item sealed into the outbox (or discarded for another room): remove it. False:
     /// keep it for another attempt. Device writes before this effect are barriers as for every other effect.
-    ShareInbox { id: String, consumed: bool },
+    ShareInbox {
+        id: String,
+        consumed: bool,
+    },
     /// The account was deleted or this device verified its removal: erase the native share inbox and its key.
     ForgetShared,
     /// Offer these bytes to the person as a file (download, share sheet, save dialog).
@@ -223,7 +226,11 @@ pub enum LogLevel {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ShareTeam { pub id: String, pub name: String, pub crown: Option<crate::views::NoteToView> }
+pub struct ShareTeam {
+    pub id: String,
+    pub name: String,
+    pub crown: Option<crate::views::NoteToView>,
+}
 
 fn is_zero(n: &u32) -> bool {
     *n == 0

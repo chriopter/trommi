@@ -677,15 +677,23 @@ impl<S: Storage> ObjectStates for HeldObjects<'_, S> {
 
 fn whole_group_of(key: &[u8], table: u8, sub: u8) -> Option<GroupId> {
     let mut rest = Reader::new(key);
-    if rest.u8().ok()? != table || rest.u8().ok()? != sub { return None; }
+    if rest.u8().ok()? != table || rest.u8().ok()? != sub {
+        return None;
+    }
     let group = super::group_after(&mut rest).ok()?;
     rest.finish().ok()?;
     Some(group)
 }
 
-pub(super) fn whole_chains_of(key: &[u8]) -> Option<GroupId> { whole_group_of(key, table::CHAIN, SUB_CHAINS) }
-pub(super) fn whole_registers_of(key: &[u8]) -> Option<GroupId> { whole_group_of(key, table::REGISTER, SUB_REGISTERS) }
-pub(super) fn whole_own_ids_of(key: &[u8]) -> Option<GroupId> { whole_group_of(key, table::REGISTER, SUB_OWN_IDS) }
+pub(super) fn whole_chains_of(key: &[u8]) -> Option<GroupId> {
+    whole_group_of(key, table::CHAIN, SUB_CHAINS)
+}
+pub(super) fn whole_registers_of(key: &[u8]) -> Option<GroupId> {
+    whole_group_of(key, table::REGISTER, SUB_REGISTERS)
+}
+pub(super) fn whole_own_ids_of(key: &[u8]) -> Option<GroupId> {
+    whole_group_of(key, table::REGISTER, SUB_OWN_IDS)
+}
 
 impl<S: Storage> Device<S> {
     // ---- the content tables: read through what the running operation wrote ----
@@ -718,35 +726,61 @@ impl<S: Storage> Device<S> {
     /// Every stored entry whose key starts with `prefix`, ascending by key, as the running operation left
     /// them.
     pub(super) fn stored_under(&self, prefix: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
-        self.stored_refs_under(prefix).into_iter()
+        self.stored_refs_under(prefix)
+            .into_iter()
             .filter_map(|(key, value)| Some((key.to_vec(), value?.to_vec())))
             .collect()
     }
 
     fn stored_keys_under(&self, prefix: &[u8]) -> BTreeSet<Vec<u8>> {
-        self.stored_refs_under(prefix).into_iter()
-            .filter_map(|(key, value)| value.map(|_| key.to_vec())).collect()
+        self.stored_refs_under(prefix)
+            .into_iter()
+            .filter_map(|(key, value)| value.map(|_| key.to_vec()))
+            .collect()
     }
 
     fn stored_refs_under(&self, prefix: &[u8]) -> BTreeMap<&[u8], Option<&[u8]>> {
-        let mut found: BTreeMap<&[u8], Option<&[u8]>> = self.mirror.range(prefix.to_vec()..)
+        let mut found: BTreeMap<&[u8], Option<&[u8]>> = self
+            .mirror
+            .range(prefix.to_vec()..)
             .take_while(|(key, _)| key.starts_with(prefix))
-            .map(|(key, value)| (key.as_slice(), Some(value.as_slice()))).collect();
-        for (key, value) in self.memory.wire.written.range(prefix.to_vec()..)
-            .take_while(|(key, _)| key.starts_with(prefix)) {
+            .map(|(key, value)| (key.as_slice(), Some(value.as_slice())))
+            .collect();
+        for (key, value) in self
+            .memory
+            .wire
+            .written
+            .range(prefix.to_vec()..)
+            .take_while(|(key, _)| key.starts_with(prefix))
+        {
             found.insert(key, value.as_ref().map(|value| value.as_slice()));
         }
         found
     }
 
-    pub(super) fn group_parts(&self, table: u8, sub: u8, group: &GroupId) -> Vec<(Vec<u8>, Vec<u8>)> {
+    pub(super) fn group_parts(
+        &self,
+        table: u8,
+        sub: u8,
+        group: &GroupId,
+    ) -> Vec<(Vec<u8>, Vec<u8>)> {
         let prefix = group_key(table, sub, group, &[]);
-        self.stored_under(&prefix).into_iter()
-            .map(|(key, value)| (key.get(prefix.len()..).unwrap_or_default().to_vec(), value)).collect()
+        self.stored_under(&prefix)
+            .into_iter()
+            .map(|(key, value)| (key.get(prefix.len()..).unwrap_or_default().to_vec(), value))
+            .collect()
     }
 
     /// Migrate a whole record and replace only changed components, in the operation's one batch.
-    pub(super) fn put_group_parts(&mut self, batch: &mut Batch, table: u8, whole: u8, split: u8, group: &GroupId, mut parts: Vec<(Vec<u8>, Vec<u8>)>) {
+    pub(super) fn put_group_parts(
+        &mut self,
+        batch: &mut Batch,
+        table: u8,
+        whole: u8,
+        split: u8,
+        group: &GroupId,
+        mut parts: Vec<(Vec<u8>, Vec<u8>)>,
+    ) {
         let prefix = group_key(table, split, group, &[]);
         let mut old = self.stored_keys_under(&prefix);
         // Bulk migrations reveal no ordering by the private register names.
@@ -754,11 +788,17 @@ impl<S: Storage> Device<S> {
         for (suffix, value) in parts {
             let key = [prefix.as_slice(), suffix.as_slice()].concat();
             old.remove(&key);
-            if self.stored(&key) != Some(value.as_slice()) { self.put_stored(batch, key, value); }
+            if self.stored(&key) != Some(value.as_slice()) {
+                self.put_stored(batch, key, value);
+            }
         }
-        for key in old { self.delete_stored(batch, key); }
+        for key in old {
+            self.delete_stored(batch, key);
+        }
         let whole = group_key(table, whole, group, &[]);
-        if self.stored(&whole).is_some() { self.delete_stored(batch, whole); }
+        if self.stored(&whole).is_some() {
+            self.delete_stored(batch, whole);
+        }
     }
 
     /// Begins an operation of the content layer: what earlier operations wrote is in the store by now.
@@ -1042,8 +1082,20 @@ impl<S: Storage> Device<S> {
         }
     }
 
-    pub(super) fn put_chains(&mut self, batch: &mut Batch, group: &GroupId, chains: &Chains) -> Result<(), Error> {
-        self.put_group_parts(batch, table::CHAIN, SUB_CHAINS, SUB_CHAIN_PARTS, group, chains.storage_parts()?);
+    pub(super) fn put_chains(
+        &mut self,
+        batch: &mut Batch,
+        group: &GroupId,
+        chains: &Chains,
+    ) -> Result<(), Error> {
+        self.put_group_parts(
+            batch,
+            table::CHAIN,
+            SUB_CHAINS,
+            SUB_CHAIN_PARTS,
+            group,
+            chains.storage_parts()?,
+        );
         Ok(())
     }
 
@@ -1052,11 +1104,15 @@ impl<S: Storage> Device<S> {
         let mut groups = BTreeSet::new();
         for key in self.stored_keys_under(&prefix) {
             let mut rest = Reader::new(key.get(prefix.len()..).unwrap_or_default());
-            groups.insert(super::group_after(&mut rest).map_err(|_| damaged("a chain component's group"))?);
+            groups.insert(
+                super::group_after(&mut rest).map_err(|_| damaged("a chain component's group"))?,
+            );
         }
         for group in groups {
             if self.memory.record.room != Some(group.room_id())
-                || !self.memory.groups.contains_key(&group) && !self.memory.observers.contains_key(&group) {
+                || !self.memory.groups.contains_key(&group)
+                    && !self.memory.observers.contains_key(&group)
+            {
                 return Err(damaged("a chain component's group"));
             }
             self.chains(&group)?;
@@ -1317,8 +1373,20 @@ impl<S: Storage> Device<S> {
         }
     }
 
-    pub(super) fn put_registers(&mut self, batch: &mut Batch, group: &GroupId, registers: &Registers) -> Result<(), Error> {
-        self.put_group_parts(batch, table::REGISTER, SUB_REGISTERS, SUB_REGISTER_PARTS, group, registers.storage_parts()?);
+    pub(super) fn put_registers(
+        &mut self,
+        batch: &mut Batch,
+        group: &GroupId,
+        registers: &Registers,
+    ) -> Result<(), Error> {
+        self.put_group_parts(
+            batch,
+            table::REGISTER,
+            SUB_REGISTERS,
+            SUB_REGISTER_PARTS,
+            group,
+            registers.storage_parts()?,
+        );
         Ok(())
     }
 
@@ -1328,14 +1396,23 @@ impl<S: Storage> Device<S> {
             let mut groups = BTreeSet::new();
             for key in self.stored_keys_under(&prefix) {
                 let mut rest = Reader::new(key.get(prefix.len()..).unwrap_or_default());
-                groups.insert(super::group_after(&mut rest).map_err(|_| damaged("a register component's group"))?);
+                groups.insert(
+                    super::group_after(&mut rest)
+                        .map_err(|_| damaged("a register component's group"))?,
+                );
             }
             for group in groups {
                 if self.memory.record.room != Some(group.room_id())
-                    || !self.memory.groups.contains_key(&group) && !self.memory.observers.contains_key(&group) {
+                    || !self.memory.groups.contains_key(&group)
+                        && !self.memory.observers.contains_key(&group)
+                {
                     return Err(damaged("a register component's group"));
                 }
-                if sub == SUB_REGISTER_PARTS { self.registers(&group)?; } else { self.own_ids(&group)?; }
+                if sub == SUB_REGISTER_PARTS {
+                    self.registers(&group)?;
+                } else {
+                    self.own_ids(&group)?;
+                }
             }
         }
         Ok(())

@@ -33,7 +33,9 @@ impl Room {
     /// A session; with `parent`, a helper session of before under that session (`sessions::LegacyHelper`). It is
     /// placed on the first team ("main", `desk`) unless the test places it elsewhere (`on_team`).
     pub fn session(&mut self, name: &str, parent: Option<&str>, online: bool) -> &mut Value {
-        self.settings.entry(dev(name)).or_insert_with(|| json!({ "desk": "main" }));
+        self.settings
+            .entry(dev(name))
+            .or_insert_with(|| json!({ "desk": "main" }));
         self.sessions.push(json!({
             "parent_session_id": parent.map(dev),
             "agent_device_id": dev(name), "agent_session_id": name, "device_name": name, "is_active": true, "is_online": online,
@@ -69,15 +71,32 @@ impl Room {
     }
     /// A message in a session's chat (`card`: under that card instead), as envelope `number`, sent `ago` before NOW.
     /// `from`: "me", or a session's name.
-    pub fn say(&mut self, of: &str, card: Option<&str>, number: u64, from: &str, ago: u64, content: Value) {
+    pub fn say(
+        &mut self,
+        of: &str,
+        card: Option<&str>,
+        number: u64,
+        from: &str,
+        ago: u64,
+        content: Value,
+    ) {
         let key = match card {
             Some(id) => format!("chat:card/{id}"),
             None => format!("chat:session/{}", dev(of)),
         };
-        let sender = if from == "me" { "me".to_string() } else { dev(from) };
+        let sender = if from == "me" {
+            "me".to_string()
+        } else {
+            dev(from)
+        };
         let item = json!({ "envelope_number": number, "local_id": null, "pending": false, "sender_device_id": sender, "sent_at": NOW - ago,
             "item_state": "loaded", "content_type": "message", "content": content });
-        self.timelines.entry(key).or_insert_with(|| json!([])).as_array_mut().unwrap().push(item);
+        self.timelines
+            .entry(key)
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .unwrap()
+            .push(item);
     }
     /// The room as a model, its Desk projected at `now`.
     pub fn model(&self, now: u64) -> Model {

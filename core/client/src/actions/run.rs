@@ -40,7 +40,11 @@ fn first_team() -> Value {
 
 fn team_name(name: &str) -> String {
     let name: String = name.trim().chars().take(NAME_MAX).collect();
-    if name.is_empty() { "Personal".into() } else { name }
+    if name.is_empty() {
+        "Personal".into()
+    } else {
+        name
+    }
 }
 
 /// A team's goals as they are kept (web `cleanGoals`, iOS `deskRegister`).
@@ -82,7 +86,10 @@ pub struct NotDone {
 }
 
 fn not_done(key: &str, en: &str) -> NotDone {
-    NotDone { text: Text::new(key, en), again: false }
+    NotDone {
+        text: Text::new(key, en),
+        again: false,
+    }
 }
 
 /// The toast of a write the device or the hub refused, by the protocol's code.
@@ -94,7 +101,10 @@ pub fn refused(code: &str) -> Text {
 
 /// The toast of a write that was lost before it was stored.
 pub fn lost() -> Text {
-    Text::new("action.lost", "Not saved: this device could not store it. Try again.")
+    Text::new(
+        "action.lost",
+        "Not saved: this device could not store it. Try again.",
+    )
 }
 
 fn reason(code: &str) -> &'static str {
@@ -125,34 +135,94 @@ impl Doing<'_> {
     /// Does `action`; `Ok` also when nothing was to do.
     pub fn run(&mut self, action: &Action) -> Result<(), NotDone> {
         match action {
-            Action::Answer { card_id, choices, note, attachments, option_notes, trusted, marks } => {
+            Action::Answer {
+                card_id,
+                choices,
+                note,
+                attachments,
+                option_notes,
+                trusted,
+                marks,
+            } => {
                 let files = self.files_of(attachments)?;
-                self.answer(action, card_id, "answer", choices, note.as_deref(), option_notes, *trusted, files, marks)
+                self.answer(
+                    action,
+                    card_id,
+                    "answer",
+                    choices,
+                    note.as_deref(),
+                    option_notes,
+                    *trusted,
+                    files,
+                    marks,
+                )
             }
-            Action::Read { card_id } => self.answer(action, card_id, "read", &[], None, &Map::new(), false, Vec::new(), &[]),
-            Action::Shred { card_id, note, attachments, marks } => {
+            Action::Read { card_id } => self.answer(
+                action,
+                card_id,
+                "read",
+                &[],
+                None,
+                &Map::new(),
+                false,
+                Vec::new(),
+                &[],
+            ),
+            Action::Shred {
+                card_id,
+                note,
+                attachments,
+                marks,
+            } => {
                 let files = self.files_of(attachments)?;
-                self.answer(action, card_id, "shred", &[], note.as_deref(), &Map::new(), false, files, marks)
+                self.answer(
+                    action,
+                    card_id,
+                    "shred",
+                    &[],
+                    note.as_deref(),
+                    &Map::new(),
+                    false,
+                    files,
+                    marks,
+                )
             }
             Action::Snooze { card_id, until_ms } => {
                 self.card_of(card_id)?;
                 let until = until_ms.unwrap_or_else(|| next_morning(self.now, self.utc_offset_min));
-                self.registers(action, &[(format!("snooze/{card_id}"), json!({ "until": until }))])
+                self.registers(
+                    action,
+                    &[(format!("snooze/{card_id}"), json!({ "until": until }))],
+                )
             }
             // woken: a past until, so the row says "Back from snooze" (web and iOS alike)
             Action::Unsnooze { card_id } => {
                 self.card_of(card_id)?;
-                self.registers(action, &[(format!("snooze/{card_id}"), json!({ "until": self.now }))])
+                self.registers(
+                    action,
+                    &[(format!("snooze/{card_id}"), json!({ "until": self.now }))],
+                )
             }
             Action::Star { card_id, on } => {
                 self.card_of(card_id)?;
-                let value = if *on { json!({ "at": self.now }) } else { Value::Null };
+                let value = if *on {
+                    json!({ "at": self.now })
+                } else {
+                    Value::Null
+                };
                 self.registers(action, &[(format!("star/{card_id}"), value)])
             }
             Action::DecideAgain { card_id } => self.decide_again(action, card_id),
             Action::Verdict { request_id, allow } => self.verdict(action, request_id, *allow),
-            Action::NewChat { session_id, team_id } => {
-                if team_id.as_ref().and_then(Option::as_ref).is_some_and(|t| !self.teams().contains(t)) {
+            Action::NewChat {
+                session_id,
+                team_id,
+            } => {
+                if team_id
+                    .as_ref()
+                    .and_then(Option::as_ref)
+                    .is_some_and(|t| !self.teams().contains(t))
+                {
                     return Err(not_done("action.no_team", "That team is no longer there."));
                 }
                 let mut content = Map::new();
@@ -167,7 +237,14 @@ impl Doing<'_> {
                 content.insert("new_chat".into(), ask);
                 self.write(action, Some(session_id), None, content)
             }
-            Action::Write { session_id, card_id, text, attachments, marks, copied_cards } => {
+            Action::Write {
+                session_id,
+                card_id,
+                text,
+                attachments,
+                marks,
+                copied_cards,
+            } => {
                 let files = self.files_of(attachments)?;
                 let mut content = Map::new();
                 content.insert("text".into(), json!(text));
@@ -183,16 +260,29 @@ impl Doing<'_> {
                 self.write(action, Some(session_id), card_id.as_deref(), content)
             }
             // "What??" or "Revise": the card goes back to its agent with the question, and comes back up awake
-            Action::HandBack { card_id, note, rework, marks, attachments } => {
+            Action::HandBack {
+                card_id,
+                note,
+                rework,
+                marks,
+                attachments,
+            } => {
                 let files = self.files_of(attachments)?;
                 let mut content = Map::new();
                 let said = note.as_deref().map(str::trim).filter(|n| !n.is_empty());
-                let bare = if *rework { crate::views::talk::HAND_BACK_TEXT } else { crate::views::talk::EXPLAIN_TEXT };
+                let bare = if *rework {
+                    crate::views::talk::HAND_BACK_TEXT
+                } else {
+                    crate::views::talk::EXPLAIN_TEXT
+                };
                 content.insert("text".into(), json!(said.unwrap_or(bare)));
                 if !files.is_empty() {
                     content.insert("attachments".into(), Value::Array(files));
                 }
-                content.insert(if *rework { "hand_back" } else { "explain" }.into(), json!(true));
+                content.insert(
+                    if *rework { "hand_back" } else { "explain" }.into(),
+                    json!(true),
+                );
                 if !marks.is_empty() {
                     content.insert("marks".into(), Value::Array(marks.clone()));
                 }
@@ -204,16 +294,33 @@ impl Doing<'_> {
             Action::TakeBack { card_id } => {
                 let card = self.card_of(card_id)?;
                 if card.object_state != "open" {
-                    return Err(not_done("action.card_closed", "That card is no longer open."));
+                    return Err(not_done(
+                        "action.card_closed",
+                        "That card is no longer open.",
+                    ));
                 }
                 let mut content = Map::new();
-                content.insert("text".into(), json!("The human took the card back; no need to rework or explain it."));
+                content.insert(
+                    "text".into(),
+                    json!("The human took the card back; no need to rework or explain it."),
+                );
                 content.insert("present_card".into(), json!(true));
                 self.write(action, None, Some(card_id), content)
             }
-            Action::Draft { place, text, keys, notes, marks } => {
+            Action::Draft {
+                place,
+                text,
+                keys,
+                notes,
+                marks,
+            } => {
                 let key = format!("draft/{place}");
-                let mut draft = self.model.human.get(&key).and_then(|r| r.value.as_object().cloned()).unwrap_or_default();
+                let mut draft = self
+                    .model
+                    .human
+                    .get(&key)
+                    .and_then(|r| r.value.as_object().cloned())
+                    .unwrap_or_default();
                 draft.insert("note".into(), json!(text));
                 if let Some(keys) = keys {
                     draft.insert("keys".into(), json!(keys));
@@ -230,9 +337,21 @@ impl Doing<'_> {
                     }
                     None => {}
                 }
-                let marked = draft.get("marks").and_then(Value::as_array).is_some_and(|m| !m.is_empty());
-                let ticked = draft.get("keys").and_then(Value::as_array).is_some_and(|k| !k.is_empty());
-                let noted = draft.get("notes").and_then(Value::as_object).is_some_and(|n| n.values().any(|v| v.as_str().is_some_and(|s| !s.trim().is_empty())));
+                let marked = draft
+                    .get("marks")
+                    .and_then(Value::as_array)
+                    .is_some_and(|m| !m.is_empty());
+                let ticked = draft
+                    .get("keys")
+                    .and_then(Value::as_array)
+                    .is_some_and(|k| !k.is_empty());
+                let noted = draft
+                    .get("notes")
+                    .and_then(Value::as_object)
+                    .is_some_and(|n| {
+                        n.values()
+                            .any(|v| v.as_str().is_some_and(|s| !s.trim().is_empty()))
+                    });
                 let value = if text.trim().is_empty() && !ticked && !noted && !marked {
                     Value::Null
                 } else {
@@ -247,10 +366,15 @@ impl Doing<'_> {
                 let name: String = name.trim().chars().take(NAME_MAX).collect();
                 self.edit_session(action, session_id, "name", json!(name))
             }
-            Action::ArchiveSession { session_id, on } => self.edit_session(action, session_id, "archived", json!(on)),
+            Action::ArchiveSession { session_id, on } => {
+                self.edit_session(action, session_id, "archived", json!(on))
+            }
             // (onto no team: `desk` null, its other settings kept; its goals and the team's knowledge it holds go at
             //  the next look, `sync_goals`, `sync_knowledge`)
-            Action::MoveSession { session_id, team_id } => {
+            Action::MoveSession {
+                session_id,
+                team_id,
+            } => {
                 if team_id.as_ref().is_some_and(|t| !self.teams().contains(t)) {
                     return Err(not_done("action.no_team", "That team is no longer there."));
                 }
@@ -264,11 +388,19 @@ impl Doing<'_> {
                 }
                 let id = self.sent.new_id(self.now);
                 let named = team_name(name);
-                values.push((format!("desk/{id}"), json!({ "name": named, "created_at": self.now })));
+                values.push((
+                    format!("desk/{id}"),
+                    json!({ "name": named, "created_at": self.now }),
+                ));
                 self.registers(action, &values)?;
                 // (the toast names the new team's id: its Undo takes the team away again, and the shell goes to it)
                 let text = Text::new("team.added", "Team added");
-                self.sent.undo_toast(self.toasts, text, Some(Text::new("team.added.name", &named)), Action::RemoveTeam { team_id: id });
+                self.sent.undo_toast(
+                    self.toasts,
+                    text,
+                    Some(Text::new("team.added.name", &named)),
+                    Action::RemoveTeam { team_id: id },
+                );
                 Ok(())
             }
             Action::RenameTeam { team_id, name } => {
@@ -276,14 +408,23 @@ impl Doing<'_> {
                 team.insert("name".into(), json!(team_name(name)));
                 self.registers(action, &[(format!("desk/{team_id}"), Value::Object(team))])
             }
-            Action::RoomRegister { key, value } if key.starts_with("desk/") || key == "kit" || key.starts_with(crate::knowledge::SEEN_PREFIX) => self.registers(action, &[(key.clone(), value.clone())]),
+            Action::RoomRegister { key, value }
+                if key.starts_with("desk/")
+                    || key == "kit"
+                    || key.starts_with(crate::knowledge::SEEN_PREFIX) =>
+            {
+                self.registers(action, &[(key.clone(), value.clone())])
+            }
             // a field of the team's register like its name; with no team yet the first one is made for them
             Action::SetGoal { team_id, text } => {
                 let live = self.teams();
                 let (id, mut team) = if live.contains(team_id) {
                     (team_id.clone(), self.team(team_id)?)
                 } else if live.is_empty() {
-                    (FIRST_TEAM_ID.to_string(), first_team().as_object().cloned().unwrap_or_default())
+                    (
+                        FIRST_TEAM_ID.to_string(),
+                        first_team().as_object().cloned().unwrap_or_default(),
+                    )
                 } else {
                     return Err(not_done("action.no_team", "That team is no longer there."));
                 };
@@ -296,57 +437,143 @@ impl Doing<'_> {
                 self.registers(action, &[(format!("desk/{id}"), Value::Object(team))])
             }
             Action::SessionIcon { session_id, icon } => {
-                let icon: Option<String> = icon.as_deref().map(str::trim).filter(|i| !i.is_empty()).map(|i| i.chars().take(NAME_MAX).collect());
+                let icon: Option<String> = icon
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|i| !i.is_empty())
+                    .map(|i| i.chars().take(NAME_MAX).collect());
                 self.edit_session(action, session_id, "icon", json!(icon))
             }
             Action::SessionGroup { session_id, group } => {
-                let group: Option<String> = group.as_deref().map(str::trim).filter(|g| !g.is_empty()).map(|g| g.chars().take(40).collect());
+                let group: Option<String> = group
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|g| !g.is_empty())
+                    .map(|g| g.chars().take(40).collect());
                 self.edit_session(action, session_id, "group", json!(group))
             }
-            Action::PlaceSession { session_id, before, after } => self.place_session(action, session_id, before.as_deref(), after.as_deref()),
+            Action::PlaceSession {
+                session_id,
+                before,
+                after,
+            } => self.place_session(action, session_id, before.as_deref(), after.as_deref()),
             Action::CrownSession { session_id, on } => self.crown_session(action, session_id, *on),
             Action::OrderTeams { team_ids } => self.order_teams(action, team_ids),
             Action::RenameDevice { name } => {
-                let Some(me) = self.model.my_device_id.clone() else { return Err(bad_id()) };
+                let Some(me) = self.model.my_device_id.clone() else {
+                    return Err(bad_id());
+                };
                 let key = format!("device/{me}");
-                let mut value = self.model.human.get(&key).and_then(|r| r.value.as_object().cloned()).unwrap_or_default();
+                let mut value = self
+                    .model
+                    .human
+                    .get(&key)
+                    .and_then(|r| r.value.as_object().cloned())
+                    .unwrap_or_default();
                 let name: String = name.trim().chars().take(NAME_MAX).collect();
                 value.insert("device_name".into(), json!(name));
                 self.registers(action, &[(key, Value::Object(value))])
             }
-            Action::WriteNoteFiles { note_id, text, attachments } => {
-                let own = Map::from_iter([("text".into(), json!(text)), ("attachments".into(), json!(self.files_of(attachments)?))]);
+            Action::WriteNoteFiles {
+                note_id,
+                text,
+                attachments,
+            } => {
+                let own = Map::from_iter([
+                    ("text".into(), json!(text)),
+                    ("attachments".into(), json!(self.files_of(attachments)?)),
+                ]);
                 self.note_version(action, note_id.as_deref(), Some(own))
             }
-            Action::WriteNote { note_id, text } => self.write_note(action, note_id.as_deref(), Some(text)),
+            Action::WriteNote { note_id, text } => {
+                self.write_note(action, note_id.as_deref(), Some(text))
+            }
             Action::SendNote { note_id, to } => self.send_note(action, note_id, to.as_deref()),
             Action::UnsendNote { note_id } => {
-                let held = self.model.notes.get(note_id).and_then(|n| n.get("held")).is_some_and(|h| !h.is_null());
+                let held = self
+                    .model
+                    .notes
+                    .get(note_id)
+                    .and_then(|n| n.get("held"))
+                    .is_some_and(|h| !h.is_null());
                 if !held {
-                    return Err(not_done("notes.too_late", "Too late: the note already went."));
+                    return Err(not_done(
+                        "notes.too_late",
+                        "Too late: the note already went.",
+                    ));
                 }
-                self.note_version(action, Some(note_id), Some(Map::from_iter([("held".to_string(), Value::Null)])))
+                self.note_version(
+                    action,
+                    Some(note_id),
+                    Some(Map::from_iter([("held".to_string(), Value::Null)])),
+                )
             }
             Action::DeleteNote { note_id } => self.write_note(action, Some(note_id), None),
-            Action::DrawStroke { board_id, local_id, points, tool, color, width } => {
-                let points: Result<Vec<_>, _> = points.iter().map(|v| {
-                    let p = v.as_array().filter(|p| p.len() >= 2).ok_or_else(bad_id)?;
-                    let number = |n: usize| p.get(n).and_then(Value::as_f64).filter(|v| v.is_finite());
-                    let x = number(0).ok_or_else(bad_id)? * 16.0;
-                    let y = number(1).ok_or_else(bad_id)? * 16.0;
-                    if x.abs() > f64::from(i32::MAX) || y.abs() > f64::from(i32::MAX) { return Err(bad_id()); }
-                    Ok(trommi_core::board_items::Point { x: x.round() as i32, y: y.round() as i32, t: number(2).unwrap_or(0.0).max(0.0) as u32, force: (number(3).unwrap_or(1.0).clamp(0.0, 1.0) * 255.0).round() as u8, azimuth: 0, altitude: 0 })
-                }).collect();
-                let ink = trommi_core::board_items::Ink::new(points?, false, true).map_err(|_| bad_id())?;
+            Action::DrawStroke {
+                board_id,
+                local_id,
+                points,
+                tool,
+                color,
+                width,
+            } => {
+                let points: Result<Vec<_>, _> = points
+                    .iter()
+                    .map(|v| {
+                        let p = v.as_array().filter(|p| p.len() >= 2).ok_or_else(bad_id)?;
+                        let number =
+                            |n: usize| p.get(n).and_then(Value::as_f64).filter(|v| v.is_finite());
+                        let x = number(0).ok_or_else(bad_id)? * 16.0;
+                        let y = number(1).ok_or_else(bad_id)? * 16.0;
+                        if x.abs() > f64::from(i32::MAX) || y.abs() > f64::from(i32::MAX) {
+                            return Err(bad_id());
+                        }
+                        Ok(trommi_core::board_items::Point {
+                            x: x.round() as i32,
+                            y: y.round() as i32,
+                            t: number(2).unwrap_or(0.0).max(0.0) as u32,
+                            force: (number(3).unwrap_or(1.0).clamp(0.0, 1.0) * 255.0).round() as u8,
+                            azimuth: 0,
+                            altitude: 0,
+                        })
+                    })
+                    .collect();
+                let ink = trommi_core::board_items::Ink::new(points?, false, true)
+                    .map_err(|_| bad_id())?;
                 self.board_item(action, board_id, local_id, &json!({"content_type": "strokes", "strokes": [{"tool": tool, "color": color, "width": width, "points": ink.to_base64url()}]}))
             }
-            Action::BoardItem { board_id, local_id, content } => self.board_item(action, board_id, local_id, content),
-            Action::KnowledgeSave { team_id, entry_id, title, text, kind, pinned } => self.knowledge_save(action, team_id, entry_id.as_deref(), title, text, kind, *pinned),
+            Action::BoardItem {
+                board_id,
+                local_id,
+                content,
+            } => self.board_item(action, board_id, local_id, content),
+            Action::KnowledgeSave {
+                team_id,
+                entry_id,
+                title,
+                text,
+                kind,
+                pinned,
+            } => self.knowledge_save(
+                action,
+                team_id,
+                entry_id.as_deref(),
+                title,
+                text,
+                kind,
+                *pinned,
+            ),
             // (only the person pins: an agent's write never does; a pin is no change of the entry's words)
             Action::KnowledgePin { entry_id, on } => {
                 let e = self.entry(entry_id)?;
                 let pinned = crate::knowledge::Entry { pinned: *on, ..e };
-                self.registers(action, &[(format!("{}{entry_id}", crate::knowledge::PREFIX), pinned.value())])
+                self.registers(
+                    action,
+                    &[(
+                        format!("{}{entry_id}", crate::knowledge::PREFIX),
+                        pinned.value(),
+                    )],
+                )
             }
             Action::KnowledgeDelete { entry_id } => {
                 let e = self.entry(entry_id)?;
@@ -356,12 +583,27 @@ impl Doing<'_> {
                 let log = self.sent.new_id(self.now);
                 self.registers(action, &crate::knowledge::forget(&e, &log, None, self.now))
             }
-            Action::WakeupCancel { session_id, wakeup_id } => self.wakeup_edit(action, session_id, wakeup_id, crate::wakeups::Edit::Cancel),
-            Action::WakeupMove { session_id, wakeup_id, at_ms } => {
+            Action::WakeupCancel {
+                session_id,
+                wakeup_id,
+            } => self.wakeup_edit(action, session_id, wakeup_id, crate::wakeups::Edit::Cancel),
+            Action::WakeupMove {
+                session_id,
+                wakeup_id,
+                at_ms,
+            } => {
                 if *at_ms < self.now + 60_000 || *at_ms > self.now + crate::wakeups::MAX_AHEAD_MS {
-                    return Err(not_done("wakeups.bad_time", "Choose a time from a minute from now to 60 days ahead."));
+                    return Err(not_done(
+                        "wakeups.bad_time",
+                        "Choose a time from a minute from now to 60 days ahead.",
+                    ));
                 }
-                self.wakeup_edit(action, session_id, wakeup_id, crate::wakeups::Edit::At(*at_ms))
+                self.wakeup_edit(
+                    action,
+                    session_id,
+                    wakeup_id,
+                    crate::wakeups::Edit::At(*at_ms),
+                )
             }
             Action::KnowledgeUndo { change_id } => {
                 let log = self
@@ -369,14 +611,23 @@ impl Doing<'_> {
                     .human
                     .get(&format!("{}{change_id}", crate::knowledge::LOG_PREFIX))
                     .and_then(|r| crate::knowledge::Log::read(change_id, &r.value))
-                    .ok_or_else(|| not_done("knowledge.no_change", "That change is no longer in the history."))?;
+                    .ok_or_else(|| {
+                        not_done(
+                            "knowledge.no_change",
+                            "That change is no longer in the history.",
+                        )
+                    })?;
                 let now_entry = crate::knowledge::entry_of(self.model, &log.entry);
                 let id = self.sent.new_id(self.now);
                 let live = crate::knowledge::of_team(self.model, &log.team).len();
-                let writes = crate::knowledge::undo(&log, now_entry.as_ref(), live, &id, self.now).map_err(|why| match why {
-                    "full" => not_done("knowledge.full", "This team holds 200 entries: forget one to bring this one back."),
-                    _ => not_done("knowledge.gone", "That entry is no longer there."),
-                })?;
+                let writes = crate::knowledge::undo(&log, now_entry.as_ref(), live, &id, self.now)
+                    .map_err(|why| match why {
+                        "full" => not_done(
+                            "knowledge.full",
+                            "This team holds 200 entries: forget one to bring this one back.",
+                        ),
+                        _ => not_done("knowledge.gone", "That entry is no longer there."),
+                    })?;
                 self.registers(action, &writes)
             }
             _ => Err(not_done("action.unknown", "This cannot be done here yet.")),
@@ -385,34 +636,88 @@ impl Doing<'_> {
 
     /// An item on a Scribble Board, shown at once in the board's timeline (`crate::scribble` lays it over the
     /// board until the hub's copy comes). A picture named by its file's id gets the reference with its key.
-    fn board_item(&mut self, action: &Action, board_id: &str, local_id: &str, content: &Value) -> Result<(), NotDone> {
-        let board = crate::scribble::board_of(board_id).ok_or_else(|| not_done("action.bad", "That board is not known."))?;
-        let mut content = content.as_object().cloned().ok_or_else(|| not_done("action.bad", "That cannot be drawn."))?;
+    fn board_item(
+        &mut self,
+        action: &Action,
+        board_id: &str,
+        local_id: &str,
+        content: &Value,
+    ) -> Result<(), NotDone> {
+        let board = crate::scribble::board_of(board_id)
+            .ok_or_else(|| not_done("action.bad", "That board is not known."))?;
+        let mut content = content
+            .as_object()
+            .cloned()
+            .ok_or_else(|| not_done("action.bad", "That cannot be drawn."))?;
         if let Some(Value::Array(shapes)) = content.get_mut("strokes") {
             for shape in shapes.iter_mut() {
-                let Some(picture) = shape.get_mut("attachment") else { continue };
+                let Some(picture) = shape.get_mut("attachment") else {
+                    continue;
+                };
                 if picture.get("file_key").is_some() {
                     continue;
                 }
-                let id = picture.as_str().or_else(|| picture.get("attachment_id").and_then(Value::as_str)).unwrap_or("").to_string();
-                let reference = (self.file)(&id).ok_or_else(|| not_done("action.file_not_ready", "A file is still uploading, or is not here."))?;
+                let id = picture
+                    .as_str()
+                    .or_else(|| picture.get("attachment_id").and_then(Value::as_str))
+                    .unwrap_or("")
+                    .to_string();
+                let reference = (self.file)(&id).ok_or_else(|| {
+                    not_done(
+                        "action.file_not_ready",
+                        "A file is still uploading, or is not here.",
+                    )
+                })?;
                 *picture = Value::Object(reference);
             }
         }
-        let payload = codec::encode_body(BodyKind::BoardItem, &content).map_err(|_| not_done("action.bad", "That cannot be drawn."))?;
+        let payload = codec::encode_body(BodyKind::BoardItem, &content)
+            .map_err(|_| not_done("action.bad", "That cannot be drawn."))?;
         let files = file_ids(BodyKind::BoardItem, &content);
-        let local_id = if local_id.is_empty() || self.model.echoes.contains_key(local_id) { self.sent.local_id() } else { local_id.to_string() };
-        let timeline = crate::model::timeline_key("scribble", &format!("desk/{}", crate::engine::feed::hex(board.as_bytes())));
-        self.model.echo_timeline_item(&local_id, &timeline, content, None, None, self.now, &mut self.change);
-        let draft = Draft::BoardItem { board, payload: SecretBytes::new(payload.into_bytes()) };
+        let local_id = if local_id.is_empty() || self.model.echoes.contains_key(local_id) {
+            self.sent.local_id()
+        } else {
+            local_id.to_string()
+        };
+        let timeline = crate::model::timeline_key(
+            "scribble",
+            &format!("desk/{}", crate::engine::feed::hex(board.as_bytes())),
+        );
+        self.model.echo_timeline_item(
+            &local_id,
+            &timeline,
+            content,
+            None,
+            None,
+            self.now,
+            &mut self.change,
+        );
+        let draft = Draft::BoardItem {
+            board,
+            payload: SecretBytes::new(payload.into_bytes()),
+        };
         self.seal_echoed(action, &local_id, &draft, None, &files)
     }
 
     /// Imports a native share as a note or a message, with the same encrypted file references as every action.
-    pub fn import_share(&mut self, action: &Action, import_id: &str, text: &str, attachments: &[String], to: Option<&String>) -> Result<(), NotDone> {
-        let mut content = Map::from_iter([("text".into(), json!(text)), ("import_id".into(), json!(import_id)), ("attachments".into(), json!(self.files_of(attachments)?))]);
+    pub fn import_share(
+        &mut self,
+        action: &Action,
+        import_id: &str,
+        text: &str,
+        attachments: &[String],
+        to: Option<&String>,
+    ) -> Result<(), NotDone> {
+        let mut content = Map::from_iter([
+            ("text".into(), json!(text)),
+            ("import_id".into(), json!(import_id)),
+            ("attachments".into(), json!(self.files_of(attachments)?)),
+        ]);
         if let Some(to) = to {
-            content.insert("note".into(), json!({"object_id": import_id, "written_at": self.now}));
+            content.insert(
+                "note".into(),
+                json!({"object_id": import_id, "written_at": self.now}),
+            );
             self.write(action, Some(to), None, content)
         } else {
             self.note_version(action, None, Some(content))
@@ -421,57 +726,129 @@ impl Doing<'_> {
 
     /// A new Note, a new version of one (`text`), or its closed version (none: deleted), shown at once. While a
     /// version of the note is on its way, the edit waits behind it ([`Sent`]).
-    fn write_note(&mut self, action: &Action, note_id: Option<&str>, text: Option<&String>) -> Result<(), NotDone> {
+    fn write_note(
+        &mut self,
+        action: &Action,
+        note_id: Option<&str>,
+        text: Option<&String>,
+    ) -> Result<(), NotDone> {
         let own = text.map(|t| Map::from_iter([("text".to_string(), json!(t))]));
         self.note_version(action, note_id, own)
     }
 
     /// A note sent to a session (`SendNote`): held for [`NOTE_HOLD_MS`] (the toast's Undo), then delivered by the
     /// App ([`Doing::deliver_note`]). `to`: a session, else the crown's.
-    fn send_note(&mut self, action: &Action, note_id: &str, to: Option<&str>) -> Result<(), NotDone> {
-        let crown = self.model.human.get("crown").and_then(|r| r.value.get("session_id").and_then(Value::as_str).map(str::to_string));
-        let Some(to) = to.map(str::to_string).or(crown).filter(|s| self.model.sessions.contains_key(s)) else {
-            return Err(not_done("notes.no_session", "This note has no session to go to."));
+    fn send_note(
+        &mut self,
+        action: &Action,
+        note_id: &str,
+        to: Option<&str>,
+    ) -> Result<(), NotDone> {
+        let crown = self.model.human.get("crown").and_then(|r| {
+            r.value
+                .get("session_id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        });
+        let Some(to) = to
+            .map(str::to_string)
+            .or(crown)
+            .filter(|s| self.model.sessions.contains_key(s))
+        else {
+            return Err(not_done(
+                "notes.no_session",
+                "This note has no session to go to.",
+            ));
         };
-        let note = self.model.notes.get(note_id).ok_or_else(|| not_done("action.note_gone", "That note is no longer there."))?;
-        let empty = note.get("text").and_then(Value::as_str).is_none_or(|t| t.trim().is_empty()) && note.get("attachments").and_then(Value::as_array).is_none_or(Vec::is_empty);
+        let note = self
+            .model
+            .notes
+            .get(note_id)
+            .ok_or_else(|| not_done("action.note_gone", "That note is no longer there."))?;
+        let empty = note
+            .get("text")
+            .and_then(Value::as_str)
+            .is_none_or(|t| t.trim().is_empty())
+            && note
+                .get("attachments")
+                .and_then(Value::as_array)
+                .is_none_or(Vec::is_empty);
         if empty {
             return Err(not_done("notes.empty", "An empty note is not sent."));
         }
         let held = json!({ "to": to, "until": self.now + NOTE_HOLD_MS });
-        self.note_version(action, Some(note_id), Some(Map::from_iter([("held".to_string(), held)])))
+        self.note_version(
+            action,
+            Some(note_id),
+            Some(Map::from_iter([("held".to_string(), held)])),
+        )
     }
 
     /// Delivers a note whose hold ran out: a line to its session that names the note, then the note closed.
     pub fn deliver_note(&mut self, note_id: &str) -> Result<(), NotDone> {
-        let Some(note) = self.model.notes.get(note_id).cloned() else { return Ok(()) };
-        let Some(to) = note.get("held").and_then(|h| h.get("to")).and_then(Value::as_str).map(str::to_string) else { return Ok(()) };
-        let action = Action::SendNote { note_id: note_id.to_string(), to: Some(to.clone()) };
+        let Some(note) = self.model.notes.get(note_id).cloned() else {
+            return Ok(());
+        };
+        let Some(to) = note
+            .get("held")
+            .and_then(|h| h.get("to"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        else {
+            return Ok(());
+        };
+        let action = Action::SendNote {
+            note_id: note_id.to_string(),
+            to: Some(to.clone()),
+        };
         let mut content = Map::new();
-        content.insert("text".into(), note.get("text").cloned().unwrap_or(json!("")));
-        if let Some(a) = note.get("attachments").filter(|a| a.as_array().is_some_and(|a| !a.is_empty())) {
+        content.insert(
+            "text".into(),
+            note.get("text").cloned().unwrap_or(json!("")),
+        );
+        if let Some(a) = note
+            .get("attachments")
+            .filter(|a| a.as_array().is_some_and(|a| !a.is_empty()))
+        {
             content.insert("attachments".into(), a.clone());
         }
         let written = note.get("created_at").and_then(Value::as_u64);
-        content.insert("note".into(), json!({ "object_id": note_id, "written_at": written }));
+        content.insert(
+            "note".into(),
+            json!({ "object_id": note_id, "written_at": written }),
+        );
         self.write(&action, Some(&to), None, content)?;
         self.note_version(&action, Some(note_id), None)
     }
 
     /// A new version of a note with these fields set (none: closed).
-    fn note_version(&mut self, action: &Action, note_id: Option<&str>, own_fields: Option<Map<String, Value>>) -> Result<(), NotDone> {
+    fn note_version(
+        &mut self,
+        action: &Action,
+        note_id: Option<&str>,
+        own_fields: Option<Map<String, Value>>,
+    ) -> Result<(), NotDone> {
         let closed = own_fields.is_none();
         if let Some(id) = note_id {
             let gone = || not_done("action.note_gone", "That note is no longer there.");
             let note = self.model.notes.get(id).ok_or_else(gone)?;
-            if note.get("unsupported").is_some_and(crate::model::apply::truthy) {
-                return Err(not_done("action.needs_update", "Update Trommi to change this note."));
+            if note
+                .get("unsupported")
+                .is_some_and(crate::model::apply::truthy)
+            {
+                return Err(not_done(
+                    "action.needs_update",
+                    "Update Trommi to change this note.",
+                ));
             }
             if note.get("object_state").and_then(Value::as_str) == Some("closed") {
                 return Err(gone());
             }
         } else if closed {
-            return Err(not_done("action.note_gone", "That note is no longer there."));
+            return Err(not_done(
+                "action.note_gone",
+                "That note is no longer there.",
+            ));
         }
         let mut own = Map::new();
         if let Some(fields) = own_fields {
@@ -490,13 +867,20 @@ impl Doing<'_> {
                 self.model.rollback_echo(&before.local_id, &mut self.change);
                 own = before.own.into_iter().chain(own).collect();
             }
-            self.model.echo_note(&local_id, Some(id), &shown, closed, &mut self.change);
+            self.model
+                .echo_note(&local_id, Some(id), &shown, closed, &mut self.change);
             if let Some(busy) = self.sent.notes.get_mut(id) {
-                busy.next = Some(NoteNext { own, closed, local_id, action: action.clone() });
+                busy.next = Some(NoteNext {
+                    own,
+                    closed,
+                    local_id,
+                    action: action.clone(),
+                });
             }
             return Ok(());
         }
-        self.model.echo_note(&local_id, note_id, &shown, closed, &mut self.change);
+        self.model
+            .echo_note(&local_id, note_id, &shown, closed, &mut self.change);
         self.seal_note(action, note_id, &own, closed, &local_id)
     }
 
@@ -506,14 +890,29 @@ impl Doing<'_> {
     pub fn sync_goals(&mut self) {
         let mut writes = Vec::new();
         for (sid, s) in &self.model.sessions {
-            let settings = s.settings.clone().or_else(|| self.model.human.get(&format!("session/{sid}")).map(|r| r.value.clone()));
-            let archived = s.group_archived || settings.as_ref().and_then(|v| v.get("archived")) == Some(&Value::Bool(true));
-            if !s.is_active || s.stale || s.parent_session_id.is_some() || s.group_id.is_none() || archived {
+            let settings = s.settings.clone().or_else(|| {
+                self.model
+                    .human
+                    .get(&format!("session/{sid}"))
+                    .map(|r| r.value.clone())
+            });
+            let archived = s.group_archived
+                || settings.as_ref().and_then(|v| v.get("archived")) == Some(&Value::Bool(true));
+            if !s.is_active
+                || s.stale
+                || s.parent_session_id.is_some()
+                || s.group_id.is_none()
+                || archived
+            {
                 continue;
             }
             // (only a team that is there: none set, no team, or one that is gone carries no goals)
             let team_id = crate::sessions::team_of(self.model, sid);
-            let team = team_id.as_ref().and_then(|d| self.model.human.get(&format!("desk/{d}"))).map(|r| r.value.clone()).unwrap_or(Value::Null);
+            let team = team_id
+                .as_ref()
+                .and_then(|d| self.model.human.get(&format!("desk/{d}")))
+                .map(|r| r.value.clone())
+                .unwrap_or(Value::Null);
             let goals = clean_goals(team.get("goals").and_then(Value::as_str).unwrap_or(""));
             let wanted = match team_id {
                 Some(d) if !goals.is_empty() => {
@@ -521,7 +920,11 @@ impl Doing<'_> {
                 }
                 _ => Value::Null,
             };
-            let held = s.registers.get("goals").map(|r| r.value.clone()).unwrap_or(Value::Null);
+            let held = s
+                .registers
+                .get("goals")
+                .map(|r| r.value.clone())
+                .unwrap_or(Value::Null);
             if held == wanted {
                 continue;
             }
@@ -531,8 +934,12 @@ impl Doing<'_> {
             writes.push((sid.clone(), wanted));
         }
         for (sid, wanted) in writes {
-            let Some(session) = id(&sid).map(SessionId::new) else { continue };
-            let Ok((name, wire)) = codec::encode_register("goals", &wanted) else { continue };
+            let Some(session) = id(&sid).map(SessionId::new) else {
+                continue;
+            };
+            let Ok((name, wire)) = codec::encode_register("goals", &wanted) else {
+                continue;
+            };
             let draft = Draft::Register {
                 group: GroupId::session(self.room, session),
                 name,
@@ -546,20 +953,44 @@ impl Doing<'_> {
 
     /// The person's word on a wakeup of a session (`wakeup_edit/<id>` in its group, spec/v1.md 9.3.8): its agent's
     /// connector applies it and takes it away. Shown at once on this device.
-    fn wakeup_edit(&mut self, action: &Action, session_id: &str, wakeup_id: &str, edit: crate::wakeups::Edit) -> Result<(), NotDone> {
+    fn wakeup_edit(
+        &mut self,
+        action: &Action,
+        session_id: &str,
+        wakeup_id: &str,
+        edit: crate::wakeups::Edit,
+    ) -> Result<(), NotDone> {
         let key = format!("{}{wakeup_id}", crate::wakeups::EDIT_PREFIX);
-        let s = self.model.sessions.get(session_id).ok_or_else(|| not_done("action.not_found", "That session is no longer there."))?;
-        if !s.registers.get(&format!("{}{wakeup_id}", crate::wakeups::PREFIX)).is_some_and(|r| !r.value.is_null()) {
+        let s = self
+            .model
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| not_done("action.not_found", "That session is no longer there."))?;
+        if !s
+            .registers
+            .get(&format!("{}{wakeup_id}", crate::wakeups::PREFIX))
+            .is_some_and(|r| !r.value.is_null())
+        {
             return Err(not_done("wakeups.gone", "That wakeup is no longer there."));
         }
         let session = id(session_id).map(SessionId::new).ok_or_else(bad_id)?;
         let value = edit.value(&self.sent.new_id(self.now));
         let (name, wire) = codec::encode_register(&key, &value).map_err(|_| bad_id())?;
-        let draft = Draft::Register { group: GroupId::session(self.room, session), name, value: wire.map(|w| SecretBytes::new(w.into_bytes())) };
+        let draft = Draft::Register {
+            group: GroupId::session(self.room, session),
+            name,
+            value: wire.map(|w| SecretBytes::new(w.into_bytes())),
+        };
         self.seal_plain(action, &draft, None)?;
         // (his word shows at once; the hub's copy takes its place)
         if let Some(s) = self.model.sessions.get_mut(session_id) {
-            s.registers.insert(key, crate::model::types::RegisterValue { value, ..Default::default() });
+            s.registers.insert(
+                key,
+                crate::model::types::RegisterValue {
+                    value,
+                    ..Default::default()
+                },
+            );
         }
         self.change.sessions.insert(session_id.to_string());
         Ok(())
@@ -567,12 +998,22 @@ impl Doing<'_> {
 
     /// A team's knowledge entry by its id (a forgotten one too).
     fn entry(&self, entry_id: &str) -> Result<crate::knowledge::Entry, NotDone> {
-        crate::knowledge::entry_of(self.model, entry_id).ok_or_else(|| not_done("knowledge.gone", "That entry is no longer there."))
+        crate::knowledge::entry_of(self.model, entry_id)
+            .ok_or_else(|| not_done("knowledge.gone", "That entry is no longer there."))
     }
 
     /// An entry the person writes on the page Knowledge: new, or anew (its team and its agent stay).
     #[allow(clippy::too_many_arguments)]
-    fn knowledge_save(&mut self, action: &Action, team_id: &str, entry_id: Option<&str>, title: &str, text: &str, kind: &str, pinned: bool) -> Result<(), NotDone> {
+    fn knowledge_save(
+        &mut self,
+        action: &Action,
+        team_id: &str,
+        entry_id: Option<&str>,
+        title: &str,
+        text: &str,
+        kind: &str,
+        pinned: bool,
+    ) -> Result<(), NotDone> {
         use crate::knowledge::{clean_text, clean_title, of_team, ENTRIES_MAX};
         let title = clean_title(title);
         if title.is_empty() {
@@ -583,8 +1024,22 @@ impl Doing<'_> {
         let writes = match entry_id {
             Some(id) => {
                 let before = self.entry(id)?;
-                let kind = if kind.is_empty() { before.kind.clone() } else { kind.to_string() };
-                crate::knowledge::edit(Some(&before), &before.team, id, &title, &text, &kind, pinned, &log, self.now)
+                let kind = if kind.is_empty() {
+                    before.kind.clone()
+                } else {
+                    kind.to_string()
+                };
+                crate::knowledge::edit(
+                    Some(&before),
+                    &before.team,
+                    id,
+                    &title,
+                    &text,
+                    &kind,
+                    pinned,
+                    &log,
+                    self.now,
+                )
             }
             None => {
                 let live = self.teams();
@@ -596,10 +1051,15 @@ impl Doing<'_> {
                     return Err(not_done("action.no_team", "That team is no longer there."));
                 };
                 if of_team(self.model, &team).len() >= ENTRIES_MAX {
-                    return Err(not_done("knowledge.full", "This team holds 200 entries: delete one first."));
+                    return Err(not_done(
+                        "knowledge.full",
+                        "This team holds 200 entries: delete one first.",
+                    ));
                 }
                 let id = self.sent.new_id(self.now);
-                crate::knowledge::edit(None, &team, &id, &title, &text, kind, pinned, &log, self.now)
+                crate::knowledge::edit(
+                    None, &team, &id, &title, &text, kind, pinned, &log, self.now,
+                )
             }
         };
         self.registers(action, &writes)
@@ -613,16 +1073,25 @@ impl Doing<'_> {
     ///   and answered (`knowledge_done/<id>`); the answer goes once the agent took its write away;
     /// - forgotten entries past their 30 days go for good, and so do changes beyond the newest ten of an entry.
     pub fn sync_knowledge(&mut self) {
-        use crate::knowledge::{apply, of_team, Applied, Ask, ASK_PREFIX, DONE_PREFIX, LOG_PREFIX, PREFIX};
+        use crate::knowledge::{
+            apply, of_team, Applied, Ask, ASK_PREFIX, DONE_PREFIX, LOG_PREFIX, PREFIX,
+        };
         // (a write the group holds now is done: should another device write it over, it is written again; "" is the
         //  room)
         let model = &*self.model;
         for (sid, written) in self.sent.knowledge.iter_mut() {
             let held = |key: &str| -> Value {
                 if sid.is_empty() {
-                    model.human.get(key).map_or(Value::Null, |r| r.value.clone())
+                    model
+                        .human
+                        .get(key)
+                        .map_or(Value::Null, |r| r.value.clone())
                 } else {
-                    model.sessions.get(sid).and_then(|s| s.registers.get(key)).map_or(Value::Null, |r| r.value.clone())
+                    model
+                        .sessions
+                        .get(sid)
+                        .and_then(|s| s.registers.get(key))
+                        .map_or(Value::Null, |r| r.value.clone())
                 }
             };
             written.retain(|key, (value, _)| held(key) != *value);
@@ -636,24 +1105,44 @@ impl Doing<'_> {
             if writes.len() + room_writes.len() >= KNOWLEDGE_WRITES {
                 break;
             }
-            let settings = s.settings.clone().or_else(|| self.model.human.get(&format!("session/{sid}")).map(|r| r.value.clone()));
-            let archived = s.group_archived || settings.as_ref().and_then(|v| v.get("archived")) == Some(&Value::Bool(true));
-            if !s.is_active || s.stale || s.parent_session_id.is_some() || s.group_id.is_none() || archived {
+            let settings = s.settings.clone().or_else(|| {
+                self.model
+                    .human
+                    .get(&format!("session/{sid}"))
+                    .map(|r| r.value.clone())
+            });
+            let archived = s.group_archived
+                || settings.as_ref().and_then(|v| v.get("archived")) == Some(&Value::Bool(true));
+            if !s.is_active
+                || s.stale
+                || s.parent_session_id.is_some()
+                || s.group_id.is_none()
+                || archived
+            {
                 continue;
             }
             // (a session on no team holds no team's entries: the ones it holds go, and its writes are refused)
             let team = crate::knowledge::team_of(self.model, sid);
             let none = BTreeMap::new();
             let wanted = match &team {
-                Some(team) => &*teams
-                    .entry(team.clone())
-                    .or_insert_with(|| of_team(self.model, team).into_iter().map(|e| (format!("{PREFIX}{}", e.id), e.copy())).collect()),
+                Some(team) => &*teams.entry(team.clone()).or_insert_with(|| {
+                    of_team(self.model, team)
+                        .into_iter()
+                        .map(|e| (format!("{PREFIX}{}", e.id), e.copy()))
+                        .collect()
+                }),
                 None => &none,
             };
             let sent = self.sent.knowledge.get(sid);
-            let held = |key: &str| s.registers.get(key).map(|r| &r.value).filter(|v| !v.is_null());
+            let held = |key: &str| {
+                s.registers
+                    .get(key)
+                    .map(|r| &r.value)
+                    .filter(|v| !v.is_null())
+            };
             let differs = |key: &str, want: &Value| {
-                held(key).unwrap_or(&Value::Null) != want && sent.and_then(|m| m.get(key)).is_none_or(|(w, _)| w != want)
+                held(key).unwrap_or(&Value::Null) != want
+                    && sent.and_then(|m| m.get(key)).is_none_or(|(w, _)| w != want)
             };
             for (key, value) in wanted.iter() {
                 if differs(key, value) {
@@ -661,7 +1150,11 @@ impl Doing<'_> {
                 }
             }
             for (key, r) in &s.registers {
-                if key.starts_with(PREFIX) && !r.value.is_null() && !wanted.contains_key(key) && differs(key, &Value::Null) {
+                if key.starts_with(PREFIX)
+                    && !r.value.is_null()
+                    && !wanted.contains_key(key)
+                    && differs(key, &Value::Null)
+                {
                     writes.push((sid.clone(), key.clone(), Value::Null));
                 }
             }
@@ -670,9 +1163,14 @@ impl Doing<'_> {
             // and only whole: its entry and its record together, within the look's budget.
             let by = crate::knowledge::agent_name(self.model, sid);
             for (key, r) in &s.registers {
-                let Some(write) = key.strip_prefix(ASK_PREFIX) else { continue };
+                let Some(write) = key.strip_prefix(ASK_PREFIX) else {
+                    continue;
+                };
                 let done_key = format!("{DONE_PREFIX}{write}");
-                if r.value.is_null() || held(&done_key).is_some() || sent.is_some_and(|m| m.contains_key(&done_key)) {
+                if r.value.is_null()
+                    || held(&done_key).is_some()
+                    || sent.is_some_and(|m| m.contains_key(&done_key))
+                {
                     continue;
                 }
                 if room_writes.len() + 2 > KNOWLEDGE_WRITES {
@@ -681,35 +1179,70 @@ impl Doing<'_> {
                 let answer = match (Ask::read(&r.value), team.as_deref()) {
                     (None, _) => json!({ "ok": false, "why": "bad" }),
                     // (a session on no team writes no team's knowledge, whichever entry it names)
-                    (Some(ask), None) => json!({ "ok": false, "why": "no_team", "entry": ask.entry.clone().unwrap_or_else(|| write.to_string()) }),
+                    (Some(ask), None) => {
+                        json!({ "ok": false, "why": "no_team", "entry": ask.entry.clone().unwrap_or_else(|| write.to_string()) })
+                    }
                     (Some(ask), Some(team)) => {
                         let named = ask.entry.clone().unwrap_or_else(|| write.to_string());
                         let entry_key = format!("{PREFIX}{named}");
                         // (the room as it will stand: its registers, then what this device sent and the hub has not
                         //  echoed yet, then this look's writes)
-                        let pending = |k: &str| room_writes.get(k).or_else(|| room_sent.get(k).map(|(v, _)| v));
+                        let pending = |k: &str| {
+                            room_writes
+                                .get(k)
+                                .or_else(|| room_sent.get(k).map(|(v, _)| v))
+                        };
                         let kept = match pending(&entry_key) {
                             Some(v) => crate::knowledge::Entry::read(&named, v),
                             None => crate::knowledge::entry_of(self.model, &named),
                         };
                         let log_key = format!("{LOG_PREFIX}{write}");
-                        let logged = self.model.human.get(&log_key).is_some_and(|l| !l.value.is_null()) || room_sent.contains_key(&log_key) || room_writes.contains_key(&log_key);
-                        let mut current: BTreeMap<String, crate::knowledge::Entry> = of_team(self.model, team).into_iter().map(|e| (e.id.clone(), e)).collect();
-                        for (k, v) in room_sent.iter().map(|(k, (v, _))| (k, v)).chain(room_writes.iter()) {
-                            let Some(id) = k.strip_prefix(PREFIX) else { continue };
-                            match crate::knowledge::Entry::read(id, v).filter(|e| e.team == team && !e.forgotten()) {
+                        let logged = self
+                            .model
+                            .human
+                            .get(&log_key)
+                            .is_some_and(|l| !l.value.is_null())
+                            || room_sent.contains_key(&log_key)
+                            || room_writes.contains_key(&log_key);
+                        let mut current: BTreeMap<String, crate::knowledge::Entry> =
+                            of_team(self.model, team)
+                                .into_iter()
+                                .map(|e| (e.id.clone(), e))
+                                .collect();
+                        for (k, v) in room_sent
+                            .iter()
+                            .map(|(k, (v, _))| (k, v))
+                            .chain(room_writes.iter())
+                        {
+                            let Some(id) = k.strip_prefix(PREFIX) else {
+                                continue;
+                            };
+                            match crate::knowledge::Entry::read(id, v)
+                                .filter(|e| e.team == team && !e.forgotten())
+                            {
                                 Some(e) => current.insert(id.to_string(), e),
                                 None => current.remove(id),
                             };
                         }
                         let current: Vec<crate::knowledge::Entry> = current.into_values().collect();
-                        match apply(&ask, write, team, &current, kept.as_ref(), logged, &by, self.now) {
+                        match apply(
+                            &ask,
+                            write,
+                            team,
+                            &current,
+                            kept.as_ref(),
+                            logged,
+                            &by,
+                            self.now,
+                        ) {
                             Applied::Write(w) => {
                                 room_writes.extend(w);
                                 json!({ "ok": true, "entry": named })
                             }
                             Applied::Done => json!({ "ok": true, "entry": named }),
-                            Applied::Refused(why) => json!({ "ok": false, "why": why, "entry": named }),
+                            Applied::Refused(why) => {
+                                json!({ "ok": false, "why": why, "entry": named })
+                            }
                         }
                     }
                 };
@@ -717,22 +1250,38 @@ impl Doing<'_> {
             }
             // the person's words on its wakeups, once its connector applied them (or the wakeup is gone), go
             for (key, r) in &s.registers {
-                let Some(wid) = key.strip_prefix(crate::wakeups::EDIT_PREFIX) else { continue };
-                let w = s.registers.get(&format!("{}{wid}", crate::wakeups::PREFIX)).and_then(|r| crate::wakeups::Wakeup::read(wid, &r.value));
-                if !r.value.is_null() && crate::wakeups::edit_applied(w.as_ref(), &crate::wakeups::mark(&r.value)) && differs(key, &Value::Null) {
+                let Some(wid) = key.strip_prefix(crate::wakeups::EDIT_PREFIX) else {
+                    continue;
+                };
+                let w = s
+                    .registers
+                    .get(&format!("{}{wid}", crate::wakeups::PREFIX))
+                    .and_then(|r| crate::wakeups::Wakeup::read(wid, &r.value));
+                if !r.value.is_null()
+                    && crate::wakeups::edit_applied(w.as_ref(), &crate::wakeups::mark(&r.value))
+                    && differs(key, &Value::Null)
+                {
                     writes.push((sid.clone(), key.clone(), Value::Null));
                 }
             }
             for (key, r) in &s.registers {
-                let Some(write) = key.strip_prefix(DONE_PREFIX) else { continue };
-                if !r.value.is_null() && held(&format!("{ASK_PREFIX}{write}")).is_none() && differs(key, &Value::Null) {
+                let Some(write) = key.strip_prefix(DONE_PREFIX) else {
+                    continue;
+                };
+                if !r.value.is_null()
+                    && held(&format!("{ASK_PREFIX}{write}")).is_none()
+                    && differs(key, &Value::Null)
+                {
                     writes.push((sid.clone(), key.clone(), Value::Null));
                 }
             }
         }
         if room_writes.len() < KNOWLEDGE_WRITES {
             for (key, value) in crate::knowledge::upkeep(self.model, self.now, KNOWLEDGE_WRITES) {
-                if !room_sent.contains_key(&key) && !room_writes.contains_key(&key) && room_writes.len() < KNOWLEDGE_WRITES {
+                if !room_sent.contains_key(&key)
+                    && !room_writes.contains_key(&key)
+                    && room_writes.len() < KNOWLEDGE_WRITES
+                {
                     room_writes.insert(key, value);
                 }
             }
@@ -743,13 +1292,25 @@ impl Doing<'_> {
             let group = if sid.is_empty() {
                 GroupId::room(self.room)
             } else {
-                let Some(session) = id(&sid).map(SessionId::new) else { continue };
+                let Some(session) = id(&sid).map(SessionId::new) else {
+                    continue;
+                };
                 GroupId::session(self.room, session)
             };
-            let Ok((name, wire)) = codec::encode_register(&key, &value) else { continue };
-            let draft = Draft::Register { group, name, value: wire.map(|w| SecretBytes::new(w.into_bytes())) };
+            let Ok((name, wire)) = codec::encode_register(&key, &value) else {
+                continue;
+            };
+            let draft = Draft::Register {
+                group,
+                name,
+                value: wire.map(|w| SecretBytes::new(w.into_bytes())),
+            };
             if let Ok(sealed) = (self.seal)(&draft, None, &[]) {
-                self.sent.knowledge.entry(sid).or_default().insert(key, (value, sealed.outbox_id));
+                self.sent
+                    .knowledge
+                    .entry(sid)
+                    .or_default()
+                    .insert(key, (value, sealed.outbox_id));
             }
         }
     }
@@ -767,7 +1328,10 @@ impl Doing<'_> {
     ) -> Result<(), NotDone> {
         let head = note_id.and_then(|id| self.model.notes.get(id)).map(|n| {
             if n.get("pending").is_some_and(crate::model::apply::truthy) {
-                n.get("_base").and_then(Value::as_object).cloned().unwrap_or_default()
+                n.get("_base")
+                    .and_then(Value::as_object)
+                    .cloned()
+                    .unwrap_or_default()
             } else {
                 n.clone()
             }
@@ -780,48 +1344,101 @@ impl Doing<'_> {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         content.extend(own.iter().map(|(k, v)| (k.clone(), v.clone())));
-        let version = head.as_ref().and_then(|h| h.get("object_version")).and_then(Value::as_u64).unwrap_or(0);
+        let version = head
+            .as_ref()
+            .and_then(|h| h.get("object_version"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
         content.insert("object_version".into(), json!(version + 1));
-        let previous = head.as_ref().and_then(|h| h.get("version_hash")).and_then(Value::as_str).map(str::to_string);
-        content.insert("previous_version_hash".into(), json!(previous.unwrap_or_else(|| "0".repeat(64))));
-        let lamport_of = |n: &Map<String, Value>| n.get("causal").and_then(|c| c.get("lamport")).and_then(Value::as_f64).unwrap_or(0.0);
+        let previous = head
+            .as_ref()
+            .and_then(|h| h.get("version_hash"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        content.insert(
+            "previous_version_hash".into(),
+            json!(previous.unwrap_or_else(|| "0".repeat(64))),
+        );
+        let lamport_of = |n: &Map<String, Value>| {
+            n.get("causal")
+                .and_then(|c| c.get("lamport"))
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0)
+        };
         let seen = self
             .model
             .notes
             .values()
-            .flat_map(|n| [Some(lamport_of(n)), n.get("_base").and_then(Value::as_object).map(lamport_of)])
+            .flat_map(|n| {
+                [
+                    Some(lamport_of(n)),
+                    n.get("_base").and_then(Value::as_object).map(lamport_of),
+                ]
+            })
             .flatten()
             .fold(0.0_f64, f64::max);
         self.sent.lamport = self.sent.lamport.max(seen as u64) + 1;
         content.insert("lamport".into(), json!(self.sent.lamport));
 
-        let payload = codec::encode_body(BodyKind::Note, &content).map_err(|_| not_done("action.bad", "That note cannot be saved."))?;
+        let payload = codec::encode_body(BodyKind::Note, &content)
+            .map_err(|_| not_done("action.bad", "That note cannot be saved."))?;
         let files = file_ids(BodyKind::Note, &content);
         let payload = SecretBytes::new(payload.into_bytes());
         let draft = match note_id {
-            Some(id) => Draft::NoteVersion { object_id: self::id(id).map(ObjectId::new).ok_or_else(bad_id)?, closed, payload },
+            Some(id) => Draft::NoteVersion {
+                object_id: self::id(id).map(ObjectId::new).ok_or_else(bad_id)?,
+                closed,
+                payload,
+            },
             None => Draft::NoteFirst { payload },
         };
         match (self.seal)(&draft, None, &files) {
             Ok(sealed) => {
                 let hash = crate::engine::feed::hex(sealed.envelope_hash.as_bytes());
-                let object = sealed.object_id.map(|o| crate::engine::feed::hex(o.as_bytes()));
-                self.model.confirm_echo(local_id, &hash, sealed.seq, object.as_deref(), &mut self.change);
+                let object = sealed
+                    .object_id
+                    .map(|o| crate::engine::feed::hex(o.as_bytes()));
+                self.model.confirm_echo(
+                    local_id,
+                    &hash,
+                    sealed.seq,
+                    object.as_deref(),
+                    &mut self.change,
+                );
                 if let Some(note) = object.or_else(|| note_id.map(str::to_string)) {
-                    self.sent.notes.insert(note, NoteBusy { hash, outbox: sealed.outbox_id, next: None });
+                    self.sent.notes.insert(
+                        note,
+                        NoteBusy {
+                            hash,
+                            outbox: sealed.outbox_id,
+                            next: None,
+                        },
+                    );
                 }
-                self.sent.put(sealed.outbox_id, Out { local_id: Some(local_id.to_string()), action: action.clone() });
+                self.sent.put(
+                    sealed.outbox_id,
+                    Out {
+                        local_id: Some(local_id.to_string()),
+                        action: action.clone(),
+                    },
+                );
                 Ok(())
             }
             Err(e) => {
                 self.model.rollback_echo(local_id, &mut self.change);
-                Err(NotDone { text: refused(e.code()), again: true })
+                Err(NotDone {
+                    text: refused(e.code()),
+                    again: true,
+                })
             }
         }
     }
 
     fn card_of(&self, card_id: &str) -> Result<&crate::model::types::Card, NotDone> {
-        self.model.cards.get(card_id).ok_or_else(|| not_done("action.not_found", "That card is no longer there."))
+        self.model
+            .cards
+            .get(card_id)
+            .ok_or_else(|| not_done("action.not_found", "That card is no longer there."))
     }
 
     /// An answer of any kind ("answer", "read", "shred"): the card in the state the answer leaves it, at once.
@@ -840,11 +1457,21 @@ impl Doing<'_> {
     ) -> Result<(), NotDone> {
         let card = self.card_of(card_id)?;
         if card.object_state != "open" {
-            return Err(not_done("action.card_closed", "That card is no longer open."));
+            return Err(not_done(
+                "action.card_closed",
+                "That card is no longer open.",
+            ));
         }
         // a card of a newer version is never answered by what this version guesses it means
-        if card.unsupported.as_ref().is_some_and(crate::model::apply::truthy) {
-            return Err(not_done("action.needs_update", "Update Trommi to answer this card."));
+        if card
+            .unsupported
+            .as_ref()
+            .is_some_and(crate::model::apply::truthy)
+        {
+            return Err(not_done(
+                "action.needs_update",
+                "Update Trommi to answer this card.",
+            ));
         }
         if card.content_state != "ok" || card.version_hash.is_none() {
             return Err(not_done("action.card_pruned", "This device holds only the header of this card: answer it on a device that shows it."));
@@ -855,21 +1482,39 @@ impl Doing<'_> {
         let options = card.fields.get("options");
         let options = options.as_array().map(Vec::as_slice).unwrap_or_default();
         let key_of = |o: &Value| o.get("key").and_then(Value::as_str).map(str::to_string);
-        if how == "answer" && !trusted && choices.iter().any(|c| !options.iter().any(|o| key_of(o).as_deref() == Some(c))) {
-            return Err(not_done("action.bad_choice", "That card has no such option."));
+        if how == "answer"
+            && !trusted
+            && choices
+                .iter()
+                .any(|c| !options.iter().any(|o| key_of(o).as_deref() == Some(c)))
+        {
+            return Err(not_done(
+                "action.bad_choice",
+                "That card has no such option.",
+            ));
         }
         // An answer whose every choice is an option the agent marked final settles the card in the same step, as
         // read and shred close it. Anything said beside the choice is for the agent to read, so the card stays with
         // it; so does a trusted answer, where the agent still chooses.
         let said = |s: &str| !s.trim().is_empty();
-        let plain = !note.is_some_and(said) && !option_notes.values().any(|v| v.as_str().is_some_and(said));
-        let finals: Vec<String> =
-            options.iter().filter(|o| o.get("final") == Some(&Value::Bool(true))).filter_map(key_of).collect();
-        let settles = how == "answer" && !trusted && plain && !choices.is_empty() && choices.iter().all(|c| finals.contains(c));
+        let plain =
+            !note.is_some_and(said) && !option_notes.values().any(|v| v.as_str().is_some_and(said));
+        let finals: Vec<String> = options
+            .iter()
+            .filter(|o| o.get("final") == Some(&Value::Bool(true)))
+            .filter_map(key_of)
+            .collect();
+        let settles = how == "answer"
+            && !trusted
+            && plain
+            && !choices.is_empty()
+            && choices.iter().all(|c| finals.contains(c));
         let closes = how != "answer" || settles;
         let state = if closes { "closed" } else { "answered" };
         let me = self.model.my_device_id.clone().unwrap_or_default();
-        let recipient = self.model.holder_of(&card.agent_device_id, card.session_id.as_deref());
+        let recipient = self
+            .model
+            .holder_of(&card.agent_device_id, card.session_id.as_deref());
         let (version_hash, version) = (card.version_hash.clone(), card.object_version);
 
         let mut content = Map::new();
@@ -891,7 +1536,8 @@ impl Doing<'_> {
         if !marks.is_empty() {
             content.insert("marks".into(), Value::Array(marks.to_vec()));
         }
-        let payload = codec::encode_body(BodyKind::Answer, &content).map_err(|_| not_done("action.bad", "That answer cannot be sent."))?;
+        let payload = codec::encode_body(BodyKind::Answer, &content)
+            .map_err(|_| not_done("action.bad", "That answer cannot be sent."))?;
         let files = file_ids(BodyKind::Answer, &content);
         let draft = Draft::Answer {
             session: id(&session_id).map(SessionId::new).ok_or_else(bad_id)?,
@@ -908,7 +1554,8 @@ impl Doing<'_> {
             "envelope_number": null, "envelope_hash": null, "by_device_id": me, "answered_at": self.now, "taken_back_at": null,
             "taken_back_sent_at": null }))
         .unwrap_or_default();
-        self.model.echo_answer(&local_id, card_id, echo, state, &mut self.change);
+        self.model
+            .echo_answer(&local_id, card_id, echo, state, &mut self.change);
         self.seal_echoed(action, &local_id, &draft, to.as_ref(), &files)?;
         // answered while put off: awake, so a reworked or reopened card is back on the Desk
         self.wake(card_id);
@@ -919,7 +1566,14 @@ impl Doing<'_> {
     /// one the person never saw) refuses the action.
     fn files_of(&self, ids: &[String]) -> Result<Vec<Value>, NotDone> {
         ids.iter()
-            .map(|id| (self.file)(id).map(Value::Object).ok_or_else(|| not_done("action.file_not_ready", "A file is still uploading, or is not here.")))
+            .map(|id| {
+                (self.file)(id).map(Value::Object).ok_or_else(|| {
+                    not_done(
+                        "action.file_not_ready",
+                        "A file is still uploading, or is not here.",
+                    )
+                })
+            })
             .collect()
     }
 
@@ -927,17 +1581,34 @@ impl Doing<'_> {
     /// and notes where they were). A card put off is woken instead.
     fn decide_again(&mut self, action: &Action, card_id: &str) -> Result<(), NotDone> {
         let card = self.card_of(card_id)?;
-        let snoozed = self.model.human.get(&format!("snooze/{card_id}")).and_then(|r| r.value.get("until")).and_then(Value::as_u64);
+        let snoozed = self
+            .model
+            .human
+            .get(&format!("snooze/{card_id}"))
+            .and_then(|r| r.value.get("until"))
+            .and_then(Value::as_u64);
         if card.object_state == "open" && snoozed.is_some_and(|u| u > self.now) {
-            return self.registers(action, &[(format!("snooze/{card_id}"), json!({ "until": self.now }))]);
+            return self.registers(
+                action,
+                &[(format!("snooze/{card_id}"), json!({ "until": self.now }))],
+            );
         }
-        let Some(answer) = card.answer.clone().filter(|a| a.envelope_hash.is_some() && !a.pending) else {
-            return Err(not_done("action.nothing_to_take_back", "There is no answer to take back."));
+        let Some(answer) = card
+            .answer
+            .clone()
+            .filter(|a| a.envelope_hash.is_some() && !a.pending)
+        else {
+            return Err(not_done(
+                "action.nothing_to_take_back",
+                "There is no answer to take back.",
+            ));
         };
         let Some(session_id) = card.session_id.clone() else {
             return Err(not_done("action.not_found", "That card has no session."));
         };
-        let recipient = self.model.holder_of(&card.agent_device_id, Some(&session_id));
+        let recipient = self
+            .model
+            .holder_of(&card.agent_device_id, Some(&session_id));
         let decision = card.fields.get("card_type") == json!("decision");
         let payload = codec::encode_body(BodyKind::TakeBack, &Map::new()).map_err(|_| bad_id())?;
         let draft = Draft::TakeBack {
@@ -960,7 +1631,10 @@ impl Doing<'_> {
     /// Allow or deny a permission request, addressed to its holder.
     fn verdict(&mut self, action: &Action, request_id: &str, allow: bool) -> Result<(), NotDone> {
         let Some(p) = self.model.permissions.get(request_id) else {
-            return Err(not_done("action.not_found", "That request is no longer there."));
+            return Err(not_done(
+                "action.not_found",
+                "That request is no longer there.",
+            ));
         };
         let Some(session_id) = p.session_id.clone() else {
             return Err(not_done("action.not_found", "That request has no session."));
@@ -978,33 +1652,67 @@ impl Doing<'_> {
     }
 
     /// A Chat line to a session's agent, or on a card: shown at once in its timeline.
-    fn write(&mut self, action: &Action, session_id: Option<&String>, card_id: Option<&str>, mut content: Map<String, Value>) -> Result<(), NotDone> {
+    fn write(
+        &mut self,
+        action: &Action,
+        session_id: Option<&String>,
+        card_id: Option<&str>,
+        mut content: Map<String, Value>,
+    ) -> Result<(), NotDone> {
         let card = match card_id {
             Some(c) => Some(self.card_of(c)?),
             None => None,
         };
-        let Some(sid) = card.and_then(|c| c.session_id.clone()).or_else(|| session_id.cloned()) else {
-            return Err(not_done("action.not_found", "That has no session to write to."));
+        let Some(sid) = card
+            .and_then(|c| c.session_id.clone())
+            .or_else(|| session_id.cloned())
+        else {
+            return Err(not_done(
+                "action.not_found",
+                "That has no session to write to.",
+            ));
         };
         if !self.model.sessions.contains_key(&sid) {
-            return Err(not_done("action.not_found", "That session is no longer there."));
+            return Err(not_done(
+                "action.not_found",
+                "That session is no longer there.",
+            ));
         }
         let recipient = match card {
             Some(c) => self.model.holder_of(&c.agent_device_id, Some(&sid)),
             None => self.model.recipient_of(&sid),
         };
         content.insert("content_type".into(), json!("message"));
-        let payload = codec::encode_body(BodyKind::Message, &content).map_err(|_| not_done("action.bad", "That line cannot be sent."))?;
+        let payload = codec::encode_body(BodyKind::Message, &content)
+            .map_err(|_| not_done("action.bad", "That line cannot be sent."))?;
         let files = file_ids(BodyKind::Message, &content);
         let session = id(&sid).map(SessionId::new).ok_or_else(bad_id)?;
         let payload = SecretBytes::new(payload.into_bytes());
         let (draft, timeline) = match card_id {
-            Some(c) => (Draft::CardChat { session, card: id(c).map(ObjectId::new).ok_or_else(bad_id)?, payload }, format!("chat:card/{c}")),
-            None => (Draft::SessionChat { session, payload }, format!("chat:session/{sid}")),
+            Some(c) => (
+                Draft::CardChat {
+                    session,
+                    card: id(c).map(ObjectId::new).ok_or_else(bad_id)?,
+                    payload,
+                },
+                format!("chat:card/{c}"),
+            ),
+            None => (
+                Draft::SessionChat { session, payload },
+                format!("chat:session/{sid}"),
+            ),
         };
         let to = recipient.as_deref().and_then(hex32).map(DeviceId::new);
         let local_id = self.sent.local_id();
-        self.model.echo_timeline_item(&local_id, &timeline, content, recipient, card_id.map(str::to_string), self.now, &mut self.change);
+        self.model.echo_timeline_item(
+            &local_id,
+            &timeline,
+            content,
+            recipient,
+            card_id.map(str::to_string),
+            self.now,
+            &mut self.change,
+        );
         self.change.sessions.insert(sid);
         self.seal_echoed(action, &local_id, &draft, to.as_ref(), &files)
     }
@@ -1013,21 +1721,36 @@ impl Doing<'_> {
     /// other kept.
     /// A new place in the session list (the web's `orderWrites`): every session whose place changes, or that had
     /// none, gets its number.
-    fn place_session(&mut self, action: &Action, session_id: &str, before: Option<&str>, after: Option<&str>) -> Result<(), NotDone> {
+    fn place_session(
+        &mut self,
+        action: &Action,
+        session_id: &str,
+        before: Option<&str>,
+        after: Option<&str>,
+    ) -> Result<(), NotDone> {
         let rows = crate::sessions::session_list(self.model, false);
         let Some(me) = rows.iter().position(|r| r.key == session_id) else {
-            return Err(not_done("action.not_found", "That session is no longer there."));
+            return Err(not_done(
+                "action.not_found",
+                "That session is no longer there.",
+            ));
         };
         if before == Some(session_id) || after == Some(session_id) {
             return Ok(());
         }
-        let mut order: Vec<&crate::sessions::SessionRow> = rows.iter().filter(|r| r.key != session_id).collect();
+        let mut order: Vec<&crate::sessions::SessionRow> =
+            rows.iter().filter(|r| r.key != session_id).collect();
         let target = before.or(after);
         let at = match target {
             None => order.len(),
             Some(t) => match order.iter().position(|r| r.key == t) {
                 Some(i) => i,
-                None => return Err(not_done("action.not_found", "That session is no longer there.")),
+                None => {
+                    return Err(not_done(
+                        "action.not_found",
+                        "That session is no longer there.",
+                    ))
+                }
             },
         };
         order.insert(if after.is_some() { at + 1 } else { at }, &rows[me]);
@@ -1054,7 +1777,10 @@ impl Doing<'_> {
     /// team there in the order it stands (a team made on another device meanwhile keeps its place after them); a name
     /// of a team that is gone is passed over. Only a team whose place changes is written.
     fn order_teams(&mut self, action: &Action, team_ids: &[String]) -> Result<(), NotDone> {
-        let live: Vec<String> = crate::sessions::teams_in_order(self.model).into_iter().map(|(id, _)| id).collect();
+        let live: Vec<String> = crate::sessions::teams_in_order(self.model)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
         if !team_ids.iter().any(|d| live.contains(d)) {
             return Err(not_done("action.no_team", "That team is no longer there."));
         }
@@ -1080,16 +1806,31 @@ impl Doing<'_> {
     }
 
     /// The crown of the session's team (in the team's register), or of the room where it has no team.
-    fn crown_session(&mut self, action: &Action, session_id: &str, on: bool) -> Result<(), NotDone> {
+    fn crown_session(
+        &mut self,
+        action: &Action,
+        session_id: &str,
+        on: bool,
+    ) -> Result<(), NotDone> {
         let Some(s) = self.model.sessions.get(session_id) else {
-            return Err(not_done("action.not_found", "That session is no longer there."));
+            return Err(not_done(
+                "action.not_found",
+                "That session is no longer there.",
+            ));
         };
-        let crown = if on { json!({ "session_id": session_id, "agent_device_id": s.agent_device_id }) } else { Value::Null };
+        let crown = if on {
+            json!({ "session_id": session_id, "agent_device_id": s.agent_device_id })
+        } else {
+            Value::Null
+        };
         // (a session on no team is no team's main session, and never takes another team's crown; in a room without
         //  teams the room's one crown)
         let team = crate::sessions::team_of(self.model, session_id);
         if team.is_none() && !self.teams().is_empty() {
-            return Err(not_done("action.no_team_crown", "A chat on no team is no team's main session. Move it onto a team first."));
+            return Err(not_done(
+                "action.no_team_crown",
+                "A chat on no team is no team's main session. Move it onto a team first.",
+            ));
         }
         match team {
             Some(d) => {
@@ -1106,32 +1847,58 @@ impl Doing<'_> {
             .sessions
             .get(session_id)
             .and_then(|s| s.settings.clone())
-            .or_else(|| self.model.human.get(&format!("session/{session_id}")).map(|r| r.value.clone()))
+            .or_else(|| {
+                self.model
+                    .human
+                    .get(&format!("session/{session_id}"))
+                    .map(|r| r.value.clone())
+            })
             .and_then(|v| v.as_object().cloned())
             .unwrap_or_default()
     }
 
-    fn edit_session(&mut self, action: &Action, session_id: &str, field: &str, value: Value) -> Result<(), NotDone> {
+    fn edit_session(
+        &mut self,
+        action: &Action,
+        session_id: &str,
+        field: &str,
+        value: Value,
+    ) -> Result<(), NotDone> {
         let Some(s) = self.model.sessions.get(session_id) else {
-            return Err(not_done("action.not_found", "That session is no longer there."));
+            return Err(not_done(
+                "action.not_found",
+                "That session is no longer there.",
+            ));
         };
         let mut settings = s
             .settings
             .clone()
-            .or_else(|| self.model.human.get(&format!("session/{session_id}")).map(|r| r.value.clone()))
+            .or_else(|| {
+                self.model
+                    .human
+                    .get(&format!("session/{session_id}"))
+                    .map(|r| r.value.clone())
+            })
             .and_then(|v| v.as_object().cloned())
             .unwrap_or_default();
         settings.insert(field.into(), value);
         self.change.sessions.insert(session_id.to_string());
-        self.registers(action, &[(format!("session/{session_id}"), Value::Object(settings))])
+        self.registers(
+            action,
+            &[(format!("session/{session_id}"), Value::Object(settings))],
+        )
     }
 
     /// A session's settings with these fields set and every other kept, for a step of the App (an invited agent's
     /// session named and placed as the invite said); a toast if it cannot be saved.
     pub fn session_settings(&mut self, session_id: &str, fields: Map<String, Value>) {
-        let action = Action::RenameSession { session_id: session_id.into(), name: String::new() };
+        let action = Action::RenameSession {
+            session_id: session_id.into(),
+            name: String::new(),
+        };
         for (field, value) in fields {
-            if let Err(NotDone { text, .. }) = self.edit_session(&action, session_id, &field, value) {
+            if let Err(NotDone { text, .. }) = self.edit_session(&action, session_id, &field, value)
+            {
                 self.sent.toast(self.toasts, text, None);
                 return;
             }
@@ -1141,9 +1908,17 @@ impl Doing<'_> {
     /// A register of a session's group, for its agent to read (`join_link/<nonce>`, 12.4): no echo; false when it
     /// could not be sealed.
     pub fn session_register(&mut self, session_id: &str, key: &str, value: &Value) -> bool {
-        let Some(session) = id(session_id).map(SessionId::new) else { return false };
-        let Ok((name, wire)) = codec::encode_register(key, value) else { return false };
-        let draft = Draft::Register { group: GroupId::session(self.room, session), name, value: wire.map(|w| SecretBytes::new(w.into_bytes())) };
+        let Some(session) = id(session_id).map(SessionId::new) else {
+            return false;
+        };
+        let Ok((name, wire)) = codec::encode_register(key, value) else {
+            return false;
+        };
+        let draft = Draft::Register {
+            group: GroupId::session(self.room, session),
+            name,
+            value: wire.map(|w| SecretBytes::new(w.into_bytes())),
+        };
         (self.seal)(&draft, None, &[]).is_ok()
     }
 
@@ -1166,22 +1941,43 @@ impl Doing<'_> {
     }
 
     /// Seals a draft that shows no echo (a take back, a verdict: the hub's copy shows them).
-    fn seal_plain(&mut self, action: &Action, draft: &Draft, to: Option<&DeviceId>) -> Result<(), NotDone> {
+    fn seal_plain(
+        &mut self,
+        action: &Action,
+        draft: &Draft,
+        to: Option<&DeviceId>,
+    ) -> Result<(), NotDone> {
         match (self.seal)(draft, to, &[]) {
             Ok(sealed) => {
-                self.sent.put(sealed.outbox_id, Out { local_id: None, action: action.clone() });
+                self.sent.put(
+                    sealed.outbox_id,
+                    Out {
+                        local_id: None,
+                        action: action.clone(),
+                    },
+                );
                 Ok(())
             }
-            Err(e) => Err(NotDone { text: refused(e.code()), again: true }),
+            Err(e) => Err(NotDone {
+                text: refused(e.code()),
+                again: true,
+            }),
         }
     }
 
     /// A card put off that the person acts on is woken: its snooze ends now. A failure here is not the action's.
     fn wake(&mut self, card_id: &str) {
         let key = format!("snooze/{card_id}");
-        let until = self.model.human.get(&key).and_then(|r| r.value.get("until")).and_then(Value::as_u64);
+        let until = self
+            .model
+            .human
+            .get(&key)
+            .and_then(|r| r.value.get("until"))
+            .and_then(Value::as_u64);
         if until.is_some_and(|u| u > self.now) {
-            let again = Action::Unsnooze { card_id: card_id.into() };
+            let again = Action::Unsnooze {
+                card_id: card_id.into(),
+            };
             let _ = self.registers(&again, &[(key, json!({ "until": self.now }))]);
         }
     }
@@ -1191,14 +1987,26 @@ impl Doing<'_> {
     fn registers(&mut self, action: &Action, values: &[(String, Value)]) -> Result<(), NotDone> {
         let group = GroupId::room(self.room);
         for (key, value) in values {
-            let (name, wire) = codec::encode_register(key, value).map_err(|_| not_done("action.bad", "That cannot be saved."))?;
-            let files = codec::file_ids_of(BodyKind::Register, &Map::from_iter([("value".to_string(), value.clone())]))
-                .into_iter()
-                .map(FileId::new)
-                .collect::<Vec<_>>();
-            let draft = Draft::Register { group, name, value: wire.map(|w| SecretBytes::new(w.into_bytes())) };
+            let (name, wire) = codec::encode_register(key, value)
+                .map_err(|_| not_done("action.bad", "That cannot be saved."))?;
+            let files = codec::file_ids_of(
+                BodyKind::Register,
+                &Map::from_iter([("value".to_string(), value.clone())]),
+            )
+            .into_iter()
+            .map(FileId::new)
+            .collect::<Vec<_>>();
+            let draft = Draft::Register {
+                group,
+                name,
+                value: wire.map(|w| SecretBytes::new(w.into_bytes())),
+            };
             let local_id = self.sent.local_id();
-            self.model.echo_registers(&local_id, &Map::from_iter([(key.clone(), value.clone())]), &mut self.change);
+            self.model.echo_registers(
+                &local_id,
+                &Map::from_iter([(key.clone(), value.clone())]),
+                &mut self.change,
+            );
             self.change.registers.insert(key.clone());
             self.seal_echoed(action, &local_id, &draft, None, &files)?;
         }
@@ -1218,14 +2026,31 @@ impl Doing<'_> {
         match (self.seal)(draft, to, files) {
             Ok(sealed) => {
                 let hash = crate::engine::feed::hex(sealed.envelope_hash.as_bytes());
-                let object = sealed.object_id.map(|o| crate::engine::feed::hex(o.as_bytes()));
-                self.model.confirm_echo(local_id, &hash, sealed.seq, object.as_deref(), &mut self.change);
-                self.sent.put(sealed.outbox_id, Out { local_id: Some(local_id.to_string()), action: action.clone() });
+                let object = sealed
+                    .object_id
+                    .map(|o| crate::engine::feed::hex(o.as_bytes()));
+                self.model.confirm_echo(
+                    local_id,
+                    &hash,
+                    sealed.seq,
+                    object.as_deref(),
+                    &mut self.change,
+                );
+                self.sent.put(
+                    sealed.outbox_id,
+                    Out {
+                        local_id: Some(local_id.to_string()),
+                        action: action.clone(),
+                    },
+                );
                 Ok(())
             }
             Err(e) => {
                 self.model.rollback_echo(local_id, &mut self.change);
-                Err(NotDone { text: refused(e.code()), again: true })
+                Err(NotDone {
+                    text: refused(e.code()),
+                    again: true,
+                })
             }
         }
     }
@@ -1233,8 +2058,20 @@ impl Doing<'_> {
 
 /// What the model adds to a Note beside its own fields (web `noteFields`): never written into a version.
 const NOTE_CORE_FIELDS: [&str; 14] = [
-    "object_id", "by_device_id", "object_version", "version_hash", "version_hashes", "causal", "envelope_number",
-    "object_state", "pending", "unsupported", "local_id", "_base", "previous_version_hash", "lamport",
+    "object_id",
+    "by_device_id",
+    "object_version",
+    "version_hash",
+    "version_hashes",
+    "causal",
+    "envelope_number",
+    "object_state",
+    "pending",
+    "unsupported",
+    "local_id",
+    "_base",
+    "previous_version_hash",
+    "lamport",
 ];
 
 fn bad_id() -> NotDone {
@@ -1242,7 +2079,10 @@ fn bad_id() -> NotDone {
 }
 
 fn file_ids(kind: BodyKind, content: &Map<String, Value>) -> Vec<FileId> {
-    codec::file_ids_of(kind, content).into_iter().map(FileId::new).collect()
+    codec::file_ids_of(kind, content)
+        .into_iter()
+        .map(FileId::new)
+        .collect()
 }
 
 /// A 16-byte id from the model's hex.
@@ -1283,7 +2123,10 @@ mod tests {
         let early = day + 3 * 3_600_000;
         assert_eq!(next_morning(early, 0), day + 7 * 3_600_000);
         // exactly at 07:00: the next one
-        assert_eq!(next_morning(day + 7 * 3_600_000, 0), day + DAY_MS + 7 * 3_600_000);
+        assert_eq!(
+            next_morning(day + 7 * 3_600_000, 0),
+            day + DAY_MS + 7 * 3_600_000
+        );
         // west of UTC (New York, -4 h): 14:05 UTC is 10:05 local, so tomorrow 07:00 local = 11:00 UTC
         assert_eq!(next_morning(now, -240), day + DAY_MS + 11 * 3_600_000);
     }
@@ -1293,12 +2136,18 @@ mod tests {
         assert_eq!(clean_goals("  one \r\n\n two\n"), "one\ntwo");
         assert_eq!(clean_goals(&"x\n".repeat(30)).lines().count(), GOAL_LINES);
         assert_eq!(clean_goals(&"y".repeat(300)).len(), GOAL_LINE_MAX);
-        assert_eq!((team_name("   "), team_name(&"d".repeat(50)).len()), ("Personal".to_string(), NAME_MAX));
+        assert_eq!(
+            (team_name("   "), team_name(&"d".repeat(50)).len()),
+            ("Personal".to_string(), NAME_MAX)
+        );
     }
 
     #[test]
     fn ids_from_hex() {
-        assert_eq!(id("00112233445566778899aabbccddeeff").map(|b| b[15]), Some(0xff));
+        assert_eq!(
+            id("00112233445566778899aabbccddeeff").map(|b| b[15]),
+            Some(0xff)
+        );
         assert_eq!(id("0011"), None);
         assert_eq!(id("zz112233445566778899aabbccddeeff"), None);
         assert_eq!(unhex("abc"), None);

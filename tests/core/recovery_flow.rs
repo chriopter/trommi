@@ -2240,7 +2240,9 @@ fn the_one_call_room_check_places_the_commits_of_a_session_it_cannot_name() {
 /// Commits alone, no session named; `defer`: `None` no room-only mode, `Some(all)` room-only, naming every live
 /// session (`true`) or none (`false`: a hub that leaves them out of its list). Returns the world, the device
 /// after its posted join, and what the hub served.
-fn room_only_sign_in(defer: Option<bool>) -> (World, TestDevice, trommi_tests::Fetched, Vec<GroupId>) {
+fn room_only_sign_in(
+    defer: Option<bool>,
+) -> (World, TestDevice, trommi_tests::Fetched, Vec<GroupId>) {
     use trommi_tests::placed_commits;
     let mut w = world(true);
     w.write_epochs(3);
@@ -2343,7 +2345,14 @@ fn a_device_signs_in_checking_the_room_group_alone_and_each_session_after() {
     }
     // Without a check of that group, the call holds nothing.
     assert_eq!(
-        c.join_session_checked_keys(&test_keys(), &sessions[0], &[], &fetched.rows, &fetched.links, now()),
+        c.join_session_checked_keys(
+            &test_keys(),
+            &sessions[0],
+            &[],
+            &fetched.rows,
+            &fetched.links,
+            now()
+        ),
         Err(Error::NotFound)
     );
 }

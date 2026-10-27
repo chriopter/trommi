@@ -175,7 +175,10 @@ impl ClientModel {
 
     /// The model as an app's cache held it (the web model's snapshot JSON): records only, no echoes.
     pub fn load(&self, snapshot: String) -> Result<(), CoreError> {
-        self.with(|m, _| m.load_text(&snapshot).map_err(|e| CoreError::bad_format(&e)))
+        self.with(|m, _| {
+            m.load_text(&snapshot)
+                .map_err(|e| CoreError::bad_format(&e))
+        })
     }
 
     /// Envelopes as the core took them, in order. Returns, per envelope, whether it changed what the model shows
@@ -323,7 +326,8 @@ impl ClientModel {
     /// One `presence` event of the live stream, JSON as the hub sends it (`{device, online, lost?, hears?, working?,
     /// last_call_at?, offline_since?}`, the device as base64url or hex). Returns whether an agent device came online.
     pub fn apply_presence_event(&self, event: String, now_ms: u64) -> Result<bool, CoreError> {
-        let e: trommi_client_core::presence::PresenceEvent = serde_json::from_str(&event).map_err(json_err)?;
+        let e: trommi_client_core::presence::PresenceEvent =
+            serde_json::from_str(&event).map_err(json_err)?;
         self.with(|m, c| Ok(m.apply_presence_event(&e, c, now_ms)))
     }
 
@@ -344,9 +348,14 @@ impl ClientModel {
     }
     /// After the hub's list: the one agent to found now, of `candidates` (JSON list of hex), none of which the hub lists
     /// in a session group (`hub_seated`, JSON list of hex).
-    pub fn seat_after_hub(&self, candidates: String, hub_seated: String) -> Result<Option<String>, CoreError> {
+    pub fn seat_after_hub(
+        &self,
+        candidates: String,
+        hub_seated: String,
+    ) -> Result<Option<String>, CoreError> {
         let c: Vec<String> = serde_json::from_str(&candidates).map_err(json_err)?;
-        let h: std::collections::BTreeSet<String> = serde_json::from_str(&hub_seated).map_err(json_err)?;
+        let h: std::collections::BTreeSet<String> =
+            serde_json::from_str(&hub_seated).map_err(json_err)?;
         self.with(|m, _| Ok(m.seats.after_hub(&c, &h)))
     }
     /// The founding of `agent`'s main session went out.
@@ -375,36 +384,82 @@ impl ClientModel {
     /// What a team holds, counted, for the confirm: JSON `Counts`. `board`: JSON `{shapes, files, notes, snapshot_empty}`
     /// of the team's board as read, or "" while it is not.
     pub fn team_contents(&self, team_id: String, board: String) -> Result<String, CoreError> {
-        let b: Option<trommi_client_core::team_delete::BoardKnown> =
-            if board.is_empty() { None } else { Some(serde_json::from_str(&board).map_err(json_err)?) };
-        self.with(|m, _| Ok(serde_json::to_string(&m.team_contents(&team_id, b.as_ref())).unwrap_or_default()))
+        let b: Option<trommi_client_core::team_delete::BoardKnown> = if board.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_str(&board).map_err(json_err)?)
+        };
+        self.with(|m, _| {
+            Ok(serde_json::to_string(&m.team_contents(&team_id, b.as_ref())).unwrap_or_default())
+        })
     }
     /// The next step of deleting a team: JSON `{step, …, done, total, left}`. `known`: JSON `{board?, files_gone}`;
     /// `by`: this device (hex). The app does the step and asks again until `step` is `done` (or `refused`).
-    pub fn team_delete_plan(&self, team_id: String, known: String, by: String, now_ms: u64) -> Result<String, CoreError> {
-        let k: trommi_client_core::team_delete::Known = serde_json::from_str(&known).map_err(json_err)?;
-        self.with(|m, _| Ok(serde_json::to_string(&m.team_delete_plan(&team_id, &k, &by, now_ms)).unwrap_or_default()))
+    pub fn team_delete_plan(
+        &self,
+        team_id: String,
+        known: String,
+        by: String,
+        now_ms: u64,
+    ) -> Result<String, CoreError> {
+        let k: trommi_client_core::team_delete::Known =
+            serde_json::from_str(&known).map_err(json_err)?;
+        self.with(|m, _| {
+            Ok(
+                serde_json::to_string(&m.team_delete_plan(&team_id, &k, &by, now_ms))
+                    .unwrap_or_default(),
+            )
+        })
     }
     /// Self-join (core/client/src/selfjoin.rs): the agents' asks to act on, JSON `[{session_id, nonce, ask, refused}]`.
     /// `answered`: the nonces this device answered; `pending`: the accounts of its vouched links not through yet.
     pub fn self_join_asks(&self, answered: String, pending: String) -> Result<String, CoreError> {
-        let a: std::collections::BTreeSet<String> = serde_json::from_str(&answered).map_err(json_err)?;
+        let a: std::collections::BTreeSet<String> =
+            serde_json::from_str(&answered).map_err(json_err)?;
         let p: Vec<String> = serde_json::from_str(&pending).map_err(json_err)?;
-        self.with(|m, _| Ok(serde_json::to_string(&trommi_client_core::selfjoin::asks(m, &a, &p)).unwrap_or_default()))
+        self.with(|m, _| {
+            Ok(
+                serde_json::to_string(&trommi_client_core::selfjoin::asks(m, &a, &p))
+                    .unwrap_or_default(),
+            )
+        })
     }
     /// Whether a vouched Request is let in: none while the ask names no hash yet.
-    pub fn self_join_verdict(&self, session_id: String, nonce: String, request_hash: String) -> Result<Option<bool>, CoreError> {
-        self.with(|m, _| Ok(trommi_client_core::selfjoin::verdict(m, &session_id, &nonce, &request_hash)))
+    pub fn self_join_verdict(
+        &self,
+        session_id: String,
+        nonce: String,
+        request_hash: String,
+    ) -> Result<Option<bool>, CoreError> {
+        self.with(|m, _| {
+            Ok(trommi_client_core::selfjoin::verdict(
+                m,
+                &session_id,
+                &nonce,
+                &request_hash,
+            ))
+        })
     }
     /// The devices of archived self-joined sessions still in the room, JSON list of hex.
     pub fn self_join_retire(&self) -> Result<String, CoreError> {
-        self.with(|m, _| Ok(serde_json::to_string(&trommi_client_core::selfjoin::to_retire(m)).unwrap_or_default()))
+        self.with(|m, _| {
+            Ok(
+                serde_json::to_string(&trommi_client_core::selfjoin::to_retire(m))
+                    .unwrap_or_default(),
+            )
+        })
     }
     /// The asks as rows of the sidebar, JSON `[{nonce, session_id, state, folder, name, host, kind, by}]`; `invites`:
     /// JSON `{invite_id: state}` of the invites this device knows.
     pub fn join_rows(&self, invites: String) -> Result<String, CoreError> {
-        let i: std::collections::BTreeMap<String, String> = serde_json::from_str(&invites).map_err(json_err)?;
-        self.with(|m, _| Ok(serde_json::to_string(&trommi_client_core::selfjoin::join_rows(m, &i)).unwrap_or_default()))
+        let i: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(&invites).map_err(json_err)?;
+        self.with(|m, _| {
+            Ok(
+                serde_json::to_string(&trommi_client_core::selfjoin::join_rows(m, &i))
+                    .unwrap_or_default(),
+            )
+        })
     }
 
     /// What the hub says of devices: JSON `[{device_id, is_online, offline_since, link?}]`.
@@ -700,7 +755,9 @@ impl ClientModel {
             }
             let mut part = Change::new();
             while part.cards.len() < max {
-                let Some(id) = m.patch_rest.pop_first() else { break };
+                let Some(id) = m.patch_rest.pop_first() else {
+                    break;
+                };
                 part.cards.insert(id);
             }
             Ok(m.patch_text(&part))
@@ -789,13 +846,22 @@ impl ClientModel {
     /// The session list every app shows (core/client/src/sessions.rs), as JSON: one entry per session, in order, with its
     /// name, online or gone, archived, parent. `reading`: the room is still being read.
     pub fn session_list(&self, reading: bool) -> Result<String, CoreError> {
-        self.with(|m, _| Ok(serde_json::to_string(&trommi_client_core::sessions::session_list(m, reading)).unwrap_or_default()))
+        self.with(|m, _| {
+            Ok(
+                serde_json::to_string(&trommi_client_core::sessions::session_list(m, reading))
+                    .unwrap_or_default(),
+            )
+        })
     }
 
     /// The open question to offer after `card_id` (decided just now, or still open): the next in the Desk's order
     /// (core/client/src/desk.rs `walk_order`) among the cards of the sessions `within` (by session key: the team in view;
     /// none: every team), else the first that waits; none when nothing else waits.
-    pub fn next_open_after(&self, card_id: String, within: Option<Vec<String>>) -> Result<Option<String>, CoreError> {
+    pub fn next_open_after(
+        &self,
+        card_id: String,
+        within: Option<Vec<String>>,
+    ) -> Result<Option<String>, CoreError> {
         self.with(|m, _| Ok(m.next_open_after(&card_id, within.as_deref())))
     }
 }
@@ -811,7 +877,8 @@ mod tests {
             cards.push(serde_json::json!([format!("c{i:03}"), { "object_id": format!("c{i:03}"), "title": format!("card {i}"), "object_state": "open" }]));
         }
         let m = ClientModel::new(String::new());
-        m.load(serde_json::json!({ "cards": cards }).to_string()).unwrap();
+        m.load(serde_json::json!({ "cards": cards }).to_string())
+            .unwrap();
         m.touch_all().unwrap();
         m
     }
@@ -830,8 +897,17 @@ mod tests {
             let p: serde_json::Value = serde_json::from_str(&text).unwrap();
             let got = p["cards"].as_array().map(Vec::len).unwrap_or(0);
             assert!(got <= 3, "a part holds at most 3 cards");
-            assert_eq!(p["change"]["cards"].as_array().map(Vec::len).unwrap_or(0), got);
-            seen.extend(p["cards"].as_array().into_iter().flatten().map(|e| e[0].as_str().unwrap().to_string()));
+            assert_eq!(
+                p["change"]["cards"].as_array().map(Vec::len).unwrap_or(0),
+                got
+            );
+            seen.extend(
+                p["cards"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|e| e[0].as_str().unwrap().to_string()),
+            );
         }
         assert_eq!(parts, 3);
         seen.sort();

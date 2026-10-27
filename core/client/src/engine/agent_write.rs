@@ -40,15 +40,52 @@ pub const WAITING_MAX: usize = 500;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AgentWrite {
-    SessionChat { session: String, payload: String },
-    CardChat { session: String, card: String, payload: String },
+    SessionChat {
+        session: String,
+        payload: String,
+    },
+    CardChat {
+        session: String,
+        card: String,
+        payload: String,
+    },
     /// A register of a group: none deletes it.
-    Register { group: String, name: String, value: Option<String> },
-    CardFirst { session: String, urgency: u8, push: bool, payload: String },
-    CardVersion { session: String, object: String, closed: bool, urgency: u8, push: bool, payload: String },
-    PermissionRequest { session: String, urgency: u8, expires_at: u64, push: bool, payload: String },
-    ArtifactFirst { session: String, payload: String },
-    ArtifactVersion { session: String, object: String, closed: bool, payload: String },
+    Register {
+        group: String,
+        name: String,
+        value: Option<String>,
+    },
+    CardFirst {
+        session: String,
+        urgency: u8,
+        push: bool,
+        payload: String,
+    },
+    CardVersion {
+        session: String,
+        object: String,
+        closed: bool,
+        urgency: u8,
+        push: bool,
+        payload: String,
+    },
+    PermissionRequest {
+        session: String,
+        urgency: u8,
+        expires_at: u64,
+        push: bool,
+        payload: String,
+    },
+    ArtifactFirst {
+        session: String,
+        payload: String,
+    },
+    ArtifactVersion {
+        session: String,
+        object: String,
+        closed: bool,
+        payload: String,
+    },
 }
 
 fn text(payload: &str) -> SecretBytes {
@@ -62,22 +99,84 @@ impl AgentWrite {
         let object = |o: &str| ObjectId::from_base64url(o);
         let urgency = |u: u8| Urgency::from_byte(u);
         Ok(match self {
-            AgentWrite::SessionChat { session: s, payload } => Draft::SessionChat { session: session(s)?, payload: text(payload) },
-            AgentWrite::CardChat { session: s, card, payload } => Draft::CardChat { session: session(s)?, card: object(card)?, payload: text(payload) },
+            AgentWrite::SessionChat {
+                session: s,
+                payload,
+            } => Draft::SessionChat {
+                session: session(s)?,
+                payload: text(payload),
+            },
+            AgentWrite::CardChat {
+                session: s,
+                card,
+                payload,
+            } => Draft::CardChat {
+                session: session(s)?,
+                card: object(card)?,
+                payload: text(payload),
+            },
             AgentWrite::Register { group, name, value } => Draft::Register {
                 group: GroupId::from_bytes(&base64url_decode(group)?)?,
                 name: name.clone(),
                 value: value.as_deref().map(text),
             },
-            AgentWrite::CardFirst { session: s, urgency: u, push, payload } => Draft::CardFirst { session: session(s)?, urgency: urgency(*u)?, push: *push, payload: text(payload) },
-            AgentWrite::CardVersion { session: s, object: o, closed, urgency: u, push, payload } => {
-                Draft::CardVersion { session: session(s)?, object_id: object(o)?, closed: *closed, urgency: urgency(*u)?, push: *push, payload: text(payload) }
-            }
-            AgentWrite::PermissionRequest { session: s, urgency: u, expires_at, push, payload } => {
-                Draft::PermissionRequest { session: session(s)?, urgency: urgency(*u)?, expires_at: *expires_at, push: *push, payload: text(payload) }
-            }
-            AgentWrite::ArtifactFirst { session: s, payload } => Draft::ArtifactFirst { session: session(s)?, payload: text(payload) },
-            AgentWrite::ArtifactVersion { session: s, object: o, closed, payload } => Draft::ArtifactVersion { session: session(s)?, object_id: object(o)?, closed: *closed, payload: text(payload) },
+            AgentWrite::CardFirst {
+                session: s,
+                urgency: u,
+                push,
+                payload,
+            } => Draft::CardFirst {
+                session: session(s)?,
+                urgency: urgency(*u)?,
+                push: *push,
+                payload: text(payload),
+            },
+            AgentWrite::CardVersion {
+                session: s,
+                object: o,
+                closed,
+                urgency: u,
+                push,
+                payload,
+            } => Draft::CardVersion {
+                session: session(s)?,
+                object_id: object(o)?,
+                closed: *closed,
+                urgency: urgency(*u)?,
+                push: *push,
+                payload: text(payload),
+            },
+            AgentWrite::PermissionRequest {
+                session: s,
+                urgency: u,
+                expires_at,
+                push,
+                payload,
+            } => Draft::PermissionRequest {
+                session: session(s)?,
+                urgency: urgency(*u)?,
+                expires_at: *expires_at,
+                push: *push,
+                payload: text(payload),
+            },
+            AgentWrite::ArtifactFirst {
+                session: s,
+                payload,
+            } => Draft::ArtifactFirst {
+                session: session(s)?,
+                payload: text(payload),
+            },
+            AgentWrite::ArtifactVersion {
+                session: s,
+                object: o,
+                closed,
+                payload,
+            } => Draft::ArtifactVersion {
+                session: session(s)?,
+                object_id: object(o)?,
+                closed: *closed,
+                payload: text(payload),
+            },
         })
     }
 }
@@ -106,8 +205,15 @@ impl Engine {
     /// The agent writes: sealed now (the hash and number are final), posted by the pump. Refused `forbidden` for no
     /// agent's engine, `busy` before the lease and the rollback guard, `chain-break` while the pump halts on an envelope
     /// the hub refused for good, `too-many` while [`WAITING_MAX`] writes wait.
-    pub fn agent_send(&mut self, ctx: &mut Ctx<'_>, write: AgentWrite, files: &[FileId]) -> Result<Sealed, Error> {
-        let Some(agent) = self.agent.as_ref() else { return Err(Error::Forbidden) };
+    pub fn agent_send(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        write: AgentWrite,
+        files: &[FileId],
+    ) -> Result<Sealed, Error> {
+        let Some(agent) = self.agent.as_ref() else {
+            return Err(Error::Forbidden);
+        };
         if self.stopped.is_some() {
             return Err(Error::Storage("the device is closed".into()));
         }
@@ -130,7 +236,13 @@ impl Engine {
                 return Err(e);
             }
         };
-        let note = WriteNote { write, files: files.iter().map(FileId::to_base64url).collect(), resealed: 0, first: sealed.outbox_id, rebuild: false };
+        let note = WriteNote {
+            write,
+            files: files.iter().map(FileId::to_base64url).collect(),
+            resealed: 0,
+            first: sealed.outbox_id,
+            rebuild: false,
+        };
         if let Some(agent) = self.agent.as_mut() {
             agent.writes.insert(sealed.outbox_id, note);
         }
@@ -148,8 +260,12 @@ impl Engine {
     /// The hub voided an envelope of the agent: true when it is sealed again (`wrong-epoch`, fewer than [`RESEALS`]
     /// times); its sender hears nothing of it yet.
     pub(super) fn agent_voided(&mut self, entry: u64, code: &Error) -> bool {
-        let Some(agent) = self.agent.as_mut() else { return false };
-        let Some(note) = agent.writes.get_mut(&entry) else { return false };
+        let Some(agent) = self.agent.as_mut() else {
+            return false;
+        };
+        let Some(note) = agent.writes.get_mut(&entry) else {
+            return false;
+        };
         if *code != Error::WrongEpoch || note.resealed >= RESEALS {
             agent.writes.remove(&entry);
             return false;
@@ -160,22 +276,53 @@ impl Engine {
 
     /// Seals again what the hub voided for its epoch, once the hub's order was read.
     pub(super) fn drive_reseal(&mut self, ctx: &mut Ctx<'_>) {
-        let Some(agent) = self.agent.as_ref() else { return };
-        if self.pass || self.page.is_some() || !self.todo.is_empty() || self.repair.is_some() || !agent.signs() {
+        let Some(agent) = self.agent.as_ref() else {
+            return;
+        };
+        if self.pass
+            || self.page.is_some()
+            || !self.todo.is_empty()
+            || self.repair.is_some()
+            || !agent.signs()
+        {
             return;
         }
-        let due: Vec<u64> = agent.writes.iter().filter(|(_, n)| n.rebuild).map(|(id, _)| *id).collect();
+        let due: Vec<u64> = agent
+            .writes
+            .iter()
+            .filter(|(_, n)| n.rebuild)
+            .map(|(id, _)| *id)
+            .collect();
         for old in due {
-            let Some(note) = self.agent.as_mut().and_then(|a| a.writes.remove(&old)) else { continue };
-            let files: Vec<FileId> = note.files.iter().filter_map(|f| FileId::from_base64url(f).ok()).collect();
-            let sealed = note.write.draft().and_then(|draft| self.device.seal(&draft, None, &files, ctx.now));
+            let Some(note) = self.agent.as_mut().and_then(|a| a.writes.remove(&old)) else {
+                continue;
+            };
+            let files: Vec<FileId> = note
+                .files
+                .iter()
+                .filter_map(|f| FileId::from_base64url(f).ok())
+                .collect();
+            let sealed = note
+                .write
+                .draft()
+                .and_then(|draft| self.device.seal(&draft, None, &files, ctx.now));
             match sealed {
                 Ok(sealed) => {
-                    let again = WriteNote { resealed: note.resealed + 1, rebuild: false, ..note.clone() };
+                    let again = WriteNote {
+                        resealed: note.resealed + 1,
+                        rebuild: false,
+                        ..note.clone()
+                    };
                     if let Some(agent) = self.agent.as_mut() {
                         agent.writes.insert(sealed.outbox_id, again);
                     }
-                    self.report(Report::Resealed { first: note.first, voided: old, id: sealed.outbox_id, envelope_hash: sealed.envelope_hash, object_id: sealed.object_id });
+                    self.report(Report::Resealed {
+                        first: note.first,
+                        voided: old,
+                        id: sealed.outbox_id,
+                        envelope_hash: sealed.envelope_hash,
+                        object_id: sealed.object_id,
+                    });
                 }
                 // (not now: a Commit of this device waits)
                 Err(Error::Busy) => {
@@ -189,7 +336,12 @@ impl Engine {
                     if self.stopped.is_some() {
                         return;
                     }
-                    self.report(Report::Refused { id: old, kind: OutboxKind::Envelope, code: e.code(), voided: true });
+                    self.report(Report::Refused {
+                        id: old,
+                        kind: OutboxKind::Envelope,
+                        code: e.code(),
+                        voided: true,
+                    });
                 }
             }
         }

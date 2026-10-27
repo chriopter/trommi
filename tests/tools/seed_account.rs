@@ -38,8 +38,8 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use trommi_connector::driver::Driver as Client;
 use trommi_connector::driver::b64;
+use trommi_connector::driver::Driver as Client;
 use trommi_connector::join::join_room;
 use trommi_connector::store::Journal;
 use trommi_connector::util::{random_hex, unhex};
@@ -85,7 +85,9 @@ fn args() -> Res<Args> {
                 .map_or(Ok(150), |v| v.parse())
                 .map_err(|e| format!("--pace-ms: {e}"))?,
         ),
-        bulk: take("bulk").map_or(Ok(0), |v| v.parse()).map_err(|e| format!("--bulk: {e}"))?,
+        bulk: take("bulk")
+            .map_or(Ok(0), |v| v.parse())
+            .map_err(|e| format!("--bulk: {e}"))?,
         serve: take("serve").map(PathBuf::from),
     })
 }
@@ -672,7 +674,11 @@ impl Seeder {
             .map_err(|e| format!("bulk card {n}: {e}"))?;
         for line in 0..chat {
             client
-                .send_message(obj(&json!({ "text": format!("Working on step {n}, part {line}.") })), Some(id.clone()), None)
+                .send_message(
+                    obj(&json!({ "text": format!("Working on step {n}, part {line}.") })),
+                    Some(id.clone()),
+                    None,
+                )
                 .await
                 .map_err(|e| format!("bulk chat: {e}"))?;
         }
@@ -690,13 +696,22 @@ impl Seeder {
         self.human.sync().await;
         if !self.human.object_ids().iter().any(|o| o == id) {
             let client = self.agents[seat.agent].client.clone();
-            client.close(id, "Done elsewhere.").await.map_err(|e| format!("bulk close: {e}"))?;
+            client
+                .close(id, "Done elsewhere.")
+                .await
+                .map_err(|e| format!("bulk close: {e}"))?;
             self.count("bulk closed by the agent alone");
             return Ok(());
         }
-        let body = with_schema_map(obj(&json!({ "answer_action": "answer", "choices": ["yes"], "attachments": [] })));
+        let body = with_schema_map(obj(
+            &json!({ "answer_action": "answer", "choices": ["yes"], "attachments": [] }),
+        ));
         // (an epoch that ended under the answer: followed, and answered once more)
-        if let Err(first) = self.human.answer(id, Value::Object(body.clone()), &["yes"], false).await {
+        if let Err(first) = self
+            .human
+            .answer(id, Value::Object(body.clone()), &["yes"], false)
+            .await
+        {
             self.human.sync().await;
             self.human
                 .answer(id, Value::Object(body), &["yes"], false)
@@ -706,10 +721,18 @@ impl Seeder {
         let client = self.agents[seat.agent].client.clone();
         let want = id.to_string();
         common::eventually("the agent has the bulk answer", || async {
-            client.lock().model().cards.get(&want).is_some_and(|c| !c.answers.is_empty())
+            client
+                .lock()
+                .model()
+                .cards
+                .get(&want)
+                .is_some_and(|c| !c.answers.is_empty())
         })
         .await;
-        client.close(id, "Done.").await.map_err(|e| format!("bulk close: {e}"))?;
+        client
+            .close(id, "Done.")
+            .await
+            .map_err(|e| format!("bulk close: {e}"))?;
         self.count("bulk settled");
         Ok(())
     }
@@ -761,17 +784,30 @@ impl Seeder {
             let mut cmds: Vec<PathBuf> = std::fs::read_dir(dir)
                 .map_err(|e| e.to_string())?
                 .filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.extension().is_some_and(|x| x == "cmd") && !p.with_extension("done").exists())
+                .filter(|p| {
+                    p.extension().is_some_and(|x| x == "cmd") && !p.with_extension("done").exists()
+                })
                 .collect();
             cmds.sort();
             for cmd in cmds {
                 let text = std::fs::read_to_string(&cmd).unwrap_or_default();
-                let n: Vec<usize> = text.split_whitespace().filter_map(|w| w.parse().ok()).collect();
-                let (settle, new, chat) = (n.first().copied().unwrap_or(0), n.get(1).copied().unwrap_or(0), n.get(2).copied().unwrap_or(0));
+                let n: Vec<usize> = text
+                    .split_whitespace()
+                    .filter_map(|w| w.parse().ok())
+                    .collect();
+                let (settle, new, chat) = (
+                    n.first().copied().unwrap_or(0),
+                    n.get(1).copied().unwrap_or(0),
+                    n.get(2).copied().unwrap_or(0),
+                );
                 let started = std::time::Instant::now();
                 self.away_round(settle, new, chat).await?;
                 for agent in &self.agents {
-                    agent.client.settle(120_000).await.map_err(|e| format!("settle: {e}"))?;
+                    agent
+                        .client
+                        .settle(120_000)
+                        .await
+                        .map_err(|e| format!("settle: {e}"))?;
                 }
                 self.human.sync().await;
                 let open: Vec<&str> = self.bulk_open.iter().map(|(id, _)| id.as_str()).collect();

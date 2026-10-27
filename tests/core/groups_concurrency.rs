@@ -691,7 +691,11 @@ fn a_welcome_taken_late_is_caught_up_from_its_place_in_the_log() {
         &again[..],
         [
             Ok(Processed::Skipped),
-            Ok(Processed::Message(Received::Keys { taken: 2, last: true, .. })),
+            Ok(Processed::Message(Received::Keys {
+                taken: 2,
+                last: true,
+                ..
+            })),
             Ok(Processed::Commit { .. }),
             Err(Error::WrongEpoch),
             Ok(Processed::Commit { .. })

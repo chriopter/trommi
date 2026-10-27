@@ -179,7 +179,11 @@ pub enum Route<'a> {
     /// `DELETE /v1/token`: ends the token the site carries, at once; the hub cuts the device's streams.
     SignOut,
     /// Public, device-signed request for a human's own room leaf to be retired by another human.
-    Depart { room: &'a RoomId, device: &'a DeviceId, signature: &'a [u8] },
+    Depart {
+        room: &'a RoomId,
+        device: &'a DeviceId,
+        signature: &'a [u8],
+    },
     /// `GET /v1/desk[?active=1|?archived=1]`: the open objects with their current version, every writer's
     /// newest value per register, the counts per group.
     Desk { only: DeskOnly },
@@ -978,7 +982,10 @@ pub enum Answer {
     /// Tinfoil's attestation bundle, unread (the device's platform checks it).
     SttBundle(Vec<u8>),
     /// A sealed transcript and its `Ehbp-Response-Nonce`.
-    SttSealed { nonce: String, body: Vec<u8> },
+    SttSealed {
+        nonce: String,
+        body: Vec<u8>,
+    },
     /// `expires_at` is the hub's clock, a hint: the engine bounds the life it assumes.
     Token {
         token: String,
@@ -1172,7 +1179,10 @@ pub enum StreamEvent {
         invite: InviteId,
     },
     Presence(Presence),
-    Departure { device: DeviceId, signature: [u8; 64] },
+    Departure {
+        device: DeviceId,
+        signature: [u8; 64],
+    },
     /// The end of the list of who is here that a human device's new stream is told first.
     Here,
     Archived {

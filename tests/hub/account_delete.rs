@@ -46,14 +46,18 @@ fn login(hub: &TestHub, email: &str, auth: &[u8; 32]) -> Reply {
         "POST",
         "/v1/account/login",
         &[("cf-connecting-ip", format!("198.51.100.{}", n % 250 + 1))],
-        json!({ "email": email, "auth_key": b64(auth) }).to_string().as_bytes(),
+        json!({ "email": email, "auth_key": b64(auth) })
+            .to_string()
+            .as_bytes(),
     )
 }
 
 /// The test's own source forgets its waits (a wrong proof makes it wait a second, then two …), so the next refusal
 /// is checked at once.
 fn forget_waits(hub: &TestHub) {
-    db(hub).execute_batch("DELETE FROM login_sources; DELETE FROM login_turns;").unwrap();
+    db(hub)
+        .execute_batch("DELETE FROM login_sources; DELETE FROM login_turns;")
+        .unwrap();
 }
 
 fn db(hub: &TestHub) -> rusqlite::Connection {
@@ -136,7 +140,10 @@ fn rows_naming(c: &rusqlite::Connection, marks: &[Vec<u8>]) -> Vec<String> {
 fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else() {
     let apns_key = {
         use p256::pkcs8::EncodePrivateKey;
-        p256::SecretKey::random(&mut p256::elliptic_curve::rand_core::OsRng).to_pkcs8_pem(Default::default()).unwrap().to_string()
+        p256::SecretKey::random(&mut p256::elliptic_curve::rand_core::OsRng)
+            .to_pkcs8_pem(Default::default())
+            .unwrap()
+            .to_string()
     };
     let hub = TestHub::start_with(&[
         ("APPLE_APNS_KEY", &apns_key),
@@ -148,7 +155,11 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
     let (other_room, _, other) = found_room(&hub);
     let (other_auth, other_kit) = (random::<32>(), random::<32>());
     other
-        .post(&hub, "/v1/account", &account_body("bea@example.org", &other_auth, &other_kit))
+        .post(
+            &hub,
+            "/v1/account",
+            &account_body("bea@example.org", &other_auth, &other_kit),
+        )
         .ok();
     let before = snapshot(&db(&hub));
 
@@ -156,11 +167,18 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
     let mut w = World::on(hub);
     let (auth, kit) = (random::<32>(), random::<32>());
     w.ada
-        .post(&w.hub, "/v1/account", &account_body("ada@example.org", &auth, &kit))
+        .post(
+            &w.hub,
+            "/v1/account",
+            &account_body("ada@example.org", &auth, &kit),
+        )
         .ok();
     // a passkey beside the password
     let key = Authenticator::new();
-    let challenge = w.ada.post(&w.hub, "/v1/account/passkeys/challenge", &json!({})).ok();
+    let challenge = w
+        .ada
+        .post(&w.hub, "/v1/account/passkeys/challenge", &json!({}))
+        .ok();
     let handle = unb64(challenge["user_handle"].as_str().unwrap()).unwrap();
     let challenge = unb64(challenge["challenge"].as_str().unwrap()).unwrap();
     w.ada
@@ -178,14 +196,30 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
     let (session, group) = w.found_main(&mut [&mut bea], Some(&mut agent));
     agent.link(&w.hub).ok();
     agent.upload_key_packages(&w.hub, 2).ok();
-    agent.send(&w.hub, &group, &chat(&session, agent.id(), "at work")).ok();
+    agent
+        .send(&w.hub, &group, &chat(&session, agent.id(), "at work"))
+        .ok();
     // a file, named by an Artifact, with a Share link
     let file: [u8; 16] = random();
     agent
-        .raw(&w.hub, "PUT", &format!("/v1/files/{}", b64(&file)), &[], b"some bytes")
+        .raw(
+            &w.hub,
+            "PUT",
+            &format!("/v1/files/{}", b64(&file)),
+            &[],
+            b"some bytes",
+        )
         .ok();
     let object_id = enc::object_id(&group, &agent.id(), agent.chain(&group).0 + 1);
-    let mut artifact = object(wire::KIND_VERSION, object_id, wire::TYPE_ARTIFACT, wire::STATE_OPEN, 1, ZERO32, ZERO32);
+    let mut artifact = object(
+        wire::KIND_VERSION,
+        object_id,
+        wire::TYPE_ARTIFACT,
+        wire::STATE_OPEN,
+        1,
+        ZERO32,
+        ZERO32,
+    );
     artifact.file_ids = vec![file];
     agent.send(&w.hub, &group, &artifact).ok();
     let share: [u8; 16] = random();
@@ -194,23 +228,62 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
         .ok();
     let card_id = enc::object_id(&group, &agent.id(), agent.chain(&group).0 + 1);
     agent
-        .send(&w.hub, &group, &object(wire::KIND_VERSION, card_id, wire::TYPE_CARD, wire::STATE_OPEN, 2, ZERO32, ZERO32))
+        .send(
+            &w.hub,
+            &group,
+            &object(
+                wire::KIND_VERSION,
+                card_id,
+                wire::TYPE_CARD,
+                wire::STATE_OPEN,
+                2,
+                ZERO32,
+                ZERO32,
+            ),
+        )
         .ok();
     // a note: in the room group, by a human device
     let room_group = w.room.to_vec();
     let note_id = enc::object_id(&room_group, &bea.id(), bea.chain(&room_group).0 + 1);
-    bea.send(&w.hub, &room_group, &object(wire::KIND_VERSION, note_id, wire::TYPE_NOTE, wire::STATE_OPEN, 0, ZERO32, ZERO32))
-        .ok();
+    bea.send(
+        &w.hub,
+        &room_group,
+        &object(
+            wire::KIND_VERSION,
+            note_id,
+            wire::TYPE_NOTE,
+            wire::STATE_OPEN,
+            0,
+            ZERO32,
+            ZERO32,
+        ),
+    )
+    .ok();
     bea.send(&w.hub, &group, &register(&random(), "v")).ok();
     let board: [u8; 16] = random();
     bea.send(&w.hub, &room_group, &board_item(&board)).ok();
     // a board snapshot's frontier posts (10.9): a declaration and the post bound to its register value
     let head = bea.chain(&room_group);
     let bea_id = bea.id();
-    write_snapshot(&w.hub, &mut bea, &room_group, &board, &random(), &[(&bea_id, head)], &[]);
-    let (epoch, message) = (bea.epoch(&group), bea.application_message(&group, b"a step"));
-    bea.post(&w.hub, &format!("/v1/groups/{}/messages", b64(&group)), &json!({ "epoch": epoch, "message": b64(&message) }))
-        .ok();
+    write_snapshot(
+        &w.hub,
+        &mut bea,
+        &room_group,
+        &board,
+        &random(),
+        &[(&bea_id, head)],
+        &[],
+    );
+    let (epoch, message) = (
+        bea.epoch(&group),
+        bea.application_message(&group, b"a step"),
+    );
+    bea.post(
+        &w.hub,
+        &format!("/v1/groups/{}/messages", b64(&group)),
+        &json!({ "epoch": epoch, "message": b64(&message) }),
+    )
+    .ok();
     agent
         .post(&w.hub, "/v1/requests", &json!({ "kind": "readmit", "group": b64(&group), "key_package": b64(&agent.key_package(false)) }))
         .ok();
@@ -227,15 +300,33 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
     assert!(files.join(hex(&file)).is_file());
     // what the account keeps on the hub (GET /v1/account/usage): counts and sizes of its own room, a human device's
     let usage = w.ada.get(&w.hub, "/v1/account/usage").ok();
-    assert_eq!((usage["rooms"].as_u64(), usage["files"].as_u64(), usage["file_bytes"].as_u64(), usage["cards"].as_u64()), (Some(1), Some(1), Some(10), Some(1)));
-    assert!(usage["groups"].as_u64() >= Some(2) && usage["envelopes"].as_u64() >= Some(5) && usage["messages"].as_u64() >= Some(1));
+    assert_eq!(
+        (
+            usage["rooms"].as_u64(),
+            usage["files"].as_u64(),
+            usage["file_bytes"].as_u64(),
+            usage["cards"].as_u64()
+        ),
+        (Some(1), Some(1), Some(10), Some(1))
+    );
+    assert!(
+        usage["groups"].as_u64() >= Some(2)
+            && usage["envelopes"].as_u64() >= Some(5)
+            && usage["messages"].as_u64() >= Some(1)
+    );
     assert_eq!(
         usage["total_bytes"].as_u64(),
         Some(usage["log_bytes"].as_u64().unwrap() + usage["envelope_bytes"].as_u64().unwrap() + 10)
     );
-    agent.get(&w.hub, "/v1/account/usage").refused(403, "forbidden");
+    agent
+        .get(&w.hub, "/v1/account/usage")
+        .refused(403, "forbidden");
     let theirs = other.get(&w.hub, "/v1/account/usage").ok();
-    assert_eq!((theirs["cards"].as_u64(), theirs["files"].as_u64()), (Some(0), Some(0)), "another account sees only its own");
+    assert_eq!(
+        (theirs["cards"].as_u64(), theirs["files"].as_u64()),
+        (Some(0), Some(0)),
+        "another account sees only its own"
+    );
     let room = w.room;
     let marks: Vec<Vec<u8>> = vec![
         room.to_vec(),
@@ -259,20 +350,50 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
 
     // ---- refused: not a human device; no proof, a wrong one, a passkey on no fresh challenge
     let hub = &w.hub;
-    agent.call(hub, "DELETE", "/v1/account", &json!({ "password": { "auth_key": b64(&auth) } }))
+    agent
+        .call(
+            hub,
+            "DELETE",
+            "/v1/account",
+            &json!({ "password": { "auth_key": b64(&auth) } }),
+        )
         .refused(403, "forbidden");
-    w.ada.call(hub, "DELETE", "/v1/account", &json!({})).refused(400, "bad-format");
-    w.ada.call(hub, "DELETE", "/v1/account", &json!({ "password": { "auth_key": b64(&random::<32>()) } }))
+    w.ada
+        .call(hub, "DELETE", "/v1/account", &json!({}))
+        .refused(400, "bad-format");
+    w.ada
+        .call(
+            hub,
+            "DELETE",
+            "/v1/account",
+            &json!({ "password": { "auth_key": b64(&random::<32>()) } }),
+        )
         .refused(401, "wrong-login");
     // a wrong proof makes the source wait like a wrong login (throttle.rs), in the database, so a restart keeps it
-    w.ada.call(hub, "DELETE", "/v1/account", &json!({ "password": { "auth_key": b64(&random::<32>()) } }))
+    w.ada
+        .call(
+            hub,
+            "DELETE",
+            "/v1/account",
+            &json!({ "password": { "auth_key": b64(&random::<32>()) } }),
+        )
         .refused(429, "rate-limited");
     let waits: i64 = db(hub)
-        .query_row("SELECT count(*) FROM login_sources WHERE failures > 0", [], |r| r.get(0))
+        .query_row(
+            "SELECT count(*) FROM login_sources WHERE failures > 0",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(waits, 1, "the failure is on record");
     forget_waits(hub);
-    w.ada.call(hub, "DELETE", "/v1/account", &json!({ "kit": { "auth_key": b64(&auth) } }))
+    w.ada
+        .call(
+            hub,
+            "DELETE",
+            "/v1/account",
+            &json!({ "kit": { "auth_key": b64(&auth) } }),
+        )
         .refused(401, "wrong-login");
     forget_waits(hub);
     let assertion = |challenge: &[u8]| {
@@ -280,21 +401,49 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
         let (data, signature) = key.assertion(RP, UP_UV, &client);
         json!({ "passkey": { "credential_id": b64(&key.credential_id), "authenticator_data": b64(&data), "client_data_json": b64(&client), "signature": b64(&signature) } })
     };
-    w.ada.call(hub, "DELETE", "/v1/account", &assertion(&[1; 32])).refused(401, "wrong-login");
+    w.ada
+        .call(hub, "DELETE", "/v1/account", &assertion(&[1; 32]))
+        .refused(401, "wrong-login");
     forget_waits(hub);
     // a sign-in challenge is not this account's
-    let sign_in = unb64(hub.post("/v1/account/passkey/challenge", &json!({})).ok()["challenge"].as_str().unwrap()).unwrap();
-    w.ada.call(hub, "DELETE", "/v1/account", &assertion(&sign_in)).refused(401, "wrong-login");
+    let sign_in = unb64(
+        hub.post("/v1/account/passkey/challenge", &json!({})).ok()["challenge"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    w.ada
+        .call(hub, "DELETE", "/v1/account", &assertion(&sign_in))
+        .refused(401, "wrong-login");
     forget_waits(hub);
     let unkept = |state: BTreeMap<String, BTreeSet<String>>| {
-        state.into_iter().filter(|(t, _)| !KEPT.contains(&t.as_str())).collect::<BTreeMap<_, _>>()
+        state
+            .into_iter()
+            .filter(|(t, _)| !KEPT.contains(&t.as_str()))
+            .collect::<BTreeMap<_, _>>()
     };
-    assert_eq!(unkept(settled(hub)), unkept(filled.clone()), "a refused deletion changes nothing but the throttle");
+    assert_eq!(
+        unkept(settled(hub)),
+        unkept(filled.clone()),
+        "a refused deletion changes nothing but the throttle"
+    );
 
     // ---- deleted, with a passkey on the account's challenge
     let mut events = bea.events(hub, None);
-    let fresh = unb64(w.ada.post(hub, "/v1/account/passkeys/challenge", &json!({})).ok()["challenge"].as_str().unwrap()).unwrap();
-    assert_eq!(w.ada.call(hub, "DELETE", "/v1/account", &assertion(&fresh)).ok(), json!({ "deleted": true }));
+    let fresh = unb64(
+        w.ada
+            .post(hub, "/v1/account/passkeys/challenge", &json!({}))
+            .ok()["challenge"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        w.ada
+            .call(hub, "DELETE", "/v1/account", &assertion(&fresh))
+            .ok(),
+        json!({ "deleted": true })
+    );
 
     // no row of any table names the account, the room, its groups or its devices
     let c = db(hub);
@@ -303,7 +452,11 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
     let after = snapshot(&c);
     for (table, rows) in &after {
         if !KEPT.contains(&table.as_str()) {
-            assert_eq!(rows, &before[table.as_str()], "{table} holds rows of the deleted room");
+            assert_eq!(
+                rows,
+                &before[table.as_str()],
+                "{table} holds rows of the deleted room"
+            );
         }
     }
     // the files are gone from the disk; a folder of the deleted room that comes back (an upload admitted before
@@ -314,7 +467,10 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
     let living = w.hub.dir.join("files").join(hex(&other_room));
     std::fs::create_dir_all(&living).unwrap();
     hub.post("/v1/__test/sweep", &json!({})).ok();
-    assert!(!files.exists(), "the sweep removes the folder of a deleted room");
+    assert!(
+        !files.exists(),
+        "the sweep removes the folder of a deleted room"
+    );
     assert!(living.exists(), "the sweep leaves a living room's folder");
     // the old e-mail is an e-mail nobody has; the tokens and streams of the room ended
     login(hub, "ada@example.org", &auth).refused(401, "wrong-login");
@@ -334,13 +490,32 @@ fn the_password_or_kit_deletes_an_account_and_a_room_without_one_has_nothing_to_
     let w = World::new();
     let hub = &w.hub;
     // a room without an account
-    w.ada.call(hub, "DELETE", "/v1/account", &json!({ "password": { "auth_key": b64(&[1u8; 32]) } }))
+    w.ada
+        .call(
+            hub,
+            "DELETE",
+            "/v1/account",
+            &json!({ "password": { "auth_key": b64(&[1u8; 32]) } }),
+        )
         .refused(404, "not-found");
     let (auth, kit) = (random::<32>(), random::<32>());
-    w.ada.post(hub, "/v1/account", &account_body("cleo@example.org", &auth, &kit)).ok();
+    w.ada
+        .post(
+            hub,
+            "/v1/account",
+            &account_body("cleo@example.org", &auth, &kit),
+        )
+        .ok();
     // the kit is a proof as well
     assert_eq!(
-        w.ada.call(hub, "DELETE", "/v1/account", &json!({ "kit": { "auth_key": b64(&kit) } })).ok(),
+        w.ada
+            .call(
+                hub,
+                "DELETE",
+                "/v1/account",
+                &json!({ "kit": { "auth_key": b64(&kit) } })
+            )
+            .ok(),
         json!({ "deleted": true })
     );
     login(hub, "cleo@example.org", &auth).refused(401, "wrong-login");
@@ -349,10 +524,20 @@ fn the_password_or_kit_deletes_an_account_and_a_room_without_one_has_nothing_to_
         if KEPT.contains(&table.as_str()) {
             continue;
         }
-        let n: i64 = c.query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |r| r.get(0)).unwrap();
+        let n: i64 = c
+            .query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(n, 0, "{table} keeps rows of the only room");
     }
     // the e-mail is free again
     let (_, _, again) = found_room(hub);
-    again.post(hub, "/v1/account", &account_body("cleo@example.org", &auth, &kit)).ok();
+    again
+        .post(
+            hub,
+            "/v1/account",
+            &account_body("cleo@example.org", &auth, &kit),
+        )
+        .ok();
 }

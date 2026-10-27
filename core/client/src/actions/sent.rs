@@ -76,7 +76,8 @@ impl Sent {
     /// and two devices' ids differ by their seeds.
     pub fn new_id(&mut self, now: u64) -> String {
         self.next_local += 1;
-        let mut x = self.seed ^ now.rotate_left(17) ^ self.next_local.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let mut x =
+            self.seed ^ now.rotate_left(17) ^ self.next_local.wrapping_mul(0x9E37_79B9_7F4A_7C15);
         let mut out = String::with_capacity(32);
         for _ in 0..2 {
             // splitmix64
@@ -111,7 +112,10 @@ impl Sent {
 
     /// Whether an echo of this local id waits for the hub.
     pub fn waits(&self, local_id: &str) -> bool {
-        self.outbox.values().flatten().any(|o| o.local_id.as_deref() == Some(local_id))
+        self.outbox
+            .values()
+            .flatten()
+            .any(|o| o.local_id.as_deref() == Some(local_id))
     }
 
     /// The hub took the entry, or it is gone: what it carried.
@@ -121,12 +125,20 @@ impl Sent {
 
     /// The entries that are no longer in the device's outbox (`held`).
     pub fn gone(&self, held: &BTreeSet<u64>) -> Vec<u64> {
-        self.outbox.keys().filter(|id| !held.contains(id)).copied().collect()
+        self.outbox
+            .keys()
+            .filter(|id| !held.contains(id))
+            .copied()
+            .collect()
     }
 
     /// The Note whose version on its way has this hash, or this outbox entry, is free again: its id and the edit
     /// that waited behind it.
-    pub fn note_back(&mut self, hash: Option<&str>, outbox: Option<u64>) -> Option<(String, Option<NoteNext>)> {
+    pub fn note_back(
+        &mut self,
+        hash: Option<&str>,
+        outbox: Option<u64>,
+    ) -> Option<(String, Option<NoteNext>)> {
         let id = self
             .notes
             .iter()
@@ -156,7 +168,13 @@ impl Sent {
     }
 
     /// A toast that says what was done, with Undo (`undo`, sent back as it is): no problem, the shell's own time.
-    pub fn undo_toast(&mut self, toasts: &mut Vec<Toast>, text: Text, line: Option<Text>, undo: Action) {
+    pub fn undo_toast(
+        &mut self,
+        toasts: &mut Vec<Toast>,
+        text: Text,
+        line: Option<Text>,
+        undo: Action,
+    ) {
         self.next_toast += 1;
         toasts.push(Toast {
             id: format!("toast-{}", self.next_toast),
@@ -179,7 +197,10 @@ mod tests {
     use super::*;
 
     fn star(id: &str) -> Action {
-        Action::Star { card_id: id.into(), on: true }
+        Action::Star {
+            card_id: id.into(),
+            on: true,
+        }
     }
 
     #[test]
@@ -187,8 +208,20 @@ mod tests {
         let mut s = Sent::default();
         let (a, b) = (s.local_id(), s.local_id());
         assert_ne!(a, b);
-        s.put(4, Out { local_id: Some(a.clone()), action: star("x") });
-        s.put(5, Out { local_id: Some(b.clone()), action: star("y") });
+        s.put(
+            4,
+            Out {
+                local_id: Some(a.clone()),
+                action: star("x"),
+            },
+        );
+        s.put(
+            5,
+            Out {
+                local_id: Some(b.clone()),
+                action: star("y"),
+            },
+        );
         assert!(s.waits(&a));
         assert_eq!(s.take(4).len(), 1);
         assert!(s.take(4).is_empty() && !s.waits(&a));
@@ -201,11 +234,33 @@ mod tests {
     #[test]
     fn a_note_is_free_again_by_its_hash_or_its_entry() {
         let mut s = Sent::default();
-        let next = NoteNext { own: Map::new(), closed: true, local_id: "local-9".into(), action: star("n") };
-        s.notes.insert("n1".into(), NoteBusy { hash: "aa".into(), outbox: 3, next: Some(next.clone()) });
-        s.notes.insert("n2".into(), NoteBusy { hash: "bb".into(), outbox: 4, next: None });
+        let next = NoteNext {
+            own: Map::new(),
+            closed: true,
+            local_id: "local-9".into(),
+            action: star("n"),
+        };
+        s.notes.insert(
+            "n1".into(),
+            NoteBusy {
+                hash: "aa".into(),
+                outbox: 3,
+                next: Some(next.clone()),
+            },
+        );
+        s.notes.insert(
+            "n2".into(),
+            NoteBusy {
+                hash: "bb".into(),
+                outbox: 4,
+                next: None,
+            },
+        );
         assert_eq!(s.note_back(Some("cc"), Some(9)), None);
-        assert_eq!(s.note_back(Some("aa"), None), Some(("n1".into(), Some(next))));
+        assert_eq!(
+            s.note_back(Some("aa"), None),
+            Some(("n1".into(), Some(next)))
+        );
         assert_eq!(s.note_back(None, Some(4)), Some(("n2".into(), None)));
         assert!(s.notes.is_empty());
     }

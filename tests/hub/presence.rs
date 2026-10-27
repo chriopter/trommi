@@ -34,7 +34,10 @@ fn a_new_stream_of_a_human_device_is_told_who_is_here_at_once() {
     let mut whole = false;
     while let Some(e) = page.next(Duration::from_secs(2)) {
         if e.name == "presence" {
-            told.insert(e.data["device"].as_str().unwrap().to_string(), e.data.clone());
+            told.insert(
+                e.data["device"].as_str().unwrap().to_string(),
+                e.data.clone(),
+            );
         }
         if e.name == "here" {
             whole = true;
@@ -44,16 +47,26 @@ fn a_new_stream_of_a_human_device_is_told_who_is_here_at_once() {
     assert!(whole, "the list ends with a `here` event");
     let a = &told[&b64(&agent.id())];
     assert_eq!(a["online"], true);
-    assert_eq!(a["hears"], true, "the lease's link report comes with it: {a}");
+    assert_eq!(
+        a["hears"], true,
+        "the lease's link report comes with it: {a}"
+    );
     assert_eq!(a["working"], true);
     assert_eq!(a["last_call_at"], 1234);
     let q = &told[&b64(&quiet.id())];
     assert_eq!(q["online"], true);
-    assert_eq!((q["hears"].clone(), q["working"].clone()), (json!(true), json!(false)), "its own report: {q}");
+    assert_eq!(
+        (q["hears"].clone(), q["working"].clone()),
+        (json!(true), json!(false)),
+        "its own report: {q}"
+    );
     // (an agent device's own stream is told nothing of the others: presence is for the human devices)
     let mut others = 0;
     while let Some(e) = agent_stream.next(Duration::from_millis(500)) {
-        if e.name == "presence" && e.data["device"] != b64(&agent.id()) && e.data["device"] != b64(&quiet.id()) {
+        if e.name == "presence"
+            && e.data["device"] != b64(&agent.id())
+            && e.data["device"] != b64(&quiet.id())
+        {
             others += 1;
         }
     }
@@ -71,18 +84,42 @@ fn an_expired_working_lease_clears_activity_even_with_an_open_stream() {
     agent.lease = agent.post(&w.hub, "/v1/link", &report(None::<u64>)).ok()["generation"].as_u64();
     let agent_stream = agent.events(&w.hub, None);
     let mut page = w.ada.events(&w.hub, None);
-    while let Some(e) = page.next(Duration::from_secs(2)) { if e.name == "here" { break; } }
+    while let Some(e) = page.next(Duration::from_secs(2)) {
+        if e.name == "here" {
+            break;
+        }
+    }
     // Expire just this lease deterministically; its device's stream remains healthy.
     let expired_at = trommi_hub::util::now() as i64 - 1;
-    w.hub.app.db.write(|c| c.execute("UPDATE agent_leases SET expires_at = ?1 WHERE device = ?2", rusqlite::params![expired_at, &agent.id()[..]])).unwrap();
+    w.hub
+        .app
+        .db
+        .write(|c| {
+            c.execute(
+                "UPDATE agent_leases SET expires_at = ?1 WHERE device = ?2",
+                rusqlite::params![expired_at, &agent.id()[..]],
+            )
+        })
+        .unwrap();
     w.hub.app.lease_watch();
     let mut idle = None;
     while let Some(e) = page.next(Duration::from_millis(500)) {
-        if e.name == "presence" && e.data["device"] == b64(&agent.id()) && e.data["working"] == false { idle = Some(e.data); break; }
+        if e.name == "presence"
+            && e.data["device"] == b64(&agent.id())
+            && e.data["working"] == false
+        {
+            idle = Some(e.data);
+            break;
+        }
     }
-    let idle = idle.expect("lease expiry must clear the client's held working bit, even while its stream is online");
+    let idle = idle.expect(
+        "lease expiry must clear the client's held working bit, even while its stream is online",
+    );
     assert_eq!(idle["online"], true);
-    assert_eq!(idle["hears"], true, "an explicit report replaces the held link");
+    assert_eq!(
+        idle["hears"], true,
+        "an explicit report replaces the held link"
+    );
     // A reconnect that missed expiry must not preserve a cached busy link either.
     let mut reconnect = w.ada.events(&w.hub, None);
     let mut snapshot_idle = false;
@@ -93,23 +130,44 @@ fn an_expired_working_lease_clears_activity_even_with_an_open_stream() {
             assert_eq!(e.data["hears"], true);
             snapshot_idle = true;
         }
-        if e.name == "here" { break; }
+        if e.name == "here" {
+            break;
+        }
     }
     assert!(snapshot_idle);
     agent.post(&w.hub, "/v1/link", &report(agent.lease)).ok();
     // Opening this human device's reconnect replaced `page`; observe the current stream from here on.
     let mut busy = false;
     while let Some(e) = reconnect.next(Duration::from_secs(2)) {
-        if e.name == "presence" && e.data["device"] == b64(&agent.id()) && e.data["working"] == true { busy = true; break; }
+        if e.name == "presence" && e.data["device"] == b64(&agent.id()) && e.data["working"] == true
+        {
+            busy = true;
+            break;
+        }
     }
     assert!(busy, "renewal restores the current activity report");
     drop(agent_stream);
-    w.hub.eventually("the agent stream closes", || !w.hub.app.live.online(&w.room, &agent.id()));
-    w.hub.app.db.write(|c| c.execute("UPDATE agent_leases SET expires_at = ?1 WHERE device = ?2", rusqlite::params![expired_at - 1_000, &agent.id()[..]])).unwrap();
+    w.hub.eventually("the agent stream closes", || {
+        !w.hub.app.live.online(&w.room, &agent.id())
+    });
+    w.hub
+        .app
+        .db
+        .write(|c| {
+            c.execute(
+                "UPDATE agent_leases SET expires_at = ?1 WHERE device = ?2",
+                rusqlite::params![expired_at - 1_000, &agent.id()[..]],
+            )
+        })
+        .unwrap();
     w.hub.app.lease_watch();
     let mut offline = false;
     while let Some(e) = reconnect.next(Duration::from_secs(2)) {
-        if e.name == "presence" && e.data["device"] == b64(&agent.id()) && e.data["online"] == false { offline = true; break; }
+        if e.name == "presence" && e.data["device"] == b64(&agent.id()) && e.data["online"] == false
+        {
+            offline = true;
+            break;
+        }
     }
     assert!(offline, "without a stream an expired lease becomes offline");
 }
@@ -120,37 +178,109 @@ fn public_departures_require_the_exact_devices_signature_and_replay_without_chan
     let other = w.add_human();
     let agent = w.enrol_agent();
     let path = format!("/v1/rooms/{}/departures", b64(&w.room));
-    let proof = other.sign(trommi_wire::signin::LABEL_DEVICE_DEPARTURE, &trommi_wire::signin::departure_content(&w.room, &other.id()));
+    let proof = other.sign(
+        trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
+        &trommi_wire::signin::departure_content(&w.room, &other.id()),
+    );
     let payload = json!({"device":b64(&other.id()),"signature":b64(&proof)});
-    let bad = w.hub.post(&path, &json!({"device":b64(&other.id()),"signature":b64(&[0u8;64])}));
+    let bad = w.hub.post(
+        &path,
+        &json!({"device":b64(&other.id()),"signature":b64(&[0u8;64])}),
+    );
     assert_eq!(bad.json()["error"], "bad-signature");
-    let agent_proof = agent.sign(trommi_wire::signin::LABEL_DEVICE_DEPARTURE, &trommi_wire::signin::departure_content(&w.room, &agent.id()));
-    let bad = w.hub.post(&path, &json!({"device":b64(&agent.id()),"signature":b64(&agent_proof)}));
+    let agent_proof = agent.sign(
+        trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
+        &trommi_wire::signin::departure_content(&w.room, &agent.id()),
+    );
+    let bad = w.hub.post(
+        &path,
+        &json!({"device":b64(&agent.id()),"signature":b64(&agent_proof)}),
+    );
     assert_eq!(bad.json()["error"], "forbidden");
     let mut live = w.ada.events(&w.hub, None);
-    while let Some(event) = live.next(Duration::from_secs(2)) { if event.name == "here" { break; } }
-    assert_eq!(w.hub.post(&path, &payload).status, 200, "no bearer is needed for an already device-signed own request");
+    while let Some(event) = live.next(Duration::from_secs(2)) {
+        if event.name == "here" {
+            break;
+        }
+    }
+    assert_eq!(
+        w.hub.post(&path, &payload).status,
+        200,
+        "no bearer is needed for an already device-signed own request"
+    );
     let mut received = false;
     while let Some(event) = live.next(Duration::from_secs(2)) {
-        if event.name == "departure" { assert_eq!(event.data, payload); received = true; break; }
+        if event.name == "departure" {
+            assert_eq!(event.data, payload);
+            received = true;
+            break;
+        }
     }
     assert!(received, "the current human app receives the public proof");
-    assert_eq!(w.hub.post(&path, &payload).status, 200, "replay is idempotent");
-    let in_room: bool = w.hub.app.db.read(|c| c.query_row("SELECT removed_epoch IS NULL FROM devices WHERE room_id=?1 AND device=?2", rusqlite::params![&w.room[..],&other.id()[..]], |r| r.get(0))).unwrap();
-    assert!(in_room, "the hub relays intent; only a verified human Commit removes membership");
+    assert_eq!(
+        w.hub.post(&path, &payload).status,
+        200,
+        "replay is idempotent"
+    );
+    let in_room: bool = w
+        .hub
+        .app
+        .db
+        .read(|c| {
+            c.query_row(
+                "SELECT removed_epoch IS NULL FROM devices WHERE room_id=?1 AND device=?2",
+                rusqlite::params![&w.room[..], &other.id()[..]],
+                |r| r.get(0),
+            )
+        })
+        .unwrap();
+    assert!(
+        in_room,
+        "the hub relays intent; only a verified human Commit removes membership"
+    );
     drop(live);
     let mut later = w.ada.events(&w.hub, None);
     let mut replayed = 0;
     while let Some(event) = later.next(Duration::from_secs(2)) {
-        if event.name == "departure" { assert_eq!(event.data, payload); replayed += 1; }
-        if event.name == "here" { break; }
+        if event.name == "departure" {
+            assert_eq!(event.data, payload);
+            replayed += 1;
+        }
+        if event.name == "here" {
+            break;
+        }
     }
     assert_eq!(replayed, 1, "a later human app gets one persisted proof");
     let unknown = Dev::new();
-    let signature = unknown.sign(trommi_wire::signin::LABEL_DEVICE_DEPARTURE, &trommi_wire::signin::departure_content(&w.room,&unknown.id()));
-    assert_eq!(w.hub.post(&path, &json!({"device":b64(&unknown.id()),"signature":b64(&signature)})).status, 200);
-    let count: i64 = w.hub.app.db.read(|c| c.query_row("SELECT count(*) FROM devices WHERE room_id=?1 AND device=?2",rusqlite::params![&w.room[..],&unknown.id()[..]],|r|r.get(0))).unwrap();
-    assert_eq!(count,0,"a request racing its own join never enrolls an unknown device");
+    let signature = unknown.sign(
+        trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
+        &trommi_wire::signin::departure_content(&w.room, &unknown.id()),
+    );
+    assert_eq!(
+        w.hub
+            .post(
+                &path,
+                &json!({"device":b64(&unknown.id()),"signature":b64(&signature)})
+            )
+            .status,
+        200
+    );
+    let count: i64 = w
+        .hub
+        .app
+        .db
+        .read(|c| {
+            c.query_row(
+                "SELECT count(*) FROM devices WHERE room_id=?1 AND device=?2",
+                rusqlite::params![&w.room[..], &unknown.id()[..]],
+                |r| r.get(0),
+            )
+        })
+        .unwrap();
+    assert_eq!(
+        count, 0,
+        "a request racing its own join never enrolls an unknown device"
+    );
 }
 
 #[test]
@@ -158,8 +288,14 @@ fn unknown_departures_are_bounded_expire_and_cannot_block_a_members_own_logout()
     let w = World::new();
     let observer = trommi_hub::observer::MlsObserver::default();
     let unknown = Dev::new();
-    let proof = unknown.sign(trommi_wire::signin::LABEL_DEVICE_DEPARTURE,&trommi_wire::signin::departure_content(&w.room,&unknown.id()));
-    let own = w.ada.sign(trommi_wire::signin::LABEL_DEVICE_DEPARTURE,&trommi_wire::signin::departure_content(&w.room,&w.ada.id()));
+    let proof = unknown.sign(
+        trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
+        &trommi_wire::signin::departure_content(&w.room, &unknown.id()),
+    );
+    let own = w.ada.sign(
+        trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
+        &trommi_wire::signin::departure_content(&w.room, &w.ada.id()),
+    );
     w.hub.app.db.write(|c| {
         for n in 0..1000u32 {
             let mut id = [0x55;32]; id[..4].copy_from_slice(&n.to_le_bytes());

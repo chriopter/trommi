@@ -988,7 +988,10 @@ impl CoreDevice {
     /// a check.
     pub fn code_check_defer(&self, groups: Vec<Vec<u8>>) -> Result<(), CoreError> {
         self.write(|device| {
-            let groups = groups.iter().map(|g| group_id(g)).collect::<Result<Vec<_>, _>>()?;
+            let groups = groups
+                .iter()
+                .map(|g| group_id(g))
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(device.code_check_defer(&groups)?)
         })
     }
@@ -1096,7 +1099,14 @@ impl CoreDevice {
     ) -> Result<u64, CoreError> {
         let keys = recovery::keys(&recovery_code)?;
         self.write(|device| {
-            Ok(device.join_session_checked_keys(&keys, &group_id(&group)?, &current, &rows, &links, now_ms)?)
+            Ok(device.join_session_checked_keys(
+                &keys,
+                &group_id(&group)?,
+                &current,
+                &rows,
+                &links,
+                now_ms,
+            )?)
         })
     }
 

@@ -108,7 +108,9 @@ impl Proxy {
         let s = shared.clone();
         let task = tokio::spawn(async move {
             loop {
-                let Ok((conn, _)) = listener.accept().await else { continue };
+                let Ok((conn, _)) = listener.accept().await else {
+                    continue;
+                };
                 let _ = conn.set_nodelay(true);
                 let s = s.clone();
                 tokio::spawn(async move {
@@ -229,21 +231,24 @@ async fn serve(conn: TcpStream, s: Arc<Shared>) -> std::io::Result<()> {
             return Ok(());
         };
         s.count(|c| c.requests += 1);
-                let knobs = s.knobs();
+        let knobs = s.knobs();
         if knobs.latency_ms > 0 {
             let wait = (s.rand() * knobs.latency_ms as f64) as u64;
             tokio::time::sleep(Duration::from_millis(wait)).await;
         }
         // the request's body, whole (requests are small, or file pieces of a few MB)
         let mut body = Vec::new();
-        let chunked_req = field(&fields, "transfer-encoding").is_some_and(|v| v.contains("chunked"));
+        let chunked_req =
+            field(&fields, "transfer-encoding").is_some_and(|v| v.contains("chunked"));
         if chunked_req {
             while let Some(c) = read_chunk(&mut cr).await? {
                 body.extend_from_slice(&c);
             }
             fields.retain(|(k, _)| !k.eq_ignore_ascii_case("transfer-encoding"));
             fields.push(("Content-Length".into(), body.len().to_string()));
-        } else if let Some(n) = field(&fields, "content-length").and_then(|v| v.parse::<usize>().ok()) {
+        } else if let Some(n) =
+            field(&fields, "content-length").and_then(|v| v.parse::<usize>().ok())
+        {
             body.resize(n, 0);
             cr.read_exact(&mut body).await?;
         }

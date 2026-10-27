@@ -24,13 +24,21 @@ fn moved(v: &Value, key: &str, by: i64) -> Value {
             }
         }
         Value::Array(a) => Value::Array(a.iter().map(|x| moved(x, key, by)).collect()),
-        Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), moved(x, k, by))).collect()),
+        Value::Object(o) => Value::Object(
+            o.iter()
+                .map(|(k, x)| (k.clone(), moved(x, k, by)))
+                .collect(),
+        ),
         _ => v.clone(),
     }
 }
 
 fn list<'a>(f: &'a Value, key: &str) -> impl Iterator<Item = &'a Map<String, Value>> {
-    f.get(key).and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_object)
+    f.get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
 }
 
 fn text<'a>(o: &'a Map<String, Value>, key: &str) -> &'a str {
@@ -39,18 +47,26 @@ fn text<'a>(o: &'a Map<String, Value>, key: &str) -> &'a str {
 
 /// The person's registers of the fixture, grouped by kind.
 fn h_of(f: &Value) -> Map<String, Value> {
-    f.get("human").and_then(Value::as_object).cloned().unwrap_or_default()
+    f.get("human")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// The demo room as a model, its Desk projected at `now_ms`. `fixture`: the parsed `fixture.json`.
 pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
-    let made = fixture.get("made_at").and_then(Value::as_i64).ok_or("the fixture names no made_at")?;
+    let made = fixture
+        .get("made_at")
+        .and_then(Value::as_i64)
+        .ok_or("the fixture names no made_at")?;
     let f = moved(fixture, "", now_ms as i64 - made);
     let pair = |id: &str, o: Map<String, Value>| json!([id, o]);
 
     // (a session's key is its 16-byte id as every app spells it: the demo's agent device ids, cut to their first half)
     let sid = |dev: &str| dev.get(..32).unwrap_or(dev).to_string();
-    let members: Vec<Value> = list(&f, "members").map(|m| pair(text(m, "device_id"), m.clone())).collect();
+    let members: Vec<Value> = list(&f, "members")
+        .map(|m| pair(text(m, "device_id"), m.clone()))
+        .collect();
     // (a card, a request or an Artifact belongs to its agent's session)
     let owned = |key: &str| -> Vec<Value> {
         list(&f, key)
@@ -74,7 +90,10 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
                 c.insert("session_id".into(), json!(sid(&agent)));
             }
             if !c.contains_key("state_envelope_number") {
-                c.insert("state_envelope_number".into(), c.get("envelope_number").cloned().unwrap_or(json!(0)));
+                c.insert(
+                    "state_envelope_number".into(),
+                    c.get("envelope_number").cloned().unwrap_or(json!(0)),
+                );
             }
             pair(text(&c, "object_id"), c.clone())
         })
@@ -95,31 +114,54 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
             // (the person's devices copy the team's knowledge into its sessions: the demo holds those copies too)
             // (a chat on no team, `desk` null, holds none)
             let human = h_of(&f);
-            let desk = human.get("session_settings").and_then(|all| all.get(&dev)).and_then(|v| v.get("desk"));
-            let team = if desk.is_some_and(Value::is_null) { None } else { Some(desk.and_then(Value::as_str).unwrap_or("main").to_string()) };
+            let desk = human
+                .get("session_settings")
+                .and_then(|all| all.get(&dev))
+                .and_then(|v| v.get("desk"));
+            let team = if desk.is_some_and(Value::is_null) {
+                None
+            } else {
+                Some(desk.and_then(Value::as_str).unwrap_or("main").to_string())
+            };
             let carried: Vec<Value> = h_of(&f)
                 .get("knowledge")
                 .and_then(Value::as_object)
                 .into_iter()
                 .flatten()
-                .filter(|(_, v)| team.is_some() && v.get("desk").and_then(Value::as_str) == team.as_deref() && v.get("deleted_at").is_none())
+                .filter(|(_, v)| {
+                    team.is_some()
+                        && v.get("desk").and_then(Value::as_str) == team.as_deref()
+                        && v.get("deleted_at").is_none()
+                })
                 .map(|(id, v)| json!([format!("knowledge/{id}"), { "value": v }]))
                 .collect();
             // (and the wakeups its agent set itself: `wakeup/<id>` in its group)
             let mut carried = carried;
-            for (wid, v) in h_of(&f).get("wakeups").and_then(|all| all.get(&dev)).and_then(Value::as_object).into_iter().flatten() {
+            for (wid, v) in h_of(&f)
+                .get("wakeups")
+                .and_then(|all| all.get(&dev))
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+            {
                 carried.push(json!([format!("wakeup/{wid}"), { "value": v }]));
             }
             o.insert("registers".into(), Value::Array(carried));
             pair(&id, o)
         })
         .collect();
-    let notes: Vec<Value> = list(&f, "notes").map(|n| pair(text(n, "object_id"), n.clone())).collect();
+    let notes: Vec<Value> = list(&f, "notes")
+        .map(|n| pair(text(n, "object_id"), n.clone()))
+        .collect();
 
     // The person's registers under their names: `session/<key>`, `desk/<id>`, `snooze/<card>`, `draft/<card>`,
     // `duck/<card>`, `star/<card>`, `knowledge/<entry>`, `crown`.
     let mut human: Vec<Value> = Vec::new();
-    let h = f.get("human").and_then(Value::as_object).cloned().unwrap_or_default();
+    let h = f
+        .get("human")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
     let mut put = |key: String, value: &Value| {
         if !value.is_null() {
             // (no change number: a "Later" then holds whatever version its card has, as in the web's demo)
@@ -136,7 +178,12 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
         ("knowledge_log", "knowledge_log"),
         ("knowledge_seen", "knowledge_seen"),
     ] {
-        for (id, v) in h.get(group).and_then(Value::as_object).into_iter().flatten() {
+        for (id, v) in h
+            .get(group)
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
             put(format!("{name}/{id}"), v);
         }
     }
@@ -146,7 +193,12 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
     for (i, s) in list(&f, "sessions").enumerate() {
         let dev = text(s, "agent_device_id");
         let id = sid(dev);
-        let mut set = settings.and_then(|all| all.get(dev)).or(s.get("settings")).and_then(Value::as_object).cloned().unwrap_or_default();
+        let mut set = settings
+            .and_then(|all| all.get(dev))
+            .or(s.get("settings"))
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
         if !set.get("position").is_some_and(Value::is_number) {
             set.insert("position".into(), json!(i));
         }

@@ -10,8 +10,8 @@ use crate::keeper::Keeper;
 use crate::store::Journal;
 use crate::util::{hex, now_ms};
 use crate::vault::Vault;
-use trommi_client_core::hub::{Answer, Route};
 use std::sync::Arc;
+use trommi_client_core::hub::{Answer, Route};
 use trommi_core::invite::{CheckCode, InviteLink, Offer, Role, SignedOffer, SignedReveal};
 
 /// The room and hub an invite link names, without using it: `(room id as base64url, hub address)`.
@@ -59,9 +59,7 @@ where
     for tried in 0.. {
         match step().await {
             Ok(v) => return Ok(Some(v)),
-            Err(fault) if posted && maybe_in && fault.code == "invite-used" => {
-                return Ok(None)
-            }
+            Err(fault) if posted && maybe_in && fault.code == "invite-used" => return Ok(None),
             Err(fault) if crate::driver::is_transient(&fault) => {
                 maybe_in = true;
                 let Some(wait) = JOIN_RETRY_MS.get(tried) else {

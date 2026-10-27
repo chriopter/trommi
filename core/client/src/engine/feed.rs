@@ -50,7 +50,9 @@ pub fn received_of(r: &ReceivedEnvelope) -> rx::Received {
     let (kind, timeline) = match &h.subject {
         Subject::Item(timeline) => {
             let (kind, id) = match timeline {
-                Timeline::SessionChat(session) => (rx::TimelineKind::SessionChat, hex(session.as_bytes())),
+                Timeline::SessionChat(session) => {
+                    (rx::TimelineKind::SessionChat, hex(session.as_bytes()))
+                }
                 Timeline::CardChat(card) => (rx::TimelineKind::CardChat, hex(card.as_bytes())),
                 Timeline::Board(board) => (rx::TimelineKind::Board, hex(board.as_bytes())),
             };
@@ -78,7 +80,9 @@ pub fn received_of(r: &ReceivedEnvelope) -> rx::Received {
         kind,
         sender: hex(h.sender.as_bytes()),
         seq: h.seq,
-        recipient: Some(h.recipient).filter(|d| !d.is_zero()).map(|d| hex(d.as_bytes())),
+        recipient: Some(h.recipient)
+            .filter(|d| !d.is_zero())
+            .map(|d| hex(d.as_bytes())),
         time: h.time,
         session_id: h.group.session_id().map(|s| hex(s.as_bytes())),
         timeline,
@@ -99,20 +103,37 @@ pub fn received_of(r: &ReceivedEnvelope) -> rx::Received {
             Bind::None => None,
             Bind::Answer(a) => Some(rx::Bind::Answer {
                 version_hash: Some(hex(a.version_hash.as_bytes())),
-                choices: a.choices.iter().map(|c| String::from_utf8_lossy(c).into_owned()).collect(),
+                choices: a
+                    .choices
+                    .iter()
+                    .map(|c| String::from_utf8_lossy(c).into_owned())
+                    .collect(),
             }),
             Bind::TakeBack(t) => Some(rx::Bind::TakeBack {
                 previous_hash: Some(hex(t.previous_hash.as_bytes())),
             }),
-            Bind::Request(q) => Some(rx::Bind::Request { expires_at: q.expires_at }),
-            Bind::Verdict(v) => Some(rx::Bind::Verdict { allow: v.verdict == Verdict::Allow }),
+            Bind::Request(q) => Some(rx::Bind::Request {
+                expires_at: q.expires_at,
+            }),
+            Bind::Verdict(v) => Some(rx::Bind::Verdict {
+                allow: v.verdict == Verdict::Allow,
+            }),
         }),
-        register: r.register.as_ref().map(|x| rx::RegisterTaken { name: x.name.clone(), current: x.current }),
-        payload: r.body.as_ref().map(|body| String::from_utf8_lossy(body.payload()).into_owned()),
+        register: r.register.as_ref().map(|x| rx::RegisterTaken {
+            name: x.name.clone(),
+            current: x.current,
+        }),
+        payload: r
+            .body
+            .as_ref()
+            .map(|body| String::from_utf8_lossy(body.payload()).into_owned()),
         shown: r
             .shown
             .iter()
-            .map(|shown| rx::Shown { name: shown.name.clone(), now: shown.now.as_deref().map(|now| Box::new(received_of(now))) })
+            .map(|shown| rx::Shown {
+                name: shown.name.clone(),
+                now: shown.now.as_deref().map(|now| Box::new(received_of(now))),
+            })
             .collect(),
     }
 }
@@ -127,7 +148,9 @@ fn commit_in(facts: &CommitFacts) -> CommitIn {
         external: facts.external,
         committer: hex(facts.committer.as_bytes()),
         agents: match &facts.context {
-            ContextChange::To(GroupKind::Room(room)) => room.agents.iter().map(|d| hex(d.as_bytes())).collect(),
+            ContextChange::To(GroupKind::Room(room)) => {
+                room.agents.iter().map(|d| hex(d.as_bytes())).collect()
+            }
             _ => Vec::new(),
         },
         time: facts.note.as_ref().map(|note| note.time),
@@ -164,25 +187,55 @@ impl Board {
                     return;
                 }
                 // `heads` is the devices' own bookkeeping (9.0.7): nothing of it is on the board
-                if matches!(received.header.subject, Subject::Register(_)) && received.register.as_ref().is_some_and(|r| r.name == "heads") {
+                if matches!(received.header.subject, Subject::Register(_))
+                    && received
+                        .register
+                        .as_ref()
+                        .is_some_and(|r| r.name == "heads")
+                {
                     return;
                 }
                 let _ = matches!(received.provisional, Some(Confirmation::Confirmed));
                 m.apply_envelope(&received_of(received), c, now);
             }
-            Report::Log { change, group, processed } => match &**processed {
+            Report::Log {
+                change,
+                group,
+                processed,
+            } => match &**processed {
                 Processed::Commit { facts, removed, .. } => {
                     let by_recovery = facts.external && facts.group.is_room();
-                    m.apply_commit(&commit_in(facts), c, by_recovery, *removed && group.is_room(), now);
+                    m.apply_commit(
+                        &commit_in(facts),
+                        c,
+                        by_recovery,
+                        *removed && group.is_room(),
+                        now,
+                    );
                     refresh_cut_registers(m, c, device, facts, now);
                 }
                 Processed::Observed(facts) => {
                     m.apply_commit(&commit_in(facts), c, false, false, now);
                     refresh_cut_registers(m, c, device, facts, now);
-                },
-                Processed::Message(Received::WorkTrail { from, turn, number, time, step }) => {
+                }
+                Processed::Message(Received::WorkTrail {
+                    from,
+                    turn,
+                    number,
+                    time,
+                    step,
+                }) => {
                     if let Some(session) = group.session_id() {
-                        m.apply_work_trail(&hex(session.as_bytes()), &hex(from.as_bytes()), &hex(turn.as_bytes()), u64::from(*number), *time, step, *change, c);
+                        m.apply_work_trail(
+                            &hex(session.as_bytes()),
+                            &hex(from.as_bytes()),
+                            &hex(turn.as_bytes()),
+                            u64::from(*number),
+                            *time,
+                            step,
+                            *change,
+                            c,
+                        );
                     }
                 }
                 _ => {}
@@ -209,16 +262,32 @@ impl Board {
                     RolesIn {
                         epoch: state.epoch,
                         humans: state.humans.iter().map(|d| hex(d.as_bytes())).collect(),
-                        agents: state.room.agents.iter().map(|d| hex(d.as_bytes())).collect(),
-                        recovery_fingerprint: Some(fingerprint_of(&hex(&state.room.recovery_hpke_key))),
+                        agents: state
+                            .room
+                            .agents
+                            .iter()
+                            .map(|d| hex(d.as_bytes()))
+                            .collect(),
+                        recovery_fingerprint: Some(fingerprint_of(&hex(&state
+                            .room
+                            .recovery_hpke_key))),
                     }
                 });
                 m.apply_groups(&groups, roles.as_ref(), c);
             }
-            Report::Desk { at, open, truncated } => {
+            Report::Desk {
+                at,
+                open,
+                truncated,
+            } => {
                 // a list cut short decides nothing: the hub's order brings the rest
                 if !*truncated {
-                    m.set_desk_listing(Some((*at, open.iter().map(|(id, version)| (hex(id.as_bytes()), *version)).collect())));
+                    m.set_desk_listing(Some((
+                        *at,
+                        open.iter()
+                            .map(|(id, version)| (hex(id.as_bytes()), *version))
+                            .collect(),
+                    )));
                 }
                 if !self.listed {
                     self.listed = true;
@@ -226,7 +295,10 @@ impl Board {
                 }
             }
             Report::Counts { at, settled } => {
-                let settled = settled.iter().filter_map(|(group, n)| group.session_id().map(|s| (hex(s.as_bytes()), *n))).collect();
+                let settled = settled
+                    .iter()
+                    .filter_map(|(group, n)| group.session_id().map(|s| (hex(s.as_bytes()), *n)))
+                    .collect();
                 m.set_hub_settled(*at, settled);
             }
             Report::DeskComplete => {
@@ -248,25 +320,57 @@ impl Board {
                 m.apply_presence_event(&event, c, now);
             }
             Report::Here => m.apply_here(c, now),
-            Report::Relay(received) => {
-                match &**received {
-                    Received::StrokePiece { from, board, piece } => {
-                        m.apply_stroke_piece(&hex(from.as_bytes()), &hex(board.as_bytes()), piece, now, c);
-                    }
-                    Received::AnswerPreview { from, turn, number, preview } => {
-                        m.apply_answer_preview(&hex(from.as_bytes()), &hex(turn.as_bytes()), *number, preview, now, c);
-                    }
-                    _ => {}
+            Report::Relay(received) => match &**received {
+                Received::StrokePiece { from, board, piece } => {
+                    m.apply_stroke_piece(
+                        &hex(from.as_bytes()),
+                        &hex(board.as_bytes()),
+                        piece,
+                        now,
+                        c,
+                    );
                 }
-            }
-            Report::Founded(_) | Report::LinkJoin(_) | Report::InviteRequest { .. } | Report::FileEvicted { .. } | Report::Alert(_) | Report::Connection(_) | Report::Accepted { .. } | Report::Refused { .. } | Report::Blocked(_) | Report::SessionsJoined { .. } | Report::RoomJoin(_) | Report::Answer(_) | Report::Stopped(_) | Report::Command(_) | Report::Lease(_) | Report::Resealed { .. } => {}
+                Received::AnswerPreview {
+                    from,
+                    turn,
+                    number,
+                    preview,
+                } => {
+                    m.apply_answer_preview(
+                        &hex(from.as_bytes()),
+                        &hex(turn.as_bytes()),
+                        *number,
+                        preview,
+                        now,
+                        c,
+                    );
+                }
+                _ => {}
+            },
+            Report::Founded(_)
+            | Report::LinkJoin(_)
+            | Report::InviteRequest { .. }
+            | Report::FileEvicted { .. }
+            | Report::Alert(_)
+            | Report::Connection(_)
+            | Report::Accepted { .. }
+            | Report::Refused { .. }
+            | Report::Blocked(_)
+            | Report::SessionsJoined { .. }
+            | Report::RoomJoin(_)
+            | Report::Answer(_)
+            | Report::Stopped(_)
+            | Report::Command(_)
+            | Report::Lease(_)
+            | Report::Resealed { .. } => {}
         }
     }
 
     /// A timeline's window as a page read from the hub left it (`app::past`): the oldest change read, and whether
     /// the hub holds more before it.
     pub fn window(&mut self, key: &str, down_to: Option<u64>, more: bool) {
-        self.model.put_items(key, Vec::new(), down_to, Some(more), &mut self.change);
+        self.model
+            .put_items(key, Vec::new(), down_to, Some(more), &mut self.change);
     }
 
     /// Projects the Desk from what the reports touched and hands back what changed; the model's next wake by the
@@ -279,32 +383,86 @@ impl Board {
 
 /// A Cut can invalidate a value already handed to the model, including a value read through its chain.
 /// Ask the device for what stands now; do not rebuild register ordering in the projection.
-fn refresh_cut_registers(model: &mut Model, change: &mut Change, device: &Device, facts: &CommitFacts, now: u64) {
-    if facts.note.as_ref().is_none_or(|note| note.cuts.is_empty()) { return; }
+fn refresh_cut_registers(
+    model: &mut Model,
+    change: &mut Change,
+    device: &Device,
+    facts: &CommitFacts,
+    now: u64,
+) {
+    if facts.note.as_ref().is_none_or(|note| note.cuts.is_empty()) {
+        return;
+    }
     let session = facts.group.session_id().map(|id| hex(id.as_bytes()));
     let mut keys: Vec<String> = match &session {
-        Some(id) => model.sessions.get(id).map(|s| s.registers.keys().cloned().collect()).unwrap_or_default(),
-        None => model.human.iter().filter(|(_, r)| !r.pending).map(|(key, _)| key.clone()).collect(),
+        Some(id) => model
+            .sessions
+            .get(id)
+            .map(|s| s.registers.keys().cloned().collect())
+            .unwrap_or_default(),
+        None => model
+            .human
+            .iter()
+            .filter(|(_, r)| !r.pending)
+            .map(|(key, _)| key.clone())
+            .collect(),
     };
-    keys.extend(model.device_register_groups.iter().filter(|(_, group)| **group == session).map(|(id, _)| format!("device/{id}")));
-    let names: Vec<String> = keys.iter().map(|key| crate::codec::register_name_of(key)).collect();
+    keys.extend(
+        model
+            .device_register_groups
+            .iter()
+            .filter(|(_, group)| **group == session)
+            .map(|(id, _)| format!("device/{id}")),
+    );
+    let names: Vec<String> = keys
+        .iter()
+        .map(|key| crate::codec::register_name_of(key))
+        .collect();
     let values = match device.shown_registers(&facts.group, &names) {
         Ok(values) => values,
         Err(_) => {
-            model.push_alert(change, "storage", "the current register values could not be read after a Cut", None, None, "local", now);
-            names.iter().map(|name| trommi_core::device::RegisterShown { name: name.clone(), of: None, now: None }).collect()
+            model.push_alert(
+                change,
+                "storage",
+                "the current register values could not be read after a Cut",
+                None,
+                None,
+                "local",
+                now,
+            );
+            names
+                .iter()
+                .map(|name| trommi_core::device::RegisterShown {
+                    name: name.clone(),
+                    of: None,
+                    now: None,
+                })
+                .collect()
         }
     };
     for (key, value) in keys.into_iter().zip(values) {
         // Only the verified replacement list is applied. The remaining fields locate a deleted value.
         let template = rx::Received {
-            change: 0, hash: String::new(), outcome: rx::Outcome::Applied, code: None,
+            change: 0,
+            hash: String::new(),
+            outcome: rx::Outcome::Applied,
+            code: None,
             kind: rx::EnvelopeKind::Register,
-            sender: key.strip_prefix("device/").unwrap_or("").to_string(), seq: 0,
-            recipient: None, time: now, session_id: session.clone(), timeline: None,
-            object: None, object_after: None, bind: None,
-            register: None, payload: None,
-            shown: vec![rx::Shown { name: value.name, now: value.now.as_deref().map(|r| Box::new(received_of(r))) }],
+            sender: key.strip_prefix("device/").unwrap_or("").to_string(),
+            seq: 0,
+            recipient: None,
+            time: now,
+            session_id: session.clone(),
+            timeline: None,
+            object: None,
+            object_after: None,
+            bind: None,
+            register: None,
+            payload: None,
+            shown: vec![rx::Shown {
+                name: value.name,
+                now: value.now.as_deref().map(|r| Box::new(received_of(r))),
+            }],
         };
         model.apply_register_changes(&template, change, now);
     }

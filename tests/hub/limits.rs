@@ -89,10 +89,14 @@ fn an_older_process_closing_its_stream_never_overrides_a_newer_processs_here() {
     std::thread::sleep(std::time::Duration::from_millis(500));
     // what the human device saw for the agent, up to a mark of its own
     let seen = |human: &mut Events, w: &mut World| {
-        w.ada.send(&w.hub, &w.room, &register(&random(), "mark")).ok();
+        w.ada
+            .send(&w.hub, &w.room, &register(&random(), "mark"))
+            .ok();
         let mut presence = vec![];
         loop {
-            let e = human.next(std::time::Duration::from_secs(5)).expect("the mark comes");
+            let e = human
+                .next(std::time::Duration::from_secs(5))
+                .expect("the mark comes");
             match e.name.as_str() {
                 "envelope" => return presence,
                 "presence" if e.data["device"] == device.as_str() => presence.push(e.data),
@@ -101,8 +105,15 @@ fn an_older_process_closing_its_stream_never_overrides_a_newer_processs_here() {
         }
     };
     let told = seen(&mut human, &mut w);
-    assert!(told.iter().any(|p| p["online"] == true && p["hears"] == true), "the new process's here: {told:?}");
-    assert!(told.iter().all(|p| p["online"] == true), "no offline after the newer here: {told:?}");
+    assert!(
+        told.iter()
+            .any(|p| p["online"] == true && p["hears"] == true),
+        "the new process's here: {told:?}"
+    );
+    assert!(
+        told.iter().all(|p| p["online"] == true),
+        "no offline after the newer here: {told:?}"
+    );
     // the lease holder's own stream drops (a human message it could not take at once, a network blip): while its
     // lease runs it stays here, nothing says offline
     let new = agent.events(&w.hub, None);
@@ -110,14 +121,21 @@ fn an_older_process_closing_its_stream_never_overrides_a_newer_processs_here() {
     drop(new);
     std::thread::sleep(std::time::Duration::from_millis(500));
     let told = seen(&mut human, &mut w);
-    assert!(told.iter().all(|p| p["online"] == true), "a dropped stream under a running lease says nothing: {told:?}");
+    assert!(
+        told.iter().all(|p| p["online"] == true),
+        "a dropped stream under a running lease says nothing: {told:?}"
+    );
     // the process ends and gives its lease up: offline at once
     let process = agent.process.clone();
     let body = json!({ "process": process, "generation": agent.lease, "hears": true, "working": false, "last_call_at": 0, "leaving": true });
     assert_eq!(agent.post(&w.hub, "/v1/link", &body).status, 200);
     std::thread::sleep(std::time::Duration::from_millis(300));
     let told = seen(&mut human, &mut w);
-    assert_eq!(told.last().map(|p| p["online"].clone()), Some(json!(false)), "leaving says offline: {told:?}");
+    assert_eq!(
+        told.last().map(|p| p["online"].clone()),
+        Some(json!(false)),
+        "leaving says offline: {told:?}"
+    );
 }
 
 #[test]
@@ -958,11 +976,14 @@ fn a_room_of_a_thousand_human_devices() {
         .ada
         .get(&w.hub, &format!("/v1/rooms/{}/groups", b64(&room)))
         .ok();
-    assert!(listed
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|g| g["group_id"] == b64(&group) && g["leaves"].as_array().unwrap().len() == size + 1));
+    assert!(
+        listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["group_id"] == b64(&group)
+                && g["leaves"].as_array().unwrap().len() == size + 1)
+    );
     let _ = &mut agent;
 }
 

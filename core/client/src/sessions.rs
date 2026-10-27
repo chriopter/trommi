@@ -265,10 +265,20 @@ pub fn model_label(id: &str) -> String {
     // (Claude: family and version; a date and a context tag such as "[1m]" are left out)
     if let Some(rest) = lower.strip_prefix("claude-") {
         let rest = rest.split('[').next().unwrap_or(rest);
-        let parts: Vec<&str> = rest.split('-').filter(|p| !(p.len() == 8 && p.bytes().all(|b| b.is_ascii_digit()))).collect();
-        if let Some(fam) = parts.iter().position(|p| p.chars().all(|c| c.is_ascii_alphabetic())) {
+        let parts: Vec<&str> = rest
+            .split('-')
+            .filter(|p| !(p.len() == 8 && p.bytes().all(|b| b.is_ascii_digit())))
+            .collect();
+        if let Some(fam) = parts
+            .iter()
+            .position(|p| p.chars().all(|c| c.is_ascii_alphabetic()))
+        {
             let name = parts[fam];
-            let version: Vec<&str> = parts.iter().filter(|p| p.chars().all(|c| c.is_ascii_digit())).copied().collect();
+            let version: Vec<&str> = parts
+                .iter()
+                .filter(|p| p.chars().all(|c| c.is_ascii_digit()))
+                .copied()
+                .collect();
             let mut out = name[..1].to_ascii_uppercase() + &name[1..];
             if !version.is_empty() {
                 out.push(' ');
@@ -328,14 +338,27 @@ pub fn teams_in_order(m: &Model) -> Vec<(String, String)> {
         .filter_map(|(k, r)| k.strip_prefix("desk/").map(|id| (id, &r.value)))
         .filter(|(_, v)| v.is_object())
         .map(|(id, v)| {
-            let name = v.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()).unwrap_or("Personal");
-            (id.to_string(), v.get("order").and_then(Value::as_f64), v.get("created_at").and_then(Value::as_u64).unwrap_or(0), name.to_string())
+            let name = v
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .unwrap_or("Personal");
+            (
+                id.to_string(),
+                v.get("order").and_then(Value::as_f64),
+                v.get("created_at").and_then(Value::as_u64).unwrap_or(0),
+                name.to_string(),
+            )
         })
         .collect();
     let ordered = d.iter().any(|x| x.1.is_some());
     d.sort_by(|a, b| {
         if ordered {
-            a.1.unwrap_or(f64::INFINITY).partial_cmp(&b.1.unwrap_or(f64::INFINITY)).unwrap_or(std::cmp::Ordering::Equal).then(a.2.cmp(&b.2))
+            a.1.unwrap_or(f64::INFINITY)
+                .partial_cmp(&b.1.unwrap_or(f64::INFINITY))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.2.cmp(&b.2))
         } else {
             (a.0 != "main").cmp(&(b.0 != "main")).then(a.2.cmp(&b.2))
         }
@@ -364,7 +387,11 @@ fn session_paths(m: &Model, out: &mut [SessionRow]) {
 /// the one that took its place: its open cards stay on the Desk.
 pub fn archived_sessions(m: &Model) -> Vec<String> {
     let (rows, _, legacy) = rows_of(m, false);
-    let mut out: Vec<String> = rows.into_iter().filter(|r| r.archived && !r.replaced).filter_map(|r| r.session_id).collect();
+    let mut out: Vec<String> = rows
+        .into_iter()
+        .filter(|r| r.archived && !r.replaced)
+        .filter_map(|r| r.session_id)
+        .collect();
     out.extend(legacy.into_iter().filter(|h| h.archived).map(|h| h.key));
     out
 }
@@ -407,7 +434,9 @@ fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>, Vec<Leg
             .cloned()
             .unwrap_or_else(|| key.chars().take(SESSION_ID_LEN).collect());
         // (a helper session of before: its group names its main)
-        let closed_child = s.parent_session_id.is_some() && truthy(p.get("closed_at")) && s.open_card_ids.is_empty();
+        let closed_child = s.parent_session_id.is_some()
+            && truthy(p.get("closed_at"))
+            && s.open_card_ids.is_empty();
         // (the person's choice; else a group archived at the hub, by its agent or on a device of the person: also when
         // this device missed the archive itself, as it reads archived groups lazily)
         let chosen = if set.contains_key("archived") {
@@ -509,7 +538,10 @@ fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>, Vec<Leg
     let mut legacy = Vec::new();
     let mut i = 0;
     while i < out.len() {
-        let main = list[i].parent_session_id.as_deref().and_then(|p| out.iter().position(|r| r.key == p && r.key != out[i].key));
+        let main = list[i]
+            .parent_session_id
+            .as_deref()
+            .and_then(|p| out.iter().position(|r| r.key == p && r.key != out[i].key));
         match main {
             Some(j) if list[j].parent_session_id.is_none() => {
                 legacy.push(LegacyHelper {
@@ -548,10 +580,18 @@ fn replace_in_slots(out: &mut [SessionRow], slots: &[Option<Slot>]) {
     // (connected first, then the newest pairing, then the one active last; the key settles a tie)
     let rank = |i: usize| {
         let a = &out[i];
-        (a.online, slots[i].as_ref().map_or(0, |s| s.added), a.last_activity_at, a.key.clone())
+        (
+            a.online,
+            slots[i].as_ref().map_or(0, |s| s.added),
+            a.last_activity_at,
+            a.key.clone(),
+        )
     };
     // two sessions are one agent's unless both name who they are and that differs
-    let same_agent = |i: usize, j: usize| match (&slots[i].as_ref().unwrap().agent, &slots[j].as_ref().unwrap().agent) {
+    let same_agent = |i: usize, j: usize| match (
+        &slots[i].as_ref().unwrap().agent,
+        &slots[j].as_ref().unwrap().agent,
+    ) {
         (Some(a), Some(b)) => a == b,
         _ => true,
     };
@@ -663,15 +703,47 @@ mod tests {
         let mut m = Model::new();
         member(&mut m, "d0", 1, true);
         session(&mut m, S0, "d0", true, None, 0);
-        let row = |m: &Model, k: &str| session_list(m, false).into_iter().find(|r| r.key == k).unwrap();
+        let row = |m: &Model, k: &str| {
+            session_list(m, false)
+                .into_iter()
+                .find(|r| r.key == k)
+                .unwrap()
+        };
         // one team: no team in the path
-        m.human.insert("desk/main".into(), HumanRegister { value: json!({ "name": "Work" }), ..Default::default() });
+        m.human.insert(
+            "desk/main".into(),
+            HumanRegister {
+                value: json!({ "name": "Work" }),
+                ..Default::default()
+            },
+        );
         assert_eq!(row(&m, S0).path, vec![row(&m, S0).name.clone()]);
         // two teams: the team's name first; a session whose team is gone stands on none (no team in its path)
-        m.human.insert("desk/lab".into(), HumanRegister { value: json!({ "name": "Lab", "created_at": 5 }), ..Default::default() });
-        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "desk": "lab", "name": "Core" }), ..Default::default() });
-        assert_eq!(row(&m, S0).path, vec!["Lab".to_string(), "Core".to_string()]);
-        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "desk": "gone", "name": "Core" }), ..Default::default() });
+        m.human.insert(
+            "desk/lab".into(),
+            HumanRegister {
+                value: json!({ "name": "Lab", "created_at": 5 }),
+                ..Default::default()
+            },
+        );
+        m.human.insert(
+            format!("session/{S0}"),
+            HumanRegister {
+                value: json!({ "desk": "lab", "name": "Core" }),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            row(&m, S0).path,
+            vec!["Lab".to_string(), "Core".to_string()]
+        );
+        m.human.insert(
+            format!("session/{S0}"),
+            HumanRegister {
+                value: json!({ "desk": "gone", "name": "Core" }),
+                ..Default::default()
+            },
+        );
         assert_eq!(row(&m, S0).path, vec!["Core".to_string()]);
     }
 
@@ -680,11 +752,35 @@ mod tests {
         let mut m = Model::new();
         member(&mut m, "d0", 1, true);
         session(&mut m, S0, "d0", true, None, 0);
-        m.human.insert("desk/main".into(), HumanRegister { value: json!({ "name": "Work" }), ..Default::default() });
-        m.human.insert("desk/lab".into(), HumanRegister { value: json!({ "name": "Lab", "created_at": 5 }), ..Default::default() });
-        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "desk": null, "name": "Root chat" }), ..Default::default() });
-        let row = session_list(&m, false).into_iter().find(|r| r.key == S0).unwrap();
-        assert!(row.team.is_empty(), "an explicit root chat must not fall back to Personal");
+        m.human.insert(
+            "desk/main".into(),
+            HumanRegister {
+                value: json!({ "name": "Work" }),
+                ..Default::default()
+            },
+        );
+        m.human.insert(
+            "desk/lab".into(),
+            HumanRegister {
+                value: json!({ "name": "Lab", "created_at": 5 }),
+                ..Default::default()
+            },
+        );
+        m.human.insert(
+            format!("session/{S0}"),
+            HumanRegister {
+                value: json!({ "desk": null, "name": "Root chat" }),
+                ..Default::default()
+            },
+        );
+        let row = session_list(&m, false)
+            .into_iter()
+            .find(|r| r.key == S0)
+            .unwrap();
+        assert!(
+            row.team.is_empty(),
+            "an explicit root chat must not fall back to Personal"
+        );
         assert_eq!(row.path, vec!["Root chat".to_string()]);
     }
 
@@ -698,22 +794,47 @@ mod tests {
         session(&mut m, S0, "d0", true, None, 0);
         assert_eq!(team_of(&m, S0), None, "no teams, none set: none");
         let set = |m: &mut Model, key: &str, v: Value| {
-            m.human.insert(format!("session/{key}"), HumanRegister { value: v, ..Default::default() });
+            m.human.insert(
+                format!("session/{key}"),
+                HumanRegister {
+                    value: v,
+                    ..Default::default()
+                },
+            );
         };
         team(&mut m, "main", json!({ "name": "Work" }));
         team(&mut m, "lab", json!({ "name": "Lab", "created_at": 5 }));
         assert_eq!(team_of(&m, S0), None, "none set: not the first team");
-        let row = session_list(&m, false).into_iter().find(|r| r.key == S0).unwrap();
-        assert_eq!((row.team.as_str(), row.path.len()), ("", 1), "no first team in its path either");
+        let row = session_list(&m, false)
+            .into_iter()
+            .find(|r| r.key == S0)
+            .unwrap();
+        assert_eq!(
+            (row.team.as_str(), row.path.len()),
+            ("", 1),
+            "no first team in its path either"
+        );
         set(&mut m, S0, json!({ "desk": null }));
         assert_eq!(team_of(&m, S0), None);
-        team(&mut m, "ops", json!({ "name": "Ops", "created_at": 7, "order": 0 }));
+        team(
+            &mut m,
+            "ops",
+            json!({ "name": "Ops", "created_at": 7, "order": 0 }),
+        );
         team(&mut m, "main", Value::Null);
-        assert_eq!(team_of(&m, S0), None, "made, put in order, the first one deleted: still none");
+        assert_eq!(
+            team_of(&m, S0),
+            None,
+            "made, put in order, the first one deleted: still none"
+        );
         set(&mut m, S0, json!({ "desk": "lab", "name": "x" }));
         assert_eq!(team_of(&m, S0).as_deref(), Some("lab"));
         team(&mut m, "lab", Value::Null);
-        assert_eq!(team_of(&m, S0), None, "its team deleted: none, never another team");
+        assert_eq!(
+            team_of(&m, S0),
+            None,
+            "its team deleted: none, never another team"
+        );
         set(&mut m, S0, json!({ "desk": "never" }));
         assert_eq!(team_of(&m, S0), None);
         set(&mut m, S0, json!({ "desk": "" }));
@@ -756,10 +877,22 @@ mod tests {
         session(&mut m, S0, D0, false, None, 0);
         session(&mut m, S1, D1, true, None, 0);
         assert_eq!(shown(&m), vec![S1.to_string()]);
-        let old = session_list(&m, false).into_iter().find(|r| r.key == S0).unwrap();
-        assert!(old.replaced && old.replaced_by.as_deref() == Some(&S1[..12]), "{old:?}");
+        let old = session_list(&m, false)
+            .into_iter()
+            .find(|r| r.key == S0)
+            .unwrap();
+        assert!(
+            old.replaced && old.replaced_by.as_deref() == Some(&S1[..12]),
+            "{old:?}"
+        );
         // fetched back by the person: it stays
-        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "archived": false }), ..Default::default() });
+        m.human.insert(
+            format!("session/{S0}"),
+            HumanRegister {
+                value: json!({ "archived": false }),
+                ..Default::default()
+            },
+        );
         assert_eq!(shown(&m).len(), 2);
     }
 
@@ -767,7 +900,8 @@ mod tests {
     /// lazily: the list differed from load to load); its open cards stay on the Desk, through the session that took
     /// its place.
     #[test]
-    fn a_replaced_session_stays_replaced_however_many_cards_are_read_and_its_cards_stay_reachable() {
+    fn a_replaced_session_stays_replaced_however_many_cards_are_read_and_its_cards_stay_reachable()
+    {
         let mut m = Model::new();
         member(&mut m, D0, 3, false);
         member(&mut m, D1, 5, true);
@@ -778,9 +912,18 @@ mod tests {
         m.sessions.get_mut(S0).unwrap().card_ids = vec!["c0".into(), "c1".into()];
         assert_eq!(shown(&m), before, "the same list with its cards read");
         assert_eq!(before, vec![S1.to_string()]);
-        assert!(!archived_sessions(&m).contains(&S0.to_string()), "its open cards stay on the Desk");
+        assert!(
+            !archived_sessions(&m).contains(&S0.to_string()),
+            "its open cards stay on the Desk"
+        );
         // the person's own archive still takes its cards off the Desk
-        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "archived": true }), ..Default::default() });
+        m.human.insert(
+            format!("session/{S0}"),
+            HumanRegister {
+                value: json!({ "archived": true }),
+                ..Default::default()
+            },
+        );
         assert!(archived_sessions(&m).contains(&S0.to_string()));
     }
 
@@ -794,16 +937,43 @@ mod tests {
         session(&mut m, S0, D0, false, None, 0);
         session(&mut m, S2, D0, false, Some(S0), 1);
         session(&mut m, S1, D1, true, None, 0);
-        m.human.insert("crown".into(), HumanRegister { value: json!({ "session_id": S0 }), ..Default::default() });
+        m.human.insert(
+            "crown".into(),
+            HumanRegister {
+                value: json!({ "session_id": S0 }),
+                ..Default::default()
+            },
+        );
         let rows = session_list(&m, false);
         let row = |k: &str| rows.iter().find(|r| r.key == k).unwrap().clone();
         assert!(row(S0).archived && !row(S0).starred);
         assert!(row(S1).starred, "the crown moves to the new session");
-        assert_eq!(shown(&m), vec![S1.to_string()], "no row for the helper session of before");
-        assert_eq!(legacy_helpers(&m), vec![LegacyHelper { key: S2.into(), main: S0.into(), name: "trommi-hub".into(), archived: false }]);
-        assert!(!archived_sessions(&m).contains(&S2.to_string()), "its open card stays on the Desk");
+        assert_eq!(
+            shown(&m),
+            vec![S1.to_string()],
+            "no row for the helper session of before"
+        );
+        assert_eq!(
+            legacy_helpers(&m),
+            vec![LegacyHelper {
+                key: S2.into(),
+                main: S0.into(),
+                name: "trommi-hub".into(),
+                archived: false
+            }]
+        );
+        assert!(
+            !archived_sessions(&m).contains(&S2.to_string()),
+            "its open card stays on the Desk"
+        );
         // the person archives the replaced coordinator: its cards and its helpers' leave the Desk (his choice)
-        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "archived": true }), ..Default::default() });
+        m.human.insert(
+            format!("session/{S0}"),
+            HumanRegister {
+                value: json!({ "archived": true }),
+                ..Default::default()
+            },
+        );
         assert!(archived_sessions(&m).contains(&S0.to_string()));
         assert!(archived_sessions(&m).contains(&S2.to_string()));
     }
@@ -818,7 +988,13 @@ mod tests {
         session(&mut m, S0, D0, false, None, 0);
         session(&mut m, S1, D1, true, None, 0);
         let agent = |m: &mut Model, d: &str, a: &str| {
-            m.device_registers.insert(d.into(), json!({ "device_name": "trommi-hub", "agent": a }).as_object().unwrap().clone());
+            m.device_registers.insert(
+                d.into(),
+                json!({ "device_name": "trommi-hub", "agent": a })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            );
         };
         agent(&mut m, D0, "0123456789abcdef");
         agent(&mut m, D1, "fedcba9876543210");
@@ -837,16 +1013,34 @@ mod tests {
         member(&mut m, D0, 3, false);
         session(&mut m, S0, D0, false, None, 0);
         session(&mut m, S2, D0, false, Some(S0), 0);
-        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "archived": true }), ..Default::default() });
+        m.human.insert(
+            format!("session/{S0}"),
+            HumanRegister {
+                value: json!({ "archived": true }),
+                ..Default::default()
+            },
+        );
         assert_eq!(shown(&m), Vec::<String>::new());
         assert!(legacy_helpers(&m)[0].archived, "off the Desk with its main");
         m.sessions.get_mut(S0).unwrap().is_online = true;
         assert_eq!(shown(&m), vec![S0.to_string()]);
         assert!(!legacy_helpers(&m)[0].archived);
-        m.sessions.get_mut(S2).unwrap().profile.as_mut().unwrap().insert("closed_at".into(), json!(1));
-        assert!(legacy_helpers(&m)[0].archived, "closed by its agent with nothing open");
+        m.sessions
+            .get_mut(S2)
+            .unwrap()
+            .profile
+            .as_mut()
+            .unwrap()
+            .insert("closed_at".into(), json!(1));
+        assert!(
+            legacy_helpers(&m)[0].archived,
+            "closed by its agent with nothing open"
+        );
         m.sessions.get_mut(S2).unwrap().open_card_ids = vec!["c0".into()];
-        assert!(!legacy_helpers(&m)[0].archived, "an open question keeps it on the Desk");
+        assert!(
+            !legacy_helpers(&m)[0].archived,
+            "an open question keeps it on the Desk"
+        );
         m.sessions.get_mut(S2).unwrap().group_archived = true;
         assert!(legacy_helpers(&m)[0].archived);
         assert!(archived_sessions(&m).contains(&S2.to_string()));
@@ -917,10 +1111,20 @@ mod tests {
         let mut m = Model::new();
         m.my_device_id = Some("ee".repeat(16));
         let me = "ee".repeat(16);
-        let room = GroupIn { group: "r".into(), session: None, leaves: vec![me.clone()], disallowed: 0, archived: false, epoch: 1 };
+        let room = GroupIn {
+            group: "r".into(),
+            session: None,
+            leaves: vec![me.clone()],
+            disallowed: 0,
+            archived: false,
+            epoch: 1,
+        };
         let mine = GroupIn {
             group: "g".into(),
-            session: Some(SessionOfGroup { session_id: S1.into(), parent: None }),
+            session: Some(SessionOfGroup {
+                session_id: S1.into(),
+                parent: None,
+            }),
             leaves: vec![me.clone(), D0.into()],
             disallowed: 0,
             archived: false,
@@ -934,7 +1138,13 @@ mod tests {
     }
 
     fn team(m: &mut Model, id: &str, value: serde_json::Value) {
-        m.human.insert(format!("desk/{id}"), HumanRegister { value, ..Default::default() });
+        m.human.insert(
+            format!("desk/{id}"),
+            HumanRegister {
+                value,
+                ..Default::default()
+            },
+        );
     }
 
     fn team_ids(m: &Model) -> Vec<String> {
@@ -950,17 +1160,49 @@ mod tests {
         team(&mut m, "lab", json!({ "name": "Lab", "created_at": 5 }));
         team(&mut m, "ops", json!({ "name": "Ops", "created_at": 2 }));
         team(&mut m, "main", json!({ "name": "Work", "created_at": 9 }));
-        assert_eq!(team_ids(&m), ["main", "ops", "lab"], "no places: main first, then by age");
-        team(&mut m, "lab", json!({ "name": "Lab", "created_at": 5, "order": 0 }));
-        team(&mut m, "main", json!({ "name": "Work", "created_at": 9, "order": 1 }));
-        team(&mut m, "ops", json!({ "name": "Ops", "created_at": 2, "order": 2 }));
+        assert_eq!(
+            team_ids(&m),
+            ["main", "ops", "lab"],
+            "no places: main first, then by age"
+        );
+        team(
+            &mut m,
+            "lab",
+            json!({ "name": "Lab", "created_at": 5, "order": 0 }),
+        );
+        team(
+            &mut m,
+            "main",
+            json!({ "name": "Work", "created_at": 9, "order": 1 }),
+        );
+        team(
+            &mut m,
+            "ops",
+            json!({ "name": "Ops", "created_at": 2, "order": 2 }),
+        );
         assert_eq!(team_ids(&m), ["lab", "main", "ops"]);
         team(&mut m, "new", json!({ "name": "New", "created_at": 1 }));
         team(&mut m, "newer", json!({ "name": "Newer", "created_at": 3 }));
-        assert_eq!(team_ids(&m), ["lab", "main", "ops", "new", "newer"], "teams without a place come after, by age");
+        assert_eq!(
+            team_ids(&m),
+            ["lab", "main", "ops", "new", "newer"],
+            "teams without a place come after, by age"
+        );
         team(&mut m, "main", serde_json::Value::Null);
-        assert_eq!(team_ids(&m), ["lab", "ops", "new", "newer"], "a deleted team is left out, the others keep their order");
-        team(&mut m, "lab", json!({ "name": "Lab", "created_at": 5, "order": "first" }));
-        assert_eq!(team_ids(&m), ["ops", "new", "newer", "lab"], "a place that is no number counts as none");
+        assert_eq!(
+            team_ids(&m),
+            ["lab", "ops", "new", "newer"],
+            "a deleted team is left out, the others keep their order"
+        );
+        team(
+            &mut m,
+            "lab",
+            json!({ "name": "Lab", "created_at": 5, "order": "first" }),
+        );
+        assert_eq!(
+            team_ids(&m),
+            ["ops", "new", "newer", "lab"],
+            "a place that is no number counts as none"
+        );
     }
 }

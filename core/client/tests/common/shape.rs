@@ -114,26 +114,49 @@ fn recorded() -> &'static Vec<(String, Value)> {
             if path.extension().is_none_or(|x| x != "json") {
                 continue;
             }
-            let vector: Value = serde_json::from_slice(&std::fs::read(&path).expect("a vector")).expect("a vector is JSON");
+            let vector: Value = serde_json::from_slice(&std::fs::read(&path).expect("a vector"))
+                .expect("a vector is JSON");
             if vector["status"] != 200 {
                 continue;
             }
-            let Some(answer) = vector["answer"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) else { continue };
-            out.push((path.file_stem().expect("a name").to_string_lossy().into_owned(), answer));
+            let Some(answer) = vector["answer"]
+                .as_str()
+                .and_then(|text| serde_json::from_str::<Value>(text).ok())
+            else {
+                continue;
+            };
+            out.push((
+                path.file_stem()
+                    .expect("a name")
+                    .to_string_lossy()
+                    .into_owned(),
+                answer,
+            ));
         }
-        assert!(out.len() > 30, "the recorded vectors are there: {}", out.len());
+        assert!(
+            out.len() > 30,
+            "the recorded vectors are there: {}",
+            out.len()
+        );
         out
     })
 }
 
 /// Panics when a 200 answer of the stand-in on a recorded route has not the recorded shape.
 pub fn check(method: &str, path: &str, answer: &Value) {
-    let Some(prefixes) = family(method, path) else { return };
+    let Some(prefixes) = family(method, path) else {
+        return;
+    };
     let mut real = Shape::new();
     let mut any = false;
     for (name, recorded) in recorded() {
         // (a family is a name, or that name and what follows a dash: `changes-all-0`, `welcomes-none`)
-        if prefixes.iter().any(|p| name == p.trim_end_matches('-') || name.strip_prefix(p.trim_end_matches('-')).is_some_and(|rest| rest.starts_with('-'))) {
+        if prefixes.iter().any(|p| {
+            name == p.trim_end_matches('-')
+                || name
+                    .strip_prefix(p.trim_end_matches('-'))
+                    .is_some_and(|rest| rest.starts_with('-'))
+        }) {
             walk(recorded, "", &mut real);
             any = true;
         }
@@ -144,22 +167,40 @@ pub fn check(method: &str, path: &str, answer: &Value) {
     for (place, here) in &mine {
         // (below a place the real hub left empty or null in every recording nothing is known)
         let Some(there) = real.get(place) else {
-            let parent = place.rsplit_once(['.', '[']).map_or("", |(parent, _)| parent);
-            let known = real.contains_key(parent) || real.contains_key(parent.trim_end_matches('['));
-            let sometimes = place.rsplit_once('.').is_some_and(|(_, name)| SOMETIMES.contains(&name));
-            assert!(!known || sometimes || place.ends_with("[]"), "{method} {path}: the stand-in answers `{place}`, the real hub never did");
+            let parent = place
+                .rsplit_once(['.', '['])
+                .map_or("", |(parent, _)| parent);
+            let known =
+                real.contains_key(parent) || real.contains_key(parent.trim_end_matches('['));
+            let sometimes = place
+                .rsplit_once('.')
+                .is_some_and(|(_, name)| SOMETIMES.contains(&name));
+            assert!(
+                !known || sometimes || place.ends_with("[]"),
+                "{method} {path}: the stand-in answers `{place}`, the real hub never did"
+            );
             continue;
         };
         for kind in &here.types {
-            assert!(there.types.contains(kind) || ALSO.contains(&(place.as_str(), *kind)), "{method} {path}: `{place}` is {kind} at the stand-in, at the real hub {:?}", there.types);
+            assert!(
+                there.types.contains(kind) || ALSO.contains(&(place.as_str(), *kind)),
+                "{method} {path}: `{place}` is {kind} at the stand-in, at the real hub {:?}",
+                there.types
+            );
         }
         for name in here.members.keys() {
-            assert!(there.members.contains_key(name) || SOMETIMES.contains(&name.as_str()), "{method} {path}: the stand-in's `{place}.{name}` is no member at the real hub");
+            assert!(
+                there.members.contains_key(name) || SOMETIMES.contains(&name.as_str()),
+                "{method} {path}: the stand-in's `{place}.{name}` is no member at the real hub"
+            );
         }
         if here.objects > 0 {
             for (name, count) in &there.members {
                 let always = *count == there.objects;
-                assert!(!always || here.members.get(name) == Some(&here.objects), "{method} {path}: the real hub always has `{place}.{name}`, the stand-in not");
+                assert!(
+                    !always || here.members.get(name) == Some(&here.objects),
+                    "{method} {path}: the real hub always has `{place}.{name}`, the stand-in not"
+                );
             }
         }
     }

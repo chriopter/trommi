@@ -9,9 +9,9 @@
 use super::account_steps::Step as Asked;
 use super::{App, Effect};
 use crate::actions::Action;
-use crate::team_delete::{Known, Step};
 use crate::hub::{Codec, Route};
-use crate::views::{TeamCountsView, TeamDeleteView, Phase, Text};
+use crate::team_delete::{Known, Step};
+use crate::views::{Phase, TeamCountsView, TeamDeleteView, Text};
 use std::collections::{BTreeMap, BTreeSet};
 use trommi_core::ids::FileId;
 
@@ -80,24 +80,41 @@ impl App {
                 self.teams.running.entry(id).or_default();
             }
         }
-        let by = self.engine.as_ref().map(|e| crate::engine::feed::hex(e.device().id().as_bytes())).unwrap_or_default();
+        let by = self
+            .engine
+            .as_ref()
+            .map(|e| crate::engine::feed::hex(e.device().id().as_bytes()))
+            .unwrap_or_default();
         let ids: Vec<String> = self.teams.running.keys().cloned().collect();
         for team_id in ids {
             let board_id = crate::scribble::team_board(&team_id);
             let known = Known {
                 board: self.board_known(&board_id),
-                files_gone: self.teams.running.get(&team_id).map(|r| r.files_gone.clone()).unwrap_or_default(),
+                files_gone: self
+                    .teams
+                    .running
+                    .get(&team_id)
+                    .map(|r| r.files_gone.clone())
+                    .unwrap_or_default(),
             };
-            let plan = self.board.model.team_delete_plan(&team_id, &known, &by, now_ms);
+            let plan = self
+                .board
+                .model
+                .team_delete_plan(&team_id, &known, &by, now_ms);
             let key = serde_json::to_string(&plan.step).unwrap_or_default();
-            let Some(run) = self.teams.running.get_mut(&team_id) else { continue };
+            let Some(run) = self.teams.running.get_mut(&team_id) else {
+                continue;
+            };
             (run.done, run.total) = (plan.done, plan.total);
             match &run.last {
                 Some((last, at, _)) if *last == key && now_ms < at + AGAIN_MS => continue,
                 Some((last, _, n)) if *last == key && *n + 1 >= STUCK => {
                     self.teams.running.remove(&team_id);
                     self.teams.stopped.insert(team_id.clone());
-                    let text = Text::new("teams.delete_stuck", "The team was not deleted yet. It goes on at the next start.");
+                    let text = Text::new(
+                        "teams.delete_stuck",
+                        "The team was not deleted yet. It goes on at the next start.",
+                    );
                     self.sent.toast(&mut self.next_view.toasts, text, None);
                     continue;
                 }
@@ -109,10 +126,31 @@ impl App {
         self.show_team_deletes();
     }
 
-    fn team_step(&mut self, now_ms: u64, team_id: &str, board_id: &str, step: Step, out: &mut Vec<Effect>) {
+    fn team_step(
+        &mut self,
+        now_ms: u64,
+        team_id: &str,
+        board_id: &str,
+        step: Step,
+        out: &mut Vec<Effect>,
+    ) {
         match step {
-            Step::Mark { register, value } => self.run_action(now_ms, Action::RoomRegister { key: register, value }, out),
-            Step::RemoveTeam { register } => self.run_action(now_ms, Action::RoomRegister { key: register, value: serde_json::Value::Null }, out),
+            Step::Mark { register, value } => self.run_action(
+                now_ms,
+                Action::RoomRegister {
+                    key: register,
+                    value,
+                },
+                out,
+            ),
+            Step::RemoveTeam { register } => self.run_action(
+                now_ms,
+                Action::RoomRegister {
+                    key: register,
+                    value: serde_json::Value::Null,
+                },
+                out,
+            ),
             Step::ForgetKnowledge { entry_ids } => {
                 for entry_id in entry_ids {
                     self.run_action(now_ms, Action::KnowledgeDelete { entry_id }, out);
@@ -120,24 +158,68 @@ impl App {
             }
             Step::Shred { object_ids } => {
                 for card_id in object_ids {
-                    self.run_action(now_ms, Action::Shred { card_id, note: None, attachments: Vec::new(), marks: Vec::new() }, out);
+                    self.run_action(
+                        now_ms,
+                        Action::Shred {
+                            card_id,
+                            note: None,
+                            attachments: Vec::new(),
+                            marks: Vec::new(),
+                        },
+                        out,
+                    );
                 }
             }
             Step::Archive { sessions } => {
                 for s in sessions {
-                    self.run_action(now_ms, Action::ArchiveSession { session_id: s.key, on: true }, out);
+                    self.run_action(
+                        now_ms,
+                        Action::ArchiveSession {
+                            session_id: s.key,
+                            on: true,
+                        },
+                        out,
+                    );
                 }
             }
-            Step::RemoveDevices { device_ids } => self.account(now_ms, crate::account::AccountAction::RemoveDevices { device_ids }, out),
+            Step::RemoveDevices { device_ids } => self.account(
+                now_ms,
+                crate::account::AccountAction::RemoveDevices { device_ids },
+                out,
+            ),
             Step::LoadBoard { .. } => out.extend(self.board_work(now_ms, board_id, false)),
-            Step::EraseBoard { shape_ids } => out.extend(self.erase_board(now_ms, board_id, &shape_ids)),
+            Step::EraseBoard { shape_ids } => {
+                out.extend(self.erase_board(now_ms, board_id, &shape_ids))
+            }
             Step::WriteSnapshot { .. } => out.extend(self.board_work(now_ms, board_id, true)),
             Step::DeleteFiles { file_ids } => {
                 for file in file_ids {
-                    let asked = self.teams.running.get(team_id).is_some_and(|r| r.files_asked.contains(&file));
-                    let Some(id) = (!asked).then(|| unhex16(&file)).flatten() else { continue };
+                    let asked = self
+                        .teams
+                        .running
+                        .get(team_id)
+                        .is_some_and(|r| r.files_asked.contains(&file));
+                    let Some(id) = (!asked).then(|| unhex16(&file)).flatten() else {
+                        continue;
+                    };
                     let (team, f) = (team_id.to_string(), file.clone());
-                    if self.step_send(now_ms, out, move |site| Codec.request(site, &Route::DeleteFile { file: &FileId::new(id) }), move |expect| Asked::TeamFile { team, file: f, expect }) {
+                    if self.step_send(
+                        now_ms,
+                        out,
+                        move |site| {
+                            Codec.request(
+                                site,
+                                &Route::DeleteFile {
+                                    file: &FileId::new(id),
+                                },
+                            )
+                        },
+                        move |expect| Asked::TeamFile {
+                            team,
+                            file: f,
+                            expect,
+                        },
+                    ) {
                         if let Some(run) = self.teams.running.get_mut(team_id) {
                             run.files_asked.insert(file);
                         }
@@ -166,7 +248,11 @@ impl App {
             .teams
             .running
             .iter()
-            .map(|(id, r)| TeamDeleteView { team_id: id.clone(), done: r.done, total: r.total })
+            .map(|(id, r)| TeamDeleteView {
+                team_id: id.clone(),
+                done: r.done,
+                total: r.total,
+            })
             .collect();
     }
 
@@ -180,7 +266,12 @@ impl App {
                 let id = k.trim_start_matches("desk/").to_string();
                 let board = self.board_known(&crate::scribble::team_board(&id));
                 let c = m.team_contents(&id, board.as_ref());
-                let name = r.value.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+                let name = r
+                    .value
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
                 let mut view = TeamCountsView {
                     team_id: id,
                     sessions: c.sessions,

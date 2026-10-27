@@ -1295,7 +1295,8 @@ pub const MAX_COUNTED_GROUPS: usize = 10_000;
 /// (every row of the object tables, also of objects whose bodies are pruned), ascending by group id; a group
 /// without an object is left out. Says whether it was cut short at [`MAX_COUNTED_GROUPS`].
 fn counts(c: &Connection, room: &Room, sees: &dyn Fn(&[u8]) -> bool) -> Res<(Vec<Value>, bool)> {
-    let mut by_group: std::collections::BTreeMap<Vec<u8>, Value> = std::collections::BTreeMap::new();
+    let mut by_group: std::collections::BTreeMap<Vec<u8>, Value> =
+        std::collections::BTreeMap::new();
     let mut cut = false;
     for (table, _) in OBJECT_TABLES {
         let mut s = c.prepare_cached(&format!(
@@ -1362,7 +1363,11 @@ pub fn settled_objects(
     // of one. A human device may read every group; it is asked over the room (`active=1` skips the archived rows,
     // which it may read as well).
     let groups: Option<Vec<Vec<u8>>> = match (group, readable) {
-        (Some(one), _) => Some(if sees(one) { vec![one.to_vec()] } else { vec![] }),
+        (Some(one), _) => Some(if sees(one) {
+            vec![one.to_vec()]
+        } else {
+            vec![]
+        }),
         (None, Some(list)) => Some(list.iter().filter(|g| sees(g)).cloned().collect()),
         (None, None) => None,
     };
@@ -1401,7 +1406,10 @@ pub fn settled_objects(
         let (index, only_groups) = match from {
             From::Room => ("settled", ""),
             From::Group(_) => ("settled_by_group", " AND group_id = ?3"),
-            From::Groups(_) => ("settled_by_group", " AND group_id IN (SELECT unhex(value) FROM json_each(?3))"),
+            From::Groups(_) => (
+                "settled_by_group",
+                " AND group_id IN (SELECT unhex(value) FROM json_each(?3))",
+            ),
         };
         statements.push(c.prepare_cached(&format!(
             "SELECT {COLUMNS} FROM {table} INDEXED BY {table}_{index}
@@ -1417,7 +1425,9 @@ pub fn settled_objects(
         });
     }
     let read = |rows: &mut rusqlite::Rows, table: &str| -> Res<Option<Ahead>> {
-        let Some(r) = rows.next()? else { return Ok(None) };
+        let Some(r) = rows.next()? else {
+            return Ok(None);
+        };
         let group: Vec<u8> = r.get(1)?;
         let head: i64 = r.get(7)?;
         let row = json!({
@@ -1437,7 +1447,8 @@ pub fn settled_objects(
     for (rows, (table, _)) in cursors.iter_mut().zip(&sources) {
         ahead.push(read(rows, table)?);
     }
-    let (mut items, mut bytes, mut looked, mut next, mut more) = (Vec::new(), 0usize, 0usize, before, false);
+    let (mut items, mut bytes, mut looked, mut next, mut more) =
+        (Vec::new(), 0usize, 0usize, before, false);
     while let Some(at) = (0..ahead.len())
         .filter(|i| ahead[*i].is_some())
         .max_by_key(|i| ahead[*i].as_ref().map(|a| a.0))
@@ -1446,10 +1457,14 @@ pub fn settled_objects(
             more = true;
             break;
         }
-        let (head, group, owner, mut row, version_change) = ahead[at].take().expect("a row read ahead");
+        let (head, group, owner, mut row, version_change) =
+            ahead[at].take().expect("a row read ahead");
         if sees(&group) {
             let version = envelope_at(c, &auth.room, version_change, false)?;
-            let size = version.as_ref().and_then(|v| v["envelope"].as_str()).map_or(0, str::len);
+            let size = version
+                .as_ref()
+                .and_then(|v| v["envelope"].as_str())
+                .map_or(0, str::len);
             // the Desk's budget, checked before a row goes in; the first one always does
             if bytes + size > ANSWER_BYTES && !items.is_empty() {
                 more = true;
@@ -1775,8 +1790,15 @@ pub fn changes_upto(
     let limit = clamp(limit, 200, MAX_CHANGES.into());
     // `active=1`: no envelope of an archived group (its Commits and MLS messages still come: a leaf keeps its
     // group state whole); `group=`: that group's envelopes alone, nothing of the log
-    let skipped = if only.active { archived_hex(c, &auth.room)? } else { "[]".to_string() };
-    let one = only.group.as_ref().map(|g| crate::util::hex(g).to_uppercase());
+    let skipped = if only.active {
+        archived_hex(c, &auth.room)?
+    } else {
+        "[]".to_string()
+    };
+    let one = only
+        .group
+        .as_ref()
+        .map(|g| crate::util::hex(g).to_uppercase());
     let room_head = store::room_row(c, &auth.room)?.change;
     let head = ceiling.map_or(room_head, |top| top.min(room_head));
     // (how far one catch-up request looks: an asker that sees little of a busy room gets what lies in this stretch
@@ -1953,8 +1975,11 @@ mod read_scope_tests {
     #[test]
     fn desk_scopes_keep_room_membership_and_archive_filters_separate() {
         let c = Connection::open_in_memory().unwrap();
-        c.execute_batch("CREATE TABLE groups (group_id BLOB, room_id BLOB, live INTEGER);
-            CREATE TABLE group_members (group_id BLOB, device BLOB, removed_epoch INTEGER);").unwrap();
+        c.execute_batch(
+            "CREATE TABLE groups (group_id BLOB, room_id BLOB, live INTEGER);
+            CREATE TABLE group_members (group_id BLOB, device BLOB, removed_epoch INTEGER);",
+        )
+        .unwrap();
         let room = [1; 32];
         let device = [2; 32];
         for (group, owner, live, removed) in [
@@ -1963,19 +1988,33 @@ mod read_scope_tests {
             (b"removed".as_slice(), room, 1, Some(1)),
             (b"foreign".as_slice(), [3; 32], 1, None),
         ] {
-            c.execute("INSERT INTO groups VALUES (?1, ?2, ?3)", params![group, &owner[..], live]).unwrap();
-            c.execute("INSERT INTO group_members VALUES (?1, ?2, ?3)", params![group, &device[..], removed]).unwrap();
+            c.execute(
+                "INSERT INTO groups VALUES (?1, ?2, ?3)",
+                params![group, &owner[..], live],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO group_members VALUES (?1, ?2, ?3)",
+                params![group, &device[..], removed],
+            )
+            .unwrap();
         }
         for who in [Who::Human, Who::Agent, Who::Helper, Who::Spent] {
             let auth = Auth { room, device, who };
             for (active, archived) in [(false, false), (true, false), (false, true), (true, true)] {
-                let only = Only { active, archived, group: None };
+                let only = Only {
+                    active,
+                    archived,
+                    group: None,
+                };
                 let scope = ReadScope::load(&c, &auth, &only).unwrap();
                 assert_eq!(scope.sees(b"live"), who != Who::Spent && !archived);
                 assert_eq!(scope.sees(b"archived"), who != Who::Spent && !active);
                 assert_eq!(scope.sees(b"removed"), who == Who::Human && !archived);
                 // Human group selection is bounded by each route's room SQL, while agents' membership is too.
-                if who != Who::Human { assert!(!scope.sees(b"foreign")); }
+                if who != Who::Human {
+                    assert!(!scope.sees(b"foreign"));
+                }
             }
         }
     }

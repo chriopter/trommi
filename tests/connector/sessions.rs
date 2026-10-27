@@ -79,15 +79,26 @@ impl Machine {
     }
 
     async fn approve_computer(&mut self, account: char) -> GroupId {
-        if let Some((_, group)) = self.computers.iter().find(|(a, _)| *a == account) { return *group }
-        let human = if account == 'A' { &mut self.a } else { &mut self.b };
+        if let Some((_, group)) = self.computers.iter().find(|(a, _)| *a == account) {
+            return *group;
+        }
+        let human = if account == 'A' {
+            &mut self.a
+        } else {
+            &mut self.b
+        };
         let group = self.seat.approve_computer(human).await;
         self.computers.push((account, group));
         group
     }
 
     async fn admit_any(&mut self, account: char) -> (DeviceId, GroupId) {
-        let computer = self.computers.iter().find(|(a, _)| *a == account).expect("approved computer").1;
+        let computer = self
+            .computers
+            .iter()
+            .find(|(a, _)| *a == account)
+            .expect("approved computer")
+            .1;
         let (admitted, group, _) = self.human(account).admit_activation(&computer).await;
         self.groups.push((account, group));
         (admitted.device, group)
@@ -178,7 +189,9 @@ impl Session {
     /// Starts its connector (a new one; a running one is left as it is, as /mcp Reconnect does).
     async fn start(&mut self, m: &Machine) -> Option<Mcp> {
         let hello = match self.client {
-            Client::Claude => json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "claude-code", "version": "2.1.0" } }),
+            Client::Claude => {
+                json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "claude-code", "version": "2.1.0" } })
+            }
             Client::Codex => codex_hello(),
         };
         // TROMMI_MATRIX_LOGS=<folder>: each connector's stderr into a file of its own there
@@ -187,7 +200,8 @@ impl Session {
                 .name()
                 .unwrap_or("test")
                 .replace("::", "-");
-            let file = PathBuf::from(dir).join(format!("{test}-{}-{}.log", self.name, random_hex(2)));
+            let file =
+                PathBuf::from(dir).join(format!("{test}-{}-{}.log", self.name, random_hex(2)));
             std::fs::File::create(file).expect("a log file")
         });
         let mut mcp = Mcp::start_logged(self.command(m), hello, log).await;
@@ -305,7 +319,10 @@ async fn joined<T>(
     };
     if said.is_none() {
         let (text, failed) = connect.await;
-        assert!(!failed && text.starts_with("Check code:"), "{name}: connect: {text}");
+        assert!(
+            !failed && text.starts_with("Check code:"),
+            "{name}: connect: {text}"
+        );
     }
     out
 }
@@ -346,10 +363,7 @@ async fn all_on_board(m: &mut Machine, sessions: &mut [&mut Session]) {
 
 /// A refusal that says what the human does: an invite in the Trommi app and where its link goes.
 fn says_what_to_do(client: Client, said: &str) {
-    assert!(
-        !said.contains("Call the tool again"),
-        "no loop: {said}"
-    );
+    assert!(!said.contains("Call the tool again"), "no loop: {said}");
     assert!(said.to_lowercase().contains("connect"), "{said}");
     match client {
         Client::Codex => assert!(said.contains("connect"), "{said}"),
@@ -431,14 +445,20 @@ async fn many_fresh_sessions_at_once(client: Client) {
         s.start(&m).await;
     }
     m.approve_computer('A').await;
-    let calls = news.iter_mut().map(|s| async move { s.mcp().call("connect", json!({})).await });
+    let calls = news
+        .iter_mut()
+        .map(|s| async move { s.mcp().call("connect", json!({})).await });
     let admissions = async {
         let mut admitted = vec![];
-        for _ in 0..4 { admitted.push(m.admit_any('A').await); }
+        for _ in 0..4 {
+            admitted.push(m.admit_any('A').await);
+        }
         admitted
     };
     let (answers, admitted) = tokio::join!(futures_join_all(calls), admissions);
-    for (said, failed) in answers { assert!(!failed, "{said}"); }
+    for (said, failed) in answers {
+        assert!(!failed, "{said}");
+    }
     for s in news.iter_mut() {
         s.mcp().ready().await;
     }
@@ -621,7 +641,11 @@ async fn explicit_activation_beside_a_link_join(client: Client) {
         let admitted = m.b.admit(&mut invite).await;
         (admitted.device, m.b.found_session(&admitted).await)
     };
-    let ((said, failed), (child, group, _), (device, direct_group)) = tokio::join!(activation, admit_activation, joined("direct", connect, admit_link));
+    let ((said, failed), (child, group, _), (device, direct_group)) = tokio::join!(
+        activation,
+        admit_activation,
+        joined("direct", connect, admit_link)
+    );
     assert!(!failed, "{said}");
     s2.on = Some(('A', child.device, group));
     s3.on = Some(('B', device, direct_group));
@@ -662,7 +686,11 @@ async fn connect_asleep_awake_and_in_the_other_accounts_room(client: Client) {
     s4.start(&m).await;
     let mut invite = invite;
     let link = invite.link.clone();
-    let connect = s4.mcp.as_mut().unwrap().call("connect", json!({ "link": link }));
+    let connect = s4
+        .mcp
+        .as_mut()
+        .unwrap()
+        .call("connect", json!({ "link": link }));
     let admit = async {
         let admitted = m.b.admit(&mut invite).await;
         (admitted.device, m.b.found_session(&admitted).await)
@@ -755,9 +783,15 @@ impl Session {
 /// The owner records of the machine that name `owner`.
 fn owner_files(m: &Machine, owner: &str) -> Vec<PathBuf> {
     let mut out = vec![];
-    for room in std::fs::read_dir(m.seat.home.path().join("keys")).into_iter().flatten().flatten() {
-        for f in trommi_connector::member::room_slot_dirs(&room.path()).into_iter()
-            .flat_map(|dir| std::fs::read_dir(dir).into_iter().flatten().flatten()) {
+    for room in std::fs::read_dir(m.seat.home.path().join("keys"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        for f in trommi_connector::member::room_slot_dirs(&room.path())
+            .into_iter()
+            .flat_map(|dir| std::fs::read_dir(dir).into_iter().flatten().flatten())
+        {
             let p = f.path();
             let name = p.file_name().unwrap().to_string_lossy().to_string();
             if name.ends_with(".owner")
@@ -792,7 +826,11 @@ async fn a_key_of_no_known_session_is_never_taken(client: Client) {
     let f2 = owner_files(&m, &s2.owner());
     assert_eq!((f1.len(), f2.len()), (1, 1));
     std::fs::remove_file(&f1[0]).unwrap();
-    std::fs::write(&f2[0], r#"{"owner":"","claude_pid":4194300,"claude_start":"","at":0}"#).unwrap();
+    std::fs::write(
+        &f2[0],
+        r#"{"owner":"","claude_pid":4194300,"claude_start":"","at":0}"#,
+    )
+    .unwrap();
     let mut s3 = Session::new(&m, "s3", client, "project", "cfg");
     s3.start(&m).await;
     let said = s3.refused("inbox").await;
@@ -865,7 +903,11 @@ async fn a_resumed_session_waits_for_its_own_key_and_never_joins_anew() {
         "{said}"
     );
     let (_, _, vg) = v.on.unwrap();
-    assert_eq!(asks_settle(&mut m, &vg, 1, 3000).await, Err(0), "no ask to let it in anew");
+    assert_eq!(
+        asks_settle(&mut m, &vg, 1, 3000).await,
+        Err(0),
+        "no ask to let it in anew"
+    );
 
     // the earlier process ends: its key is free
     old.close().await;
@@ -873,7 +915,11 @@ async fn a_resumed_session_waits_for_its_own_key_and_never_joins_anew() {
     all_on_board(&mut m, &mut [&mut s1, &mut v, &mut o]).await;
     assert_eq!(s1.on, was, "the same device in the same board session");
     assert_eq!(m.a.open_asks(&vg).await, 0);
-    assert_eq!(owner_files(&m, &s1.owner()).len(), 1, "one key for the session");
+    assert_eq!(
+        owner_files(&m, &s1.owner()).len(),
+        1,
+        "one key for the session"
+    );
 }
 
 /// A session's door, as another connector of this machine knocks at it.
@@ -881,11 +927,15 @@ async fn knock_session(m: &Machine, s: &Session, req: serde_json::Value) -> serd
     assert!(s.on.is_some(), "{} is on the board", s.name);
     let keys = m.seat.home.path().join("keys");
     for room in std::fs::read_dir(&keys).unwrap().flatten() {
-        for f in trommi_connector::member::room_slot_dirs(&room.path()).into_iter()
-            .flat_map(|dir| std::fs::read_dir(dir).unwrap().flatten()) {
+        for f in trommi_connector::member::room_slot_dirs(&room.path())
+            .into_iter()
+            .flat_map(|dir| std::fs::read_dir(dir).unwrap().flatten())
+        {
             let p = f.path();
             let name = p.file_name().unwrap().to_string_lossy().to_string();
-            let Some(stem) = name.strip_suffix(".owner") else { continue };
+            let Some(stem) = name.strip_suffix(".owner") else {
+                continue;
+            };
             let mine = std::fs::read_to_string(&p)
                 .ok()
                 .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
@@ -900,7 +950,9 @@ async fn knock_session(m: &Machine, s: &Session, req: serde_json::Value) -> serd
                 .join(format!("trommi-{}", trommi_connector::slots::uid()))
                 .join(format!(
                     "{}.sock",
-                    &hex(&trommi_connector::util::sha256(key.display().to_string().as_bytes()))[..20]
+                    &hex(&trommi_connector::util::sha256(
+                        key.display().to_string().as_bytes()
+                    ))[..20]
                 ));
             return trommi_connector::door::knock_at(&sock, &req, 10_000)
                 .await
@@ -917,8 +969,16 @@ async fn ordinary_sessions_refuse_the_removed_voucher_protocol() {
     let mut session = Session::new(&m, "ordinary", Client::Claude, "one", "cfg");
     session.start(&m).await;
     session.connect(&mut m, 'A').await;
-    let reply = knock_session(&m, &session, json!({"op":"vouch","owner":"cc:other","account":"claimed"})).await;
-    assert_ne!(reply["ok"], true, "ordinary agents cannot admit sessions: {reply}");
+    let reply = knock_session(
+        &m,
+        &session,
+        json!({"op":"vouch","owner":"cc:other","account":"claimed"}),
+    )
+    .await;
+    assert_ne!(
+        reply["ok"], true,
+        "ordinary agents cannot admit sessions: {reply}"
+    );
 }
 
 /// The link of an invite for the coordinator's own session, given to `trommi-connector connect` in a terminal of
@@ -967,7 +1027,11 @@ async fn a_link_joined_in_a_terminal_of_another_folder_reaches_the_waiting_sessi
     drop(old_parent);
     s1.on = Some(('A', admitted.device, group));
     all_on_board(&mut m, &mut [&mut s1]).await;
-    assert_eq!(owner_files(&m, &s1.owner()).len(), 1, "one key for the session");
+    assert_eq!(
+        owner_files(&m, &s1.owner()).len(),
+        1,
+        "one key for the session"
+    );
 }
 
 /// Keys of one session in two rooms (copied by hand, say): refused by name, never one picked by directory order.
@@ -984,13 +1048,23 @@ async fn keys_of_one_session_in_two_rooms_are_refused_by_name() {
     s2.close().await;
     let f1 = owner_files(&m, &s1.owner());
     let f2 = owner_files(&m, &s2.owner());
-    let text = std::fs::read_to_string(&f2[0]).unwrap().replace(&s2.owner(), &s1.owner());
+    let text = std::fs::read_to_string(&f2[0])
+        .unwrap()
+        .replace(&s2.owner(), &s1.owner());
     std::fs::write(&f2[0], text).unwrap();
     // A manually copied session key includes its owner directory. Merely changing a record under
     // another owner's hash must not make that other owner's subtree discoverable.
     let from = f2[0].parent().unwrap();
-    if from.parent().and_then(|p| p.file_name()).is_some_and(|n| n == "s") {
-        std::fs::rename(from, from.with_file_name(f1[0].parent().unwrap().file_name().unwrap())).unwrap();
+    if from
+        .parent()
+        .and_then(|p| p.file_name())
+        .is_some_and(|n| n == "s")
+    {
+        std::fs::rename(
+            from,
+            from.with_file_name(f1[0].parent().unwrap().file_name().unwrap()),
+        )
+        .unwrap();
     }
     s1.resume(&m).await;
     let said = s1.refused("inbox").await;
@@ -1024,31 +1098,60 @@ async fn approved_computer_activates_only_explicit_sessions_without_a_running_vo
     let mut invite = m.a.invite(None).await;
     let link = invite.link.clone();
     let human = &mut m.a;
-    let connect = first.mcp().call("connect", json!({"link":link,"computer":true}));
+    let connect = first
+        .mcp()
+        .call("connect", json!({"link":link,"computer":true}));
     let admit = async {
         let machine = human.admit(&mut invite).await;
         eprintln!("computer emoji enrolment confirmed");
         let group = human.found_session(&machine).await;
         let sid = hex(group.session_id().unwrap().as_bytes());
         let room = GroupId::room(human.room);
-        human.set_register(&room, &format!("session/{sid}"), Some(json!({"machine":{"device":hex(machine.device.as_bytes())}}))).await.unwrap();
-        human.set_register(&group, "machine_approved", Some(json!({"device":hex(machine.device.as_bytes())}))).await.unwrap();
+        human
+            .set_register(
+                &room,
+                &format!("session/{sid}"),
+                Some(json!({"machine":{"device":hex(machine.device.as_bytes())}})),
+            )
+            .await
+            .unwrap();
+        human
+            .set_register(
+                &group,
+                "machine_approved",
+                Some(json!({"device":hex(machine.device.as_bytes())})),
+            )
+            .await
+            .unwrap();
         eprintln!("computer grant and acknowledgement posted; waiting for first activation");
         let (child, session, _) = human.admit_activation(&group).await;
         (machine.device, group, child.device, session)
     };
     let (computer, group, device, session) = joined("computer approval", connect, admit).await;
-    assert_ne!(computer, device, "computer authority and conversation are separate devices");
+    assert_ne!(
+        computer, device,
+        "computer authority and conversation are separate devices"
+    );
     first.on = Some(('A', device, session));
     m.groups.push(('A', group));
     first.mcp().ready().await;
     first.speaks(&mut m).await;
     first.close().await;
-    let mut second = Session::new(&m, "activation", Client::Claude, "two", "another-program-config");
+    let mut second = Session::new(
+        &m,
+        "activation",
+        Client::Claude,
+        "two",
+        "another-program-config",
+    );
     second.start(&m).await;
     let said = second.refused("inbox").await;
     assert!(said.contains("connect"), "{said}");
-    assert_eq!(m.a.open_asks(&group).await, 0, "startup, tools/list and inbox do not activate");
+    assert_eq!(
+        m.a.open_asks(&group).await,
+        0,
+        "startup, tools/list and inbox do not activate"
+    );
     let activation = second.mcp().call("connect", json!({}));
     let admit = m.a.admit_activation(&group);
     let ((said, failed), (child, session, _)) = tokio::join!(activation, admit);
@@ -1063,15 +1166,26 @@ async fn approved_computer_activates_only_explicit_sessions_without_a_running_vo
     let mut revoked = Session::new(&m, "revoked", Client::Claude, "three", "cfg");
     revoked.start(&m).await;
     let (said, failed) = revoked.mcp().call("connect", json!({})).await;
-    assert!(failed, "a removed computer cannot activate another session: {said}");
-    assert!(said.contains("computer") || said.contains("removed") || said.contains("room"), "{said}");
+    assert!(
+        failed,
+        "a removed computer cannot activate another session: {said}"
+    );
+    assert!(
+        said.contains("computer") || said.contains("removed") || said.contains("room"),
+        "{said}"
+    );
     revoked.close().await;
 }
 
 /// The tool names a connector lists now.
 async fn listed(s: &mut Session) -> Vec<String> {
     let list = s.mcp().request("tools/list", json!({})).await;
-    list["tools"].as_array().unwrap().iter().filter_map(|t| t["name"].as_str().map(String::from)).collect()
+    list["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|t| t["name"].as_str().map(String::from))
+        .collect()
 }
 
 /// A session whose key the human removed in the app: after a restart (/mcp Reconnect, a resume) it lists connect,
@@ -1090,9 +1204,18 @@ async fn a_session_whose_key_was_removed_connects_again_after_a_restart() {
     //  connector that the session went on from: it is still this session's key, and the session takes it)
     s.close().await;
     let keys = m.seat.home.path().join("keys");
-    let base = std::fs::read_to_string(s.folder.join(".trommi/slot-base")).unwrap().trim().to_string();
-    let own = walk(&keys).into_iter().find(|d| d.join("session-1.key").exists()
-        && std::fs::read_to_string(d.join("session-1.owner")).is_ok_and(|o| o.contains(&s.id))).expect("the session's key");
+    let base = std::fs::read_to_string(s.folder.join(".trommi/slot-base"))
+        .unwrap()
+        .trim()
+        .to_string();
+    let own = walk(&keys)
+        .into_iter()
+        .find(|d| {
+            d.join("session-1.key").exists()
+                && std::fs::read_to_string(d.join("session-1.owner"))
+                    .is_ok_and(|o| o.contains(&s.id))
+        })
+        .expect("the session's key");
     let room = own.parent().unwrap().parent().unwrap().to_path_buf();
     for e in std::fs::read_dir(&own).unwrap().flatten() {
         let name = e.file_name().to_string_lossy().to_string();
@@ -1108,18 +1231,37 @@ async fn a_session_whose_key_was_removed_connects_again_after_a_restart() {
     // the running connector finds itself out: connect comes back in its list
     let mut out = false;
     for _ in 0..300 {
-        if listed(&mut s).await.contains(&"connect".to_string()) { out = true; break }
+        if listed(&mut s).await.contains(&"connect".to_string()) {
+            out = true;
+            break;
+        }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     assert!(out, "connect is listed once the key is out");
     for restart in ["/mcp Reconnect", "a resume"] {
-        if restart == "a resume" { s.resume(&m).await } else { s.close().await; s.start(&m).await; }
+        if restart == "a resume" {
+            s.resume(&m).await
+        } else {
+            s.close().await;
+            s.start(&m).await;
+        }
         let said = s.refused("inbox").await;
         assert!(said.contains("connect"), "{restart}: {said}");
         let tools = listed(&mut s).await;
-        assert!(tools.contains(&"connect".to_string()), "{restart}: connect is not listed: {tools:?}");
+        assert!(
+            tools.contains(&"connect".to_string()),
+            "{restart}: connect is not listed: {tools:?}"
+        );
     }
-    let aside = |dir: &std::path::Path| std::fs::read_dir(dir).map(|d| d.flatten().filter(|e| e.file_name().to_string_lossy().starts_with("replaced-")).count()).unwrap_or(0);
+    let aside = |dir: &std::path::Path| {
+        std::fs::read_dir(dir)
+            .map(|d| {
+                d.flatten()
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("replaced-"))
+                    .count()
+            })
+            .unwrap_or(0)
+    };
     let count = |keys: &std::path::Path| walk(keys).iter().map(|d| aside(d)).sum::<usize>();
     s.activate(&mut m, &voucher).await;
     let (_, fresh, _) = s.on.unwrap();
@@ -1153,7 +1295,22 @@ async fn a_fresh_mcp_never_consumes_an_invite_from_its_environment() {
     let _ = mcp.request("tools/list", json!({})).await;
     let (said, failed) = mcp.call("inbox", json!({})).await;
     assert!(failed && said.contains("connect"), "{said}");
-    let served = m.a.hub.get(&format!("/v1/invites/{}", trommi_core::invite::InviteLink::parse(&invite.link).unwrap().invite_id().unwrap().to_base64url())).await.unwrap();
-    assert_eq!(served["requests"].as_array().unwrap().len(), 0, "an environment variable is no activation command");
+    let served =
+        m.a.hub
+            .get(&format!(
+                "/v1/invites/{}",
+                trommi_core::invite::InviteLink::parse(&invite.link)
+                    .unwrap()
+                    .invite_id()
+                    .unwrap()
+                    .to_base64url()
+            ))
+            .await
+            .unwrap();
+    assert_eq!(
+        served["requests"].as_array().unwrap().len(),
+        0,
+        "an environment variable is no activation command"
+    );
     mcp.close().await;
 }

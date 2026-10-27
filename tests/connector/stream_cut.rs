@@ -19,7 +19,8 @@ use std::time::Duration;
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stream_cut_after_each_event_is_opened_again_at_once() {
     let proxy = Proxy::start(7).await;
-    let hub = HubProc::start_in_with(TempDir::new("hub"), 0, &[("HUB_URL", proxy.url.as_str())]).await;
+    let hub =
+        HubProc::start_in_with(TempDir::new("hub"), 0, &[("HUB_URL", proxy.url.as_str())]).await;
     proxy.set_upstream(hub.port);
     let mut human = Human::found(&proxy.url).await;
     let seat = Seat::new(&proxy.url);
@@ -36,18 +37,29 @@ async fn a_stream_cut_after_each_event_is_opened_again_at_once() {
     mcp.ready().await;
 
     // From now on every stream is cut right after its first event; the person writes every half second.
-    proxy.set(Knobs { cut_after: 1.0, ..Knobs::calm() });
+    proxy.set(Knobs {
+        cut_after: 1.0,
+        ..Knobs::calm()
+    });
     let before = proxy.counts().streams;
     let until = std::time::Instant::now() + Duration::from_secs(25);
     let mut n = 0;
     while std::time::Instant::now() < until {
-        let _ = human.say(&group, json!({ "content_type": "message", "text": format!("note {n}") })).await;
+        let _ = human
+            .say(
+                &group,
+                json!({ "content_type": "message", "text": format!("note {n}") }),
+            )
+            .await;
         n += 1;
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     let opened = proxy.counts().streams - before;
     // About one a second and a half (a second's pause, up to half of it again by chance, and the event to wait
     // for). With a doubling pause it was 5: after 1, 2, 4, 8 seconds, then 16.
-    assert!(opened >= 10, "{opened} streams in 25 s of cuts: the connector waits longer and longer");
+    assert!(
+        opened >= 10,
+        "{opened} streams in 25 s of cuts: the connector waits longer and longer"
+    );
     mcp.close().await;
 }

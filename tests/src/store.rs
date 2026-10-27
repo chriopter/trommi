@@ -81,7 +81,11 @@ impl MemoryStorage {
 
     /// Accepted puts and their key/value bytes in one table, for storage cost measurements.
     pub fn table_written(&self, table: u8) -> (u64, u64) {
-        self.content().by_table.get(&table).copied().unwrap_or_default()
+        self.content()
+            .by_table
+            .get(&table)
+            .copied()
+            .unwrap_or_default()
     }
 
     /// Every entry, ascending by key.

@@ -43,7 +43,9 @@ use crate::hub::{Answer, ChainItem, Failure, LinkReport, LogItem, Route};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::VecDeque;
-use trommi_core::device::{log_finding, LogEntry, LogFinding, LogKind, Processed, ReceivedEnvelope};
+use trommi_core::device::{
+    log_finding, LogEntry, LogFinding, LogKind, Processed, ReceivedEnvelope,
+};
 use trommi_core::envelope::{Envelope, ObjectState, Subject, Timeline, Verdict};
 use trommi_core::ids::{DeviceId, GroupId, Hash32};
 use trommi_core::objects::{AnswerAction, Command, Decision, Refusal};
@@ -60,7 +62,8 @@ pub const NO_HUB_ROUNDS: u32 = 3;
 /// A stream that lived at least this long was a working connection: the pause before the next starts small.
 pub const STREAM_LIVED_MS: u64 = 30_000;
 /// The text of a command whose effect is uncertain and whose content is not known any more.
-pub const UNCERTAIN: &str = "a command whose effect is uncertain after a restart; ask the human what they meant";
+pub const UNCERTAIN: &str =
+    "a command whose effect is uncertain after a restart; ask the human what they meant";
 
 /// A human's command for the agent, after the gate (9.0.9). Ids as the agent sees them: a session or object as
 /// hex, a device and an envelope hash as base64url, an envelope's place as the hub's change number.
@@ -96,17 +99,30 @@ pub struct AgentCommand {
 impl AgentCommand {
     /// The payload's fields; empty when it is not known or no object.
     pub fn content(&self) -> Map<String, Value> {
-        serde_json::from_str::<Value>(&self.payload).ok().and_then(|v| v.as_object().cloned()).unwrap_or_default()
+        serde_json::from_str::<Value>(&self.payload)
+            .ok()
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default()
     }
 
     /// Completes a take-back's command from the shared model's recorded answer.
     pub fn with_model(mut self, model: &crate::model::Model) -> Self {
         if self.command == "decide_again" && self.previous_choices.is_empty() {
-            let taken = self.object_id.as_ref().and_then(|id| model.cards.get(id)).and_then(|card| {
-                card.answers.iter().rev().find(|answer| answer.taken_back_at.is_some()).or(card.answers.last())
-            });
-            self.previous_choices = taken.and_then(|answer| answer.choices.as_array())
-                .map(|list| list.iter().map(crate::codec::js_string).collect()).unwrap_or_default();
+            let taken = self
+                .object_id
+                .as_ref()
+                .and_then(|id| model.cards.get(id))
+                .and_then(|card| {
+                    card.answers
+                        .iter()
+                        .rev()
+                        .find(|answer| answer.taken_back_at.is_some())
+                        .or(card.answers.last())
+                });
+            self.previous_choices = taken
+                .and_then(|answer| answer.choices.as_array())
+                .map(|list| list.iter().map(crate::codec::js_string).collect())
+                .unwrap_or_default();
         }
         self
     }
@@ -115,7 +131,11 @@ impl AgentCommand {
     pub fn of(received: &ReceivedEnvelope, decision: &Decision) -> Option<AgentCommand> {
         let header = &received.header;
         let session = header.group.session_id().map(|s| hex(s.as_bytes()));
-        let payload = received.body.as_ref().map(|b| String::from_utf8_lossy(b.payload()).into_owned()).unwrap_or_default();
+        let payload = received
+            .body
+            .as_ref()
+            .map(|b| String::from_utf8_lossy(b.payload()).into_owned())
+            .unwrap_or_default();
         let mut command = AgentCommand {
             session_id: session.clone(),
             envelope_number: received.change,
@@ -147,12 +167,19 @@ impl AgentCommand {
                 });
             }
             Decision::Act(Command::Answer { action, choices }) => {
-                let closed = received.object_after.as_ref().is_some_and(|(_, o)| o.state == ObjectState::Closed);
+                let closed = received
+                    .object_after
+                    .as_ref()
+                    .is_some_and(|(_, o)| o.state == ObjectState::Closed);
                 command.settled = *action == AnswerAction::Answer && closed;
                 command.command = match action {
                     AnswerAction::Read => "read",
                     AnswerAction::Shred => "shred",
-                    AnswerAction::Answer if command.content().get("trusted").is_some_and(truthy) => "trust",
+                    AnswerAction::Answer
+                        if command.content().get("trusted").is_some_and(truthy) =>
+                    {
+                        "trust"
+                    }
                     AnswerAction::Answer => "answer",
                 }
                 .into();
@@ -186,7 +213,10 @@ enum Guard {
     #[default]
     Due,
     /// The groups still to ask about, with the number of this device's own head in each.
-    Asking { todo: VecDeque<(GroupId, u64)>, asked: Option<super::IoId> },
+    Asking {
+        todo: VecDeque<(GroupId, u64)>,
+        asked: Option<super::IoId>,
+    },
     Passed,
 }
 
@@ -261,14 +291,20 @@ impl Agent {
 
     /// Whether this process may sign: it holds the lease, and its own chains were held against the hub's.
     pub(super) fn signs(&self) -> bool {
-        self.generation.is_some() && !self.leaving && !self.room_removed && self.removal.is_none() && matches!(self.guard, Guard::Passed)
+        self.generation.is_some()
+            && !self.leaving
+            && !self.room_removed
+            && self.removal.is_none()
+            && matches!(self.guard, Guard::Passed)
     }
 }
 
 /// How this device stands in the room's newest state: an agent the room names.
 fn enrolled(device: &super::Device<super::memstore::MemStore>) -> bool {
     let me = device.id();
-    device.room_history().is_some_and(|h| h.newest().is_agent(&me))
+    device
+        .room_history()
+        .is_some_and(|h| h.newest().is_agent(&me))
 }
 
 impl Engine {
@@ -310,7 +346,11 @@ impl Engine {
     /// The process ends: its last renewal gives the lease up (`leaving`), so the human devices see the device
     /// go at once. Nothing more is read or written.
     pub fn leave(&mut self, ctx: &mut Ctx<'_>) {
-        if let Some(agent) = self.agent.as_mut().filter(|a| a.generation.is_some() && !a.leaving) {
+        if let Some(agent) = self
+            .agent
+            .as_mut()
+            .filter(|a| a.generation.is_some() && !a.leaving)
+        {
             agent.leaving = true;
             agent.renew_now = true;
             agent.report.hears = false;
@@ -342,16 +382,26 @@ impl Engine {
     /// This agent device's main session group: the live session group without a parent where the room names it
     /// the agent.
     pub fn main_group(&self) -> Option<GroupId> {
-        self.device.groups().ok()?.into_iter().map(|g| g.group).find(|group| self.is_main(group))
+        self.device
+            .groups()
+            .ok()?
+            .into_iter()
+            .map(|g| g.group)
+            .find(|group| self.is_main(group))
     }
 
     /// Whether `group` is this agent device's main session group.
     fn is_main(&self, group: &GroupId) -> bool {
-        let (Some(history), Ok(summary)) = (self.device.room_history(), self.device.group(group)) else { return false };
+        let (Some(history), Ok(summary)) = (self.device.room_history(), self.device.group(group))
+        else {
+            return false;
+        };
         let room = history.newest();
         let me = self.device.id();
         let seat = summary.leaves.iter().find(|leaf| room.is_agent(leaf));
-        summary.session.is_some_and(|s| s.parent.is_zero()) && !summary.archived && seat == Some(&me)
+        summary.session.is_some_and(|s| s.parent.is_zero())
+            && !summary.archived
+            && seat == Some(&me)
     }
 
     // ---- inside the engine
@@ -366,7 +416,15 @@ impl Engine {
         if agent.left {
             return None;
         }
-        let mut at = [agent.retry.at, agent.guard_retry.at, agent.way.wake(), agent.removal.as_ref().and_then(|r| r.retry_at)].into_iter().flatten().min();
+        let mut at = [
+            agent.retry.at,
+            agent.guard_retry.at,
+            agent.way.wake(),
+            agent.removal.as_ref().and_then(|r| r.retry_at),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
         if agent.generation.is_some() && agent.asked.is_none() {
             at = Some(at.map_or(agent.renew_at, |a| a.min(agent.renew_at)));
         }
@@ -376,7 +434,9 @@ impl Engine {
     /// The agent's turn of the drive, once signed in: the lease, the rollback guard, a removal being read. False:
     /// nothing else may be read or written now.
     pub(super) fn drive_agent(&mut self, ctx: &mut Ctx<'_>) -> bool {
-        let Some(agent) = self.agent.as_mut() else { return true };
+        let Some(agent) = self.agent.as_mut() else {
+            return true;
+        };
         if agent.left {
             return false;
         }
@@ -387,9 +447,15 @@ impl Engine {
         let agent = self.agent.as_mut().expect("an agent");
         let due = agent.generation.is_none() || agent.renew_now || ctx.now >= agent.renew_at;
         if due && agent.asked.is_none() && !agent.retry.waiting(ctx.now) {
-            let (process, generation, report, leaving) = (agent.process, agent.generation, agent.report, agent.leaving);
+            let (process, generation, report, leaving) =
+                (agent.process, agent.generation, agent.report, agent.leaving);
             agent.renew_now = false;
-            let route = Route::Link { process: &process, generation, report: &report, leaving };
+            let route = Route::Link {
+                process: &process,
+                generation,
+                report: &report,
+                leaving,
+            };
             let asked = self.ask(ctx, route, true, Asked::Lease);
             self.agent.as_mut().expect("an agent").asked = asked;
         }
@@ -407,14 +473,30 @@ impl Engine {
     /// Tells the kept commands again after a start, as uncertain, and what the gate started that the record did
     /// not keep. Once, when the record was read.
     pub(super) fn agent_restart(&mut self) {
-        let Some(agent) = self.agent.as_mut().filter(|a| !a.told) else { return };
+        let Some(agent) = self.agent.as_mut().filter(|a| !a.told) else {
+            return;
+        };
         agent.told = true;
-        let mut told: Vec<AgentCommand> = agent.commands.iter().cloned().map(|c| AgentCommand { uncertain: true, ..c }).collect();
+        let mut told: Vec<AgentCommand> = agent
+            .commands
+            .iter()
+            .cloned()
+            .map(|c| AgentCommand {
+                uncertain: true,
+                ..c
+            })
+            .collect();
         let started = self.device.commands_uncertain().unwrap_or_default();
         for hash in started {
             let text = hash.to_base64url();
             if !told.iter().any(|c| c.envelope_hash == text) {
-                told.push(AgentCommand { uncertain: true, command: "unsupported".into(), envelope_hash: text, what: Some(UNCERTAIN.into()), ..AgentCommand::default() });
+                told.push(AgentCommand {
+                    uncertain: true,
+                    command: "unsupported".into(),
+                    envelope_hash: text,
+                    what: Some(UNCERTAIN.into()),
+                    ..AgentCommand::default()
+                });
             }
         }
         for command in told {
@@ -422,8 +504,15 @@ impl Engine {
         }
     }
 
-    pub(super) fn on_lease(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, refusal: Option<&str>) {
-        let Some(agent) = self.agent.as_mut() else { return };
+    pub(super) fn on_lease(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        answer: Result<Answer, Failure>,
+        refusal: Option<&str>,
+    ) {
+        let Some(agent) = self.agent.as_mut() else {
+            return;
+        };
         agent.asked = None;
         match answer {
             Ok(Answer::Linked { generation, .. }) => {
@@ -447,7 +536,10 @@ impl Engine {
             }
             Ok(_) => agent.retry.fail(ctx.now, None, &mut self.jitter),
             Err(_) if refusal == Some("lease-lost") => {
-                ctx.log(LogLevel::Warn, "lease: another process took this device's lease");
+                ctx.log(
+                    LogLevel::Warn,
+                    "lease: another process took this device's lease",
+                );
                 self.stop(ctx, Stopped::LeaseLost);
             }
             Err(failure) => {
@@ -464,14 +556,27 @@ impl Engine {
     /// the protocol's (a proxy's page), `bad-format` or `client-too-old`. A round (a sign-in, the lease) answered so
     /// at the first try, or [`NO_HUB_ROUNDS`] times in a row, stops the agent ([`Stopped::HubUnusable`]): asking on
     /// helps nothing. Any other answer of a round counts it again from zero. True: the engine stopped.
-    pub(super) fn agent_no_hub(&mut self, ctx: &mut Ctx<'_>, asked: &Asked, answer: &Result<Answer, Failure>, code: Option<&str>) -> bool {
-        let Some(agent) = self.agent.as_mut() else { return false };
-        if !matches!(asked, Asked::Challenge(_) | Asked::Token(_) | Asked::Lease(_)) {
+    pub(super) fn agent_no_hub(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        asked: &Asked,
+        answer: &Result<Answer, Failure>,
+        code: Option<&str>,
+    ) -> bool {
+        let Some(agent) = self.agent.as_mut() else {
+            return false;
+        };
+        if !matches!(
+            asked,
+            Asked::Challenge(_) | Asked::Token(_) | Asked::Lease(_)
+        ) {
             return false;
         }
         let no_hub = match answer {
             Err(Failure::BadAnswer { .. }) => true,
-            Err(Failure::Refused { .. }) => code.is_none_or(|c| matches!(c, "bad-format" | "client-too-old")),
+            Err(Failure::Refused { .. }) => {
+                code.is_none_or(|c| matches!(c, "bad-format" | "client-too-old"))
+            }
             _ => false,
         };
         let first = !agent.rounds;
@@ -501,7 +606,9 @@ impl Engine {
     /// A refusal of any request: `lease-lost` is checked by renewing; a key the hub takes for no member reads
     /// what the hub still serves it.
     pub(super) fn agent_refused(&mut self, ctx: &mut Ctx<'_>, code: &str) {
-        let Some(agent) = self.agent.as_mut() else { return };
+        let Some(agent) = self.agent.as_mut() else {
+            return;
+        };
         match code {
             "lease-lost" => {
                 agent.renew_now = true;
@@ -521,16 +628,38 @@ impl Engine {
             return;
         }
         let groups: VecDeque<GroupId> = std::iter::once(GroupId::room(self.room))
-            .chain(self.device.groups().unwrap_or_default().into_iter().filter(|g| !g.group.is_room() && !g.archived).map(|g| g.group))
+            .chain(
+                self.device
+                    .groups()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|g| !g.group.is_room() && !g.archived)
+                    .map(|g| g.group),
+            )
             .collect();
-        let Some(agent) = self.agent.as_mut().filter(|a| a.removal.is_none()) else { return };
-        ctx.log(LogLevel::Warn, "the hub takes this device for a removed one: its Commits are read");
-        agent.removal = Some(RemovalRead { groups, after: 0, pages: 0, items: Vec::new(), asked: None, retry_at: None, retries: 0 });
+        let Some(agent) = self.agent.as_mut().filter(|a| a.removal.is_none()) else {
+            return;
+        };
+        ctx.log(
+            LogLevel::Warn,
+            "the hub takes this device for a removed one: its Commits are read",
+        );
+        agent.removal = Some(RemovalRead {
+            groups,
+            after: 0,
+            pages: 0,
+            items: Vec::new(),
+            asked: None,
+            retry_at: None,
+            retries: 0,
+        });
         self.close_stream(ctx);
     }
 
     fn drive_removal(&mut self, ctx: &mut Ctx<'_>) {
-        let Some(read) = self.agent.as_mut().and_then(|a| a.removal.as_mut()) else { return };
+        let Some(read) = self.agent.as_mut().and_then(|a| a.removal.as_mut()) else {
+            return;
+        };
         if read.asked.is_some() || read.retry_at.is_some_and(|at| ctx.now < at) {
             return;
         }
@@ -539,7 +668,15 @@ impl Engine {
             return self.follow_removal(ctx);
         };
         let after = read.after;
-        let asked = self.ask(ctx, Route::Removal { group: &group, after }, true, |expect| Asked::Removal { expect, group });
+        let asked = self.ask(
+            ctx,
+            Route::Removal {
+                group: &group,
+                after,
+            },
+            true,
+            |expect| Asked::Removal { expect, group },
+        );
         match (asked, self.agent.as_mut().and_then(|a| a.removal.as_mut())) {
             (Some(id), Some(read)) => read.asked = Some(id),
             (None, _) => self.stop(ctx, Stopped::NotMember),
@@ -547,10 +684,18 @@ impl Engine {
         }
     }
 
-    pub(super) fn on_removal(&mut self, ctx: &mut Ctx<'_>, group: GroupId, answer: Result<Answer, Failure>, refusal: Option<&str>) {
+    pub(super) fn on_removal(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        group: GroupId,
+        answer: Result<Answer, Failure>,
+        refusal: Option<&str>,
+    ) {
         let wait_for_takeover = self.agent.as_ref().is_some_and(|a| a.takeover_pending)
             && self.agent_before(&group).is_some_and(|(_, main)| main);
-        let Some(read) = self.agent.as_mut().and_then(|a| a.removal.as_mut()) else { return };
+        let Some(read) = self.agent.as_mut().and_then(|a| a.removal.as_mut()) else {
+            return;
+        };
         read.asked = None;
         let next = |read: &mut RemovalRead| {
             read.groups.pop_front();
@@ -563,10 +708,13 @@ impl Engine {
         match answer {
             Ok(Answer::Removal { items, more, .. }) => {
                 let last = items.last().map(|i| i.n);
-                read.items.extend(items.into_iter().filter(|i| i.group == group));
+                read.items
+                    .extend(items.into_iter().filter(|i| i.group == group));
                 read.pages += 1;
                 match last {
-                    Some(n) if more && n > read.after && read.pages < REMOVAL_PAGES_MAX => read.after = n,
+                    Some(n) if more && n > read.after && read.pages < REMOVAL_PAGES_MAX => {
+                        read.after = n
+                    }
                     _ => {
                         room_done = group.is_room();
                         next(read);
@@ -575,12 +723,20 @@ impl Engine {
             }
             // The inviter enrols the new device before posting the session's replacement Commit. The
             // verified room change already stops signing; wait briefly for the session's removal proof.
-            Err(Failure::Refused { .. }) if wait_for_takeover && matches!(refusal, Some("not-found" | "not-member")) && read.retries < 20 => {
+            Err(Failure::Refused { .. })
+                if wait_for_takeover
+                    && matches!(refusal, Some("not-found" | "not-member"))
+                    && read.retries < 20 =>
+            {
                 read.retries += 1;
                 read.retry_at = Some(ctx.now.saturating_add(1_000));
             }
             // this device was not removed from that group, or the hub keeps nothing of it
-            Err(Failure::Refused { .. }) if matches!(refusal, Some("not-found" | "not-member" | "gone")) => next(read),
+            Err(Failure::Refused { .. })
+                if matches!(refusal, Some("not-found" | "not-member" | "gone")) =>
+            {
+                next(read)
+            }
             _ => {
                 // what the hub serves cannot be read: out by its word alone, the state kept
                 ctx.log(LogLevel::Warn, "the removal could not be read");
@@ -590,17 +746,41 @@ impl Engine {
         if room_done {
             // Verify the room's removal before asking for its session's. A removed-role token may be the
             // first notice, while the inviter has not posted the session replacement yet.
-            let items: Vec<_> = self.agent.as_ref().and_then(|a| a.removal.as_ref())
-                .into_iter().flat_map(|r| r.items.iter()).filter(|i| i.group.is_room()).cloned().collect();
+            let items: Vec<_> = self
+                .agent
+                .as_ref()
+                .and_then(|a| a.removal.as_ref())
+                .into_iter()
+                .flat_map(|r| r.items.iter())
+                .filter(|i| i.group.is_room())
+                .cloned()
+                .collect();
             for item in items {
-                if item.change <= self.device.cursor() { continue; }
+                if item.change <= self.device.cursor() {
+                    continue;
+                }
                 let was_enrolled = enrolled(&self.device);
-                let entry = LogEntry { change: item.change, group: item.group, kind: LogKind::Commit { bytes: &item.bytes, recovery_auth: item.recovery_auth.as_deref() } };
+                let entry = LogEntry {
+                    change: item.change,
+                    group: item.group,
+                    kind: LogKind::Commit {
+                        bytes: &item.bytes,
+                        recovery_auth: item.recovery_auth.as_deref(),
+                    },
+                };
                 match self.device.process_log_entry(&entry, ctx.now) {
-                    Ok(Processed::Observed(facts)) if was_enrolled && !enrolled(&self.device) => self.note_room_removal(&facts),
+                    Ok(Processed::Observed(facts)) if was_enrolled && !enrolled(&self.device) => {
+                        self.note_room_removal(&facts)
+                    }
                     Ok(_) => {}
-                    Err(e) if log_finding(&e) == LogFinding::Local => { self.local(ctx, &e); return; }
-                    Err(_) => { self.stop(ctx, Stopped::NotMember); return; }
+                    Err(e) if log_finding(&e) == LogFinding::Local => {
+                        self.local(ctx, &e);
+                        return;
+                    }
+                    Err(_) => {
+                        self.stop(ctx, Stopped::NotMember);
+                        return;
+                    }
                 }
             }
             self.flush(ctx);
@@ -610,12 +790,18 @@ impl Engine {
     /// Hands the Commits the hub served after it stopped taking this device to the device, in the hub's order:
     /// each is verified as any other, nothing is taken on the hub's word.
     fn follow_removal(&mut self, ctx: &mut Ctx<'_>) {
-        let Some(read) = self.agent.as_mut().and_then(|a| a.removal.take()) else { return };
+        let Some(read) = self.agent.as_mut().and_then(|a| a.removal.take()) else {
+            return;
+        };
         if self.removal_commits(ctx, read.items) {
             return;
         }
         self.flush(ctx);
-        let why = if self.agent.as_ref().is_some_and(|a| a.room_removed) { Stopped::Removed } else { Stopped::NotMember };
+        let why = if self.agent.as_ref().is_some_and(|a| a.room_removed) {
+            Stopped::Removed
+        } else {
+            Stopped::NotMember
+        };
         self.stop(ctx, why);
     }
 
@@ -629,12 +815,24 @@ impl Engine {
                 continue;
             }
             let before = self.agent_before(&item.group);
-            let entry = LogEntry { change: item.change, group: item.group, kind: LogKind::Commit { bytes: &item.bytes, recovery_auth: item.recovery_auth.as_deref() } };
+            let entry = LogEntry {
+                change: item.change,
+                group: item.group,
+                kind: LogKind::Commit {
+                    bytes: &item.bytes,
+                    recovery_auth: item.recovery_auth.as_deref(),
+                },
+            };
             match self.device.process_log_entry(&entry, ctx.now) {
                 Ok(processed) => {
-                    if matches!(processed, Processed::Observed(_)) && item.group.is_room()
-                        && before.is_some_and(|(enrolled, _)| enrolled) && !enrolled(&self.device) {
-                        if let Processed::Observed(facts) = &processed { self.note_room_removal(facts); }
+                    if matches!(processed, Processed::Observed(_))
+                        && item.group.is_room()
+                        && before.is_some_and(|(enrolled, _)| enrolled)
+                        && !enrolled(&self.device)
+                    {
+                        if let Processed::Observed(facts) = &processed {
+                            self.note_room_removal(facts);
+                        }
                         continue;
                     }
                     if self.agent_processed(ctx, item.group, &processed, before) {
@@ -692,7 +890,10 @@ impl Engine {
         self.auth_retry.at.is_some()
             || self.order_retry.at.is_some()
             || (self.pump_retry.at.is_some() && !self.device.outbox().is_empty())
-            || self.agent.as_ref().is_some_and(|a| a.retry.at.is_some() || a.guard_retry.at.is_some())
+            || self
+                .agent
+                .as_ref()
+                .is_some_and(|a| a.retry.at.is_some() || a.guard_retry.at.is_some())
     }
 
     fn drive_guard(&mut self, ctx: &mut Ctx<'_>) -> bool {
@@ -713,26 +914,58 @@ impl Engine {
             }
             Guard::Asking { .. } => {}
         }
-        let Some(Agent { guard: Guard::Asking { todo, .. }, .. }) = self.agent.as_mut() else { return false };
+        let Some(Agent {
+            guard: Guard::Asking { todo, .. },
+            ..
+        }) = self.agent.as_mut()
+        else {
+            return false;
+        };
         let Some((group, own)) = todo.front().copied() else {
             self.agent.as_mut().expect("an agent").guard = Guard::Passed;
             return true;
         };
-        let route = Route::Chain { group: &group, sender: &me, after: own, limit: 1 };
-        let id = self.ask(ctx, route, true, |expect| Asked::Guard { expect, group, own });
-        if let Some(Agent { guard: Guard::Asking { asked, .. }, .. }) = self.agent.as_mut() {
+        let route = Route::Chain {
+            group: &group,
+            sender: &me,
+            after: own,
+            limit: 1,
+        };
+        let id = self.ask(ctx, route, true, |expect| Asked::Guard {
+            expect,
+            group,
+            own,
+        });
+        if let Some(Agent {
+            guard: Guard::Asking { asked, .. },
+            ..
+        }) = self.agent.as_mut()
+        {
             *asked = id;
         }
         false
     }
 
-    pub(super) fn on_guard(&mut self, ctx: &mut Ctx<'_>, group: GroupId, own: u64, answer: Result<Answer, Failure>, refusal: Option<&str>) {
+    pub(super) fn on_guard(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        group: GroupId,
+        own: u64,
+        answer: Result<Answer, Failure>,
+        refusal: Option<&str>,
+    ) {
         let me = self.device.id();
-        let Some(agent) = self.agent.as_mut() else { return };
-        let Guard::Asking { todo, asked } = &mut agent.guard else { return };
+        let Some(agent) = self.agent.as_mut() else {
+            return;
+        };
+        let Guard::Asking { todo, asked } = &mut agent.guard else {
+            return;
+        };
         *asked = None;
         let ahead = match answer {
-            Ok(Answer::Chain { items, .. }) => items.iter().any(|ChainItem { item, .. }| is_ahead(&item.envelope, &me, &group, own)),
+            Ok(Answer::Chain { items, .. }) => items
+                .iter()
+                .any(|ChainItem { item, .. }| is_ahead(&item.envelope, &me, &group, own)),
             Err(Failure::Refused { .. }) if refusal == Some("not-found") => false,
             Ok(_) | Err(_) => {
                 agent.guard_retry.fail(ctx.now, None, &mut self.jitter);
@@ -752,7 +985,11 @@ impl Engine {
     }
 
     /// Before an envelope of the order is handed to the device: one of this device beyond its own head halts.
-    pub(super) fn agent_guard_envelope(&mut self, ctx: &mut Ctx<'_>, bytes: &[u8]) -> Option<Taken> {
+    pub(super) fn agent_guard_envelope(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        bytes: &[u8],
+    ) -> Option<Taken> {
         self.agent.as_ref()?;
         let envelope = Envelope::decode(bytes).ok()?;
         let me = self.device.id();
@@ -766,7 +1003,11 @@ impl Engine {
     }
 
     /// The gate on an envelope the device took in the hub's order, in the same step.
-    pub(super) fn agent_gate(&mut self, ctx: &mut Ctx<'_>, received: &ReceivedEnvelope) -> Option<AgentCommand> {
+    pub(super) fn agent_gate(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        received: &ReceivedEnvelope,
+    ) -> Option<AgentCommand> {
         if self.agent.is_none() || !received.command {
             return None;
         }
@@ -781,7 +1022,10 @@ impl Engine {
         if let Decision::Refused(refusal) = &decision {
             if !matches!(refusal, Refusal::NotAddressed | Refusal::NotACommand) {
                 // (said without content: which rule held it back)
-                ctx.log(LogLevel::Info, format!("a human's envelope was not acted on: {refusal:?}"));
+                ctx.log(
+                    LogLevel::Info,
+                    format!("a human's envelope was not acted on: {refusal:?}"),
+                );
             }
         }
         let command = AgentCommand::of(received, &decision)?;
@@ -802,7 +1046,9 @@ impl Engine {
         // The room may already have replaced this enrolment before its session Commit arrives. Its own
         // authenticated session extension and leaf still identify the main group for removal reporting.
         let main = self.device.group(group).is_ok_and(|s| {
-            s.session.is_some_and(|s| s.parent.is_zero()) && !s.archived && s.leaves.contains(&self.device.id())
+            s.session.is_some_and(|s| s.parent.is_zero())
+                && !s.archived
+                && s.leaves.contains(&self.device.id())
         });
         Some((enrolled(&self.device), !group.is_room() && main))
     }
@@ -811,7 +1057,12 @@ impl Engine {
     fn note_room_removal(&mut self, facts: &trommi_core::mls::rules::CommitFacts) {
         let added = self.device.room_history().is_some_and(|history| {
             history.at(facts.epoch).is_some_and(|before| {
-                history.newest().room.agents.iter().any(|id| !before.is_agent(id))
+                history
+                    .newest()
+                    .room
+                    .agents
+                    .iter()
+                    .any(|id| !before.is_agent(id))
             })
         });
         let agent = self.agent.as_mut().expect("an agent");
@@ -820,11 +1071,21 @@ impl Engine {
     }
 
     /// After a log entry the device processed: whether it ended this device's place (the engine stopped).
-    pub(super) fn agent_processed(&mut self, ctx: &mut Ctx<'_>, group: GroupId, processed: &Processed, before: Option<(bool, bool)>) -> bool {
-        let Some((was_enrolled, was_main)) = before else { return false };
+    pub(super) fn agent_processed(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        group: GroupId,
+        processed: &Processed,
+        before: Option<(bool, bool)>,
+    ) -> bool {
+        let Some((was_enrolled, was_main)) = before else {
+            return false;
+        };
         let why = match processed {
             Processed::Commit { removed: true, .. } if was_main => Some(Stopped::Replaced),
-            Processed::Observed(facts) if group.is_room() && was_enrolled && !enrolled(&self.device) => {
+            Processed::Observed(facts)
+                if group.is_room() && was_enrolled && !enrolled(&self.device) =>
+            {
                 self.flush(ctx);
                 self.note_room_removal(facts);
                 self.agent_out(ctx);
@@ -848,7 +1109,10 @@ impl Engine {
         if self.agent.is_none() || *error != Error::BadInvite {
             return false;
         }
-        ctx.log(LogLevel::Error, "this device was enrolled by another device than the one that invited it");
+        ctx.log(
+            LogLevel::Error,
+            "this device was enrolled by another device than the one that invited it",
+        );
         self.stop(ctx, Stopped::BadInvite);
         true
     }
@@ -856,7 +1120,12 @@ impl Engine {
 
 /// Whether `bytes` are an envelope this device signed in `group` under a number beyond `own`.
 fn is_ahead(bytes: &[u8], me: &DeviceId, group: &GroupId, own: u64) -> bool {
-    Envelope::decode(bytes).is_ok_and(|e| e.header.sender == *me && e.header.group == *group && e.header.seq > own && e.verify().is_ok())
+    Envelope::decode(bytes).is_ok_and(|e| {
+        e.header.sender == *me
+            && e.header.group == *group
+            && e.header.seq > own
+            && e.verify().is_ok()
+    })
 }
 
 #[cfg(test)]
@@ -865,17 +1134,35 @@ mod tests {
 
     #[test]
     fn truthy_is_javascripts() {
-        for (v, t) in [(Value::Null, false), (Value::Bool(true), true), (serde_json::json!(0), false), (serde_json::json!(""), false), (serde_json::json!("x"), true), (serde_json::json!({}), true)] {
+        for (v, t) in [
+            (Value::Null, false),
+            (Value::Bool(true), true),
+            (serde_json::json!(0), false),
+            (serde_json::json!(""), false),
+            (serde_json::json!("x"), true),
+            (serde_json::json!({}), true),
+        ] {
             assert_eq!(truthy(&v), t, "{v}");
         }
     }
 
     #[test]
     fn a_kept_command_reads_back() {
-        let command = AgentCommand { command: "answer".into(), payload: r#"{"trusted":true,"note":"x"}"#.into(), choices: vec!["yes".into()], ..AgentCommand::default() };
+        let command = AgentCommand {
+            command: "answer".into(),
+            payload: r#"{"trusted":true,"note":"x"}"#.into(),
+            choices: vec!["yes".into()],
+            ..AgentCommand::default()
+        };
         let text = serde_json::to_string(&command).expect("JSON");
-        assert_eq!(serde_json::from_str::<AgentCommand>(&text).expect("it reads"), command);
-        assert_eq!(command.content().get("note"), Some(&Value::String("x".into())));
+        assert_eq!(
+            serde_json::from_str::<AgentCommand>(&text).expect("it reads"),
+            command
+        );
+        assert_eq!(
+            command.content().get("note"),
+            Some(&Value::String("x".into()))
+        );
         assert!(AgentCommand::default().content().is_empty());
     }
 }

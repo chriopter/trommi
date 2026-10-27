@@ -196,14 +196,21 @@ pub fn sign(
 /// An irrevocable, public request to retire this device key. Human membership must still be checked by
 /// the receiver, which makes the ordinary room removal Commit; the hub cannot authorize removal.
 pub fn sign_departure(key: &SigningKey, room: &RoomId) -> Result<Vec<u8>, Error> {
-    crypto::sign_with_label(key, trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
-        &trommi_wire::signin::departure_content(room.as_bytes(), &key.public()))
+    crypto::sign_with_label(
+        key,
+        trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
+        &trommi_wire::signin::departure_content(room.as_bytes(), &key.public()),
+    )
 }
 
 /// Checks only the signature and its exact room/device binding, not membership or removal status.
 pub fn verify_departure(room: &RoomId, device: &DeviceId, signature: &[u8]) -> Result<(), Error> {
-    crypto::verify_with_label(device.as_bytes(), trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
-        &trommi_wire::signin::departure_content(room.as_bytes(), device.as_bytes()), signature)
+    crypto::verify_with_label(
+        device.as_bytes(),
+        trommi_wire::signin::LABEL_DEVICE_DEPARTURE,
+        &trommi_wire::signin::departure_content(room.as_bytes(), device.as_bytes()),
+        signature,
+    )
 }
 
 /// Hub side: checks a posted sign-in against the room it was posted for, the hub's own address and the challenge

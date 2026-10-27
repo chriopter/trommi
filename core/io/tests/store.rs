@@ -255,15 +255,36 @@ fn in_one_journal_the_cache_lives_beside_the_device_and_the_owners_own_entries()
     journal.commit().unwrap();
     let mut stores = Stores::in_journal(journal.clone());
     assert_eq!(device(&mut stores), (0, vec![]));
-    ok(apply(&mut stores, 0, vec![entry(b"\x01dev", b"one")], vec![]));
-    put(&mut stores, &[("engine/ab", b"rec"), ("c1/ab/meta", b"m")], &[]);
-    assert_eq!(get(&mut stores, &["engine/ab", "nope"]), vec![Some(b"rec".to_vec()), None]);
-    assert_eq!(scan(&mut stores, "c1/"), vec![("c1/ab/meta".to_string(), b"m".to_vec())]);
+    ok(apply(
+        &mut stores,
+        0,
+        vec![entry(b"\x01dev", b"one")],
+        vec![],
+    ));
+    put(
+        &mut stores,
+        &[("engine/ab", b"rec"), ("c1/ab/meta", b"m")],
+        &[],
+    );
+    assert_eq!(
+        get(&mut stores, &["engine/ab", "nope"]),
+        vec![Some(b"rec".to_vec()), None]
+    );
+    assert_eq!(
+        scan(&mut stores, "c1/"),
+        vec![("c1/ab/meta".to_string(), b"m".to_vec())]
+    );
     put(&mut stores, &[], &["engine/ab"]);
     assert_eq!(get(&mut stores, &["engine/ab"]), vec![None]);
     // the device space holds only the device's entries; the owner's entry is as it was
-    assert_eq!(device(&mut stores), (1, vec![(b"\x01dev".to_vec(), b"one".to_vec())]));
-    assert_eq!(journal.get(&[SIDE, b'k', 1, b'x']).map(|v| v.to_vec()), Some(b"mine".to_vec()));
+    assert_eq!(
+        device(&mut stores),
+        (1, vec![(b"\x01dev".to_vec(), b"one".to_vec())])
+    );
+    assert_eq!(
+        journal.get(&[SIDE, b'k', 1, b'x']).map(|v| v.to_vec()),
+        Some(b"mine".to_vec())
+    );
     // all of it is on disk: opened again, the same
     drop(stores);
     drop(journal);
@@ -277,18 +298,31 @@ fn in_one_journal_the_cache_lives_beside_the_device_and_the_owners_own_entries()
 fn a_refused_cache_batch_leaves_every_key_unchanged() {
     let dir = folder("cache-atomic");
     let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
-    put(&mut stores, &[("existing", b"before"), ("keep", b"yes")], &[]);
+    put(
+        &mut stores,
+        &[("existing", b"before"), ("keep", b"yes")],
+        &[],
+    );
     let result = stores.run(StoreOp::Put {
         put: vec![
-            Entry { key: "existing".into(), value: b"after".as_slice().into() },
-            Entry { key: "k".repeat(300), value: b"refused".as_slice().into() },
+            Entry {
+                key: "existing".into(),
+                value: b"after".as_slice().into(),
+            },
+            Entry {
+                key: "k".repeat(300),
+                value: b"refused".as_slice().into(),
+            },
         ],
         delete: vec!["keep".into()],
     });
     assert!(matches!(result, IoResult::Err(_)));
     drop(stores);
     let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
-    assert_eq!(get(&mut stores, &["existing", "keep"]), vec![Some(b"before".to_vec()), Some(b"yes".to_vec())]);
+    assert_eq!(
+        get(&mut stores, &["existing", "keep"]),
+        vec![Some(b"before".to_vec()), Some(b"yes".to_vec())]
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -299,13 +333,30 @@ fn poisoned_cache_state_cannot_be_read_as_if_a_failed_write_had_committed() {
     let journal = Journal::open(&dir).unwrap();
     let mut stores = Stores::in_journal(journal.clone());
     put(&mut stores, &[("engine/requests", b"durable")], &[]);
-    journal.put([&[trommi_io::journal::SIDE, b'c'][..], b"engine/requests"].concat(), b"uncommitted".to_vec());
+    journal.put(
+        [&[trommi_io::journal::SIDE, b'c'][..], b"engine/requests"].concat(),
+        b"uncommitted".to_vec(),
+    );
     journal.poison();
-    assert!(matches!(stores.run(StoreOp::Get { keys: vec!["engine/requests".into()] }), IoResult::Err(_)));
-    assert!(matches!(stores.run(StoreOp::Scan { prefix: "engine/".into() }), IoResult::Err(_)));
-    drop(stores); drop(journal);
+    assert!(matches!(
+        stores.run(StoreOp::Get {
+            keys: vec!["engine/requests".into()]
+        }),
+        IoResult::Err(_)
+    ));
+    assert!(matches!(
+        stores.run(StoreOp::Scan {
+            prefix: "engine/".into()
+        }),
+        IoResult::Err(_)
+    ));
+    drop(stores);
+    drop(journal);
     let mut stores = Stores::in_journal(Journal::open(&dir).unwrap());
-    assert_eq!(get(&mut stores, &["engine/requests"]), vec![Some(b"durable".to_vec())]);
+    assert_eq!(
+        get(&mut stores, &["engine/requests"]),
+        vec![Some(b"durable".to_vec())]
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -321,16 +372,33 @@ fn legacy_cache_migration_keeps_pending_work_and_never_reimports_stale_files() {
     assert!(Stores::open(&dir.join("device"), &cache).is_err());
     std::fs::remove_dir(cache.join("unreadable")).unwrap();
     let mut stores = Stores::open(&dir.join("device"), &cache).unwrap();
-    assert_eq!(get(&mut stores, &["engine/room", "engine/requests"]), vec![Some(b"room identity".to_vec()), Some(b"pending request".to_vec())]);
-    assert_eq!(device(&mut stores), (0, vec![]), "cache migration changes no device revision");
+    assert_eq!(
+        get(&mut stores, &["engine/room", "engine/requests"]),
+        vec![
+            Some(b"room identity".to_vec()),
+            Some(b"pending request".to_vec())
+        ]
+    );
+    assert_eq!(
+        device(&mut stores),
+        (0, vec![]),
+        "cache migration changes no device revision"
+    );
     assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
-    put(&mut stores, &[("engine/room", b"current identity")], &["engine/requests"]);
+    put(
+        &mut stores,
+        &[("engine/room", b"current identity")],
+        &["engine/requests"],
+    );
     drop(stores);
     // A crash after the durable migration but before cleanup leaves stale files.
     std::fs::write(cache.join("engine%2Froom"), b"stale identity").unwrap();
     std::fs::write(cache.join("engine%2Frequests"), b"already answered").unwrap();
     let mut stores = Stores::open(&dir.join("device"), &cache).unwrap();
-    assert_eq!(get(&mut stores, &["engine/room", "engine/requests"]), vec![Some(b"current identity".to_vec()), None]);
+    assert_eq!(
+        get(&mut stores, &["engine/room", "engine/requests"]),
+        vec![Some(b"current identity".to_vec()), None]
+    );
     assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
     drop(stores);
     let _ = std::fs::remove_dir_all(&dir);
@@ -342,16 +410,29 @@ fn sixty_four_cache_puts_are_one_durable_journal_record() {
     let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
     let log = dir.join("device/state.log");
     let before = std::fs::metadata(&log).unwrap().len();
-    let entries = (0..64).map(|n| Entry {
-        key: format!("c1/aa/card/{n}"), value: vec![n; 1024].into(),
-    }).collect();
-    ok(stores.run(StoreOp::Put { put: entries, delete: vec![] }));
+    let entries = (0..64)
+        .map(|n| Entry {
+            key: format!("c1/aa/card/{n}"),
+            value: vec![n; 1024].into(),
+        })
+        .collect();
+    ok(stores.run(StoreOp::Put {
+        put: entries,
+        delete: vec![],
+    }));
     let bytes = std::fs::read(&log).unwrap();
     let added = &bytes[usize::try_from(before).unwrap()..];
     let payload = u32::from_le_bytes(added[..4].try_into().unwrap()) as usize;
-    assert_eq!(added.len(), payload + 4 + 32, "all64puts form exactly one journal record");
+    assert_eq!(
+        added.len(),
+        payload + 4 + 32,
+        "all64puts form exactly one journal record"
+    );
     assert_eq!(std::fs::read_dir(dir.join("cache")).unwrap().count(), 0);
-    println!("64 cache puts: one synced journal record, {} appended bytes, no per-key files", added.len());
+    println!(
+        "64 cache puts: one synced journal record, {} appended bytes, no per-key files",
+        added.len()
+    );
     drop(stores);
     let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
     assert_eq!(scan(&mut stores, "c1/aa/card/").len(), 64);
@@ -362,14 +443,31 @@ fn sixty_four_cache_puts_are_one_durable_journal_record() {
 fn a_durable_public_notice_survives_private_device_erasure_and_its_ack_survives_reopen() {
     let dir = folder("public-departure");
     let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
-    ok(apply(&mut stores, 0, vec![entry(b"key", b"private signing key")], vec![]));
-    ok(stores.run(StoreOp::PutDurable { put:vec![Entry { key:"public-departure/room.device".into(), value:b"public signed notice".as_slice().into() }], delete:vec![] }));
+    ok(apply(
+        &mut stores,
+        0,
+        vec![entry(b"key", b"private signing key")],
+        vec![],
+    ));
+    ok(stores.run(StoreOp::PutDurable {
+        put: vec![Entry {
+            key: "public-departure/room.device".into(),
+            value: b"public signed notice".as_slice().into(),
+        }],
+        delete: vec![],
+    }));
     ok(apply(&mut stores, 1, vec![], vec![b"key"]));
     drop(stores);
     let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
     assert!(device(&mut stores).1.is_empty());
-    assert_eq!(get(&mut stores, &["public-departure/room.device"]), vec![Some(b"public signed notice".to_vec())]);
-    ok(stores.run(StoreOp::PutDurable { put:vec![], delete:vec!["public-departure/room.device".into()] }));
+    assert_eq!(
+        get(&mut stores, &["public-departure/room.device"]),
+        vec![Some(b"public signed notice".to_vec())]
+    );
+    ok(stores.run(StoreOp::PutDurable {
+        put: vec![],
+        delete: vec!["public-departure/room.device".into()],
+    }));
     drop(stores);
     let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
     assert!(scan(&mut stores, "public-departure/").is_empty());
@@ -381,10 +479,37 @@ fn a_durable_public_notice_survives_private_device_erasure_and_its_ack_survives_
 fn cache_names_are_ordered_and_never_include_device_entries_or_cached_values() {
     let dir = folder("cache-names");
     let mut stores = Stores::open(&dir.join("device"), &dir.join("cache")).unwrap();
-    ok(apply(&mut stores, 0, vec![entry(b"private-device-key", b"secret")], vec![]));
-    put(&mut stores, &[("private/b", b"big value"), ("private/a", b"another value"), ("other", b"unrelated")], &[]);
-    assert_eq!(ok(stores.run(StoreOp::Keys { prefix:"private/".into() })), StoreAnswer::Keys { keys:vec!["private/a".into(),"private/b".into()] });
-    assert_eq!(ok(stores.run(StoreOp::Keys { prefix:String::new() })), StoreAnswer::Keys { keys:vec!["other".into(),"private/a".into(),"private/b".into()] });
+    ok(apply(
+        &mut stores,
+        0,
+        vec![entry(b"private-device-key", b"secret")],
+        vec![],
+    ));
+    put(
+        &mut stores,
+        &[
+            ("private/b", b"big value"),
+            ("private/a", b"another value"),
+            ("other", b"unrelated"),
+        ],
+        &[],
+    );
+    assert_eq!(
+        ok(stores.run(StoreOp::Keys {
+            prefix: "private/".into()
+        })),
+        StoreAnswer::Keys {
+            keys: vec!["private/a".into(), "private/b".into()]
+        }
+    );
+    assert_eq!(
+        ok(stores.run(StoreOp::Keys {
+            prefix: String::new()
+        })),
+        StoreAnswer::Keys {
+            keys: vec!["other".into(), "private/a".into(), "private/b".into()]
+        }
+    );
     drop(stores);
     let _ = std::fs::remove_dir_all(dir);
 }

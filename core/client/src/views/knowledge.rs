@@ -7,8 +7,14 @@
 use super::board::Board;
 use super::session::day_label;
 use super::words::{next_midnight, say};
-use super::{KnowledgeChipView, KnowledgeFilterView, KnowledgeKindView, KnowledgeLogView, KnowledgeRowView, KnowledgeView, KnowledgeWordsView, Text};
-use crate::knowledge::{forgotten_of_team, is_new, logs_of, of_team, seen_of, Entry, Index, Log, ENTRIES_MAX, FORGOTTEN_DAYS, TEXT_MAX, TITLE_MAX};
+use super::{
+    KnowledgeChipView, KnowledgeFilterView, KnowledgeKindView, KnowledgeLogView, KnowledgeRowView,
+    KnowledgeView, KnowledgeWordsView, Text,
+};
+use crate::knowledge::{
+    forgotten_of_team, is_new, logs_of, of_team, seen_of, Entry, Index, Log, ENTRIES_MAX,
+    FORGOTTEN_DAYS, TEXT_MAX, TITLE_MAX,
+};
 
 /// What the page asks: the search's words, the filter ("" every entry, "new", "pinned", "forgotten"), the entry
 /// open (its history shows), and when the person had last looked before this visit (what changed since is new).
@@ -24,7 +30,9 @@ pub struct Ask {
 
 /// The team the page and the chip are about: the team in view, else the first team's id.
 pub fn team(b: &Board) -> String {
-    b.team.clone().unwrap_or_else(|| super::board::DEFAULT_TEAM.into())
+    b.team
+        .clone()
+        .unwrap_or_else(|| super::board::DEFAULT_TEAM.into())
 }
 
 fn count_words(n: usize) -> String {
@@ -57,7 +65,11 @@ fn by_line(e: &Entry, when: &str) -> Text {
         ("knowledge.by.added", "added", &e.by)
     };
     let name = who(by);
-    say(key, format!("{verb} by {name} · {when}"), &[("who", &name), ("when", when)])
+    say(
+        key,
+        format!("{verb} by {name} · {when}"),
+        &[("who", &name), ("when", when)],
+    )
 }
 
 /// One change of the history: "Codex updated it · Yesterday", the words it replaced, and Undo.
@@ -72,10 +84,18 @@ fn log_view(b: &Board, l: &Log) -> KnowledgeLogView {
     };
     KnowledgeLogView {
         id: l.id.clone(),
-        says: say(&format!("knowledge.log.{}", l.op), format!("{name} {verb} · {when}"), &[("who", &name), ("when", &when)]),
+        says: say(
+            &format!("knowledge.log.{}", l.op),
+            format!("{name} {verb} · {when}"),
+            &[("who", &name), ("when", &when)],
+        ),
         title: l.title.clone().unwrap_or_default(),
         text: l.text.clone().unwrap_or_default(),
-        before: if l.title.is_some() { say("knowledge.log.before", "Before:", &[]) } else { say("knowledge.log.new", "It was new.", &[]) },
+        before: if l.title.is_some() {
+            say("knowledge.log.before", "Before:", &[])
+        } else {
+            say("knowledge.log.new", "It was new.", &[])
+        },
         by_agent: l.by.is_some(),
         at_ms: l.at,
     }
@@ -84,7 +104,12 @@ fn log_view(b: &Board, l: &Log) -> KnowledgeLogView {
 /// The page.
 pub fn page(b: &Board, ask: &Ask) -> KnowledgeView {
     let team = team(b);
-    let name = b.teams.iter().find(|d| d.id == team).map(|d| d.name.clone()).unwrap_or_else(|| "Personal".into());
+    let name = b
+        .teams
+        .iter()
+        .find(|d| d.id == team)
+        .map(|d| d.name.clone())
+        .unwrap_or_else(|| "Personal".into());
     let index = Index::new(of_team(b.model, &team));
     let mut forgotten = forgotten_of_team(b.model, &team);
     forgotten.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at).then(a.id.cmp(&b.id)));
@@ -101,11 +126,15 @@ pub fn page(b: &Board, ask: &Ask) -> KnowledgeView {
     let found: Vec<&Entry> = if filter == "forgotten" {
         forgotten.iter().collect()
     } else {
-        index.search(&query, usize::MAX).into_iter().filter(|e| match filter {
-            "pinned" => e.pinned,
-            "new" => is_new(e, seen),
-            _ => true,
-        }).collect()
+        index
+            .search(&query, usize::MAX)
+            .into_iter()
+            .filter(|e| match filter {
+                "pinned" => e.pinned,
+                "new" => is_new(e, seen),
+                _ => true,
+            })
+            .collect()
     };
     let zone = b.lens.utc_offset_min;
     if !found.is_empty() {
@@ -119,7 +148,10 @@ pub fn page(b: &Board, ask: &Ask) -> KnowledgeView {
             let when = day_label(e.changed(), b.now, zone).en;
             let mine = logs.get(&e.id).map(Vec::as_slice).unwrap_or_default();
             // (the way back from the last change, when an agent made it: one tap)
-            let undo = mine.first().filter(|l| l.by.is_some()).map(|l| l.id.clone());
+            let undo = mine
+                .first()
+                .filter(|l| l.by.is_some())
+                .map(|l| l.id.clone());
             KnowledgeRowView {
                 id: e.id.clone(),
                 title: e.title.clone(),
@@ -129,20 +161,41 @@ pub fn page(b: &Board, ask: &Ask) -> KnowledgeView {
                 kind_label: kind_label(&e.kind),
                 confirmed: (e.confirmed() > e.changed()).then(|| {
                     let day = day_label(e.confirmed(), b.now, zone).en;
-                    say("knowledge.confirmed", format!("confirmed {day}"), &[("when", &day)])
+                    say(
+                        "knowledge.confirmed",
+                        format!("confirmed {day}"),
+                        &[("when", &day)],
+                    )
                 }),
                 by: by_line(e, &when),
                 at_ms: e.changed(),
                 new: is_new(e, seen),
                 forgotten: e.forgotten(),
                 undo,
-                restore: e.forgotten().then(|| mine.iter().find(|l| l.op == "forget").map(|l| l.id.clone())).flatten(),
+                restore: e
+                    .forgotten()
+                    .then(|| mine.iter().find(|l| l.op == "forget").map(|l| l.id.clone()))
+                    .flatten(),
                 gone_in: e.forgotten().then(|| {
-                    let left = ((e.deleted_at + FORGOTTEN_DAYS * crate::knowledge::DAY_MS).saturating_sub(b.now) / crate::knowledge::DAY_MS).max(1);
-                    say("knowledge.gone_in", format!("Goes for good in {left} {}", if left == 1 { "day" } else { "days" }), &[("n", &left.to_string())])
+                    let left = ((e.deleted_at + FORGOTTEN_DAYS * crate::knowledge::DAY_MS)
+                        .saturating_sub(b.now)
+                        / crate::knowledge::DAY_MS)
+                        .max(1);
+                    say(
+                        "knowledge.gone_in",
+                        format!(
+                            "Goes for good in {left} {}",
+                            if left == 1 { "day" } else { "days" }
+                        ),
+                        &[("n", &left.to_string())],
+                    )
                 }),
                 open: open == Some(e.id.as_str()),
-                history: if open == Some(e.id.as_str()) { mine.iter().map(|l| log_view(b, l)).collect() } else { Vec::new() },
+                history: if open == Some(e.id.as_str()) {
+                    mine.iter().map(|l| log_view(b, l)).collect()
+                } else {
+                    Vec::new()
+                },
             }
         })
         .collect();
@@ -160,7 +213,12 @@ pub fn page(b: &Board, ask: &Ask) -> KnowledgeView {
         }
     });
     let n = total.to_string();
-    let filter_view = |key: &str, label: Text, count: usize| KnowledgeFilterView { key: key.into(), label, count: count as u32, on: filter == key };
+    let filter_view = |key: &str, label: Text, count: usize| KnowledgeFilterView {
+        key: key.into(),
+        label,
+        count: count as u32,
+        on: filter == key,
+    };
     KnowledgeView {
         team_id: team,
         team: say("knowledge.team", name.clone(), &[("team", &name)]),
@@ -210,13 +268,21 @@ pub fn chip(b: &Board) -> KnowledgeChipView {
     let n = entries.len();
     let seen = seen_of(b.model, &team);
     let fresh = entries.iter().filter(|e| is_new(e, seen)).count() as u32;
-    let first = Index::new(entries).search("", 4).into_iter().map(|e| e.title.clone()).collect();
+    let first = Index::new(entries)
+        .search("", 4)
+        .into_iter()
+        .map(|e| e.title.clone())
+        .collect();
     KnowledgeChipView {
         first,
         fresh,
         count: n as u32,
         label: say("knowledge.chip", "Knowledge", &[]),
-        says: say("knowledge.chip.says", format!("Team knowledge: {}", count_words(n)), &[("n", &n.to_string())]),
+        says: say(
+            "knowledge.chip.says",
+            format!("Team knowledge: {}", count_words(n)),
+            &[("n", &n.to_string())],
+        ),
         team_id: team,
     }
 }
@@ -226,9 +292,17 @@ pub fn chip(b: &Board) -> KnowledgeChipView {
 pub fn work_words(held: usize, query: &str) -> Text {
     let n = held.to_string();
     if query.trim().is_empty() {
-        say("work.knowledge", format!("reads team knowledge ({n})"), &[("n", &n)])
+        say(
+            "work.knowledge",
+            format!("reads team knowledge ({n})"),
+            &[("n", &n)],
+        )
     } else {
         let q = query.trim();
-        say("work.knowledge.query", format!("reads team knowledge ({n}) · “{q}”"), &[("n", &n), ("query", q)])
+        say(
+            "work.knowledge.query",
+            format!("reads team knowledge ({n}) · “{q}”"),
+            &[("n", &n), ("query", q)],
+        )
     }
 }

@@ -16,7 +16,10 @@ async fn until(human: &mut Human, what: &str, check: impl Fn(&Human) -> bool) {
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    panic!("{what}: not seen; items {:?} findings {:?}", human.items, human.findings);
+    panic!(
+        "{what}: not seen; items {:?} findings {:?}",
+        human.items, human.findings
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -34,7 +37,11 @@ async fn the_hermes_addon_hears_the_board_and_answers_into_the_chat() {
     let mut mcp = Mcp::start_as(command, hello.clone()).await;
     let again = mcp.request("initialize", hello).await;
     let instructions = again["instructions"].as_str().unwrap_or("").to_string();
-    assert!(instructions.contains("platform trommi") && instructions.contains("never repeat it with reply"), "{instructions}");
+    assert!(
+        instructions.contains("platform trommi")
+            && instructions.contains("never repeat it with reply"),
+        "{instructions}"
+    );
     for never in ["Trommi · ", "/mcp", "Codex", "--urgent via Bash"] {
         assert!(!instructions.contains(never), "{never:?} in {instructions}");
     }
@@ -51,22 +58,50 @@ async fn the_hermes_addon_hears_the_board_and_answers_into_the_chat() {
     mcp.ready().await;
     let me = human.seat(&group).await.expect("the agent");
     human.sync().await;
-    let device = human.register(&group, &format!("device/{}", me.to_base64url())).await.expect("device label");
-    assert_eq!(device["platform"], "hermes", "the existing encrypted device label must name the actual host");
+    let device = human
+        .register(&group, &format!("device/{}", me.to_base64url()))
+        .await
+        .expect("device label");
+    assert_eq!(
+        device["platform"], "hermes",
+        "the existing encrypted device label must name the actual host"
+    );
 
     // The person writes: the add-on hears it as a channel event (it hands it to Hermes as a message of this chat).
-    human.say(&group, json!({ "content_type": "message", "text": "Wie ist das Wetter?" })).await.expect("written");
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Wie ist das Wetter?" }),
+        )
+        .await
+        .expect("written");
     let event = mcp.notification("notifications/claude/channel").await;
-    assert_eq!((event["content"].as_str(), event["meta"]["kind"].as_str()), (Some("Wie ist das Wetter?"), Some("chat")));
+    assert_eq!(
+        (event["content"].as_str(), event["meta"]["kind"].as_str()),
+        (Some("Wie ist das Wetter?"), Some("chat"))
+    );
 
     // Hermes works, its answer grows, then comes whole: the agent's message in the chat.
     mcp.notify("trommi/working", json!({ "on": true })).await;
-    mcp.notify("trommi/preview", json!({ "draft": "1", "text": "Sonnig" })).await;
+    mcp.notify("trommi/preview", json!({ "draft": "1", "text": "Sonnig" }))
+        .await;
     // (the answer is a request: answered once it is written to the board)
-    assert_eq!(mcp.request("trommi/answer", json!({ "text": "Sonnig, 21 Grad." })).await, json!({}));
-    assert_eq!(mcp.request("trommi/state", json!({})).await["phase"], "ready");
+    assert_eq!(
+        mcp.request("trommi/answer", json!({ "text": "Sonnig, 21 Grad." }))
+            .await,
+        json!({})
+    );
+    assert_eq!(
+        mcp.request("trommi/state", json!({})).await["phase"],
+        "ready"
+    );
     mcp.notify("trommi/working", json!({ "on": false })).await;
-    until(&mut human, "the answer", |h| h.items.iter().any(|(_, s, p)| *s == me && p["terminal"] == "answer" && p["text"] == "Sonnig, 21 Grad.")).await;
+    until(&mut human, "the answer", |h| {
+        h.items.iter().any(|(_, s, p)| {
+            *s == me && p["terminal"] == "answer" && p["text"] == "Sonnig, 21 Grad."
+        })
+    })
+    .await;
 
     // Hermes asks to run a command: a yes/no card; the person's yes goes back to the add-on.
     mcp.notify(
@@ -76,14 +111,23 @@ async fn the_hermes_addon_hears_the_board_and_answers_into_the_chat() {
     .await;
     let request = loop {
         human.sync().await;
-        if let Some(id) = human.object_ids().into_iter().find(|id| human.has_request(id)) {
+        if let Some(id) = human
+            .object_ids()
+            .into_iter()
+            .find(|id| human.has_request(id))
+        {
             break id;
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     };
     human.verdict(&request, true).await.expect("allowed");
-    let verdict = mcp.notification("notifications/claude/channel/permission").await;
-    assert_eq!((verdict["request_id"].as_str(), verdict["behavior"].as_str()), (Some("ab12cd"), Some("allow")));
+    let verdict = mcp
+        .notification("notifications/claude/channel/permission")
+        .await;
+    assert_eq!(
+        (verdict["request_id"].as_str(), verdict["behavior"].as_str()),
+        (Some("ab12cd"), Some("allow"))
+    );
 
     // "New chat with …": the person's ask reaches the add-on as its own kind of event, not as words.
     human
@@ -91,7 +135,10 @@ async fn the_hermes_addon_hears_the_board_and_answers_into_the_chat() {
         .await
         .expect("written");
     let ask: Value = mcp.notification("notifications/claude/channel").await;
-    assert_eq!((ask["meta"]["kind"].as_str(), ask["meta"]["nonce"].as_str()), (Some("new_chat"), Some("n1")));
+    assert_eq!(
+        (ask["meta"]["kind"].as_str(), ask["meta"]["nonce"].as_str()),
+        (Some("new_chat"), Some("n1"))
+    );
     assert!(human.findings.is_empty(), "{:?}", human.findings);
     mcp.close().await;
 }
@@ -103,7 +150,9 @@ async fn hermes_turn_lifecycle_is_independent_of_manual_task_status() {
     let mut human = Human::found(&hub.url).await;
     let seat = Seat::new(&hub.url);
     let mut command = seat.command(&[]);
-    command.env("TROMMI_HOST", "hermes").env("TROMMI_CHANNEL_EVENTS", "on");
+    command
+        .env("TROMMI_HOST", "hermes")
+        .env("TROMMI_CHANNEL_EVENTS", "on");
     let hello = json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "hermes-trommi", "version": "1" } });
     let mut mcp = Mcp::start_as(command, hello).await;
     let mut invite = human.invite(None).await;
@@ -118,22 +167,41 @@ async fn hermes_turn_lifecycle_is_independent_of_manual_task_status() {
     mcp.ready().await;
     let me = human.seat(&group).await.unwrap();
     let db = rusqlite::Connection::open(hub.data.path().join("hub.db")).unwrap();
-    let work = || db.query_row("SELECT working FROM agent_leases WHERE device = ?1", [me.as_bytes().as_slice()], |r| r.get::<_, bool>(0)).unwrap();
+    let work = || {
+        db.query_row(
+            "SELECT working FROM agent_leases WHERE device = ?1",
+            [me.as_bytes().as_slice()],
+            |r| r.get::<_, bool>(0),
+        )
+        .unwrap()
+    };
     macro_rules! waits {
         ($on:expr) => {{
             let mut seen = false;
             for _ in 0..100 {
-                if work() == $on { seen = true; break; }
+                if work() == $on {
+                    seen = true;
+                    break;
+                }
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             }
-            assert!(seen, "Hermes lease working should be {}, was {}", $on, work());
+            assert!(
+                seen,
+                "Hermes lease working should be {}, was {}",
+                $on,
+                work()
+            );
         }};
     }
     waits!(false);
     mcp.notify("trommi/working", json!({ "on": true })).await;
     waits!(true); // busy before any draft/text (also while tools run)
     mcp.notify("trommi/working", json!({ "on": true })).await;
-    mcp.ok("set_status", json!({ "id": "task", "label": "Long running task", "state": "working" })).await;
+    mcp.ok(
+        "set_status",
+        json!({ "id": "task", "label": "Long running task", "state": "working" }),
+    )
+    .await;
     waits!(true);
     mcp.notify("trommi/working", json!({ "on": false })).await;
     waits!(false); // regression: the manual working line cannot keep the automatic turn on
@@ -141,8 +209,12 @@ async fn hermes_turn_lifecycle_is_independent_of_manual_task_status() {
         mcp.notify("trommi/working", json!({ "on": true })).await;
         waits!(true);
         if let Some(text) = text {
-            mcp.notify("trommi/preview", json!({ "draft": "2", "text": "Final" })).await;
-            assert_eq!(mcp.request("trommi/answer", json!({ "text": text })).await, json!({}));
+            mcp.notify("trommi/preview", json!({ "draft": "2", "text": "Final" }))
+                .await;
+            assert_eq!(
+                mcp.request("trommi/answer", json!({ "text": text })).await,
+                json!({})
+            );
         }
         mcp.notify("trommi/working", json!({ "on": false })).await;
         waits!(false); // cancel/error without an answer, then normal final answer
@@ -161,7 +233,10 @@ async fn hermes_turn_lifecycle_is_independent_of_manual_task_status() {
     assert!(!work());
     // The encrypted manual register is still working, not removed to hide the face.
     human.sync().await;
-    let task = human.register(&group, "status_line/task").await.expect("manual task retained");
+    let task = human
+        .register(&group, "status_line/task")
+        .await
+        .expect("manual task retained");
     assert_eq!(task["state"], "working");
     mcp.close().await;
 }
@@ -180,12 +255,20 @@ async fn setup_hermes_with_a_link_approves_the_computer_and_restarts_the_gateway
     // (the installed connector, and a Hermes that only writes down what it was asked)
     let installed = home.join(".local/share/trommi/bin");
     std::fs::create_dir_all(&installed).unwrap();
-    std::fs::copy(common::process::connector_binary(), installed.join("trommi-connector")).unwrap();
+    std::fs::copy(
+        common::process::connector_binary(),
+        installed.join("trommi-connector"),
+    )
+    .unwrap();
     let bin = home.join("fake-bin");
     std::fs::create_dir_all(&bin).unwrap();
     let log = home.join("hermes.log");
     let fake = bin.join("hermes");
-    std::fs::write(&fake, format!("#!/bin/sh\necho \"$*\" >> '{}'\n", log.display())).unwrap();
+    std::fs::write(
+        &fake,
+        format!("#!/bin/sh\necho \"$*\" >> '{}'\n", log.display()),
+    )
+    .unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     let hermes_home = home.join(".hermes");
@@ -194,49 +277,140 @@ async fn setup_hermes_with_a_link_approves_the_computer_and_restarts_the_gateway
     let mut invite = human.invite(None).await;
     let link = invite.link.clone();
     let mut command = seat.command(&["setup", "hermes", "--name", "Einkauf", "--link", &link]);
-    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
     // (the setup runs in an agent session's terminal: what names that session must not reach the approval)
-    command.env("PATH", path).env("HERMES_HOME", &hermes_home).env("TROMMI_AGENT_NAME", "Claude").env("CLAUDE_CODE_SESSION_ID", "x");
+    command
+        .env("PATH", path)
+        .env("HERMES_HOME", &hermes_home)
+        .env("TROMMI_AGENT_NAME", "Claude")
+        .env("CLAUDE_CODE_SESSION_ID", "x");
     let setup = command.stdin(std::process::Stdio::null()).output();
     let admit = async {
         let device = human.admit(&mut invite).await;
         let computer = human.found_session(&device).await;
         let sid = hex(computer.session_id().unwrap().as_bytes());
-        human.set_register(&GroupId::room(human.room), &format!("session/{sid}"), Some(json!({"machine":{"device":hex(device.device.as_bytes())}}))).await.unwrap();
-        human.set_register(&computer, "machine_approved", Some(json!({"device":hex(device.device.as_bytes())}))).await.unwrap();
+        human
+            .set_register(
+                &GroupId::room(human.room),
+                &format!("session/{sid}"),
+                Some(json!({"machine":{"device":hex(device.device.as_bytes())}})),
+            )
+            .await
+            .unwrap();
+        human
+            .set_register(
+                &computer,
+                "machine_approved",
+                Some(json!({"device":hex(device.device.as_bytes())})),
+            )
+            .await
+            .unwrap();
         human.admit_activation(&computer).await
     };
     let (setup, (_, chat, ask)) = tokio::join!(setup, admit);
     let setup = setup.expect("the setup runs");
-    let said = format!("{}{}", String::from_utf8_lossy(&setup.stdout), String::from_utf8_lossy(&setup.stderr));
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&setup.stdout),
+        String::from_utf8_lossy(&setup.stderr)
+    );
     assert!(setup.status.success(), "{said}");
     // one code to compare: the computer's; the first chat's own key is added by the app without one
-    assert_eq!(said.matches("invite answered: check code").count(), 1, "{said}");
+    assert_eq!(
+        said.matches("invite answered: check code").count(),
+        1,
+        "{said}"
+    );
     assert!(said.contains("the app adds it by itself"), "{said}");
-    assert!(ask["name"].as_str().is_some_and(|n| n.contains("Hermes Einkauf")) && ask["account_label"] == "Hermes", "{ask}");
+    assert!(
+        ask["name"]
+            .as_str()
+            .is_some_and(|n| n.contains("Hermes Einkauf"))
+            && ask["account_label"] == "Hermes",
+        "{ask}"
+    );
     let asked = std::fs::read_to_string(&log).unwrap();
-    assert!(asked.contains("config set --force platforms.trommi.extra.instance einkauf"), "{asked}");
+    assert!(
+        asked.contains("config set --force platforms.trommi.extra.instance einkauf"),
+        "{asked}"
+    );
     // (live text: streaming was off, so setup turns it on and notes that the other platforms keep theirs off)
-    assert!(asked.contains("config set --force platforms.trommi.extra.quiet_others true") && asked.contains("config set --force streaming.enabled true"), "{asked}");
+    assert!(
+        asked.contains("config set --force platforms.trommi.extra.quiet_others true")
+            && asked.contains("config set --force streaming.enabled true"),
+        "{asked}"
+    );
     assert_eq!(asked.lines().last(), Some("gateway restart"), "{asked}");
     assert!(said.contains("Next: write to \"Hermes Einkauf\""), "{said}");
     // The same setup again without a link (a newer add-on, say): it finds this Hermes connected and says so.
     let mut again = seat.command(&["setup", "hermes", "--name", "Einkauf"]);
-    again.env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default())).env("HERMES_HOME", &hermes_home);
-    let again = again.stdin(std::process::Stdio::null()).output().await.expect("the setup runs");
+    again
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                bin.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("HERMES_HOME", &hermes_home);
+    let again = again
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await
+        .expect("the setup runs");
     let told = String::from_utf8_lossy(&again.stdout).to_string();
-    assert!(again.status.success() && told.contains("already connected as \"Hermes Einkauf\""), "{told}");
+    assert!(
+        again.status.success() && told.contains("already connected as \"Hermes Einkauf\""),
+        "{told}"
+    );
     // The app's Hermes line once more, on the computer approved already: no second approval, it only activates.
     let fresh = human.invite(None).await;
-    let mut once_more = seat.command(&["setup", "hermes", "--name", "Einkauf", "--link", &fresh.link]);
-    once_more.env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default())).env("HERMES_HOME", &hermes_home);
-    let once_more = once_more.stdin(std::process::Stdio::null()).output().await.expect("the setup runs");
-    let said = format!("{}{}", String::from_utf8_lossy(&once_more.stdout), String::from_utf8_lossy(&once_more.stderr));
+    let mut once_more = seat.command(&[
+        "setup",
+        "hermes",
+        "--name",
+        "Einkauf",
+        "--link",
+        &fresh.link,
+    ]);
+    once_more
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                bin.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("HERMES_HOME", &hermes_home);
+    let once_more = once_more
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await
+        .expect("the setup runs");
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&once_more.stdout),
+        String::from_utf8_lossy(&once_more.stderr)
+    );
     assert!(once_more.status.success(), "{said}");
-    assert!(said.contains("approved already") && !said.contains("invite answered: check code"), "{said}");
+    assert!(
+        said.contains("approved already") && !said.contains("invite answered: check code"),
+        "{said}"
+    );
     // The add-on starts the first chat's connector: it finds its key and is on the board without another step.
     let mut command = seat.command(&[]);
-    for (k, v) in [("TROMMI_HOST", "hermes"), ("TROMMI_INSTANCE", "einkauf"), ("TROMMI_AGENT_NAME", "Hermes Einkauf"), ("TROMMI_SESSION_KEY", "hermes-einkauf")] {
+    for (k, v) in [
+        ("TROMMI_HOST", "hermes"),
+        ("TROMMI_INSTANCE", "einkauf"),
+        ("TROMMI_AGENT_NAME", "Hermes Einkauf"),
+        ("TROMMI_SESSION_KEY", "hermes-einkauf"),
+    ] {
         command.env(k, v);
     }
     command.env("TROMMI_FOLDER", &hermes_home);
@@ -245,7 +419,12 @@ async fn setup_hermes_with_a_link_approves_the_computer_and_restarts_the_gateway
     mcp.ready().await;
     let me = human.seat(&chat).await.expect("the first chat's agent");
     mcp.ok("reply", json!({ "text": "Hallo" })).await;
-    until(&mut human, "the first chat's words", |h| h.items.iter().any(|(_, s, p)| *s == me && p["text"] == "Hallo")).await;
+    until(&mut human, "the first chat's words", |h| {
+        h.items
+            .iter()
+            .any(|(_, s, p)| *s == me && p["text"] == "Hallo")
+    })
+    .await;
     mcp.close().await;
     assert!(human.findings.is_empty(), "{:?}", human.findings);
 }

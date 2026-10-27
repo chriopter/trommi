@@ -77,7 +77,10 @@ pub fn fresh(revision: u64, stale: Vec<Vec<u8>>) -> (MemStore, Writes) {
     let (store, writes) = store(revision, Vec::new());
     {
         let mut inner = lock(&store.0);
-        inner.loaded = Some(Loaded { revision: 0, entries: Vec::new() });
+        inner.loaded = Some(Loaded {
+            revision: 0,
+            entries: Vec::new(),
+        });
         inner.device_revision = 0;
         inner.keys = Some(BTreeSet::new());
         for key in stale {
@@ -117,7 +120,9 @@ impl Storage for MemStore {
                 keys.insert(entry.key.clone());
             }
             // (an `Entry` wipes its value when dropped: the bytes are copied out, not moved)
-            inner.folded.insert(entry.key.clone(), Some(entry.value.clone()));
+            inner
+                .folded
+                .insert(entry.key.clone(), Some(entry.value.clone()));
         }
         Ok(())
     }
@@ -169,7 +174,11 @@ impl Writes {
         if delete.is_empty() {
             return None;
         }
-        let write = Write { expected_revision: self.shell_revision, put: Vec::new(), delete: delete.into_iter().collect() };
+        let write = Write {
+            expected_revision: self.shell_revision,
+            put: Vec::new(),
+            delete: delete.into_iter().collect(),
+        };
         self.shell_revision += 1;
         Some(write)
     }
@@ -205,7 +214,10 @@ mod tests {
         b.put(vec![3], vec![3]);
         store.apply(8, b).unwrap();
         // the device's revision is its own
-        assert!(matches!(store.apply(7, Batch::new()), Err(StorageError::Conflict)));
+        assert!(matches!(
+            store.apply(7, Batch::new()),
+            Err(StorageError::Conflict)
+        ));
         let w = writes.take().unwrap();
         assert_eq!(w.expected_revision, 7);
         assert_eq!(w.put, vec![(vec![1], vec![2]), (vec![3], vec![3])]);
@@ -215,7 +227,10 @@ mod tests {
         store.apply(9, c).unwrap();
         assert_eq!(writes.take().unwrap().expected_revision, 8);
         writes.lose();
-        assert!(matches!(store.apply(10, Batch::new()), Err(StorageError::Conflict)));
+        assert!(matches!(
+            store.apply(10, Batch::new()),
+            Err(StorageError::Conflict)
+        ));
     }
 
     #[test]
@@ -238,7 +253,10 @@ mod tests {
         assert_eq!(w.expected_revision, 6);
         assert_eq!(w.delete, vec![vec![1], vec![2], vec![3]]);
         assert!(w.put.is_empty());
-        assert!(matches!(store.apply(2, Batch::new()), Err(StorageError::Conflict)));
+        assert!(matches!(
+            store.apply(2, Batch::new()),
+            Err(StorageError::Conflict)
+        ));
         // (a store opened as it was stored wipes whole too: a sign-out takes everything)
         let (_, mut plain) = super::store(1, vec![(vec![1], vec![1])]);
         assert_eq!(plain.wipe().map(|w| w.delete), Some(vec![vec![1]]));

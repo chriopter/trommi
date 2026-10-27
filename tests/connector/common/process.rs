@@ -84,9 +84,18 @@ impl Seat {
     pub async fn approve_computer(&self, human: &mut super::Human) -> trommi_core::ids::GroupId {
         use trommi_connector::{machine, member::Cfg, util::hex};
         use trommi_core::ids::GroupId;
-        let cfg = Cfg { keys_dir:self.home.path().join("keys"), folder:self.folder.clone(), shown:"~/project".into(),
-            host:"test".into(), base:"test".into(), session:"test-computer".into(), owner:"test-computer".into(),
-            takeover_ms:1, hub_url:self.hub_url.clone(), room:String::new() };
+        let cfg = Cfg {
+            keys_dir: self.home.path().join("keys"),
+            folder: self.folder.clone(),
+            shown: "~/project".into(),
+            host: "test".into(),
+            base: "test".into(),
+            session: "test-computer".into(),
+            owner: "test-computer".into(),
+            takeover_ms: 1,
+            hub_url: self.hub_url.clone(),
+            room: String::new(),
+        };
         let mut invite = human.invite(None).await;
         let link = invite.link.clone();
         let member = machine::approval_member(&cfg, &link).unwrap();
@@ -95,8 +104,22 @@ impl Seat {
             let device = human.admit(&mut invite).await;
             let group = human.found_session(&device).await;
             let sid = hex(group.session_id().unwrap().as_bytes());
-            human.set_register(&GroupId::room(human.room), &format!("session/{sid}"), Some(json!({"machine":{"device":hex(device.device.as_bytes())}}))).await.unwrap();
-            human.set_register(&group, "machine_approved", Some(json!({"device":hex(device.device.as_bytes())}))).await.unwrap();
+            human
+                .set_register(
+                    &GroupId::room(human.room),
+                    &format!("session/{sid}"),
+                    Some(json!({"machine":{"device":hex(device.device.as_bytes())}})),
+                )
+                .await
+                .unwrap();
+            human
+                .set_register(
+                    &group,
+                    "machine_approved",
+                    Some(json!({"device":hex(device.device.as_bytes())})),
+                )
+                .await
+                .unwrap();
             group
         };
         let (approved, group) = tokio::join!(approval, admit);
@@ -166,7 +189,10 @@ impl Seat {
             .env("TROMMI_SAY_MS", "120000")
             // the account and usage of the program (usage.rs) only where a test asks for them
             .env("TROMMI_USAGE", "off")
-            .env("TROMMI_TEST_LOG", std::env::var("TROMMI_TEST_LOG").unwrap_or_default())
+            .env(
+                "TROMMI_TEST_LOG",
+                std::env::var("TROMMI_TEST_LOG").unwrap_or_default(),
+            )
             .current_dir(&self.folder)
             .kill_on_drop(true);
         command
@@ -317,7 +343,11 @@ impl Mcp {
 
     /// The same with the server's stderr into `log` (a file of the test's output), each line after the time it
     /// came at (ms since 1970).
-    pub async fn start_logged(mut command: Command, hello: Value, log: Option<std::fs::File>) -> Mcp {
+    pub async fn start_logged(
+        mut command: Command,
+        hello: Value,
+        log: Option<std::fs::File>,
+    ) -> Mcp {
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

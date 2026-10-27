@@ -31,7 +31,8 @@ pub fn name_of(v: Option<&Value>) -> Option<String> {
 /// The helper a card comes from: its `helper`, else the name of the helper session of before it was filed in
 /// (`legacy`: the helper session's key to its name).
 pub fn of_card(c: &Card, legacy: &BTreeMap<String, String>) -> Option<String> {
-    name_of(Some(&c.field("helper"))).or_else(|| c.session_id.as_ref().and_then(|s| legacy.get(s)).cloned())
+    name_of(Some(&c.field("helper")))
+        .or_else(|| c.session_id.as_ref().and_then(|s| legacy.get(s)).cloned())
 }
 
 /// One helper of a session.
@@ -59,10 +60,17 @@ pub fn helpers_of<'c>(
 ) -> Vec<Helper> {
     let mut out: Vec<Helper> = Vec::new();
     let mut add = |name: &str, at: u64, working: bool, waiting: bool| {
-        let i = match out.iter().position(|h| h.name.to_lowercase() == name.to_lowercase()) {
+        let i = match out
+            .iter()
+            .position(|h| h.name.to_lowercase() == name.to_lowercase())
+        {
             Some(i) => i,
             None => {
-                out.push(Helper { name: name.to_string(), since: at, ..Default::default() });
+                out.push(Helper {
+                    name: name.to_string(),
+                    since: at,
+                    ..Default::default()
+                });
                 out.len() - 1
             }
         };
@@ -72,7 +80,9 @@ pub fn helpers_of<'c>(
         h.waiting += u32::from(waiting);
     };
     for t in lines {
-        let (Some(name), Some(state)) = (t.helper.as_deref(), shown(t)) else { continue };
+        let (Some(name), Some(state)) = (t.helper.as_deref(), shown(t)) else {
+            continue;
+        };
         add(name, t.updated_at, state == "working", false);
     }
     for (c, name, waits) in cards {
@@ -109,17 +119,40 @@ mod tests {
             updated_at: at,
             ..Default::default()
         };
-        let lines = vec![line("a", Some("Icons"), 30), line("b", None, 10), line("c", Some("Tokens"), 20), line("d", Some("Gone"), 5)];
-        let card = |state: &str, at: u64| Card { object_state: state.into(), created_at: at, ..Default::default() };
+        let lines = vec![
+            line("a", Some("Icons"), 30),
+            line("b", None, 10),
+            line("c", Some("Tokens"), 20),
+            line("d", Some("Gone"), 5),
+        ];
+        let card = |state: &str, at: u64| Card {
+            object_state: state.into(),
+            created_at: at,
+            ..Default::default()
+        };
         let (open, closed, other) = (card("open", 40), card("closed", 1), card("answered", 50));
-        let cards = vec![(&open, Some("icons".to_string()), true), (&closed, Some("Old".to_string()), false), (&other, Some("Dark Mode".to_string()), false)];
+        let cards = vec![
+            (&open, Some("icons".to_string()), true),
+            (&closed, Some("Old".to_string()), false),
+            (&other, Some("Dark Mode".to_string()), false),
+        ];
         let shown = |t: &StatusLine| match t.id.as_str() {
             "a" => Some("working"),
             "d" => None,
             _ => Some("done"),
         };
         let h = helpers_of(&lines, shown, cards);
-        let got: Vec<(&str, bool, u32)> = h.iter().map(|h| (h.name.as_str(), h.working, h.waiting)).collect();
-        assert_eq!(got, [("Tokens", false, 0), ("Icons", true, 1), ("Dark Mode", false, 0)]);
+        let got: Vec<(&str, bool, u32)> = h
+            .iter()
+            .map(|h| (h.name.as_str(), h.working, h.waiting))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("Tokens", false, 0),
+                ("Icons", true, 1),
+                ("Dark Mode", false, 0)
+            ]
+        );
     }
 }

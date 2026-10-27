@@ -42,7 +42,9 @@ use crate::hub::{GroupRowKind, SealedKeysPage};
 use trommi_core::crypto::SigningKey;
 use trommi_core::device::CodeJoin;
 use trommi_core::hub_auth::SignedHubAuth;
-use trommi_core::recovery::{select_anchor, PlacedCommit, RecoveryKeys, ServedCommit, ServedEnd, ServedStart};
+use trommi_core::recovery::{
+    select_anchor, PlacedCommit, RecoveryKeys, ServedCommit, ServedEnd, ServedStart,
+};
 
 /// Sealed keys asked for in one page (the hub serves at most 2000).
 pub const KEYS_PAGE: u32 = 1000;
@@ -108,7 +110,9 @@ impl RoomJoinError {
             RoomJoinError::RoomExists => "room-exists",
             RoomJoinError::Interrupted => "interrupted",
             RoomJoinError::Busy => "busy",
-            RoomJoinError::Unverified(code) | RoomJoinError::Refused(code) | RoomJoinError::Device(code) => code,
+            RoomJoinError::Unverified(code)
+            | RoomJoinError::Refused(code)
+            | RoomJoinError::Device(code) => code,
         }
     }
 
@@ -118,7 +122,9 @@ impl RoomJoinError {
             Error::WrongRecovery => RoomJoinError::WrongCode,
             Error::TooMany => RoomJoinError::TooMany,
             Error::RoomExists => RoomJoinError::RoomExists,
-            Error::Storage(_) | Error::Entropy | Error::Internal(_) => RoomJoinError::Device(error.code()),
+            Error::Storage(_) | Error::Entropy | Error::Internal(_) => {
+                RoomJoinError::Device(error.code())
+            }
             _ => RoomJoinError::Unverified(error.code()),
         }
     }
@@ -129,7 +135,10 @@ impl RoomJoinError {
 pub enum RoomJoinStatus {
     Step(RoomJoinStep),
     /// A read or the post failed for now (offline, not now, a 5xx): tried again at `retry_at`.
-    Waiting { step: RoomJoinStep, retry_at: u64 },
+    Waiting {
+        step: RoomJoinStep,
+        retry_at: u64,
+    },
     Joined,
     Failed(RoomJoinError),
 }
@@ -200,7 +209,10 @@ pub(super) struct Joiner {
 
 /// The device's join of the room group, posted and not answered yet.
 pub(super) fn staged(device: &Device<memstore::MemStore>) -> Option<OutboxEntry> {
-    device.outbox().into_iter().find(|e| e.kind == OutboxKind::ExternalCommit && e.group.is_some_and(|g| g.is_room()))
+    device
+        .outbox()
+        .into_iter()
+        .find(|e| e.kind == OutboxKind::ExternalCommit && e.group.is_some_and(|g| g.is_room()))
 }
 
 impl Joiner {
@@ -210,7 +222,11 @@ impl Joiner {
             retry: Retry::default(),
             asked: None,
             tries: 0,
-            step: if entry.is_some() { RoomJoinStep::Joining } else { RoomJoinStep::Reading },
+            step: if entry.is_some() {
+                RoomJoinStep::Joining
+            } else {
+                RoomJoinStep::Reading
+            },
             rows: Vec::new(),
             links: Vec::new(),
             bytes: 0,
@@ -250,7 +266,12 @@ impl Joiner {
     }
 
     /// The hub's sign-in signed with the code's key.
-    pub(super) fn sign_in(&self, room: RoomId, address: &HubAddress, challenge: [u8; 32]) -> Result<SignedHubAuth, Error> {
+    pub(super) fn sign_in(
+        &self,
+        room: RoomId,
+        address: &HubAddress,
+        challenge: [u8; 32],
+    ) -> Result<SignedHubAuth, Error> {
         let key: &SigningKey = self.keys.signing_key();
         trommi_core::hub_auth::sign(key, room, address, challenge)
     }
@@ -269,29 +290,42 @@ impl Engine {
         join: RoomJoin,
         entropy: Box<dyn Entropy + Send>,
     ) -> Result<Self, RoomJoinError> {
-        let address = HubAddress::parse(&join.hub).map_err(|_| RoomJoinError::Refused("bad-hub"))?;
+        let address =
+            HubAddress::parse(&join.hub).map_err(|_| RoomJoinError::Refused("bad-hub"))?;
         if address.as_str() != join.hub {
             return Err(RoomJoinError::Refused("bad-hub"));
         }
-        let entries: Vec<(Vec<u8>, Vec<u8>)> = entries.into_iter().map(|e| (e.key.0, e.value.0)).collect();
+        let entries: Vec<(Vec<u8>, Vec<u8>)> =
+            entries.into_iter().map(|e| (e.key.0, e.value.0)).collect();
         let mut entropy = Some(entropy);
         let mut staged_entry = None;
         let (device, writes) = if revision == 0 || entries.is_empty() {
             let (store, writes) = memstore::fresh(revision, Vec::new());
-            (Device::create(store, entropy.take().expect("entropy")).map_err(|e| RoomJoinError::Device(e.code()))?, writes)
+            (
+                Device::create(store, entropy.take().expect("entropy"))
+                    .map_err(|e| RoomJoinError::Device(e.code()))?,
+                writes,
+            )
         } else {
             let stale: Vec<Vec<u8>> = entries.iter().map(|(k, _)| k.clone()).collect();
             let (store, writes) = memstore::wipeable(revision, entries);
             match Device::open(store, entropy.take().expect("entropy")) {
                 Ok(device) if device.room().is_some() => return Err(RoomJoinError::RoomExists),
-                Ok(device) if staged(&device).is_some_and(|e| e.group == Some(GroupId::room(join.room))) => {
+                Ok(device)
+                    if staged(&device)
+                        .is_some_and(|e| e.group == Some(GroupId::room(join.room))) =>
+                {
                     staged_entry = staged(&device).map(|e| (e.id, e.epoch));
                     (device, writes)
                 }
                 // (a device in no room, without a join of this room: nothing of it is kept)
                 Ok(_) | Err(_) => {
                     let (store, writes) = memstore::fresh(revision, stale);
-                    (Device::create(store, Box::new(SystemEntropy)).map_err(|e| RoomJoinError::Device(e.code()))?, writes)
+                    (
+                        Device::create(store, Box::new(SystemEntropy))
+                            .map_err(|e| RoomJoinError::Device(e.code()))?,
+                        writes,
+                    )
                 }
             }
         };
@@ -303,15 +337,27 @@ impl Engine {
     }
 
     /// Resume a code sign-in's unfinished sessions on the same device; never create another leaf.
-    pub fn resume_room(&mut self, ctx: &mut Ctx<'_>, keys: RecoveryKeys) -> Result<(), RoomJoinError> {
-        if self.room_join.is_some() { return Err(RoomJoinError::Busy); }
-        let history = self.device.room_history().ok_or(RoomJoinError::RoomExists)?;
-        keys.check_room(&history.newest().room).map_err(|e| RoomJoinError::of(&e))?;
+    pub fn resume_room(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        keys: RecoveryKeys,
+    ) -> Result<(), RoomJoinError> {
+        if self.room_join.is_some() {
+            return Err(RoomJoinError::Busy);
+        }
+        let history = self
+            .device
+            .room_history()
+            .ok_or(RoomJoinError::RoomExists)?;
+        keys.check_room(&history.newest().room)
+            .map_err(|e| RoomJoinError::of(&e))?;
         let mut joiner = Joiner::new(keys, None);
         joiner.resuming = true;
         self.room_join = Some(joiner);
         self.token = None;
-        self.report(Report::RoomJoin(RoomJoinStatus::Step(RoomJoinStep::Reading)));
+        self.report(Report::RoomJoin(RoomJoinStatus::Step(
+            RoomJoinStep::Reading,
+        )));
         self.drive(ctx);
         Ok(())
     }
@@ -333,7 +379,10 @@ impl Engine {
 
     /// The first step of a join with the code (in place of [`Engine::start`]: there is no record to read).
     pub fn start_room_join(&mut self, ctx: &mut Ctx<'_>) {
-        let step = self.room_join.as_ref().map_or(RoomJoinStep::Reading, |j| j.step);
+        let step = self
+            .room_join
+            .as_ref()
+            .map_or(RoomJoinStep::Reading, |j| j.step);
         self.report(Report::RoomJoin(RoomJoinStatus::Step(step)));
         self.drive(ctx);
     }
@@ -355,7 +404,11 @@ impl Engine {
                 self.pending.insert(id, Asked::DeviceWrite);
                 ctx.out.push(Effect::Store {
                     id,
-                    op: StoreOp::DeviceApply { expected_revision: write.expected_revision, put: Vec::new(), delete: write.delete.into_iter().map(Into::into).collect() },
+                    op: StoreOp::DeviceApply {
+                        expected_revision: write.expected_revision,
+                        put: Vec::new(),
+                        delete: write.delete.into_iter().map(Into::into).collect(),
+                    },
                 });
             }
         }
@@ -377,21 +430,33 @@ impl Engine {
         };
         j.retry.fail(ctx.now, retry_after, &mut self.jitter);
         if let Some(retry_at) = j.retry.at {
-            self.report(Report::RoomJoin(RoomJoinStatus::Waiting { step: j.step, retry_at }));
+            self.report(Report::RoomJoin(RoomJoinStatus::Waiting {
+                step: j.step,
+                retry_at,
+            }));
         }
     }
 
     /// The challenge or the token was refused: for good when the hub said so.
     pub(super) fn room_auth_failed(&mut self, ctx: &mut Ctx<'_>, failure: Failure) {
-        let Some(mut j) = self.room_join.take() else { return };
+        let Some(mut j) = self.room_join.take() else {
+            return;
+        };
         match &failure {
-            Failure::Refused { code: Some(code), .. } if code == "not-found" => self.room_failed(ctx, j, RoomJoinError::NotFound),
+            Failure::Refused {
+                code: Some(code), ..
+            } if code == "not-found" => self.room_failed(ctx, j, RoomJoinError::NotFound),
             // (a key the room does not name: the code is not this room's)
-            Failure::Refused { code: Some(_), .. } => self.room_failed(ctx, j, RoomJoinError::WrongCode),
+            Failure::Refused { code: Some(_), .. } => {
+                self.room_failed(ctx, j, RoomJoinError::WrongCode)
+            }
             _ => {
                 self.auth_failed(ctx, failure.clone());
                 if let Some(retry_at) = self.auth_retry.at {
-                    self.report(Report::RoomJoin(RoomJoinStatus::Waiting { step: j.step, retry_at }));
+                    self.report(Report::RoomJoin(RoomJoinStatus::Waiting {
+                        step: j.step,
+                        retry_at,
+                    }));
                 }
                 j.retry = Retry::default();
                 self.room_join = Some(j);
@@ -400,7 +465,9 @@ impl Engine {
     }
 
     pub(super) fn drive_room_join(&mut self, ctx: &mut Ctx<'_>) {
-        let Some(mut j) = self.room_join.take() else { return };
+        let Some(mut j) = self.room_join.take() else {
+            return;
+        };
         if j.asked.is_some() || j.retry.waiting(ctx.now) {
             self.room_join = Some(j);
             return;
@@ -413,7 +480,14 @@ impl Engine {
     fn room_after(&mut self, ctx: &mut Ctx<'_>, mut j: Joiner, result: Result<(), RoomJoinError>) {
         match result {
             Err(error) => self.room_failed(ctx, j, error),
-            Ok(()) if j.entry.is_none() && j.keys_done && j.sessions_done && self.device.room() == Some(self.room) => self.room_joined(ctx, j),
+            Ok(())
+                if j.entry.is_none()
+                    && j.keys_done
+                    && j.sessions_done
+                    && self.device.room() == Some(self.room) =>
+            {
+                self.room_joined(ctx, j)
+            }
             Ok(()) => {
                 if j.restart {
                     j = j.again();
@@ -424,9 +498,17 @@ impl Engine {
         }
     }
 
-    pub(super) fn room_ask(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner, route: Route<'_>, what: Read) -> Result<(), RoomJoinError> {
+    pub(super) fn room_ask(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        j: &mut Joiner,
+        route: Route<'_>,
+        what: Read,
+    ) -> Result<(), RoomJoinError> {
         j.asked = self.ask(ctx, route, true, |expect| Asked::RoomRead { expect, what });
-        j.asked.map(|_| ()).ok_or(RoomJoinError::Device("bad-format"))
+        j.asked
+            .map(|_| ())
+            .ok_or(RoomJoinError::Device("bad-format"))
     }
 
     /// Asks for what comes next, or builds and posts the join once all is read.
@@ -436,8 +518,26 @@ impl Engine {
         if let Some(id) = j.entry {
             if j.awaiting || !j.may_post {
                 return match j.current {
-                    None if !j.awaiting => self.room_ask(ctx, j, Route::GroupInfo { group: &group, epoch: None }, Read::Info(None)),
-                    _ => self.room_ask(ctx, j, Route::GroupLog { group: &group, after: j.find_after, limit: LOG_PAGE, commits_only: true }, Read::Find),
+                    None if !j.awaiting => self.room_ask(
+                        ctx,
+                        j,
+                        Route::GroupInfo {
+                            group: &group,
+                            epoch: None,
+                        },
+                        Read::Info(None),
+                    ),
+                    _ => self.room_ask(
+                        ctx,
+                        j,
+                        Route::GroupLog {
+                            group: &group,
+                            after: j.find_after,
+                            limit: LOG_PAGE,
+                            commits_only: true,
+                        },
+                        Read::Find,
+                    ),
                 };
             }
             let Some(entry) = self.device.outbox().into_iter().find(|e| e.id == id) else {
@@ -445,82 +545,190 @@ impl Engine {
             };
             j.step = RoomJoinStep::Joining;
             let kind = entry.kind;
-            self.posting = self.ask(ctx, Route::Outbox { room: &room, entry: &entry, extra: None }, true, |expect| Asked::Post { expect, entry: id, kind, group: Some(group) });
+            self.posting = self.ask(
+                ctx,
+                Route::Outbox {
+                    room: &room,
+                    entry: &entry,
+                    extra: None,
+                },
+                true,
+                |expect| Asked::Post {
+                    expect,
+                    entry: id,
+                    kind,
+                    group: Some(group),
+                },
+            );
             j.asked = self.posting;
             j.posted = true;
-            return j.asked.map(|_| ()).ok_or(RoomJoinError::Device("bad-format"));
+            return j
+                .asked
+                .map(|_| ())
+                .ok_or(RoomJoinError::Device("bad-format"));
         }
         if !j.keys_done {
-            return self.room_ask(ctx, j, Route::SealedKeys { after: j.keys_after, limit: KEYS_PAGE }, Read::Keys);
+            return self.room_ask(
+                ctx,
+                j,
+                Route::SealedKeys {
+                    after: j.keys_after,
+                    limit: KEYS_PAGE,
+                },
+                Read::Keys,
+            );
         }
         if self.device.room() == Some(room) {
             // (a join that went on after a restart is through: what the sessions' joins need is read, no more)
             if !j.sessions_done {
-                return self.room_ask(ctx, j, Route::RoomGroups { room: &room, after: j.sessions_after, limit: crate::hub::limits::MAX_GROUPS_PAGE }, Read::Sessions);
+                return self.room_ask(
+                    ctx,
+                    j,
+                    Route::RoomGroups {
+                        room: &room,
+                        after: j.sessions_after,
+                        limit: crate::hub::limits::MAX_GROUPS_PAGE,
+                    },
+                    Read::Sessions,
+                );
             }
             return Ok(());
         }
         let anchor_epoch = match j.anchor_epoch {
             Some(epoch) => epoch,
             None => {
-                let anchor = select_anchor(&j.keys, &room, &j.rows).map_err(|e| RoomJoinError::of(&e))?;
+                let anchor =
+                    select_anchor(&j.keys, &room, &j.rows).map_err(|e| RoomJoinError::of(&e))?;
                 j.anchor_epoch = Some(anchor.epoch);
                 anchor.epoch
             }
         };
         let Some((current_epoch, current)) = j.current.clone() else {
-            return self.room_ask(ctx, j, Route::GroupInfo { group: &group, epoch: None }, Read::Info(None));
+            return self.room_ask(
+                ctx,
+                j,
+                Route::GroupInfo {
+                    group: &group,
+                    epoch: None,
+                },
+                Read::Info(None),
+            );
         };
         let anchored = j.recover.is_none() && anchor_epoch == current_epoch && j.links.is_empty();
         if !anchored && j.founding.is_none() {
             if current_epoch == 0 {
                 j.founding = Some(current.clone());
             } else {
-                return self.room_ask(ctx, j, Route::GroupInfo { group: &group, epoch: Some(0) }, Read::Info(Some(0)));
+                return self.room_ask(
+                    ctx,
+                    j,
+                    Route::GroupInfo {
+                        group: &group,
+                        epoch: Some(0),
+                    },
+                    Read::Info(Some(0)),
+                );
             }
         }
         if j.anchor.is_none() {
             if anchor_epoch == 0 {
-                j.anchor = j.founding.clone().or_else(|| (current_epoch == 0).then(|| current.clone()));
+                j.anchor = j
+                    .founding
+                    .clone()
+                    .or_else(|| (current_epoch == 0).then(|| current.clone()));
             } else if anchor_epoch == current_epoch {
                 j.anchor = Some(current.clone());
             } else {
-                return self.room_ask(ctx, j, Route::GroupInfo { group: &group, epoch: Some(anchor_epoch) }, Read::Info(Some(anchor_epoch)));
+                return self.room_ask(
+                    ctx,
+                    j,
+                    Route::GroupInfo {
+                        group: &group,
+                        epoch: Some(anchor_epoch),
+                    },
+                    Read::Info(Some(anchor_epoch)),
+                );
             }
         }
         if !j.sessions_done {
-            return self.room_ask(ctx, j, Route::RoomGroups { room: &room, after: j.sessions_after, limit: crate::hub::limits::MAX_GROUPS_PAGE }, Read::Sessions);
+            return self.room_ask(
+                ctx,
+                j,
+                Route::RoomGroups {
+                    room: &room,
+                    after: j.sessions_after,
+                    limit: crate::hub::limits::MAX_GROUPS_PAGE,
+                },
+                Read::Sessions,
+            );
         }
         if j.recover.is_some() {
             let sessions: Vec<GroupId> = j.main.iter().chain(&j.helpers).copied().collect();
-            let (founding, anchor) = (j.founding.clone().unwrap_or_default(), j.anchor.clone().unwrap_or_default());
+            let (founding, anchor) = (
+                j.founding.clone().unwrap_or_default(),
+                j.anchor.clone().unwrap_or_default(),
+            );
             return self.recover_next(ctx, j, sessions, (current_epoch, current), founding, anchor);
         }
         if !j.started {
             j.step = RoomJoinStep::Checking;
             self.room_status(j);
-            let (founding, anchor) = (j.founding.clone().unwrap_or_default(), j.anchor.clone().unwrap_or_default());
-            let served = ServedStart { room, founding: &founding, anchor: &anchor, rows: &j.rows, sessions: &[] };
+            let (founding, anchor) = (
+                j.founding.clone().unwrap_or_default(),
+                j.anchor.clone().unwrap_or_default(),
+            );
+            let served = ServedStart {
+                room,
+                founding: &founding,
+                anchor: &anchor,
+                rows: &j.rows,
+                sessions: &[],
+            };
             if anchored {
-                self.device.code_check_start_at_anchor(&j.keys, &served).map_err(|e| RoomJoinError::of(&e))?;
+                self.device
+                    .code_check_start_at_anchor(&j.keys, &served)
+                    .map_err(|e| RoomJoinError::of(&e))?;
                 j.reached = anchor_epoch;
                 j.anchored = true;
             } else {
-                self.device.code_check_start(&j.keys, &served).map_err(|e| RoomJoinError::of(&e))?;
+                self.device
+                    .code_check_start(&j.keys, &served)
+                    .map_err(|e| RoomJoinError::of(&e))?;
             }
             let later: Vec<GroupId> = j.main.iter().chain(&j.helpers).copied().collect();
-            self.device.code_check_defer(&later).map_err(|e| RoomJoinError::of(&e))?;
+            self.device
+                .code_check_defer(&later)
+                .map_err(|e| RoomJoinError::of(&e))?;
             j.started = true;
         }
         if j.reached < current_epoch {
-            return self.room_ask(ctx, j, Route::GroupLog { group: &group, after: j.log_after, limit: LOG_PAGE, commits_only: true }, Read::Log);
+            return self.room_ask(
+                ctx,
+                j,
+                Route::GroupLog {
+                    group: &group,
+                    after: j.log_after,
+                    limit: LOG_PAGE,
+                    commits_only: true,
+                },
+                Read::Log,
+            );
         }
         // the walk reached the current GroupInfo: the join is built on it
         j.step = RoomJoinStep::Joining;
         self.room_status(j);
         let built: CodeJoin = self
             .device
-            .join_room_checked(&j.keys, &ServedEnd { current: &current, sessions: &[], rows: &j.rows, links: &j.links }, ctx.now)
+            .join_room_checked(
+                &j.keys,
+                &ServedEnd {
+                    current: &current,
+                    sessions: &[],
+                    rows: &j.rows,
+                    links: &j.links,
+                },
+                ctx.now,
+            )
             .map_err(|e| RoomJoinError::of(&e))?;
         if built.missing_link.is_some() {
             self.report(Report::Alert(Alert::MissingLink));
@@ -539,12 +747,22 @@ impl Engine {
     fn room_slices(&mut self, j: &mut Joiner, log: &[LogItem]) -> Result<(), RoomJoinError> {
         let upto = j.current.as_ref().map_or(0, |(epoch, _)| *epoch);
         let group = GroupId::room(self.room);
-        let commits: Vec<&LogItem> = log.iter().filter(|c| c.n > j.log_after && c.epoch < upto).collect();
+        let commits: Vec<&LogItem> = log
+            .iter()
+            .filter(|c| c.n > j.log_after && c.epoch < upto)
+            .collect();
         let (mut at, mut size) = (0, SLICE);
         while at < commits.len() {
             let slice: Vec<PlacedCommit<'_>> = commits[at..(at + size).min(commits.len())]
                 .iter()
-                .map(|c| PlacedCommit { group, commit: ServedCommit { change: c.change, commit: &c.bytes, recovery_auth: c.recovery_auth.as_deref() } })
+                .map(|c| PlacedCommit {
+                    group,
+                    commit: ServedCommit {
+                        change: c.change,
+                        commit: &c.bytes,
+                        recovery_auth: c.recovery_auth.as_deref(),
+                    },
+                })
                 .collect();
             match self.device.code_check_slice(&slice) {
                 Ok(()) => {
@@ -559,21 +777,41 @@ impl Engine {
         Ok(())
     }
 
-    pub(super) fn on_room_read(&mut self, ctx: &mut Ctx<'_>, what: Read, answer: Result<Answer, Failure>, unauthorised: bool, _refusal: Option<Refusal>) {
-        let Some(mut j) = self.room_join.take() else { return };
+    pub(super) fn on_room_read(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        what: Read,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+        _refusal: Option<Refusal>,
+    ) {
+        let Some(mut j) = self.room_join.take() else {
+            return;
+        };
         j.asked = None;
         let result = self.room_read(ctx, &mut j, what, answer, unauthorised);
         self.room_after(ctx, j, result);
     }
 
-    fn room_read(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner, what: Read, answer: Result<Answer, Failure>, unauthorised: bool) -> Result<(), RoomJoinError> {
+    fn room_read(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        j: &mut Joiner,
+        what: Read,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+    ) -> Result<(), RoomJoinError> {
         let answer = match answer {
             Ok(answer) => answer,
             // (signed in again, and asked again)
             Err(_) if unauthorised => return Ok(()),
-            Err(Failure::Refused { code: Some(code), .. }) => {
+            Err(Failure::Refused {
+                code: Some(code), ..
+            }) => {
                 return Err(match Error::from_code(&code) {
-                    Some(Error::NotFound) if matches!(what, Read::Keys | Read::Info(None)) => RoomJoinError::NotFound,
+                    Some(Error::NotFound) if matches!(what, Read::Keys | Read::Info(None)) => {
+                        RoomJoinError::NotFound
+                    }
                     Some(e) => RoomJoinError::Refused(e.code()),
                     None => RoomJoinError::Refused("refused"),
                 });
@@ -584,13 +822,28 @@ impl Engine {
             }
         };
         j.retry.ok();
-        if matches!(what, Read::Session(..) | Read::SessionLog(_) | Read::Chain | Read::Open) {
+        if matches!(
+            what,
+            Read::Session(..) | Read::SessionLog(_) | Read::Chain | Read::Open
+        ) {
             return self.recover_read(j, what, answer);
         }
         let room = GroupId::room(self.room);
         match (what, answer) {
-            (Read::Keys, Answer::SealedKeys(SealedKeysPage { rows, links, change, more })) => {
-                j.bytes += rows.iter().map(|(_, b)| b.len()).chain(links.iter().map(|l| l.recovery_link.len())).sum::<usize>();
+            (
+                Read::Keys,
+                Answer::SealedKeys(SealedKeysPage {
+                    rows,
+                    links,
+                    change,
+                    more,
+                }),
+            ) => {
+                j.bytes += rows
+                    .iter()
+                    .map(|(_, b)| b.len())
+                    .chain(links.iter().map(|l| l.recovery_link.len()))
+                    .sum::<usize>();
                 if j.bytes > KEYS_BYTES_MAX {
                     return Err(RoomJoinError::Refused("too-large"));
                 }
@@ -607,8 +860,12 @@ impl Engine {
                     j.may_post = true;
                 }
             }
-            (Read::Info(Some(0)), Answer::GroupInfo { group_info, .. }) => j.founding = Some(group_info),
-            (Read::Info(Some(_)), Answer::GroupInfo { group_info, .. }) => j.anchor = Some(group_info),
+            (Read::Info(Some(0)), Answer::GroupInfo { group_info, .. }) => {
+                j.founding = Some(group_info)
+            }
+            (Read::Info(Some(_)), Answer::GroupInfo { group_info, .. }) => {
+                j.anchor = Some(group_info)
+            }
             (Read::Sessions, Answer::RoomGroups { items, more, after }) => {
                 let any = !items.is_empty();
                 for row in items.into_iter().filter(|r| r.live) {
@@ -626,7 +883,16 @@ impl Engine {
                 j.sessions_done = !more || !any;
             }
             (Read::Log, Answer::GroupLog { items, more }) => {
-                let log: Vec<LogItem> = items.into_iter().filter_map(|i| if let ChangeItem::Commit(l) = i { Some(l) } else { None }).collect();
+                let log: Vec<LogItem> = items
+                    .into_iter()
+                    .filter_map(|i| {
+                        if let ChangeItem::Commit(l) = i {
+                            Some(l)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
                 let before = j.log_after;
                 self.room_slices(j, &log)?;
                 let upto = j.current.as_ref().map_or(0, |(epoch, _)| *epoch);
@@ -641,13 +907,22 @@ impl Engine {
                 }
                 let before = j.find_after;
                 for item in items {
-                    let ChangeItem::Commit(c) = item else { continue };
+                    let ChangeItem::Commit(c) = item else {
+                        continue;
+                    };
                     j.find_after = j.find_after.max(c.n);
                     if c.epoch < j.entry_epoch || c.group != room {
                         continue;
                     }
                     // 13.2: the core decides whose Commit took the join's epoch, its own or another's
-                    let entry = trommi_core::device::LogEntry { change: c.change, group: room, kind: LogKind::Commit { bytes: &c.bytes, recovery_auth: c.recovery_auth.as_deref() } };
+                    let entry = trommi_core::device::LogEntry {
+                        change: c.change,
+                        group: room,
+                        kind: LogKind::Commit {
+                            bytes: &c.bytes,
+                            recovery_auth: c.recovery_auth.as_deref(),
+                        },
+                    };
                     match self.device.process_log_entry(&entry, ctx.now) {
                         Ok(Processed::OwnCommit) => {
                             j.entry = None;
@@ -664,20 +939,35 @@ impl Engine {
                 }
             }
             _ => {
-                self.room_wait(ctx, j, &Failure::BadAnswer { why: "an answer to another read" });
+                self.room_wait(
+                    ctx,
+                    j,
+                    &Failure::BadAnswer {
+                        why: "an answer to another read",
+                    },
+                );
             }
         }
         Ok(())
     }
 
     /// The hub's answer to the posted join, or what the log said of it: in the room, or refused.
-    fn room_answered(&mut self, ctx: &mut Ctx<'_>, j: &mut Joiner, entry: u64, answer: Result<Option<u64>, Error>) -> Result<(), RoomJoinError> {
+    fn room_answered(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        j: &mut Joiner,
+        entry: u64,
+        answer: Result<Option<u64>, Error>,
+    ) -> Result<(), RoomJoinError> {
         match answer {
-            Ok(change) => match self.device.outbox_accepted(entry, trommi_core::device::Accepted { change }) {
+            Ok(change) => match self
+                .device
+                .outbox_accepted(entry, trommi_core::device::Accepted { change })
+            {
                 Ok(()) | Err(Error::NotFound) => {
                     j.settled_at = change;
                     self.room_settled(ctx, j)
-                },
+                }
                 Err(e) => Err(RoomJoinError::of(&e)),
             },
             Err(code) => {
@@ -730,10 +1020,22 @@ impl Engine {
     }
 
     /// The hub's answer to a posted join.
-    pub(super) fn on_room_posted(&mut self, ctx: &mut Ctx<'_>, entry: u64, answer: Result<Answer, Failure>, unauthorised: bool, refusal: Option<Refusal>) {
-        let Some(mut j) = self.room_join.take() else { return };
+    pub(super) fn on_room_posted(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        entry: u64,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+        refusal: Option<Refusal>,
+    ) {
+        let Some(mut j) = self.room_join.take() else {
+            return;
+        };
         j.asked = None;
-        if j.recover.as_ref().is_some_and(|r| r.posting() == Some(entry)) {
+        if j.recover
+            .as_ref()
+            .is_some_and(|r| r.posting() == Some(entry))
+        {
             let result = self.recover_posted(ctx, &mut j, entry, answer, unauthorised);
             return self.room_after(ctx, j, result);
         }
@@ -743,7 +1045,11 @@ impl Engine {
                 self.room_answered(ctx, &mut j, entry, Ok(taken.change))
             }
             // (the hub's own refusal, by a code this build knows and that is not of the moment)
-            Err(Failure::Refused { code: Some(code), .. }) if !unauthorised && Error::from_code(&code).is_some_and(|c| !refusal_is_passing(&c)) => {
+            Err(Failure::Refused {
+                code: Some(code), ..
+            }) if !unauthorised
+                && Error::from_code(&code).is_some_and(|c| !refusal_is_passing(&c)) =>
+            {
                 let code = Error::from_code(&code).unwrap_or(Error::BadFormat);
                 self.room_answered(ctx, &mut j, entry, Err(code))
             }
@@ -755,10 +1061,15 @@ impl Engine {
                 if !unauthorised {
                     let failure = match other {
                         Err(failure) => failure,
-                        Ok(_) => Failure::BadAnswer { why: "an outbox answer" },
+                        Ok(_) => Failure::BadAnswer {
+                            why: "an outbox answer",
+                        },
                     };
                     let failure = match (failure, refusal) {
-                        (Failure::Refused { .. }, Some(r)) => Failure::NotNow { status: 503, retry_after_ms: r.retry_after_ms },
+                        (Failure::Refused { .. }, Some(r)) => Failure::NotNow {
+                            status: 503,
+                            retry_after_ms: r.retry_after_ms,
+                        },
                         (failure, _) => failure,
                     };
                     self.room_wait(ctx, &mut j, &failure);
@@ -773,7 +1084,11 @@ impl Engine {
     fn room_joined(&mut self, ctx: &mut Ctx<'_>, j: Joiner) {
         // (the recovery key's token ends here: from now on the device signs in as itself)
         self.token = None;
-        self.position = if j.resuming { self.position.max(self.device.cursor()) } else { self.device.cursor() };
+        self.position = if j.resuming {
+            self.position.max(self.device.cursor())
+        } else {
+            self.device.cursor()
+        };
         if j.anchored {
             if let Some(change) = j.settled_at {
                 // The fresh leaf starts at its accepted join. Older content comes from the Desk/history;
@@ -786,9 +1101,27 @@ impl Engine {
         self.report(Report::RoomJoin(RoomJoinStatus::Joined));
         self.report(Report::Groups);
         let recovered = j.recover.is_some();
-        let Joiner { keys, rows, links, main, helpers, .. } = j;
+        let Joiner {
+            keys,
+            rows,
+            links,
+            main,
+            helpers,
+            ..
+        } = j;
         // (a recovery joined every live session with the room)
-        let groups: Vec<GroupId> = if recovered { Vec::new() } else { main.into_iter().chain(helpers).collect() };
-        self.join_sessions(ctx, SessionJoins { keys, later: Some(Later { rows, links }), groups });
+        let groups: Vec<GroupId> = if recovered {
+            Vec::new()
+        } else {
+            main.into_iter().chain(helpers).collect()
+        };
+        self.join_sessions(
+            ctx,
+            SessionJoins {
+                keys,
+                later: Some(Later { rows, links }),
+                groups,
+            },
+        );
     }
 }

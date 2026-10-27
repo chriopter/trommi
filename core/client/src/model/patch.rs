@@ -89,7 +89,11 @@ impl Serialize for LeanCard<'_> {
             m.serialize_entry("unsupported", u)?;
         }
         m.serialize_entry("state_envelope_number", &c.state_envelope_number)?;
-        for (k, v) in [("snoozed_until", c.snoozed_until), ("snoozed_at", c.snoozed_at), ("unsnoozed", c.unsnoozed)] {
+        for (k, v) in [
+            ("snoozed_until", c.snoozed_until),
+            ("snoozed_at", c.snoozed_at),
+            ("unsnoozed", c.unsnoozed),
+        ] {
             if let Some(v) = v {
                 m.serialize_entry(k, &v)?;
             }
@@ -106,7 +110,11 @@ struct LeanEntries<'a> {
 
 impl Serialize for LeanEntries<'_> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_seq(self.ids.iter().map(|id| (id, self.map.get(id).map(LeanCard))))
+        s.collect_seq(
+            self.ids
+                .iter()
+                .map(|id| (id, self.map.get(id).map(LeanCard))),
+        )
     }
 }
 
@@ -172,7 +180,10 @@ impl Model {
 
     /// One card whole, as JSON text (a lean copy reads the rest of a card by it); empty for none.
     pub fn card_json(&self, id: &str) -> String {
-        self.cards.get(id).and_then(|c| serde_json::to_string(c).ok()).unwrap_or_default()
+        self.cards
+            .get(id)
+            .and_then(|c| serde_json::to_string(c).ok())
+            .unwrap_or_default()
     }
 
     /// The patch for one change.
@@ -202,14 +213,22 @@ impl Model {
             let rows = crate::sessions::session_list(self, self.reading);
             // What has left the Desk (off_mind.rs): made from the same things, and from the list itself.
             let off = crate::off_mind::off_mind(self, &rows, self.clock);
-            self.status_wake = rows.iter().filter_map(|r| r.recheck_at).chain(off.wake.map(|w| w + 1)).min().unwrap_or(0);
+            self.status_wake = rows
+                .iter()
+                .filter_map(|r| r.recheck_at)
+                .chain(off.wake.map(|w| w + 1))
+                .min()
+                .unwrap_or(0);
             (rows, off)
         });
         let this: &'a Model = self;
         let mut p = Map::new();
         p.insert("room".into(), this.room_json());
         if change.room {
-            p.insert("newer".into(), serde_json::to_value(&this.newer).unwrap_or(Value::Null));
+            p.insert(
+                "newer".into(),
+                serde_json::to_value(&this.newer).unwrap_or(Value::Null),
+            );
         }
         if change.members {
             p.insert(
@@ -220,7 +239,12 @@ impl Model {
         if change.members || change.registers.iter().any(|k| k.starts_with("device/")) {
             p.insert(
                 "devregs".into(),
-                Value::Array(this.device_registers.iter().map(|(id, r)| json!([id, r])).collect()),
+                Value::Array(
+                    this.device_registers
+                        .iter()
+                        .map(|(id, r)| json!([id, r]))
+                        .collect(),
+                ),
             );
         }
         if !change.registers.is_empty() {
@@ -233,16 +257,28 @@ impl Model {
             p.insert("human".into(), Value::Array(human));
         }
         if change.alerts {
-            p.insert("alerts".into(), serde_json::to_value(&this.alerts).unwrap_or(Value::Null));
+            p.insert(
+                "alerts".into(),
+                serde_json::to_value(&this.alerts).unwrap_or(Value::Null),
+            );
         }
         if change.stack {
             p.insert("stack".into(), json!(this.stack));
-            p.insert("open_permission_ids".into(), json!(this.open_permission_ids));
+            p.insert(
+                "open_permission_ids".into(),
+                json!(this.open_permission_ids),
+            );
             p.insert("desk_order".into(), json!(this.desk_order));
         }
         if let Some((rows, off)) = rows {
-            p.insert("session_list".into(), serde_json::to_value(rows).unwrap_or(Value::Null));
-            p.insert("off_mind".into(), serde_json::to_value(off).unwrap_or(Value::Null));
+            p.insert(
+                "session_list".into(),
+                serde_json::to_value(rows).unwrap_or(Value::Null),
+            );
+            p.insert(
+                "off_mind".into(),
+                serde_json::to_value(off).unwrap_or(Value::Null),
+            );
         }
         // When the app is to project again although nothing came: the next snooze or request to run out, the next
         // change of a session's status by the clock (0: none).
@@ -269,11 +305,22 @@ impl Model {
         let timelines = (!keys.is_empty()).then(|| {
             keys.iter()
                 .map(|key| match this.timelines.get(*key) {
-                    None => TimelineOut { key, meta: Value::Null, items: vec![], keys: vec![] },
+                    None => TimelineOut {
+                        key,
+                        meta: Value::Null,
+                        items: vec![],
+                        keys: vec![],
+                    },
                     Some(t) => TimelineOut {
                         key,
                         meta: timeline_meta(t),
-                        items: change.items.get(*key).into_iter().flatten().filter_map(|k| t.items.get(k)).collect(),
+                        items: change
+                            .items
+                            .get(*key)
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|k| t.items.get(k))
+                            .collect(),
                         keys: t.items.keys().map(ItemKey::to_json).collect(),
                     },
                 })
@@ -281,17 +328,35 @@ impl Model {
         });
         PatchOut {
             small: p,
-            sessions: entries(&change.sessions).map(|ids| Entries { map: &this.sessions, ids }),
+            sessions: entries(&change.sessions).map(|ids| Entries {
+                map: &this.sessions,
+                ids,
+            }),
             cards: entries(&change.cards).map(|ids| {
                 if this.lean_cards {
-                    CardEntries::Lean(LeanEntries { map: &this.cards, ids })
+                    CardEntries::Lean(LeanEntries {
+                        map: &this.cards,
+                        ids,
+                    })
                 } else {
-                    CardEntries::Whole(Entries { map: &this.cards, ids })
+                    CardEntries::Whole(Entries {
+                        map: &this.cards,
+                        ids,
+                    })
                 }
             }),
-            permissions: entries(&change.permissions).map(|ids| Entries { map: &this.permissions, ids }),
-            notes: entries(&change.notes).map(|ids| Entries { map: &this.notes, ids }),
-            published: entries(&change.published).map(|ids| Entries { map: &this.published, ids }),
+            permissions: entries(&change.permissions).map(|ids| Entries {
+                map: &this.permissions,
+                ids,
+            }),
+            notes: entries(&change.notes).map(|ids| Entries {
+                map: &this.notes,
+                ids,
+            }),
+            published: entries(&change.published).map(|ids| Entries {
+                map: &this.published,
+                ids,
+            }),
             timelines,
         }
     }

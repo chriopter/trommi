@@ -64,13 +64,20 @@ fn average(samples: &[Sample]) -> Option<Sample> {
     let last = samples.last()?;
     let mut v = [f64::NAN; SERIES];
     for (k, slot) in v.iter_mut().enumerate() {
-        let known: Vec<f64> = samples.iter().map(|s| s.v[k]).filter(|x| x.is_finite()).collect();
+        let known: Vec<f64> = samples
+            .iter()
+            .map(|s| s.v[k])
+            .filter(|x| x.is_finite())
+            .collect();
         if !known.is_empty() {
             *slot = known.iter().sum::<f64>() / known.len() as f64;
         }
     }
     // (stamped at the start of its minute)
-    Some(Sample { at: last.at - last.at % COARSE_STEP_MS, v })
+    Some(Sample {
+        at: last.at - last.at % COARSE_STEP_MS,
+        v,
+    })
 }
 
 impl History {
@@ -101,7 +108,12 @@ impl History {
         if range_ms <= FINE_MS {
             return self.fine.iter().filter(|s| s.at >= from).copied().collect();
         }
-        let mut out: Vec<Sample> = self.coarse.iter().filter(|s| s.at >= from).copied().collect();
+        let mut out: Vec<Sample> = self
+            .coarse
+            .iter()
+            .filter(|s| s.at >= from)
+            .copied()
+            .collect();
         out.extend(average(&self.minute));
         out
     }
@@ -132,11 +144,19 @@ struct State {
 
 impl Metrics {
     pub fn push(&self, s: Sample) {
-        self.state.lock().unwrap_or_else(|e| e.into_inner()).history.push(s);
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .history
+            .push(s);
     }
 
     pub fn since(&self, range_ms: u64, now: u64) -> Vec<Sample> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner()).history.since(range_ms, now)
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .history
+            .since(range_ms, now)
     }
 
     /// Takes a sample of the server and the hub (the periodic job, every `STEP_MS`).
@@ -144,9 +164,12 @@ impl Metrics {
         let at = crate::util::now();
         let ticks = crate::admin_view::cpu_ticks();
         let requests = self.requests.load(Ordering::Relaxed);
-        let mem = std::fs::read_to_string("/proc/meminfo").ok().and_then(|text| {
-            crate::admin_view::kb(&text, "MemTotal:").zip(crate::admin_view::kb(&text, "MemAvailable:"))
-        });
+        let mem = std::fs::read_to_string("/proc/meminfo")
+            .ok()
+            .and_then(|text| {
+                crate::admin_view::kb(&text, "MemTotal:")
+                    .zip(crate::admin_view::kb(&text, "MemAvailable:"))
+            });
         let rss = std::fs::read_to_string("/proc/self/status")
             .ok()
             .and_then(|text| crate::admin_view::kb(&text, "VmRSS:"));
@@ -174,7 +197,8 @@ impl Metrics {
                 / at.saturating_sub(last_at).max(1) as f64;
         }
         if let Some((total, available)) = mem {
-            v[Series::Mem as usize] = 100.0 * total.saturating_sub(available) as f64 / total.max(1) as f64;
+            v[Series::Mem as usize] =
+                100.0 * total.saturating_sub(available) as f64 / total.max(1) as f64;
         }
         if let Some(rss) = rss {
             v[Series::Rss as usize] = rss as f64;

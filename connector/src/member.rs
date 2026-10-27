@@ -1,7 +1,7 @@
 //! The member: this process as a member of the room. Key slot, sign-in, lease, stream; joining by an
 //! agent invite link; keys that are out (put aside, the next usable key at once); handing the key over.
-use crate::driver::{BoxFut, Command, Driver, DriverEvent};
 use crate::door::knock;
+use crate::driver::{BoxFut, Command, Driver, DriverEvent};
 use crate::error::{Fault, Result};
 use crate::hooks::ancestors;
 use crate::slots::*;
@@ -212,7 +212,8 @@ fn joined_file(cfg: &Cfg) -> PathBuf {
 /// The room this folder joined last, as a join wrote it.
 pub fn joined_room(cfg: &Cfg) -> Option<String> {
     let text = std::fs::read_to_string(joined_file(cfg))
-        .or_else(|_| std::fs::read_to_string(cfg.folder.join(".trommi/room"))).ok()?;
+        .or_else(|_| std::fs::read_to_string(cfg.folder.join(".trommi/room")))
+        .ok()?;
     let room = text.trim();
     is_room_id(room).then(|| room.to_string())
 }
@@ -356,9 +357,14 @@ pub fn paths_named(dir: &Path, name: &str) -> SlotPaths {
 pub fn room_slot_dirs(room: &Path) -> Vec<PathBuf> {
     let mut dirs = vec![room.to_path_buf()];
     if let Ok(rd) = std::fs::read_dir(room.join("s")) {
-        let mut sessions: Vec<_> = rd.filter_map(|e| e.ok()).filter(|e| {
-            e.file_type().is_ok_and(|t| t.is_dir()) && crate::identity::is_identity(&e.file_name().to_string_lossy())
-        }).map(|e| e.path()).collect();
+        let mut sessions: Vec<_> = rd
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_type().is_ok_and(|t| t.is_dir())
+                    && crate::identity::is_identity(&e.file_name().to_string_lossy())
+            })
+            .map(|e| e.path())
+            .collect();
         sessions.sort();
         dirs.extend(sessions);
     }
@@ -370,7 +376,10 @@ fn session_dir(cfg: &Cfg, room: &str, owner: &str) -> PathBuf {
     if owner == format!("machine:{room}") {
         return cfg.keys_dir.join(room).join("machine");
     }
-    cfg.keys_dir.join(room).join("s").join(&crate::util::hex(&crate::util::sha256(owner.as_bytes()))[..16])
+    cfg.keys_dir
+        .join(room)
+        .join("s")
+        .join(&crate::util::hex(&crate::util::sha256(owner.as_bytes()))[..16])
 }
 fn new_paths(cfg: &Cfg, room: &str, slot: u32) -> SlotPaths {
     let owner = cfg.owner();
@@ -381,8 +390,11 @@ fn new_paths(cfg: &Cfg, room: &str, slot: u32) -> SlotPaths {
 }
 /// The keys this command may address: its exact owner's keys and legacy keys of its folder.
 pub fn command_slots(cfg: &Cfg, room: &str) -> Vec<SlotPaths> {
-    let mut paths: Vec<_> = own_slots(cfg, &cfg.owner()).into_iter()
-        .filter(|(r, _)| r == room).map(|(_, p)| p).collect();
+    let mut paths: Vec<_> = own_slots(cfg, &cfg.owner())
+        .into_iter()
+        .filter(|(r, _)| r == room)
+        .map(|(_, p)| p)
+        .collect();
     for n in slots_in(cfg, &cfg.keys_dir.join(room)) {
         let p = paths_of(cfg, room, n);
         if !paths.iter().any(|old| old.key_file == p.key_file) {
@@ -401,17 +413,27 @@ pub fn own_slots(cfg: &Cfg, owner: &str) -> Vec<(String, SlotPaths)> {
     for room in room_names(cfg) {
         // Only the exact owner's subtree is inspected. A hash collision must still pass the full owner check.
         for dir in [session_dir(cfg, &room, owner), cfg.keys_dir.join(&room)] {
-            let Ok(rd) = std::fs::read_dir(&dir) else { continue };
-            let mut names: Vec<String> = rd.filter_map(|e| e.ok())
+            let Ok(rd) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            let mut names: Vec<String> = rd
+                .filter_map(|e| e.ok())
                 .map(|e| e.file_name().to_string_lossy().to_string())
                 .filter_map(|f| f.strip_suffix(".owner").map(String::from))
-                .filter(|n| !n.starts_with("replaced-")).collect();
+                .filter(|n| !n.starts_with("replaced-"))
+                .collect();
             names.sort();
             for name in names {
                 let p = paths_named(&dir, &name);
                 let keyed = std::fs::read_to_string(&p.key_file).is_ok_and(|t| t == KEY_MARKER);
-                let mine = owner_of(&p).as_ref().and_then(|r| r.get("owner")).and_then(|o| o.as_str()) == Some(owner);
-                if keyed && mine { out.push((room.clone(), p)); }
+                let mine = owner_of(&p)
+                    .as_ref()
+                    .and_then(|r| r.get("owner"))
+                    .and_then(|o| o.as_str())
+                    == Some(owner);
+                if keyed && mine {
+                    out.push((room.clone(), p));
+                }
             }
         }
     }
@@ -455,9 +477,9 @@ fn session_room(cfg: &Cfg, owner: &str) -> Result<Option<String>> {
     if terminal.len() == 1 {
         return Ok(terminal.into_iter().next());
     }
-    Ok(room_names(cfg).into_iter().find(|r| {
-        last_out(cfg, r).is_some_and(|m| owned_by(m.get("owner"), owner, ppid()))
-    }))
+    Ok(room_names(cfg)
+        .into_iter()
+        .find(|r| last_out(cfg, r).is_some_and(|m| owned_by(m.get("owner"), owner, ppid()))))
 }
 /// How many keys of this folder, in any room, belong to other sessions than this one.
 pub fn others_keys_here(cfg: &Cfg) -> usize {
@@ -534,11 +556,26 @@ pub fn paths_of(cfg: &Cfg, room_id: &str, slot: u32) -> SlotPaths {
 pub fn last_out(cfg: &Cfg, room_id: &str) -> Option<Value> {
     let owner = cfg.owner();
     let mut marks = Vec::new();
-    for (dir, base) in [(cfg.keys_dir.join(room_id), cfg.base.clone()), (session_dir(cfg, room_id, &owner), "session".into())] {
-        if base == "session" && owner.is_empty() { continue; }
-        let re = regex::Regex::new(&format!(r"^replaced-(\d{{8}}T\d{{6}})-{}-\d+\.out$", regex::escape(&base))).unwrap();
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
-        marks.extend(rd.filter_map(|e| e.ok()).filter(|e| re.is_match(&e.file_name().to_string_lossy())).filter_map(|e| read_json(&e.path())));
+    for (dir, base) in [
+        (cfg.keys_dir.join(room_id), cfg.base.clone()),
+        (session_dir(cfg, room_id, &owner), "session".into()),
+    ] {
+        if base == "session" && owner.is_empty() {
+            continue;
+        }
+        let re = regex::Regex::new(&format!(
+            r"^replaced-(\d{{8}}T\d{{6}})-{}-\d+\.out$",
+            regex::escape(&base)
+        ))
+        .unwrap();
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        marks.extend(
+            rd.filter_map(|e| e.ok())
+                .filter(|e| re.is_match(&e.file_name().to_string_lossy()))
+                .filter_map(|e| read_json(&e.path())),
+        );
     }
     marks.sort_by_key(|m| m.get("at").and_then(|v| v.as_u64()).unwrap_or(0));
     let own = marks
@@ -1191,7 +1228,9 @@ impl Member {
         {
             let c = client.lock();
             if c.connection() == "removed" {
-                return Err(removed_err(c.removal().is_some_and(|(replaced, _)| replaced)));
+                return Err(removed_err(
+                    c.removal().is_some_and(|(replaced, _)| replaced),
+                ));
             }
         }
         if client.lock().session_id().is_none() {
@@ -1397,7 +1436,13 @@ impl Member {
     /// Join by an agent invite link; resolves when the human's app has added this device and the session is claimed.
     /// `vouched`: a link the human's app opened for this session on an approved computer (machine.rs `activate`): the
     /// app confirms it by itself, there is nothing to compare.
-    pub async fn join(self: &Arc<Self>, link: &str, replace_held: bool, cli: bool, vouched: bool) -> Result<()> {
+    pub async fn join(
+        self: &Arc<Self>,
+        link: &str,
+        replace_held: bool,
+        cli: bool,
+        vouched: bool,
+    ) -> Result<()> {
         if self.phase() == "ready" {
             return Err(Fault::plain("this session is already in a room"));
         }
@@ -1716,17 +1761,37 @@ mod session_key_tests {
     struct Fixture(Cfg);
     impl Fixture {
         fn new(owner: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("trommi-session-paths-{}", crate::util::random_hex(16)));
-            Self(Cfg { keys_dir: dir.clone(), folder: dir.join("project"), shown: "~/project".into(), host: "test".into(), base: "test-project".into(), session: owner.into(), owner: owner.into(), takeover_ms: 1, hub_url: "http://127.0.0.1:9".into(), room: String::new() })
+            let dir = std::env::temp_dir().join(format!(
+                "trommi-session-paths-{}",
+                crate::util::random_hex(16)
+            ));
+            Self(Cfg {
+                keys_dir: dir.clone(),
+                folder: dir.join("project"),
+                shown: "~/project".into(),
+                host: "test".into(),
+                base: "test-project".into(),
+                session: owner.into(),
+                owner: owner.into(),
+                takeover_ms: 1,
+                hub_url: "http://127.0.0.1:9".into(),
+                room: String::new(),
+            })
         }
-        fn room(&self) -> String { trommi_core::ids::RoomId::new([7; 32]).to_base64url() }
+        fn room(&self) -> String {
+            trommi_core::ids::RoomId::new([7; 32]).to_base64url()
+        }
         fn keyed(&self, p: &SlotPaths, owner: &str) {
             std::fs::create_dir_all(&p.dir).unwrap();
             write_private(&p.key_file, KEY_MARKER).unwrap();
             write_owner(p, &owner_record(owner, Some(ppid())));
         }
     }
-    impl Drop for Fixture { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0.keys_dir); } }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0.keys_dir);
+        }
+    }
 
     #[tokio::test]
     async fn identified_keys_resume_across_folders_and_leave_legacy_keys_where_they_are() {
@@ -1766,7 +1831,8 @@ mod session_key_tests {
         f.keyed(&others, "cc:other");
         let retired = paths_named(&dir, "elsewhere-2");
         f.keyed(&retired, "cc:first");
-        let mark = json!({ "at": 42, "owner": owner_record("cc:first", Some(ppid())), "verified": true });
+        let mark =
+            json!({ "at": 42, "owner": owner_record("cc:first", Some(ppid())), "verified": true });
         write_private(&out_file(&retired), &mark.to_string()).unwrap();
         set_slot_aside(&retired, Some("20261025T132016".into()));
         let hub = paths_named(&dir, &format!("{}-hub-2", f.0.base));
@@ -1776,12 +1842,17 @@ mod session_key_tests {
         assert_eq!(own_slots(&f.0, "cc:first").len(), 1);
         assert_eq!(resolve_room(&f.0).unwrap(), Some(room.clone()));
         let got = pick_slot(&f.0, &room, false).await;
-        assert!(got.has_key, "the own key must be claimed, not skipped as one of this folder's slots");
+        assert!(
+            got.has_key,
+            "the own key must be claimed, not skipped as one of this folder's slots"
+        );
         assert_eq!(got.key_file, hub.key_file);
         unlock_slot(&got);
         // the retired key stays put aside, the other session's key untouched
         assert!(!retired.key_file.exists());
-        assert!(dir.join("replaced-20261025T132016-elsewhere-2.out").exists());
+        assert!(dir
+            .join("replaced-20261025T132016-elsewhere-2.out")
+            .exists());
         assert_eq!(owner_of(&others).unwrap()["owner"], "cc:other");
     }
 
@@ -1811,12 +1882,14 @@ mod session_key_tests {
         assert_ne!(old.key_file, next.key_file);
         assert!(old.key_file.exists());
         assert_eq!(old.dir, next.dir);
-        let mark = json!({ "at": 42, "owner": owner_record(&f.0.owner, Some(ppid())), "verified": true });
+        let mark =
+            json!({ "at": 42, "owner": owner_record(&f.0.owner, Some(ppid())), "verified": true });
         write_private(&out_file(&old), &mark.to_string()).unwrap();
         set_slot_aside(&old, Some("20261015T220000".into()));
         unlock_slot(&old);
         unlock_slot(&next);
-        let mut moved = f.0.clone(); moved.base = "new-folder".into();
+        let mut moved = f.0.clone();
+        moved.base = "new-folder".into();
         assert_eq!(last_out(&moved, &room), Some(mark));
         assert_eq!(resolve_room(&moved).unwrap(), Some(room));
     }

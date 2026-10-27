@@ -99,7 +99,8 @@ impl App {
         lens.carry_device(&self.lens);
         let lens = std::mem::replace(&mut self.lens, lens);
         let parts = self.next_view.take_window_parts();
-        self.next_view.put_window_parts(std::mem::take(&mut incoming.parts));
+        self.next_view
+            .put_window_parts(std::mem::take(&mut incoming.parts));
         let view = std::mem::replace(&mut self.view, std::mem::take(&mut incoming.view));
         let rendered_once = std::mem::replace(&mut self.rendered_once, incoming.rendered_once);
         let made_note = std::mem::replace(&mut self.made_note, incoming.made_note.take());
@@ -121,8 +122,17 @@ impl App {
     /// The Scribble Boards in view: the current window's is the focus, the other windows' are watched too.
     pub(super) fn scribble_windows(&mut self) {
         let focus = self.windows.get(&self.window).and_then(|w| w.board);
-        let others = self.windows.iter().filter(|(id, _)| **id != self.window).filter_map(|(_, w)| w.board).collect();
-        let thumbs = self.lens.thumbs || self.windows.iter().any(|(id, w)| *id != self.window && w.lens.thumbs);
+        let others = self
+            .windows
+            .iter()
+            .filter(|(id, _)| **id != self.window)
+            .filter_map(|(_, w)| w.board)
+            .collect();
+        let thumbs = self.lens.thumbs
+            || self
+                .windows
+                .iter()
+                .any(|(id, w)| *id != self.window && w.lens.thumbs);
         self.scribble.in_view(focus, others, thumbs);
     }
 
@@ -147,7 +157,9 @@ impl App {
             return;
         }
         if window == self.window {
-            let Some(other) = self.windows.keys().copied().find(|w| *w != window) else { return };
+            let Some(other) = self.windows.keys().copied().find(|w| *w != window) else {
+                return;
+            };
             self.switch_window(other);
         }
         self.windows.remove(&window);
@@ -172,7 +184,12 @@ impl App {
             return;
         }
         let home = self.window;
-        let others: Vec<u32> = self.windows.keys().copied().filter(|w| *w != home).collect();
+        let others: Vec<u32> = self
+            .windows
+            .keys()
+            .copied()
+            .filter(|w| *w != home)
+            .collect();
         for w in others {
             self.switch_window(w);
             if moved || self.windows.get(&w).is_some_and(|w| w.stale) {
@@ -187,9 +204,10 @@ impl App {
     /// anything else is the window it names.
     pub(super) fn origin_of(&mut self, window: u32, event: &Event) -> u32 {
         match event {
-            Event::Http { id, .. } | Event::Store { id, .. } | Event::Secret { id, .. } | Event::Platform { id, .. } => {
-                self.io_windows.remove(id).unwrap_or(window)
-            }
+            Event::Http { id, .. }
+            | Event::Store { id, .. }
+            | Event::Secret { id, .. }
+            | Event::Platform { id, .. } => self.io_windows.remove(id).unwrap_or(window),
             Event::Progress { id, .. } => self.io_windows.get(id).copied().unwrap_or(window),
             _ => window,
         }
@@ -216,7 +234,9 @@ impl App {
                 Effect::Cancel { id } => {
                     self.io_windows.remove(id);
                 }
-                Effect::SaveFile { window, .. } | Effect::OpenUrl { window, .. } => *window = origin,
+                Effect::SaveFile { window, .. } | Effect::OpenUrl { window, .. } => {
+                    *window = origin
+                }
                 _ => {}
             }
         }

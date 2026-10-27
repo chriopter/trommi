@@ -131,7 +131,9 @@ impl Rec {
             Rec::Published(id) => json(m.published.get(id)?),
             Rec::Register(id) => json(m.human.get(id)?),
             Rec::Timeline(id) => json(m.timelines.get(id)?),
-            Rec::Item(timeline, key) => json::<TimelineItem>(m.timelines.get(timeline)?.items.get(key)?),
+            Rec::Item(timeline, key) => {
+                json::<TimelineItem>(m.timelines.get(timeline)?.items.get(key)?)
+            }
         }
     }
 }
@@ -141,7 +143,8 @@ impl Rec {
 pub fn snapshot_text(records: &[(Rec, &[u8])]) -> Option<String> {
     let mut lists: [Vec<(&str, &str)>; 7] = Default::default();
     let mut single: [Option<&str>; 4] = [None; 4];
-    let mut timelines: std::collections::BTreeMap<&str, (Option<&str>, Vec<&str>)> = Default::default();
+    let mut timelines: std::collections::BTreeMap<&str, (Option<&str>, Vec<&str>)> =
+        Default::default();
     for (rec, bytes) in records {
         let text = serde_json::from_slice::<&RawValue>(bytes).ok()?.get();
         let slot = |rec: &Rec| -> Option<usize> {
@@ -162,21 +165,42 @@ pub fn snapshot_text(records: &[(Rec, &[u8])]) -> Option<String> {
             Rec::Newer => single[3] = Some(text),
             Rec::Timeline(id) => timelines.entry(id.as_str()).or_default().0 = Some(text),
             Rec::Item(id, _) => timelines.entry(id.as_str()).or_default().1.push(text),
-            Rec::Card(id) | Rec::Session(id) | Rec::Permission(id) | Rec::Note(id) | Rec::Published(id) | Rec::Register(id) => {
+            Rec::Card(id)
+            | Rec::Session(id)
+            | Rec::Permission(id)
+            | Rec::Note(id)
+            | Rec::Published(id)
+            | Rec::Register(id) => {
                 lists[slot(rec)?].push((id.as_str(), text));
             }
         }
     }
-    let mut out = String::with_capacity(records.iter().map(|(_, b)| b.len() + 24).sum::<usize>() + 256);
+    let mut out =
+        String::with_capacity(records.iter().map(|(_, b)| b.len() + 24).sum::<usize>() + 256);
     out.push('{');
-    let _ = write!(out, r#""room":{},"members":{}"#, single[0].unwrap_or("null"), single[1].unwrap_or("[]"));
+    let _ = write!(
+        out,
+        r#""room":{},"members":{}"#,
+        single[0].unwrap_or("null"),
+        single[1].unwrap_or("[]")
+    );
     if let Some(alerts) = single[2] {
         let _ = write!(out, r#","alerts":{alerts}"#);
     }
     if let Some(newer) = single[3] {
         let _ = write!(out, r#","newer":{newer}"#);
     }
-    for (name, list) in ["cards", "sessions", "permissions", "notes", "published", "human"].iter().zip(&lists) {
+    for (name, list) in [
+        "cards",
+        "sessions",
+        "permissions",
+        "notes",
+        "published",
+        "human",
+    ]
+    .iter()
+    .zip(&lists)
+    {
         let _ = write!(out, r#","{name}":["#);
         for (i, (id, text)) in list.iter().enumerate() {
             if i > 0 {
@@ -200,7 +224,11 @@ pub fn snapshot_text(records: &[(Rec, &[u8])]) -> Option<String> {
         out.push_str(&serde_json::to_string(id).ok()?);
         out.push_str(",{");
         out.push_str(body);
-        out.push_str(if body.is_empty() { r#""items":["# } else { r#","items":["# });
+        out.push_str(if body.is_empty() {
+            r#""items":["#
+        } else {
+            r#","items":["#
+        });
         for (i, item) in items.iter().enumerate() {
             if i > 0 {
                 out.push(',');
@@ -256,10 +284,23 @@ mod tests {
             Rec::Item("session_chat:s1".into(), ItemKey::Number(42)),
             Rec::Item("card_chat:c/1".into(), ItemKey::Local("l/1%".into())),
         ] {
-            assert_eq!(Rec::of_tail(&rec.tail()), Some(rec.clone()), "{}", rec.tail());
+            assert_eq!(
+                Rec::of_tail(&rec.tail()),
+                Some(rec.clone()),
+                "{}",
+                rec.tail()
+            );
         }
         assert_eq!(Rec::Register("star/c1".into()).tail(), "reg/star%2Fc1");
-        for odd in ["", "card", "card/", "item/x", "item/x/q1", "item/x/nq", "what/x"] {
+        for odd in [
+            "",
+            "card",
+            "card/",
+            "item/x",
+            "item/x/q1",
+            "item/x/nq",
+            "what/x",
+        ] {
             assert_eq!(Rec::of_tail(odd), None, "{odd}");
         }
     }
@@ -267,18 +308,44 @@ mod tests {
     #[test]
     fn records_read_back_as_the_snapshot_they_were_written_from() {
         let mut m = Model::new();
-        m.cards.insert("c1".into(), serde_json::from_value(json!({ "object_id": "c1", "title": "Ask", "object_version": 2 })).unwrap());
-        m.human.insert("star/c1".into(), serde_json::from_value(json!({ "value": true, "envelope_number": 3 })).unwrap());
-        m.members.insert("a1".into(), serde_json::from_value(json!({ "device_id": "a1", "device_role": "agent" })).unwrap());
-        let mut t = crate::model::types::Timeline { timeline_key: "session_chat:s1".into(), item_count: 2, ..Default::default() };
-        for it in [json!({ "envelope_number": 4, "content": "hi" }), json!({ "local_id": "l1", "pending": true })] {
+        m.cards.insert(
+            "c1".into(),
+            serde_json::from_value(
+                json!({ "object_id": "c1", "title": "Ask", "object_version": 2 }),
+            )
+            .unwrap(),
+        );
+        m.human.insert(
+            "star/c1".into(),
+            serde_json::from_value(json!({ "value": true, "envelope_number": 3 })).unwrap(),
+        );
+        m.members.insert(
+            "a1".into(),
+            serde_json::from_value(json!({ "device_id": "a1", "device_role": "agent" })).unwrap(),
+        );
+        let mut t = crate::model::types::Timeline {
+            timeline_key: "session_chat:s1".into(),
+            item_count: 2,
+            ..Default::default()
+        };
+        for it in [
+            json!({ "envelope_number": 4, "content": "hi" }),
+            json!({ "local_id": "l1", "pending": true }),
+        ] {
             let o = it.as_object().unwrap().clone();
             t.items.insert(ItemKey::of(&o), o);
         }
         m.timelines.insert("session_chat:s1".into(), t);
-        m.timelines.insert("card_chat:c1".into(), Default::default());
-        let values: Vec<(Rec, Vec<u8>)> = every_record(&m).into_iter().filter_map(|r| Some((r.clone(), r.value(&m)?))).collect();
-        let records: Vec<(Rec, &[u8])> = values.iter().map(|(r, v)| (r.clone(), v.as_slice())).collect();
+        m.timelines
+            .insert("card_chat:c1".into(), Default::default());
+        let values: Vec<(Rec, Vec<u8>)> = every_record(&m)
+            .into_iter()
+            .filter_map(|r| Some((r.clone(), r.value(&m)?)))
+            .collect();
+        let records: Vec<(Rec, &[u8])> = values
+            .iter()
+            .map(|(r, v)| (r.clone(), v.as_slice()))
+            .collect();
         let text = snapshot_text(&records).expect("the records read");
         let mut back = Model::new();
         back.load_text(&text).unwrap();

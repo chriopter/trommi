@@ -152,7 +152,8 @@ fn apns_is_nonce_then_the_suites_aead_over_the_json() {
         .expect("opens");
     // the JSON, then zero bytes up to the one length of every payload
     assert_eq!(padded.len(), APNS_PLAIN_LEN);
-    let json = format!(r#"{{"room_id":"{ROOM_TEXT}","change":4711,"urgency":2,"ticket":"AQIDBAU"}}"#);
+    let json =
+        format!(r#"{{"room_id":"{ROOM_TEXT}","change":4711,"urgency":2,"ticket":"AQIDBAU"}}"#);
     assert_eq!(&padded[..json.len()], json.as_bytes());
     assert!(padded[json.len()..].iter().all(|b| *b == 0));
 }
@@ -174,10 +175,14 @@ fn every_sealed_payload_has_one_length() {
         .collect();
     assert_eq!(lengths, [MAX_APNS_LEN; 3]);
     // a payload of before, unpadded, still opens
-    let json = format!(r#"{{"room_id":"{ROOM_TEXT}","change":4711,"urgency":2,"ticket":"AQIDBAU"}}"#);
+    let json =
+        format!(r#"{{"room_id":"{ROOM_TEXT}","change":4711,"urgency":2,"ticket":"AQIDBAU"}}"#);
     let nonce = [9; NONCE_LEN];
     let old = crypto::aead_seal(&key(1), &nonce, APNS_AAD, json.as_bytes()).expect("seals");
-    assert_eq!(open(&key(1), &[nonce.as_slice(), &old].concat()), Ok(push()));
+    assert_eq!(
+        open(&key(1), &[nonce.as_slice(), &old].concat()),
+        Ok(push())
+    );
 }
 
 #[test]
@@ -186,7 +191,9 @@ fn a_live_activity_block_opens_to_its_counts() {
     assert_eq!(sealed.len(), LIVE_SEALED_LEN);
     assert_eq!(open_live(&key(1), &sealed), Ok((3, 7)));
     assert_eq!(
-        seal_live(&key(1), 0, 1, &mut SystemEntropy).expect("seals").len(),
+        seal_live(&key(1), 0, 1, &mut SystemEntropy)
+            .expect("seals")
+            .len(),
         LIVE_SEALED_LEN
     );
     assert_eq!(open_live(&key(2), &sealed), Err(Error::DecryptFailed));
@@ -198,7 +205,10 @@ fn a_live_activity_block_opens_to_its_counts() {
     let (nonce, ct) = sealed.split_first_chunk::<NONCE_LEN>().expect("nonce");
     let plain = crypto::aead_open(&key(1), nonce, b"trommi live v1", ct).expect("opens");
     let as_push = crypto::aead_seal(&key(1), nonce, APNS_AAD, &plain).expect("seals");
-    assert_eq!(open_live(&key(1), &[nonce.as_slice(), &as_push].concat()), Err(Error::DecryptFailed));
+    assert_eq!(
+        open_live(&key(1), &[nonce.as_slice(), &as_push].concat()),
+        Err(Error::DecryptFailed)
+    );
 }
 
 #[test]

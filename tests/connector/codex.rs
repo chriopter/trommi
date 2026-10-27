@@ -367,16 +367,27 @@ async fn a_codex_session_connects_files_cards_and_is_woken_by_the_board() {
     // Codex receives no channel events and caches its first tool list. A changed contract must tell
     // the agent through a normal tool result to restart Codex and reload both definitions and words.
     std::fs::write(&new_file, b"#!/bin/sh\nif [ \"$1\" = launch-abi ]; then echo '2:changed-contract'; exit 0; fi\nexit 99\n").unwrap();
-    std::fs::set_permissions(&new_file, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(
+        &new_file,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
     std::fs::rename(&new_file, &program).unwrap();
     let notice = tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
             let said = mcp.ok("inbox", json!({})).await;
-            if said.contains("reload its tools and instructions") { break said; }
+            if said.contains("reload its tools and instructions") {
+                break said;
+            }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
-    }).await.expect("Codex sees the stale-contract notice in its tool result");
-    assert!(notice.contains("Tell the human") && notice.contains("Quit Codex"), "{notice}");
+    })
+    .await
+    .expect("Codex sees the stale-contract notice in its tool result");
+    assert!(
+        notice.contains("Tell the human") && notice.contains("Quit Codex"),
+        "{notice}"
+    );
     assert!(!notice.contains("/mcp"), "{notice}");
     mcp.close().await;
 }
@@ -648,16 +659,17 @@ async fn two_claude_sessions(
     let mut first = seat.serve().await;
     first.ready().await;
     let mut second = seat
-        .serve_with(&[
-            ("TROMMI_SESSION_KEY", "test-second"),
-        ])
+        .serve_with(&[("TROMMI_SESSION_KEY", "test-second")])
         .await;
     let (said, failed) = second.call("reply", json!({ "text": "too early" })).await;
     assert!(failed, "{said}");
     let mut invite = human.invite(None).await;
     let link = invite.link.clone();
     let connect = second.call("connect", json!({"link":link}));
-    let admit = async { let device = human.admit(&mut invite).await; human.found_session(&device).await; };
+    let admit = async {
+        let device = human.admit(&mut invite).await;
+        human.found_session(&device).await;
+    };
     let ((said, failed), _) = tokio::join!(connect, admit);
     assert!(!failed, "{said}");
     second.ready().await;
@@ -1181,7 +1193,12 @@ fn codex_running(dir: &Path, thread: &str) -> tokio::process::Child {
 }
 
 /// The connector of a Codex process `parent` started for a thread it has not named yet.
-async fn serve_codex_of(seat: &Seat, codex: &Path, parent: u32, thread: &str) -> common::process::Mcp {
+async fn serve_codex_of(
+    seat: &Seat,
+    codex: &Path,
+    parent: u32,
+    thread: &str,
+) -> common::process::Mcp {
     let mut command = seat.command(&[]);
     command
         .env_remove("TROMMI_SESSION_KEY")

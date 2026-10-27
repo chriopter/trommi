@@ -402,7 +402,10 @@ impl App {
         let dir = self.files.join(util::hex(room));
         if dir.exists() {
             if let Err(e) = std::fs::remove_dir_all(&dir) {
-                crate::log::warn("files", json!({ "deleted_room_folder_left": util::hex(room), "error": e.to_string() }));
+                crate::log::warn(
+                    "files",
+                    json!({ "deleted_room_folder_left": util::hex(room), "error": e.to_string() }),
+                );
             }
         }
     }
@@ -943,9 +946,17 @@ impl App {
                 return Ok::<_, Refused>(());
             }
             for data in crate::devices::departures(c, &auth.room, now)? {
-                if data["device"] != b64(&auth.device) { stream.send_now(crate::live::sse("departure", None, &data)); }
+                if data["device"] != b64(&auth.device) {
+                    stream.send_now(crate::live::sse("departure", None, &data));
+                }
             }
-            for data in crate::devices::snapshot(c, &auth.room, &auth.device, &self.live.online_devices(&auth.room), now)? {
+            for data in crate::devices::snapshot(
+                c,
+                &auth.room,
+                &auth.device,
+                &self.live.online_devices(&auth.room),
+                now,
+            )? {
                 stream.send_now(crate::live::sse("presence", None, &data));
             }
             // the list is whole: a device it did not name is not here (a client whose stream was cut missed its

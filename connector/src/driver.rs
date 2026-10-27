@@ -220,15 +220,20 @@ pub fn fault_of(failure: &Failure) -> Fault {
             format!("what answers at the hub's address is no Trommi hub (HTTP {status})"),
         )
         .status(*status),
-        Failure::NotNow { status, retry_after_ms } => {
-            let mut fault = Fault::new("overloaded", "the hub asked to try again later").status(*status);
+        Failure::NotNow {
+            status,
+            retry_after_ms,
+        } => {
+            let mut fault =
+                Fault::new("overloaded", "the hub asked to try again later").status(*status);
             fault.retry_after = retry_after_ms.map(|ms| ms.div_ceil(1_000));
             fault
         }
         Failure::Offline => Fault::new("offline", "the hub could not be reached"),
-        Failure::BadAnswer { why } => {
-            Fault::new("bad-format", format!("the hub's answer does not read ({why})"))
-        }
+        Failure::BadAnswer { why } => Fault::new(
+            "bad-format",
+            format!("the hub's answer does not read ({why})"),
+        ),
     }
 }
 
@@ -320,7 +325,8 @@ pub struct Inner {
     /// The pump halts on this entry, with the hub's code.
     blocked: Option<(u64, &'static str)>,
     /// Answers to this driver's own requests, by their id.
-    answers: BTreeMap<IoId, std::result::Result<trommi_client_core::app::io::HttpResponse, Failure>>,
+    answers:
+        BTreeMap<IoId, std::result::Result<trommi_client_core::app::io::HttpResponse, Failure>>,
     /// Why the engine stopped, and whether this device is out: `(replaced, verified)`.
     stopped: Option<Stopped>,
     removal: Option<(bool, bool)>,
@@ -419,7 +425,12 @@ impl Inner {
     }
 
     /// Calls the engine with a context; what it asks for waits in `pending`.
-    fn call<T>(&mut self, now: u64, shared: &Shared, step: impl FnOnce(&mut Engine, &mut Ctx<'_>) -> T) -> T {
+    fn call<T>(
+        &mut self,
+        now: u64,
+        shared: &Shared,
+        step: impl FnOnce(&mut Engine, &mut Ctx<'_>) -> T,
+    ) -> T {
         let mut out = std::mem::take(&mut self.pending);
         let result = {
             let mut ctx = Ctx {
@@ -453,7 +464,14 @@ impl Inner {
                 Event::Store { id, result } => {
                     self.device_writes.remove(&id);
                     let took = match self.cache.as_mut() {
-                        Some(cache) => cache.on_store(id, &result, &mut self.board.model, now, ctx.next_id, ctx.out),
+                        Some(cache) => cache.on_store(
+                            id,
+                            &result,
+                            &mut self.board.model,
+                            now,
+                            ctx.next_id,
+                            ctx.out,
+                        ),
                         None => cache::Took::No,
                     };
                     match took {
@@ -491,10 +509,14 @@ impl Inner {
 
     /// What follows every step: the reports into the model and to the owner, the cache behind the board, the timer.
     fn after(&mut self, now: u64, out: &mut Vec<Effect>, shared: &Shared) {
-        self.device_writes.extend(out.iter().filter_map(|effect| match effect {
-            Effect::Store { id, op: trommi_client_core::app::StoreOp::DeviceApply { .. } } => Some(*id),
-            _ => None,
-        }));
+        self.device_writes
+            .extend(out.iter().filter_map(|effect| match effect {
+                Effect::Store {
+                    id,
+                    op: trommi_client_core::app::StoreOp::DeviceApply { .. },
+                } => Some(*id),
+                _ => None,
+            }));
         let mut fed = false;
         while let Some(report) = self.engine.next_report() {
             self.board.take(&report, self.engine.device(), now);
@@ -544,16 +566,34 @@ impl Inner {
             Report::Envelope { received, .. } => {
                 let me = self.engine.device().id();
                 let code = received.code.as_ref().map_or("", |code| code.code());
-                if received.outcome == EnvelopeOutcome::Chained && code == "newer-version" && received.header.sender != me {
+                if received.outcome == EnvelopeOutcome::Chained
+                    && code == "newer-version"
+                    && received.header.sender != me
+                {
                     // 9.0.4: no command, whoever sent it: a notice that a newer connector is needed
-                    self.tell(shared, Fault::new("newer-version", "an item of a newer Trommi arrived that this connector cannot read"));
+                    self.tell(
+                        shared,
+                        Fault::new(
+                            "newer-version",
+                            "an item of a newer Trommi arrived that this connector cannot read",
+                        ),
+                    );
                 }
-                if received.header.sender == me && matches!(received.outcome, EnvelopeOutcome::Void | EnvelopeOutcome::Chained) {
+                if received.header.sender == me
+                    && matches!(
+                        received.outcome,
+                        EnvelopeOutcome::Void | EnvelopeOutcome::Chained
+                    )
+                {
                     eprintln!("[trommi] an envelope of this device was not applied: {code}");
                 }
             }
             Report::Groups => {
-                let main = self.engine.main_group().and_then(|g| g.session_id()).map(|s| hex(s.as_bytes()));
+                let main = self
+                    .engine
+                    .main_group()
+                    .and_then(|g| g.session_id())
+                    .map(|s| hex(s.as_bytes()));
                 if main.is_some() && main != self.main {
                     if let Some(session_id) = main.clone() {
                         shared.emit(DriverEvent::Session { session_id });
@@ -601,7 +641,13 @@ impl Inner {
                 }
                 self.refused.insert(id, code);
             }
-            Report::Resealed { voided, id, envelope_hash, object_id, .. } => {
+            Report::Resealed {
+                voided,
+                id,
+                envelope_hash,
+                object_id,
+                ..
+            } => {
                 if self.resealed.len() >= 4096 {
                     self.resealed.pop_first();
                 }
@@ -627,7 +673,8 @@ impl Inner {
                 match why {
                     Stopped::Removed | Stopped::Replaced | Stopped::NotMember => {
                         let verified = why != Stopped::NotMember;
-                        let replaced = why == Stopped::Replaced || self.removal.is_some_and(|(r, _)| r);
+                        let replaced =
+                            why == Stopped::Replaced || self.removal.is_some_and(|(r, _)| r);
                         if self.removal != Some((replaced, verified)) {
                             self.removal = Some((replaced, verified));
                             shared.emit(DriverEvent::Removed { replaced, verified });
@@ -703,9 +750,15 @@ impl Driver {
     /// from the slot's cache before this returns; nothing is sent yet: [`Driver::start`] goes online.
     pub async fn open(
         journal: Journal,
-    ) -> Result<(Arc<Driver>, tokio::sync::mpsc::UnboundedReceiver<DriverEvent>)> {
+    ) -> Result<(
+        Arc<Driver>,
+        tokio::sync::mpsc::UnboundedReceiver<DriverEvent>,
+    )> {
         let record = room_record(&journal).ok_or_else(|| {
-            Fault::new("no-room", "this slot holds no room: join with an invite link")
+            Fault::new(
+                "no-room",
+                "this slot holds no room: join with an invite link",
+            )
         })?;
         let room = RoomId::from_base64url(&record.room)
             .map_err(|_| Fault::new("state-damaged", "the stored room does not read"))?;
@@ -737,7 +790,9 @@ impl Driver {
             text => Some(
                 unhex(text)
                     .and_then(|bytes| SessionId::from_slice(&bytes).ok())
-                    .ok_or_else(|| Fault::new("state-damaged", "the stored invite does not read"))?,
+                    .ok_or_else(|| {
+                        Fault::new("state-damaged", "the stored invite does not read")
+                    })?,
             ),
         };
         let invite = AgentInvite {
@@ -746,13 +801,23 @@ impl Driver {
             session,
         };
         let seed = u64::from_le_bytes(crate::util::random::<8>()?) >> 11;
-        let engine = Engine::open_agent(&record.hub, crate::CLIENT, seed, loaded.revision, entries, invite)
-            .map_err(|e| match e {
-                trommi_client_core::engine::OpenError::Hub => {
-                    Fault::new("bad-format", "the hub's address is not canonical")
-                }
-                other => Fault::new("state-damaged", format!("the stored state does not open ({other:?})")),
-            })?;
+        let engine = Engine::open_agent(
+            &record.hub,
+            crate::CLIENT,
+            seed,
+            loaded.revision,
+            entries,
+            invite,
+        )
+        .map_err(|e| match e {
+            trommi_client_core::engine::OpenError::Hub => {
+                Fault::new("bad-format", "the hub's address is not canonical")
+            }
+            other => Fault::new(
+                "state-damaged",
+                format!("the stored state does not open ({other:?})"),
+            ),
+        })?;
         let me = engine.device().id();
         let (events, rx) = tokio::sync::mpsc::unbounded_channel();
         let shared = Arc::new(Shared {
@@ -818,7 +883,9 @@ impl Driver {
         });
         driver.poke();
         driver
-            .wait(Duration::from_secs(30), |inner| inner.cache_read.then_some(()))
+            .wait(Duration::from_secs(30), |inner| {
+                inner.cache_read.then_some(())
+            })
             .await;
         Ok((driver, rx))
     }
@@ -844,7 +911,11 @@ impl Driver {
     }
 
     /// Waits until `check` finds what it looks for, at most `timeout`; looked at after every step of the loop.
-    async fn wait<T>(&self, timeout: Duration, mut check: impl FnMut(&mut Inner) -> Option<T>) -> Option<T> {
+    async fn wait<T>(
+        &self,
+        timeout: Duration,
+        mut check: impl FnMut(&mut Inner) -> Option<T>,
+    ) -> Option<T> {
         let until = tokio::time::Instant::now() + timeout;
         loop {
             let notified = self.shared.changed.notified();
@@ -944,7 +1015,8 @@ impl Driver {
             )),
             Some(Err(Stopped::Removed | Stopped::Replaced | Stopped::NotMember)) => {
                 let replaced = self.lock().removal.is_some_and(|(r, _)| r);
-                Err(Fault::new("not-member", "this device is out of the room").with("replaced", replaced))
+                Err(Fault::new("not-member", "this device is out of the room")
+                    .with("replaced", replaced))
             }
             Some(Err(why)) => Err(stop_fault(why)),
             Some(Ok(())) | None => Ok(()),
@@ -961,14 +1033,19 @@ impl Driver {
         // computer operation can reopen the same journal; stop must not leave a detached store lock behind.
         lock(&self.handle).take();
         let task = lock(&self.task).take();
-        if let Some(task) = task { let _ = task.await; }
+        if let Some(task) = task {
+            let _ = task.await;
+        }
     }
 
     async fn durable(&self) -> Result<()> {
-        match self.wait(WRITE_WAIT, |inner| {
-            // A stopped engine can still have a queued device write. Drain it before a verified removal wipes storage.
-            inner.device_writes.is_empty().then_some(Ok(()))
-        }).await {
+        match self
+            .wait(WRITE_WAIT, |inner| {
+                // A stopped engine can still have a queued device write. Drain it before a verified removal wipes storage.
+                inner.device_writes.is_empty().then_some(Ok(()))
+            })
+            .await
+        {
             Some(result) => result,
             None => Err(Fault::new("storage", "the device write did not finish")),
         }
@@ -982,7 +1059,10 @@ impl Driver {
             return Err(Fault::new("removed", "this device is out of the room"));
         }
         if self.shared.stopped.load(Ordering::SeqCst) {
-            return Err(Fault::new("stopped", "this connector stopped working on its room"));
+            return Err(Fault::new(
+                "stopped",
+                "this connector stopped working on its room",
+            ));
         }
         match inner.stopped {
             None => Ok(()),
@@ -1041,9 +1121,18 @@ impl Driver {
     /// Reports with the lease what this process hears and does (13.7): `hears`, `working`, `last_call_at`.
     pub async fn report_link(&self, report: Value) -> Result<()> {
         let report = LinkReport {
-            hears: report.get("hears").and_then(Value::as_bool).unwrap_or(false),
-            working: report.get("working").and_then(Value::as_bool).unwrap_or(false),
-            last_call_at: report.get("last_call_at").and_then(Value::as_u64).unwrap_or(0),
+            hears: report
+                .get("hears")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            working: report
+                .get("working")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            last_call_at: report
+                .get("last_call_at")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
         };
         self.call(|engine, ctx| engine.link_report(ctx, report));
         Ok(())
@@ -1109,7 +1198,11 @@ impl Driver {
 
     /// Seals an agent's write, lets the hub take it, and waits for the model to reach its place. With the hub
     /// away the envelope waits in the outbox and this returns without a change number.
-    pub(crate) async fn write(&self, write: AgentWrite, files: &[trommi_core::ids::FileId]) -> Result<SentInfo> {
+    pub(crate) async fn write(
+        &self,
+        write: AgentWrite,
+        files: &[trommi_core::ids::FileId],
+    ) -> Result<SentInfo> {
         self.active()?;
         let sealed = self.call(|engine, ctx| engine.agent_send(ctx, write, files));
         let sealed: Sealed = match sealed {
@@ -1199,7 +1292,10 @@ impl Driver {
     /// from `step` drops it.
     pub(crate) fn device_queue(
         &self,
-        step: impl FnOnce(&mut crate::driver::EngineDevice, u64) -> std::result::Result<(), trommi_core::Error>,
+        step: impl FnOnce(
+            &mut crate::driver::EngineDevice,
+            u64,
+        ) -> std::result::Result<(), trommi_core::Error>,
     ) -> Result<()> {
         self.active()?;
         let done = self.call(|engine, ctx| {
@@ -1234,7 +1330,8 @@ impl Driver {
                 None,
             )
         });
-        let id = asked.map_err(|code| Fault::new(code, format!("the request was not sent ({code})")))?;
+        let id =
+            asked.map_err(|code| Fault::new(code, format!("the request was not sent ({code})")))?;
         let Some(expect) = expect else {
             return Err(Fault::new("internal", "a request without its expectation"));
         };
@@ -1259,7 +1356,9 @@ impl Driver {
                 return Err(Fault::new("offline", "the hub did not answer in time"));
             }
         };
-        Codec.answer(&expect, &response).map_err(|failure| fault_of(&failure))
+        Codec
+            .answer(&expect, &response)
+            .map_err(|failure| fault_of(&failure))
     }
 
     /// Archives a session group at the hub and on the device (5.2.10), retiring nobody; waits for the hub.
@@ -1279,13 +1378,18 @@ impl Driver {
         match answered {
             Some(Ok(Ok(response))) => match trommi_client_core::hub::classify(&response) {
                 Ok(()) => Ok(()),
-                Err(Failure::Refused { code: Some(code), .. }) if code == "gone" => Ok(()),
+                Err(Failure::Refused {
+                    code: Some(code), ..
+                }) if code == "gone" => Ok(()),
                 Err(failure) => Err(fault_of(&failure)),
             },
             Some(Ok(Err(failure))) => Err(fault_of(&failure)),
             Some(Err(fault)) => Err(fault),
             // (the archive is kept across a restart: it goes once the hub is back)
-            None => Err(Fault::new("offline", "the hub did not answer in time; the archive goes once it is back")),
+            None => Err(Fault::new(
+                "offline",
+                "the hub did not answer in time; the archive goes once it is back",
+            )),
         }
     }
 }
@@ -1341,11 +1445,23 @@ impl OpenHub {
     ) -> Result<String> {
         let challenge = match self.call(None, &Route::Challenge { room }).await? {
             Answer::Challenge(challenge) => challenge,
-            _ => return Err(Fault::new("bad-format", "the hub's challenge does not read")),
+            _ => {
+                return Err(Fault::new(
+                    "bad-format",
+                    "the hub's challenge does not read",
+                ))
+            }
         };
         let signed = sign(challenge).await?;
         match self
-            .call(None, &Route::Token { room, auth: &signed.auth, signature: &signed.signature })
+            .call(
+                None,
+                &Route::Token {
+                    room,
+                    auth: &signed.auth,
+                    signature: &signed.signature,
+                },
+            )
             .await?
         {
             Answer::Token { token, .. } => Ok(token),

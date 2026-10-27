@@ -420,8 +420,15 @@ fn a_commit_the_hub_answers_not_found_is_cleared_and_nothing_else_changes() {
     assert_eq!(own.kind, OutboxKind::Commit);
     assert!(run.device.group(&room_group).unwrap().pending);
     run.device.outbox_refused(own.id, &Error::NotFound).unwrap();
-    assert!(run.device.outbox().is_empty(), "the entry is gone: nothing is posted again");
-    assert_eq!(shown(&run.device).groups, before, "the group is held as before the Commit, not dropped");
+    assert!(
+        run.device.outbox().is_empty(),
+        "the entry is gone: nothing is posted again"
+    );
+    assert_eq!(
+        shown(&run.device).groups,
+        before,
+        "the group is held as before the Commit, not dropped"
+    );
     // the group goes on: the device follows another device's Commit and commits itself again
     run.peer.update(&room_group, true, now()).unwrap().unwrap();
     post_ok(&mut run.hub, &mut run.peer);

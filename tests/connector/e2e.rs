@@ -7,7 +7,7 @@ use common::{eventually, Admitted, HubProc, Human, TempDir};
 use serde_json::{json, Map, Value};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedReceiver;
-use trommi_connector::driver::{Driver as Client, DriverEvent as ClientEvent, Command};
+use trommi_connector::driver::{Command, Driver as Client, DriverEvent as ClientEvent};
 use trommi_connector::join::join_room;
 use trommi_connector::store::Journal;
 use trommi_core::ids::GroupId;
@@ -270,10 +270,7 @@ async fn a_takeover_stops_the_first_connector_and_hands_the_session_on() {
             break replaced;
         }
     };
-    assert_eq!(
-        first.client.lock().connection(),
-        "removed"
-    );
+    assert_eq!(first.client.lock().connection(), "removed");
     let _ = removed;
 
     // The second one sits in the same session, reads what was there, and owns the first one's card.
@@ -458,7 +455,9 @@ async fn a_new_agent_reads_an_object_two_senders_wrote_in_turns() {
                 c.object_state == "answered"
                     && c.object_version == 2
                     && c.s("body") == "second"
-                    && c.answer.as_ref().is_some_and(|a| a.choices == serde_json::json!(["b"]))
+                    && c.answer
+                        .as_ref()
+                        .is_some_and(|a| a.choices == serde_json::json!(["b"]))
                     && c.answers.len() == 2
             })
         },
@@ -521,8 +520,5 @@ async fn a_removal_is_verified_only_by_the_commit_the_device_processes_itself() 
         item["change"] = json!(item["change"].as_u64().unwrap_or(0) + 1_000);
     }
     let _ = second.client.verify_removal(&forged).await;
-    assert_ne!(
-        second.client.lock().connection(),
-        "removed"
-    );
+    assert_ne!(second.client.lock().connection(), "removed");
 }

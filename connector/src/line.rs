@@ -122,7 +122,11 @@ pub fn monitor_line(params: &Value) -> Option<String> {
         return None;
     }
     let kind = meta.get("kind").and_then(|k| k.as_str()).unwrap_or("");
-    let session = crate::server::clean_name(meta.get("helper").or_else(|| meta.get("session")).unwrap_or(&none));
+    let session = crate::server::clean_name(
+        meta.get("helper")
+            .or_else(|| meta.get("session"))
+            .unwrap_or(&none),
+    );
     let head = format!(
         "{HEAD}{}{}",
         if session.is_empty() {
@@ -202,13 +206,12 @@ pub fn goals_block(goals: &Value) -> String {
             .and_then(|v| v.as_str())
             .unwrap_or(""),
     );
-    let lines: Vec<String> =
-        clean_goals(goals.get("goals").and_then(|v| v.as_str()).unwrap_or(""))
-            .lines()
-            .map(clean)
-            .filter(|l| !l.is_empty())
-            .map(|l| format!("  {l}"))
-            .collect();
+    let lines: Vec<String> = clean_goals(goals.get("goals").and_then(|v| v.as_str()).unwrap_or(""))
+        .lines()
+        .map(clean)
+        .filter(|l| !l.is_empty())
+        .map(|l| format!("  {l}"))
+        .collect();
     if lines.is_empty() {
         return String::new();
     }
@@ -255,7 +258,9 @@ pub fn team_goals_of(value: &serde_json::Value) -> Option<serde_json::Value> {
 }
 
 /// The team goals of a session of the board model, as [`team_goals_of`] reads its `goals` register.
-pub fn session_goals(session: &trommi_client_core::model::types::Session) -> Option<serde_json::Value> {
+pub fn session_goals(
+    session: &trommi_client_core::model::types::Session,
+) -> Option<serde_json::Value> {
     session
         .registers
         .get("goals")

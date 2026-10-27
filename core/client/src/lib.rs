@@ -33,7 +33,6 @@ pub mod cache;
 pub mod codec;
 pub mod desk;
 pub mod dictation;
-pub mod team_delete;
 pub mod engine;
 pub mod faces;
 pub mod files;
@@ -41,7 +40,6 @@ pub mod helpers;
 pub mod hub;
 pub mod knowledge;
 pub mod live_answer;
-pub mod wakeups;
 pub mod machines;
 pub mod model;
 pub mod off_mind;
@@ -53,7 +51,9 @@ pub mod seats;
 pub mod selfjoin;
 pub mod sessions;
 pub mod status;
+pub mod team_delete;
 pub mod views;
+pub mod wakeups;
 
 pub use board::{Board, Fact, Kind, Object, Source, State};
 pub use desk::{

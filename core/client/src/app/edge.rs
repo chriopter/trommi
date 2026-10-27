@@ -76,7 +76,9 @@ struct WindowOf {
 
 /// `handle` across the edge, for the window the event names.
 pub fn handle(app: &mut App, now_ms: u64, event: Packet) -> Result<Packet, String> {
-    let window = serde_json::from_str::<WindowOf>(&event.json).map_err(why)?.window;
+    let window = serde_json::from_str::<WindowOf>(&event.json)
+        .map_err(why)?
+        .window;
     let event = decode_event(event)?;
     Ok(encode_effects(&app.handle_in(now_ms, window, event)))
 }

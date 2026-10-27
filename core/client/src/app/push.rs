@@ -76,7 +76,10 @@ fn level_of(choice: PushChoice) -> PushLevel {
 /// The platform's token as the hub's target.
 fn target_of(kind: &str, token: &[u8], notify_key: Option<[u8; 32]>) -> Option<PushTarget> {
     let v: serde_json::Value = serde_json::from_slice(token).ok()?;
-    let b64 = |s: &serde_json::Value| s.as_str().and_then(|t| trommi_core::ids::base64url_decode(t.trim_end_matches('=')).ok());
+    let b64 = |s: &serde_json::Value| {
+        s.as_str()
+            .and_then(|t| trommi_core::ids::base64url_decode(t.trim_end_matches('=')).ok())
+    };
     match kind {
         "web_push" => Some(PushTarget::WebPush {
             endpoint: v.get("endpoint")?.as_str()?.to_string(),
@@ -96,7 +99,11 @@ fn target_of(kind: &str, token: &[u8], notify_key: Option<[u8; 32]>) -> Option<P
 impl App {
     /// `Action::Push`: the level for this device.
     pub(super) fn push_action(&mut self, now_ms: u64, choice: PushChoice, out: &mut Vec<Effect>) {
-        let can = self.config.as_ref().map(|c| c.can.push.clone()).unwrap_or_default();
+        let can = self
+            .config
+            .as_ref()
+            .map(|c| c.can.push.clone())
+            .unwrap_or_default();
         if choice != PushChoice::Off && can.is_empty() {
             let text = Text::new("push.cannot", "This device cannot get push notifications.");
             self.sent.toast(&mut self.next_view.toasts, text, None);
@@ -107,7 +114,11 @@ impl App {
             self.push.want = None;
             self.push_send(now_ms, out, Ask::Remove);
             let id = self.push_io();
-            out.push(Effect::Platform { id, op: PlatformOp::PushUnregister, window: 0 });
+            out.push(Effect::Platform {
+                id,
+                op: PlatformOp::PushUnregister,
+                window: 0,
+            });
             self.push.token = None;
             self.push.level = Some(PushChoice::Off);
             self.show_push();
@@ -133,23 +144,42 @@ impl App {
     /// The platform asked to register (it may ask the person first).
     fn push_platform(&mut self, out: &mut Vec<Effect>) {
         let id = self.push_io();
-        out.push(Effect::Platform { id, op: PlatformOp::PushRegister { server_key: self.push.vapid.clone().map(Bytes) }, window: 0 });
+        out.push(Effect::Platform {
+            id,
+            op: PlatformOp::PushRegister {
+                server_key: self.push.vapid.clone().map(Bytes),
+            },
+            window: 0,
+        });
     }
 
     fn push_send(&mut self, now_ms: u64, out: &mut Vec<Effect>, ask: Ask) {
         let route_of = |push: &Push| -> Option<PushRegistration> {
             let (kind, token) = push.token.as_ref()?;
             let target = target_of(kind, token, push.notify_key)?;
-            Some(PushRegistration { target, level: level_of(push.want?) })
+            Some(PushRegistration {
+                target,
+                level: level_of(push.want?),
+            })
         };
         match ask {
             Ask::State => {
-                self.step_send(now_ms, out, |site| Codec.request(site, &Route::PushState), |expect| Step::Push(Ask::State, expect));
+                self.step_send(
+                    now_ms,
+                    out,
+                    |site| Codec.request(site, &Route::PushState),
+                    |expect| Step::Push(Ask::State, expect),
+                );
             }
             Ask::Remove => {
-                self.step_send(now_ms, out, |site| Codec.request(site, &Route::PushRemove { endpoint: None }), |expect| Step::Push(Ask::Remove, expect));
+                self.step_send(
+                    now_ms,
+                    out,
+                    |site| Codec.request(site, &Route::PushRemove { endpoint: None }),
+                    |expect| Step::Push(Ask::Remove, expect),
+                );
             }
-            Ask::Live => {},
+            Ask::Live => {}
             Ask::Register => {
                 let Some(registration) = route_of(&self.push) else {
                     out.push(log(LogLevel::Warn, "push: a token the hub cannot take"));
@@ -157,16 +187,36 @@ impl App {
                     self.sent.toast(&mut self.next_view.toasts, text, None);
                     return;
                 };
-                self.step_send(now_ms, out, move |site| Codec.request(site, &Route::PushRegister { registration: &registration }), |expect| Step::Push(Ask::Register, expect));
+                self.step_send(
+                    now_ms,
+                    out,
+                    move |site| {
+                        Codec.request(
+                            site,
+                            &Route::PushRegister {
+                                registration: &registration,
+                            },
+                        )
+                    },
+                    |expect| Step::Push(Ask::Register, expect),
+                );
             }
         }
     }
 
     /// The platform's answer to a registration: the token, or no.
-    pub(super) fn push_platform_answered(&mut self, now_ms: u64, id: IoId, result: IoResult<PlatformAnswer>, out: &mut Vec<Effect>) {
+    pub(super) fn push_platform_answered(
+        &mut self,
+        now_ms: u64,
+        id: IoId,
+        result: IoResult<PlatformAnswer>,
+        out: &mut Vec<Effect>,
+    ) {
         self.push.platform.remove(&id);
         match result {
-            IoResult::Ok(PlatformAnswer::Push { kind, token }) => self.push_token(now_ms, kind, Some(token.0), out),
+            IoResult::Ok(PlatformAnswer::Push { kind, token }) => {
+                self.push_token(now_ms, kind, Some(token.0), out)
+            }
             IoResult::Ok(PlatformAnswer::Done) => {}
             _ if self.push.want.is_some() => {
                 self.push.want = None;
@@ -179,12 +229,25 @@ impl App {
 
     /// A token from the platform (`Event::PushToken`, or the answer to a registration): registered with the hub
     /// at the level asked for, or the level the hub had.
-    pub(super) fn push_token(&mut self, now_ms: u64, kind: String, token: Option<Vec<u8>>, out: &mut Vec<Effect>) {
+    pub(super) fn push_token(
+        &mut self,
+        now_ms: u64,
+        kind: String,
+        token: Option<Vec<u8>>,
+        out: &mut Vec<Effect>,
+    ) {
         if kind == "apns_live_activity" {
-            if token.is_none() { self.push.live_tokens.clear(); return; }
-            if let Some(value) = token.and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok()) {
+            if token.is_none() {
+                self.push.live_tokens.clear();
+                return;
+            }
+            if let Some(value) =
+                token.and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+            {
                 if !self.push.live_tokens.contains(&value) {
-                    if self.push.live_tokens.len() >= 16 { self.push.live_tokens.remove(0); }
+                    if self.push.live_tokens.len() >= 16 {
+                        self.push.live_tokens.remove(0);
+                    }
                     self.push.live_tokens.push(value);
                 }
             }
@@ -196,11 +259,21 @@ impl App {
             return self.push_send(now_ms, out, Ask::Remove);
         };
         if kind == "apns" && self.push.notify_key.is_none() {
-            let Ok(key) = trommi_core::crypto::random::<32>(&mut trommi_core::crypto::SystemEntropy) else { return };
+            let Ok(key) =
+                trommi_core::crypto::random::<32>(&mut trommi_core::crypto::SystemEntropy)
+            else {
+                return;
+            };
             self.push.notify_key = Some(key);
             let id = IoId(self.next_id);
             self.next_id += 1;
-            out.push(Effect::Secret { id, op: SecretOp::Put { name: NOTIFY_KEY.into(), value: Bytes(key.to_vec()) } });
+            out.push(Effect::Secret {
+                id,
+                op: SecretOp::Put {
+                    name: NOTIFY_KEY.into(),
+                    value: Bytes(key.to_vec()),
+                },
+            });
         }
         self.push.token = Some((kind, token));
         if self.push.want.is_none() {
@@ -222,7 +295,13 @@ impl App {
         self.push_send(now_ms, out, Ask::State);
     }
 
-    pub(super) fn push_answered(&mut self, now_ms: u64, ask: Ask, answer: Result<Answer, Failure>, out: &mut Vec<Effect>) {
+    pub(super) fn push_answered(
+        &mut self,
+        now_ms: u64,
+        ask: Ask,
+        answer: Result<Answer, Failure>,
+        out: &mut Vec<Effect>,
+    ) {
         match (ask, answer) {
             (Ask::State, Ok(Answer::Push(state))) => {
                 self.push.vapid = Some(state.vapid_public_key.clone());
@@ -239,7 +318,7 @@ impl App {
                 self.push.level = self.push.want.take();
             }
             (Ask::Remove, Ok(_)) => {}
-            (Ask::Live, _) => {},
+            (Ask::Live, _) => {}
             (_, Err(failure)) => {
                 out.push(log(LogLevel::Warn, &format!("push: {failure:?}")));
                 if self.push.want.take().is_some() {
@@ -256,29 +335,68 @@ impl App {
     /// ActivityKit only supplies tokens. The core chooses the room tag and whether a token may be registered.
     fn push_live(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
         if self.push.level.is_none_or(|l| l == PushChoice::Off)
-            || !self.config.as_ref().is_some_and(|c| c.can.push == "apns") { return; }
-        let Some(engine) = self.engine.as_ref() else { return };
+            || !self.config.as_ref().is_some_and(|c| c.can.push == "apns")
+        {
+            return;
+        }
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
         let mut input = b"trommi live activity".to_vec();
         input.extend_from_slice(engine.room().as_bytes());
         input.extend_from_slice(engine.device().id().as_bytes());
-        let Ok(hash) = trommi_core::crypto::sha256(&input) else { return };
+        let Ok(hash) = trommi_core::crypto::sha256(&input) else {
+            return;
+        };
         let tag = crate::engine::feed::hex(&hash.as_bytes()[..8]);
         for value in self.push.live_tokens.clone() {
-            let word = |k| value.get(k).and_then(serde_json::Value::as_str).unwrap_or("").to_string();
-            if !matches!(word("kind").as_str(), "start" | "activity") { continue; }
+            let word = |k| {
+                value
+                    .get(k)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string()
+            };
+            if !matches!(word("kind").as_str(), "start" | "activity") {
+                continue;
+            }
             let start = word("kind") == "start";
-            if !start && word("tag") != tag { continue; }
-            let activity = crate::hub::LiveActivity { start, token: word("token"), tag: tag.clone(), environment: word("environment"), topic: word("topic") };
+            if !start && word("tag") != tag {
+                continue;
+            }
+            let activity = crate::hub::LiveActivity {
+                start,
+                token: word("token"),
+                tag: tag.clone(),
+                environment: word("environment"),
+                topic: word("topic"),
+            };
             let key = format!("{}:{}:{}", activity.start, tag, activity.token);
             if self.push.live_sent.insert(key) {
-                self.step_send(now_ms, out, move |site| Codec.request(site, &Route::LiveActivity { activity: &activity }), |expect| Step::Push(Ask::Live, expect));
+                self.step_send(
+                    now_ms,
+                    out,
+                    move |site| {
+                        Codec.request(
+                            site,
+                            &Route::LiveActivity {
+                                activity: &activity,
+                            },
+                        )
+                    },
+                    |expect| Step::Push(Ask::Live, expect),
+                );
             }
         }
     }
 
     pub(super) fn show_push(&mut self) {
         self.outside.due = true;
-        let can = self.config.as_ref().map(|c| c.can.push.clone()).unwrap_or_default();
+        let can = self
+            .config
+            .as_ref()
+            .map(|c| c.can.push.clone())
+            .unwrap_or_default();
         self.next_view.settings.push = (!can.is_empty()).then(|| PushView {
             level: match self.push.level.unwrap_or(PushChoice::Off) {
                 PushChoice::Off => "off",

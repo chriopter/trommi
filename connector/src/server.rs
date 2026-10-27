@@ -13,8 +13,8 @@
 //!   trommi-connector driver --home <dir> the interop driver (dev/interop)
 
 use crate::bridge::{About, Bridge};
-use crate::driver::{BoxFut, Command};
 use crate::door::{Door, Gone, MonitorFeed};
+use crate::driver::{BoxFut, Command};
 use crate::error::Fault;
 use crate::hooks::HookDesk;
 use crate::mcp::Out;
@@ -185,7 +185,10 @@ pub async fn say_with(bridge: Arc<Bridge>, req: Value) -> crate::error::Result<S
         return Err(Fault::plain("at most 4000 characters"));
     }
     let mut args = Map::new();
-    if let Some(h) = ["helper", "session"].iter().find_map(|k| req.get(*k).filter(|v| crate::util::truthy(v))) {
+    if let Some(h) = ["helper", "session"]
+        .iter()
+        .find_map(|k| req.get(*k).filter(|v| crate::util::truthy(v)))
+    {
         args.insert("helper".into(), json!(js_string(h)));
     }
     if !req.get("urgent").is_some_and(crate::util::truthy) {
@@ -502,7 +505,10 @@ impl Conn {
     pub async fn notify(&self, method: &str, params: Value, about: Option<About>) {
         if method == "notifications/claude/channel/permission" {
             // (a woken run's ask: its tool call waits for this)
-            let ask = params.get("request_id").and_then(Value::as_str).and_then(|r| self.asks.lock().unwrap().remove(r));
+            let ask = params
+                .get("request_id")
+                .and_then(Value::as_str)
+                .and_then(|r| self.asks.lock().unwrap().remove(r));
             if let Some(tx) = ask {
                 let _ = tx.send(params.get("behavior").and_then(Value::as_str) == Some("allow"));
                 return;
@@ -968,14 +974,20 @@ impl Conn {
         self.present();
     }
 
-
     /// One look of the wakeups' clock: the first look takes the note a closed session left (and the wakeup a waker
     /// woke it for); a due wakeup reaches the agent as a board event.
     async fn wake_look(&self) {
         let _one = self.wake_lock.lock().await;
-        let ready = self.bridge.lock().unwrap().clone().filter(|_| self.member.phase() == "ready");
+        let ready = self
+            .bridge
+            .lock()
+            .unwrap()
+            .clone()
+            .filter(|_| self.member.phase() == "ready");
         let Some(b) = ready else { return };
-        let Some(sid) = b.client.lock().session_id() else { return };
+        let Some(sid) = b.client.lock().session_id() else {
+            return;
+        };
         if !self.wake_took.swap(true, Ordering::SeqCst) {
             let running = crate::wakeups::take(&self.cfg.keys_dir, &sid);
             self.woken.store(running.is_some(), Ordering::SeqCst);
@@ -986,7 +998,10 @@ impl Conn {
         match b.wakeups_tick(running.as_deref(), counted).await {
             Ok(t) => {
                 *self.wake_run.lock().unwrap() = None;
-                let today = trommi_client_core::wakeups::day_of(crate::util::now_ms(), crate::wakeups::zone_min());
+                let today = trommi_client_core::wakeups::day_of(
+                    crate::util::now_ms(),
+                    crate::wakeups::zone_min(),
+                );
                 if (today, t.day_runs) != counted && t.day_runs > 0 {
                     if let Some(st) = self.member.me.lock().unwrap().storage.clone() {
                         st.set("wake_runs", json!({ "day": today, "runs": t.day_runs }));
@@ -997,7 +1012,12 @@ impl Conn {
                     let mut meta = Map::new();
                     meta.insert("kind".into(), json!("wakeup"));
                     meta.insert("wakeup_id".into(), json!(id));
-                    self.notify("notifications/claude/channel", json!({ "content": words, "meta": meta }), None).await;
+                    self.notify(
+                        "notifications/claude/channel",
+                        json!({ "content": words, "meta": meta }),
+                        None,
+                    )
+                    .await;
                 }
                 // (looked once, and what was due is handed over: a woken run's first inbox finds it)
                 self.wake_looked.store(true, Ordering::SeqCst);
@@ -1008,8 +1028,21 @@ impl Conn {
 
     /// The session's runs today as this connector kept them (the day, how many).
     fn wake_runs(&self) -> (u64, u32) {
-        let kept = self.member.me.lock().unwrap().storage.clone().and_then(|st| st.get("wake_runs"));
-        kept.map(|v| (v["day"].as_u64().unwrap_or(0), v["runs"].as_u64().unwrap_or(0) as u32)).unwrap_or((0, 0))
+        let kept = self
+            .member
+            .me
+            .lock()
+            .unwrap()
+            .storage
+            .clone()
+            .and_then(|st| st.get("wake_runs"));
+        kept.map(|v| {
+            (
+                v["day"].as_u64().unwrap_or(0),
+                v["runs"].as_u64().unwrap_or(0) as u32,
+            )
+        })
+        .unwrap_or((0, 0))
     }
 
     /// The note and waker of a session that closes with wakeups left (wakeups.rs).
@@ -1017,18 +1050,34 @@ impl Conn {
         if crate::host::preset().woken_run.is_none() {
             return;
         }
-        let Some(b) = self.bridge.lock().unwrap().clone() else { return };
-        let Some(sid) = b.client.lock().session_id() else { return };
+        let Some(b) = self.bridge.lock().unwrap().clone() else {
+            return;
+        };
+        let Some(sid) = b.client.lock().session_id() else {
+            return;
+        };
         let (list, _) = b.wakeups_held();
         let codex = crate::host::is_codex();
-        let resume = if codex { crate::host::thread() } else { std::env::var("CLAUDE_CODE_SESSION_ID").ok() };
-        let ask_tool = if std::env::var_os("CLAUDE_PLUGIN_ROOT").is_some() { "mcp__plugin_trommi_trommi__ask_permission" } else { "mcp__trommi__ask_permission" };
+        let resume = if codex {
+            crate::host::thread()
+        } else {
+            std::env::var("CLAUDE_CODE_SESSION_ID").ok()
+        };
+        let ask_tool = if std::env::var_os("CLAUDE_PLUGIN_ROOT").is_some() {
+            "mcp__plugin_trommi_trommi__ask_permission"
+        } else {
+            "mcp__trommi__ask_permission"
+        };
         let note = crate::wakeups::Note {
             session: sid,
             folder: self.cfg.folder.display().to_string(),
             program: crate::host::preset().id.into(),
             resume: resume.unwrap_or_default(),
-            ask_tool: if codex { String::new() } else { ask_tool.into() },
+            ask_tool: if codex {
+                String::new()
+            } else {
+                ask_tool.into()
+            },
             zone_min: crate::wakeups::zone_min(),
             counted: self.wake_runs(),
             wakeups: list,
@@ -1048,10 +1097,21 @@ impl Conn {
         if !self.woken.load(Ordering::SeqCst) {
             return deny("only a run a wakeup started asks the human through this tool");
         }
-        let Some(b) = self.bridge.lock().unwrap().clone() else { return deny("not on the board") };
-        let tool = args.get("tool_name").and_then(Value::as_str).unwrap_or("").to_string();
+        let Some(b) = self.bridge.lock().unwrap().clone() else {
+            return deny("not on the board");
+        };
+        let tool = args
+            .get("tool_name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
         let input = args.get("input").cloned().unwrap_or(json!({}));
-        let rid = args.get("tool_use_id").and_then(Value::as_str).filter(|r| !r.is_empty()).map(str::to_string).unwrap_or_else(|| crate::util::random_hex(8));
+        let rid = args
+            .get("tool_use_id")
+            .and_then(Value::as_str)
+            .filter(|r| !r.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| crate::util::random_hex(8));
         let preview: String = input.to_string().chars().take(1000).collect();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.asks.lock().unwrap().insert(rid.clone(), tx);
@@ -1060,7 +1120,10 @@ impl Conn {
             self.asks.lock().unwrap().remove(&rid);
             return deny(&format!("the human could not be asked: {}", e.text()));
         }
-        let wait = std::time::Duration::from_millis(env_ms("TROMMI_WAKE_RUN_MS", trommi_client_core::wakeups::RUN_MAX_MS));
+        let wait = std::time::Duration::from_millis(env_ms(
+            "TROMMI_WAKE_RUN_MS",
+            trommi_client_core::wakeups::RUN_MAX_MS,
+        ));
         match tokio::time::timeout(wait, rx).await {
             Ok(Ok(true)) => json!({ "behavior": "allow", "updatedInput": input }).to_string(),
             Ok(Ok(false)) => deny("the human said no"),
@@ -1113,7 +1176,10 @@ impl Conn {
             }
         }
         // a session that closes with wakeups left: a note of them and a waker on this computer (wakeups.rs)
-        if !swap && self.member.phase() == "ready" && !["lease-lost", "state-rolled-back"].contains(&reason) {
+        if !swap
+            && self.member.phase() == "ready"
+            && !["lease-lost", "state-rolled-back"].contains(&reason)
+        {
             self.leave_wakeups();
         }
         if let Some(here) = self.here.lock().unwrap().clone() {
@@ -1237,7 +1303,11 @@ impl Conn {
                 return format!("This session is not in the Trommi room yet: its own key ({}) is held by connector process pid {list}, an earlier connector of this same session (its program's earlier process, still ending). This session takes that key as soon as it is free, on every Trommi tool call and by itself; no invite is needed. If that process hangs: tell the human to run `kill {list}` in a terminal, then call any Trommi tool again.", p.key_file.display());
             }
         }
-        let error = me.error.as_ref().map(|e| format!(" ({e})")).unwrap_or_default();
+        let error = me
+            .error
+            .as_ref()
+            .map(|e| format!(" ({e})"))
+            .unwrap_or_default();
         if crate::host::is_hermes() {
             format!("Not on the board{error}: on the human's request, call trommi_connect: with the link he gives you from \"Approve a computer\" in the Trommi app (computer=true), or without a link on a computer he approved before.")
         } else if crate::host::is_codex() {
@@ -1569,11 +1639,20 @@ impl Conn {
         };
         let block = {
             let core = c.lock();
-            let session = core.session_id().and_then(|sid| core.model().sessions.get(&sid));
-            let list = session.map(|s| knowledge::entries(s.registers.iter().map(|(k, r)| (k, &r.value)), None)).unwrap_or_default();
+            let session = core
+                .session_id()
+                .and_then(|sid| core.model().sessions.get(&sid));
+            let list = session
+                .map(|s| knowledge::entries(s.registers.iter().map(|(k, r)| (k, &r.value)), None))
+                .unwrap_or_default();
             let team = session
                 .and_then(|s| s.registers.get("goals"))
-                .and_then(|r| r.value.get("desk_name").and_then(Value::as_str).map(str::to_string))
+                .and_then(|r| {
+                    r.value
+                        .get("desk_name")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
                 .unwrap_or_default();
             knowledge::digest(&team, &list)
         };
@@ -1582,7 +1661,11 @@ impl Conn {
             return out;
         }
         *told = Some(block.clone());
-        let note = if block.is_empty() { line::KNOWLEDGE_GONE.to_string() } else { block };
+        let note = if block.is_empty() {
+            line::KNOWLEDGE_GONE.to_string()
+        } else {
+            block
+        };
         if out.is_empty() {
             note
         } else {
@@ -1983,7 +2066,13 @@ impl member::Host for ConnHost {
     fn on_state_rolled_back(&self) -> BoxFut<'_, ()> {
         Box::pin(async move {
             if let Some(c) = self.0.upgrade() {
-                tokio::spawn(async move { c.bye("the stored state is older than this device's signed writes", "state-rolled-back").await });
+                tokio::spawn(async move {
+                    c.bye(
+                        "the stored state is older than this device's signed writes",
+                        "state-rolled-back",
+                    )
+                    .await
+                });
             }
         })
     }
@@ -2114,7 +2203,10 @@ impl Conn {
                 }
                 if on {
                     self.turn_count.fetch_add(1, Ordering::SeqCst);
-                    *self.turn_live.lock().unwrap() = LiveTurn { turn: crate::util::random().unwrap_or_default(), ..Default::default() };
+                    *self.turn_live.lock().unwrap() = LiveTurn {
+                        turn: crate::util::random().unwrap_or_default(),
+                        ..Default::default()
+                    };
                     let bridge = self.bridge.lock().unwrap().clone();
                     if let Some(b) = bridge {
                         let (client, live) = (b.client.clone(), self.turn_live.clone());
@@ -2128,7 +2220,10 @@ impl Conn {
                                 if let Err(e) = client.answer_preview(turn, number, &text).await {
                                     eprintln!("[trommi] a preview did not go: {}", e.text());
                                 }
-                                tokio::time::sleep(std::time::Duration::from_millis(trommi_client_core::live_answer::EVERY_MS)).await;
+                                tokio::time::sleep(std::time::Duration::from_millis(
+                                    trommi_client_core::live_answer::EVERY_MS,
+                                ))
+                                .await;
                             }
                         });
                         if let Some(old) = self.previews.lock().unwrap().replace(clock) {
@@ -2146,7 +2241,9 @@ impl Conn {
                         //  that goes late shows nothing, the answer came)
                         let (me, count) = (self.clone(), self.turn_count.load(Ordering::SeqCst));
                         tokio::spawn(async move {
-                            if me.turn_count.load(Ordering::SeqCst) == count && !me.turn_on.load(Ordering::SeqCst) {
+                            if me.turn_count.load(Ordering::SeqCst) == count
+                                && !me.turn_on.load(Ordering::SeqCst)
+                            {
                                 let _ = b.client.drop_previews().await;
                             }
                         });
@@ -2175,7 +2272,12 @@ impl Conn {
     async fn turn_request(&self, method: &str, params: &Value) -> Result<Value, String> {
         match method {
             "trommi/answer" => {
-                let mut text = params.get("text").and_then(Value::as_str).unwrap_or("").trim().to_string();
+                let mut text = params
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
                 if text.is_empty() {
                     return Ok(json!({}));
                 }
@@ -2260,11 +2362,7 @@ impl mcp::Server for Conn {
                         .into_iter()
                         .filter(|o| !o.spare && o.session != self.cfg.session)
                         .collect();
-                    now = claims_at_start(
-                        self.spare,
-                        reconnect,
-                        others.len(),
-                    ) && !codex_unnamed;
+                    now = claims_at_start(self.spare, reconnect, others.len()) && !codex_unnamed;
                     why = if codex_unnamed {
                         why
                     } else if self.spare {
@@ -2311,7 +2409,11 @@ impl mcp::Server for Conn {
         Box::pin(async move {
             if self.unconnected() {
                 self.offered_connect.store(true, Ordering::SeqCst);
-                let note = if crate::host::is_hermes() { "Not on the board: on the human's request, call trommi_connect. No session joins before that." } else { "Not on the board: activate with /trommi:connect (in Codex, ask to connect to Trommi). No session joins before that command." };
+                let note = if crate::host::is_hermes() {
+                    "Not on the board: on the human's request, call trommi_connect. No session joins before that."
+                } else {
+                    "Not on the board: activate with /trommi:connect (in Codex, ask to connect to Trommi). No session joins before that command."
+                };
                 if crate::host::is_codex() {
                     return prompt::tools_list_json_with_connect(true, Some(note));
                 }
@@ -2457,7 +2559,9 @@ impl mcp::Server for Conn {
         })
     }
     fn notification(self: Arc<Self>, method: String, params: Value) {
-        if matches!(method.as_str(), "trommi/working" | "trommi/preview") && crate::host::is_hermes() {
+        if matches!(method.as_str(), "trommi/working" | "trommi/preview")
+            && crate::host::is_hermes()
+        {
             return self.turn_notification(&method, &params);
         }
         if method == crate::launch::STOP && crate::launch::launched() {
@@ -2498,9 +2602,15 @@ impl mcp::Server for Conn {
             }
         });
     }
-    fn request(self: Arc<Self>, method: String, params: Value) -> BoxFut<'static, Option<Result<Value, String>>> {
+    fn request(
+        self: Arc<Self>,
+        method: String,
+        params: Value,
+    ) -> BoxFut<'static, Option<Result<Value, String>>> {
         Box::pin(async move {
-            if !crate::host::is_hermes() || !matches!(method.as_str(), "trommi/answer" | "trommi/state") {
+            if !crate::host::is_hermes()
+                || !matches!(method.as_str(), "trommi/answer" | "trommi/state")
+            {
                 return None;
             }
             Some(self.turn_request(&method, &params).await)
@@ -2606,8 +2716,8 @@ pub async fn main_server() {
     *conn.desk.lock().unwrap() = Some(HookDesk::new(heard, bridge_fn, say_fn, ppid()));
     // the bell: a hook of this Claude Code process rings, so this session is used
     let w = Arc::downgrade(&conn);
-    let bell_handler: door::Handler =
-        Arc::new(move |req: Value, _gone: Gone| -> BoxFut<'static, Value> {
+    let bell_handler: door::Handler = Arc::new(
+        move |req: Value, _gone: Gone| -> BoxFut<'static, Value> {
             let w = w.clone();
             Box::pin(async move {
                 let Some(c) = w.upgrade() else {
@@ -2646,7 +2756,8 @@ pub async fn main_server() {
                 c.wake().await;
                 json!({ "ok": true, "phase": c.member.phase() })
             })
-        });
+        },
+    );
     *conn.bell_handler.lock().unwrap() = Some(bell_handler.clone());
     let bell_file = door::bell_path(ppid());
     let _ = std::fs::create_dir_all(bell_file.parent().unwrap());
@@ -2723,7 +2834,11 @@ pub async fn main_server() {
         let c = conn.clone();
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(std::time::Duration::from_millis(env_ms("TROMMI_PROFILE_LOOK_MS", 3_000))).await;
+                tokio::time::sleep(std::time::Duration::from_millis(env_ms(
+                    "TROMMI_PROFILE_LOOK_MS",
+                    3_000,
+                )))
+                .await;
                 if c.leaving.load(Ordering::SeqCst) {
                     return;
                 }
@@ -2782,7 +2897,14 @@ pub async fn main_server() {
         tokio::spawn(async move {
             let every = env_ms("TROMMI_WAKE_TICK_MS", 30_000).max(200);
             loop {
-                tokio::time::sleep(std::time::Duration::from_millis(if c.wake_looked.load(Ordering::SeqCst) { every } else { 500 })).await;
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    if c.wake_looked.load(Ordering::SeqCst) {
+                        every
+                    } else {
+                        500
+                    },
+                ))
+                .await;
                 if c.leaving.load(Ordering::SeqCst) {
                     return;
                 }
@@ -2828,7 +2950,10 @@ impl Conn {
     /// while it still looked for a key of its own, which then turned out to be out of the room): the client is told
     /// to list again, so that connect is there for the human's /trommi:connect.
     async fn offer_connect(&self) {
-        if crate::host::is_codex() || self.offered_connect.load(Ordering::SeqCst) || !self.unconnected() {
+        if crate::host::is_codex()
+            || self.offered_connect.load(Ordering::SeqCst)
+            || !self.unconnected()
+        {
             return;
         }
         self.offered_connect.store(true, Ordering::SeqCst);
@@ -2875,7 +3000,10 @@ impl Conn {
     /// answers with the six emoji of the check code as soon as the inviter's app revealed them. The join goes on
     /// in this process: once the human confirmed the emoji, the session is online and its tools are announced.
     async fn connect(self: Arc<Self>, args: &Value) -> std::result::Result<String, String> {
-        let computer = args.get("computer").and_then(Value::as_bool).unwrap_or(false);
+        let computer = args
+            .get("computer")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         const ALREADY: &str = "This session is connected to Trommi already; no link is needed. If the board tools are not listed, list the tools again.";
         // A join of this process that has not ended, or ended well before any call showed its check code: this
         // call answers from it. (Online and its code shown: connected already, also in the moment between the
@@ -2884,7 +3012,8 @@ impl Conn {
             let r = run.lock().unwrap();
             r.outcome.is_none() || (!r.shown && matches!(r.outcome, Some(Ok(()))))
         });
-        if !computer && self.member.phase() == "ready"
+        if !computer
+            && self.member.phase() == "ready"
             && running.as_ref().is_none_or(|run| run.lock().unwrap().shown)
         {
             return Err(self.already(args, ALREADY));
@@ -2901,7 +3030,9 @@ impl Conn {
                 // a look for the key that runs now (the start's, or a tool call's) ends first: a slot it opens
                 // is "starting" for a moment, and connect answered "Connecting to the Trommi hub" in it
                 let until = now_ms() + 15_000;
-                while ["starting", "moving"].contains(&self.member.phase().as_str()) && now_ms() < until {
+                while ["starting", "moving"].contains(&self.member.phase().as_str())
+                    && now_ms() < until
+                {
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
                 if !computer && !self.unconnected() {
@@ -2911,16 +3042,33 @@ impl Conn {
                         self.not_ready()
                     });
                 }
-                let link = args.get("link").and_then(Value::as_str).map(str::trim).filter(|l| !l.is_empty()).map(String::from);
-                if computer && link.is_none() { return Err(Self::link_needed()) }
+                let link = args
+                    .get("link")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .map(String::from);
+                if computer && link.is_none() {
+                    return Err(Self::link_needed());
+                }
                 if let Some(link) = &link {
-                    crate::join::check_link(link, now_ms()).map_err(|e| format!("not connected: {}", e.text()))?;
+                    crate::join::check_link(link, now_ms())
+                        .map_err(|e| format!("not connected: {}", e.text()))?;
                 }
                 let target = if computer {
-                    Some(crate::machine::approval_member(&self.cfg, link.as_deref().unwrap()).map_err(|e| e.text())?)
-                } else { None };
+                    Some(
+                        crate::machine::approval_member(&self.cfg, link.as_deref().unwrap())
+                            .map_err(|e| e.text())?,
+                    )
+                } else {
+                    None
+                };
                 self.member.me.lock().unwrap().check_code = None;
-                let run: Connecting = Arc::new(Mutex::new(JoinRun { target: target.clone(), automatic: link.is_none(), ..Default::default() }));
+                let run: Connecting = Arc::new(Mutex::new(JoinRun {
+                    target: target.clone(),
+                    automatic: link.is_none(),
+                    ..Default::default()
+                }));
                 *self.connecting.lock().unwrap() = Some(run.clone());
                 let member = self.member.clone();
                 let cfg = self.cfg.clone();
@@ -2928,15 +3076,19 @@ impl Conn {
                 tokio::spawn(async move {
                     let outcome = async {
                         if let Some(target) = target {
-                            crate::machine::approve(&cfg, link.as_deref().unwrap(), &target).await?;
+                            crate::machine::approve(&cfg, link.as_deref().unwrap(), &target)
+                                .await?;
                             crate::machine::activate(&cfg, &member).await
                         } else if let Some(link) = link {
                             member.join(&link, false, false, false).await
                         } else {
                             crate::machine::activate(&cfg, &member).await
                         }
-                    }.await;
-                    if let Err(e) = &outcome { eprintln!("[trommi] not connected: {}", e.text()); }
+                    }
+                    .await;
+                    if let Err(e) = &outcome {
+                        eprintln!("[trommi] not connected: {}", e.text());
+                    }
                     done.lock().unwrap().outcome = Some(outcome.map_err(|e| e.text()));
                 });
                 run
@@ -2953,8 +3105,17 @@ impl Conn {
             // (the check code is set before the join can end, so an outcome seen here comes with its code)
             let step = {
                 let mut r = run.lock().unwrap();
-                let code = if r.automatic { None } else {
-                    r.target.as_ref().unwrap_or(&self.member).me.lock().unwrap().check_code.clone()
+                let code = if r.automatic {
+                    None
+                } else {
+                    r.target
+                        .as_ref()
+                        .unwrap_or(&self.member)
+                        .me
+                        .lock()
+                        .unwrap()
+                        .check_code
+                        .clone()
                 };
                 match (&r.outcome, code) {
                     (Some(Err(why)), _) => JoinStep::Failed(why.clone()),

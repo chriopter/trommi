@@ -39,7 +39,12 @@ impl Assets {
                 .values()
                 .filter(|p| p.object_state != "closed")
                 .map(|p| {
-                    let media = p.attachments.get(0).and_then(|a| a.get("media_type")).and_then(Value::as_str).unwrap_or("");
+                    let media = p
+                        .attachments
+                        .get(0)
+                        .and_then(|a| a.get("media_type"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
                     (p.object_id.clone(), (p.title.clone(), kind_of(media)))
                 })
                 .collect(),
@@ -47,7 +52,8 @@ impl Assets {
     }
     /// One Artifact, for tests.
     pub fn with(mut self, id: &str, title: &str, media_type: &str) -> Self {
-        self.0.insert(id.into(), (title.into(), kind_of(media_type)));
+        self.0
+            .insert(id.into(), (title.into(), kind_of(media_type)));
         self
     }
 }
@@ -64,7 +70,10 @@ enum Info {
 
 /// The Artifact's id in an address, when it is one: `(https://host)?/(artifact|a)/<16 to 64 signs>#<43 signs>`.
 fn asset_id(url: &str) -> Option<(&str, bool)> {
-    let (origin, path) = match url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")) {
+    let (origin, path) = match url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+    {
         Some(rest) => {
             let slash = rest.find('/')?;
             if slash == 0 || rest[..slash].chars().any(char::is_whitespace) {
@@ -74,9 +83,14 @@ fn asset_id(url: &str) -> Option<(&str, bool)> {
         }
         None => (false, url),
     };
-    let rest = path.strip_prefix("/artifact/").or_else(|| path.strip_prefix("/a/"))?;
+    let rest = path
+        .strip_prefix("/artifact/")
+        .or_else(|| path.strip_prefix("/a/"))?;
     let (id, key) = rest.split_once('#')?;
-    let good = (16..=64).contains(&id.len()) && id.chars().all(id_sign) && key.len() == 43 && key.chars().all(id_sign);
+    let good = (16..=64).contains(&id.len())
+        && id.chars().all(id_sign)
+        && key.len() == 43
+        && key.chars().all(id_sign);
     good.then_some((id, origin))
 }
 
@@ -101,7 +115,10 @@ fn info(url: &str, assets: &Assets) -> Info {
             return Info::Asset(name);
         }
     }
-    let mut text = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")).unwrap_or(url);
+    let mut text = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
     text = text.strip_prefix("www.").unwrap_or(text);
     if let Some(at) = text.find(['?', '#']) {
         text = &text[..at];
@@ -110,7 +127,13 @@ fn info(url: &str, assets: &Assets) -> Info {
     // (JavaScript counts UTF-16 units; an address is ASCII but for rare cases)
     if text.encode_utf16().count() > 34 {
         let mut units = 0;
-        let cut: String = text.chars().take_while(|c| { units += c.len_utf16(); units <= 33 }).collect();
+        let cut: String = text
+            .chars()
+            .take_while(|c| {
+                units += c.len_utf16();
+                units <= 33
+            })
+            .collect();
         Info::Other(format!("{cut}…"))
     } else {
         Info::Other(text.to_string())
@@ -127,7 +150,9 @@ fn url_end(text: &str, at: usize) -> Option<usize> {
     } else {
         return None;
     };
-    let body = rest[head..].find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | ')' | '`')).unwrap_or(rest.len() - head);
+    let body = rest[head..]
+        .find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | ')' | '`'))
+        .unwrap_or(rest.len() - head);
     (body > 0).then_some(at + head + body)
 }
 
@@ -141,12 +166,17 @@ pub fn without_layouts(text: &str) -> String {
     };
     let rule = |l: &str| {
         let t = l.trim();
-        !t.is_empty() && t.contains('-') && t.chars().all(|c| matches!(c, '|' | ':' | '-') || c.is_whitespace())
+        !t.is_empty()
+            && t.contains('-')
+            && t.chars()
+                .all(|c| matches!(c, '|' | ':' | '-') || c.is_whitespace())
     };
     lines
         .iter()
         .enumerate()
-        .filter(|(i, l)| !(row(l) || (rule(l) && i.checked_sub(1).is_some_and(|p| lines[p].contains('|')))))
+        .filter(|(i, l)| {
+            !(row(l) || (rule(l) && i.checked_sub(1).is_some_and(|p| lines[p].contains('|'))))
+        })
         .map(|(_, l)| *l)
         .collect::<Vec<_>>()
         .join("\n")
@@ -158,11 +188,17 @@ fn without_html_fences(text: &str) -> String {
     let mut rest = text;
     loop {
         let lower = rest.to_ascii_lowercase();
-        let Some(open) = lower.find("```html") else { break };
+        let Some(open) = lower.find("```html") else {
+            break;
+        };
         // (the fence's line, then its body up to the closing fence)
-        let Some(nl) = rest[open..].find('\n') else { break };
+        let Some(nl) = rest[open..].find('\n') else {
+            break;
+        };
         let body = open + nl + 1;
-        let Some(close) = rest[body..].find("```") else { break };
+        let Some(close) = rest[body..].find("```") else {
+            break;
+        };
         out.push_str(&rest[..open]);
         out.push(' ');
         rest = &rest[body + close + 3..];
@@ -184,8 +220,16 @@ pub fn tidy_links(text: &str, assets: &Assets) -> String {
             continue;
         };
         // (a backtick on either side goes with it)
-        let from = if text[..start].ends_with('`') { start - 1 } else { start };
-        let to = if text[end..].starts_with('`') { end + 1 } else { end };
+        let from = if text[..start].ends_with('`') {
+            start - 1
+        } else {
+            start
+        };
+        let to = if text[end..].starts_with('`') {
+            end + 1
+        } else {
+            end
+        };
         out.push_str(&text[last..from]);
         match info(&text[start..end], assets) {
             Info::Asset(name) => {
@@ -223,7 +267,10 @@ pub fn plain(text: &str, assets: &Assets) -> String {
     let out = tidy_links(&out, assets);
     // (__underlined__ words keep their words: the signs go with the others below, and a lone _ stays)
     let out = out.replace("__", "");
-    let out: String = out.chars().filter(|c| !matches!(c, '*' | '`' | '#')).collect();
+    let out: String = out
+        .chars()
+        .filter(|c| !matches!(c, '*' | '`' | '#'))
+        .collect();
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -261,12 +308,22 @@ pub fn titled(text: &str, assets: &Assets) -> String {
             if line[..start].ends_with("](") {
                 continue;
             }
-            let Info::Asset(name) = info(&line[start..end], assets) else { continue };
+            let Info::Asset(name) = info(&line[start..end], assets) else {
+                continue;
+            };
             let ticked = line[..start].ends_with('`') && line[end..].starts_with('`');
-            let (from, to) = if ticked { (start - 1, end + 1) } else { (start, end) };
+            let (from, to) = if ticked {
+                (start - 1, end + 1)
+            } else {
+                (start, end)
+            };
             out.push_str(&line[last..from]);
             let name = name.replace(['[', ']'], "");
-            let name = if name == "published link" { "Published link".to_string() } else { name };
+            let name = if name == "published link" {
+                "Published link".to_string()
+            } else {
+                name
+            };
             out.push_str(&format!("[{name}]({})", &line[start..end]));
             last = to;
             at = to;
@@ -283,7 +340,9 @@ mod tests {
     const KEY: &str = "abcdefghijABCDEFGHIJ0123456789_-abcdefghijk";
 
     fn assets() -> Assets {
-        Assets::default().with("0123456789abcdef0123", "Launch plan", "text/html").with("ffffeeeeddddcccc", "", "image/png")
+        Assets::default()
+            .with("0123456789abcdef0123", "Launch plan", "text/html")
+            .with("ffffeeeeddddcccc", "", "image/png")
     }
 
     #[test]
@@ -301,13 +360,19 @@ mod tests {
         );
         // (the fragment goes, and the full stop that followed it with it, as on the web)
         // an address too long is cut to 34 signs
-        assert_eq!(plain("https://github.com/chriopter/trommi/pull/187/files", &a), "github.com/chriopter/trommi/pull/…");
+        assert_eq!(
+            plain("https://github.com/chriopter/trommi/pull/187/files", &a),
+            "github.com/chriopter/trommi/pull/…"
+        );
     }
 
     #[test]
     fn layouts_stand_in_no_line() {
         let text = "Pick one.\n```HTML\n<div>tiles</div>\n```\n| a | b |\n|---|---|\n| 1 | 2 |\nThen ship - soon.\n- a list stays";
-        assert_eq!(plain(text, &Assets::default()), "Pick one. Then ship - soon. - a list stays");
+        assert_eq!(
+            plain(text, &Assets::default()),
+            "Pick one. Then ship - soon. - a list stays"
+        );
         // a rule without a table above it stays
         assert_eq!(without_layouts("one\n---\ntwo"), "one\n---\ntwo");
     }

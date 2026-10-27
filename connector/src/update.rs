@@ -87,7 +87,11 @@ pub fn check(
     if !product.is_some_and(|product| PRODUCTS.contains(&product)) {
         return Err("the manifest is of another product");
     }
-    if !stated.get("repository").and_then(Value::as_str).is_some_and(|r| r == REPOSITORY || r == LEGACY_REPOSITORY) {
+    if !stated
+        .get("repository")
+        .and_then(Value::as_str)
+        .is_some_and(|r| r == REPOSITORY || r == LEGACY_REPOSITORY)
+    {
         return Err("the manifest is of another repository");
     }
     let version = stated

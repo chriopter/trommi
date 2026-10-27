@@ -35,7 +35,12 @@ pub enum EhbpError {
 }
 
 fn hpke() -> Hpke<HpkeRustCrypto> {
-    Hpke::new(Mode::Base, KemAlgorithm::DhKem25519, KdfAlgorithm::HkdfSha256, AeadAlgorithm::Aes256Gcm)
+    Hpke::new(
+        Mode::Base,
+        KemAlgorithm::DhKem25519,
+        KdfAlgorithm::HkdfSha256,
+        AeadAlgorithm::Aes256Gcm,
+    )
 }
 
 /// A request body sealed to the enclave, and what opens its answer.
@@ -76,7 +81,9 @@ impl Drop for Opener {
 pub fn seal(public_key: &[u8; 32], plain: &[u8]) -> Result<Sealed, EhbpError> {
     let mut hpke = hpke();
     let key = HpkePublicKey::from(&public_key[..]);
-    let (enc, mut context) = hpke.setup_sender(&key, REQUEST_INFO, None, None, None).map_err(|_| EhbpError::BadKey)?;
+    let (enc, mut context) = hpke
+        .setup_sender(&key, REQUEST_INFO, None, None, None)
+        .map_err(|_| EhbpError::BadKey)?;
     let enc: [u8; 32] = enc.as_slice().try_into().map_err(|_| EhbpError::Seal)?;
     let sealed = context.seal(&[], plain).map_err(|_| EhbpError::Seal)?;
     let secret: [u8; 32] = context
@@ -89,7 +96,11 @@ pub fn seal(public_key: &[u8; 32], plain: &[u8]) -> Result<Sealed, EhbpError> {
     let mut body = Vec::with_capacity(4 + sealed.len());
     body.extend_from_slice(&length.to_be_bytes());
     body.extend_from_slice(&sealed);
-    Ok(Sealed { body, encapsulated_key: hex(&enc), opener: Opener { secret, enc } })
+    Ok(Sealed {
+        body,
+        encapsulated_key: hex(&enc),
+        opener: Opener { secret, enc },
+    })
 }
 
 impl Opener {
@@ -103,9 +114,11 @@ impl Opener {
         let nonce = unhex::<32>(nonce).ok_or(EhbpError::Open)?;
         let salt = [&self.enc[..], &nonce[..]].concat();
         let kdf = KdfAlgorithm::HkdfSha256;
-        let prk = HpkeRustCrypto::kdf_extract(kdf, &salt, &self.secret).map_err(|_| EhbpError::Open)?;
+        let prk =
+            HpkeRustCrypto::kdf_extract(kdf, &salt, &self.secret).map_err(|_| EhbpError::Open)?;
         let key = HpkeRustCrypto::kdf_expand(kdf, &prk, b"key", 32).map_err(|_| EhbpError::Open)?;
-        let base = HpkeRustCrypto::kdf_expand(kdf, &prk, b"nonce", 12).map_err(|_| EhbpError::Open)?;
+        let base =
+            HpkeRustCrypto::kdf_expand(kdf, &prk, b"nonce", 12).map_err(|_| EhbpError::Open)?;
         let mut out = Vec::new();
         let mut rest = body;
         let mut seq: u64 = 0;
@@ -125,8 +138,9 @@ impl Opener {
             for (i, b) in seq.to_be_bytes().iter().enumerate() {
                 chunk_nonce[4 + i] ^= b;
             }
-            let plain = HpkeRustCrypto::aead_open(AeadAlgorithm::Aes256Gcm, &key, &chunk_nonce, &[], chunk)
-                .map_err(|_| EhbpError::Open)?;
+            let plain =
+                HpkeRustCrypto::aead_open(AeadAlgorithm::Aes256Gcm, &key, &chunk_nonce, &[], chunk)
+                    .map_err(|_| EhbpError::Open)?;
             out.extend_from_slice(&plain);
             seq += 1;
         }
@@ -155,7 +169,10 @@ mod tests {
     use hpke_rs::HpkePrivateKey;
 
     fn unhex_vec(text: &str) -> Vec<u8> {
-        (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
+        (0..text.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+            .collect()
     }
 
     fn vectors() -> serde_json::Value {
@@ -171,7 +188,14 @@ mod tests {
         let length = u32::from_be_bytes(body[..4].try_into().unwrap()) as usize;
         assert_eq!(length, body.len() - 4);
         let private = HpkePrivateKey::from(unhex_vec(v["private_key"].as_str().unwrap()));
-        let context = hpke().setup_receiver(&unhex_vec(v["enc"].as_str().unwrap()), &private, REQUEST_INFO, None, None, None);
+        let context = hpke().setup_receiver(
+            &unhex_vec(v["enc"].as_str().unwrap()),
+            &private,
+            REQUEST_INFO,
+            None,
+            None,
+            None,
+        );
         let plain = context.unwrap().open(&[], &body[4..]).unwrap();
         assert_eq!(hex(&plain), v["plain"].as_str().unwrap());
     }
@@ -187,7 +211,9 @@ mod tests {
         let sealed = seal(&public, &plain).unwrap();
         assert_eq!(sealed.encapsulated_key.len(), 64);
         let enc = unhex_vec(&sealed.encapsulated_key);
-        let context = hpke().setup_receiver(&enc, pair.private_key(), REQUEST_INFO, None, None, None).unwrap();
+        let context = hpke()
+            .setup_receiver(&enc, pair.private_key(), REQUEST_INFO, None, None, None)
+            .unwrap();
         let mut enclave = context;
         assert_eq!(enclave.open(&[], &sealed.body[4..]).unwrap(), plain);
         // the enclave's side of the answer
@@ -196,17 +222,39 @@ mod tests {
         let salt = [&enc[..], &nonce[..]].concat();
         let prk = HpkeRustCrypto::kdf_extract(KdfAlgorithm::HkdfSha256, &salt, &secret).unwrap();
         let key = HpkeRustCrypto::kdf_expand(KdfAlgorithm::HkdfSha256, &prk, b"key", 32).unwrap();
-        let base = HpkeRustCrypto::kdf_expand(KdfAlgorithm::HkdfSha256, &prk, b"nonce", 12).unwrap();
-        let ct = HpkeRustCrypto::aead_seal(AeadAlgorithm::Aes256Gcm, &key, &base, &[], b"{\"text\":\"ok\"}").unwrap();
+        let base =
+            HpkeRustCrypto::kdf_expand(KdfAlgorithm::HkdfSha256, &prk, b"nonce", 12).unwrap();
+        let ct = HpkeRustCrypto::aead_seal(
+            AeadAlgorithm::Aes256Gcm,
+            &key,
+            &base,
+            &[],
+            b"{\"text\":\"ok\"}",
+        )
+        .unwrap();
         let mut answer = (ct.len() as u32).to_be_bytes().to_vec();
         answer.extend_from_slice(&ct);
-        assert_eq!(sealed.opener.open(&hex(&nonce), &answer).unwrap(), b"{\"text\":\"ok\"}");
+        assert_eq!(
+            sealed.opener.open(&hex(&nonce), &answer).unwrap(),
+            b"{\"text\":\"ok\"}"
+        );
         // another nonce, a flipped bit, a cut body: refused
-        assert_eq!(sealed.opener.open(&hex(&[8u8; 32]), &answer), Err(EhbpError::Open));
+        assert_eq!(
+            sealed.opener.open(&hex(&[8u8; 32]), &answer),
+            Err(EhbpError::Open)
+        );
         let mut flipped = answer.clone();
         *flipped.last_mut().unwrap() ^= 1;
-        assert_eq!(sealed.opener.open(&hex(&nonce), &flipped), Err(EhbpError::Open));
-        assert_eq!(sealed.opener.open(&hex(&nonce), &answer[..answer.len() - 1]), Err(EhbpError::Open));
+        assert_eq!(
+            sealed.opener.open(&hex(&nonce), &flipped),
+            Err(EhbpError::Open)
+        );
+        assert_eq!(
+            sealed
+                .opener
+                .open(&hex(&nonce), &answer[..answer.len() - 1]),
+            Err(EhbpError::Open)
+        );
         assert_eq!(sealed.opener.open("zz", &answer), Err(EhbpError::Open));
     }
 
@@ -214,11 +262,23 @@ mod tests {
     #[test]
     fn opens_the_reference_answer() {
         let v = &vectors()["response"];
-        let secret: [u8; 32] = unhex_vec(v["exported_secret"].as_str().unwrap()).try_into().unwrap();
-        let enc: [u8; 32] = unhex_vec(v["request_enc"].as_str().unwrap()).try_into().unwrap();
+        let secret: [u8; 32] = unhex_vec(v["exported_secret"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let enc: [u8; 32] = unhex_vec(v["request_enc"].as_str().unwrap())
+            .try_into()
+            .unwrap();
         let opener = Opener::from_parts(secret, enc);
-        let plain = opener.open(v["nonce"].as_str().unwrap(), &unhex_vec(v["body"].as_str().unwrap())).unwrap();
-        assert_eq!(String::from_utf8(plain).unwrap(), v["plain"].as_str().unwrap());
+        let plain = opener
+            .open(
+                v["nonce"].as_str().unwrap(),
+                &unhex_vec(v["body"].as_str().unwrap()),
+            )
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(plain).unwrap(),
+            v["plain"].as_str().unwrap()
+        );
     }
 
     #[test]

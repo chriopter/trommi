@@ -3,14 +3,14 @@
 use crate::driver::{BoxFut, Command, Driver};
 use crate::error::{Fault, Result};
 use crate::html::{clean_fences, fences_hide, fences_show, html_beside, stripped_hint};
-use trommi_client_core::knowledge;
-use trommi_client_core::wakeups;
-use trommi_client_core::model::types::{self as model, Card};
 use crate::util::{now_ms, truthy};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use trommi_client_core::knowledge;
+use trommi_client_core::model::types::{self as model, Card};
+use trommi_client_core::wakeups;
 
 /// The largest file a tool sends: what a padded file holds at most (64 MiB less the byte of its pad mark).
 pub const MAX_ASSET: u64 = trommi_core::files::MAX_CONTENT_LEN;
@@ -586,7 +586,10 @@ fn knowledge_kind(args: &Map<String, Value>) -> Result<Option<String>> {
     }
     let kind = trim(&js_str(&args["kind"])).to_lowercase();
     if !knowledge::KINDS.contains(&kind.as_str()) {
-        return Err(err(format!("kind is one of {}", knowledge::KINDS.join(", "))));
+        return Err(err(format!(
+            "kind is one of {}",
+            knowledge::KINDS.join(", ")
+        )));
     }
     Ok(Some(kind))
 }
@@ -597,9 +600,16 @@ fn knowledge_arg(args: &Map<String, Value>, key: &str, max: usize) -> Result<Opt
     }
     let given = js_str(&args[key]);
     if given.chars().count() > max {
-        return Err(err(format!("{key} has {} characters, at most {max}: say it shorter", given.chars().count())));
+        return Err(err(format!(
+            "{key} has {} characters, at most {max}: say it shorter",
+            given.chars().count()
+        )));
     }
-    Ok(Some(if key == "title" { knowledge::clean_title(&given) } else { knowledge::clean_text(&given) }))
+    Ok(Some(if key == "title" {
+        knowledge::clean_title(&given)
+    } else {
+        knowledge::clean_text(&given)
+    }))
 }
 
 fn tag(fields: &mut Map<String, Value>, spot: &Spot) {
@@ -910,7 +920,11 @@ pub fn line_key(helper: Option<&str>, id: &str) -> String {
 /// The id a tool was given for a status line (`line_key` undone).
 fn line_shown(l: &model::StatusLine) -> String {
     match l.helper.as_deref() {
-        Some(h) => l.id.strip_prefix(&line_key(Some(h), "")).unwrap_or(&l.id).to_string(),
+        Some(h) => {
+            l.id.strip_prefix(&line_key(Some(h), ""))
+                .unwrap_or(&l.id)
+                .to_string()
+        }
         None => l.id.clone(),
     }
 }
@@ -960,7 +974,9 @@ impl Bridge {
     /// The helper a tool call names: `helper`, or `session` as the tools called it before helpers lived in their
     /// agent's session (README "Helpers and their events"); none for the agent's own words.
     fn helper_arg(args: &Map<String, Value>) -> Result<Option<String>> {
-        let given = ["helper", "session"].into_iter().find(|k| present(args.get(*k)));
+        let given = ["helper", "session"]
+            .into_iter()
+            .find(|k| present(args.get(*k)));
         let Some(key) = given else { return Ok(None) };
         let name = trim(&s(args.get(key)));
         if name.is_empty() {
@@ -968,11 +984,16 @@ impl Bridge {
         }
         trommi_client_core::helpers::name_of(Some(&json!(name)))
             .map(Some)
-            .ok_or_else(|| err("helper is a helper's short name, one line of at most 40 characters"))
+            .ok_or_else(|| {
+                err("helper is a helper's short name, one line of at most 40 characters")
+            })
     }
     /// Where a tool call writes: this agent's session, for the helper it names.
     fn spot_of(args: &Map<String, Value>) -> Result<Spot> {
-        Ok(Spot { sid: None, helper: Self::helper_arg(args)? })
+        Ok(Spot {
+            sid: None,
+            helper: Self::helper_arg(args)?,
+        })
     }
     /// Where a card of this agent stands: its session (a helper session of before, or this agent's), its helper.
     async fn spot_of_card(&self, card: &Card) -> Spot {
@@ -1012,7 +1033,10 @@ impl Bridge {
     /// Called after catching up and whenever one of their cards is done.
     pub async fn retire_children(&self) {
         // (only from the hub's whole order: a card not read yet must not let its group be archived under it)
-        if !self.client.is_online() || self.client.settle(10_000).await.is_err() || !self.client.is_online() {
+        if !self.client.is_online()
+            || self.client.settle(10_000).await.is_err()
+            || !self.client.is_online()
+        {
             return;
         }
         let children: Vec<String> = self.client.lock().child_session_ids();
@@ -1022,14 +1046,18 @@ impl Bridge {
         let cards = self.my_cards().await;
         for sid in children {
             let waits = cards.iter().any(|c| {
-                c.session_id.as_deref() == Some(sid.as_str()) && matches!(c.object_state.as_str(), "open" | "answered")
+                c.session_id.as_deref() == Some(sid.as_str())
+                    && matches!(c.object_state.as_str(), "open" | "answered")
             });
             if waits {
                 continue;
             }
             match self.client.archive_child_session(&sid).await {
                 Ok(()) => eprintln!("[trommi] helper session of before {sid} archived"),
-                Err(e) => eprintln!("[trommi] helper session of before {sid} not archived: {}", e.message),
+                Err(e) => eprintln!(
+                    "[trommi] helper session of before {sid} not archived: {}",
+                    e.message
+                ),
             }
         }
     }
@@ -1037,7 +1065,11 @@ impl Bridge {
     /// what stands there. Returns whether it wrote.
     pub async fn put_profile(&self, key: &str, value: Value) -> Result<bool> {
         let _held = self.profile.lock().await;
-        let mut p = self.my_session(None).await.and_then(|s| s.profile).unwrap_or_default();
+        let mut p = self
+            .my_session(None)
+            .await
+            .and_then(|s| s.profile)
+            .unwrap_or_default();
         if p.get(key) == Some(&value) {
             return Ok(false);
         }
@@ -1055,7 +1087,7 @@ impl Bridge {
             .my_session(None)
             .await
             .and_then(|s| s.profile)
-                        .unwrap_or_default();
+            .unwrap_or_default();
         if p.get("account") == Some(&account) {
             return Ok(false);
         }
@@ -1079,16 +1111,27 @@ impl Bridge {
         let c = self.client.lock();
         let session = c.session_id().and_then(|sid| c.model().sessions.get(&sid));
         let held: Vec<(&String, &model::RegisterValue)> = session
-            .map(|s| s.registers.iter().filter(|(k, _)| k.starts_with(knowledge::PREFIX)).collect())
+            .map(|s| {
+                s.registers
+                    .iter()
+                    .filter(|(k, _)| k.starts_with(knowledge::PREFIX))
+                    .collect()
+            })
             .unwrap_or_default();
-        let mark: Vec<(String, u64)> = held.iter().map(|(k, r)| ((*k).clone(), r.envelope_number)).collect();
+        let mark: Vec<(String, u64)> = held
+            .iter()
+            .map(|(k, r)| ((*k).clone(), r.envelope_number))
+            .collect();
         let mut cached = self.knowledge.lock().unwrap();
         if let Some((m, index)) = cached.as_ref() {
             if *m == mark {
                 return index.clone();
             }
         }
-        let index = Arc::new(knowledge::Index::new(knowledge::entries(held.iter().map(|(k, r)| (*k, &r.value)), None)));
+        let index = Arc::new(knowledge::Index::new(knowledge::entries(
+            held.iter().map(|(k, r)| (*k, &r.value)),
+            None,
+        )));
         *cached = Some((mark, index.clone()));
         index
     }
@@ -1097,12 +1140,15 @@ impl Bridge {
     fn knowledge_entry(&self, args: &Map<String, Value>) -> Result<knowledge::Entry> {
         let id = trim(&s(args.get("id")));
         if id.is_empty() {
-            return Err(err("id is required: the entry's id, as search_knowledge names it"));
+            return Err(err(
+                "id is required: the entry's id, as search_knowledge names it",
+            ));
         }
-        self.knowledge_index()
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| err(format!("no entry \"{id}\" in the team's knowledge: search_knowledge names their ids")))
+        self.knowledge_index().get(&id).cloned().ok_or_else(|| {
+            err(format!(
+                "no entry \"{id}\" in the team's knowledge: search_knowledge names their ids"
+            ))
+        })
     }
 
     /// An agent's write of the team's knowledge: put into this session (`knowledge_ask/<id>`), from where the
@@ -1110,13 +1156,27 @@ impl Bridge {
     async fn knowledge_write(&self, ask: knowledge::Ask) -> Result<String> {
         let write = crate::util::random_hex(16);
         let key = format!("{}{write}", knowledge::ASK_PREFIX);
-        let (name, value) = trommi_client_core::codec::encode_register(&key, &ask.value()).map_err(|_| err("that write does not fit the team's knowledge"))?;
+        let (name, value) = trommi_client_core::codec::encode_register(&key, &ask.value())
+            .map_err(|_| err("that write does not fit the team's knowledge"))?;
         let mut values = Map::new();
-        values.insert(name, value.map_or(Value::Null, |v| serde_json::from_str(&v).unwrap_or(Value::Null)));
+        values.insert(
+            name,
+            value.map_or(Value::Null, |v| {
+                serde_json::from_str(&v).unwrap_or(Value::Null)
+            }),
+        );
         self.client.set_status(values, None).await?;
         let what = match ask.op {
             knowledge::Op::Add => format!("\"{}\" written", ask.title),
-            knowledge::Op::Update if ask.kind.is_none() && self.knowledge_index().all().iter().any(|e| Some(&e.id) == ask.entry.as_ref() && (&e.title, &e.text) == (&ask.title, &ask.text)) => format!("\"{}\" confirmed", ask.title),
+            knowledge::Op::Update
+                if ask.kind.is_none()
+                    && self.knowledge_index().all().iter().any(|e| {
+                        Some(&e.id) == ask.entry.as_ref()
+                            && (&e.title, &e.text) == (&ask.title, &ask.text)
+                    }) =>
+            {
+                format!("\"{}\" confirmed", ask.title)
+            }
             knowledge::Op::Update => format!("\"{}\" changed", ask.title),
             knowledge::Op::Forget => format!("\"{}\" forgotten", ask.title),
         };
@@ -1128,19 +1188,35 @@ impl Bridge {
     pub async fn knowledge_answers(&self) -> Option<String> {
         let (answers, asks) = {
             let c = self.client.lock();
-            let session = c.session_id().and_then(|sid| c.model().sessions.get(&sid))?;
+            let session = c
+                .session_id()
+                .and_then(|sid| c.model().sessions.get(&sid))?;
             let of = |prefix: &str| -> Vec<(String, Value)> {
-                session.registers.iter().filter_map(|(k, r)| k.strip_prefix(prefix).filter(|_| !r.value.is_null()).map(|w| (w.to_string(), r.value.clone()))).collect()
+                session
+                    .registers
+                    .iter()
+                    .filter_map(|(k, r)| {
+                        k.strip_prefix(prefix)
+                            .filter(|_| !r.value.is_null())
+                            .map(|w| (w.to_string(), r.value.clone()))
+                    })
+                    .collect()
             };
             (of(knowledge::DONE_PREFIX), of(knowledge::ASK_PREFIX))
         };
         let mut told = Vec::new();
         let mut clear = Map::new();
         for (write, answer) in answers {
-            let Some((_, asked)) = asks.iter().find(|(w, _)| *w == write) else { continue };
+            let Some((_, asked)) = asks.iter().find(|(w, _)| *w == write) else {
+                continue;
+            };
             if answer.get("ok") == Some(&Value::Bool(false)) {
                 let why = answer.get("why").and_then(Value::as_str).unwrap_or("");
-                let title = asked.get("title").and_then(Value::as_str).or_else(|| asked.get("was").and_then(Value::as_str)).unwrap_or("");
+                let title = asked
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .or_else(|| asked.get("was").and_then(Value::as_str))
+                    .unwrap_or("");
                 told.push(format!("\"{title}\": {}", knowledge::refusal_words(why)));
             }
             let key = format!("{}{write}", knowledge::ASK_PREFIX);
@@ -1151,19 +1227,32 @@ impl Bridge {
         if !clear.is_empty() {
             let _ = self.client.set_status(clear, None).await;
         }
-        (!told.is_empty()).then(|| format!("[Trommi: the team's knowledge did not take your write: {}.]", told.join("; ")))
+        (!told.is_empty()).then(|| {
+            format!(
+                "[Trommi: the team's knowledge did not take your write: {}.]",
+                told.join("; ")
+            )
+        })
     }
 
     // ---- wakeups (README "Wakeups"): the agent's own, in its session; the person's words on them beside -------------
     /// This session's wakeups (the next first) and the person's words on them (id, word, its envelope).
     pub fn wakeups_held(&self) -> (Vec<wakeups::Wakeup>, Vec<(String, wakeups::Edit, String)>) {
         let c = self.client.lock();
-        let Some(session) = c.session_id().and_then(|sid| c.model().sessions.get(&sid)) else { return (Vec::new(), Vec::new()) };
+        let Some(session) = c.session_id().and_then(|sid| c.model().sessions.get(&sid)) else {
+            return (Vec::new(), Vec::new());
+        };
         let list = wakeups::of(session.registers.iter().map(|(k, r)| (k, &r.value)));
         let edits = session
             .registers
             .iter()
-            .filter_map(|(k, r)| Some((k.strip_prefix(wakeups::EDIT_PREFIX)?.to_string(), wakeups::Edit::read(&r.value)?, wakeups::mark(&r.value))))
+            .filter_map(|(k, r)| {
+                Some((
+                    k.strip_prefix(wakeups::EDIT_PREFIX)?.to_string(),
+                    wakeups::Edit::read(&r.value)?,
+                    wakeups::mark(&r.value),
+                ))
+            })
             .collect();
         (list, edits)
     }
@@ -1176,8 +1265,17 @@ impl Bridge {
         let mut values = Map::new();
         for (id, w) in writes {
             let value = w.as_ref().map_or(Value::Null, wakeups::Wakeup::value);
-            let (name, wire) = trommi_client_core::codec::encode_register(&format!("{}{id}", wakeups::PREFIX), &value).map_err(|_| err("that wakeup does not fit"))?;
-            values.insert(name, wire.map_or(Value::Null, |v| serde_json::from_str(&v).unwrap_or(Value::Null)));
+            let (name, wire) = trommi_client_core::codec::encode_register(
+                &format!("{}{id}", wakeups::PREFIX),
+                &value,
+            )
+            .map_err(|_| err("that wakeup does not fit"))?;
+            values.insert(
+                name,
+                wire.map_or(Value::Null, |v| {
+                    serde_json::from_str(&v).unwrap_or(Value::Null)
+                }),
+            );
         }
         self.client.set_status(values, None).await?;
         Ok(())
@@ -1185,25 +1283,71 @@ impl Bridge {
 
     /// One look of the clock: the person's words applied, due wakeups run (their first words in `runs`) or put off.
     /// `running`: the wakeup a waker woke this session for; `counted`: the session's runs today as kept.
-    pub async fn wakeups_tick(&self, running: Option<&str>, counted: (u64, u32)) -> Result<wakeups::Tick> {
+    pub async fn wakeups_tick(
+        &self,
+        running: Option<&str>,
+        counted: (u64, u32),
+    ) -> Result<wakeups::Tick> {
         let _one = self.wakeups.lock().await;
         let (list, edits) = self.wakeups_held();
         let now = now_ms();
         if list.is_empty() {
             let today = wakeups::day_of(now, crate::wakeups::zone_min());
-            return Ok(wakeups::Tick { day_runs: if counted.0 == today { counted.1 } else { 0 }, ..Default::default() });
+            return Ok(wakeups::Tick {
+                day_runs: if counted.0 == today { counted.1 } else { 0 },
+                ..Default::default()
+            });
         }
-        let t = wakeups::tick(&list, &edits, now, crate::wakeups::zone_min(), crate::wakeups::usage(now), running, counted);
+        let t = wakeups::tick(
+            &list,
+            &edits,
+            now,
+            crate::wakeups::zone_min(),
+            crate::wakeups::usage(now),
+            running,
+            counted,
+        );
         self.wakeups_write(&t.writes).await?;
         Ok(t)
     }
 
     fn wakeup_line(w: &wakeups::Wakeup, zone: i32) -> String {
         let now = now_ms();
-        let day = if wakeups::day_of(w.at, zone) == wakeups::day_of(now, zone) { "today".to_string() } else { format!("in {} day(s)", wakeups::day_of(w.at, zone).saturating_sub(wakeups::day_of(now, zone))) };
-        let last = w.last.as_ref().map(|l| format!("; last: {}{}", l.result, if l.detail.is_empty() { String::new() } else { format!(" ({})", l.detail) })).unwrap_or_default();
-        let helper = w.helper.as_deref().map(|h| format!(" for helper \"{h}\"")).unwrap_or_default();
-        format!("{} {} {day}, {}{helper}: {}{last}", w.id, wakeups::clock(w.at, zone), wakeups::every_words(w.every), w.note)
+        let day = if wakeups::day_of(w.at, zone) == wakeups::day_of(now, zone) {
+            "today".to_string()
+        } else {
+            format!(
+                "in {} day(s)",
+                wakeups::day_of(w.at, zone).saturating_sub(wakeups::day_of(now, zone))
+            )
+        };
+        let last = w
+            .last
+            .as_ref()
+            .map(|l| {
+                format!(
+                    "; last: {}{}",
+                    l.result,
+                    if l.detail.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" ({})", l.detail)
+                    }
+                )
+            })
+            .unwrap_or_default();
+        let helper = w
+            .helper
+            .as_deref()
+            .map(|h| format!(" for helper \"{h}\""))
+            .unwrap_or_default();
+        format!(
+            "{} {} {day}, {}{helper}: {}{last}",
+            w.id,
+            wakeups::clock(w.at, zone),
+            wakeups::every_words(w.every),
+            w.note
+        )
     }
 
     async fn my_cards(&self) -> Vec<Card> {
@@ -1215,7 +1359,8 @@ impl Bridge {
             .values()
             .filter(|k| {
                 c.model()
-                    .holder_of(&k.agent_device_id, k.session_id.as_deref()) == Some(me.clone())
+                    .holder_of(&k.agent_device_id, k.session_id.as_deref())
+                    == Some(me.clone())
             })
             .cloned()
             .collect();
@@ -1393,7 +1538,10 @@ impl Bridge {
         for reference in &list {
             let r = match crate::agent::attachment_wire(reference) {
                 Ok(reference) => reference,
-                Err(_) => { eprintln!("[trommi] an attachment reference does not read"); continue; }
+                Err(_) => {
+                    eprintln!("[trommi] an attachment reference does not read");
+                    continue;
+                }
             };
             let res: Result<String> = async {
                 let id = s(r.get("file_id"));
@@ -1566,9 +1714,7 @@ impl Bridge {
                 *next += 1;
                 number
             };
-            self.client
-                .work_step(None, turn, number, &step.0)
-                .await?;
+            self.client.work_step(None, turn, number, &step.0).await?;
         }
         Ok(())
     }
@@ -2294,7 +2440,8 @@ impl Bridge {
             .values()
             .find(|p| {
                 c.model()
-                    .holder_of(&p.agent_device_id, p.session_id.as_deref()) == Some(me.clone())
+                    .holder_of(&p.agent_device_id, p.session_id.as_deref())
+                    == Some(me.clone())
                     && p.object_id == want
             })
             .cloned()
@@ -2381,7 +2528,11 @@ impl Bridge {
             m.insert("answered_version".into(), json!(a.bound_object_version));
             m.insert(
                 "choice".into(),
-                a.choices.as_array().and_then(|a| a.first()).cloned().unwrap_or(Value::Null),
+                a.choices
+                    .as_array()
+                    .and_then(|a| a.first())
+                    .cloned()
+                    .unwrap_or(Value::Null),
             );
             m.insert("choices".into(), json!(a.choices));
             m.insert(
@@ -2399,7 +2550,10 @@ impl Bridge {
         if let Some(r) = &c.in_revision {
             m.insert("with_agent".into(), json!(r.by));
         }
-        m.insert("multiple".into(), json!(truthy(&c.field("allows_multiple"))));
+        m.insert(
+            "multiple".into(),
+            json!(truthy(&c.field("allows_multiple"))),
+        );
         if open {
             m.insert(
                 "body".into(),
@@ -2426,13 +2580,19 @@ impl Bridge {
             }
         }
         if truthy(&c.field("merged_into_object_id")) {
-            m.insert("merged_into".into(), c.field("merged_into_object_id").clone());
+            m.insert(
+                "merged_into".into(),
+                c.field("merged_into_object_id").clone(),
+            );
         }
         if c.field("merged_from_object_ids")
             .as_array()
             .is_some_and(|a| !a.is_empty())
         {
-            m.insert("merged_from".into(), c.field("merged_from_object_ids").clone());
+            m.insert(
+                "merged_from".into(),
+                c.field("merged_from_object_ids").clone(),
+            );
         }
         m
     }
@@ -2537,7 +2697,10 @@ impl Bridge {
             }
         }
         let attachments: Vec<Value> = if args.get("attachments").is_none_or(|v| v.is_null()) {
-            card.attachments().iter().map(crate::agent::attachment_wire).collect::<Result<Vec<_>>>()?
+            card.attachments()
+                .iter()
+                .map(crate::agent::attachment_wire)
+                .collect::<Result<Vec<_>>>()?
         } else {
             self.upload_all(args.get("attachments")).await?
         };
@@ -2838,9 +3001,23 @@ impl Bridge {
                 }
                 // (the person asks for a new chat with this agent: `NewChat`, spec'd by the app core; only the agent's own
                 //  main session, never a card's chat)
-                if let Some(nonce) = c.get("new_chat").filter(|v| v.is_object()).and_then(|v| v.get("nonce")).and_then(Value::as_str) {
-                    if card.is_none() && nonce.len() <= 64 && nonce.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_') {
-                        return send("The human asks for a new chat with you.".into(), meta(vec![("kind", json!("new_chat")), ("nonce", json!(nonce))])).await;
+                if let Some(nonce) = c
+                    .get("new_chat")
+                    .filter(|v| v.is_object())
+                    .and_then(|v| v.get("nonce"))
+                    .and_then(Value::as_str)
+                {
+                    if card.is_none()
+                        && nonce.len() <= 64
+                        && nonce
+                            .chars()
+                            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+                    {
+                        return send(
+                            "The human asks for a new chat with you.".into(),
+                            meta(vec![("kind", json!("new_chat")), ("nonce", json!(nonce))]),
+                        )
+                        .await;
                     }
                     return;
                 }
@@ -3639,7 +3816,8 @@ impl Bridge {
             if k.object_state == "open"
                 && k.card_type() == "decision"
                 && k.session_id.clone().or(main.clone()) == want
-                && self.spot_of_card(&k).await.helper.map(|h| h.to_lowercase()) == spot.helper.as_deref().map(str::to_lowercase)
+                && self.spot_of_card(&k).await.helper.map(|h| h.to_lowercase())
+                    == spot.helper.as_deref().map(str::to_lowercase)
             {
                 v.push(k);
             }
@@ -3669,17 +3847,26 @@ impl Bridge {
                 None => Value::Null,
             },
         );
-        self.client.set_status(v, spot.sid.clone()).await.map(|_| ())
+        self.client
+            .set_status(v, spot.sid.clone())
+            .await
+            .map(|_| ())
     }
 
     /// The status lines of a spot's session.
     async fn lines_at(&self, spot: &Spot) -> Vec<model::StatusLine> {
-        self.my_session(spot.sid.as_deref()).await.map(|s| s.status_lines).unwrap_or_default()
+        self.my_session(spot.sid.as_deref())
+            .await
+            .map(|s| s.status_lines)
+            .unwrap_or_default()
     }
 
     /// The spot a line stands at: its session, its own helper.
     fn spot_of_line(spot: &Spot, l: &model::StatusLine) -> Spot {
-        Spot { sid: spot.sid.clone(), helper: l.helper.clone() }
+        Spot {
+            sid: spot.sid.clone(),
+            helper: l.helper.clone(),
+        }
     }
 
     /// A question was filed: its helper's status line now waits on it (decision, with the card), so that the

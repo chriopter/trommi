@@ -22,7 +22,11 @@ fn crc_table() -> [u32; 256] {
     for (n, slot) in table.iter_mut().enumerate() {
         let mut c = n as u32;
         for _ in 0..8 {
-            c = if c & 1 != 0 { 0xedb8_8320 ^ (c >> 1) } else { c >> 1 };
+            c = if c & 1 != 0 {
+                0xedb8_8320 ^ (c >> 1)
+            } else {
+                c >> 1
+            };
         }
         *slot = c;
     }
@@ -40,14 +44,25 @@ fn crc32(bytes: &[u8]) -> u32 {
 
 // ---- the tables of DEFLATE (RFC 1951, 3.2.5) ----
 
-const LENGTH_BASE: [u16; 29] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];
-const LENGTH_EXTRA: [u8; 29] = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
-const DIST_BASE: [u16; 30] = [
-    1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
+const LENGTH_BASE: [u16; 29] = [
+    3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131,
+    163, 195, 227, 258,
 ];
-const DIST_EXTRA: [u8; 30] = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+const LENGTH_EXTRA: [u8; 29] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0,
+];
+const DIST_BASE: [u16; 30] = [
+    1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537,
+    2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
+];
+const DIST_EXTRA: [u8; 30] = [
+    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13,
+    13,
+];
 /// The order in which a dynamic block lists the code lengths of its code-length code.
-const CLEN_ORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+const CLEN_ORDER: [usize; 19] = [
+    16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
+];
 
 // ---- writing ----
 
@@ -96,15 +111,27 @@ fn fixed_symbol(bits: &mut BitsOut, symbol: u16) {
 }
 
 fn put_length(bits: &mut BitsOut, length: usize) {
-    let i = LENGTH_BASE.iter().rposition(|b| usize::from(*b) <= length).unwrap_or(0);
+    let i = LENGTH_BASE
+        .iter()
+        .rposition(|b| usize::from(*b) <= length)
+        .unwrap_or(0);
     fixed_symbol(bits, 257 + i as u16);
-    bits.put((length - usize::from(LENGTH_BASE[i])) as u32, u32::from(LENGTH_EXTRA[i]));
+    bits.put(
+        (length - usize::from(LENGTH_BASE[i])) as u32,
+        u32::from(LENGTH_EXTRA[i]),
+    );
 }
 
 fn put_distance(bits: &mut BitsOut, distance: usize) {
-    let i = DIST_BASE.iter().rposition(|b| usize::from(*b) <= distance).unwrap_or(0);
+    let i = DIST_BASE
+        .iter()
+        .rposition(|b| usize::from(*b) <= distance)
+        .unwrap_or(0);
     bits.code(i as u32, 5);
-    bits.put((distance - usize::from(DIST_BASE[i])) as u32, u32::from(DIST_EXTRA[i]));
+    bits.put(
+        (distance - usize::from(DIST_BASE[i])) as u32,
+        u32::from(DIST_EXTRA[i]),
+    );
 }
 
 const WINDOW: usize = 32 * 1024;
@@ -120,7 +147,11 @@ fn hash3(b: &[u8]) -> usize {
 
 /// `bytes` as one gzip member.
 pub fn gzip(bytes: &[u8]) -> Vec<u8> {
-    let mut bits = BitsOut { out: vec![0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0xff], acc: 0, n: 0 };
+    let mut bits = BitsOut {
+        out: vec![0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0xff],
+        acc: 0,
+        n: 0,
+    };
     // one block, final, fixed codes
     bits.put(1, 1);
     bits.put(1, 2);
@@ -243,7 +274,11 @@ impl Huffman {
             code |= input.bits(1)? as i32;
             let count = i32::from(self.counts[len]);
             if code - count < first {
-                return self.symbols.get((index + code - first) as usize).copied().ok_or(GzipError::Bad);
+                return self
+                    .symbols
+                    .get((index + code - first) as usize)
+                    .copied()
+                    .ok_or(GzipError::Bad);
             }
             index += count;
             first += count;
@@ -254,7 +289,13 @@ impl Huffman {
     }
 }
 
-fn inflate_codes(input: &mut BitsIn<'_>, out: &mut Vec<u8>, max: usize, lit: &Huffman, dist: &Huffman) -> Result<(), GzipError> {
+fn inflate_codes(
+    input: &mut BitsIn<'_>,
+    out: &mut Vec<u8>,
+    max: usize,
+    lit: &Huffman,
+    dist: &Huffman,
+) -> Result<(), GzipError> {
     loop {
         let symbol = lit.decode(input)?;
         match symbol {
@@ -267,12 +308,14 @@ fn inflate_codes(input: &mut BitsIn<'_>, out: &mut Vec<u8>, max: usize, lit: &Hu
             256 => return Ok(()),
             257..=285 => {
                 let i = usize::from(symbol - 257);
-                let length = usize::from(LENGTH_BASE[i]) + input.bits(u32::from(LENGTH_EXTRA[i]))? as usize;
+                let length =
+                    usize::from(LENGTH_BASE[i]) + input.bits(u32::from(LENGTH_EXTRA[i]))? as usize;
                 let d = usize::from(dist.decode(input)?);
                 if d >= 30 {
                     return Err(GzipError::Bad);
                 }
-                let distance = usize::from(DIST_BASE[d]) + input.bits(u32::from(DIST_EXTRA[d]))? as usize;
+                let distance =
+                    usize::from(DIST_BASE[d]) + input.bits(u32::from(DIST_EXTRA[d]))? as usize;
                 if distance > out.len() {
                     return Err(GzipError::Bad);
                 }
@@ -325,7 +368,10 @@ fn dynamic_codes(input: &mut BitsIn<'_>) -> Result<(Huffman, Huffman), GzipError
             continue;
         }
         let (value, repeat) = match symbol {
-            16 => (*lengths.get(i.wrapping_sub(1)).ok_or(GzipError::Bad)?, 3 + input.bits(2)? as usize),
+            16 => (
+                *lengths.get(i.wrapping_sub(1)).ok_or(GzipError::Bad)?,
+                3 + input.bits(2)? as usize,
+            ),
             17 => (0, 3 + input.bits(3)? as usize),
             _ => (0, 11 + input.bits(7)? as usize),
         };
@@ -340,7 +386,10 @@ fn dynamic_codes(input: &mut BitsIn<'_>) -> Result<(Huffman, Huffman), GzipError
     if lengths[256] == 0 {
         return Err(GzipError::Bad);
     }
-    Ok((Huffman::new(&lengths[..nlen])?, Huffman::new(&lengths[nlen..])?))
+    Ok((
+        Huffman::new(&lengths[..nlen])?,
+        Huffman::new(&lengths[nlen..])?,
+    ))
 }
 
 /// The bytes of one gzip member, never more than `max` of them.
@@ -349,18 +398,29 @@ pub fn gunzip(bytes: &[u8], max: usize) -> Result<Vec<u8>, GzipError> {
     const FEXTRA: u8 = 4;
     const FNAME: u8 = 8;
     const FCOMMENT: u8 = 16;
-    if bytes.len() < 18 || bytes[0] != 0x1f || bytes[1] != 0x8b || bytes[2] != 8 || bytes[3] & 0xe0 != 0 {
+    if bytes.len() < 18
+        || bytes[0] != 0x1f
+        || bytes[1] != 0x8b
+        || bytes[2] != 8
+        || bytes[3] & 0xe0 != 0
+    {
         return Err(GzipError::Bad);
     }
     let flags = bytes[3];
     let mut at = 10;
     if flags & FEXTRA != 0 {
-        let len = usize::from(u16::from_le_bytes([*bytes.get(at).ok_or(GzipError::Bad)?, *bytes.get(at + 1).ok_or(GzipError::Bad)?]));
+        let len = usize::from(u16::from_le_bytes([
+            *bytes.get(at).ok_or(GzipError::Bad)?,
+            *bytes.get(at + 1).ok_or(GzipError::Bad)?,
+        ]));
         at += 2 + len;
     }
     for flag in [FNAME, FCOMMENT] {
         if flags & flag != 0 {
-            let end = bytes.get(at..).and_then(|rest| rest.iter().position(|b| *b == 0)).ok_or(GzipError::Bad)?;
+            let end = bytes
+                .get(at..)
+                .and_then(|rest| rest.iter().position(|b| *b == 0))
+                .ok_or(GzipError::Bad)?;
             at += end + 1;
         }
     }
@@ -368,7 +428,12 @@ pub fn gunzip(bytes: &[u8], max: usize) -> Result<Vec<u8>, GzipError> {
         at += 2;
     }
     let body = bytes.get(at..).ok_or(GzipError::Bad)?;
-    let mut input = BitsIn { bytes: body, at: 0, acc: 0, n: 0 };
+    let mut input = BitsIn {
+        bytes: body,
+        at: 0,
+        acc: 0,
+        n: 0,
+    };
     let mut out = Vec::new();
     loop {
         let last = input.bits(1)? == 1;
@@ -381,7 +446,9 @@ pub fn gunzip(bytes: &[u8], max: usize) -> Result<Vec<u8>, GzipError> {
                 if nlen != !(len as u16) {
                     return Err(GzipError::Bad);
                 }
-                let data = body.get(input.at + 4..input.at + 4 + len).ok_or(GzipError::Bad)?;
+                let data = body
+                    .get(input.at + 4..input.at + 4 + len)
+                    .ok_or(GzipError::Bad)?;
                 if out.len() + len > max {
                     return Err(GzipError::TooLarge);
                 }
@@ -425,7 +492,9 @@ mod tests {
     }
 
     fn unhex(text: &str) -> Vec<u8> {
-        (0..text.len() / 2).map(|i| u8::from_str_radix(&text[i * 2..i * 2 + 2], 16).unwrap()).collect()
+        (0..text.len() / 2)
+            .map(|i| u8::from_str_radix(&text[i * 2..i * 2 + 2], 16).unwrap())
+            .collect()
     }
 
     #[test]
@@ -435,7 +504,11 @@ mod tests {
             let packed = gzip(text.as_bytes());
             assert_eq!(gunzip(&packed, 1 << 20).unwrap(), text.as_bytes());
         }
-        assert!(gzip(shapes.as_bytes()).len() * 5 < shapes.len(), "it compresses");        let mut noise = Vec::new();
+        assert!(
+            gzip(shapes.as_bytes()).len() * 5 < shapes.len(),
+            "it compresses"
+        );
+        let mut noise = Vec::new();
         let mut x = 7u32;
         for _ in 0..100_000 {
             x = x.wrapping_mul(1_103_515_245).wrapping_add(12_345);
@@ -447,8 +520,14 @@ mod tests {
     #[test]
     fn another_writers_file_reads() {
         let got = gunzip(&unhex(FIXED), 1 << 20).unwrap();
-        assert_eq!(got, br#"{"v":3,"shapes":[],"frontier":{},"gone":[],"moved":[]}{"v":3,"shapes":[]}"#);
-        assert_eq!(gunzip(&unhex(DYNAMIC), 1 << 20).unwrap(), shape_text(40).as_bytes());
+        assert_eq!(
+            got,
+            br#"{"v":3,"shapes":[],"frontier":{},"gone":[],"moved":[]}{"v":3,"shapes":[]}"#
+        );
+        assert_eq!(
+            gunzip(&unhex(DYNAMIC), 1 << 20).unwrap(),
+            shape_text(40).as_bytes()
+        );
     }
 
     #[test]
@@ -459,7 +538,13 @@ mod tests {
         let n = broken.len();
         broken[n - 5] ^= 1;
         assert_eq!(gunzip(&broken, 1 << 20), Err(GzipError::Bad));
-        assert_eq!(gunzip(&packed[..packed.len() - 1], 1 << 20), Err(GzipError::Bad));
-        assert_eq!(gunzip(b"not gzip at all, really", 1 << 20), Err(GzipError::Bad));
+        assert_eq!(
+            gunzip(&packed[..packed.len() - 1], 1 << 20),
+            Err(GzipError::Bad)
+        );
+        assert_eq!(
+            gunzip(b"not gzip at all, really", 1 << 20),
+            Err(GzipError::Bad)
+        );
     }
 }

@@ -519,7 +519,12 @@ impl Journal {
 
     /// Cache names without cloning the private values held beside them.
     pub fn keys(&self, prefix: &[u8]) -> Vec<Vec<u8>> {
-        self.lock().entries.range(prefix.to_vec()..).take_while(|(key,_)| key.starts_with(prefix)).map(|(key,_)| key.clone()).collect()
+        self.lock()
+            .entries
+            .range(prefix.to_vec()..)
+            .take_while(|(key, _)| key.starts_with(prefix))
+            .map(|(key, _)| key.clone())
+            .collect()
     }
 
     /// Stages an entry of the connector's own; written by the next [`Journal::commit`].

@@ -14,7 +14,9 @@ use crate::observer::{By, CommitFacts, Device, Observer};
 use crate::rules::{self, SessionKind, Standing};
 use crate::store::{self, Audience, Auth, Effects, Event, GroupKind, Room, Sight, Who};
 use crate::util::{b64, same, short};
-use trommi_wire::layout::{self as wire, CommitNote, RecoveryAuth, RecoveryLink, SealedKey, ZERO16};
+use trommi_wire::layout::{
+    self as wire, CommitNote, RecoveryAuth, RecoveryLink, SealedKey, ZERO16,
+};
 
 pub struct Ctx<'a> {
     pub c: &'a Connection,
@@ -771,7 +773,11 @@ fn commit_in(
         if founding {
             // 5.2.5: a human device is left out of a founding only while the hub holds no KeyPackage of it; it is
             // added later (5.2.7). One the hub could have handed out: claim again and found again.
-            for human in view.humans.iter().filter(|h| !facts.after.leaves.contains(h)) {
+            for human in view
+                .humans
+                .iter()
+                .filter(|h| !facts.after.leaves.contains(h))
+            {
                 if claimable(x, &room, human)?.is_some() {
                     return Err(refuse(
                         "incomplete",
@@ -1083,12 +1089,19 @@ pub fn message(
             GroupKind::Main | GroupKind::Helper => matches!(auth.who, Who::Agent | Who::Helper),
         };
         if !may {
-            return Err(refuse("forbidden", "the room group relays from human devices, a session group from its agent"));
+            return Err(refuse(
+                "forbidden",
+                "the room group relays from human devices, a session group from its agent",
+            ));
         }
         joined(x.c, group_id, &auth.device)?;
         // (to the room's human devices, as a stroke piece: a human device the session has not taken in yet cannot open
         //  it; agents get none)
-        let audience = Audience { humans: true, others: vec![], except: Some(auth.device) };
+        let audience = Audience {
+            humans: true,
+            others: vec![],
+            except: Some(auth.device),
+        };
         fx.events.push(Event {
             room: auth.room,
             audience,

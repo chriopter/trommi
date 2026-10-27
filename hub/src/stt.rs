@@ -28,7 +28,12 @@ use crate::http::{self, Answer, Body, ReqBody};
 use crate::limits::Window;
 
 /// The request headers of EHBP and Tinfoil that are passed on; nothing else of the device's request is.
-const PASSED_ON: &[&str] = &["ehbp-encapsulated-key", "content-type", "accept", "x-tinfoil-model"];
+const PASSED_ON: &[&str] = &[
+    "ehbp-encapsulated-key",
+    "content-type",
+    "accept",
+    "x-tinfoil-model",
+];
 /// The one path of the enclave the relay calls.
 pub const UPSTREAM_PATH: &str = "/v1/audio/transcriptions";
 /// The most an answer of the enclave (a transcript, sealed) may hold.
@@ -115,7 +120,10 @@ impl Stt {
             && !host.starts_with('.')
             && (host == "tinfoil.sh" || host.ends_with(".tinfoil.sh"));
         if !fine {
-            return Err(refuse("bad-format", "x-tinfoil-enclave-url: not an enclave"));
+            return Err(refuse(
+                "bad-format",
+                "x-tinfoil-enclave-url: not an enclave",
+            ));
         }
         Ok(format!("https://{host}"))
     }
@@ -165,9 +173,11 @@ fn logged(event: &str, size: usize, started: Instant, status: u16) {
 
 async fn signed_in_human(app: &Arc<App>, bearer: Option<String>) -> Res<crate::store::Auth> {
     let a = app.clone();
-    let auth = tokio::task::spawn_blocking(move || a.read(|x| a.sessions.authorise(x.c, bearer.as_deref(), x.now)))
-        .await
-        .unwrap_or_else(|_| Err(refuse("internal", "internal error")))?;
+    let auth = tokio::task::spawn_blocking(move || {
+        a.read(|x| a.sessions.authorise(x.c, bearer.as_deref(), x.now))
+    })
+    .await
+    .unwrap_or_else(|_| Err(refuse("internal", "internal error")))?;
     auth.human()?;
     Ok(auth)
 }
@@ -232,10 +242,14 @@ pub async fn relay(
     let enclave = stt.enclave(http::header(headers, "x-tinfoil-enclave-url"))?;
     let key = http::header(headers, "ehbp-encapsulated-key").unwrap_or_default();
     if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(refuse("bad-format", "ehbp-encapsulated-key: 32 bytes as hex"));
+        return Err(refuse(
+            "bad-format",
+            "ehbp-encapsulated-key: 32 bytes as hex",
+        ));
     }
     let limit = app.cfg.stt_limit;
-    let announced: Option<u64> = http::header(headers, "content-length").and_then(|v| v.parse().ok());
+    let announced: Option<u64> =
+        http::header(headers, "content-length").and_then(|v| v.parse().ok());
     if announced.is_some_and(|n| n > limit as u64) {
         return Err(refuse("too-large", "a dictation is at most five minutes"));
     }
@@ -289,7 +303,9 @@ pub async fn relay(
             crate::log::warn("stt_key_refused", json!({ "status": status }));
         }
         match status {
-            429 | 503 => refuse("overloaded", "the enclave is busy: try again in a moment").retry(5),
+            429 | 503 => {
+                refuse("overloaded", "the enclave is busy: try again in a moment").retry(5)
+            }
             _ => refuse("overloaded", "the enclave did not answer").retry(2),
         }
     };

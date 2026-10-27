@@ -73,13 +73,25 @@ impl Wishes {
     }
 
     pub(super) fn restore(&mut self, answered: &[u64]) {
-        self.answered = answered.iter().rev().take(ANSWERED_MAX).rev().copied().collect();
+        self.answered = answered
+            .iter()
+            .rev()
+            .take(ANSWERED_MAX)
+            .rev()
+            .copied()
+            .collect();
     }
 }
 
 impl Engine {
     /// A piece the hub only passed on: shown if the core opens it.
-    pub(super) fn on_relay(&mut self, ctx: &mut Ctx<'_>, group: GroupId, sender: DeviceId, message: &[u8]) {
+    pub(super) fn on_relay(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        group: GroupId,
+        sender: DeviceId,
+        message: &[u8],
+    ) {
         // (a stroke piece in the room group, 7.2; an answer preview of an agent in a session group, 7.5: the protocol core
         //  takes each only from whom it may come)
         if sender == self.device.id() {
@@ -99,14 +111,22 @@ impl Engine {
 
     /// A wish of another device, from the stream or from the hub's list.
     pub(super) fn on_wish(&mut self, ctx: &mut Ctx<'_>, row: WishRow) {
-        let seen = |w: &Wishes, id: u64| w.answered.contains(&id) || w.queue.iter().any(|q| q.id == id) || w.readmits.iter().any(|(q, _)| q.id == id);
+        let seen = |w: &Wishes, id: u64| {
+            w.answered.contains(&id)
+                || w.queue.iter().any(|q| q.id == id)
+                || w.readmits.iter().any(|(q, _)| q.id == id)
+        };
         if seen(&self.wishes, row.id) {
             return;
         }
         match row.kind {
             WishRowKind::Handover => {
                 let w = &mut self.wishes;
-                if !self.device.is_human() || row.device == self.device.id() || w.answered.contains(&row.id) || w.queue.iter().any(|q| q.id == row.id) {
+                if !self.device.is_human()
+                    || row.device == self.device.id()
+                    || w.answered.contains(&row.id)
+                    || w.queue.iter().any(|q| q.id == row.id)
+                {
                     return;
                 }
                 if w.queue.len() >= WISHES_MAX {
@@ -117,18 +137,31 @@ impl Engine {
             // (an agent asks for a session: the seat rule looks)
             WishRowKind::Session => self.tending.want = true,
             WishRowKind::Readmit => {
-                let (Some(group), Some(_)) = (row.group, row.key_package.as_ref()) else { return };
+                let (Some(group), Some(_)) = (row.group, row.key_package.as_ref()) else {
+                    return;
+                };
                 let me = self.device.id();
                 if !self.device.is_human() || row.device == me || group.is_room() {
                     return;
                 }
-                let Ok(held) = self.device.group(&group) else { return };
+                let Ok(held) = self.device.group(&group) else {
+                    return;
+                };
                 if !held.leaves.contains(&me) || held.archived {
                     return;
                 }
                 // the first human leaf but the asker answers at once, the others after the grace
-                let first = held.leaves.iter().filter(|d| **d != row.device && self.device_is_human(d)).min() == Some(&me);
-                let from = if first { ctx.now } else { ctx.now + READMIT_GRACE_MS };
+                let first = held
+                    .leaves
+                    .iter()
+                    .filter(|d| **d != row.device && self.device_is_human(d))
+                    .min()
+                    == Some(&me);
+                let from = if first {
+                    ctx.now
+                } else {
+                    ctx.now + READMIT_GRACE_MS
+                };
                 let w = &mut self.wishes;
                 if w.readmits.len() >= WISHES_MAX {
                     w.readmits.pop_front();
@@ -136,12 +169,19 @@ impl Engine {
                 w.readmits.push_back((row, from));
             }
             WishRowKind::Reject => {
-                let (Some(group), Some(n)) = (row.group, row.n) else { return };
+                let (Some(group), Some(n)) = (row.group, row.n) else {
+                    return;
+                };
                 if !self.device.is_human() || row.device == self.device.id() {
                     return;
                 }
                 self.wishes.mark_answered(row.id);
-                self.report(Report::Alert(super::Alert::Rejected { group, n, from: row.device, committer: row.committer }));
+                self.report(Report::Alert(super::Alert::Rejected {
+                    group,
+                    n,
+                    from: row.device,
+                    committer: row.committer,
+                }));
             }
         }
     }
@@ -151,7 +191,11 @@ impl Engine {
     /// fresh KeyPackage, which a human device of the group adds again in one Commit with the Cut of its old leaf;
     /// an agent device asks without one, as its connector did. The hub's answer changes nothing here.
     pub(super) fn ask_readmit(&mut self, ctx: &mut Ctx<'_>, group: GroupId, error: &Error) {
-        if *error == Error::Replay || group.is_room() || self.readmit_asked.contains(&group) || self.readmit_asked.len() >= READMITTED_MAX {
+        if *error == Error::Replay
+            || group.is_room()
+            || self.readmit_asked.contains(&group)
+            || self.readmit_asked.len() >= READMITTED_MAX
+        {
             return;
         }
         self.readmit_asked.insert(group);
@@ -163,17 +207,35 @@ impl Engine {
         } else {
             None
         };
-        ctx.log(LogLevel::Info, format!("a Welcome did not open ({}): asked to be let in again", error.code()));
-        let route = Route::Wish { kind: WishKind::Readmit, group: Some(&group), key_package: key_package.as_deref() };
+        ctx.log(
+            LogLevel::Info,
+            format!(
+                "a Welcome did not open ({}): asked to be let in again",
+                error.code()
+            ),
+        );
+        let route = Route::Wish {
+            kind: WishKind::Readmit,
+            group: Some(&group),
+            key_package: key_package.as_deref(),
+        };
         self.ask(ctx, route, true, Asked::Told);
     }
 
     fn device_is_human(&self, device: &DeviceId) -> bool {
-        self.device.room_history().is_some_and(|h| h.newest().is_human(device))
+        self.device
+            .room_history()
+            .is_some_and(|h| h.newest().is_human(device))
     }
 
     /// A Commit of a session group was taken: one that removed and added the same device is a readmit.
-    pub(super) fn note_readmit(&mut self, ctx: &mut Ctx<'_>, group: &GroupId, adds: &[DeviceId], removes: &[DeviceId]) {
+    pub(super) fn note_readmit(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        group: &GroupId,
+        adds: &[DeviceId],
+        removes: &[DeviceId],
+    ) {
         for device in adds.iter().filter(|d| removes.contains(d)) {
             let w = &mut self.wishes;
             if w.readmitted.len() >= READMITTED_MAX {
@@ -191,25 +253,40 @@ impl Engine {
     fn drive_readmits(&mut self, ctx: &mut Ctx<'_>) {
         let due: Vec<(WishRow, u64)> = {
             let w = &mut self.wishes;
-            let (due, wait): (VecDeque<_>, VecDeque<_>) = w.readmits.drain(..).partition(|(_, from)| *from <= ctx.now);
+            let (due, wait): (VecDeque<_>, VecDeque<_>) =
+                w.readmits.drain(..).partition(|(_, from)| *from <= ctx.now);
             w.readmits = wait;
             due.into_iter().collect()
         };
         for (row, from) in due {
-            let (Some(group), Some(key_package)) = (row.group, row.key_package.as_ref()) else { continue };
+            let (Some(group), Some(key_package)) = (row.group, row.key_package.as_ref()) else {
+                continue;
+            };
             // (one that waited: answered only if nobody let the device in again meanwhile)
             let queued = from.saturating_sub(READMIT_GRACE_MS);
-            if self.wishes.readmitted.iter().any(|(g, d, at)| *g == group && *d == row.device && *at >= queued) {
+            if self
+                .wishes
+                .readmitted
+                .iter()
+                .any(|(g, d, at)| *g == group && *d == row.device && *at >= queued)
+            {
                 self.wishes.mark_answered(row.id);
                 continue;
             }
-            match self.device.readmit_human(&group, &row.device, key_package, ctx.now) {
+            match self
+                .device
+                .readmit_human(&group, &row.device, key_package, ctx.now)
+            {
                 Ok(_) => {
                     self.wishes.mark_answered(row.id);
-                    self.wishes.readmitted.push_back((group, row.device, ctx.now));
+                    self.wishes
+                        .readmitted
+                        .push_back((group, row.device, ctx.now));
                 }
                 // (the device is no human leaf of it now, or the hub holds its envelope beyond the Cut: not now)
-                Err(Error::BadCommit | Error::Forbidden | Error::NotFound) => self.wishes.mark_answered(row.id),
+                Err(Error::BadCommit | Error::Forbidden | Error::NotFound) => {
+                    self.wishes.mark_answered(row.id)
+                }
                 Err(e) => {
                     self.local(ctx, &e);
                     if self.stopped.is_some() {
@@ -223,8 +300,15 @@ impl Engine {
 
     /// The wishes for keys that wait, answered once the order is at rest.
     pub(super) fn drive_wishes(&mut self, ctx: &mut Ctx<'_>) {
-        if self.anchored_past_missing() { return; }
-        if (self.wishes.queue.is_empty() && self.wishes.readmits.is_empty()) || !self.caught_up || self.pass || !self.todo.is_empty() || self.repair.is_some() {
+        if self.anchored_past_missing() {
+            return;
+        }
+        if (self.wishes.queue.is_empty() && self.wishes.readmits.is_empty())
+            || !self.caught_up
+            || self.pass
+            || !self.todo.is_empty()
+            || self.repair.is_some()
+        {
             return;
         }
         self.drive_readmits(ctx);
@@ -232,7 +316,10 @@ impl Engine {
             return;
         }
         while let Some(row) = self.wishes.queue.pop_front() {
-            match self.device.answer_key_request(row.group.as_ref(), &row.device, ctx.now) {
+            match self
+                .device
+                .answer_key_request(row.group.as_ref(), &row.device, ctx.now)
+            {
                 Ok(made) if !made.is_empty() => self.wishes.mark_answered(row.id),
                 // (nothing to hand over now, answered within the hour, or no human device of the room as this
                 //  device knows it: the hub's list is read again with the next round)
@@ -258,9 +345,13 @@ impl Engine {
     pub(super) fn on_wishes(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>) {
         self.wishes.asked = None;
         // (a list not read is read with the next round)
-        let Ok(Answer::Wishes(rows)) = answer else { return };
+        let Ok(Answer::Wishes(rows)) = answer else {
+            return;
+        };
         for row in rows {
-            let fresh = row.at.is_some_and(|at| at.saturating_add(WISH_FRESH_MS) >= ctx.now);
+            let fresh = row
+                .at
+                .is_some_and(|at| at.saturating_add(WISH_FRESH_MS) >= ctx.now);
             if fresh && row.kind != WishRowKind::Session {
                 self.on_wish(ctx, row);
             }

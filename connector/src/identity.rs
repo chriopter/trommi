@@ -23,7 +23,11 @@ pub fn is_identity(v: &str) -> bool {
 /// was before when the ask's `agent` identity matches one: [`agent_identity`].)
 pub fn session_name(cfg: &Cfg) -> String {
     // (a chat agent's name as its setup gave it: "Hermes Einkauf")
-    if let Some(name) = std::env::var("TROMMI_AGENT_NAME").ok().map(|n| n.trim().chars().take(40).collect::<String>()).filter(|n| !n.is_empty()) {
+    if let Some(name) = std::env::var("TROMMI_AGENT_NAME")
+        .ok()
+        .map(|n| n.trim().chars().take(40).collect::<String>())
+        .filter(|n| !n.is_empty())
+    {
         return name;
     }
     cfg.folder

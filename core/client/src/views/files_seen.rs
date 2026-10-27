@@ -21,8 +21,12 @@ pub fn take() -> BTreeMap<String, Map<String, Value>> {
 
 /// A model attachment the views show.
 pub fn saw(attachment: &Value) {
-    let Some(a) = attachment.as_object() else { return };
-    let Some(id) = a.get("attachment_id").and_then(Value::as_str) else { return };
+    let Some(a) = attachment.as_object() else {
+        return;
+    };
+    let Some(id) = a.get("attachment_id").and_then(Value::as_str) else {
+        return;
+    };
     if a.get("file_key").is_none() {
         return;
     }

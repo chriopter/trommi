@@ -45,11 +45,11 @@ use crate::mls::profile::{
     MAX_COMMIT_REQUEST_LEN, MAX_HELPER_DEVICES, MAX_HUMAN_DEVICES, RECOVERY_KEY_LEN,
 };
 use crate::mls::provider::{self, DeviceSigner, MlsEntries, Provider};
-use crate::objects::Objects;
 use crate::mls::rules::{
     self, CommitFacts, Judged, Parent, RoomHistory, RoomState, SessionBefore, SessionFacts,
     Staleness, Verifier,
 };
+use crate::objects::Objects;
 use crate::recovery::{
     self, AuthMessage, CheckedRoom, CheckedSession, KeyContext, MacKeys, PlacedCommit, PublicRules,
     RecoveryJoin, RecoveryKeys, RecoveryMac, RecoveryPublic, Replacement, SealedKey, Sealing,
@@ -681,7 +681,9 @@ impl Staged {
                         ..
                     ]
             ) || matches!(key.as_slice(), [table::DEVICE, SUB_ANCHORED, ..])
-                && key.get(2..).is_some_and(|bytes| GroupId::from_bytes(bytes).is_ok_and(|group| group.is_room()))
+                && key.get(2..).is_some_and(|bytes| {
+                    GroupId::from_bytes(bytes).is_ok_and(|group| group.is_room())
+                })
         };
         self.put.iter().all(|(key, _)| allowed(key)) && self.delete.iter().all(allowed)
     }
@@ -2316,7 +2318,9 @@ impl<S: Storage> Device<S> {
                 .memory
                 .outbox
                 .values()
-                .filter(|entry| entry.kind == OutboxKind::RelayMessage && entry.group == Some(*group))
+                .filter(|entry| {
+                    entry.kind == OutboxKind::RelayMessage && entry.group == Some(*group)
+                })
                 .map(|entry| entry.id)
                 .collect();
             for id in &ids {
@@ -2857,11 +2861,19 @@ impl<S: Storage> Device<S> {
             // A copy staged by a build before this one may hold a group's objects in the record of the form
             // before, while the device holds them as entries by now: they become the group's entries.
             if let Some(group) = facts::whole_registers_of(&key) {
-                self.put_registers(batch, &group, &crate::registers::Registers::from_bytes(&value)?)?;
+                self.put_registers(
+                    batch,
+                    &group,
+                    &crate::registers::Registers::from_bytes(&value)?,
+                )?;
                 continue;
             }
             if let Some(group) = facts::whole_own_ids_of(&key) {
-                self.put_own_ids(batch, &group, &crate::registers::OwnIds::from_bytes(&value)?)?;
+                self.put_own_ids(
+                    batch,
+                    &group,
+                    &crate::registers::OwnIds::from_bytes(&value)?,
+                )?;
                 continue;
             }
             if let Some(group) = facts::whole_chains_of(&key) {
@@ -3332,7 +3344,11 @@ impl<S: Storage> Device<S> {
             if agent.is_some_and(|agent| !added.contains(agent)) {
                 return Err(Error::Incomplete);
             }
-            if !room.humans.iter().any(|h| *h == device.id || added.contains(h)) {
+            if !room
+                .humans
+                .iter()
+                .any(|h| *h == device.id || added.contains(h))
+            {
                 return Err(Error::Incomplete);
             }
             let mut id = [0u8; 16];
@@ -3710,14 +3726,20 @@ impl<S: Storage> Device<S> {
     /// Whether an anchored code sign-in still needs its verified pre-join room history before
     /// judging new membership changes. Ordinary device invites retain their authenticated origin.
     pub fn room_past_required(&self) -> Result<bool, Error> {
-        let Some(room) = self.memory.record.room.filter(|_| self.is_human()) else { return Ok(false) };
+        let Some(room) = self.memory.record.room.filter(|_| self.is_human()) else {
+            return Ok(false);
+        };
         let group = GroupId::room(room);
-        Ok(self.stored(&device_key(SUB_ANCHORED, group.as_bytes())).is_some()
+        Ok(self
+            .stored(&device_key(SUB_ANCHORED, group.as_bytes()))
+            .is_some()
             && self.origin(&group)?.is_some_and(|origin| !origin.learned))
     }
 
     fn require_room_past(&self) -> Result<(), Error> {
-        if self.room_past_required()? { return Err(Error::RoomBehind); }
+        if self.room_past_required()? {
+            return Err(Error::RoomBehind);
+        }
         Ok(())
     }
 
@@ -4134,7 +4156,8 @@ impl<S: Storage> Device<S> {
                 // agent's enrolment ahead of its session's Welcome: the Welcome is early, and taken again after
                 // the room (it uses up nothing). A device the room held and revoked is judged now. (A helper
                 // session's helper devices are in no room state.)
-                if session.parent.is_zero() && offending.iter().any(|device| !history.knows(device)) {
+                if session.parent.is_zero() && offending.iter().any(|device| !history.knows(device))
+                {
                     return Err(Error::RoomBehind);
                 }
                 meta.distrusted = closed || !offending.is_empty();
@@ -4557,7 +4580,9 @@ impl<S: Storage> Device<S> {
         links: &[Vec<u8>],
     ) -> Result<Option<[u8; 32]>, Error> {
         self.owner()?;
-        if !self.is_human() { return Err(Error::Forbidden); }
+        if !self.is_human() {
+            return Err(Error::Forbidden);
+        }
         let room = self.memory.record.room.ok_or(Error::NoRoom)?;
         let group = GroupId::room(room);
         if !self.group_past(&group)?.is_some_and(|past| past.learned) {
@@ -4566,10 +4591,14 @@ impl<S: Storage> Device<S> {
         let history = self.history()?;
         keys.check_room(&history.newest().room)?;
         let opened = recovery::open_links(keys, &room, links, &recovery::key_changes(history))?;
-        let own: Vec<_> = rows.iter().filter(|row| {
-            SealedKey::from_bytes(row).is_ok_and(|row| row.context.group == group)
-        }).cloned().collect();
-        let recovered = recovery::select_keys(&room, &own, &opened.openers, history, &|_, _| recovery::Began::Never)?;
+        let own: Vec<_> = rows
+            .iter()
+            .filter(|row| SealedKey::from_bytes(row).is_ok_and(|row| row.context.group == group))
+            .cloned()
+            .collect();
+        let recovered = recovery::select_keys(&room, &own, &opened.openers, history, &|_, _| {
+            recovery::Began::Never
+        })?;
         self.transact(|this, batch| {
             for key in recovered {
                 if this.keep_key(batch, &key.group, key.epoch, key.key) && !key.confirmed {

@@ -1,9 +1,9 @@
 //! The monitor's line (connector/src/line.rs): what a board event looks like in the terminal, and that the human's
 //! words in it cannot pass for anything else. Pure functions of the library, no hub and no room.
 use serde_json::{json, Value};
+use trommi_client_core::views::board::GOALS_LINES;
 use trommi_connector::line::{clean, goals_block, monitor_line, GOALS_GONE, HEAD, TAIL, TEXT_MAX};
 use trommi_connector::mirror::terminal_input;
-use trommi_client_core::views::board::GOALS_LINES;
 
 fn chat(text: &str) -> String {
     monitor_line(&json!({ "content": text, "meta": { "kind": "chat" }, "echo": { "text": text } }))

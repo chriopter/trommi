@@ -338,7 +338,10 @@ pub fn prompt_origin(prompt: &str, typed: bool) -> (&'static str, Vec<String>) {
     let mut cards = vec![];
     for t in tags.find_iter(prompt) {
         let tag = t.as_str();
-        let card = match (attr(tag, "card_id"), attr(tag, "helper").or_else(|| attr(tag, "session"))) {
+        let card = match (
+            attr(tag, "card_id"),
+            attr(tag, "helper").or_else(|| attr(tag, "session")),
+        ) {
             (Some(id), None) => id.chars().take(64).collect(),
             _ => String::new(),
         };
@@ -558,7 +561,11 @@ impl Mirror {
     /// a helper's event, one from another session) makes the turn one of more than a card.
     pub fn heard(&self, meta: Option<&Value>, own: bool) {
         let card = meta
-            .filter(|m| own && ["helper", "session"].iter().all(|k| m.get(*k).is_none_or(|s| s.is_null())))
+            .filter(|m| {
+                own && ["helper", "session"]
+                    .iter()
+                    .all(|k| m.get(*k).is_none_or(|s| s.is_null()))
+            })
             .and_then(|m| m.get("card_id"))
             .and_then(|v| v.as_str())
             .unwrap_or("");

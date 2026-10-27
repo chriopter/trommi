@@ -342,8 +342,13 @@ impl Config {
             apns_topics: list(env, "APPLE_APNS_TOPIC"),
             apns_hosts,
 
-            stt_key: optional("HUB_TINFOIL_API_KEY").filter(|_| !dry_run).map(Redacted),
-            stt_attestation_url: text("HUB_STT_ATTESTATION_URL", "https://atc.tinfoil.sh/attestation"),
+            stt_key: optional("HUB_TINFOIL_API_KEY")
+                .filter(|_| !dry_run)
+                .map(Redacted),
+            stt_attestation_url: text(
+                "HUB_STT_ATTESTATION_URL",
+                "https://atc.tinfoil.sh/attestation",
+            ),
             stt_extra_origins: list(env, "HUB_STT_EXTRA_ORIGINS"),
             stt_per_day: number(env, "HUB_LIMIT_STT_PER_DAY", 200),
             stt_at_once: number(env, "HUB_LIMIT_STT_AT_ONCE", 8),

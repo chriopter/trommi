@@ -98,13 +98,20 @@ impl Stores {
     /// Runs one store op to its end (for `DeviceApply`: durable on return).
     pub fn run(&mut self, op: StoreOp) -> IoResult<StoreAnswer> {
         if self.journal.is_poisoned() {
-            return IoResult::Err(failed(IoErrorKind::Failed, "an earlier store write failed; reopen the slot"));
+            return IoResult::Err(failed(
+                IoErrorKind::Failed,
+                "an earlier store write failed; reopen the slot",
+            ));
         }
         match op {
             StoreOp::Get { keys } => Ok(StoreAnswer::Values {
                 values: keys
                     .iter()
-                    .map(|key| self.journal.get(&journal_key(key)).map(|v| Bytes(v.to_vec())))
+                    .map(|key| {
+                        self.journal
+                            .get(&journal_key(key))
+                            .map(|v| Bytes(v.to_vec()))
+                    })
                     .collect(),
             }),
             StoreOp::Scan { prefix } => {
@@ -114,26 +121,47 @@ impl Stores {
                     .into_iter()
                     .filter_map(|(key, value)| {
                         let key = String::from_utf8(key.get(2..)?.to_vec()).ok()?;
-                        Some(Entry { key, value: value.to_vec().into() })
+                        Some(Entry {
+                            key,
+                            value: value.to_vec().into(),
+                        })
                     })
                     .collect();
                 Ok(StoreAnswer::Entries { entries })
             }
             StoreOp::Keys { prefix } => Ok(StoreAnswer::Keys {
-                keys:self.journal.keys(&journal_key(&prefix)).into_iter().filter_map(|key| String::from_utf8(key.get(2..)?.to_vec()).ok()).collect(),
+                keys: self
+                    .journal
+                    .keys(&journal_key(&prefix))
+                    .into_iter()
+                    .filter_map(|key| String::from_utf8(key.get(2..)?.to_vec()).ok())
+                    .collect(),
             }),
-            StoreOp::Put { put, delete } | StoreOp::PutDurable { put, delete } => self.journal_put(put, delete),
+            StoreOp::Put { put, delete } | StoreOp::PutDurable { put, delete } => {
+                self.journal_put(put, delete)
+            }
             StoreOp::DeviceLoad => self.device_load(),
-            StoreOp::DeviceApply { expected_revision, put, delete } => self.device_apply(expected_revision, put, delete),
+            StoreOp::DeviceApply {
+                expected_revision,
+                put,
+                delete,
+            } => self.device_apply(expected_revision, put, delete),
         }
         .into()
     }
 
-    fn journal_put(&mut self, put: Vec<Entry>, delete: Vec<String>) -> Result<StoreAnswer, IoError> {
+    fn journal_put(
+        &mut self,
+        put: Vec<Entry>,
+        delete: Vec<String>,
+    ) -> Result<StoreAnswer, IoError> {
         // Validate the entire batch before staging any mutation. Keep the legacy key contract.
         for key in put.iter().map(|entry| &entry.key).chain(delete.iter()) {
             if self.file_keys && file_name(key).is_none() {
-                return Err(failed(IoErrorKind::Failed, "a cache key is too long or empty"));
+                return Err(failed(
+                    IoErrorKind::Failed,
+                    "a cache key is too long or empty",
+                ));
             }
         }
         for key in delete {
@@ -189,7 +217,9 @@ impl Stores {
             })?;
         // the journal stages a batch; `commit` writes and syncs it. After a failure it stays poisoned: every
         // later op fails, and the shell opens the slot again.
-        self.journal.commit().map_err(|error| journal_error(error, "the device state was not written"))?;
+        self.journal
+            .commit()
+            .map_err(|error| journal_error(error, "the device state was not written"))?;
         Ok(StoreAnswer::Done)
     }
 }
@@ -233,7 +263,11 @@ const CACHE_MIGRATED: &[u8] = &[crate::journal::SIDE, b'm', b'c', 1];
 
 fn migrate_cache(journal: &Journal, dir: &Path) -> Result<(), OpenError> {
     let io = |error: std::io::Error| OpenError::Io(error.kind().to_string());
-    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir).map_err(io)?;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .map_err(io)?;
     let mut files = Vec::new();
     for entry in std::fs::read_dir(dir).map_err(io)? {
         let entry = entry.map_err(io)?;
@@ -243,19 +277,34 @@ fn migrate_cache(journal: &Journal, dir: &Path) -> Result<(), OpenError> {
     }
     match journal.get(CACHE_MIGRATED) {
         Some(marker) if marker.as_slice() == [1] => {}
-        Some(_) => return Err(OpenError::Damaged("the cache migration marker does not read".into())),
+        Some(_) => {
+            return Err(OpenError::Damaged(
+                "the cache migration marker does not read".into(),
+            ))
+        }
         None => {
             // Read everything before staging anything. A failed read cannot commit a partial import.
-            let entries = files.iter().map(|(key, path)| {
-                std::fs::read(path).map(|value| (journal_key(key), value)).map_err(io)
-            }).collect::<Result<Vec<_>, _>>()?;
-            for (key, value) in entries { journal.put(key, value); }
+            let entries = files
+                .iter()
+                .map(|(key, path)| {
+                    std::fs::read(path)
+                        .map(|value| (journal_key(key), value))
+                        .map_err(io)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            for (key, value) in entries {
+                journal.put(key, value);
+            }
             journal.put(CACHE_MIGRATED.to_vec(), vec![1]);
-            journal.commit().map_err(|error| OpenError::Io(error.to_string()))?;
+            journal
+                .commit()
+                .map_err(|error| OpenError::Io(error.to_string()))?;
         }
     }
     // Cleanup is after the durable marker. If interrupted, reopening repeats cleanup, never import.
-    for (_, path) in files { std::fs::remove_file(path).map_err(io)?; }
+    for (_, path) in files {
+        std::fs::remove_file(path).map_err(io)?;
+    }
     Ok(())
 }
 

@@ -54,7 +54,9 @@ struct SnapshotIn {
 }
 
 fn typed<V>(list: Vec<(String, Option<V>)>) -> BTreeMap<String, V> {
-    list.into_iter().filter_map(|(k, v)| Some((k, v?))).collect()
+    list.into_iter()
+        .filter_map(|(k, v)| Some((k, v?)))
+        .collect()
 }
 
 impl Model {
@@ -134,14 +136,13 @@ impl Model {
         self.notes = typed(v.notes);
         self.published = typed(v.published);
         self.human = typed(v.human);
-        self.device_register_groups = room.get("device_register_groups").cloned().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
+        self.device_register_groups = room
+            .get("device_register_groups")
+            .cloned()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
         self.timelines.clear();
-        for e in v
-            .timelines
-            .as_array()
-            .into_iter()
-            .flatten()
-        {
+        for e in v.timelines.as_array().into_iter().flatten() {
             let (Some(k), Some(meta)) = (e.get(0).and_then(Value::as_str), e.get(1)) else {
                 continue;
             };
@@ -185,7 +186,9 @@ impl Model {
         self.snooze_marked = self
             .cards
             .values()
-            .filter(|c| c.snoozed_until.is_some() || c.snoozed_at.is_some() || c.unsnoozed.is_some())
+            .filter(|c| {
+                c.snoozed_until.is_some() || c.snoozed_at.is_some() || c.unsnoozed.is_some()
+            })
             .map(|c| c.object_id.clone())
             .collect();
         for r in self.permissions.values_mut() {
@@ -234,11 +237,27 @@ mod tests {
         }))
         .unwrap();
         m.cards.insert("c1".into(), card);
-        m.members.insert("a1".into(), serde_json::from_value(json!({ "device_id": "a1", "device_role": "agent" })).unwrap());
-        m.sessions.insert("s1".into(), serde_json::from_value(json!({ "session_id": "s1" })).unwrap());
-        m.human.insert("star/c1".into(), serde_json::from_value(json!({ "value": true, "envelope_number": 3 })).unwrap());
-        let mut t = Timeline { timeline_key: "chat:s1".into(), item_count: 2, ..Timeline::default() };
-        for it in [json!({ "envelope_number": 4, "content": "hi" }), json!({ "local_id": "l1", "pending": true })] {
+        m.members.insert(
+            "a1".into(),
+            serde_json::from_value(json!({ "device_id": "a1", "device_role": "agent" })).unwrap(),
+        );
+        m.sessions.insert(
+            "s1".into(),
+            serde_json::from_value(json!({ "session_id": "s1" })).unwrap(),
+        );
+        m.human.insert(
+            "star/c1".into(),
+            serde_json::from_value(json!({ "value": true, "envelope_number": 3 })).unwrap(),
+        );
+        let mut t = Timeline {
+            timeline_key: "chat:s1".into(),
+            item_count: 2,
+            ..Timeline::default()
+        };
+        for it in [
+            json!({ "envelope_number": 4, "content": "hi" }),
+            json!({ "local_id": "l1", "pending": true }),
+        ] {
             let o = it.as_object().unwrap().clone();
             t.items.insert(ItemKey::of(&o), o);
         }
@@ -269,14 +288,30 @@ mod tests {
         assert_eq!(a.cards["c1"].fields.get("title"), json!("Ask"));
         assert!(!a.cards["c1"].catching_up);
         // (the fields as slots and a version's body as text read and write as the values they are)
-        assert_eq!(a.cards["c1"].fields.get("options"), json!([{ "key": "a", "label": "A" }]));
+        assert_eq!(
+            a.cards["c1"].fields.get("options"),
+            json!([{ "key": "a", "label": "A" }])
+        );
         assert_eq!(a.cards["c1"].fields.get("sections"), json!([]));
         assert_eq!(a.cards["c1"].fields.get("nothing"), Value::Null);
         assert_eq!(a.cards["c1"], m.cards["c1"].clone().tap_catching_up(false));
-        assert_eq!(a.cards["c1"].versions[0].content.as_ref().map(|c| c.obj()), json!({ "title": "Before" }).as_object().cloned());
+        assert_eq!(
+            a.cards["c1"].versions[0].content.as_ref().map(|c| c.obj()),
+            json!({ "title": "Before" }).as_object().cloned()
+        );
         let card = serde_json::to_value(&a.cards["c1"]).unwrap();
-        assert_eq!((card["options"].clone(), card["working"].clone(), card["versions"][0]["content"].clone()),
-            (json!([{ "key": "a", "label": "A" }]), Value::Null, json!({ "title": "Before" })));
+        assert_eq!(
+            (
+                card["options"].clone(),
+                card["working"].clone(),
+                card["versions"][0]["content"].clone()
+            ),
+            (
+                json!([{ "key": "a", "label": "A" }]),
+                Value::Null,
+                json!({ "title": "Before" })
+            )
+        );
         assert_eq!(a.timelines["chat:s1"].items.len(), 2);
         // (a pair whose value is null stands for no record; what is not a snapshot is refused)
         assert!(a.load_text(r#"{"cards":[["c2",null]]}"#).is_ok() && a.cards.is_empty());
@@ -294,7 +329,10 @@ mod tests {
         let text = m.patch_text(&c);
         let v = m.patch(&c);
         assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), v);
-        assert_eq!(v["cards"], json!([["c1", m.snapshot()["cards"][0][1]], ["gone", null]]));
+        assert_eq!(
+            v["cards"],
+            json!([["c1", m.snapshot()["cards"][0][1]], ["gone", null]])
+        );
         assert_eq!(v["timelines"][0]["meta"], Value::Null);
         assert_eq!(v["timelines"][1]["items"].as_array().map(Vec::len), Some(2));
     }
@@ -309,13 +347,23 @@ mod tests {
         let v = m.patch(&c);
         assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), v);
         let lean = &v["cards"][0][1];
-        assert_eq!((lean["lean"].clone(), lean["title"].clone(), lean["lazy"].clone()), (json!(true), json!("Ask"), json!(["options"])));
+        assert_eq!(
+            (
+                lean["lean"].clone(),
+                lean["title"].clone(),
+                lean["lazy"].clone()
+            ),
+            (json!(true), json!("Ask"), json!(["options"]))
+        );
         assert_eq!((lean.get("options"), lean.get("answers")), (None, None));
         assert_eq!(lean["sections"], json!([]));
         assert_eq!(lean["versions"][0].get("content"), None);
         assert_eq!(lean["versions"][0]["object_version"], json!(1));
         // (the history goes whole: a lean card's view lists every revision without reading the versions' bodies)
-        assert_eq!(lean["history"], json!([{ "object_version": 1, "envelope_number": 0, "sent_at": 0, "note": "", "title": "Before" }]));
+        assert_eq!(
+            lean["history"],
+            json!([{ "object_version": 1, "envelope_number": 0, "sent_at": 0, "note": "", "title": "Before" }])
+        );
         let whole: Value = serde_json::from_str(&m.card_json("c1")).unwrap();
         assert_eq!(whole, m.snapshot()["cards"][0][1]);
         assert_eq!(m.card_json("none"), "");

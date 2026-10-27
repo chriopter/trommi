@@ -1332,7 +1332,9 @@ impl Walked {
             first_epoch: observer.epoch()?,
             epochs: vec![WalkedEpoch {
                 leaves: observer.leaves()?.into_iter().collect(),
-                room_epoch: observer.history().map_or(0, |history| history.newest().epoch),
+                room_epoch: observer
+                    .history()
+                    .map_or(0, |history| history.newest().epoch),
                 change: 0,
                 end: None,
             }],
@@ -2005,7 +2007,9 @@ impl RoomCheck {
         // An anchor authenticates current roles, not whether a new role or recovery key was
         // used and revoked earlier. Obtain the verified prefix before judging such a change.
         if self.walked.first_epoch != 0
-            && (facts.external || !facts.adds.is_empty() || facts.context != rules::ContextChange::None)
+            && (facts.external
+                || !facts.adds.is_empty()
+                || facts.context != rules::ContextChange::None)
         {
             self.anchored = false;
             return Err(Error::RoomBehind);

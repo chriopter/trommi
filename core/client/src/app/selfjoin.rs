@@ -20,11 +20,20 @@ pub(super) struct SelfJoin {
 
 impl App {
     /// `AnswerAsk`: true when `action` was one.
-    pub(super) fn selfjoin_action(&mut self, now_ms: u64, action: &AccountAction, out: &mut Vec<Effect>) -> bool {
-        let AccountAction::AnswerAsk { nonce, allow } = action else { return false };
+    pub(super) fn selfjoin_action(
+        &mut self,
+        now_ms: u64,
+        action: &AccountAction,
+        out: &mut Vec<Effect>,
+    ) -> bool {
+        let AccountAction::AnswerAsk { nonce, allow } = action else {
+            return false;
+        };
         let (pending, _) = self.vouched_open();
         let asks = crate::selfjoin::asks(&self.board.model, &self.selfjoin.answered, &pending);
-        let Some(ask) = asks.into_iter().find(|a| a.nonce == *nonce) else { return true };
+        let Some(ask) = asks.into_iter().find(|a| a.nonce == *nonce) else {
+            return true;
+        };
         self.selfjoin.answered.insert(nonce.clone());
         let refused = match (&ask.refused, *allow) {
             (Some(why), _) => Some(why.clone()),
@@ -32,7 +41,13 @@ impl App {
             (None, true) => None,
         };
         if let Some(why) = refused {
-            self.answer_ask(now_ms, &ask.session_id, nonce, json!({ "refused": why }), out);
+            self.answer_ask(
+                now_ms,
+                &ask.session_id,
+                nonce,
+                json!({ "refused": why }),
+                out,
+            );
             return true;
         }
         let s = self.board.model.sessions.get(&ask.session_id);
@@ -41,19 +56,41 @@ impl App {
         // (where the person's ask for a new chat put it, else where the approved computer stands:
         //  `selfjoin::activation_place`)
         let used = self.invites.new_chats();
-        let (new_chat, team) = crate::selfjoin::activation_place(&self.board.model, &ask.session_id, &ask.ask, &used, now_ms);
+        let (new_chat, team) = crate::selfjoin::activation_place(
+            &self.board.model,
+            &ask.session_id,
+            &ask.ask,
+            &used,
+            now_ms,
+        );
         let vouch = Vouch {
             new_chat,
             nonce: nonce.clone(),
             session_id: ask.session_id.clone(),
             account: crate::machines::quota(&ask.session_id),
             account_label: "Approved computer".into(),
-            by_name: Some(text(&settings, "name")).filter(|n| !n.is_empty()).unwrap_or_else(|| text(&ask.ask, "vouched_by")),
-            machine: crate::machines::granted_device(&self.board.model, &ask.session_id).map(String::from),
+            by_name: Some(text(&settings, "name"))
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| text(&ask.ask, "vouched_by")),
+            machine: crate::machines::granted_device(&self.board.model, &ask.session_id)
+                .map(String::from),
         };
         let label: String = ask.name.chars().take(120).collect();
-        if !self.invite_open(now_ms, trommi_core::invite::Role::Agent, label, team, Some(vouch), out) {
-            self.answer_ask(now_ms, &ask.session_id, nonce, json!({ "refused": "busy" }), out);
+        if !self.invite_open(
+            now_ms,
+            trommi_core::invite::Role::Agent,
+            label,
+            team,
+            Some(vouch),
+            out,
+        ) {
+            self.answer_ask(
+                now_ms,
+                &ask.session_id,
+                nonce,
+                json!({ "refused": "busy" }),
+                out,
+            );
         }
         true
     }
@@ -66,15 +103,34 @@ impl App {
         let states = self.vouched_states();
         crate::selfjoin::join_rows(&self.board.model, &states)
             .into_iter()
-            .filter(|r| r.state == "joining" && crate::machines::approved(&self.board.model, &r.session_id))
+            .filter(|r| {
+                r.state == "joining" && crate::machines::approved(&self.board.model, &r.session_id)
+            })
             .map(|r| {
-                let place = if r.folder.is_empty() { r.name.clone() } else { r.folder.clone() };
-                let on = if r.host.is_empty() { String::new() } else { format!(" on {}", r.host) };
-                let by = if r.by.is_empty() { String::new() } else { format!(", vouched for by {}", r.by) };
+                let place = if r.folder.is_empty() {
+                    r.name.clone()
+                } else {
+                    r.folder.clone()
+                };
+                let on = if r.host.is_empty() {
+                    String::new()
+                } else {
+                    format!(" on {}", r.host)
+                };
+                let by = if r.by.is_empty() {
+                    String::new()
+                } else {
+                    format!(", vouched for by {}", r.by)
+                };
                 let says = crate::views::words::say(
                     "join.ask",
                     format!("New {} session in {place}{on}{by}", r.kind),
-                    &[("kind", &r.kind), ("place", &place), ("host", &r.host), ("by", &r.by)],
+                    &[
+                        ("kind", &r.kind),
+                        ("place", &place),
+                        ("host", &r.host),
+                        ("by", &r.by),
+                    ],
                 );
                 crate::views::AskView {
                     nonce: r.nonce,
@@ -91,7 +147,14 @@ impl App {
             .collect()
     }
 
-    fn answer_ask(&mut self, now_ms: u64, session_id: &str, nonce: &str, value: Value, out: &mut Vec<Effect>) {
+    fn answer_ask(
+        &mut self,
+        now_ms: u64,
+        session_id: &str,
+        nonce: &str,
+        value: Value,
+        out: &mut Vec<Effect>,
+    ) {
         self.doing(now_ms, out, |doing| {
             doing.session_register(session_id, &format!("join_link/{nonce}"), &value);
         });
@@ -104,34 +167,69 @@ impl App {
             return;
         }
         let (pending, waiting) = self.vouched_open();
-        let refusals: Vec<(String, String, String)> = crate::selfjoin::asks(&self.board.model, &self.selfjoin.answered, &pending)
-            .into_iter()
-            .filter_map(|a| a.refused.filter(|why| why != "computer-required").map(|why| (a.session_id, a.nonce, why)))
-            .collect();
+        let refusals: Vec<(String, String, String)> =
+            crate::selfjoin::asks(&self.board.model, &self.selfjoin.answered, &pending)
+                .into_iter()
+                .filter_map(|a| {
+                    a.refused
+                        .filter(|why| why != "computer-required")
+                        .map(|why| (a.session_id, a.nonce, why))
+                })
+                .collect();
         for (session, nonce, why) in refusals {
             self.selfjoin.answered.insert(nonce.clone());
             self.answer_ask(now_ms, &session, &nonce, json!({ "refused": why }), out);
         }
-        let allowed: Vec<String> = crate::selfjoin::asks(&self.board.model, &self.selfjoin.answered, &pending)
-            .into_iter().filter(|a| a.refused.is_none()).map(|a| a.nonce).collect();
+        let allowed: Vec<String> =
+            crate::selfjoin::asks(&self.board.model, &self.selfjoin.answered, &pending)
+                .into_iter()
+                .filter(|a| a.refused.is_none())
+                .map(|a| a.nonce)
+                .collect();
         for nonce in allowed {
-            self.selfjoin_action(now_ms, &AccountAction::AnswerAsk { nonce, allow: true }, out);
+            self.selfjoin_action(
+                now_ms,
+                &AccountAction::AnswerAsk { nonce, allow: true },
+                out,
+            );
         }
         for (invite_id, vouch, hash) in waiting {
             if self.selfjoin.decided.contains(&invite_id) {
                 continue;
             }
-            let Some(verdict) = crate::selfjoin::verdict(&self.board.model, &vouch.session_id, &vouch.nonce, &hash) else { continue };
+            let Some(verdict) =
+                crate::selfjoin::verdict(&self.board.model, &vouch.session_id, &vouch.nonce, &hash)
+            else {
+                continue;
+            };
             self.selfjoin.decided.insert(invite_id.clone());
             self.invite_confirm(now_ms, &invite_id, verdict, out);
         }
-        let enrolled: BTreeSet<String> = self.engine.as_ref().map(|e| e.roles().1).unwrap_or_default()
-            .iter().map(|a| crate::engine::feed::hex(a.as_bytes())).collect();
-        let retiring = crate::selfjoin::to_retire(&self.board.model).into_iter()
-            .chain(crate::machines::retired_children(&self.board.model, &enrolled));
-        let devices: Vec<String> = retiring.filter(|d| enrolled.contains(d) && self.selfjoin.retiring.insert(d.clone())).collect();
+        let enrolled: BTreeSet<String> = self
+            .engine
+            .as_ref()
+            .map(|e| e.roles().1)
+            .unwrap_or_default()
+            .iter()
+            .map(|a| crate::engine::feed::hex(a.as_bytes()))
+            .collect();
+        let retiring = crate::selfjoin::to_retire(&self.board.model)
+            .into_iter()
+            .chain(crate::machines::retired_children(
+                &self.board.model,
+                &enrolled,
+            ));
+        let devices: Vec<String> = retiring
+            .filter(|d| enrolled.contains(d) && self.selfjoin.retiring.insert(d.clone()))
+            .collect();
         if !devices.is_empty() {
-            self.account_step(now_ms, &AccountAction::RemoveDevices { device_ids: devices }, out);
+            self.account_step(
+                now_ms,
+                &AccountAction::RemoveDevices {
+                    device_ids: devices,
+                },
+                out,
+            );
         }
     }
 }

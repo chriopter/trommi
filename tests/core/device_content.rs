@@ -814,7 +814,13 @@ fn what_fails_checks_seven_to_nine_is_chained_and_never_applied() {
     // names: that one is the hub's word alone.
     let ahead = f
         .reader
-        .receive_envelope(&note.encode().unwrap(), got.change + 1_000_000, false, None, now())
+        .receive_envelope(
+            &note.encode().unwrap(),
+            got.change + 1_000_000,
+            false,
+            None,
+            now(),
+        )
         .unwrap();
     assert_eq!((full.change, ahead.change), (got.change, got.change));
     // A kind of a newer Trommi is chained and nothing else.
@@ -1366,22 +1372,47 @@ fn an_answer_preview_is_relayed_from_the_sessions_agent() {
     let mut sizes = Vec::new();
     for (number, words) in [(1u32, ""), (2, "Sonnig"), (3, &*"lang ".repeat(1_200))] {
         let preview = trommi_client_core::live_answer::encode(words);
-        w.agent.send_answer_preview(&w.group, &turn, number, &preview).unwrap();
+        w.agent
+            .send_answer_preview(&w.group, &turn, number, &preview)
+            .unwrap();
         trommi_tests::post_ok(&mut w.hub, &mut w.agent);
         let (group, relayed) = w.hub.relayed.last().unwrap().clone();
         assert_eq!(group, w.group);
         sizes.push(relayed.len());
         let cursor = other.cursor();
         let got = other.receive_relay(&group, &relayed, now()).unwrap();
-        assert_eq!(got, Some(Received::AnswerPreview { from: w.agent.id(), turn, number, preview: preview.clone() }));
+        assert_eq!(
+            got,
+            Some(Received::AnswerPreview {
+                from: w.agent.id(),
+                turn,
+                number,
+                preview: preview.clone()
+            })
+        );
         assert_eq!(other.cursor(), cursor, "not in the log");
-        assert_eq!(trommi_client_core::live_answer::decode(&preview).as_deref(), Some(trommi_client_core::live_answer::tail(words)));
+        assert_eq!(
+            trommi_client_core::live_answer::decode(&preview).as_deref(),
+            Some(trommi_client_core::live_answer::tail(words))
+        );
     }
-    assert!(sizes.windows(2).all(|p| p[0] == p[1]), "every preview the same size: {sizes:?}");
+    assert!(
+        sizes.windows(2).all(|p| p[0] == p[1]),
+        "every preview the same size: {sizes:?}"
+    );
     // a human device sends none, and none in the room group; number 0 is no preview
-    assert_eq!(w.human.send_answer_preview(&w.group, &turn, 1, b"{}"), Err(Error::Forbidden));
-    assert_eq!(w.agent.send_answer_preview(&w.room, &turn, 1, b"{}"), Err(Error::Forbidden));
-    assert_eq!(w.agent.send_answer_preview(&w.group, &turn, 0, b"{}"), Err(Error::BadFormat));
+    assert_eq!(
+        w.human.send_answer_preview(&w.group, &turn, 1, b"{}"),
+        Err(Error::Forbidden)
+    );
+    assert_eq!(
+        w.agent.send_answer_preview(&w.room, &turn, 1, b"{}"),
+        Err(Error::Forbidden)
+    );
+    assert_eq!(
+        w.agent.send_answer_preview(&w.group, &turn, 0, b"{}"),
+        Err(Error::BadFormat)
+    );
 }
 
 /// 7.0: an application message is padded to its bucket: pieces of different lengths in one bucket travel alike,
@@ -1998,9 +2029,20 @@ fn a_cut_drops_another_envelope_under_its_own_number() {
     hub.post(&pen.id(), &posting(&accepted)).unwrap();
     let accepted = hub.content.envelopes.last().unwrap().clone();
     take_envelope(&mut a, &accepted);
-    let forked = fork.sign(&claim, &register_draft(1, NAME, Some("fork"), 5), &Objects::new(), now());
+    let forked = fork.sign(
+        &claim,
+        &register_draft(1, NAME, Some("fork"), 5),
+        &Objects::new(),
+        now(),
+    );
     let got = b
-        .receive_envelope(&forked.encode().unwrap(), accepted.change, false, None, now())
+        .receive_envelope(
+            &forked.encode().unwrap(),
+            accepted.change,
+            false,
+            None,
+            now(),
+        )
         .unwrap();
     assert!(got.register.as_ref().unwrap().current);
     // a removes the pen's device with its Cut at 1, naming the envelope it accepted
@@ -2034,7 +2076,10 @@ fn a_cut_drops_another_envelope_under_its_own_number() {
     let mut seen = false;
     for got in sync_all(&hub, &mut b) {
         if let Some(r) = got.register.as_ref().filter(|r| r.name == NAME) {
-            assert!(r.current, "the fork under the Cut's number is gone from the overlay");
+            assert!(
+                r.current,
+                "the fork under the Cut's number is gone from the overlay"
+            );
             seen = true;
         }
     }
@@ -2064,16 +2109,27 @@ fn a_dropped_receipt_takes_its_mark_back() {
     assert!(got.register.as_ref().unwrap().current);
     shown.take(&got);
     let session = hex(w.session.as_bytes());
-    assert_eq!(shown.0.sessions.get(&session).and_then(|s| s.heard_up_to), Some(100));
+    assert_eq!(
+        shown.0.sessions.get(&session).and_then(|s| s.heard_up_to),
+        Some(100)
+    );
     // the chain reaches its number as a void record
-    let pruned = Envelope::decode(&heard.bytes).unwrap().prune().unwrap().encode().unwrap();
+    let pruned = Envelope::decode(&heard.bytes)
+        .unwrap()
+        .prune()
+        .unwrap()
+        .encode()
+        .unwrap();
     let got = other
         .receive_envelope(&pruned, heard.change, true, Some(&Error::TooLarge), now())
         .unwrap();
     assert_eq!(got.outcome, EnvelopeOutcome::Void);
     assert_eq!(got.shown.len(), 1);
     shown.take(&got);
-    assert_eq!(shown.0.sessions.get(&session).and_then(|s| s.heard_up_to), None);
+    assert_eq!(
+        shown.0.sessions.get(&session).and_then(|s| s.heard_up_to),
+        None
+    );
 }
 
 #[test]
@@ -2082,20 +2138,35 @@ fn one_more_room_register_does_not_rewrite_the_existing_registers() {
     let mut human = trommi_tests::new_device_on(store.handle());
     let (mut hub, room) = found_room(&mut human);
     for n in 0..64 {
-        write(&mut hub, &mut human, &Draft::Register {
-            group: room, name: format!("star/{n:032x}"), value: Some(json(r#"{"at":1}"#)),
-        });
+        write(
+            &mut hub,
+            &mut human,
+            &Draft::Register {
+                group: room,
+                name: format!("star/{n:032x}"),
+                value: Some(json(r#"{"at":1}"#)),
+            },
+        );
         sync_all(&hub, &mut human);
     }
     let before = store.table_written(trommi_core::store::table::REGISTER);
-    write(&mut hub, &mut human, &Draft::Register {
-        group: room, name: format!("star/{:032x}", 64), value: Some(json(r#"{"at":1}"#)),
-    });
+    write(
+        &mut hub,
+        &mut human,
+        &Draft::Register {
+            group: room,
+            name: format!("star/{:032x}", 64),
+            value: Some(json(r#"{"at":1}"#)),
+        },
+    );
     sync_all(&hub, &mut human);
     let after = store.table_written(trommi_core::store::table::REGISTER);
     let (puts, bytes) = (after.0 - before.0, after.1 - before.1);
     println!("one register update after64names: {puts} puts / {bytes} bytes");
-    assert!(bytes < 2_000, "one update must not carry every existing value: {bytes} bytes");
+    assert!(
+        bytes < 2_000,
+        "one update must not carry every existing value: {bytes} bytes"
+    );
 }
 
 #[test]
@@ -2106,35 +2177,74 @@ fn legacy_chain_and_register_records_migrate_atomically_and_reopen() {
     let store = trommi_tests::MemoryStorage::new();
     let mut human = trommi_tests::new_device_on(store.handle());
     let (mut hub, room) = found_room(&mut human);
-    let key = |table: u8, sub: u8| {
-        [&[table, sub, room.as_bytes().len() as u8], room.as_bytes()].concat()
-    };
+    let key =
+        |table: u8, sub: u8| [&[table, sub, room.as_bytes().len() as u8], room.as_bytes()].concat();
     let legacy = [
         (key(table::CHAIN, 2), Chains::new().to_bytes().unwrap()),
-        (key(table::REGISTER, 0), Registers::new().to_bytes().unwrap()),
+        (
+            key(table::REGISTER, 0),
+            Registers::new().to_bytes().unwrap(),
+        ),
         (key(table::REGISTER, 1), OwnIds::new().to_bytes().unwrap()),
     ];
     drop(human);
-    store.rewrite(|entries| { for (key, value) in &legacy { entries.insert(key.clone(), value.clone()); } });
+    store.rewrite(|entries| {
+        for (key, value) in &legacy {
+            entries.insert(key.clone(), value.clone());
+        }
+    });
     let mut human = trommi_tests::reopen(store.handle()).unwrap();
     let name = "star/00000000000000000000000000000001";
-    let draft = Draft::Register { group: room, name: name.into(), value: Some(json(r#"{"at":1}"#)) };
+    let draft = Draft::Register {
+        group: room,
+        name: name.into(),
+        value: Some(json(r#"{"at":1}"#)),
+    };
     store.fail_apply(1);
-    assert!(matches!(human.seal(&draft, None, &[], now()), Err(Error::Storage(_))));
-    for (key, value) in &legacy { assert_eq!(store.get(key).as_ref(), Some(value)); }
+    assert!(matches!(
+        human.seal(&draft, None, &[], now()),
+        Err(Error::Storage(_))
+    ));
+    for (key, value) in &legacy {
+        assert_eq!(store.get(key).as_ref(), Some(value));
+    }
     let sent = write(&mut hub, &mut human, &draft);
-    let envelope = hub.changes_after(human.cursor()).into_iter().find_map(|change| match change {
-        trommi_tests::hub::content::Change::Envelope(envelope) if envelope.hash == sent.envelope_hash => Some(envelope),
-        _ => None,
-    }).unwrap();
+    let envelope = hub
+        .changes_after(human.cursor())
+        .into_iter()
+        .find_map(|change| match change {
+            trommi_tests::hub::content::Change::Envelope(envelope)
+                if envelope.hash == sent.envelope_hash =>
+            {
+                Some(envelope)
+            }
+            _ => None,
+        })
+        .unwrap();
     store.fail_apply(1);
-    assert!(matches!(human.receive_envelope(&envelope.bytes, envelope.change, true, None, now()), Err(Error::Storage(_))));
-    for (key, value) in legacy.iter().take(2) { assert_eq!(store.get(key).as_ref(), Some(value)); }
-    assert_eq!(human.receive_envelope(&envelope.bytes, envelope.change, true, None, now()).unwrap().outcome, EnvelopeOutcome::Applied);
-    for (key, _) in &legacy { assert!(store.get(key).is_none()); }
+    assert!(matches!(
+        human.receive_envelope(&envelope.bytes, envelope.change, true, None, now()),
+        Err(Error::Storage(_))
+    ));
+    for (key, value) in legacy.iter().take(2) {
+        assert_eq!(store.get(key).as_ref(), Some(value));
+    }
+    assert_eq!(
+        human
+            .receive_envelope(&envelope.bytes, envelope.change, true, None, now())
+            .unwrap()
+            .outcome,
+        EnvelopeOutcome::Applied
+    );
+    for (key, _) in &legacy {
+        assert!(store.get(key).is_none());
+    }
     drop(human);
     let human = trommi_tests::reopen(store.reopened()).unwrap();
-    assert_eq!(human.register(&room, name).unwrap().unwrap().expose(), br#"{"at":1}"#);
+    assert_eq!(
+        human.register(&room, name).unwrap().unwrap().expose(),
+        br#"{"at":1}"#
+    );
 }
 
 #[test]
@@ -2142,17 +2252,30 @@ fn malformed_component_group_keys_are_storage_errors() {
     let store = trommi_tests::MemoryStorage::new();
     let mut human = trommi_tests::new_device_on(store.handle());
     let (mut hub, room) = found_room(&mut human);
-    write(&mut hub, &mut human, &Draft::Register {
-        group: room, name: "star/00000000000000000000000000000001".into(), value: Some(json(r#"{"at":1}"#)),
-    });
+    write(
+        &mut hub,
+        &mut human,
+        &Draft::Register {
+            group: room,
+            name: "star/00000000000000000000000000000001".into(),
+            value: Some(json(r#"{"at":1}"#)),
+        },
+    );
     sync_all(&hub, &mut human);
     drop(human);
     store.rewrite(|entries| {
-        let key = entries.keys().find(|key| key.starts_with(&[trommi_core::store::table::REGISTER, 3])).unwrap().clone();
+        let key = entries
+            .keys()
+            .find(|key| key.starts_with(&[trommi_core::store::table::REGISTER, 3]))
+            .unwrap()
+            .clone();
         let value = entries.remove(&key).unwrap();
         let mut bad = key;
         *bad.get_mut(2).unwrap() = 255;
         entries.insert(bad, value);
     });
-    assert!(matches!(trommi_tests::reopen(store), Err(Error::Storage(_))));
+    assert!(matches!(
+        trommi_tests::reopen(store),
+        Err(Error::Storage(_))
+    ));
 }

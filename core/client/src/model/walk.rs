@@ -15,7 +15,11 @@ fn walk_card(c: &Card) -> WalkCard {
         object_id: c.object_id.clone(),
         info: loading || newer || c.field("card_type").as_str() == Some("info"),
         permission: false,
-        urgency: Some(if loading { "normal".into() } else { c.urgency.clone() }),
+        urgency: Some(if loading {
+            "normal".into()
+        } else {
+            c.urgency.clone()
+        }),
         first_change: c.first_envelope_number,
     }
 }
@@ -62,7 +66,10 @@ impl Model {
 
     /// The walk of every team, by id.
     pub fn walk(&self, within: Option<&[String]>) -> Vec<String> {
-        self.walk_cards(within).into_iter().map(|c| c.object_id).collect()
+        self.walk_cards(within)
+            .into_iter()
+            .map(|c| c.object_id)
+            .collect()
     }
 
     /// The open question to offer after `card` (just decided, or still open): the next in the Desk's order among the
@@ -123,14 +130,22 @@ mod tests {
         let p: PermissionRequest = serde_json::from_value(json!({ "object_id": "perm", "agent_device_id": "a1", "sent_at": 7, "envelope_number": 7, "permission_state": "pending" })).unwrap();
         m.permissions.insert("perm".into(), p);
         m.open_permission_ids.push("perm".into());
-        assert_eq!(m.walk(None), ["perm", "block", "hinfo", "knock", "note2", "note1", "old", "new"]);
+        assert_eq!(
+            m.walk(None),
+            ["perm", "block", "hinfo", "knock", "note2", "note1", "old", "new"]
+        );
     }
 
     #[test]
     fn with_its_agent_or_off_the_stack_is_not_in_the_walk() {
-        let mut m = model(vec![card("a", "normal", 1, false), card("b", "normal", 2, false)]);
-        m.cards.get_mut("a").unwrap().in_revision = Some(serde_json::from_value(json!({ "envelope_number": 3 })).unwrap());
-        m.cards.insert("snoozed".into(), card("snoozed", "critical", 0, false));
+        let mut m = model(vec![
+            card("a", "normal", 1, false),
+            card("b", "normal", 2, false),
+        ]);
+        m.cards.get_mut("a").unwrap().in_revision =
+            Some(serde_json::from_value(json!({ "envelope_number": 3 })).unwrap());
+        m.cards
+            .insert("snoozed".into(), card("snoozed", "critical", 0, false));
         assert_eq!(m.walk(None), ["b"]);
     }
 
@@ -164,31 +179,47 @@ mod tests {
 
     #[test]
     fn what_in_blitz_leaves_the_walk_and_leads_on_to_the_next_question() {
-        let mut m = model(vec![card("a", "normal", 1, false), card("b", "normal", 2, false), card("c", "normal", 3, false)]);
+        let mut m = model(vec![
+            card("a", "normal", 1, false),
+            card("b", "normal", 2, false),
+            card("c", "normal", 3, false),
+        ]);
         assert_eq!(m.next_open_after("b", None).as_deref(), Some("c"));
         // What?? (a hand-back without rework): b is with its agent, off the walk, and the way on is still c, never the end
-        m.cards.get_mut("b").unwrap().in_revision = Some(serde_json::from_value(json!({ "envelope_number": 4 })).unwrap());
+        m.cards.get_mut("b").unwrap().in_revision =
+            Some(serde_json::from_value(json!({ "envelope_number": 4 })).unwrap());
         assert_eq!(m.walk(None), ["a", "c"]);
         assert_eq!(m.next_open_after("b", None).as_deref(), Some("c"));
         // the last one asked about: round to the first that still waits
-        m.cards.get_mut("c").unwrap().in_revision = Some(serde_json::from_value(json!({ "envelope_number": 5 })).unwrap());
+        m.cards.get_mut("c").unwrap().in_revision =
+            Some(serde_json::from_value(json!({ "envelope_number": 5 })).unwrap());
         assert_eq!(m.next_open_after("c", None).as_deref(), Some("a"));
     }
 
     #[test]
     fn a_more_urgent_card_decided_leads_to_the_top_of_the_rest() {
-        let mut m = model(vec![card("crit", "critical", 9, false), card("n1", "normal", 1, false), card("n2", "normal", 2, false)]);
+        let mut m = model(vec![
+            card("crit", "critical", 9, false),
+            card("n1", "normal", 1, false),
+            card("n2", "normal", 2, false),
+        ]);
         m.stack.retain(|id| id != "crit");
         assert_eq!(m.next_open_after("crit", None).as_deref(), Some("n1"));
         // an info decided (read) leads to the decisions of its band, oldest first
-        let mut m = model(vec![card("i", "normal", 5, true), card("n1", "normal", 1, false)]);
+        let mut m = model(vec![
+            card("i", "normal", 5, true),
+            card("n1", "normal", 1, false),
+        ]);
         m.stack.retain(|id| id != "i");
         assert_eq!(m.next_open_after("i", None).as_deref(), Some("n1"));
     }
 
     #[test]
     fn a_card_not_read_yet_waits_as_a_quiet_info() {
-        let mut m = model(vec![card("n1", "normal", 1, false), card("dark", "critical", 2, false)]);
+        let mut m = model(vec![
+            card("n1", "normal", 1, false),
+            card("dark", "critical", 2, false),
+        ]);
         m.cards.get_mut("dark").unwrap().content_state = "header".into();
         assert_eq!(m.walk(None), ["dark", "n1"]);
         m.cards.get_mut("dark").unwrap().content_state = "ok".into();
@@ -201,7 +232,10 @@ mod tests {
 
     #[test]
     fn a_null_unsupported_is_a_card_as_any() {
-        let mut m = model(vec![card("i", "normal", 5, true), card("d", "normal", 1, false)]);
+        let mut m = model(vec![
+            card("i", "normal", 5, true),
+            card("d", "normal", 1, false),
+        ]);
         m.cards.get_mut("d").unwrap().unsupported = Some(Value::Null);
         assert_eq!(m.walk(None), ["i", "d"]);
         m.cards.get_mut("d").unwrap().unsupported = Some(Value::from("card_type"));

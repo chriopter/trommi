@@ -36,7 +36,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use trommi_client_core::app::io::{Header, HttpRequest, HttpResponse, IoError, StreamItem};
 use trommi_core::envelope::Envelope;
 use trommi_core::hub_auth::{self, HubAddress, IssuedChallenge, SignedHubAuth};
-use trommi_core::ids::{base64url_decode, base64url_encode as b64, DeviceId, GroupId, RoomId, SessionId};
+use trommi_core::ids::{
+    base64url_decode, base64url_encode as b64, DeviceId, GroupId, RoomId, SessionId,
+};
 use trommi_core::mls::observer::{Context, Observer, PostedCommit};
 use trommi_core::mls::profile::MAX_HUMAN_DEVICES;
 use trommi_core::mls::rules::{Parent, SessionFacts};
@@ -54,8 +56,24 @@ pub const DESK_REGISTERS: usize = 20_000;
 /// One entry of the room's order.
 #[derive(Clone)]
 pub enum Item {
-    Log { change: u64, group: GroupId, n: u64, epoch: u64, commit: bool, bytes: Vec<u8>, recovery_auth: Option<Vec<u8>>, from: DeviceId },
-    Envelope { change: u64, group: GroupId, sender: DeviceId, seq: u64, bytes: Vec<u8>, void_code: Option<String> },
+    Log {
+        change: u64,
+        group: GroupId,
+        n: u64,
+        epoch: u64,
+        commit: bool,
+        bytes: Vec<u8>,
+        recovery_auth: Option<Vec<u8>>,
+        from: DeviceId,
+    },
+    Envelope {
+        change: u64,
+        group: GroupId,
+        sender: DeviceId,
+        seq: u64,
+        bytes: Vec<u8>,
+        void_code: Option<String>,
+    },
 }
 
 impl Item {
@@ -71,7 +89,16 @@ impl Item {
     }
     pub fn json(&self) -> Value {
         match self {
-            Item::Log { change, group, n, epoch, commit, bytes, recovery_auth, from } => {
+            Item::Log {
+                change,
+                group,
+                n,
+                epoch,
+                commit,
+                bytes,
+                recovery_auth,
+                from,
+            } => {
                 let mut v = json!({ "change": change, "kind": if *commit { "commit" } else { "message" }, "group_id": b64(group.as_bytes()),
                     "n": n, "epoch": epoch, "at": 0, "bytes": b64(bytes), "sender": from.to_base64url() });
                 if let Some(auth) = recovery_auth {
@@ -88,7 +115,15 @@ impl Item {
     }
     /// An envelope as a route serves it that brings envelopes alone (the Desk, an object, a Chat).
     pub fn served(&self) -> Value {
-        let Item::Envelope { change, bytes, void_code, .. } = self else { return self.json() };
+        let Item::Envelope {
+            change,
+            bytes,
+            void_code,
+            ..
+        } = self
+        else {
+            return self.json();
+        };
         let mut v = json!({ "change": change, "envelope": b64(bytes), "received_at": 0 });
         if let Some(code) = void_code {
             v["void_code"] = json!(code);
@@ -105,8 +140,17 @@ impl Item {
     }
     /// As the stream sends it.
     pub fn sse(&self) -> Vec<u8> {
-        let name = if matches!(self, Item::Envelope { .. }) { "envelope" } else { "log" };
-        format!("id: {}\nevent: {name}\ndata: {}\n\n", self.change(), self.json()).into_bytes()
+        let name = if matches!(self, Item::Envelope { .. }) {
+            "envelope"
+        } else {
+            "log"
+        };
+        format!(
+            "id: {}\nevent: {name}\ndata: {}\n\n",
+            self.change(),
+            self.json()
+        )
+        .into_bytes()
     }
 }
 
@@ -163,7 +207,10 @@ struct Sessions<'a> {
 
 impl Sessions<'_> {
     fn live(&self) -> impl Iterator<Item = &Observer> {
-        self.sessions.iter().filter(|(group, _)| !self.archived.contains(group)).map(|(_, o)| o)
+        self.sessions
+            .iter()
+            .filter(|(group, _)| !self.archived.contains(group))
+            .map(|(_, o)| o)
     }
 }
 
@@ -179,7 +226,9 @@ impl SessionFacts for Sessions<'_> {
             .find_map(|o| o.session().map(|s| s.session_id))
     }
     fn live_helpers(&self, parent: &SessionId) -> usize {
-        self.live().filter(|o| o.session().is_some_and(|s| s.parent == *parent)).count()
+        self.live()
+            .filter(|o| o.session().is_some_and(|s| s.parent == *parent))
+            .count()
     }
 }
 
@@ -352,26 +401,39 @@ impl Default for Hub {
 
 /// The board an item of the order belongs to, if it is a board item.
 fn board_of(item: &Item) -> Option<trommi_core::ids::BoardId> {
-    let Item::Envelope { bytes, .. } = item else { return None };
+    let Item::Envelope { bytes, .. } = item else {
+        return None;
+    };
     match Envelope::decode(bytes).ok()?.header.subject {
-        trommi_core::envelope::Subject::Item(trommi_core::envelope::Timeline::Board(board)) => Some(board),
+        trommi_core::envelope::Subject::Item(trommi_core::envelope::Timeline::Board(board)) => {
+            Some(board)
+        }
         _ => None,
     }
 }
 
 /// The Chat an item is of: (a session's, its id or the card's id as bytes).
 fn chat_of(item: &Item) -> Option<(bool, Vec<u8>)> {
-    let Item::Envelope { bytes, .. } = item else { return None };
+    let Item::Envelope { bytes, .. } = item else {
+        return None;
+    };
     match Envelope::decode(bytes).ok()?.header.subject {
-        trommi_core::envelope::Subject::Item(trommi_core::envelope::Timeline::SessionChat(s)) => Some((true, s.as_bytes().to_vec())),
-        trommi_core::envelope::Subject::Item(trommi_core::envelope::Timeline::CardChat(c)) => Some((false, c.as_bytes().to_vec())),
+        trommi_core::envelope::Subject::Item(trommi_core::envelope::Timeline::SessionChat(s)) => {
+            Some((true, s.as_bytes().to_vec()))
+        }
+        trommi_core::envelope::Subject::Item(trommi_core::envelope::Timeline::CardChat(c)) => {
+            Some((false, c.as_bytes().to_vec()))
+        }
         _ => None,
     }
 }
 
 fn unhex(text: &str) -> Option<Vec<u8>> {
     text.len().is_multiple_of(2).then_some(())?;
-    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok()).collect()
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
+        .collect()
 }
 
 fn part(entry: &OutboxEntry, at: usize) -> &[u8] {
@@ -395,17 +457,31 @@ impl Hub {
     /// A group as the hub serves it to a device that joins with the code: its founding GroupInfo, its Commits (the
     /// change, the Commit, its RecoveryAuth) and its current GroupInfo.
     #[allow(clippy::type_complexity)]
-    pub fn served(&self, group: &GroupId) -> (Vec<u8>, Vec<(u64, Vec<u8>, Option<Vec<u8>>)>, Vec<u8>) {
+    pub fn served(
+        &self,
+        group: &GroupId,
+    ) -> (Vec<u8>, Vec<(u64, Vec<u8>, Option<Vec<u8>>)>, Vec<u8>) {
         let epoch = self.epochs[group];
         let commits = self
             .order
             .iter()
             .filter_map(|i| match i {
-                Item::Log { change, group: g, commit: true, bytes, recovery_auth, .. } if g == group => Some((*change, bytes.clone(), recovery_auth.clone())),
+                Item::Log {
+                    change,
+                    group: g,
+                    commit: true,
+                    bytes,
+                    recovery_auth,
+                    ..
+                } if g == group => Some((*change, bytes.clone(), recovery_auth.clone())),
                 _ => None,
             })
             .collect();
-        (self.group_infos[&(*group, 0)].clone(), commits, self.group_infos[&(*group, epoch)].clone())
+        (
+            self.group_infos[&(*group, 0)].clone(),
+            commits,
+            self.group_infos[&(*group, epoch)].clone(),
+        )
     }
     pub fn session_groups(&self) -> Vec<GroupId> {
         self.sessions.keys().copied().collect()
@@ -424,46 +500,109 @@ impl Hub {
             .iter()
             .map(|d| {
                 let pool = self.pools.get_mut(d).expect("checked");
-                pool.single_use.pop().or_else(|| pool.last_resort.clone()).expect("checked")
+                pool.single_use
+                    .pop()
+                    .or_else(|| pool.last_resort.clone())
+                    .expect("checked")
             })
             .collect())
     }
 
-    fn append(&mut self, group: GroupId, commit: bool, epoch: u64, bytes: &[u8], recovery_auth: Option<&[u8]>, from: &DeviceId) -> (u64, u64) {
+    fn append(
+        &mut self,
+        group: GroupId,
+        commit: bool,
+        epoch: u64,
+        bytes: &[u8],
+        recovery_auth: Option<&[u8]>,
+        from: &DeviceId,
+    ) -> (u64, u64) {
         self.change += 1;
         let n = self.log_n.entry(group).or_default();
         *n += 1;
-        self.order.push(Item::Log { change: self.change, group, n: *n, epoch, commit, bytes: bytes.to_vec(), recovery_auth: recovery_auth.map(<[u8]>::to_vec), from: *from });
+        self.order.push(Item::Log {
+            change: self.change,
+            group,
+            n: *n,
+            epoch,
+            commit,
+            bytes: bytes.to_vec(),
+            recovery_auth: recovery_auth.map(<[u8]>::to_vec),
+            from: *from,
+        });
         (self.change, *n)
     }
 
-    fn accept_commit(&mut self, group: GroupId, epoch: u64, posted: &PostedCommit<'_>, from: &DeviceId, adds: &[DeviceId]) -> Value {
+    fn accept_commit(
+        &mut self,
+        group: GroupId,
+        epoch: u64,
+        posted: &PostedCommit<'_>,
+        from: &DeviceId,
+        adds: &[DeviceId],
+    ) -> Value {
         self.epochs.insert(group, epoch + 1);
-        self.group_infos.insert((group, epoch + 1), posted.group_info.to_vec());
+        self.group_infos
+            .insert((group, epoch + 1), posted.group_info.to_vec());
         if !posted.sealed_key.is_empty() {
             self.rows.push(posted.sealed_key.to_vec());
         }
-        let (change, _) = self.append(group, true, epoch, posted.commit, posted.recovery_auth, from);
+        let (change, _) = self.append(
+            group,
+            true,
+            epoch,
+            posted.commit,
+            posted.recovery_auth,
+            from,
+        );
         if let Some(welcome) = posted.welcome {
             for device in adds {
                 self.counter += 1;
-                self.welcomes.push(Welcome { id: self.counter, group, bytes: welcome.to_vec(), device: *device });
+                self.welcomes.push(Welcome {
+                    id: self.counter,
+                    group,
+                    bytes: welcome.to_vec(),
+                    device: *device,
+                });
             }
             // (the stream tells each device added that a Welcome waits)
-            self.note(adds.to_vec(), "welcome", json!({ "group_id": b64(group.as_bytes()) }));
+            self.note(
+                adds.to_vec(),
+                "welcome",
+                json!({ "group_id": b64(group.as_bytes()) }),
+            );
         }
         json!({ "epoch": epoch + 1, "change": change })
     }
 
-    fn check(&mut self, group: &GroupId, posted: &PostedCommit<'_>, from: &DeviceId) -> Result<Vec<DeviceId>, Error> {
+    fn check(
+        &mut self,
+        group: &GroupId,
+        posted: &PostedCommit<'_>,
+        from: &DeviceId,
+    ) -> Result<Vec<DeviceId>, Error> {
         let facts = if group.is_room() {
-            let context = Context { room: None, sessions: &Sessions { sessions: &self.sessions, archived: &self.archived }, recovery: &PublicRules, max_human_devices: MAX_HUMAN_DEVICES };
-            self.room.as_mut().ok_or(Error::NoRoom)?.check_posted_commit(posted, &context)?
+            let context = Context {
+                room: None,
+                sessions: &Sessions {
+                    sessions: &self.sessions,
+                    archived: &self.archived,
+                },
+                recovery: &PublicRules,
+                max_human_devices: MAX_HUMAN_DEVICES,
+            };
+            self.room
+                .as_mut()
+                .ok_or(Error::NoRoom)?
+                .check_posted_commit(posted, &context)?
         } else {
             let mut observer = self.sessions.remove(group).ok_or(Error::NotFound)?;
             let context = Context {
                 room: self.room.as_ref().and_then(Observer::history),
-                sessions: &Sessions { sessions: &self.sessions, archived: &self.archived },
+                sessions: &Sessions {
+                    sessions: &self.sessions,
+                    archived: &self.archived,
+                },
                 recovery: &PublicRules,
                 max_human_devices: MAX_HUMAN_DEVICES,
             };
@@ -538,7 +677,9 @@ impl Hub {
                 if self.room.is_some() {
                     return Err(no(Error::RoomExists));
                 }
-                let (observer, founder) = Observer::found_room(part(entry, 0), part(entry, 1), &PublicRules).map_err(no)?;
+                let (observer, founder) =
+                    Observer::found_room(part(entry, 0), part(entry, 1), &PublicRules)
+                        .map_err(no)?;
                 if founder != *from || observer.group() != group {
                     return Err(no(Error::WrongSender));
                 }
@@ -550,10 +691,27 @@ impl Hub {
                 Ok(json!({ "room_id": group.room_id().to_base64url() }))
             }
             OutboxKind::GroupFounding => {
-                let posted = PostedCommit { commit: part(entry, 2), group_info: part(entry, 3), welcome: optional(part(entry, 4)), sealed_key: part(entry, 5), recovery_auth: None, base_group_info: None };
+                let posted = PostedCommit {
+                    commit: part(entry, 2),
+                    group_info: part(entry, 3),
+                    welcome: optional(part(entry, 4)),
+                    sealed_key: part(entry, 5),
+                    recovery_auth: None,
+                    base_group_info: None,
+                };
                 let room = self.room.as_ref().ok_or(no(Error::NoRoom))?;
-                let context = Context { room: room.history(), sessions: &Sessions { sessions: &self.sessions, archived: &self.archived }, recovery: &PublicRules, max_human_devices: MAX_HUMAN_DEVICES };
-                let (observer, facts) = Observer::found_session(part(entry, 0), part(entry, 1), &posted, &context).map_err(no)?;
+                let context = Context {
+                    room: room.history(),
+                    sessions: &Sessions {
+                        sessions: &self.sessions,
+                        archived: &self.archived,
+                    },
+                    recovery: &PublicRules,
+                    max_human_devices: MAX_HUMAN_DEVICES,
+                };
+                let (observer, facts) =
+                    Observer::found_session(part(entry, 0), part(entry, 1), &posted, &context)
+                        .map_err(no)?;
                 // (over HTTP the group is the founding's own: the request does not name it)
                 let group = observer.group();
                 if facts.committer != *from || entry.group.is_some_and(|named| named != group) {
@@ -577,9 +735,17 @@ impl Hub {
                 let posted = PostedCommit {
                     commit: part(entry, 0),
                     group_info: part(entry, 1),
-                    welcome: if external { None } else { optional(part(entry, 2)) },
+                    welcome: if external {
+                        None
+                    } else {
+                        optional(part(entry, 2))
+                    },
                     sealed_key: part(entry, if external { 2 } else { 3 }),
-                    recovery_auth: if external { optional(part(entry, 3)) } else { None },
+                    recovery_auth: if external {
+                        optional(part(entry, 3))
+                    } else {
+                        None
+                    },
                     base_group_info: base.as_deref(),
                 };
                 if self.archived.contains(&group) {
@@ -601,17 +767,32 @@ impl Hub {
                 }
                 let head = self.chains.entry((group, sender)).or_default();
                 if seq != *head + 1 {
-                    return Err(no(if seq <= *head { Error::Replay } else { Error::Gap }));
+                    return Err(no(if seq <= *head {
+                        Error::Replay
+                    } else {
+                        Error::Gap
+                    }));
                 }
                 *head = seq;
                 self.change += 1;
                 if self.voids > 0 {
                     self.voids -= 1;
-                    self.order.push(Item::Envelope { change: self.change, group, sender, seq, bytes: bytes.to_vec(), void_code: Some("wrong-epoch".into()) });
-                    return Err(No { voided: true, ..no(Error::WrongEpoch) });
+                    self.order.push(Item::Envelope {
+                        change: self.change,
+                        group,
+                        sender,
+                        seq,
+                        bytes: bytes.to_vec(),
+                        void_code: Some("wrong-epoch".into()),
+                    });
+                    return Err(No {
+                        voided: true,
+                        ..no(Error::WrongEpoch)
+                    });
                 }
                 if let trommi_core::envelope::Subject::Register(register) = &header.subject {
-                    self.registers.insert((group, sender, register.as_bytes().to_vec()), self.change);
+                    self.registers
+                        .insert((group, sender, register.as_bytes().to_vec()), self.change);
                 }
                 if let Some(fields) = header.subject.object() {
                     use trommi_core::envelope::{ObjectState, ObjectType, Subject};
@@ -635,7 +816,14 @@ impl Hub {
                     }
                     object.envelopes.push(change);
                 }
-                self.order.push(Item::Envelope { change: self.change, group, sender, seq, bytes: bytes.to_vec(), void_code: None });
+                self.order.push(Item::Envelope {
+                    change: self.change,
+                    group,
+                    sender,
+                    seq,
+                    bytes: bytes.to_vec(),
+                    void_code: None,
+                });
                 Ok(json!({ "change": self.change }))
             }
             OutboxKind::SealedKey => {
@@ -649,8 +837,17 @@ impl Hub {
     // ---- over HTTP
 
     fn device_of(&self, now: u64, request: &HttpRequest) -> Option<DeviceId> {
-        let value = request.headers.iter().find(|h| h.name.eq_ignore_ascii_case("authorization"))?.value.strip_prefix("Bearer ")?.to_string();
-        self.tokens.get(&value).filter(|(_, until)| now < *until).map(|(device, _)| *device)
+        let value = request
+            .headers
+            .iter()
+            .find(|h| h.name.eq_ignore_ascii_case("authorization"))?
+            .value
+            .strip_prefix("Bearer ")?
+            .to_string();
+        self.tokens
+            .get(&value)
+            .filter(|(_, until)| now < *until)
+            .map(|(device, _)| *device)
     }
 
     fn log_page(&self, group: &GroupId, after: u64, limit: usize, commits_only: bool) -> Value {
@@ -670,8 +867,13 @@ impl Hub {
         if self.unseen.contains(group) {
             return Err(no(Error::NotFound));
         }
-        let epoch = epoch.or(self.epochs.get(group).copied()).ok_or(no(Error::NotFound))?;
-        let info = self.group_infos.get(&(*group, epoch)).ok_or(no(Error::NotFound))?;
+        let epoch = epoch
+            .or(self.epochs.get(group).copied())
+            .ok_or(no(Error::NotFound))?;
+        let info = self
+            .group_infos
+            .get(&(*group, epoch))
+            .ok_or(no(Error::NotFound))?;
         Ok(json!({ "epoch": epoch, "group_info": b64(info) }))
     }
 
@@ -688,7 +890,10 @@ impl Hub {
     /// The human devices of the room's newest state.
     /// Whether the room's newest state names `device` among its agents.
     pub fn is_agent(&self, device: &DeviceId) -> bool {
-        self.room.as_ref().and_then(Observer::history).is_some_and(|h| h.newest().is_agent(device))
+        self.room
+            .as_ref()
+            .and_then(Observer::history)
+            .is_some_and(|h| h.newest().is_agent(device))
     }
 
     pub fn is_archived(&self, group: &GroupId) -> bool {
@@ -696,12 +901,17 @@ impl Hub {
     }
 
     pub fn humans(&self) -> Vec<DeviceId> {
-        self.room.as_ref().and_then(Observer::history).map(|h| h.newest().humans.iter().copied().collect()).unwrap_or_default()
+        self.room
+            .as_ref()
+            .and_then(Observer::history)
+            .map(|h| h.newest().humans.iter().copied().collect())
+            .unwrap_or_default()
     }
 
     /// An event beside the order for `to`.
     pub fn note(&mut self, to: Vec<DeviceId>, name: &str, data: Value) {
-        self.notes.push((to, format!("event: {name}\ndata: {data}\n\n").into_bytes()));
+        self.notes
+            .push((to, format!("event: {name}\ndata: {data}\n\n").into_bytes()));
     }
 
     /// A device's wish to the human devices (`POST /v1/requests`), at the hub's clock `at`. Returns its id.
@@ -712,7 +922,16 @@ impl Hub {
     /// A wish with what a `readmit` (its KeyPackage) or a `reject` (the Commit's number and its committer)
     /// carries. The stream tells the KeyPackage; the list never does (the real hub's recorded list has none).
     #[allow(clippy::too_many_arguments)]
-    pub fn wish_with(&mut self, device: &DeviceId, kind: &str, group: Option<GroupId>, at: u64, key_package: Option<&[u8]>, n: Option<u64>, committer: Option<DeviceId>) -> u64 {
+    pub fn wish_with(
+        &mut self,
+        device: &DeviceId,
+        kind: &str,
+        group: Option<GroupId>,
+        at: u64,
+        key_package: Option<&[u8]>,
+        n: Option<u64>,
+        committer: Option<DeviceId>,
+    ) -> u64 {
         self.counter += 1;
         let id = self.counter;
         self.wishes.push((id, *device, kind.to_string(), group, at));
@@ -729,14 +948,27 @@ impl Hub {
     /// The hub deletes a file (11.3): the human devices are told.
     pub fn evict(&mut self, file: &trommi_core::ids::FileId) {
         let to = self.humans();
-        self.note(to, "file_evicted", json!({ "file_id": file.to_base64url() }));
+        self.note(
+            to,
+            "file_evicted",
+            json!({ "file_id": file.to_base64url() }),
+        );
     }
 
     /// A human device archives a session (5.2.10): its leaves are told.
     pub fn archive(&mut self, group: &GroupId) {
         if self.archived.insert(*group) {
-            let to = self.observer(group).and_then(|o| o.leaves().ok()).unwrap_or_default().into_iter().collect();
-            self.note(to, "presence", json!({ "group_id": b64(group.as_bytes()), "archived": true }));
+            let to = self
+                .observer(group)
+                .and_then(|o| o.leaves().ok())
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            self.note(
+                to,
+                "presence",
+                json!({ "group_id": b64(group.as_bytes()), "archived": true }),
+            );
         }
     }
 
@@ -751,7 +983,11 @@ impl Hub {
                 return answer;
             }
         }
-        let path = request.url.strip_prefix(HUB_URL).unwrap_or("/nowhere").to_string();
+        let path = request
+            .url
+            .strip_prefix(HUB_URL)
+            .unwrap_or("/nowhere")
+            .to_string();
         self.seen.push(format!("{} {path}", request.method));
         if let Some(answer) = self.invites_route(request, &path) {
             return Ok(answer);
@@ -765,35 +1001,76 @@ impl Hub {
                 answer(200, body)
             }
             Err(n) => {
-                self.refused.push(format!("{} {path}: {}", request.method, n.code));
-                answer(n.status, json!({ "error": n.code, "message": "refused", "voided": n.voided }))
+                self.refused
+                    .push(format!("{} {path}: {}", request.method, n.code));
+                answer(
+                    n.status,
+                    json!({ "error": n.code, "message": "refused", "voided": n.voided }),
+                )
             }
         })
     }
 
     /// Invites (12.1): kept as they came; a token is not checked here.
     fn invites_route(&mut self, request: &HttpRequest, path: &str) -> Option<HttpResponse> {
-        let segs: Vec<&str> = path.split('?').next().unwrap_or("").split('/').filter(|s| !s.is_empty()).collect();
-        let body: Value = request.body.as_ref().and_then(|b| serde_json::from_slice(b).ok()).unwrap_or(Value::Null);
-        let field = |name: &str| body[name].as_str().and_then(|s| base64url_decode(s).ok()).unwrap_or_default();
-        let missing = || answer(404, json!({ "error": "not-found", "message": "no such invite" }));
+        let segs: Vec<&str> = path
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
+        let body: Value = request
+            .body
+            .as_ref()
+            .and_then(|b| serde_json::from_slice(b).ok())
+            .unwrap_or(Value::Null);
+        let field = |name: &str| {
+            body[name]
+                .as_str()
+                .and_then(|s| base64url_decode(s).ok())
+                .unwrap_or_default()
+        };
+        let missing = || {
+            answer(
+                404,
+                json!({ "error": "not-found", "message": "no such invite" }),
+            )
+        };
         Some(match (request.method.as_str(), segs.as_slice()) {
             ("POST", ["v1", "invites"]) => {
                 let offer = field("offer");
                 let decoded = trommi_core::invite::Offer::decode(&offer).ok()?;
                 let id = b64(decoded.invite_id.as_bytes());
                 let expires_at = decoded.expires_at;
-                self.invites.insert(id.clone(), StandInInvite { offer, signature: field("signature"), mac: field("mac"), expires_at, requests: Vec::new(), reveal: None });
+                self.invites.insert(
+                    id.clone(),
+                    StandInInvite {
+                        offer,
+                        signature: field("signature"),
+                        mac: field("mac"),
+                        expires_at,
+                        requests: Vec::new(),
+                        reveal: None,
+                    },
+                );
                 answer(200, json!({ "invite_id": id }))
             }
             ("GET", ["v1", "invites", id]) => match self.invites.get(*id) {
-                Some(i) => answer(200, json!({ "offer": b64(&i.offer), "signature": b64(&i.signature), "mac": b64(&i.mac), "expires_at": i.expires_at,
-                    "requests": i.requests.iter().map(|r| json!({ "request": b64(&r.request), "mac": b64(&r.mac), "signature": b64(&r.signature) })).collect::<Vec<_>>() })),
+                Some(i) => answer(
+                    200,
+                    json!({ "offer": b64(&i.offer), "signature": b64(&i.signature), "mac": b64(&i.mac), "expires_at": i.expires_at,
+                    "requests": i.requests.iter().map(|r| json!({ "request": b64(&r.request), "mac": b64(&r.mac), "signature": b64(&r.signature) })).collect::<Vec<_>>() }),
+                ),
                 None => missing(),
             },
             ("POST", ["v1", "invites", id, "request"]) => match self.invites.get_mut(*id) {
                 Some(i) => {
-                    let request = trommi_core::invite::SignedRequest { request: field("request"), mac: field("mac"), signature: field("signature") };
+                    let request = trommi_core::invite::SignedRequest {
+                        request: field("request"),
+                        mac: field("mac"),
+                        signature: field("signature"),
+                    };
                     let hash = trommi_core::invite::request_hash(&request).ok()?;
                     if !i.requests.contains(&request) {
                         i.requests.push(request);
@@ -802,13 +1079,21 @@ impl Hub {
                 }
                 None => missing(),
             },
-            ("GET", ["v1", "invites", id, "reveal"]) => match self.invites.get(*id).and_then(|i| i.reveal.as_ref()) {
-                Some(r) => answer(200, json!({ "reveal": b64(&r.reveal), "signature": b64(&r.signature) })),
-                None => missing(),
-            },
+            ("GET", ["v1", "invites", id, "reveal"]) => {
+                match self.invites.get(*id).and_then(|i| i.reveal.as_ref()) {
+                    Some(r) => answer(
+                        200,
+                        json!({ "reveal": b64(&r.reveal), "signature": b64(&r.signature) }),
+                    ),
+                    None => missing(),
+                }
+            }
             ("PUT", ["v1", "invites", id, "reveal"]) => match self.invites.get_mut(*id) {
                 Some(i) => {
-                    i.reveal = Some(trommi_core::invite::SignedReveal { reveal: field("reveal"), signature: field("signature") });
+                    i.reveal = Some(trommi_core::invite::SignedReveal {
+                        reveal: field("reveal"),
+                        signature: field("signature"),
+                    });
                     answer(200, json!({ "revealed": true }))
                 }
                 None => missing(),
@@ -823,8 +1108,18 @@ impl Hub {
 
     /// Files and Share links (11.3, 11.5): bytes kept as they came; a token is not checked here.
     fn files_route(&mut self, request: &HttpRequest, path: &str) -> Option<HttpResponse> {
-        let segs: Vec<&str> = path.split('?').next().unwrap_or("").split('/').filter(|s| !s.is_empty()).collect();
-        let body = request.body.as_ref().map(|b| b.to_vec()).unwrap_or_default();
+        let segs: Vec<&str> = path
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
+        let body = request
+            .body
+            .as_ref()
+            .map(|b| b.to_vec())
+            .unwrap_or_default();
         Some(match (request.method.as_str(), segs.as_slice()) {
             ("PUT", ["v1", "files", id]) => {
                 let mut hasher = trommi_core::files::FileHasher::new();
@@ -832,17 +1127,34 @@ impl Hub {
                 let sha = hasher.finish().expect("a hash");
                 let size = body.len();
                 self.files.insert(id.to_string(), body);
-                answer(200, json!({ "file_id": id, "size": size, "sha256": b64(sha.as_bytes()) }))
+                answer(
+                    200,
+                    json!({ "file_id": id, "size": size, "sha256": b64(sha.as_bytes()) }),
+                )
             }
             ("GET", ["v1", "files", id]) => match self.files.get(*id) {
-                Some(bytes) => HttpResponse { status: 200, headers: Vec::new(), body: bytes.clone().into() },
-                None => answer(404, json!({ "error": "not-found", "message": "no such file" })),
+                Some(bytes) => HttpResponse {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: bytes.clone().into(),
+                },
+                None => answer(
+                    404,
+                    json!({ "error": "not-found", "message": "no such file" }),
+                ),
             },
             ("POST", ["v1", "shares"]) => {
                 let v: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
-                let (share, file, expires) = (v["share_id"].as_str().unwrap_or("").to_string(), v["file_id"].as_str().unwrap_or("").to_string(), v["expires_at"].as_u64().unwrap_or(0));
+                let (share, file, expires) = (
+                    v["share_id"].as_str().unwrap_or("").to_string(),
+                    v["file_id"].as_str().unwrap_or("").to_string(),
+                    v["expires_at"].as_u64().unwrap_or(0),
+                );
                 if !self.files.contains_key(&file) {
-                    return Some(answer(404, json!({ "error": "not-found", "message": "no such file" })));
+                    return Some(answer(
+                        404,
+                        json!({ "error": "not-found", "message": "no such file" }),
+                    ));
                 }
                 self.shares.insert(share.clone(), (file, expires));
                 answer(200, json!({ "share_id": share, "expires_at": expires }))
@@ -857,22 +1169,48 @@ impl Hub {
 
     fn route(&mut self, now: u64, request: &HttpRequest, path: &str) -> Result<Value, No> {
         let (path, query) = path.split_once('?').unwrap_or((path, ""));
-        let q = |name: &str| query.split('&').find_map(|pair| pair.strip_prefix(name).and_then(|rest| rest.strip_prefix('=')));
+        let q = |name: &str| {
+            query.split('&').find_map(|pair| {
+                pair.strip_prefix(name)
+                    .and_then(|rest| rest.strip_prefix('='))
+            })
+        };
         let num = |name: &str| q(name).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
         let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-        let body: Value = request.body.as_ref().and_then(|b| serde_json::from_slice(b).ok()).unwrap_or(Value::Null);
-        let bytes = |name: &str| body.get(name).and_then(Value::as_str).and_then(|s| base64url_decode(s).ok()).unwrap_or_default();
-        let group_at = |at: usize| segs.get(at).and_then(|s| base64url_decode(s).ok()).and_then(|b| GroupId::from_bytes(&b).ok()).ok_or(no(Error::BadFormat));
+        let body: Value = request
+            .body
+            .as_ref()
+            .and_then(|b| serde_json::from_slice(b).ok())
+            .unwrap_or(Value::Null);
+        let bytes = |name: &str| {
+            body.get(name)
+                .and_then(Value::as_str)
+                .and_then(|s| base64url_decode(s).ok())
+                .unwrap_or_default()
+        };
+        let group_at = |at: usize| {
+            segs.get(at)
+                .and_then(|s| base64url_decode(s).ok())
+                .and_then(|b| GroupId::from_bytes(&b).ok())
+                .ok_or(no(Error::BadFormat))
+        };
         let method = request.method.as_str();
         // the two routes without a token
         match (method, segs.as_slice()) {
             ("POST", ["v1", "rooms", room, "departures"]) => {
-                if *room != self.room_id().to_base64url() { return Err(no(Error::WrongRoom)); }
+                if *room != self.room_id().to_base64url() {
+                    return Err(no(Error::WrongRoom));
+                }
                 let device = DeviceId::from_slice(&bytes("device")).map_err(no)?;
                 let signature = bytes("signature");
-                trommi_core::hub_auth::verify_departure(&self.room_id(), &device, &signature).map_err(no)?;
+                trommi_core::hub_auth::verify_departure(&self.room_id(), &device, &signature)
+                    .map_err(no)?;
                 if self.departures.insert(device, signature.clone()).is_none() {
-                    self.note(self.humans(), "departure", json!({"device":device.to_base64url(),"signature":b64(&signature)}));
+                    self.note(
+                        self.humans(),
+                        "departure",
+                        json!({"device":device.to_base64url(),"signature":b64(&signature)}),
+                    );
                 }
                 return Ok(json!({}));
             }
@@ -884,31 +1222,75 @@ impl Hub {
                 return Ok(json!({ "challenge": b64(&challenge) }));
             }
             ("POST", ["v1", "account", way @ ("login" | "recover")]) => {
-                let (name, auth) = (body["account"].as_str().unwrap_or_default().to_string(), bytes("auth_key"));
+                let (name, auth) = (
+                    body["account"].as_str().unwrap_or_default().to_string(),
+                    bytes("auth_key"),
+                );
                 let kit = *way == "recover";
-                let account = self.accounts.iter().find(|a| (a.name == name || a.id == name) && auth == if kit { a.kit_auth } else { a.password_auth }).cloned();
-                let Some(account) = account else { return Err(no(if kit { Error::WrongRecovery } else { Error::WrongLogin })) };
-                let sealed = if kit { &account.sealed_kit } else { &account.sealed_password };
-                return Ok(json!({ "account": account.id, "email": account.name, "kdf": { "alg": "argon2id", "m": 65536, "p": 1, "t": 3, "v": 1 },
-                    "rooms": [{ "room_id": b64(self.room_id().as_bytes()), "sealed_copy": b64(sealed), "challenge": b64(&[7u8; 32]) }] }));
+                let account = self
+                    .accounts
+                    .iter()
+                    .find(|a| {
+                        (a.name == name || a.id == name)
+                            && auth == if kit { a.kit_auth } else { a.password_auth }
+                    })
+                    .cloned();
+                let Some(account) = account else {
+                    return Err(no(if kit {
+                        Error::WrongRecovery
+                    } else {
+                        Error::WrongLogin
+                    }));
+                };
+                let sealed = if kit {
+                    &account.sealed_kit
+                } else {
+                    &account.sealed_password
+                };
+                return Ok(
+                    json!({ "account": account.id, "email": account.name, "kdf": { "alg": "argon2id", "m": 65536, "p": 1, "t": 3, "v": 1 },
+                    "rooms": [{ "room_id": b64(self.room_id().as_bytes()), "sealed_copy": b64(sealed), "challenge": b64(&[7u8; 32]) }] }),
+                );
             }
             // a founding with its account (8.1, 8.9): no token; the founder is the GroupInfo's signer
             ("POST", ["v1", "rooms"]) => {
                 let account = body.get("account").cloned();
-                let email = account.as_ref().and_then(|a| a["email"].as_str()).map(|e| e.to_string());
+                let email = account
+                    .as_ref()
+                    .and_then(|a| a["email"].as_str())
+                    .map(|e| e.to_string());
                 if let Some(email) = &email {
                     if self.accounts.iter().any(|a| &a.name == email) {
-                        return Err(no(Error::from_code("account-exists").unwrap_or(Error::BadFormat)));
+                        return Err(no(
+                            Error::from_code("account-exists").unwrap_or(Error::BadFormat)
+                        ));
                     }
                 }
                 let (info, sealed) = (bytes("group_info"), bytes("sealed_key"));
-                let (observer, founder) = Observer::found_room(&info, &sealed, &PublicRules).map_err(no)?;
+                let (observer, founder) =
+                    Observer::found_room(&info, &sealed, &PublicRules).map_err(no)?;
                 let group = observer.group();
                 // (the room's recovery key signs in as the recovery device, as World sets it)
-                self.recovery = observer.history().map(|h| DeviceId::new(h.newest().room.recovery_signature_key));
-                let answer = self.post(&founder, &OutboxEntry { id: 0, kind: OutboxKind::RoomFounding, group: Some(group), epoch: 0, parts: vec![info, sealed] })?;
+                self.recovery = observer
+                    .history()
+                    .map(|h| DeviceId::new(h.newest().room.recovery_signature_key));
+                let answer = self.post(
+                    &founder,
+                    &OutboxEntry {
+                        id: 0,
+                        kind: OutboxKind::RoomFounding,
+                        group: Some(group),
+                        epoch: 0,
+                        parts: vec![info, sealed],
+                    },
+                )?;
                 if let (Some(a), Some(email)) = (account, email) {
-                    let key = |way: &str, f: &str| a[way][f].as_str().and_then(|t| base64url_decode(t).ok()).unwrap_or_default();
+                    let key = |way: &str, f: &str| {
+                        a[way][f]
+                            .as_str()
+                            .and_then(|t| base64url_decode(t).ok())
+                            .unwrap_or_default()
+                    };
                     let fixed = |v: Vec<u8>| <[u8; 32]>::try_from(v).unwrap_or([0; 32]);
                     self.accounts.push(Account {
                         name: email,
@@ -922,12 +1304,34 @@ impl Hub {
                 return Ok(answer);
             }
             ("POST", ["v1", "rooms", _, "tokens"]) => {
-                let signed = SignedHubAuth { auth: bytes("auth"), signature: bytes("signature") };
+                let signed = SignedHubAuth {
+                    auth: bytes("auth"),
+                    signature: bytes("signature"),
+                };
                 let auth = hub_auth::HubAuth::decode(&signed.auth).map_err(no)?;
-                let at = self.challenges.iter().position(|c| *c == auth.challenge).ok_or(no(Error::BadChallenge))?;
-                let issued = IssuedChallenge { challenge: self.challenges.remove(at), expires_at: now + 120_000 };
-                let device = hub_auth::verify(&signed, &self.room_id(), &HubAddress::parse(HUB_URL).expect("an address"), &issued, now).map_err(no)?;
-                let history = self.room.as_ref().and_then(Observer::history).ok_or(no(Error::NoRoom))?.newest();
+                let at = self
+                    .challenges
+                    .iter()
+                    .position(|c| *c == auth.challenge)
+                    .ok_or(no(Error::BadChallenge))?;
+                let issued = IssuedChallenge {
+                    challenge: self.challenges.remove(at),
+                    expires_at: now + 120_000,
+                };
+                let device = hub_auth::verify(
+                    &signed,
+                    &self.room_id(),
+                    &HubAddress::parse(HUB_URL).expect("an address"),
+                    &issued,
+                    now,
+                )
+                .map_err(no)?;
+                let history = self
+                    .room
+                    .as_ref()
+                    .and_then(Observer::history)
+                    .ok_or(no(Error::NoRoom))?
+                    .newest();
                 let role = if self.removed_keys.contains_key(&device) {
                     "removed"
                 } else if Some(device) == self.recovery {
@@ -946,7 +1350,9 @@ impl Hub {
             }
             _ => {}
         }
-        let device = self.device_of(now, request).ok_or(no(Error::Unauthorised))?;
+        let device = self
+            .device_of(now, request)
+            .ok_or(no(Error::Unauthorised))?;
         if let Some(removed) = self.removed_keys.get(&device) {
             // (a removed key reads the Commits that removed it, and nothing else)
             return match (method, segs.as_slice()) {
@@ -968,7 +1374,11 @@ impl Hub {
         // 13.7: an agent's writes carry its lease; one of an older generation is refused
         if method != "GET" && segs.as_slice() != ["v1", "link"] {
             if let Some((_, generation)) = self.leases.get(&device) {
-                let carried = request.headers.iter().find(|h| h.name.eq_ignore_ascii_case("trommi-lease")).and_then(|h| h.value.parse::<u64>().ok());
+                let carried = request
+                    .headers
+                    .iter()
+                    .find(|h| h.name.eq_ignore_ascii_case("trommi-lease"))
+                    .and_then(|h| h.value.parse::<u64>().ok());
                 if carried != Some(*generation) {
                     return Err(no(Error::from_code("lease-lost").expect("a code")));
                 }
@@ -980,7 +1390,8 @@ impl Hub {
             let on_room = |at: usize| segs.get(at).map(|s| s.to_string()) == room;
             let allowed = match (method, segs.as_slice()) {
                 ("GET", ["v1", "sealed-keys"]) | ("GET", ["v1", "rooms", _, "groups"]) => true,
-                ("GET", ["v1", "groups", _, "info" | "log"]) | ("POST", ["v1", "groups", _, "commits"]) => on_room(2),
+                ("GET", ["v1", "groups", _, "info" | "log"])
+                | ("POST", ["v1", "groups", _, "commits"]) => on_room(2),
                 _ => false,
             };
             if !allowed {
@@ -1000,7 +1411,9 @@ impl Hub {
                 let held = self.leases.get(&device).cloned();
                 let generation = match (&held, body["generation"].as_u64()) {
                     (Some((p, g)), Some(given)) if *p == process && *g == given => *g,
-                    (_, Some(_)) => return Err(no(Error::from_code("lease-lost").expect("a code"))),
+                    (_, Some(_)) => {
+                        return Err(no(Error::from_code("lease-lost").expect("a code")))
+                    }
                     (Some((_, g)), None) => g + 1,
                     (None, None) => 1,
                 };
@@ -1010,26 +1423,49 @@ impl Hub {
             ("GET", ["v1", "sealed-keys"]) => {
                 // (each row numbered by its place: the stand-in keeps no change of its own for a row)
                 let (after, limit) = (num("after") as usize, num("limit").clamp(1, 2000) as usize);
-                let page: Vec<Value> = self.rows.iter().enumerate().skip(after).take(limit).map(|(at, row)| json!({ "change": at + 1, "sealed_key": b64(row) })).collect();
+                let page: Vec<Value> = self
+                    .rows
+                    .iter()
+                    .enumerate()
+                    .skip(after)
+                    .take(limit)
+                    .map(|(at, row)| json!({ "change": at + 1, "sealed_key": b64(row) }))
+                    .collect();
                 let end = after + page.len();
-                Ok(json!({ "rows": page, "links": [], "change": end, "more": end < self.rows.len() }))
+                Ok(
+                    json!({ "rows": page, "links": [], "change": end, "more": end < self.rows.len() }),
+                )
             }
             ("GET", ["v1", "changes"]) => {
                 let (after, limit) = (num("after"), num("limit").clamp(1, 1000) as usize);
-                let only: Option<GroupId> = q("group").and_then(|g| base64url_decode(g).ok()).and_then(|b| GroupId::from_bytes(&b).ok());
+                let only: Option<GroupId> = q("group")
+                    .and_then(|g| base64url_decode(g).ok())
+                    .and_then(|b| GroupId::from_bytes(&b).ok());
                 // (point 46: `active=1` leaves out what lies in an archived session)
                 let active = q("active") == Some("1");
                 let limit = limit.min(self.page_max.unwrap_or(usize::MAX));
                 let mut items: Vec<&Item> = self
                     .order
                     .iter()
-                    .filter(|i| i.change() > after && !self.hidden.contains(&i.change()) && only.is_none_or(|g| i.group() == g && matches!(i, Item::Envelope { .. })))
+                    .filter(|i| {
+                        i.change() > after
+                            && !self.hidden.contains(&i.change())
+                            && only.is_none_or(|g| {
+                                i.group() == g && matches!(i, Item::Envelope { .. })
+                            })
+                    })
                     .filter(|i| !active || !self.archived.contains(&i.group()))
                     .collect();
                 let more = items.len() > limit;
                 items.truncate(limit);
-                let change = if more { items.last().map_or(after, |i| i.change()) } else { self.change.max(after) };
-                Ok(json!({ "items": items.iter().map(|i| i.json()).collect::<Vec<_>>(), "change": change, "more": more, "head": self.head_lie.unwrap_or(self.change).max(change) }))
+                let change = if more {
+                    items.last().map_or(after, |i| i.change())
+                } else {
+                    self.change.max(after)
+                };
+                Ok(
+                    json!({ "items": items.iter().map(|i| i.json()).collect::<Vec<_>>(), "change": change, "more": more, "head": self.head_lie.unwrap_or(self.change).max(change) }),
+                )
             }
             ("GET", ["v1", "welcomes"]) => {
                 let after = num("after");
@@ -1049,9 +1485,20 @@ impl Hub {
                 }
                 Ok(self.log_page(&group, after, limit, q("kind") == Some("commit")))
             }
-            ("GET", ["v1", "groups", _, "info"]) => self.info(&group_at(2)?, q("epoch").and_then(|e| e.parse().ok())),
+            ("GET", ["v1", "groups", _, "info"]) => {
+                self.info(&group_at(2)?, q("epoch").and_then(|e| e.parse().ok()))
+            }
             ("POST", ["v1", "groups", "read"]) => {
-                let asked: Vec<GroupId> = body["groups"].as_array().into_iter().flatten().filter_map(|g| g.as_str().and_then(|s| base64url_decode(s).ok()).and_then(|b| GroupId::from_bytes(&b).ok())).collect();
+                let asked: Vec<GroupId> = body["groups"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|g| {
+                        g.as_str()
+                            .and_then(|s| base64url_decode(s).ok())
+                            .and_then(|b| GroupId::from_bytes(&b).ok())
+                    })
+                    .collect();
                 let distinct: BTreeSet<&GroupId> = asked.iter().collect();
                 if asked.is_empty() || asked.len() > 64 || distinct.len() != asked.len() {
                     return Err(no(Error::BadFormat));
@@ -1080,7 +1527,12 @@ impl Hub {
                 if commits.is_empty() || commits.len() > 64 {
                     return Err(no(Error::BadFormat));
                 }
-                let b = |v: &Value, name: &str| v.get(name).and_then(Value::as_str).and_then(|s| base64url_decode(s).ok()).unwrap_or_default();
+                let b = |v: &Value, name: &str| {
+                    v.get(name)
+                        .and_then(Value::as_str)
+                        .and_then(|s| base64url_decode(s).ok())
+                        .unwrap_or_default()
+                };
                 let answers: Vec<Value> = commits
                     .iter()
                     .map(|c| {
@@ -1114,11 +1566,23 @@ impl Hub {
             }
             // a Chat's items before a change, newest first; nothing is pruned here
             ("GET", ["v1", "chats", scope @ ("session" | "card"), id, "items"]) => {
-                self.chat_reads.push((scope.to_string(), id.to_string(), q("before").and_then(|v| v.parse().ok())));
+                self.chat_reads.push((
+                    scope.to_string(),
+                    id.to_string(),
+                    q("before").and_then(|v| v.parse().ok()),
+                ));
                 let want = (*scope == "session", unhex(id).ok_or(no(Error::BadFormat))?);
-                let before = q("before").and_then(|v| v.parse::<u64>().ok()).unwrap_or(u64::MAX);
+                let before = q("before")
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(u64::MAX);
                 let limit = num("limit").clamp(1, 500) as usize;
-                let mut items: Vec<Value> = self.order.iter().rev().filter(|i| i.change() < before && chat_of(i).as_ref() == Some(&want)).map(Item::served).collect();
+                let mut items: Vec<Value> = self
+                    .order
+                    .iter()
+                    .rev()
+                    .filter(|i| i.change() < before && chat_of(i).as_ref() == Some(&want))
+                    .map(Item::served)
+                    .collect();
                 let more = items.len() > limit;
                 items.truncate(limit);
                 Ok(json!({ "items": items, "more": more }))
@@ -1127,7 +1591,14 @@ impl Hub {
             ("GET", ["v1", "boards", board]) => {
                 let board = trommi_core::ids::BoardId::from_base64url(board).map_err(no)?;
                 let (after, limit) = (num("after_change"), num("limit").clamp(1, 500) as usize);
-                let mut items: Vec<Value> = self.order.iter().filter(|i| i.change() > after.max(self.board_pruned) && board_of(i) == Some(board)).map(Item::served).collect();
+                let mut items: Vec<Value> = self
+                    .order
+                    .iter()
+                    .filter(|i| {
+                        i.change() > after.max(self.board_pruned) && board_of(i) == Some(board)
+                    })
+                    .map(Item::served)
+                    .collect();
                 let more = items.len() > limit;
                 items.truncate(limit);
                 Ok(json!({ "items": items, "more": more }))
@@ -1138,7 +1609,12 @@ impl Hub {
                 Ok(json!({ "pruned": 0 }))
             }
             ("GET", ["v1", "desk"]) => {
-                let item = |change: u64| self.order.iter().find(|i| i.change() == change).map(Item::served);
+                let item = |change: u64| {
+                    self.order
+                        .iter()
+                        .find(|i| i.change() == change)
+                        .map(Item::served)
+                };
                 // (point 46: `active=1` the live sessions alone, `archived=1` the archived ones alone)
                 let (active, archived) = (q("active") == Some("1"), q("archived") == Some("1"));
                 let sees = |group: &GroupId| {
@@ -1150,8 +1626,21 @@ impl Hub {
                 let mut bytes = 0usize;
                 let mut any = false;
                 let mut cut = false;
-                let list = |request: bool, bytes: &mut usize, any: &mut bool, cut: &mut bool| -> Vec<Value> {
-                    let mut open: Vec<_> = self.objects.iter().filter(|(_, o)| o.open && (o.card || o.request) && o.request == request && sees(&o.group)).collect();
+                let list = |request: bool,
+                            bytes: &mut usize,
+                            any: &mut bool,
+                            cut: &mut bool|
+                 -> Vec<Value> {
+                    let mut open: Vec<_> = self
+                        .objects
+                        .iter()
+                        .filter(|(_, o)| {
+                            o.open
+                                && (o.card || o.request)
+                                && o.request == request
+                                && sees(&o.group)
+                        })
+                        .collect();
                     open.sort_by_key(|(_, o)| o.first_change);
                     let mut rows = Vec::new();
                     for (id, o) in open {
@@ -1160,7 +1649,10 @@ impl Hub {
                             break;
                         }
                         let version = item(o.version);
-                        *bytes += version.as_ref().and_then(|v| v["envelope"].as_str()).map_or(0, str::len);
+                        *bytes += version
+                            .as_ref()
+                            .and_then(|v| v["envelope"].as_str())
+                            .map_or(0, str::len);
                         if *bytes > self.desk_bytes_max && *any {
                             *cut = true;
                             break;
@@ -1174,7 +1666,11 @@ impl Hub {
                 };
                 let cards = list(false, &mut bytes, &mut any, &mut cut);
                 let requests = list(true, &mut bytes, &mut any, &mut cut);
-                let mut newest: Vec<(u64, GroupId)> = self.registers.iter().map(|((group, ..), change)| (*change, *group)).collect();
+                let mut newest: Vec<(u64, GroupId)> = self
+                    .registers
+                    .iter()
+                    .map(|((group, ..), change)| (*change, *group))
+                    .collect();
                 newest.sort_unstable();
                 let mut registers: Vec<Value> = Vec::new();
                 for (change, group) in newest {
@@ -1213,16 +1709,31 @@ impl Hub {
                     .map(|(group, (open, closed, requests))| json!({ "group_id": b64(group.as_bytes()), "cards": { "open": open, "answered": 0, "closed": closed },
                         "permission_requests": { "open": requests, "answered": 0, "closed": 0 }, "notes": zero, "artifacts": zero }))
                     .collect();
-                Ok(json!({ "cards": cards, "permission_requests": requests, "notes": [], "artifacts": [], "registers": registers, "groups": [],
-                    "counts": counts, "truncated": self.desk_truncated || cut, "change": self.change }))
+                Ok(
+                    json!({ "cards": cards, "permission_requests": requests, "notes": [], "artifacts": [], "registers": registers, "groups": [],
+                    "counts": counts, "truncated": self.desk_truncated || cut, "change": self.change }),
+                )
             }
             // (point 47) the cards no longer open, newest first by head_change, below `before`;
             // preserve the signed answered/closed state, as the real hub does.
             ("GET", ["v1", "objects"]) => {
-                self.settled_reads.push(q("before").and_then(|v| v.parse().ok()));
-                let before = q("before").and_then(|v| v.parse::<u64>().ok()).unwrap_or(u64::MAX);
+                self.settled_reads
+                    .push(q("before").and_then(|v| v.parse().ok()));
+                let before = q("before")
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(u64::MAX);
                 let limit = num("limit").clamp(1, 500) as usize;
-                let mut rows: Vec<_> = self.objects.iter().filter(|(_, o)| o.card && !o.request && !o.open && o.head_change < before && !self.archived.contains(&o.group)).collect();
+                let mut rows: Vec<_> = self
+                    .objects
+                    .iter()
+                    .filter(|(_, o)| {
+                        o.card
+                            && !o.request
+                            && !o.open
+                            && o.head_change < before
+                            && !self.archived.contains(&o.group)
+                    })
+                    .collect();
                 rows.sort_by_key(|r| std::cmp::Reverse(r.1.head_change));
                 let more = rows.len() > limit;
                 rows.truncate(limit);
@@ -1233,47 +1744,92 @@ impl Hub {
                         "owner": DeviceId::new([0; 32]).to_base64url(), "first_change": o.first_change, "head_change": o.head_change,
                         "version": self.order.iter().find(|i| i.change() == o.version).map(Item::served) }))
                     .collect();
-                Ok(json!({ "items": items, "more": more, "before": if more { last } else { 0 }, "change": self.change }))
+                Ok(
+                    json!({ "items": items, "more": more, "before": if more { last } else { 0 }, "change": self.change }),
+                )
             }
             ("GET", ["v1", kind @ ("cards" | "permission-requests"), object]) => {
                 let _ = kind;
                 let id = trommi_core::ids::ObjectId::from_base64url(object).map_err(no)?;
                 let o = self.objects.get(&id).ok_or(no(Error::NotFound))?;
                 let (after, limit) = (num("after"), num("limit").clamp(1, 2000) as usize);
-                let mut items: Vec<Value> = o.envelopes.iter().filter(|c| **c > after).filter_map(|c| self.order.iter().find(|i| i.change() == *c).map(Item::served)).collect();
+                let mut items: Vec<Value> = o
+                    .envelopes
+                    .iter()
+                    .filter(|c| **c > after)
+                    .filter_map(|c| {
+                        self.order
+                            .iter()
+                            .find(|i| i.change() == *c)
+                            .map(Item::served)
+                    })
+                    .collect();
                 let more = items.len() > limit;
                 items.truncate(limit);
-                Ok(json!({ "object_id": object, "group_id": b64(o.group.as_bytes()), "state": 1, "urgency": 1, "owner": DeviceId::new([0; 32]).to_base64url(),
-                    "first_change": o.first_change, "head_change": o.head_change, "items": items, "more": more }))
+                Ok(
+                    json!({ "object_id": object, "group_id": b64(o.group.as_bytes()), "state": 1, "urgency": 1, "owner": DeviceId::new([0; 32]).to_base64url(),
+                    "first_change": o.first_change, "head_change": o.head_change, "items": items, "more": more }),
+                )
             }
             ("PUT", ["v1", "key-packages"]) => {
                 let list = |name: &str| -> Vec<Vec<u8>> {
-                    body.get(name).and_then(Value::as_array).into_iter().flatten().filter_map(|v| v.as_str().and_then(|s| base64url_decode(s).ok())).collect()
+                    body.get(name)
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|v| v.as_str().and_then(|s| base64url_decode(s).ok()))
+                        .collect()
                 };
                 let mut parts = vec![bytes("last_resort")];
                 parts.extend(list("single_use"));
                 if parts.iter().all(Vec::is_empty) {
                     return Ok(json!({ "unused": self.unused(&device) }));
                 }
-                self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::KeyPackages, group: None, epoch: 0, parts })
+                self.post(
+                    &device,
+                    &OutboxEntry {
+                        id: 0,
+                        kind: OutboxKind::KeyPackages,
+                        group: None,
+                        epoch: 0,
+                        parts,
+                    },
+                )
             }
             ("GET", ["v1", "rooms", _, "groups"]) => {
                 // (every group in one list, numbered from 1 in a fixed order; `stale` is not told)
                 let (after, limit) = (num("after") as usize, num("limit").clamp(1, 1000) as usize);
                 let limit = limit.min(self.groups_max.unwrap_or(usize::MAX));
                 let history = self.room.as_ref().and_then(Observer::history);
-                let facts = Sessions { sessions: &self.sessions, archived: &self.archived };
+                let facts = Sessions {
+                    sessions: &self.sessions,
+                    archived: &self.archived,
+                };
                 let row = |o: &Observer, kind: &str| {
                     let session = o.session();
-                    let parent = session.filter(|s| s.parent != SessionId::ZERO).map(|s| s.parent.to_base64url());
+                    let parent = session
+                        .filter(|s| s.parent != SessionId::ZERO)
+                        .map(|s| s.parent.to_base64url());
                     // (5.2.8 under the newest room state, the one predicate of the hub and every device)
-                    let stale = history.is_some_and(|h| o.staleness(h, h.newest(), &facts).is_ok_and(|s| s.is_stale()));
+                    let stale = history.is_some_and(|h| {
+                        o.staleness(h, h.newest(), &facts)
+                            .is_ok_and(|s| s.is_stale())
+                    });
                     json!({ "group_id": b64(o.group().as_bytes()), "kind": kind, "epoch": o.epoch().unwrap_or(0), "room_epoch": o.previous_room_epoch(),
                         "leaves": o.leaves().unwrap_or_default().iter().map(DeviceId::to_base64url).collect::<Vec<_>>(),
                         "live": !self.archived.contains(&o.group()), "stale": stale, "parent": parent, "session_id": session.map(|s| s.session_id.to_base64url()) })
                 };
                 let mut rows: Vec<Value> = self.room.iter().map(|o| row(o, "room")).collect();
-                rows.extend(self.sessions.values().map(|o| row(o, if o.session().is_some_and(|s| s.parent != SessionId::ZERO) { "helper" } else { "main" })));
+                rows.extend(self.sessions.values().map(|o| {
+                    row(
+                        o,
+                        if o.session().is_some_and(|s| s.parent != SessionId::ZERO) {
+                            "helper"
+                        } else {
+                            "main"
+                        },
+                    )
+                }));
                 let page: Vec<Value> = rows.iter().skip(after).take(limit).cloned().collect();
                 let end = after + page.len();
                 Ok(json!({ "items": page, "more": end < rows.len(), "after": end }))
@@ -1283,13 +1839,21 @@ impl Hub {
                 if !self.humans().contains(&device) {
                     return Err(no(Error::Forbidden));
                 }
-                let asked: Vec<DeviceId> = body["devices"].as_array().into_iter().flatten().filter_map(|d| d.as_str().and_then(|s| DeviceId::from_base64url(s).ok())).collect();
+                let asked: Vec<DeviceId> = body["devices"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|d| d.as_str().and_then(|s| DeviceId::from_base64url(s).ok()))
+                    .collect();
                 let has = |p: &Pool| !p.single_use.is_empty() || p.last_resort.is_some();
-                if asked.is_empty() || asked.len() != body["devices"].as_array().map_or(0, Vec::len) {
+                if asked.is_empty() || asked.len() != body["devices"].as_array().map_or(0, Vec::len)
+                {
                     return Err(no(Error::BadFormat));
                 }
                 // (all or nothing, unless `partial`: then the devices without one are left out)
-                if body["partial"] != json!(true) && !asked.iter().all(|d| self.pools.get(d).is_some_and(has)) {
+                if body["partial"] != json!(true)
+                    && !asked.iter().all(|d| self.pools.get(d).is_some_and(has))
+                {
                     return Err(no(Error::NotFound));
                 }
                 let mut claimed = serde_json::Map::new();
@@ -1297,7 +1861,11 @@ impl Hub {
                 for device in asked {
                     match self.pools.get_mut(&device).filter(|p| has(p)) {
                         Some(pool) => {
-                            let package = pool.single_use.pop().or_else(|| pool.last_resort.clone()).expect("checked");
+                            let package = pool
+                                .single_use
+                                .pop()
+                                .or_else(|| pool.last_resort.clone())
+                                .expect("checked");
                             claimed.insert(device.to_base64url(), json!(b64(&package)));
                         }
                         None => missing.push(device.to_base64url()),
@@ -1309,30 +1877,100 @@ impl Hub {
                 }
                 Ok(answer)
             }
-            ("POST", ["v1", "envelopes"]) => self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::Envelope, group: None, epoch: 0, parts: vec![bytes("envelope")] }),
+            ("POST", ["v1", "envelopes"]) => self.post(
+                &device,
+                &OutboxEntry {
+                    id: 0,
+                    kind: OutboxKind::Envelope,
+                    group: None,
+                    epoch: 0,
+                    parts: vec![bytes("envelope")],
+                },
+            ),
             ("POST", ["v1", "groups"]) => {
-                let parts = vec![bytes("group_info_0"), bytes("sealed_key_0"), bytes("commit"), bytes("group_info"), bytes("welcome"), bytes("sealed_key")];
-                self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::GroupFounding, group: None, epoch: 0, parts })
+                let parts = vec![
+                    bytes("group_info_0"),
+                    bytes("sealed_key_0"),
+                    bytes("commit"),
+                    bytes("group_info"),
+                    bytes("welcome"),
+                    bytes("sealed_key"),
+                ];
+                self.post(
+                    &device,
+                    &OutboxEntry {
+                        id: 0,
+                        kind: OutboxKind::GroupFounding,
+                        group: None,
+                        epoch: 0,
+                        parts,
+                    },
+                )
             }
             ("POST", ["v1", "groups", _, "commits"]) => {
                 let external = body.get("recovery_auth").is_some_and(Value::is_string);
                 let parts = if external {
-                    vec![bytes("commit"), bytes("group_info"), bytes("sealed_key"), bytes("recovery_auth")]
+                    vec![
+                        bytes("commit"),
+                        bytes("group_info"),
+                        bytes("sealed_key"),
+                        bytes("recovery_auth"),
+                    ]
                 } else {
-                    vec![bytes("commit"), bytes("group_info"), bytes("welcome"), bytes("sealed_key")]
+                    vec![
+                        bytes("commit"),
+                        bytes("group_info"),
+                        bytes("welcome"),
+                        bytes("sealed_key"),
+                    ]
                 };
-                let kind = if external { OutboxKind::ExternalCommit } else { OutboxKind::Commit };
-                self.post(&device, &OutboxEntry { id: 0, kind, group: Some(group_at(2)?), epoch: body["epoch"].as_u64().unwrap_or(0), parts })
+                let kind = if external {
+                    OutboxKind::ExternalCommit
+                } else {
+                    OutboxKind::Commit
+                };
+                self.post(
+                    &device,
+                    &OutboxEntry {
+                        id: 0,
+                        kind,
+                        group: Some(group_at(2)?),
+                        epoch: body["epoch"].as_u64().unwrap_or(0),
+                        parts,
+                    },
+                )
             }
             ("POST", ["v1", "groups", _, "messages"]) => {
-                let kind = if body["relay"] == json!(true) { OutboxKind::RelayMessage } else { OutboxKind::Message };
-                self.post(&device, &OutboxEntry { id: 0, kind, group: Some(group_at(2)?), epoch: body["epoch"].as_u64().unwrap_or(0), parts: vec![bytes("message")] })
+                let kind = if body["relay"] == json!(true) {
+                    OutboxKind::RelayMessage
+                } else {
+                    OutboxKind::Message
+                };
+                self.post(
+                    &device,
+                    &OutboxEntry {
+                        id: 0,
+                        kind,
+                        group: Some(group_at(2)?),
+                        epoch: body["epoch"].as_u64().unwrap_or(0),
+                        parts: vec![bytes("message")],
+                    },
+                )
             }
             ("POST", ["v1", "groups", _, "reject"]) => Ok(json!({ "id": 1 })),
             ("POST", ["v1", "requests"]) => {
-                let kind = body["kind"].as_str().filter(|k| ["readmit", "handover", "session"].contains(k)).ok_or(no(Error::BadFormat))?.to_string();
-                let group = body["group"].as_str().and_then(|g| base64url_decode(g).ok()).and_then(|b| GroupId::from_bytes(&b).ok());
-                let package = body["key_package"].as_str().and_then(|p| base64url_decode(p).ok());
+                let kind = body["kind"]
+                    .as_str()
+                    .filter(|k| ["readmit", "handover", "session"].contains(k))
+                    .ok_or(no(Error::BadFormat))?
+                    .to_string();
+                let group = body["group"]
+                    .as_str()
+                    .and_then(|g| base64url_decode(g).ok())
+                    .and_then(|b| GroupId::from_bytes(&b).ok());
+                let package = body["key_package"]
+                    .as_str()
+                    .and_then(|p| base64url_decode(p).ok());
                 let id = self.wish_with(&device, &kind, group, now, package.as_deref(), None, None);
                 if let Some(package) = package {
                     self.wish_packages.insert(id, package);
@@ -1371,24 +2009,51 @@ impl Hub {
         self.seen.push(format!("STREAM {path}"));
         let Some(device) = self.device_of(now, request) else {
             return vec![
-                StreamItem::Opened { status: 401, headers: Vec::new() },
-                StreamItem::Chunk { bytes: json!({ "error": "unauthorised", "message": "refused" }).to_string().into_bytes().into() },
+                StreamItem::Opened {
+                    status: 401,
+                    headers: Vec::new(),
+                },
+                StreamItem::Chunk {
+                    bytes: json!({ "error": "unauthorised", "message": "refused" })
+                        .to_string()
+                        .into_bytes()
+                        .into(),
+                },
                 StreamItem::Ended,
             ];
         };
-        let carried = request.headers.iter().find(|h| h.name.eq_ignore_ascii_case("trommi-lease")).and_then(|h| h.value.parse::<u64>().ok());
+        let carried = request
+            .headers
+            .iter()
+            .find(|h| h.name.eq_ignore_ascii_case("trommi-lease"))
+            .and_then(|h| h.value.parse::<u64>().ok());
         if let (Some(carried), Some((_, generation))) = (carried, self.leases.get(&device)) {
             if carried != *generation {
                 return vec![
-                    StreamItem::Opened { status: 409, headers: Vec::new() },
-                    StreamItem::Chunk { bytes: json!({ "error": "lease-lost", "message": "refused" }).to_string().into_bytes().into() },
+                    StreamItem::Opened {
+                        status: 409,
+                        headers: Vec::new(),
+                    },
+                    StreamItem::Chunk {
+                        bytes: json!({ "error": "lease-lost", "message": "refused" })
+                            .to_string()
+                            .into_bytes()
+                            .into(),
+                    },
                     StreamItem::Ended,
                 ];
             }
         }
-        let after: u64 = path.split_once("after=").and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
+        let after: u64 = path
+            .split_once("after=")
+            .and_then(|(_, n)| n.parse().ok())
+            .unwrap_or(0);
         let mut bytes = Vec::new();
-        for item in self.order.iter().filter(|i| i.change() > after && !self.hidden.contains(&i.change())) {
+        for item in self
+            .order
+            .iter()
+            .filter(|i| i.change() > after && !self.hidden.contains(&i.change()))
+        {
             bytes.extend(item.sse());
         }
         for (departing, signature) in &self.departures {
@@ -1399,8 +2064,20 @@ impl Hub {
         }
         bytes.extend(b"event: here\ndata: {}\n\n");
         self.streaming.retain(|(d, ..)| *d != device);
-        self.streaming.push((device, self.change.max(after), self.notes.len()));
-        vec![StreamItem::Opened { status: 200, headers: vec![Header { name: "content-type".into(), value: "text/event-stream".into() }] }, StreamItem::Chunk { bytes: bytes.into() }]
+        self.streaming
+            .push((device, self.change.max(after), self.notes.len()));
+        vec![
+            StreamItem::Opened {
+                status: 200,
+                headers: vec![Header {
+                    name: "content-type".into(),
+                    value: "text/event-stream".into(),
+                }],
+            },
+            StreamItem::Chunk {
+                bytes: bytes.into(),
+            },
+        ]
     }
 
     /// What the open stream of `device` has not been sent yet, as one chunk; none when nothing is new.
@@ -1408,7 +2085,11 @@ impl Hub {
         let at = self.streaming.iter().position(|(d, ..)| d == device)?;
         let (_, sent, noted) = self.streaming[at];
         let mut bytes = Vec::new();
-        for item in self.order.iter().filter(|i| i.change() > sent && !self.hidden.contains(&i.change())) {
+        for item in self
+            .order
+            .iter()
+            .filter(|i| i.change() > sent && !self.hidden.contains(&i.change()))
+        {
             bytes.extend(item.sse());
         }
         for (to, note) in &self.notes[noted..] {
@@ -1432,10 +2113,25 @@ pub struct StandInInvite {
 }
 
 pub fn answer(status: u16, body: Value) -> HttpResponse {
-    HttpResponse { status, headers: Vec::new(), body: if body.is_null() { Vec::new().into() } else { body.to_string().into_bytes().into() } }
+    HttpResponse {
+        status,
+        headers: Vec::new(),
+        body: if body.is_null() {
+            Vec::new().into()
+        } else {
+            body.to_string().into_bytes().into()
+        },
+    }
 }
 
 /// An answer with a `Retry-After` in seconds.
 pub fn later(status: u16, seconds: u64) -> HttpResponse {
-    HttpResponse { status, headers: vec![Header { name: "Retry-After".into(), value: seconds.to_string() }], body: Vec::new().into() }
+    HttpResponse {
+        status,
+        headers: vec![Header {
+            name: "Retry-After".into(),
+            value: seconds.to_string(),
+        }],
+        body: Vec::new().into(),
+    }
 }

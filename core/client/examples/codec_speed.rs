@@ -35,13 +35,21 @@ fn main() {
         let parse = Instant::now();
         let mut n = 0;
         for (_, payload) in &items {
-            n += serde_json::from_slice::<serde_json::Value>(payload).map_or(0, |v| v.as_object().map_or(0, |m| m.len()));
+            n += serde_json::from_slice::<serde_json::Value>(payload)
+                .map_or(0, |v| v.as_object().map_or(0, |m| m.len()));
         }
         let raw = Instant::now();
         for (_, payload) in &items {
-            n += serde_json::from_slice::<std::collections::BTreeMap<&str, &serde_json::value::RawValue>>(payload).map_or(0, |m| m.len());
+            n += serde_json::from_slice::<
+                std::collections::BTreeMap<&str, &serde_json::value::RawValue>,
+            >(payload)
+            .map_or(0, |m| m.len());
         }
-        println!("  (a Value parse: {:.2} ms, raw top level: {:.2} ms, {n})", (raw - parse).as_secs_f64() * 1e3, raw.elapsed().as_secs_f64() * 1e3);
+        println!(
+            "  (a Value parse: {:.2} ms, raw top level: {:.2} ms, {n})",
+            (raw - parse).as_secs_f64() * 1e3,
+            raw.elapsed().as_secs_f64() * 1e3
+        );
         for want in [BodyKind::Card, BodyKind::Message] {
             let t = Instant::now();
             for (kind, payload) in items.iter().filter(|(k, _)| *k == want) {
@@ -49,6 +57,9 @@ fn main() {
             }
             println!("  {want:?}: {:.2} ms", t.elapsed().as_secs_f64() * 1e3);
         }
-        println!("round {round}: {:.2} ms for 10,000 bodies ({bytes} bytes out)", start.elapsed().as_secs_f64() * 1e3);
+        println!(
+            "round {round}: {:.2} ms for 10,000 bodies ({bytes} bytes out)",
+            start.elapsed().as_secs_f64() * 1e3
+        );
     }
 }

@@ -196,7 +196,8 @@ fn wakeup_fits(name: &str, value: &serde_json::Value) -> Result<(), Error> {
         serde_json::Value::Object(fields) => fields,
         _ => return Err(Error::BadFormat),
     };
-    let (Some(serde_json::Value::String(note)), Some(at)) = (fields.get("note"), fields.get("at")) else {
+    let (Some(serde_json::Value::String(note)), Some(at)) = (fields.get("note"), fields.get("at"))
+    else {
         return Err(Error::BadFormat);
     };
     if at.as_u64().is_none() {
@@ -346,11 +347,14 @@ pub fn name_owner(name: &str, in_room: bool) -> Option<NameOwner> {
             ]);
         return room_humans.then_some(NameOwner::RoomHumans);
     }
-    if name == GOALS || name == MACHINE_APPROVED || has_prefix(&[JOIN_LINK, KNOWLEDGE, KNOWLEDGE_DONE, WAKEUP_EDIT]) {
+    if name == GOALS
+        || name == MACHINE_APPROVED
+        || has_prefix(&[JOIN_LINK, KNOWLEDGE, KNOWLEDGE_DONE, WAKEUP_EDIT])
+    {
         return Some(NameOwner::SessionHumans);
     }
-    let session_devices =
-        ["profile", "heard"].contains(&name) || has_prefix(&["status_line/", "alert/", JOIN_ASK, KNOWLEDGE_ASK, WAKEUP]);
+    let session_devices = ["profile", "heard"].contains(&name)
+        || has_prefix(&["status_line/", "alert/", JOIN_ASK, KNOWLEDGE_ASK, WAKEUP]);
     session_devices.then_some(NameOwner::SessionDevices)
 }
 
@@ -443,7 +447,12 @@ fn read_text(reader: &mut Reader<'_>) -> Result<String, Error> {
     String::from_utf8(reader.opaque()?.to_vec()).map_err(|_| Error::BadFormat)
 }
 
-fn write_held(writer: &mut Writer, name: &str, of: Option<DeviceId>, held: &Held) -> Result<(), Error> {
+fn write_held(
+    writer: &mut Writer,
+    name: &str,
+    of: Option<DeviceId>,
+    held: &Held,
+) -> Result<(), Error> {
     writer.opaque(name.as_bytes())?;
     writer.fixed(of.unwrap_or(DeviceId::ZERO).as_bytes());
     writer.u64(held.stamp.lamport);
@@ -456,11 +465,28 @@ fn write_held(writer: &mut Writer, name: &str, of: Option<DeviceId>, held: &Held
 fn read_held(reader: &mut Reader<'_>) -> Result<(String, Option<DeviceId>, Held), Error> {
     let name = read_text(reader)?;
     let of = Some(reader.value::<DeviceId>()?).filter(|device| !device.is_zero());
-    let stamp = Stamp { lamport: reader.u64()?, sender: reader.value()?, seq: reader.u64()? };
-    let present = match reader.u8()? { 0 => false, 1 => true, _ => return Err(Error::BadFormat) };
+    let stamp = Stamp {
+        lamport: reader.u64()?,
+        sender: reader.value()?,
+        seq: reader.u64()?,
+    };
+    let present = match reader.u8()? {
+        0 => false,
+        1 => true,
+        _ => return Err(Error::BadFormat),
+    };
     let text = read_text(reader)?;
-    if !present && !text.is_empty() { return Err(Error::BadFormat); }
-    Ok((name, of, Held { stamp, value: present.then_some(text) }))
+    if !present && !text.is_empty() {
+        return Err(Error::BadFormat);
+    }
+    Ok((
+        name,
+        of,
+        Held {
+            stamp,
+            value: present.then_some(text),
+        },
+    ))
 }
 
 impl Registers {

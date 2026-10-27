@@ -436,7 +436,12 @@ impl Model {
         } else if !deeds_only {
             change.sessions.insert(tl.id.clone());
             // A message of the agent ends what it showed of its answer while it wrote it (7.5).
-            if !human && self.live_answers.get(&tl.id).is_some_and(|l| l.sender == sender) {
+            if !human
+                && self
+                    .live_answers
+                    .get(&tl.id)
+                    .is_some_and(|l| l.sender == sender)
+            {
                 if let Some(l) = self.live_answers.remove(&tl.id) {
                     self.live_settled.push_back(l.turn);
                     while self.live_settled.len() > 64 {
@@ -709,22 +714,47 @@ impl Model {
 
     /// The answer an agent is writing now (7.5): the session whose agent or helper device sent it shows it, a newer
     /// preview of the same turn (or one of another turn) replacing it. False for one that is not shown.
-    pub fn apply_answer_preview(&mut self, from: &str, turn: &str, number: u32, payload: &[u8], now: u64, change: &mut Change) -> bool {
-        let Some(text) = crate::live_answer::decode(payload) else { return false };
+    pub fn apply_answer_preview(
+        &mut self,
+        from: &str,
+        turn: &str,
+        number: u32,
+        payload: &[u8],
+        now: u64,
+        change: &mut Change,
+    ) -> bool {
+        let Some(text) = crate::live_answer::decode(payload) else {
+            return false;
+        };
         let Some(session) = self
             .sessions
             .values()
-            .find(|s| s.agent_device_id.as_deref() == Some(from) || s.agent_device_ids.iter().any(|d| d == from))
+            .find(|s| {
+                s.agent_device_id.as_deref() == Some(from)
+                    || s.agent_device_ids.iter().any(|d| d == from)
+            })
             .map(|s| s.session_id.clone())
         else {
             return false;
         };
-        if self.live_answers.get(&session).is_some_and(|l| l.sender == from && l.turn == turn && l.number >= number)
+        if self
+            .live_answers
+            .get(&session)
+            .is_some_and(|l| l.sender == from && l.turn == turn && l.number >= number)
             || self.live_settled.iter().any(|t| t == turn)
         {
             return false;
         }
-        self.live_answers.insert(session.clone(), crate::model::LiveAnswer { sender: from.to_string(), turn: turn.to_string(), number, text, at: now });
+        self.live_answers.insert(
+            session.clone(),
+            crate::model::LiveAnswer {
+                sender: from.to_string(),
+                turn: turn.to_string(),
+                number,
+                text,
+                at: now,
+            },
+        );
         change.sessions.insert(session);
         true
     }
@@ -1202,7 +1232,9 @@ impl Model {
                                 at = card
                                     .answers
                                     .iter()
-                                    .position(|a| a.envelope_hash.as_deref() == Some(r.hash.as_str()))
+                                    .position(|a| {
+                                        a.envelope_hash.as_deref() == Some(r.hash.as_str())
+                                    })
                                     .expect("the answer");
                             }
                             _ => {}
@@ -1284,7 +1316,10 @@ impl Model {
                             && v.previous_version_hash == a.bound_version_hash
                             && n < v.envelope_number
                     })
-                    && card.answers.iter().all(|other| other.envelope_number <= a.envelope_number)
+                    && card
+                        .answers
+                        .iter()
+                        .all(|other| other.envelope_number <= a.envelope_number)
                 {
                     // A settled card's closing version may be read before its answer. Restore the answer
                     // bound to the version it closed, without moving the newer state backwards.
@@ -1835,10 +1870,17 @@ impl Model {
     }
 
     /// A device's own register `device/<id>`: its name and where it runs, shown on its member and its sessions.
-    fn set_device_register(&mut self, device_id: &str, value: &Value, session: &Option<String>, change: &mut Change) {
+    fn set_device_register(
+        &mut self,
+        device_id: &str,
+        value: &Value,
+        session: &Option<String>,
+        change: &mut Change,
+    ) {
         let v = value.as_object().cloned().unwrap_or_default();
         if self.device_register_groups.get(device_id) != Some(session) {
-            self.device_register_groups.insert(device_id.to_string(), session.clone());
+            self.device_register_groups
+                .insert(device_id.to_string(), session.clone());
             change.room = true;
         }
         self.device_registers

@@ -82,7 +82,11 @@ pub(super) struct Requests {
 
 impl Requests {
     pub(super) fn wake(&self) -> Option<u64> {
-        self.outs.values().filter(|o| o.flying.is_none()).filter_map(|o| o.retry.at).min()
+        self.outs
+            .values()
+            .filter(|o| o.flying.is_none())
+            .filter_map(|o| o.retry.at)
+            .min()
     }
     pub(super) fn hurry(&mut self) {
         for out in self.outs.values_mut() {
@@ -96,7 +100,10 @@ fn kept_key(name: &str) -> String {
 }
 
 fn needs_token(request: &HttpRequest) -> bool {
-    request.headers.iter().any(|h| h.name.eq_ignore_ascii_case("authorization"))
+    request
+        .headers
+        .iter()
+        .any(|h| h.name.eq_ignore_ascii_case("authorization"))
 }
 
 /// The request as it is kept: without its token.
@@ -116,18 +123,46 @@ impl Engine {
     /// with side effects at the hub, kept across a restart (see the module); at most 64 characters of
     /// `[a-z0-9/_-]`. Refused: `bad-request` (it does not build, or a bad name), `busy` (too many wait),
     /// `stopped`.
-    pub fn request(&mut self, ctx: &mut Ctx<'_>, build: impl FnOnce(&Site<'_>) -> Result<HttpRequest, Failure>, keep: Option<String>) -> Result<IoId, &'static str> {
+    pub fn request(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        build: impl FnOnce(&Site<'_>) -> Result<HttpRequest, Failure>,
+        keep: Option<String>,
+    ) -> Result<IoId, &'static str> {
         if self.stopped.is_some() {
             return Err("stopped");
         }
-        let plain = |n: &str| !n.is_empty() && n.len() <= 64 && n.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"/_-".contains(&b));
+        let plain = |n: &str| {
+            !n.is_empty()
+                && n.len() <= 64
+                && n.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"/_-".contains(&b))
+        };
         if keep.as_deref().is_some_and(|n| !plain(n)) {
             return Err("bad-request");
         }
-        if self.requests.outs.len() >= REQUESTS_MAX || (keep.is_some() && self.requests.outs.values().filter(|o| o.keep.is_some()).count() >= KEPT_MAX) {
+        if self.requests.outs.len() >= REQUESTS_MAX
+            || (keep.is_some()
+                && self
+                    .requests
+                    .outs
+                    .values()
+                    .filter(|o| o.keep.is_some())
+                    .count()
+                    >= KEPT_MAX)
+        {
             return Err("busy");
         }
-        let site = Site { url: &self.hub, token: Some(self.token.as_ref().map_or("waits-for-a-sign-in", |t| t.value.as_str())), client: &self.client, lease: self.lease_header() };
+        let site = Site {
+            url: &self.hub,
+            token: Some(
+                self.token
+                    .as_ref()
+                    .map_or("waits-for-a-sign-in", |t| t.value.as_str()),
+            ),
+            client: &self.client,
+            lease: self.lease_header(),
+        };
         let request = build(&site).map_err(|_| "bad-request")?;
         self.send_request(ctx, request, keep, None)
     }
@@ -135,29 +170,41 @@ impl Engine {
     /// The invites of this device that still have steps to take (12.1.5): an invite being added is through once
     /// it is not listed here.
     pub fn device_mut_steps(&mut self) -> Vec<trommi_core::ids::InviteId> {
-        let mut ids: Vec<_> = self.device.invite_steps().map(|s| s.into_iter().map(|(i, _)| i).collect()).unwrap_or_default();
+        let mut ids: Vec<_> = self
+            .device
+            .invite_steps()
+            .map(|s| s.into_iter().map(|(i, _)| i).collect())
+            .unwrap_or_default();
         ids.dedup();
         ids
     }
 
     /// The room's human devices and agent devices as this device holds the room now.
     pub fn roles(&self) -> (Vec<DeviceId>, Vec<DeviceId>) {
-        self.device.room_history().map_or_else(Default::default, |h| {
-            let s = h.newest();
-            (s.humans.iter().copied().collect(), s.room.agents.to_vec())
-        })
+        self.device
+            .room_history()
+            .map_or_else(Default::default, |h| {
+                let s = h.newest();
+                (s.humans.iter().copied().collect(), s.room.agents.to_vec())
+            })
     }
 
     /// Everything the device's store holds taken away in one write (a sign-out); the device writes no more. False
     /// when nothing was there to take.
     pub fn wipe(&mut self, ctx: &mut Ctx<'_>) -> bool {
         self.flush(ctx);
-        let Some(write) = self.writes.wipe() else { return false };
+        let Some(write) = self.writes.wipe() else {
+            return false;
+        };
         let id = ctx.id();
         self.pending.insert(id, Asked::DeviceWrite);
         ctx.out.push(Effect::Store {
             id,
-            op: StoreOp::DeviceApply { expected_revision: write.expected_revision, put: Vec::new(), delete: write.delete.into_iter().map(Into::into).collect() },
+            op: StoreOp::DeviceApply {
+                expected_revision: write.expected_revision,
+                put: Vec::new(),
+                delete: write.delete.into_iter().map(Into::into).collect(),
+            },
         });
         true
     }
@@ -171,16 +218,46 @@ impl Engine {
         Some(flying)
     }
 
-    fn send_request(&mut self, ctx: &mut Ctx<'_>, request: HttpRequest, keep: Option<String>, then: Option<Then>) -> Result<IoId, &'static str> {
+    fn send_request(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        request: HttpRequest,
+        keep: Option<String>,
+        then: Option<Then>,
+    ) -> Result<IoId, &'static str> {
         if let Some(name) = &keep {
-            let kept = Kept { request: without_token(&request), then: then.clone() };
-            let Ok(value) = serde_json::to_vec(&kept) else { return Err("bad-request") };
+            let kept = Kept {
+                request: without_token(&request),
+                then: then.clone(),
+            };
+            let Ok(value) = serde_json::to_vec(&kept) else {
+                return Err("bad-request");
+            };
             let id = ctx.id();
             self.pending.insert(id, Asked::KeptWrite);
-            ctx.out.push(Effect::Store { id, op: StoreOp::Put { put: vec![Entry { key: kept_key(name), value: value.into() }], delete: Vec::new() } });
+            ctx.out.push(Effect::Store {
+                id,
+                op: StoreOp::Put {
+                    put: vec![Entry {
+                        key: kept_key(name),
+                        value: value.into(),
+                    }],
+                    delete: Vec::new(),
+                },
+            });
         }
         let id = ctx.id();
-        self.requests.outs.insert(id, Out { request, keep, then, flying: None, tries: 0, retry: Retry::default() });
+        self.requests.outs.insert(
+            id,
+            Out {
+                request,
+                keep,
+                then,
+                flying: None,
+                tries: 0,
+                retry: Retry::default(),
+            },
+        );
         self.drive(ctx);
         Ok(id)
     }
@@ -193,21 +270,42 @@ impl Engine {
     /// nobody (the connector's `archive_child_session`). Refused: `forbidden` (the room group, a human device's
     /// call from an agent's engine, or an agent that would retire devices), `not-found` (a group this device does
     /// not hold), `busy`, `stopped`.
-    pub fn archive_session(&mut self, ctx: &mut Ctx<'_>, group: GroupId, retire: Vec<DeviceId>) -> Result<IoId, &'static str> {
+    pub fn archive_session(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        group: GroupId,
+        retire: Vec<DeviceId>,
+    ) -> Result<IoId, &'static str> {
         if self.stopped.is_some() {
             return Err("stopped");
         }
-        let allowed = if self.device.is_human() { self.agent.is_none() } else { self.agent.is_some() && retire.is_empty() };
+        let allowed = if self.device.is_human() {
+            self.agent.is_none()
+        } else {
+            self.agent.is_some() && retire.is_empty()
+        };
         if group.is_room() || !allowed {
             return Err("forbidden");
         }
         if self.device.group(&group).is_err() {
             return Err("not-found");
         }
-        let site = Site { url: &self.hub, token: Some(self.token.as_ref().map_or("waits-for-a-sign-in", |t| t.value.as_str())), client: &self.client, lease: self.lease_header() };
+        let site = Site {
+            url: &self.hub,
+            token: Some(
+                self.token
+                    .as_ref()
+                    .map_or("waits-for-a-sign-in", |t| t.value.as_str()),
+            ),
+            client: &self.client,
+            lease: self.lease_header(),
+        };
         let request = crate::hub::archive_request(&site, &group).map_err(|_| "bad-request")?;
         let name = format!("archive/{}", crate::engine::feed::hex(group.as_bytes()));
-        let then = Then::Archive { group: trommi_core::ids::base64url_encode(group.as_bytes()), retire: retire.iter().map(DeviceId::to_base64url).collect() };
+        let then = Then::Archive {
+            group: trommi_core::ids::base64url_encode(group.as_bytes()),
+            retire: retire.iter().map(DeviceId::to_base64url).collect(),
+        };
         self.send_request(ctx, request, Some(name), Some(then))
     }
 
@@ -218,31 +316,50 @@ impl Engine {
                 let taken = match result {
                     Ok(response) => match crate::hub::archive_answer(response) {
                         Ok(()) => true,
-                        Err(Failure::Refused { code: Some(code), .. }) => code == "gone",
+                        Err(Failure::Refused {
+                            code: Some(code), ..
+                        }) => code == "gone",
                         Err(_) => false,
                     },
                     Err(_) => false,
                 };
-                let Some(group) = trommi_core::ids::base64url_decode(group).ok().and_then(|b| GroupId::from_bytes(&b).ok()) else { return };
+                let Some(group) = trommi_core::ids::base64url_decode(group)
+                    .ok()
+                    .and_then(|b| GroupId::from_bytes(&b).ok())
+                else {
+                    return;
+                };
                 if !taken {
                     return;
                 }
                 self.archive_held(ctx, &group);
-                let retire: Vec<DeviceId> = retire.iter().filter_map(|d| DeviceId::from_base64url(d).ok()).collect();
+                let retire: Vec<DeviceId> = retire
+                    .iter()
+                    .filter_map(|d| DeviceId::from_base64url(d).ok())
+                    .collect();
                 if !retire.is_empty() {
                     // (one Commit for all; a device that is no enrolled agent any more is left out, `not-member`)
                     let mut result = self.device.remove_agents(&retire, ctx.now);
                     if result == Err(Error::NotMember) {
                         result = Ok(0);
                         for device in &retire {
-                            match self.device.remove_agents(std::slice::from_ref(device), ctx.now) {
+                            match self
+                                .device
+                                .remove_agents(std::slice::from_ref(device), ctx.now)
+                            {
                                 Ok(_) | Err(Error::NotMember) => {}
                                 Err(e) => result = Err(e),
                             }
                         }
                     }
                     if let Err(e) = result {
-                        ctx.log(LogLevel::Warn, format!("archive: the vouched devices were not retired: {}", e.code()));
+                        ctx.log(
+                            LogLevel::Warn,
+                            format!(
+                                "archive: the vouched devices were not retired: {}",
+                                e.code()
+                            ),
+                        );
                         self.local(ctx, &e);
                     }
                 }
@@ -257,18 +374,33 @@ impl Engine {
     /// Sends what waits and may go now: a request that needs the token only with one.
     pub(super) fn drive_requests(&mut self, ctx: &mut Ctx<'_>) {
         let token = self.token.as_ref().map(|t| t.value.clone());
-        let due: Vec<IoId> = self.requests.outs.iter().filter(|(_, o)| o.flying.is_none() && !o.retry.waiting(ctx.now) && (token.is_some() || !needs_token(&o.request))).map(|(id, _)| *id).collect();
+        let due: Vec<IoId> = self
+            .requests
+            .outs
+            .iter()
+            .filter(|(_, o)| {
+                o.flying.is_none()
+                    && !o.retry.waiting(ctx.now)
+                    && (token.is_some() || !needs_token(&o.request))
+            })
+            .map(|(id, _)| *id)
+            .collect();
         if !due.is_empty() {
             // (what the device wrote goes first, as for every request)
             self.flush(ctx);
         }
         for id in due {
-            let Some(out) = self.requests.outs.get_mut(&id) else { continue };
+            let Some(out) = self.requests.outs.get_mut(&id) else {
+                continue;
+            };
             let mut request = out.request.clone();
             if let Some(token) = &token {
                 for h in &mut request.headers {
                     if h.name.eq_ignore_ascii_case("authorization") {
-                        *h = Header { name: "authorization".into(), value: format!("Bearer {token}") };
+                        *h = Header {
+                            name: "authorization".into(),
+                            value: format!("Bearer {token}"),
+                        };
                     }
                 }
             }
@@ -276,24 +408,46 @@ impl Engine {
             out.flying = Some(flying);
             out.tries += 1;
             self.pending.insert(flying, Asked::Request { id });
-            ctx.out.push(Effect::Http { id: flying, request });
+            ctx.out.push(Effect::Http {
+                id: flying,
+                request,
+            });
         }
     }
 
     /// The result of one sending of a request.
-    pub(super) fn on_request(&mut self, ctx: &mut Ctx<'_>, id: IoId, result: IoResult<HttpResponse>) {
-        let Some(mut out) = self.requests.outs.remove(&id) else { return };
+    pub(super) fn on_request(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        id: IoId,
+        result: IoResult<HttpResponse>,
+    ) {
+        let Some(mut out) = self.requests.outs.remove(&id) else {
+            return;
+        };
         out.flying = None;
         let (result, unauthorised, retry_after) = match result {
             IoResult::Ok(response) => {
                 let refusal = self.codec.refusal(&response);
-                let unauthorised = refusal.as_ref().is_some_and(|r| r.code == "unauthorised") && needs_token(&out.request);
+                let unauthorised = refusal.as_ref().is_some_and(|r| r.code == "unauthorised")
+                    && needs_token(&out.request);
                 match crate::hub::classify(&response) {
-                    Err(Failure::NotNow { retry_after_ms, .. }) => (Err(Failure::NotNow { status: response.status, retry_after_ms }), false, retry_after_ms),
+                    Err(Failure::NotNow { retry_after_ms, .. }) => (
+                        Err(Failure::NotNow {
+                            status: response.status,
+                            retry_after_ms,
+                        }),
+                        false,
+                        retry_after_ms,
+                    ),
                     _ => (Ok(response), unauthorised, None),
                 }
             }
-            IoResult::Err(error) => (Err(classify_io(&error).unwrap_or(Failure::Offline)), false, None),
+            IoResult::Err(error) => (
+                Err(classify_io(&error).unwrap_or(Failure::Offline)),
+                false,
+                None,
+            ),
         };
         if unauthorised {
             // the token ended: signed in again, and the same request goes with the new one
@@ -322,10 +476,20 @@ impl Engine {
                 let key = kept_key(name);
                 let write = ctx.id();
                 self.pending.insert(write, Asked::KeptWrite);
-                ctx.out.push(Effect::Store { id: write, op: StoreOp::Put { put: Vec::new(), delete: vec![key] } });
+                ctx.out.push(Effect::Store {
+                    id: write,
+                    op: StoreOp::Put {
+                        put: Vec::new(),
+                        delete: vec![key],
+                    },
+                });
             }
         }
-        self.report(Report::Answer(Box::new(requests::Answered { id, keep: out.keep, result })));
+        self.report(Report::Answer(Box::new(requests::Answered {
+            id,
+            keep: out.keep,
+            result,
+        })));
     }
 
     /// At the start: the kept requests of an earlier run are read, to be sent again.
@@ -333,7 +497,12 @@ impl Engine {
         let id = ctx.id();
         self.requests.scanning = Some(id);
         self.pending.insert(id, Asked::KeptScan);
-        ctx.out.push(Effect::Store { id, op: StoreOp::Scan { prefix: KEPT_PREFIX.into() } });
+        ctx.out.push(Effect::Store {
+            id,
+            op: StoreOp::Scan {
+                prefix: KEPT_PREFIX.into(),
+            },
+        });
     }
 
     pub(super) fn on_kept(&mut self, ctx: &mut Ctx<'_>, result: &IoResult<StoreAnswer>) {
@@ -343,14 +512,37 @@ impl Engine {
             return;
         };
         for entry in entries.iter().take(KEPT_MAX) {
-            let name = entry.key.strip_prefix(KEPT_PREFIX).unwrap_or_default().to_string();
-            let Ok(Kept { request, then }) = serde_json::from_slice::<Kept>(&entry.value.0) else { continue };
+            let name = entry
+                .key
+                .strip_prefix(KEPT_PREFIX)
+                .unwrap_or_default()
+                .to_string();
+            let Ok(Kept { request, then }) = serde_json::from_slice::<Kept>(&entry.value.0) else {
+                continue;
+            };
             // (only to this engine's hub: a kept request never names another address)
-            if name.is_empty() || !request.url.starts_with(&format!("{}/", self.hub)) || self.requests.outs.values().any(|o| o.keep.as_deref() == Some(&name)) {
+            if name.is_empty()
+                || !request.url.starts_with(&format!("{}/", self.hub))
+                || self
+                    .requests
+                    .outs
+                    .values()
+                    .any(|o| o.keep.as_deref() == Some(&name))
+            {
                 continue;
             }
             let id = ctx.id();
-            self.requests.outs.insert(id, Out { request, keep: Some(name), then, flying: None, tries: 0, retry: Retry::default() });
+            self.requests.outs.insert(
+                id,
+                Out {
+                    request,
+                    keep: Some(name),
+                    then,
+                    flying: None,
+                    tries: 0,
+                    retry: Retry::default(),
+                },
+            );
         }
     }
 }

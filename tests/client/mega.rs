@@ -32,10 +32,10 @@
 //! where the snapshots and the report go. `speed_of_every_client` measures the same clients with a big Desk, and
 //! how fast a reopened connector holds the human's answers (`connector_answers_lag_ms`: per answer, from the hub's
 //! taking it to the agent's holding it).
-#[path = "../connector/common/mod.rs"]
-mod common;
 #[path = "mega/chaos.rs"]
 mod chaos;
+#[path = "../connector/common/mod.rs"]
+mod common;
 #[path = "mega/full.rs"]
 mod full;
 #[path = "mega/torture.rs"]
@@ -108,12 +108,16 @@ fn account_body(room: &trommi_core::ids::RoomId, code: &trommi_core::crypto::Sec
     use trommi_connector::driver::b64;
     use trommi_core::account::{self, Way};
     use trommi_core::crypto::SystemEntropy;
-    let pw = account::password_keys(MEGA_EMAIL, MEGA_PASSWORD, Some(account::KDF_RECORD)).expect("the password's keys");
+    let pw = account::password_keys(MEGA_EMAIL, MEGA_PASSWORD, Some(account::KDF_RECORD))
+        .expect("the password's keys");
     let words = account::generate_kit_words(&mut SystemEntropy).expect("words");
     let words = String::from_utf8(words.expose().to_vec()).expect("text");
     let kit = account::kit_keys(MEGA_EMAIL, &words).expect("the kit's keys");
-    let sealed_password = account::seal_code(&pw.wrap_key, room, Way::Password, code, &mut SystemEntropy).expect("sealed");
-    let sealed_kit = account::seal_code(&kit.wrap_key, room, Way::Kit, code, &mut SystemEntropy).expect("sealed");
+    let sealed_password =
+        account::seal_code(&pw.wrap_key, room, Way::Password, code, &mut SystemEntropy)
+            .expect("sealed");
+    let sealed_kit = account::seal_code(&kit.wrap_key, room, Way::Kit, code, &mut SystemEntropy)
+        .expect("sealed");
     json!({
         "email": MEGA_EMAIL,
         "password": {
@@ -158,7 +162,9 @@ impl Observer {
             "ios" => {
                 // the built test runner itself (tests/client/mega/prepare.sh builds it): no SwiftPM, so several
                 // devices of one tree run side by side without its lock on .build
-                let runner = root.join("tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiShellTests-test-runner");
+                let runner = root.join(
+                    "tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiShellTests-test-runner",
+                );
                 Command::new(&runner)
                     .arg("TrommiShellTests.MegaObserverTests/testObserve")
                     .env("TROMMI_MEGA_OBSERVER", &dir)
@@ -420,7 +426,11 @@ impl World {
             0..=17 => {
                 let info = self.rng.chance(0.2);
                 let session = Some(self.agents[a].session.clone());
-                let helper = if self.rng.chance(0.25) { self.agents[a].helper.clone() } else { None };
+                let helper = if self.rng.chance(0.25) {
+                    self.agents[a].helper.clone()
+                } else {
+                    None
+                };
                 let urgency = ["low", "normal", "high", "critical"][self.rng.below(4)];
                 let mut card = if info {
                     json!({ "card_type": "info", "title": format!("c{n} info"), "body": format!("info {n}"), "urgency": urgency })
@@ -732,7 +742,9 @@ impl World {
                 let answer = c.answer.as_ref().map(|x| {
                     let mut ch: Vec<String> = x
                         .choices
-                        .as_array().into_iter().flatten()
+                        .as_array()
+                        .into_iter()
+                        .flatten()
                         .filter_map(|v| v.as_str().map(String::from))
                         .collect();
                     ch.sort();
@@ -856,7 +868,11 @@ fn compare(label: &str, snaps: &BTreeMap<String, Value>, report: &mut Report) {
     // that differs is named once, not once per other device)
     let groups: BTreeSet<(&str, &str)> = devices.iter().map(|(k, _)| platform_tree(k)).collect();
     for group in groups {
-        let mine: Vec<(&String, &Value)> = devices.iter().copied().filter(|(k, _)| platform_tree(k) == group).collect();
+        let mine: Vec<(&String, &Value)> = devices
+            .iter()
+            .copied()
+            .filter(|(k, _)| platform_tree(k) == group)
+            .collect();
         let shown = |v: &Value| {
             let mut v = v.clone();
             if let Some(o) = v.as_object_mut() {
@@ -869,7 +885,10 @@ fn compare(label: &str, snaps: &BTreeMap<String, Value>, report: &mut Report) {
             counts.entry(shown(v)).or_insert((0, i)).0 += 1;
         }
         // the most shown; on a tie the one of the first device
-        let Some(&(_, at)) = counts.values().max_by_key(|(n, i)| (*n, std::cmp::Reverse(*i))) else {
+        let Some(&(_, at)) = counts
+            .values()
+            .max_by_key(|(n, i)| (*n, std::cmp::Reverse(*i)))
+        else {
             continue;
         };
         let (a, va) = mine[at];

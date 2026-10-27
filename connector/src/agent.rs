@@ -617,7 +617,7 @@ impl Driver {
         })
     }
 
-        /// The previews of this session that still wait for the hub go (the turns they were of ended).
+    /// The previews of this session that still wait for the hub go (the turns they were of ended).
     pub async fn drop_previews(&self) -> Result<()> {
         let group = self.lock().group_of(None)?;
         self.device_queue(move |d, _now| d.outbox_drop_relays(&group).map(|_| ()))

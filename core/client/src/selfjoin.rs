@@ -55,8 +55,20 @@ pub fn known_name(m: &Model, ask: &Value) -> Option<String> {
 /// folder's last part.
 pub fn ask_name(m: &Model, ask: &Value) -> String {
     known_name(m, ask)
-        .or_else(|| ask.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()).map(String::from))
-        .or_else(|| Some(folder_name(ask.get("folder").and_then(Value::as_str).unwrap_or(""))).filter(|n| !n.is_empty()).map(String::from))
+        .or_else(|| {
+            ask.get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(String::from)
+        })
+        .or_else(|| {
+            Some(folder_name(
+                ask.get("folder").and_then(Value::as_str).unwrap_or(""),
+            ))
+            .filter(|n| !n.is_empty())
+            .map(String::from)
+        })
         .unwrap_or_default()
         .chars()
         .take(120)
@@ -72,7 +84,10 @@ fn setting<'a>(s: &'a Session, key: &str) -> Option<&'a Value> {
 }
 
 fn nonce_ok(n: &str) -> bool {
-    !n.is_empty() && n.len() <= 64 && n.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    !n.is_empty()
+        && n.len() <= 64
+        && n.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// A live main session whose group this device holds: the only place an ask counts.
@@ -89,7 +104,9 @@ fn open_asks(m: &Model) -> Vec<(&Session, &str, &Value)> {
     let mut out = Vec::new();
     for s in m.sessions.values().filter(|s| asks_here(s)) {
         for (key, reg) in &s.registers {
-            let Some(nonce) = key.strip_prefix("join_ask/") else { continue };
+            let Some(nonce) = key.strip_prefix("join_ask/") else {
+                continue;
+            };
             if !nonce_ok(nonce) || !reg.value.is_object() {
                 continue;
             }
@@ -111,7 +128,12 @@ fn vouched_accounts(m: &Model) -> Vec<String> {
         .values()
         .filter(|s| s.is_active && !truthy(setting(s, "archived")))
         .filter_map(|s| setting(s, "vouched").filter(|v| v.is_object()))
-        .map(|v| v.get("account").and_then(Value::as_str).unwrap_or("").to_string())
+        .map(|v| {
+            v.get("account")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string()
+        })
         .collect()
 }
 
@@ -176,29 +198,68 @@ pub fn verdict(m: &Model, session_id: &str, nonce: &str, request_hash: &str) -> 
 /// `vouched.new_chat` names one let in by any device) and within an agent invite's life. An ask that names one this
 /// device cannot read (not here, from another sender, too old, used, of a team that is gone) stands on no team: it
 /// is never placed on a team the person did not choose.
-pub fn new_chat_place(m: &Model, computer: &str, ask: &Value, used: &BTreeSet<String>, now: u64) -> Option<(String, Option<Option<String>>)> {
-    let nonce = ask.get("new_chat").and_then(Value::as_str).filter(|n| nonce_ok(n))?.to_string();
+pub fn new_chat_place(
+    m: &Model,
+    computer: &str,
+    ask: &Value,
+    used: &BTreeSet<String>,
+    now: u64,
+) -> Option<(String, Option<Option<String>>)> {
+    let nonce = ask
+        .get("new_chat")
+        .and_then(Value::as_str)
+        .filter(|n| nonce_ok(n))?
+        .to_string();
     let none = Some((nonce.clone(), Some(None)));
     let taken = used.contains(&nonce)
-        || m.sessions.values().any(|s| setting(s, "vouched").and_then(|v| v.get("new_chat")).and_then(Value::as_str) == Some(nonce.as_str()));
+        || m.sessions.values().any(|s| {
+            setting(s, "vouched")
+                .and_then(|v| v.get("new_chat"))
+                .and_then(Value::as_str)
+                == Some(nonce.as_str())
+        });
     if taken {
         return none;
     }
-    let human = |d: &str| m.my_device_id.as_deref() == Some(d) || m.members.get(d).is_some_and(|x| x.device_role == "human");
+    let human = |d: &str| {
+        m.my_device_id.as_deref() == Some(d)
+            || m.members.get(d).is_some_and(|x| x.device_role == "human")
+    };
     // (the computer's own session, and the sessions it let in)
-    let ours = |s: &Session| s.session_id == computer || setting(s, "vouched").and_then(|v| v.get("by")).and_then(Value::as_str) == Some(computer);
+    let ours = |s: &Session| {
+        s.session_id == computer
+            || setting(s, "vouched")
+                .and_then(|v| v.get("by"))
+                .and_then(Value::as_str)
+                == Some(computer)
+    };
     for s in m.sessions.values().filter(|s| ours(s)) {
-        let Some(t) = m.timelines.get(&format!("chat:session/{}", s.session_id)) else { continue };
+        let Some(t) = m.timelines.get(&format!("chat:session/{}", s.session_id)) else {
+            continue;
+        };
         for item in t.items.values() {
-            let Some(asked) = item.get("content").and_then(|c| c.get("new_chat")).filter(|a| a.get("nonce").and_then(Value::as_str) == Some(nonce.as_str())) else { continue };
+            let Some(asked) = item
+                .get("content")
+                .and_then(|c| c.get("new_chat"))
+                .filter(|a| a.get("nonce").and_then(Value::as_str) == Some(nonce.as_str()))
+            else {
+                continue;
+            };
             let sent = item.get("sent_at").and_then(Value::as_u64).unwrap_or(0);
-            if !human(item.get("sender_device_id").and_then(Value::as_str).unwrap_or("")) || sent + trommi_core::invite::AGENT_INVITE_LIFE_MS < now {
+            if !human(
+                item.get("sender_device_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or(""),
+            ) || sent + trommi_core::invite::AGENT_INVITE_LIFE_MS < now
+            {
                 return none;
             }
             let teams = crate::sessions::teams_in_order(m);
             return match asked.get("desk") {
                 None => Some((nonce, None)),
-                Some(Value::String(t)) if teams.iter().any(|(id, _)| id == t) => Some((nonce, Some(Some(t.clone())))),
+                Some(Value::String(t)) if teams.iter().any(|(id, _)| id == t) => {
+                    Some((nonce, Some(Some(t.clone()))))
+                }
                 _ => none,
             };
         }
@@ -209,7 +270,13 @@ pub fn new_chat_place(m: &Model, computer: &str, ask: &Value, used: &BTreeSet<St
 /// Where an activation of the approved computer `computer` stands, and the person's new-chat ask it answers: the
 /// place his ask chose ([`new_chat_place`]); an ask that chose none, or no ask, stands where the computer stands (its
 /// team while that team is there, else no team: `sessions::team_of`).
-pub fn activation_place(m: &Model, computer: &str, ask: &Value, used: &BTreeSet<String>, now: u64) -> (Option<String>, Option<String>) {
+pub fn activation_place(
+    m: &Model,
+    computer: &str,
+    ask: &Value,
+    used: &BTreeSet<String>,
+    now: u64,
+) -> (Option<String>, Option<String>) {
     let asked = new_chat_place(m, computer, ask, used, now);
     let nonce = asked.as_ref().map(|(n, _)| n.clone());
     let team = match asked {
@@ -228,7 +295,10 @@ pub fn to_retire(m: &Model) -> Vec<String> {
             continue;
         }
         if let Some(d) = s.agent_device_id.as_ref() {
-            if m.members.get(d).is_some_and(|x| x.is_active && x.device_role != "human") {
+            if m.members
+                .get(d)
+                .is_some_and(|x| x.is_active && x.device_role != "human")
+            {
                 out.insert(d.clone());
             }
         }
@@ -265,12 +335,17 @@ pub fn join_rows(m: &Model, invites: &BTreeMap<String, String>) -> Vec<JoinRow> 
     let mut out = Vec::new();
     for s in m.sessions.values().filter(|s| asks_here(s)) {
         for (key, reg) in &s.registers {
-            let Some(nonce) = key.strip_prefix("join_ask/") else { continue };
+            let Some(nonce) = key.strip_prefix("join_ask/") else {
+                continue;
+            };
             let ask = &reg.value;
             if !nonce_ok(nonce) || !ask.is_object() {
                 continue;
             }
-            let link = s.registers.get(&format!("join_link/{nonce}")).map(|r| &r.value);
+            let link = s
+                .registers
+                .get(&format!("join_link/{nonce}"))
+                .map(|r| &r.value);
             let state = match link {
                 None | Some(Value::Null) => "ask",
                 Some(l) => {
@@ -287,9 +362,17 @@ pub fn join_rows(m: &Model, invites: &BTreeMap<String, String>) -> Vec<JoinRow> 
             let folder = ask.get("folder").and_then(Value::as_str).unwrap_or("");
             let name = known_name(m, ask)
                 .or_else(|| Some(folder_name(folder).to_string()).filter(|n| !n.is_empty()))
-                .or_else(|| ask.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).map(String::from))
+                .or_else(|| {
+                    ask.get("name")
+                        .and_then(Value::as_str)
+                        .filter(|n| !n.is_empty())
+                        .map(String::from)
+                })
                 .unwrap_or_else(|| "New session".into());
-            let label = ask.get("account_label").and_then(Value::as_str).unwrap_or("");
+            let label = ask
+                .get("account_label")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             let by = setting(s, "name")
                 .and_then(Value::as_str)
                 .filter(|n| !n.is_empty())
@@ -302,8 +385,17 @@ pub fn join_rows(m: &Model, invites: &BTreeMap<String, String>) -> Vec<JoinRow> 
                 state: state.into(),
                 folder: folder.to_string(),
                 name,
-                host: ask.get("host").and_then(Value::as_str).unwrap_or("").to_string(),
-                kind: if label.starts_with("codex") { "Codex" } else { "Claude" }.into(),
+                host: ask
+                    .get("host")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                kind: if label.starts_with("codex") {
+                    "Codex"
+                } else {
+                    "Claude"
+                }
+                .into(),
                 by,
             });
         }
@@ -327,7 +419,13 @@ mod tests {
         s.agent_device_id = Some(AGENT.into());
         let grant = json!({"machine":{"device":AGENT}});
         s.settings = Some(grant.clone());
-        m.human.insert(format!("session/{S1}"), crate::model::types::HumanRegister { value: grant, ..Default::default() });
+        m.human.insert(
+            format!("session/{S1}"),
+            crate::model::types::HumanRegister {
+                value: grant,
+                ..Default::default()
+            },
+        );
         m
     }
     fn reg(m: &mut Model, sid: &str, key: &str, value: Value) {
@@ -353,43 +451,134 @@ mod tests {
         const HUMAN: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
         const NOW: u64 = 10_000_000;
         let mut m = room();
-        m.members.insert(HUMAN.into(), Member { device_id: HUMAN.into(), device_role: "human".into(), is_active: true, ..Default::default() });
+        m.members.insert(
+            HUMAN.into(),
+            Member {
+                device_id: HUMAN.into(),
+                device_role: "human".into(),
+                is_active: true,
+                ..Default::default()
+            },
+        );
         for (id, name) in [("main", "Work"), ("lab", "Lab")] {
-            m.human.insert(format!("desk/{id}"), HumanRegister { value: json!({ "name": name }), ..Default::default() });
+            m.human.insert(
+                format!("desk/{id}"),
+                HumanRegister {
+                    value: json!({ "name": name }),
+                    ..Default::default()
+                },
+            );
         }
         let s = m.session_of(MAIN);
         s.group_id = Some("g2".into());
         s.settings = Some(json!({ "vouched": { "by": S1 } }));
         let say = |m: &mut Model, n: u64, from: &str, at: u64, asked: Value| {
-            let t = m.timelines.entry(format!("chat:session/{MAIN}")).or_default();
+            let t = m
+                .timelines
+                .entry(format!("chat:session/{MAIN}"))
+                .or_default();
             let item = json!({ "sender_device_id": from, "sent_at": at, "content": { "text": "Start a new chat with me, please.", "new_chat": asked } });
-            t.items.insert(ItemKey::Number(n), item.as_object().unwrap().clone());
+            t.items
+                .insert(ItemKey::Number(n), item.as_object().unwrap().clone());
         };
-        say(&mut m, 1, HUMAN, NOW - 1_000, json!({ "v": 1, "nonce": "aa01", "desk": null }));
-        say(&mut m, 2, HUMAN, NOW - 1_000, json!({ "v": 1, "nonce": "aa02", "desk": "lab" }));
-        say(&mut m, 3, HUMAN, NOW - 1_000, json!({ "v": 1, "nonce": "aa03" }));
-        say(&mut m, 4, AGENT, NOW - 1_000, json!({ "v": 1, "nonce": "aa04", "desk": "lab" }));
-        say(&mut m, 5, HUMAN, NOW - 16 * 60_000, json!({ "v": 1, "nonce": "aa05", "desk": "lab" }));
-        say(&mut m, 6, HUMAN, NOW - 1_000, json!({ "v": 1, "nonce": "aa06", "desk": "gone" }));
+        say(
+            &mut m,
+            1,
+            HUMAN,
+            NOW - 1_000,
+            json!({ "v": 1, "nonce": "aa01", "desk": null }),
+        );
+        say(
+            &mut m,
+            2,
+            HUMAN,
+            NOW - 1_000,
+            json!({ "v": 1, "nonce": "aa02", "desk": "lab" }),
+        );
+        say(
+            &mut m,
+            3,
+            HUMAN,
+            NOW - 1_000,
+            json!({ "v": 1, "nonce": "aa03" }),
+        );
+        say(
+            &mut m,
+            4,
+            AGENT,
+            NOW - 1_000,
+            json!({ "v": 1, "nonce": "aa04", "desk": "lab" }),
+        );
+        say(
+            &mut m,
+            5,
+            HUMAN,
+            NOW - 16 * 60_000,
+            json!({ "v": 1, "nonce": "aa05", "desk": "lab" }),
+        );
+        say(
+            &mut m,
+            6,
+            HUMAN,
+            NOW - 1_000,
+            json!({ "v": 1, "nonce": "aa06", "desk": "gone" }),
+        );
         let none = BTreeSet::new();
-        let place = |m: &Model, nonce: &str, used: &BTreeSet<String>| new_chat_place(m, S1, &json!({ "name": "x", "new_chat": nonce }), used, NOW).map(|(_, p)| p);
-        assert_eq!(new_chat_place(&m, S1, &ask("a"), &none, NOW), None, "no ask named: as always");
+        let place = |m: &Model, nonce: &str, used: &BTreeSet<String>| {
+            new_chat_place(m, S1, &json!({ "name": "x", "new_chat": nonce }), used, NOW)
+                .map(|(_, p)| p)
+        };
+        assert_eq!(
+            new_chat_place(&m, S1, &ask("a"), &none, NOW),
+            None,
+            "no ask named: as always"
+        );
         assert_eq!(place(&m, "aa01", &none), Some(Some(None)), "no team");
-        assert_eq!(place(&m, "aa02", &none), Some(Some(Some("lab".into()))), "his team");
-        assert_eq!(place(&m, "aa03", &none), Some(None), "he chose none: as always");
-        assert_eq!(place(&m, "aa04", &none), Some(Some(None)), "the agent's own line places nothing");
+        assert_eq!(
+            place(&m, "aa02", &none),
+            Some(Some(Some("lab".into()))),
+            "his team"
+        );
+        assert_eq!(
+            place(&m, "aa03", &none),
+            Some(None),
+            "he chose none: as always"
+        );
+        assert_eq!(
+            place(&m, "aa04", &none),
+            Some(Some(None)),
+            "the agent's own line places nothing"
+        );
         assert_eq!(place(&m, "aa05", &none), Some(Some(None)), "too old");
-        assert_eq!(place(&m, "aa06", &none), Some(Some(None)), "a team that is gone");
-        assert_eq!(place(&m, "ffff", &none), Some(Some(None)), "an ask not read here");
-        assert_eq!(place(&m, "aa02", &["aa02".to_string()].into()), Some(Some(None)), "let in once by this device");
+        assert_eq!(
+            place(&m, "aa06", &none),
+            Some(Some(None)),
+            "a team that is gone"
+        );
+        assert_eq!(
+            place(&m, "ffff", &none),
+            Some(Some(None)),
+            "an ask not read here"
+        );
+        assert_eq!(
+            place(&m, "aa02", &["aa02".to_string()].into()),
+            Some(Some(None)),
+            "let in once by this device"
+        );
         // let in by any device: once
         let other = m.session_of("ffffffffffffffffffffffffffffffff");
         other.settings = Some(json!({ "vouched": { "by": S1, "new_chat": "aa02" } }));
         assert_eq!(place(&m, "aa02", &none), Some(Some(None)));
         // another computer's asks are not this one's
-        assert_eq!(new_chat_place(&m, "9999", &json!({ "new_chat": "aa01" }), &none, NOW).map(|(_, p)| p), Some(Some(None)));
+        assert_eq!(
+            new_chat_place(&m, "9999", &json!({ "new_chat": "aa01" }), &none, NOW).map(|(_, p)| p),
+            Some(Some(None))
+        );
         m.sessions.get_mut(MAIN).unwrap().settings = Some(json!({ "vouched": { "by": "9999" } }));
-        assert_eq!(new_chat_place(&m, S1, &json!({ "new_chat": "aa03" }), &none, NOW).map(|(_, p)| p), Some(Some(None)));
+        assert_eq!(
+            new_chat_place(&m, S1, &json!({ "new_chat": "aa03" }), &none, NOW).map(|(_, p)| p),
+            Some(Some(None))
+        );
     }
 
     /// An activation stands where the person's ask chose; one whose ask chose nothing, and one that names no ask,
@@ -400,26 +589,77 @@ mod tests {
         const HUMAN: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
         const NOW: u64 = 10_000_000;
         let mut m = room();
-        m.members.insert(HUMAN.into(), Member { device_id: HUMAN.into(), device_role: "human".into(), is_active: true, ..Default::default() });
+        m.members.insert(
+            HUMAN.into(),
+            Member {
+                device_id: HUMAN.into(),
+                device_role: "human".into(),
+                is_active: true,
+                ..Default::default()
+            },
+        );
         for (id, name) in [("main", "Work"), ("lab", "Lab")] {
-            m.human.insert(format!("desk/{id}"), HumanRegister { value: json!({ "name": name }), ..Default::default() });
+            m.human.insert(
+                format!("desk/{id}"),
+                HumanRegister {
+                    value: json!({ "name": name }),
+                    ..Default::default()
+                },
+            );
         }
         let placed = json!({ "machine": { "device": AGENT }, "desk": "lab" });
         m.sessions.get_mut(S1).unwrap().settings = Some(placed.clone());
-        m.human.insert(format!("session/{S1}"), HumanRegister { value: placed, ..Default::default() });
+        m.human.insert(
+            format!("session/{S1}"),
+            HumanRegister {
+                value: placed,
+                ..Default::default()
+            },
+        );
         let t = m.timelines.entry(format!("chat:session/{S1}")).or_default();
-        for (n, asked) in [(1, json!({ "v": 1, "nonce": "ab01" })), (2, json!({ "v": 1, "nonce": "ab02", "desk": null })), (3, json!({ "v": 1, "nonce": "ab03", "desk": "main" }))] {
+        for (n, asked) in [
+            (1, json!({ "v": 1, "nonce": "ab01" })),
+            (2, json!({ "v": 1, "nonce": "ab02", "desk": null })),
+            (3, json!({ "v": 1, "nonce": "ab03", "desk": "main" })),
+        ] {
             let item = json!({ "sender_device_id": HUMAN, "sent_at": NOW - 1_000, "content": { "new_chat": asked } });
-            t.items.insert(ItemKey::Number(n), item.as_object().unwrap().clone());
+            t.items
+                .insert(ItemKey::Number(n), item.as_object().unwrap().clone());
         }
         let none = BTreeSet::new();
         let at = |m: &Model, ask: Value| activation_place(m, S1, &ask, &none, NOW);
-        assert_eq!(at(&m, ask("a")), (None, Some("lab".into())), "no ask named: the computer's team");
-        assert_eq!(at(&m, json!({ "new_chat": "ab01" })), (Some("ab01".into()), Some("lab".into())), "no choice: the computer's team");
-        assert_eq!(at(&m, json!({ "new_chat": "ab02" })), (Some("ab02".into()), None), "no team chosen");
-        assert_eq!(at(&m, json!({ "new_chat": "ab03" })), (Some("ab03".into()), Some("main".into())), "his team");
-        m.human.insert("desk/lab".into(), HumanRegister { value: Value::Null, ..Default::default() });
-        assert_eq!(at(&m, json!({ "new_chat": "ab01" })).1, None, "the computer's team gone: no team");
+        assert_eq!(
+            at(&m, ask("a")),
+            (None, Some("lab".into())),
+            "no ask named: the computer's team"
+        );
+        assert_eq!(
+            at(&m, json!({ "new_chat": "ab01" })),
+            (Some("ab01".into()), Some("lab".into())),
+            "no choice: the computer's team"
+        );
+        assert_eq!(
+            at(&m, json!({ "new_chat": "ab02" })),
+            (Some("ab02".into()), None),
+            "no team chosen"
+        );
+        assert_eq!(
+            at(&m, json!({ "new_chat": "ab03" })),
+            (Some("ab03".into()), Some("main".into())),
+            "his team"
+        );
+        m.human.insert(
+            "desk/lab".into(),
+            HumanRegister {
+                value: Value::Null,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            at(&m, json!({ "new_chat": "ab01" })).1,
+            None,
+            "the computer's team gone: no team"
+        );
     }
 
     #[test]
@@ -429,8 +669,16 @@ mod tests {
         let got = asks(&m, &BTreeSet::new(), &[]);
         assert_eq!((got.len(), got[0].refused.clone()), (1, None));
         assert!(asks(&m, &["a1".to_string()].into(), &[]).is_empty());
-        reg(&mut m, S1, "join_link/a1", json!({ "link": "x", "invite_id": "00" }));
-        assert!(asks(&m, &BTreeSet::new(), &[]).is_empty(), "answered by another device");
+        reg(
+            &mut m,
+            S1,
+            "join_link/a1",
+            json!({ "link": "x", "invite_id": "00" }),
+        );
+        assert!(
+            asks(&m, &BTreeSet::new(), &[]).is_empty(),
+            "answered by another device"
+        );
         // not held here: none
         let mut m = room();
         reg(&mut m, S1, "join_ask/a1", ask("acct"));
@@ -442,28 +690,73 @@ mod tests {
     fn the_bounds() {
         let mut m = room();
         reg(&mut m, S1, "join_ask/b0", ask(""));
-        assert_eq!(asks(&m, &BTreeSet::new(), &[])[0].refused, None, "program accounts do not confer computer authority");
+        assert_eq!(
+            asks(&m, &BTreeSet::new(), &[])[0].refused,
+            None,
+            "program accounts do not confer computer authority"
+        );
         m.human.clear();
-        assert_eq!(asks(&m, &BTreeSet::new(), &[])[0].refused.as_deref(), Some("computer-required"));
+        assert_eq!(
+            asks(&m, &BTreeSet::new(), &[])[0].refused.as_deref(),
+            Some("computer-required")
+        );
         let mut m = room();
         for i in 0..10 {
             reg(&mut m, S1, &format!("join_ask/c{i}"), ask("acct"));
         }
         let got = asks(&m, &BTreeSet::new(), &[]);
-        assert_eq!(got.iter().filter(|a| a.refused.is_none()).count(), MAX_VOUCHED, "ten at once: eight links");
+        assert_eq!(
+            got.iter().filter(|a| a.refused.is_none()).count(),
+            MAX_VOUCHED,
+            "ten at once: eight links"
+        );
         let pending = vec![crate::machines::quota(S1); 8];
-        assert_eq!(asks(&m, &BTreeSet::new(), &pending).iter().filter(|a| a.refused.is_none()).count(), 0);
+        assert_eq!(
+            asks(&m, &BTreeSet::new(), &pending)
+                .iter()
+                .filter(|a| a.refused.is_none())
+                .count(),
+            0
+        );
         let mut m = room();
         for i in 0..30 {
-            reg(&mut m, S1, &format!("join_ask/d{i:02}"), ask(&format!("acct{i}")));
+            reg(
+                &mut m,
+                S1,
+                &format!("join_ask/d{i:02}"),
+                ask(&format!("acct{i}")),
+            );
         }
         let got = asks(&m, &BTreeSet::new(), &[]);
-        assert_eq!(got.iter().filter(|a| a.refused.is_none()).count(), MAX_VOUCHED_OPEN);
-        assert_eq!(got.iter().filter(|a| a.refused.as_deref() == Some("cap")).count(), 30 - MAX_VOUCHED, "changing claimed accounts cannot evade a computer's quota");
-        let busy: Vec<String> = (0..MAX_VOUCHED_OPEN).map(|i| format!("other-machine-{i}")).collect();
-        assert!(asks(&m, &BTreeSet::new(), &busy).iter().all(|a| a.refused.as_deref() == Some("busy")), "open invites on other computers bound concurrent work");
-        let pending: Vec<String> = (0..MAX_VOUCHED_ROOM).map(|i| format!("other-machine-{i}")).collect();
-        assert!(asks(&m, &BTreeSet::new(), &pending).iter().all(|a| a.refused.as_deref() == Some("cap")), "the room bound includes other computers");
+        assert_eq!(
+            got.iter().filter(|a| a.refused.is_none()).count(),
+            MAX_VOUCHED_OPEN
+        );
+        assert_eq!(
+            got.iter()
+                .filter(|a| a.refused.as_deref() == Some("cap"))
+                .count(),
+            30 - MAX_VOUCHED,
+            "changing claimed accounts cannot evade a computer's quota"
+        );
+        let busy: Vec<String> = (0..MAX_VOUCHED_OPEN)
+            .map(|i| format!("other-machine-{i}"))
+            .collect();
+        assert!(
+            asks(&m, &BTreeSet::new(), &busy)
+                .iter()
+                .all(|a| a.refused.as_deref() == Some("busy")),
+            "open invites on other computers bound concurrent work"
+        );
+        let pending: Vec<String> = (0..MAX_VOUCHED_ROOM)
+            .map(|i| format!("other-machine-{i}"))
+            .collect();
+        assert!(
+            asks(&m, &BTreeSet::new(), &pending)
+                .iter()
+                .all(|a| a.refused.as_deref() == Some("cap")),
+            "the room bound includes other computers"
+        );
     }
 
     #[test]
@@ -472,12 +765,21 @@ mod tests {
         m.sessions.get_mut(S1).unwrap().is_active = true;
         reg(&mut m, S1, "join_ask/e1", ask("acct"));
         assert_eq!(verdict(&m, S1, "e1", "HASH"), None, "no hash named yet");
-        reg(&mut m, S1, "join_ask/e1", json!({ "account": "acct", "request_hash": "HASH" }));
+        reg(
+            &mut m,
+            S1,
+            "join_ask/e1",
+            json!({ "account": "acct", "request_hash": "HASH" }),
+        );
         assert_eq!(verdict(&m, S1, "e1", "HASH"), Some(true));
         assert_eq!(verdict(&m, S1, "e1", "OTHER"), Some(false));
         m.sessions.get_mut(S1).unwrap().settings = Some(json!({ "archived": true }));
         m.human.get_mut(&format!("session/{S1}")).unwrap().value["archived"] = json!(true);
-        assert_eq!(verdict(&m, S1, "e1", "HASH"), Some(false), "an archived voucher vouches for nobody");
+        assert_eq!(
+            verdict(&m, S1, "e1", "HASH"),
+            Some(false),
+            "an archived voucher vouches for nobody"
+        );
     }
 
     #[test]
@@ -485,7 +787,14 @@ mod tests {
         let mut m = room();
         reg(&mut m, S1, "join_ask/f1", ask("acct"));
         let rows = join_rows(&m, &BTreeMap::new());
-        assert_eq!((rows[0].state.as_str(), rows[0].name.as_str(), rows[0].kind.as_str()), ("ask", "project", "Claude"));
+        assert_eq!(
+            (
+                rows[0].state.as_str(),
+                rows[0].name.as_str(),
+                rows[0].kind.as_str()
+            ),
+            ("ask", "project", "Claude")
+        );
         reg(&mut m, S1, "join_link/f1", json!({ "invite_id": "i1" }));
         assert!(join_rows(&m, &BTreeMap::new()).is_empty());
         let invites: BTreeMap<String, String> = [("i1".to_string(), "waiting".to_string())].into();
@@ -500,7 +809,8 @@ mod tests {
                 ..Default::default()
             },
         );
-        m.sessions.get_mut(S1).unwrap().settings = Some(json!({ "archived": true, "vouched": { "account": "acct" } }));
+        m.sessions.get_mut(S1).unwrap().settings =
+            Some(json!({ "archived": true, "vouched": { "account": "acct" } }));
         assert_eq!(to_retire(&m), vec![AGENT.to_string()]);
     }
 
@@ -512,13 +822,34 @@ mod tests {
         const OLD: &str = "dddddddddddddddddddddddddddddddd";
         const OLD_DEV: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
         let mut m = room();
-        m.members.insert(OLD_DEV.into(), Member { device_id: OLD_DEV.into(), device_role: "agent".into(), host: json!("desktop"), folder: json!("~/git/trommi"), ..Default::default() });
+        m.members.insert(
+            OLD_DEV.into(),
+            Member {
+                device_id: OLD_DEV.into(),
+                device_role: "agent".into(),
+                host: json!("desktop"),
+                folder: json!("~/git/trommi"),
+                ..Default::default()
+            },
+        );
         let s = m.session_of(OLD);
         s.group_id = Some("g-old".into());
         s.agent_device_id = Some(OLD_DEV.into());
         s.card_ids = vec!["c".into()];
-        m.human.insert(format!("session/{OLD}"), crate::model::types::HumanRegister { value: json!({ "name": "trommi" }), ..Default::default() });
-        m.device_registers.insert(OLD_DEV.into(), json!({ "host": "desktop", "agent": "0123456789abcdef" }).as_object().unwrap().clone());
+        m.human.insert(
+            format!("session/{OLD}"),
+            crate::model::types::HumanRegister {
+                value: json!({ "name": "trommi" }),
+                ..Default::default()
+            },
+        );
+        m.device_registers.insert(
+            OLD_DEV.into(),
+            json!({ "host": "desktop", "agent": "0123456789abcdef" })
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
         let mut a = json!({ "name": "saeckel", "folder": "~/git/saeckel", "host": "desktop", "account": "acct", "agent": "0123456789abcdef" });
         reg(&mut m, S1, "join_ask/a7", a.clone());
         assert_eq!(asks(&m, &BTreeSet::new(), &[])[0].name, "trommi");

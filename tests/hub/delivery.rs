@@ -684,7 +684,11 @@ fn the_hub_founds_no_helper_session() {
     let (_group, reply, _) = w.found_helper(&mut agent, &session, &humans, &[]);
     reply.refused(403, "forbidden");
     let list = groups(&w, &w.ada);
-    assert_eq!(list.len(), 2, "the room group and the main session: {list:?}");
+    assert_eq!(
+        list.len(),
+        2,
+        "the room group and the main session: {list:?}"
+    );
     assert!(!list.iter().any(|g| g["kind"] == "helper"), "{list:?}");
 }
 
@@ -1698,7 +1702,12 @@ fn key_packages_are_handed_out_once_and_the_last_resort_one_when_none_is_left() 
         )
         .ok();
     assert_eq!(partial["missing"], json!([b64(&stranger.id())]));
-    assert_eq!(partial["key_packages"][b64(&bea.id())].as_str().map(|k| unb64(k).unwrap()), Some(last.clone()));
+    assert_eq!(
+        partial["key_packages"][b64(&bea.id())]
+            .as_str()
+            .map(|k| unb64(k).unwrap()),
+        Some(last.clone())
+    );
     assert!(partial["key_packages"].get(b64(&stranger.id())).is_none());
     // all or nothing: a device without any makes the claim fail, and what was taken for the others stays unused
     bea.put(
@@ -2809,25 +2818,57 @@ fn commits_posted_together_are_each_taken_or_refused_in_their_place() {
     let now = w.ada.room_now();
     // the room group's next Commit, and one for a group that does not exist
     let out = w.ada.commit(&room, &Change::default(), now);
-    let sealed = w.ada.sealed_key(&room, out.epoch + 1, &out.group_info, now.0, &w.recovery.hpke_public, true);
+    let sealed = w.ada.sealed_key(
+        &room,
+        out.epoch + 1,
+        &out.group_info,
+        now.0,
+        &w.recovery.hpke_public,
+        true,
+    );
     let mut good = commit_json(&out, &sealed, None);
     good["group"] = json!(b64(&room));
     let nowhere: [u8; 48] = random();
     let mut junk = json!({ "epoch": 0, "commit": b64(&[1u8; 600]), "group_info": b64(&[2u8; 600]), "sealed_key": b64(&[3u8; 100]) });
     junk["group"] = json!(b64(&nowhere));
-    let answers = w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": [good, junk] })).ok()["answers"].clone();
+    let answers = w
+        .ada
+        .post(&w.hub, "/v1/commits", &json!({ "commits": [good, junk] }))
+        .ok()["answers"]
+        .clone();
     let answers = answers.as_array().expect("answers");
     assert_eq!(answers.len(), 2);
     assert_eq!(answers[0]["epoch"], out.epoch + 1, "{answers:?}");
     assert!(answers[0]["change"].as_u64().unwrap() > 0);
-    assert!(answers[1]["error"].is_string() && answers[1]["status"].as_u64().unwrap() >= 400, "{answers:?}");
+    assert!(
+        answers[1]["error"].is_string() && answers[1]["status"].as_u64().unwrap() >= 400,
+        "{answers:?}"
+    );
     w.ada.merge(&room);
-    assert_eq!(group_of(&groups(&w, &w.ada), &room)["epoch"], out.epoch + 1, "the good one was taken");
+    assert_eq!(
+        group_of(&groups(&w, &w.ada), &room)["epoch"],
+        out.epoch + 1,
+        "the good one was taken"
+    );
     // the request's own form: none, too many, two for one group
-    w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": [] })).refused(400, "bad-format");
+    w.ada
+        .post(&w.hub, "/v1/commits", &json!({ "commits": [] }))
+        .refused(400, "bad-format");
     let one = json!({ "group": b64(&nowhere), "epoch": 0, "commit": b64(&[1u8; 8]), "group_info": b64(&[2u8; 8]), "sealed_key": b64(&[3u8; 8]) });
-    w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": vec![one.clone(); 65] })).refused(400, "bad-format");
-    w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": [one.clone(), one] })).refused(400, "bad-format");
+    w.ada
+        .post(
+            &w.hub,
+            "/v1/commits",
+            &json!({ "commits": vec![one.clone(); 65] }),
+        )
+        .refused(400, "bad-format");
+    w.ada
+        .post(
+            &w.hub,
+            "/v1/commits",
+            &json!({ "commits": [one.clone(), one] }),
+        )
+        .refused(400, "bad-format");
 }
 
 /// A Commit posted to a session the asker may not see is answered as for a group that does not exist: the route
@@ -2855,7 +2896,13 @@ fn a_commit_to_a_session_the_asker_may_not_see_tells_nothing_of_it() {
         assert_eq!(got.refused(404, "not-found"), none, "epoch {epoch}");
     }
     // archived or not
-    w.ada.post(&w.hub, &format!("/v1/groups/{}/archive", b64(&theirs)), &json!({})).ok();
+    w.ada
+        .post(
+            &w.hub,
+            &format!("/v1/groups/{}/archive", b64(&theirs)),
+            &json!({}),
+        )
+        .ok();
     assert_eq!(ask(&agent, &theirs, 1).refused(404, "not-found"), none);
     // and in a request of several
     let many = json!({ "commits": [{ "group": b64(&theirs), "epoch": 0, "commit": b64(&[1u8; 600]), "group_info": b64(&[2u8; 600]), "sealed_key": b64(&[3u8; 100]) }] });
@@ -2867,19 +2914,46 @@ fn a_commit_to_a_session_the_asker_may_not_see_tells_nothing_of_it() {
 fn several_groups_are_read_in_one_request_each_in_its_place() {
     let w = World::new();
     let nowhere: [u8; 48] = random();
-    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [b64(&w.room), b64(&nowhere)] })).ok();
+    let got = w
+        .ada
+        .post(
+            &w.hub,
+            "/v1/groups/read",
+            &json!({ "groups": [b64(&w.room), b64(&nowhere)] }),
+        )
+        .ok();
     let groups = got["groups"].as_array().expect("groups");
     assert_eq!(groups.len(), 2);
-    let one = w.ada.get(&w.hub, &format!("/v1/groups/{}/info", b64(&w.room))).ok();
+    let one = w
+        .ada
+        .get(&w.hub, &format!("/v1/groups/{}/info", b64(&w.room)))
+        .ok();
     assert_eq!(groups[0]["group"], b64(&w.room));
     assert_eq!(groups[0]["info"], one, "as GET …/info answers it");
-    let log = w.ada.get(&w.hub, &format!("/v1/groups/{}/log?after=0&limit=256&kind=commit", b64(&w.room))).ok();
+    let log = w
+        .ada
+        .get(
+            &w.hub,
+            &format!(
+                "/v1/groups/{}/log?after=0&limit=256&kind=commit",
+                b64(&w.room)
+            ),
+        )
+        .ok();
     assert_eq!(groups[0]["log"], log, "as GET …/log?kind=commit answers it");
     assert_eq!(groups[1]["group"], b64(&nowhere));
     assert_eq!(groups[1]["error"], "not-found", "{groups:?}");
-    w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [] })).refused(400, "bad-format");
+    w.ada
+        .post(&w.hub, "/v1/groups/read", &json!({ "groups": [] }))
+        .refused(400, "bad-format");
     // each group once: 64 times the same group is not 64 answers
-    w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [b64(&w.room), b64(&w.room)] })).refused(400, "bad-format");
+    w.ada
+        .post(
+            &w.hub,
+            "/v1/groups/read",
+            &json!({ "groups": [b64(&w.room), b64(&w.room)] }),
+        )
+        .refused(400, "bad-format");
 }
 
 /// The whole answer of `POST /v1/groups/read` has one budget (8 MiB, the first group always goes in): a group that
@@ -2904,19 +2978,40 @@ fn groups_read_together_share_one_answer_budget() {
             assert_eq!(fat, 1);
         }
     }
-    let ids: Vec<String> = sessions.iter().map(|g| b64(g)).chain([b64(&room)]).collect();
-    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": ids })).ok();
+    let ids: Vec<String> = sessions
+        .iter()
+        .map(|g| b64(g))
+        .chain([b64(&room)])
+        .collect();
+    let got = w
+        .ada
+        .post(&w.hub, "/v1/groups/read", &json!({ "groups": ids }))
+        .ok();
     let groups = got["groups"].as_array().expect("groups");
     assert_eq!(groups.len(), 4);
     // 2 MiB are 2.7 MiB of base64: two fit, the third does not, and nothing after it is read into this answer
-    assert!(groups[0]["log"].is_object() && groups[1]["log"].is_object(), "the first two fit: {:?} {:?}", groups[0]["error"], groups[1]["error"]);
+    assert!(
+        groups[0]["log"].is_object() && groups[1]["log"].is_object(),
+        "the first two fit: {:?} {:?}",
+        groups[0]["error"],
+        groups[1]["error"]
+    );
     for (i, late) in groups[2..].iter().enumerate() {
-        assert_eq!(late["error"], "too-large", "group {} of an answer that is full", i + 2);
+        assert_eq!(
+            late["error"],
+            "too-large",
+            "group {} of an answer that is full",
+            i + 2
+        );
         assert_eq!(late["status"], 413);
         assert_eq!(late["group"], ids[i + 2], "in its place");
         assert!(late.get("log").is_none());
     }
-    assert!(got.to_string().len() <= trommi_hub::content::ANSWER_BYTES + (64 << 10), "{} bytes in one answer", got.to_string().len());
+    assert!(
+        got.to_string().len() <= trommi_hub::content::ANSWER_BYTES + (64 << 10),
+        "{} bytes in one answer",
+        got.to_string().len()
+    );
     // the budget is the answer's own size, RecoveryAuths and all: with a RecoveryAuth of 3 MiB on its Commit, the
     // second group no longer fits beside the first
     {
@@ -2924,32 +3019,77 @@ fn groups_read_together_share_one_answer_budget() {
         db.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
         db.execute("UPDATE group_log SET recovery_auth = zeroblob(3 << 20) WHERE group_id = ?1 AND n = (SELECT min(n) FROM group_log WHERE group_id = ?1 AND kind = 'commit')", [&sessions[0][..]]).unwrap();
     }
-    let with_auth = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[0], ids[1]] })).ok();
+    let with_auth = w
+        .ada
+        .post(
+            &w.hub,
+            "/v1/groups/read",
+            &json!({ "groups": [ids[0], ids[1]] }),
+        )
+        .ok();
     assert!(with_auth["groups"][0]["log"].is_object());
-    assert_eq!(with_auth["groups"][1]["error"], "too-large", "2 MiB + 3 MiB + 2 MiB are more than 8 MiB of base64");
+    assert_eq!(
+        with_auth["groups"][1]["error"], "too-large",
+        "2 MiB + 3 MiB + 2 MiB are more than 8 MiB of base64"
+    );
     assert!(with_auth.to_string().len() <= trommi_hub::content::ANSWER_BYTES);
     // a group left out is read alone, whole
-    let alone = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[2]] })).ok();
-    assert!(alone["groups"][0]["log"]["items"].as_array().is_some_and(|l| !l.is_empty()));
+    let alone = w
+        .ada
+        .post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[2]] }))
+        .ok();
+    assert!(alone["groups"][0]["log"]["items"]
+        .as_array()
+        .is_some_and(|l| !l.is_empty()));
     // the first group always goes in, however large
     {
         let db = rusqlite::Connection::open(w.hub.dir.join("hub.db")).unwrap();
         db.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
         db.execute("UPDATE group_log SET bytes = zeroblob(7 << 20) WHERE group_id = ?1 AND n = (SELECT min(n) FROM group_log WHERE group_id = ?1 AND kind = 'commit')", [&sessions[0][..]]).unwrap();
     }
-    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[0], ids[3]] })).ok();
+    let got = w
+        .ada
+        .post(
+            &w.hub,
+            "/v1/groups/read",
+            &json!({ "groups": [ids[0], ids[3]] }),
+        )
+        .ok();
     assert!(got["groups"][0]["log"].is_object());
     assert_eq!(got["groups"][1]["error"], "too-large");
     // a group that does not exist, or that the asker may not see, is `not-found` also in an answer that is full:
     // it is not told to read it alone
     let nowhere: [u8; 48] = random();
-    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[0], ids[1], b64(&nowhere)] })).ok();
+    let got = w
+        .ada
+        .post(
+            &w.hub,
+            "/v1/groups/read",
+            &json!({ "groups": [ids[0], ids[1], b64(&nowhere)] }),
+        )
+        .ok();
     assert_eq!(got["groups"][1]["error"], "too-large");
-    assert_eq!(got["groups"][2]["error"], "not-found", "{:?}", got["groups"][2]);
+    assert_eq!(
+        got["groups"][2]["error"], "not-found",
+        "{:?}",
+        got["groups"][2]
+    );
     let mut outsider = w.enrol_agent();
     w.found_main(&mut [], Some(&mut outsider));
-    let got = outsider.post(&w.hub, "/v1/groups/read", &json!({ "groups": [b64(&room), ids[0], ids[1]] })).ok();
-    assert!(got["groups"][0]["log"].is_object(), "an agent follows the room group");
-    assert_eq!(got["groups"][1]["error"], "not-found", "another agent's session");
+    let got = outsider
+        .post(
+            &w.hub,
+            "/v1/groups/read",
+            &json!({ "groups": [b64(&room), ids[0], ids[1]] }),
+        )
+        .ok();
+    assert!(
+        got["groups"][0]["log"].is_object(),
+        "an agent follows the room group"
+    );
+    assert_eq!(
+        got["groups"][1]["error"], "not-found",
+        "another agent's session"
+    );
     assert_eq!(got["groups"][2]["error"], "not-found");
 }

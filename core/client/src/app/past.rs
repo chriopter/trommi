@@ -105,15 +105,30 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
     if !text.len().is_multiple_of(2) {
         return None;
     }
-    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok()).collect()
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
+        .collect()
 }
 
 #[derive(Clone)]
 enum Read {
-    Session { session: SessionId, before: Option<u64> },
-    Card { card: ObjectId, before: Option<u64> },
-    Object { object: ObjectId, after: u64, limit: u32 },
-    Settled { before: Option<u64> },
+    Session {
+        session: SessionId,
+        before: Option<u64>,
+    },
+    Card {
+        card: ObjectId,
+        before: Option<u64>,
+    },
+    Object {
+        object: ObjectId,
+        after: u64,
+        limit: u32,
+    },
+    Settled {
+        before: Option<u64>,
+    },
 }
 
 impl Read {
@@ -129,7 +144,11 @@ impl Read {
                 before: *before,
                 limit: CHAT_PAGE,
             },
-            Self::Object { object, after, limit } => Route::Object {
+            Self::Object {
+                object,
+                after,
+                limit,
+            } => Route::Object {
                 route: ObjectRoute::Cards,
                 object,
                 after: *after,
@@ -226,10 +245,15 @@ impl Past {
             }
             self.retries.push((at.max(ctx.now + 1_000), read, asked));
         }
-        if let Some((key, session)) = lens.session.as_deref().and_then(|id| self.session(model, id)) {
+        if let Some((key, session)) = lens
+            .session
+            .as_deref()
+            .and_then(|id| self.session(model, id))
+        {
             let key = talk_key(&key);
             if !self.read.contains(&key) {
-                if let Some(session) = unhex(&session).and_then(|b| SessionId::from_slice(&b).ok()) {
+                if let Some(session) = unhex(&session).and_then(|b| SessionId::from_slice(&b).ok())
+                {
                     self.chat(Timeline::Session(&session), key, None, engine, ctx);
                 }
             }
@@ -255,7 +279,10 @@ impl Past {
         if self.starred_flying < STARRED_AT_ONCE {
             let starred: Vec<String> = model
                 .human
-                .range::<str, _>((std::ops::Bound::Included("star/"), std::ops::Bound::Excluded("star0")))
+                .range::<str, _>((
+                    std::ops::Bound::Included("star/"),
+                    std::ops::Bound::Excluded("star0"),
+                ))
                 .filter(|(_, r)| r.value.get("at").is_some())
                 .filter_map(|(k, _)| k.strip_prefix("star/"))
                 .filter(|id| !model.cards.contains_key(*id) && !self.versions.contains(*id))
@@ -300,8 +327,14 @@ impl Past {
 
     fn tend_heads(&mut self, engine: &mut Engine, ctx: &mut Ctx<'_>) {
         while self.heads_flying < HEADS_AT_ONCE {
-            let Some((object, after)) = self.heads.pop_front() else { break };
-            let read = Read::Object { object, after, limit: 20 };
+            let Some((object, after)) = self.heads.pop_front() else {
+                break;
+            };
+            let read = Read::Object {
+                object,
+                after,
+                limit: 20,
+            };
             if let Some((id, expect)) = ask(engine, ctx, &read) {
                 self.routes.insert(id, read);
                 self.heads_flying += 1;
@@ -311,10 +344,20 @@ impl Past {
     }
 
     /// "Earlier messages": the page before the oldest one read, when the hub holds more.
-    pub fn earlier(&mut self, session_id: &str, model: &Model, engine: &mut Engine, ctx: &mut Ctx<'_>) {
-        let Some((key, session)) = session_of(model, session_id) else { return };
+    pub fn earlier(
+        &mut self,
+        session_id: &str,
+        model: &Model,
+        engine: &mut Engine,
+        ctx: &mut Ctx<'_>,
+    ) {
+        let Some((key, session)) = session_of(model, session_id) else {
+            return;
+        };
         let key = talk_key(&key);
-        let Some(t) = model.timelines.get(&key) else { return };
+        let Some(t) = model.timelines.get(&key) else {
+            return;
+        };
         if !t.has_more || !self.read.contains(&key) {
             return;
         }
@@ -325,10 +368,20 @@ impl Past {
     }
 
     /// "Load earlier" under a card: the page of its Chat before the oldest one read.
-    pub fn earlier_comments(&mut self, card: &str, model: &Model, engine: &mut Engine, ctx: &mut Ctx<'_>) {
-        let Some(card) = card_of(model, card) else { return };
+    pub fn earlier_comments(
+        &mut self,
+        card: &str,
+        model: &Model,
+        engine: &mut Engine,
+        ctx: &mut Ctx<'_>,
+    ) {
+        let Some(card) = card_of(model, card) else {
+            return;
+        };
         let key = format!("chat:card/{card}");
-        let Some(t) = model.timelines.get(&key) else { return };
+        let Some(t) = model.timelines.get(&key) else {
+            return;
+        };
         if !t.has_more || !self.read.contains(&key) {
             return;
         }
@@ -338,13 +391,26 @@ impl Past {
         }
     }
 
-    fn chat(&mut self, timeline: Timeline<'_>, key: String, before: Option<u64>, engine: &mut Engine, ctx: &mut Ctx<'_>) {
+    fn chat(
+        &mut self,
+        timeline: Timeline<'_>,
+        key: String,
+        before: Option<u64>,
+        engine: &mut Engine,
+        ctx: &mut Ctx<'_>,
+    ) {
         if self.flying.contains(&key) {
             return;
         }
         let read = match timeline {
-            Timeline::Session(session) => Read::Session { session: *session, before },
-            Timeline::Card(card) => Read::Card { card: *card, before },
+            Timeline::Session(session) => Read::Session {
+                session: *session,
+                before,
+            },
+            Timeline::Card(card) => Read::Card {
+                card: *card,
+                before,
+            },
         };
         if let Some((id, expect)) = ask(engine, ctx, &read) {
             self.routes.insert(id, read);
@@ -354,7 +420,16 @@ impl Past {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn versions_from(&mut self, card: String, object: ObjectId, after: u64, read: usize, starred: bool, engine: &mut Engine, ctx: &mut Ctx<'_>) -> bool {
+    fn versions_from(
+        &mut self,
+        card: String,
+        object: ObjectId,
+        after: u64,
+        read: usize,
+        starred: bool,
+        engine: &mut Engine,
+        ctx: &mut Ctx<'_>,
+    ) -> bool {
         let route = Read::Object {
             object,
             after,
@@ -363,7 +438,15 @@ impl Past {
         match ask(engine, ctx, &route) {
             Some((id, expect)) => {
                 self.routes.insert(id, route);
-                self.asked.insert(id, Asked::Versions { card, read, starred, expect });
+                self.asked.insert(
+                    id,
+                    Asked::Versions {
+                        card,
+                        read,
+                        starred,
+                        expect,
+                    },
+                );
                 true
             }
             None => false,
@@ -371,23 +454,37 @@ impl Past {
     }
 
     /// The hub's answer to one of these reads: its envelopes go to the core, read out of the hub's order.
-    pub fn answered(&mut self, id: IoId, result: &Result<HttpResponse, Failure>, engine: &mut Engine, ctx: &mut Ctx<'_>) {
-        let Some(asked) = self.asked.remove(&id) else { return };
+    pub fn answered(
+        &mut self,
+        id: IoId,
+        result: &Result<HttpResponse, Failure>,
+        engine: &mut Engine,
+        ctx: &mut Ctx<'_>,
+    ) {
+        let Some(asked) = self.asked.remove(&id) else {
+            return;
+        };
         let answer = |expect: &Expect| match result {
             Ok(response) => Codec.answer(expect, response),
             Err(failure) => Err(failure.clone()),
         };
         let expect = match &asked {
-            Asked::Chat { expect, .. } | Asked::Settled { expect } | Asked::Head { expect } | Asked::Versions { expect, .. } => expect,
+            Asked::Chat { expect, .. }
+            | Asked::Settled { expect }
+            | Asked::Head { expect }
+            | Asked::Versions { expect, .. } => expect,
         };
         let read = self.routes.remove(&id);
         let retry = match answer(expect) {
             Err(Failure::Offline) => Some(5_000),
-            Err(Failure::NotNow { retry_after_ms, .. }) => Some(retry_after_ms.unwrap_or(5_000).max(1_000)),
+            Err(Failure::NotNow { retry_after_ms, .. }) => {
+                Some(retry_after_ms.unwrap_or(5_000).max(1_000))
+            }
             _ => None,
         };
         if let (Some(delay), Some(read)) = (retry, read) {
-            self.retries.push((ctx.now.saturating_add(delay), read, asked));
+            self.retries
+                .push((ctx.now.saturating_add(delay), read, asked));
             return;
         }
         match asked {
@@ -416,13 +513,22 @@ impl Past {
                 self.settled.flying = false;
                 self.settled.below = None;
                 if let Ok(Answer::Settled(page)) = answer(&expect) {
-                    let mut versions: Vec<_> = page.items.iter().filter_map(|o| o.row.version.clone()).collect();
+                    let mut versions: Vec<_> = page
+                        .items
+                        .iter()
+                        .filter_map(|o| o.row.version.clone())
+                        .collect();
                     versions.sort_by_key(|v| v.change);
                     engine.show_items(ctx, &versions);
                     // (its answer is read too, which lies between its first version and its last: else an answered
                     //  card stands as open, and a closed one as withdrawn; one card's envelopes in one request)
-                    for o in page.items.iter().filter(|o| o.row.head_change > o.row.first_change) {
-                        self.heads.push_back((o.row.object, o.row.first_change.saturating_sub(1)));
+                    for o in page
+                        .items
+                        .iter()
+                        .filter(|o| o.row.head_change > o.row.first_change)
+                    {
+                        self.heads
+                            .push_back((o.row.object, o.row.first_change.saturating_sub(1)));
                     }
                     self.settled.below = page.more.then_some(page.before).filter(|b| *b > 0);
                     self.tend_heads(engine, ctx);
@@ -435,11 +541,20 @@ impl Past {
                 }
                 self.tend_heads(engine, ctx);
             }
-            Asked::Versions { card, read, starred, expect } => {
+            Asked::Versions {
+                card,
+                read,
+                starred,
+                expect,
+            } => {
                 if let Ok(Answer::Object(got)) = answer(&expect) {
                     engine.show_items(ctx, &got.items);
                     let read = read + got.items.len();
-                    if let (true, Some(last), true) = (got.more, got.items.last().map(|i| i.change), read < VERSIONS_MAX) {
+                    if let (true, Some(last), true) = (
+                        got.more,
+                        got.items.last().map(|i| i.change),
+                        read < VERSIONS_MAX,
+                    ) {
                         if self.versions_from(card, got.object, last, read, starred, engine, ctx) {
                             return;
                         }

@@ -1684,7 +1684,6 @@ fn a_check_code_is_six_numbers_below_64() {
     );
 }
 
-
 #[test]
 fn the_vectors_read_back() {
     use trommi_tests::vectors::invite::NAME;

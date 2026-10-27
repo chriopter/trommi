@@ -17,7 +17,10 @@ pub const WOKEN: &str = "[Trommi] Woken for a wakeup you set: call the trommi in
 
 /// The person's zone, in minutes east of UTC, as this computer's clock has it (`TROMMI_ZONE_MIN` in tests).
 pub fn zone_min() -> i32 {
-    if let Some(z) = std::env::var("TROMMI_ZONE_MIN").ok().and_then(|v| v.parse::<i32>().ok()) {
+    if let Some(z) = std::env::var("TROMMI_ZONE_MIN")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+    {
         return z;
     }
     std::process::Command::new("date")
@@ -48,12 +51,22 @@ pub fn usage(now: u64) -> Option<f64> {
     if crate::host::is_codex() {
         return None;
     }
-    crate::usage::kept_windows(now).get("five_hour").and_then(|w| w.get("used")).and_then(Value::as_f64).map(|u| u / 100.0)
+    crate::usage::kept_windows(now)
+        .get("five_hour")
+        .and_then(|w| w.get("used"))
+        .and_then(Value::as_f64)
+        .map(|u| u / 100.0)
 }
 
 /// Where the note of a session's wakeups waits while the session is closed.
 pub fn note_file(keys_dir: &Path, session: &str) -> PathBuf {
-    keys_dir.join("wakers").join(format!("{}.json", session.chars().filter(char::is_ascii_alphanumeric).collect::<String>()))
+    keys_dir.join("wakers").join(format!(
+        "{}.json",
+        session
+            .chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect::<String>()
+    ))
 }
 
 /// The note a closed session leaves for its waker.
@@ -81,7 +94,11 @@ impl Note {
     pub fn read(file: &Path) -> Option<Note> {
         let v = crate::slots::read_json(file)?;
         let s = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-        let wakeups = v.get("wakeups").and_then(Value::as_object).map(|o| o.iter().filter_map(|(id, w)| Wakeup::read(id, w)).collect()).unwrap_or_default();
+        let wakeups = v
+            .get("wakeups")
+            .and_then(Value::as_object)
+            .map(|o| o.iter().filter_map(|(id, w)| Wakeup::read(id, w)).collect())
+            .unwrap_or_default();
         Some(Note {
             session: s("session"),
             folder: s("folder"),
@@ -89,7 +106,10 @@ impl Note {
             resume: s("resume"),
             ask_tool: s("ask_tool"),
             zone_min: v.get("zone_min").and_then(Value::as_i64).unwrap_or(0) as i32,
-            counted: (v.get("day").and_then(Value::as_u64).unwrap_or(0), v.get("runs").and_then(Value::as_u64).unwrap_or(0) as u32),
+            counted: (
+                v.get("day").and_then(Value::as_u64).unwrap_or(0),
+                v.get("runs").and_then(Value::as_u64).unwrap_or(0) as u32,
+            ),
             wakeups,
             waker: s("waker"),
             running: v.get("running").and_then(Value::as_str).map(str::to_string),
@@ -102,11 +122,21 @@ impl Note {
         if Note::read(file).is_none_or(|n| n.waker != me) {
             return false;
         }
-        let Ok(mut f) = std::fs::OpenOptions::new().write(true).truncate(true).open(file) else { return false };
+        let Ok(mut f) = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(file)
+        else {
+            return false;
+        };
         f.write_all(self.json().to_string().as_bytes()).is_ok()
     }
     fn json(&self) -> Value {
-        let wakeups: serde_json::Map<String, Value> = self.wakeups.iter().map(|w| (w.id.clone(), w.value())).collect();
+        let wakeups: serde_json::Map<String, Value> = self
+            .wakeups
+            .iter()
+            .map(|w| (w.id.clone(), w.value()))
+            .collect();
         json!({ "session": self.session, "folder": self.folder, "program": self.program, "resume": self.resume, "ask_tool": self.ask_tool, "zone_min": self.zone_min, "day": self.counted.0, "runs": self.counted.1, "wakeups": wakeups, "waker": self.waker, "running": self.running })
     }
     pub fn write(&self, file: &Path) -> std::io::Result<()> {
@@ -134,7 +164,15 @@ pub fn step(note: &Note, now: u64, usage: Option<f64>) -> Step {
     if note.wakeups.is_empty() {
         return Step::Done;
     }
-    let t = core::tick(&note.wakeups, &[], now, note.zone_min, usage, None, note.counted);
+    let t = core::tick(
+        &note.wakeups,
+        &[],
+        now,
+        note.zone_min,
+        usage,
+        None,
+        note.counted,
+    );
     let mut next = note.clone();
     for (id, w) in &t.writes {
         next.wakeups.retain(|x| x.id != *id);
@@ -149,7 +187,14 @@ pub fn step(note: &Note, now: u64, usage: Option<f64>) -> Step {
             next.running = Some(id.clone());
             Step::Run(id.clone(), next)
         }
-        None => Step::Sleep(next.wakeups.iter().map(|w| w.at).min().unwrap_or(now + 60_000), next),
+        None => Step::Sleep(
+            next.wakeups
+                .iter()
+                .map(|w| w.at)
+                .min()
+                .unwrap_or(now + 60_000),
+            next,
+        ),
     }
 }
 
@@ -157,7 +202,12 @@ pub fn step(note: &Note, now: u64, usage: Option<f64>) -> Step {
 /// asking the human through the board (Claude Code); Codex runs as its settings say (no asking in this version).
 pub fn command(note: &Note) -> Option<(String, Vec<String>)> {
     let turns = core::RUN_MAX_TURNS.to_string();
-    crate::preset::by_id(&note.program)?.woken_command(&crate::preset::Fill { prompt: WOKEN, resume: &note.resume, max_turns: &turns, ask_tool: &note.ask_tool })
+    crate::preset::by_id(&note.program)?.woken_command(&crate::preset::Fill {
+        prompt: WOKEN,
+        resume: &note.resume,
+        max_turns: &turns,
+        ask_tool: &note.ask_tool,
+    })
 }
 
 /// Leaves the note of a closing session and starts its waker (none when it has no wakeups).
@@ -173,7 +223,10 @@ pub fn leave(keys_dir: &Path, mut note: Note) {
     if note.write(&file).is_err() {
         return;
     }
-    if matches!(crate::update::verify_file(&crate::server::self_path()), crate::update::Release::Refused(_)) {
+    if matches!(
+        crate::update::verify_file(&crate::server::self_path()),
+        crate::update::Release::Refused(_)
+    ) {
         return;
     }
     let mut cmd = std::process::Command::new(crate::server::self_path());
@@ -191,8 +244,12 @@ pub fn leave(keys_dir: &Path, mut note: Note) {
 
 /// Whether a waker started a run in `folder` that no connector took yet (its first inbox waits for the clock's look).
 pub fn woken_here(keys_dir: &Path, folder: &str) -> bool {
-    let Ok(dir) = std::fs::read_dir(keys_dir.join("wakers")) else { return false };
-    dir.flatten().filter_map(|e| Note::read(&e.path())).any(|n| n.folder == folder && n.running.is_some())
+    let Ok(dir) = std::fs::read_dir(keys_dir.join("wakers")) else {
+        return false;
+    };
+    dir.flatten()
+        .filter_map(|e| Note::read(&e.path()))
+        .any(|n| n.folder == folder && n.running.is_some())
 }
 
 /// What the connector of a session that starts takes from its note: the wakeup a waker started this run for. The
@@ -207,9 +264,13 @@ pub fn take(keys_dir: &Path, session: &str) -> Option<String> {
 /// `waker <note> <waker>`: sleeps until the next wakeup of a closed session, then starts its run; ends when the note
 /// is gone or another waker keeps it, or the run ended (its connector leaves a new note and waker).
 pub async fn waker(file: Option<String>, me: Option<String>) -> i32 {
-    let (Some(file), Some(me)) = (file.map(PathBuf::from), me) else { return 1 };
+    let (Some(file), Some(me)) = (file.map(PathBuf::from), me) else {
+        return 1;
+    };
     loop {
-        let Some(mut note) = Note::read(&file).filter(|n| n.waker == me) else { return 0 };
+        let Some(mut note) = Note::read(&file).filter(|n| n.waker == me) else {
+            return 0;
+        };
         // (this computer's zone as it is now: a change of the clocks moves the quiet hours with it)
         note.zone_min = zone_min();
         let now = crate::util::now_ms();
@@ -222,7 +283,9 @@ pub async fn waker(file: Option<String>, me: Option<String>) -> i32 {
                 if next != note && !next.replace(&file, &me) {
                     return 0;
                 }
-                let wait = at.saturating_sub(now).clamp(1_000, crate::server::env_ms("TROMMI_WAKER_LOOK_MS", 60_000));
+                let wait = at
+                    .saturating_sub(now)
+                    .clamp(1_000, crate::server::env_ms("TROMMI_WAKER_LOOK_MS", 60_000));
                 tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
             }
             Step::Run(id, next) => {
@@ -249,12 +312,20 @@ pub async fn waker(file: Option<String>, me: Option<String>) -> i32 {
                     let _ = std::fs::remove_file(&file);
                     return 1;
                 };
-                let limit = std::time::Duration::from_millis(crate::server::env_ms("TROMMI_WAKE_RUN_MS", core::RUN_MAX_MS));
+                let limit = std::time::Duration::from_millis(crate::server::env_ms(
+                    "TROMMI_WAKE_RUN_MS",
+                    core::RUN_MAX_MS,
+                ));
                 if tokio::time::timeout(limit, child.wait()).await.is_err() {
-                    if let Some(pid) = child.id().and_then(|p| rustix::process::Pid::from_raw(p as i32)) {
-                        let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::TERM);
+                    if let Some(pid) = child
+                        .id()
+                        .and_then(|p| rustix::process::Pid::from_raw(p as i32))
+                    {
+                        let _ =
+                            rustix::process::kill_process_group(pid, rustix::process::Signal::TERM);
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+                        let _ =
+                            rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
                     }
                     let _ = child.kill().await;
                 }
@@ -276,22 +347,63 @@ mod tests {
 
     #[test]
     fn zones_read() {
-        assert_eq!((zone_of("+0200"), zone_of("-0530"), zone_of("0200"), zone_of("")), (Some(120), Some(-330), None, None));
+        assert_eq!(
+            (
+                zone_of("+0200"),
+                zone_of("-0530"),
+                zone_of("0200"),
+                zone_of("")
+            ),
+            (Some(120), Some(-330), None, None)
+        );
     }
 
     #[test]
     fn the_waker_sleeps_runs_or_ends() {
-        let w = |id: &str, at: u64| Wakeup { id: id.into(), at, note: "x".into(), ..Default::default() };
-        let note = Note { session: "s".into(), program: "claude".into(), resume: "abc".into(), zone_min: 120, wakeups: vec![w("a", NOW + 60_000)], ..Default::default() };
+        let w = |id: &str, at: u64| Wakeup {
+            id: id.into(),
+            at,
+            note: "x".into(),
+            ..Default::default()
+        };
+        let note = Note {
+            session: "s".into(),
+            program: "claude".into(),
+            resume: "abc".into(),
+            zone_min: 120,
+            wakeups: vec![w("a", NOW + 60_000)],
+            ..Default::default()
+        };
         assert!(matches!(step(&note, NOW, None), Step::Sleep(at, _) if at == NOW + 60_000));
-        let Step::Run(id, after) = step(&note, NOW + 60_000, None) else { panic!() };
-        assert_eq!((id.as_str(), after.running.as_deref(), after.wakeups.len()), ("a", Some("a"), 0));
+        let Step::Run(id, after) = step(&note, NOW + 60_000, None) else {
+            panic!()
+        };
+        assert_eq!(
+            (id.as_str(), after.running.as_deref(), after.wakeups.len()),
+            ("a", Some("a"), 0)
+        );
         // the subscription's window almost used: it waits half an hour
-        assert!(matches!(step(&note, NOW + 60_000, Some(0.95)), Step::Sleep(at, _) if at == NOW + 60_000 + core::USAGE_WAIT_MS));
+        assert!(
+            matches!(step(&note, NOW + 60_000, Some(0.95)), Step::Sleep(at, _) if at == NOW + 60_000 + core::USAGE_WAIT_MS)
+        );
         assert_eq!(step(&Note::default(), NOW, None), Step::Done);
-        let (program, args) = command(&Note { ask_tool: "mcp__trommi__ask_permission".into(), ..note.clone() }).unwrap();
+        let (program, args) = command(&Note {
+            ask_tool: "mcp__trommi__ask_permission".into(),
+            ..note.clone()
+        })
+        .unwrap();
         assert_eq!(program, "claude");
-        assert_eq!(args[2..].join(" "), "--resume abc --max-turns 30 --permission-prompt-tool mcp__trommi__ask_permission");
-        assert_eq!(command(&Note { resume: String::new(), ..note }), None, "nothing to resume, no run");
+        assert_eq!(
+            args[2..].join(" "),
+            "--resume abc --max-turns 30 --permission-prompt-tool mcp__trommi__ask_permission"
+        );
+        assert_eq!(
+            command(&Note {
+                resume: String::new(),
+                ..note
+            }),
+            None,
+            "nothing to resume, no run"
+        );
     }
 }

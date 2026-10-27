@@ -37,10 +37,14 @@ impl std::fmt::Debug for SttSealed {
 
 /// An enclave's address as the relay takes it: `https://` and a host under `tinfoil.sh`, nothing else.
 pub fn enclave_ok(url: &str) -> bool {
-    let Some(host) = url.strip_prefix("https://") else { return false };
+    let Some(host) = url.strip_prefix("https://") else {
+        return false;
+    };
     !host.is_empty()
         && host.len() <= 253
-        && host.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
         && !host.contains("..")
         && !host.starts_with('.')
         && (host == "tinfoil.sh" || host.ends_with(".tinfoil.sh"))
@@ -51,9 +55,21 @@ pub(crate) fn attestation_request(site: &Site<'_>) -> Read<HttpRequest> {
 }
 
 pub(crate) fn sealed_request(site: &Site<'_>, sealed: &SttSealed) -> Read<HttpRequest> {
-    let hexed = sealed.encapsulated_key.len() == 64 && sealed.encapsulated_key.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-    let boundary = sealed.content_type.strip_prefix("multipart/form-data; boundary=").unwrap_or_default();
-    let plain = |t: &str, max: usize| !t.is_empty() && t.len() <= max && t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b'_');
+    let hexed = sealed.encapsulated_key.len() == 64
+        && sealed
+            .encapsulated_key
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    let boundary = sealed
+        .content_type
+        .strip_prefix("multipart/form-data; boundary=")
+        .unwrap_or_default();
+    let plain = |t: &str, max: usize| {
+        !t.is_empty()
+            && t.len() <= max
+            && t.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b'_')
+    };
     if !enclave_ok(&sealed.enclave) || !hexed || !plain(boundary, 70) || !plain(&sealed.model, 64) {
         return bad("the request: a sealed dictation's headers are not plain");
     }
@@ -69,7 +85,10 @@ pub(crate) fn sealed_request(site: &Site<'_>, sealed: &SttSealed) -> Read<HttpRe
         .done();
     // (the form's type, not the bytes' default)
     request.headers.retain(|h| h.name != "content-type");
-    request.headers.push(crate::app::io::Header { name: "content-type".into(), value: sealed.content_type.clone() });
+    request.headers.push(crate::app::io::Header {
+        name: "content-type".into(),
+        value: sealed.content_type.clone(),
+    });
     request.timeout_ms = STT_TIMEOUT_MS;
     Ok(request)
 }
@@ -77,7 +96,10 @@ pub(crate) fn sealed_request(site: &Site<'_>, sealed: &SttSealed) -> Read<HttpRe
 /// The bundle's bytes as they came (the device checks them, not the codec): a JSON object of at most 4 MiB.
 pub(crate) fn bundle(response: &HttpResponse) -> Result<Answer, Failure> {
     classify(response)?;
-    if response.status != 200 || response.body.len() > CAP_BUNDLE || response.body.first() != Some(&b'{') {
+    if response.status != 200
+        || response.body.len() > CAP_BUNDLE
+        || response.body.first() != Some(&b'{')
+    {
         return bad("an attestation bundle: a JSON object");
     }
     Ok(Answer::SttBundle(response.body.to_vec()))
@@ -86,10 +108,15 @@ pub(crate) fn bundle(response: &HttpResponse) -> Result<Answer, Failure> {
 /// The sealed transcript and its `Ehbp-Response-Nonce` (64 hex digits).
 pub(crate) fn transcript(response: &HttpResponse) -> Result<Answer, Failure> {
     classify(response)?;
-    let nonce = response.header("ehbp-response-nonce").filter(|n| n.len() == 64 && n.bytes().all(|b| b.is_ascii_hexdigit()));
+    let nonce = response
+        .header("ehbp-response-nonce")
+        .filter(|n| n.len() == 64 && n.bytes().all(|b| b.is_ascii_hexdigit()));
     match nonce {
         Some(nonce) if response.status == 200 && response.body.len() <= CAP_TRANSCRIPT => {
-            Ok(Answer::SttSealed { nonce: nonce.to_ascii_lowercase(), body: response.body.to_vec() })
+            Ok(Answer::SttSealed {
+                nonce: nonce.to_ascii_lowercase(),
+                body: response.body.to_vec(),
+            })
         }
         _ => bad("a sealed transcript: status 200 and its nonce"),
     }
@@ -113,20 +140,56 @@ mod tests {
     #[test]
     fn the_relay_request_carries_only_checked_headers() {
         let r = sealed_request(&SITE, &sealed()).unwrap();
-        assert_eq!((r.method.as_str(), r.url.as_str()), ("POST", "https://hub.example/v1/stt"));
-        assert_eq!(header(&r, "x-tinfoil-enclave-url"), Some("https://router.inf6.tinfoil.sh"));
+        assert_eq!(
+            (r.method.as_str(), r.url.as_str()),
+            ("POST", "https://hub.example/v1/stt")
+        );
+        assert_eq!(
+            header(&r, "x-tinfoil-enclave-url"),
+            Some("https://router.inf6.tinfoil.sh")
+        );
         assert_eq!(header(&r, "ehbp-encapsulated-key"), Some(&*"ab".repeat(32)));
-        assert_eq!(header(&r, "content-type"), Some("multipart/form-data; boundary=trommi-1"));
-        assert_eq!(r.headers.iter().filter(|h| h.name == "content-type").count(), 1);
+        assert_eq!(
+            header(&r, "content-type"),
+            Some("multipart/form-data; boundary=trommi-1")
+        );
+        assert_eq!(
+            r.headers
+                .iter()
+                .filter(|h| h.name == "content-type")
+                .count(),
+            1
+        );
         assert_eq!(r.max_answer as usize, CAP_TRANSCRIPT);
         for bad in [
-            SttSealed { enclave: "https://evil.example".into(), ..sealed() },
-            SttSealed { enclave: "http://router.tinfoil.sh".into(), ..sealed() },
-            SttSealed { enclave: "https://router.tinfoil.sh\r\nx: y".into(), ..sealed() },
-            SttSealed { encapsulated_key: "AB".repeat(32), ..sealed() },
-            SttSealed { content_type: "text/plain".into(), ..sealed() },
-            SttSealed { model: "a b".into(), ..sealed() },
-            SttSealed { body: vec![], ..sealed() },
+            SttSealed {
+                enclave: "https://evil.example".into(),
+                ..sealed()
+            },
+            SttSealed {
+                enclave: "http://router.tinfoil.sh".into(),
+                ..sealed()
+            },
+            SttSealed {
+                enclave: "https://router.tinfoil.sh\r\nx: y".into(),
+                ..sealed()
+            },
+            SttSealed {
+                encapsulated_key: "AB".repeat(32),
+                ..sealed()
+            },
+            SttSealed {
+                content_type: "text/plain".into(),
+                ..sealed()
+            },
+            SttSealed {
+                model: "a b".into(),
+                ..sealed()
+            },
+            SttSealed {
+                body: vec![],
+                ..sealed()
+            },
         ] {
             assert!(sealed_request(&SITE, &bad).is_err(), "{bad:?}");
         }
@@ -134,11 +197,30 @@ mod tests {
 
     #[test]
     fn a_transcript_needs_its_nonce() {
-        let ok = HttpResponse { status: 200, headers: vec![crate::app::io::Header { name: "Ehbp-Response-Nonce".into(), value: "AB".repeat(32) }], body: crate::app::bytes::Bytes(vec![0, 0, 0, 1, 9]) };
-        assert!(matches!(transcript(&ok), Ok(Answer::SttSealed { ref nonce, .. }) if *nonce == "ab".repeat(32)));
-        let no_nonce = HttpResponse { headers: vec![], ..ok.clone() };
+        let ok = HttpResponse {
+            status: 200,
+            headers: vec![crate::app::io::Header {
+                name: "Ehbp-Response-Nonce".into(),
+                value: "AB".repeat(32),
+            }],
+            body: crate::app::bytes::Bytes(vec![0, 0, 0, 1, 9]),
+        };
+        assert!(
+            matches!(transcript(&ok), Ok(Answer::SttSealed { ref nonce, .. }) if *nonce == "ab".repeat(32))
+        );
+        let no_nonce = HttpResponse {
+            headers: vec![],
+            ..ok.clone()
+        };
         assert!(transcript(&no_nonce).is_err());
-        let refused = HttpResponse { status: 503, headers: vec![], body: crate::app::bytes::Bytes(br#"{"error":"overloaded","message":"x"}"#.to_vec()) };
-        assert!(matches!(transcript(&refused), Err(Failure::NotNow { status: 503, .. })));
+        let refused = HttpResponse {
+            status: 503,
+            headers: vec![],
+            body: crate::app::bytes::Bytes(br#"{"error":"overloaded","message":"x"}"#.to_vec()),
+        };
+        assert!(matches!(
+            transcript(&refused),
+            Err(Failure::NotNow { status: 503, .. })
+        ));
     }
 }

@@ -34,7 +34,10 @@ mod tests {
         assert_eq!(mark_of(" Draw:Cloud ").unwrap(), "draw:cloud");
         assert_eq!(mark_of("rocket").unwrap(), "draw:drop");
         let e = mark_of("spaceship").unwrap_err();
-        assert!(e.contains("spaceship") && e.contains("drop (release)") && e.contains("blob (general)"), "{e}");
+        assert!(
+            e.contains("spaceship") && e.contains("drop (release)") && e.contains("blob (general)"),
+            "{e}"
+        );
     }
 
     /// The web and the iOS app hold the same faces, in the same order, as the app core.
@@ -44,18 +47,51 @@ mod tests {
         let want: Vec<String> = FACES.iter().map(|f| f.name.to_string()).collect();
 
         let ui = std::fs::read_to_string(root.join("app/web/public/ui.mjs")).unwrap();
-        let faces = ui.split("const FACES = {").nth(1).unwrap().split("\n}").next().unwrap();
-        let web: Vec<String> = faces.lines().filter(|l| l.starts_with("  ") && !l.starts_with("   ") && !l.trim_start().starts_with("//"))
-            .filter_map(|l| l.trim().split(':').next().map(String::from)).collect();
+        let faces = ui
+            .split("const FACES = {")
+            .nth(1)
+            .unwrap()
+            .split("\n}")
+            .next()
+            .unwrap();
+        let web: Vec<String> = faces
+            .lines()
+            .filter(|l| {
+                l.starts_with("  ") && !l.starts_with("   ") && !l.trim_start().starts_with("//")
+            })
+            .filter_map(|l| l.trim().split(':').next().map(String::from))
+            .collect();
         assert_eq!(web, want, "app/web/public/ui.mjs");
 
-        let pen = std::fs::read_to_string(root.join("app/ios/TrommiApp/Sources/TrommiApp/Pen.swift")).unwrap();
-        let drawings = pen.split("static let drawings = [").nth(1).unwrap().split(']').next().unwrap().to_string();
-        let ios: Vec<String> = drawings.split('"').skip(1).step_by(2).map(String::from).collect();
+        let pen =
+            std::fs::read_to_string(root.join("app/ios/TrommiApp/Sources/TrommiApp/Pen.swift"))
+                .unwrap();
+        let drawings = pen
+            .split("static let drawings = [")
+            .nth(1)
+            .unwrap()
+            .split(']')
+            .next()
+            .unwrap()
+            .to_string();
+        let ios: Vec<String> = drawings
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .map(String::from)
+            .collect();
         assert_eq!(ios, want, "Pen.swift");
 
-        let public: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(root.join("app/web/public/drawings.json")).unwrap()).unwrap();
-        let public: Vec<String> = public.as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
+        let public: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("app/web/public/drawings.json")).unwrap(),
+        )
+        .unwrap();
+        let public: Vec<String> = public
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["name"].as_str().unwrap().to_string())
+            .collect();
         assert_eq!(public, want, "app/web/public/drawings.json");
     }
 }

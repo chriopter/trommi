@@ -363,7 +363,8 @@ fn what_does_not_check_is_refused_and_nothing_is_installed() {
 
     // another repository, properly signed
     let elsewhere = bench.release("elsewhere", "trommi-connector", 7, &verified(7), None);
-    let manifest = read(&elsewhere.join("manifest.json")).replace("chriopter/trommi", "someone/else");
+    let manifest =
+        read(&elsewhere.join("manifest.json")).replace("chriopter/trommi", "someone/else");
     std::fs::write(elsewhere.join("manifest.json"), manifest).expect("rewritten");
     bench.sign(&elsewhere, None);
     refused(&elsewhere, "another repository");
@@ -592,8 +593,14 @@ esac
 
     // The feed names only the ten newest releases of every part: after a day of other parts' releases it holds
     // no connector (2026-10-14), and GitHub's list of releases names it.
-    let others: String = (0..10).map(|n| entry(&format!("web-v{}", 40 + n))).collect();
-    std::fs::write(stage.join("releases.atom"), format!("<feed>\n{others}</feed>\n")).expect("the feed");
+    let others: String = (0..10)
+        .map(|n| entry(&format!("web-v{}", 40 + n)))
+        .collect();
+    std::fs::write(
+        stage.join("releases.atom"),
+        format!("<feed>\n{others}</feed>\n"),
+    )
+    .expect("the feed");
     std::fs::write(
         stage.join("releases.json"),
         "[\n  {\n    \"tag_name\": \"hub-v34\",\n    \"draft\": false\n  },\n  {\n    \"tag_name\": \"connector-v34\"\n  },\n  {\n    \"tag_name\": \"connector-v29\"\n  }\n]\n",
@@ -677,15 +684,34 @@ fn the_installer_hands_the_hermes_line_to_its_setup() {
     std::fs::create_dir_all(&programs).expect("a folder");
     executable(&programs.join("claude"), "#!/bin/sh\nexit 0\n");
     let link = "https://app.trommi.com/#v1.secret-part";
-    let args = ["--from", release.to_str().expect("plain"), "hermes", "--name", "Mika O'Neil", "--link", link];
+    let args = [
+        "--from",
+        release.to_str().expect("plain"),
+        "hermes",
+        "--name",
+        "Mika O'Neil",
+        "--link",
+        link,
+    ];
     let output = bench.install(&args, Some(&programs));
     let text = said(&output);
     assert!(output.status.success(), "{text}");
     let calls = std::fs::read_to_string(bench.home().join("setup-calls")).unwrap_or_default();
-    assert_eq!(calls.lines().collect::<Vec<_>>(), ["setup hermes"], "only Hermes is set up: {text}");
-    let words = std::fs::read_to_string(bench.home().join("setup-args")).expect("the setup's words");
-    assert_eq!(words.lines().collect::<Vec<_>>(), ["setup", "hermes", "--name", "Mika O'Neil", "--link", link]);
-    assert!(!text.contains("secret-part"), "the link is not printed: {text}");
+    assert_eq!(
+        calls.lines().collect::<Vec<_>>(),
+        ["setup hermes"],
+        "only Hermes is set up: {text}"
+    );
+    let words =
+        std::fs::read_to_string(bench.home().join("setup-args")).expect("the setup's words");
+    assert_eq!(
+        words.lines().collect::<Vec<_>>(),
+        ["setup", "hermes", "--name", "Mika O'Neil", "--link", link]
+    );
+    assert!(
+        !text.contains("secret-part"),
+        "the link is not printed: {text}"
+    );
     assert!(!text.contains("/trommi:connect"), "{text}");
     // (as the app's line runs it: the script on standard input, `sh -s -- …`)
     let _ = std::fs::remove_file(bench.home().join("setup-args"));
@@ -704,17 +730,29 @@ fn the_installer_hands_the_hermes_line_to_its_setup() {
     {
         use std::io::Write;
         let script = std::fs::read(bench.dir.path().join("install.sh")).expect("the installer");
-        piped.stdin.take().expect("stdin").write_all(&script).expect("piped");
+        piped
+            .stdin
+            .take()
+            .expect("stdin")
+            .write_all(&script)
+            .expect("piped");
     }
     let output = piped.wait_with_output().expect("it ends");
     assert!(output.status.success(), "{}", said(&output));
-    let words = std::fs::read_to_string(bench.home().join("setup-args")).expect("the setup's words, piped");
-    assert_eq!(words.lines().collect::<Vec<_>>(), ["setup", "hermes", "--name", "Mika O'Neil", "--link", link]);
+    let words =
+        std::fs::read_to_string(bench.home().join("setup-args")).expect("the setup's words, piped");
+    assert_eq!(
+        words.lines().collect::<Vec<_>>(),
+        ["setup", "hermes", "--name", "Mika O'Neil", "--link", link]
+    );
     std::fs::write(bench.home().join("setup-fails"), "").expect("written");
     let output = bench.install(&args, Some(&programs));
     let text = said(&output);
     assert!(!output.status.success(), "{text}");
-    assert!(text.contains("Hermes was not set up") && !text.contains("secret-part"), "{text}");
+    assert!(
+        text.contains("Hermes was not set up") && !text.contains("secret-part"),
+        "{text}"
+    );
     assert!(bench.installed("trommi-connector").is_file());
 }
 
@@ -1081,7 +1119,10 @@ fn setup_claude_renews_an_old_copy_turns_the_plugin_on_and_keeps_to_claude_confi
         text.contains("the installed copy was old (commands/connect.md missing), installed afresh"),
         "{text}"
     );
-    assert!(text.contains(&format!("Claude Code folder: {account}")), "{text}");
+    assert!(
+        text.contains(&format!("Claude Code folder: {account}")),
+        "{text}"
+    );
     assert!(cache.join("commands/connect.md").is_file());
     let calls = desk.calls()[before..].to_vec();
     for call in [
@@ -1099,7 +1140,11 @@ fn setup_claude_renews_an_old_copy_turns_the_plugin_on_and_keeps_to_claude_confi
     )
     .expect("written");
     let on = desk.run(&["setup", "claude", "--verbose"], b"", &env);
-    assert!(said(&on).contains("was turned off, turned on"), "{}", said(&on));
+    assert!(
+        said(&on).contains("was turned off, turned on"),
+        "{}",
+        said(&on)
+    );
     assert!(read(&plugins).contains("\"enabled\":true"));
     assert!(desk
         .calls()
@@ -1110,7 +1155,9 @@ fn setup_claude_renews_an_old_copy_turns_the_plugin_on_and_keeps_to_claude_confi
         "every claude call in the account's folder: {dirs}"
     );
     // the status line went into that account's settings, not ~/.claude
-    assert!(std::path::Path::new(account).join("settings.json").is_file());
+    assert!(std::path::Path::new(account)
+        .join("settings.json")
+        .is_file());
     assert!(!desk.settings().exists());
     // a copy that only differs is renewed too
     std::fs::write(cache.join("commands/connect.md"), "old words\n").expect("written");
@@ -1120,7 +1167,10 @@ fn setup_claude_renews_an_old_copy_turns_the_plugin_on_and_keeps_to_claude_confi
         "{}",
         said(&third)
     );
-    assert_eq!(read(&cache.join("commands/connect.md")), "Call the tool `connect`.\n");
+    assert_eq!(
+        read(&cache.join("commands/connect.md")),
+        "Call the tool `connect`.\n"
+    );
 }
 
 #[test]

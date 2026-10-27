@@ -36,7 +36,11 @@ thread_local! {
 }
 
 pub fn now() -> u64 {
-    FIXED.with(|f| f.get()).unwrap_or_else(|| SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64))
+    FIXED.with(|f| f.get()).unwrap_or_else(|| {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64)
+    })
 }
 
 /// From now on this thread's world reads `at` as the time (a test of its own thread: Rust runs each test on one).
@@ -54,7 +58,14 @@ pub type Stored = (u64, BTreeMap<Vec<u8>, Vec<u8>>);
 impl Storage for TestStore {
     fn load(&mut self) -> Result<Loaded, StorageError> {
         let inner = self.0.borrow();
-        Ok(Loaded { revision: inner.0, entries: inner.1.iter().map(|(k, v)| trommi_core::store::Entry::new(k.clone(), v.clone())).collect() })
+        Ok(Loaded {
+            revision: inner.0,
+            entries: inner
+                .1
+                .iter()
+                .map(|(k, v)| trommi_core::store::Entry::new(k.clone(), v.clone()))
+                .collect(),
+        })
     }
     fn apply(&mut self, expected_revision: u64, batch: Batch) -> Result<(), StorageError> {
         let mut inner = self.0.borrow_mut();
@@ -76,27 +87,63 @@ pub type Peer = Device<TestStore>;
 
 pub fn new_peer() -> (Peer, TestStore) {
     let store = TestStore::default();
-    (Device::create(store.clone(), Box::new(SystemEntropy)).expect("a new device"), store)
+    (
+        Device::create(store.clone(), Box::new(SystemEntropy)).expect("a new device"),
+        store,
+    )
 }
 
 /// Processes the hub's order after the device's cursor, taking this device's Welcomes on the way.
 pub fn sync(hub: &Hub, device: &mut Peer) {
     let me = device.id();
     let room = hub.room_id();
-    for item in hub.order.iter().filter(|i| i.change() > device.cursor()).cloned().collect::<Vec<_>>() {
+    for item in hub
+        .order
+        .iter()
+        .filter(|i| i.change() > device.cursor())
+        .cloned()
+        .collect::<Vec<_>>()
+    {
         match &item {
-            hub::Item::Log { change, group, commit, bytes, recovery_auth, .. } => {
+            hub::Item::Log {
+                change,
+                group,
+                commit,
+                bytes,
+                recovery_auth,
+                ..
+            } => {
                 let entry = LogEntry {
                     change: *change,
                     group: *group,
-                    kind: if *commit { LogKind::Commit { bytes, recovery_auth: recovery_auth.as_deref() } } else { LogKind::Message { bytes } },
+                    kind: if *commit {
+                        LogKind::Commit {
+                            bytes,
+                            recovery_auth: recovery_auth.as_deref(),
+                        }
+                    } else {
+                        LogKind::Message { bytes }
+                    },
                 };
                 let _ = device.process_log_entry(&entry, now());
                 if *commit {
                     let mut joined = false;
-                    for w in hub.welcomes.iter().filter(|w| w.device == me && w.group == *group) {
+                    for w in hub
+                        .welcomes
+                        .iter()
+                        .filter(|w| w.device == me && w.group == *group)
+                    {
                         if device.group(&w.group).is_err() {
-                            joined |= device.join_welcome(&w.bytes, &WelcomeExpectation { room, committer: None }, now()).is_ok();
+                            joined |= device
+                                .join_welcome(
+                                    &w.bytes,
+                                    &WelcomeExpectation {
+                                        room,
+                                        committer: None,
+                                    },
+                                    now(),
+                                )
+                                .is_ok();
                         }
                     }
                     if joined {
@@ -125,11 +172,19 @@ pub fn post_all(hub: &mut Hub, device: &mut Peer) -> Vec<String> {
             }
             match hub.post(&device.id(), &entry) {
                 Ok(v) => {
-                    let _ = device.outbox_accepted(entry.id, Accepted { change: v.get("change").and_then(|c| c.as_u64()) });
+                    let _ = device.outbox_accepted(
+                        entry.id,
+                        Accepted {
+                            change: v.get("change").and_then(|c| c.as_u64()),
+                        },
+                    );
                     sync(hub, device);
                 }
                 Err(no) => {
-                    let _ = device.outbox_refused(entry.id, &Error::from_code(&no.code).unwrap_or(Error::BadFormat));
+                    let _ = device.outbox_refused(
+                        entry.id,
+                        &Error::from_code(&no.code).unwrap_or(Error::BadFormat),
+                    );
                     refused.push(no.code);
                 }
             }
@@ -140,13 +195,33 @@ pub fn post_all(hub: &mut Hub, device: &mut Peer) -> Vec<String> {
 
 pub fn invite(inviter: &mut Peer, joiner: &mut Peer, role: Role) -> u64 {
     let address = HubAddress::parse(HUB_URL).expect("an address");
-    let opened = inviter.invite_open(role, None, "https://app.example", &address, now()).expect("an invite");
+    let opened = inviter
+        .invite_open(role, None, "https://app.example", &address, now())
+        .expect("an invite");
     let link = String::from_utf8(opened.link.expose().to_vec()).expect("the link is text");
-    let request = joiner.join_request(&link, &opened.signed_offer, now()).expect("a request").signed_request;
-    let accepted = inviter.invite_accept(&opened.invite_id, &request, now()).expect("accepted");
-    let code = joiner.join_reveal(&accepted.signed_reveal).expect("the code");
-    inviter.invite_confirm(&opened.invite_id, &code, &accepted.request_hash, true, now()).expect("confirmed").expect("a Commit");
-    Offer::decode(&opened.signed_offer.offer).expect("an offer").room_epoch
+    let request = joiner
+        .join_request(&link, &opened.signed_offer, now())
+        .expect("a request")
+        .signed_request;
+    let accepted = inviter
+        .invite_accept(&opened.invite_id, &request, now())
+        .expect("accepted");
+    let code = joiner
+        .join_reveal(&accepted.signed_reveal)
+        .expect("the code");
+    inviter
+        .invite_confirm(
+            &opened.invite_id,
+            &code,
+            &accepted.request_hash,
+            true,
+            now(),
+        )
+        .expect("confirmed")
+        .expect("a Commit");
+    Offer::decode(&opened.signed_offer.offer)
+        .expect("an offer")
+        .room_epoch
 }
 
 /// The keys of the room's recovery code (the same for every `World`).
@@ -185,26 +260,41 @@ impl World {
         let (mut agent, agent_store) = new_peer();
         let keys = code_keys();
         hub.recovery = Some(DeviceId::new(keys.public().signature_key));
-        let room = GroupId::room(founder.found_room(&keys, now()).expect("the room is founded"));
+        let room = GroupId::room(
+            founder
+                .found_room(&keys, now())
+                .expect("the room is founded"),
+        );
         assert!(post_all(&mut hub, &mut founder).is_empty());
         // a second human device: the one the App runs
         invite(&mut founder, &mut me, Role::Human);
         assert!(post_all(&mut hub, &mut founder).is_empty());
         let welcome = hub.welcomes.last().expect("a Welcome").bytes.clone();
-        me.join_invited(&welcome, now()).expect("the App's device joins the room");
+        me.join_invited(&welcome, now())
+            .expect("the App's device joins the room");
         sync(&hub, &mut me);
         me.key_packages_to_upload(0, now()).expect("key packages");
         assert!(post_all(&mut hub, &mut me).is_empty());
         // an agent device, and its main session
-        agent.key_packages_to_upload(0, now()).expect("key packages");
+        agent
+            .key_packages_to_upload(0, now())
+            .expect("key packages");
         assert!(post_all(&mut hub, &mut agent).is_empty());
         let epoch = invite(&mut founder, &mut agent, Role::Agent);
         assert!(post_all(&mut hub, &mut founder).is_empty());
-        let info = hub.group_infos.get(&(room, epoch)).expect("the GroupInfo of the Offer's epoch").clone();
+        let info = hub
+            .group_infos
+            .get(&(room, epoch))
+            .expect("the GroupInfo of the Offer's epoch")
+            .clone();
         agent.join_observe(&info).expect("the room is followed");
         sync(&hub, &mut agent);
-        let packages = hub.claim(&[me.id(), agent.id()]).expect("a KeyPackage of each");
-        let session = founder.found_session(&agent.id(), &packages, now()).expect("the founding is built");
+        let packages = hub
+            .claim(&[me.id(), agent.id()])
+            .expect("a KeyPackage of each");
+        let session = founder
+            .found_session(&agent.id(), &packages, now())
+            .expect("the founding is built");
         assert!(post_all(&mut hub, &mut founder).is_empty());
         for device in [&mut founder, &mut agent, &mut me] {
             sync(&hub, device);
@@ -214,11 +304,27 @@ impl World {
             sync(&hub, device);
         }
         let group = GroupId::session(room.room_id(), session);
-        assert!(me.group(&group).is_ok(), "the App's device is in the session");
+        assert!(
+            me.group(&group).is_ok(),
+            "the App's device is in the session"
+        );
         assert!(agent.group(&group).is_ok(), "the agent is in its session");
         let id = me.id();
         drop(me);
-        World { hub: Rc::new(RefCell::new(hub)), founder, agent, room, session, group, me: id, me_store, cards: 0, ticks: 0, others: Vec::new(), agent_store }
+        World {
+            hub: Rc::new(RefCell::new(hub)),
+            founder,
+            agent,
+            room,
+            session,
+            group,
+            me: id,
+            me_store,
+            cards: 0,
+            ticks: 0,
+            others: Vec::new(),
+            agent_store,
+        }
     }
 
     /// A Sim whose device store holds the App's device as it stands, whose hub is the stand-in.
@@ -237,9 +343,13 @@ impl World {
 
     pub fn attach(&self, sim: &mut Sim) {
         let hub = self.hub.clone();
-        sim.hub = Some(Box::new(move |now, request| hub.borrow_mut().http(now, request)));
+        sim.hub = Some(Box::new(move |now, request| {
+            hub.borrow_mut().http(now, request)
+        }));
         let hub = self.hub.clone();
-        sim.stream_hub = Some(Box::new(move |now, request| hub.borrow_mut().open_stream(now, request)));
+        sim.stream_hub = Some(Box::new(move |now, request| {
+            hub.borrow_mut().open_stream(now, request)
+        }));
     }
 
     /// An agent engine over a copy of the agent's device state as it stands, against the stand-in hub. The World's
@@ -258,16 +368,27 @@ impl World {
     pub fn another_session(&mut self) -> GroupId {
         let hub = &mut *self.hub.borrow_mut();
         let (mut agent, _) = new_peer();
-        agent.key_packages_to_upload(0, now()).expect("key packages");
+        agent
+            .key_packages_to_upload(0, now())
+            .expect("key packages");
         assert!(post_all(hub, &mut agent).is_empty());
         sync(hub, &mut self.founder);
         let epoch = invite(&mut self.founder, &mut agent, Role::Agent);
         assert!(post_all(hub, &mut self.founder).is_empty());
-        let info = hub.group_infos.get(&(self.room, epoch)).expect("the GroupInfo of the Offer's epoch").clone();
+        let info = hub
+            .group_infos
+            .get(&(self.room, epoch))
+            .expect("the GroupInfo of the Offer's epoch")
+            .clone();
         agent.join_observe(&info).expect("the room is followed");
         sync(hub, &mut agent);
-        let packages = hub.claim(&[self.me, agent.id()]).expect("a KeyPackage of each");
-        let session = self.founder.found_session(&agent.id(), &packages, now()).expect("the founding is built");
+        let packages = hub
+            .claim(&[self.me, agent.id()])
+            .expect("a KeyPackage of each");
+        let session = self
+            .founder
+            .found_session(&agent.id(), &packages, now())
+            .expect("the founding is built");
         assert!(post_all(hub, &mut self.founder).is_empty());
         sync(hub, &mut agent);
         post_all(hub, &mut agent);
@@ -284,15 +405,48 @@ impl World {
         let keys = RecoveryKeys::from_code(Secret::new([0xC0; 32])).expect("the keys of the code");
         let (mut device, store) = new_peer();
         let room = self.room.room_id();
-        let groups: Vec<GroupId> = std::iter::once(self.room).chain(hub.session_groups()).collect();
+        let groups: Vec<GroupId> = std::iter::once(self.room)
+            .chain(hub.session_groups())
+            .collect();
         let raw: Vec<_> = groups.iter().map(|g| hub.served(g)).collect();
-        let commits: Vec<Vec<ServedCommit<'_>>> =
-            raw.iter().map(|(_, c, _)| c.iter().map(|(change, commit, auth)| ServedCommit { change: *change, commit, recovery_auth: auth.as_deref() }).collect()).collect();
-        let served: Vec<ServedGroup<'_>> = raw.iter().zip(&commits).map(|((founding, _, current), commits)| ServedGroup { founding, commits, current }).collect();
-        let anchor = select_anchor(&keys, &room, &hub.rows).expect("an anchor").epoch;
+        let commits: Vec<Vec<ServedCommit<'_>>> = raw
+            .iter()
+            .map(|(_, c, _)| {
+                c.iter()
+                    .map(|(change, commit, auth)| ServedCommit {
+                        change: *change,
+                        commit,
+                        recovery_auth: auth.as_deref(),
+                    })
+                    .collect()
+            })
+            .collect();
+        let served: Vec<ServedGroup<'_>> = raw
+            .iter()
+            .zip(&commits)
+            .map(|((founding, _, current), commits)| ServedGroup {
+                founding,
+                commits,
+                current,
+            })
+            .collect();
+        let anchor = select_anchor(&keys, &room, &hub.rows)
+            .expect("an anchor")
+            .epoch;
         let anchor = hub.group_infos[&(self.room, anchor)].clone();
         let joined = device
-            .join_room_with_code(&keys, &ServedRoom { room, group: served[0], anchor: &anchor, rows: &hub.rows, links: &[], sessions: &served[1..] }, now())
+            .join_room_with_code(
+                &keys,
+                &ServedRoom {
+                    room,
+                    group: served[0],
+                    anchor: &anchor,
+                    rows: &hub.rows,
+                    links: &[],
+                    sessions: &served[1..],
+                },
+                now(),
+            )
             .expect("the room verifies");
         assert!(joined.unverified.is_empty() && joined.missing_link.is_none());
         drop(served);
@@ -305,7 +459,10 @@ impl World {
 
     /// The agent says a line in its session's Chat. Returns the change the hub gave it.
     pub fn agent_says(&mut self, line: &str) -> u64 {
-        let draft = Draft::SessionChat { session: self.session, payload: text(&format!(r#"{{"content_type":"message","text":"{line}"}}"#)) };
+        let draft = Draft::SessionChat {
+            session: self.session,
+            payload: text(&format!(r#"{{"content_type":"message","text":"{line}"}}"#)),
+        };
         self.write(false, &draft)
     }
 
@@ -315,7 +472,12 @@ impl World {
         let payload = format!(
             r#"{{"card_type":"decision","title":"{title}","options":[{{"key":"yes"}},{{"key":"no"}}],"object_version":1,"previous_version_hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}"#
         );
-        let draft = Draft::CardFirst { session: self.session, urgency: Urgency::Normal, push: false, payload: text(&payload) };
+        let draft = Draft::CardFirst {
+            session: self.session,
+            urgency: Urgency::Normal,
+            push: false,
+            payload: text(&payload),
+        };
         self.write(false, &draft)
     }
 
@@ -325,56 +487,117 @@ impl World {
         let payload = format!(
             r#"{{"card_type":"decision","title":"{title}","options":[{{"key":"yes"}},{{"key":"no"}}],"object_version":1,"previous_version_hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}"#
         );
-        let draft = Draft::CardFirst { session: self.session, urgency: Urgency::Normal, push: false, payload: text(&payload) };
+        let draft = Draft::CardFirst {
+            session: self.session,
+            urgency: Urgency::Normal,
+            push: false,
+            payload: text(&payload),
+        };
         let (sealed, change) = self.seal(false, &draft);
-        (sealed.object_id.expect("a card"), trommi_core::ids::base64url_encode(sealed.envelope_hash.as_bytes()), change)
+        (
+            sealed.object_id.expect("a card"),
+            trommi_core::ids::base64url_encode(sealed.envelope_hash.as_bytes()),
+            change,
+        )
     }
 
     /// The agent writes a later version of a card. Returns that version's hash and its change.
-    pub fn agent_revises(&mut self, card: trommi_core::ids::ObjectId, previous: &str, title: &str, version: u32) -> (String, u64) {
+    pub fn agent_revises(
+        &mut self,
+        card: trommi_core::ids::ObjectId,
+        previous: &str,
+        title: &str,
+        version: u32,
+    ) -> (String, u64) {
         let payload = format!(
             r#"{{"card_type":"decision","title":"{title}","options":[{{"key":"yes"}},{{"key":"no"}}],"object_version":{version},"previous_version_hash":"{previous}"}}"#
         );
-        let draft = Draft::CardVersion { session: self.session, object_id: card, closed: false, urgency: Urgency::Normal, push: false, payload: text(&payload) };
+        let draft = Draft::CardVersion {
+            session: self.session,
+            object_id: card,
+            closed: false,
+            urgency: Urgency::Normal,
+            push: false,
+            payload: text(&payload),
+        };
         let (sealed, change) = self.seal(false, &draft);
-        (trommi_core::ids::base64url_encode(sealed.envelope_hash.as_bytes()), change)
+        (
+            trommi_core::ids::base64url_encode(sealed.envelope_hash.as_bytes()),
+            change,
+        )
     }
 
     /// The agent closes a card, retaining the preceding answer.
-    pub fn agent_closes(&mut self, card: trommi_core::ids::ObjectId, previous: &str, title: &str, version: u32) {
-        let payload = format!(r#"{{"card_type":"decision","title":"{title}","object_version":{version},"previous_version_hash":"{previous}","close_summary":"Done"}}"#);
-        let draft = Draft::CardVersion { session: self.session, object_id: card, closed: true, urgency: Urgency::Normal, push: false, payload: text(&payload) };
+    pub fn agent_closes(
+        &mut self,
+        card: trommi_core::ids::ObjectId,
+        previous: &str,
+        title: &str,
+        version: u32,
+    ) {
+        let payload = format!(
+            r#"{{"card_type":"decision","title":"{title}","object_version":{version},"previous_version_hash":"{previous}","close_summary":"Done"}}"#
+        );
+        let draft = Draft::CardVersion {
+            session: self.session,
+            object_id: card,
+            closed: true,
+            urgency: Urgency::Normal,
+            push: false,
+            payload: text(&payload),
+        };
         self.seal(false, &draft);
     }
 
     /// The agent writes a register of its session.
     pub fn agent_register(&mut self, name: &str, value: &str) -> u64 {
-        let draft = Draft::Register { group: self.group, name: name.into(), value: Some(text(value)) };
+        let draft = Draft::Register {
+            group: self.group,
+            name: name.into(),
+            value: Some(text(value)),
+        };
         self.write(false, &draft)
     }
 
     /// The agent deletes a register of its session.
     pub fn agent_clears(&mut self, name: &str) -> u64 {
-        let draft = Draft::Register { group: self.group, name: name.into(), value: None };
+        let draft = Draft::Register {
+            group: self.group,
+            name: name.into(),
+            value: None,
+        };
         self.write(false, &draft)
     }
 
     /// The founder (the person's other device) says a line.
     pub fn founder_says(&mut self, line: &str) -> u64 {
-        let draft = Draft::SessionChat { session: self.session, payload: text(&format!(r#"{{"content_type":"message","text":"{line}"}}"#)) };
+        let draft = Draft::SessionChat {
+            session: self.session,
+            payload: text(&format!(r#"{{"content_type":"message","text":"{line}"}}"#)),
+        };
         self.write(true, &draft)
     }
 
     /// The person answers a card on his other device (the founder): the option `choice`.
     pub fn founder_answers(&mut self, card: trommi_core::ids::ObjectId, choice: &str) -> u64 {
         let payload = format!(r#"{{"answer_action":"answer","choices":["{choice}"]}}"#);
-        let draft = Draft::Answer { session: self.session, object_id: card, choices: vec![choice.into()], closes: false, payload: text(&payload) };
+        let draft = Draft::Answer {
+            session: self.session,
+            object_id: card,
+            choices: vec![choice.into()],
+            closes: false,
+            payload: text(&payload),
+        };
         self.write(true, &draft)
     }
 
     /// The person's other device (the founder) sets a register of the room (`snooze/<card>`, `star/<card>`).
     pub fn founder_sets(&mut self, name: &str, value: &str) -> u64 {
-        let draft = Draft::Register { group: self.room, name: name.into(), value: Some(text(value)) };
+        let draft = Draft::Register {
+            group: self.room,
+            name: name.into(),
+            value: Some(text(value)),
+        };
         self.write(true, &draft)
     }
 
@@ -387,7 +610,9 @@ impl World {
     pub fn founder_piece(&mut self, board: &trommi_core::ids::BoardId, piece: &[u8]) {
         let mut hub = self.hub.borrow_mut();
         sync(&hub, &mut self.founder);
-        self.founder.send_stroke_piece(board, piece).expect("the piece goes");
+        self.founder
+            .send_stroke_piece(board, piece)
+            .expect("the piece goes");
         assert_eq!(post_all(&mut hub, &mut self.founder), Vec::<String>::new());
     }
 
@@ -399,9 +624,15 @@ impl World {
     fn seal(&mut self, founder: bool, draft: &Draft) -> (trommi_core::device::Sealed, u64) {
         self.ticks += 10;
         let mut hub = self.hub.borrow_mut();
-        let device = if founder { &mut self.founder } else { &mut self.agent };
+        let device = if founder {
+            &mut self.founder
+        } else {
+            &mut self.agent
+        };
         sync(&hub, device);
-        let sealed = device.seal(draft, None, &[], now() + self.ticks).expect("the item seals");
+        let sealed = device
+            .seal(draft, None, &[], now() + self.ticks)
+            .expect("the item seals");
         assert_eq!(post_all(&mut hub, device), Vec::<String>::new());
         (sealed, hub.change)
     }
@@ -418,12 +649,22 @@ impl World {
     pub fn stream(&self, sim: &mut Sim) -> bool {
         let news = self.hub.borrow_mut().stream_news(&self.me);
         match news {
-            Some(bytes) => sim.stream(StreamItem::Chunk { bytes: bytes.into() }),
+            Some(bytes) => sim.stream(StreamItem::Chunk {
+                bytes: bytes.into(),
+            }),
             None => false,
         }
     }
 }
 
 pub fn start() -> Event {
-    Event::Start { config: Config { platform: "test".into(), version: "0".into(), hub: HUB_URL.into(), seed: 7, ..Default::default() } }
+    Event::Start {
+        config: Config {
+            platform: "test".into(),
+            version: "0".into(),
+            hub: HUB_URL.into(),
+            seed: 7,
+            ..Default::default()
+        },
+    }
 }

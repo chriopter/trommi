@@ -27,7 +27,10 @@ pub fn set_preset(p: &'static Preset) {
 
 /// The program the connector was started for (`TROMMI_HOST`, set by the Hermes add-on), if it names a preset.
 pub fn from_env() {
-    if let Some(p) = std::env::var("TROMMI_HOST").ok().and_then(|h| crate::preset::by_id(&h)) {
+    if let Some(p) = std::env::var("TROMMI_HOST")
+        .ok()
+        .and_then(|h| crate::preset::by_id(&h))
+    {
         set_preset(p);
     }
 }
@@ -252,8 +255,17 @@ pub fn wake_detached(thread: &str, text: &str) {
 
 /// The arguments that queue `text` for a Codex thread (the Codex preset's live wake).
 fn queue_args(thread: &str, text: &str) -> Vec<String> {
-    let crate::preset::Live::Command(groups) = crate::preset::CODEX.live else { return vec![] };
-    crate::preset::render(groups, &crate::preset::Fill { prompt: text, resume: thread, ..Default::default() })
+    let crate::preset::Live::Command(groups) = crate::preset::CODEX.live else {
+        return vec![];
+    };
+    crate::preset::render(
+        groups,
+        &crate::preset::Fill {
+            prompt: text,
+            resume: thread,
+            ..Default::default()
+        },
+    )
 }
 
 /// The program's name, for texts the human reads.

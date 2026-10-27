@@ -877,7 +877,10 @@ impl<S: Storage> Device<S> {
         origin.learned = true;
         self.put_stored(batch, origin_key(group), codec::encode(&origin)?);
         if group.is_room() {
-            self.delete_stored(batch, super::device_key(super::SUB_ANCHORED, group.as_bytes()));
+            self.delete_stored(
+                batch,
+                super::device_key(super::SUB_ANCHORED, group.as_bytes()),
+            );
         }
         Ok(Learned {
             epochs: origin.epoch,
@@ -1047,7 +1050,11 @@ impl<S: Storage> Device<S> {
         // from zero, and no older epoch becomes readable until a backward walk verifies it.
         if walked.first_epoch != 0 {
             if group.is_room() {
-                self.put_stored(batch, super::device_key(super::SUB_ANCHORED, group.as_bytes()), Vec::new());
+                self.put_stored(
+                    batch,
+                    super::device_key(super::SUB_ANCHORED, group.as_bytes()),
+                    Vec::new(),
+                );
             }
             return Ok(());
         }

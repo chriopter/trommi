@@ -23,9 +23,13 @@ impl std::fmt::Debug for Secret {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "by", rename_all = "snake_case")]
 pub enum Unlock {
-    Password { password: Secret },
+    Password {
+        password: Secret,
+    },
     /// The Emergency Kit's twelve words.
-    Words { words: Secret },
+    Words {
+        words: Secret,
+    },
     /// One of the account's passkeys (`PlatformOp::PasskeyGet`).
     Passkey,
 }
@@ -95,7 +99,11 @@ pub enum AccountAction {
     InviteAgent {
         #[serde(default)]
         label: String,
-        #[serde(default, deserialize_with = "crate::actions::missing_or_null", skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "crate::actions::missing_or_null",
+            skip_serializing_if = "Option::is_none"
+        )]
         team: Option<Option<String>>,
     },
     /// Approve one computer by emoji, after which its local sessions activate without another tap.

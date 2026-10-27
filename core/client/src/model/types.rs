@@ -131,8 +131,12 @@ impl Default for Slot {
 impl Slot {
     pub fn of(v: Value) -> Slot {
         match &v {
-            Value::Array(a) if !a.is_empty() => serde_json::value::to_raw_value(&v).map(Slot::Text).unwrap_or(Slot::Plain(v)),
-            Value::Object(o) if !o.is_empty() => serde_json::value::to_raw_value(&v).map(Slot::Text).unwrap_or(Slot::Plain(v)),
+            Value::Array(a) if !a.is_empty() => serde_json::value::to_raw_value(&v)
+                .map(Slot::Text)
+                .unwrap_or(Slot::Plain(v)),
+            Value::Object(o) if !o.is_empty() => serde_json::value::to_raw_value(&v)
+                .map(Slot::Text)
+                .unwrap_or(Slot::Plain(v)),
             _ => Slot::Plain(v),
         }
     }
@@ -171,7 +175,9 @@ impl<'de> Deserialize<'de> for Slot {
             // (an empty list or object, with blanks in it, is kept as text: it reads the same)
             Ok(Slot::Text(raw))
         } else {
-            serde_json::from_str(raw.get()).map(Slot::Plain).map_err(serde::de::Error::custom)
+            serde_json::from_str(raw.get())
+                .map(Slot::Plain)
+                .map_err(serde::de::Error::custom)
         }
     }
 }
@@ -187,7 +193,9 @@ impl CardFields {
     }
     /// A content field's value (null for a name that is none).
     pub fn get(&self, name: &str) -> Value {
-        Self::slot(name).map(|i| self.0[i].value()).unwrap_or(Value::Null)
+        Self::slot(name)
+            .map(|i| self.0[i].value())
+            .unwrap_or(Value::Null)
     }
     /// Sets a content field; a name that is none is not kept.
     pub fn insert(&mut self, name: &str, v: Value) {
@@ -392,7 +400,13 @@ pub fn history_of(versions: &[CardVersion]) -> Vec<Revision> {
         .filter(|v| v.object_version == 1 || v.object_state == "open")
         .map(|v| {
             let body = v.content.as_ref().map(RawObj::obj).unwrap_or_default();
-            let text = |k: &str| body.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
+            let text = |k: &str| {
+                body.get(k)
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string()
+            };
             Revision {
                 object_version: v.object_version,
                 envelope_number: v.envelope_number,
@@ -410,19 +424,35 @@ impl Card {
     }
     /// A content field as text, using the same spelling as an agent's tool result.
     pub fn s(&self, name: &str) -> String {
-        match self.field(name) { Value::Null => String::new(), v => crate::codec::js_string(&v) }
+        match self.field(name) {
+            Value::Null => String::new(),
+            v => crate::codec::js_string(&v),
+        }
     }
     pub fn title(&self) -> String {
         self.s("title")
     }
     pub fn card_type(&self) -> String {
-        self.field("card_type").as_str().unwrap_or("decision").to_string()
+        self.field("card_type")
+            .as_str()
+            .unwrap_or("decision")
+            .to_string()
     }
     pub fn options(&self) -> Vec<Value> {
-        self.field("options").as_array().cloned().unwrap_or_default()
+        self.field("options")
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
     }
     pub fn option_keys(&self) -> Vec<String> {
-        self.options().iter().map(|o| o.get("key").map(crate::codec::js_string).unwrap_or_else(|| "undefined".into())).collect()
+        self.options()
+            .iter()
+            .map(|o| {
+                o.get("key")
+                    .map(crate::codec::js_string)
+                    .unwrap_or_else(|| "undefined".into())
+            })
+            .collect()
     }
     pub fn recommended_list(&self) -> Vec<String> {
         match self.field("recommended") {
@@ -432,7 +462,10 @@ impl Card {
         }
     }
     pub fn attachments(&self) -> Vec<Value> {
-        self.field("attachments").as_array().cloned().unwrap_or_default()
+        self.field("attachments")
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
     }
     /// A card of a newer Trommi (its type or schema): read as an info. (`unsupported` may stand as null.)
     pub fn is_unsupported(&self) -> bool {
@@ -721,7 +754,9 @@ mod history_tests {
 
     /// A card asked once, revised five times (each with its note), then closed: the version that closes it is no revision.
     fn revised_five_times() -> Card {
-        let mut versions = vec![json!({ "object_version": 1, "envelope_number": 10, "sent_at": 1000, "object_state": "open", "content": { "title": "Working on: the history" } })];
+        let mut versions = vec![
+            json!({ "object_version": 1, "envelope_number": 10, "sent_at": 1000, "object_state": "open", "content": { "title": "Working on: the history" } }),
+        ];
         for n in 2..=6 {
             versions.push(json!({ "object_version": n, "envelope_number": 10 * n, "sent_at": 1000 * n, "object_state": "open",
                 "content": { "title": format!("Step {n}"), "change_note": format!("step {n} done") } }));
@@ -734,12 +769,27 @@ mod history_tests {
     fn a_card_revised_five_times_keeps_five_revisions_under_its_first_version() {
         let card = revised_five_times();
         let h = &card.history;
-        assert_eq!(h.len(), 6, "the first version and every revision; the closing version is none");
+        assert_eq!(
+            h.len(),
+            6,
+            "the first version and every revision; the closing version is none"
+        );
         assert_eq!(h.iter().filter(|r| r.object_version > 1).count(), 5);
-        assert_eq!(h.iter().map(|r| r.object_version).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(
+            h.iter().map(|r| r.object_version).collect::<Vec<_>>(),
+            vec![1, 2, 3, 4, 5, 6]
+        );
         assert_eq!(h[0].title, "Working on: the history");
         assert_eq!(h[0].note, "");
-        assert_eq!((h[3].note.as_str(), h[3].title.as_str(), h[3].sent_at, h[3].envelope_number), ("step 4 done", "Step 4", 4000, 40));
+        assert_eq!(
+            (
+                h[3].note.as_str(),
+                h[3].title.as_str(),
+                h[3].sent_at,
+                h[3].envelope_number
+            ),
+            ("step 4 done", "Step 4", 4000, 40)
+        );
         // (written and read again, the history is the same: worked out from the versions)
         let again: Card = serde_json::from_value(serde_json::to_value(&card).unwrap()).unwrap();
         assert_eq!(again.history, card.history);
@@ -753,6 +803,12 @@ mod history_tests {
         ] }))
         .unwrap();
         assert_eq!(card.history.len(), 2);
-        assert_eq!((card.history[1].note.as_str(), card.history[1].title.as_str()), ("", ""));
+        assert_eq!(
+            (
+                card.history[1].note.as_str(),
+                card.history[1].title.as_str()
+            ),
+            ("", "")
+        );
     }
 }
