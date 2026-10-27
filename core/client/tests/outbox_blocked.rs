@@ -21,6 +21,7 @@ fn yes(card: &str) -> Action {
         option_notes: Default::default(),
         trusted: false,
         marks: vec![],
+        onward: false,
     }
 }
 

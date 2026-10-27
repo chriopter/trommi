@@ -795,6 +795,7 @@ fn the_log_out_page_names_what_is_not_sent_yet() {
             option_notes: Default::default(),
             trusted: false,
             marks: vec![],
+            onward: false,
         },
     });
     let unsent = sim
