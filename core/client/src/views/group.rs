@@ -200,7 +200,7 @@ pub fn group(b: &Board) -> GroupView {
     } else {
         None
     };
-    let (chips, chips_shown, more) = chips_of(b, &chats, chosen.map(|c| c.id.as_str()), all_open);
+    let (chips, chips_shown, more) = chips_of(&chats, chosen.map(|c| c.id.as_str()), all_open);
     let count = |key: &str, word: &str, n: usize| {
         let s = n.to_string();
         (n > 0).then(|| say(key, word, &[("n", &s)]))
@@ -338,7 +338,6 @@ fn head(b: &Board, team: &str, chats: &[SessionRowView]) -> GroupHeadView {
 /// rest, each part in the list's order); how many stand in the row, and the "+n" for the rest. `chosen`: the chosen
 /// chat's key. `open`: the group's open cards.
 fn chips_of(
-    b: &Board,
     chats: &[SessionRowView],
     chosen: Option<&str>,
     open: u32,
@@ -346,7 +345,6 @@ fn chips_of(
     if chats.is_empty() {
         return (Vec::new(), 0, None);
     }
-    let _ = b;
     let rank = |r: &SessionRowView| {
         if needs(r) {
             0
