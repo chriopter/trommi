@@ -1,0 +1,48 @@
+# The one check on GitHub: a green tick on pushes to main and on pull requests. It formats, type-checks and runs the
+# light web tests; it builds, signs, releases and deploys nothing, and reads no secret. Releases stay by hand
+# (README, "Releases").
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # the toolchain of rust-toolchain.toml (rustup installs it on first use), plus rustfmt
+      - run: rustup component add rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo check --workspace --all-targets --locked
+      - run: cargo fmt --all --check
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      # the web tests that need no built core (card-page imports core/bindings/wasm/pkg, built by hand only)
+      - run: node --test $(find ../../tests/web/views ../../tests/web/worker ../../tests/web/shell -name '*.test.mjs' ! -name card-page.test.mjs | sort)
