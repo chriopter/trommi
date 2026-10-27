@@ -218,6 +218,7 @@ struct LogoutPage: View {
     VStack(alignment: .leading, spacing: 18) {
       Text(l.ask.en).font(Face.text(17)).foregroundStyle(Ink.fg).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("logout-ask")
       if let note = l.note { Text(note.en).font(Face.text(17, .semibold)).foregroundStyle(Ink.fg).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("logout-last") }
+      if let unsent = l.unsent { Text(unsent.en).font(Face.text(17, .semibold)).foregroundStyle(Ink.urgCritical).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("logout-unsent") }
       Text(l.meta.en).font(Face.text(14)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
       SetGroup {
         Button { if shell.isDemo { shell.leaveDemo() } else { shell.account(["step": "sign_out"]) } } label: {

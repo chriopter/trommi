@@ -4,7 +4,7 @@
 //
 // Real here: IndexedDB, Web Locks, BroadcastChannel and WebCrypto of the browser; the binding's IdbStore; and, in the
 // tests named "core:", the Rust core's Device from the WASM build run.mjs serves under /pkg/. NOT real: the client.
-import { deleteStores, dropIfEmpty, openCache, openDeviceStore } from '../../../app/web/core/store-idb.ts'
+import { deleteStores, dropIfEmpty, forgetAll, openCache, openDeviceStore } from '../../../app/web/core/store-idb.ts'
 import type { Cache, DeviceStore, IdbStoreClass } from '../../../app/web/core/store-idb.ts'
 import type { StoredState, StoreEntry, StoreWrite } from '../../../app/web/core/core-api.ts'
 import type * as Binding from '../../../core/bindings/wasm/js/trommi-core.js'
@@ -455,6 +455,29 @@ const tests: [string, () => Promise<void>][] = [
     const room = await again.foundRoom(core.generateRecoveryCode(), Date.now())
     same(room.length, 32, 'and it goes on')
     await again.close()
+  }],
+  // (the last of these: it deletes every database of the origin, the other tests' too)
+  ['store: forgetAll: after a log out every database of the app goes; the cache only once it holds nothing, the state only under its free lock', async () => {
+    const name = fresh('forget'), cache = `${name}:app`, other = fresh('other')
+    const a = await opened(name)
+    await a.store.apply(write(0, [put(bytes(1), 'a device')]))
+    const c = await openCache(cache)
+    await c.set('public-departure/r.d', 'a notice', { durable: true })
+    c.close()
+    const o = await openCache(other); o.close()
+    // (while the state is open, its lock is taken: it stays)
+    let gone = await forgetAll({ device: name, cache })
+    same([gone.includes(name), gone.includes(`${name}:wrap`)], [false, false], 'an owner\'s state is not touched')
+    same(await databases(other), [], 'another database of the app goes')
+    same(await databases(name), [name, `${cache}:cache`, `${name}:wrap`], 'the state and the cache with its notice stay')
+    await a.store.close()
+    gone = await forgetAll({ device: name, cache })
+    same(await databases(name), [`${cache}:cache`], 'the state and its key went; the notice stays')
+    const kept = await openCache(cache)
+    same(await kept.keys(''), ['public-departure/r.d'], 'the notice, for the next start')
+    await kept.delete('public-departure/r.d'); kept.close()
+    await forgetAll({ device: name, cache })
+    same(await databases(name), [], 'delivered: nothing is left')
   }],
 ]
 

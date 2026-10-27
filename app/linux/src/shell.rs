@@ -83,6 +83,7 @@ impl<F: FnMut(String) + Send + 'static> Shell for Window<F> {
                 }
             }
             Effect::FileGone { file_id } => self.desktop.file_gone(&file_id),
+            Effect::ForgetLocal => self.desktop.forget(),
             Effect::Notify { notice } => self.desktop.notify(notice),
             Effect::SaveFile { name, bytes, .. } => {
                 if let Err(e) = self.desktop.save_file(&name, &bytes) {

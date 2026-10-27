@@ -10,7 +10,7 @@
 // app.mjs asks gate(vm, url) on every visit while signed out or while a step runs: the address the page must be on.
 // The UI says "account", never "room". Calm and sober: pen drawings only on the choice buttons.
 import { BELL, Controller, PLUS, SET_CHEVRON, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode } from './ui.mjs'
-import { actCore, passkeysOn, pushObstacle } from './app.mjs'
+import { actCore, justLoggedOut, passkeysOn, pushObstacle } from './app.mjs'
 
 // (the page's core and the QR reader come when first needed: this module also loads in Node, for its tests)
 const qrReader = () => import('./app.mjs').then(app => app.qrReader())
@@ -244,6 +244,8 @@ function screenOpts(name, vm, url) {
 // ---- the routes ----
 export function register(t) {
   const vm = () => t.vm()
+  // (a log out wiped this browser and started the app anew: the first screen says so once)
+  if (justLoggedOut()) local.loggedOut = true
   const page = (req, res, title, main, extra = {}) => t.page(req, res, { title: `${title} · Trommi`, view: 'room', main, ...extra })
   const sent = (path, word, passkey = false) => { local.sent = { path, word, passkey }; local.begun = true; local.loggedOut = false; if (path !== '/forgot' && path !== '/new-way') local.words = null }
   const field = (form, name) => String(form.get(name) ?? '')
@@ -346,7 +348,7 @@ export function register(t) {
   const logoutMain = () => {
     const l = vm().settings?.logout ?? {}
     return roomShell(l.title?.en ?? '', html`<p class="room-lead" id="logout-ask">${l.ask?.en ?? ''}</p>
-${l.note ? html`<p class="room-lead" id="logout-last">${l.note.en}</p>` : ''}<p class="room-meta">${l.meta?.en ?? ''}</p>
+${l.note ? html`<p class="room-lead" id="logout-last">${l.note.en}</p>` : ''}${l.unsent ? html`<p class="room-lead" id="logout-unsent" role="alert">${l.unsent.en}</p>` : ''}<p class="room-meta">${l.meta?.en ?? ''}</p>
 <form method="post" action="/logout" class="room-inline room-logout" id="logout-form"><button type="submit" class="room-danger" id="logout-go">${l.go?.en ?? ''}</button><a href="/" data-nav class="room-back" id="logout-cancel">${l.cancel?.en ?? ''}</a></form>`)
   }
   t.get(/^\/logout$/, ({ req, res }) => { readAccount(); page(req, res, vm().settings?.logout?.title?.en ?? '', logoutMain(), { view: 'logout' }) })

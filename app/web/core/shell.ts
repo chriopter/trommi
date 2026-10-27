@@ -36,6 +36,9 @@ export interface ShellHost {
   openUrl?(url: string, window: number): void
   notify?(notice: unknown): void
   log?(level: string, text: string): void
+  /** The core forgot this device and its own erasing is through (`Effect::ForgetLocal`): erase what the app keeps
+   *  outside the two stores, and start anew. */
+  forgetLocal?(): void
   /** A platform service only the page has (passkeys, push): `op` as the contract spells it, its bytes by index in
    *  `blobs`. Resolves with the answer (bytes by index in its own `blobs`); `{ answer: 'refused' }` when the person
    *  said no or the browser cannot. Without it every op is refused. `window`: the one whose step asks; only it prompts. */
@@ -146,6 +149,7 @@ export class CoreShell {
       case 'save_file': return this.host.saveFile?.(effect['name'] as string, effect['media_type'] as string, blobs[effect['bytes'] as number] ?? new Uint8Array(), win(effect))
       case 'open_url': return this.host.openUrl?.(effect['url'] as string, win(effect))
       case 'notify': return this.host.notify?.(effect['notice'])
+      case 'forget_local': return this.host.forgetLocal?.()
       case 'snapshot': case 'notify_context': case 'share_inbox': case 'forget_shared': return
       case 'log': return this.host.log?.(effect['level'] as string, effect['text'] as string)
       default: return this.host.log?.('warn', `an effect this shell does not know: ${String(effect['type'])}`)

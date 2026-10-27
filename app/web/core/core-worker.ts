@@ -18,7 +18,7 @@
 import { CoreShell, memorySpaces } from './shell.ts'
 import type { CacheSpace, DeviceSpace } from './shell.ts'
 import { IdbStore, deviceOwner, loadCore } from './core-wasm.ts'
-import { openCache, openDeviceStore } from './store-idb.ts'
+import { forgetAll, openCache, openDeviceStore } from './store-idb.ts'
 import type { DeviceStore } from './store-idb.ts'
 
 type Json = Record<string, unknown>
@@ -45,6 +45,9 @@ export type FromCore =
   | { t: 'notify'; notice: unknown }
   | { t: 'log'; level: string; text: string }
   | { t: 'platform'; id: number; op: Json; blobs: Uint8Array[] }
+  /** This device was forgotten and the worker erased what it keeps (`forget`): the page erases its own part and
+   *  starts anew. */
+  | { t: 'forgotten' }
 
 interface Port {
   postMessage(m: FromCore): void
@@ -151,6 +154,7 @@ async function start(m: Extract<ToCore, { t: 'start' }>): Promise<void> {
         openUrl: (url, window) => send(byWindow(window), { t: 'open_url', url }),
         notify: notice => send(anyWindow(), { t: 'notify', notice }),
         log: (level, text) => everyone({ t: 'log', level, text }),
+        forgetLocal: () => { if (mine === run) void forget(m.slot) },
         platform: (op, blobs, window) => new Promise((ok, bad) => {
           // (a passkey or push prompt only in the window whose step asks (the core names it); gone: refused)
           const conn = byWindow(window)
@@ -198,6 +202,22 @@ function giveUp(tell = true): Promise<void> {
   for (const c of conns) { c.window = null; c.wants = false }
   stopping = (st?.close() ?? Promise.resolve()).catch(() => {})
   return stopping
+}
+
+/** The core forgot this device (`Effect::ForgetLocal`): it stops, its store closes and frees the lock, the browser's
+ *  databases of the app go (store-idb.ts `forgetAll`: the cache only once it is empty, it may hold logout notices
+ *  still to deliver) and Cache Storage with them; then every page hears `forgotten`, erases its own storage and
+ *  starts anew. What fails to go is logged; the pages start anew all the same. */
+async function forget(slot: string): Promise<void> {
+  const told = [...conns]
+  await giveUp(false)
+  const failed: string[] = []
+  if (slot) await forgetAll({ device: slot, cache: `${slot}:app` }).catch(e => { failed.push(`databases: ${String((e as Error)?.message ?? e)}`) })
+  try { for (const key of await caches.keys()) await caches.delete(key) } catch (e) { failed.push(`caches: ${(e as { name?: string })?.name ?? 'failed'}`) }
+  for (const c of told) {
+    for (const f of failed) send(c, { t: 'log', level: 'warn', text: `forgetting this device: ${f}` })
+    send(c, { t: 'forgotten' })
+  }
 }
 
 /** A page went: its window closes; with the last page the core stops and frees the device. */

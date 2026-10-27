@@ -2,9 +2,9 @@
   "app/web/core/core-api.ts": 14,
   "app/web/core/core-start.ts": 37,
   "app/web/core/core-wasm.ts": 32,
-  "app/web/core/core-worker.ts": 261,
+  "app/web/core/core-worker.ts": 281,
   "app/web/core/proof-worker.ts": 30,
-  "app/web/core/shell.ts": 344,
+  "app/web/core/shell.ts": 348,
   "app/web/core/spent.ts": 9,
-  "app/web/core/store-idb.ts": 287
+  "app/web/core/store-idb.ts": 308
 }

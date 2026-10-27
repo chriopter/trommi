@@ -111,6 +111,15 @@ impl Desktop {
         serde_json::Value::Object(map).to_string()
     }
 
+    /// The device was forgotten (`Effect::ForgetLocal`): every file for drawing goes with its folder, kept or not,
+    /// and the window hears that none is left. The slot's stores are the core's (it emptied them).
+    pub fn forget(&mut self) {
+        self.clear();
+        let _ = std::fs::remove_dir_all(&self.files_dir);
+        let json = self.files_json();
+        (self.on_files)(json);
+    }
+
     /// Drops every kept file (the app ends).
     pub fn clear(&mut self) {
         for (_, path) in std::mem::take(&mut self.files) {

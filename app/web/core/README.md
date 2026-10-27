@@ -24,5 +24,12 @@ The contract between the page and the core is the core's: `Event` and `Action` i
 `views-fold.js`. Tests: `tests/web/shell/` (the shell, and against the real hub with `TROMMI_HUB_BIN`),
 `tests/web/store/` (the store in Chromium).
 
+**Log out.** The core erases the slot itself (the device's state, the cache but its public logout notices). Its
+`ForgetLocal` effect follows once that is written and the hub heard the sign-out and each notice once: the worker
+stops the core, frees the lock, deletes every database of the app (`store-idb.ts` `forgetAll`; the cache only once
+it is empty, else it keeps the undelivered notices for the next start) and Cache Storage, and tells every page
+`forgotten`. Each page then clears its local and session storage, unregisters the service worker, tells tabs with
+a core of their own over the BroadcastChannel `trommi-forget`, and loads `/` anew ("Logged out." once).
+
 Apple-only `Snapshot`, `NotifyContext`, `ShareInbox` and `ForgetShared` effects need no browser service and are
 ignored. Account authority, push policy, file references and all shared decisions stay in Rust.

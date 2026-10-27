@@ -262,6 +262,27 @@ export async function dropIfEmpty(name: string): Promise<void> {
   })
 }
 
+/**
+ * After the core forgot the device (`Effect::ForgetLocal`, its own erasing through): every database of this origin
+ * goes, but the cache `cache` while it still holds records (the public logout notices the core delivers on its next
+ * start), and the state `device` with its wrapping key only while this call holds its lock (another tab may be making
+ * a device in it right now). The caller closed its own store and cache first. Where the browser cannot list its
+ * databases, only these are known. Resolves with the names deleted.
+ */
+export async function forgetAll({ device, cache }: { device: string; cache: string }): Promise<string[]> {
+  const listed = await (indexedDB.databases?.() ?? Promise.resolve([])).then(list => list.flatMap(d => (d.name ? [d.name] : [])), () => [])
+  const own = [device, wrapName(device), cacheName(cache)]
+  const gone: string[] = []
+  const drop = async (db: string): Promise<void> => { await deleteDatabase(db); gone.push(db) }
+  await underLock(device, async () => { await drop(device); await drop(wrapName(device)) })
+  const records = await openCache(cache)
+  let left: number
+  try { left = (await records.keys('')).length } finally { records.close() }
+  if (left === 0) await drop(cacheName(cache))
+  for (const db of listed) if (!own.includes(db)) await drop(db)
+  return gone
+}
+
 /** `fn` while this call holds the state's Web Lock (the binding's lock name, idb-store.js); not at all if it is taken. */
 async function underLock(name: string, fn: () => Promise<void>): Promise<void> {
   await navigator.locks.request(`trommi-core:${name}`, { ifAvailable: true }, async held => { if (held) await fn() })

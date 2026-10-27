@@ -154,3 +154,14 @@ test('Approve a computer: Claude Code, Codex and Hermes as tabs from AccountView
   assert.deepEqual(b.sent.at(-1), { do: 'account', action: { step: 'hermes_name', name: 'Work' } })
   assert.equal(sent.to, '/pair/agent?with=hermes')
 })
+
+test('Log out: the core\'s words, its warning of what is not sent yet, and the sign-out it asks for', async () => {
+  const b = board()
+  const words = { title: { en: 'Log out' }, ask: { en: 'Log out of this device?' }, meta: { en: 'Everything Trommi keeps on this device is deleted here.' }, go: { en: 'Log Out' }, cancel: { en: 'Cancel' } }
+  b.set({ settings: { logout: words } })
+  assert.doesNotMatch((await b.request('GET', '/logout')).main, /logout-unsent/, 'nothing waits: no warning')
+  b.set({ settings: { logout: { ...words, unsent: { key: 'logout.unsent', args: { count: '3' }, en: 'Not sent yet: 3 changes from this device (answers, messages and the like). Logging out deletes them.' } } } })
+  assert.match((await b.request('GET', '/logout')).main, /id="logout-unsent" role="alert">Not sent yet: 3 changes/)
+  await b.request('POST', '/logout')
+  assert.deepEqual(b.sent.at(-1), { do: 'account', action: { step: 'sign_out' } })
+})

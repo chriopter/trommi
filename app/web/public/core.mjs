@@ -75,8 +75,34 @@ function receive(m) {
       view = fold.emptyView(); lastFocus = ''
       emit(m.t, null); return
     case 'failed': emit('failed', new Error(m.error)); return
+    case 'forgotten': void forgetPage(true); return
   }
 }
+
+/** The tabs of this browser hear that the device was forgotten here: a tab with a core of its own (no SharedWorker,
+ *  another build) starts anew as well. */
+const FORGET_CHANNEL = 'trommi-forget'
+let forgetting = false
+/** After the core's worker erased its part (`forgotten`): this page's storage, the service workers, the other tabs;
+ *  then the first screen, from the network. `first`: this tab heard it from its worker, not from another tab. */
+async function forgetPage(first) {
+  if (forgetting) return
+  forgetting = true
+  for (const url of urls.values()) URL.revokeObjectURL(url)
+  urls.clear(); asked.clear()
+  leaveCore()
+  if (first) { try { const c = new BroadcastChannel(FORGET_CHANNEL); c.postMessage('forgotten'); c.close() } catch {} }
+  try { localStorage.clear() } catch {}
+  try { sessionStorage.clear(); sessionStorage.setItem('trommi-logged-out', '1') } catch {}
+  try { for (const r of await navigator.serviceWorker?.getRegistrations() ?? []) await r.unregister() } catch {}
+  try { for (const key of await caches.keys()) await caches.delete(key) } catch {}
+  location.replace('/')
+}
+/** Whether this tab starts on the first screen after a log out (said once). */
+export function justLoggedOut() {
+  try { const was = sessionStorage.getItem('trommi-logged-out') === '1'; sessionStorage.removeItem('trommi-logged-out'); return was } catch { return false }
+}
+let forgetHeard = null
 
 /** This page leaves its worker: a dedicated one ends, the shared one closes this page's window. */
 function leaveCore() {
@@ -123,6 +149,7 @@ export async function startCore(config, { take = false, slot = SLOT } = {}) {
     for (const e of early?.messages ?? []) receive(e.data)
     if (early?.error) emit('failed', new Error(early.error.message || 'the core worker failed'))
   }
+  if (slot && !forgetHeard && typeof BroadcastChannel === 'function') { forgetHeard = new BroadcastChannel(FORGET_CHANNEL); forgetHeard.onmessage = () => void forgetPage(false) }
   view = fold.emptyView()
   port.postMessage({ t: 'start', slot, config, take })
 }

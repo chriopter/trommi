@@ -17,7 +17,7 @@ import { passkeysOn, pushable } from './platform.mjs'
 import { canDictate } from './dictate.mjs'
 /** For the views (a view imports only app.mjs and ui.mjs). */
 export { passkeysOn, pushObstacle } from './platform.mjs'
-export { on as onCore, act as actCore } from './core.mjs'
+export { on as onCore, act as actCore, justLoggedOut } from './core.mjs'
 export { dictateLevel } from './dictate.mjs'
 
 // The views a cold start needs (the Desk, its frame, the notes) come with this module; every other view is loaded

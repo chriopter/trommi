@@ -52,3 +52,23 @@ test('without the page\'s service the op is refused; a failing service is a fail
   await settle()
   assert.equal(broken.seen.find(s => s.event.type === 'platform').event.result.err.kind, 'failed')
 })
+
+test('a forgotten device goes to the page\'s host once its erasing is through, after the writes before it', async () => {
+  const order = []
+  const spaces = memorySpaces()
+  const device = { ...spaces.device, apply: async (...a) => { await settle(); order.push('device'); return spaces.device.apply(...a) } }
+  const core = {
+    handle(_now, packet) {
+      const event = JSON.parse(packet.json)
+      if (event.type === 'start') return { json: JSON.stringify([{ type: 'store', id: 1, op: { op: 'device_apply', expected_revision: 0, put: [], delete: [] } }, { type: 'forget_local' }]), blobs: [] }
+      return { json: '[]', blobs: [] }
+    },
+  }
+  const shell = new CoreShell({ core, device, cache: spaces.cache, host: { render() {}, forgetLocal: () => order.push('forget') } })
+  shell.send({ type: 'start', config: {} })
+  await settle(); await settle()
+  assert.deepEqual(order, ['device', 'forget'], 'the device write is a barrier for it too')
+  // (a host without it: nothing happens, nothing fails)
+  new CoreShell({ core, ...memorySpaces(), host: { render() {} } }).send({ type: 'start', config: {} })
+  await settle()
+})
