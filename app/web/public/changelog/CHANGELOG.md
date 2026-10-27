@@ -12,6 +12,18 @@ notes, pick the two to four things people will notice most. A day may have at mo
 (`?mock=1`, never real data), webp, at most 150 KB. The days before the releases had notes are in history.json
 (frozen).
 
+## 28 October 2026
+
+Answering on a card's page goes straight on to the next card, with Undo in the toast. A helper's status line says
+what it is doing and for how long. Logging out on the web wipes this browser, and the iPhone groups your chats and
+teams.
+
+## 27 October 2026
+
+The Desk is gone: tap a group to see its open cards, the questions first, with a chip for each chat; Blitz walks
+every group. What you wrote under a card goes along with What?? and a hand back, and a refused answer says "Not sent
+yet".
+
 ## 20 October 2026
 
 Agents can set their own wakeups and start again later, even after the session was closed. The new Wakeups page shows
