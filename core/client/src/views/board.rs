@@ -83,6 +83,9 @@ pub struct Lens {
     pub comments_window: Option<(String, u32)>,
     /// The calm chat (`Focus.calm`).
     pub calm: bool,
+    /// The outbox halts on an envelope the hub refused without a void record (`engine::Report::Blocked`): the hub's
+    /// refusal code. Whatever this device sent after it waits too, so every answer still on its way says so.
+    pub outbox_blocked: Option<String>,
 }
 
 /// Rows of a session's talk in one page of its window (the web's PAGE).
@@ -116,6 +119,7 @@ impl Lens {
         self.off_reading = from.off_reading;
         self.off_hub_more = from.off_hub_more;
         self.goals_folded.clone_from(&from.goals_folded);
+        self.outbox_blocked.clone_from(&from.outbox_blocked);
     }
 
     /// THE HOOK for the action "show more" (W3 wires it; where the older part is not on this device, the engine's

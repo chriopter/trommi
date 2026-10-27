@@ -464,6 +464,8 @@ struct CardScreen: View {
       case "said":
         // the answer, the way on directly under it (as on the web; Undo stays in the row: no toast here)
         said(a)
+        // (AnswerView.notSent: the answer is still on this device, the outbox halts on the hub's refusal)
+        if let notSent = a.notSent { Text(notSent.en).font(.footnote.weight(.semibold)).foregroundStyle(Ink.urgCritical) }
         if answeredHere, let after = card.after { nextButton(after) }
         ForEach(Array(a.optionNotes.enumerated()), id: \.offset) { _, n in still(n.label, n.note.en) }
         if let settled = a.settled { still("✓ Settled by your answer", settled.en) }

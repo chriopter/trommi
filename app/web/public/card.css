@@ -1021,6 +1021,7 @@ body:has(.tc-page.is-full) :is(.corner-note-box, .curl, #phone-bar, #agents, .to
 .tc-said-or { opacity: .35; }
 .tc-answer.is-said .tc-ans-foot { margin: 6px 2px 0; }
 .tc-said-more { margin: 2px 2px 0; color: var(--muted); font: 500 var(--t-xs)/1.4 var(--font); }
+.tc-said-more.tc-not-sent { color: var(--urg-critical, var(--urg-high)); font-weight: 600; }
 .tc-said-more .sketch { width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; }
 /* (right after the answer the way on stands directly under it; opened later, What?? keeps the foot) */
 .tc-or.is-said > .tc-or-pair.is-near { margin-top: var(--s-1); padding-top: 0; }

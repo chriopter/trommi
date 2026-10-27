@@ -2962,6 +2962,13 @@ impl App {
                     self.scribble.refused(id);
                     refused.push((id, code));
                 }
+                Report::Blocked(blocked) => {
+                    let code = blocked.map(|(_, code)| code.to_string());
+                    if self.lens.outbox_blocked != code {
+                        self.lens.outbox_blocked = code;
+                        self.stale_views = true;
+                    }
+                }
                 Report::Alert(alert) => {
                     if self.alerts.len() >= ALERTS_MAX {
                         self.alerts.remove(0);

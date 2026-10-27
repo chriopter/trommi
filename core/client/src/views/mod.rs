@@ -2148,6 +2148,10 @@ pub struct AnswerView {
     /// others. Always sent.
     #[serde(default)]
     pub ducked: bool,
+    /// "said", his answer still on its way while this device's outbox halts on a refusal (`Lens.outbox_blocked`):
+    /// "Not sent yet: <code>". The answer stands here only; the agent has not got it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_sent: Option<Text>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

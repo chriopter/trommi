@@ -788,6 +788,17 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
     Some(v)
 }
 
+/// "Not sent yet: <code>" under an answer still on its way while the outbox halts on the hub's refusal.
+fn not_sent(b: &Board, a: Option<&crate::model::types::Answer>) -> Option<Text> {
+    let code = b.lens.outbox_blocked.as_deref()?;
+    a.filter(|a| a.pending)?;
+    Some(say(
+        "card.not_sent",
+        format!("Not sent yet: {code}"),
+        &[("code", code)],
+    ))
+}
+
 fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
     let m = b.model;
     let by_number = || {
@@ -1059,6 +1070,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
                 }),
             says: None,
             ducked: trusted && !info,
+            not_sent: not_sent(b, a),
         }
     } else if loading {
         quiet(
@@ -2365,6 +2377,37 @@ mod tests {
             assert_eq!(en(&v.answer.label), "Expired");
             assert!(v.answer.summary.is_empty());
         }
+    }
+
+    #[test]
+    fn an_answer_the_outbox_holds_says_it_is_not_sent_yet() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.answered("q", "a", NOW - MIN, 150);
+        r.cards[0]["answer"]["pending"] = json!(true);
+        let m = r.model(NOW);
+        let at = |lens: &Lens| {
+            let b = Board::new(&m, lens, NOW);
+            card(&b, "q", &[]).expect("the card is held").answer
+        };
+        // the outbox runs: the answer on its way says nothing more
+        let mut lens = Lens::default();
+        assert_eq!(at(&lens).not_sent, None);
+        // it halts on the hub's refusal: the answer behind it is not sent yet
+        lens.outbox_blocked = Some("wrong-epoch".into());
+        let a = at(&lens);
+        assert_eq!(a.mode, "said");
+        let t = a.not_sent.expect("the answer says it waits");
+        assert_eq!(
+            (t.key.as_str(), t.en.as_str()),
+            ("card.not_sent", "Not sent yet: wrong-epoch")
+        );
+        assert_eq!(t.args.get("code").map(String::as_str), Some("wrong-epoch"));
+        // an answer the hub took says nothing of the halt
+        r.cards[0]["answer"]["pending"] = json!(false);
+        let m = r.model(NOW);
+        let b = Board::new(&m, &lens, NOW);
+        assert_eq!(card(&b, "q", &[]).unwrap().answer.not_sent, None);
     }
 
     #[test]

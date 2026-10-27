@@ -1538,6 +1538,9 @@ export interface AnswerView {
   /** "said": he left it to the agent (the duck): the duck's row is the one marked; the options' `chosen` say the
    *  others. Always sent. */
   ducked: boolean
+  /** "said", his answer still on its way while this device's outbox halts on a refusal (`Lens.outbox_blocked`):
+   *  "Not sent yet: <code>". The answer stands here only; the agent has not got it. */
+  not_sent?: Text
 }
 
 export interface NotedView {

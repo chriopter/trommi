@@ -171,7 +171,8 @@ function saidCard(card, a, form, after) {
   const next = after && card.after?.next
     ? html`<a class="tc-tile tc-next-tile" data-nav href="${focusAt(cardPath(card.after.next, after.self), after.focus)}" title="${card.after.next.title ?? ''}">${words(card.after.go) || 'Next'} ›</a>`
     : ''
-  const quiet = html`${a.detail ? html`<p class="tc-said-more">${words(a.detail)}</p>` : ''}${(a.option_notes ?? []).map(n => html`<p class="tc-said-more"><b>${n.label}</b> ${n.note?.en ?? ''}</p>`)}${a.settled ? html`<p class="tc-said-more">${sk('tick')}${a.settled.en}</p>` : ''}${a.summary ? html`<p class="tc-said-more">${a.summary}</p>` : ''}`
+  // (AnswerView.not_sent: the answer is still on this device, the outbox halts on the hub's refusal)
+  const quiet = html`${a.not_sent ? html`<p class="tc-said-more tc-not-sent" role="status">${a.not_sent.en}</p>` : ''}${a.detail ? html`<p class="tc-said-more">${words(a.detail)}</p>` : ''}${(a.option_notes ?? []).map(n => html`<p class="tc-said-more"><b>${n.label}</b> ${n.note?.en ?? ''}</p>`)}${a.settled ? html`<p class="tc-said-more">${sk('tick')}${a.settled.en}</p>` : ''}${a.summary ? html`<p class="tc-said-more">${a.summary}</p>` : ''}`
   const foot = html`${after ? '' : saidFoot(card, a)}${quiet}`
   const pair = html`<div class="tc-or-pair${after ? ' is-near' : ''}">${next}${a.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}</div>`
   const tail = after ? html`${pair}${foot}` : html`${foot}${pair}`
