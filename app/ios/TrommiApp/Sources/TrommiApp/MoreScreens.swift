@@ -916,6 +916,8 @@ struct KnowledgeScreen: View {
         Button(role: .destructive) { deleting = row } label: { Label(k.words.delete.en, systemImage: "trash") }
       }
     }
+    // (a container of its own: its Undo, Bring back and history keep their identifiers instead of taking the entry's)
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("knowledge-\(row.id)")
   }
   /** Whose knowledge this is: the team's name; with two teams or more, a menu that shows another team's. */

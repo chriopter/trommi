@@ -99,6 +99,8 @@ struct WakeupsScreen: View {
       .frame(maxWidth: .infinity, alignment: .leading)
     }
     .padding(14)
+    // (a container of its own: its Other time and Cancel keep their identifiers instead of taking the row's)
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("wakeup-row")
   }
 }
