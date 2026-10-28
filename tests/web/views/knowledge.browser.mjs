@@ -1,5 +1,5 @@
-// knowledge.browser.mjs: the team's knowledge in the web app (demo room, ?mock=1). The team's Desk has the tile that
-// opens the page Knowledge (DeskView.tiles, key knowledge); the page lists what the core lists (KnowledgeView.rows, in its order), the search filters
+// knowledge.browser.mjs: the team's knowledge in the web app (demo room, ?mock=1). The group page's ⋯ menu has the
+// entry that says how many entries and opens the page Knowledge (GroupView.head.menu, key knowledge); the page lists what the core lists (KnowledgeView.rows, in its order), the search filters
 // as one types and the field keeps the keyboard, the filter Pinned shows the pinned ones; an entry is added with the
 // editor, pinned, edited in place and deleted, each through the core (Action::KnowledgeSave, KnowledgePin,
 // KnowledgeDelete), and the page shows what the core then holds. As a 1440 px window and as a phone.
@@ -46,21 +46,24 @@ try {
     await page.send('Emulation.setDeviceMetricsOverride', { width: size.width, height: size.height, deviceScaleFactor: 1, mobile: size.mobile })
     await page.send('Page.navigate', { url: 'about:blank' })
     await page.send('Page.navigate', { url: `${APP}/team/main?mock=1` })
-    await until("document.readyState === 'complete' && document.documentElement.hasAttribute('data-ready') && Boolean(document.querySelector('#tile-knowledge'))", 10000)
-    // the Desk's tile says how many entries and opens the page
-    const chip = await ev(`(() => { const a = document.querySelector('#tile-knowledge'), t = trommi.vm().desk.tiles?.find(x => x.key === 'knowledge'); return a ? { line: a.querySelector('.dt-head i')?.textContent, names: [...a.querySelectorAll('.dt-names li')].map(l => l.textContent), vm: trommi.vm().desk.knowledge?.count, tile: t?.count, says: t?.line?.en, first: t?.names } : null })()`)
-    if (!chip || chip.tile !== chip.vm || chip.line !== chip.says || !(chip.vm > 0) || JSON.stringify(chip.names) !== JSON.stringify(chip.first) || !chip.names.length) bad.push(`the Desk's tile: ${JSON.stringify(chip)}`)
-    await ev("document.querySelector('#tile-knowledge').click()")
-    if (!(await until("Boolean(document.querySelector('#knowledge .kn-list')) && location.pathname === '/knowledge'"))) bad.push('the tile does not open the page')
-    // (with something new to him, the tile opens the new entries)
+    const ITEM = `document.querySelector('.group-menu a.group-menu-item[href*="/knowledge"]')`
+    await until(`document.readyState === 'complete' && document.documentElement.hasAttribute('data-ready') && Boolean(${ITEM})`, 10000)
+    // the ⋯ menu's entry says what the core says (its words and how many) and opens the page
+    const chip = await ev(`(() => { const a = ${ITEM}, m = trommi.vm().group.head?.menu?.find(x => x.key === 'knowledge'); return a ? { label: a.querySelector('span')?.textContent, count: a.querySelector('i')?.textContent ?? null, says: m?.label?.en, counts: m?.count?.en ?? null, filter: m?.opens?.filter ?? null } : null })()`)
+    const told = Number(/\d+/.exec(chip?.count ?? '')?.[0])
+    if (!chip || chip.label !== chip.says || chip.count !== chip.counts || !(told > 0)) bad.push(`the ⋯ menu's Knowledge: ${JSON.stringify(chip)}`)
+    await ev(`(() => { document.querySelector('.group-menu > summary').click(); ${ITEM}.click() })()`)
+    if (!(await until("Boolean(document.querySelector('#knowledge .kn-list')) && location.pathname === '/knowledge'"))) bad.push('the menu does not open the page')
+    // (with something new to him, the entry opens the new entries)
     let p = await ev(PROBE)
-    if (p.vm?.filter !== 'new' || !p.shown.length || !same(p.shown, p.vm.rows)) bad.push(`the tile does not open what is new: ${JSON.stringify(p)}`)
+    if (chip?.filter !== 'new' || p.vm?.filter !== 'new' || !p.shown.length || !same(p.shown, p.vm.rows)) bad.push(`the menu does not open what is new: ${JSON.stringify(p)}`)
     await ev("window.Turbo.visit('/knowledge')")
     await until("trommi.vm().knowledge?.filter === '' && document.querySelectorAll('#kn-list > .kn-item').length === trommi.vm().knowledge.rows.length")
     p = await ev(PROBE)
     if (!p.vm || !same(p.shown, p.vm.rows) || p.total !== `(${p.vm.count})`) bad.push(`the list is not the core's: ${JSON.stringify(p)}`)
     if (p.pinned.length < 1 || !same(p.shown.slice(0, p.pinned.length), p.pinned)) bad.push(`the pinned do not come first: ${JSON.stringify(p.pinned)}`)
     const all = p.vm.count
+    if (all !== told) bad.push(`the ⋯ menu says ${told} entries, the page lists ${all}`)
     // the search, as one types: the core's rows, and the field keeps the keyboard
     await ev("(() => { const q = document.querySelector('.kn-search input'); q.focus(); q.value = 'check'; q.dispatchEvent(new Event('input', { bubbles: true })) })()")
     await until("trommi.vm().knowledge?.query === 'check' && document.querySelectorAll('#kn-list > .kn-item').length === trommi.vm().knowledge.rows.length")
