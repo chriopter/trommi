@@ -693,6 +693,22 @@ fn info_fields(args: &Map<String, Value>, names: &[String]) -> Result<Map<String
     Ok(out)
 }
 
+/// The names of a card's attachments as the agent counts them: a picture's page, sent as an attachment of its own
+/// after it, is no place of its own (the client core's `pictures_of` counts the same way).
+fn given_names(attachments: &[Value]) -> Vec<String> {
+    let pages: HashSet<String> = attachments
+        .iter()
+        .filter_map(|a| a.get("page").and_then(Value::as_str))
+        .filter_map(|p| p.strip_prefix("attachment:"))
+        .map(String::from)
+        .collect();
+    attachments
+        .iter()
+        .filter(|a| !pages.contains(&s(a.get("file_id"))))
+        .map(|a| s(a.get("file_name")))
+        .collect()
+}
+
 fn names_of(list: Option<&Value>) -> Result<Vec<String>> {
     Ok(list_arg(list, "attachments")?
         .iter()
@@ -2704,7 +2720,7 @@ impl Bridge {
         } else {
             self.upload_all(args.get("attachments")).await?
         };
-        let names: Vec<String> = attachments.iter().map(|x| s(x.get("file_name"))).collect();
+        let names = given_names(&attachments);
         if !info {
             a.insert("multiple".into(), multiple.clone());
         }
@@ -4170,6 +4186,24 @@ impl Bridge {
 
 #[cfg(test)]
 mod tests {
+
+    /// A revision counts the card's attachments as the agent gave them: the pictures' pages are no places.
+    #[test]
+    fn revised_pictures_count_without_their_pages() {
+        use super::{given_names, picture_of};
+        use serde_json::json;
+        let pic = |id: &str| {
+            [
+                json!({ "file_id": id, "file_name": format!("{id}.png"), "page": format!("attachment:{id}h") }),
+                json!({ "file_id": format!("{id}h"), "file_name": format!("{id}.html") }),
+            ]
+        };
+        let atts = [pic("c"), pic("cd"), pic("a"), pic("b")].concat();
+        let names = given_names(&atts);
+        assert_eq!(names, ["c.png", "cd.png", "a.png", "b.png"]);
+        assert_eq!(picture_of(&json!("a.png"), &names, "a").unwrap(), 2);
+        assert_eq!(picture_of(&json!(3), &names, "b").unwrap(), 3);
+    }
     use super::waits_on_human;
 
     #[test]

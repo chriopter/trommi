@@ -376,14 +376,33 @@ pub fn pictures_of(
                 .starts_with("image/")
         })
         .collect();
-    let index_of = |raw: usize| images.iter().position(|(i, _)| *i == raw);
-    // (a section names its picture by its place among the attachments)
+    // (a section names its picture by its place among the attachments the agent gave: a picture's page travels as
+    //  an attachment of its own right after it, which the agent never counted, so the pages are left out here)
+    let pages: std::collections::HashSet<&str> = attachments
+        .iter()
+        .filter_map(|a| a.get("page").and_then(Value::as_str))
+        .filter_map(|p| p.strip_prefix("attachment:"))
+        .collect();
+    let given: Vec<usize> = attachments
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| {
+            !a.get("attachment_id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| pages.contains(id))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    let index_of = |at: usize| {
+        let raw = *given.get(at)?;
+        images.iter().position(|(i, _)| *i == raw)
+    };
     let section_pics: Vec<(usize, String)> = sections
         .iter()
         .filter_map(|x| {
             let key = x.get("key").and_then(Value::as_str)?;
-            let raw = x.get("picture").and_then(Value::as_u64)? as usize;
-            Some((index_of(raw)?, key.to_string()))
+            let at = x.get("picture").and_then(Value::as_u64)? as usize;
+            Some((index_of(at)?, key.to_string()))
         })
         .collect();
     let mut keys: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
@@ -1821,6 +1840,63 @@ mod tests {
                 vec!["centered".to_string(), "split".into()]
             )
         );
+    }
+
+    /// The agent counts its own attachments; each picture's page follows it on the card as one more. Options
+    /// c (recommended, first), a and b name the pictures 0, 2 and 3 of four (the second a dark variant of c):
+    /// each picture finds its option, whatever order the tiles stand in.
+    #[test]
+    fn section_pictures_count_without_their_pages() {
+        let opt = |k: &str, l: &str| crate::views::group::Opt {
+            key: k.into(),
+            label: l.into(),
+            ..Default::default()
+        };
+        let pic = |id: &str, name: &str| {
+            [
+                json!({ "attachment_id": id, "file_name": format!("{name}.png"), "media_type": "image/png", "page": format!("attachment:{id}h") }),
+                json!({ "attachment_id": format!("{id}h"), "file_name": format!("{name}.html"), "media_type": "text/html" }),
+            ]
+        };
+        let atts: Vec<Value> = [
+            pic("c", "variant-c"),
+            pic("cd", "variant-c-dark"),
+            pic("a", "variant-a"),
+            pic("b", "variant-b"),
+        ]
+        .concat();
+        let sections = [
+            json!({ "text": "In all three" }),
+            json!({ "key": "c", "label": "Grouped", "picture": 0, "recommended": true }),
+            json!({ "key": "a", "label": "Sidebar", "picture": 2 }),
+            json!({ "key": "b", "label": "Right", "picture": 3 }),
+        ];
+        let opts = [opt("c", "Grouped"), opt("a", "Sidebar"), opt("b", "Right")];
+        let p = pictures_of(&atts, &sections, &opts);
+        let by = p
+            .iter()
+            .map(|x| (x.file_id.as_str(), x.keys.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            by,
+            [
+                ("c", vec!["c".to_string()]),
+                ("cd", vec![]),
+                ("a", vec!["a".to_string()]),
+                ("b", vec!["b".to_string()]),
+            ]
+        );
+        // without pages the places are the attachments' own
+        let bare: Vec<Value> = ["c", "cd", "a", "b"]
+            .iter()
+            .map(|id| json!({ "attachment_id": id, "file_name": format!("{id}.png"), "media_type": "image/png" }))
+            .collect();
+        let p = pictures_of(&bare, &sections, &opts);
+        let keys = p
+            .iter()
+            .map(|x| x.key.clone().unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert_eq!(keys, ["c", "", "a", "b"]);
     }
 
     /// The viewer's line under a picture: its caption, else its option's label, else its file name.
