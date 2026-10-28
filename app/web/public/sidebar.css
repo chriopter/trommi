@@ -1208,3 +1208,5 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
 .side-add-menu .desk-move-sub > summary { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; }
 .side-add-menu .desk-move-sub > summary .agent-avatar { width: 22px; height: 22px; }
 .side-add-menu .desk-move-sub .side-new-chat { padding-left: 28px; }
+/* (the chats on no team stand loose at the top, with no head over them: a little room between them and the first team) */
+#agents > .agent-row:not([data-team-of]) + .team-head { margin-top: var(--s-3); }

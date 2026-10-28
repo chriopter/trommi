@@ -1740,7 +1740,7 @@ const WAYS = {
   },
   verdict: ({ id, f }) => [{ do: 'verdict', request_id: id, allow: f.get('key') === 'allow' }],
   // (the agent still chooses; its recommendation goes as the choices: the card's in view, else the Desk row's tile)
-  trust: ({ id, vm, card, f, note }) => [{ do: 'answer', card_id: id, choices: card ? (card.options ?? []).filter(o => o.recommended).map(o => o.key) : ([...(vm.group?.questions ?? []), ...(vm.group?.reads ?? [])].find(r => r.id === id)?.tiles.tiles ?? []).filter(x => x.advised).map(x => x.key), trusted: true, ...(note ? { note } : {}), ...onwardOf(f) }],
+  trust: ({ id, vm, card, f, note }) => [{ do: 'answer', card_id: id, choices: card ? (card.options ?? []).filter(o => o.recommended).map(o => o.key) : ((vm.group?.blocks ?? []).flatMap(k => [...(k.questions ?? []), ...(k.reads ?? [])]).find(r => r.id === id)?.tiles.tiles ?? []).filter(x => x.advised).map(x => x.key), trusted: true, ...(note ? { note } : {}), ...onwardOf(f) }],
   close: ({ id, f }) => [{ do: 'read', card_id: id, ...onwardOf(f) }],
   snooze: ({ id }) => [{ do: 'snooze', card_id: id }],
   wake: ({ id }) => [{ do: 'unsnooze', card_id: id }],
@@ -1834,7 +1834,7 @@ export function register(t) {
     if (f.has('undo')) return /\/card\/[^/]+$/.test(new URL(String(req.headers?.referer ?? '/'), 'http://x').pathname) ? t.done(res) : t.sendStream(req, res, stream('visit', cardPath(card ?? id)))
     // (gone on from the card's page: the core's toast says it, with its Undo)
     const said = !f.has('quiet') && !acts.some(a => a.onward) && SAID[what]
-    const toast = said ? t.toast({ head: said.head, line: card?.title ?? [...(vm.group?.questions ?? []), ...(vm.group?.reads ?? [])].find(r => r.id === id)?.title ?? '', undo: said.back ? { action: `/cards/${id}/${said.back}` } : null }) : ''
+    const toast = said ? t.toast({ head: said.head, line: card?.title ?? (vm.group?.blocks ?? []).flatMap(k => [...(k.questions ?? []), ...(k.reads ?? [])]).find(r => r.id === id)?.title ?? '', undo: said.back ? { action: `/cards/${id}/${said.back}` } : null }) : ''
     let to = null
     if (f.has('page')) {
       const back = String(f.get('back') ?? ''), home = /^\/chat\/[^/?#]+$/.test(back) ? back : '/', self = home === '/' ? '' : home

@@ -170,16 +170,18 @@ The app is chats in groups (teams). `/` is the page of the group in view (`vm.gr
 no page of every group: Blitz (`/blitz`, `G B`) walks every group's open cards (`?walk=1` on the card's page sends
 `Focus.walk_all`).
 
-- **Head:** the group's name (`group.head`), its chats' faces, and a ⋯ menu: Knowledge, Wakeups, Scribble Board, each
+- **Head:** the group's name (`group.head`) and a ⋯ menu (no faces: the sidebar lists the chats): Knowledge, Wakeups, Scribble Board, each
   with the core's count, and Rename group (the name turns into a field: Enter keeps, `RenameTeam`). Blitz with its count
   and "all groups", and the duck for all of the page's cards, at the right.
-- **Chips:** "All" with the group's open cards, then one chip per chat (`group.chips`, the core's order: the chats that
-  need you first, a quiet dot on them), `chips_shown` in the row and the rest behind "+n" (a tap shows them). A chip is
-  `/?chat=<slug>` (`Focus.group_chat`): only that chat's cards; the chosen chip says "Open chat ›"; All clears it.
-- **Two parts:** the questions (decisions, approval requests) under "Waits for you", as rows with their answers; below,
-  smaller, what is only to read under "To read", one line each with its time and "Read" (`/cards/batch` way read).
-- **No team:** while chats stand on no team, they are a group of their own (`/?team=none`, `sidebar.no_team`), with a
-  head over them in the sidebar.
+- **Summary:** one quiet line under the head, "4 wait for you · 3 to read" (`group.summary`).
+- **Blocks by chat:** one block per chat with open cards (`group.blocks`, the core's order: a chat with an urgent
+  or blocking question first, then the sidebar's order, so a block keeps its place while you answer). Its head (the chat's face, name, "2 open", "working", "Open chat ›") is the link into the chat
+  (`/chat/<slug>`); under it the chat's questions (decisions, approval requests) as rows with their answers, then,
+  smaller, what is only to read, one line each with its time and "Read" (`/cards/batch` way read). No chips, no filter.
+- **Nothing open:** the calm word ("Nothing waits for you in Personal."), who is at work, the other team where a question
+  waits (`/?team=<id>`), and "You answered lately" (`group.empty`).
+- **No team:** chats on no team stand loose at the top of the sidebar (`sidebar.root`), with no head over them and no
+  group page of their own; their cards stand in their chat and in Blitz.
 - **Goals:** under the group's name, the team's own checklist (at most 20 lines of 200 characters: `GOALS_LINES`,
   `GOALS_LINE_MAX` are editor limits; Rust `actions::run::clean_goals` validates the text), written in place with a click; empty only a faint "Goals…". One toggle, a chevron beside them, folds them to their first line and opens them again (folded or
   not is kept per team in `localStorage` `trommi-goals-folded`), so a long list need not push the cards off the screen. A line that starts with an emoji or a tick box has its sign in a

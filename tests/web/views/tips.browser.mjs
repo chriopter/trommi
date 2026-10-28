@@ -28,7 +28,7 @@ const PROBE = `(() => {
   const v = window.trommi?.vm?.() ?? {}
   const names = new Set()
   const add = v => { v = String(v ?? '').trim(); if (v.length > 1) names.add(v) }
-  for (const r of v.desk?.rows ?? []) { add(r.title); for (const t of r.tiles?.tiles ?? []) add(t.label); add(r.from?.name) }
+  for (const r of [...(v.desk?.rows ?? []), ...(v.group?.blocks ?? []).flatMap(k => [...(k.questions ?? []), ...(k.reads ?? [])])]) { add(r.title); for (const t of r.tiles?.tiles ?? []) add(t.label); add(r.from?.name) }
   for (const c of Object.values(v.cards ?? {})) { add(c.title); for (const o of c.options ?? []) add(o.label); for (const p of c.pictures ?? []) add(p.name) }
   for (const x of [...(v.desk?.starred?.rows ?? []), ...(v.desk?.running?.rows ?? []), ...(v.off?.works ?? []), ...(v.off?.rest ?? []), ...(v.desk?.off?.rows ?? [])]) add(x.title)
   for (const x of v.sidebar?.sessions ?? []) add(x.name?.en)

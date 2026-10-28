@@ -1,13 +1,12 @@
-// The group page: the group's head (its name, its chats' faces, its ⋯ menu), a chip per chat to filter by, and its
-// open cards in one list: the questions under "Waits for you", what is only to read below, smaller, under "To read"
-// (vm.group, views.d.ts GroupView); the page /stacks/off (vm.off) in its groups. The markup is the one app.css and
+// The group page: the group's head (its name, its ⋯ menu, one quiet line of how much is open) and its open cards in
+// one block per chat: the block's head (the chat's face and name) is the link into the chat, under it the chat's
+// questions, then what is only to read, smaller; nothing open: a calm word (vm.group, views.d.ts GroupView); the page /stacks/off (vm.off) in its groups. The markup is the one app.css and
 // desk.css style. A row never unfolds: its text is a link to the card's own page, its tiles are forms that answer with
 // one tap (the card's routes, card.mjs). Nothing here decides what stands where: the core does; the page draws and acts.
 import { flipOut } from './app.mjs'
 import { Controller, PLUS, WORDS, agoSpan, avatar, controller, deskRow, html, lastUndo, linkSlip, mq, raw, ringSvg, sideWays, sk, starMark, undoLast, whoOf } from './ui.mjs'
 
-// ---- the head: the group's name, its faces, its ⋯ menu, Blitz and the duck; the goals under it ----
-const faces = list => html`<span class="group-faces team-faces" data-n="${list.length}" aria-hidden="true">${list.map(f => avatar({ ...whoOf(f), online: true }, { crown: false }))}</span>`
+// ---- the head: the group's name, its ⋯ menu, Blitz and the duck; the goals and how much is open under it ----
 /** Where a ⋯ entry goes (GroupMenuItem.opens, the core's Screen): its address here. */
 const MENU_PATH = { knowledge: s => `/knowledge${s.filter ? `?filter=${encodeURIComponent(s.filter)}` : ''}`, wakeups: () => '/wakeups', scribble: () => '/scribble-board' }
 const MENU_ICON = { knowledge: 'book', wakeups: 'snooze', board: 'pen', rename: 'pen' }
@@ -25,31 +24,11 @@ function groupMenu(h, base) {
 }
 function groupHead(d, base) {
   const h = d.head
-  const top = h ? html`<div class="group-title" data-controller="group-name" data-group-name-team-value="${h.team_id}" data-group-name-name-value="${h.name.en}"><h2 class="group-name" data-group-name-target="name">${h.name.en}</h2>${faces(h.faces ?? [])}${groupMenu(h, base)}</div>` : ''
+  const top = h ? html`<div class="group-title" data-controller="group-name" data-group-name-team-value="${h.team_id}" data-group-name-name-value="${h.name.en}"><h2 class="group-name" data-group-name-target="name">${h.name.en}</h2>${groupMenu(h, base)}</div>` : ''
   const tools = d.blitz ? html`<div class="desk-tools" id="desk-tools">${duckAll(d, base)}${nextPlease(d, base)}</div>` : ''
-  return html`<header class="inbox-head desk-top group-head" id="desk-head" data-controller="title" data-title-count-value="${d.waiting}">${top}${tools}${d.reading ? html`<p class="desk-reading" role="status">${d.reading.en}</p>` : ''}${deskGoals(d.goals)}${chipsRow(d, base)}</header>${d.mode === 'invite' ? deskInvite() : ''}`
+  return html`<header class="inbox-head desk-top group-head" id="desk-head" data-controller="title" data-title-count-value="${d.waiting}">${top}${tools}${d.reading ? html`<p class="desk-reading" role="status">${d.reading.en}</p>` : ''}${deskGoals(d.goals)}${d.summary ? html`<p class="group-summary">${d.summary.en}</p>` : ''}</header>${d.mode === 'invite' ? deskInvite() : ''}`
 }
 
-// ---- the chips: All, then one per chat; the ones behind "+n" come forth with a tap ----
-function chipsRow(d, base) {
-  const chips = d.chips ?? []
-  if (!chips.length) return ''
-  const shown = d.chips_shown || chips.length
-  const chip = (c, i) => {
-    const behind = i >= shown ? ' is-behind' : ''
-    if (!c.session_id) return html`<a class="group-chip is-all${c.selected ? ' is-on' : ''}${behind}" data-nav href="${base}/" aria-label="${c.says.en}"${c.selected ? raw(' aria-current="true"') : ''}><b>${c.name.en}</b>${c.count ? html`<i>${c.count}</i>` : ''}</a>`
-    const who = whoOf({ ...c, id: c.session_id, online: true })
-    const mark = html`${avatar(who, { crown: false })}<b>${c.name.en}</b>${c.needs ? html`<i class="group-chip-dot" aria-hidden="true"></i>` : ''}`
-    if (c.selected) return html`<span class="group-chip is-on${behind}" style="--hue:${who.hue}"><a class="group-chip-name" data-nav href="${base}/" aria-label="${c.says.en}: show all chats" aria-current="true">${mark}</a>${c.open_chat ? html`<a class="group-chip-go" data-nav href="${base}/chat/${encodeURIComponent(c.slug || c.session_id)}">${c.open_chat.en}</a>` : ''}</span>`
-    return html`<a class="group-chip${behind}" data-nav href="${base}/?chat=${encodeURIComponent(c.slug || c.session_id)}" style="--hue:${who.hue}" aria-label="${c.says.en}">${mark}</a>`
-  }
-  return html`<nav class="group-chips" id="group-chips" aria-label="Chats" data-controller="chips">${chips.map(chip)}${d.more ? html`<button type="button" class="group-chip is-more" data-action="chips#more" aria-label="${d.more.en}: show every chat">${d.more.en}</button>` : ''}</nav>`
-}
-controller('chips', class extends Controller {
-  // (a phone scrolls the row: the chosen chip in sight)
-  connect() { const on = this.element.querySelector('.group-chip.is-on'); if (on && this.element.scrollWidth > this.element.clientWidth) this.element.scrollLeft = Math.max(0, on.offsetLeft - this.element.offsetLeft - 16) }
-  more(e) { this.element.classList.add('is-open'); e.currentTarget.hidden = true }
-})
 /** The group's name written in place: "Rename group" of the ⋯ menu puts a field there (Enter keeps:
  *  Action::RenameTeam; Escape leaves it). */
 controller('group-name', class extends Controller {
@@ -142,21 +121,36 @@ ${way('snooze', 'snooze', WORDS.later)}${way('revise', 'reverse', WORDS.revise)}
 const WINDOW = globalThis.TROMMI_DESK_WINDOW ?? 16
 const filled = new Set()
 const emptyRow = r => raw(`<article class="inbox-row" id="row-${r.id}" data-later data-id="${r.id}"${r.sign === 'knock' || r.sign === 'block' ? ' data-knock' : ''}></article>`)
-/** Every row of the page, in its order: the questions, then what is only to read. */
-const rowsOf = d => [...(d?.questions ?? []), ...(d?.reads ?? [])]
-/** Something to read, one quiet line: its chat's mark, the title (to the card), how long ago, "Read". */
+/** Every row of the page, in its order: block after block, its questions, then what is only to read. */
+const rowsOf = d => (d?.blocks ?? []).flatMap(k => [...(k.questions ?? []), ...(k.reads ?? [])])
+/** Something to read, one quiet line under its chat's head: the title (to the card), how long ago, "Read". */
 const readRow = (r, base) => {
   const who = whoOf(r.from)
-  return html`<article class="inbox-row group-read" id="row-${r.id}" data-id="${r.id}" data-kind="info"${r.loading ? raw(' data-loading') : ''}${who ? html` style="--hue:${who.hue}"` : ''}>${who ? avatar(who, { crown: false }) : ''}<a class="group-read-title" data-nav href="${base}/card/${encodeURIComponent(r.id)}">${r.starred ? starMark() : ''}${r.title}${who ? html`<small>${who.name}</small>` : ''}</a>${agoSpan(r.created_ms, 'ago group-read-ago')}${r.tiles?.kind === 'read' ? html`<form method="post" action="${base}/cards/batch"><input type="hidden" name="way" value="read"><input type="hidden" name="ids" value="${r.id}"><button type="submit" class="group-read-go">Read</button></form>` : ''}</article>`
+  return html`<article class="inbox-row group-read" id="row-${r.id}" data-id="${r.id}" data-kind="info"${r.loading ? raw(' data-loading') : ''}${who ? html` style="--hue:${who.hue}"` : ''}><a class="group-read-title" data-nav href="${base}/card/${encodeURIComponent(r.id)}">${r.starred ? starMark() : ''}${r.title}</a>${agoSpan(r.created_ms, 'ago group-read-ago')}${r.tiles?.kind === 'read' ? html`<form method="post" action="${base}/cards/batch"><input type="hidden" name="way" value="read"><input type="hidden" name="ids" value="${r.id}"><button type="submit" class="group-read-go">Read</button></form>` : ''}</article>`
 }
-/** A section's heading: its words and, beside them, how many (GroupView.questions_says, reads_says). */
-const sectionHead = (t, id) => (t ? html`<h3 class="group-sec" id="${id}">${t.en}<span>${t.args?.n ?? ''}</span></h3>` : '')
+const chatPath = (x, base) => `${base}/chat/${encodeURIComponent(x.slug || x.session_id)}`
+/** One chat's block: its head, the link into the chat (its face, its name, how many wait, at work, "Open chat ›"),
+ *  then its questions and what is only to read. `at`: how many questions stand before it (the window). */
+function chatBlock(k, base, at) {
+  const who = whoOf({ ...k, id: k.session_id, name: k.name.en, online: true })
+  const id = `block-${k.session_id}`
+  return html`<section class="group-block" id="${id}" style="--hue:${who.hue}" aria-labelledby="${id}-head"><a class="group-block-head" id="${id}-head" data-nav href="${chatPath(k, base)}" aria-label="${k.says.en}">${avatar(who, { crown: false })}<b>${k.name.en}</b>${k.open ? html`<i class="group-block-open">${k.open.en}</i>` : ''}${k.working ? html`<i class="group-block-working">${k.working.en}</i>` : ''}<span class="group-block-go">${k.open_chat.en}</span></a>
+<div class="group-block-rows">${(k.questions ?? []).map((r, i) => (at + i < WINDOW || filled.has(r.id) ? deskRow(r, base, { slim: true }) : emptyRow(r)))}${(k.reads ?? []).map(r => readRow(r, base))}</div></section>`
+}
+/** Nothing open: the calm word, who is at work, where else a question waits, what he answered lately. */
+function groupEmpty(e, d, base) {
+  const reading = d.mode === 'reading'
+  const lately = e.lately ?? []
+  const answered = a => { const who = whoOf({ ...a, id: a.session_id, name: a.name.en, online: true }); return html`<li class="group-lately-row" style="--hue:${who.hue}">${avatar(who, { crown: false })}<a class="group-lately-chat" data-nav href="${chatPath(a, base)}">${a.name.en}</a><a class="group-lately-title" data-nav href="${base}/card/${encodeURIComponent(a.id)}">${a.title}</a><span class="group-lately-choice">${a.choice.en}</span><span class="ago">${a.age.en}</span></li>` }
+  return html`<div class="inbox-empty group-empty${reading ? ' is-reading' : ''}" id="desk-empty"${reading ? raw(' role="status"') : ''}><span class="group-empty-mark">${sk('bell')}</span><h3>${e.title.en}</h3>${e.line ? html`<p>${e.line.en}</p>` : ''}${e.elsewhere ? html`<a class="group-elsewhere" data-nav href="${base}/?team=${encodeURIComponent(e.elsewhere.team_id)}" data-team="${e.elsewhere.team_id}">${e.elsewhere.mark ? avatar(whoOf({ id: e.elsewhere.team_id, mark: e.elsewhere.mark }), { crown: false }) : ''}<span>${e.elsewhere.says.en}</span> ›</a>` : ''}
+${lately.length ? html`<section class="group-lately" aria-labelledby="group-lately-head"><h4 id="group-lately-head">${e.lately_says?.en ?? ''}</h4><ul>${lately.map(answered)}</ul></section>` : ''}</div>`
+}
 function deskList(d, base) {
-  const questions = d.questions ?? [], reads = d.reads ?? []
+  let at = 0
+  const blocks = (d.blocks ?? []).map(k => { const b = chatBlock(k, base, at); at += (k.questions ?? []).length; return b })
   return html`${linkSlip(d.slip ?? [], base)}
-${questions.length ? html`<section class="group-part is-questions" aria-labelledby="sec-questions">${sectionHead(d.questions_says, 'sec-questions')}${questions.map((r, i) => (i < WINDOW || filled.has(r.id) ? deskRow(r, base, { slim: true, named: true }) : emptyRow(r)))}</section>` : ''}
-${reads.length ? html`<section class="group-part is-reads" aria-labelledby="sec-reads">${sectionHead(d.reads_says, 'sec-reads')}${reads.map(r => readRow(r, base))}</section>` : ''}
-${d.empty ? html`<div class="inbox-empty${d.mode === 'reading' ? ' is-reading' : ''}" id="desk-empty"${d.mode === 'reading' ? raw(' role="status"') : ''}>${sk('desk')}<p>${d.empty.en}</p></div>` : ''}
+${blocks}
+${d.empty && d.mode !== 'invite' ? groupEmpty(d.empty, d, base) : ''}
 <section id="desk-ip" class="tail" hidden></section>`
 }
 
@@ -638,5 +632,5 @@ export function register(t) {
   })
 
   // Rows beyond the first ones stand empty until they come near (startDeskWindow): their markup is made then.
-  if (typeof IntersectionObserver === 'function') startDeskWindow(id => { const r = desk().questions?.find(x => x.id === id); if (!r) return ''; filled.add(id); return String(deskRow(r, t.BASE, { slim: true, named: true })) })
+  if (typeof IntersectionObserver === 'function') startDeskWindow(id => { const r = rowsOf(desk()).find(x => x.id === id); if (!r) return ''; filled.add(id); return String(deskRow(r, t.BASE, { slim: true })) })
 }

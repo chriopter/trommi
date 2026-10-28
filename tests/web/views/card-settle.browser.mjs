@@ -55,7 +55,7 @@ try {
   }
   // a card to read, answered on its own page
   await open('/?mock=1', '#desk-list')
-  const id = await ev("(trommi.vm().group?.reads ?? []).find(r => r.kind === 'info')?.id ?? ''")
+  const id = await ev("(trommi.vm().group?.blocks ?? []).flatMap(k => k.reads ?? []).find(r => r.kind === 'info')?.id ?? ''")
   await open(`/card/${id}?mock=1`, '.tc-card .tc-tile.is-ack')
   const at = await ev('location.pathname')
   const c = await ev(WATCH('.tc-card .tc-tile.is-ack', '.tc-card'))

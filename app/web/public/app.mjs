@@ -210,15 +210,12 @@ const walkChatOf = (pathname, search = '') => { const m = /^\/chat\/([^/]+)\/car
 /** A card's page that is a step of Blitz over every group (/card/<n>?walk=1, from /blitz): Focus.walk_all. */
 let walkAllInView = false
 const walkAllOf = (pathname, search = '') => /^\/card\//.test(pathname) && new URLSearchParams(search).has('walk')
-/** The chat chip chosen on the group page (/?chat=<slug>): Focus.group_chat. */
-let groupChatInView = null
-const groupChatOf = (pathname, search = '') => (pathname === '/' ? new URLSearchParams(search).get('chat') || null : null)
 /** The wide sidebar folded to a rail (sidebar.mjs, html[data-rail]): Focus.rail_folded, so the core leaves its counts out. */
 const railFolded = () => document.documentElement.dataset.rail === 'folded'
 let boardInView = null
 /** The core hears what is in view: the page's screen, the team, the Scribble Board beside it, whether the window is seen. */
 function sendFocus() {
-  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(groupChatInView ? { group_chat: groupChatInView } : {}), ...(railFolded() ? { rail_folded: true } : {}), ...(openTeams.length ? { open_teams: openTeams } : {}), ...(walkChatInView ? { walk_chat: walkChatInView } : {}), ...(walkAllInView ? { walk_all: true } : {}), calm: true })
+  core.focus({ screen: screenInView, visible: document.visibilityState === 'visible', ...(teamInView ? { team: teamInView } : {}), ...(boardInView ? { board: boardInView } : {}), ...(railFolded() ? { rail_folded: true } : {}), ...(openTeams.length ? { open_teams: openTeams } : {}), ...(walkChatInView ? { walk_chat: walkChatInView } : {}), ...(walkAllInView ? { walk_all: true } : {}), calm: true })
 }
 /** The core's Screen for an address (before the page is drawn: its unit is then in the model). */
 export function screenOf(pathname, search = '') {
@@ -235,12 +232,11 @@ export function screenOf(pathname, search = '') {
 }
 /** The page shows its screen's unit once the core sent it: a visit waits a moment for that render. */
 function focusFor(url) {
-  const s = screenOf(url.pathname, url.search), walk = walkChatOf(url.pathname, url.search), all = walkAllOf(url.pathname, url.search), chat = groupChatOf(url.pathname, url.search)
-  const same = JSON.stringify(s) === JSON.stringify(screenInView) && walk === walkChatInView && all === walkAllInView && chat === groupChatInView
+  const s = screenOf(url.pathname, url.search), walk = walkChatOf(url.pathname, url.search), all = walkAllOf(url.pathname, url.search)
+  const same = JSON.stringify(s) === JSON.stringify(screenInView) && walk === walkChatInView && all === walkAllInView
   screenInView = s
   walkChatInView = walk
   walkAllInView = all
-  groupChatInView = chat
   if (same) return Promise.resolve()
   sendFocus()
   return new Promise(done => { const stop = core.on('render', () => { stop(); clearTimeout(t); done() }); const t = setTimeout(() => { stop(); done() }, 250) })
@@ -343,7 +339,9 @@ export function flipOut(rows, { ghost = true } = {}) {
   for (const box of boxes) {
     const after = []
     if (box.matches('.inbox-row')) for (let n = box.nextElementSibling; n; n = n.nextElementSibling) after.push(n)
-    const top = box.matches('.inbox-row') ? box.parentElement : box
+    // (a row's own part of the list: its section, or its chat's block on the group page)
+    let top = box.matches('.inbox-row') ? box.parentElement : box
+    while (top && top.parentElement && top.parentElement !== list) top = top.parentElement
     if (top?.parentElement === list) for (let n = top.nextElementSibling; n; n = n.nextElementSibling) after.push(n)
     for (const el of after) if (!seen.has(el)) { seen.add(el); moving.push(el) }
   }
@@ -389,7 +387,9 @@ function putBack(places) {
 /** A row alone in its section takes the section with it. */
 function boxOf(row) {
   const sec = row.parentElement
-  return sec?.matches('.inbox-group') && ![...sec.children].some(c => c !== row && c.matches('.inbox-row')) ? sec : row
+  const alone = sec && ![...sec.children].some(c => c !== row && c.matches('.inbox-row'))
+  if (alone && sec.matches('.group-block-rows')) return sec.closest('.group-block') ?? row
+  return alone && sec.matches('.inbox-group') ? sec : row
 }
 // As Turbo does: an appended element whose id stands in the target already replaces it.
 function dedupe(target, fragment) {
@@ -1037,7 +1037,6 @@ async function start({ take = false } = {}) {
   screenInView = screenOf(location.pathname, location.search)
   walkChatInView = walkChatOf(location.pathname, location.search)
   walkAllInView = walkAllOf(location.pathname, location.search)
-  groupChatInView = groupChatOf(location.pathname, location.search)
   await core.startCore(configOf(fixture), { take })
   sendFocus()
   // (the rail folded or opened: the core leaves the sidebar's counts out, or puts them back)
