@@ -258,7 +258,8 @@ final class NativeScreensTests: XCTestCase {
   }
   /** The cards in one block per chat, each block's head the way into its chat; no chips; light and dark alike. */
   func testGroupCardsStandInBlocksByChat() {
-    launch("desk")
+    // (the iPhone's first page is its list of chats; the team's screen opens its group page)
+    launch("desk--fernly-team")
     let heads = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "group-block-"))
     let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-"))
     XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 15))
