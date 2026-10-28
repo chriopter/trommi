@@ -253,8 +253,9 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 15))
     let plus = app.buttons["side-plus"]
     let duck = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label BEGINSWITH %@ OR label == %@", "desk-duck", "I don", "IDGAD")).firstMatch
-    let blitz = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label BEGINSWITH %@", "desk-blitz", "Blitz")).firstMatch
-    XCTAssertTrue(plus.exists && app.buttons["side-avatar"].exists && app.buttons["side-search"].exists, "the person's picture left, search and + right. " + app.debugDescription)
+    let blitz = app.buttons.matching(NSPredicate(format: "identifier == %@ OR (label BEGINSWITH %@ AND identifier != %@)", "desk-blitz", "Blitz", "chats-blitz-all")).firstMatch
+    // (an iPhone: one row of controls at the bottom, the system's search, the bolt over every team and +)
+    XCTAssertTrue(plus.exists && app.buttons["chats-blitz-all"].exists && app.searchFields.firstMatch.exists, "the search, the bolt and + at the bottom. " + app.debugDescription)
     capture("desk-ways")
     plus.tap()
     XCTAssertTrue(blitz.waitForExistence(timeout: 5), "Blitz is in the + menu. " + app.debugDescription)
@@ -286,48 +287,40 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertFalse(app.descendants(matching: .any)["group-chips"].exists, "no chips: the blocks name the chats")
     capture("group-blocks")
   }
+  /** The iPhone's first page, calm as a messenger's: the chats on no team, then the teams, a row each with its
+   *  faces, its name and what was said last in it; no tab bar, no team switch. A team opens its group page; the
+   *  system's search at the bottom lists every team's chats under the words (the core keeps the chats that have them). */
   func testChatListIsCalm() {
     launch("chats")
-    let teaser = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-teaser-")).firstMatch
-    XCTAssertTrue(teaser.waitForExistence(timeout: 15), app.debugDescription)
-    XCTAssertFalse(teaser.label.trimmingCharacters(in: .whitespaces).isEmpty, "a row says what was said last")
-    // (calm, as a messenger's: a session's helpers are said, not drawn; no dots, what is new or waits is said in the
-    // row's label; every team's chats in one list, each team only a title over them, no team switch)
-    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "chat-session-", "helper")).firstMatch
-    XCTAssertTrue(row.exists, "a row says its helpers. " + app.debugDescription)
-    XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-helpers-")).firstMatch.exists, "no helper dots")
-    let dot = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-unread-")).firstMatch
-    XCTAssertFalse(dot.exists, "no dot. " + app.debugDescription)
+    let teams = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-folder-"))
+    XCTAssertTrue(teams.firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+    XCTAssertGreaterThanOrEqual(teams.count, 2, "every team, a row each. " + app.debugDescription)
+    XCTAssertTrue(teams.firstMatch.label.contains(". "), "a team's row says more than its name: " + teams.firstMatch.label)
     XCTAssertFalse(app.buttons["place-pill"].exists, "no team switch over the chats. " + app.debugDescription)
-    let titles = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-team-"))
-    XCTAssertGreaterThanOrEqual(titles.count, 2, "every team's chats, each under its title. " + app.debugDescription)
+    XCTAssertEqual(app.tabBars.count, 0, "no tab bar: one stack, the system's back returns home")
+    XCTAssertTrue(app.buttons["side-avatar"].exists && app.buttons["chats-blitz-all"].exists && app.buttons["side-plus"].exists, app.debugDescription)
     capture("chats")
-    // (a team's title folds its chats to one row of their drawings; a tap on that row opens them again)
-    let before = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).count
-    titles.element(boundBy: 1).tap()
-    let folded = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-folded-")).firstMatch
-    XCTAssertTrue(folded.waitForExistence(timeout: 5), "folded. " + app.debugDescription)
-    XCTAssertLessThan(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).count, before)
-    capture("chats-folded")
-    folded.tap()
-    XCTAssertTrue(folded.waitForNonExistence(timeout: 5), "open again. " + app.debugDescription)
-    // (Search: the same list under the words; the core keeps the chats that have them)
-    XCTAssertEqual(app.tabBars.buttons.count, 2, "two tabs: Desk and Chats")
-    app.buttons["side-search"].tap()
+    // (a team opens its group page: its open cards chat by chat; back comes home)
+    teams.firstMatch.tap()
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "group-block-")).firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+    app.navigationBars.buttons["BackButton"].tap()
+    XCTAssertTrue(teams.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+    // (Search: every team's chats under the words)
     let field = app.searchFields.firstMatch
     XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
     field.tap(); field.typeText("Payments")
-    // (the search lies as a sheet over the list: count its rows only)
-    let found = app.descendants(matching: .any)["chat-search"].buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-"))
+    let found = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-"))
     expectation(for: NSPredicate(format: "count == 1"), evaluatedWith: found)
     waitForExpectations(timeout: 10)
     XCTAssertTrue(found.firstMatch.label.hasPrefix("Payments"), found.firstMatch.label)
+    XCTAssertTrue(found.firstMatch.label.contains(". "), "a chat's row says what was said last: " + found.firstMatch.label)
     capture("chats-search")
     field.typeText("zzz")
     XCTAssertTrue(app.staticTexts["chats-none"].waitForExistence(timeout: 10), app.debugDescription)
   }
   func testAgentBubblesAndOneWorkingLine() {
-    launch("chat--payments-service")
+    // (the demo's Fernly Website is at work; Payments only has status lines left on working, which are no turn)
+    launch("chat")
     XCTAssertTrue(app.staticTexts["talk-message"].firstMatch.waitForExistence(timeout: 15))
     // (an iPhone: the agent at work is only its face drawing itself; a tap opens what it works on)
     let more = app.buttons["working-face"]
@@ -343,10 +336,15 @@ final class NativeScreensTests: XCTestCase {
     app.launchArguments += ["-trommi-theme", "dark"]
     app.launchEnvironment["TROMMI_SCREEN"] = "chats"
     app.launch()
-    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).firstMatch.waitForExistence(timeout: 15))
+    // (the demo's chats all stand on a team: the first page lists the teams, a team's page the way into its chats)
+    let team = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-folder-")).firstMatch
+    XCTAssertTrue(team.waitForExistence(timeout: 15), app.debugDescription)
     Thread.sleep(forTimeInterval: 1)
     capture("chats-dark")
-    app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-session-")).firstMatch.tap()
+    team.tap()
+    let head = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "group-block-")).firstMatch
+    XCTAssertTrue(head.waitForExistence(timeout: 10), app.debugDescription)
+    head.tap()
     XCTAssertTrue(app.buttons["session-title"].waitForExistence(timeout: 10))
     Thread.sleep(forTimeInterval: 1)
     capture("chat-dark")
@@ -357,7 +355,8 @@ final class NativeScreensTests: XCTestCase {
     // (the calm chat pins its open questions above the field; Questions Only from the title's menu lists them all)
     XCTAssertTrue(app.descendants(matching: .any)["pinned-cards"].waitForExistence(timeout: 5), "open questions pinned above the field. " + app.debugDescription)
     app.buttons["session-title"].tap()
-    let only = app.switches.matching(NSPredicate(format: "label BEGINSWITH %@", "Questions Only")).firstMatch
+    // (a toggle in the system's menu stands there as a button)
+    let only = app.descendants(matching: .any).matching(NSPredicate(format: "(elementType == %d OR elementType == %d) AND label BEGINSWITH %@", XCUIElement.ElementType.switch.rawValue, XCUIElement.ElementType.button.rawValue, "Questions Only")).firstMatch
     XCTAssertTrue(only.waitForExistence(timeout: 5), app.debugDescription)
     only.tap()
     XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "session-question-")).firstMatch.waitForExistence(timeout: 5), "every question it asked. " + app.debugDescription)
@@ -442,7 +441,8 @@ final class NativeScreensTests: XCTestCase {
     capture("wakeups")
     let before = app.buttons.matching(identifier: "wakeup-cancel").count
     cancel.tap()
-    let confirm = app.buttons["wakeup-cancel-confirm"]
+    // (the system's dialog wraps its button in one more: both carry the identifier)
+    let confirm = app.buttons["wakeup-cancel-confirm"].firstMatch
     XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription)
     confirm.tap()
     expectation(for: NSPredicate(format: "count == %d", before - 1), evaluatedWith: app.buttons.matching(identifier: "wakeup-cancel"))
