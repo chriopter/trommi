@@ -1059,6 +1059,9 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
   .side-tool-form { display: contents; }
   .side-tool { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: var(--sunken); color: var(--muted); cursor: pointer; }
   .side-tool:hover, .side-tool:focus-visible { color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong); }
+  /* the whiteboard's own button (one sheet for everything): the yellow of its paper, pressed while it is open */
+  .side-board { background: color-mix(in srgb, var(--note-yellow, #fdf2c4) 70%, var(--sunken)); color: var(--fg); }
+  body[data-page="whiteboard"] .side-board { box-shadow: 0 0 0 1.6px var(--fg); }
   .side-tool .sketch, .side-tool svg { width: 18px; height: 18px; }
   html[data-rail="folded"] .topbar .side-top { flex-direction: column; height: auto; padding: 10px 0 0; gap: 6px; }
   html[data-rail="folded"] .side-home { margin: 0; }

@@ -170,7 +170,7 @@ The app is chats in groups (teams). `/` is the page of the group in view (`vm.gr
 no page of every group: Blitz (`/blitz`, `G B`) walks every group's open cards (`?walk=1` on the card's page sends
 `Focus.walk_all`).
 
-- **Head:** the group's name (`group.head`) and a ⋯ menu (no faces: the sidebar lists the chats): Knowledge, Wakeups, Scribble Board, each
+- **Head:** the group's name (`group.head`) and a ⋯ menu (no faces: the sidebar lists the chats): Knowledge, Wakeups, each
   with the core's count, and Rename group (the name turns into a field: Enter keeps, `RenameTeam`). Blitz with its count
   and "all groups", and the duck for all of the page's cards, at the right.
 - **Summary:** one quiet line under the head, "4 wait for you · 3 to read" (`group.summary`).
@@ -208,7 +208,7 @@ no page of every group: Blitz (`/blitz`, `G B`) walks every group's open cards (
   as they come near).
 - **Note:** one drawn yellow note at the window's bottom-right; it unfolds there to write, takes attachments, sends to the crown of the team in view; a square sheet on a wide window (`sidebar.mjs` `cornerNote`).
 - **Sidebar:** on a wide screen one calm list (`sidebar.mjs` `sidebarRows`, `teamStack`). At its top the bell (the group
-  page of the group in view), Search and + (Add agent, Add team, Scribble). Then every team as a stack
+  page of the group in view), the Scribble Board's yellow button (`W`), Search and + (Add agent, Add team). Then every team as a stack
   (`TeamStackView`): its head card with a group picture of its agents' marks (`faces`) and its open cards (a click opens
   the team's group page); a click on the stack fans its chats out under it, held by a pen bracket, and a click on the bracket
   folds them back (`Focus.open_teams`, kept per device). A chat is a calm row (drawing, name, one grey line, one sign:
@@ -248,12 +248,16 @@ follows it freely when held; a tap, a pull past a third of the way, a fling or `
 lifted sheet lies the other page itself: the board is the frame's part `pad`, mounted once when the corner is first
 approached and kept under the group page (`app.mjs` `keepPad`); the group page under the board is rendered from the model
 (`peek`). The page is
-the pad (`whiteboard.mjs` mountPad) as large as the main area; select or frame something and **Send to…** a session.
+the pad (`whiteboard.mjs` mountPad) as large as the main area; select or frame something and **Send to…** a chat.
 One drawing on it is a scribble.
 
-What is drawn is the board of the team in view (the core's `scribble::team_board` and `BoardView.board_id` give its
-identity): one board per team, and a room without teams draws on the `main` team's. `/scribble-board?team=<id>`
-switches the team and stays on the board. Settings · Teams shows every team's board small (controller `thumbs`).
+There is one sheet for everything, whatever group is in view: the core shows the board of "All desks" (spec 10.1)
+for `Screen::Scribble` and for any `Focus.board`. The sidebar's yellow button beside Search (and `W`) opens it from
+anywhere; the corner of a chat's or a card's page turns to it. Opened from a chat (or a card of it), the core names
+that chat (`BoardView.from`): **Send to <chat>** sends with one press, ▾ lists every chat of every group
+(`BoardView.chats`, the usual ones first), and "‹ Back to <chat>" at the top left leads back. The group boards of
+before are no longer opened; Settings · Teams still shows each team's board small (controller `thumbs`), as what a
+team's delete erases.
 
 **Parking the corner note (wide windows).** On the Scribble Board the yellow corner note can be dragged onto the board
 (`sidebar.mjs` controller `corner-note` `park`, event `trommi:park-note`, taken by `whiteboard.mjs`): closed, the

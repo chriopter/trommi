@@ -2268,7 +2268,7 @@ export const LAYOUT = [
     { id: 'team.switch', keys: ['1…9'], does: 'team 1 to 9', verb: 'switch to that team of the menu', needs: 'teams' },
     { id: 'session.next', keys: ['.'], does: 'next session', needs: 'sidebar' },
     { id: 'session.prev', keys: [','], does: 'previous session', needs: 'sidebar' },
-    { id: 'pen', keys: ['p'], does: 'turn the page: the Scribble Board on the back of the group page, and back' },
+    { id: 'pen', keys: ['w', 'p'], does: 'the Scribble Board, one sheet for everything: turn the page there and back' },
     { id: 'rail', keys: ['['], does: 'fold the sidebar to a rail, or open it', needs: 'sidebar' },
     { id: 'back', keys: ['u', 'Backspace'], does: 'undo: the newest toast\'s Undo' },
     { id: 'theme', keys: ['t'], does: 'light or dark' },

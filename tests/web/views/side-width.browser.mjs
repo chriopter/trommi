@@ -16,7 +16,7 @@ const WIDTHS = [null, 380]
 
 const PROBE = `(() => {
   const box = sel => document.querySelector(sel)?.getBoundingClientRect() ?? null
-  const side = box('#agents'), add = box('#side-add'), search = box('.side-tool'), foot = box('#brand-menu')
+  const side = box('#agents'), add = box('#side-add'), search = box('.side-tool[href$="/stacks/off"]'), foot = box('#brand-menu')
   const heads = [...document.querySelectorAll('#agents .team-head .team-go')].map(e => e.getBoundingClientRect())
   return { side: side && [side.left, side.right], add: add && add.right, search: search && search.right, foot: foot && [foot.left, foot.right], heads: heads.map(h => h.right) }
 })()`

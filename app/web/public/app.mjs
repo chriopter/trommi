@@ -126,8 +126,6 @@ write('trommi-desk-all', null)
 /** The teams unfolded in the wide sidebar on this browser (sent as Focus.open_teams). */
 const OPEN_KEY = 'trommi-teams-open'
 let openTeams = (() => { try { const v = JSON.parse(read(OPEN_KEY, '[]')); return Array.isArray(v) ? v.map(String).slice(0, 50) : [] } catch { return [] } })()
-/** The Scribble Board of the team in view: the one chosen here, else the one the core shows. */
-const teamBoard = () => teamInView ?? core.vm()?.sidebar?.team ?? ''
 
 function createBoard({ views }) {
   useFiles(core.fileUrl)
@@ -226,7 +224,7 @@ export function screenOf(pathname, search = '') {
   if (/^\/artifacts(?:\/|$)/.test(pathname)) return { screen: 'artifacts' }
   if (pathname === '/wakeups') return { screen: 'wakeups' }
   if (pathname === '/knowledge') { const p = new URLSearchParams(search), f = p.get('filter') ?? ''; return { screen: 'knowledge', query: (p.get('q') ?? '').trim(), filter: ['new', 'pinned', 'forgotten'].includes(f) ? f : '', open: /^[0-9a-f]{32}$/.test(p.get('open') ?? '') ? p.get('open') : '' } }
-  if (pathname === '/scribble-board') return { screen: 'scribble', board_id: teamBoard() }
+  if (pathname === '/scribble-board') return { screen: 'scribble' }
   if (/^\/(?:settings|devices|pair|sessions)(?:\/|$)/.test(pathname)) return { screen: 'settings' }
   return { screen: 'group' }
 }
@@ -439,7 +437,8 @@ function bodyParts({ view, vm, base = '', main, sidebar = true, current = null, 
   if (view === 'whiteboard') parts.push({ key: 'pad', html: String(main) })
   else parts.push({ key: 'main', html: String(main) })
   if (FRONT.has(view) && padKept && model && loaded.whiteboard) parts.push({ key: 'pad', html: String(loaded.whiteboard.whiteboardMain(model)) })
-  const board = (FRONT.has(view) && padKept) || view === 'whiteboard' ? teamBoard() : null
+  // (one sheet for everything: the core shows the whiteboard while one is kept or in view)
+  const board = (FRONT.has(view) && padKept) || view === 'whiteboard' ? 'all' : null
   if (board !== boardInView) { boardInView = board; queueMicrotask(sendFocus) }
   // (the Desk has none: its note line leads to the board)
   if ((FRONT.has(view) && view !== 'desk') || view === 'whiteboard') parts.push({ key: 'curl', html: String(curlHTML(FRONT.has(view) ? 'desk' : 'pad', FRONT.has(view) ? `${base}/scribble-board` : `${base}${padFrom}`)) })
@@ -500,7 +499,7 @@ function createRouter({ board, onPage = () => {}, beforeVisit = () => {} }) {
         // The same drawing: the mounted pad stays; only its list of sessions and the boards beside it are brought up to date.
         const t = document.createElement('template')
         t.innerHTML = html
-        for (const id of ['whiteboard-sessions']) { const fresh = t.content.getElementById(id); if (fresh) document.getElementById(id)?.replaceWith(fresh) }
+        for (const id of ['whiteboard-sessions', 'pad-back']) { const fresh = t.content.getElementById(id); if (fresh) document.getElementById(id)?.replaceWith(fresh) }
         part.html = html
       }
       if (part && (key === 'says' || part.html === html)) {
@@ -924,7 +923,6 @@ const appView = { register(t) {
     const d = url.searchParams.get('team'); if (d == null) return false; t.setTeam(d); t.redirect(res, '/')
   })
   t.get(/^\/team\/([\w-]+)$/, ({ res, match }) => { t.setTeam(match[1]); t.redirect(res, '/') })
-  t.get(/^\/scribble-board$/, ({ res, url }) => { const d = url.searchParams.get('team'); if (d == null) return false; t.setTeam(d); t.redirect(res, '/scribble-board') })
 } }
 
 // ---- the line on the connection ----

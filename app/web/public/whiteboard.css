@@ -48,6 +48,15 @@ body[data-page="whiteboard"] #whiteboard { display: block; grid-column: 2; grid-
   .pad [data-tip]:hover::after, .pad [data-tip]:focus-visible::after { opacity: 1; }
 }
 
+/* The way back into the chat the whiteboard was opened from (whiteboard.mjs padBack): a quiet pill at the top left. */
+.pad-back { position: absolute; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); z-index: 3; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px 0 10px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--surface) 88%, transparent); box-shadow: 0 0 0 1px var(--line); color: var(--muted); font: 500 var(--t-sm)/1 var(--font); text-decoration: none; white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
+.pad-back span { font-size: 18px; line-height: 1; }
+.pad-back:hover { color: var(--fg); background: var(--surface); }
+/* (a narrow pad: a long chat name in "Send to" is cut, so the selection bar keeps its tools in view) */
+@container pad (max-width: 480px) { #send-to-label { display: inline-block; max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+/* (a phone: under the place pill and the zoom of the top row) */
+@media (max-width: 860px) { .pad-back { top: calc(60px + env(safe-area-inset-top, 0px)); } }
+
 /* ── top bar ────────────────────────────────────────────────────────────── */
 /* The board's tools stand at its foot in one row: undo and redo at its head, the tools, the cut-out drawing; the
    corner note at the right. The zoom is a small quiet capsule at the top right, beside the turned corner (.pad-top);

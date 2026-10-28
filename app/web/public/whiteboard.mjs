@@ -106,21 +106,30 @@ function sampleStroke(pts, f, { tool = 'pen', width = 4, step = 1, from = 0, to 
 }
 
 // ---- the page ----
-/** The team the board belongs to, as the sidebar has it: the pad is mounted again when it changes. */
-const teamInView = vm => vm.sidebar?.team ?? ''
+/** The whiteboard: one sheet for everything (the core shows the board of "All desks"), so the pad is mounted once. */
+const SHEET = 'all'
 
-/** The sessions for the pad's "Send to…" (read by the controller), and when the board last changed: the controller
- *  draws the board again when this element is replaced (a new render, a picture's bytes came). */
+/** The chats for the pad's "Send to…" (read by the controller: the core's BoardView.chats, the one the whiteboard
+ *  was opened from first and named in data-from), and when the board last changed: the controller draws the board
+ *  again when this element is replaced (a new render, a picture's bytes came). */
 function whiteboardSessions(vm) {
-  const sessions = (vm.sidebar?.sessions ?? []).map(s => { const w = whoOf(s); return { id: s.id, name: w.name, online: w.online, hue: w.hue, mark: String(markArt({ ...w, crowned: false })) } })
+  const chats = vm.board?.chats ?? []
+  const sessions = chats.map(c => { const w = whoOf({ id: c.session_id, mark: c.mark, name: c.name, online: c.online }); return { id: c.session_id, name: c.name, send: c.send?.en ?? '', online: c.online, hue: w.hue, mark: String(markArt({ ...w, crowned: false })) } })
   const pictures = (vm.board?.shapes ?? []).filter(s => s.attachment && T?.fileUrl(s.attachment)).length
-  return html`<div id="whiteboard-sessions" hidden data-rev="${vm.rev}:${pictures}" data-sessions="${JSON.stringify(sessions)}"></div>`
+  return html`<div id="whiteboard-sessions" hidden data-rev="${vm.rev}:${pictures}" data-from="${vm.board?.from?.session_id ?? ''}" data-sessions="${JSON.stringify(sessions)}"></div>`
+}
+
+/** The way back into the chat the whiteboard was opened from (BoardView.back); hidden when it was opened elsewhere. */
+function padBack(vm) {
+  const from = vm.board?.from
+  return from ? html`<a class="pad-back" id="pad-back" href="/chat/${encodeURIComponent(from.slug)}" data-nav draggable="false"><span aria-hidden="true">‹</span>${vm.board.back?.en ?? from.name}</a>` : html`<span id="pad-back" hidden></span>`
 }
 
 /** The Scribble Board's page. It is a part of its own in the frame (app.mjs bodyParts, key "pad"): the Desk keeps the
  *  same markup under its sheet once the corner was touched, so a turn of the page mounts nothing anew. */
-export const whiteboardMain = vm => raw(`<main id="whiteboard" aria-label="Scribble Board" data-controller="whiteboard" data-whiteboard-canvas-value="${teamInView(vm)}">
+export const whiteboardMain = vm => raw(`<main id="whiteboard" aria-label="Scribble Board" data-controller="whiteboard" data-whiteboard-canvas-value="${SHEET}">
 ${whiteboardSessions(vm)}
+${padBack(vm)}
 <div class="pad" id="pad" data-tool="pen" data-place data-owns-keys>
   <canvas class="pad-canvas" id="canvas" role="img" aria-label="Scribble Board: an endless surface for notes, drawings and pictures"></canvas>
 
@@ -305,7 +314,8 @@ controller('whiteboard', class extends Controller {
     this.pad = mountPad(this.element)
     this.sync = () => {
       const vm = T.vm()
-      try { this.pad.setSessions(JSON.parse(document.getElementById('whiteboard-sessions')?.dataset.sessions ?? '[]')) } catch {}
+      const list = document.getElementById('whiteboard-sessions')
+      try { this.pad.setSessions(JSON.parse(list?.dataset.sessions ?? '[]'), list?.dataset.from ?? '') } catch {}
       this.pad.sync(vm)
     }
     this.sync()
@@ -944,14 +954,14 @@ async function flySheet(layer, { png, rect, target }) {
 }
 
 // ---- the pad: mounted on the page /scribble-board by the controller "whiteboard" ----
-// main: the page's <main> (pad markup inside). Returns { sync(vm), setSessions(list), unmount() }.
+// main: the page's <main> (pad markup inside). Returns { sync(vm), setSessions(list, from), unmount() }.
 function mountPad(main) {
   const PAD = main.dataset.whiteboardCanvasValue
   const listening = new AbortController()
   // (Under the Desk's sheet the pad is mounted but not the page: what the window and the document hear is not its.)
   const here = () => document.body.dataset.tView === 'whiteboard'
   const on = (target, type, fn, opts = {}) => target.addEventListener(type, target === window || target === document ? e => { if (here()) fn(e) } : fn, { ...(typeof opts === 'boolean' ? { capture: opts } : opts), signal: listening.signal })
-  const board = { board: true, sessions: [] }
+  const board = { board: true, sessions: [], from: '' }
   const AUTHOR = 'human'   // a record made here; on the wire the author is the signed sender
   const MIN_Z = 0.05, MAX_Z = 8
   const UNDO_MAX = 200
@@ -2053,7 +2063,7 @@ function mountPad(main) {
     const menu = $('send-menu')
     const b = board
     const head = Object.assign(document.createElement('p'), { className: 'pad-menu-head', textContent: b.board ? 'Sessions on this board' : 'Sample sessions (no board)' })
-    const here = new Set()
+    const here = new Set(board.from ? [board.from] : [])
     const items = [...b.sessions].sort((a, c) => here.has(c.id) - here.has(a.id)).map(s => {
       const item = document.createElement('button')
       item.type = 'button'
@@ -2072,10 +2082,10 @@ function mountPad(main) {
     menu.querySelector('button')?.focus({ preventScroll: true })
   }
   /** The session the human was in when the pad was opened, if it was exactly one: sending goes there first. */
-  const preferred = () => null
+  const preferred = () => board.sessions.find(s => s.id === board.from) ?? null
   function paintSendTo() {
     const to = preferred()
-    $('send-to-label').textContent = to ? `Send to ${to.name}` : 'Send to…'
+    $('send-to-label').textContent = to ? (to.send || `Send to ${to.name}`) : 'Send to…'
     $('send-other').hidden = !to
     if (to) $('send-to').removeAttribute('aria-haspopup'); else $('send-to').setAttribute('aria-haspopup', 'menu')
   }
@@ -2252,7 +2262,7 @@ function mountPad(main) {
   function openAreaMenu() {
     const menu = $('area-menu')
     const b = board
-    const here = new Set(), recent = lastSentTo()
+    const here = new Set(board.from ? [board.from] : []), recent = lastSentTo()
     // where the human came from first, then who was sent to most recently, then who is there
     const sessions = [...b.sessions].sort((p, q) => here.has(q.id) - here.has(p.id) || (recent.get(q.id) ?? 0) - (recent.get(p.id) ?? 0) || q.online - p.online)
     const n = area.list.length
@@ -2463,7 +2473,7 @@ function mountPad(main) {
   start()
   return {
     sync,
-    setSessions(list) { board.sessions = list; renderStatus(); paintSendTo() },
+    setSessions(list, from = '') { board.sessions = list; board.from = from; renderStatus(); paintSendTo() },
     unmount() {
       commitEditor()
       listening.abort(); resized.disconnect(); themed.disconnect()
