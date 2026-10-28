@@ -171,12 +171,13 @@ extension View {
               .accessibilityHint(page.quiet?.en ?? "Opens the chat's menu")
               .accessibilityIdentifier("session-title")
           }
+          ToolbarItem(placement: .topBarTrailing) { BoardButton(round: false) }
         }
     } else {
-      self.pushedPills(solid: AppShell.phone) { pill() } trailing: { EmptyView() }
+      self.pushedPills(solid: AppShell.phone) { pill() } trailing: { BoardButton() }
     }
     #else
-    self.pushedPills(solid: AppShell.phone) { pill() } trailing: { EmptyView() }
+    self.pushedPills(solid: AppShell.phone) { pill() } trailing: { BoardButton() }
     #endif
   }
 }

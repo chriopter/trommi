@@ -52,7 +52,7 @@ struct NativeGroupPage: View {
   }
 }
 
-/** The group's ⋯ in the bar (`GroupHeadView.menu`): Knowledge, Wakeups, Scribble Board with their counts; Rename asks
+/** The group's ⋯ in the bar (`GroupHeadView.menu`): Knowledge and Wakeups with their counts; Rename asks
  *  for the new name. */
 private struct NativeGroupMenu: View {
   @EnvironmentObject var shell: AppShell

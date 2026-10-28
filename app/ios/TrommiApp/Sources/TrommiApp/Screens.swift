@@ -245,7 +245,7 @@ struct Sidebar: View {
       Divider().overlay(Ink.line)
       Menu {
         Button { shell.focus(.settings(page: "")); shell.account(["step": "read_account"]) } label: { Label("Settings", systemImage: "key") }
-        Button { shell.focus(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
+        Button { shell.focus(.scribble) } label: { Label("Scribble", systemImage: "scribble.variable") }
         Button { shell.focus(.knowledge(query: "", filter: "", open: "")) } label: { Label("Knowledge", systemImage: "book") }
         Button { shell.focus(.wakeups) } label: { Label("Wakeups", systemImage: "alarm") }
         Button { shell.focus(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
@@ -421,7 +421,7 @@ struct MePicture: View {
           Button { shell.teamPage = nil; shell.path = [.group]; shell.show(.group) } label: { Label("Group", systemImage: "tray") }
             .accessibilityIdentifier("phone-open-desk")
         }
-        Button { go(.scribble(boardId: side.team)) } label: { Label("Scribble", systemImage: "scribble.variable") }
+        Button { go(.scribble) } label: { Label("Scribble", systemImage: "scribble.variable") }
         Button { go(.knowledge(query: "", filter: "", open: "")) } label: { Label("Knowledge", systemImage: "book") }
         Button { go(.wakeups) } label: { Label("Wakeups", systemImage: "alarm") }
         Button { go(.artifacts(kind: "")) } label: { Label("Artifacts", systemImage: "photo.on.rectangle") }
@@ -543,7 +543,7 @@ struct DeskWays: View {
   }
 }
 
-/** The group's ⋯ menu (`GroupHeadView.menu`): Knowledge, Wakeups, Scribble Board, each with its count; Rename asks for
+/** The group's ⋯ menu (`GroupHeadView.menu`): Knowledge and Wakeups, each with its count; Rename asks for
  *  the new name. */
 struct GroupMenu: View {
   @EnvironmentObject var shell: AppShell

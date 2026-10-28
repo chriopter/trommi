@@ -52,3 +52,19 @@ struct ScribbleScreen: View {
   }
   private func ink(_ name: String) -> Color { switch name { case "green": Ink.accent; case "blue": .blue; case "red": Ink.deny; default: Ink.fg } }
 }
+
+/** The Scribble Board's button in a chat's top bar: the one sheet for everything, opened from this chat (the core then
+ *  names it as `BoardView.from`: where "Send to" goes and the way back leads). round: the app's own glass circle. */
+struct BoardButton: View {
+  @EnvironmentObject var shell: AppShell
+  var round = true
+  var body: some View {
+    Button { shell.focus(.scribble) } label: {
+      if round { Image(systemName: "scribble.variable").font(.system(size: 17, weight: .semibold)).foregroundStyle(Ink.fg).pillCircle() }
+      else { Image(systemName: "scribble.variable") }
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Scribble Board")
+    .accessibilityIdentifier("session-board")
+  }
+}
