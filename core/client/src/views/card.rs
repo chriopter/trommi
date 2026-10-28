@@ -2141,11 +2141,8 @@ mod tests {
         );
         let m = r.model(NOW);
         let lens = Lens::default();
-        let row = group::group(&Board::new(&m, &lens, NOW))
-            .questions
-            .into_iter()
-            .find(|x| x.id == "q")
-            .unwrap();
+        let g = group::group(&Board::new(&m, &lens, NOW));
+        let row = g.rows().into_iter().find(|x| x.id == "q").unwrap().clone();
         assert_eq!(row.words, "The plan: [Launch plan]");
     }
 

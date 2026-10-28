@@ -24,7 +24,6 @@
               "test_state": "idle"
             },
             "group": {
-              "chips_shown": 0,
               "mode": "",
               "stack": [],
               "waiting": 0
@@ -210,10 +209,11 @@
         {
           "part": "group",
           "view": {
-            "chips_shown": 0,
             "empty": {
-              "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
-              "key": "group.empty.reading"
+              "title": {
+                "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
+                "key": "group.empty.reading"
+              }
             },
             "mode": "reading",
             "stack": [],
@@ -654,50 +654,11 @@
         {
           "part": "group",
           "view": {
-            "chips": [
-              {
-                "count": 0,
-                "mark": "",
-                "name": {
-                  "en": "All",
-                  "key": "group.chip.all"
-                },
-                "needs": false,
-                "says": {
-                  "args": {
-                    "n": "0"
-                  },
-                  "en": "All: 0 open cards",
-                  "key": "group.chip.all.says"
-                },
-                "selected": true,
-                "session_id": "",
-                "slug": ""
-              },
-              {
-                "count": 0,
-                "mark": "draw:(face)",
-                "name": {
-                  "en": "Loading …",
-                  "key": "session.name"
-                },
-                "needs": false,
-                "says": {
-                  "args": {
-                    "name": "Loading …"
-                  },
-                  "en": "Loading …",
-                  "key": "group.chip"
-                },
-                "selected": false,
-                "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                "slug": "00000002eeee"
-              }
-            ],
-            "chips_shown": 2,
             "empty": {
-              "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
-              "key": "group.empty.reading"
+              "title": {
+                "en": "Catching up: reading your sessions on this device. Their open questions show here as they are read.",
+                "key": "group.empty.reading"
+              }
             },
             "goals": {
               "foldable": false,
@@ -706,12 +667,6 @@
               "team_id": "main"
             },
             "head": {
-              "faces": [
-                {
-                  "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                  "mark": "draw:(face)"
-                }
-              ],
               "menu": [
                 {
                   "apart": false,
@@ -1416,47 +1371,115 @@
                 "key": "blitz.scope"
               }
             },
-            "chips": [
+            "blocks": [
               {
-                "count": 1,
-                "mark": "",
-                "name": {
-                  "en": "All",
-                  "key": "group.chip.all"
-                },
-                "needs": false,
-                "says": {
-                  "args": {
-                    "n": "1"
-                  },
-                  "en": "All: 1 open card",
-                  "key": "group.chip.all.one"
-                },
-                "selected": true,
-                "session_id": "",
-                "slug": ""
-              },
-              {
-                "count": 0,
                 "mark": "draw:(face)",
                 "name": {
                   "en": "00000002eeee",
                   "key": "session.name"
                 },
-                "needs": true,
+                "open": {
+                  "args": {
+                    "n": "1"
+                  },
+                  "en": "1 open",
+                  "key": "group.block.open"
+                },
+                "open_chat": {
+                  "en": "Open chat ›",
+                  "key": "group.block.open_chat"
+                },
+                "questions": [
+                  {
+                    "age": {
+                      "en": "now",
+                      "key": "age.now"
+                    },
+                    "created_ms": 1791900300010,
+                    "from": {
+                      "mark": "draw:(face)",
+                      "name": "00000002eeee",
+                      "path": [
+                        "00000002eeee"
+                      ],
+                      "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee"
+                    },
+                    "id": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
+                    "kind": "decision",
+                    "loading": false,
+                    "newer": false,
+                    "run": 0,
+                    "sign": "whenever",
+                    "sign_says": {
+                      "en": "Whenever",
+                      "key": "row.whenever"
+                    },
+                    "starred": false,
+                    "tiles": {
+                      "kind": "pair",
+                      "others": 0,
+                      "tiles": [
+                        {
+                          "advised": false,
+                          "key": "yes",
+                          "label": "",
+                          "lead": false,
+                          "says": {
+                            "args": {
+                              "label": ""
+                            },
+                            "en": "",
+                            "key": "tile.says"
+                          },
+                          "settles": false,
+                          "short": false,
+                          "small": false,
+                          "thumb": "no",
+                          "thumbs": false
+                        },
+                        {
+                          "advised": false,
+                          "key": "no",
+                          "label": "",
+                          "lead": false,
+                          "says": {
+                            "args": {
+                              "label": ""
+                            },
+                            "en": "",
+                            "key": "tile.says"
+                          },
+                          "settles": false,
+                          "short": false,
+                          "small": false,
+                          "thumb": "no",
+                          "thumbs": false
+                        }
+                      ]
+                    },
+                    "title": "Ship it?",
+                    "urgency": "low",
+                    "ways": [
+                      "later",
+                      "reverse",
+                      "duck",
+                      "shred"
+                    ],
+                    "words": ""
+                  }
+                ],
                 "says": {
                   "args": {
+                    "n": "1",
                     "name": "00000002eeee"
                   },
-                  "en": "00000002eeee: waits for you",
-                  "key": "group.chip.waits"
+                  "en": "00000002eeee: 1 open. Open the chat",
+                  "key": "group.block.says"
                 },
-                "selected": false,
                 "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "slug": "00000002eeee"
               }
             ],
-            "chips_shown": 2,
             "duck": {
               "ask": {
                 "args": {
@@ -1513,12 +1536,6 @@
               "team_id": "main"
             },
             "head": {
-              "faces": [
-                {
-                  "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                  "mark": "draw:(face)"
-                }
-              ],
               "menu": [
                 {
                   "apart": false,
@@ -1569,95 +1586,17 @@
               "team_id": "main"
             },
             "mode": "group",
-            "questions": [
-              {
-                "age": {
-                  "en": "now",
-                  "key": "age.now"
-                },
-                "created_ms": 1791900300010,
-                "from": {
-                  "mark": "draw:(face)",
-                  "name": "00000002eeee",
-                  "path": [
-                    "00000002eeee"
-                  ],
-                  "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee"
-                },
-                "id": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
-                "kind": "decision",
-                "loading": false,
-                "newer": false,
-                "run": 0,
-                "sign": "whenever",
-                "sign_says": {
-                  "en": "Whenever",
-                  "key": "row.whenever"
-                },
-                "starred": false,
-                "tiles": {
-                  "kind": "pair",
-                  "others": 0,
-                  "tiles": [
-                    {
-                      "advised": false,
-                      "key": "yes",
-                      "label": "",
-                      "lead": false,
-                      "says": {
-                        "args": {
-                          "label": ""
-                        },
-                        "en": "",
-                        "key": "tile.says"
-                      },
-                      "settles": false,
-                      "short": false,
-                      "small": false,
-                      "thumb": "no",
-                      "thumbs": false
-                    },
-                    {
-                      "advised": false,
-                      "key": "no",
-                      "label": "",
-                      "lead": false,
-                      "says": {
-                        "args": {
-                          "label": ""
-                        },
-                        "en": "",
-                        "key": "tile.says"
-                      },
-                      "settles": false,
-                      "short": false,
-                      "small": false,
-                      "thumb": "no",
-                      "thumbs": false
-                    }
-                  ]
-                },
-                "title": "Ship it?",
-                "urgency": "low",
-                "ways": [
-                  "later",
-                  "reverse",
-                  "duck",
-                  "shred"
-                ],
-                "words": ""
-              }
-            ],
-            "questions_says": {
-              "args": {
-                "n": "1"
-              },
-              "en": "Waits for you",
-              "key": "group.questions"
-            },
             "stack": [
               "00000007eeeeeeeeeeeeeeeeeeeeeeee"
             ],
+            "summary": {
+              "args": {
+                "n": "1",
+                "reads": "0"
+              },
+              "en": "1 waits for you",
+              "key": "group.summary.one"
+            },
             "waiting": 1
           }
         },
@@ -3497,50 +3436,18 @@
         {
           "part": "group",
           "view": {
-            "chips": [
-              {
-                "count": 0,
-                "mark": "",
-                "name": {
-                  "en": "All",
-                  "key": "group.chip.all"
-                },
-                "needs": false,
-                "says": {
-                  "args": {
-                    "n": "0"
-                  },
-                  "en": "All: 0 open cards",
-                  "key": "group.chip.all.says"
-                },
-                "selected": true,
-                "session_id": "",
-                "slug": ""
-              },
-              {
-                "count": 0,
-                "mark": "draw:(face)",
-                "name": {
-                  "en": "00000002eeee",
-                  "key": "session.name"
-                },
-                "needs": false,
-                "says": {
-                  "args": {
-                    "name": "00000002eeee"
-                  },
-                  "en": "00000002eeee",
-                  "key": "group.chip"
-                },
-                "selected": false,
-                "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                "slug": "00000002eeee"
-              }
-            ],
-            "chips_shown": 2,
             "empty": {
-              "en": "Questions land here.",
-              "key": "group.empty"
+              "line": {
+                "en": "What your chats ask lands here.",
+                "key": "group.empty.line"
+              },
+              "title": {
+                "args": {
+                  "name": "Personal"
+                },
+                "en": "Nothing waits for you in Personal.",
+                "key": "group.empty"
+              }
             },
             "goals": {
               "foldable": false,
@@ -3549,12 +3456,6 @@
               "team_id": "main"
             },
             "head": {
-              "faces": [
-                {
-                  "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-                  "mark": "draw:(face)"
-                }
-              ],
               "menu": [
                 {
                   "apart": false,
@@ -3633,50 +3534,18 @@
       "test_state": "idle"
     },
     "group": {
-      "chips": [
-        {
-          "count": 0,
-          "mark": "",
-          "name": {
-            "en": "All",
-            "key": "group.chip.all"
-          },
-          "needs": false,
-          "says": {
-            "args": {
-              "n": "0"
-            },
-            "en": "All: 0 open cards",
-            "key": "group.chip.all.says"
-          },
-          "selected": true,
-          "session_id": "",
-          "slug": ""
-        },
-        {
-          "count": 0,
-          "mark": "draw:(face)",
-          "name": {
-            "en": "00000002eeee",
-            "key": "session.name"
-          },
-          "needs": false,
-          "says": {
-            "args": {
-              "name": "00000002eeee"
-            },
-            "en": "00000002eeee",
-            "key": "group.chip"
-          },
-          "selected": false,
-          "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-          "slug": "00000002eeee"
-        }
-      ],
-      "chips_shown": 2,
       "empty": {
-        "en": "Questions land here.",
-        "key": "group.empty"
+        "line": {
+          "en": "What your chats ask lands here.",
+          "key": "group.empty.line"
+        },
+        "title": {
+          "args": {
+            "name": "Personal"
+          },
+          "en": "Nothing waits for you in Personal.",
+          "key": "group.empty"
+        }
       },
       "goals": {
         "foldable": false,
@@ -3685,12 +3554,6 @@
         "team_id": "main"
       },
       "head": {
-        "faces": [
-          {
-            "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
-            "mark": "draw:(face)"
-          }
-        ],
         "menu": [
           {
             "apart": false,

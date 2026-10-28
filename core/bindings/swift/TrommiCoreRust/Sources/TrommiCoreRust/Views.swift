@@ -65,9 +65,6 @@ public enum CoreView {
     /// The Scribble Board shown beside the screen (the group page's): `desk/<32 hex>`, or a team's id or "all" for that
     /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
     public var board: String?
-    /// The chat chip chosen on the group page (its session key or short id): the page shows only that chat's cards
-    /// (`GroupView.chips`); none, or a chat that is not in the group: all of them. This window's: the shell keeps it.
-    public var groupChat: String?
     /// The wide sidebar is folded to a rail (this device's, the shell keeps it): its rows carry no counts and no
     /// signs but one quiet dot on a chat that needs the person (`SessionRowView.signal`).
     public var railFolded: Bool
@@ -89,12 +86,11 @@ public enum CoreView {
     /// goes through every group's open cards in their order, not only the group page's.
     public var walkAll: Bool
 
-    public init(screen: Screen = .group, visible: Bool = true, team: String? = nil, board: String? = nil, groupChat: String? = nil, railFolded: Bool = false, openTeams: [String] = [], chatsQuery: String? = nil, calm: Bool = false, walkChat: String? = nil, walkAll: Bool = false) {
+    public init(screen: Screen = .group, visible: Bool = true, team: String? = nil, board: String? = nil, railFolded: Bool = false, openTeams: [String] = [], chatsQuery: String? = nil, calm: Bool = false, walkChat: String? = nil, walkAll: Bool = false) {
       self.screen = screen
       self.visible = visible
       self.team = team
       self.board = board
-      self.groupChat = groupChat
       self.railFolded = railFolded
       self.openTeams = openTeams
       self.chatsQuery = chatsQuery
@@ -108,7 +104,6 @@ public enum CoreView {
       case visible = "visible"
       case team = "team"
       case board = "board"
-      case groupChat = "group_chat"
       case railFolded = "rail_folded"
       case openTeams = "open_teams"
       case chatsQuery = "chats_query"
@@ -123,7 +118,6 @@ public enum CoreView {
       self.visible = try c.decodeIfPresent(Bool.self, forKey: .visible) ?? true
       self.team = try c.decodeIfPresent(String.self, forKey: .team)
       self.board = try c.decodeIfPresent(String.self, forKey: .board)
-      self.groupChat = try c.decodeIfPresent(String.self, forKey: .groupChat)
       self.railFolded = try c.decodeIfPresent(Bool.self, forKey: .railFolded) ?? false
       self.openTeams = try c.decodeIfPresent([String].self, forKey: .openTeams) ?? []
       self.chatsQuery = try c.decodeIfPresent(String.self, forKey: .chatsQuery)
@@ -138,7 +132,6 @@ public enum CoreView {
       try c.encode(visible, forKey: .visible)
       try c.encodeIfPresent(team, forKey: .team)
       try c.encodeIfPresent(board, forKey: .board)
-      try c.encodeIfPresent(groupChat, forKey: .groupChat)
       try c.encode(railFolded, forKey: .railFolded)
       if !openTeams.isEmpty { try c.encode(openTeams, forKey: .openTeams) }
       try c.encodeIfPresent(chatsQuery, forKey: .chatsQuery)
@@ -629,9 +622,6 @@ public enum CoreView {
     /// Every team as a stack, in the menu's order (the wide sidebar): folded, its head over a fan of its sessions'
     /// card edges; open, its chats under it. The phone draws `sessions` instead.
     public var stacks: [TeamStackView]
-    /// The chats on no team as a group of their own ("No team"), while there are any: its page (`Focus.team`
-    /// [`NO_TEAM`]) shows their open cards; `selected` while it is the group in view. Drawn as the head over `root`.
-    public var noTeam: TeamTab?
     /// The sidebar is folded to a rail (`Focus.rail_folded`): its rows and stacks carry no counts and no signs but
     /// one quiet dot (`SessionRowView.signal` "waiting" or "stopped").
     public var folded: Bool
@@ -643,14 +633,15 @@ public enum CoreView {
     /// The bolt at the phone's top right: Blitz over every team's open cards, whatever team is in view. None while
     /// nothing waits on any team.
     public var globalBlitz: GlobalBlitzView?
-    /// The chats the person put on no team, one row each, in drawing order: at the top of the list, alongside the
-    /// teams (the phone's folders, the wide sidebar's stacks), never inside one. Their `team_id` is empty.
+    /// The chats the person put on no team, one row each, in drawing order: loose at the top of the list, with no head
+    /// over them, alongside the teams (the phone's folders, the wide sidebar's stacks), never inside one. Their
+    /// `team_id` is empty. They have no group page: their cards stand in the chat and in Blitz.
     public var root: [SessionRowView]
     /// Where an agent invited now can stand ("Copy Invite Link"): "No team", then the teams in the menu's order; the
     /// team in view is `chosen`; in a room without teams only "No team", chosen.
     public var places: [TeamPlaceView]
 
-    public init(teams: [TeamTab] = [], newChat: [NewChatView] = [], me: String = "", sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], noTeam: TeamTab? = nil, folded: Bool = false, found: [ChatGroupView] = [], foundNone: Text? = nil, globalBlitz: GlobalBlitzView? = nil, root: [SessionRowView] = [], places: [TeamPlaceView] = []) {
+    public init(teams: [TeamTab] = [], newChat: [NewChatView] = [], me: String = "", sessions: [SessionRowView] = [], badge: UInt32 = 0, team: String = "", place: Text = Text(), waiting: UInt32 = 0, knocking: UInt32 = 0, stopped: UInt32 = 0, working: UInt32 = 0, unheard: UInt32 = 0, stacks: [TeamStackView] = [], folded: Bool = false, found: [ChatGroupView] = [], foundNone: Text? = nil, globalBlitz: GlobalBlitzView? = nil, root: [SessionRowView] = [], places: [TeamPlaceView] = []) {
       self.teams = teams
       self.newChat = newChat
       self.me = me
@@ -664,7 +655,6 @@ public enum CoreView {
       self.working = working
       self.unheard = unheard
       self.stacks = stacks
-      self.noTeam = noTeam
       self.folded = folded
       self.found = found
       self.foundNone = foundNone
@@ -687,7 +677,6 @@ public enum CoreView {
       case working = "working"
       case unheard = "unheard"
       case stacks = "stacks"
-      case noTeam = "no_team"
       case folded = "folded"
       case found = "found"
       case foundNone = "found_none"
@@ -711,7 +700,6 @@ public enum CoreView {
       self.working = try c.decodeIfPresent(UInt32.self, forKey: .working) ?? 0
       self.unheard = try c.decodeIfPresent(UInt32.self, forKey: .unheard) ?? 0
       self.stacks = try c.decodeIfPresent([TeamStackView].self, forKey: .stacks) ?? []
-      self.noTeam = try c.decodeIfPresent(TeamTab.self, forKey: .noTeam)
       self.folded = try c.decodeIfPresent(Bool.self, forKey: .folded) ?? false
       self.found = try c.decodeIfPresent([ChatGroupView].self, forKey: .found) ?? []
       self.foundNone = try c.decodeIfPresent(Text.self, forKey: .foundNone)
@@ -735,7 +723,6 @@ public enum CoreView {
       try c.encode(working, forKey: .working)
       try c.encode(unheard, forKey: .unheard)
       if !stacks.isEmpty { try c.encode(stacks, forKey: .stacks) }
-      try c.encodeIfPresent(noTeam, forKey: .noTeam)
       try c.encode(folded, forKey: .folded)
       if !found.isEmpty { try c.encode(found, forKey: .found) }
       try c.encodeIfPresent(foundNone, forKey: .foundNone)
@@ -1480,40 +1467,30 @@ public enum CoreView {
     }
   }
 
-  /// The page of the group in view (a team, or the chats on no team, [`NO_TEAM`]): its head, one chip per chat to
-  /// filter by, and its open cards in one list: the questions first ("Waits for you"), then what is only to read
-  /// ("To read"). There is no page of every group: Blitz (`blitz`) is the only view of everything.
+  /// The page of the group in view (a team): its head, and its open cards in one block per chat, the chat with the
+  /// urgent question first. A block's head is the way into its chat; there is no filter (the owner, 28 October
+  /// 2026: "Nach Chat gruppiert"). There is no page of every group: Blitz (`blitz`) is the only view of everything.
   public struct GroupView: Codable, Hashable, Sendable {
-    /// Card and request ids in the page's order (the chip's filter applied): `questions`, then `reads`. A card's page
-    /// opened from here walks on in this order.
+    /// Card and request ids in the page's order: block after block, in each its questions, then what is only to read.
+    /// A card's page opened from here walks on in this order.
     public var stack: [String]
-    /// What stands in the list's place when nothing is open at all ("Questions land here.").
-    public var empty: Text?
+    /// What stands in the list's place when nothing is open at all.
+    public var empty: GroupEmptyView?
     /// "invite" (no session stands here yet: invite the first agent), "reading" (none yet, and the room is still
     /// being read), "group".
     public var mode: String
     /// How far the reading of the room's past is ("Reading your history: 12,400 of 27,000"), while it is read.
     public var reading: Text?
-    /// The group's name, its faces and its ⋯ menu; none in a room without teams and chats (a new account).
+    /// The group's name and its ⋯ menu; none in a room without teams and chats (a new account).
     public var head: GroupHeadView?
-    /// The team's goals under the head; none for the chats on no team.
+    /// The team's goals under the head.
     public var goals: GoalsView?
-    /// The filter row: "All" first, then one chip per chat of the group, the ones that need the person first. Only
-    /// one is `selected`. Empty while the group has no chat.
-    public var chips: [ChipView]
-    /// How many of `chips` stand in the row ("All" included); the rest wait behind `more`.
-    public var chipsShown: UInt32
-    /// "+4": the chips behind it, unfolded by a tap (the shell's); none when every chip stands in the row.
-    public var more: Text?
-    /// The questions' heading, "Waits for you", with how many as `n` (drawn beside it); none while there are none.
-    public var questionsSays: Text?
-    /// The questions and approval requests, in the walk's order.
-    public var questions: [DeskRowView]
-    /// The heading of what is only to read, "To read", with how many as `n`; none while there is nothing.
-    public var readsSays: Text?
-    /// What is only to read (infos, a card not read here yet, one of a newer Trommi), drawn smaller, below.
-    public var reads: [DeskRowView]
-    /// The open questions of the group (no infos, the chip's filter not applied): the number in the window's title.
+    /// One quiet line under the head over the blocks: "4 wait for you · 3 to read"; none while nothing is open.
+    public var summary: Text?
+    /// The open cards, one block per chat that has some: a chat whose question knocks or blocks first, then the chats
+    /// with a question, then those with only something to read, each rank in the sidebar's order.
+    public var blocks: [ChatBlockView]
+    /// The open questions of the group (no infos): the number in the window's title.
     public var waiting: UInt32
     /// Blitz over every group's open cards ("Blitz: 14 open cards", "all groups"); none while nothing is open
     /// anywhere.
@@ -1524,20 +1501,15 @@ public enum CoreView {
     /// The sessions of the group that are cut off, above the list: one line each, with the step in its terminal.
     public var slip: [SlipView]
 
-    public init(stack: [String] = [], empty: Text? = nil, mode: String = "", reading: Text? = nil, head: GroupHeadView? = nil, goals: GoalsView? = nil, chips: [ChipView] = [], chipsShown: UInt32 = 0, more: Text? = nil, questionsSays: Text? = nil, questions: [DeskRowView] = [], readsSays: Text? = nil, reads: [DeskRowView] = [], waiting: UInt32 = 0, blitz: GlobalBlitzView? = nil, duck: DuckAllView? = nil, slip: [SlipView] = []) {
+    public init(stack: [String] = [], empty: GroupEmptyView? = nil, mode: String = "", reading: Text? = nil, head: GroupHeadView? = nil, goals: GoalsView? = nil, summary: Text? = nil, blocks: [ChatBlockView] = [], waiting: UInt32 = 0, blitz: GlobalBlitzView? = nil, duck: DuckAllView? = nil, slip: [SlipView] = []) {
       self.stack = stack
       self.empty = empty
       self.mode = mode
       self.reading = reading
       self.head = head
       self.goals = goals
-      self.chips = chips
-      self.chipsShown = chipsShown
-      self.more = more
-      self.questionsSays = questionsSays
-      self.questions = questions
-      self.readsSays = readsSays
-      self.reads = reads
+      self.summary = summary
+      self.blocks = blocks
       self.waiting = waiting
       self.blitz = blitz
       self.duck = duck
@@ -1551,13 +1523,8 @@ public enum CoreView {
       case reading = "reading"
       case head = "head"
       case goals = "goals"
-      case chips = "chips"
-      case chipsShown = "chips_shown"
-      case more = "more"
-      case questionsSays = "questions_says"
-      case questions = "questions"
-      case readsSays = "reads_says"
-      case reads = "reads"
+      case summary = "summary"
+      case blocks = "blocks"
       case waiting = "waiting"
       case blitz = "blitz"
       case duck = "duck"
@@ -1567,18 +1534,13 @@ public enum CoreView {
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.stack = try c.decode([String].self, forKey: .stack)
-      self.empty = try c.decodeIfPresent(Text.self, forKey: .empty)
+      self.empty = try c.decodeIfPresent(GroupEmptyView.self, forKey: .empty)
       self.mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? ""
       self.reading = try c.decodeIfPresent(Text.self, forKey: .reading)
       self.head = try c.decodeIfPresent(GroupHeadView.self, forKey: .head)
       self.goals = try c.decodeIfPresent(GoalsView.self, forKey: .goals)
-      self.chips = try c.decodeIfPresent([ChipView].self, forKey: .chips) ?? []
-      self.chipsShown = try c.decodeIfPresent(UInt32.self, forKey: .chipsShown) ?? 0
-      self.more = try c.decodeIfPresent(Text.self, forKey: .more)
-      self.questionsSays = try c.decodeIfPresent(Text.self, forKey: .questionsSays)
-      self.questions = try c.decodeIfPresent([DeskRowView].self, forKey: .questions) ?? []
-      self.readsSays = try c.decodeIfPresent(Text.self, forKey: .readsSays)
-      self.reads = try c.decodeIfPresent([DeskRowView].self, forKey: .reads) ?? []
+      self.summary = try c.decodeIfPresent(Text.self, forKey: .summary)
+      self.blocks = try c.decodeIfPresent([ChatBlockView].self, forKey: .blocks) ?? []
       self.waiting = try c.decodeIfPresent(UInt32.self, forKey: .waiting) ?? 0
       self.blitz = try c.decodeIfPresent(GlobalBlitzView.self, forKey: .blitz)
       self.duck = try c.decodeIfPresent(DuckAllView.self, forKey: .duck)
@@ -1593,13 +1555,8 @@ public enum CoreView {
       try c.encodeIfPresent(reading, forKey: .reading)
       try c.encodeIfPresent(head, forKey: .head)
       try c.encodeIfPresent(goals, forKey: .goals)
-      if !chips.isEmpty { try c.encode(chips, forKey: .chips) }
-      try c.encode(chipsShown, forKey: .chipsShown)
-      try c.encodeIfPresent(more, forKey: .more)
-      try c.encodeIfPresent(questionsSays, forKey: .questionsSays)
-      if !questions.isEmpty { try c.encode(questions, forKey: .questions) }
-      try c.encodeIfPresent(readsSays, forKey: .readsSays)
-      if !reads.isEmpty { try c.encode(reads, forKey: .reads) }
+      try c.encodeIfPresent(summary, forKey: .summary)
+      if !blocks.isEmpty { try c.encode(blocks, forKey: .blocks) }
       try c.encode(waiting, forKey: .waiting)
       try c.encodeIfPresent(blitz, forKey: .blitz)
       try c.encodeIfPresent(duck, forKey: .duck)
@@ -1607,23 +1564,251 @@ public enum CoreView {
     }
   }
 
-  /// The head of a group page: its name, up to three of its chats' faces, and its ⋯ menu.
+  /// The open cards of one chat on the group page: its head (the chat's face and name, how many of its questions wait,
+  /// whether it is at work, "Open chat ›"), which is the link into the chat, then its cards.
+  public struct ChatBlockView: Codable, Hashable, Sendable {
+    /// The chat's session key (`Screen::Session`).
+    public var sessionId: String
+    /// The chat's short id, for its address (`/chat/<slug>`); empty when it has none (the key serves then).
+    public var slug: String
+    public var name: Text
+    /// What draws the chat (`SessionRowView.mark`).
+    public var mark: String
+    /// "2 open": its questions and requests that wait; none while only something to read is open.
+    public var open: Text?
+    /// "working": the chat is at work now.
+    public var working: Text?
+    /// "Open chat ›" at the head's end.
+    public var openChat: Text
+    /// What the head says to a screen reader: "socom: 2 open. Open the chat".
+    public var says: Text
+    /// Its questions and approval requests, in the walk's order.
+    public var questions: [DeskRowView]
+    /// What is only to read (infos, a card not read here yet, one of a newer Trommi), drawn smaller, below them.
+    public var reads: [DeskRowView]
+
+    public init(sessionId: String = "", slug: String = "", name: Text = Text(), mark: String = "", open: Text? = nil, working: Text? = nil, openChat: Text = Text(), says: Text = Text(), questions: [DeskRowView] = [], reads: [DeskRowView] = []) {
+      self.sessionId = sessionId
+      self.slug = slug
+      self.name = name
+      self.mark = mark
+      self.open = open
+      self.working = working
+      self.openChat = openChat
+      self.says = says
+      self.questions = questions
+      self.reads = reads
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case sessionId = "session_id"
+      case slug = "slug"
+      case name = "name"
+      case mark = "mark"
+      case open = "open"
+      case working = "working"
+      case openChat = "open_chat"
+      case says = "says"
+      case questions = "questions"
+      case reads = "reads"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.sessionId = try c.decode(String.self, forKey: .sessionId)
+      self.slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
+      self.name = try c.decode(Text.self, forKey: .name)
+      self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
+      self.open = try c.decodeIfPresent(Text.self, forKey: .open)
+      self.working = try c.decodeIfPresent(Text.self, forKey: .working)
+      self.openChat = try c.decode(Text.self, forKey: .openChat)
+      self.says = try c.decode(Text.self, forKey: .says)
+      self.questions = try c.decodeIfPresent([DeskRowView].self, forKey: .questions) ?? []
+      self.reads = try c.decodeIfPresent([DeskRowView].self, forKey: .reads) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(sessionId, forKey: .sessionId)
+      try c.encode(slug, forKey: .slug)
+      try c.encode(name, forKey: .name)
+      try c.encode(mark, forKey: .mark)
+      try c.encodeIfPresent(open, forKey: .open)
+      try c.encodeIfPresent(working, forKey: .working)
+      try c.encode(openChat, forKey: .openChat)
+      try c.encode(says, forKey: .says)
+      if !questions.isEmpty { try c.encode(questions, forKey: .questions) }
+      if !reads.isEmpty { try c.encode(reads, forKey: .reads) }
+    }
+  }
+
+  /// The group page when nothing is open: a calm word, who is at work, where else something waits, and what the person
+  /// answered here lately.
+  public struct GroupEmptyView: Codable, Hashable, Sendable {
+    /// "Nothing waits for you in Personal." (while the room is still read: "Catching up: …").
+    public var title: Text
+    /// "trommi and release are at work. What they ask lands here."
+    public var line: Text?
+    /// Another group where a question waits: "1 question waits in Valiido"; none when nothing waits anywhere else.
+    public var elsewhere: ElsewhereView?
+    /// The heading over `lately`: "You answered lately"; none while it is empty.
+    public var latelySays: Text?
+    /// The questions of this group the person answered last, the newest first (up to three).
+    public var lately: [AnsweredView]
+
+    public init(title: Text = Text(), line: Text? = nil, elsewhere: ElsewhereView? = nil, latelySays: Text? = nil, lately: [AnsweredView] = []) {
+      self.title = title
+      self.line = line
+      self.elsewhere = elsewhere
+      self.latelySays = latelySays
+      self.lately = lately
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case title = "title"
+      case line = "line"
+      case elsewhere = "elsewhere"
+      case latelySays = "lately_says"
+      case lately = "lately"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.title = try c.decode(Text.self, forKey: .title)
+      self.line = try c.decodeIfPresent(Text.self, forKey: .line)
+      self.elsewhere = try c.decodeIfPresent(ElsewhereView.self, forKey: .elsewhere)
+      self.latelySays = try c.decodeIfPresent(Text.self, forKey: .latelySays)
+      self.lately = try c.decodeIfPresent([AnsweredView].self, forKey: .lately) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(title, forKey: .title)
+      try c.encodeIfPresent(line, forKey: .line)
+      try c.encodeIfPresent(elsewhere, forKey: .elsewhere)
+      try c.encodeIfPresent(latelySays, forKey: .latelySays)
+      if !lately.isEmpty { try c.encode(lately, forKey: .lately) }
+    }
+  }
+
+  /// Another group where questions wait (`GroupEmptyView.elsewhere`): pressed, that group comes into view.
+  public struct ElsewhereView: Codable, Hashable, Sendable {
+    /// The team's id (`Focus.team`).
+    public var teamId: String
+    /// The team's picture: its first chat's mark; empty when it has none.
+    public var mark: String
+    /// "1 question waits in Valiido", the team's name as `name`.
+    public var says: Text
+
+    public init(teamId: String = "", mark: String = "", says: Text = Text()) {
+      self.teamId = teamId
+      self.mark = mark
+      self.says = says
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case teamId = "team_id"
+      case mark = "mark"
+      case says = "says"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.teamId = try c.decode(String.self, forKey: .teamId)
+      self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
+      self.says = try c.decode(Text.self, forKey: .says)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(teamId, forKey: .teamId)
+      try c.encode(mark, forKey: .mark)
+      try c.encode(says, forKey: .says)
+    }
+  }
+
+  /// A question the person answered (`GroupEmptyView.lately`): its chat, its title, what he chose, how long ago.
+  public struct AnsweredView: Codable, Hashable, Sendable {
+    /// The card (`Screen::Card`).
+    public var id: String
+    /// Its chat: its session key, short id, name and mark.
+    public var sessionId: String
+    public var slug: String
+    public var name: Text
+    public var mark: String
+    public var title: String
+    /// What he chose: the options' labels ("Ship today"), "I don’t give a duck".
+    public var choice: Text
+    /// When he answered.
+    public var answeredMs: UInt64
+    /// How long ago, short ("2h").
+    public var age: Text
+
+    public init(id: String = "", sessionId: String = "", slug: String = "", name: Text = Text(), mark: String = "", title: String = "", choice: Text = Text(), answeredMs: UInt64 = 0, age: Text = Text()) {
+      self.id = id
+      self.sessionId = sessionId
+      self.slug = slug
+      self.name = name
+      self.mark = mark
+      self.title = title
+      self.choice = choice
+      self.answeredMs = answeredMs
+      self.age = age
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case sessionId = "session_id"
+      case slug = "slug"
+      case name = "name"
+      case mark = "mark"
+      case title = "title"
+      case choice = "choice"
+      case answeredMs = "answered_ms"
+      case age = "age"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.sessionId = try c.decode(String.self, forKey: .sessionId)
+      self.slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
+      self.name = try c.decode(Text.self, forKey: .name)
+      self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
+      self.title = try c.decode(String.self, forKey: .title)
+      self.choice = try c.decode(Text.self, forKey: .choice)
+      self.answeredMs = try c.decode(UInt64.self, forKey: .answeredMs)
+      self.age = try c.decode(Text.self, forKey: .age)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(sessionId, forKey: .sessionId)
+      try c.encode(slug, forKey: .slug)
+      try c.encode(name, forKey: .name)
+      try c.encode(mark, forKey: .mark)
+      try c.encode(title, forKey: .title)
+      try c.encode(choice, forKey: .choice)
+      try c.encode(answeredMs, forKey: .answeredMs)
+      try c.encode(age, forKey: .age)
+    }
+  }
+
+  /// The head of a group page: its name and its ⋯ menu (its chats stand in the sidebar, not here again).
   public struct GroupHeadView: Codable, Hashable, Sendable {
-    /// The team's id; [`NO_TEAM`] for the chats on no team.
+    /// The team's id.
     public var teamId: String
     public var name: Text
-    /// Its picture: up to three of its chats' marks, the crowned one first (as `TeamStackView.faces`).
-    public var faces: [StackEdgeView]
-    /// The ⋯ menu, in order: "knowledge", "wakeups", "board" (the Scribble Board), then "rename". Empty for the chats
-    /// on no team: no ⋯ then.
+    /// The ⋯ menu, in order: "knowledge", "wakeups", "board" (the Scribble Board), then "rename" (none in a room
+    /// without teams).
     public var menu: [GroupMenuItem]
     /// What the ⋯ says to a screen reader: "Fernly: knowledge, wakeups, Scribble Board, rename".
     public var menuSays: Text
 
-    public init(teamId: String = "", name: Text = Text(), faces: [StackEdgeView] = [], menu: [GroupMenuItem] = [], menuSays: Text = Text()) {
+    public init(teamId: String = "", name: Text = Text(), menu: [GroupMenuItem] = [], menuSays: Text = Text()) {
       self.teamId = teamId
       self.name = name
-      self.faces = faces
       self.menu = menu
       self.menuSays = menuSays
     }
@@ -1631,7 +1816,6 @@ public enum CoreView {
     enum CodingKeys: String, CodingKey {
       case teamId = "team_id"
       case name = "name"
-      case faces = "faces"
       case menu = "menu"
       case menuSays = "menu_says"
     }
@@ -1640,7 +1824,6 @@ public enum CoreView {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.teamId = try c.decode(String.self, forKey: .teamId)
       self.name = try c.decode(Text.self, forKey: .name)
-      self.faces = try c.decodeIfPresent([StackEdgeView].self, forKey: .faces) ?? []
       self.menu = try c.decodeIfPresent([GroupMenuItem].self, forKey: .menu) ?? []
       self.menuSays = try c.decodeIfPresent(Text.self, forKey: .menuSays) ?? Text()
     }
@@ -1649,7 +1832,6 @@ public enum CoreView {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(teamId, forKey: .teamId)
       try c.encode(name, forKey: .name)
-      if !faces.isEmpty { try c.encode(faces, forKey: .faces) }
       if !menu.isEmpty { try c.encode(menu, forKey: .menu) }
       try c.encode(menuSays, forKey: .menuSays)
     }
@@ -1701,78 +1883,6 @@ public enum CoreView {
       try c.encodeIfPresent(count, forKey: .count)
       try c.encodeIfPresent(opens, forKey: .opens)
       try c.encode(apart, forKey: .apart)
-    }
-  }
-
-  /// A chip of a group page's filter row: "All", or one chat of the group.
-  public struct ChipView: Codable, Hashable, Sendable {
-    /// The chat's session key (`Focus.group_chat`); empty for "All" (no filter).
-    public var sessionId: String
-    /// The chat's short id, for its address (`/chat/<slug>`); empty for "All".
-    public var slug: String
-    /// "All", or the chat's name.
-    public var name: Text
-    /// What draws the chat (`SessionRowView.mark`); empty for "All".
-    public var mark: String
-    /// "All": the group's open cards, the calm grey count; 0 on a chat's chip (its dot says what matters).
-    public var count: UInt32
-    /// The chat needs the person (a question waits for him, or it is stopped): one quiet dot.
-    public var needs: Bool
-    /// The chip in force (one at a time; "All" when no chat is chosen).
-    public var selected: Bool
-    /// On the chosen chat's chip: "Open chat ›", its way into the chat.
-    public var openChat: Text?
-    /// What it says to a screen reader: "Fernly Website: waits for you", "All: 8 open cards".
-    public var says: Text
-
-    public init(sessionId: String = "", slug: String = "", name: Text = Text(), mark: String = "", count: UInt32 = 0, needs: Bool = false, selected: Bool = false, openChat: Text? = nil, says: Text = Text()) {
-      self.sessionId = sessionId
-      self.slug = slug
-      self.name = name
-      self.mark = mark
-      self.count = count
-      self.needs = needs
-      self.selected = selected
-      self.openChat = openChat
-      self.says = says
-    }
-
-    enum CodingKeys: String, CodingKey {
-      case sessionId = "session_id"
-      case slug = "slug"
-      case name = "name"
-      case mark = "mark"
-      case count = "count"
-      case needs = "needs"
-      case selected = "selected"
-      case openChat = "open_chat"
-      case says = "says"
-    }
-
-    public init(from decoder: any Decoder) throws {
-      let c = try decoder.container(keyedBy: CodingKeys.self)
-      self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId) ?? ""
-      self.slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
-      self.name = try c.decode(Text.self, forKey: .name)
-      self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
-      self.count = try c.decodeIfPresent(UInt32.self, forKey: .count) ?? 0
-      self.needs = try c.decodeIfPresent(Bool.self, forKey: .needs) ?? false
-      self.selected = try c.decodeIfPresent(Bool.self, forKey: .selected) ?? false
-      self.openChat = try c.decodeIfPresent(Text.self, forKey: .openChat)
-      self.says = try c.decode(Text.self, forKey: .says)
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-      var c = encoder.container(keyedBy: CodingKeys.self)
-      try c.encode(sessionId, forKey: .sessionId)
-      try c.encode(slug, forKey: .slug)
-      try c.encode(name, forKey: .name)
-      try c.encode(mark, forKey: .mark)
-      try c.encode(count, forKey: .count)
-      try c.encode(needs, forKey: .needs)
-      try c.encode(selected, forKey: .selected)
-      try c.encodeIfPresent(openChat, forKey: .openChat)
-      try c.encode(says, forKey: .says)
     }
   }
 

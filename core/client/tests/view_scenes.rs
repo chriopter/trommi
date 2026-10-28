@@ -168,8 +168,8 @@ fn empty_group_page() {
     let mut sim = world.sim();
     sim.send(start());
     assert_eq!(
-        sim.view.group.empty.as_ref().map(|t| t.en.as_str()),
-        Some("Questions land here.")
+        sim.view.group.empty.as_ref().map(|t| t.title.en.as_str()),
+        Some("Nothing waits for you in Personal.")
     );
     record("empty-group", &sim);
 }

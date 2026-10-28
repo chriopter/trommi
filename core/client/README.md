@@ -103,12 +103,16 @@ ordinary result, not an app decision in the shell.
 ### The group page
 
 The app is chats in groups (teams); there is no Desk and no page of every group. `ViewModel.group`
-(`src/views/group.rs`, `GroupView`) is the page of the group in view (`Focus.team`; `none` is the chats on no team
-while there are any, `SidebarView.no_team`): its head (name, faces, the ⋯ menu with Knowledge, Wakeups, Scribble
-Board and Rename), one chip per chat (`chips`: "All" first, the chats that need the person in front, `chips_shown`
-of them in the row, the rest behind `more`), and its open cards in one list, `questions` (decisions and requests)
-then `reads`, in the core's order; `stack` is both, in order, and a card's page opened from the page walks on in it.
-`Focus.group_chat` (a session key or short id) keeps only that chat's cards and gives its chip `open_chat`.
+(`src/views/group.rs`, `GroupView`) is the page of the team in view (`Focus.team`): its head (name and the ⋯ menu
+with Knowledge, Wakeups, Scribble Board and Rename; no faces, the sidebar lists the chats), a quiet `summary` ("4 wait
+for you · 3 to read"), and its open cards in one block per chat (`blocks`, `ChatBlockView`): a chat with a question that
+knocks or blocks first, then the chats with a question, then those with only something to read, each rank in the
+sidebar's order (a block keeps its place while the person answers), its head (face, name, `open`, `working`, `open_chat`) the way into the chat,
+under it its `questions` (decisions and requests), then its `reads`. There is no filter. `stack` is the blocks' rows in
+order, and a card's page opened from the page walks on in it. Nothing open: `empty` (`GroupEmptyView`) says so calmly,
+names who is at work, the first other team where a question waits (`elsewhere`) and the questions the person answered
+here last (`lately`). The chats on no team have no group page: they stand loose at the top of the sidebar
+(`SidebarView.root`, no head over them), their cards in their chat and in Blitz.
 `blitz` (as `SidebarView.global_blitz`) walks every group's open cards: a card's page with `Focus.walk_all` walks on
 through them. `Focus.rail_folded` tells the core the wide sidebar is a rail: its rows and stacks then carry no counts
 and no sign but `signal` "waiting" or "stopped", one quiet dot. Grey counts count cards, never messages.

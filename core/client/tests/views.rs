@@ -209,17 +209,23 @@ fn edit(
         1 => v.status = (r.below(2) == 0).then(|| Text::new("status", &r.word())),
         2 => v.sidebar = other.sidebar.clone(),
         3 => v.group = other.group.clone(),
-        4 if !v.group.questions.is_empty() => {
-            let at = r.below(v.group.questions.len());
+        4 if v
+            .group
+            .blocks
+            .first()
+            .is_some_and(|k| !k.questions.is_empty()) =>
+        {
+            let block = &mut v.group.blocks[0];
+            let at = r.below(block.questions.len());
             match r.below(3) {
                 0 => {
-                    v.group.questions.remove(at);
+                    block.questions.remove(at);
                 }
                 1 => {
-                    let to = r.below(v.group.questions.len());
-                    v.group.questions.swap(at, to);
+                    let to = r.below(block.questions.len());
+                    block.questions.swap(at, to);
                 }
-                _ => v.group.questions[at].title = r.word(),
+                _ => block.questions[at].title = r.word(),
             }
             v.group.stack = v.group.rows().iter().map(|x| x.id.clone()).collect();
         }

@@ -70,8 +70,8 @@ fn an_empty_room_shows_its_session_and_an_empty_group_page() {
         ("group", 0, 0)
     );
     assert_eq!(
-        sim.view.group.empty.as_ref().map(|t| t.en.as_str()),
-        Some("Questions land here.")
+        sim.view.group.empty.as_ref().map(|t| t.title.en.as_str()),
+        Some("Nothing waits for you in Personal.")
     );
     assert_eq!(
         sim.view.sidebar.sessions.len(),
@@ -132,7 +132,6 @@ fn a_decision_that_arrives_stands_on_the_desk_and_on_its_sessions_page() {
             chats_query: None,
             calm: false,
             walk_chat: None,
-            group_chat: None,
             rail_folded: false,
             walk_all: false,
         },
@@ -168,7 +167,6 @@ fn a_decision_that_arrives_stands_on_the_desk_and_on_its_sessions_page() {
             chats_query: None,
             calm: false,
             walk_chat: None,
-            group_chat: None,
             rail_folded: false,
             walk_all: false,
         },
@@ -201,7 +199,6 @@ fn a_decision_that_arrives_stands_on_the_desk_and_on_its_sessions_page() {
             chats_query: None,
             calm: false,
             walk_chat: None,
-            group_chat: None,
             rail_folded: false,
             walk_all: false,
         },
@@ -313,7 +310,6 @@ fn the_chat_list_dots_what_was_said_since_the_chat_was_last_in_view_and_keeps_it
             chats_query: None,
             calm: false,
             walk_chat: None,
-            group_chat: None,
             rail_folded: false,
             walk_all: false,
         },
@@ -351,7 +347,6 @@ fn the_chat_list_dots_what_was_said_since_the_chat_was_last_in_view_and_keeps_it
             chats_query: None,
             calm: false,
             walk_chat: None,
-            group_chat: None,
             rail_folded: false,
             walk_all: false,
         },
@@ -370,7 +365,6 @@ fn the_chat_list_dots_what_was_said_since_the_chat_was_last_in_view_and_keeps_it
             chats_query: None,
             calm: false,
             walk_chat: None,
-            group_chat: None,
             rail_folded: false,
             walk_all: false,
         },
@@ -388,7 +382,6 @@ fn the_chat_list_dots_what_was_said_since_the_chat_was_last_in_view_and_keeps_it
             chats_query: None,
             calm: false,
             walk_chat: None,
-            group_chat: None,
             rail_folded: false,
             walk_all: false,
         },
@@ -406,7 +399,6 @@ fn the_chat_list_dots_what_was_said_since_the_chat_was_last_in_view_and_keeps_it
             chats_query: None,
             calm: false,
             walk_chat: None,
-            group_chat: None,
             rail_folded: false,
             walk_all: false,
         },
@@ -427,7 +419,6 @@ fn the_chat_list_dots_what_was_said_since_the_chat_was_last_in_view_and_keeps_it
             chats_query: None,
             calm: false,
             walk_chat: None,
-            group_chat: None,
             rail_folded: false,
             walk_all: false,
         },

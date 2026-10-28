@@ -21,9 +21,6 @@ export interface Focus {
   /** The Scribble Board shown beside the screen (the group page's): `desk/<32 hex>`, or a team's id or "all" for that
    *  team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`. */
   board?: string
-  /** The chat chip chosen on the group page (its session key or short id): the page shows only that chat's cards
-   *  (`GroupView.chips`); none, or a chat that is not in the group: all of them. This window's: the shell keeps it. */
-  group_chat?: string
   /** The wide sidebar is folded to a rail (this device's, the shell keeps it): its rows carry no counts and no
    *  signs but one quiet dot on a chat that needs the person (`SessionRowView.signal`). */
   rail_folded: boolean
@@ -186,9 +183,6 @@ export interface SidebarView {
   /** Every team as a stack, in the menu's order (the wide sidebar): folded, its head over a fan of its sessions'
    *  card edges; open, its chats under it. The phone draws `sessions` instead. */
   stacks?: TeamStackView[]
-  /** The chats on no team as a group of their own ("No team"), while there are any: its page (`Focus.team`
-   *  [`NO_TEAM`]) shows their open cards; `selected` while it is the group in view. Drawn as the head over `root`. */
-  no_team?: TeamTab
   /** The sidebar is folded to a rail (`Focus.rail_folded`): its rows and stacks carry no counts and no signs but
    *  one quiet dot (`SessionRowView.signal` "waiting" or "stopped"). */
   folded: boolean
@@ -200,8 +194,9 @@ export interface SidebarView {
   /** The bolt at the phone's top right: Blitz over every team's open cards, whatever team is in view. None while
    *  nothing waits on any team. */
   global_blitz?: GlobalBlitzView
-  /** The chats the person put on no team, one row each, in drawing order: at the top of the list, alongside the
-   *  teams (the phone's folders, the wide sidebar's stacks), never inside one. Their `team_id` is empty. */
+  /** The chats the person put on no team, one row each, in drawing order: loose at the top of the list, with no head
+   *  over them, alongside the teams (the phone's folders, the wide sidebar's stacks), never inside one. Their
+   *  `team_id` is empty. They have no group page: their cards stand in the chat and in Blitz. */
   root?: SessionRowView[]
   /** Where an agent invited now can stand ("Copy Invite Link"): "No team", then the teams in the menu's order; the
    *  team in view is `chosen`; in a room without teams only "No team", chosen. */
@@ -417,40 +412,30 @@ export interface FixView {
   code: string
 }
 
-/** The page of the group in view (a team, or the chats on no team, [`NO_TEAM`]): its head, one chip per chat to
- *  filter by, and its open cards in one list: the questions first ("Waits for you"), then what is only to read
- *  ("To read"). There is no page of every group: Blitz (`blitz`) is the only view of everything. */
+/** The page of the group in view (a team): its head, and its open cards in one block per chat, the chat with the
+ *  urgent question first. A block's head is the way into its chat; there is no filter (the owner, 28 October
+ *  2026: "Nach Chat gruppiert"). There is no page of every group: Blitz (`blitz`) is the only view of everything. */
 export interface GroupView {
-  /** Card and request ids in the page's order (the chip's filter applied): `questions`, then `reads`. A card's page
-   *  opened from here walks on in this order. */
+  /** Card and request ids in the page's order: block after block, in each its questions, then what is only to read.
+   *  A card's page opened from here walks on in this order. */
   stack: string[]
-  /** What stands in the list's place when nothing is open at all ("Questions land here."). */
-  empty?: Text
+  /** What stands in the list's place when nothing is open at all. */
+  empty?: GroupEmptyView
   /** "invite" (no session stands here yet: invite the first agent), "reading" (none yet, and the room is still
    *  being read), "group". */
   mode: string
   /** How far the reading of the room's past is ("Reading your history: 12,400 of 27,000"), while it is read. */
   reading?: Text
-  /** The group's name, its faces and its ⋯ menu; none in a room without teams and chats (a new account). */
+  /** The group's name and its ⋯ menu; none in a room without teams and chats (a new account). */
   head?: GroupHeadView
-  /** The team's goals under the head; none for the chats on no team. */
+  /** The team's goals under the head. */
   goals?: GoalsView
-  /** The filter row: "All" first, then one chip per chat of the group, the ones that need the person first. Only
-   *  one is `selected`. Empty while the group has no chat. */
-  chips?: ChipView[]
-  /** How many of `chips` stand in the row ("All" included); the rest wait behind `more`. */
-  chips_shown: number
-  /** "+4": the chips behind it, unfolded by a tap (the shell's); none when every chip stands in the row. */
-  more?: Text
-  /** The questions' heading, "Waits for you", with how many as `n` (drawn beside it); none while there are none. */
-  questions_says?: Text
-  /** The questions and approval requests, in the walk's order. */
-  questions?: DeskRowView[]
-  /** The heading of what is only to read, "To read", with how many as `n`; none while there is nothing. */
-  reads_says?: Text
-  /** What is only to read (infos, a card not read here yet, one of a newer Trommi), drawn smaller, below. */
-  reads?: DeskRowView[]
-  /** The open questions of the group (no infos, the chip's filter not applied): the number in the window's title. */
+  /** One quiet line under the head over the blocks: "4 wait for you · 3 to read"; none while nothing is open. */
+  summary?: Text
+  /** The open cards, one block per chat that has some: a chat whose question knocks or blocks first, then the chats
+   *  with a question, then those with only something to read, each rank in the sidebar's order. */
+  blocks?: ChatBlockView[]
+  /** The open questions of the group (no infos): the number in the window's title. */
   waiting: number
   /** Blitz over every group's open cards ("Blitz: 14 open cards", "all groups"); none while nothing is open
    *  anywhere. */
@@ -462,15 +447,80 @@ export interface GroupView {
   slip?: SlipView[]
 }
 
-/** The head of a group page: its name, up to three of its chats' faces, and its ⋯ menu. */
+/** The open cards of one chat on the group page: its head (the chat's face and name, how many of its questions wait,
+ *  whether it is at work, "Open chat ›"), which is the link into the chat, then its cards. */
+export interface ChatBlockView {
+  /** The chat's session key (`Screen::Session`). */
+  session_id: string
+  /** The chat's short id, for its address (`/chat/<slug>`); empty when it has none (the key serves then). */
+  slug: string
+  name: Text
+  /** What draws the chat (`SessionRowView.mark`). */
+  mark: string
+  /** "2 open": its questions and requests that wait; none while only something to read is open. */
+  open?: Text
+  /** "working": the chat is at work now. */
+  working?: Text
+  /** "Open chat ›" at the head's end. */
+  open_chat: Text
+  /** What the head says to a screen reader: "socom: 2 open. Open the chat". */
+  says: Text
+  /** Its questions and approval requests, in the walk's order. */
+  questions?: DeskRowView[]
+  /** What is only to read (infos, a card not read here yet, one of a newer Trommi), drawn smaller, below them. */
+  reads?: DeskRowView[]
+}
+
+/** The group page when nothing is open: a calm word, who is at work, where else something waits, and what the person
+ *  answered here lately. */
+export interface GroupEmptyView {
+  /** "Nothing waits for you in Personal." (while the room is still read: "Catching up: …"). */
+  title: Text
+  /** "trommi and release are at work. What they ask lands here." */
+  line?: Text
+  /** Another group where a question waits: "1 question waits in Valiido"; none when nothing waits anywhere else. */
+  elsewhere?: ElsewhereView
+  /** The heading over `lately`: "You answered lately"; none while it is empty. */
+  lately_says?: Text
+  /** The questions of this group the person answered last, the newest first (up to three). */
+  lately?: AnsweredView[]
+}
+
+/** Another group where questions wait (`GroupEmptyView.elsewhere`): pressed, that group comes into view. */
+export interface ElsewhereView {
+  /** The team's id (`Focus.team`). */
+  team_id: string
+  /** The team's picture: its first chat's mark; empty when it has none. */
+  mark: string
+  /** "1 question waits in Valiido", the team's name as `name`. */
+  says: Text
+}
+
+/** A question the person answered (`GroupEmptyView.lately`): its chat, its title, what he chose, how long ago. */
+export interface AnsweredView {
+  /** The card (`Screen::Card`). */
+  id: string
+  /** Its chat: its session key, short id, name and mark. */
+  session_id: string
+  slug: string
+  name: Text
+  mark: string
+  title: string
+  /** What he chose: the options' labels ("Ship today"), "I don’t give a duck". */
+  choice: Text
+  /** When he answered. */
+  answered_ms: number
+  /** How long ago, short ("2h"). */
+  age: Text
+}
+
+/** The head of a group page: its name and its ⋯ menu (its chats stand in the sidebar, not here again). */
 export interface GroupHeadView {
-  /** The team's id; [`NO_TEAM`] for the chats on no team. */
+  /** The team's id. */
   team_id: string
   name: Text
-  /** Its picture: up to three of its chats' marks, the crowned one first (as `TeamStackView.faces`). */
-  faces?: StackEdgeView[]
-  /** The ⋯ menu, in order: "knowledge", "wakeups", "board" (the Scribble Board), then "rename". Empty for the chats
-   *  on no team: no ⋯ then. */
+  /** The ⋯ menu, in order: "knowledge", "wakeups", "board" (the Scribble Board), then "rename" (none in a room
+   *  without teams). */
   menu?: GroupMenuItem[]
   /** What the ⋯ says to a screen reader: "Fernly: knowledge, wakeups, Scribble Board, rename". */
   menu_says: Text
@@ -489,28 +539,6 @@ export interface GroupMenuItem {
   opens?: Screen
   /** Below a line of its own (the last group of entries: "rename"). */
   apart: boolean
-}
-
-/** A chip of a group page's filter row: "All", or one chat of the group. */
-export interface ChipView {
-  /** The chat's session key (`Focus.group_chat`); empty for "All" (no filter). */
-  session_id: string
-  /** The chat's short id, for its address (`/chat/<slug>`); empty for "All". */
-  slug: string
-  /** "All", or the chat's name. */
-  name: Text
-  /** What draws the chat (`SessionRowView.mark`); empty for "All". */
-  mark: string
-  /** "All": the group's open cards, the calm grey count; 0 on a chat's chip (its dot says what matters). */
-  count: number
-  /** The chat needs the person (a question waits for him, or it is stopped): one quiet dot. */
-  needs: boolean
-  /** The chip in force (one at a time; "All" when no chat is chosen). */
-  selected: boolean
-  /** On the chosen chat's chip: "Open chat ›", its way into the chat. */
-  open_chat?: Text
-  /** What it says to a screen reader: "Fernly Website: waits for you", "All: 8 open cards". */
-  says: Text
 }
 
 /** The duck for all: the cards it clears (`Action::Batch` with way "sweep") and its words (the web's `duckAll`). */

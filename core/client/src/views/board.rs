@@ -47,8 +47,6 @@ pub struct Lens {
     pub walk_chat: Option<String>,
     /// That card's page is a step of Blitz over every group (`Focus.walk_all`).
     pub walk_all: bool,
-    /// The chat chip chosen on the group page (`Focus.group_chat`): its session key or short id.
-    pub group_chat: Option<String>,
     /// The wide sidebar is folded to a rail (`Focus.rail_folded`).
     pub rail_folded: bool,
     /// The page Off your mind is in view, with the search's words: its unit is made.
@@ -167,11 +165,10 @@ pub struct Agent {
     pub team: Option<String>,
     /// The crowned session of its team (one per team, never one for all; never one on no team).
     pub crowned: bool,
-    /// It stands on the group in view (archived or not): the team in view's, or, while the chats on no team are the
-    /// group in view (`Board::no_team`), one of them.
+    /// It stands on the group in view (archived or not): the team in view's (in a room without teams, every one).
     pub on_team: bool,
     /// On no team that is there (`desk` null, none set, a team that is gone), in a room with teams: it stands at the
-    /// top of the list, alongside the teams, on no team's page but on the group "No team" and in Blitz, with no
+    /// top of the list, alongside the teams, on no group page (its cards stand in its chat and in Blitz), with no
     /// team's goals or knowledge.
     pub root: bool,
     /// Its device says platform "codex".
@@ -209,11 +206,8 @@ pub struct Board<'a> {
     pub by_id: HashMap<String, usize>,
     /// The teams in the menu's order; empty in a room without teams.
     pub teams: Vec<DeskFacts>,
-    /// The team in view: an id of `teams`, or none in a room without teams. While the chats on no team are the group
-    /// in view (`no_team`), the first team: what is a team's (its board, its crown) stays that team's.
+    /// The team in view: an id of `teams`, or none in a room without teams.
     pub team: Option<String>,
-    /// The group in view is the chats on no team (`Focus.team` [`super::NO_TEAM`], while there are any).
-    pub no_team: bool,
     /// The open questions of the whole board, in the stack's order, the approval requests last.
     pub all_fresh: Vec<Fresh>,
     /// Every open card of the whole board, infos too, and every open approval request: what the group pages list and
@@ -278,10 +272,6 @@ impl<'a> Board<'a> {
             _ => first.id.clone(),
         });
         let (rows, legacy_rows) = session_list_and_helpers(model, lens.reading);
-        // (the chats on no team as the group in view: only while there are any)
-        let no_team = !teams.is_empty()
-            && lens.team.as_deref() == Some(super::NO_TEAM)
-            && rows.iter().any(|r| !r.archived && !has(&r.team));
         let agents: Vec<Agent> = rows
             .into_iter()
             .map(|row| {
@@ -315,7 +305,7 @@ impl<'a> Board<'a> {
                 };
                 let session = model.sessions.get(&row.key);
                 Agent {
-                    on_team: teams.is_empty() || if no_team { root } else { !root && own == team },
+                    on_team: teams.is_empty() || (!root && own == team),
                     root,
                     codex: row
                         .agent_device_id
@@ -425,7 +415,6 @@ impl<'a> Board<'a> {
             by_id,
             teams,
             team,
-            no_team,
             all_fresh,
             all_cards,
             unheard: HashMap::new(),

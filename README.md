@@ -391,9 +391,9 @@ sequenceDiagram
   from before this rule may, and a chat whose placement has not reached this device yet), and for a chat whose team
   was deleted. Every agent invite and approved computer now writes its chat's team, or null. A chat on no team gets no
   team's goals or knowledge: your devices take the copies it held out of its session, and refuse its agent's writes
-  (`no_team`), until a team that is there is named for it. While there are such chats they are a group of their own,
-  "No team" (`Focus.team` `none`): its page lists their open cards, and the bolt walks them with every group's; they are
-  on no team's count. What its agent read while it was on a team it may still know, as when a chat moves from one
+  (`no_team`), until a team that is there is named for it. Such chats stand loose at the top of the list, with no
+  head over them, and have no group page: their open cards stand in the chat (its row shows that something waits), and
+  the bolt walks them with every group's; they are on no team's count. What its agent read while it was on a team it may still know, as when a chat moves from one
   team to another. Chats of one Hermes still share their Trommi tools, as above: a Hermes chat on no team can use the
   tools of that Hermes's chats on a team. One rule decides a chat's team for every part of the app
   (`sessions::team_of`).

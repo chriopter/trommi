@@ -1564,7 +1564,6 @@ impl App {
                         }
                     }
                     self.lens.team = focus.team;
-                    self.lens.group_chat = focus.group_chat;
                     self.lens.rail_folded = focus.rail_folded;
                     self.lens.walk_all = focus.walk_all;
                     self.lens.calm = focus.calm;

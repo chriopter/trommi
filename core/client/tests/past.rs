@@ -22,7 +22,6 @@ fn focus(screen: Screen) -> Event {
             chats_query: None,
             calm: false,
             walk_chat: None,
-            group_chat: None,
             rail_folded: false,
             walk_all: false,
         },

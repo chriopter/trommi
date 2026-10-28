@@ -324,7 +324,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
                 name: team_name(name),
                 waiting,
                 cards: cards_on(id),
-                selected: *id == in_view && !b.no_team,
+                selected: *id == in_view,
                 knocks,
             }
         })
@@ -334,31 +334,13 @@ pub fn sidebar(b: &Board) -> SidebarView {
     // other teams stands in the menu, team by team.
     let on_page = || b.all_fresh.iter().filter(|f| b.on_page(f.agent));
     let badge = on_page().count() as u32;
-    // (the chats on no team as a group of their own, while there are any)
-    let root_here = b.agents.iter().any(|a| a.root && !a.row.archived);
-    let no_team = root_here.then(|| {
-        let root_of = |agent: Option<usize>| agent.is_some_and(|i| b.agents[i].root);
-        let mine = || b.all_fresh.iter().filter(|f| root_of(f.agent));
-        TeamTab {
-            id: super::NO_TEAM.into(),
-            name: say("place.none", "No team", &[]),
-            waiting: mine().count() as u32,
-            cards: b.all_cards.iter().filter(|f| root_of(f.agent)).count() as u32,
-            selected: b.no_team,
-            knocks: mine().any(|f| f.knocks),
-        }
-    });
-    let place = if b.no_team {
-        say("place.none", "No team", &[])
-    } else {
-        team_name(
-            teams
-                .iter()
-                .find(|(id, _)| *id == in_view)
-                .map(|(_, n)| n.as_str())
-                .unwrap_or(""),
-        )
-    };
+    let place = team_name(
+        teams
+            .iter()
+            .find(|(id, _)| *id == in_view)
+            .map(|(_, n)| n.as_str())
+            .unwrap_or(""),
+    );
 
     // ---- the rows, in drawing order ----
     let asked = asked_last(b);
@@ -368,7 +350,7 @@ pub fn sidebar(b: &Board) -> SidebarView {
     let stacks: Vec<TeamStackView> = tabs
         .iter()
         .map(|t| {
-            let sessions = if t.id == in_view && !b.no_team {
+            let sessions = if t.id == in_view {
                 rows.clone()
             } else {
                 // (in a room without teams there is one, and it is in view)
@@ -507,7 +489,6 @@ pub fn sidebar(b: &Board) -> SidebarView {
         found_none,
         global_blitz,
         stacks,
-        no_team,
         folded: b.lens.rail_folded,
         teams: tabs,
         sessions: rows,
@@ -547,11 +528,6 @@ fn quiet(view: &mut SidebarView) {
         s.waiting = 0;
         s.knocks = false;
         s.sessions.iter_mut().for_each(row);
-    }
-    if let Some(t) = view.no_team.as_mut() {
-        t.cards = 0;
-        t.waiting = 0;
-        t.knocks = false;
     }
 }
 
@@ -1324,7 +1300,6 @@ mod tests {
             (1, 1, 0),
             "a group's page counts that group alone"
         );
-        assert!(v.no_team.is_none(), "no chat on no team: no such group");
         lens.team = Some("lab".into());
         let v = sidebar(&Board::new(&m, &lens, NOW));
         assert_eq!(marks(&v), [false, true]);
@@ -1437,14 +1412,9 @@ mod tests {
             );
             assert!(!slugs(&v).contains(&"c-root".to_string()));
             assert_eq!(
-                (
-                    v.no_team
-                        .as_ref()
-                        .map(|t| (t.id.as_str(), t.waiting, t.selected)),
-                    v.badge
-                ),
-                (Some(("none", 1, false)), 0),
-                "the group No team counts it, the team's page does not"
+                (v.root[0].open, v.badge),
+                (1, 0),
+                "its own row counts it, no team's page does: there is no group No team"
             );
             assert_eq!(v.global_blitz.as_ref().map(|g| g.card.as_str()), Some("q1"));
             let places: Vec<(Option<&str>, bool)> = v
@@ -2087,7 +2057,7 @@ mod tests {
                 tabs,
                 (v.badge, v.waiting, v.knocking),
                 d.waiting,
-                d.empty.map(|t| t.en),
+                d.empty.map(|t| t.title.en),
             )
         };
         let main = Lens {
@@ -2105,7 +2075,7 @@ mod tests {
                 tabs.clone(),
                 (0, 0, 0),
                 0,
-                Some("Questions land here.".into())
+                Some("Nothing waits for you in Work.".into())
             )
         );
         assert_eq!(counts(&r, lab), (tabs, (1, 1, 0), 1, None));
