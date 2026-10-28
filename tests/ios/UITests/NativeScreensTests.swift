@@ -112,7 +112,8 @@ final class NativeScreensTests: XCTestCase {
     capture("real-signin-logged-out")
   }
   func testDeskOpensARealCard() {
-    launch("desk")
+    // (the iPhone's first page is its list of chats; the team's screen opens its group page)
+    launch("desk--fernly-team")
     let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-")).firstMatch
     XCTAssertTrue(row.waitForExistence(timeout: 15))
     XCTAssertFalse(row.label.isEmpty)
@@ -229,7 +230,8 @@ final class NativeScreensTests: XCTestCase {
   // ---- what came back after the move to the app core: the duck for all, Blitz, the Chat list, the session's
   // switch and menu, Settings' pages, the Artifacts filter, the note that saves itself ----
   func testDeskDuckForAllAndBlitz() {
-    launch("desk")
+    // (the iPhone's first page is its list of chats; the team's screen opens its group page)
+    launch("desk--fernly-team")
     let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-"))
     XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 15))
     let plus = app.buttons["side-plus"]
@@ -435,7 +437,8 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(app.buttons["wakeup-move"].firstMatch.waitForExistence(timeout: 5))
   }
   func testTheNoteSavesItself() {
-    launch("desk")
+    // (the iPhone's first page is its list of chats; the team's screen opens its group page)
+    launch("desk--fernly-team")
     XCTAssertTrue(app.buttons["side-plus"].waitForExistence(timeout: 15))
     app.buttons["side-plus"].tap()
     app.buttons["note-open"].tap()
