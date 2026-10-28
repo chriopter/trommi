@@ -14,9 +14,9 @@ notes, pick the two to four things people will notice most. A day may have at mo
 
 ## 28 October 2026
 
-A group's page stands chat by chat, on the iPhone as calm as a messenger's list, and chats on no team stand loose at
-the top. One Scribble Board for everything, its button next to Search, and an option's picture on a card is its own
-again. Answers go straight on to the next card, and helpers say what they do.
+A group's page stands chat by chat, on the iPhone as calm as a messenger's list. On the iPhone a card's options are
+pages to swipe, each with its own picture and button, and an explanation you asked for scrolls into view. One Scribble
+Board for everything, its button next to Search.
 
 ## 27 October 2026
 
