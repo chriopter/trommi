@@ -4,8 +4,8 @@ The website [trommi.com](https://trommi.com): one page, the imprint, the privacy
 they are from `public/` with `worker.js` in front (http to https, www.trommi.com to trommi.com; `/beta` to the iPhone
 app's public TestFlight link, the server's setting `TESTFLIGHT_URL`, or to the install steps on GitHub while that is
 empty). Nothing is built (the pictures of the apps in `public/images/` are made once by `dev/showcase.mjs`
-from real screenshots of the demo room: the web app's group page on a laptop and on a phone, see its head; the
-iPhone and Mac pictures come from those apps); Node 22 or newer, no packages. Font licences: `THIRD-PARTY.md`.
+from real screenshots of the demo room: the web app's group page and the iPhone app in the iOS simulator, see its
+head; the Mac's picture comes from the Mac app); Node 22 or newer, no packages. Font licences: `THIRD-PARTY.md`.
 
 ```
 node site/dev/serve.mjs              # http://127.0.0.1:8910, with the headers of public/_headers

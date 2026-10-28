@@ -18,7 +18,13 @@
 //                     TROMMI_THEME, status bar at 9:41)
 //   phone-scribble    the README's gallery only: the Scribble Board (TROMMI_SCREEN=scribble-board); without it the
 //                     gallery is left as it is
-// The iPhone and Mac pictures of the Apps section (app-iphone, app-mac) come from those apps and are not made here.
+//   iphone-home-light the Apps section's iPhone: the iPhone app's first page in the simulator (TROMMI_SCREEN=chats:
+//                     the chats and the teams, grouped), its top cut to 600x880; without it app-iphone stays
+// The simulator's pictures: shots.sh's way (an unsigned build for the simulator, SIMCTL_CHILD_TROMMI_SCREEN,
+// TROMMI_THEME and TROMMI_STORE_SHOTS=1, `simctl status_bar` at 9:41, `simctl io screenshot`), light and dark; the
+// phone-* names then come from there: phone-group chats, phone-card card--two-pictures, phone-chat
+// chat--payments-service, phone-scribble scribble-board. The Mac's picture (app-mac) needs a logged-in desktop and
+// is not made here.
 // Every file it writes must stay under 300 KB; a larger one is reported and the run exits 1.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -128,6 +134,12 @@ for (const [name, query, width, height] of jobs) {
 if (has('web-group-light')) {
   const f = path.join(out, 'app-web.webp')
   execFileSync('magick', [path.resolve(raw, 'web-group-light.png'), '-resize', '1440x900', '-strip', '-quality', '80', '-define', 'webp:method=6', f])
+  report(f)
+}
+// the Apps section's iPhone: the top of the first page at half its size, the status bar with it
+if (has('iphone-home-light')) {
+  const f = path.join(out, 'app-iphone.webp')
+  execFileSync('magick', [path.resolve(raw, 'iphone-home-light.png'), '-resize', '600x', '-crop', '600x880+0+0', '+repage', '-strip', '-quality', '80', '-define', 'webp:method=6', f])
   report(f)
 }
 fs.rmSync(tmp, { recursive: true, force: true })

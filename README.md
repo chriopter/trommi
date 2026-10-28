@@ -15,7 +15,7 @@ One Rust app core runs the web, iPhone, Mac, Linux and connector; the platform s
   chat; Blitz walks every group's open cards; an agent's helpers show inside its session
 - 🔒 **End-to-end encrypted**: the server never holds a key or reads content
 
-<img src=".github/readme/gallery-light.png" width="880" alt="The iPhone app: the Desk, a decision card with pictures, a chat with an agent, the Scribble Board">
+<img src=".github/readme/gallery-light.png" width="880" alt="The iPhone app: the chats grouped by team, a decision card with pictures, a chat with an agent, the Scribble Board">
 
 <sub>Desk · Card · Chat · Scribble Board, from the made-up demo room (`demo/`).</sub>
 
