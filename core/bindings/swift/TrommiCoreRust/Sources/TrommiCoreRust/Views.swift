@@ -4721,6 +4721,36 @@ public enum CoreView {
     }
   }
 
+  /// The answer to his What?? on a card's page (`CardView::explained`).
+  public struct ExplainedView: Codable, Hashable, Sendable {
+    /// The id of the talk row with the agent's words.
+    public var id: String
+    /// "The explanation is below ↓": a tap goes there.
+    public var says: Text
+
+    public init(id: String = "", says: Text = Text()) {
+      self.id = id
+      self.says = says
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case says = "says"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.says = try c.decode(Text.self, forKey: .says)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(says, forKey: .says)
+    }
+  }
+
   /// One card's page (a question, something to read, a request for approval): who it comes from, its words, its
   /// answers or what was said, its history, and the comments under it. Made for the card in view (`Lens::card`).
   public struct CardView: Codable, Hashable, Sendable {
@@ -4790,6 +4820,9 @@ public enum CoreView {
     public var lead: [LeadView]
     /// The comments and what happened to the card, oldest first: the window's rows (`earlier`).
     public var talk: [TalkRow]
+    /// The agent's words that answer his newest What?? in `talk`: the page scrolls to them when they come and shows
+    /// a line pointing down to them; none while nothing answered it, or a new version came after it.
+    public var explained: ExplainedView?
     /// The hub holds older comments than `talk` has.
     public var hasMore: Bool
     /// The cards it replaces.
@@ -4814,7 +4847,7 @@ public enum CoreView {
     /// session works on it (the strip above the title, or the card back with the agent for rework).
     public var paper: String
 
-    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil, words: CardWordsView = CardWordsView(), menu: [CardMenuItem] = [], paper: String = "") {
+    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], explained: ExplainedView? = nil, hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil, words: CardWordsView = CardWordsView(), menu: [CardMenuItem] = [], paper: String = "") {
       self.id = id
       self.sessionId = sessionId
       self.kind = kind
@@ -4850,6 +4883,7 @@ public enum CoreView {
       self.starSays = starSays
       self.lead = lead
       self.talk = talk
+      self.explained = explained
       self.hasMore = hasMore
       self.mergedFrom = mergedFrom
       self.mergedInto = mergedInto
@@ -4897,6 +4931,7 @@ public enum CoreView {
       case starSays = "star_says"
       case lead = "lead"
       case talk = "talk"
+      case explained = "explained"
       case hasMore = "has_more"
       case mergedFrom = "merged_from"
       case mergedInto = "merged_into"
@@ -4945,6 +4980,7 @@ public enum CoreView {
       self.starSays = try c.decodeIfPresent(Text.self, forKey: .starSays) ?? Text()
       self.lead = try c.decodeIfPresent([LeadView].self, forKey: .lead) ?? []
       self.talk = try c.decodeIfPresent([TalkRow].self, forKey: .talk) ?? []
+      self.explained = try c.decodeIfPresent(ExplainedView.self, forKey: .explained)
       self.hasMore = try c.decodeIfPresent(Bool.self, forKey: .hasMore) ?? false
       self.mergedFrom = try c.decodeIfPresent([CardRefView].self, forKey: .mergedFrom) ?? []
       self.mergedInto = try c.decodeIfPresent(CardRefView.self, forKey: .mergedInto)
@@ -4993,6 +5029,7 @@ public enum CoreView {
       try c.encode(starSays, forKey: .starSays)
       if !lead.isEmpty { try c.encode(lead, forKey: .lead) }
       if !talk.isEmpty { try c.encode(talk, forKey: .talk) }
+      try c.encodeIfPresent(explained, forKey: .explained)
       try c.encode(hasMore, forKey: .hasMore)
       if !mergedFrom.isEmpty { try c.encode(mergedFrom, forKey: .mergedFrom) }
       try c.encodeIfPresent(mergedInto, forKey: .mergedInto)

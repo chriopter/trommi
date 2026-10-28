@@ -145,6 +145,7 @@ a.agent-badge:hover, a.agent-badge:focus-visible { scale: 1.08; }
 .tc-text .rich > :first-child { margin-top: 0; }
 .tc-text .rich > :last-child { margin-bottom: 0; }
 .tc-more-text { justify-self: start; color: var(--accent); font: 600 var(--t-xs)/1 var(--font); text-decoration: none; }
+.tc-explained-link { justify-self: start; margin: 8px 2px 0; padding: 0; border: 0; background: none; color: var(--accent); font: 600 var(--t-xs)/1.4 var(--font); cursor: pointer; }
 .tc-more-text:hover { text-decoration: underline; }
 
 /* the picture: whole, at the column's width; a very tall one shows its top (the gallery has all of it) */

@@ -377,7 +377,7 @@ ${answering ? more('is-shred', 'bin', WORDS.shred, WORDS.shred, 'shred') : ''}
   // What stands unsent (the draft: the field's words, the ticks, the notes on options) is given to the controller,
   // which puts it into the fields once: the fields' markup never changes while he types.
   const kept = drafting ? { note: card.draft ?? '', keys: card.multiple ? (card.options ?? []).filter(o => o.chosen).map(o => o.key) : [], notes: Object.fromEntries((card.options ?? []).filter(o => o.note).map(o => [o.key, o.note])) } : { note: card.draft ?? '' }
-  return html`<main id="cardpage" class="tc-page${large ? ' is-full' : focus ? ' is-focus' : ''}" aria-label="Question ${card.number}" data-id="${card.id}"${focus ? raw(' data-focus') : ''} data-controller="card" data-card-draft-value="${drafting ? act(card, 'draft') : ''}" data-card-kept-value="${JSON.stringify(kept)}" data-card-pictures-value="${JSON.stringify(picturesOf(media.pictures, vm, here))}" data-action="pointerdown->card#besideStart click->card#beside turbo:frame-load->card#framed circles:drawn->card#link turbo:submit-start->card#sent turbo:submit-end->card#done dragover->card#over drop->card#drop">
+  return html`<main id="cardpage" class="tc-page${large ? ' is-full' : focus ? ' is-focus' : ''}" aria-label="Question ${card.number}" data-id="${card.id}" data-explained="${card.explained?.id ?? ''}"${focus ? raw(' data-focus') : ''} data-controller="card" data-card-draft-value="${drafting ? act(card, 'draft') : ''}" data-card-kept-value="${JSON.stringify(kept)}" data-card-pictures-value="${JSON.stringify(picturesOf(media.pictures, vm, here))}" data-action="pointerdown->card#besideStart click->card#beside turbo:frame-load->card#framed circles:drawn->card#link turbo:submit-start->card#sent turbo:submit-end->card#done dragover->card#over drop->card#drop">
 <div class="tc-pad"${tone != null ? html` style="--hue:${tone}"` : ''}>${bar}<div class="tc-frame">
 ${large ? rails() : ''}
 <article class="tc-card" id="card-${card.id}" style="--hue:${tone ?? 162}" data-paper="${card.paper === 'pale' ? 'pale' : 'full'}" data-id="${card.id}" data-kind="${card.kind}" data-urgency="${URGENCY[card.urgency] ?? 'normal'}" aria-labelledby="card-title-${card.id}"${shown ? raw(' data-pictures') : ''}${card.state === 'open' && mode !== 'revising' ? '' : raw(' data-settled')}>
@@ -387,6 +387,7 @@ ${old ? '' : optionsSaid(card)}
 </div>
 <div class="tc-right">
 ${cardAnswer(card, { old, pic: shownPic, self })}
+${card.explained && !old ? html`<button type="button" class="tc-explained-link" data-action="card#toExplained">${card.explained.says.en}</button>` : ''}
 </div>
 <div class="tc-ink" style="display:contents"></div>
 </article>
@@ -1172,7 +1173,9 @@ controller('card', class extends Controller {
     this.element.addEventListener('load', e => { if (e.target.matches?.('.tc-figure img')) this.shape(e.target) }, true)
     // (the page is drawn again from the core's view model and morphed in place: a part that was drawn anew, as the
     //  card's left column, takes the notes on it along)
-    this.morphed = () => { if (this.marksUi && !this.marksUi.scroll.isConnected && this.hasMarksTarget) { const list = this.marksUi.get(); this.marksUi = null; this.mountMarks().then(() => this.marksUi?.set(list)) } this.link() }
+    // (the agent's answer to his What?? comes in: the page goes down to it)
+    this.explained = this.element.dataset.explained ?? ''
+    this.morphed = () => { const now = this.element.dataset.explained ?? ''; if (now && now !== this.explained) this.toExplained(); this.explained = now; if (this.marksUi && !this.marksUi.scroll.isConnected && this.hasMarksTarget) { const list = this.marksUi.get(); this.marksUi = null; this.mountMarks().then(() => this.marksUi?.set(list)) } this.link() }
     document.addEventListener('trommi:morph', this.morphed)
     this.link()
   }
@@ -1417,6 +1420,7 @@ controller('card', class extends Controller {
     this.element.classList.toggle('card-gone', r.bottom < box.top + 90)
     this.element.classList.toggle('foot-passed', r.bottom < box.bottom - 96)
   }
+  toExplained() { document.getElementById(`msg-${this.element.dataset.explained}`)?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }) }
   toAnswers() { this.element.querySelector('.tc-card')?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }) }
   // ---- focus: the card's page alone in the window (card.css .is-focus), with the talk and the field ----
   // Switched in place, so what is written, drawn or scrolled stays; the address says it (?focus=1), so a reload and

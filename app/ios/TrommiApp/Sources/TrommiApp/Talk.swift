@@ -307,6 +307,7 @@ struct CardScreen: View {
   /** The quiet fill of a row and a side way. */
   private var calmFill: Color { Ink.fg.opacity(0.055) }
   var body: some View {
+    ScrollViewReader { reader in
     ScrollView {
       VStack(alignment: .leading, spacing: 22) {
         lead
@@ -323,6 +324,13 @@ struct CardScreen: View {
         answers
           .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in if card.status == "open" { answersHeight = h } }
           .frame(minHeight: answeredHere ? answersHeight : nil, alignment: .top)
+        // (his What?? answered in words further down: a line that goes there)
+        if let e = card.explained {
+          Button { showTalk = true; withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo(e.id, anchor: .top) } } label: {
+            Text(e.says.en).font(.subheadline.weight(.semibold)).foregroundStyle(Ink.accent)
+          }
+          .buttonStyle(.plain)
+        }
         if card.answer.mode == "options" && !card.sections.isEmpty { sections }
         // (a plain receipt, "Your answer is on its way", stands quietly in the answer's line; a box only for what
         //  needs a look: the session cut off, asleep, gone)
@@ -331,6 +339,13 @@ struct CardScreen: View {
       }
       .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 24)
       .frame(maxWidth: 760).frame(maxWidth: .infinity)
+    }
+    // (the agent's answer to his What?? comes: the page goes down to it)
+    .onChange(of: card.explained?.id) { _, id in
+      guard let id else { return }
+      showTalk = true
+      withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo(id, anchor: .top) }
+    }
     }
     .scrollDismissesKeyboard(.interactively)
     .background(Ink.bg.ignoresSafeArea())
@@ -627,7 +642,7 @@ struct CardScreen: View {
           if let earlier = card.earlier {
             Button(earlier.says.en) { shell.act(["do": "show_more", "of": ["list": "comments", "card": card.id]]) }.font(.subheadline.weight(.semibold)).foregroundStyle(Ink.accent)
           }
-          ForEach(Array(card.talk.enumerated()), id: \.element.id) { i, row in TalkRow(row: row, who: who, inCard: true, last: i + 1 == card.talk.count || !card.talk[i + 1].cont) }
+          ForEach(Array(card.talk.enumerated()), id: \.element.id) { i, row in TalkRow(row: row, who: who, inCard: true, last: i + 1 == card.talk.count || !card.talk[i + 1].cont).id(row.id) }
           ForEach(card.versions, id: \.n) { v in RevisionRow(version: v) }
         }
       }

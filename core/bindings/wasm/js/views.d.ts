@@ -1360,6 +1360,14 @@ export interface WakeLineView {
   says: Text
 }
 
+/** The answer to his What?? on a card's page (`CardView::explained`). */
+export interface ExplainedView {
+  /** The id of the talk row with the agent's words. */
+  id: string
+  /** "The explanation is below ↓": a tap goes there. */
+  says: Text
+}
+
 /** One card's page (a question, something to read, a request for approval): who it comes from, its words, its
  *  answers or what was said, its history, and the comments under it. Made for the card in view (`Lens::card`). */
 export interface CardView {
@@ -1429,6 +1437,9 @@ export interface CardView {
   lead?: LeadView[]
   /** The comments and what happened to the card, oldest first: the window's rows (`earlier`). */
   talk?: TalkRow[]
+  /** The agent's words that answer his newest What?? in `talk`: the page scrolls to them when they come and shows
+   *  a line pointing down to them; none while nothing answered it, or a new version came after it. */
+  explained?: ExplainedView
   /** The hub holds older comments than `talk` has. */
   has_more: boolean
   /** The cards it replaces. */

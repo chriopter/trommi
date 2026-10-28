@@ -170,3 +170,13 @@ test('answered or read on the card\'s page, it goes on at once: the next card th
   const chat = await b.post(`/cards/${card.id}/decide`, { key: 'centered', page: '1', back: '/chat/fernly' })
   assert.match(chat.stream, /action="visit" target="\/chat\/fernly"/)
 })
+
+test('his What?? answered in words: a line under the answers goes down to them, the page names them for its scroll', async () => {
+  const vm = vmOf(43), card = cardOf(vm)
+  card.explained = { id: 'm-1', says: { en: 'The explanation is below ↓' } }
+  const main = await board(vm).get('/card/43')
+  assert.match(main, /data-explained="m-1"/)
+  assert.match(main, /<button type="button" class="tc-explained-link" data-action="card#toExplained">The explanation is below ↓<\/button>/)
+  delete card.explained
+  assert.doesNotMatch(await board(vm).get('/card/43'), /tc-explained-link/)
+})

@@ -675,15 +675,14 @@ fn thread(c: &Card, mut talk: Vec<TalkRow>) -> Vec<TalkRow> {
             _ => {}
         }
     }
-    // (a What?? that nothing answered yet)
+    // (a What?? that nothing answered yet: no words of the agent and no new version after it)
     for i in 0..talk.len() {
         let bare =
             talk[i].kind == "event" && talk[i].event.as_ref().is_some_and(|e| e.kind == "explain");
-        if bare
-            && !talk
-                .iter()
-                .any(|r| r.answers.as_deref() == Some(talk[i].id.as_str()))
-        {
+        let answered = talk[i + 1..]
+            .iter()
+            .any(|r| r.kind == "agent" || r.event.as_ref().is_some_and(|e| e.kind == "revised"));
+        if bare && !answered {
             talk[i].waits = Some(say(
                 "card.explain.waits",
                 "Waiting for the explanation.",
@@ -692,6 +691,31 @@ fn thread(c: &Card, mut talk: Vec<TalkRow>) -> Vec<TalkRow> {
         }
     }
     talk
+}
+
+/// The agent's words that answer his newest What?? (the row the page scrolls to), while no new version came after
+/// them; empty when there are none.
+fn explained_of(talk: &[TalkRow]) -> Option<super::ExplainedView> {
+    let is = |r: &TalkRow, kind: &str| {
+        r.event
+            .as_ref()
+            .or(r.deed.as_ref())
+            .is_some_and(|e| e.kind == kind)
+    };
+    let Some(at) = talk.iter().rposition(|r| is(r, "explain")) else {
+        return None;
+    };
+    let after = &talk[at + 1..];
+    if after.iter().any(|r| is(r, "revised")) {
+        return None;
+    }
+    after
+        .iter()
+        .find(|r| r.kind == "agent")
+        .map(|r| super::ExplainedView {
+            id: r.id.clone(),
+            says: say("card.explained", "The explanation is below ↓", &[]),
+        })
 }
 
 /// The way on: the next open question in the walk's order after the card's place (the core's walk,
@@ -1164,6 +1188,8 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
                 && (!e.row.text.is_empty() || !e.row.files.is_empty())
         })
         .count();
+    let talk = thread(c, entries.into_iter().map(|e| e.row).collect());
+    let explained = explained_of(&talk);
 
     // ---- the quiet line ----
     let merged: Vec<String> = c
@@ -1426,7 +1452,8 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         } else {
             say("card.star", "Star", &[])
         },
-        talk: thread(c, entries.into_iter().map(|e| e.row).collect()),
+        talk,
+        explained,
         has_more: chat.is_some_and(|t| t.has_more),
         merged_from: merged.iter().map(|x| other(x)).collect(),
         merged_into: (!into.is_empty()).then(|| other(&into)),
@@ -2001,6 +2028,55 @@ mod tests {
                 .map(|o| (o.key.as_str(), o.detail.as_str()))
                 .collect::<Vec<_>>(),
             [("y", "now")]
+        );
+    }
+
+    /// A What?? the agent answered with a new version (revise_card) does not wait any more.
+    #[test]
+    fn a_what_answered_by_a_new_version_does_not_wait() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let c = r.card("q", "a", "decision", "normal");
+        c["versions"] = json!([
+            { "object_version": 1, "envelope_number": 101, "sent_at": NOW - 9 * MIN, "object_state": "open",
+              "content": { "title": "First", "options": [{ "key": "y", "label": "Yes" }] } },
+            { "object_version": 2, "envelope_number": 120, "sent_at": NOW - 4 * MIN, "object_state": "open", "content": { "title": "q", "change_note": "Plainer." } },
+        ]);
+        r.say(
+            "a",
+            Some("q"),
+            110,
+            "me",
+            8 * MIN,
+            json!({ "text": crate::views::talk::EXPLAIN_TEXT, "explain": true }),
+        );
+        let v = view(&r, "q");
+        let what = v.talk.iter().find(|x| x.id == "e110").unwrap();
+        assert!(what.waits.is_none());
+        assert!(v.explained.is_none());
+        // (answered in words: the page points to them and scrolls there)
+        r.say(
+            "a",
+            Some("q"),
+            130,
+            "me",
+            3 * MIN,
+            json!({ "text": crate::views::talk::EXPLAIN_TEXT, "explain": true }),
+        );
+        r.say(
+            "a",
+            Some("q"),
+            131,
+            "a",
+            2 * MIN,
+            json!({ "text": "It means this." }),
+        );
+        let v = view(&r, "q");
+        let answer = v.talk.iter().find(|x| x.text == "It means this.").unwrap();
+        let explained = v.explained.unwrap();
+        assert_eq!(
+            (explained.id.as_str(), explained.says.en.as_str()),
+            (answer.id.as_str(), "The explanation is below ↓")
         );
     }
 

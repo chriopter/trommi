@@ -1901,6 +1901,15 @@ pub struct WakeLineView {
     pub says: Text,
 }
 
+/// The answer to his What?? on a card's page (`CardView::explained`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExplainedView {
+    /// The id of the talk row with the agent's words.
+    pub id: String,
+    /// "The explanation is below ↓": a tap goes there.
+    pub says: Text,
+}
+
 /// One card's page (a question, something to read, a request for approval): who it comes from, its words, its
 /// answers or what was said, its history, and the comments under it. Made for the card in view (`Lens::card`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1996,6 +2005,10 @@ pub struct CardView {
     /// The comments and what happened to the card, oldest first: the window's rows (`earlier`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub talk: Vec<TalkRow>,
+    /// The agent's words that answer his newest What?? in `talk`: the page scrolls to them when they come and shows
+    /// a line pointing down to them; none while nothing answered it, or a new version came after it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explained: Option<ExplainedView>,
     /// The hub holds older comments than `talk` has.
     #[serde(default)]
     pub has_more: bool,
