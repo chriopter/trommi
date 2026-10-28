@@ -109,8 +109,10 @@ head opens the chat, under it its questions, then what is only to read), `group.
 `elsewhere` shows that team, on a `lately` row its card), and its ⋯ menu
 (`group.head.menu`; Rename sends `RenameTeam`); its duck for all and Blitz draw `group.duck` (sent back as `Batch`
 "sweep") and `group.blitz` (every group's open cards, `Focus.walk_all`). The iPhone draws it in its native look
-(`NativeGroup.swift`): the name as the large title, a face per chip, then two inset groups, the questions with their
-answers as two round buttons and what is to read, each row with who sent it and the core's `age`. The Chat list draws
+(`NativeGroup.swift`): the name as the large title, then a plain white page with no boxes and no lines, chat by chat:
+a small grey head (the chat's face and name, a tap opens the chat), its questions in the system's body text, each
+with its lead answer as one quiet grey round button, the other answer as plain words beside it and the core's `age`
+at the end of the line, then what is to read. The Chat list draws
 each row's `last` (teaser and time) in one line, grey while not `online`, with its `signal` as one quiet dot; Settings has a page per `Screen.settings(page:)`; the Artifacts filter is `Screen.artifacts(kind:)` with
 the words of `view.gallery`; the note saves itself with `KeepNote` a moment after typing and when it is left; the
 start screen shows `account.notice` (logged out, removed, account deleted).

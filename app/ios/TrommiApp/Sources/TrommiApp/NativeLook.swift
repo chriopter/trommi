@@ -248,10 +248,16 @@ extension NativeLook {
 }
 
 extension View {
-  /** A list of the iPhone: inset and grouped, the large title, the system's search whose words the core filters by,
-   *  the controls at the bottom. */
-  func nativeList(title: String, query: Binding<String>, onQuery: @escaping () -> Void) -> some View {
-    self.listStyle(.insetGrouped)
+  /** A list of the iPhone: inset and grouped (plain: one white page with no boxes), the large title, the system's
+   *  search whose words the core filters by, the controls at the bottom. */
+  func nativeList(title: String, plain: Bool = false, query: Binding<String>, onQuery: @escaping () -> Void) -> some View {
+    Group {
+      if plain {
+        self.listStyle(.plain).scrollContentBackground(.hidden).background(Color(uiColor: .systemBackground))
+      } else {
+        self.listStyle(.insetGrouped)
+      }
+    }
       .navigationTitle(title)
       .navigationBarTitleDisplayMode(.large)
       // (the system's bar stays, also when coming back from a page that hid it for its pills)

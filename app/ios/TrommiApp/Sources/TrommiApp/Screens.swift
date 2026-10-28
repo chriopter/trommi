@@ -570,17 +570,16 @@ struct GroupMenu: View {
 }
 
 /** A chat's block head on the group page (`ChatBlockView`): its face and name, how many of its questions wait, at
- *  work, "Open chat ›"; the whole head opens the chat. `native`: the iPhone's system look. */
+ *  work, "Open chat ›"; the whole head opens the chat (the iPad and Mac; the iPhone has its own small head). */
 struct GroupBlockHead: View {
   @EnvironmentObject var shell: AppShell
   let block: CoreView.ChatBlockView
-  var native = false
   var body: some View {
     let hue = Pen.hueFor(id: block.slug.isEmpty ? block.sessionId : block.slug, mark: block.mark)
     Button { shell.focus(.session(sessionId: block.sessionId)) } label: {
       HStack(spacing: 10) {
-        NativeAvatar(mark: block.mark, hue: hue, size: native ? 28 : 32)
-        Text(block.name.en).font(native ? .headline : Face.display(18, .bold)).foregroundStyle(native ? Color.primary : Ink.fg).lineLimit(1)
+        NativeAvatar(mark: block.mark, hue: hue, size: 32)
+        Text(block.name.en).font(Face.display(18, .bold)).foregroundStyle(Ink.fg).lineLimit(1)
         if let open = block.open {
           Text(open.en).font(.caption.weight(.semibold)).foregroundStyle(Ink.accent)
             .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Ink.accentSoft))
