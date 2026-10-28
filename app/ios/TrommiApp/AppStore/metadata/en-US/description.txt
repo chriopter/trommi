@@ -8,7 +8,7 @@ AGENTS ASK, YOU DECIDE
 A session files a card with its question and a few options, with pictures or a page to try when it helps. One tap answers, and the agent carries on.
 
 ONE LIST PER GROUP
-Your chats and teams, grouped. Tap a group and its open cards are there in one list: what waits for you first, then what is to read, with a chip for each chat. Answer one, and the next card is already open. Blitz walks the open cards of every group, one after the other.
+Your chats and teams, grouped. Tap a group and its open cards stand there chat by chat: each chat's questions first, then what is to read. Answer one, and the next card is already open. Blitz walks the open cards of every group, one after the other.
 
 A PUSH WHEN ONE NEEDS YOU
 Blocking questions come first and ring; the rest waits quietly in its group. Choose per phone: every question, only the urgent ones, or none.

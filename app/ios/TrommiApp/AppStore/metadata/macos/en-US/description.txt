@@ -8,7 +8,7 @@ AGENTS ASK, YOU DECIDE
 A session files a card with its question and a few options, with pictures or a page to try when it helps. One click answers, and the agent carries on.
 
 ONE LIST PER GROUP
-Click a group in the sidebar and its open cards are there in one list: what waits for you first, then what is to read, with a chip for each chat. Answer one, and the next card is already open. Blitz walks the open cards of every group, one after the other.
+Click a group in the sidebar and its open cards stand there chat by chat: each chat's questions first, then what is to read. Answer one, and the next card is already open. Blitz walks the open cards of every group, one after the other.
 
 IN THE MENU BAR
 A bell in the menu bar shows how many questions are waiting. Its panel lists them, the urgent ones first; a click opens the card.

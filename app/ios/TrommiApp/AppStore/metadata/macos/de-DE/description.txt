@@ -8,7 +8,7 @@ AGENTEN FRAGEN, DU ENTSCHEIDEST
 Eine Session legt eine Karte mit ihrer Frage und ein paar Optionen an, mit Bildern oder einer Seite zum Ausprobieren, wenn es hilft. Ein Klick antwortet, und der Agent macht weiter.
 
 EINE LISTE PRO GRUPPE
-Klick in der Seitenleiste auf eine Gruppe, und ihre offenen Karten stehen in einer Liste: zuerst, was auf dich wartet, dann, was zu lesen ist, mit einem Chip für jeden Chat. Nach einer Antwort ist die nächste Karte schon offen. Blitz geht die offenen Karten aller Gruppen nacheinander durch.
+Klick in der Seitenleiste auf eine Gruppe, und ihre offenen Karten stehen Chat für Chat da: zuerst die Fragen jedes Chats, dann, was zu lesen ist. Nach einer Antwort ist die nächste Karte schon offen. Blitz geht die offenen Karten aller Gruppen nacheinander durch.
 
 IN DER MENÜLEISTE
 Eine Glocke in der Menüleiste zeigt, wie viele Fragen warten. Ihr Fenster listet sie auf, die dringenden zuerst; ein Klick öffnet die Karte.
