@@ -3,6 +3,7 @@
      (no mockup images). dev/showcase.mjs opens it once per picture, on a transparent page:
        showcase.html?layout=hero&laptop=<web png>&phone=<iPhone png>
        showcase.html?layout=phone&phone=<iPhone png>
+       showcase.html?layout=shot&phone=<phone png>       (the phone alone, edge to edge, no shadow)
        showcase.html?layout=gallery&phones=<png>,<png>,...
      and theme=light|dark for the frames' shade. Sizes are CSS pixels; the picture is taken at 2x. -->
 <html><head><meta charset="utf-8"><style>
@@ -62,6 +63,10 @@ if (layout === 'hero') {
 } else if (layout === 'phone') {
   set({ w: 300, h: 640, pw: 270 })
   html = phone(q.get('phone'), 'left:15px;top:14px')
+} else if (layout === 'shot') {
+  // the phone fills the page; its shadow is the site's (a drop-shadow there)
+  set({ w: 240, h: 504, pw: 240 })
+  html = phone(q.get('phone'), 'left:0;top:0;box-shadow:0 0 0 1.4px var(--rim)')
 } else if (layout === 'gallery') {
   const list = q.get('phones').split(',')
   set({ w: 1100, h: 560, pw: 240, gap: 32, pad: 14 })
