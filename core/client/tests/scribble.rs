@@ -19,7 +19,8 @@ use trommi_core::crypto::SecretBytes;
 use trommi_core::device::Draft;
 use trommi_core::ids::BoardId;
 
-const BOARD: &str = "desk/00112233445566778899aabbccddeeff";
+/// The one sheet: the board of "All desks" (spec 10.1).
+const BOARD: &str = "desk/616c6c2d6465736b7300000000000009";
 
 fn board() -> BoardId {
     scribble::board_of(BOARD).expect("a board id")
@@ -324,9 +325,7 @@ fn an_item_the_hub_refuses_is_taken_back() {
     sim.send(start());
     sim.send(Event::Focus {
         focus: Focus {
-            screen: Screen::Scribble {
-                board_id: BOARD.into(),
-            },
+            screen: Screen::Scribble,
             ..Default::default()
         },
     });
@@ -549,4 +548,23 @@ fn settings_show_every_desks_board_small() {
         },
     });
     assert_eq!(sim.view.thumbs, None, "a page without them");
+}
+
+#[test]
+fn the_whiteboard_is_one_sheet_whatever_an_older_shell_names() {
+    // an older shell names its team's board: it is read, and the one sheet shows
+    let screen: Screen = serde_json::from_value(
+        json!({ "screen": "scribble", "board_id": "desk/00112233445566778899aabbccddeeff" }),
+    )
+    .expect("read");
+    assert_eq!(screen, Screen::Scribble);
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    look(&mut sim, Some("main"));
+    assert_eq!(
+        sim.view.board.as_ref().map(|b| b.board_id.as_str()),
+        Some(BOARD),
+        "a team's board beside the page is the one sheet too"
+    );
 }

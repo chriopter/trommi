@@ -689,18 +689,6 @@
                   "opens": {
                     "screen": "wakeups"
                   }
-                },
-                {
-                  "apart": false,
-                  "key": "board",
-                  "label": {
-                    "en": "Scribble Board",
-                    "key": "group.menu.board"
-                  },
-                  "opens": {
-                    "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
-                    "screen": "scribble"
-                  }
                 }
               ],
               "menu_says": {
@@ -735,7 +723,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -812,7 +800,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -827,7 +815,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -985,7 +973,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -1007,7 +995,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -1112,7 +1100,7 @@
               }
             },
             "unfinished": [
-              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -1337,18 +1325,6 @@
                   "opens": {
                     "screen": "wakeups"
                   }
-                },
-                {
-                  "apart": false,
-                  "key": "board",
-                  "label": {
-                    "en": "Scribble Board",
-                    "key": "group.menu.board"
-                  },
-                  "opens": {
-                    "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
-                    "screen": "scribble"
-                  }
                 }
               ],
               "menu_says": {
@@ -1383,7 +1359,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -1460,7 +1436,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -1475,7 +1451,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -1633,7 +1609,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -1655,7 +1631,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -1760,7 +1736,7 @@
               }
             },
             "unfinished": [
-              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -1973,7 +1949,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -2050,7 +2026,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -2065,7 +2041,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -2223,7 +2199,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -2245,7 +2221,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -2350,7 +2326,7 @@
               }
             },
             "unfinished": [
-              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -3944,18 +3920,6 @@
             "opens": {
               "screen": "wakeups"
             }
-          },
-          {
-            "apart": false,
-            "key": "board",
-            "label": {
-              "en": "Scribble Board",
-              "key": "group.menu.board"
-            },
-            "opens": {
-              "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
-              "screen": "scribble"
-            }
           }
         ],
         "menu_says": {
@@ -4001,7 +3965,7 @@
             "key": "agents.count"
           },
           "devices": [
-            "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
           ],
           "host": "",
           "key": "Agent · ",
@@ -4078,7 +4042,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": true,
           "role": "human",
@@ -4093,7 +4057,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": false,
           "role": "human",
@@ -4251,7 +4215,7 @@
                 },
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "mark": {
                   "en": "this device",
                   "key": "security.this_device"
@@ -4273,7 +4237,7 @@
                 },
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "open": "device",
                 "says": {
                   "en": "everything",
@@ -4378,7 +4342,7 @@
         }
       },
       "unfinished": [
-        "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       ]
     },
     "sidebar": {

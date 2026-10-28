@@ -689,18 +689,6 @@
                   "opens": {
                     "screen": "wakeups"
                   }
-                },
-                {
-                  "apart": false,
-                  "key": "board",
-                  "label": {
-                    "en": "Scribble Board",
-                    "key": "group.menu.board"
-                  },
-                  "opens": {
-                    "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
-                    "screen": "scribble"
-                  }
                 }
               ],
               "menu_says": {
@@ -735,7 +723,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -812,7 +800,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -827,7 +815,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -985,7 +973,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -1007,7 +995,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -1112,7 +1100,7 @@
               }
             },
             "unfinished": [
-              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -1337,18 +1325,6 @@
                   "opens": {
                     "screen": "wakeups"
                   }
-                },
-                {
-                  "apart": false,
-                  "key": "board",
-                  "label": {
-                    "en": "Scribble Board",
-                    "key": "group.menu.board"
-                  },
-                  "opens": {
-                    "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
-                    "screen": "scribble"
-                  }
                 }
               ],
               "menu_says": {
@@ -1383,7 +1359,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -1460,7 +1436,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -1475,7 +1451,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -1633,7 +1609,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -1655,7 +1631,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -1760,7 +1736,7 @@
               }
             },
             "unfinished": [
-              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -1802,7 +1778,7 @@
             "badge": 1,
             "folded": false,
             "global_blitz": {
-              "card": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
+              "card": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
               "says": {
                 "args": {
                   "n": "1"
@@ -2033,7 +2009,7 @@
           "part": "group",
           "view": {
             "blitz": {
-              "card": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
+              "card": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
               "says": {
                 "args": {
                   "n": "1"
@@ -2079,7 +2055,7 @@
                       ],
                       "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee"
                     },
-                    "id": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
+                    "id": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
                     "kind": "decision",
                     "loading": false,
                     "newer": false,
@@ -2166,7 +2142,7 @@
                 "key": "duck.ask.one"
               },
               "card_ids": [
-                "00000007eeeeeeeeeeeeeeeeeeeeeeee"
+                "00000006eeeeeeeeeeeeeeeeeeeeeeee"
               ],
               "no": {
                 "en": "Cancel",
@@ -2233,18 +2209,6 @@
                   "opens": {
                     "screen": "wakeups"
                   }
-                },
-                {
-                  "apart": false,
-                  "key": "board",
-                  "label": {
-                    "en": "Scribble Board",
-                    "key": "group.menu.board"
-                  },
-                  "opens": {
-                    "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
-                    "screen": "scribble"
-                  }
                 }
               ],
               "menu_says": {
@@ -2262,7 +2226,7 @@
             },
             "mode": "group",
             "stack": [
-              "00000007eeeeeeeeeeeeeeeeeeeeeeee"
+              "00000006eeeeeeeeeeeeeeeeeeeeeeee"
             ],
             "summary": {
               "args": {
@@ -2289,7 +2253,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -2366,7 +2330,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -2381,7 +2345,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -2539,7 +2503,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "mark": {
                         "en": "this device",
                         "key": "security.this_device"
@@ -2561,7 +2525,7 @@
                       },
                       "fingerprint": "(fingerprint)",
                       "icon": "laptop",
-                      "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                      "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                       "open": "device",
                       "says": {
                         "en": "everything",
@@ -2666,7 +2630,7 @@
               }
             },
             "unfinished": [
-              "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -2695,7 +2659,7 @@
     },
     "group": {
       "blitz": {
-        "card": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
+        "card": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
         "says": {
           "args": {
             "n": "1"
@@ -2741,7 +2705,7 @@
                 ],
                 "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee"
               },
-              "id": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
+              "id": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
               "kind": "decision",
               "loading": false,
               "newer": false,
@@ -2828,7 +2792,7 @@
           "key": "duck.ask.one"
         },
         "card_ids": [
-          "00000007eeeeeeeeeeeeeeeeeeeeeeee"
+          "00000006eeeeeeeeeeeeeeeeeeeeeeee"
         ],
         "no": {
           "en": "Cancel",
@@ -2895,18 +2859,6 @@
             "opens": {
               "screen": "wakeups"
             }
-          },
-          {
-            "apart": false,
-            "key": "board",
-            "label": {
-              "en": "Scribble Board",
-              "key": "group.menu.board"
-            },
-            "opens": {
-              "board_id": "desk/00000003eeeeeeeeeeeeeeeeeeeeeeee",
-              "screen": "scribble"
-            }
           }
         ],
         "menu_says": {
@@ -2924,7 +2876,7 @@
       },
       "mode": "group",
       "stack": [
-        "00000007eeeeeeeeeeeeeeeeeeeeeeee"
+        "00000006eeeeeeeeeeeeeeeeeeeeeeee"
       ],
       "summary": {
         "args": {
@@ -2962,7 +2914,7 @@
             "key": "agents.count"
           },
           "devices": [
-            "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
           ],
           "host": "",
           "key": "Agent · ",
@@ -3039,7 +2991,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": true,
           "role": "human",
@@ -3054,7 +3006,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": false,
           "role": "human",
@@ -3212,7 +3164,7 @@
                 },
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "mark": {
                   "en": "this device",
                   "key": "security.this_device"
@@ -3234,7 +3186,7 @@
                 },
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "open": "device",
                 "says": {
                   "en": "everything",
@@ -3339,14 +3291,14 @@
         }
       },
       "unfinished": [
-        "00000006eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       ]
     },
     "sidebar": {
       "badge": 1,
       "folded": false,
       "global_blitz": {
-        "card": "00000007eeeeeeeeeeeeeeeeeeeeeeee",
+        "card": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
         "says": {
           "args": {
             "n": "1"

@@ -18,8 +18,9 @@ export interface Focus {
   visible: boolean
   /** The team in view: a team's id; none when none was chosen, or one that is gone: the first team. */
   team?: string
-  /** The Scribble Board shown beside the screen (the group page's): `desk/<32 hex>`, or a team's id or "all" for that
-   *  team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`. */
+  /** The whiteboard is kept beside the screen (under the turned corner of a group, chat or card page): any value
+   *  (a board id or team id of before is read the same). There is one sheet, the board of "All desks" (spec 10.1);
+   *  `Screen::Scribble` shows it too. The core reads it and sends `ViewModel.board`. */
   board?: string
   /** The wide sidebar is folded to a rail (this device's, the shell keeps it): its rows carry no counts and no
    *  signs but one quiet dot on a chat that needs the person (`SessionRowView.signal`). */
@@ -51,7 +52,9 @@ export type Screen =
   | { screen: 'notes' }
   /** The page Off your mind, the complete list, with the search's words (empty: all). */
   | { screen: 'off'; query: string }
-  | { screen: 'scribble'; board_id: string }
+  /** The whiteboard: the one sheet of the person, the board of "All desks" (spec 10.1). The group boards of before
+   *  are no longer shown (their items stay on the hub). A `board_id` an older shell sends is ignored. */
+  | { screen: 'scribble' }
   /** The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
    *  videos and files, "pages" the pages. */
   | { screen: 'artifacts'; kind?: string }
@@ -534,7 +537,7 @@ export interface GroupMenuItem {
   label: Text
   /** How many, small at its end: "7 entries", "7 entries · 2 new", "3 set"; none where there is nothing to count. */
   count?: Text
-  /** Where it goes: `Screen::Knowledge`, `Screen::Wakeups`, `Screen::Scribble`; none for "rename" (the shell asks
+  /** Where it goes: `Screen::Knowledge`, `Screen::Wakeups`; none for "rename" (the shell asks
    *  for the new name and sends `Action::RenameTeam`). */
   opens?: Screen
   /** Below a line of its own (the last group of entries: "rename"). */
@@ -2178,11 +2181,34 @@ export interface ThumbView {
 export interface BoardView {
   /** `desk/<32 hex>`. */
   board_id: string
+  /** The chat the whiteboard was opened from (the page before it was a chat's, or a card's of that chat): its
+   *  "Send to" sends a selection there with one press. None: it was opened from anywhere else. */
+  from?: BoardChatView
+  /** "Back to Fernly Website": the way back into that chat (with `from`). */
+  back?: Text
+  /** Every chat a selection can be sent to, of every group: the one it was opened from first, then the sidebar's
+   *  order. */
+  chats?: BoardChatView[]
   /** "loading" (its snapshot and the items after it are read), "ready", "newer_version" (an item needs a newer
    *  Trommi: what it did is not shown), "withheld" (an item could not be read on this device). */
   state: string
   /** Every shape in drawing order: by layer (`z`), then as they were made; strokes others are still drawing last. */
   shapes?: BoardShape[]
+}
+
+/** A chat a selection of the whiteboard can be sent to (`BoardView.chats`, `BoardView.from`). */
+export interface BoardChatView {
+  /** The session's key (`SessionRowView.id`): where a selection is sent. */
+  session_id: string
+  /** Its short id: its address (`/chat/<slug>`). */
+  slug: string
+  name: string
+  /** Its face (`SessionRowView.mark`). */
+  mark: string
+  /** Its agent is connected. */
+  online: boolean
+  /** "Send to Fernly Website". */
+  send: Text
 }
 
 /** One shape of a board, in board units (a point is two numbers). The fields its tool does not use are left out.

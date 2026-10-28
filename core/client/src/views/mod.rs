@@ -91,8 +91,9 @@ pub struct Focus {
     /// The team in view: a team's id; none when none was chosen, or one that is gone: the first team.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team: Option<String>,
-    /// The Scribble Board shown beside the screen (the group page's): `desk/<32 hex>`, or a team's id or "all" for that
-    /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
+    /// The whiteboard is kept beside the screen (under the turned corner of a group, chat or card page): any value
+    /// (a board id or team id of before is read the same). There is one sheet, the board of "All desks" (spec 10.1);
+    /// `Screen::Scribble` shows it too. The core reads it and sends `ViewModel.board`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
     /// The wide sidebar is folded to a rail (this device's, the shell keeps it): its rows carry no counts and no
@@ -146,9 +147,9 @@ pub enum Screen {
         #[serde(default)]
         query: String,
     },
-    Scribble {
-        board_id: String,
-    },
+    /// The whiteboard: the one sheet of the person, the board of "All desks" (spec 10.1). The group boards of before
+    /// are no longer shown (their items stay on the hub). A `board_id` an older shell sends is ignored.
+    Scribble,
     /// The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
     /// videos and files, "pages" the pages.
     Artifacts {
@@ -841,7 +842,7 @@ pub struct GroupMenuItem {
     /// How many, small at its end: "7 entries", "7 entries · 2 new", "3 set"; none where there is nothing to count.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<Text>,
-    /// Where it goes: `Screen::Knowledge`, `Screen::Wakeups`, `Screen::Scribble`; none for "rename" (the shell asks
+    /// Where it goes: `Screen::Knowledge`, `Screen::Wakeups`; none for "rename" (the shell asks
     /// for the new name and sends `Action::RenameTeam`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opens: Option<Screen>,
@@ -3005,12 +3006,39 @@ pub struct ThumbView {
 pub struct BoardView {
     /// `desk/<32 hex>`.
     pub board_id: String,
+    /// The chat the whiteboard was opened from (the page before it was a chat's, or a card's of that chat): its
+    /// "Send to" sends a selection there with one press. None: it was opened from anywhere else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<BoardChatView>,
+    /// "Back to Fernly Website": the way back into that chat (with `from`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub back: Option<Text>,
+    /// Every chat a selection can be sent to, of every group: the one it was opened from first, then the sidebar's
+    /// order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chats: Vec<BoardChatView>,
     /// "loading" (its snapshot and the items after it are read), "ready", "newer_version" (an item needs a newer
     /// Trommi: what it did is not shown), "withheld" (an item could not be read on this device).
     pub state: String,
     /// Every shape in drawing order: by layer (`z`), then as they were made; strokes others are still drawing last.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shapes: Vec<BoardShape>,
+}
+
+/// A chat a selection of the whiteboard can be sent to (`BoardView.chats`, `BoardView.from`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoardChatView {
+    /// The session's key (`SessionRowView.id`): where a selection is sent.
+    pub session_id: String,
+    /// Its short id: its address (`/chat/<slug>`).
+    pub slug: String,
+    pub name: String,
+    /// Its face (`SessionRowView.mark`).
+    pub mark: String,
+    /// Its agent is connected.
+    pub online: bool,
+    /// "Send to Fernly Website".
+    pub send: Text,
 }
 
 /// One shape of a board, in board units (a point is two numbers). The fields its tool does not use are left out.

@@ -282,9 +282,7 @@ fn a_note_keeps_its_attached_file_and_a_native_pen_stroke_round_trips() {
     let board = trommi_client_core::scribble::team_board("all");
     sim.send(Event::Focus {
         focus: trommi_client_core::views::Focus {
-            screen: trommi_client_core::views::Screen::Scribble {
-                board_id: board.clone(),
-            },
+            screen: trommi_client_core::views::Screen::Scribble,
             ..Default::default()
         },
     });

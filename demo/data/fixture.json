@@ -10017,14 +10017,14 @@
     ],
     "scribble:desk/6d61696e000000000000000000000004": [
       {
-        "envelope_number": 799601,
+        "envelope_number": 874001,
         "local_id": null,
         "pending": false,
-        "envelope_hash": "ca3176d0aabdcdfdc068f589b1cbec00bd1607d3607185439492d7c5c292ddc3",
-        "sender_device_id": "bab7d20137fb7093183f65076f6c0ba36a1f1d3ff7defdf7f429c7e45e2ed266",
-        "sender_sequence": 1,
+        "envelope_hash": "359fd01f262118cea187fa5726894b93398499833d00dad936540c039fe2c4c9",
+        "sender_device_id": "5e5c199cbf26ef2038765bf094beea7134501402b2629fdf9171b3c9b6ca67f0",
+        "sender_sequence": 5,
         "recipient_device_id": null,
-        "sent_at": 1791391800000,
+        "sent_at": 1791466200000,
         "item_state": "loaded",
         "content_type": "strokes",
         "content": {
@@ -10036,17 +10036,17 @@
                 40,
                 30
               ],
-              "text": "Fernly: launch week",
+              "text": "This week",
               "size": 30,
               "color": "ink",
-              "z": 1
+              "z": 52
             },
             {
               "tool": "marker",
-              "color": "green",
+              "color": "pink",
               "width": 14,
-              "points": "ANAJkhIAd4QEKQyH-AMCDHvYAwIMd-gDBwym5gMUDH7iAzsMk8ADHAx69AMpDIreAxgMkfoDBAx6uAMRDKKSBAwMoMQDEQyg7AMWDKDOAzUMofYDCwyasAMFDIHmAwMMc5QEHAx_uAMMDHc",
-              "z": 2
+              "points": "APgJiBIAeqYCNQyYrgIeDH3oAR8Mc_ABHAx5_AENDHeuAhUMorYCBQx1-AEQDJiUAhcMi-wBCgx2xgICDIfmAQYMkY4CDAx9jgI7DIu4AgIMnKACAwx8igIDDIfWAQ0MgqoCCAxzpgIMDIE",
+              "z": 53
             },
             {
               "tool": "sticky",
@@ -10054,248 +10054,67 @@
                 40,
                 120
               ],
-              "text": "Before Monday\n· pricing ✓\n· onboarding ✓\n· checkout\n· Safari test",
+              "text": "Fernly\nweb launch Monday 09:00",
               "size": 17,
               "color": "ink",
               "wrap": 230,
-              "z": 3
-            },
-            {
-              "tool": "pen",
-              "color": "green",
-              "width": 4,
-              "points": "AKw-hCYAoOoBpgIMeWp-DIz2AZkDDHPAAtEDDKE",
-              "z": 4
-            },
-            {
-              "tool": "pen",
-              "color": "green",
-              "width": 4,
-              "points": "AMZDkCwAfcgBoAIMkGaCAQx1jgKrAwyatgLPAwyW",
-              "z": 5
-            },
-            {
-              "tool": "image",
-              "rect": [
-                330,
-                110,
-                540,
-                564
-              ],
-              "attachment": {
-                "attachment_id": "f0dc48fdf98ca01482e6877528d75bc2",
-                "file_key": "",
-                "sha256": "",
-                "file_name": "phone-today.png",
-                "media_type": "image/png",
-                "total_size": 102893,
-                "width": 780,
-                "height": 1688,
-                "url": "/demo/files/phone-today.png"
-              },
-              "nw": 780,
-              "nh": 1688,
-              "mime": "image/png",
-              "name": "phone-today.png",
-              "z": 6
+              "z": 54
             },
             {
               "tool": "sticky",
               "at": [
-                600,
-                100
+                300,
+                132
               ],
-              "text": "“Never forget to water again.”\nKeep it!",
+              "text": "iOS 1.2\nin review by Friday",
               "size": 17,
               "color": "ink",
-              "wrap": 280,
-              "z": 7
+              "wrap": 230,
+              "z": 55
             },
             {
-              "tool": "pen",
-              "color": "red",
-              "width": 4,
-              "points": "AJbeAfgbAJdu1gEMjugC5AEMiVPuAQyfgwOGAgyPZdYBDJ-_A7gBDIHjBYQBDJaPBdYBDImpBiYMh80GiAEMfIkHEwyR7wYUDH_pBi0MoacGcwyd4QU3DIS3BskBDJaNBL0BDJ_3Ac0BDHn1AekBDILZAdEBDKJb9wEMc6IDzwEMecwC6wEMh_ACzwEMdNQEswEMltwFjQEMocAGSQx8kgY9DH78BiEMo_oGIwyW2gZyDHz6BggMefgFegyTkAWsAQx0_ALQAQycvAS2AQyR2AKGAgyZceYBDHkL2AEMhA",
-              "z": 8
-            },
-            {
-              "tool": "pen",
+              "tool": "sticky",
+              "at": [
+                560,
+                120
+              ],
+              "text": "Platform\nus-east serving reads by Oct 31",
+              "size": 17,
               "color": "ink",
-              "width": 4,
-              "points": "AIiWAdIvAIGNAQ4MfXcoDHR_JAyLjQEWDI9fOAx6azgMg3VIDItRSAx-a0gMdl1CDHVDUgx4Q1QMk1tcDIsxWgycP2QMmCdiDI0tcAyWR2wMhydgDJIDmgEMpD1eDJoPpgEMpAaKAQyX",
-              "z": 9
+              "wrap": 240,
+              "z": 56
             },
             {
               "tool": "pen",
-              "color": "ink",
-              "width": 4,
-              "points": "APqGAaY6AImaAYoEDI_aAsUDDIY",
-              "z": 10
+              "color": "orange",
+              "width": 3,
+              "points": "AL5D-kAAnZQDOQylvAMPDIaAAxUMjqADNQyErAMLDKWQAx4MhbYDAAxzkgMYDJyYAxYMoYADCgyAlgMwDJmwA04MpvgCRAyOrgNODKWOAzwMkIoDXgyWjAOAAQyH7gJSDISmA5oBDIOEA4YBDKX0AnYMd5ADlgEMkJgDrgEMgg",
+              "z": 57
+            },
+            {
+              "tool": "pen",
+              "color": "orange",
+              "width": 3,
+              "points": "AMiHAa5LAIi2BCkMgYcDvwMMeg",
+              "z": 58
             },
             {
               "tool": "text",
               "at": [
-                600,
-                250
+                360,
+                320
               ],
-              "text": "the first screen people see",
+              "text": "checkout must be ready first",
               "size": 18,
-              "color": "blue",
-              "z": 11
-            }
-          ]
-        }
-      },
-      {
-        "envelope_number": 853602,
-        "local_id": null,
-        "pending": false,
-        "envelope_hash": "c4e5b8fc9fa1e46b933b090839ee2b55ea5b2a8016c8397ca32aa1f862b60417",
-        "sender_device_id": "bab7d20137fb7093183f65076f6c0ba36a1f1d3ff7defdf7f429c7e45e2ed266",
-        "sender_sequence": 2,
-        "recipient_device_id": null,
-        "sent_at": 1791445800000,
-        "item_state": "loaded",
-        "content_type": "strokes",
-        "content": {
-          "content_type": "strokes",
-          "strokes": [
-            {
-              "tool": "text",
-              "at": [
-                40,
-                520
-              ],
-              "text": "iOS 1.2",
-              "size": 26,
-              "color": "ink",
-              "z": 12
-            },
-            {
-              "tool": "marker",
-              "color": "pink",
-              "width": 14,
-              "points": "AIoK-ooBAIOSASMMkcIBDAyQrAEGDJOsARcMkKYBJAx76AEpDH2MAQsMeZ4BFgyE2AEfDJO-AQYMn6QBBgyUbh8Mh-gBGAyElAEODIfSATUMeZoBDQx7qgE0DHXIAScMi6QBEgyG0gEJDHc",
-              "z": 13
-            },
-            {
-              "tool": "pen",
-              "color": "ink",
-              "width": 3,
-              "points": "AIYKxpMBAHfwAgEMiPYCCQx3lAMZDIKGAwwMhqIDJAyDiAMFDIeAAygMc4QDOQyH8AIuDIiWAx0MnJ4DDQyd_gIGDHXKAgIMibwDFgyQJTMMkxrIAQx6DaoBDHkAjgEMhyJ8DHU33AEMgRyAAQyVAbQBDHwZjgEMpE6mAQygD6gBDI8bogEMexCcAQyIMbQBDJYyjgEMgRsADImXAwMMgp0DJQyH7wIcDH2nAwcMc8cCIgx-tQMdDJP5Ag8MlI8DBQx0lQMEDKPzAiIMd_cCGQx4oQMaDJjbAhIMlrcDBwyVPAEMkCetAQyjAs8BDHYFewx_HMMBDHssrwEMhSe5AQyDRpMBDH0XiwEMdAa5AQx7RpMBDI0BzQEMpBepAQx7HpEBDI0VpwEMkw",
-              "z": 14
-            },
-            {
-              "tool": "text",
-              "at": [
-                58,
-                612
-              ],
-              "text": "widgets",
-              "size": 20,
-              "color": "ink",
-              "z": 15
-            },
-            {
-              "tool": "pen",
-              "color": "ink",
-              "width": 3,
-              "points": "AJo8zJMBAJ3qAhAMg4gDOwyW_gIiDKP0AjEMl4YDLAyZkAMQDJyoAwEMl_gCTQyf8AJYDHiGAx8MjpgDCwyIjAMCDKPeAjcMe6YDGAyYDSAMgxm0AQyODKoBDIoXagx1JNABDJUivAEMdguiAQyKDIIBDHgPnAEMdRGMAQx8G6IBDJAEvAEMlhaUAQydFXwMfR7YAQx2GgIMh6EDAgx2gQMhDKGxAxoMnuMCEwyOhQMaDKOjAwUMpZEDHAyegQMrDHzrAigMmK8DMwyN8wIADKWVA0AMgPsCAQye_QIvDHsYFgylB88BDIgngQEMjBTPAQx1QqsBDH8BcQyNJaEBDJko3QEMnwmVAQyGMMUBDI8UnQEMnBWRAQyMSpUBDKUDrQEMlS3LAQyK",
-              "z": 16
-            },
-            {
-              "tool": "text",
-              "at": [
-                255,
-                612
-              ],
-              "text": "dark mode",
-              "size": 20,
-              "color": "ink",
-              "z": 17
-            },
-            {
-              "tool": "pen",
-              "color": "ink",
-              "width": 3,
-              "points": "APpttpMBAJ30AgUMiKADBAyDngMaDJqGAyEMo-ICGgye-AIMDKCYAw8MoPwCAQyD8gIPDIiiAyQMeegCBwyIlAMgDHf6AhkMc6oDBQylPxkMnjimAQyfCrgBDKJDnAEMhCyiAQyUEYgBDJEIfgycBtoBDH0LrgEMeQpqDKQS1AEMpSKkAQycAngMfEOkAQykB74BDIkqDgyLmwMHDJSbAwkMgO8CAgyliQMZDH6FAywMdI0DJQx24QILDIeXAwcMlvkCLgyDiwM3DJafA0QMl68DAAx15QIXDJvBAyUMfTooDHwrwwEMnFClAQyKH6UBDHs2zQEMdAuTAQx_CakBDH8ggwEMhjbdAQyVBIUBDJgNiQEMkgGhAQyABrkBDIAKmQEMfwTXAQyU",
-              "z": 18
-            },
-            {
-              "tool": "text",
-              "at": [
-                470,
-                612
-              ],
-              "text": "sharing",
-              "size": 20,
-              "color": "ink",
-              "z": 19
-            },
-            {
-              "tool": "pen",
-              "color": "green",
-              "width": 4,
-              "points": "AJAu8osBAHveAbACDJp2cgyOgAKVAwyisALLAwyZ",
-              "z": 20
-            },
-            {
-              "tool": "pen",
-              "color": "green",
-              "width": 4,
-              "points": "AKhg9IsBAI_MAaACDHdgiAEMnpgCpwMMgrACqwMMgQ",
-              "z": 21
-            },
-            {
-              "tool": "pen",
-              "color": "green",
-              "width": 4,
-              "points": "AJqSAfSLAQCh6gGyAgyZaIQBDHriAbcDDJ_GArsDDKQ",
-              "z": 22
-            },
-            {
-              "tool": "pen",
               "color": "orange",
-              "width": 4,
-              "points": "ANKYAa6cAQCWchQMiXweDHt2FgyhcgEMnIIBEgyChgEODJhsDAyMggEaDI58AQyXmAEFDJtiIAx2mgEADJdoIQylggEFDJ50Dgx8iAEbDKR0BQyWiAECDKF4LQyCigERDIN4DQykZgMMg5gBLwyT",
-              "z": 23
-            },
-            {
-              "tool": "pen",
-              "color": "orange",
-              "width": 4,
-              "points": "AMirAYqfAQCFvAP5AgxzuwRtDIw",
-              "z": 24
-            },
-            {
-              "tool": "text",
-              "at": [
-                712,
-                612
-              ],
-              "text": "review Friday",
-              "size": 20,
-              "color": "orange",
-              "z": 25
-            },
-            {
-              "tool": "sticky",
-              "at": [
-                650,
-                340
-              ],
-              "text": "Later: holiday mode. Who waters when I am away?",
-              "size": 17,
-              "color": "ink",
-              "wrap": 220,
-              "z": 26
+              "z": 59
             },
             {
               "tool": "pen",
               "color": "orange",
               "width": 3,
-              "points": "ALbjAchVAJHUAvgHDHzrBvEEDIG-CBEMnvEGogUMkeICkQgMicICgAgMh-UGgwUMpKwIAwyF4QaSBQx82gKbCAyM",
-              "z": 27
+              "points": "ALDUAbQXAJDAArIHDKKbBsEEDIzWBxUMmIkG0AQMfaICqQcMd6gCogcMi4sGpwQMi9gHFwydkQbCBAyImgKVBwyb",
+              "z": 60
             }
           ]
         }
@@ -10585,14 +10404,14 @@
     ],
     "scribble:desk/616c6c2d6465736b7300000000000009": [
       {
-        "envelope_number": 874001,
+        "envelope_number": 799601,
         "local_id": null,
         "pending": false,
-        "envelope_hash": "359fd01f262118cea187fa5726894b93398499833d00dad936540c039fe2c4c9",
-        "sender_device_id": "5e5c199cbf26ef2038765bf094beea7134501402b2629fdf9171b3c9b6ca67f0",
-        "sender_sequence": 5,
+        "envelope_hash": "ca3176d0aabdcdfdc068f589b1cbec00bd1607d3607185439492d7c5c292ddc3",
+        "sender_device_id": "bab7d20137fb7093183f65076f6c0ba36a1f1d3ff7defdf7f429c7e45e2ed266",
+        "sender_sequence": 1,
         "recipient_device_id": null,
-        "sent_at": 1791466200000,
+        "sent_at": 1791391800000,
         "item_state": "loaded",
         "content_type": "strokes",
         "content": {
@@ -10604,17 +10423,17 @@
                 40,
                 30
               ],
-              "text": "This week",
+              "text": "Fernly: launch week",
               "size": 30,
               "color": "ink",
-              "z": 52
+              "z": 1
             },
             {
               "tool": "marker",
-              "color": "pink",
+              "color": "green",
               "width": 14,
-              "points": "APgJiBIAeqYCNQyYrgIeDH3oAR8Mc_ABHAx5_AENDHeuAhUMorYCBQx1-AEQDJiUAhcMi-wBCgx2xgICDIfmAQYMkY4CDAx9jgI7DIu4AgIMnKACAwx8igIDDIfWAQ0MgqoCCAxzpgIMDIE",
-              "z": 53
+              "points": "ANAJkhIAd4QEKQyH-AMCDHvYAwIMd-gDBwym5gMUDH7iAzsMk8ADHAx69AMpDIreAxgMkfoDBAx6uAMRDKKSBAwMoMQDEQyg7AMWDKDOAzUMofYDCwyasAMFDIHmAwMMc5QEHAx_uAMMDHc",
+              "z": 2
             },
             {
               "tool": "sticky",
@@ -10622,67 +10441,248 @@
                 40,
                 120
               ],
-              "text": "Fernly\nweb launch Monday 09:00",
+              "text": "Before Monday\n· pricing ✓\n· onboarding ✓\n· checkout\n· Safari test",
               "size": 17,
               "color": "ink",
               "wrap": 230,
-              "z": 54
+              "z": 3
+            },
+            {
+              "tool": "pen",
+              "color": "green",
+              "width": 4,
+              "points": "AKw-hCYAoOoBpgIMeWp-DIz2AZkDDHPAAtEDDKE",
+              "z": 4
+            },
+            {
+              "tool": "pen",
+              "color": "green",
+              "width": 4,
+              "points": "AMZDkCwAfcgBoAIMkGaCAQx1jgKrAwyatgLPAwyW",
+              "z": 5
+            },
+            {
+              "tool": "image",
+              "rect": [
+                330,
+                110,
+                540,
+                564
+              ],
+              "attachment": {
+                "attachment_id": "f0dc48fdf98ca01482e6877528d75bc2",
+                "file_key": "",
+                "sha256": "",
+                "file_name": "phone-today.png",
+                "media_type": "image/png",
+                "total_size": 102893,
+                "width": 780,
+                "height": 1688,
+                "url": "/demo/files/phone-today.png"
+              },
+              "nw": 780,
+              "nh": 1688,
+              "mime": "image/png",
+              "name": "phone-today.png",
+              "z": 6
             },
             {
               "tool": "sticky",
               "at": [
-                300,
-                132
+                600,
+                100
               ],
-              "text": "iOS 1.2\nin review by Friday",
+              "text": "“Never forget to water again.”\nKeep it!",
               "size": 17,
               "color": "ink",
-              "wrap": 230,
-              "z": 55
-            },
-            {
-              "tool": "sticky",
-              "at": [
-                560,
-                120
-              ],
-              "text": "Platform\nus-east serving reads by Oct 31",
-              "size": 17,
-              "color": "ink",
-              "wrap": 240,
-              "z": 56
+              "wrap": 280,
+              "z": 7
             },
             {
               "tool": "pen",
-              "color": "orange",
-              "width": 3,
-              "points": "AL5D-kAAnZQDOQylvAMPDIaAAxUMjqADNQyErAMLDKWQAx4MhbYDAAxzkgMYDJyYAxYMoYADCgyAlgMwDJmwA04MpvgCRAyOrgNODKWOAzwMkIoDXgyWjAOAAQyH7gJSDISmA5oBDIOEA4YBDKX0AnYMd5ADlgEMkJgDrgEMgg",
-              "z": 57
+              "color": "red",
+              "width": 4,
+              "points": "AJbeAfgbAJdu1gEMjugC5AEMiVPuAQyfgwOGAgyPZdYBDJ-_A7gBDIHjBYQBDJaPBdYBDImpBiYMh80GiAEMfIkHEwyR7wYUDH_pBi0MoacGcwyd4QU3DIS3BskBDJaNBL0BDJ_3Ac0BDHn1AekBDILZAdEBDKJb9wEMc6IDzwEMecwC6wEMh_ACzwEMdNQEswEMltwFjQEMocAGSQx8kgY9DH78BiEMo_oGIwyW2gZyDHz6BggMefgFegyTkAWsAQx0_ALQAQycvAS2AQyR2AKGAgyZceYBDHkL2AEMhA",
+              "z": 8
             },
             {
               "tool": "pen",
-              "color": "orange",
-              "width": 3,
-              "points": "AMiHAa5LAIi2BCkMgYcDvwMMeg",
-              "z": 58
+              "color": "ink",
+              "width": 4,
+              "points": "AIiWAdIvAIGNAQ4MfXcoDHR_JAyLjQEWDI9fOAx6azgMg3VIDItRSAx-a0gMdl1CDHVDUgx4Q1QMk1tcDIsxWgycP2QMmCdiDI0tcAyWR2wMhydgDJIDmgEMpD1eDJoPpgEMpAaKAQyX",
+              "z": 9
+            },
+            {
+              "tool": "pen",
+              "color": "ink",
+              "width": 4,
+              "points": "APqGAaY6AImaAYoEDI_aAsUDDIY",
+              "z": 10
             },
             {
               "tool": "text",
               "at": [
-                360,
-                320
+                600,
+                250
               ],
-              "text": "checkout must be ready first",
+              "text": "the first screen people see",
               "size": 18,
+              "color": "blue",
+              "z": 11
+            }
+          ]
+        }
+      },
+      {
+        "envelope_number": 853602,
+        "local_id": null,
+        "pending": false,
+        "envelope_hash": "c4e5b8fc9fa1e46b933b090839ee2b55ea5b2a8016c8397ca32aa1f862b60417",
+        "sender_device_id": "bab7d20137fb7093183f65076f6c0ba36a1f1d3ff7defdf7f429c7e45e2ed266",
+        "sender_sequence": 2,
+        "recipient_device_id": null,
+        "sent_at": 1791445800000,
+        "item_state": "loaded",
+        "content_type": "strokes",
+        "content": {
+          "content_type": "strokes",
+          "strokes": [
+            {
+              "tool": "text",
+              "at": [
+                40,
+                520
+              ],
+              "text": "iOS 1.2",
+              "size": 26,
+              "color": "ink",
+              "z": 12
+            },
+            {
+              "tool": "marker",
+              "color": "pink",
+              "width": 14,
+              "points": "AIoK-ooBAIOSASMMkcIBDAyQrAEGDJOsARcMkKYBJAx76AEpDH2MAQsMeZ4BFgyE2AEfDJO-AQYMn6QBBgyUbh8Mh-gBGAyElAEODIfSATUMeZoBDQx7qgE0DHXIAScMi6QBEgyG0gEJDHc",
+              "z": 13
+            },
+            {
+              "tool": "pen",
+              "color": "ink",
+              "width": 3,
+              "points": "AIYKxpMBAHfwAgEMiPYCCQx3lAMZDIKGAwwMhqIDJAyDiAMFDIeAAygMc4QDOQyH8AIuDIiWAx0MnJ4DDQyd_gIGDHXKAgIMibwDFgyQJTMMkxrIAQx6DaoBDHkAjgEMhyJ8DHU33AEMgRyAAQyVAbQBDHwZjgEMpE6mAQygD6gBDI8bogEMexCcAQyIMbQBDJYyjgEMgRsADImXAwMMgp0DJQyH7wIcDH2nAwcMc8cCIgx-tQMdDJP5Ag8MlI8DBQx0lQMEDKPzAiIMd_cCGQx4oQMaDJjbAhIMlrcDBwyVPAEMkCetAQyjAs8BDHYFewx_HMMBDHssrwEMhSe5AQyDRpMBDH0XiwEMdAa5AQx7RpMBDI0BzQEMpBepAQx7HpEBDI0VpwEMkw",
+              "z": 14
+            },
+            {
+              "tool": "text",
+              "at": [
+                58,
+                612
+              ],
+              "text": "widgets",
+              "size": 20,
+              "color": "ink",
+              "z": 15
+            },
+            {
+              "tool": "pen",
+              "color": "ink",
+              "width": 3,
+              "points": "AJo8zJMBAJ3qAhAMg4gDOwyW_gIiDKP0AjEMl4YDLAyZkAMQDJyoAwEMl_gCTQyf8AJYDHiGAx8MjpgDCwyIjAMCDKPeAjcMe6YDGAyYDSAMgxm0AQyODKoBDIoXagx1JNABDJUivAEMdguiAQyKDIIBDHgPnAEMdRGMAQx8G6IBDJAEvAEMlhaUAQydFXwMfR7YAQx2GgIMh6EDAgx2gQMhDKGxAxoMnuMCEwyOhQMaDKOjAwUMpZEDHAyegQMrDHzrAigMmK8DMwyN8wIADKWVA0AMgPsCAQye_QIvDHsYFgylB88BDIgngQEMjBTPAQx1QqsBDH8BcQyNJaEBDJko3QEMnwmVAQyGMMUBDI8UnQEMnBWRAQyMSpUBDKUDrQEMlS3LAQyK",
+              "z": 16
+            },
+            {
+              "tool": "text",
+              "at": [
+                255,
+                612
+              ],
+              "text": "dark mode",
+              "size": 20,
+              "color": "ink",
+              "z": 17
+            },
+            {
+              "tool": "pen",
+              "color": "ink",
+              "width": 3,
+              "points": "APpttpMBAJ30AgUMiKADBAyDngMaDJqGAyEMo-ICGgye-AIMDKCYAw8MoPwCAQyD8gIPDIiiAyQMeegCBwyIlAMgDHf6AhkMc6oDBQylPxkMnjimAQyfCrgBDKJDnAEMhCyiAQyUEYgBDJEIfgycBtoBDH0LrgEMeQpqDKQS1AEMpSKkAQycAngMfEOkAQykB74BDIkqDgyLmwMHDJSbAwkMgO8CAgyliQMZDH6FAywMdI0DJQx24QILDIeXAwcMlvkCLgyDiwM3DJafA0QMl68DAAx15QIXDJvBAyUMfTooDHwrwwEMnFClAQyKH6UBDHs2zQEMdAuTAQx_CakBDH8ggwEMhjbdAQyVBIUBDJgNiQEMkgGhAQyABrkBDIAKmQEMfwTXAQyU",
+              "z": 18
+            },
+            {
+              "tool": "text",
+              "at": [
+                470,
+                612
+              ],
+              "text": "sharing",
+              "size": 20,
+              "color": "ink",
+              "z": 19
+            },
+            {
+              "tool": "pen",
+              "color": "green",
+              "width": 4,
+              "points": "AJAu8osBAHveAbACDJp2cgyOgAKVAwyisALLAwyZ",
+              "z": 20
+            },
+            {
+              "tool": "pen",
+              "color": "green",
+              "width": 4,
+              "points": "AKhg9IsBAI_MAaACDHdgiAEMnpgCpwMMgrACqwMMgQ",
+              "z": 21
+            },
+            {
+              "tool": "pen",
+              "color": "green",
+              "width": 4,
+              "points": "AJqSAfSLAQCh6gGyAgyZaIQBDHriAbcDDJ_GArsDDKQ",
+              "z": 22
+            },
+            {
+              "tool": "pen",
               "color": "orange",
-              "z": 59
+              "width": 4,
+              "points": "ANKYAa6cAQCWchQMiXweDHt2FgyhcgEMnIIBEgyChgEODJhsDAyMggEaDI58AQyXmAEFDJtiIAx2mgEADJdoIQylggEFDJ50Dgx8iAEbDKR0BQyWiAECDKF4LQyCigERDIN4DQykZgMMg5gBLwyT",
+              "z": 23
+            },
+            {
+              "tool": "pen",
+              "color": "orange",
+              "width": 4,
+              "points": "AMirAYqfAQCFvAP5AgxzuwRtDIw",
+              "z": 24
+            },
+            {
+              "tool": "text",
+              "at": [
+                712,
+                612
+              ],
+              "text": "review Friday",
+              "size": 20,
+              "color": "orange",
+              "z": 25
+            },
+            {
+              "tool": "sticky",
+              "at": [
+                650,
+                340
+              ],
+              "text": "Later: holiday mode. Who waters when I am away?",
+              "size": 17,
+              "color": "ink",
+              "wrap": 220,
+              "z": 26
             },
             {
               "tool": "pen",
               "color": "orange",
               "width": 3,
-              "points": "ALDUAbQXAJDAArIHDKKbBsEEDIzWBxUMmIkG0AQMfaICqQcMd6gCogcMi4sGpwQMi9gHFwydkQbCBAyImgKVBwyb",
-              "z": 60
+              "points": "ALbjAchVAJHUAvgHDHzrBvEEDIG-CBEMnvEGogUMkeICkQgMicICgAgMh-UGgwUMpKwIAwyF4QaSBQx82gKbCAyM",
+              "z": 27
             }
           ]
         }

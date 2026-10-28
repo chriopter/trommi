@@ -62,8 +62,9 @@ public enum CoreView {
     public var visible: Bool
     /// The team in view: a team's id; none when none was chosen, or one that is gone: the first team.
     public var team: String?
-    /// The Scribble Board shown beside the screen (the group page's): `desk/<32 hex>`, or a team's id or "all" for that
-    /// team's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
+    /// The whiteboard is kept beside the screen (under the turned corner of a group, chat or card page): any value
+    /// (a board id or team id of before is read the same). There is one sheet, the board of "All desks" (spec 10.1);
+    /// `Screen::Scribble` shows it too. The core reads it and sends `ViewModel.board`.
     public var board: String?
     /// The wide sidebar is folded to a rail (this device's, the shell keeps it): its rows carry no counts and no
     /// signs but one quiet dot on a chat that needs the person (`SessionRowView.signal`).
@@ -149,7 +150,9 @@ public enum CoreView {
     case notes
     /// The page Off your mind, the complete list, with the search's words (empty: all).
     case off(query: String)
-    case scribble(boardId: String)
+    /// The whiteboard: the one sheet of the person, the board of "All desks" (spec 10.1). The group boards of before
+    /// are no longer shown (their items stay on the hub). A `board_id` an older shell sends is ignored.
+    case scribble
     /// The gallery of every Artifact the agents published, with its filter: "" every one, "media" the pictures,
     /// videos and files, "pages" the pages.
     case artifacts(kind: String)
@@ -169,7 +172,6 @@ public enum CoreView {
       case sessionId = "session_id"
       case cardId = "card_id"
       case query = "query"
-      case boardId = "board_id"
       case kind = "kind"
       case filter = "filter"
       case open = "open"
@@ -184,7 +186,7 @@ public enum CoreView {
       case "card": self = .card(cardId: try c.decode(String.self, forKey: .cardId))
       case "notes": self = .notes
       case "off": self = .off(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "")
-      case "scribble": self = .scribble(boardId: try c.decode(String.self, forKey: .boardId))
+      case "scribble": self = .scribble
       case "artifacts": self = .artifacts(kind: try c.decodeIfPresent(String.self, forKey: .kind) ?? "")
       case "knowledge": self = .knowledge(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "", filter: try c.decodeIfPresent(String.self, forKey: .filter) ?? "", open: try c.decodeIfPresent(String.self, forKey: .open) ?? "")
       case "wakeups": self = .wakeups
@@ -209,9 +211,8 @@ public enum CoreView {
       case .off(let query):
         try c.encode("off", forKey: .screen)
         try c.encode(query, forKey: .query)
-      case .scribble(let boardId):
+      case .scribble:
         try c.encode("scribble", forKey: .screen)
-        try c.encode(boardId, forKey: .boardId)
       case .artifacts(let kind):
         try c.encode("artifacts", forKey: .screen)
         if !kind.isEmpty { try c.encode(kind, forKey: .kind) }
@@ -1845,7 +1846,7 @@ public enum CoreView {
     public var label: Text
     /// How many, small at its end: "7 entries", "7 entries · 2 new", "3 set"; none where there is nothing to count.
     public var count: Text?
-    /// Where it goes: `Screen::Knowledge`, `Screen::Wakeups`, `Screen::Scribble`; none for "rename" (the shell asks
+    /// Where it goes: `Screen::Knowledge`, `Screen::Wakeups`; none for "rename" (the shell asks
     /// for the new name and sends `Action::RenameTeam`).
     public var opens: Screen?
     /// Below a line of its own (the last group of entries: "rename").
@@ -7597,20 +7598,34 @@ public enum CoreView {
   public struct BoardView: Codable, Hashable, Sendable {
     /// `desk/<32 hex>`.
     public var boardId: String
+    /// The chat the whiteboard was opened from (the page before it was a chat's, or a card's of that chat): its
+    /// "Send to" sends a selection there with one press. None: it was opened from anywhere else.
+    public var from: BoardChatView?
+    /// "Back to Fernly Website": the way back into that chat (with `from`).
+    public var back: Text?
+    /// Every chat a selection can be sent to, of every group: the one it was opened from first, then the sidebar's
+    /// order.
+    public var chats: [BoardChatView]
     /// "loading" (its snapshot and the items after it are read), "ready", "newer_version" (an item needs a newer
     /// Trommi: what it did is not shown), "withheld" (an item could not be read on this device).
     public var state: String
     /// Every shape in drawing order: by layer (`z`), then as they were made; strokes others are still drawing last.
     public var shapes: [BoardShape]
 
-    public init(boardId: String = "", state: String = "", shapes: [BoardShape] = []) {
+    public init(boardId: String = "", from: BoardChatView? = nil, back: Text? = nil, chats: [BoardChatView] = [], state: String = "", shapes: [BoardShape] = []) {
       self.boardId = boardId
+      self.from = from
+      self.back = back
+      self.chats = chats
       self.state = state
       self.shapes = shapes
     }
 
     enum CodingKeys: String, CodingKey {
       case boardId = "board_id"
+      case from = "from"
+      case back = "back"
+      case chats = "chats"
       case state = "state"
       case shapes = "shapes"
     }
@@ -7618,6 +7633,9 @@ public enum CoreView {
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.boardId = try c.decode(String.self, forKey: .boardId)
+      self.from = try c.decodeIfPresent(BoardChatView.self, forKey: .from)
+      self.back = try c.decodeIfPresent(Text.self, forKey: .back)
+      self.chats = try c.decodeIfPresent([BoardChatView].self, forKey: .chats) ?? []
       self.state = try c.decode(String.self, forKey: .state)
       self.shapes = try c.decodeIfPresent([BoardShape].self, forKey: .shapes) ?? []
     }
@@ -7625,8 +7643,64 @@ public enum CoreView {
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(boardId, forKey: .boardId)
+      try c.encodeIfPresent(from, forKey: .from)
+      try c.encodeIfPresent(back, forKey: .back)
+      if !chats.isEmpty { try c.encode(chats, forKey: .chats) }
       try c.encode(state, forKey: .state)
       if !shapes.isEmpty { try c.encode(shapes, forKey: .shapes) }
+    }
+  }
+
+  /// A chat a selection of the whiteboard can be sent to (`BoardView.chats`, `BoardView.from`).
+  public struct BoardChatView: Codable, Hashable, Sendable {
+    /// The session's key (`SessionRowView.id`): where a selection is sent.
+    public var sessionId: String
+    /// Its short id: its address (`/chat/<slug>`).
+    public var slug: String
+    public var name: String
+    /// Its face (`SessionRowView.mark`).
+    public var mark: String
+    /// Its agent is connected.
+    public var online: Bool
+    /// "Send to Fernly Website".
+    public var send: Text
+
+    public init(sessionId: String = "", slug: String = "", name: String = "", mark: String = "", online: Bool = false, send: Text = Text()) {
+      self.sessionId = sessionId
+      self.slug = slug
+      self.name = name
+      self.mark = mark
+      self.online = online
+      self.send = send
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case sessionId = "session_id"
+      case slug = "slug"
+      case name = "name"
+      case mark = "mark"
+      case online = "online"
+      case send = "send"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.sessionId = try c.decode(String.self, forKey: .sessionId)
+      self.slug = try c.decode(String.self, forKey: .slug)
+      self.name = try c.decode(String.self, forKey: .name)
+      self.mark = try c.decode(String.self, forKey: .mark)
+      self.online = try c.decode(Bool.self, forKey: .online)
+      self.send = try c.decode(Text.self, forKey: .send)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(sessionId, forKey: .sessionId)
+      try c.encode(slug, forKey: .slug)
+      try c.encode(name, forKey: .name)
+      try c.encode(mark, forKey: .mark)
+      try c.encode(online, forKey: .online)
+      try c.encode(send, forKey: .send)
     }
   }
 

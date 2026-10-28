@@ -11,8 +11,8 @@ with plain names ("Fernly Website", "Push Reminders"); a helper's cards, status 
 session with its name; each session has its conversation, some with work trails, notes
 and artifacts in it. There are 52 cards: 31 open (yes/no, two and three options with pictures, multiple choice,
 sections, a table, every urgency, two handed back to their agent), and answered, closed, settled, read, shredded,
-withdrawn and merged ones; 14 artifacts, two permission requests already answered, the corner note, the team knowledge of each team (a few pinned, two new to the person, one forgotten, with their history), a Scribble Board
-per team (and one of the view of every team at once, which is gone), and the 40 pictures, pages and files they name. The Desk is meant to look inviting:
+withdrawn and merged ones; 14 artifacts, two permission requests already answered, the corner note, the team knowledge of each team (a few pinned, two new to the person, one forgotten, with their history), the Scribble Board
+(the one sheet, the board of "All desks"; and a board per team of before, shown small in Settings), and the 40 pictures, pages and files they name. The Desk is meant to look inviting:
 one blocking card, one that knocks, then design and product choices with pictures (oldest first), the plain
 questions after them and the reports last. `/screens` lists the states of the account screens, the Desk on each team, chats, cards,
 Settings and the Scribble Board.

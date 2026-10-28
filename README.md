@@ -62,8 +62,8 @@ The computer-approval release changes the MCP tool contract and needs one client
   the recording to it; the hub relays ciphertext only ([spec/v1.md](spec/v1.md) section 18, [SECURITY.md](SECURITY.md)).
 - **Groups:** your chats stand in groups (teams). A group's page lists its open cards in one list: the questions
   under "Waits for you", what is only to read below under "To read"; a chip per chat (those that need you first, the
-  rest behind "+n") shows one chat's cards and opens it; the ⋯ beside the name holds Knowledge, Wakeups, the Scribble
-  Board and Rename. There is no page of every group: Blitz walks every group's open cards. The folded sidebar shows no
+  rest behind "+n") shows one chat's cards and opens it; the ⋯ beside the name holds Knowledge, Wakeups and Rename.
+  The Scribble Board is one sheet for everything, its yellow button beside Search. There is no page of every group: Blitz walks every group's open cards. The folded sidebar shows no
   counters, only a quiet dot on a chat that waits for you or is stopped; the grey counters count cards, never messages.
 - **Connector:** one signed program that joins a Claude Code, Codex or Hermes Agent session to your room.
   What the agent is told: [connector/prompt.md](connector/prompt.md).

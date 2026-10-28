@@ -506,15 +506,6 @@ fn head(b: &Board, team: &str) -> GroupHeadView {
             opens: Some(Screen::Wakeups),
             apart: false,
         });
-        menu.push(GroupMenuItem {
-            key: "board".into(),
-            label: say("group.menu.board", "Scribble Board", &[]),
-            count: None,
-            opens: Some(Screen::Scribble {
-                board_id: crate::scribble::team_board(team),
-            }),
-            apart: false,
-        });
         // (a room without teams has its one list, no team to rename)
         if !b.teams.is_empty() {
             menu.push(GroupMenuItem {
@@ -1596,14 +1587,12 @@ mod tests {
             [
                 ("knowledge", "Knowledge", "", false),
                 ("wakeups", "Wakeups", "", false),
-                ("board", "Scribble Board", "", false),
                 ("rename", "Rename group", "", true)
             ]
         );
         assert!(matches!(head.menu[0].opens, Some(Screen::Knowledge { .. })));
         assert_eq!(head.menu[1].opens, Some(Screen::Wakeups));
-        assert!(matches!(head.menu[2].opens, Some(Screen::Scribble { .. })));
-        assert_eq!(head.menu[3].opens, None);
+        assert_eq!(head.menu[2].opens, None);
         // (a room without teams: its one list has no team to rename)
         let mut r = Room::default();
         r.session("a", None, true);

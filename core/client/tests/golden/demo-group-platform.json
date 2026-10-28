@@ -59,18 +59,6 @@
         "apart": false
       },
       {
-        "key": "board",
-        "label": {
-          "key": "group.menu.board",
-          "en": "Scribble Board"
-        },
-        "opens": {
-          "screen": "scribble",
-          "board_id": "desk/706c6174666f726d0000000000000008"
-        },
-        "apart": false
-      },
-      {
         "key": "rename",
         "label": {
           "key": "group.menu.rename",

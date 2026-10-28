@@ -203,19 +203,20 @@ fn the_demo_shows_its_scribble_boards_folds_goals_and_adds_a_team_with_undo() {
             ..Default::default()
         },
     });
-    // the group page's board beside it: the demo's shapes, its pictures openable
+    // the whiteboard kept beside the group page: the one sheet (the board of "All desks"), whatever team is in
+    // view; the demo's shapes, its pictures openable
     sim.send(Event::Focus {
         focus: Focus {
             screen: Screen::Group,
-            team: Some("main".into()),
-            board: Some("main".into()),
+            team: Some("platform".into()),
+            board: Some("all".into()),
             ..Default::default()
         },
     });
     let board = sim.view.board.clone().expect("the board in view");
     assert_eq!(
         (board.board_id.as_str(), board.state.as_str()),
-        ("desk/6d61696e000000000000000000000004", "ready")
+        ("desk/616c6c2d6465736b7300000000000009", "ready")
     );
     assert!(board.shapes.len() >= 5, "{}", board.shapes.len());
     let picture = board
@@ -241,7 +242,81 @@ fn the_demo_shows_its_scribble_boards_folds_goals_and_adds_a_team_with_undo() {
     let now = sim.view.board.clone().unwrap();
     assert_eq!(now.shapes.len(), board.shapes.len() - 1);
     assert!(!now.shapes.iter().any(|s| s.id == first));
-    // the group page draws no board small (its ⋯ menu opens the board)
+    // opened from a chat: "Send to" goes there, and the way back leads there; every chat of every group is offered
+    let chat = sim.view.sidebar.sessions[1].clone();
+    for screen in [
+        Screen::Session {
+            session_id: chat.slug.clone(),
+        },
+        Screen::Scribble,
+    ] {
+        sim.send(Event::Focus {
+            focus: Focus {
+                screen,
+                team: Some("platform".into()),
+                board: Some("all".into()),
+                ..Default::default()
+            },
+        });
+    }
+    let sheet = sim.view.board.clone().expect("the whiteboard");
+    let from = sheet.from.clone().expect("opened from a chat");
+    assert_eq!(from.session_id, chat.id);
+    assert_eq!(from.send.en, format!("Send to {}", chat.name.en));
+    assert_eq!(
+        sheet.back.as_ref().map(|t| t.en.clone()),
+        Some(format!("Back to {}", chat.name.en))
+    );
+    assert_eq!(
+        sheet.chats[0].session_id, chat.id,
+        "the chat it came from first"
+    );
+    assert!(
+        sheet.chats.len() > sim.view.sidebar.sessions.len(),
+        "the chats of every group"
+    );
+    // opened from a card's page (by its number, as its address has it): that card's chat
+    let block = sim.view.group.blocks[0].clone();
+    let id = block.questions[0].id.clone();
+    sim.send(Event::Focus {
+        focus: Focus {
+            screen: Screen::Card {
+                card_id: id.clone(),
+            },
+            ..Default::default()
+        },
+    });
+    let number = sim.view.cards[&id].number.to_string();
+    for screen in [Screen::Card { card_id: number }, Screen::Scribble] {
+        sim.send(Event::Focus {
+            focus: Focus {
+                screen,
+                board: Some("all".into()),
+                ..Default::default()
+            },
+        });
+    }
+    assert_eq!(
+        sim.view
+            .board
+            .as_ref()
+            .and_then(|b| b.from.as_ref())
+            .map(|f| f.session_id.clone()),
+        Some(block.session_id.clone())
+    );
+    // opened from the group page: no chat first
+    for screen in [Screen::Group, Screen::Scribble] {
+        sim.send(Event::Focus {
+            focus: Focus {
+                screen,
+                ..Default::default()
+            },
+        });
+    }
+    let sheet = sim.view.board.clone().expect("the whiteboard");
+    assert!(sheet.from.is_none() && sheet.back.is_none());
+
+    // the group page draws no board small
     assert!(
         sim.view.thumbs.is_none(),
         "no boards small on the group page"
@@ -265,7 +340,7 @@ fn the_demo_shows_its_scribble_boards_folds_goals_and_adds_a_team_with_undo() {
             .collect::<Vec<_>>(),
         ["main", "platform"]
     );
-    assert_eq!(thumbs[0].count as usize, now.shapes.len());
+    assert!(thumbs[0].count > 0, "the team's board of before, small");
     assert!(thumbs
         .iter()
         .flat_map(|t| &t.shapes)

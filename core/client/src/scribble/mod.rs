@@ -919,6 +919,7 @@ impl Scribble {
             board_id: format!("desk/{}", pad.hex()),
             state: pad.state().into(),
             shapes,
+            ..Default::default()
         })
     }
 
@@ -1386,6 +1387,7 @@ pub fn model_board(
             board_id: id,
             state: "ready".into(),
             shapes,
+            ..Default::default()
         },
         refs,
     )

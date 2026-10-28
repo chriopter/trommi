@@ -7,7 +7,7 @@
 //! red hand and status lines (`sessions.rs`, `status.rs`), the open cards and their order (`group.rs`, the model's
 //! `stack`, `open_permission_ids`, `desk_order`).
 
-use super::words::earliest;
+use super::words::{earliest, say};
 use crate::helpers::Helper;
 use crate::model::types::{Card, PermissionRequest};
 use crate::model::Model;
@@ -43,6 +43,9 @@ pub struct Lens {
     pub session: Option<String>,
     /// The card whose page is in view: its unit is made.
     pub card: Option<String>,
+    /// The page the whiteboard was opened from, while it is a chat's (its key or short id) or a card's (its id):
+    /// set by the page in view, kept while the whiteboard is (`BoardView.from`).
+    pub board_from: Option<String>,
     /// That card's page is a step of this chat's Blitz (`Focus.walk_chat`), not of the group page's.
     pub walk_chat: Option<String>,
     /// That card's page is a step of Blitz over every group (`Focus.walk_all`).
@@ -699,6 +702,57 @@ pub fn clean_goals(text: &str) -> String {
         .take(GOALS_LINES)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The chats of the whiteboard in view (`BoardView.from`, `back`, `chats`): every chat that is not archived, the
+/// one it was opened from first (`Lens.board_from`: a chat's page names it, a card's page its chat).
+pub fn board_chats(model: &Model, lens: &Lens, now: u64, view: &mut super::BoardView) {
+    let b = Board::new(model, lens, now);
+    let chat = |a: &Agent| {
+        let name = a.row.name.as_str();
+        super::BoardChatView {
+            session_id: a.row.key.clone(),
+            slug: a.row.id.clone(),
+            name: name.to_string(),
+            mark: a.row.mark(),
+            online: a.row.online,
+            send: say(
+                "board.send_to",
+                format!("Send to {name}"),
+                &[("name", name)],
+            ),
+        }
+    };
+    let from = lens.board_from.as_deref().and_then(|from| {
+        // (a card by its id, or by its number on the board as its address has it)
+        let card = model.cards.get(from).or_else(|| {
+            let n: u32 = from.parse().ok().filter(|n| *n > 0)?;
+            model
+                .cards
+                .iter()
+                .find(|(k, _)| b.number_of(k) == n)
+                .map(|(_, c)| c)
+        });
+        let key = match card {
+            Some(c) => key_of(&c.session_id, &c.agent_device_id).to_string(),
+            None => from.to_string(),
+        };
+        b.by_key.get(&key).or_else(|| b.by_id.get(&key)).copied()
+    });
+    let from = from.filter(|i| !b.agents[*i].row.archived);
+    view.from = from.map(|i| chat(&b.agents[i]));
+    view.back = view.from.as_ref().map(|c| {
+        say(
+            "board.back_to",
+            format!("Back to {}", c.name),
+            &[("name", c.name.as_str())],
+        )
+    });
+    view.chats = from
+        .into_iter()
+        .chain((0..b.agents.len()).filter(|i| Some(*i) != from && !b.agents[*i].row.archived))
+        .map(|i| chat(&b.agents[i]))
+        .collect();
 }
 
 /// Makes the board's units of `view` again from the model: the sidebar, the group page, the pages in view, the notes and

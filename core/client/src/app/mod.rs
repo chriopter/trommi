@@ -1541,11 +1541,19 @@ impl App {
                 } => self.account(now_ms, action, &mut out),
                 Event::Action { action } => self.action(now_ms, action, &mut out),
                 Event::Focus { focus } => {
-                    let board = match &focus.screen {
-                        Screen::Scribble { board_id } => Some(board_id.as_str()),
-                        _ => focus.board.as_deref(),
-                    };
-                    let board = board.and_then(crate::scribble::board_in_view);
+                    // (one sheet: the whiteboard in view, or kept beside the page, is the board of "All desks")
+                    let board = (matches!(focus.screen, Screen::Scribble) || focus.board.is_some())
+                        .then_some(trommi_core::ids::BoardId::ALL_DESKS);
+                    // (the page it is opened from: a chat's or a card's names where "Send to" goes; the whiteboard
+                    //  keeps it, any other page forgets it)
+                    match &focus.screen {
+                        Screen::Session { session_id } => {
+                            self.lens.board_from = Some(session_id.clone())
+                        }
+                        Screen::Card { card_id } => self.lens.board_from = Some(card_id.clone()),
+                        Screen::Scribble => {}
+                        _ => self.lens.board_from = None,
+                    }
                     self.scribble.focus(board);
                     self.this_window().board = board;
                     // (every team's board small: Settings)
@@ -1962,6 +1970,13 @@ impl App {
         self.outside(now_ms, out);
     }
 
+    /// The whiteboard in view: the chats a selection goes to, the one it was opened from first (`BoardView.from`).
+    fn board_chats(&mut self, now_ms: u64) {
+        if let Some(view) = self.next_view.board.as_mut() {
+            crate::views::board::board_chats(&self.board.model, &self.lens, now_ms, view);
+        }
+    }
+
     /// The current window's views, made from the model and its lens; the files every window names and the earliest
     /// moment one changes by the clock.
     fn make_views(&mut self, now_ms: u64) {
@@ -1978,6 +1993,7 @@ impl App {
                 shown.extend(refs);
                 view
             });
+            self.board_chats(now_ms);
             self.next_view.thumbs = self.thumbs();
             self.next_view.settings.logout =
                 crate::views::settings::logout(&self.next_view.settings, true);
@@ -1993,6 +2009,7 @@ impl App {
             );
             self.next_view.board = self.scribble.view(&self.board.model);
             shown.extend(self.scribble.pictures(&self.board.model));
+            self.board_chats(now_ms);
             self.next_view.thumbs = self.thumbs();
             if let Some(engine) = self.engine.as_ref() {
                 self.next_view.settings.room = Some(engine::feed::hex(engine.room().as_bytes()));
