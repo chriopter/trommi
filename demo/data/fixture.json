@@ -187,7 +187,7 @@
           "id": "launch",
           "label": "Launch Monday",
           "state": "decision",
-          "detail": "Monday 09:00 or Tuesday? On your Desk",
+          "detail": "Monday 09:00 or Tuesday? Waits for you",
           "object_id": "95a7444523d097bff745b891bc2166cf",
           "updated_at": 1791468720000
         },
@@ -228,7 +228,7 @@
           "id": "copy-button",
           "label": "Sign-up button",
           "state": "decision",
-          "detail": "Two versions on your Desk",
+          "detail": "Two versions wait for you",
           "object_id": "daa202f98097523fa1f1fe18068f8322",
           "updated_at": 1791467820000,
           "helper": "Copywriting"
@@ -422,7 +422,7 @@
           "id": "icons",
           "label": "Tab bar icons",
           "state": "decision",
-          "detail": "Three styles on your Desk",
+          "detail": "Three styles wait for you",
           "object_id": "0bfe44d41f866466dc1f6246fabac244",
           "updated_at": 1791467100000
         },
@@ -526,7 +526,7 @@
           "id": "checkout-variant",
           "label": "Sheet or page",
           "state": "decision",
-          "detail": "Both built, on your Desk",
+          "detail": "Both built, waiting for you",
           "object_id": "992640bed603743781e3241f6a2de105",
           "updated_at": 1791468600000,
           "helper": "Checkout"
@@ -7623,7 +7623,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Three sets of names for the plans are on your Desk.",
+          "text": "Three sets of names for the plans are waiting for you.",
           "attachments": [],
           "helper": "Copywriting"
         }
@@ -7685,7 +7685,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "On it. I split it up:\n\n- **Landing Page**: the hero and the sections\n- **Copywriting**: plan names, buttons, the e-mails\n- **Onboarding**: sign-up in three steps\n- **Page Speed** and **Testing** in parallel\n- **Search & Social** last\n\nQuestions come to your Desk as cards.",
+          "text": "On it. I split it up:\n\n- **Landing Page**: the hero and the sections\n- **Copywriting**: plan names, buttons, the e-mails\n- **Onboarding**: sign-up in three steps\n- **Page Speed** and **Testing** in parallel\n- **Search & Social** last\n\nQuestions come to you as cards.",
           "attachments": []
         }
       },
@@ -7836,7 +7836,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Two heroes are drawn, with the same words. The choice is on your Desk.",
+          "text": "Two heroes are drawn, with the same words. The choice is waiting for you.",
           "attachments": [],
           "helper": "Landing Page"
         }
@@ -7938,7 +7938,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Largest paint 1.4 s, first load 98 kB. Info card is on your Desk.",
+          "text": "Largest paint 1.4 s, first load 98 kB. The info card is ready to read.",
           "attachments": [],
           "helper": "Page Speed"
         }
@@ -8127,7 +8127,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "When we ask for notifications is the last open point. On your Desk.",
+          "text": "When we ask for notifications is the last open point. Waiting for you.",
           "attachments": [],
           "helper": "Onboarding"
         }
@@ -8158,7 +8158,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Then I would send one on Sunday evening. The question is on your Desk.",
+          "text": "Then I would send one on Sunday evening. The question is waiting for you.",
           "attachments": []
         }
       },
@@ -8173,7 +8173,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "One more: the button on step 1. Both versions are on your Desk, each with its picture.",
+          "text": "One more: the button on step 1. Both versions are waiting for you, each with its picture.",
           "attachments": [],
           "helper": "Copywriting"
         }
@@ -8189,7 +8189,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "The social card is on your Desk: photo or illustration.",
+          "text": "The social card is waiting for you: photo or illustration.",
           "attachments": [],
           "helper": "Search & Social"
         }
@@ -8220,7 +8220,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Done, 10% smaller from 1280 px. Both versions on your Desk again.",
+          "text": "Done, 10% smaller from 1280 px. Both versions are waiting for you again.",
           "attachments": [],
           "helper": "Landing Page"
         }
@@ -8271,7 +8271,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Only the Safari test, and it is a test problem, not a checkout problem. Monday or Tuesday is on your Desk, with the reasons.",
+          "text": "Only the Safari test, and it is a test problem, not a checkout problem. Monday or Tuesday is waiting for you, with the reasons.",
           "attachments": []
         }
       },
@@ -8344,7 +8344,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "41 of 44 green; the Safari checkout test fails 2 of 12 runs, always on the iframe. Question on your Desk.",
+          "text": "41 of 44 green; the Safari checkout test fails 2 of 12 runs, always on the iframe. The question is waiting for you.",
           "attachments": [],
           "helper": "Testing"
         }
@@ -8575,7 +8575,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Which go first is on your Desk.",
+          "text": "Which go first is waiting for you.",
           "attachments": [],
           "helper": "App Store"
         }
@@ -8591,7 +8591,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Both sizes designed. Which first is on your Desk.",
+          "text": "Both sizes designed. Which first is waiting for you.",
           "attachments": [],
           "helper": "Widgets"
         }
@@ -8729,7 +8729,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "The crash is in the widget timeline on a time-zone change; **419 fixes it** and is on TestFlight since noon. Holding 1.2 for it costs one day of review. Card on your Desk.",
+          "text": "The crash is in the widget timeline on a time-zone change; **419 fixes it** and is on TestFlight since noon. Holding 1.2 for it costs one day of review. The card is waiting for you.",
           "attachments": [],
           "terminal": "answer"
         }
@@ -8901,7 +8901,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Only the photos are open: on your Desk.",
+          "text": "Only the photos are open: waiting for you.",
           "attachments": [],
           "helper": "Dark Mode"
         }
@@ -8917,7 +8917,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Proposal: name colours by their job in code. First one on your Desk.",
+          "text": "Proposal: name colours by their job in code. The first one is waiting for you.",
           "attachments": [],
           "helper": "Design Tokens"
         }
@@ -8933,7 +8933,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "The tab bar icons in three styles are on your Desk; the whole set follows the pick.",
+          "text": "The tab bar icons in three styles are waiting for you; the whole set follows the pick.",
           "attachments": []
         }
       },
@@ -8948,7 +8948,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Tab bar in three styles on your Desk.",
+          "text": "Tab bar in three styles, waiting for you.",
           "attachments": [],
           "helper": "Icons"
         }
@@ -8997,7 +8997,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Yes: since the 14:02 deploy every webhook gets a 400. Stripe retries, nothing is lost yet. Rollback question on your Desk, critical.",
+          "text": "Yes: since the 14:02 deploy every webhook gets a 400. Stripe retries, nothing is lost yet. Rollback question is waiting for you, critical.",
           "attachments": []
         }
       },
@@ -9028,7 +9028,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Retries: day 1, day 3, day 7. On your Desk.",
+          "text": "Retries: day 1, day 3, day 7. Waiting for you.",
           "attachments": [],
           "helper": "Webhooks"
         }
@@ -9118,7 +9118,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "It is built twice, as a sheet and as a page; **Checkout** put both on your Desk. **Load Testing** runs k6 against staging once you allow it.",
+          "text": "It is built twice, as a sheet and as a page; **Checkout** sent both to you. **Load Testing** runs k6 against staging once you allow it.",
           "attachments": []
         }
       },
@@ -9133,7 +9133,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "400 rps with p95 176 ms. Info card on your Desk.",
+          "text": "400 rps with p95 176 ms. The info card is ready to read.",
           "attachments": [],
           "helper": "Load Testing"
         }
@@ -9181,7 +9181,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "What people may change themselves is on your Desk.",
+          "text": "What people may change themselves is waiting for you.",
           "attachments": [],
           "helper": "Invoices"
         }
@@ -9527,7 +9527,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "How long to keep raw events is on your Desk; I merged the CDC schedule question into it.",
+          "text": "How long to keep raw events is waiting for you; I merged the CDC schedule question into it.",
           "attachments": []
         }
       },
@@ -9557,7 +9557,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Because opening the app counts. With “watered a plant” it is 14,960. Which one is on your Desk.",
+          "text": "Because opening the app counts. With “watered a plant” it is 14,960. Which one is waiting for you.",
           "attachments": [],
           "helper": "Dashboards"
         }
@@ -9805,7 +9805,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Production on Wednesday night is on your Desk.",
+          "text": "Production on Wednesday night is waiting for you.",
           "attachments": [],
           "helper": "Kubernetes"
         }
@@ -9916,7 +9916,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "The primary disk is at 91%. Critical card on your Desk.",
+          "text": "The primary disk is at 91%. The critical card is waiting for you.",
           "attachments": []
         }
       }
@@ -9979,7 +9979,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "The OpenAPI file covers 34 endpoints. Generate from it? On your Desk.",
+          "text": "The OpenAPI file covers 34 endpoints. Generate from it? Waiting for you.",
           "attachments": [],
           "helper": "API Reference"
         }
@@ -9995,7 +9995,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Layout on your Desk: sidebar or tabs.",
+          "text": "Layout waits for you: sidebar or tabs.",
           "attachments": []
         }
       },
@@ -10837,7 +10837,7 @@
       "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1": {
         "desk": "platform",
         "title": "Cloud budget",
-        "text": "Under 6,000 € a month. Anything that adds more than 200 € a month needs a Yes on the Desk first.",
+        "text": "Under 6,000 € a month. Anything that adds more than 200 € a month needs a Yes on a card first.",
         "at": 1791210600000,
         "pinned": true,
         "kind": "rule"

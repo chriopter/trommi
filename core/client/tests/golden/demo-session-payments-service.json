@@ -32,7 +32,7 @@
     {
       "id": "e271120",
       "from_me": false,
-      "text": "Yes: since the 14:02 deploy every webhook gets a 400. Stripe retries, nothing is lost yet. Rollback question on your Desk, critical.",
+      "text": "Yes: since the 14:02 deploy every webhook gets a 400. Stripe retries, nothing is lost yet. Rollback question is waiting for you, critical.",
       "time_ms": 1790863320000,
       "heard": false,
       "pending": false,
@@ -152,7 +152,7 @@
     {
       "id": "e337000",
       "from_me": false,
-      "text": "Retries: day 1, day 3, day 7. On your Desk.",
+      "text": "Retries: day 1, day 3, day 7. Waiting for you.",
       "time_ms": 1790929200000,
       "heard": false,
       "pending": false,
@@ -397,7 +397,7 @@
     {
       "id": "e865720",
       "from_me": false,
-      "text": "It is built twice, as a sheet and as a page; **Checkout** put both on your Desk. **Load Testing** runs k6 against staging once you allow it.",
+      "text": "It is built twice, as a sheet and as a page; **Checkout** sent both to you. **Load Testing** runs k6 against staging once you allow it.",
       "time_ms": 1791457920000,
       "heard": false,
       "pending": false,
@@ -410,7 +410,7 @@
     {
       "id": "e870100",
       "from_me": false,
-      "text": "400 rps with p95 176 ms. Info card on your Desk.",
+      "text": "400 rps with p95 176 ms. The info card is ready to read.",
       "time_ms": 1791462300000,
       "heard": false,
       "pending": false,
@@ -646,7 +646,7 @@
     {
       "id": "e874122",
       "from_me": false,
-      "text": "What people may change themselves is on your Desk.",
+      "text": "What people may change themselves is waiting for you.",
       "time_ms": 1791466320000,
       "heard": false,
       "pending": false,
@@ -972,7 +972,7 @@
       "label": "Sheet or page",
       "helper": "Checkout",
       "who": "Checkout",
-      "detail": "Both built, on your Desk",
+      "detail": "Both built, waiting for you",
       "state": "decision",
       "says": {
         "key": "line.decision",

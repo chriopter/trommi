@@ -88,7 +88,7 @@
     {
       "id": "e873101",
       "from_me": false,
-      "text": "Largest paint 1.4 s, first load 98 kB. Info card is on your Desk.",
+      "text": "Largest paint 1.4 s, first load 98 kB. The info card is ready to read.",
       "time_ms": 1791465300000,
       "heard": false,
       "pending": false,
@@ -436,7 +436,7 @@
     {
       "id": "e874481",
       "from_me": false,
-      "text": "When we ask for notifications is the last open point. On your Desk.",
+      "text": "When we ask for notifications is the last open point. Waiting for you.",
       "time_ms": 1791466680000,
       "heard": false,
       "pending": false,
@@ -559,7 +559,7 @@
     {
       "id": "e875201",
       "from_me": false,
-      "text": "Then I would send one on Sunday evening. The question is on your Desk.",
+      "text": "Then I would send one on Sunday evening. The question is waiting for you.",
       "time_ms": 1791467400000,
       "heard": false,
       "pending": false,
@@ -688,7 +688,7 @@
     {
       "id": "e875621",
       "from_me": false,
-      "text": "One more: the button on step 1. Both versions are on your Desk, each with its picture.",
+      "text": "One more: the button on step 1. Both versions are waiting for you, each with its picture.",
       "time_ms": 1791467820000,
       "heard": false,
       "pending": false,
@@ -702,7 +702,7 @@
     {
       "id": "e875740",
       "from_me": false,
-      "text": "The social card is on your Desk: photo or illustration.",
+      "text": "The social card is waiting for you: photo or illustration.",
       "time_ms": 1791467940000,
       "heard": false,
       "pending": false,
@@ -873,7 +873,7 @@
     {
       "id": "e876041",
       "from_me": false,
-      "text": "Done, 10% smaller from 1280 px. Both versions on your Desk again.",
+      "text": "Done, 10% smaller from 1280 px. Both versions are waiting for you again.",
       "time_ms": 1791468240000,
       "heard": false,
       "pending": false,
@@ -1108,7 +1108,7 @@
     {
       "id": "e876521",
       "from_me": false,
-      "text": "Only the Safari test, and it is a test problem, not a checkout problem. Monday or Tuesday is on your Desk, with the reasons.",
+      "text": "Only the Safari test, and it is a test problem, not a checkout problem. Monday or Tuesday is waiting for you, with the reasons.",
       "time_ms": 1791468720000,
       "heard": false,
       "pending": false,
@@ -1335,7 +1335,7 @@
     {
       "id": "e877241",
       "from_me": false,
-      "text": "41 of 44 green; the Safari checkout test fails 2 of 12 runs, always on the iframe. Question on your Desk.",
+      "text": "41 of 44 green; the Safari checkout test fails 2 of 12 runs, always on the iframe. The question is waiting for you.",
       "time_ms": 1791469440000,
       "heard": false,
       "pending": false,
@@ -1661,7 +1661,7 @@
       "id": "launch",
       "label": "Launch Monday",
       "who": "Fernly Website",
-      "detail": "Monday 09:00 or Tuesday? On your Desk",
+      "detail": "Monday 09:00 or Tuesday? Waits for you",
       "state": "decision",
       "says": {
         "key": "line.decision",
@@ -1719,7 +1719,7 @@
       "label": "Sign-up button",
       "helper": "Copywriting",
       "who": "Copywriting",
-      "detail": "Two versions on your Desk",
+      "detail": "Two versions wait for you",
       "state": "decision",
       "says": {
         "key": "line.decision",
