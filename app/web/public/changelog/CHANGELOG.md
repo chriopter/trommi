@@ -14,9 +14,9 @@ notes, pick the two to four things people will notice most. A day may have at mo
 
 ## 28 October 2026
 
-Answering on a card's page goes straight on to the next card, with Undo in the toast. A helper's status line says
-what it is doing and for how long. Logging out on the web wipes this browser, and the iPhone groups your chats and
-teams.
+A group's page stands chat by chat, and chats on no team stand loose at the top. One Scribble Board for everything,
+its button next to Search, and an option's picture on a card is its own again. Answers go straight on to the next
+card, helpers say what they do, and logging out on the web wipes this browser.
 
 ## 27 October 2026
 
