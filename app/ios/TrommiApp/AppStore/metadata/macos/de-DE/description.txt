@@ -7,6 +7,9 @@ Coding-Agenten halten an, wenn sie dich brauchen: eine Designfrage, eine Freigab
 AGENTEN FRAGEN, DU ENTSCHEIDEST
 Eine Session legt eine Karte mit ihrer Frage und ein paar Optionen an, mit Bildern oder einer Seite zum Ausprobieren, wenn es hilft. Ein Klick antwortet, und der Agent macht weiter.
 
+EINE LISTE PRO GRUPPE
+Klick in der Seitenleiste auf eine Gruppe, und ihre offenen Karten stehen in einer Liste: zuerst, was auf dich wartet, dann, was zu lesen ist, mit einem Chip für jeden Chat. Nach einer Antwort ist die nächste Karte schon offen. Blitz geht die offenen Karten aller Gruppen nacheinander durch.
+
 IN DER MENÜLEISTE
 Eine Glocke in der Menüleiste zeigt, wie viele Fragen warten. Ihr Fenster listet sie auf, die dringenden zuerst; ein Klick öffnet die Karte.
 
@@ -14,15 +17,15 @@ DAS GANZE GESPRÄCH
 Schreib mit jeder Session, sieh, woran sie arbeitet, gib eine Karte mit einer Notiz zurück, erteile eine Freigabe. Return sendet; Shift+Return gibt eine Karte mit deinen Worten zurück.
 
 ÜBERALL DASSELBE BOARD
-Mac, iPhone und die Web-App zeigen denselben Desk. Was du auf einem Gerät beantwortest, ist auf allen beantwortet.
+Mac, iPhone und die Web-App zeigen dieselben Gruppen und Karten. Was du auf einem Gerät beantwortest, ist auf allen beantwortet.
 
 ENDE-ZU-ENDE VERSCHLÜSSELT
 Karten, Antworten, Chats, Notizen und Dateien werden auf deinen Geräten mit MLS verschlüsselt, dem IETF-Standard für Gruppennachrichten. Der Server stellt versiegelte Umschläge zu und hat keinen Schlüssel, der sie öffnet. App, Connector und Server sind offener Code unter der O'Saasy-Lizenz: lesen, ändern, selbst betreiben.
 
 SO VERBINDET ES SICH
-Trommi arbeitet mit Agenten, die du selbst betreibst. Installiere auf einem Linux- oder macOS-Rechner mit Claude Code oder Codex einmal den Trommi-Connector und verbinde eine Session mit dem Einladungslink aus „Invite Agent…“ in der App. Sechs Emoji vergleichen, bestätigen, und die nächste Frage der Session landet auf deinem Desk. Anleitung: trommi.com
+Trommi arbeitet mit Agenten, die du selbst betreibst. Installiere auf einem Linux- oder macOS-Rechner mit Claude Code oder Codex einmal den Trommi-Connector und verbinde eine Session mit dem Einladungslink aus „Invite Agent…“ in der App. Sechs Emoji vergleichen, bestätigen, und die nächste Frage der Session landet in ihrer Gruppe. Anleitung: trommi.com
 
-Erst mal umsehen? „Try the demo“ auf dem Startbildschirm öffnet einen vollständigen, erfundenen Desk; nichts wird gesendet.
+Erst mal umsehen? „Try the demo“ auf dem Startbildschirm öffnet einen vollständigen, erfundenen Arbeitsbereich; nichts wird gesendet.
 
 Trommi ist vorerst kostenlos. Registriere dich mit E-Mail-Adresse und Passwort, oder füge diesen Mac mit einem Link von einem deiner anderen Geräte zu deinem Konto hinzu. Dein Konto kannst du jederzeit in den Einstellungen löschen.
 

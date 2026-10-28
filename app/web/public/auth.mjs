@@ -22,7 +22,7 @@ const day = ms => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', mon
 const local = {
   sent: null,          // the form sent last: { path, word, passkey } (its button is busy while the step is 'working')
   email: '',           // the e-mail typed last, to start the next form with
-  begun: false,        // this page signed in, made an account or joined: its screens lead to the Desk once in
+  begun: false,        // this page signed in, made an account or joined: its screens lead to the group page once in
   loggedOut: false,    // "Logged out." on the start page
   invite: null,        // the invite asked for here: { kind: 'device' | 'agent' } (where it stands: vm.account.invite)
   kitFrom: 'start',    // where a new kit is shown: 'start' (/kit) or 'settings' (/settings/account/kit)
@@ -270,7 +270,7 @@ export function register(t) {
     if (hash.startsWith('#k1.')) { history.replaceState(history.state, '', location.pathname + location.search); return t.redirect(res, '/forgot?way=passkey') }
     const flowing = signedOut(m) || !['none', 'invite'].includes(step) || (name === 'login' && Boolean(m.account?.resume))
     if (!flowing) {
-      // (signed in: the words of a recovery wait for the new way in; a screen this page led through leads to the Desk)
+      // (signed in: the words of a recovery wait for the new way in; a screen this page led through leads to the group page)
       if (name === 'newway' && local.words) return t.page(req, res, { title: 'New way in · Trommi', view: 'account', sidebar: false, main: screenMain('newway', screenOpts('newway', m, url)) })
       if (local.words && name === 'forgot') return t.redirect(res, '/new-way')
       if (!local.begun && (name === 'login' || name === 'join')) return page(req, res, 'Pair a device', alreadyIn())
@@ -280,7 +280,7 @@ export function register(t) {
     if (name === 'scan' && !url.searchParams.has('paste')) local.paste = ''
     t.page(req, res, { title: `${TITLES[name]} · Trommi`, view: 'account', sidebar: false, main: screenMain(name, screenOpts(name, m, url)) })
   })
-  const alreadyIn = () => roomShell('Already logged in', html`<p class="room-lead">This device is logged in already. Invite another device under <a href="/settings" data-nav>Settings</a>.</p><p class="room-meta">Another account? <a href="/logout" data-nav id="login-logout-first">Log out of this device first</a>, then log in.</p><p class="room-meta"><a href="/" data-nav>Open your Desk</a></p>`)
+  const alreadyIn = () => roomShell('Already logged in', html`<p class="room-lead">This device is logged in already. Invite another device under <a href="/settings" data-nav>Settings</a>.</p><p class="room-meta">Another account? <a href="/logout" data-nav id="login-logout-first">Log out of this device first</a>, then log in.</p><p class="room-meta"><a href="/" data-nav>Open your groups</a></p>`)
 
   t.post(/^\/create$/, ({ res, form }) => {
     const email = field(form, 'email').trim()

@@ -2,13 +2,16 @@ Your agents ring. Answer anywhere.
 
 Claude Code and Codex ask as cards on your phone. One tap, and they keep working. End-to-end encrypted.
 
-Coding agents stop when they need you: a design choice, a permission, a question only you can answer. Trommi brings that question to your pocket, so the work goes on while you are away from the desk.
+Coding agents stop when they need you: a design choice, a permission, a question only you can answer. Trommi brings that question to your pocket, so the work goes on while you are away from your computer.
 
 AGENTS ASK, YOU DECIDE
 A session files a card with its question and a few options, with pictures or a page to try when it helps. One tap answers, and the agent carries on.
 
+ONE LIST PER GROUP
+Your chats and teams, grouped. Tap a group and its open cards are there in one list: what waits for you first, then what is to read, with a chip for each chat. Answer one, and the next card is already open. Blitz walks the open cards of every group, one after the other.
+
 A PUSH WHEN ONE NEEDS YOU
-Blocking questions come first and ring; the rest waits quietly on your Desk. Choose per phone: every question, only the urgent ones, or none.
+Blocking questions come first and ring; the rest waits quietly in its group. Choose per phone: every question, only the urgent ones, or none.
 
 THE WHOLE CONVERSATION
 Chat with any session, see what it is working on, hand a card back with a note, approve a permission request.
@@ -20,9 +23,9 @@ END-TO-END ENCRYPTED
 Cards, answers, chats, drawings and files are encrypted on your devices with MLS, the IETF standard for group messaging. The server delivers sealed envelopes and holds no key that opens them. App, connector and server are open code under the O'Saasy license: read it, change it, host it yourself.
 
 HOW IT CONNECTS
-Trommi works with agents you run yourself. On a Linux or macOS machine with Claude Code or Codex, install the Trommi connector once, then connect a session with the invite link from "Invite Agent…" in the app. Compare six emoji, confirm, and the session's next question lands on your Desk. Instructions: trommi.com
+Trommi works with agents you run yourself. On a Linux or macOS machine with Claude Code or Codex, install the Trommi connector once, then connect a session with the invite link from "Invite Agent…" in the app. Compare six emoji, confirm, and the session's next question lands in its group. Instructions: trommi.com
 
-Want to look around first? "Try the demo" on the start screen opens a full made-up Desk on your phone; nothing is sent.
+Want to look around first? "Try the demo" on the start screen opens a full made-up workspace on your phone; nothing is sent.
 
 Trommi is free for now. Sign up with an email address and a password. You can delete your account in Settings at any time.
 
