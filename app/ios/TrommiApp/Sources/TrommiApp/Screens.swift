@@ -168,7 +168,6 @@ struct PlacePill: View {
     let side = shell.view.sidebar
     Menu {
       Section("Teams") {
-        if let none = side.noTeam { HomeItem(home: none) { shell.pick(.desk); shell.focus(.group, team: none.id) } }
         ForEach(side.teams, id: \.id) { teamItem($0) }
       }
     } label: {
@@ -215,7 +214,6 @@ struct Sidebar: View {
     VStack(spacing: 0) {
       // The top: only the switch of the team in view, a menu of the teams, each with its open questions.
       Menu {
-        if let none = side.noTeam { HomeItem(home: none) { shell.focus(.group, team: none.id) } }
         ForEach(side.teams, id: \.id) { teamItem($0) }
       } label: {
         HStack(spacing: 12) {
@@ -278,19 +276,6 @@ struct Sidebar: View {
   }
 }
 
-/** The chats on no team in the team menu, above the teams (`sidebar.no_team`, while there are any): their group page. */
-struct HomeItem: View {
-  let home: CoreView.TeamTab
-  let pick: () -> Void
-  var body: some View {
-    Button(action: pick) {
-      Label { Text(home.cards > 0 ? "\(home.name.en) · \(home.cards)" : home.name.en) } icon: { if home.selected { Image(systemName: "checkmark") } else { PenImage.desk(waiting: home.waiting > 0) } }
-    }
-    .accessibilityLabel(home.waiting > 0 ? "\(home.name.en), \(home.waiting) waiting" : home.name.en)
-    .accessibilityIdentifier("team-home")
-  }
-}
-
 /** One session in the sidebar: its mark, its name, how it hears, its helpers as dots, what waits. */
 struct SessionRow: View {
   @EnvironmentObject var shell: AppShell
@@ -333,7 +318,8 @@ struct SessionRow: View {
 
 // ---- the group page ------------------------------------------------------------------------------------------------
 
-/** The group page (`view.group`): the group's name, a chip per chat, the questions, then what is only to read. The
+/** The group page (`view.group`): the group's name, then one block per chat (its head opens the chat), in each its
+ *  questions, then what is only to read; nothing open: the calm word. The
  *  iPhone's look is being redrawn on its own; this draws the core's GroupView with the components there are. */
 struct DeskScreen: View {
   @EnvironmentObject var shell: AppShell
@@ -353,21 +339,15 @@ struct DeskScreen: View {
             if let goals = desk.goals { GoalsDrawing(goals: goals).id(goals.teamId) }
           }.padding(.top, 18).padding(.bottom, 6)
         }
-        if !desk.chips.isEmpty { GroupChips(chips: desk.chips) }
         if let reading = desk.reading { Text(reading.en).font(Face.text(14)).foregroundStyle(Ink.muted).accessibilityIdentifier("reading-history") }
         if !desk.slip.isEmpty { CutSlip(slips: desk.slip) }
-        if let says = desk.questionsSays { GroupPart(says: says) }
-        ForEach(desk.questions, id: \.id) { row in DeskRow(row: row) }
-        if let says = desk.readsSays { GroupPart(says: says) }
-        ForEach(desk.reads, id: \.id) { row in DeskRow(row: row) }
-        if calm, let empty = desk.empty {
-          ContentUnavailableView(empty.en, systemImage: "checkmark.circle").frame(maxWidth: .infinity).padding(.vertical, 40)
-        } else if let empty = desk.empty {
-          VStack(spacing: 10) {
-            Sketch("desk", color: Ink.faint).frame(width: 64, height: 64)
-            Text(empty.en).font(Face.text(15)).foregroundStyle(Ink.muted).multilineTextAlignment(.center)
-          }.frame(maxWidth: .infinity).padding(.vertical, 28)
+        if let summary = desk.summary { Text(summary.en).font(Face.text(14)).foregroundStyle(Ink.muted) }
+        ForEach(desk.blocks, id: \.sessionId) { block in
+          GroupBlockHead(block: block).padding(.top, 10)
+          ForEach(block.questions, id: \.id) { row in DeskRow(row: row) }
+          ForEach(block.reads, id: \.id) { row in DeskRow(row: row) }
         }
+        if let empty = desk.empty, desk.mode != "invite" { GroupCalm(empty: empty) }
       }
       .padding(.horizontal, 16).padding(.bottom, 120)
       .frame(maxWidth: 760).frame(maxWidth: .infinity)
@@ -589,47 +569,81 @@ struct GroupMenu: View {
   }
 }
 
-/** The chips of the group page (`GroupView.chips`): "All" first, then each chat; a tap shows only that chat's cards,
- *  the chosen one opens its chat. The core orders them; every one is drawn (the row scrolls). */
-struct GroupChips: View {
+/** A chat's block head on the group page (`ChatBlockView`): its face and name, how many of its questions wait, at
+ *  work, "Open chat ›"; the whole head opens the chat. `native`: the iPhone's system look. */
+struct GroupBlockHead: View {
   @EnvironmentObject var shell: AppShell
-  let chips: [CoreView.ChipView]
+  let block: CoreView.ChatBlockView
+  var native = false
   var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: 8) {
-        ForEach(chips, id: \.sessionId) { chip in
-          Button {
-            if chip.selected, !chip.sessionId.isEmpty { shell.focus(.session(sessionId: chip.sessionId)) }
-            else { shell.chip(chip.sessionId.isEmpty ? nil : chip.sessionId) }
-          } label: {
-            HStack(spacing: 6) {
-              Text(chip.name.en).font(Face.text(14, .semibold)).lineLimit(1)
-              if chip.count > 0 { Text("\(chip.count)").font(Face.text(14)).foregroundStyle(chip.selected ? Ink.bg : Ink.muted) }
-              if chip.needs { Circle().fill(chip.selected ? Ink.bg : Ink.accent).frame(width: 7, height: 7) }
-              if let go = chip.openChat { Text(go.en).font(Face.text(14, .bold)) }
-            }
-            .foregroundStyle(chip.selected ? Ink.bg : Ink.fg)
-            .padding(.horizontal, 12).frame(height: 34)
-            .background(Capsule().fill(chip.selected ? Ink.fg : Ink.surface))
-            .overlay(Capsule().stroke(Ink.line, lineWidth: chip.selected ? 0 : 1))
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel(chip.says.en)
+    let hue = Pen.hueFor(id: block.slug.isEmpty ? block.sessionId : block.slug, mark: block.mark)
+    Button { shell.focus(.session(sessionId: block.sessionId)) } label: {
+      HStack(spacing: 10) {
+        NativeAvatar(mark: block.mark, hue: hue, size: native ? 28 : 32)
+        Text(block.name.en).font(native ? .headline : Face.display(18, .bold)).foregroundStyle(native ? Color.primary : Ink.fg).lineLimit(1)
+        if let open = block.open {
+          Text(open.en).font(.caption.weight(.semibold)).foregroundStyle(Ink.accent)
+            .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Ink.accentSoft))
         }
+        if let working = block.working { Text(working.en).font(.caption.weight(.medium)).foregroundStyle(Ink.stWorking) }
+        Spacer(minLength: 6)
+        Text(block.openChat.en).font(.footnote.weight(.semibold)).foregroundStyle(Tone.color(hue: hue, .pen)).lineLimit(1)
       }
+      .textCase(nil)
+      .contentShape(Rectangle())
     }
-    .accessibilityIdentifier("group-chips")
+    .buttonStyle(.plain)
+    .accessibilityLabel(block.says.en)
+    .accessibilityIdentifier("group-block-" + block.sessionId)
   }
 }
 
-/** A part's heading on the group page: "Waits for you", "To read", with how many. */
-struct GroupPart: View {
-  let says: CoreView.Text
+/** The group page with nothing open (`GroupEmptyView`): the calm word, who is at work, where else a question waits
+ *  (a tap: that group), and what the person answered here lately (a tap: the card). */
+struct GroupCalm: View {
+  @EnvironmentObject var shell: AppShell
+  let empty: CoreView.GroupEmptyView
   var body: some View {
-    HStack(spacing: 6) {
-      Text(says.en.uppercased()).font(Face.text(12, .bold)).foregroundStyle(Ink.muted)
-      Text(says.args["n"] ?? "").font(Face.text(12)).foregroundStyle(Ink.faint)
-    }.padding(.top, 6)
+    VStack(spacing: 10) {
+      Sketch("bell", color: Ink.accent).frame(width: 34, height: 34)
+        .frame(width: 64, height: 64).background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Ink.accentSoft))
+      Text(empty.title.en).font(Face.display(22, .bold)).foregroundStyle(Ink.fg).multilineTextAlignment(.center)
+      if let line = empty.line { Text(line.en).font(Face.text(15)).foregroundStyle(Ink.muted).multilineTextAlignment(.center) }
+      if let at = empty.elsewhere {
+        Button { shell.focus(.group, team: at.teamId) } label: {
+          HStack(spacing: 8) {
+            if !at.mark.isEmpty { NativeAvatar(mark: at.mark, hue: Pen.hueFor(id: at.teamId, mark: at.mark), size: 22) }
+            Text(at.says.en).font(Face.text(14, .medium)).foregroundStyle(Ink.muted)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Ink.faint)
+          }
+          .padding(.horizontal, 14).frame(minHeight: 40)
+          .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Ink.lineStrong, lineWidth: 1))
+        }
+        .buttonStyle(.plain).accessibilityIdentifier("group-elsewhere")
+      }
+      if !empty.lately.isEmpty {
+        VStack(alignment: .leading, spacing: 0) {
+          if let says = empty.latelySays { Text(says.en.uppercased()).font(Face.text(12, .bold)).foregroundStyle(Ink.muted).padding(.bottom, 6) }
+          ForEach(empty.lately, id: \.id) { a in
+            Button { shell.focus(.card(cardId: a.id)) } label: {
+              HStack(spacing: 8) {
+                NativeAvatar(mark: a.mark, hue: Pen.hueFor(id: a.slug.isEmpty ? a.sessionId : a.slug, mark: a.mark), size: 20)
+                Text(a.name.en).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+                Text(a.title).font(Face.text(14)).foregroundStyle(Ink.muted).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                Text(a.choice.en).font(Face.text(12, .semibold)).foregroundStyle(Ink.accent).lineLimit(1)
+                Text(a.age.en).font(Face.text(12)).foregroundStyle(Ink.faint)
+              }
+              .frame(minHeight: 40).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Divider()
+          }
+        }
+        .padding(.top, 24)
+        .accessibilityIdentifier("group-lately")
+      }
+    }
+    .frame(maxWidth: .infinity).padding(.vertical, 28)
   }
 }
 

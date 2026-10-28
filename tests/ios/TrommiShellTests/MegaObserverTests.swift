@@ -147,7 +147,7 @@ private final class NativeObserver {
     await focus(["screen": "group"])
     let view = await state.model(); var sessions: [String: Any] = [:]
     for row in view.sidebar.sessions { sessions[row.id] = ["agent_name": row.name.en, "parent": null] }
-    return ["desk": view.group.stack, "permissions_open": (view.group.questions + view.group.reads).filter { $0.kind == "request" }.map(\.id), "cards": cards, "permissions": permissions, "sessions": sessions, "snoozed": later.sorted(), "snooze_values": snooze, "debug": ["phase": view.phase.rawValue, "toasts": view.toasts.map { $0.text.en }]]
+    return ["desk": view.group.stack, "permissions_open": view.group.blocks.flatMap { $0.questions + $0.reads }.filter { $0.kind == "request" }.map(\.id), "cards": cards, "permissions": permissions, "sessions": sessions, "snoozed": later.sorted(), "snooze_values": snooze, "debug": ["phase": view.phase.rawValue, "toasts": view.toasts.map { $0.text.en }]]
   }
   func run(_ cmd: [String: Any]) async throws -> Any {
     let op = cmd["op"] as? String ?? ""

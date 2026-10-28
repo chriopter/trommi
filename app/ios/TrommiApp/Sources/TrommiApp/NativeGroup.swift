@@ -1,6 +1,7 @@
 // NativeGroup.swift: the iPhone's group page in the native look, drawing only (the core's `view.group`). The group's
-// name as the large title, its ⋯ menu in the bar, a face per chat to filter by, then two inset groups: the questions
-// with their answers as two round buttons, then what is only to read. The same controls at the bottom as the list.
+// name as the large title, its ⋯ menu in the bar, then one inset group per chat: its head (the chat's face and name,
+// "Open chat ›") is the way into the chat, under it its questions with their answers as two round buttons, then what
+// is only to read. Nothing open: the calm word. The same controls at the bottom as the list.
 // Order, headings, answers, ages and words are the core's.
 import SwiftUI
 import TrommiClient
@@ -17,28 +18,23 @@ struct NativeGroupPage: View {
         NativeFound()
       } else {
         if group.mode == "invite" { FirstAgent().listRowBackground(Color.clear).listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4)) }
-        if !group.chips.isEmpty {
-          NativeChips(chips: group.chips)
-            .listRowBackground(Color.clear).listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
+        if let summary = group.summary {
+          Text(summary.en).font(.subheadline).foregroundStyle(.secondary).listRowBackground(Color.clear)
+            .accessibilityIdentifier("group-summary")
         }
         if let reading = group.reading {
           Text(reading.en).font(.footnote).foregroundStyle(.secondary).listRowBackground(Color.clear)
             .accessibilityIdentifier("reading-history")
         }
         if !group.slip.isEmpty { CutSlip(slips: group.slip).listRowBackground(Color.clear).listRowInsets(EdgeInsets()) }
-        if !group.questions.isEmpty {
+        ForEach(group.blocks, id: \.sessionId) { block in
           Section {
-            ForEach(group.questions, id: \.id) { row in NativeQuestionRow(row: row) }
-          } header: { if let says = group.questionsSays { NativePartHead(says: says) } }
-        }
-        if !group.reads.isEmpty {
-          Section {
-            ForEach(group.reads, id: \.id) { row in NativeReadRow(row: row) }
-          } header: { if let says = group.readsSays { NativePartHead(says: says) } }
+            ForEach(block.questions, id: \.id) { row in NativeQuestionRow(row: row) }
+            ForEach(block.reads, id: \.id) { row in NativeReadRow(row: row) }
+          } header: { GroupBlockHead(block: block, native: true) }
         }
         if let empty = group.empty, group.mode != "invite" {
-          ContentUnavailableView(empty.en, systemImage: "checkmark.circle")
-            .frame(maxWidth: .infinity).padding(.vertical, 40).listRowBackground(Color.clear)
+          GroupCalm(empty: empty).listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
       }
     }
@@ -53,14 +49,6 @@ struct NativeGroupPage: View {
     .accessibilityIdentifier("desk-content")
     .accessibilityValue(speedReport ?? String(group.stack.count))
     .onAppear { speedReport = NativeDemo.ready(rows: group.stack.count) }
-  }
-}
-
-/** A part's heading: the core's "Waits for you" or "To read", with how many beside it. */
-private struct NativePartHead: View {
-  let says: CoreView.Text
-  var body: some View {
-    Text(says.args["n"].map { "\(says.en) · \($0)" } ?? says.en)
   }
 }
 
@@ -90,66 +78,12 @@ private struct NativeGroupMenu: View {
   }
 }
 
-/** The faces of the group's chats under the title (`GroupView.chips`), "All" first with its calm count: a tap shows
- *  only that chat's cards, the chosen one is ringed and a second tap opens its chat. Every chip is drawn; the row
- *  scrolls. */
-private struct NativeChips: View {
-  @EnvironmentObject var shell: AppShell
-  let chips: [CoreView.ChipView]
-  var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(alignment: .top, spacing: 14) {
-        ForEach(chips, id: \.sessionId) { chip in
-          Button {
-            if chip.selected, !chip.sessionId.isEmpty { shell.focus(.session(sessionId: chip.sessionId)) }
-            else { shell.chip(chip.sessionId.isEmpty ? nil : chip.sessionId) }
-          } label: {
-            VStack(spacing: 5) {
-              picture(chip)
-                .padding(3)
-                .overlay(Circle().stroke(chip.selected ? Ink.accent : Color.clear, lineWidth: 2))
-                .overlay(alignment: .topTrailing) {
-                  if chip.needs { Circle().fill(NativeLook.waits).frame(width: 11, height: 11).overlay(Circle().stroke(Color(uiColor: .systemGroupedBackground), lineWidth: 2)) }
-                }
-              Text(chip.name.en).font(.caption).foregroundStyle(chip.selected ? Color.primary : Color.secondary)
-                .lineLimit(2).multilineTextAlignment(.center)
-              if let go = chip.openChat { Text(go.en).font(.caption2.weight(.semibold)).foregroundStyle(Ink.accent).lineLimit(1) }
-            }
-            .frame(width: 66)
-            .contentShape(Rectangle())
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel(chip.says.en)
-          .accessibilityIdentifier("group-chip-" + (chip.sessionId.isEmpty ? "all" : chip.sessionId))
-          .accessibilityAddTraits(chip.selected ? .isSelected : [])
-        }
-      }
-      .padding(.horizontal, 16).padding(.vertical, 2)
-    }
-    .accessibilityIdentifier("group-chips")
-  }
-  @ViewBuilder private func picture(_ chip: CoreView.ChipView) -> some View {
-    if chip.sessionId.isEmpty {
-      // ("All": a quiet well with the group's calm count)
-      Circle().fill(NativeLook.bubble).frame(width: 50, height: 50)
-        .overlay { Text(chip.count > 0 ? "\(chip.count)" : "").font(.headline).monospacedDigit().foregroundStyle(.secondary) }
-    } else {
-      NativeAvatar(mark: chip.mark, hue: Pen.hueFor(id: chip.slug.isEmpty ? chip.sessionId : chip.slug, mark: chip.mark), size: 50)
-    }
-  }
-}
-
-/** Who a row is from and how long ago, small above its title: the face, its name, the core's age. */
+/** How long ago, small above a row's title (its chat is the block's head): the core's age, and its helper. */
 private struct NativeFromLine: View {
   let row: CoreView.DeskRowView
   var body: some View {
-    HStack(spacing: 6) {
-      if let from = row.from {
-        NativeAvatar(mark: from.mark, hue: Pen.hueFor(id: from.sessionId, mark: from.mark), size: 20)
-      }
-      Text([row.from?.name, row.age?.en].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-        .font(.footnote).foregroundStyle(.secondary).lineLimit(1)
-    }
+    Text([row.from?.helper?.en, row.age?.en].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+      .font(.footnote).foregroundStyle(.secondary).lineLimit(1)
   }
 }
 
@@ -259,7 +193,7 @@ private struct NativeAnswerStyle: ButtonStyle {
   }
 }
 
-/** Something to read: the page's drawing in a quiet square, its title, who sent it and how long ago. A tap opens it;
+/** Something to read: the page's drawing in a quiet square, its title and how long ago (its chat heads the block). A tap opens it;
  *  a swipe says Got it; held, the ways the core offers. */
 private struct NativeReadRow: View {
   @EnvironmentObject var shell: AppShell
@@ -272,8 +206,7 @@ private struct NativeReadRow: View {
         VStack(alignment: .leading, spacing: 1) {
           Text(row.title.isEmpty ? " " : row.title).font(.body.weight(.medium))
             .foregroundStyle(row.loading ? Color.secondary : Color.primary).lineLimit(1)
-          Text([row.from?.name, row.age?.en].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-            .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+          Text(row.age?.en ?? "").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .alignmentGuide(.listRowSeparatorLeading) { d in d[.leading] }

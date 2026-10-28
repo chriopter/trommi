@@ -165,9 +165,15 @@ fn wait_for(drawn: &mpsc::Receiver<String>, what: &str, want: impl Fn(&Value) ->
 
 /// The titles of the Desk's rows, in the order given.
 fn desk_titles(view: &Value) -> Vec<String> {
-    view["group"]["questions"]
+    view["group"]["blocks"]
         .as_array()
-        .map(|rows| rows.iter().filter_map(|r| r["title"].as_str().map(String::from)).collect())
+        .map(|blocks| {
+            blocks
+                .iter()
+                .flat_map(|k| k["questions"].as_array().cloned().unwrap_or_default())
+                .filter_map(|r| r["title"].as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -204,7 +210,7 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
     // the sidebar names the agent's session, and the card's row says who sent it
     let sessions = view["sidebar"]["sessions"].as_array().cloned().unwrap_or_default();
     assert_eq!(sessions.len(), 1, "one session: {sessions:?}");
-    let row = &view["group"]["questions"][0];
+    let row = &view["group"]["blocks"][0]["questions"][0];
     assert_eq!(row["from"]["session_id"], sessions[0]["id"], "{row}");
     if view["phase"] != "live" {
         wait_for(&drawn, "the phase live", |v| v["phase"] == "live");

@@ -256,14 +256,15 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertFalse(duck.waitForExistence(timeout: 2), "nothing left to duck")
     capture("desk-duck-done")
   }
-  /** Over the questions the group's chips: All first, then each chat; light and dark alike. */
-  func testGroupChipsOverTheQuestions() {
+  /** The cards in one block per chat, each block's head the way into its chat; no chips; light and dark alike. */
+  func testGroupCardsStandInBlocksByChat() {
     launch("desk")
-    let chips = app.descendants(matching: .any)["group-chips"]
+    let heads = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "group-block-"))
     let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "desk-card-"))
     XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 15))
-    XCTAssertTrue(chips.exists, app.debugDescription)
-    capture("group-chips")
+    XCTAssertTrue(heads.firstMatch.exists, app.debugDescription)
+    XCTAssertFalse(app.descendants(matching: .any)["group-chips"].exists, "no chips: the blocks name the chats")
+    capture("group-blocks")
   }
   func testChatListIsCalm() {
     launch("chats")

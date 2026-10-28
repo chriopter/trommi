@@ -115,7 +115,7 @@ ApplicationWindow {
             const scene = trommi.scene
             if (step === 0 && ["card", "session", "answer"].indexOf(scene) >= 0) {
                 step = 1
-                const rows = ((window.view.group || {}).questions || []).concat((window.view.group || {}).reads || [])
+                const rows = ((window.view.group || {}).blocks || []).reduce((all, k) => all.concat(k.questions || [], k.reads || []), [])
                 const sessions = (window.view.sidebar || {}).sessions || []
                 if (scene === "card" && rows.length) window.go({ screen: "card", card_id: rows[0].id })
                 if (scene === "session" && sessions.length) window.go({ screen: "session", session_id: sessions[0].id })

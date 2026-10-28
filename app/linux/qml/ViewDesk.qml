@@ -29,8 +29,9 @@ Item {
     }
 
     property bool goalsFolded: true
-    // (the questions, then what is only to read; the head's name is the big line)
-    readonly property var rows: (desk.questions || []).concat(desk.reads || [])
+    // (block after block, as the core orders them: each chat's questions, then what is only to read; the head's
+    //  name is the big line)
+    readonly property var rows: (desk.blocks || []).reduce((all, k) => all.concat(k.questions || [], k.reads || []), [])
     readonly property var words: desk.head ? desk.head.name.en.split(" ") : []
     readonly property var goals: desk.goals || null
     readonly property var slugs: { const m = {}; for (const s of (sidebar.sessions || [])) m[s.id] = s.slug; return m }
@@ -182,7 +183,7 @@ Item {
     Label {
         anchors.centerIn: parent
         visible: !!root.desk.empty
-        text: root.desk.empty ? root.desk.empty.en : ""
+        text: root.desk.empty ? root.desk.empty.title.en : ""
         color: theme.muted; font.pixelSize: 16
     }
 }

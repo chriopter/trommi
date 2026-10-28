@@ -104,8 +104,9 @@ stroke encoding is `Action::DrawStroke` in Rust. Goals are edited through `SetGo
 `FoldGoals`; the teams whose goals are folded are a local UI preference. The team in view is the core's
 (`sidebar.team`); the shell only remembers the last team chosen on this device (`trommi-team` in UserDefaults) and
 sends it as `Focus.team` after a start, and the core falls back to the first team when it is gone. A session's
-helpers are a line of dots under its name (`helpers`). The group page draws `group.questions`, then `group.reads`, under the core's
-headings, its chips (`group.chips`: a tap sends `Focus.group_chat`, the chosen one opens its chat) and its ⋯ menu
+helpers are a line of dots under its name (`helpers`). The group page draws `group.summary`, then one block per chat (`group.blocks`: its
+head opens the chat, under it its questions, then what is only to read), `group.empty` when nothing is open (a tap on
+`elsewhere` shows that team, on a `lately` row its card), and its ⋯ menu
 (`group.head.menu`; Rename sends `RenameTeam`); its duck for all and Blitz draw `group.duck` (sent back as `Batch`
 "sweep") and `group.blitz` (every group's open cards, `Focus.walk_all`). The iPhone draws it in its native look
 (`NativeGroup.swift`): the name as the large title, a face per chip, then two inset groups, the questions with their
@@ -119,7 +120,7 @@ inviting an agent, answering self-join requests, changing password/e-mail/kit, r
 removing devices and deleting an account. Core account flows check membership history and keep incomplete joins
 durable. Passkeys remain off (`Config.can.passkeys = false`); the native shell holds no parallel passkey flow.
 
-On a Mac the same sources draw a window with a sidebar and a menu-bar list of the core's open questions (`group.questions`). Closing the
+On a Mac the same sources draw a window with a sidebar and a menu-bar list of the core's open questions (the `questions` of `group.blocks`). Closing the
 window leaves the process in the menu bar. The Mac has APNs through AppKit but no share, notification-service or
 Live Activity extension. File selection and the Scribble canvas are available on both platforms; QR scanning is
 iPhone-only.
@@ -173,7 +174,7 @@ grey pills. The person's picture is a small button at the top right. At the bott
 the core filters by (`Focus.chats_query`, `sidebar.found`), then Blitz over every group and the + in one glass group. Cards, conversations and settings push onto the tab's
 navigation stack (the bar hides there), so Back and swipe-back return to the list. The note opens from the group page's top
 row. The place pill and the top of the sidebar (iPad, Mac) switch the group in view: a menu of the core's
-`sidebar.teams` (and "No team", `sidebar.no_team`, while chats stand on none), each with its open cards.
+`sidebar.teams`, each with its open cards (the chats on no team are no group: they stand loose in the list).
 
 An iPhone sends `Focus.calm` (the web too), and a chat is then calm, as Grok's: the core folds a run of card events into one row of
 chips (`TalkRow.kind` "events", `events`, a tap opens the card), leaves the helper list out (their status lines name

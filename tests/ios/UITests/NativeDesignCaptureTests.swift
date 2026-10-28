@@ -56,13 +56,13 @@ final class NativeDesignCaptureTests: XCTestCase {
     XCTAssertTrue(text.waitForExistence(timeout: 10), app.debugDescription, file: file, line: line)
     XCTAssertLessThan(text.frame.midX, app.windows.firstMatch.frame.midX, "the large title stands at the left", file: file, line: line)
   }
-  /** On a team's page: a chat's face among the chips, tapped twice (chosen, then its chat); the chat's row id. */
+  /** On a team's page: the head of its first chat's block, tapped (it opens the chat); the chat's row id. */
   private func openFirstChatOfTeam() -> String {
     XCTAssertTrue(app.descendants(matching: .any)["desk-content"].waitForExistence(timeout: 10), app.debugDescription)
-    let chip = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier != %@", "group-chip-", "group-chip-all")).firstMatch
-    XCTAssertTrue(chip.waitForExistence(timeout: 10), app.debugDescription)
-    let id = "chat-session-" + chip.identifier.dropFirst("group-chip-".count)
-    chip.tap(); chip.tap()
+    let head = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "group-block-")).firstMatch
+    XCTAssertTrue(head.waitForExistence(timeout: 10), app.debugDescription)
+    let id = "chat-session-" + head.identifier.dropFirst("group-block-".count)
+    head.tap()
     return id
   }
   /** Moves the first chat of Platform out of every team (the session menu's "No team") and comes home; its id. */

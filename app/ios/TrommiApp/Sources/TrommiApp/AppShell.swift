@@ -99,10 +99,6 @@ enum NativeTab: Hashable { case chat, desk, search }
     walkAll = true; walkChat = nil
     focus(.card(cardId: card))
   }
-  /** The chat chip chosen on the group page (`Focus.group_chat`); none: All. */
-  private(set) var groupChat: String?
-  /** A chip of the group page was tapped: only that chat's cards (none: All). */
-  func chip(_ session: String?) { groupChat = session; show(.group) }
   /** A tab of the iPhone's bar was chosen: its root, the note put away, the search's words left with its tab. */
   func pick(_ next: NativeTab) {
     closeNote(); path = []
@@ -169,11 +165,11 @@ enum NativeTab: Hashable { case chat, desk, search }
   func show(_ screen: CoreView.Screen, team: String? = nil) {
     self.screen = screen
     if case .card = screen {} else { walkChat = nil; walkAll = false }
-    // (a team chosen: its group page, every chat of it)
-    if let team { groupChat = nil; if !isDemo { UserDefaults.standard.set(team, forKey: Self.teamKey) } }
+    // (a team chosen: its group page)
+    if let team, !isDemo { UserDefaults.standard.set(team, forKey: Self.teamKey) }
     let inView = view.sidebar.team.isEmpty ? (isDemo ? nil : Self.lastTeam) : view.sidebar.team
     let query = chatsQuery.trimmingCharacters(in: .whitespaces)
-    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, groupChat: groupChat, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query, calm: Self.phone, walkChat: walkChat, walkAll: walkAll)
+    let focus = CoreView.Focus(screen: screen, visible: true, team: team ?? inView, openTeams: openTeams, chatsQuery: query.isEmpty ? nil : query, calm: Self.phone, walkChat: walkChat, walkAll: walkAll)
     if let data = try? JSONEncoder().encode(focus), let json = try? JSONSerialization.jsonObject(with: data) { send(["type": "focus", "focus": json]) }
   }
   func scene(_ active: Bool) { send(["type": active ? "foreground" : "background"]); if !isDemo { NativeServices.shared.foreground(active) } }
