@@ -66,6 +66,7 @@
     {"id":"chat--payments-service","screen":"Chat","state":"payments-service","web":{"path":"/chat/9ace71aadae23ea1f467d62b83b1d604","state":null,"mock":"1"}},
     {"id":"card","screen":"Card","state":"As it is","web":{"path":"/card/a38afef6dbdd056db8042980f2b83336","state":null,"mock":"1"}},
     {"id":"card--two-pictures","screen":"Card","state":"Two pictures","web":{"path":"/card/a38afef6dbdd056db8042980f2b83336","state":null,"mock":"1"}},
+    {"id":"card--three-pictures","screen":"Card","state":"Three pictures","web":{"path":"/card/e3eb869558332fec907b2752f54a608a","state":null,"mock":"1"}},
     {"id":"card--critical","screen":"Card","state":"Critical","web":{"path":"/card/cc29fc8ae7fedb4d24f25fe7cd7d80d6","state":null,"mock":"1"}},
     {"id":"card--sections","screen":"Card","state":"Sections","web":{"path":"/card/95a7444523d097bff745b891bc2166cf","state":null,"mock":"1"}},
     {"id":"card--multiple-choice","screen":"Card","state":"Multiple choice","web":{"path":"/card/cf5922f1d3baa4cf7dd0d9b573716bfb","state":null,"mock":"1"}},

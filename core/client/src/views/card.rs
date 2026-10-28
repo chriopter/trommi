@@ -1462,8 +1462,10 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         words: Default::default(),
         menu: Vec::new(),
         paper: String::new(),
+        pages: Vec::new(),
         id,
     };
+    v.pages = pages_of(&v);
     v.menu = menu_of(&v);
     v.paper = paper_of(&v).into();
     Some(v)
@@ -1481,6 +1483,67 @@ pub(crate) fn paper_of(v: &CardView) -> &'static str {
 /// The card's ⋯ menu, from what the page shows of it: the questions before and after it while it has a place,
 /// the pen while it can be drawn on (an open decision, an info still to be read), its session's conversation when
 /// it has one, Wake up while it is put off, Shred while it waits for an answer; focus and copy always.
+/// The options one page each (`CardView::pages`): while the card waits for one choice of two or more, when an
+/// option has a picture or words of its own and every picture shows an option. The recommended one first, the
+/// others in their order.
+fn pages_of(v: &CardView) -> Vec<super::OptionPageView> {
+    let shows = |p: &super::PictureView, key: &str| {
+        p.keys.iter().any(|k| k == key) || p.key.as_deref() == Some(key)
+    };
+    let own = |key: &str| {
+        v.sections
+            .iter()
+            .find(|s| s.key == key)
+            .map(|s| s.text.clone())
+            .unwrap_or_default()
+    };
+    if v.kind != "decision"
+        || v.answer.mode != "options"
+        || v.multiple
+        || v.options.len() < 2
+        || v.pictures
+            .iter()
+            .any(|p| !v.options.iter().any(|o| shows(p, &o.key)))
+        || (v.pictures.is_empty() && v.options.iter().all(|o| own(&o.key).is_empty()))
+    {
+        return Vec::new();
+    }
+    let mut order: Vec<&super::OptionView> = v.options.iter().filter(|o| o.recommended).collect();
+    order.extend(v.options.iter().filter(|o| !o.recommended));
+    let n = order.len().to_string();
+    order
+        .iter()
+        .enumerate()
+        .map(|(i, o)| {
+            let at = (i + 1).to_string();
+            super::OptionPageView {
+                key: o.key.clone(),
+                label: o.label.clone(),
+                detail: o.detail.clone(),
+                text: own(&o.key),
+                recommended: o.recommended,
+                settles: o.settles,
+                pictures: v
+                    .pictures
+                    .iter()
+                    .filter(|p| shows(p, &o.key))
+                    .cloned()
+                    .collect(),
+                choose: say(
+                    "card.page.choose",
+                    format!("Choose {}", o.label),
+                    &[("label", &o.label)],
+                ),
+                place: say(
+                    "card.page.place",
+                    format!("{at} of {n}"),
+                    &[("at", &at), ("n", &n)],
+                ),
+            }
+        })
+        .collect()
+}
+
 pub(crate) fn menu_of(v: &CardView) -> Vec<CardMenuItem> {
     let item = |key: &str, en: &str, keys: &str, now_only: bool| CardMenuItem {
         key: key.into(),
@@ -1819,6 +1882,65 @@ mod tests {
     }
 
     /// The web's `pictureKeys`, case by case.
+    /// A decision of one choice with a picture per option: a page each, the recommended one first, the way to
+    /// choose it under it; several to tick, or a picture of no option, and the page stays as it was.
+    #[test]
+    fn the_options_as_pages_to_swipe() {
+        let opt = |k: &str, rec: bool| OptionView {
+            key: k.into(),
+            label: k.to_uppercase(),
+            recommended: rec,
+            ..Default::default()
+        };
+        let pic = |id: &str, k: &str| PictureView {
+            file_id: id.into(),
+            key: Some(k.into()),
+            keys: vec![k.into()],
+            ..Default::default()
+        };
+        let mut v = CardView {
+            kind: "decision".into(),
+            answer: AnswerView {
+                mode: "options".into(),
+                ..Default::default()
+            },
+            options: vec![opt("a", false), opt("b", false), opt("c", true)],
+            pictures: vec![pic("1", "a"), pic("2", "b"), pic("3", "c")],
+            ..Default::default()
+        };
+        let pages = pages_of(&v);
+        assert_eq!(
+            pages
+                .iter()
+                .map(|p| (
+                    p.key.as_str(),
+                    p.pictures[0].file_id.as_str(),
+                    p.choose.en.as_str(),
+                    p.place.en.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("c", "3", "Choose C", "1 of 3"),
+                ("a", "1", "Choose A", "2 of 3"),
+                ("b", "2", "Choose B", "3 of 3")
+            ]
+        );
+        v.pictures.push(PictureView {
+            file_id: "4".into(),
+            ..Default::default()
+        });
+        assert!(pages_of(&v).is_empty(), "a picture of no option");
+        v.pictures.pop();
+        v.multiple = true;
+        assert!(pages_of(&v).is_empty(), "several to tick");
+        v.multiple = false;
+        v.answer.mode = "said".into();
+        assert!(pages_of(&v).is_empty(), "answered");
+        v.answer.mode = "options".into();
+        v.pictures.clear();
+        assert!(pages_of(&v).is_empty(), "nothing of their own");
+    }
+
     #[test]
     fn pictures_find_their_options() {
         let opt = |k: &str, l: &str| crate::views::group::Opt {

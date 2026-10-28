@@ -290,6 +290,8 @@ struct CardScreen: View {
   @State private var goesOn = false
   /** The card's talk unfolded: open at first (owner, 23 October), its row folds it. */
   @State private var showTalk = true
+  /** The option page in view (`CardView.pages`, by key); none: the first. */
+  @State private var page: String?
   /** How tall the answers stood while the card was open: once answered here the way on keeps that room, so nothing
    *  under it moves and the page does not jump when it gets shorter. */
   @State private var answersHeight: CGFloat = 0
@@ -311,7 +313,9 @@ struct CardScreen: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 22) {
         lead
-        if !card.pictures.isEmpty {
+        // (one choice of several, each with its picture or words: a page each to swipe, its button under it)
+        if !card.pages.isEmpty { pager }
+        if !card.pictures.isEmpty && card.pages.isEmpty {
           VStack(spacing: 12) {
             ForEach(Array(card.pictures.enumerated()), id: \.offset) { i, picture in
               CardPicture(fileId: picture.fileId, ratio: ratioOf(picture), zoom: zoom) {
@@ -320,7 +324,8 @@ struct CardScreen: View {
             }
           }
         }
-        FileRows(ids: card.files)
+        // (the pictures stand above, or on the option pages: here only the other files)
+        FileRows(ids: card.files.filter { id in !card.pictures.contains { $0.fileId == id } })
         answers
           .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in if card.status == "open" { answersHeight = h } }
           .frame(minHeight: answeredHere ? answersHeight : nil, alignment: .top)
@@ -331,7 +336,7 @@ struct CardScreen: View {
           }
           .buttonStyle(.plain)
         }
-        if card.answer.mode == "options" && !card.sections.isEmpty { sections }
+        if card.answer.mode == "options" && !card.sections.isEmpty && card.pages.isEmpty { sections }
         // (a plain receipt, "Your answer is on its way", stands quietly in the answer's line; a box only for what
         //  needs a look: the session cut off, asleep, gone)
         if let n = card.note, !receiptOnly(n) { LinkNoteBox(note: n) }
@@ -456,6 +461,67 @@ struct CardScreen: View {
     }
   }
 
+  // ---- the options as pages: swiped sideways, one each, the way to choose it under it ----
+
+  @ViewBuilder private var pager: some View {
+    let shots = card.pages.flatMap { p in p.pictures.map { Shot(fileId: $0.fileId, caption: $0.caption) } }
+    let at = card.pages.firstIndex { $0.key == page } ?? 0
+    VStack(spacing: 14) {
+      ScrollView(.horizontal) {
+        HStack(alignment: .top, spacing: 0) {
+          ForEach(card.pages, id: \.key) { p in
+            optionPage(p, shots: shots).padding(.horizontal, 2).containerRelativeFrame(.horizontal).id(p.key)
+          }
+        }
+        .scrollTargetLayout()
+      }
+      .scrollTargetBehavior(.paging)
+      .scrollIndicators(.hidden)
+      .scrollPosition(id: $page)
+      // (the dots: where the page is, a tap goes to that one)
+      HStack(spacing: 8) {
+        ForEach(Array(card.pages.enumerated()), id: \.element.key) { i, p in
+          Button { withAnimation(.snappy) { page = p.key } } label: {
+            Circle().fill(i == at ? Ink.fg : Ink.fg.opacity(0.2)).frame(width: 8, height: 8).padding(6)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("\(p.label), \(p.place.en)")
+        }
+      }
+      .frame(maxWidth: .infinity)
+    }
+  }
+  private func optionPage(_ p: CoreView.OptionPageView, shots: [Shot]) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      ForEach(p.pictures, id: \.fileId) { picture in
+        CardPicture(fileId: picture.fileId, ratio: ratioOf(picture), zoom: zoom) {
+          showing = PictureShow(shots: shots, start: shots.firstIndex { $0.fileId == picture.fileId } ?? 0)
+        }
+      }
+      HStack(alignment: .firstTextBaseline) {
+        Text(p.label).font(.title3.weight(.bold)).foregroundStyle(Ink.fg)
+        Spacer(minLength: 8)
+        if p.recommended { Text(card.words.recommended.en).font(.caption.weight(.semibold)).foregroundStyle(Ink.accent) }
+      }
+      if !p.detail.isEmpty { Text(p.detail).font(.subheadline).foregroundStyle(Ink.muted) }
+      if !p.text.isEmpty { Markdown(text: p.text, size: 15, system: true) }
+      Button { answer([p.key]) } label: {
+        HStack(spacing: 6) {
+          Text(p.choose.en).font(.body.weight(.semibold))
+          if p.settles { Image(systemName: "checkmark").font(.caption.weight(.bold)) }
+        }
+        .foregroundStyle(p.recommended ? Ink.accentFg : Ink.fg)
+        .padding(.horizontal, 18).frame(maxWidth: .infinity, minHeight: 56)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(p.recommended ? Ink.accent : calmFill))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+      }
+      .buttonStyle(TalkPressStyle())
+      .accessibilityIdentifier("page-choose-" + p.key)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("\(p.label), \(p.place.en)")
+  }
+
   // ---- the answers ----
 
   @ViewBuilder private var answers: some View {
@@ -464,7 +530,7 @@ struct CardScreen: View {
     VStack(alignment: .leading, spacing: 10) {
       switch a.mode {
       case "options":
-        ForEach(card.options, id: \.key) { o in option(o) }
+        if card.pages.isEmpty { ForEach(card.options, id: \.key) { o in option(o) } }
         if card.multiple {
           Button { answer(Array(choices)) } label: {
             Text("Send the answer").font(.body.weight(.semibold)).foregroundStyle(Ink.accentFg).frame(maxWidth: .infinity, minHeight: 54)

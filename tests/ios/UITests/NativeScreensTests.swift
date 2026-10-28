@@ -156,6 +156,23 @@ final class NativeScreensTests: XCTestCase {
     XCTAssertTrue(picture.waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["picture-viewer-close"].exists)
   }
+  /** One choice of three, each with its picture: a page each, the recommended one first, its button under it; a
+   *  swipe brings the next with its own button. */
+  func testCardOptionsArePagesToSwipe() {
+    launch("card--three-pictures")
+    let first = app.buttons["page-choose-meadow"]
+    XCTAssertTrue(first.waitForExistence(timeout: 15), app.debugDescription)
+    XCTAssertTrue(first.isHittable)
+    capture("card--three-pictures-page-1")
+    app.buttons["card-picture"].firstMatch.swipeLeft()
+    let second = app.buttons["page-choose-terracotta"]
+    XCTAssertTrue(second.waitForExistence(timeout: 5))
+    let settled = NSPredicate { _, _ in second.isHittable && !first.isHittable }
+    XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: settled, evaluatedWith: nil)], timeout: 5), .completed, app.debugDescription)
+    capture("card--three-pictures-page-2")
+    app.swipeUp()
+    capture("card--three-pictures-below")
+  }
   func testChatContainsAnActualMessage() {
     launch("chat")
     let message = app.staticTexts["talk-message"].firstMatch

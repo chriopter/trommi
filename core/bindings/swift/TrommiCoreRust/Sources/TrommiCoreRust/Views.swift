@@ -4721,6 +4721,75 @@ public enum CoreView {
     }
   }
 
+  /// One option as a page of its own (`CardView::pages`).
+  public struct OptionPageView: Codable, Hashable, Sendable {
+    public var key: String
+    public var label: String
+    /// Its line of detail, as plain words.
+    public var detail: String
+    /// Its own paragraph (markdown, its section's text); "" when none.
+    public var text: String
+    public var recommended: Bool
+    /// Choosing it settles the card.
+    public var settles: Bool
+    /// The pictures that show it.
+    public var pictures: [PictureView]
+    /// The button under it: "Choose Meadow".
+    public var choose: Text
+    /// "2 of 3", for the voice.
+    public var place: Text
+
+    public init(key: String = "", label: String = "", detail: String = "", text: String = "", recommended: Bool = false, settles: Bool = false, pictures: [PictureView] = [], choose: Text = Text(), place: Text = Text()) {
+      self.key = key
+      self.label = label
+      self.detail = detail
+      self.text = text
+      self.recommended = recommended
+      self.settles = settles
+      self.pictures = pictures
+      self.choose = choose
+      self.place = place
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case label = "label"
+      case detail = "detail"
+      case text = "text"
+      case recommended = "recommended"
+      case settles = "settles"
+      case pictures = "pictures"
+      case choose = "choose"
+      case place = "place"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decode(String.self, forKey: .key)
+      self.label = try c.decode(String.self, forKey: .label)
+      self.detail = try c.decodeIfPresent(String.self, forKey: .detail) ?? ""
+      self.text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+      self.recommended = try c.decode(Bool.self, forKey: .recommended)
+      self.settles = try c.decodeIfPresent(Bool.self, forKey: .settles) ?? false
+      self.pictures = try c.decodeIfPresent([PictureView].self, forKey: .pictures) ?? []
+      self.choose = try c.decode(Text.self, forKey: .choose)
+      self.place = try c.decode(Text.self, forKey: .place)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(label, forKey: .label)
+      if !detail.isEmpty { try c.encode(detail, forKey: .detail) }
+      if !text.isEmpty { try c.encode(text, forKey: .text) }
+      try c.encode(recommended, forKey: .recommended)
+      try c.encode(settles, forKey: .settles)
+      if !pictures.isEmpty { try c.encode(pictures, forKey: .pictures) }
+      try c.encode(choose, forKey: .choose)
+      try c.encode(place, forKey: .place)
+    }
+  }
+
   /// The answer to his What?? on a card's page (`CardView::explained`).
   public struct ExplainedView: Codable, Hashable, Sendable {
     /// The id of the talk row with the agent's words.
@@ -4831,6 +4900,11 @@ public enum CoreView {
     public var mergedInto: CardRefView?
     /// Its pictures, in order (the stage and the small ones under it), each with the option it shows.
     public var pictures: [PictureView]
+    /// The options one page each, to swipe through on a phone (the iPhone's card page): its pictures, words and the
+    /// way to choose it under them, the recommended one first. While the card waits for one choice of two or more
+    /// options and an option has a picture or words of its own, every picture showing an option; else empty, and
+    /// the page draws `pictures`, `options` and `sections` as before.
+    public var pages: [OptionPageView]
     /// The line above the comments when more stand before them ("Load earlier (N)", "Earlier comments"): `talk`
     /// is a window of the newest [`board::COMMENTS_PAGE`] rows, a page more for each time the person asked
     /// (`Lens::comments_window`, `MoreOf::Comments`); none when it shows everything there is.
@@ -4847,7 +4921,7 @@ public enum CoreView {
     /// session works on it (the strip above the title, or the card back with the agent for rework).
     public var paper: String
 
-    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], explained: ExplainedView? = nil, hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil, words: CardWordsView = CardWordsView(), menu: [CardMenuItem] = [], paper: String = "") {
+    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], explained: ExplainedView? = nil, hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], pages: [OptionPageView] = [], earlier: MoreView? = nil, after: AfterView? = nil, words: CardWordsView = CardWordsView(), menu: [CardMenuItem] = [], paper: String = "") {
       self.id = id
       self.sessionId = sessionId
       self.kind = kind
@@ -4888,6 +4962,7 @@ public enum CoreView {
       self.mergedFrom = mergedFrom
       self.mergedInto = mergedInto
       self.pictures = pictures
+      self.pages = pages
       self.earlier = earlier
       self.after = after
       self.words = words
@@ -4936,6 +5011,7 @@ public enum CoreView {
       case mergedFrom = "merged_from"
       case mergedInto = "merged_into"
       case pictures = "pictures"
+      case pages = "pages"
       case earlier = "earlier"
       case after = "after"
       case words = "words"
@@ -4985,6 +5061,7 @@ public enum CoreView {
       self.mergedFrom = try c.decodeIfPresent([CardRefView].self, forKey: .mergedFrom) ?? []
       self.mergedInto = try c.decodeIfPresent(CardRefView.self, forKey: .mergedInto)
       self.pictures = try c.decodeIfPresent([PictureView].self, forKey: .pictures) ?? []
+      self.pages = try c.decodeIfPresent([OptionPageView].self, forKey: .pages) ?? []
       self.earlier = try c.decodeIfPresent(MoreView.self, forKey: .earlier)
       self.after = try c.decodeIfPresent(AfterView.self, forKey: .after)
       self.words = try c.decodeIfPresent(CardWordsView.self, forKey: .words) ?? CardWordsView()
@@ -5034,6 +5111,7 @@ public enum CoreView {
       if !mergedFrom.isEmpty { try c.encode(mergedFrom, forKey: .mergedFrom) }
       try c.encodeIfPresent(mergedInto, forKey: .mergedInto)
       if !pictures.isEmpty { try c.encode(pictures, forKey: .pictures) }
+      if !pages.isEmpty { try c.encode(pages, forKey: .pages) }
       try c.encodeIfPresent(earlier, forKey: .earlier)
       try c.encodeIfPresent(after, forKey: .after)
       try c.encode(words, forKey: .words)

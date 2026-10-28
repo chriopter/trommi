@@ -219,6 +219,78 @@
       ]
     }
   ],
+  "pages": [
+    {
+      "key": "split",
+      "label": "Split",
+      "detail": "The app visible at once",
+      "recommended": true,
+      "settles": false,
+      "pictures": [
+        {
+          "file_id": "2696c38e6cc7b29aa0904b353c4d5855",
+          "name": "hero-split.png",
+          "caption": "Split",
+          "width": 2560,
+          "height": 1600,
+          "key": "split",
+          "keys": [
+            "split"
+          ]
+        }
+      ],
+      "choose": {
+        "key": "card.page.choose",
+        "args": {
+          "label": "Split"
+        },
+        "en": "Choose Split"
+      },
+      "place": {
+        "key": "card.page.place",
+        "args": {
+          "at": "1",
+          "n": "2"
+        },
+        "en": "1 of 2"
+      }
+    },
+    {
+      "key": "centered",
+      "label": "Centered",
+      "detail": "Words first, plants around",
+      "recommended": false,
+      "settles": false,
+      "pictures": [
+        {
+          "file_id": "689be4d14b8c7e0929da081e6bc78714",
+          "name": "hero-centered.png",
+          "caption": "Centered",
+          "width": 2560,
+          "height": 1600,
+          "key": "centered",
+          "keys": [
+            "centered"
+          ]
+        }
+      ],
+      "choose": {
+        "key": "card.page.choose",
+        "args": {
+          "label": "Centered"
+        },
+        "en": "Choose Centered"
+      },
+      "place": {
+        "key": "card.page.place",
+        "args": {
+          "at": "2",
+          "n": "2"
+        },
+        "en": "2 of 2"
+      }
+    }
+  ],
   "after": {
     "next": {
       "id": "29e26860adecd0578df14c491915b27a",

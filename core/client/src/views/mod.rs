@@ -1901,6 +1901,30 @@ pub struct WakeLineView {
     pub says: Text,
 }
 
+/// One option as a page of its own (`CardView::pages`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OptionPageView {
+    pub key: String,
+    pub label: String,
+    /// Its line of detail, as plain words.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+    /// Its own paragraph (markdown, its section's text); "" when none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    pub recommended: bool,
+    /// Choosing it settles the card.
+    #[serde(default)]
+    pub settles: bool,
+    /// The pictures that show it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pictures: Vec<PictureView>,
+    /// The button under it: "Choose Meadow".
+    pub choose: Text,
+    /// "2 of 3", for the voice.
+    pub place: Text,
+}
+
 /// The answer to his What?? on a card's page (`CardView::explained`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExplainedView {
@@ -2021,6 +2045,12 @@ pub struct CardView {
     /// Its pictures, in order (the stage and the small ones under it), each with the option it shows.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pictures: Vec<PictureView>,
+    /// The options one page each, to swipe through on a phone (the iPhone's card page): its pictures, words and the
+    /// way to choose it under them, the recommended one first. While the card waits for one choice of two or more
+    /// options and an option has a picture or words of its own, every picture showing an option; else empty, and
+    /// the page draws `pictures`, `options` and `sections` as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pages: Vec<OptionPageView>,
     /// The line above the comments when more stand before them ("Load earlier (N)", "Earlier comments"): `talk`
     /// is a window of the newest [`board::COMMENTS_PAGE`] rows, a page more for each time the person asked
     /// (`Lens::comments_window`, `MoreOf::Comments`); none when it shows everything there is.

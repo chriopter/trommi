@@ -1360,6 +1360,25 @@ export interface WakeLineView {
   says: Text
 }
 
+/** One option as a page of its own (`CardView::pages`). */
+export interface OptionPageView {
+  key: string
+  label: string
+  /** Its line of detail, as plain words. */
+  detail?: string
+  /** Its own paragraph (markdown, its section's text); "" when none. */
+  text?: string
+  recommended: boolean
+  /** Choosing it settles the card. */
+  settles: boolean
+  /** The pictures that show it. */
+  pictures?: PictureView[]
+  /** The button under it: "Choose Meadow". */
+  choose: Text
+  /** "2 of 3", for the voice. */
+  place: Text
+}
+
 /** The answer to his What?? on a card's page (`CardView::explained`). */
 export interface ExplainedView {
   /** The id of the talk row with the agent's words. */
@@ -1448,6 +1467,11 @@ export interface CardView {
   merged_into?: CardRefView
   /** Its pictures, in order (the stage and the small ones under it), each with the option it shows. */
   pictures?: PictureView[]
+  /** The options one page each, to swipe through on a phone (the iPhone's card page): its pictures, words and the
+   *  way to choose it under them, the recommended one first. While the card waits for one choice of two or more
+   *  options and an option has a picture or words of its own, every picture showing an option; else empty, and
+   *  the page draws `pictures`, `options` and `sections` as before. */
+  pages?: OptionPageView[]
   /** The line above the comments when more stand before them ("Load earlier (N)", "Earlier comments"): `talk`
    *  is a window of the newest [`board::COMMENTS_PAGE`] rows, a page more for each time the person asked
    *  (`Lens::comments_window`, `MoreOf::Comments`); none when it shows everything there is. */
